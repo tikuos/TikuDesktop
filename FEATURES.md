@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 225   partial 152   differs 68   open 444
+    done 231   partial 152   differs 70   open 436
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -2675,21 +2675,24 @@ FSDeleteFolder recurses, calls loopControl->FileError(kFileDeleteErrorString, re
 BPoseView::Delete / MoveListToTrash / RestoreItemsFromTrash build a two-element task list run in order by ThreadSequence::Launch: the FS call first (FSDeleteRefList/FSMoveToTrash/FSRestoreRefList with async=false), then TTracker::SelectPoseAtLocationSoon with the target folder's node_ref and a point computed from the deleted pose's list index. Only done when ViewMode() == kListMode.  
 `PoseView.cpp` → `BPoseView::Delete`  
 
-#### FS-051 · core · open
+#### FS-051 · core · done
 **Cut and Copy put the selection on the system clipboard; Shift turns them into "Cut more"/"Copy more", which add to what is already there instead of replacing it.**  
 B_CUT -> FSClipboardAddPoses(dir, selection, kMoveSelectionTo, clearClipboard=true); kCutMoreSelectionToClipboard -> same with false; B_COPY / kCopyMoreSelectionToClipboard -> kCopySelectionTo with true/false. TShortcuts::CutLabel/CopyLabel swap the menu text on B_SHIFT_KEY and CutCommand/CopyCommand swap the command.  
 `FSClipboard.cpp` → `FSClipboardAddPoses`  
 **TIKU:** There is no system clipboard; the rewrite needs a clipboard service (a namespace node would let other processes read it, which is a deliberate exposure decision).  
+**PORT:** The clipboard holds a reference and a mode per item and copies nothing; Cut and Copy differ only in the mode, and "more" appends where the plain gesture replaces.
 
-#### FS-052 · important · open
+#### FS-052 · important · done
 **Volumes, the root, the Trash and the Desktop are silently excluded from a Cut or Copy.**  
 FSClipboardAddPoses skips any pose whose model IsVolume() || IsRoot() || IsTrash() || IsDesktop() before touching the clipboard; the returned refsAdded count therefore can be lower than the selection size.  
 `FSClipboard.cpp` → `FSClipboardAddPoses`  
+**PORT:** A volume, the Trash and the desktop are silently excluded -- none of them could be pasted anywhere, so offering to would be a promise nothing can keep.
 
-#### FS-053 · important · open
+#### FS-053 · important · done
 **An item can appear on the clipboard only once: cutting something that was already copied changes its mode rather than adding a second entry.**  
 In the non-clearing path FSClipboardAddPoses first tries ReplaceInt32/ReplaceRef on the "m<dev>_<ino>"/"r<dev>_<ino>" field pair and only falls back to AddRef/AddInt32 when the replace fails; failed replaces emit a tcnode with moveMode kDelete so listeners drop the stale highlight.  
 `FSClipboard.cpp` → `FSClipboardAddPoses`  
+**PORT:** Uniqueness is structural rather than searched: entries are keyed by the node's identity, so a second gesture on the same item rewrites the entry it already has and updates its mode.
 
 #### FS-054 · important · open
 **Cut items are drawn semi-transparent in every window that shows them, and the dimming clears as soon as the clipboard is cleared or the item is pasted.**  
@@ -2697,10 +2700,11 @@ BPose::Draw switches to B_OP_ALPHA with B_CONSTANT_ALPHA and alpha 128 when fCli
 `Pose.cpp` → `BPose::Draw`  
 **TIKU:** The broadcast becomes a VFS watch notification; every window showing the node must re-render, which is exactly the watch semantics ("touched, re-read").  
 
-#### FS-055 · core · open
+#### FS-055 · core · differs
 **Paste moves the items when they were Cut and copies them when they were Copied, and a second Paste always copies — Cut is consumed by the first paste.**  
 FSClipboardPaste sorts each clipboard ref into moveList (linksMode or moveMode == kMoveSelectionTo), copyList (kCopySelectionTo) or duplicateList, then for any entry whose moveMode was kMoveSelectionTo sets newMoveMode = kCopySelectionTo and rewrites the clipboard field with clip->ReplaceInt32(modeName, kCopySelectionTo), emitting a kDelete tcnode so the dimming clears.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
+**PORT:** Paste moves cut items and copies copied ones, and a cut is spent by its paste while a copy stays.  A mixed clipboard is treated as a move rather than split into two operations, there being one queue.
 
 #### FS-056 · important · open
 **Pasting copied items into the folder they already live in duplicates them ("<name> copy"); pasting cut items into their own folder does nothing.**  
@@ -2712,31 +2716,35 @@ sameDirectory is destNodeRef->device == ref.device && destNodeRef->node == ref.d
 kPasteLinksFromClipboard -> FSClipboardPaste(TargetModel(), kCreateLink); inside, linksMode routes every existing entry into moveList and the dispatch is FSMoveToFolder(moveList, entry, linksMode). TShortcuts::PasteLabel/PasteCommand swap on B_SHIFT_KEY.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
 
-#### FS-058 · important · open
+#### FS-058 · important · done
 **Clipboard entries whose files no longer exist are dropped from the clipboard at paste time instead of producing an error.**  
 FSClipboardPaste: !entry.Exists() -> clip->RemoveName(refName); clip->RemoveName(modeName); newMoveMode = kDelete, which also emits a tcnode so the poses stop being drawn as cut.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
+**PORT:** Entries whose files have gone are dropped at paste time rather than handed to a copy that would fail on them.
 
 #### FS-059 · polish · open
 **Paste is refused into the Disks root with "You must drop items on one of the disk icons in the \"Disks\" window."**  
 FSClipboardPaste checks model->IsRoot() after processing the clipboard (so the clipboard has already been mutated) and, together with the copy-into-Trash check, sets okToMove = false and deletes all three lists before returning false. BPoseView::MoveSelectionInto raises the identical alert for drops.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
 
-#### FS-060 · important · open
+#### FS-060 · important · done
 **Clipboard entries follow their files: renaming or moving a cut file updates the clipboard, deleting it or unmounting its volume removes it.**  
 BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus a global B_WATCH_MOUNT. B_ENTRY_MOVED -> UpdateNode(node, new ref) which ReplaceRefs, or removes both fields and stops watching if the replace fails; B_ENTRY_REMOVED -> RemoveNode(node, removeFromClipboard=true); B_DEVICE_UNMOUNTED -> RemoveNodesByDevice(device), which matches clipboard field names by the "r<dev>_" prefix.  
 `FSClipboard.cpp` → `BClipboardRefsWatcher::MessageReceived`  
 **TIKU:** Maps onto VFS watch notifications, but VFS watches are per-boot and capped (TIKU_VFS_WATCH_MAX 8) while the clipboard can hold arbitrarily many nodes — the rewrite needs either a bigger watch table or a lazy revalidation-on-paste strategy.  
+**PORT:** The payload follows the file and the MODE does not: an item cut and then renamed is still cut, and the paste uses the name it has now.
 
-#### FS-061 · important · open
+#### FS-061 · important · differs
 **When another application replaces the clipboard contents, all cut/copy highlighting in Tracker disappears.**  
 BClipboardRefsWatcher watches be_clipboard; on B_CLIPBOARD_CHANGED, if it previously held refs and FSClipboardHasRefs() is now false, Clear() stops all node watching, re-arms B_WATCH_MOUNT, and broadcasts kFSClipboardChanges with clearClipboard = true to every registered pose view.  
 `FSClipboard.cpp` → `BClipboardRefsWatcher::Clear`  
+**PORT:** There is no system clipboard to lose it to, so the analogue is a serial the views compare against: when the contents move, anything drawing cut items knows to stop.
 
-#### FS-062 · polish · open
+#### FS-062 · polish · done
 **Escape clears the file clipboard; Shift+Escape removes just the selected items from it.**  
 B_CANCEL -> if (FSClipboardHasRefs()) FSClipboardClear(); kCancelSelectionToClipboard -> FSClipboardRemovePoses on the selection, or on the whole pose list when nothing is selected. The Shift+Escape binding is installed as ShortcutFilter(B_ESCAPE, B_SHIFT_KEY, kCancelSelectionToClipboard).  
 `PoseView.cpp` → `BPoseView::MessageReceived`  
+**PORT:** Clearing empties it; removing named entries leaves the rest.
 
 #### FS-063 · core · partial
 **Undo (Cmd+Z) reverses the last file operation and Redo (Shift+Cmd+Z) replays it; the stack holds at most 20 operations and any new operation wipes the redo stack.**  

@@ -14,7 +14,7 @@ BUILD := build
 DESK  := ../desktop/src
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
          src/tiku_trk_attr.c src/tiku_trk_query.c src/tiku_trk_notify.c \
-         src/tiku_trk_match.c \
+         src/tiku_trk_match.c src/tiku_trk_clip.c \
          src/tiku_trk_model.c src/tiku_trk_backend_posix.c \
          src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c \
          $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c $(DESK)/tiku_desk_ns.c
@@ -27,7 +27,7 @@ TESTBINS := $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
-            $(BUILD)/test_edit $(BUILD)/test_title
+            $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop
 
@@ -57,7 +57,7 @@ $(BUILD)/test_query: src/tiku_trk_query.c src/tiku_trk_attr.c \
 
 $(BUILD)/test_notify: src/tiku_trk_notify.c src/tiku_trk_poseview.c \
                       src/tiku_trk_model.c src/tiku_trk_attr.c \
-                      src/tiku_trk_match.c \
+                      src/tiku_trk_match.c src/tiku_trk_clip.c \
                       src/tiku_trk_state.c src/tiku_trk_backend_posix.c \
                       src/tiku_trk_task.c $(DESK)/tiku_desk_gfx.c \
                       $(DESK)/tiku_desk_font.c tests/test_notify.c | $(BUILD)
@@ -72,6 +72,10 @@ $(BUILD)/test_title: $(CORE) src/tiku_trk_poseview.c src/tiku_trk_titleview.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_match: src/tiku_trk_match.c tests/test_match.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_clip: src/tiku_trk_clip.c src/tiku_trk_model.c \
+                    tests/test_clip.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_edit: src/tiku_trk_edit.c src/tiku_trk_select.c \
@@ -122,6 +126,7 @@ test: all
 	@$(BUILD)/test_match
 	@$(BUILD)/test_edit
 	@$(BUILD)/test_title
+	@$(BUILD)/test_clip
 
 clean:
 	rm -rf $(BUILD)

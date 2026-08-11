@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_attr.h"
+#include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_iconpaint.h"
@@ -120,6 +121,9 @@ typedef struct desktop {
      * window on the first. */
     int                  cascade_x, cascade_y;
     struct tiku_trk_store *store;
+    /* ONE clipboard for the desktop, as the system's is one: cutting in a
+     * window and pasting in another is the whole point of it. */
+    tiku_trk_clip_t      clip;
     /* Select by pattern.  ONE of these serves the whole desktop and is
      * hidden rather than destroyed, so its expression outlives the window
      * it was last used on (CW-063, AW-105). */
@@ -175,6 +179,9 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
         }
     }
     c.can_edit_name = (c.selection == 1);
+    /* FS-051: the clipboard really has something in it, so the item can
+     * finally be enabled -- it has been permanently grey until now. */
+    c.clipboard_has_refs = (tiku_trk_clip_count(&app->clip) > 0);
     c.can_open_parent = (strcmp(fl->path, "/") != 0);
     {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
@@ -1150,6 +1157,72 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                          : "the Trash is empty", n, (n == 1) ? "" : "s");
         break;
     }
+    case TIKU_TRK_CMD_CUT:
+    case TIKU_TRK_CMD_CUT_MORE:
+    case TIKU_TRK_CMD_COPY:
+    case TIKU_TRK_CMD_COPY_MORE: {
+        tiku_trk_model_t sel[64];
+        int i2, k = 0, n2 = tiku_trk_poseview_count(fl->view);
+        int cut = (command == TIKU_TRK_CMD_CUT ||
+                   command == TIKU_TRK_CMD_CUT_MORE);
+        int more = (command == TIKU_TRK_CMD_CUT_MORE ||
+                    command == TIKU_TRK_CMD_COPY_MORE);
+
+        for (i2 = 0; i2 < n2 && k < 64; i2++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i2);
+
+            if (p != NULL && p->selected) {
+                sel[k++] = p->model;
+            }
+        }
+        /* Nothing is copied here: the clipboard holds references and a
+         * mode, and the work happens at the Paste. */
+        (void)tiku_trk_clip_add(&app->clip, sel, k,
+                                cut ? TIKU_TRK_CLIP_MOVE
+                                    : TIKU_TRK_CLIP_COPY, !more);
+        snprintf(app->status, sizeof app->status, "%d item%s on the clipboard",
+                 tiku_trk_clip_count(&app->clip),
+                 (tiku_trk_clip_count(&app->clip) == 1) ? "" : "s");
+        break;
+    }
+    case TIKU_TRK_CMD_PASTE: {
+        char paths[64][TIKU_TRK_PATH_MAX];
+        const char *sel[64];
+        int i2, k = 0, moving = 0;
+
+        /* Entries whose files have gone are dropped rather than pasted:
+         * a reference to nothing is not something to hand to a copy. */
+        (void)tiku_trk_clip_prune(&app->clip);
+        for (i2 = 0; i2 < tiku_trk_clip_count(&app->clip) && k < 64; i2++) {
+            const tiku_trk_clip_entry_t *e = tiku_trk_clip_at(&app->clip, i2);
+
+            snprintf(paths[k], sizeof paths[k], "%s", e->path);
+            sel[k] = paths[k];
+            if (e->mode == TIKU_TRK_CLIP_MOVE) {
+                moving = 1;
+            }
+            k++;
+        }
+        if (k == 0) {
+            snprintf(app->status, sizeof app->status,
+                     "the clipboard is empty");
+            break;
+        }
+        /* What a Paste DOES is the mode the clipboard carries: cut items
+         * move, copied items copy. */
+        if (moving) {
+            (void)tiku_trk_fs_move(app->fs, sel, k, fl->path,
+                                   TIKU_TRK_CONFLICT_ASK);
+            /* A cut is spent by its paste; a copy stays for the next one. */
+            tiku_trk_clip_clear(&app->clip);
+        } else {
+            (void)tiku_trk_fs_copy(app->fs, sel, k, fl->path,
+                                   TIKU_TRK_CONFLICT_ASK);
+        }
+        snprintf(app->status, sizeof app->status, "%s %d item%s here",
+                 moving ? "moving" : "copying", k, (k == 1) ? "" : "s");
+        break;
+    }
     case TIKU_TRK_CMD_CLOSE:
         close_window(app, fl->win);
         break;
@@ -1391,6 +1464,7 @@ main(int argc, char **argv)
     /* The Select window's defaults are wildcard and ignore-case, and a
      * zeroed struct is neither -- it is "starts with", case-sensitive. */
     tiku_trk_select_init(&app.sel);
+    tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_store_memory_open();
 
     if (use_device) {
