@@ -26,6 +26,20 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
+/** @brief Cancel after this many chunk checks; 0 means never. */
+static int cancel_after;
+static int cancel_seen;
+
+static int
+cancel_hook(void *ctx)
+{
+    (void)ctx;
+    if (cancel_after == 0) {
+        return 0;
+    }
+    return (++cancel_seen >= cancel_after);
+}
+
 static int
 there(const char *p)
 {
@@ -40,12 +54,36 @@ put(const char *p, const char *text)
     if (f != NULL) { fputs(text, f); (void)fclose(f); }
 }
 
+/** @brief Whether the file at @p p holds exactly @p text. */
+static int
+holds(const char *p, const char *text)
+{
+    char  buf[128];
+    FILE *f = fopen(p, "r");
+    size_t n;
+
+    if (f == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    return strcmp(buf, text) == 0;
+}
+
 static void
 run_to_end(tiku_trk_fs_t *fs)
 {
     int guard = 0;
     while (tiku_trk_fs_busy(fs) && guard++ < 1000) {
         if (tiku_trk_fs_step(fs, 4) == 0) {
+            /* An error stops the job with a question up; standing in for
+             * the user clicking OK keeps the rest of a suite about the
+             * rule it is testing rather than about the alert. */
+            if (tiku_trk_fs_progress(fs)->error_ask) {
+                tiku_trk_fs_resolve_error(fs, 1);
+                continue;
+            }
             break;                    /* stopped on a conflict */
         }
     }
@@ -180,6 +218,163 @@ main(void)
     }
 
 
+
+
+    /* --- what the collision question OFFERS (FS-017, FS-018, FS-019) ---- */
+    {
+        char one[600], two[600], adir[600];
+        const char *sel[2];
+
+        /* One file-versus-file collision: the short question. */
+        snprintf(one, sizeof one, "%s/solo.txt", A);
+        put(one, "a");
+        snprintf(two, sizeof two, "%s/solo.txt", B);
+        put(two, "b");
+        sel[0] = one;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_trk_fs_step(fs, 4);
+        check(tiku_trk_fs_progress(fs)->conflict &&
+              !tiku_trk_fs_progress(fs)->conflict_many, "FS-018",
+              "a lone file-versus-file collision asks the short question");
+        tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_SKIP);
+        run_to_end(fs);
+
+        /* A FOLDER collision always asks the four-way one, even alone. */
+        snprintf(adir, sizeof adir, "%s/samedir", A);
+        (void)mkdir(adir, 0755);
+        {
+            char d2[600];
+
+            snprintf(d2, sizeof d2, "%s/samedir", B);
+            (void)mkdir(d2, 0755);
+        }
+        sel[0] = adir;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_trk_fs_step(fs, 4);
+        check(tiku_trk_fs_progress(fs)->conflict &&
+              tiku_trk_fs_progress(fs)->conflict_many &&
+              tiku_trk_fs_progress(fs)->conflict_isdir, "FS-019",
+              "a folder collision asks the four-way question even when it "
+              "is the only one");
+        tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_SKIP);
+        run_to_end(fs);
+
+        /* More than one collision: the four-way question, and "all" is
+         * what stops it asking again (FS-017). */
+        {
+            char c1[600], c2[600];
+
+            snprintf(c1, sizeof c1, "%s/both1.txt", A);
+            put(c1, "1");
+            snprintf(c2, sizeof c2, "%s/both2.txt", A);
+            put(c2, "2");
+            {
+                char d1[600], d2[600];
+
+                snprintf(d1, sizeof d1, "%s/both1.txt", B);
+                put(d1, "x");
+                snprintf(d2, sizeof d2, "%s/both2.txt", B);
+                put(d2, "y");
+            }
+            sel[0] = c1;
+            sel[1] = c2;
+            (void)tiku_trk_fs_copy(fs, sel, 2, B, TIKU_TRK_CONFLICT_ASK);
+            (void)tiku_trk_fs_step(fs, 4);
+            check(tiku_trk_fs_progress(fs)->conflict_many, "FS-017",
+                  "several collisions ask the four-way question");
+            tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_SKIP_ALL);
+            run_to_end(fs);
+            check(tiku_trk_fs_progress(fs)->skipped == 2 &&
+                  !tiku_trk_fs_progress(fs)->conflict, "FS-017",
+                  "\"skip all\" answers the rest without asking again");
+        }
+
+        /* And a plain "skip" is NOT sticky: the next one asks. */
+        {
+            char c1[600], c2[600];
+
+            snprintf(c1, sizeof c1, "%s/both1.txt", A);
+            snprintf(c2, sizeof c2, "%s/both2.txt", A);
+            sel[0] = c1;
+            sel[1] = c2;
+            (void)tiku_trk_fs_copy(fs, sel, 2, B, TIKU_TRK_CONFLICT_ASK);
+            (void)tiku_trk_fs_step(fs, 4);
+            tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_SKIP);
+            (void)tiku_trk_fs_step(fs, 4);
+            check(tiku_trk_fs_progress(fs)->conflict, "FS-019",
+                  "a plain \"skip\" answers one collision and the next "
+                  "still asks");
+            tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_SKIP_ALL);
+            run_to_end(fs);
+        }
+
+        /* Replace REMOVES the old file first (FS-021). */
+        {
+            char c1[600], d1[600];
+
+            snprintf(c1, sizeof c1, "%s/both1.txt", A);
+            snprintf(d1, sizeof d1, "%s/both1.txt", B);
+            put(d1, "old-and-longer-than-the-new-one");
+            sel[0] = c1;
+            (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+            run_to_end(fs);
+            check(holds(d1, "1"), "FS-021",
+                  "replacing leaves the new contents alone, with none of "
+                  "the longer file it replaced trailing after them");
+
+            /* A destination that will not go stops the item and says so. */
+            {
+                char lockdir[600], locked[700];
+
+                snprintf(lockdir, sizeof lockdir, "%s/nodelete", B);
+                (void)mkdir(lockdir, 0755);
+                snprintf(locked, sizeof locked, "%s/both1.txt", lockdir);
+                put(locked, "x");
+                (void)chmod(lockdir, 0555);   /* no unlink in here */
+                sel[0] = c1;
+                (void)tiku_trk_fs_copy(fs, sel, 1, lockdir,
+                                       TIKU_TRK_CONFLICT_REPLACE);
+                (void)tiku_trk_fs_step(fs, 4);
+                check(tiku_trk_fs_progress(fs)->error_ask &&
+                      strstr(tiku_trk_fs_progress(fs)->error,
+                             "problem trying to replace") != NULL,
+                      "FS-021",
+                      "and a file that cannot be removed is reported rather "
+                      "than written over");
+                tiku_trk_fs_resolve_error(fs, 1);
+                run_to_end(fs);
+                (void)chmod(lockdir, 0755);
+                (void)remove(locked);
+                (void)rmdir(lockdir);
+            }
+        }
+
+        /* "Replace" is one-shot the same way "Skip" is. */
+        {
+            char c1[600], c2[600], d1[600], d2[600];
+
+            snprintf(c1, sizeof c1, "%s/both1.txt", A);
+            snprintf(c2, sizeof c2, "%s/both2.txt", A);
+            snprintf(d1, sizeof d1, "%s/both1.txt", B);
+            snprintf(d2, sizeof d2, "%s/both2.txt", B);
+            put(d1, "x");
+            put(d2, "y");
+            sel[0] = c1;
+            sel[1] = c2;
+            (void)tiku_trk_fs_copy(fs, sel, 2, B, TIKU_TRK_CONFLICT_ASK);
+            (void)tiku_trk_fs_step(fs, 4);
+            tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_REPLACE);
+            (void)tiku_trk_fs_step(fs, 4);
+            check(tiku_trk_fs_progress(fs)->conflict, "FS-019",
+                  "a plain \"replace\" overwrites one and the next still "
+                  "asks");
+            tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_REPLACE_ALL);
+            run_to_end(fs);
+            check(holds(d1, "1") && holds(d2, "2"), "FS-017",
+                  "and both replaced files really hold the source's "
+                  "contents -- the one-shot answer and the sticky one");
+        }
+    }
 
     /* --- a folder "replaced" is MERGED, never emptied first (FS-020) ---- */
     {
@@ -465,10 +660,276 @@ main(void)
         }
     }
 
+
+    /* --- cancelling (FS-033, FS-034) ------------------------------------ */
+    printf("\ncancelling a job\n");
+    {
+        char big[600], made[600];
+        const char *sel[1];
+
+        snprintf(big, sizeof big, "%s/large.bin", A);
+        put(big, "0123456789");
+        sel[0] = big;
+        snprintf(made, sizeof made, "%s/large.bin", B);
+
+        cancel_seen = 0;
+        /* The second check: the first is the one between items, so this
+         * one lands INSIDE the copy, after fopen has created the
+         * destination and before a byte of it is right. */
+        cancel_after = 2;
+        tiku_trk_fs_set_cancel_check(fs, cancel_hook, NULL);
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_ASK);
+        run_to_end(fs);
+        check(!there(made), "FS-033",
+              "cancelling during a file copy removes the half-written "
+              "destination rather than leaving a truncated file under the "
+              "real one's name");
+        check(tiku_trk_fs_progress(fs)->cancelled, "FS-033",
+              "and the job says it was cancelled");
+        check(there(big), "FS-033", "the source is untouched");
+
+        /* A FOLDER copy keeps what it managed. */
+        {
+            char dir[500], c1[600], c2[600], c3[600], out[500];
+            int i;
+
+            snprintf(dir, sizeof dir, "%s/manyfiles", A);
+            (void)mkdir(dir, 0755);
+            snprintf(c1, sizeof c1, "%s/a.txt", dir);
+            snprintf(c2, sizeof c2, "%s/b.txt", dir);
+            snprintf(c3, sizeof c3, "%s/c.txt", dir);
+            put(c1, "a");
+            put(c2, "b");
+            put(c3, "c");
+
+            cancel_seen = 0;
+            /* One check between items, then two per file (a chunk and
+             * the end of it): six lands inside the third child. */
+            cancel_after = 6;
+            sel[0] = dir;
+            (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_ASK);
+            run_to_end(fs);
+            snprintf(out, sizeof out, "%s/manyfiles", B);
+            check(there(out), "FS-034",
+                  "cancelling a folder copy leaves the folder it had "
+                  "already made -- only the file in hand is cleaned up");
+            {
+                int kept = 0;
+                char probe[700];
+
+                for (i = 0; i < 3; i++) {
+                    snprintf(probe, sizeof probe, "%s/%c.txt", out,
+                             'a' + i);
+                    kept += there(probe);
+                }
+                check(kept == 2, "FS-034",
+                      "with the children it had written still there and "
+                      "the rest never started");
+            }
+        }
+        cancel_after = 0;
+        tiku_trk_fs_set_cancel_check(fs, NULL, NULL);
+    }
+
+    /* --- an error asks whether to continue (FS-035) --------------------- */
+    {
+        char bad[600], good[600], out[600];
+        const char *sel[2];
+
+        /* A source that cannot be read: the copy of it fails, the copy of
+         * the other one should still be offered. */
+        snprintf(bad, sizeof bad, "%s/unreadable.txt", A);
+        put(bad, "secret");
+        (void)chmod(bad, 0000);
+        snprintf(good, sizeof good, "%s/readable.txt", A);
+        put(good, "fine");
+        sel[0] = bad;
+        sel[1] = good;
+
+        (void)tiku_trk_fs_copy(fs, sel, 2, B, TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_trk_fs_step(fs, 4);
+        check(tiku_trk_fs_progress(fs)->error_ask, "FS-035",
+              "a file that will not copy stops the job and asks");
+        check(strstr(tiku_trk_fs_progress(fs)->error, "unreadable.txt") !=
+              NULL &&
+              strstr(tiku_trk_fs_progress(fs)->error, "Error copying") !=
+              NULL,
+              "FS-035", "naming the file and what went wrong");
+        check(tiku_trk_fs_progress(fs)->error_can_continue, "FS-035",
+              "and offers to carry on");
+
+        tiku_trk_fs_resolve_error(fs, 1);
+        run_to_end(fs);
+        snprintf(out, sizeof out, "%s/readable.txt", B);
+        check(there(out) && tiku_trk_fs_progress(fs)->failed == 1,
+              "FS-035", "continuing counts the failure and copies the rest");
+
+        /* Answering "cancel" abandons what is left. */
+        (void)remove(out);
+        (void)tiku_trk_fs_copy(fs, sel, 2, B, TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_trk_fs_step(fs, 4);
+        tiku_trk_fs_resolve_error(fs, 0);
+        run_to_end(fs);
+        check(!there(out) && tiku_trk_fs_progress(fs)->cancelled,
+              "FS-035", "and cancelling stops the rest of the job dead");
+
+        (void)chmod(bad, 0644);
+        (void)remove(bad);
+    }
+
+    /* --- the undo stack goes deeper than one (FS-063) ------------------- */
+    printf("\nundo, redo and new folders\n");
+    {
+        char f1[600], f2[600], n1[600], n2[600], what[64];
+
+        snprintf(f1, sizeof f1, "%s/u1.txt", A);
+        snprintf(f2, sizeof f2, "%s/u2.txt", A);
+        put(f1, "one");
+        put(f2, "two");
+        snprintf(n1, sizeof n1, "%s/u1-renamed.txt", A);
+        snprintf(n2, sizeof n2, "%s/u2-renamed.txt", A);
+
+        (void)tiku_trk_fs_rename(fs, f1, "u1-renamed.txt", NULL, 0);
+        (void)tiku_trk_fs_rename(fs, f2, "u2-renamed.txt", NULL, 0);
+        check(tiku_trk_fs_undo(fs, NULL, 0) == 1 && there(f2) && !there(f1),
+              "FS-063", "undo reverses the LAST operation");
+        check(tiku_trk_fs_can_undo(fs, what, sizeof what) &&
+              strcmp(what, "Rename") == 0,
+              "FS-063", "and the one before it is still there to undo");
+        check(tiku_trk_fs_undo(fs, NULL, 0) == 1 && there(f1),
+              "FS-063", "which undoes too -- the stack is not one deep");
+
+        /* Redo puts them back, newest first. */
+        check(tiku_trk_fs_can_redo(fs, what, sizeof what) &&
+              strcmp(what, "Rename") == 0,
+              "FS-063", "an undone operation can be redone");
+        check(tiku_trk_fs_redo(fs, NULL, 0) == 1 && there(n1),
+              "FS-063", "and redo replays it");
+        (void)tiku_trk_fs_redo(fs, NULL, 0);
+        check(there(n2), "FS-063", "both come back");
+        check(!tiku_trk_fs_can_redo(fs, NULL, 0),
+              "FS-063", "and then there is nothing left to redo");
+
+        /* Doing something NEW makes the redo history unreachable. */
+        (void)tiku_trk_fs_undo(fs, NULL, 0);
+        check(tiku_trk_fs_can_redo(fs, NULL, 0),
+              "FS-063", "an undo leaves a redo waiting");
+        (void)tiku_trk_fs_rename(fs, n1, "u1-again.txt", NULL, 0);
+        check(!tiku_trk_fs_can_redo(fs, NULL, 0),
+              "FS-063", "and a new operation wipes it");
+    }
+
+    /* The stack is bounded at 20 and drops the OLDEST. */
+    {
+        char p[600], q[600];
+        int i, drained = 0;
+
+        for (i = 0; i < 25; i++) {
+            snprintf(p, sizeof p, "%s/deep%d.txt", A, i);
+            put(p, "x");
+            snprintf(q, sizeof q, "deep%d-r.txt", i);
+            (void)tiku_trk_fs_rename(fs, p, q, NULL, 0);
+        }
+        while (tiku_trk_fs_can_undo(fs, NULL, 0)) {
+            (void)tiku_trk_fs_undo(fs, NULL, 0);
+            drained++;
+        }
+        check(drained == 20, "FS-063",
+              "twenty-five operations leave exactly twenty on the stack");
+        snprintf(p, sizeof p, "%s/deep0.txt", A);
+        snprintf(q, sizeof q, "%s/deep0-r.txt", A);
+        check(there(q) && !there(p), "FS-063",
+              "and the five it dropped are the OLDEST -- the first rename "
+              "stayed done");
+        snprintf(p, sizeof p, "%s/deep24.txt", A);
+        check(there(p), "FS-063",
+              "while the newest was still there to be undone");
+    }
+
+    /* --- undoing a copy removes what the copy made (FS-064) ------------- */
+    {
+        char src[600], made[600];
+
+        snprintf(src, sizeof src, "%s/tocopy.txt", A);
+        put(src, "c");
+        {
+            const char *sel[1];
+
+            sel[0] = src;
+            (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_ASK);
+            run_to_end(fs);
+        }
+        snprintf(made, sizeof made, "%s/tocopy.txt", B);
+        check(there(made), "FS-064", "the copy landed");
+        (void)tiku_trk_fs_undo(fs, NULL, 0);
+        check(!there(made) && there(src), "FS-064",
+              "undoing a copy deletes the copy and leaves the original");
+        (void)tiku_trk_fs_redo(fs, NULL, 0);
+        check(there(made), "FS-064", "and redo copies it again");
+    }
+
+    /* --- undoing a move to the Trash puts it back (FS-065) -------------- */
+    {
+        const char *home = getenv("HOME");
+        char work[512], t[600], what[64];
+        const char *sel[1];
+
+        /* Under HOME, not /tmp: the Trash is resolved per filesystem, and
+         * on this host /tmp and HOME are different ones. */
+        if (home != NULL && home[0] != '\0') {
+            snprintf(work, sizeof work, "%s/.tiku_trk_fs_test", home);
+            (void)mkdir(work, 0755);
+            snprintf(t, sizeof t, "%s/totrash.txt", work);
+            put(t, "t");
+            sel[0] = t;
+            (void)tiku_trk_fs_trash(fs, sel, 1);
+            run_to_end(fs);
+            check(!there(t) && tiku_trk_fs_progress(fs)->done == 1,
+                  "FS-065", "the item went to the Trash");
+            check(tiku_trk_fs_can_undo(fs, what, sizeof what) &&
+                  strcmp(what, "Move to Trash") == 0,
+                  "FS-065", "which is an undoable move, named as one");
+            (void)tiku_trk_fs_undo(fs, NULL, 0);
+            check(there(t), "FS-065", "and undo brings it back");
+            (void)remove(t);
+            (void)rmdir(work);
+        }
+    }
+
+    /* --- New folder, and its naming (FS-066, FS-079) -------------------- */
+    {
+        char made[600], name[64];
+        int i;
+
+        tiku_trk_fs_new_folder_name(fs, B, name, sizeof name);
+        check(strcmp(name, "New folder") == 0,
+              "FS-079", "the first new folder is called \"New folder\"");
+        check(tiku_trk_fs_new_folder(fs, B, made, sizeof made, NULL, 0) == 0 &&
+              there(made), "FS-066", "and creating it makes it");
+        tiku_trk_fs_new_folder_name(fs, B, name, sizeof name);
+        check(strcmp(name, "New folder 2") == 0,
+              "FS-079", "the second is \"New folder 2\", with a space");
+
+        for (i = 2; i <= 9; i++) {
+            (void)tiku_trk_fs_new_folder(fs, B, NULL, 0, NULL, 0);
+        }
+        tiku_trk_fs_new_folder_name(fs, B, name, sizeof name);
+        check(strcmp(name, "New folder10") == 0,
+              "FS-079", "and the tenth loses the space -- \"New folder10\", "
+              "the original's own off-by-one, kept so both agree on which "
+              "folder is which");
+
+        (void)tiku_trk_fs_new_folder(fs, B, made, sizeof made, NULL, 0);
+        check(there(made), "FS-066", "a new folder is there");
+        (void)tiku_trk_fs_undo(fs, NULL, 0);
+        check(!there(made), "FS-066", "and undoing New folder deletes it");
+        (void)tiku_trk_fs_redo(fs, NULL, 0);
+        check(there(made), "FS-066", "redo makes it again");
+    }
+
     tiku_trk_fs_free(fs);
     tiku_trk_backend_close(b);
     (void)system("rm -rf /tmp/trk_fs_a /tmp/trk_fs_b");
-
     printf("\n%s\n", fails ? "FAILURES" : "all file-operation rules match");
     return fails ? 1 : 0;
 }

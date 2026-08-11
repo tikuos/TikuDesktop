@@ -1011,6 +1011,26 @@ main(void)
         tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     }
 
+    /* --- what is selected after a delete (FS-050) ----------------------- */
+    {
+        int n = tiku_trk_poseview_count(v);
+        int got;
+
+        got = tiku_trk_poseview_select_after_removal(v, 1);
+        check(got == 1 && sel_at(v, 1) &&
+              tiku_trk_poseview_selection_count(v) == 1,
+              "FS-050", "after a delete the NEXT item down is selected, on "
+              "its own");
+        got = tiku_trk_poseview_select_after_removal(v, n);
+        check(got == n - 1 && sel_at(v, n - 1),
+              "FS-050", "and deleting the last row leaves the new last row "
+              "selected rather than nothing");
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        check(tiku_trk_poseview_select_after_removal(v, 1) == -1,
+              "FS-050", "icon mode has no next-one-down and selects nothing");
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

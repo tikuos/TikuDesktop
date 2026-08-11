@@ -28,6 +28,7 @@ typedef enum {
     TIKU_TRK_OP_DELETE,
     TIKU_TRK_OP_RENAME,
     TIKU_TRK_OP_LINK,
+    TIKU_TRK_OP_NEW_FOLDER,
 } tiku_trk_op_t;
 
 /** @brief How a name collision was resolved. */
@@ -36,6 +37,11 @@ typedef enum {
     TIKU_TRK_CONFLICT_REPLACE,
     TIKU_TRK_CONFLICT_SKIP,
     TIKU_TRK_CONFLICT_RENAME,    /* invent a fresh name, as Duplicate does */
+    /* The two sticky answers.  "Replace" and "Skip" apply to the collision
+     * in hand and the next one asks again; "all" is what makes a long job
+     * finish without further questions (FS-019). */
+    TIKU_TRK_CONFLICT_REPLACE_ALL,
+    TIKU_TRK_CONFLICT_SKIP_ALL,
 } tiku_trk_conflict_t;
 
 /** @brief Live state of a running operation. */
@@ -49,7 +55,28 @@ typedef struct {
     char          error[256];     /* the backend's own words, verbatim    */
     int           conflict;       /* 1 while stopped on a collision       */
     char          conflict_path[TIKU_TRK_PATH_MAX];
+    /* What the question should OFFER.  A folder collision, or any
+     * collision while several are pending, gets the four-way form; a lone
+     * file-versus-file collision gets Cancel and Replace (FS-018, FS-019). */
+    int           conflict_many;  /* four buttons rather than two          */
+    int           conflict_isdir;
+    int           collisions;     /* counted before the job starts         */
+    /* Stopped on an error rather than a collision.  Separate from
+     * `conflict` because the two questions are different questions: one
+     * offers a name, the other offers to give up (FS-035). */
+    int           error_ask;
+    int           error_can_continue;  /* a delete failure cannot         */
+    int           cancelled;      /* the job was stopped part-way          */
 } tiku_trk_progress_t;
+
+/**
+ * @brief Asked before every chunk; non-zero abandons the job.
+ *
+ * Per chunk rather than per item, because the thing being cancelled is
+ * usually one large file and waiting for it to finish is the wait the
+ * user just tried to escape.
+ */
+typedef int (*tiku_trk_cancel_fn)(void *ctx);
 
 typedef struct tiku_trk_fs tiku_trk_fs_t;
 
@@ -235,11 +262,46 @@ void tiku_trk_fs_resolve(tiku_trk_fs_t *fs, tiku_trk_conflict_t how);
 /** @brief Abandon the running operation; what is done stays done. */
 void tiku_trk_fs_cancel(tiku_trk_fs_t *fs);
 
+/**
+ * @brief Install the mid-copy cancel check.
+ *
+ * @p fn is polled between chunks; returning non-zero stops the job where
+ * it stands.
+ */
+void tiku_trk_fs_set_cancel_check(tiku_trk_fs_t *fs, tiku_trk_cancel_fn fn,
+                                  void *ctx);
+
+/**
+ * @brief Answer the "would you like to continue?" the error put up.
+ *
+ * @p keep_going non-zero counts the item as failed and moves on; zero
+ * abandons the rest of the job.
+ */
+void tiku_trk_fs_resolve_error(tiku_trk_fs_t *fs, int keep_going);
+
 int tiku_trk_fs_busy(const tiku_trk_fs_t *fs);
 
 /*---------------------------------------------------------------------------*/
 /* Undo                                                                      */
 /*---------------------------------------------------------------------------*/
+
+/**
+ * @brief The name a new folder would get in @p dir, collisions avoided.
+ *
+ * "New folder", then "New folder 2" .. "New folder 9", then "New folder10".
+ */
+void tiku_trk_fs_new_folder_name(tiku_trk_fs_t *fs, const char *dir,
+                                 char *out, size_t max);
+
+/**
+ * @brief Create a new folder in @p dir; its path lands in @p out.
+ *
+ * Undoable: undo removes it again, redo makes it afresh.
+ *
+ * @return 0 on success.
+ */
+int tiku_trk_fs_new_folder(tiku_trk_fs_t *fs, const char *dir, char *out,
+                           size_t max, char *err, size_t errmax);
 
 /**
  * @brief Whether the last operation can be undone, and its description.
@@ -251,5 +313,19 @@ int tiku_trk_fs_can_undo(const tiku_trk_fs_t *fs, char *what, size_t max);
 
 /** @brief Reverse the last operation.  @return items reversed, or -1. */
 int tiku_trk_fs_undo(tiku_trk_fs_t *fs, char *err, size_t errmax);
+
+/**
+ * @brief Whether the last undo can be put back, and its description.
+ *
+ * Doing anything new empties the redo history: it described a world that
+ * the new operation has just replaced.
+ */
+int tiku_trk_fs_can_redo(const tiku_trk_fs_t *fs, char *what, size_t max);
+
+/** @brief Replay the operation the last undo reversed. */
+int tiku_trk_fs_redo(tiku_trk_fs_t *fs, char *err, size_t errmax);
+
+/** @brief The menu word for @p op ("Copy", "Move to Trash", ...). */
+const char *tiku_trk_fs_op_name(tiku_trk_op_t op);
 
 #endif /* TIKU_TRK_FS_H_ */

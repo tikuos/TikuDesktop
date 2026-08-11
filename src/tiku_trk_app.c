@@ -83,7 +83,42 @@ typedef struct {
     tiku_trk_titleview_t tv;         /* the column strip's tracking state  */
     Cursor               resize_cur;
     int                  cursor_ew;  /* which cursor the window is showing */
+    /* The list row to select once a delete has finished; -1 when the last
+     * operation was not one that removes rows (FS-050). */
+    int                  select_next;
 } app_t;
+
+/** @brief Index of the first selected row, or -1. */
+static int
+first_selected_index(app_t *a)
+{
+    int i, n = tiku_trk_poseview_count(a->view);
+
+    for (i = 0; i < n; i++) {
+        const tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+
+        if (p != NULL && p->selected) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** @brief Index of the row whose model sits at @p path, or -1. */
+static int
+index_of_path(app_t *a, const char *path)
+{
+    int i, n = tiku_trk_poseview_count(a->view);
+
+    for (i = 0; i < n; i++) {
+        const tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+
+        if (p != NULL && strcmp(p->model.path, path) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
 
 static void blit(app_t *a);
 
@@ -726,6 +761,12 @@ after_op(app_t *a)
 {
     (void)tiku_trk_poseview_reload(a->view);
     (void)tiku_trk_poseview_restore_state(a->view);
+    if (a->select_next >= 0) {
+        /* The row that has taken the deleted one's place, so a run of
+         * deletes can be done with one key held down (FS-050). */
+        (void)tiku_trk_poseview_select_after_removal(a->view, a->select_next);
+        a->select_next = -1;
+    }
     settle_layout(a);
     a->dirty = 1;
 }
@@ -1104,6 +1145,10 @@ handle_key(app_t *a, XKeyEvent *ev)
             tiku_trk_delete_q_t q =
                 tiku_trk_fs_delete_question(a->fs, sel[0], shift);
 
+            /* Noted BEFORE the listing changes: afterwards the index is
+             * the only thing left pointing at where the item was. */
+            a->select_next = first_selected_index(a);
+
             if (q == TIKU_TRK_DELETE_STRAIGHT) {
                 snprintf(a->status, sizeof a->status,
                          "deleting %d item%s -- this cannot be undone", n,
@@ -1135,6 +1180,22 @@ handle_key(app_t *a, XKeyEvent *ev)
         }
         break;
     case XK_z:
+        if ((ev->state & ControlMask) && (ev->state & ShiftMask)) {
+            char what[64], err[200];
+
+            if (a->fs != NULL && tiku_trk_fs_can_redo(a->fs, what,
+                                                      sizeof what)) {
+                int n = tiku_trk_fs_redo(a->fs, err, sizeof err);
+
+                snprintf(a->status, sizeof a->status, "redid %s (%d item%s)",
+                         what, n, (n == 1) ? "" : "s");
+                after_op(a);
+            } else {
+                snprintf(a->status, sizeof a->status, "nothing to redo");
+            }
+            a->dirty = 1;
+            return;
+        }
         if (ev->state & ControlMask) {
             char what[64], err[200];
 
@@ -1146,6 +1207,36 @@ handle_key(app_t *a, XKeyEvent *ev)
                 after_op(a);
             } else {
                 snprintf(a->status, sizeof a->status, "nothing to undo");
+            }
+            a->dirty = 1;
+            return;
+        }
+        break;
+    case XK_n:
+        if (ev->state & ControlMask) {
+            char made[TIKU_TRK_PATH_MAX], err[200];
+
+            if (a->fs != NULL &&
+                tiku_trk_fs_new_folder(a->fs, tiku_trk_poseview_path(a->view), made, sizeof made, err,
+                                       sizeof err) == 0) {
+                const char *slash = strrchr(made, '/');
+
+                snprintf(a->status, sizeof a->status, "created '%.180s'",
+                         (slash != NULL) ? slash + 1 : made);
+                after_op(a);
+                /* Tracker opens the name for editing straight away; here
+                 * the folder is at least selected, so the rename is the
+                 * next keystroke rather than a hunt down the list. */
+                {
+                    int i = index_of_path(a, made);
+
+                    if (i >= 0) {
+                        tiku_trk_poseview_click(a->view, i, 0u);
+                    }
+                }
+            } else {
+                snprintf(a->status, sizeof a->status, "%s",
+                         err[0] ? err : "could not create a new folder");
             }
             a->dirty = 1;
             return;
@@ -1182,6 +1273,10 @@ main(int argc, char **argv)
     int64_t shot_at_us = 0;
 
     memset(&a, 0, sizeof a);
+    /* Zero is a valid row, so the "nothing to select" state has to be set
+     * rather than zeroed: left at 0 it would re-select the first row after
+     * every operation (FS-050). */
+    a.select_next = -1;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0)                      { use_device = 1; }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { port = argv[++i]; use_device = 1; }
@@ -1668,6 +1763,13 @@ main(int argc, char **argv)
                              "'%s' exists -- keeping both", shown);
                 }
                 tiku_trk_fs_resolve(a.fs, TIKU_TRK_CONFLICT_RENAME);
+            } else if (pr->error_ask) {
+                /* The original puts up a Cancel/OK alert here.  With no
+                 * alert layer, the message is shown and the job carries on
+                 * -- the answer that loses least, since cancelling would
+                 * throw away the items that were about to work. */
+                snprintf(a.status, sizeof a.status, "%.200s", pr->error);
+                tiku_trk_fs_resolve_error(a.fs, 1);
             } else {
                 snprintf(a.status, sizeof a.status, "%d of %d%s%s",
                          pr->done + pr->skipped, pr->total,

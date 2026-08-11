@@ -240,6 +240,16 @@ tiku_trk_pose_t *tiku_trk_poseview_active(tiku_trk_poseview_t *v);
 void tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index,
                              unsigned mods);
 
+/**
+ * @brief Select whatever now sits at @p index, after a removal (FS-050).
+ *
+ * List mode only, and clamped to the end: deleting the last row leaves the
+ * new last row selected rather than nothing.
+ *
+ * @return the index selected, or -1 when there was nothing to select.
+ */
+int tiku_trk_poseview_select_after_removal(tiku_trk_poseview_t *v, int index);
+
 /** @brief Clear the selection; the pivot goes with it (PVS-008). */
 void tiku_trk_poseview_select_none(tiku_trk_poseview_t *v);
 

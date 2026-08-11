@@ -32,6 +32,30 @@ typedef struct {
     int  created;                   /* undo removes rather than moves    */
 } undo_rec_t;
 
+/**
+ * @brief One reversible operation: its kind and the records it produced.
+ *
+ * A whole operation is the unit, not a record: undoing half a move of nine
+ * items is not something the user ever asked for.
+ */
+typedef struct {
+    tiku_trk_op_t op;
+    int           n;
+    undo_rec_t   *rec;              /* n entries, grown as they arrive   */
+} undo_op_t;
+
+/**
+ * @brief How deep the two stacks go.
+ *
+ * Tracker's kUndoRedoListMaxCount.  A bound rather than a growing list
+ * because the records hold paths, and an unbounded history of them is a
+ * leak that only shows up on a long-lived session.
+ */
+#define FS_UNDO_MAX 20
+
+
+static void undo_stack_clear(undo_op_t *stack, int *count);
+
 struct tiku_trk_fs {
     tiku_trk_backend_t *backend;
     char                queue[FS_QUEUE_MAX][TIKU_TRK_PATH_MAX];
@@ -41,11 +65,29 @@ struct tiku_trk_fs {
     tiku_trk_conflict_t policy;
     tiku_trk_progress_t prog;
 
-    undo_rec_t         *undo;
-    int                 undo_count;
-    int                 undo_cap;
-    tiku_trk_op_t       undo_op;
+    int                 pending_ask;  /* a one-shot answer is in force  */
+    undo_op_t           ustack[FS_UNDO_MAX];
+    int                 ucount;
+    undo_op_t           rstack[FS_UNDO_MAX];
+    int                 rcount;
+
+    tiku_trk_cancel_fn  cancel_fn;
+    void               *cancel_ctx;
+    int                 cancelling;   /* the flag cancel() itself sets  */
 };
+
+/** @brief Whether the job should stop where it stands. */
+static int
+cancelled(tiku_trk_fs_t *fs)
+{
+    if (fs->cancelling) {
+        return 1;
+    }
+    if (fs->cancel_fn != NULL && fs->cancel_fn(fs->cancel_ctx)) {
+        fs->cancelling = 1;
+    }
+    return fs->cancelling;
+}
 
 tiku_trk_fs_t *
 tiku_trk_fs_new(tiku_trk_backend_t *backend)
@@ -62,7 +104,10 @@ void
 tiku_trk_fs_free(tiku_trk_fs_t *fs)
 {
     if (fs != NULL) {
-        free(fs->undo);
+        undo_stack_clear(fs->ustack, &fs->ucount);
+        undo_stack_clear(fs->rstack, &fs->rcount);
+    }
+    if (fs != NULL) {
         free(fs);
     }
 }
@@ -302,26 +347,84 @@ tiku_trk_fs_drop_action(tiku_trk_fs_t *fs, const char *src,
 /* the queue                                                                 */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Release one operation's records. */
+static void
+undo_op_free(undo_op_t *o)
+{
+    free(o->rec);
+    o->rec = NULL;
+    o->n = 0;
+    o->op = TIKU_TRK_OP_IDLE;
+}
+
+/** @brief Empty a stack. */
+static void
+undo_stack_clear(undo_op_t *stack, int *count)
+{
+    while (*count > 0) {
+        undo_op_free(&stack[--(*count)]);
+    }
+}
+
+/**
+ * @brief Push @p o, dropping the OLDEST when the stack is full.
+ *
+ * The oldest goes because the recent operations are the ones anybody wants
+ * back; a full stack that refused new entries would silently stop recording
+ * exactly when the history matters most.
+ */
+static undo_op_t *
+undo_stack_push(undo_op_t *stack, int *count, const undo_op_t *o)
+{
+    if (*count >= FS_UNDO_MAX) {
+        int i;
+
+        undo_op_free(&stack[0]);
+        for (i = 1; i < FS_UNDO_MAX; i++) {
+            stack[i - 1] = stack[i];
+        }
+        stack[FS_UNDO_MAX - 1].rec = NULL;
+        (*count)--;
+    }
+    stack[*count] = *o;
+    return &stack[(*count)++];
+}
+
+/**
+ * @brief Begin recording a new operation of kind @p op.
+ *
+ * Doing anything new makes the redo history unreachable -- it described a
+ * world that no longer exists -- so the redo stack goes here.
+ */
 static void
 undo_reset(tiku_trk_fs_t *fs, tiku_trk_op_t op)
 {
-    fs->undo_count = 0;
-    fs->undo_op = op;
-    if (fs->undo == NULL) {
-        fs->undo_cap = FS_QUEUE_MAX;
-        fs->undo = calloc((size_t)fs->undo_cap, sizeof *fs->undo);
-    }
+    undo_op_t fresh;
+
+    memset(&fresh, 0, sizeof fresh);
+    fresh.op = op;
+    undo_stack_clear(fs->rstack, &fs->rcount);
+    (void)undo_stack_push(fs->ustack, &fs->ucount, &fresh);
 }
 
 static void
 undo_push(tiku_trk_fs_t *fs, const char *from, const char *to, int created)
 {
-    undo_rec_t *r;
+    undo_op_t  *o;
+    undo_rec_t *grown, *r;
 
-    if (fs->undo == NULL || fs->undo_count >= fs->undo_cap) {
+    if (fs->ucount == 0) {
         return;
     }
-    r = &fs->undo[fs->undo_count++];
+    o = &fs->ustack[fs->ucount - 1];
+    grown = realloc(o->rec, (size_t)(o->n + 1) * sizeof *o->rec);
+    if (grown == NULL) {
+        return;                     /* the operation stands; only its
+                                     * reversal is lost                  */
+    }
+    o->rec = grown;
+    r = &o->rec[o->n++];
+    memset(r, 0, sizeof *r);
     snprintf(r->from, sizeof r->from, "%s", from);
     snprintf(r->to, sizeof r->to, "%s", to ? to : "");
     r->created = created;
@@ -412,8 +515,22 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
         snprintf(fs->prog.error, sizeof fs->prog.error, "%s", kept);
         fs->prog.skipped = skipped;
     }
+    {
+        /* Counted before the job starts, because the QUESTION depends on
+         * how many collisions there are and asking that after the first
+         * one has been answered is too late (FS-017). */
+        int k, collisions = 0;
+
+        for (k = 0; dst != NULL && k < fs->qcount; k++) {
+            if (exists(fs, dst, leaf_of(fs->queue[k]))) {
+                collisions++;
+            }
+        }
+        fs->prog.collisions = collisions;
+    }
     fs->prog.op = op;
     fs->prog.total = fs->qcount;
+    fs->cancelling = 0;             /* a new job is not the cancelled one */
     undo_reset(fs, op);
     return 0;
 }
@@ -489,7 +606,24 @@ copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
                  strerror(errno));
         return -1;
     }
-    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
+    for (;;) {
+        /* Before the chunk, not after: a cancel that had to wait for the
+         * write it was trying to stop would not be a cancel. */
+        if (cancelled(fs)) {
+            (void)fclose(in);
+            (void)fclose(out);
+            /* The destination is half a file and nothing owns it: it was
+             * created by this copy and the copy is not happening.  Leaving
+             * it would put a truncated file under the real one's name
+             * (FS-033). */
+            (void)remove(dst);
+            snprintf(err, errmax, "cancelled");
+            return -2;
+        }
+        n = fread(buf, 1, sizeof buf, in);
+        if (n == 0) {
+            break;
+        }
         if (fwrite(buf, 1, n, out) != n) {
             (void)fclose(in);
             (void)fclose(out);
@@ -614,7 +748,14 @@ copy_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
             /* A failure on one child does not abandon the rest: the loop
              * is best-effort, as the original's is, so one unreadable file
              * does not cost the user the whole folder. */
-            (void)copy_tree(fs, child, cdst, err, errmax);
+            if (copy_tree(fs, child, cdst, err, errmax) == -2) {
+                /* Cancelled.  The folder already made and the children
+                 * already written STAY: only the file being written when
+                 * the cancel arrived is cleaned up, so what the user sees
+                 * is how far the copy got rather than nothing (FS-034). */
+                (void)closedir(d);
+                return -2;
+            }
         }
     }
     (void)closedir(d);
@@ -1120,6 +1261,34 @@ tiku_trk_fs_empty_trash(tiku_trk_fs_t *fs)
     return n;
 }
 
+/**
+ * @brief Stop on a failure and put "would you like to continue?" up.
+ *
+ * The item is NOT counted yet: whether it counts as failed or as the last
+ * thing the job did depends on the answer.  A delete failure is told apart
+ * because the original offers no Continue for one -- there is nothing left
+ * to continue to.
+ *
+ * @return 0, so the caller can `return fail_ask(...)` from a step.
+ */
+static int
+fail_ask(tiku_trk_fs_t *fs, const char *msg, int can_continue)
+{
+    snprintf(fs->prog.error, sizeof fs->prog.error, "%s", msg);
+    fs->prog.error_ask = 1;
+    fs->prog.error_can_continue = can_continue;
+    return 0;
+}
+
+/** @brief Note that the job stopped part-way and drop the rest. */
+static int
+give_up(tiku_trk_fs_t *fs)
+{
+    fs->prog.cancelled = 1;
+    fs->qcursor = fs->qcount;
+    return 1;
+}
+
 static int
 step_one(tiku_trk_fs_t *fs)
 {
@@ -1128,6 +1297,9 @@ step_one(tiku_trk_fs_t *fs)
     char name[TIKU_TRK_NAME_MAX];
     char err[256];
 
+    if (cancelled(fs)) {
+        return give_up(fs);
+    }
     snprintf(fs->prog.current, sizeof fs->prog.current, "%s", src);
     err[0] = '\0';
 
@@ -1190,10 +1362,11 @@ step_one(tiku_trk_fs_t *fs)
         } else if (remove(src) != 0) {
             /* The message is for a human in a dialog: show the leaf name,
              * which is what they selected, not the whole path. */
-            snprintf(fs->prog.error, sizeof fs->prog.error,
-                     "cannot remove '%s' (%s)", leaf_of(src),
-                     strerror(errno));
-            fs->prog.failed++;
+            char msg[240];
+
+            snprintf(msg, sizeof msg, "Error deleting \"%.60s\": %.150s.",
+                     leaf_of(src), strerror(errno));
+            return fail_ask(fs, msg, 0);
         } else {
             fs->prog.done++;
         }
@@ -1235,6 +1408,9 @@ step_one(tiku_trk_fs_t *fs)
     if (fs->prog.op != TIKU_TRK_OP_DUPLICATE && exists(fs, dstdir, name)) {
         switch (fs->policy) {
         case TIKU_TRK_CONFLICT_SKIP:
+            /* A policy the CALLER set stands for the whole job; answering
+             * one question is resolve()'s business, and keeping the
+             * distinction in one place is what stops the two disagreeing. */
             fs->prog.skipped++;
             fs->qcursor++;
             return 1;
@@ -1248,11 +1424,36 @@ step_one(tiku_trk_fs_t *fs)
             }
             break;
         case TIKU_TRK_CONFLICT_REPLACE:
-            break;                  /* fall through and overwrite */
+            if (fs->pending_ask) {
+                /* A one-shot "Replace": used up by this item. */
+                fs->pending_ask = 0;
+                fs->policy = TIKU_TRK_CONFLICT_ASK;
+            }
+            /* Replaced by REMOVING first, not by writing over.  Truncating
+             * in place would leave anything holding the old file looking at
+             * a half-new one, and a file that cannot be removed is one this
+             * job must not start writing into (FS-021).  A directory is
+             * left alone: replacing a folder means merging into it. */
+            if (!is_dir(dstpath) && remove(dstpath) != 0) {
+                char msg[240];
+
+                snprintf(msg, sizeof msg,
+                         "There was a problem trying to replace \"%.60s\". "
+                         "The item might be open or busy.", name);
+                return fail_ask(fs, msg, 1);
+            }
+            break;
         default:
             fs->prog.conflict = 1;
             snprintf(fs->prog.conflict_path, sizeof fs->prog.conflict_path,
                      "%s", dstpath);
+            /* What the question should offer: a FOLDER collision always
+             * gets the four-way form, and so does any collision while more
+             * than one is pending -- only a lone file-versus-file
+             * collision gets the short form (FS-018, FS-019). */
+            fs->prog.conflict_isdir = is_dir(dstpath);
+            fs->prog.conflict_many = (fs->prog.collisions > 1) ||
+                                     fs->prog.conflict_isdir;
             return 0;               /* stop and wait for an answer */
         }
     }
@@ -1261,12 +1462,17 @@ step_one(tiku_trk_fs_t *fs)
         /* Through the tree walker, so a FOLDER moves too -- and moves onto
          * an existing folder of the same name by merging into it rather
          * than refusing or replacing it (FS-029). */
-        if (move_tree(fs, src, dstpath, err, sizeof err) != 0) {
-            snprintf(fs->prog.error, sizeof fs->prog.error, "%s",
-                     err[0] ? err : "move failed");
-            fs->prog.failed++;
-            fs->qcursor++;
-            return 1;
+        int rc = move_tree(fs, src, dstpath, err, sizeof err);
+
+        if (rc == -2) {
+            return give_up(fs);
+        }
+        if (rc != 0) {
+            char msg[240];
+
+            snprintf(msg, sizeof msg, "Error moving file \"%.60s\": %.150s.",
+                     leaf_of(src), err[0] ? err : "move failed");
+            return fail_ask(fs, msg, 1);
         }
         undo_push(fs, dstpath, src, 0);
         fs->prog.done++;
@@ -1274,13 +1480,24 @@ step_one(tiku_trk_fs_t *fs)
         /* The same for a copy: a folder already there is merged into, so
          * its children that the source has no counterpart for survive
          * (FS-020). */
-        if (copy_tree(fs, src, dstpath, err, sizeof err) != 0) {
-            snprintf(fs->prog.error, sizeof fs->prog.error, "%s", err);
-            fs->prog.failed++;
-        } else {
-            undo_push(fs, dstpath, NULL, 1);
-            fs->prog.done++;
+        int rc = copy_tree(fs, src, dstpath, err, sizeof err);
+
+        if (rc == -2) {
+            /* Cancelled mid-file.  What the copy managed stays, and is
+             * recorded, so an undo can still take it away (FS-034). */
+            undo_push(fs, dstpath, src, 1);
+            return give_up(fs);
         }
+        if (rc != 0) {
+            char msg[240];
+
+            snprintf(msg, sizeof msg,
+                     "Error copying file \"%.60s\": %.150s.", leaf_of(src),
+                     err[0] ? err : "copy failed");
+            return fail_ask(fs, msg, 1);
+        }
+        undo_push(fs, dstpath, src, 1);
+        fs->prog.done++;
     }
     fs->qcursor++;
     return 1;
@@ -1291,7 +1508,7 @@ tiku_trk_fs_step(tiku_trk_fs_t *fs, int budget)
 {
     int n = 0;
 
-    if (fs == NULL || fs->prog.conflict) {
+    if (fs == NULL || fs->prog.conflict || fs->prog.error_ask) {
         return 0;
     }
     while (n < budget && fs->qcursor < fs->qcount) {
@@ -1313,11 +1530,30 @@ tiku_trk_fs_resolve(tiku_trk_fs_t *fs, tiku_trk_conflict_t how)
         return;
     }
     fs->prog.conflict = 0;
-    fs->policy = how;
-    if (how == TIKU_TRK_CONFLICT_SKIP) {
+    /* The two "all" answers are the only sticky ones: they become the
+     * job's standing policy.  The other two answer the collision in hand
+     * and leave the next one to ask again, which is the whole difference
+     * between "Replace" and "Replace all" (FS-019). */
+    switch (how) {
+    case TIKU_TRK_CONFLICT_SKIP_ALL:
+        fs->policy = TIKU_TRK_CONFLICT_SKIP;
+        break;
+    case TIKU_TRK_CONFLICT_REPLACE_ALL:
+        fs->policy = TIKU_TRK_CONFLICT_REPLACE;
+        break;
+    case TIKU_TRK_CONFLICT_SKIP:
         fs->prog.skipped++;
         fs->qcursor++;
-        fs->policy = TIKU_TRK_CONFLICT_ASK;   /* ask again next time */
+        fs->policy = TIKU_TRK_CONFLICT_ASK;
+        break;
+    case TIKU_TRK_CONFLICT_REPLACE:
+        /* Applied to this item, then back to asking. */
+        fs->policy = TIKU_TRK_CONFLICT_REPLACE;
+        fs->pending_ask = 1;
+        break;
+    default:
+        fs->policy = how;
+        break;
     }
 }
 
@@ -1325,9 +1561,38 @@ void
 tiku_trk_fs_cancel(tiku_trk_fs_t *fs)
 {
     if (fs != NULL) {
-        /* What is already done stays done: a half-finished copy is real. */
+        /* What is already done stays done: a half-finished copy is real.
+         * The flag rather than a drain, so a copy already inside a file
+         * sees it on its next chunk and cleans that file up (FS-033). */
+        fs->cancelling = 1;
         fs->qcursor = fs->qcount;
         fs->prog.conflict = 0;
+        fs->prog.error_ask = 0;
+        fs->prog.cancelled = 1;
+    }
+}
+
+void
+tiku_trk_fs_set_cancel_check(tiku_trk_fs_t *fs, tiku_trk_cancel_fn fn,
+                             void *ctx)
+{
+    if (fs != NULL) {
+        fs->cancel_fn = fn;
+        fs->cancel_ctx = ctx;
+    }
+}
+
+void
+tiku_trk_fs_resolve_error(tiku_trk_fs_t *fs, int keep_going)
+{
+    if (fs == NULL || !fs->prog.error_ask) {
+        return;
+    }
+    fs->prog.error_ask = 0;
+    fs->prog.failed++;
+    fs->qcursor++;
+    if (!keep_going || !fs->prog.error_can_continue) {
+        (void)give_up(fs);
     }
 }
 
@@ -1368,50 +1633,213 @@ tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path, const char *new_name,
 /* undo                                                                      */
 /*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+/* New folder (FS-079)                                                       */
+/*---------------------------------------------------------------------------*/
+
+void
+tiku_trk_fs_new_folder_name(tiku_trk_fs_t *fs, const char *dir, char *out,
+                            size_t max)
+{
+    long n;
+
+    if (out == NULL || max == 0) {
+        return;
+    }
+    snprintf(out, max, "New folder");
+    if (fs == NULL || dir == NULL || !exists(fs, dir, out)) {
+        return;
+    }
+    for (n = 2; n < 10000; n++) {
+        /* The missing space past nine is the original's, not a slip: it
+         * increments before formatting and switches format string at >9,
+         * so "New folder 9" is followed by "New folder10".  Ported as it
+         * is, because a folder created by one and found by the other has
+         * to be the same folder. */
+        if (n <= 9) {
+            snprintf(out, max, "New folder %ld", n);
+        } else {
+            snprintf(out, max, "New folder%ld", n);
+        }
+        if (!exists(fs, dir, out)) {
+            return;
+        }
+    }
+}
+
+int
+tiku_trk_fs_new_folder(tiku_trk_fs_t *fs, const char *dir, char *out,
+                       size_t max, char *err, size_t errmax)
+{
+    char name[TIKU_TRK_PATH_MAX], path[TIKU_TRK_PATH_MAX];
+
+    if (fs == NULL || dir == NULL) {
+        return -1;
+    }
+    tiku_trk_fs_new_folder_name(fs, dir, name, sizeof name);
+    if (join(path, sizeof path, dir, name) != 0 || mkdir(path, 0755) != 0) {
+        if (err != NULL) {
+            snprintf(err, errmax, "Sorry, could not create a new folder.");
+        }
+        return -1;
+    }
+    undo_reset(fs, TIKU_TRK_OP_NEW_FOLDER);
+    undo_push(fs, path, NULL, 1);
+    if (out != NULL) {
+        snprintf(out, max, "%s", path);
+    }
+    return 0;
+}
+
 int
 tiku_trk_fs_can_undo(const tiku_trk_fs_t *fs, char *what, size_t max)
 {
-    static const char *names[] = {
-        "", "Copy", "Move", "Duplicate", "Move to Trash", "Delete",
-        "Rename", "Create Link"
-    };
+    const undo_op_t *o;
 
-    if (fs == NULL || fs->undo_count == 0) {
+    if (fs == NULL || fs->ucount == 0) {
+        return 0;
+    }
+    o = &fs->ustack[fs->ucount - 1];
+    if (o->n == 0) {
         return 0;
     }
     /* A delete is gone; saying "Undo Delete" and failing would be worse
      * than not offering it. */
-    if (fs->undo_op == TIKU_TRK_OP_DELETE) {
+    if (o->op == TIKU_TRK_OP_DELETE) {
         return 0;
     }
-    if (what != NULL && (size_t)fs->undo_op < sizeof names / sizeof names[0]) {
-        snprintf(what, max, "%s", names[fs->undo_op]);
+    if (what != NULL) {
+        snprintf(what, max, "%s", tiku_trk_fs_op_name(o->op));
     }
     return 1;
 }
 
 int
+tiku_trk_fs_can_redo(const tiku_trk_fs_t *fs, char *what, size_t max)
+{
+    const undo_op_t *o;
+
+    if (fs == NULL || fs->rcount == 0) {
+        return 0;
+    }
+    o = &fs->rstack[fs->rcount - 1];
+    if (o->n == 0) {
+        return 0;
+    }
+    if (what != NULL) {
+        snprintf(what, max, "%s", tiku_trk_fs_op_name(o->op));
+    }
+    return 1;
+}
+
+const char *
+tiku_trk_fs_op_name(tiku_trk_op_t op)
+{
+    static const char *names[] = {
+        "", "Copy", "Move", "Duplicate", "Move to Trash", "Delete",
+        "Rename", "Create Link", "New Folder"
+    };
+
+    if ((size_t)op >= sizeof names / sizeof names[0]) {
+        return "";
+    }
+    return names[op];
+}
+
+/**
+ * @brief Put one record back the way it was.
+ *
+ * @return 1 when something was undone.
+ */
+static int
+undo_one(tiku_trk_fs_t *fs, const undo_rec_t *r, char *err, size_t errmax)
+{
+    (void)fs;
+    if (r->created) {
+        /* Whatever the operation made goes, tree and all: a copied FOLDER
+         * has children the copy created too, and remove() would leave the
+         * lot behind on the grounds that the directory is not empty. */
+        return (remove_tree(r->from) == 0);
+    }
+    if (rename(r->from, r->to) == 0) {
+        return 1;
+    }
+    if (err != NULL) {
+        snprintf(err, errmax, "cannot undo '%s' (%s)", r->from,
+                 strerror(errno));
+    }
+    return 0;
+}
+
+/**
+ * @brief Do one record over again, in the direction the operation went.
+ *
+ * The record does not say what the operation WAS, so the kind is passed in:
+ * putting a copy back means copying again, while putting a move back means
+ * moving, and the two records look identical.
+ */
+static int
+redo_one(tiku_trk_fs_t *fs, tiku_trk_op_t op, const undo_rec_t *r, char *err,
+         size_t errmax)
+{
+    if (op == TIKU_TRK_OP_NEW_FOLDER) {
+        return (make_path(r->from) == 0);
+    }
+    if (r->created) {
+        if (r->to[0] == '\0') {
+            return 0;               /* nothing recorded to repeat from   */
+        }
+        return (copy_tree(fs, r->to, r->from, err, errmax) == 0);
+    }
+    if (rename(r->to, r->from) == 0) {
+        return 1;
+    }
+    if (err != NULL) {
+        snprintf(err, errmax, "cannot redo '%s' (%s)", r->to,
+                 strerror(errno));
+    }
+    return 0;
+}
+
+int
 tiku_trk_fs_undo(tiku_trk_fs_t *fs, char *err, size_t errmax)
 {
+    undo_op_t *o;
     int i, n = 0;
 
     if (!tiku_trk_fs_can_undo(fs, NULL, 0)) {
         return -1;
     }
+    o = &fs->ustack[fs->ucount - 1];
     /* Reverse order, so a sequence that renamed around a collision unwinds
      * without colliding with itself. */
-    for (i = fs->undo_count - 1; i >= 0; i--) {
-        undo_rec_t *r = &fs->undo[i];
-
-        if (r->created) {
-            if (remove(r->from) == 0) { n++; }
-        } else if (rename(r->from, r->to) == 0) {
-            n++;
-        } else if (err != NULL) {
-            snprintf(err, errmax, "cannot undo '%s' (%s)", r->from,
-                     strerror(errno));
-        }
+    for (i = o->n - 1; i >= 0; i--) {
+        n += undo_one(fs, &o->rec[i], err, errmax);
     }
-    fs->undo_count = 0;
+    /* Moved to the redo stack whatever the individual records did: the
+     * original ignores Undo()'s return code too, and a partially reversed
+     * operation is still the thing the user would want back. */
+    (void)undo_stack_push(fs->rstack, &fs->rcount, o);
+    memset(o, 0, sizeof *o);
+    fs->ucount--;
+    return n;
+}
+
+int
+tiku_trk_fs_redo(tiku_trk_fs_t *fs, char *err, size_t errmax)
+{
+    undo_op_t *o;
+    int i, n = 0;
+
+    if (!tiku_trk_fs_can_redo(fs, NULL, 0)) {
+        return -1;
+    }
+    o = &fs->rstack[fs->rcount - 1];
+    for (i = 0; i < o->n; i++) {
+        n += redo_one(fs, o->op, &o->rec[i], err, errmax);
+    }
+    (void)undo_stack_push(fs->ustack, &fs->ucount, o);
+    memset(o, 0, sizeof *o);
+    fs->rcount--;
     return n;
 }

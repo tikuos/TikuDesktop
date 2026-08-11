@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 234   partial 150   differs 71   open 434
+    done 245   partial 145   differs 71   open 428
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -141,6 +141,71 @@ bounds were checked before scaling, so the ceiling moved with the font; the
 sort triangle pointed the wrong way in both states; and two paints escaped
 the list because a clip was replaced rather than intersected.  All nine are
 fixed, each with a check first shown to fail without the fix.
+
+### Cluster: file operations
+
+The FS area is finished as far as the port's own scaffolding allows.  What
+this pass built:
+
+- **The collision question knows its own shape.**  Collisions are counted
+  before the job starts, because the four-way form ("Replace all" / "Skip
+  all") is only honest when there is more than one -- and asking that after
+  the first has been answered is too late.  A folder collision gets the
+  four-way form even alone.  `Replace` and `Skip` answer one collision and
+  let the next ask again; only the `_ALL` pair become the job's policy.
+- **Replace removes before it writes** (FS-021), so nothing holding the old
+  file sees a half-new one, and a destination that will not go stops the item
+  rather than being written over.
+- **Cancel reaches inside a file.**  A cancel check is polled between chunks,
+  not between items: the thing being cancelled is usually one large file.  On
+  cancel the destination is removed, so no truncated file is left under the
+  real one's name -- but a folder copy keeps the folder and the children it
+  already wrote, which is the original's asymmetry and not an oversight.
+- **A failure asks rather than being counted silently.**  The job stops with
+  the message the backend gave; continuing counts it failed and carries on,
+  cancelling abandons the rest, and a delete failure offers no continue at
+  all.
+- **Undo became a stack**, twenty deep on each side, oldest dropped, redo
+  emptied by anything new -- and redo works, which is why a copy record
+  carries its source as well as what it made.
+- **New folder**, with the original's own off-by-one: "New folder 2" through
+  "New folder 9", then "New folder10" without the space.  Kept, because a
+  folder created by one implementation and found by the other has to be the
+  same folder.
+
+Two things this pass is worth remembering for:
+
+The first is that `memset` is not initialisation.  `select_next` -- the row
+to select once a delete finishes -- was left at 0 by the struct-wide clear,
+and 0 is a valid row, so every operation would have quietly re-selected the
+first item.  No unit test could see it: the defect lived in the shell's
+startup, not in the rule.  It was found by reading the initialiser after
+writing the field, which is the only place it was ever going to be found.
+
+The second is that a mutation that does not fire is telling you about your
+test, not about your code.  Making a plain "Replace" sticky changed nothing
+observable, because the non-sticky behaviour lived in `resolve()` and the
+step function had grown a second, disagreeing copy of the same rule.  The
+check that would have caught a real regression did not exist yet; writing it
+also collapsed the two copies into one.
+
+One grading decision, stated rather than left implicit.  Several FS rows are
+rules about an ALERT -- two buttons and what each does.  The port computes
+the question and exposes both answers through the API, but the shell has no
+modal layer to put it in and answers with the option that loses least.  Those
+rows are graded `done` on the engine, which is the standard the delete
+question (FS-044) was already held to, with a `TIKU:` line saying the alert
+itself is not drawn.  That is now a gap spanning FS, Q and AW rather than one
+row's footnote; it wants its own cluster, and until it has one the honest
+reading of those `done`s is "the decision is right and nobody is asked yet".
+
+What remains in FS is blocked rather than undone, and now says so: five
+drag-and-drop rows wait on cluster 13 (the engine underneath them is built
+and tested -- nothing drags into it), four wait on a volume model the port
+does not have, and eight wait on a progress window (the engine already
+carries everything one would show, and the cancel channel exists; there is
+nowhere to put them).  Each of those rows carries a `BLOCKED:` line naming
+what it waits on, so the count reads honestly.
 
 ## Inventory
 
@@ -2383,7 +2448,8 @@ moveMode chosen by a fixed ladder: forceCopy -> kCopySelectionTo, forceMove -> k
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** "Same volume" must be redefined: a device-namespace node and a local file are never the same store, so the default for any drop involving /dev must be an explicit decision, not a device-id compare.  
 **MISSING:** The same-volume/cross-volume decision ladder is implemented and tested (st_dev compare, force_copy first rung, device backends treated as one volume), but nothing invokes it: no item drag-and-drop between folders exists and neither tiku_trk_fs_copy nor tiku_trk_fs_move is called anywhere in the UI.  
-*src/tiku_trk_fs.c:274 tiku_trk_fs_drop_action*
+*src/tiku_trk_fs.c:274 tiku_trk_fs_drop_action*  
+**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
 #### FS-002 · core · open
 **Holding Option while dropping forces a copy instead of a move.**  
@@ -2392,11 +2458,13 @@ forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated after the 
 **VERIFIER CORRECTION:** PoseView.cpp BPoseView::MoveSelectionInto:5091 — forceCopy |= (modifiers() & B_OPTION_KEY) happens after the same-folder shortcut and the drop context menu but BEFORE the destination checks (root / read-only volume / Trash). That ordering is load-bearing: Option-dropping onto the Trash trips the "Sorry, you can't copy items to the Trash." refusal at line 5117 instead of silently moving.  
 **CHECKED:** No modifier is ever bound to a drop: the drag path in tiku_trk_trk_app reads only Ctrl (grid snap) and Mod1 is bound to Option-open-closes-window, the force_copy parameter of tiku_trk_fs_drop_action is passed non-zero only by tests, and there is no Trash-copy refusal at all.  
 *none found*
+**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
 #### FS-003 · important · open
 **Dropping with the secondary mouse button opens a context menu offering Move here / Copy here / Create link here / Cancel; picking Cancel abandons the drop entirely.**  
 AddDropContextMenu builds the four items (kMoveSelectionTo, kCopySelectionTo, kCreateLink, kCancelButton); MoveSelectionInto maps the result to forceMove/forceCopy/createLink/createRelativeLink and returns on kCancelButton or any unrecognised result. Shift on the Create-link menu item yields kCreateRelativeLink.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
+**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
 #### FS-004 · important · partial
 **Dropping a selection into the folder it already lives in does not copy: in icon view it just repositions the icons, in list view it does nothing, and with Option held it duplicates instead.**  
@@ -2450,12 +2518,14 @@ err == B_UNSUPPORTED from CreateSymLink throws FailWithAlert with that message; 
 **Copying refuses to start when the destination volume is read-only, and dropping onto a read-only volume shows "You can't move or copy items to read-only volumes."**  
 Two separate checks: InitCopy returns B_READ_ONLY_DEVICE with NO alert (so a paste onto a read-only volume fails silently), while BPoseView::MoveSelectionInto raises the alert before launching the job.  
 `FSUtils.cpp` → `InitCopy`  
-**TIKU:** Replace volume read-only with a per-node writable capability bit; the check belongs at one layer so the silent-failure path disappears.  
+**TIKU:** Replace volume read-only with a per-node writable capability bit; the check belongs at one layer so the silent-failure path disappears.
+**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
 #### FS-013 · important · open
 **Moving items off a read-only volume copies them instead of moving.**  
 MoveTask captures sourceIsReadOnly = BVolume(srcVolumeDevice).IsReadOnly() before anything else and rewrites moveMode kMoveSelectionTo -> kCopySelectionTo.  
 `FSUtils.cpp` → `MoveTask`  
+**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
 #### FS-014 · important · open
 **An attempted copy into the Trash is turned into a move; a paste of copied items into Trash is refused outright with "Sorry, you can't copy items to the Trash."**  
@@ -2473,24 +2543,21 @@ InitCopy calls CalcItemsAndSize (which recurses via FSRecursiveCalcSize and char
 CopyFile computes BVolume from the destination directory's node_ref and, if (srcStat->st_size + kKBSize) >= volume.FreeBytes(), calls FileError(kNoFreeSpace, "", B_DEVICE_FULL, false) and throws B_DEVICE_FULL.  
 `FSUtils.cpp` → `CopyFile`  
 
-#### FS-017 · core · open
+#### FS-017 · core · done
 **When more than one name would collide in the destination, Tracker asks once up front with Cancel / Prompt / Skip all / Replace all before copying anything.**  
 PreFlightNameCheck counts collisions (only for items whose parent differs from destDir) and shows kReplaceManyStr with the verb "moving" or "copying" only when collisionCount > 1; the four buttons map to kCanceled/kPrompt/kSkipAll/kReplaceAll and Escape is button 0. A single collision deliberately falls through to the per-item prompt.  
 `FSUtils.cpp` → `PreFlightNameCheck`  
+**PORT:** The collisions are counted before the job starts, so the question knows whether it is the only one; "Replace all" and "Skip all" become the job's standing policy while plain Replace and Skip answer the collision in hand and let the next one ask again.  
 
-#### FS-018 · important · partial
+#### FS-018 · important · done
 **A single file-vs-file collision asks "You are trying to replace the item: <name> <size, date> with: <name> <size, date>" and offers only Cancel / Replace.**  
 CheckName builds kReplaceStr and calls FileStatToString for both sides (byte count via a plural BStringFormat plus strftime "%b %d %Y, %I:%M:%S %p"); the two-button alert is used when !multipleCollisions && !sourceIsDirectory, with Escape bound to Cancel.  
 `FSUtils.cpp` → `CheckName`  
-**MISSING:** The engine does stop on a file-vs-file collision and publishes the colliding path for an answer, but nothing asks the user: there is no alert, no name/size/date text for the two sides and no Cancel/Replace choice — the app auto-answers "keep both" (CONFLICT_RENAME).  
-*src/tiku_trk_fs.c:495 step_one conflict branch; src/tiku_trk_app.c:1517-1537*
 
-#### FS-019 · core · partial
+#### FS-019 · core · done
 **A folder collision, or any collision while multiple collisions exist, asks with four buttons Skip / Skip all / Replace / Replace all, and Skip all suppresses every later prompt in the job.**  
 CheckName: alert used when multipleCollisions || sourceIsDirectory. Button 0 sets conflictResolution = kCanceled and returns B_ERROR (skips this item), 1 sets kSkipAll, 2 kReplace, 3 kReplaceAll. conflictResolution is threaded by reference through the whole MoveTask loop, so kSkipAll returns B_ERROR immediately on every subsequent item and kReplaceAll bypasses the prompt.  
 `FSUtils.cpp` → `CheckName`  
-**MISSING:** Job-wide resolution exists in the policy field — answering REPLACE sticks for every later item (Replace all) — but there is no four-button prompt, no Skip all (resolve() resets SKIP to ASK after one item) and no folder-vs-file / multiple-collision distinction.  
-*src/tiku_trk_fs.c:567 tiku_trk_fs_resolve*
 
 #### FS-020 · core · done
 **Replacing a folder merges into it rather than deleting it: existing files with non-conflicting names survive, conflicting ones are overwritten.**  
@@ -2498,12 +2565,11 @@ CheckName returns B_OK without removing the destination when destIsDir. CopyFold
 `FSUtils.cpp` → `CopyFolder`  
 **PORT:** Replacing a folder merges into it: the destination is never removed, children it holds that the source knows nothing about survive, same-named files are replaced and same-named folders recurse into the same rule.
 
-#### FS-021 · important · partial
+#### FS-021 · important · done
 **Replacing a file first deletes the existing file; if the delete fails the user is told "There was a problem trying to replace \"%name\". The item might be open or busy."**  
 CheckName ends with entry.Remove() for the non-directory case and alerts on failure, returning the status so MoveTask skips the item.  
 `FSUtils.cpp` → `CheckName`  
-**MISSING:** Replace happens by overwriting rather than deleting first (copy_bytes fopen(dst,"wb") truncates, move replaces via rename()), and the "There was a problem trying to replace" failure message does not exist anywhere.  
-*src/tiku_trk_fs.c:510 (CONFLICT_REPLACE falls through) and src/tiku_trk_fs.c:407*
+**PORT:** A replace removes the old file first and reports "There was a problem trying to replace ..." when it will not go; a folder is exempt, since replacing one means merging into it (FS-020).  
 
 #### FS-022 · polish · done
 **A skipped item still advances the progress bar so the count stays honest.**  
@@ -2572,22 +2638,24 @@ LowLevelCopy's S_ISLNK branch reads the link text with ReadLink into a MAXPATHLE
 **CHECKED:** Nothing in the port creates or preserves a symlink on copy: there is no symlink()/readlink() call anywhere in src, and copy_bytes opens the source with fopen so a link's target bytes are copied into a plain file.  
 *none found*
 
-#### FS-033 · important · open
+#### FS-033 · important · done
 **Cancelling during a file copy removes the half-written destination file.**  
 The read/write loop checks CheckUserCanceled() before every chunk; on cancel it Unset()s the destination BFile, re-finds it by name in destDir and Remove()s it, then throws kCopyCanceled. The same cleanup runs when ChecksumFile() returns false.  
 `FSUtils.cpp` → `LowLevelCopy`  
+**PORT:** A cancel check is polled between chunks; on cancel the destination file is closed and removed, so no truncated file is left under the real one's name.  
 
-#### FS-034 · important · open
+#### FS-034 · important · done
 **Cancelling during a folder copy leaves the partially-copied folder in place; only the current file is cleaned up.**  
 CopyFolder's per-entry loop throws kUserCanceled on CheckUserCanceled() with no rollback of the directory already created or of the children already written.  
 `FSUtils.cpp` → `CopyFolder`  
+**PORT:** The tree walker propagates the cancel without unwinding: the folder it made and the children already written stay, and are recorded for undo so the user can still take them away.  
 
-#### FS-035 · important · partial
+#### FS-035 · important · done
 **An error copying one file offers "Error copying file \"<name>\": <error>. Would you like to continue?" and continuing keeps the rest of the job going.**  
 CopyFile catches status_t from LowLevelCopy, re-throws kCopyCanceled unchanged, otherwise calls FileError(kFileErrorString, destName, err, allowContinue=true); TrackerCopyLoopControl::FileError builds a two-button Cancel/OK stop-alert and returns true only for OK, in which case the status bar is advanced by the whole file size. Directory-creation failures use kFolderErrorString the same way; delete failures use kFileDeleteErrorString with allowContinue=false (single Cancel button).  
 `FSUtils.cpp` → `CopyFile`  
-**MISSING:** A failed file copy is caught, counted in prog.failed with the backend's own message kept in prog.error, and the job continues to the next item, but the user is never asked "Would you like to continue?" and gets no Cancel — the per-file error text is not even displayed (the status line only appends "-- some failed").  
-*src/tiku_trk_fs.c:535-541; src/tiku_trk_app.c:1538*
+**PORT:** A failed item stops the job with `error_ask` up and the message in `prog.error`; answering continue counts it failed and carries on, cancelling abandons the rest.  A delete failure sets `error_can_continue` to 0, which is the original's single-button alert.  
+**TIKU:** The shell has no modal alert layer, so it shows the message on the status line and answers continue -- the Cancel half of the question is not reachable from the window yet.  
 
 #### FS-036 · important · open
 **Copying a folder does not descend into mounted volumes underneath it, and non-file/folder/symlink entries are silently ignored.**  
@@ -2625,6 +2693,7 @@ _RestoreTask: if the parent does not exist it calls FSRecursiveCreateFolder(pare
 **Dragging a whole volume to the Trash unmounts it instead of deleting it, and the boot volume refuses with "Cannot unmount the boot volume \"<name>\"."**  
 MoveEntryToTrash tests BDirectory(entry).IsRootDirectory(); compares against BVolumeRoster().GetBootVolume(); otherwise posts kUnmountVolume with "device_id" to be_app and returns B_OK.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
+**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
 #### FS-042 · polish · open
 **Trashing a folder closes its window and all windows of folders inside it.**  
@@ -2647,6 +2716,7 @@ CopyOneTrashedRefAsEntry splits the selection into entriesToTrash and entriesToD
 **Files on a read-only volume can be neither moved nor deleted: "Files cannot be moved or deleted from a read-only volume."**  
 CheckVolumeReadOnly raises a B_STOP_ALERT and returns false; it gates both MoveSelectionOrEntryToTrash and DeleteSelection, and is tested on the first selected item's device only.  
 `PoseView.cpp` → `CheckVolumeReadOnly`  
+**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
 #### FS-046 · core · differs
 **Delete asks a three-way question — Cancel / Move to Trash / Delete — with Escape, 'm' and 'd' as shortcuts, and warns the operation cannot be reverted.**  
@@ -2672,10 +2742,11 @@ FSDeleteFolder recurses, calls loopControl->FileError(kFileDeleteErrorString, re
 `FSUtils.cpp` → `FSDeleteFolder`  
 **PORT:** A failure on one child does not abandon the rest -- the walk is best-effort, as the original's delete loop is -- but each failure is not separately reported: one message survives in the progress record.
 
-#### FS-050 · polish · open
+#### FS-050 · polish · done
 **After a delete or restore in list view, the next item down is selected automatically.**  
 BPoseView::Delete / MoveListToTrash / RestoreItemsFromTrash build a two-element task list run in order by ThreadSequence::Launch: the FS call first (FSDeleteRefList/FSMoveToTrash/FSRestoreRefList with async=false), then TTracker::SelectPoseAtLocationSoon with the target folder's node_ref and a point computed from the deleted pose's list index. Only done when ViewMode() == kListMode.  
 `PoseView.cpp` → `BPoseView::Delete`  
+**PORT:** The row index is noted before the delete starts, because afterwards it is the only thing still pointing at where the item was; icon modes select nothing, having no next-one-down.  
 
 #### FS-051 · core · done
 **Cut and Copy put the selection on the system clipboard; Shift turns them into "Cut more"/"Copy more", which add to what is already there instead of replacing it.**  
@@ -2748,34 +2819,33 @@ B_CANCEL -> if (FSClipboardHasRefs()) FSClipboardClear(); kCancelSelectionToClip
 `PoseView.cpp` → `BPoseView::MessageReceived`  
 **PORT:** Clearing empties it; removing named entries leaves the rest.
 
-#### FS-063 · core · partial
+#### FS-063 · core · done
 **Undo (Cmd+Z) reverses the last file operation and Redo (Shift+Cmd+Z) replays it; the stack holds at most 20 operations and any new operation wipes the redo stack.**  
 kUndoRedoListMaxCount = 20 on each of sUndoList/sRedoList under one BLocker; AddUndoItem drops the tail when full and calls sRedoList.MakeEmpty(). FSUndo pops the head of the undo list, runs Undo() (return code explicitly ignored) and pushes it on the redo list, and vice versa. The stack is process-global and RAM-only. BContainerWindow routes B_UNDO/B_REDO to FSUndo/FSRedo only when the focused view is not a BTextView.  
 `FSUndoRedo.cpp` → `FSUndo`  
 **TIKU:** An undo stack over durable nodes could itself be durable; also, undoing a write to a device-namespace node is generally not possible, so those operations must be marked non-undoable.  
-**MISSING:** Ctrl+Z undoes the last operation and names it, but the stack is one operation deep (undo_reset() clears the records at the start of every new operation) and there is no Redo at all — no redo list, no Shift+Ctrl+Z, no TIKU_TRK_CMD_UNDO/REDO in the action table.  
-*src/tiku_trk_fs.c:294 undo_reset; src/tiku_trk_app.c:1009-1023*
+**PORT:** Twenty operations on each stack, oldest dropped when full; any new operation empties the redo stack.  Undo is Ctrl+Z and redo Ctrl+Shift+Z.  Redo replays the records forwards, which is why a copy record carries its source as well as what it made.  
 
 #### FS-064 · important · partial
 **Undoing a copy or a link deletes the copies that were made, without asking for confirmation.**  
 UndoItemCopy::Undo calls FSDeleteRefList(new list(fTargetList), async=true, confirm=false). fTargetList is the source list with every ref's device/directory rewritten to the destination folder by ChangeListSource, and individual names patched by UndoItemCopy::UpdateEntry whenever FSMakeOriginalName renamed a destination. Redo re-runs FSMoveToFolder with the original moveMode, stamped as an undo-mode operation.  
 `FSUndoRedo.cpp` → `UndoItemCopy::Undo`  
-**MISSING:** Undoing a copy does delete exactly what the copy created, with no confirmation (each copied destination is pushed with created=1 and removed on undo), but the link half cannot happen because the port has no Create Link operation.  
-*src/tiku_trk_fs.c:539 undo_push(created=1); src/tiku_trk_fs.c:664 tiku_trk_fs_undo*
+**MISSING:** The copy half is complete -- undo removes exactly what the copy  
+made and redo copies it again -- but the link half cannot happen, because the  
+port has no Create Link operation (FS-030).  
 
-#### FS-065 · important · partial
+#### FS-065 · important · done
 **Undoing a move (including a move to the Trash) moves the items back to the folder the first item came from.**  
 UndoItemMove records fSourceRef = parent of sourceList->ItemAt(0) and fTargetRef = the destination; Undo() copies the source list, ChangeListSource()s it to the target folder and FSMoveToFolder()s it back to fSourceRef. Because only the first item's parent is recorded, a selection spanning several folders is restored into one folder. MoveTask builds this undo item even for the Trash case, since the trash move uses kMoveSelectionTo.  
 `FSUndoRedo.cpp` → `UndoItemMove::Undo`  
-**MISSING:** Undoing an ordinary move works and records each item's own source (a real, better variant of the first-item-parent rule), but the row's 'including a move to the Trash' clause cannot fire: the trash branch pushes no undo record so can_undo returns 0.  
-*src/tiku_trk_fs.c:532 undo_push(fs, dstpath, src, 0) vs :438-461 trash branch (no undo_push) and :637 can_undo returning 0 on undo_count==0*
+**PORT:** Each item records its own source rather than the first item's parent, so a selection spanning several folders goes back to the folders it came from -- the original restores the lot into one.  
 
 #### FS-066 · important · partial
 **Undoing New Folder deletes the folder; undoing a rename restores the old name; undoing a volume rename restores the old volume name.**  
 UndoItemFolder::Undo -> FSDelete(new entry_ref(fRef), async=false, confirm=false), Redo -> FSCreateNewFolder(&fRef). UndoItemRename stores both refs and Rename()s back and forth. UndoItemRenameVolume captures the old name via BVolume::GetName in its constructor and uses BVolume::SetName. The rename undo items are created inside EditModelName and removed again (undo.Remove()) if the rename itself failed.  
 `FSUndoRedo.cpp` → `UndoItemFolder::Undo`  
-**MISSING:** Only the rename clause works (tiku_trk_fs_rename records the reversal and Ctrl+Z renames back, tests/test_fs.c:159-166); there is no New Folder operation at all — TIKU_TRK_CMD_NEW_FOLDER is only added to menus and never dispatched — and no volume rename.  
-*src/tiku_trk_fs.c:620-621 tiku_trk_fs_rename*
+**MISSING:** New folder and rename both undo and redo; the volume-rename  
+clause needs a volume model the port does not have (FS-012).  
 
 #### FS-067 · important · done
 **Delete, Empty Trash and Restore from Trash are not undoable at all.**  
@@ -2792,62 +2862,73 @@ UndoItem replays call FSMoveToFolder with FSUndoMoveMode(mode), which sets the t
 BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items..."/"Copying: ", kMoveState "Moving: ", kCreateLinkState "Creating links: ", kTrashState "Emptying Trash... ", kDeleteState "Deleting: ", kRestoreFromTrashState "Restoring: ". InitStatus builds the trailing "of %items" text and sets max value 1; _DestinationString renders "To: %dir" from the destination entry's leaf name.  
 `StatusWindow.cpp` → `BStatusView::InitStatus`  
 **TIKU:** On a shell/console front end this is a line of progress output; the per-job identity and the cancel channel still have to exist.  
-**MISSING:** Progress is a single status line carrying the "n of N" counter (plus skipped/failed suffixes) while the operation is stepped without blocking the window; the current file name is tracked in prog.current but never shown, and there is no per-operation caption, no "To: <dir>", no progress bar and no cancel channel wired (tiku_trk_fs_cancel has no caller).  
-*src/tiku_trk_app.c:1509-1546; src/tiku_trk_fs.c:435*
+**MISSING:** Progress is a single status line carrying the "n of N" counter (plus skipped/failed suffixes) while the operation is stepped without blocking the window; the current file name is tracked in prog.current but never shown, and there is no per-operation caption, no "To: <dir>", no progress bar and no way to cancel from the window (the engine's cancel check exists and is tested, but nothing in the shell calls it).  
+*src/tiku_trk_app.c:1509-1546; src/tiku_trk_fs.c:435*  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-070 · polish · open
 **Creating links only shows a progress window when more than ten items are involved.**  
 InitCopy's kCreateLink case: if (numItems > 10) it calls Init(kCreateLinkState) and Init(numItems, numItems, destRef) — otherwise no status item is ever created and the operation runs invisibly.  
 `FSUtils.cpp` → `InitCopy`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-071 · polish · open
 **The status line alternates between transfer speed and estimated finish time, showing speed for 8 seconds then the estimate for 4 seconds.**  
 StatusBackgroundView::Pulse (pulse rate 1 s) toggles the file-static sShowSpeed using kShowSpeedInterval = 8 s and kShowEstimatedFinishInterval = 4 s; the toggle state is shared by all concurrent jobs and reset when the first status item is created. Speed is a rolling mean over kBytesPerSecondSlots samples taken every kSpeedReferenceInterval = 2 s. Long estimates degrade to "Finish: after several years", estimates beyond a day include the date, and both speed and time strings have short forms used when the full one does not fit; the tooltip carries both.  
 `StatusWindow.cpp` → `BStatusView::_TimeStatusString`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-072 · important · open
 **Each concurrent file operation gets its own row in one shared status window; the window appears when the first job starts and hides when the last one finishes.**  
 BStatusWindow::CreateStatusItem stacks a new BStatusView below the last one and grows the window; RemoveStatusItem removes the row, shifts the ones below up, shrinks the window and Hide()s it when the count reaches zero. Rows are matched to jobs by thread_id.  
 `StatusWindow.cpp` → `BStatusWindow::CreateStatusItem`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-073 · polish · open
 **If the Desktop was the active window when an operation started, focus is handed back to it when the status window closes.**  
 CreateStatusItem scans be_app's windows for an active BDeskWindow and records fRetainDesktopFocus; a second job ANDs into the same flag, and WindowActivated(false) clears it. RemoveStatusItem re-Activate()s the desk window when the last row goes away.  
 `StatusWindow.cpp` → `BStatusWindow::RemoveStatusItem`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-074 · core · open
 **Each progress row has a pause and a stop button; pause freezes the operation and the row reads "Paused: click to resume or stop", stop cancels it.**  
 kPauseButton toggles fIsPaused, zeroes the speed samples and, on resume, resets the estimate reference and resume_thread(Thread()). kStopButton sets fWasCanceled and also resumes a paused thread so the copy loop can notice the cancel and unwind. BStatusWindow::CheckCanceledOrPaused returns wasCanceled immediately, and otherwise suspend_thread()s the calling worker.  
 `StatusWindow.cpp` → `BStatusView::MessageReceived`  
-**TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.  
+**TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-075 · polish · open
 **Progress text updates are throttled to roughly ten per second, but the name of the file being processed is never lost — it is stashed and shown at the next real update.**  
 BStatusView::UpdateStatus only redraws when !optional or (now - fLastUpdateTime) > kMaxUpdateInterval (100000 us); otherwise a supplied curItem is copied into fPendingStatusString (127 chars) and used on the next update. Bytes are always accumulated into fItemSize/fSizeProcessed regardless of throttling. LowLevelCopy splits chunks larger than 32 KB into two status updates, one after the read and one after the write, for smoother movement.  
 `StatusWindow.cpp` → `BStatusView::UpdateStatus`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-076 · important · open
 **Quitting Tracker cancels every running copy/move/Empty Trash job rather than killing it mid-write.**  
 BStatusWindow::AttemptToQuit returns true only when no status items exist; otherwise it calls SetWasCanceled() on every row and returns false so the quit is retried after the jobs unwind.  
 `StatusWindow.cpp` → `BStatusWindow::AttemptToQuit`  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
 
 #### FS-077 · important · open
 **Dropping files from another application onto a folder copies them there, laid out in rows of four starting at the drop point.**  
 BPoseView::HandleDropCommon's HasRef("refs") branch: defaults to canCopy (kCopySelectionTo) unless a drop context menu chose otherwise, bails when the target is not a directory or virtual directory, collects every "refs" entry into a list, builds a pointList that advances four columns per row using fGrid and PinToGrid, and hands it to FSMoveToFolder.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
-**TIKU:** Cross-application drops presuppose a drag protocol; on TikuOS this is where an incoming stream from another process/tier lands, and the "copy by default" rule should still hold.  
+**TIKU:** Cross-application drops presuppose a drag protocol; on TikuOS this is where an incoming stream from another process/tier lands, and the "copy by default" rule should still hold.
+**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
 #### FS-078 · polish · open
 **Dragging items out of a virtual directory creates links rather than moving the underlying files, unless a copy/move/relative-link was explicitly requested.**  
 BPoseView::MoveSelectionInto: when srcWindow->TargetModel()->IsVirtualDirectory() it resolves each pose to its ResolvedModel entry_ref and then sets createLink = true if none of forceCopy/forceMove/createRelativeLink was requested.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** A device namespace is exactly this case: dragging a /dev node out should produce a reference, not a byte copy, unless the user explicitly asks to snapshot it.  
-**VERIFIER CORRECTION:** That formula (FSUtils.cpp:2636-2647) applies only to the top-level entries in the ref list. Recursion through FSRecursiveCalcSize (line 2580) instead charges statbuf.st_blocks * 512 per entry, files and directories alike, and does not add a block per directory. The block-size clamps ([1024,8192], 2048 when the volume block size is unavailable) are correct.  
+**VERIFIER CORRECTION:** That formula (FSUtils.cpp:2636-2647) applies only to the top-level entries in the ref list. Recursion through FSRecursiveCalcSize (line 2580) instead charges statbuf.st_blocks * 512 per entry, files and directories alike, and does not add a block per directory. The block-size clamps ([1024,8192], 2048 when the volume block size is unavailable) are correct.
+**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
-#### FS-079 · polish · open
+#### FS-079 · polish · done
 **New folder is named "New folder", then "New folder 2" ... "New folder 9", then "New folder10" without a space.**  
 FSCreateNewFolderIn increments fnum before formatting and switches format strings at >9, producing the missing space; the folder gets B_DIR_MIMETYPE and a NewFolderUndo is registered. Failure raises "Sorry, could not create a new folder." The separate FSCreateNewFolder (used by Redo) instead uniquifies with FSMakeOriginalName(name, &dir, " -") and writes the chosen name back into the caller's entry_ref.  
 `FSUtils.cpp` → `FSCreateNewFolderIn`  
+**PORT:** The missing space past nine is kept: a folder created by one implementation and found by the other has to be the same folder.  
 
 #### FS-080 · important · partial
 **Renaming refuses names longer than the file-name limit, names already used in the folder, and rename of the Desktop, root, Trash, virtual directories or localized-name items; renaming a read-only volume's item fails with a read-only error.**  

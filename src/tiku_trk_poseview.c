@@ -815,6 +815,35 @@ tiku_trk_poseview_select_none(tiku_trk_poseview_t *v)
     }
 }
 
+int
+tiku_trk_poseview_select_after_removal(tiku_trk_poseview_t *v, int index)
+{
+    int n;
+
+    if (v == NULL || tiku_trk_poseview_mode(v) != TIKU_TRK_MODE_LIST) {
+        /* Icon modes have no "next one down": the poses are where the user
+         * put them, and picking a neighbour by list order would select
+         * something on the other side of the window. */
+        return -1;
+    }
+    n = tiku_trk_poseview_count(v);
+    if (n == 0) {
+        tiku_trk_poseview_select_none(v);
+        return -1;
+    }
+    /* The row that has TAKEN the removed one's index -- the next one down
+     * before the removal.  Past the end means the last item went, and the
+     * new last row is the one that moved up into the gap. */
+    if (index < 0) {
+        index = 0;
+    }
+    if (index >= n) {
+        index = n - 1;
+    }
+    tiku_trk_poseview_click(v, index, 0u);
+    return index;
+}
+
 void
 tiku_trk_poseview_select_all(tiku_trk_poseview_t *v)
 {
