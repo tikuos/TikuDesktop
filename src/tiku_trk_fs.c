@@ -504,6 +504,199 @@ copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
 /** @brief Process one queued item.  @return 1 done, 0 stopped on a conflict. */
 
 
+
+/*---------------------------------------------------------------------------*/
+/* Copying and moving a tree (FS-020, FS-029)                                */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief Remove @p path and everything under it.
+ *
+ * Best effort, as the original's delete loop is: one child that will not go
+ * does not abandon the rest, because leaving a half-deleted tree AND
+ * reporting failure is worse than removing what can be removed.
+ *
+ * @return 0 when the top-level item went.
+ */
+static int
+remove_tree(const char *path)
+{
+    struct stat st;
+    DIR *d;
+    struct dirent *e;
+
+    if (stat(path, &st) != 0) {
+        return -1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return (unlink(path) == 0) ? 0 : -1;
+    }
+    d = opendir(path);
+    while (d != NULL && (e = readdir(d)) != NULL) {
+        char child[TIKU_TRK_PATH_MAX];
+
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
+            continue;
+        }
+        if (join(child, sizeof child, path, e->d_name) == 0) {
+            (void)remove_tree(child);
+        }
+    }
+    if (d != NULL) {
+        (void)closedir(d);
+    }
+    return (rmdir(path) == 0) ? 0 : -1;
+}
+
+/**
+ * @brief Copy @p src into @p dst_dir, merging into a folder already there.
+ *
+ * "Replacing" a folder is a MERGE and never a delete-then-copy: the
+ * destination folder is kept, its children that have no counterpart in the
+ * source SURVIVE, same-named files are replaced, and same-named folders
+ * recurse into the same rule.  Deleting the destination first would throw
+ * away everything the user did not name.
+ *
+ * @return 0 on success.
+ */
+static int
+copy_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
+          size_t errmax)
+{
+    struct stat st;
+    DIR *d;
+    struct dirent *e;
+
+    /* The full destination PATH, not the folder: the name may have been
+     * chosen by a collision answer, and recomputing it from the source
+     * leaf would quietly undo that choice. */
+    if (stat(src, &st) != 0) {
+        snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
+        return -1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return copy_bytes(fs, src, dstpath, err, errmax);
+    }
+    if (stat(dstpath, &st) == 0) {
+        if (!S_ISDIR(st.st_mode)) {
+            snprintf(err, errmax,
+                     "cannot replace the file '%.50s' with a folder",
+                     leaf_of(dstpath));
+            return -1;
+        }
+        /* It is there and it is a folder: merge INTO it.  Its own
+         * attributes are left alone for the same reason its children are --
+         * the user asked for the contents to arrive, not for the folder to
+         * be replaced by another one. */
+    } else if (mkdir(dstpath, 0755) != 0) {
+        snprintf(err, errmax, "cannot create '%.60s' (%.40s)",
+                 leaf_of(dstpath), strerror(errno));
+        return -1;
+    }
+    d = opendir(src);
+    if (d == NULL) {
+        snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
+        return -1;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char child[TIKU_TRK_PATH_MAX];
+
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
+            continue;
+        }
+        {
+            char cdst[TIKU_TRK_PATH_MAX];
+
+            if (join(child, sizeof child, src, e->d_name) != 0 ||
+                join(cdst, sizeof cdst, dstpath, e->d_name) != 0) {
+                continue;
+            }
+            /* A failure on one child does not abandon the rest: the loop
+             * is best-effort, as the original's is, so one unreadable file
+             * does not cost the user the whole folder. */
+            (void)copy_tree(fs, child, cdst, err, errmax);
+        }
+    }
+    (void)closedir(d);
+    return 0;
+}
+
+/**
+ * @brief Move @p src into @p dst_dir on one filesystem, merging (FS-029).
+ *
+ * A same-volume move never copies.  Where the destination already holds a
+ * folder of the same name it is descended into and the emptied source
+ * folders are removed behind it, which is a merge rather than a refusal.
+ *
+ * @return 0 on success.
+ */
+static int
+move_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
+          size_t errmax)
+{
+    struct stat sst, dst_st;
+    DIR *d;
+    struct dirent *e;
+
+    if (stat(src, &sst) != 0) {
+        snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
+        return -1;
+    }
+    if (stat(dstpath, &dst_st) != 0) {
+        /* Nothing in the way: one rename moves the whole tree. */
+        if (rename(src, dstpath) == 0) {
+            return 0;
+        }
+        if (errno != EXDEV) {
+            snprintf(err, errmax, "cannot move '%.60s' (%.40s)",
+                     leaf_of(src), strerror(errno));
+            return -1;
+        }
+        /* Across a boundary a move is a copy followed by a delete, which
+         * is the one case where a move reads every byte (FS-030). */
+        if (copy_tree(fs, src, dstpath, err, errmax) != 0) {
+            return -1;
+        }
+        return remove_tree(src);
+    }
+    if (!S_ISDIR(sst.st_mode) || !S_ISDIR(dst_st.st_mode)) {
+        /* A file over a file: the refusal gate has already allowed this,
+         * so the destination goes and the source takes its place. */
+        (void)remove(dstpath);
+        if (rename(src, dstpath) != 0) {
+            snprintf(err, errmax, "cannot move '%.60s' (%.40s)",
+                     leaf_of(src), strerror(errno));
+            return -1;
+        }
+        return 0;
+    }
+    d = opendir(src);
+    if (d == NULL) {
+        snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
+        return -1;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char child[TIKU_TRK_PATH_MAX];
+
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
+            continue;
+        }
+        {
+            char cdst[TIKU_TRK_PATH_MAX];
+
+            if (join(child, sizeof child, src, e->d_name) == 0 &&
+                join(cdst, sizeof cdst, dstpath, e->d_name) == 0) {
+                (void)move_tree(fs, child, cdst, err, errmax);
+            }
+        }
+    }
+    (void)closedir(d);
+    /* The source folder is left behind only if something in it would not
+     * move; an empty one goes, which is what makes this a move. */
+    (void)rmdir(src);
+    return 0;
+}
+
 /*---------------------------------------------------------------------------*/
 /* Refusals (FS-023, FS-024, FS-025)                                         */
 /*---------------------------------------------------------------------------*/
@@ -1065,21 +1258,23 @@ step_one(tiku_trk_fs_t *fs)
     }
 
     if (fs->prog.op == TIKU_TRK_OP_MOVE) {
-        if (rename(src, dstpath) != 0) {
-            /* Across volumes rename cannot work; copy then remove. */
-            if (copy_bytes(fs, src, dstpath, err, sizeof err) != 0 ||
-                remove(src) != 0) {
-                snprintf(fs->prog.error, sizeof fs->prog.error, "%s",
-                         err[0] ? err : "move failed");
-                fs->prog.failed++;
-                fs->qcursor++;
-                return 1;
-            }
+        /* Through the tree walker, so a FOLDER moves too -- and moves onto
+         * an existing folder of the same name by merging into it rather
+         * than refusing or replacing it (FS-029). */
+        if (move_tree(fs, src, dstpath, err, sizeof err) != 0) {
+            snprintf(fs->prog.error, sizeof fs->prog.error, "%s",
+                     err[0] ? err : "move failed");
+            fs->prog.failed++;
+            fs->qcursor++;
+            return 1;
         }
         undo_push(fs, dstpath, src, 0);
         fs->prog.done++;
     } else {
-        if (copy_bytes(fs, src, dstpath, err, sizeof err) != 0) {
+        /* The same for a copy: a folder already there is merged into, so
+         * its children that the source has no counterpart for survive
+         * (FS-020). */
+        if (copy_tree(fs, src, dstpath, err, sizeof err) != 0) {
             snprintf(fs->prog.error, sizeof fs->prog.error, "%s", err);
             fs->prog.failed++;
         } else {

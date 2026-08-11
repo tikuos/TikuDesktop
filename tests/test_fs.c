@@ -180,6 +180,97 @@ main(void)
     }
 
 
+
+    /* --- a folder "replaced" is MERGED, never emptied first (FS-020) ---- */
+    {
+        char sdir[600], ddir[600], keep[700], mine[700], theirs[700];
+        const char *sel[1];
+
+        snprintf(sdir, sizeof sdir, "%s/tree", A);
+        (void)mkdir(sdir, 0755);
+        snprintf(mine, sizeof mine, "%s/tree/shared.txt", A);
+        put(mine, "new");
+        snprintf(theirs, sizeof theirs, "%s/tree/only-source.txt", A);
+        put(theirs, "s");
+
+        snprintf(ddir, sizeof ddir, "%s/tree", B);
+        (void)mkdir(ddir, 0755);
+        snprintf(keep, sizeof keep, "%s/tree/only-dest.txt", B);
+        put(keep, "d");
+        {
+            char clash[700];
+
+            snprintf(clash, sizeof clash, "%s/tree/shared.txt", B);
+            put(clash, "old");
+        }
+
+        sel[0] = sdir;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+        run_to_end(fs);
+
+        check(there(keep), "FS-020",
+              "a child of the destination that the source knows nothing "
+              "about SURVIVES -- replacing a folder is a merge, not a "
+              "delete and recopy");
+        {
+            char clash[700];
+            char got[16];
+            FILE *f;
+
+            snprintf(clash, sizeof clash, "%s/tree/shared.txt", B);
+            f = fopen(clash, "r");
+            got[0] = '\0';
+            if (f != NULL) {
+                size_t n = fread(got, 1, sizeof got - 1, f);
+                got[n] = '\0';
+                (void)fclose(f);
+            }
+            check(strcmp(got, "new") == 0, "FS-020",
+                  "a same-named child IS replaced");
+        }
+        {
+            char brought[700];
+
+            snprintf(brought, sizeof brought, "%s/tree/only-source.txt", B);
+            check(there(brought), "FS-020",
+                  "and one only the source had is brought over");
+        }
+    }
+
+    /* --- a same-volume move of a folder merges too (FS-029) ------------- */
+    {
+        char sdir[600], dkeep[700], moved[700];
+        const char *sel[1];
+
+        snprintf(sdir, sizeof sdir, "%s/mtree", A);
+        (void)mkdir(sdir, 0755);
+        snprintf(moved, sizeof moved, "%s/mtree/carried.txt", A);
+        put(moved, "c");
+        {
+            char d[600];
+
+            snprintf(d, sizeof d, "%s/mtree", B);
+            (void)mkdir(d, 0755);
+        }
+        snprintf(dkeep, sizeof dkeep, "%s/mtree/stays.txt", B);
+        put(dkeep, "s");
+
+        sel[0] = sdir;
+        (void)tiku_trk_fs_move(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+        run_to_end(fs);
+        {
+            char arrived[700];
+
+            snprintf(arrived, sizeof arrived, "%s/mtree/carried.txt", B);
+            check(there(arrived) && there(dkeep), "FS-029",
+                  "a move onto a folder of the same name merges: what was "
+                  "there stays and what moved arrives");
+            check(!there(moved) && !there(sdir), "FS-029",
+                  "and the emptied source folder goes, which is what makes "
+                  "it a move");
+        }
+    }
+
     /* --- the refusals: operations that would destroy the unnamed -------- */
     {
         char inner[600], deep[700], afile[600], adir[600], why[220];

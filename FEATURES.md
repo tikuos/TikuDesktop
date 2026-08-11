@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 231   partial 152   differs 70   open 436
+    done 234   partial 150   differs 71   open 434
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -2492,10 +2492,11 @@ CheckName: alert used when multipleCollisions || sourceIsDirectory. Button 0 set
 **MISSING:** Job-wide resolution exists in the policy field — answering REPLACE sticks for every later item (Replace all) — but there is no four-button prompt, no Skip all (resolve() resets SKIP to ASK after one item) and no folder-vs-file / multiple-collision distinction.  
 *src/tiku_trk_fs.c:567 tiku_trk_fs_resolve*
 
-#### FS-020 · core · open
+#### FS-020 · core · done
 **Replacing a folder merges into it rather than deleting it: existing files with non-conflicting names survive, conflicting ones are overwritten.**  
 CheckName returns B_OK without removing the destination when destIsDir. CopyFolder then calls OverwriteOnConflict and, for kMerge (or kReplace on a directory, which falls through), sets newDir to the existing entry and skips CreateDirectory, so directory attributes are NOT re-copied (the CopyAttributes call is guarded by createDirectory).  
 `FSUtils.cpp` → `CopyFolder`  
+**PORT:** Replacing a folder merges into it: the destination is never removed, children it holds that the source knows nothing about survive, same-named files are replaced and same-named folders recurse into the same rule.
 
 #### FS-021 · important · partial
 **Replacing a file first deletes the existing file; if the delete fails the user is told "There was a problem trying to replace \"%name\". The item might be open or busy."**  
@@ -2545,18 +2546,18 @@ ConfirmChangeIfWellKnownDirectory: returns false outright for Desktop/Printers/r
 MoveItem: when statbuf.st_dev == destNode.device and the mode is neither kCopySelectionTo nor kDuplicateSelection, it calls loopControl->UpdateStatus(ref.name, ref, 1) with the comment that size is irrelevant, then BEntry::MoveTo(destDir, newName).  
 `FSUtils.cpp` → `MoveItem`  
 
-#### FS-029 · important · open
+#### FS-029 · important · done
 **A same-volume move of a folder onto an existing folder of the same name merges recursively instead of failing, moving each file individually and removing the emptied source directories.**  
 RecursiveMove: if destDir->Contains(name) it opens the existing sub-directory and, for each source entry, recurses on directories (then Remove()s them) and for files consults OverwriteOnConflict — skipping on kSkip, otherwise BEntry::MoveTo(&subDir, NULL, clobber=true). Finally the source directory is removed. If the name is free it is a plain MoveTo.  
 `FSUtils.cpp` → `RecursiveMove`  
+**PORT:** A same-volume move never copies -- one rename where nothing is in the way, and a recursive merge with the emptied source folders removed behind it where a folder of the same name is.
 
-#### FS-030 · core · partial
+#### FS-030 · core · done
 **A cross-volume move is a copy followed by a delete of each source item, performed per-item, so a cancelled cross-volume move leaves the already-transferred items on the destination and gone from the source.**  
 MoveItem's else-branch: directories go to CopyFolder(..., removeSource = (moveMode == kMoveSelectionTo)) which removes each child right after copying it and then removes the source folder; files go to CopyFile and then entry->Remove(). Nothing is transactional above the level of one file.  
 `FSUtils.cpp` → `MoveItem`  
 **TIKU:** Durable-media targets make the ordering matter more: the rewrite should decide whether the source delete is allowed before the destination write is committed/flushed.  
-**MISSING:** For files the rule holds exactly — rename() first, and on failure copy_bytes then remove(src) per item, with cancel leaving already-transferred items on the destination and gone from the source — but there is no recursive folder case (copy_bytes only streams one regular file's bytes), so a cross-volume folder move is not performed.  
-*src/tiku_trk_fs.c:520-533 step_one move branch; src/tiku_trk_fs.c:582 tiku_trk_fs_cancel*
+**PORT:** A cross-boundary move is a copy followed by a delete, taken only when rename reports the boundary rather than guessed at from the paths.
 
 #### FS-031 · core · open
 **File copy preserves every attribute except the icon-position attribute, plus permissions, owner, group, modification time and creation time.**  
@@ -2665,10 +2666,11 @@ empty_trash does two passes over BVolumeRoster: one summing items via CalcItemsA
 `FSUtils.cpp` → `empty_trash`  
 **PORT:** Empties the one Trash this store has rather than every mounted volume's, there being one; it goes through the DELETE queue because the trash queue refuses to trash anything already in the Trash (FS-043), and those two rules cannot share a queue builder.
 
-#### FS-049 · important · open
+#### FS-049 · important · differs
 **Deleting a folder tree continues past individual failures, reporting each one, rather than aborting the whole delete.**  
 FSDeleteFolder recurses, calls loopControl->FileError(kFileDeleteErrorString, ref.name, status, allowContinue=false) for any non-OK, non-cancel status and keeps iterating; only kTrashCanceled propagates. CheckUserCanceled is polled per entry and again before removing the top directory.  
 `FSUtils.cpp` → `FSDeleteFolder`  
+**PORT:** A failure on one child does not abandon the rest -- the walk is best-effort, as the original's delete loop is -- but each failure is not separately reported: one message survives in the progress record.
 
 #### FS-050 · polish · open
 **After a delete or restore in list view, the next item down is selected automatically.**  
