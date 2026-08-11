@@ -545,6 +545,122 @@ main(void)
           "which it does not say when nothing is filtered");
     tiku_trk_poseview_type_clear(v);
 
+    /* --- the batched load (PVL-088, PVN-047, PVL-089, PVL-090, TS-038) -- */
+    {
+        int64_t t0 = 1000000;
+        int staged, more, first_count;
+
+        staged = tiku_trk_poseview_load_begin(v, t0);
+        check(staged == 6 && tiku_trk_poseview_loading(v), "PVL-088",
+              "the folder is staged and the load is in flight");
+        check(tiku_trk_poseview_count(v) == 0, "PVN-047",
+              "nothing is published before the first batch");
+        check(!tiku_trk_poseview_pole(v, t0), "TS-038",
+              "and no pole yet -- it is armed, not shown");
+        check(!tiku_trk_poseview_pole(v, t0 + TIKU_TRK_POLE_AFTER_US - 1),
+              "TS-038",
+              "a load that finishes inside half a second never shows one");
+        check(tiku_trk_poseview_pole(v, t0 + TIKU_TRK_POLE_AFTER_US),
+              "TS-038", "past half a second it appears");
+
+        more = tiku_trk_poseview_load_step(v, t0);
+        first_count = tiku_trk_poseview_count(v);
+        check(more && first_count == 1, "PVN-047",
+              "the first row is published on its own, so the window shows "
+              "something at once");
+        while (tiku_trk_poseview_load_step(v, t0)) {
+        }
+        check(tiku_trk_poseview_count(v) == 6 &&
+              !tiku_trk_poseview_loading(v), "PVL-088",
+              "the rest arrive in batches and the load completes");
+        check(!tiku_trk_poseview_pole(v, t0 + 10 * TIKU_TRK_POLE_AFTER_US),
+              "TS-038", "and the pole goes with it");
+    }
+
+    /* --- PVL-089: a load belongs to the folder that started it ---------- */
+    {
+        int gen_before = tiku_trk_poseview_generation(v);
+
+        (void)tiku_trk_poseview_load_begin(v, 0);
+        check(tiku_trk_poseview_generation(v) == gen_before + 1, "PVL-089",
+              "starting a load moves the generation on");
+        (void)tiku_trk_poseview_switch_dir(v, "/tmp");
+        check(tiku_trk_poseview_generation(v) != gen_before + 1, "PVL-089",
+              "and switching folders moves it again, so a batch still in "
+              "flight for the old one can be told apart");
+        (void)tiku_trk_poseview_switch_dir(v, dir);
+    }
+
+    /* --- PVL-090: the loader and a notice are two mouths, one listing --- */
+    {
+        tiku_trk_event_t e;
+        tiku_trk_model_t late;
+
+        /* Take a real entry, then start a load and let a CREATION notice
+         * for that same entry arrive while it is still STAGED -- the race
+         * the guard exists for. */
+        (void)tiku_trk_poseview_reload(v);
+        late = tiku_trk_poseview_at(v, 5)->model;
+        (void)tiku_trk_poseview_load_begin(v, 0);
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_CREATED;
+        e.model = late;
+        snprintf(e.path, sizeof e.path, "%s", late.path);
+        snprintf(e.dir, sizeof e.dir, "%s", dir);
+        (void)tiku_trk_poseview_notify(v, &e);
+        check(tiku_trk_poseview_count(v) == 1, "PVL-090",
+              "the notice brings the row in ahead of the loader");
+        while (tiku_trk_poseview_load_step(v, 0)) {
+        }
+        check(tiku_trk_poseview_count(v) == 6, "PVL-090",
+              "and the loader reaching the same node adds nothing -- one "
+              "node, one row, whichever mouth reported it first");
+
+        /* The harder case, and the one identity exists for: the notice
+         * brings the node in under a NEW name while the loader still has
+         * it staged under the old one, so the paths do not match and only
+         * the node id can tell they are the same entry. */
+        (void)tiku_trk_poseview_load_begin(v, 0);
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_CREATED;
+        e.model = late;
+        snprintf(e.model.name, sizeof e.model.name, "renamed.txt");
+        snprintf(e.model.path, sizeof e.model.path, "%s/renamed.txt", dir);
+        snprintf(e.path, sizeof e.path, "%s", e.model.path);
+        snprintf(e.dir, sizeof e.dir, "%s", dir);
+        (void)tiku_trk_poseview_notify(v, &e);
+        while (tiku_trk_poseview_load_step(v, 0)) {
+        }
+        check(tiku_trk_poseview_count(v) == 6, "PVL-090",
+              "a node renamed under the loader appears once, under its new "
+              "name -- the paths differ, so only its identity says so");
+    }
+
+    /* --- PVN-047: batching is by TIME as well as by count --------------- */
+    {
+        int64_t t = 5000000;
+        int rows_first, rows_second;
+
+        (void)tiku_trk_poseview_load_begin(v, t);
+        (void)tiku_trk_poseview_load_step(v, t);       /* row one alone    */
+        rows_first = tiku_trk_poseview_count(v);
+        /* Each later call arrives well past the batch deadline, so each
+         * publishes one batch and yields rather than draining the folder. */
+        t += 10 * TIKU_TRK_LOAD_CHUNK_US;
+        (void)tiku_trk_poseview_load_step(v, t);
+        rows_second = tiku_trk_poseview_count(v);
+        check(rows_first == 1 && rows_second == 2, "PVN-047",
+              "a step that is already past its deadline publishes one batch "
+              "and yields, instead of draining the folder in one go");
+        while (tiku_trk_poseview_load_step(v, t)) {
+            t += 10 * TIKU_TRK_LOAD_CHUNK_US;
+        }
+        check(tiku_trk_poseview_count(v) == 6, "PVN-047",
+              "and the folder still finishes complete");
+    }
+    (void)tiku_trk_poseview_reload(v);
+    (void)tiku_trk_poseview_restore_state(v);
+
     /* --- PVK-005: shift+arrow shrinks REPEATEDLY, not once -------------- */
     tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     tiku_trk_poseview_select_none(v);

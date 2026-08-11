@@ -137,6 +137,62 @@ void tiku_trk_poseview_free(tiku_trk_poseview_t *v);
 /** @brief Re-read the directory into poses (the AddPoses pass). */
 int tiku_trk_poseview_reload(tiku_trk_poseview_t *v);
 
+/*---------------------------------------------------------------------------*/
+/* Loading a folder in batches (PVL-088, PVN-047, PVL-089, PVL-090)          */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Rows published per batch (kMaxAddPosesChunk). */
+#define TIKU_TRK_LOAD_CHUNK 50
+
+/** @brief A batch is also flushed once this long has passed. */
+#define TIKU_TRK_LOAD_CHUNK_US 300000
+
+/** @brief The pole appears only if the load outlasts this (TS-038). */
+#define TIKU_TRK_POLE_AFTER_US 500000
+
+/**
+ * @brief Begin loading the current folder.
+ *
+ * The entries are read now -- enumerating a namespace is fast -- and
+ * PUBLISHED in batches, which is the contract the row is about: the window
+ * never sits blank, rows appear as they arrive, and a load long enough to
+ * notice shows a barber pole.
+ *
+ * @return Entries staged, or -1.
+ */
+int tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now);
+
+/**
+ * @brief Publish the next batch.
+ *
+ * The first row is published on its own, immediately, as Tracker's zero
+ * initial deadline makes it do -- a folder shows something at once and
+ * settles into batches afterwards.
+ *
+ * @return 1 while more remain, 0 when the load is complete.
+ */
+int tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now);
+
+/** @brief Whether a load is in flight. */
+int tiku_trk_poseview_loading(const tiku_trk_poseview_t *v);
+
+/**
+ * @brief Whether the barber pole should be drawn (TS-038).
+ *
+ * Armed rather than shown: a load that finishes inside half a second never
+ * flashes a pole at all.
+ */
+int tiku_trk_poseview_pole(const tiku_trk_poseview_t *v, int64_t now);
+
+/**
+ * @brief The load's generation.
+ *
+ * A batch, or a change notice, carrying an older one belongs to a folder
+ * this window has left, and applying it puts the previous directory's rows
+ * into this one (PVL-089).
+ */
+int tiku_trk_poseview_generation(const tiku_trk_poseview_t *v);
+
 /**
  * @brief Fill the view from a result set instead of a directory.
  *

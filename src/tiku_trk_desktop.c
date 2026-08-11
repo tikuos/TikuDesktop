@@ -2344,6 +2344,16 @@ sel_done:
 
         /* One pump serves every window and the tray, so a device is read
          * once per cycle however many windows are showing it. */
+        for (i = 0; i < app.folder_count; i++) {
+            /* One batch per window per turn: a folder still arriving keeps
+             * the desktop drawing rather than holding the loop. */
+            if (app.folders[i].win != NULL && app.folders[i].win->open &&
+                tiku_trk_poseview_loading(app.folders[i].view)) {
+                (void)tiku_trk_poseview_load_step(app.folders[i].view,
+                                                  tiku_trk_now());
+                app.dirty = 1;
+            }
+        }
         if (tiku_trk_now() - last_pump > 400000) {
             int changed = 0;
             /*

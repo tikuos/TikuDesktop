@@ -1052,6 +1052,65 @@ main(void)
         rm_tree(dir);
     }
 
+    printf("\nan ancestor moving takes the window with it (PVN-057)\n");
+    {
+        tiku_trk_backend_t *b;
+        tiku_trk_poseview_t *v;
+        tiku_trk_event_t e;
+        char sub[512];
+        unsigned f;
+
+        rm_tree(dir);
+        (void)mkdir(dir, 0755);
+        snprintf(sub, sizeof sub, "%s/inner", dir);
+        (void)mkdir(sub, 0755);
+        touch(sub, "one.txt");
+        b = tiku_trk_backend_posix_open();
+        v = tiku_trk_poseview_new(b, sub);
+
+        /* The PARENT is renamed.  Nothing in this folder moved. */
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_MOVED;
+        e.model = node("/tmp/trk_notify_moved", "trk_notify_moved", 991u, 0);
+        snprintf(e.path, sizeof e.path, "/tmp/trk_notify_moved");
+        snprintf(e.from, sizeof e.from, "%s", dir);
+        snprintf(e.dir, sizeof e.dir, "/tmp");
+        f = tiku_trk_poseview_notify(v, &e);
+        check((f & TIKU_TRK_NOTIFY_RETITLE) != 0u, "PVN-057",
+              "renaming an ancestor retitles the window");
+        check(strcmp(tiku_trk_poseview_path(v),
+                     "/tmp/trk_notify_moved/inner") == 0, "PVN-057",
+              "and the window's own path is rebuilt under the new name");
+
+        /* A sibling whose name merely STARTS with ours is not an ancestor. */
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_MOVED;
+        e.model = node("/tmp/elsewhere", "elsewhere", 992u, 0);
+        snprintf(e.path, sizeof e.path, "/tmp/elsewhere");
+        snprintf(e.from, sizeof e.from, "/tmp/trk_notify_moved/inn");
+        snprintf(e.dir, sizeof e.dir, "/tmp");
+        f = tiku_trk_poseview_notify(v, &e);
+        check((f & TIKU_TRK_NOTIFY_RETITLE) == 0u &&
+              strcmp(tiku_trk_poseview_path(v),
+                     "/tmp/trk_notify_moved/inner") == 0, "PVN-057",
+              "but a path that is only a text prefix is not an ancestor, "
+              "so \"inn\" moving leaves \"inner\" alone");
+
+        tiku_trk_poseview_free(v);
+        tiku_trk_backend_close(b);
+        /* Nothing was renamed on DISK -- the notice was synthetic -- so the
+         * cleanup is of the paths that really exist.  Left behind, the
+         * extra entry breaks this suite's earlier cases on the next run. */
+        {
+            char f[600];
+
+            snprintf(f, sizeof f, "%s/one.txt", sub);
+            (void)unlink(f);
+        }
+        (void)rmdir(sub);
+        rm_tree(dir);
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every notification rule holds");
     return fails ? 1 : 0;
 }

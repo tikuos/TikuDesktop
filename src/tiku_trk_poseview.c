@@ -91,6 +91,25 @@ struct tiku_trk_poseview {
     int                 column_count;
     int                 hscroll;        /* titles and rows share it        */
     int                 font_px;        /* what widths are scaled against  */
+
+    /* The batched load.  The read is synchronous; what is staged here is
+     * PUBLISHED a batch at a time, so the window is never blank and never
+     * blocked (PVL-088, PVN-047). */
+    tiku_trk_model_t   *stage;
+    int                 stage_count;
+    int                 stage_at;
+    int                 loading;
+    int64_t             next_chunk;
+    int64_t             pole_at;        /* when the pole becomes visible   */
+    /* Bumped whenever the listing this view shows changes identity.  A
+     * batch or a notice carrying an older one belongs to a folder the
+     * window has left (PVL-089). */
+    int                 load_gen;
+    /* Node ids published this load.  The loader and the change notices are
+     * two mouths feeding one listing, and without this a node reported by
+     * both arrives twice (PVL-090). */
+    uint64_t           *inserted;
+    int                 inserted_count;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -319,6 +338,8 @@ natural_cmp(const char *a, const char *b)
 }
 
 static void rebuild_filter(tiku_trk_poseview_t *v);
+static void note_inserted(tiku_trk_poseview_t *v, uint64_t id);
+static int pose_index(const tiku_trk_poseview_t *v, const char *path);
 static int pose_is_hidden(tiku_trk_poseview_t *v, const char *path);
 static int poses_sorted(tiku_trk_poseview_t *v);
 
@@ -401,6 +422,164 @@ resort(tiku_trk_poseview_t *v)
     g_sorting = NULL;
 }
 
+
+/*---------------------------------------------------------------------------*/
+/* loading in batches (PVL-088, PVN-047, PVL-089, PVL-090, TS-038)           */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief Stage one entry from the enumeration.
+ *
+ * Zero CONTINUES the walk and non-zero stops it, which is the backend's
+ * contract and the opposite of what a "did it work" return would read as.
+ */
+static int
+stage_one(const tiku_trk_model_t *m, void *ctx)
+{
+    tiku_trk_poseview_t *v = ctx;
+
+    if (v->stage_count >= POSES_MAX) {
+        return 1;                       /* full: stop the walk            */
+    }
+    v->stage[v->stage_count++] = *m;
+    return 0;
+}
+
+/** @brief Whether this node has already been published in this load. */
+static int
+already_inserted(const tiku_trk_poseview_t *v, uint64_t id)
+{
+    int i;
+
+    if (id == 0) {
+        return 0;                       /* no identity, no claim           */
+    }
+    for (i = 0; i < v->inserted_count; i++) {
+        if (v->inserted[i] == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+note_inserted(tiku_trk_poseview_t *v, uint64_t id)
+{
+    if (id != 0 && v->inserted_count < POSES_MAX &&
+        !already_inserted(v, id)) {
+        v->inserted[v->inserted_count++] = id;
+    }
+}
+
+int
+tiku_trk_poseview_generation(const tiku_trk_poseview_t *v)
+{
+    return (v != NULL) ? v->load_gen : 0;
+}
+
+int
+tiku_trk_poseview_loading(const tiku_trk_poseview_t *v)
+{
+    return (v != NULL) ? v->loading : 0;
+}
+
+int
+tiku_trk_poseview_pole(const tiku_trk_poseview_t *v, int64_t now)
+{
+    if (v == NULL || !v->loading) {
+        return 0;
+    }
+    /* Armed, not shown: a folder that loads in a blink must not flash a
+     * pole at the user, so the arming time has to pass first. */
+    return (now >= v->pole_at) ? 1 : 0;
+}
+
+int
+tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
+{
+    if (v == NULL || v->backend == NULL) {
+        return -1;
+    }
+    /* The generation moves FIRST.  Anything still in flight from the last
+     * load is stamped with the old one from here on and will be refused. */
+    v->load_gen++;
+    v->count = 0;
+    v->pivot = -1;
+    v->active = -1;
+    v->last_added = -1;
+    v->inserted_count = 0;
+    v->stage_count = 0;
+    v->stage_at = 0;
+    if (v->is_query) {
+        v->loading = 0;
+        return v->count;
+    }
+    if (v->backend->ops->list(v->backend, v->path, stage_one, v) < 0) {
+        v->loading = 0;
+        return -1;
+    }
+    v->loading = 1;
+    v->pole_at = now + TIKU_TRK_POLE_AFTER_US;
+    /* Zero, so the first row is published on its own and the window shows
+     * something at once; the batching starts from the second. */
+    v->next_chunk = 0;
+    return v->stage_count;
+}
+
+int
+tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
+{
+    int published = 0;
+
+    if (v == NULL || !v->loading) {
+        return 0;
+    }
+    while (v->stage_at < v->stage_count) {
+        tiku_trk_model_t *m = &v->stage[v->stage_at];
+
+        /* By identity where the store has one, and by path where it does
+         * not: a backend without node ids still must not list a row twice. */
+        if (already_inserted(v, m->node_id) || pose_index(v, m->path) >= 0 ||
+            pose_is_hidden(v, m->path)) {
+            /* A node the change notices already brought in, or one marked
+             * not to be shown: consumed, not published. */
+            v->stage_at++;
+            continue;
+        }
+        {   /* collect() answers the WALK, not the caller: whether a row
+             * appeared is the count moving, not its return value. */
+            int before = v->count;
+
+            (void)collect(m, v);
+            v->stage_at++;
+            if (v->count == before) {
+                continue;               /* held as a zombie, or no room   */
+            }
+        }
+        note_inserted(v, m->node_id);
+        published++;
+        if (published >= TIKU_TRK_LOAD_CHUNK ||
+            (v->next_chunk != 0 && now > v->next_chunk)) {
+            break;
+        }
+        if (v->next_chunk == 0) {
+            break;                      /* the first row goes alone        */
+        }
+    }
+    v->next_chunk = now + TIKU_TRK_LOAD_CHUNK_US;
+    resort(v);
+    if (v->filtering) {
+        rebuild_filter(v);
+    }
+    if (v->stage_at >= v->stage_count) {
+        v->loading = 0;                 /* AddPosesCompleted               */
+        v->stage_count = 0;
+        v->stage_at = 0;
+        return 0;
+    }
+    return 1;
+}
+
 int
 tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
 {
@@ -410,12 +589,12 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
     if (v->is_query) {
         return v->count;      /* results do not come from a directory    */
     }
-    v->count = 0;
-    v->pivot = -1;
-    v->active = -1;
-    v->last_added = -1;
-    if (v->backend->ops->list(v->backend, v->path, collect, v) < 0) {
+    /* The same path the batched loader takes, drained in one go: two ways
+     * of building a listing is two places for it to differ. */
+    if (tiku_trk_poseview_load_begin(v, 0) < 0) {
         return -1;
+    }
+    while (tiku_trk_poseview_load_step(v, TIKU_TRK_LOAD_CHUNK_US * 2)) {
     }
     resort(v);
     {
@@ -496,10 +675,15 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     v->poses = calloc(POSES_MAX, sizeof *v->poses);
     v->filtered = calloc(POSES_MAX, sizeof *v->filtered);
     v->band_was = calloc(POSES_MAX, 1u);
-    if (v->poses == NULL || v->filtered == NULL || v->band_was == NULL) {
+    v->stage = calloc(POSES_MAX, sizeof *v->stage);
+    v->inserted = calloc(POSES_MAX, sizeof *v->inserted);
+    if (v->poses == NULL || v->filtered == NULL || v->band_was == NULL ||
+        v->stage == NULL || v->inserted == NULL) {
         free(v->poses);
         free(v->filtered);
         free(v->band_was);
+        free(v->stage);
+        free(v->inserted);
         free(v);
         return NULL;
     }
@@ -541,6 +725,8 @@ tiku_trk_poseview_free(tiku_trk_poseview_t *v)
         free(v->poses);
         free(v->filtered);
         free(v->band_was);
+        free(v->stage);
+        free(v->inserted);
         free(v);
     }
 }
@@ -2573,6 +2759,29 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         return TIKU_TRK_NOTIFY_NOTHING;
     }
 
+    /* PVN-057: an ANCESTOR moving takes this folder with it.  Nothing about
+     * the contents changed and no row moved -- but the window is showing a
+     * path that no longer exists, so the title has to follow. */
+    if (e->op == TIKU_TRK_EV_MOVED && e->from[0] != '\0') {
+        size_t n = strlen(e->from);
+
+        /* At a component boundary, or "/a/b" would claim "/a/bc" as its
+         * own child and rewrite an unrelated window's path. */
+        if (n > 0u && strncmp(e->from, v->path, n) == 0 &&
+            v->path[n] == '/') {
+            char rebuilt[TIKU_TRK_PATH_MAX];
+
+            /* Built into a scratch buffer and only then adopted: a path
+             * that would not fit leaves the window pointing at the old one
+             * rather than at a truncated name that resolves to nothing. */
+            if ((int)snprintf(rebuilt, sizeof rebuilt, "%s%s", e->path,
+                              v->path + n) < (int)sizeof rebuilt) {
+                snprintf(v->path, sizeof v->path, "%s", rebuilt);
+            }
+            return TIKU_TRK_NOTIFY_RETITLE;
+        }
+    }
+
     switch (e->op) {
     case TIKU_TRK_EV_CREATED:
         /* A file made in some other folder is not this folder's business,
@@ -2635,6 +2844,10 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
             if (insert_sorted(v, &p) < 0) {
                 return TIKU_TRK_NOTIFY_NOTHING;
             }
+            /* PVL-090: the insertion set is shared with the loader.  A node
+             * this notice brought in early must be recorded here, or the
+             * loader reaching the same entry adds it a second time. */
+            note_inserted(v, e->model.node_id);
             flags |= TIKU_TRK_NOTIFY_REDRAW;
             /* Anything that arrived for this node before it existed is
              * replayed now, in the order it came. */

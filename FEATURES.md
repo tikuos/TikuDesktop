@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 210   partial 155   differs 63   open 461
+    done 216   partial 155   differs 66   open 452
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -86,6 +86,24 @@ All four are fixed, each with a check first shown to fail without it.  The
 lesson is the one this file keeps teaching: the dangerous part of finishing a
 half-built rule is not the rule, it is the code around it that was relying on
 the half.
+
+### Cluster 1: the loader and liveness
+
+The folder loader is a staged read published in batches -- fifty rows or
+300 ms, the first row alone so a window is never blank -- with a generation
+counter that refuses a batch belonging to a folder the window has left, and
+one insertion set shared by the loader and the change notices so a node
+reported by both appears once.  The barber pole is armed at half a second
+rather than shown, so a fast folder never flashes one.
+
+The watch-slot question the rows raise turned out not to apply.  AW-003's
+note describes `tiku_vfs_watch`, the in-kernel subscription with eight fixed
+slots; this Tracker never calls it.  Its liveness comes from the global
+change ring, drained once per cycle for every window at once, whose limit is
+DEPTH rather than slots -- and whose exhaustion is already explicit: the
+board counts drops, the drain reports them, and a set that moved the counter
+is answered with a full re-read.  Three eviction policies were designed for a
+resource nothing allocates before anyone checked which path the code takes.
 
 ### The differs re-audit
 
@@ -676,23 +694,26 @@ fSelectionChangedHook gates calls to ContainerWindow()->SelectionChanged() from 
 **MISSING:** Menu enablement does track the selection, but it is pulled — menu_ctx re-reads the live selection count each time a menu is built — rather than pushed by a selection-changed hook, and the count view always shows the folder's total item count, never "N items selected".  
 *src/tiku_trk_desktop.c:menu_ctx (161-196) and folder_draw count block (343); src/tiku_trk_shortcuts.c:tiku_trk_sc_enabled (199)*
 
-#### PVL-088 · core · open ⟨found by verification⟩
+#### PVL-088 · core · differs ⟨found by verification⟩
 **Folder contents load on a background thread and appear in batches, with a barber pole shown until the load completes.**  
 AddPoses spawns AddPosesTask after ShowBarberPole(); the task accumulates up to kMaxAddPosesChunk (50) models, or flushes early once 300000 µs have passed since the last flush, sending each batch as kAddNewPoses (handled by CreatePoses) and finally kAddPosesCompleted; it snoozes 500 µs between batches and unlocks the window while reading each dirent. HideBarberPole runs in AddPosesCompleted or on any early failure.  
 `PoseView.cpp` → `BPoseView::AddPoses / BPoseView::AddPosesTask / BPoseView::MessageReceived (case kAddNewPoses, kAddPosesCompleted) / ShowBarberPole`  
 **TIKU:** Enumerating a device namespace is fast enough to be synchronous, but the batching contract (view never blocks, rows appear incrementally, a progress indicator covers the gap) is what makes a slow/remote mount tolerable — decide now whether listing is allowed to block the shell process.  
+**PORT:** Rows appear in batches behind an armed barber pole, but from a staged synchronous read rather than a background thread: this shell has one event loop, and the device side is cooperative protothreads where a thread's locals do not survive a yield.  The chunk cursor lives in the view.
 
-#### PVL-089 · important · open ⟨found by verification⟩
+#### PVL-089 · important · done ⟨found by verification⟩
 **Switching folders or refreshing invalidates the in-flight loading thread so a stale load cannot inject rows into the new listing.**  
 fAddPosesThreads is a set of blessed thread ids; SwitchDir and DetachedFromWindow clear it, and AddPosesTask checks IsValidAddPosesThread(threadID) after every re-lock, hiding the barber pole and unwinding via failToLock when it is no longer blessed. AddPosesThreadValid additionally rejects a kAddNewPoses batch whose "ref" no longer matches the target model.  
 `PoseView.cpp` → `BPoseView::IsValidAddPosesThread / BPoseView::AddPosesThreadValid / BPoseView::SwitchDir`  
 **TIKU:** Any asynchronous listing needs a generation token; a watch notification arriving for the previous directory must be discarded the same way.  
+**PORT:** A generation counter rather than a set of blessed thread ids: the view has one loader, so a number that moves on every switch says the same thing a set of ids does, and a batch or a notice carrying an older one is refused.
 
-#### PVL-090 · important · open ⟨found by verification⟩
+#### PVL-090 · important · done ⟨found by verification⟩
 **A node that the loader and the change notification both report is only ever added once.**  
 CreatePoses keeps fInsertedNodes (a node_ref set): a model whose node_ref is already present (or is in the zombie list) is stopped-watching, deleted and skipped; DeletePose removes the node from the set, and SwitchDir/Refresh clear it. This is a second guard beyond EntryCreated's FindPose/FindZombie check, and it is what closes the load-thread vs. B_ENTRY_CREATED race.  
 `PoseView.cpp` → `BPoseView::CreatePoses (fInsertedNodes) / BPoseView::DeletePose`  
 **TIKU:** With a re-listing-on-notify design this dedup becomes mandatory, not optional.  
+**PORT:** Guarded by node identity AND by path, so a store with no node ids still cannot list a row twice.  The notice path records into the same set the loader checks.
 
 #### PVL-091 · polish · open ⟨found by verification⟩
 **An attribute/stat notification for a node that is momentarily busy is retried rather than dropped, so a change landing during mimeset is still picked up.**  
@@ -1534,11 +1555,12 @@ Mask is B_WATCH_DIRECTORY | B_WATCH_CHILDREN | B_WATCH_NAME | B_WATCH_STAT | B_W
 **PORT:** Whole-folder liveness with no per-file subscriptions is achieved by the route the row's own TIKU note names: poll asks the device's change ring once per tick for the whole desktop, then re-lists the directory and diffs it, and the diff reports creation, removal, rename (paired by node_id) and fact/attribute changes.  
 *src/tiku_trk_poseview.c:2804 tiku_trk_poseview_poll (ring first, then re-list); src/tiku_trk_notify.c:106-161 tiku_trk_notify_diff (CREATED/REMOVED/MOVED/CHANGED, facts_differ :78-90); wired at src/tiku_trk_desktop.c:2261-2291*
 
-#### PVN-006 · important · open
+#### PVN-006 · important · differs
 **Per-entry watches are only established where the container watch cannot reach: symlink targets outside the folder, volume poses on the Desktop, the Trash icon, and the Open-With list.**  
 BPoseView::WatchNewNodeMask() returns 0 ('B_WATCH_CHILDREN suffices'); BQueryPoseView::WatchNewNodeMask() returns 0 ('B_QUERY_WATCH_ALL suffices'); OpenWithPoseView::WatchNewNodeMask() returns B_WATCH_STAT|B_WATCH_INTERIM_STAT|B_WATCH_ATTR.  
 `PoseView.cpp` → `BPoseView::WatchNewNodeMask / BQueryPoseView::WatchNewNodeMask / OpenWithPoseView::WatchNewNodeMask`  
 **TIKU:** With only 8 watch slots the per-entry escape hatch is unavailable; symlink-target and volume-pose freshness needs a different mechanism.  
+**PORT:** Per-entry watches are unnecessary rather than unavailable: every change on the board reaches the ring whatever entry it touched, so a symlink target or a value outside the folder is reported without a watch of its own.
 
 #### PVN-007 · core · differs
 **A node is watched BEFORE its model is read, so a change that lands while the entry is being read still produces a notification and the row is never stale.**  
@@ -1778,11 +1800,12 @@ case B_ENTRY_CREATED, when fBrokenLinks is non-empty and the created node is a d
 TryUpdatingBrokenLinks() is called at the end of the CREATED, REMOVED and MOVED paths; it runs UpdateWasBrokenSymlinkBinder over fPoseList (which calls BPose::UpdateWasBrokenSymlink -> CreateSymlinkPoseTarget or stop-watching the vanished target) and then StopWatchingParentsOf every link that left fBrokenLinks.  
 `PoseView.cpp` → `BPoseView::TryUpdatingBrokenLinks / UpdateWasBrokenSymlinkBinder`  
 
-#### PVN-047 · core · open
+#### PVN-047 · core · done
 **A folder's contents stream in progressively -- rows appear in batches while a barber pole spins, rather than the window staying blank until the whole directory is read.**  
 AddPosesTask ships a chunk when it has kMaxAddPosesChunk (50) models or 300000 us have passed since the last chunk, whichever first, as a kAddNewPoses message; snooze(500) between chunks 'be nice'. ShowBarberPole on AddPoses, HideBarberPole in AddPosesCompleted (kAddPosesCompleted).  
 `PoseView.cpp` → `BPoseView::AddPosesTask / kMaxAddPosesChunk / BPoseView::AddPoses / BPoseView::AddPosesCompleted`  
 **TIKU:** TikuOS is cooperative protothreads: the loader must be a yielding protothread, not a spawned thread with a per-chunk window lock. Watch the known trap -- protothread locals do not survive a yield, so the chunk cursor must live in the process struct.  
+**PORT:** The read is synchronous -- enumerating a namespace is fast -- and the PUBLICATION is batched: fifty rows or 300 ms, the first row alone so the window shows something at once.
 
 #### PVN-048 · core · partial
 **Switching a window to a different folder makes the in-flight loader abandon its work at the next chunk, and any chunk that still arrives for the old folder is discarded rather than mixed into the new listing.**  
@@ -1837,10 +1860,11 @@ BTrashWatcher watches every volume's trash with B_WATCH_DIRECTORY plus B_WATCH_M
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon`  
 **TIKU:** Note the indirection: state change is published by writing an attribute, and the views learn about it through ordinary attribute watching. TikuOS's tiku_vfs_notify() on a driver-updated node is the direct analogue and is cleaner.  
 
-#### PVN-057 · polish · open
+#### PVN-057 · polish · done
 **Renaming any ancestor folder updates an open window's title, when path watching is on.**  
 BContainerWindow::SetPathWatchingEnabled walks GetParent() up to '/' installing watch_node(&ref, B_WATCH_NAME, this) on each ancestor; BContainerWindow::MessageReceived's case B_NODE_MONITOR simply calls UpdateTitle().  
 `ContainerWindow.cpp` → `BContainerWindow::SetPathWatchingEnabled / BContainerWindow::MessageReceived (case B_NODE_MONITOR)`  
+**PORT:** An ancestor's move is recognised by prefix at a component boundary -- "/a/b" moving does not claim "/a/bc" -- and the window's own path is rebuilt under the new name.
 
 #### PVN-058 · important · open
 **Toggling the Disks-icon or volumes-on-Desktop setting adds or removes the / icon immediately, and closes the Disks window if it was open.**  
@@ -4386,16 +4410,18 @@ Plural forms and number grouping are locale-formatted (BStringFormat + BNumberFo
 `CountView.cpp` → `BCountView::Draw`  
 **MISSING:** An empty folder says so rather than counting to zero; the source's other count-view states are not all there.
 
-#### TS-038 · important · open
+#### TS-038 · important · done
 **During a long directory read a barber pole spins in the status area, but only if the read takes more than half a second.**  
 StartBarberPole only arms it (fStartSpinningAfter = now + 500000us); the first paint of the pole invalidates the whole text+pole rect, later frames only the pole. Animation is driven by Pulse(); the stripe bitmap offset decrements 5..0 and wraps each frame. Ended by AddPosesCompleted and by every early-out in the add-poses path (bad directory, rewind failure, superseded thread).  
 `CountView.cpp` → `BCountView::TrySpinningBarberPole`  
 **TIKU:** The add-poses worker runs on its own thread and locks the window to touch the count view; a Tiku port must keep an equivalent boundary (or post an event) since VFS enumeration and watch callbacks may arrive off the UI context.  
+**PORT:** Armed at half a second and drawn from the clock, so a load that finishes inside it never flashes a pole.
 
-#### TS-039 · polish · open
+#### TS-039 · polish · done
 **While the barber pole is visible the count text gets 10px less room, so text and pole never overlap.**  
 TextInvalRect subtracts 10 from the right when fShowingBarberPole; the pole itself is a 7x7 inner rect inset 3,4 from the right end of the view with a 1px bevel frame drawn light/shadow.  
 `CountView.cpp` → `BCountView::TextInvalRect`  
+**PORT:** The count text is clipped short of the pole's strip while it shows.
 
 #### TS-040 · polish · open
 **The status area only repaints when the item count or the selection count actually changes.**  
@@ -4573,11 +4599,12 @@ chdir(find_directory(B_USER_DIRECTORY)); setrlimit(RLIMIT_NOFILE, 512).
 `Tracker.cpp` → `TTracker::TTracker`  
 **TIKU:** cwd inheritance is a POSIX-process notion; in TikuOS the equivalent is the default namespace root handed to a launched task.  
 
-#### AW-003 · important · open
+#### AW-003 · important · differs
 **When the node-monitor allocation is exhausted, watching retries once after raising the per-team node-monitor limit by 512, instead of silently failing to track a folder.**  
 watch_node returning B_NO_MEMORY -> NeedMoreNodeMonitors() bumps RLIMIT_NOVMON by kNodeMonitorBumpValue (512) from DEFAULT_MON_NUM (4096), then retries. In a file panel (no TTracker) it just fails.  
 `Tracker.cpp` → `TTracker::WatchNode / TTracker::NeedMoreNodeMonitors`  
 **TIKU:** VFS watch slots are a fixed table (TIKU_VFS_WATCH_MAX, 8 by default) with no growth path; the rewrite must either grow it or define an explicit eviction/refusal rule, and the 'silently stops updating' failure mode must not be inherited.  
+**PORT:** This Tracker never allocates a per-folder watch: the device's liveness comes from the global change ring, one drain per cycle for every window.  The limit is the ring's DEPTH, not a slot count, and exhaustion is explicit -- the board counts drops, the drain reports them, and a set that moved the counter is treated as incomplete and answered with a full re-read rather than a quietly partial picture.
 
 #### AW-004 · core · open
 **On quit, the set of open folder windows is written to an attribute on the Desktop directory so the same windows reopen next boot; if no windows were open the attribute is deleted.**  

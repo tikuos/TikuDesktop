@@ -205,6 +205,42 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
     }
 }
 
+/** @brief The strip the barber pole occupies at the right of the count. */
+#define POLE_W 10
+
+/**
+ * @brief The barber pole: a bevelled well with a moving stripe (TS-038).
+ *
+ * The phase comes from the clock rather than from a frame counter, so it
+ * advances at the same rate whatever the draw rate happens to be.
+ */
+static void
+draw_pole(app_t *a, tiku_desk_rect_t count)
+{
+    tiku_desk_surface_t *s = a->surf;
+    tiku_desk_rect_t r;
+    int phase = (int)((tiku_trk_now() / 60000) % 6);
+    int i;
+
+    r.w = 7;
+    r.h = 7;
+    r.x = count.x + count.w - r.w - 3;
+    r.y = count.y + (COUNT_H - r.h) / 2;
+    tiku_desk_fill(s, r, TIKU_DESK_C_DOC);
+    tiku_desk_frame(s, r, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.30f));
+    for (i = -6; i < r.h + 6; i += 3) {
+        int y = r.y + i + phase;
+        int k;
+
+        for (k = 0; k < 2; k++) {
+            if (y + k >= r.y + 1 && y + k < r.y + r.h - 1) {
+                tiku_desk_hline(s, r.x + 1, y + k, r.w - 2,
+                                tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+            }
+        }
+    }
+}
+
 /** @brief The count view, shared by both modes. */
 static void
 draw_count(app_t *a, tiku_desk_rect_t list)
@@ -226,6 +262,12 @@ draw_count(app_t *a, tiku_desk_rect_t list)
     } else if (typed[0] != '\0') {
         tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
         snprintf(label, sizeof label, "%s", typed);
+    } else if (tiku_trk_poseview_pole(a->view, tiku_trk_now())) {
+        /* TS-038: a load long enough to notice says so.  The count is not
+         * final yet, so it is not shown as though it were. */
+        tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
+        snprintf(label, sizeof label, "%d item%s so far", total,
+                 (total == 1) ? "" : "s");
     } else {
         tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
         /* TS-037: an empty folder says so in words.  "0 items" reads like
@@ -241,9 +283,23 @@ draw_count(app_t *a, tiku_desk_rect_t list)
                          ? " (filtered)" : "");
         }
     }
-    tiku_desk_text(s, f, count.x + 5,
-                   count.y + (COUNT_H - f->height) / 2 + f->ascent, label,
-                   TIKU_DESK_C_TEXT);
+    {   /* TS-039: while the pole is up the text gives up the strip it
+         * occupies, so the two never overlap. */
+        int pole = tiku_trk_poseview_pole(a->view, tiku_trk_now());
+        tiku_desk_rect_t clip = count;
+
+        if (pole) {
+            clip.w -= POLE_W;
+        }
+        tiku_desk_clip_set(s, clip);
+        tiku_desk_text(s, f, count.x + 5,
+                       count.y + (COUNT_H - f->height) / 2 + f->ascent,
+                       label, TIKU_DESK_C_TEXT);
+        tiku_desk_clip_reset(s);
+        if (pole) {
+            draw_pole(a, count);
+        }
+    }
 }
 
 /** @brief One icon: the node's own art, plus a centred label. */
@@ -790,6 +846,11 @@ open_selection(app_t *a)
     if (tiku_trk_model_is_container(&p->model)) {
         (void)tiku_trk_poseview_save_state(a->view);
         (void)tiku_trk_poseview_switch_dir(a->view, p->model.path);
+        /* Opened as a BATCHED load: a folder with thousands of entries
+         * shows its first rows at once instead of freezing the window
+         * until the last one is read. */
+        (void)tiku_trk_poseview_load_begin(a->view, tiku_trk_now());
+        (void)tiku_trk_poseview_load_step(a->view, tiku_trk_now());
         (void)tiku_trk_poseview_restore_state(a->view);
         settle_layout(a);
         settle_writability(a);
@@ -1613,6 +1674,12 @@ main(int argc, char **argv)
             if (due >= 0 && !a.editing) {
                 begin_rename_row(&a, due);
             }
+        }
+        if (tiku_trk_poseview_loading(a.view)) {
+            /* One batch per turn round the loop, so the window keeps
+             * drawing and answering the mouse while a folder arrives. */
+            (void)tiku_trk_poseview_load_step(a.view, tiku_trk_now());
+            a.dirty = 1;
         }
         tiku_trk_poseview_type_tick(a.view);
         if (tiku_trk_poseview_pump(a.view, 40) > 0) {
