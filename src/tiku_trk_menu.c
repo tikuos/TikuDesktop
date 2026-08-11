@@ -1,0 +1,607 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_menu.c - menu layout, drawing and hit-testing.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "tiku_trk_menu.h"
+
+#include <stdio.h>
+#include <string.h>
+
+/* Every measurement below descends from one number: half the plain font's
+ * size, which the control look calls the default label spacing.  At the 12 px
+ * face that is 6, and the paddings are 14 / 2 / 20 / 0. */
+#define LABEL_SPACING  6
+#define PAD_LEFT      14      /* the mark gutter, reserved whether or not   */
+#define PAD_TOP        2      /* anything is actually marked                */
+#define PAD_RIGHT     20
+#define PAD_BOTTOM     0
+#define SEAM           1      /* items do not tile: one unpainted row       */
+#define FONT_SIZE     12
+#define SEP_H          8      /* max(4, floor((size * 0.8) / 2) * 2)        */
+#define MARK_TINT   0.75f     /* the check and the arrow are LIGHTER than   */
+                              /* the label, not darker                      */
+
+/** @brief A stroked line with a square pen, for the check and the arrow. */
+static void
+pen_line(tiku_desk_surface_t *s, int x0, int y0, int x1, int y1, int pen,
+         tiku_desk_rgb_t c)
+{
+    int dx = (x1 > x0) ? x1 - x0 : x0 - x1;
+    int dy = (y1 > y0) ? y1 - y0 : y0 - y1;
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+
+    for (;;) {
+        int a, b;
+
+        for (a = 0; a < pen; a++) {
+            for (b = 0; b < pen; b++) {
+                tiku_desk_pixel(s, x0 + a, y0 + b, c);
+            }
+        }
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        {
+            int e2 = 2 * err;
+
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 <  dx) { err += dx; y0 += sy; }
+        }
+    }
+}
+
+void
+tiku_trk_menu_clear(tiku_trk_menu_t *m)
+{
+    if (m != NULL) {
+        m->count = 0;
+        m->open_index = -1;
+        m->hot = -1;
+    }
+}
+
+int
+tiku_trk_menu_add(tiku_trk_menu_t *m, const char *label, int command, char sc,
+                  unsigned mods, int enabled)
+{
+    tiku_trk_mitem_t *it;
+
+    if (m == NULL || m->count >= TIKU_TRK_MENU_ITEMS_MAX) {
+        return -1;
+    }
+    it = &m->item[m->count];
+    memset(it, 0, sizeof *it);
+    snprintf(it->label, sizeof it->label, "%s", label != NULL ? label : "");
+    it->command = command;
+    it->shortcut = sc;
+    it->mods = mods;
+    it->enabled = enabled;
+    return m->count++;
+}
+
+int
+tiku_trk_menu_add_separator(tiku_trk_menu_t *m)
+{
+    int i = tiku_trk_menu_add(m, "", 0, 0, 0u, 0);
+
+    if (i >= 0) {
+        /* Disabled, unhittable and skipped by traversal -- three separate
+         * mechanisms in the original, and all three matter: a separator that
+         * can take focus is immediately noticeable. */
+        m->item[i].separator = 1;
+        m->item[i].enabled = 0;
+    }
+    return i;
+}
+
+int
+tiku_trk_menu_add_submenu(tiku_trk_menu_t *m, const char *label,
+                          tiku_trk_menu_t *sub, int enabled)
+{
+    int i = tiku_trk_menu_add(m, label, 0, 0, 0u, enabled);
+
+    if (i >= 0) {
+        m->item[i].submenu = sub;
+    }
+    return i;
+}
+
+int
+tiku_trk_menu_insert(tiku_trk_menu_t *m, int at, const char *label,
+                     int command, char sc, unsigned mods, int enabled)
+{
+    int i;
+
+    if (m == NULL || m->count >= TIKU_TRK_MENU_ITEMS_MAX || at < 0 ||
+        at > m->count) {
+        return -1;
+    }
+    for (i = m->count; i > at; i--) {
+        m->item[i] = m->item[i - 1];
+    }
+    m->count++;
+    memset(&m->item[at], 0, sizeof m->item[at]);
+    snprintf(m->item[at].label, sizeof m->item[at].label, "%s",
+             label != NULL ? label : "");
+    m->item[at].command = command;
+    m->item[at].shortcut = sc;
+    m->item[at].mods = mods;
+    m->item[at].enabled = enabled;
+    return at;
+}
+
+void
+tiku_trk_menu_remove(tiku_trk_menu_t *m, int at)
+{
+    int i;
+
+    if (m == NULL || at < 0 || at >= m->count) {
+        return;
+    }
+    for (i = at; i < m->count - 1; i++) {
+        m->item[i] = m->item[i + 1];
+    }
+    m->count--;
+}
+
+int
+tiku_trk_menu_find(const tiku_trk_menu_t *m, int command)
+{
+    int i;
+
+    for (i = 0; m != NULL && i < m->count; i++) {
+        if (m->item[i].command == command && !m->item[i].separator) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void
+tiku_trk_menu_mark(tiku_trk_menu_t *m, int command, int marked)
+{
+    int i = tiku_trk_menu_find(m, command);
+
+    if (i >= 0) {
+        m->item[i].marked = marked ? 1 : 0;
+    }
+}
+
+void
+tiku_trk_menu_mark_radio(tiku_trk_menu_t *m, const int *commands, int n,
+                         int chosen)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        tiku_trk_menu_mark(m, commands[i], commands[i] == chosen);
+    }
+}
+
+void
+tiku_trk_menu_enable(tiku_trk_menu_t *m, int command, int enabled)
+{
+    int i = tiku_trk_menu_find(m, command);
+
+    if (i >= 0) {
+        m->item[i].enabled = enabled ? 1 : 0;
+    }
+}
+
+void
+tiku_trk_menu_relabel(tiku_trk_menu_t *m, int at, const char *label,
+                      int command, char sc, unsigned mods)
+{
+    if (m == NULL || at < 0 || at >= m->count) {
+        return;
+    }
+    /* Label, command and shortcut modifiers change TOGETHER: an item that
+     * says "Delete" while still carrying the trash command is the failure
+     * this single entry point exists to prevent. */
+    snprintf(m->item[at].label, sizeof m->item[at].label, "%s",
+             label != NULL ? label : "");
+    m->item[at].command = command;
+    m->item[at].shortcut = sc;
+    m->item[at].mods = mods;
+}
+
+int
+tiku_trk_menu_item_height(const tiku_trk_menu_t *m, int i)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+
+    if (m == NULL || i < 0 || i >= m->count) {
+        return 0;
+    }
+    if (m->item[i].separator) {
+        return SEP_H;
+    }
+    return tiku_desk_text_height(f) + PAD_TOP + PAD_BOTTOM;
+}
+
+int
+tiku_trk_menu_item_top(const tiku_trk_menu_t *m, int i)
+{
+    int k, y = 0;
+
+    for (k = 0; k < i && k < m->count; k++) {
+        y += tiku_trk_menu_item_height(m, k) + SEAM;
+    }
+    return y;
+}
+
+void
+tiku_trk_menu_measure(tiku_trk_menu_t *m)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    int i, w = 0, any_sub = 0, any_mod = 0, item_h;
+
+    if (m == NULL) {
+        return;
+    }
+    item_h = tiku_desk_text_height(f) + PAD_TOP + PAD_BOTTOM;
+    for (i = 0; i < m->count; i++) {
+        int iw;
+
+        if (m->item[i].separator) {
+            continue;
+        }
+        iw = tiku_desk_text_width(f, m->item[i].label) + PAD_LEFT + PAD_RIGHT;
+        /* A shortcut costs an em only when it is shown WITH modifiers; the
+         * modifier badges themselves are added once for the whole menu. */
+        if (m->item[i].shortcut != 0 && m->item[i].mods != 0u) {
+            iw += FONT_SIZE;
+        }
+        if (iw > w) {
+            w = iw;
+        }
+        if (m->item[i].submenu != NULL) {
+            any_sub = 1;
+        }
+        if (m->item[i].mods != 0u) {
+            any_mod = 1;
+        }
+    }
+    if (any_mod) {
+        w += FONT_SIZE + 1;
+    }
+    if (any_sub) {
+        /* Room for the arrow is reserved once for the menu, not per item, so
+         * a single submenu widens every row alike. */
+        w += item_h / 2;
+    }
+    m->width = w;
+    m->height = (m->count > 0)
+                ? tiku_trk_menu_item_top(m, m->count - 1) +
+                  tiku_trk_menu_item_height(m, m->count - 1)
+                : 0;
+}
+
+int
+tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
+                      int x, int y)
+{
+    int i;
+
+    if (m == NULL || x < frame.x || x >= frame.x + frame.w) {
+        return -1;
+    }
+    for (i = 0; i < m->count; i++) {
+        int top = frame.y + tiku_trk_menu_item_top(m, i);
+        int h = tiku_trk_menu_item_height(m, i);
+
+        if (y >= top && y < top + h) {
+            /* A separator is not an item you can be on, and the seam below
+             * each item belongs to nobody. */
+            return m->item[i].separator ? -1 : i;
+        }
+    }
+    return -1;
+}
+
+tiku_desk_rect_t
+tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y, tiku_desk_rect_t screen)
+{
+    tiku_desk_rect_t r;
+
+    tiku_trk_menu_measure(m);
+    r.x = x;
+    r.y = y;
+    r.w = m->width;
+    r.h = m->height + 2;
+    if (r.x + r.w > screen.x + screen.w) {
+        r.x = screen.x + screen.w - r.w;
+    }
+    if (r.y + r.h > screen.y + screen.h) {
+        r.y = screen.y + screen.h - r.h;
+    }
+    if (r.x < screen.x) { r.x = screen.x; }
+    if (r.y < screen.y) { r.y = screen.y; }
+    return r;
+}
+
+tiku_desk_rect_t
+tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i, tiku_desk_rect_t frame,
+                        tiku_desk_rect_t screen)
+{
+    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    tiku_trk_menu_t *sub;
+
+    if (m == NULL || i < 0 || i >= m->count ||
+        (sub = m->item[i].submenu) == NULL) {
+        return r;
+    }
+    tiku_trk_menu_measure(sub);
+    /* Anchored one pixel down and right of the parent item's top-right
+     * corner, and flipped to the parent's LEFT rather than clamped when it
+     * would leave the screen -- clamping would cover the parent. */
+    r.x = frame.x + frame.w + 1;
+    r.y = frame.y + tiku_trk_menu_item_top(m, i) + 1;
+    r.w = sub->width;
+    r.h = sub->height + 2;
+    if (r.x + r.w > screen.x + screen.w) {
+        r.x = frame.x - r.w - 1;
+    }
+    if (r.y + r.h > screen.y + screen.h) {
+        r.y = screen.y + screen.h - r.h;
+    }
+    if (r.x < screen.x) { r.x = screen.x; }
+    if (r.y < screen.y) { r.y = screen.y; }
+    return r;
+}
+
+/** @brief The check: a three-point stroked polyline in the left gutter. */
+static void
+draw_mark(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
+{
+    int gap = PAD_LEFT / 4;
+    int left = item.x + gap / 3;
+    int right = item.x + PAD_LEFT - gap;
+    int cx = (left + right) / 2;
+    int cy = item.y + item.h / 2;
+    int size = (item.h - 2 < right - left) ? item.h - 2 : right - left;
+
+    if (size < 4) {
+        return;
+    }
+    pen_line(s, cx - size / 2, cy, cx - size / 6, cy + size / 3, 2, c);
+    pen_line(s, cx - size / 6, cy + size / 3, cx + size / 2, cy - size / 3,
+             2, c);
+}
+
+/** @brief The submenu arrow: stroked, two thirds of the item's height. */
+static void
+draw_arrow(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
+{
+    int size = (item.h * 2) / 3;
+    int x = item.x + item.w - size;
+    int y = item.y + (item.h - size) / 2;
+    int hin = size / 3, vin = size / 3;
+    int l = x + hin, t = y + vin, b = y + size - vin;
+    int pen = (hin / 2 > 0) ? hin / 2 : 1;
+
+    /* Open three-point polyline, never filled: a solid triangle reads much
+     * heavier than the original's arrow. */
+    pen_line(s, l, t, l + (int)((float)(size - 2 * hin) / 1.33f), (t + b) / 2,
+             pen, c);
+    pen_line(s, l + (int)((float)(size - 2 * hin) / 1.33f), (t + b) / 2, l, b,
+             pen, c);
+}
+
+void
+tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
+                   tiku_desk_rect_t frame)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    tiku_desk_rgb_t base = TIKU_DESK_C_PANEL;
+    int i;
+
+    if (m == NULL) {
+        return;
+    }
+    tiku_trk_menu_measure(m);
+    tiku_desk_fill(s, frame, base);
+    tiku_desk_bevel(s, frame, tiku_desk_tint(base, TIKU_DESK_LIGHTEN_MAX),
+                    tiku_desk_tint(base, TIKU_DESK_DARKEN_2));
+
+    for (i = 0; i < m->count; i++) {
+        tiku_trk_mitem_t *it = &m->item[i];
+        tiku_desk_rect_t r;
+        tiku_desk_rgb_t ink;
+        int base_y;
+
+        r.x = frame.x + 1;
+        r.y = frame.y + 1 + tiku_trk_menu_item_top(m, i);
+        r.w = frame.w - 2;
+        r.h = tiku_trk_menu_item_height(m, i);
+
+        if (it->separator) {
+            /* Two hairlines, dark over light, inset one pixel at each end. */
+            int mid = r.y + r.h / 2;
+
+            tiku_desk_hline(s, r.x + 1, mid, r.w - 2,
+                            tiku_desk_tint(base, TIKU_DESK_DARKEN_1));
+            tiku_desk_hline(s, r.x + 1, mid + 1, r.w - 2,
+                            tiku_desk_tint(base, TIKU_DESK_LIGHTEN_MAX));
+            continue;
+        }
+        if (i == m->hot && it->enabled) {
+            tiku_desk_fill(s, r, TIKU_DESK_C_SELECT);
+            ink = TIKU_DESK_C_SELTEXT;
+        } else {
+            ink = it->enabled ? TIKU_DESK_C_TEXT
+                              : tiku_desk_tint(base, TIKU_DESK_DARKEN_MAX);
+            if (!it->enabled) {
+                /* Disabled text is the panel darkened, not grey-on-grey. */
+                ink = tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f);
+            }
+        }
+        base_y = r.y + PAD_TOP + f->ascent;
+        if (it->marked) {
+            draw_mark(s, r, tiku_desk_tint(ink, MARK_TINT));
+        }
+        tiku_desk_text(s, f, r.x + PAD_LEFT, base_y, it->label, ink);
+
+        if (it->submenu != NULL) {
+            draw_arrow(s, r, tiku_desk_tint(ink, MARK_TINT));
+        } else if (it->shortcut != 0) {
+            char sc[8];
+            int n = 0;
+
+            /* The modifier reads before the key, and the block is placed from
+             * the right edge inward. */
+            if (it->mods & TIKU_TRK_MENU_MOD_SHIFT) { sc[n++] = '^'; }
+            sc[n++] = it->shortcut;
+            sc[n] = '\0';
+            tiku_desk_text(s, f,
+                           r.x + r.w - tiku_desk_text_width(f, sc) - 6,
+                           base_y, sc, ink);
+        }
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+/* The menu bar                                                              */
+/*---------------------------------------------------------------------------*/
+
+void
+tiku_trk_menubar_init(tiku_trk_menubar_t *b)
+{
+    if (b != NULL) {
+        memset(b, 0, sizeof *b);
+        b->open = -1;
+        b->height = tiku_desk_text_height(tiku_desk_font_plain()) + 6;
+    }
+}
+
+int
+tiku_trk_menubar_add(tiku_trk_menubar_t *b, tiku_trk_menu_t *m)
+{
+    if (b == NULL || m == NULL || b->count >= TIKU_TRK_MENUBAR_MAX) {
+        return -1;
+    }
+    b->menu[b->count] = m;
+    return b->count++;
+}
+
+int
+tiku_trk_menubar_insert(tiku_trk_menubar_t *b, int at, tiku_trk_menu_t *m)
+{
+    int i;
+
+    if (b == NULL || m == NULL || b->count >= TIKU_TRK_MENUBAR_MAX ||
+        at < 0 || at > b->count) {
+        return -1;
+    }
+    for (i = b->count; i > at; i--) {
+        b->menu[i] = b->menu[i - 1];
+    }
+    b->menu[at] = m;
+    b->count++;
+    return at;
+}
+
+void
+tiku_trk_menubar_remove(tiku_trk_menubar_t *b, tiku_trk_menu_t *m)
+{
+    int i, j;
+
+    for (i = 0; b != NULL && i < b->count; i++) {
+        if (b->menu[i] == m) {
+            for (j = i; j < b->count - 1; j++) {
+                b->menu[j] = b->menu[j + 1];
+            }
+            b->count--;
+            if (b->open >= b->count) {
+                b->open = -1;
+            }
+            return;
+        }
+    }
+}
+
+/** @brief Width a title occupies on the bar. */
+static int
+title_width(const tiku_trk_menu_t *m)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+
+    return tiku_desk_text_width(f, m->title) + 2 * LABEL_SPACING + 4;
+}
+
+int
+tiku_trk_menubar_title_at(const tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
+                          int x, int y)
+{
+    int i, tx = frame.x + 2;
+
+    if (b == NULL || y < frame.y || y >= frame.y + frame.h) {
+        return -1;
+    }
+    for (i = 0; i < b->count; i++) {
+        int w = title_width(b->menu[i]);
+
+        if (x >= tx && x < tx + w) {
+            return i;
+        }
+        tx += w;
+    }
+    return -1;
+}
+
+tiku_desk_rect_t
+tiku_trk_menubar_panel(tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
+                       tiku_desk_rect_t screen)
+{
+    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    int i, tx = frame.x + 2;
+
+    if (b == NULL || b->open < 0 || b->open >= b->count) {
+        return r;
+    }
+    for (i = 0; i < b->open; i++) {
+        tx += title_width(b->menu[i]);
+    }
+    /* A menu bar drops its panel from the title's bottom-left corner, one
+     * pixel down and right, rather than from the right edge as a nested
+     * submenu does. */
+    return tiku_trk_menu_place(b->menu[b->open], tx + 1,
+                               frame.y + frame.h + 1, screen);
+}
+
+void
+tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_desk_surface_t *s,
+                      tiku_desk_rect_t frame)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    int i, tx = frame.x + 2;
+
+    if (b == NULL) {
+        return;
+    }
+    tiku_desk_fill(s, frame, TIKU_DESK_C_PANEL);
+    tiku_desk_hline(s, frame.x, frame.y + frame.h - 1, frame.w,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    for (i = 0; i < b->count; i++) {
+        int w = title_width(b->menu[i]);
+        tiku_desk_rect_t t = { tx, frame.y, w, frame.h - 1 };
+        tiku_desk_rgb_t ink = TIKU_DESK_C_TEXT;
+
+        if (i == b->open) {
+            tiku_desk_fill(s, t, TIKU_DESK_C_SELECT);
+            ink = TIKU_DESK_C_SELTEXT;
+        }
+        tiku_desk_text(s, f, tx + LABEL_SPACING + 2,
+                       frame.y + (frame.h - f->height) / 2 + f->ascent,
+                       b->menu[i]->title, ink);
+        tx += w;
+    }
+}

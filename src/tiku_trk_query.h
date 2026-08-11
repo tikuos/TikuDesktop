@@ -1,0 +1,265 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_query.h - searching the namespace.
+ *
+ * A query is a predicate plus a scope, exactly as it is in Tracker: terms are
+ * (attribute, operator, value), terms join with and/or, and the scope is
+ * enforced OUTSIDE the predicate as a path-prefix test on each result -- the
+ * same split the original uses, and the reason a folder filter can be added
+ * to a running search without rewriting it.
+ *
+ * The matching rules are ported rather than invented, including the two that
+ * look odd until you see the source:
+ *
+ *   - a name search is a SUBSTRING match, unless the typed text contains a
+ *     '*' anywhere, in which case the whole text becomes a pattern and must
+ *     match the name outright;
+ *   - case-insensitivity is not a comparison flag but a rewrite of the value
+ *     into per-character classes, so "txt" is matched as "[tT][xX][tT]" and
+ *     one matcher serves every operator.
+ *
+ * On TikuOS a volume is a namespace subtree and the type registry is the
+ * node's own typed descriptor, so a query can ask for "every writable node
+ * under /dev whose value is over 1000" without an index existing anywhere.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef TIKU_TRK_QUERY_H_
+#define TIKU_TRK_QUERY_H_
+
+#include "tiku_trk_attr.h"
+#include "tiku_trk_model.h"
+
+#define TIKU_TRK_QUERY_TERMS_MAX   6
+#define TIKU_TRK_QUERY_SCOPES_MAX  4
+#define TIKU_TRK_QUERY_VALUE_MAX  64
+#define TIKU_TRK_QUERY_PRED_MAX  512
+
+/** @brief Which field a term tests. */
+typedef enum {
+    TIKU_TRK_QF_NAME = 0,
+    TIKU_TRK_QF_PATH,
+    TIKU_TRK_QF_KIND,
+    TIKU_TRK_QF_VALUE,
+    TIKU_TRK_QF_SIZE,
+    TIKU_TRK_QF_CAP,
+    TIKU_TRK_QF_UNIT,        /* the descriptor's unit: bytes, Hz, s ...    */
+    TIKU_TRK_QF_WRITABLE
+} tiku_trk_qfield_t;
+
+/** @brief The operator vocabulary, in the original's order. */
+typedef enum {
+    TIKU_TRK_OP_CONTAINS = 0,
+    TIKU_TRK_OP_IS,
+    TIKU_TRK_OP_IS_NOT,
+    TIKU_TRK_OP_BEGINS_WITH,
+    TIKU_TRK_OP_ENDS_WITH,
+    TIKU_TRK_OP_GREATER,
+    TIKU_TRK_OP_LESS
+} tiku_trk_qop_t;
+
+/** @brief How a term joins the one before it. */
+typedef enum {
+    TIKU_TRK_JOIN_AND = 0,
+    TIKU_TRK_JOIN_OR
+} tiku_trk_qjoin_t;
+
+typedef struct {
+    tiku_trk_qfield_t field;
+    tiku_trk_qop_t    op;
+    char              value[TIKU_TRK_QUERY_VALUE_MAX];
+    tiku_trk_qjoin_t  join;      /* how it joins the PREVIOUS term         */
+} tiku_trk_qterm_t;
+
+/** @brief What the panel is asking. */
+typedef enum {
+    TIKU_TRK_QMODE_NAME = 0,
+    TIKU_TRK_QMODE_ATTRIBUTE,
+    TIKU_TRK_QMODE_FORMULA
+} tiku_trk_qmode_t;
+
+typedef struct {
+    tiku_trk_qmode_t mode;
+    tiku_trk_qterm_t term[TIKU_TRK_QUERY_TERMS_MAX];
+    int              term_count;
+    /* Scope: the subtrees a result may come from.  None means the whole
+     * namespace, which is the "All disks" case. */
+    char             scope[TIKU_TRK_QUERY_SCOPES_MAX][TIKU_TRK_PATH_MAX];
+    int              scope_count;
+    int              max_results;
+} tiku_trk_query_t;
+
+/** @brief Start an empty query over the whole namespace. */
+void tiku_trk_query_init(tiku_trk_query_t *q);
+
+/**
+ * @brief Set the query from typed text, as by-name mode does.
+ *
+ * The '*' rule applies: with a star anywhere the text is a pattern matched
+ * outright; without one it is a substring.  Empty text matches everything,
+ * because the substring form degenerates to "*" -- which is the original's
+ * behaviour and not an accident worth 'fixing'.
+ */
+void tiku_trk_query_set_name(tiku_trk_query_t *q, const char *text);
+
+/** @brief Append a term.  @return its index, or -1. */
+int tiku_trk_query_add_term(tiku_trk_query_t *q, tiku_trk_qfield_t field,
+                            tiku_trk_qop_t op, const char *value,
+                            tiku_trk_qjoin_t join);
+
+/** @brief Restrict results to a subtree.  @return 1 when it was added. */
+int tiku_trk_query_add_scope(tiku_trk_query_t *q, const char *path);
+
+void tiku_trk_query_clear_scope(tiku_trk_query_t *q);
+
+/**
+ * @brief Render the predicate the way the formula field shows it.
+ *
+ * Switching a panel into formula mode pre-fills it with this, so what the
+ * controls were asking is visible and editable rather than hidden.
+ */
+int tiku_trk_query_predicate(const tiku_trk_query_t *q, char *out,
+                             size_t max);
+
+/** @brief Whether a scope admits @p path, as a path-prefix test. */
+int tiku_trk_query_in_scope(const tiku_trk_query_t *q, const char *path);
+
+/** @brief Whether one node satisfies the predicate (scope not considered). */
+int tiku_trk_query_matches(const tiku_trk_query_t *q,
+                           const tiku_trk_model_t *m,
+                           const tiku_trk_desc_t *d, const char *value);
+
+/**
+ * @brief Match @p name against @p pattern, with '*', '?' and [class].
+ *
+ * Exposed because it is the one matcher every operator goes through, and
+ * because its behaviour is worth testing on its own.
+ */
+int tiku_trk_query_glob(const char *pattern, const char *name);
+
+/**
+ * @brief Build the case-insensitive pattern for @p value.
+ *
+ * Each letter becomes a two-member class and each space becomes '*', which is
+ * how the original spells "case-insensitive" -- and why searching "foo bar"
+ * also finds "foo-bar".
+ */
+int tiku_trk_query_pattern(const char *value, tiku_trk_qop_t op, char *out,
+                           size_t max);
+
+/*---------------------------------------------------------------------------*/
+/* Running one                                                               */
+/*---------------------------------------------------------------------------*/
+
+typedef struct tiku_trk_qrun tiku_trk_qrun_t;
+
+/** @brief Begin a search.  Results arrive as the walk proceeds. */
+tiku_trk_qrun_t *tiku_trk_query_start(tiku_trk_backend_t *b,
+                                      const tiku_trk_query_t *q);
+
+void tiku_trk_query_stop(tiku_trk_qrun_t *r);
+
+/**
+ * @brief Advance the walk by at most @p budget directories.
+ *
+ * Stepped rather than blocking, for the same reason the original's directory
+ * read is: a search over a slow device must not stop the window redrawing.
+ *
+ * @return New results this step, or -1 when finished.
+ */
+int tiku_trk_query_step(tiku_trk_qrun_t *r, int budget);
+
+int tiku_trk_query_count(const tiku_trk_qrun_t *r);
+
+const tiku_trk_model_t *tiku_trk_query_at(const tiku_trk_qrun_t *r, int i);
+
+/** @brief How many directories have been visited, for a progress line. */
+int tiku_trk_query_visited(const tiku_trk_qrun_t *r);
+
+int tiku_trk_query_done(const tiku_trk_qrun_t *r);
+
+/*---------------------------------------------------------------------------*/
+/* Live queries                                                              */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief Why a result left the set.
+ *
+ * The distinction is load-bearing: a node that no longer matches means the
+ * ROW goes, while a node that is gone may also mean the thing the window is
+ * about is gone.  A single "removed" event cannot tell them apart, and the
+ * source that produced it is not recoverable afterwards -- so it is recorded
+ * at the moment the difference is still knowable.
+ */
+typedef enum {
+    TIKU_TRK_QGONE_UNMATCHED = 0,   /* still there, no longer qualifies   */
+    TIKU_TRK_QGONE_VANISHED         /* the node itself has gone           */
+} tiku_trk_qgone_t;
+
+/** @brief What changed between two runs. */
+typedef struct {
+    int              added;
+    int              removed;
+    int              vanished;      /* of the removed, how many were gone */
+} tiku_trk_qdiff_t;
+
+/**
+ * @brief Re-run the query and report what changed.
+ *
+ * The result set is NOT cleared first: survivors keep their place, so a
+ * window does not flicker or lose its selection every time a value moves.
+ *
+ * The subscription lives as long as the run does; a caller that stops the run
+ * when the first fill completes has silently turned liveness off.
+ *
+ * @return 0, or -1 on failure.
+ */
+int tiku_trk_query_refresh(tiku_trk_qrun_t *r, tiku_trk_qdiff_t *out);
+
+/** @brief Whether result @p i arrived in the most recent refresh. */
+int tiku_trk_query_is_new(const tiku_trk_qrun_t *r, int i);
+
+/*---------------------------------------------------------------------------*/
+/* Saved queries                                                             */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Where a saved query is kept, and under what attribute. */
+#define TIKU_TRK_QUERY_STORE_NODE "\x01queries"
+#define TIKU_TRK_QUERY_ATTR       "_trk/query"
+#define TIKU_TRK_QUERY_INDEX_ATTR "_trk/query_index"
+
+struct tiku_trk_store;
+
+/**
+ * @brief Write @p q under @p name.
+ *
+ * Tracker saves a query as a FILE whose attributes carry the predicate, and
+ * opening that file runs it.  There is no such file here, so the same fields
+ * go to the state store under the query's name -- the indirection is kept
+ * (a query is a thing you save and re-open, not just a command you re-type)
+ * even though the container is different.
+ *
+ * @return 0, or -1 when the store refused.
+ */
+int tiku_trk_query_save(const tiku_trk_query_t *q, const char *name,
+                        struct tiku_trk_store *store);
+
+/** @brief Read back a saved query.  @return 0, or -1 when absent. */
+int tiku_trk_query_load(tiku_trk_query_t *q, const char *name,
+                        struct tiku_trk_store *store);
+
+/**
+ * @brief Names of the saved queries, newest first.
+ *
+ * @return How many were written to @p names.
+ */
+int tiku_trk_query_list(struct tiku_trk_store *store, char names[][128],
+                        int max);
+
+/** @brief Forget a saved query. */
+int tiku_trk_query_forget(const char *name, struct tiku_trk_store *store);
+
+#endif /* TIKU_TRK_QUERY_H_ */

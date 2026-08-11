@@ -1,0 +1,269 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_model.c - the questions the view is allowed to ask.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "tiku_trk_model.h"
+#include "tiku_trk_state.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+int
+tiku_trk_model_is_container(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return 0;
+    }
+    switch (m->kind) {
+    case TIKU_TRK_KIND_DIRECTORY:
+    case TIKU_TRK_KIND_VOLUME:
+    case TIKU_TRK_KIND_VIRTUAL_DIR:
+    case TIKU_TRK_KIND_TRASH:
+    case TIKU_TRK_KIND_DESKTOP:
+    case TIKU_TRK_KIND_QUERY:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int
+tiku_trk_model_is_mutable_container(const tiku_trk_model_t *m)
+{
+    if (!tiku_trk_model_is_container(m)) {
+        return 0;
+    }
+    /* A namespace directory has a fixed shape: nothing can be created,
+     * renamed or pasted into /sys.  This single answer is what disables
+     * New Folder, Paste and drop-targeting there. */
+    if (m->kind == TIKU_TRK_KIND_VIRTUAL_DIR ||
+        m->kind == TIKU_TRK_KIND_QUERY) {
+        return 0;
+    }
+    return (m->facts.perm & TIKU_TRK_P_WRITE) ? 1 : 0;
+}
+
+int
+tiku_trk_model_is_writable(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return 0;
+    }
+    return (m->facts.perm & TIKU_TRK_P_WRITE) ? 1 : 0;
+}
+
+/**
+ * @brief What a MIME-ish type says a thing is, and what it should wear.
+ *
+ * Walked twice -- once for an exact match, once for the supertype up to and
+ * including the slash -- so "text/x-source-code" finds the text entry
+ * without needing its own row.
+ */
+static const struct {
+    const char *type;
+    const char *kind;
+    const char *icon;
+} kTypes[] = {
+    { "application/x-vnd.be-directory", "Folder",        "folder" },
+    { "application/x-vnd.be-symlink",   "Symbolic link", "symlink" },
+    { "application/x-vnd.be-volume",    "Volume",        "volume" },
+    { "application/x-vnd.be-root",      "Disks",         "root" },
+    { "application/x-vnd.be-query",     "Query",         "query" },
+    { "application/x-vnd.be-trash",     "Trash",         "trash_empty" },
+    { "application/x-vnd.be-app",       "Application",   "application" },
+    /* No bare "application/" row: it would claim octet-stream, which is a
+     * generic blob and not a program.  A real executable is recognised by
+     * its permission bits before this table is consulted. */
+    { "text/",                          "Text file",     "text_file" },
+    { "image/",                         "Image",         "file" },
+    { "audio/",                         "Audio",         "file" },
+    { "video/",                         "Video",         "file" }
+};
+#define NTYPES ((int)(sizeof kTypes / sizeof kTypes[0]))
+
+/** @brief Case-folded comparison of @p n bytes. */
+static int
+fold_eq(const char *a, const char *b, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        int ca = a[i], cb = b[i];
+
+        if (ca >= 'A' && ca <= 'Z') { ca += 32; }
+        if (cb >= 'A' && cb <= 'Z') { cb += 32; }
+        if (ca != cb || ca == '\0') {
+            return (ca == cb);
+        }
+    }
+    return 1;
+}
+
+/** @brief The table row @p type matches, or -1.  Exact beats supertype. */
+static int
+type_row(const char *type)
+{
+    int i;
+    const char *slash;
+
+    if (type == NULL || type[0] == '\0') {
+        return -1;
+    }
+    for (i = 0; i < NTYPES; i++) {
+        size_t n = strlen(kTypes[i].type);
+
+        if (kTypes[i].type[n - 1u] != '/' && strlen(type) == n &&
+            fold_eq(type, kTypes[i].type, n)) {
+            return i;
+        }
+    }
+    slash = strchr(type, '/');
+    if (slash == NULL) {
+        return -1;
+    }
+    for (i = 0; i < NTYPES; i++) {
+        size_t n = strlen(kTypes[i].type);
+
+        if (kTypes[i].type[n - 1u] == '/' &&
+            n == (size_t)(slash - type) + 1u &&
+            fold_eq(type, kTypes[i].type, n)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const char *
+tiku_trk_model_kind_string(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return "";
+    }
+    /* The type is more specific than the kind, so it answers first: a file
+     * is a "Text file" when it says so, and only a bare "File" when it does
+     * not. */
+    {
+        int r = type_row(m->type);
+
+        if (r >= 0 && m->kind == TIKU_TRK_KIND_FILE) {
+            return kTypes[r].kind;
+        }
+    }
+    switch (m->kind) {
+    case TIKU_TRK_KIND_FILE:        return "File";
+    case TIKU_TRK_KIND_DIRECTORY:   return "Folder";
+    case TIKU_TRK_KIND_SYMLINK:
+        return m->facts.link_broken ? "Broken link" : "Symbolic link";
+    case TIKU_TRK_KIND_VOLUME:      return "Volume";
+    case TIKU_TRK_KIND_VIRTUAL_DIR: return "Namespace folder";
+    case TIKU_TRK_KIND_DEVICE_NODE: return "Device node";
+    case TIKU_TRK_KIND_QUERY:       return "Query";
+    case TIKU_TRK_KIND_PRINTER:     return "Printer";
+    case TIKU_TRK_KIND_TRASH:       return "Trash";
+    case TIKU_TRK_KIND_DESKTOP:     return "Desktop";
+    default:                        return "Unknown";
+    }
+}
+
+/** @brief Does @p path end in the component @p leaf. */
+static int
+leaf_is(const char *path, const char *leaf)
+{
+    const char *slash = strrchr(path, '/');
+
+    return strcmp(slash != NULL ? slash + 1 : path, leaf) == 0;
+}
+
+const char *
+tiku_trk_model_icon_name(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return "file";
+    }
+    switch (m->kind) {
+    case TIKU_TRK_KIND_TRASH:
+        return "trash_empty";
+    case TIKU_TRK_KIND_DESKTOP:
+        return "desktop";
+    case TIKU_TRK_KIND_SYMLINK:
+        /* Haiku's broken-link blob is byte-identical to its symlink one, so
+         * there is no art to distinguish them and inventing some would be a
+         * different icon set.  The Kind column carries the distinction, and
+         * the drawing dims a broken row. */
+        return "symlink";
+    case TIKU_TRK_KIND_QUERY:
+        return "query";
+    case TIKU_TRK_KIND_VOLUME:
+        return strcmp(m->path, "/") == 0 ? "root" : "volume";
+    case TIKU_TRK_KIND_PRINTER:
+        return "printer";
+    case TIKU_TRK_KIND_DEVICE_NODE:
+        /* A live value has no counterpart in a file system, so it borrows the
+         * plain document icon rather than pretending to be something it is
+         * not; the Value column is what tells the user it is live. */
+        return "file";
+    case TIKU_TRK_KIND_VIRTUAL_DIR:
+        /* Haiku ships an icon for exactly this idea -- a directory whose
+         * contents are produced rather than stored. */
+        return "folder_virtual";
+    case TIKU_TRK_KIND_DIRECTORY:
+        /* Tracker picks a special folder's icon by comparing node refs against
+         * the ones it looked up at startup; with no such registry we match the
+         * leaf name, which is right for the standard places and falls back to
+         * the plain folder everywhere else. */
+        if (leaf_is(m->path, "Desktop"))   { return "desktop"; }
+        if (leaf_is(m->path, "Downloads")) { return "folder_downloads"; }
+        if (leaf_is(m->path, "Documents")) { return "folder_people"; }
+        if (leaf_is(m->path, "Mail"))      { return "folder_mail"; }
+        if (leaf_is(m->path, "People"))    { return "folder_people"; }
+        if (leaf_is(m->path, "Fonts"))     { return "folder_fonts"; }
+        if (leaf_is(m->path, "queries"))   { return "folder_queries"; }
+        if (leaf_is(m->path, "develop"))   { return "folder_develop"; }
+        if (leaf_is(m->path, "config") ||
+            leaf_is(m->path, ".config"))   { return "folder_config"; }
+        if (leaf_is(m->path, "apps") ||
+            leaf_is(m->path, "Applications")) { return "folder_apps"; }
+        if (leaf_is(m->path, "preferences")) { return "folder_prefs"; }
+        if (leaf_is(m->path, "system") ||
+            leaf_is(m->path, "boot"))      { return "folder_system"; }
+        {
+            const char *home = getenv("HOME");
+            if (home != NULL && strcmp(m->path, home) == 0) {
+                return "home";
+            }
+        }
+        return "folder";
+    case TIKU_TRK_KIND_FILE:
+    default:
+        break;
+    }
+    if (m->facts.perm & TIKU_TRK_P_EXEC) {
+        return "executable";
+    }
+    {
+        /* Case-folded, and by supertype as well as exact: a type registry
+         * that only matched lowercase exact strings would miss most of what
+         * it is asked about. */
+        int r = type_row(m->type);
+
+        if (r >= 0) {
+            return kTypes[r].icon;
+        }
+    }
+    return "file";
+}
+
+void
+tiku_trk_backend_close(tiku_trk_backend_t *b)
+{
+    if (b != NULL && b->ops != NULL && b->ops->close != NULL) {
+        b->ops->close(b);
+    }
+}

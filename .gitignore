@@ -1,0 +1,7 @@
+# Build output.  Everything under here is derived from the sources beside it.
+build/
+
+# Editor and OS leavings.
+*.o
+*.swp
+.DS_Store
