@@ -13,7 +13,9 @@
  */
 
 #include "tiku_trk_fs.h"
+#include "tiku_trk_state.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -364,8 +366,24 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
     if (n > FS_QUEUE_MAX) {
         n = FS_QUEUE_MAX;
     }
+    fs->prog.error[0] = '\0';
+    fs->prog.skipped = 0;
     fs->qcount = 0;
     for (i = 0; i < n; i++) {
+        if ((op == TIKU_TRK_OP_COPY || op == TIKU_TRK_OP_MOVE) &&
+            dst != NULL) {
+            /* Refused HERE, where every copy and move passes, so no caller
+             * can reach the loop with an item that would destroy something
+             * it did not name (FS-023, FS-024, FS-025). */
+            char why[200];
+
+            if (tiku_trk_fs_check_move(fs, paths[i], dst, why,
+                                       sizeof why) != TIKU_TRK_REFUSE_NONE) {
+                snprintf(fs->prog.error, sizeof fs->prog.error, "%s", why);
+                fs->prog.skipped++;
+                continue;
+            }
+        }
         /* The Trash is dropped from any destructive selection, so it can
          * never be trashed or deleted -- and neither can anything that
          * CONTAINS it, since taking the parent takes the Trash with it
@@ -383,7 +401,17 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
     fs->qcursor = 0;
     fs->policy = policy;
     snprintf(fs->dst, sizeof fs->dst, "%s", dst ? dst : "");
-    memset(&fs->prog, 0, sizeof fs->prog);
+    {   /* A refusal recorded while the queue was built is the reason an
+         * item is not in it; clearing progress wholesale would throw the
+         * only explanation away. */
+        char kept[sizeof fs->prog.error];
+        int skipped = fs->prog.skipped;
+
+        snprintf(kept, sizeof kept, "%s", fs->prog.error);
+        memset(&fs->prog, 0, sizeof fs->prog);
+        snprintf(fs->prog.error, sizeof fs->prog.error, "%s", kept);
+        fs->prog.skipped = skipped;
+    }
     fs->prog.op = op;
     fs->prog.total = fs->qcount;
     undo_reset(fs, op);
@@ -418,6 +446,13 @@ tiku_trk_fs_trash(tiku_trk_fs_t *fs, const char *const *paths, int n)
                  TIKU_TRK_CONFLICT_SKIP);
 }
 
+
+int
+tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n)
+{
+    return start(fs, TIKU_TRK_OP_DELETE, paths, n, NULL,
+                 TIKU_TRK_CONFLICT_ASK);
+}
 /*---------------------------------------------------------------------------*/
 /* the work                                                                  */
 /*---------------------------------------------------------------------------*/
@@ -467,6 +502,431 @@ copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
 }
 
 /** @brief Process one queued item.  @return 1 done, 0 stopped on a conflict. */
+
+
+/*---------------------------------------------------------------------------*/
+/* Refusals (FS-023, FS-024, FS-025)                                         */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Whether @p dir is @p path or contains it, at a component boundary. */
+static int
+path_contains(const char *dir, const char *path)
+{
+    size_t n;
+
+    if (dir == NULL || path == NULL) {
+        return 0;
+    }
+    n = strlen(dir);
+    while (n > 1u && dir[n - 1u] == '/') {
+        n--;
+    }
+    if (strncmp(dir, path, n) != 0) {
+        return 0;
+    }
+    /* The same path counts as contained; a longer one only when the next
+     * character is a separator, or "/a/b" would swallow "/a/bc". */
+    return path[n] == '\0' || path[n] == '/';
+}
+
+/** @brief Whether @p path is a directory. */
+static int
+is_dir(const char *path)
+{
+    struct stat st;
+
+    return (stat(path, &st) == 0) && S_ISDIR(st.st_mode);
+}
+
+tiku_trk_refusal_t
+tiku_trk_fs_check_move(tiku_trk_fs_t *fs, const char *src, const char *dst_dir,
+                       char *msg, size_t max)
+{
+    char dstpath[TIKU_TRK_PATH_MAX];
+
+    if (msg != NULL && max > 0u) {
+        msg[0] = '\0';
+    }
+    if (fs == NULL || src == NULL || dst_dir == NULL) {
+        return TIKU_TRK_REFUSE_NONE;
+    }
+    /* The Trash is not an item to be moved about; it is where items go. */
+    if (strstr(src, "/" TIKU_TRK_TRASH_NAME) != NULL &&
+        strcmp(leaf_of(src), TIKU_TRK_TRASH_NAME) == 0) {
+        if (msg != NULL) {
+            snprintf(msg, max, "You can't move or copy the trash.");
+        }
+        return TIKU_TRK_REFUSE_TRASH;
+    }
+    /* Into ITSELF, or into anything underneath it.  Tested on the source
+     * directory, because that is the thing that would end up inside a copy
+     * of itself, for ever. */
+    if (is_dir(src) && path_contains(src, dst_dir)) {
+        if (msg != NULL) {
+            snprintf(msg, max,
+                     "You can't move a folder into itself or any of its own "
+                     "sub-folders.");
+        }
+        return TIKU_TRK_REFUSE_INTO_SELF;
+    }
+    if (join(dstpath, sizeof dstpath, dst_dir, leaf_of(src)) != 0) {
+        return TIKU_TRK_REFUSE_NONE;
+    }
+    {
+        struct stat dst_st;
+
+        if (stat(dstpath, &dst_st) != 0) {
+            return TIKU_TRK_REFUSE_NONE;    /* no collision, no question  */
+        }
+        /* The second refusal is the first one inverted: here the thing
+         * being overwritten is an ancestor of the thing overwriting it. */
+        if (S_ISDIR(dst_st.st_mode) && path_contains(dstpath, src)) {
+            if (msg != NULL) {
+                snprintf(msg, max,
+                         "You can't replace a folder with one of its "
+                         "sub-folders.");
+            }
+            return TIKU_TRK_REFUSE_BY_CHILD;
+        }
+        /* A kind mismatch is refused outright -- there is no "replace
+         * anyway", because neither thing can stand in for the other. */
+        if (S_ISDIR(dst_st.st_mode) != (is_dir(src) ? 1 : 0)) {
+            if (msg != NULL) {
+                snprintf(msg, max, is_dir(src)
+                         ? "You cannot replace a file with a folder or a "
+                           "symbolic link."
+                         : "You cannot replace a folder or a symbolic link "
+                           "with a file.");
+            }
+            return TIKU_TRK_REFUSE_KIND;
+        }
+    }
+    return TIKU_TRK_REFUSE_NONE;
+}
+
+/*---------------------------------------------------------------------------*/
+/* The Trash (FS-038, FS-039, FS-040, FS-044, FS-047, FS-048)                */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Create @p path and every missing folder above it. */
+static int
+make_path(const char *path)
+{
+    char buf[TIKU_TRK_PATH_MAX];
+    char *p;
+
+    snprintf(buf, sizeof buf, "%s", path);
+    for (p = buf + 1; *p != '\0'; p++) {
+        if (*p != '/') {
+            continue;
+        }
+        *p = '\0';
+        (void)mkdir(buf, 0755);
+        *p = '/';
+    }
+    return mkdir(buf, 0755);
+}
+
+int
+tiku_trk_fs_has_trash(const tiku_trk_fs_t *fs)
+{
+    /* A device namespace has nowhere to put anything: its nodes are not
+     * files.  Saying so is what lets the caller offer an honest "delete
+     * outright" rather than a Trash that silently destroys (FS-044). */
+    return (fs != NULL && fs->backend != NULL &&
+            fs->backend->devid[0] == '\0');
+}
+
+/**
+ * @brief The root of the filesystem @p path lives on.
+ *
+ * Walked up until the device changes, which is where that filesystem is
+ * mounted.  The Trash has to be on the item's OWN filesystem or trashing
+ * stops being a rename and becomes a copy across a boundary -- which is
+ * slow, can half-fail, and on this host simply returns EXDEV.
+ */
+static void
+volume_root(const char *path, char *out, size_t max)
+{
+    char cur[TIKU_TRK_PATH_MAX], parent[TIKU_TRK_PATH_MAX];
+    struct stat st, pst;
+
+    snprintf(out, max, "/");
+    if (path == NULL || path[0] == '\0') {
+        return;
+    }
+    snprintf(cur, sizeof cur, "%s", path);
+    /* The item itself may be gone -- asking where a trashed thing CAME
+     * from is exactly this case -- so start from the nearest ancestor that
+     * still exists.  Tracker keeps the device in the node ref and never
+     * has to ask twice; a path is all this store has. */
+    while (stat(cur, &st) != 0) {
+        char *slash = strrchr(cur, '/');
+
+        if (slash == NULL || slash == cur) {
+            return;                     /* nothing above it exists       */
+        }
+        *slash = '\0';
+    }
+    for (;;) {
+        char *slash = strrchr(cur, '/');
+
+        if (slash == NULL) {
+            break;
+        }
+        if (slash == cur) {
+            snprintf(parent, sizeof parent, "/");
+        } else {
+            snprintf(parent, sizeof parent, "%.*s", (int)(slash - cur), cur);
+        }
+        if (stat(parent, &pst) != 0 || pst.st_dev != st.st_dev) {
+            snprintf(out, max, "%s", cur);   /* the parent is elsewhere   */
+            return;
+        }
+        if (strcmp(parent, "/") == 0) {
+            snprintf(out, max, "/");
+            return;
+        }
+        snprintf(cur, sizeof cur, "%s", parent);
+    }
+}
+
+/** @brief Make @p dir/.Trash if it is not there.  @return 0 on success. */
+static int
+trash_under(const char *dir, char *out, size_t max)
+{
+    struct stat st;
+    int n;
+
+    /* One slash: "/" and "/home" both have to join cleanly, and "//.Trash"
+     * is a different path from the one anything else will look in. */
+    n = snprintf(out, max, "%s%s%s", dir,
+                 (dir[0] != '\0' && dir[strlen(dir) - 1u] == '/') ? "" : "/",
+                 TIKU_TRK_TRASH_NAME);
+    if (n < 0 || (size_t)n >= max) {
+        return -1;
+    }
+    if (stat(out, &st) == 0) {
+        return S_ISDIR(st.st_mode) ? 0 : -1;
+    }
+    return (mkdir(out, 0755) == 0) ? 0 : -1;
+}
+
+int
+tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
+                      size_t max)
+{
+    char root[TIKU_TRK_PATH_MAX];
+    struct stat st;
+
+    if (fs == NULL || out == NULL || !tiku_trk_fs_has_trash(fs)) {
+        return -1;
+    }
+    /* Resolved from the ITEM's own filesystem, as Tracker resolves it from
+     * the item's own device: a Trash somewhere else turns every trash into
+     * a cross-boundary copy, which is exactly what this rule prevents. */
+    volume_root((path != NULL) ? path : getenv("HOME"), root, sizeof root);
+    if (trash_under(root, out, max) == 0) {
+        return 0;
+    }
+    {
+        /* The volume's root is not always writable -- on this host it is
+         * usually "/" and owned by no one the browser runs as.  The home
+         * directory is the writable place ON THE SAME filesystem, which is
+         * the property that matters: the move stays a rename. */
+        const char *home = getenv("HOME");
+        struct stat rs, hs;
+
+        if (home != NULL && home[0] != '\0' && stat(home, &hs) == 0 &&
+            stat(root, &rs) == 0 && hs.st_dev == rs.st_dev &&
+            trash_under(home, out, max) == 0) {
+            return 0;
+        }
+    }
+    (void)st;
+    return -1;
+}
+
+int
+tiku_trk_fs_original_path(tiku_trk_fs_t *fs, const char *path, char *out,
+                          size_t max)
+{
+    tiku_trk_store_t *store;
+    int n;
+
+    if (fs == NULL || path == NULL || out == NULL || max == 0u ||
+        fs->backend->ops->state_store == NULL) {
+        return 0;
+    }
+    store = fs->backend->ops->state_store(fs->backend);
+    if (store == NULL) {
+        return 0;
+    }
+    n = tiku_trk_state_read(store, path, TIKU_TRK_ATTR_ORIGINAL, out,
+                            max - 1u);
+    if (n <= 0) {
+        out[0] = '\0';
+        return 0;
+    }
+    out[n] = '\0';
+    return 1;
+}
+
+/** @brief Remember where @p trashed came from, under its trashed name. */
+static void
+record_origin(tiku_trk_fs_t *fs, const char *trashed, const char *origin)
+{
+    tiku_trk_store_t *store;
+
+    if (fs->backend->ops->state_store == NULL) {
+        return;
+    }
+    store = fs->backend->ops->state_store(fs->backend);
+    if (store == NULL || !tiku_trk_store_writable(store)) {
+        return;
+    }
+    /* Recorded against the path the item now HAS.  Tracker writes the
+     * attribute on the node, where it travels with the file; a store keyed
+     * by path has to write it where the item ended up, or the record is
+     * filed under a name nothing answers to. */
+    (void)tiku_trk_state_write(store, trashed, TIKU_TRK_ATTR_ORIGINAL,
+                               origin, strlen(origin));
+    (void)tiku_trk_store_flush(store);
+}
+
+tiku_trk_delete_q_t
+tiku_trk_fs_delete_question(const tiku_trk_fs_t *fs, const char *path,
+                            int shift_held)
+{
+    if (fs == NULL) {
+        return TIKU_TRK_DELETE_STRAIGHT;
+    }
+    if (shift_held) {
+        return TIKU_TRK_DELETE_STRAIGHT;    /* the user has decided       */
+    }
+    {
+        /* Asked of THIS item's volume, not of the store: a filesystem with
+         * no writable Trash cannot offer to move anything to one, and the
+         * three-way question would show a button that does nothing
+         * (FS-044). */
+        char trash[TIKU_TRK_PATH_MAX];
+
+        if (tiku_trk_fs_trash_dir((tiku_trk_fs_t *)fs, path, trash,
+                                  sizeof trash) != 0) {
+            return TIKU_TRK_DELETE_STRAIGHT;
+        }
+    }
+    if (path != NULL && strstr(path, "/" TIKU_TRK_TRASH_NAME) != NULL) {
+        /* Inside the Trash the only thing left IS deletion, so asking
+         * whether to move it to the Trash asks nothing (FS-047). */
+        return TIKU_TRK_DELETE_STRAIGHT;
+    }
+    return TIKU_TRK_DELETE_ASK;
+}
+
+int
+tiku_trk_fs_restore(tiku_trk_fs_t *fs, const char *const *paths, int n,
+                    char *err, size_t errmax)
+{
+    int i, done = 0;
+
+    if (fs == NULL || paths == NULL) {
+        return 0;
+    }
+    if (err != NULL && errmax > 0u) {
+        err[0] = '\0';
+    }
+    for (i = 0; i < n; i++) {
+        char origin[TIKU_TRK_PATH_MAX];
+        struct stat st;
+
+        if (!tiku_trk_fs_original_path(fs, paths[i], origin, sizeof origin)) {
+            if (err != NULL) {
+                snprintf(err, errmax,
+                         "'%s' does not remember where it came from",
+                         leaf_of(paths[i]));
+            }
+            continue;
+        }
+        if (stat(origin, &st) == 0) {
+            /* Refused, not overwritten: putting one item back is not
+             * permission to destroy whatever took its place (FS-040). */
+            if (err != NULL) {
+                snprintf(err, errmax,
+                         "cannot restore '%s': something is there already",
+                         leaf_of(origin));
+            }
+            continue;
+        }
+        {   /* The folders it lived in may have gone since; make them. */
+            char parent[TIKU_TRK_PATH_MAX];
+            char *slash;
+
+            snprintf(parent, sizeof parent, "%s", origin);
+            slash = strrchr(parent, '/');
+            if (slash != NULL && slash != parent) {
+                *slash = '\0';
+                if (stat(parent, &st) != 0) {
+                    (void)make_path(parent);
+                }
+            }
+        }
+        if (rename(paths[i], origin) != 0) {
+            if (err != NULL) {
+                snprintf(err, errmax, "cannot restore '%s' (%s)",
+                         leaf_of(paths[i]), strerror(errno));
+            }
+            continue;
+        }
+        done++;
+    }
+    return done;
+}
+
+int
+tiku_trk_fs_empty_trash(tiku_trk_fs_t *fs)
+{
+    char trash[TIKU_TRK_PATH_MAX];
+    const char *home = getenv("HOME");
+    char paths[FS_QUEUE_MAX][TIKU_TRK_PATH_MAX];
+    const char *sel[FS_QUEUE_MAX];
+    int n = 0;
+    DIR *d;
+
+    if (fs == NULL || tiku_trk_fs_trash_dir(fs, home, trash,
+                                            sizeof trash) != 0) {
+        return 0;
+    }
+    d = opendir(trash);
+    if (d == NULL) {
+        return 0;
+    }
+    {
+        struct dirent *e;
+
+        while ((e = readdir(d)) != NULL && n < FS_QUEUE_MAX) {
+            if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
+                continue;
+            }
+            if ((int)snprintf(paths[n], sizeof paths[n], "%s/%s", trash,
+                              e->d_name) >= (int)sizeof paths[n]) {
+                continue;               /* a name that cannot be addressed */
+            }
+            sel[n] = paths[n];
+            n++;
+        }
+    }
+    (void)closedir(d);
+    if (n == 0) {
+        return 0;
+    }
+    /* DELETE, not trash: the queue builder refuses to trash anything
+     * inside the Trash -- rightly, since the Trash cannot be put in
+     * itself -- and emptying it is the other rule (FS-043 vs FS-048). */
+    (void)tiku_trk_fs_delete(fs, sel, n);
+    return n;
+}
+
 static int
 step_one(tiku_trk_fs_t *fs)
 {
@@ -478,6 +938,50 @@ step_one(tiku_trk_fs_t *fs)
     snprintf(fs->prog.current, sizeof fs->prog.current, "%s", src);
     err[0] = '\0';
 
+    if (fs->prog.op == TIKU_TRK_OP_TRASH && tiku_trk_fs_has_trash(fs) &&
+        strstr(src, "/" TIKU_TRK_TRASH_NAME) == NULL) {
+        /* A real Trash move: the item is RENAMED into the Trash, keeping
+         * a record of where it came from so it can be put back.  An item
+         * already in the Trash falls through to deletion, which is the
+         * only thing left to do to it. */
+        char trash[TIKU_TRK_PATH_MAX], want[TIKU_TRK_NAME_MAX];
+
+        if (tiku_trk_fs_trash_dir(fs, src, trash, sizeof trash) != 0) {
+            /* This item's filesystem has no writable Trash.  Deleting is
+             * what is left, and the caller has already asked -- the
+             * question it put to the user was a straight delete precisely
+             * because this call would fail (FS-044). */
+            trash[0] = '\0';
+        }
+        if (trash[0] != '\0') {
+        /* A name already taken in the Trash gets the same " copy" treatment
+         * a duplicate does, so trashing two files of one name keeps both. */
+        if (exists(fs, trash, leaf_of(src))) {
+            (void)tiku_trk_fs_duplicate_name(fs, trash, leaf_of(src), want,
+                                             sizeof want);
+        } else {
+            snprintf(want, sizeof want, "%s", leaf_of(src));
+        }
+        if (join(dstpath, sizeof dstpath, trash, want) != 0 ||
+            rename(src, dstpath) != 0) {
+            snprintf(fs->prog.error, sizeof fs->prog.error,
+                     "cannot move '%.80s' to the Trash (%.60s)",
+                     leaf_of(src), strerror(errno));
+            fs->prog.failed++;
+        } else {
+            /* Recorded AFTER the move, under the name it now has: this
+             * store is keyed by path, so a record written before would be
+             * filed under a name nothing answers to. */
+            record_origin(fs, dstpath, src);
+            /* Undoing a trash move puts the item back where it was, which
+             * is the same shape as undoing any other move. */
+            undo_push(fs, dstpath, src, 0);
+            fs->prog.done++;
+        }
+        fs->qcursor++;
+        return 1;
+        }
+    }
     if (fs->prog.op == TIKU_TRK_OP_TRASH ||
         fs->prog.op == TIKU_TRK_OP_DELETE) {
         if (fs->backend->devid[0] != '\0') {

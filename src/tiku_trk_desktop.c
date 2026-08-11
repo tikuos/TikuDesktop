@@ -963,6 +963,31 @@ begin_edit(desktop_t *app, folder_t *fl)
     app->dirty = 1;
 }
 
+/**
+ * @brief The selected rows' paths, for an operation that acts on them.
+ *
+ * @return How many were collected.
+ */
+static int
+folder_selection(desktop_t *app, folder_t *fl,
+                 char paths[][TIKU_TRK_PATH_MAX], const char **out, int max)
+{
+    int i, n = tiku_trk_poseview_count(fl->view), k = 0;
+
+    (void)app;
+    for (i = 0; i < n && k < max; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
+
+        if (p == NULL || !p->selected) {
+            continue;
+        }
+        snprintf(paths[k], TIKU_TRK_PATH_MAX, "%s", p->model.path);
+        out[k] = paths[k];
+        k++;
+    }
+    return k;
+}
+
 /** @brief Carry out a menu choice on the focused folder. */
 static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
@@ -1076,6 +1101,55 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         (void)tiku_trk_desk_zoom(app->desk, fl->win, folder_fit_w(app, fl),
                                  folder_fit_h(app, fl));
         break;
+    case TIKU_TRK_CMD_MOVE_TO_TRASH:
+    case TIKU_TRK_CMD_DELETE: {
+        char paths[64][TIKU_TRK_PATH_MAX];
+        const char *sel[64];
+        int n = folder_selection(app, fl, paths, sel, 64);
+
+        if (n > 0) {
+            /* The menu item and the key agree because both ask the same
+             * question of the same items (FS-046, FS-047). */
+            tiku_trk_delete_q_t q = tiku_trk_fs_delete_question(app->fs,
+                sel[0], command == TIKU_TRK_CMD_DELETE);
+
+            if (q == TIKU_TRK_DELETE_STRAIGHT) {
+                snprintf(app->status, sizeof app->status,
+                         "deleting %d item%s -- this cannot be undone", n,
+                         (n == 1) ? "" : "s");
+                (void)tiku_trk_fs_delete(app->fs, sel, n);
+            } else {
+                snprintf(app->status, sizeof app->status,
+                         "moving %d item%s to the Trash", n,
+                         (n == 1) ? "" : "s");
+                (void)tiku_trk_fs_trash(app->fs, sel, n);
+            }
+        }
+        break;
+    }
+    case TIKU_TRK_CMD_RESTORE: {
+        char paths[64][TIKU_TRK_PATH_MAX];
+        const char *sel[64];
+        char err[200];
+        int n = folder_selection(app, fl, paths, sel, 64);
+        int back = tiku_trk_fs_restore(app->fs, sel, n, err, sizeof err);
+
+        if (back > 0) {
+            snprintf(app->status, sizeof app->status,
+                     "put %d item%s back", back, (back == 1) ? "" : "s");
+        } else if (err[0] != '\0') {
+            snprintf(app->status, sizeof app->status, "%s", err);
+        }
+        break;
+    }
+    case TIKU_TRK_CMD_EMPTY_TRASH: {
+        int n = tiku_trk_fs_empty_trash(app->fs);
+
+        snprintf(app->status, sizeof app->status,
+                 (n > 0) ? "emptying the Trash: %d item%s"
+                         : "the Trash is empty", n, (n == 1) ? "" : "s");
+        break;
+    }
     case TIKU_TRK_CMD_CLOSE:
         close_window(app, fl->win);
         break;

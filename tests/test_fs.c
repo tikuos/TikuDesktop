@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -178,9 +179,205 @@ main(void)
         check(!there(victim), "FS-trash", "the item is gone");
     }
 
+
+    /* --- the refusals: operations that would destroy the unnamed -------- */
+    {
+        char inner[600], deep[700], afile[600], adir[600], why[220];
+        const char *sel[1];
+
+        snprintf(inner, sizeof inner, "%s/holder", A);
+        (void)mkdir(inner, 0755);
+        snprintf(deep, sizeof deep, "%s/holder/under", A);
+        (void)mkdir(deep, 0755);
+
+        check(tiku_trk_fs_check_move(fs, inner, inner, why, sizeof why) ==
+              TIKU_TRK_REFUSE_INTO_SELF && strstr(why, "itself") != NULL,
+              "FS-023", "a folder cannot be moved into itself");
+        check(tiku_trk_fs_check_move(fs, inner, deep, why, sizeof why) ==
+              TIKU_TRK_REFUSE_INTO_SELF, "FS-023",
+              "nor into one of its own sub-folders");
+        check(tiku_trk_fs_check_move(fs, deep, B, why, sizeof why) ==
+              TIKU_TRK_REFUSE_NONE, "FS-023",
+              "but a sub-folder may be moved somewhere else entirely");
+        {
+            /* A sibling whose name merely EXTENDS the other's is not a
+             * sub-folder: "/a/hold" is not inside "/a/holder", and a
+             * containment test done on text alone would refuse this. */
+            char sibling[600];
+
+            snprintf(sibling, sizeof sibling, "%s/hold", A);
+            (void)mkdir(sibling, 0755);
+            check(tiku_trk_fs_check_move(fs, sibling, inner, why,
+                                         sizeof why) ==
+                  TIKU_TRK_REFUSE_NONE, "FS-023",
+                  "and \"hold\" may be moved into \"holder\" -- a name "
+                  "that starts the same is not a parent");
+            (void)rmdir(sibling);
+        }
+
+        /* Replacing a folder with one of its own children (FS-024). */
+        check(tiku_trk_fs_check_move(fs, deep, A, why, sizeof why) ==
+              TIKU_TRK_REFUSE_NONE, "FS-024",
+              "moving a child up to a folder with no name clash is fine");
+        {
+            char sibling[700];
+
+            snprintf(sibling, sizeof sibling, "%s/holder/holder", A);
+            (void)mkdir(sibling, 0755);
+            check(tiku_trk_fs_check_move(fs, sibling, A, why, sizeof why) ==
+                  TIKU_TRK_REFUSE_BY_CHILD &&
+                  strstr(why, "sub-folder") != NULL, "FS-024",
+                  "but a folder may not be replaced by its own sub-folder");
+            (void)rmdir(sibling);
+        }
+
+        /* A kind mismatch is refused outright (FS-025). */
+        snprintf(afile, sizeof afile, "%s/thing", A);
+        put(afile, "x");
+        snprintf(adir, sizeof adir, "%s/thing", B);
+        (void)mkdir(adir, 0755);
+        check(tiku_trk_fs_check_move(fs, afile, B, why, sizeof why) ==
+              TIKU_TRK_REFUSE_KIND &&
+              strstr(why, "with a file") != NULL, "FS-025",
+              "a file may not replace a folder, and the message says which "
+              "way round it is");
+        (void)rmdir(adir);
+        (void)mkdir(adir, 0755);
+        {
+            char dirsrc[600], filedst[600];
+
+            snprintf(dirsrc, sizeof dirsrc, "%s/kind", A);
+            (void)mkdir(dirsrc, 0755);
+            snprintf(filedst, sizeof filedst, "%s/kind", B);
+            put(filedst, "y");
+            check(tiku_trk_fs_check_move(fs, dirsrc, B, why, sizeof why) ==
+                  TIKU_TRK_REFUSE_KIND &&
+                  strstr(why, "with a folder") != NULL, "FS-025",
+                  "and a folder may not replace a file");
+            (void)unlink(filedst);
+            (void)rmdir(dirsrc);
+        }
+        (void)unlink(afile);
+        (void)rmdir(adir);
+
+        /* The queue builder enforces it, so no caller can go round it. */
+        sel[0] = inner;
+        (void)tiku_trk_fs_copy(fs, sel, 1, deep, TIKU_TRK_CONFLICT_ASK);
+        run_to_end(fs);
+        check(tiku_trk_fs_progress(fs)->skipped == 1 &&
+              tiku_trk_fs_progress(fs)->done == 0, "FS-023",
+              "and a copy that would do it is refused before it starts, "
+              "not part-way through");
+        (void)rmdir(deep);
+        (void)rmdir(inner);
+    }
+
+    /* --- the Trash: a move with a memory (FS-038, FS-039, FS-040) -------- */
+    {
+        const char *home = getenv("HOME");
+        char work[512], victim[600], trash[600], origin[600], err[256];
+        const char *sel[1];
+
+        if (home == NULL || home[0] == '\0') {
+            printf("  (no HOME: the Trash cases need a writable volume)\n");
+        } else {
+            snprintf(work, sizeof work, "%s/.tiku_trk_fs_test", home);
+            (void)mkdir(work, 0755);
+            /* Start from an empty Trash.  A run that crashed half way
+             * through leaves items behind, and a count that included them
+             * would fail for a reason that has nothing to do with the
+             * rule. */
+            (void)tiku_trk_fs_empty_trash(fs);
+            run_to_end(fs);
+            snprintf(victim, sizeof victim, "%s/keepsake.txt", work);
+            put(victim, "x");
+            sel[0] = victim;
+
+            check(tiku_trk_fs_delete_question(fs, victim, 0) ==
+                  TIKU_TRK_DELETE_ASK, "FS-046",
+                  "a file on a volume with a Trash gets the three-way "
+                  "question");
+            check(tiku_trk_fs_delete_question(fs, victim, 1) ==
+                  TIKU_TRK_DELETE_STRAIGHT, "FS-046",
+                  "and Shift says the user has already decided");
+
+            check(tiku_trk_fs_trash(fs, sel, 1) == 0, "FS-038",
+                  "trashing starts");
+            run_to_end(fs);
+            check(!there(victim), "FS-038", "the item leaves its folder");
+            check(tiku_trk_fs_trash_dir(fs, victim, trash, sizeof trash) == 0,
+                  "FS-038", "and the Trash exists on its own volume");
+            {
+                char in_trash[700];
+
+                snprintf(in_trash, sizeof in_trash, "%s/keepsake.txt", trash);
+                check(there(in_trash), "FS-038",
+                      "the item is IN it -- trashing is a move, not a "
+                      "deletion under another name");
+                check(tiku_trk_fs_delete_question(fs, in_trash, 0) ==
+                      TIKU_TRK_DELETE_STRAIGHT, "FS-047",
+                      "and inside the Trash the question is not asked "
+                      "again: deleting is all that is left");
+                check(tiku_trk_fs_original_path(fs, in_trash, origin,
+                                                sizeof origin) &&
+                      strcmp(origin, victim) == 0, "FS-039",
+                      "it remembers where it came from");
+
+                /* Something in the way is not overwritten (FS-040). */
+                put(victim, "y");
+                sel[0] = in_trash;
+                check(tiku_trk_fs_restore(fs, sel, 1, err, sizeof err) == 0 &&
+                      err[0] != '\0', "FS-040",
+                      "restoring onto an occupied name is refused, not "
+                      "silently destructive");
+                (void)unlink(victim);
+                check(tiku_trk_fs_restore(fs, sel, 1, err, sizeof err) == 1 &&
+                      there(victim), "FS-040",
+                      "and with the way clear it goes back where it was");
+            }
+
+            /* Two of a name both survive: the second is renamed, as a
+             * duplicate is (FS-039). */
+            {
+                char other[600], in_trash[700];
+
+                snprintf(other, sizeof other, "%s/second", work);
+                (void)mkdir(other, 0755);
+                snprintf(other, sizeof other, "%s/second/keepsake.txt", work);
+                put(other, "z");
+                sel[0] = victim;
+                (void)tiku_trk_fs_trash(fs, sel, 1);
+                run_to_end(fs);
+                sel[0] = other;
+                (void)tiku_trk_fs_trash(fs, sel, 1);
+                run_to_end(fs);
+                snprintf(in_trash, sizeof in_trash,
+                         "%s/keepsake copy.txt", trash);
+                {
+                    int n = 0;
+                    DIR *d = opendir(trash);
+                    struct dirent *e;
+
+                    while (d != NULL && (e = readdir(d)) != NULL) {
+                        if (strncmp(e->d_name, "keepsake", 8) == 0) { n++; }
+                    }
+                    if (d != NULL) { (void)closedir(d); }
+                    check(n == 2, "FS-039",
+                          "two files of one name are both kept, the second "
+                          "renamed rather than overwriting the first");
+                }
+            }
+            check(tiku_trk_fs_empty_trash(fs) >= 2, "FS-048",
+                  "emptying the Trash removes what is in it");
+            run_to_end(fs);
+            (void)rmdir(work);
+        }
+    }
+
     tiku_trk_fs_free(fs);
     tiku_trk_backend_close(b);
     (void)system("rm -rf /tmp/trk_fs_a /tmp/trk_fs_b");
+
     printf("\n%s\n", fails ? "FAILURES" : "all file-operation rules match");
     return fails ? 1 : 0;
 }

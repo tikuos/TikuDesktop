@@ -1096,12 +1096,25 @@ handle_key(app_t *a, XKeyEvent *ev)
         int n = selection_paths(a, paths, sel, 64);
 
         if (n > 0 && a->fs != NULL) {
-            /* No Trash on a device store, and none here yet: say that the
-             * removal is final rather than implying a safety net. */
-            snprintf(a->status, sizeof a->status,
-                     "deleting %d item%s (no Trash -- this is final)", n,
-                     (n == 1) ? "" : "s");
-            (void)tiku_trk_fs_trash(a->fs, sel, n);
+            /* FS-046/FS-047: what the key MEANS depends on where the items
+             * are.  Somewhere with a Trash it is a move that can be undone;
+             * inside the Trash, or on a store that has none, it is final --
+             * and the wording says which. */
+            int shift = (ev->state & ShiftMask) ? 1 : 0;
+            tiku_trk_delete_q_t q =
+                tiku_trk_fs_delete_question(a->fs, sel[0], shift);
+
+            if (q == TIKU_TRK_DELETE_STRAIGHT) {
+                snprintf(a->status, sizeof a->status,
+                         "deleting %d item%s -- this cannot be undone", n,
+                         (n == 1) ? "" : "s");
+                (void)tiku_trk_fs_delete(a->fs, sel, n);
+            } else {
+                snprintf(a->status, sizeof a->status,
+                         "moving %d item%s to the Trash", n,
+                         (n == 1) ? "" : "s");
+                (void)tiku_trk_fs_trash(a->fs, sel, n);
+            }
         }
         a->dirty = 1;
         return;

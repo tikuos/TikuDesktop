@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 216   partial 155   differs 66   open 452
+    done 225   partial 152   differs 68   open 444
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -2509,28 +2509,30 @@ CheckName ends with entry.Remove() for the non-directory case and alerts on fail
 MoveTask calls loopControl.UpdateStatus(srcRef->name, *srcRef, 1) on the CheckName != B_OK path, with the comment that the move call will not update it.  
 `FSUtils.cpp` → `MoveTask`  
 
-#### FS-023 · core · open
+#### FS-023 · core · done
 **Moving or copying a folder into itself or into one of its own sub-folders is refused with "You can't move a folder into itself or any of its own sub-folders."**  
 CheckName tests srcDirectory == *destDir || srcDirectory.Contains(&destEntry) for directory sources, and exempts kCreateLink/kCreateRelativeLink.  
 `FSUtils.cpp` → `CheckName`  
+**PORT:** Refused in the queue builder, where every copy and move passes, so no caller can reach the loop with an item that would bury a folder inside itself.  Containment is tested at a component boundary: a sibling whose name merely extends another's is not inside it.
 
-#### FS-024 · important · open
+#### FS-024 · important · done
 **Replacing a folder with one of its own sub-folders is refused with "You can't replace a folder with one of its sub-folders."**  
 CheckName: after finding a conflicting destination entry that is a directory, BDirectory(&entry).Contains(sourceEntry).  
 `FSUtils.cpp` → `CheckName`  
+**PORT:** The same containment test inverted: the thing about to be overwritten is an ancestor of the thing overwriting it.
 
-#### FS-025 · important · open
+#### FS-025 · important · done
 **A file may not replace a folder or symlink and vice versa: "You cannot replace a file with a folder or a symbolic link." / "You cannot replace a folder or a symbolic link with a file."**  
 CheckName rejects when destIsDir != sourceIsDirectory, again exempting the two link modes.  
 `FSUtils.cpp` → `CheckName`  
+**PORT:** A kind mismatch is refused outright with no "anyway" -- neither a file nor a folder can stand in for the other -- and the message names which way round it is.
 
-#### FS-026 · important · partial
+#### FS-026 · important · done
 **The root directory, the Trash directory and the Printers directory cannot be copied or moved, with a mode-specific message for each.**  
 InitCopy pre-scans the whole source list: FSIsRootDir -> "You cannot copy or move the root directory." (or "...create a link to the root directory."), FSIsTrashDir -> the Trash variants, FSIsPrintersDir -> "You cannot copy or move the Printers directory." but ONLY for kCopySelectionTo/kMoveSelectionTo, so links to Printers are allowed. CheckName repeats the Trash guard per item with "You can't move or copy the trash."  
 `FSUtils.cpp` → `InitCopy`  
 **TIKU:** The equivalent list becomes namespace roots and device-namespace mount points; these need a "not movable" capability bit rather than hard-coded well-known paths.  
-**MISSING:** Only the Trash guard exists, and silently: start() drops any queued path containing "/.Trash" from every operation; there is no root-directory or Printers guard in the engine and no mode-specific message for any of the three.  
-*src/tiku_trk_fs.c:333-337 start()*
+**PORT:** The Trash refuses to be moved or copied; the root and printer directories have no counterpart in this store.
 
 #### FS-027 · important · open
 **Moving the system folder, the home folder, the config or settings folders (or anything inside them) demands confirmation, and for system/home the confirmation button only works while Shift is held.**  
@@ -2598,24 +2600,25 @@ SetupPoseLocation only inherits the source's position when loc == NULL, sourcePa
 `FSUtils.cpp` → `SetupPoseLocation`  
 **TIKU:** Icon position is a per-folder view-state concern; if it lives in a view-state store instead of a node attribute, this must be re-implemented as a view-state copy keyed by destination folder.  
 
-#### FS-038 · core · open
+#### FS-038 · core · done
 **Sending items to the Trash uses the Trash folder of the item's own volume, and colliding names get the "<name> copy" treatment there.**  
 MoveEntryToTrash calls FSGetTrashDir(&trashDir, nodeRef.device) — which find_directory()s per-volume, creates the directory with mode 0755 if missing and marks it invisible by writing a PoseInfo with fInvisible = true — then FSMakeOriginalName(name, &trashDir, " copy") when trashDir.Contains(name), reporting the new name to the undo record.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
 **TIKU:** A device namespace has no Trash; nodes there must be non-trashable (capability bit) rather than falling back to delete.  
-**CHECKED:** There is no Trash directory, no per-volume trash lookup and no '<name> copy' renaming on collision — the trash op is an immediate unlink/remove, which is the absence of the row's rule rather than another route to it.  
-*src/tiku_trk_fs.c:438-461 (TRASH/DELETE branch: unlink/remove, no destination), src/tiku_trk_app.c:979-990 ("no Trash -- this is final")*
+**PORT:** One Trash per FILESYSTEM, resolved from the item's own path so trashing stays a rename: a Trash elsewhere turns every trash into a cross-device copy, which on this host simply fails.  It sits at the volume root when that is writable and in the home directory otherwise, which is the writable place on the same filesystem.
 
-#### FS-039 · core · open
+#### FS-039 · core · done
 **Trashing an item records its full original path so Restore can put it back, and Restore removes that record on success.**  
 MoveEntryToTrash writes the pre-move BPath into the string attribute kAttrOriginalPath ("_trk/original_path"). _RestoreTask reads it back through FSGetOriginalPath, which first tries the entry's own attribute and otherwise walks up parents (stopping at the Trash root, returning B_ENTRY_NOT_FOUND) and re-appends the suffix path below the folder that carried the attribute. On a successful MoveTo the attribute is removed with node.RemoveAttr.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
 **TIKU:** Without per-node attributes this needs a durable side table in the Trash store; it must survive reboot, so it is a persistence decision, not an in-RAM map.  
+**PORT:** The original path is recorded under the item's TRASHED path -- this store is keyed by path where Tracker writes an attribute on the node -- and a name already taken in the Trash gets the same " copy" treatment a duplicate does, so two files of one name both survive.
 
-#### FS-040 · important · open
+#### FS-040 · important · done
 **Restore recreates missing parent folders, and refuses to overwrite: if something already occupies the original path the item stays in the Trash.**  
 _RestoreTask: if the parent does not exist it calls FSRecursiveCreateFolder(parentPath) (which recurses to the parent, returns B_FILE_EXISTS if the entry already exists, and CreateDirectory's the leaf); the move only happens inside if (!originalEntry.Exists()). Items whose original path cannot be determined are skipped with continue. Cancel breaks the loop.  
 `FSUtils.cpp` → `_RestoreTask`  
+**PORT:** Missing parents are recreated and an occupied name is REFUSED with a reason: putting one item back is not permission to destroy another.
 
 #### FS-041 · important · open
 **Dragging a whole volume to the Trash unmounts it instead of deleting it, and the boot volume refuses with "Cannot unmount the boot volume \"<name>\"."**  
@@ -2633,34 +2636,34 @@ MoveEntryToTrash compares dir == trashDir || dir.Contains(&trashEntry) and retur
 `FSUtils.cpp` → `MoveEntryToTrash`  
 **PORT:** Scoped to the destructive op, as the source scopes it to MoveEntryToTrash -- applied to every queue it silently dropped plain copies of any folder holding a Trash.
 
-#### FS-044 · important · partial
+#### FS-044 · important · done
 **Items on a volume that has no Trash cannot be trashed; the user is offered outright deletion instead, and the two groups are executed as two separate jobs.**  
 CopyOneTrashedRefAsEntry splits the selection into entriesToTrash and entriesToDeleteOnTheSpot, caching the FSGetTrashDir result per device in a std::map; volumes (root directories) always go to the trash list because they will be unmounted. If the delete-on-the-spot list is non-empty the user gets "...cannot be moved to the Trash. Would you like to delete it/them instead? (This operation cannot be reverted.)" with Cancel/Delete, Escape = Cancel; then MoveListToTrash runs once for each list.  
 `PoseView.cpp` → `BPoseView::MoveSelectionOrEntryToTrash`  
-**MISSING:** Outright deletion is what happens when there is no Trash (which here is always), but the user is never offered the Cancel/Delete choice — the message is a status line printed as the delete starts, not a prompt — and there is no split of the selection into a trash list and a delete-on-the-spot list run as two jobs.  
-*src/tiku_trk_app.c:983-991*
+**PORT:** Asked of the ITEM's volume rather than of the store: a filesystem with no writable Trash offers deletion outright instead of a button that cannot do anything.
 
 #### FS-045 · important · open
 **Files on a read-only volume can be neither moved nor deleted: "Files cannot be moved or deleted from a read-only volume."**  
 CheckVolumeReadOnly raises a B_STOP_ALERT and returns false; it gates both MoveSelectionOrEntryToTrash and DeleteSelection, and is tested on the first selected item's device only.  
 `PoseView.cpp` → `CheckVolumeReadOnly`  
 
-#### FS-046 · core · partial
+#### FS-046 · core · differs
 **Delete asks a three-way question — Cancel / Move to Trash / Delete — with Escape, 'm' and 'd' as shortcuts, and warns the operation cannot be reverted.**  
 _DeleteTask shows kDeleteConfirmationStr when confirm is set; case 0 deletes the list and returns B_CANCELED, case 1 (and default) diverts to FSMoveToTrash(list, NULL, false) — running it synchronously on the delete thread — and only case 2 falls through to the real delete.  
 `FSUtils.cpp` → `_DeleteTask`  
-**MISSING:** Only the irreversibility warning survives: Delete writes "deleting N items (no Trash -- this is final)" and immediately runs the delete; there is no three-way Cancel / Move to Trash / Delete question and no Escape/'m'/'d' shortcuts.  
-*src/tiku_trk_app.c:981-993 (XK_Delete)*
+**PORT:** The three-way question is decided by the engine and carried by the status line rather than a modal alert -- this shell has no alert -- and Shift means the user has already decided.
 
-#### FS-047 · important · open
+#### FS-047 · important · done
 **Deleting from inside the Trash window skips the confirmation entirely, and Shift+Delete anywhere deletes instead of trashing.**  
 BPoseView::DoDelete and DoMoveToTrash both call ExcludeTrashFromSelection() first and then, if TargetModel()->IsTrash(), DeleteSelection(true, confirm=false). DoMoveToTrash reads B_SHIFT_KEY out of the window's current message and calls DeleteSelection() (with confirmation) when it is down. The bindings are Delete -> kMoveSelectionToTrash and Shift+Delete -> kDeleteSelection.  
 `PoseView.cpp` → `BPoseView::DoMoveToTrash`  
+**PORT:** Inside the Trash the question is not asked: deletion is the only thing left to do.
 
-#### FS-048 · core · open
+#### FS-048 · core · differs
 **Empty Trash empties the Trash of every mounted volume at once, skipping read-only and non-persistent volumes, and leaves the Trash folders themselves in place.**  
 empty_trash does two passes over BVolumeRoster: one summing items via CalcItemsAndSize (decrementing totalCount by one per volume so the Trash folder is not counted) and one calling FSDeleteFolder(&entry, &loopControl, updateStatus=true, deleteTopDir=false). Failures other than kTrashCanceled/kUserCanceled produce "Error emptying Trash". FSEmptyTrash refuses to start if the thread "_tracker_empty_trash_" already exists.  
 `FSUtils.cpp` → `empty_trash`  
+**PORT:** Empties the one Trash this store has rather than every mounted volume's, there being one; it goes through the DELETE queue because the trash queue refuses to trash anything already in the Trash (FS-043), and those two rules cannot share a queue builder.
 
 #### FS-049 · important · open
 **Deleting a folder tree continues past individual failures, reporting each one, rather than aborting the whole delete.**  

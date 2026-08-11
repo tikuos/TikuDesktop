@@ -26,6 +26,10 @@
 #define TIKU_TRK_ATTR_POSE_INFO   "_trk/pinfo"
 #define TIKU_TRK_ATTR_COLUMNS     "_trk/columns"
 #define TIKU_TRK_ATTR_VIEW_STATE  "_trk/viewstate"
+/* Where a trashed item came from.  Tracker writes this on the node itself,
+ * so it travels with the file; this store is keyed by path, so the record
+ * is written under the item's TRASHED path and moves with it there. */
+#define TIKU_TRK_ATTR_ORIGINAL    "_trk/original_path"
 
 /* Reserved node keys reproducing Tracker's three-slot split: state for
  * things that cannot hold it goes to a well-known slot rather than to the

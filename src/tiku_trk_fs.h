@@ -103,6 +103,105 @@ int tiku_trk_fs_duplicate(tiku_trk_fs_t *fs, const char *const *paths, int n);
  */
 int tiku_trk_fs_trash(tiku_trk_fs_t *fs, const char *const *paths, int n);
 
+/**
+ * @brief Why an operation on an item was refused (FS-023..FS-025).
+ *
+ * Refusals, not questions: none of these has an "anyway" button, because
+ * every one of them would destroy something the user did not name.
+ */
+typedef enum {
+    TIKU_TRK_REFUSE_NONE = 0,
+    TIKU_TRK_REFUSE_INTO_SELF,   /* a folder into itself or its own child */
+    TIKU_TRK_REFUSE_BY_CHILD,    /* replacing a folder with its own child */
+    TIKU_TRK_REFUSE_KIND,        /* a file over a folder, or the reverse   */
+    TIKU_TRK_REFUSE_TRASH        /* the Trash cannot be moved or copied    */
+} tiku_trk_refusal_t;
+
+/**
+ * @brief Whether moving or copying @p src into @p dst_dir is allowed.
+ *
+ * @param msg Receives the sentence to show; the wording is the reason.
+ * @return TIKU_TRK_REFUSE_NONE when the operation may proceed.
+ */
+tiku_trk_refusal_t tiku_trk_fs_check_move(tiku_trk_fs_t *fs, const char *src,
+                                          const char *dst_dir, char *msg,
+                                          size_t max);
+
+/**
+ * @brief Delete @p paths outright, with no Trash and no undo.
+ *
+ * Separate from trashing on purpose: "never trash the Trash" and "empty the
+ * Trash" are both true, and one queue builder cannot hold both rules.
+ *
+ * @return 0 if accepted.
+ */
+int tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n);
+
+/*---------------------------------------------------------------------------*/
+/* The Trash (FS-038, FS-039, FS-040, FS-044, FS-046, FS-047, FS-048)        */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Where trashed items go, relative to the store's root. */
+#define TIKU_TRK_TRASH_NAME ".Trash"
+
+/**
+ * @brief The Trash folder for @p path, creating it if absent.
+ *
+ * Asking CREATES it, as Tracker's does: "does this store have a Trash" is
+ * answered by making sure it has one, and the trash-or-delete decision
+ * depends on that answer.
+ *
+ * @return 0 on success.
+ */
+int tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
+                          size_t max);
+
+/**
+ * @brief Whether this store can hold a Trash at all (FS-044).
+ *
+ * A device namespace cannot: its nodes are not files and there is nowhere
+ * to put them.  The caller must then offer deletion outright rather than
+ * silently deleting under the name "trash".
+ */
+int tiku_trk_fs_has_trash(const tiku_trk_fs_t *fs);
+
+/**
+ * @brief Put a trashed item back where it came from (FS-040).
+ *
+ * Missing parent folders are recreated.  Something already occupying the
+ * original name is NOT overwritten: putting one thing back is not
+ * permission to destroy another.
+ *
+ * @param err Receives the reason on refusal.
+ * @return Number restored.
+ */
+int tiku_trk_fs_restore(tiku_trk_fs_t *fs, const char *const *paths, int n,
+                        char *err, size_t errmax);
+
+/** @brief Where a trashed item came from, or 0 when nothing was recorded. */
+int tiku_trk_fs_original_path(tiku_trk_fs_t *fs, const char *path, char *out,
+                              size_t max);
+
+/** @brief Empty the Trash.  @return Number removed. */
+int tiku_trk_fs_empty_trash(tiku_trk_fs_t *fs);
+
+/**
+ * @brief What the Delete key should ASK (FS-046, FS-047).
+ *
+ * Three-way -- Cancel, Move to Trash, Delete -- except where the question
+ * has no meaning: inside the Trash deletion is the only thing left, a store
+ * with no Trash cannot offer to move anything to one, and Shift says the
+ * user has already decided.
+ */
+typedef enum {
+    TIKU_TRK_DELETE_ASK = 0,     /* the three-way question                */
+    TIKU_TRK_DELETE_STRAIGHT     /* no question: delete outright          */
+} tiku_trk_delete_q_t;
+
+tiku_trk_delete_q_t tiku_trk_fs_delete_question(const tiku_trk_fs_t *fs,
+                                                const char *path,
+                                                int shift_held);
+
 /** @brief Rename one entry.  @return 0, or -1 with @p err filled. */
 int tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path,
                        const char *new_name, char *err, size_t errmax);
