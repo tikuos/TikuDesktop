@@ -2300,31 +2300,28 @@ _EntryCreated: if the message's "path" is in fDirectoryPaths, the new directory 
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryCreated`
 **SUBSYSTEM:** Virtual directories. No fDirectoryPaths equivalent exists (grep returns nothing); a CREATED notice carries one parent dir and the handler drops entries whose dir is not the view's own path (src/tiku_trk_poseview.c:2814-2823), so there is no place where a contributing directory's appearance could fan out into per-child synthetic creations.  
 
-#### PVN-061 · core · open
+#### PVN-061 · core · done
 **In a virtual directory, a name is supplied by the first contributing directory that has it -- an entry created in a lower-priority directory is invisible and produces no row.**  
 _EntryCreated calls _GetEntry (VirtualDirectoryManager::GetEntry, which lstat()s the name under each path in order and returns the first hit) and returns without acting unless the winning ref equals the created ref; the iterator uses BMergedDirectory::B_ALWAYS_FIRST.  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryCreated / VirtualDirectoryManager::GetEntry`  
-**TIKU:** This is the shadowing rule a merged device-namespace + local-files view needs. Pick and document a precedence order (device wins, or local wins) before writing the merge.
-**SUBSYSTEM:** Virtual directories (shadowing rule). No precedence-ordered name resolution exists: rows are keyed by full path only (find_path, src/tiku_trk_notify.c:93-104; pose_index, src/tiku_trk_poseview.c:2638-2649), and two same-named entries from different source directories can never meet in one listing because every listing enumerates exactly one directory (src/tiku_trk_backend_posix.c:95-143, src/tiku_trk_backend_tiku.c:296-408). The TIKU note's decide-a-precedence-order task is undone.  
-
-#### PVN-062 · important · open
+**TIKU:** This is the shadowing rule a merged device-namespace + local-files view needs. Pick and document a precedence order (device wins, or local wins) before writing the merge.  
+**PORT:** The first contributor that has a name supplies it; a copy in a later one is shadowed and produces no row, because a row for it would name a file the user cannot reach by that name.  
+#### PVN-062 · important · done
 **An entry created in a higher-priority directory replaces the currently shown one of the same name in a single visible step.**  
 _EntryCreated finds the existing pose by name (FindPoseByFileName); if the node differs it tells the manager DirectoryRemoved (for directories) and synthesizes a B_ENTRY_REMOVED for the old node before dispatching the create.  
-`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryCreated`
-**SUBSYSTEM:** Virtual directories. No FindPoseByFileName-with-node-comparison replacement step exists — creation dedup is by exact path and node_id only (src/tiku_trk_poseview.c:2821-2843), and there is no higher/lower-priority source concept anywhere (single-source listings, src/tiku_trk_backend_tiku.c:296-360).  
-
-#### PVN-063 · important · open
+`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryCreated`  
+**PORT:** A creation is visible only when the new entry is the one that now wins, which makes the replacement a single step rather than a removal and an insertion.  
+#### PVN-063 · important · done
 **Removing the winning entry in a virtual directory reveals the shadowed entry of the same name from a lower-priority directory rather than leaving a hole.**  
 _EntryRemoved re-runs _GetEntry for the name; if another entry is found it synthesizes a B_ENTRY_CREATED for it after the removal (and returns early if the replacement resolves to the same translated directory node, i.e. nothing actually changed).  
-`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`
-**SUBSYSTEM:** Virtual directories. The REMOVED branch removes the row (or a zombie) and stops (src/tiku_trk_poseview.c:2896-2918); nothing re-resolves the removed name against other source directories to reveal a shadowed entry, because no other source directories exist for a view (one path per view, src/tiku_trk_poseview.c:690-691).  
-
-#### PVN-064 · important · open
+`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`  
+**PORT:** Removing the winner reveals what it shadowed rather than leaving a hole -- the name IS still there.  Whether a removal is visible is a question about PRIORITY answered against whoever owns the name now, since the entry itself is already gone.  
+#### PVN-064 · important · partial
 **Removing an entire contributing directory removes every row that came from it.**  
 _EntryRemoved: when "path" matches an entry in fDirectoryPaths, it collects all poses whose entry ref's DirectoryNodeRef() equals the removed node and dispatches a synthetic B_ENTRY_REMOVED for each.  
-`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`
-**SUBSYSTEM:** Virtual directories. Models carry no source-directory identity to sweep by (src/tiku_trk_model.h:96-105 — name/path/type/kind/facts/node_id only), and no path-matched removal fan-out exists; the only whole-source teardown is a window's own folder going GONE (src/tiku_trk_poseview.c:3313-3325), which closes the window rather than pruning rows from a merged view.  
-
+`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`  
+**PORT:** When the last copy of a name goes, so does its row.  
+**MISSING:** Removing a whole CONTRIBUTOR is not handled -- the merge has no way yet to be told a source path is gone and drop every row that came from it.  
 #### PVN-065 · polish · open
 **Moves inside a virtual directory are shown as a removal followed by a creation rather than as a rename.**  
 _EntryMoved dispatches B_ENTRY_REMOVED for the from-ref/from-path and B_ENTRY_CREATED for the to-ref/path; the source comments this as 'the lazy approach' versus forwarding a real B_ENTRY_MOVED.  
@@ -2332,18 +2329,18 @@ _EntryMoved dispatches B_ENTRY_REMOVED for the from-ref/from-path and B_ENTRY_CR
 **TIKU:** Consequence a rewrite inherits: selection, in-place rename and scroll position are not preserved across a move in a virtual directory. Decide whether to keep that.
 **SUBSYSTEM:** Virtual directories. The remove-then-create dispatch for merged-view moves has no home: for the port's single-source views a move is deliberately the opposite — one MOVED event paired by node_id precisely so the row is NOT destroyed and re-created (src/tiku_trk_notify.c:120-139, src/tiku_trk_poseview.c:2920-2989). The mechanism this row describes exists nowhere because merged views do not.  
 
-#### PVN-066 · important · open
+#### PVN-066 · important · partial
 **Subdirectories of a virtual directory open as virtual directories themselves, merging the same-named subdirectory from every contributing path.**  
 VirtualDirectoryEntryList::GetNextDirents rewrites any dirent that is a directory via VirtualDirectoryManager::TranslateDirectoryEntry, which manufactures a per-parent UUID directory under kTemporaryDefinitionFileBaseDirectoryPath and a child definition file, and returns that node instead of the real one.  
-`VirtualDirectoryManager.cpp` → `VirtualDirectoryManager::TranslateDirectoryEntry / VirtualDirectoryEntryList::GetNextDirents`
-**SUBSYSTEM:** Virtual directories. No TranslateDirectoryEntry/UUID-definition machinery exists (grep uuid/translate over src returns nothing except an unrelated hvif comment). A subdirectory of a namespace dir does open as a VIRTUAL_DIR (src/tiku_trk_backend_tiku.c:85), but that is single-source kind propagation, not the row's same-named-subdirectory merge.  
-
-#### PVN-067 · important · open
+`VirtualDirectoryManager.cpp` → `VirtualDirectoryManager::TranslateDirectoryEntry / VirtualDirectoryEntryList::GetNextDirents`  
+**PORT:** A subdirectory merges the same-named subdirectory of every contributor that has one, in the same order, so descending does not leave the merge behind.  
+**MISSING:** No per-parent identity for the merged child -- the original manufactures a UUID directory so the child has a node of its own -- so a merged subdirectory cannot yet be a window's target.  
+#### PVN-067 · important · partial
 **Editing the definition file of a virtual directory re-reads its source paths and reloads the window.**  
 _NodeStatChanged: for fRootDefinitionFileRef with B_STAT_MODIFICATION_TIME in "fields", it calls manager->DefinitionFileChanged (which re-reads and prunes the tree via _UpdateTree, and returns false if the definition is gone -- in which case the message is ignored and the pending remove notice is relied on), then compares GetDefinitionFileChangeTime against fFileChangeTime and calls Refresh().  
-`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_NodeStatChanged / VirtualDirectoryManager::DefinitionFileChanged`
-**SUBSYSTEM:** Virtual directories. There is no definition file whose edit could trigger anything: saved state knows only pinfo/columns/viewstate/original_path plus saved-query blobs (src/tiku_trk_state.h:26-32, src/tiku_trk_query.c:790-829), and no _NodeStatChanged-style trigger exists — the only stat-driven reactions are the generic diff (src/tiku_trk_notify.c:106-162).  
-
+`VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_NodeStatChanged / VirtualDirectoryManager::DefinitionFileChanged`  
+**PORT:** The definition file is one path per line, comments and blanks skipped, and the order of the lines IS the priority order.  
+**MISSING:** Nothing re-reads it when it changes: that needs the watch on the definition file itself (PVN-059).  
 #### PVN-068 · polish · open
 **A virtual directory that disappears cleans up its generated definition files and temporary directories.**  
 VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over children, rmdir()s the UUID directory under /var/tmp-style base path, removes the generated definition file for non-root infos, and unregisters the node from fInfos.  
