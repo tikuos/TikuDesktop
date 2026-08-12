@@ -118,6 +118,12 @@ int tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
 /** @brief Re-read the tray's nodes.  @return values that changed. */
 int tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db);
 
+/** @brief How many applications the bar is tracking. */
+int tiku_trk_deskbar_team_count(const tiku_trk_deskbar_t *db);
+
+/** @brief The name of team @p i, or NULL. */
+const char *tiku_trk_deskbar_team_name(const tiku_trk_deskbar_t *db, int i);
+
 /**
  * @brief Strip the owning application's name from a window title.
  *

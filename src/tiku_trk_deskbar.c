@@ -88,6 +88,21 @@ tiku_trk_deskbar_dock(const tiku_trk_deskbar_t *db)
 }
 
 int
+tiku_trk_deskbar_team_count(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->team_count : 0;
+}
+
+const char *
+tiku_trk_deskbar_team_name(const tiku_trk_deskbar_t *db, int i)
+{
+    if (db == NULL || i < 0 || i >= db->team_count) {
+        return NULL;
+    }
+    return db->teams[i].name;
+}
+
+int
 tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
 {
     int i;

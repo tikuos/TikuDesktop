@@ -32,6 +32,20 @@
 /** @brief The visible slots; more than this and the strip scrolls. */
 #define TIKU_TRK_SW_SLOTS 7
 
+/** @brief The two icon sizes the strip draws: the selected one is large. */
+#define TIKU_TRK_SW_SMALL 24
+#define TIKU_TRK_SW_LARGE 48
+
+/**
+ * @brief One inset step of the shrink/grow, in microseconds.
+ *
+ * The original does two steps each way at 20 ms.  Kept because the feel is
+ * the row: fast enough not to be a wait, slow enough to show WHICH icon the
+ * selection left.
+ */
+#define TIKU_TRK_SW_STEP_US 20000
+#define TIKU_TRK_SW_STEPS   2
+
 /** @brief One application in the strip. */
 typedef struct {
     char    name[TIKU_TRK_SW_NAME];
@@ -61,6 +75,11 @@ typedef struct {
     int               scroll;       /* first visible slot                */
     int64_t           opened;
     int64_t           last_switch;
+    /* The selection the strip is animating AWAY from, and when it left.
+     * Held so the size of every slot is a function of the clock rather
+     * than of a frame counter somebody has to remember to advance. */
+    int               prev;
+    int64_t           moved;
 } tiku_trk_switcher_t;
 
 void tiku_trk_switcher_init(tiku_trk_switcher_t *s);
@@ -97,6 +116,25 @@ tiku_trk_sw_act_t tiku_trk_switcher_key(tiku_trk_switcher_t *s,
 
 /** @brief A click on slot @p slot, or -1 for outside (DB-059). */
 tiku_trk_sw_act_t tiku_trk_switcher_click(tiku_trk_switcher_t *s, int slot);
+
+/**
+ * @brief The size icon @p i should draw at, at @p now (DB-058).
+ *
+ * The outgoing icon shrinks and the incoming one grows over the same two
+ * steps, so at any instant the pair says which way the selection went.
+ */
+int tiku_trk_switcher_icon_size(const tiku_trk_switcher_t *s, int i,
+                                int64_t now);
+
+/** @brief Whether the strip is still animating at @p now. */
+int tiku_trk_switcher_animating(const tiku_trk_switcher_t *s, int64_t now);
+
+/**
+ * @brief Whether a scroller arrow belongs at an end (DB-058).
+ *
+ * @param right Non-zero for the right-hand one.
+ */
+int tiku_trk_switcher_scroller(const tiku_trk_switcher_t *s, int right);
 
 /** @brief Where the panel sits on a screen of @p sw by @p sh (DB-060). */
 void tiku_trk_switcher_place(int sw, int sh, int w, int h, int *x, int *y);

@@ -6258,13 +6258,14 @@ Minimize(bool) only forwards a false; QuitRequested returns false when the messa
 `BarApp.cpp` → `TBarApp::QuitRequested`
 **WAIVER CANDIDATE:** the Deskbar is not a window: it is a strip composited by the desktop's own draw pass (src/tiku_trk_desktop.c:1516) and never enters the desk window list, so there is nothing to minimize or close; and Ctrl+Q quits the single process containing the bar (src/tiku_trk_desktop.c:2446-2448) — a Deskbar with its own survivable lifetime (and a prefs window for Cmd+Q to close instead) cannot exist in a one-process desktop. Waiver candidate  
 
-#### DB-054 · core · partial
+#### DB-054 · core · done
 **Ctrl+Tab from any window opens the application switcher; holding Ctrl keeps it on screen, Shift reverses direction, and releasing Ctrl within ~180ms instead performs an instant switch to the previous application without ever showing the panel**  
 BWindow::_Switcher sends 'TASK' with key/modifiers/when/team; MainEntry busy-waits up to 180000us in 20ms steps and calls QuickSwitch if the key or Ctrl is released first. Repeats are filtered by fSkipUntil and by the semaphore. Ctrl+` (rawKey 0x11) cycles windows of the current app instead of applications  
 `Switcher.cpp` → `TSwitchManager::MainEntry`  
 **TIKU:** Requires a system-wide hotkey path from the window/input layer to Deskbar; the timing constants are load-bearing for the feel  
 **PORT:** The hair trigger is the rule: released inside 180 ms means "the previous application", held longer means "show me the list".  The same gesture means two things and only the timing tells them apart.  
-**MISSING:** Nothing raises it -- no Ctrl+Tab binding in either shell, and no window to draw the strip in.  
+**PORT:** Ctrl+Tab raises the panel and Tab moves on within it; releasing Control commits, and the hair trigger decides what that meant -- inside 180 ms the previous application, held longer the list.  While it is up it takes every key, because it IS the focus for as long as it shows.  
+*Shell: desktop*  
 #### DB-055 · important · done
 **The switcher orders applications most-recently-used-first, but only re-sorts when it has been idle for more than 0.4 seconds, so repeated fast switching keeps a stable order**  
 _SortApps uses BPrivate::get_application_order(current_workspace()) and appends anything not in that list; triggered only when now > fLastSwitch + 400000, which also resets the quick-switch anchor to the current app/window  
@@ -6281,24 +6282,28 @@ ActivateApp: single-team case just be_roster->ActivateApp (refusing when the tar
 `Switcher.cpp` → `TSwitchManager::ActivateApp`
 **SUBSYSTEM:** application switcher; additionally waits on the multi-app roster (DB-014 — only Tracker ever registered, src/tiku_trk_desktop.c:1587) and workspaces do not exist (grep workspace hits one command-label string, src/tiku_trk_shortcuts.c:88)  
 
-#### DB-058 · polish · open
+#### DB-058 · polish · partial
 **The switcher animates: the outgoing icon shrinks, the strip scrolls to the new slot, the incoming icon grows, and arrow scrollers appear at the ends when there are more apps than the seven visible slots**  
 AnimateIcon does two 20ms inset steps each way between the 24px and 48px cached icons via an offscreen bitmap; scroll step is half the slot size and doubles when wrapping more than 4 slots; the selected icon is drawn large only when not auto-scrolling. Clicking the left/right scroller area jumps by SlotCount-1; clicking above/below the window list scrolls one window  
 `Switcher.cpp` → `TIconView::AnimateIcon`  
 **TIKU:** Animation timing is user-visible feel; on a constrained target consider a static fallback but keep the slot/scroller semantics  
-**BLOCKED:** Waits on the switcher having a window at all (DB-054).  The strip's scroll position is computed -- the selection drags it along and it holds seven slots -- but the shrink/grow animation and the end scrollers are drawing, and there is nothing to draw into.  
-#### DB-059 · polish · partial
+**PORT:** Every icon's size is a function of the switcher's own clock, so a redraw at any instant shows the animation where it actually is rather than where a frame counter believes it is.  The two icons TRADE size -- their sum is constant -- which is what makes the pair say which way the selection went, and the steps are quantised because a smooth slide would be a different animation wearing the same numbers.  Scroller arrows appear only at an end there is more strip beyond.  
+**MISSING:** The strip does not scroll SMOOTHLY to the new slot; it jumps, since the slot geometry is computed rather than tweened.  Icons are drawn from one cached size scaled, not from separate 24 and 48 px art.  
+*Shell: desktop*  
+#### DB-059 · polish · done
 **Clicking an application icon in the switcher selects it, and pressing a mouse button outside the switcher window dismisses it without switching**  
 TIconView::MouseDown maps x to a slot and calls SwitchToApp; Pulse (100ms while shown) commits with Stop(true) as soon as Ctrl is released in hair-trigger mode, or cancels with Stop(false) on an outside click when hair-trigger is off. The window view's Pulse resets to window 0 if the selected window vanished  
 `Switcher.cpp` → `TIconView::Pulse`  
 **PORT:** A click on a slot selects it, one on an empty slot does nothing, and one OUTSIDE dismisses without switching: a click that missed must not choose whatever it happened to be over.  
-**MISSING:** No hair-trigger commit on a Ctrl release detected by a pulse, since nothing pulses the switcher yet.  
-#### DB-060 · polish · partial
+**PORT:** A click on a slot selects it, an empty slot does nothing, and one outside dismisses without switching.  The Control release is handled on the key edge rather than by a pulse, which is the same decision with one fewer timer.  
+*Shell: desktop*  
+#### DB-060 · polish · done
 **The switcher panel centers itself on the main screen, slightly above vertical center, and re-centers when the screen resolution or workspace changes**  
 CenterWindow aligns in the screen frame then lifts by screenFrame.Height()/16; also re-centered by Process() if the panel would fall outside the screen. Window title strings are 'AppName: WindowTitle' unless the window name already matches the app name under SmartStrcmp (which ignores spaces and underscores), and are middle-truncated to fit  
 `Switcher.cpp` → `TSwitcherWindow::CenterWindow`  
 **PORT:** Centred across and lifted a sixteenth of the screen, because a panel centred exactly sits under where the eye already is; a row reads "App: Window", or just the application when the window is untitled, since repeating the name twice says nothing.  
-**MISSING:** Nothing re-places it on a resolution change, there being no panel on screen to re-place.  
+**PORT:** Centred across and lifted a sixteenth, sized from the slots it must hold, and the title reads "App: Window" or just the application when the window is untitled.  
+*Shell: desktop*  
 #### DB-061 · core · open
 **Deskbar preferences offer: recent documents/folders/applications with per-type counts, sort apps by name, Tracker always first, show application expander, expand new applications, hide application names, icon size slider, dock location picker, always on top, auto-raise, auto-hide**  
 Recent counts range 0..50; a count of 0 forces that type disabled even if its checkbox is on (enabled && count > 0 in the app's handler). Expander and expand-new are disabled unless the bar is vertical AND expanded; auto-raise is disabled while always-on-top is on; each dependent state is re-evaluated on kStateChanged and kUpdatePreferences  

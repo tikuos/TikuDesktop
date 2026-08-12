@@ -32,6 +32,7 @@
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_volume.h"
+#include "tiku_trk_switcher.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -171,6 +172,8 @@ typedef struct desktop {
     tiku_trk_win_t      *prefs_win;
     tiku_trk_page_t      prefs_page;
     char                 prefs_path[TIKU_TRK_PATH_MAX];
+    tiku_trk_switcher_t  sw;
+    tiku_trk_win_t      *sw_win;
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -2256,6 +2259,130 @@ prefs_open(desktop_t *app)
                                         fr, prefs_draw, app, NULL);
 }
 
+#define SW_SLOT   56
+#define SW_PAD    12
+#define SW_ARROW  14
+
+/** @brief The panel's size, from the slots it must hold. */
+static tiku_desk_rect_t
+switcher_frame(desktop_t *app)
+{
+    tiku_desk_rect_t f;
+    int slots = (app->sw.n < TIKU_TRK_SW_SLOTS) ? app->sw.n
+                                                : TIKU_TRK_SW_SLOTS;
+    int x = 0, y = 0;
+
+    if (slots < 1) { slots = 1; }
+    f.w = SW_PAD * 2 + slots * SW_SLOT + 2 * SW_ARROW;
+    f.h = SW_PAD * 2 + TIKU_TRK_SW_LARGE + 22;
+    tiku_trk_switcher_place(DESK_W, DESK_H, f.w, f.h, &x, &y);
+    f.x = x;
+    f.y = y;
+    return f;
+}
+
+/**
+ * @brief Draw the strip.
+ *
+ * Every icon's size comes from the switcher's own clock, so a redraw at any
+ * moment shows the animation where it actually is rather than where a frame
+ * counter thinks it is (DB-058).
+ */
+static void
+switcher_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+              void *ctx)
+{
+    desktop_t *app = ctx;
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    int64_t now = tiku_trk_now();
+    char title[160];
+    int i, slots;
+
+    (void)w;
+    tiku_desk_fill(s, c, TIKU_DESK_C_PANEL);
+    slots = (app->sw.n < TIKU_TRK_SW_SLOTS) ? app->sw.n : TIKU_TRK_SW_SLOTS;
+    for (i = 0; i < slots; i++) {
+        int which = app->sw.scroll + i;
+        int size, cx, cy;
+        tiku_desk_rect_t box;
+
+        if (which >= app->sw.n) {
+            break;
+        }
+        size = tiku_trk_switcher_icon_size(&app->sw, which, now);
+        /* Centred in its slot, so a growing icon expands about its middle
+         * rather than crawling out of one corner. */
+        cx = c.x + SW_PAD + SW_ARROW + i * SW_SLOT + SW_SLOT / 2;
+        cy = c.y + SW_PAD + TIKU_TRK_SW_LARGE / 2;
+        box.x = cx - size / 2;
+        box.y = cy - size / 2;
+        box.w = size;
+        box.h = size;
+        if (which == app->sw.sel) {
+            tiku_desk_fill(s, box, TIKU_DESK_C_SELECT);
+        }
+        if (!tiku_trk_icon_paint(s, "app", box.x, box.y, size)) {
+            tiku_desk_frame(s, box, TIKU_DESK_C_TEXT);
+        }
+    }
+    /* Arrows only where there is more strip to reach. */
+    if (tiku_trk_switcher_scroller(&app->sw, 0)) {
+        tiku_desk_text(s, f, c.x + 4, c.y + SW_PAD + 28, "<",
+                       TIKU_DESK_C_TEXT);
+    }
+    if (tiku_trk_switcher_scroller(&app->sw, 1)) {
+        tiku_desk_text(s, f, c.x + c.w - 12, c.y + SW_PAD + 28, ">",
+                       TIKU_DESK_C_TEXT);
+    }
+    tiku_trk_switcher_title(&app->sw, app->sw.sel, app->sw.selwin, title,
+                            sizeof title);
+    tiku_desk_text(s, f, c.x + SW_PAD, c.y + c.h - 10, title,
+                   TIKU_DESK_C_TEXT);
+}
+
+/** @brief Show the switcher, seeding it from the Deskbar's team list. */
+static void
+switcher_open(desktop_t *app, int back)
+{
+    int i;
+
+    if (!app->sw.shown) {
+        /* Seeded from the teams the Deskbar already tracks: one list of
+         * what is running, not two that can disagree. */
+        tiku_trk_switcher_init(&app->sw);
+        for (i = 0; i < tiku_trk_deskbar_team_count(app->deskbar); i++) {
+            const char *nm = tiku_trk_deskbar_team_name(app->deskbar, i);
+
+            if (nm != NULL) {
+                (void)tiku_trk_switcher_app(&app->sw, nm,
+                                            strcmp(nm, "Tracker") == 0);
+            }
+        }
+    }
+    tiku_trk_switcher_open(&app->sw, tiku_trk_now(), back);
+    if (app->sw_win == NULL || !app->sw_win->open) {
+        app->sw_win = tiku_trk_desk_open(app->desk, "Switcher",
+                                         switcher_frame(app),
+                                         switcher_draw, app, NULL);
+    }
+}
+
+/** @brief Take the switcher down, committing or not. */
+static void
+switcher_close(desktop_t *app, int commit)
+{
+    if (app->sw_win != NULL) {
+        tiku_trk_desk_close(app->desk, app->sw_win);
+        app->sw_win = NULL;
+    }
+    if (commit && app->sw.sel >= 0 && app->sw.sel < app->sw.n) {
+        snprintf(app->status, sizeof app->status, "switched to %.60s",
+                 app->sw.app[app->sw.sel].name);
+    }
+    app->sw.shown = 0;
+    app->dirty = 1;
+}
+
 static void
 draw_all(desktop_t *app)
 {
@@ -2724,7 +2851,9 @@ main(int argc, char **argv)
                 }
             } else if (app.dpy != NULL && XPending(app.dpy) > 0) {
                 XNextEvent(app.dpy, &ev);
-                if (ev.type == KeyPress) {
+                if (ev.type == KeyPress || ev.type == KeyRelease) {
+                    /* The release matters now: letting go of Control is
+                     * what commits the switcher. */
                     ev_ks = XLookupKeysym(&ev.xkey, 0);
                 }
                 have = 1;
@@ -3298,6 +3427,17 @@ main(int argc, char **argv)
                 tiku_trk_desk_end_track(app.desk);
                 break;
             case KeyRelease:
+                if (app.sw.shown && (ev_ks == XK_Control_L ||
+                                     ev_ks == XK_Control_R)) {
+                    /* Released inside the hair trigger the user meant the
+                     * previous application; held longer they meant the
+                     * list, and letting go now is the choice (DB-054). */
+                    (void)tiku_trk_switcher_release(&app.sw,
+                                                    tiku_trk_now());
+                    switcher_close(&app, 1);
+                    break;
+                }
+                /* fall through */
             case KeyPress: {
                 /* A menu that is open rewrites itself as modifiers move:
                  * nine of its items change label AND command together while
@@ -3585,6 +3725,41 @@ sel_done:
                         app.alert.chosen = app.alert.nbutton - 1;
                         answer_alert(&app);
                     }
+                    app.dirty = 1;
+                    break;
+                }
+                if (app.sw.shown) {
+                    /* Modal while it is up, and every key goes to it: the
+                     * switcher IS the focus for as long as it shows. */
+                    const char *nm = XKeysymToString(ks);
+                    tiku_trk_sw_act_t act =
+                        tiku_trk_switcher_key(&app.sw, (nm != NULL) ? nm : "",
+                                              (ev.xkey.state & ShiftMask)
+                                                  ? 1 : 0);
+
+                    if (act == TIKU_TRK_SW_COMMIT) {
+                        switcher_close(&app, 1);
+                    } else if (act == TIKU_TRK_SW_CANCEL) {
+                        switcher_close(&app, 0);
+                    } else if (act == TIKU_TRK_SW_QUIT_APP ||
+                               act == TIKU_TRK_SW_HIDE_APP) {
+                        snprintf(app.status, sizeof app.status,
+                                 "%s %.50s",
+                                 (act == TIKU_TRK_SW_QUIT_APP) ? "quitting"
+                                                               : "hiding",
+                                 app.sw.app[app.sw.sel].name);
+                    }
+                    if (ks == XK_Tab) {
+                        /* Tab while it is up moves on, which is the same
+                         * gesture that opened it. */
+                        switcher_open(&app,
+                                      (ev.xkey.state & ShiftMask) ? 1 : 0);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
+                if (ks == XK_Tab && (ev.xkey.state & ControlMask)) {
+                    switcher_open(&app, (ev.xkey.state & ShiftMask) ? 1 : 0);
                     app.dirty = 1;
                     break;
                 }

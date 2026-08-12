@@ -1,0 +1,13 @@
+# shell: desktop
+# DB-054/DB-058: Ctrl+Tab raises the switcher, and the strip is drawn.
+note Ctrl+Tab opens it
+key Tab ctrl
+wait 3
+expect-title Switcher
+shot /tmp/trk_script/switcher.png
+note Tab again moves on, and Escape takes it away
+key Tab
+wait 2
+key Escape
+wait 3
+quit

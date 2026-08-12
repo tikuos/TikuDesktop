@@ -90,6 +90,8 @@ tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
         s->selwin = 0;
         s->scroll = 0;
     }
+    s->prev = s->sel;
+    s->moved = now;
     s->sel += back ? -1 : 1;
     if (s->sel >= s->n) { s->sel = 0; }
     if (s->sel < 0)     { s->sel = s->n - 1; }
@@ -129,6 +131,7 @@ cycle_app(tiku_trk_switcher_t *s, int back)
     if (s->n == 0) {
         return;
     }
+    s->prev = s->sel;
     s->sel += back ? -1 : 1;
     if (s->sel >= s->n) { s->sel = 0; }
     if (s->sel < 0)     { s->sel = s->n - 1; }
@@ -228,4 +231,52 @@ tiku_trk_switcher_title(const tiku_trk_switcher_t *s, int i, int w,
     } else {
         snprintf(out, max, "%s", s->app[i].name);
     }
+}
+
+int
+tiku_trk_switcher_animating(const tiku_trk_switcher_t *s, int64_t now)
+{
+    if (s == NULL || !s->shown || s->prev == s->sel) {
+        return 0;
+    }
+    return (now - s->moved < (int64_t)TIKU_TRK_SW_STEP_US *
+                             TIKU_TRK_SW_STEPS);
+}
+
+int
+tiku_trk_switcher_icon_size(const tiku_trk_switcher_t *s, int i, int64_t now)
+{
+    int64_t gone;
+    int span = TIKU_TRK_SW_LARGE - TIKU_TRK_SW_SMALL;
+    int done;
+
+    if (s == NULL || i < 0 || i >= s->n) {
+        return TIKU_TRK_SW_SMALL;
+    }
+    if (!tiku_trk_switcher_animating(s, now)) {
+        /* Settled: only the selection is large. */
+        return (i == s->sel) ? TIKU_TRK_SW_LARGE : TIKU_TRK_SW_SMALL;
+    }
+    gone = now - s->moved;
+    /* Quantised to the step rather than smooth: the original insets twice,
+     * and a continuous slide would be a different animation wearing the
+     * same numbers. */
+    done = (int)(gone / TIKU_TRK_SW_STEP_US) + 1;
+    if (done > TIKU_TRK_SW_STEPS) { done = TIKU_TRK_SW_STEPS; }
+    if (i == s->sel) {
+        return TIKU_TRK_SW_SMALL + span * done / TIKU_TRK_SW_STEPS;
+    }
+    if (i == s->prev) {
+        return TIKU_TRK_SW_LARGE - span * done / TIKU_TRK_SW_STEPS;
+    }
+    return TIKU_TRK_SW_SMALL;
+}
+
+int
+tiku_trk_switcher_scroller(const tiku_trk_switcher_t *s, int right)
+{
+    if (s == NULL || s->n <= TIKU_TRK_SW_SLOTS) {
+        return 0;                   /* everything fits: nothing to reach */
+    }
+    return right ? (s->scroll + TIKU_TRK_SW_SLOTS < s->n) : (s->scroll > 0);
 }

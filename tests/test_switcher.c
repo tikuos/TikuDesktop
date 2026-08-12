@@ -141,6 +141,73 @@ main(void)
           "and just the application when the window has no title of its "
           "own, since repeating the name twice says nothing");
 
+
+    printf("\nthe animation (DB-058)\n");
+    {
+        tiku_trk_switcher_t t;
+        int64_t t0 = 100000000;
+
+        tiku_trk_switcher_init(&t);
+        (void)tiku_trk_switcher_app(&t, "One", 0);
+        (void)tiku_trk_switcher_app(&t, "Two", 0);
+        tiku_trk_switcher_open(&t, t0, 0);   /* 0 -> 1 */
+
+        check(tiku_trk_switcher_animating(&t, t0), "DB-058",
+              "a move starts the strip animating");
+        check(tiku_trk_switcher_icon_size(&t, 1, t0) < TIKU_TRK_SW_LARGE &&
+              tiku_trk_switcher_icon_size(&t, 1, t0) > TIKU_TRK_SW_SMALL,
+              "DB-058", "the incoming icon is part way grown");
+        check(tiku_trk_switcher_icon_size(&t, 0, t0) < TIKU_TRK_SW_LARGE &&
+              tiku_trk_switcher_icon_size(&t, 0, t0) > TIKU_TRK_SW_SMALL,
+              "DB-058", "and the outgoing one part way shrunk -- the pair "
+              "says which way the selection went");
+        check(tiku_trk_switcher_icon_size(&t, 0, t0) +
+              tiku_trk_switcher_icon_size(&t, 1, t0) ==
+              TIKU_TRK_SW_SMALL + TIKU_TRK_SW_LARGE, "DB-058",
+              "they trade size between them rather than both growing");
+
+        check(!tiku_trk_switcher_animating(&t, t0 + 40000), "DB-058",
+              "it is over after two twenty-millisecond steps");
+        check(tiku_trk_switcher_icon_size(&t, 1, t0 + 40000) ==
+              TIKU_TRK_SW_LARGE &&
+              tiku_trk_switcher_icon_size(&t, 0, t0 + 40000) ==
+              TIKU_TRK_SW_SMALL, "DB-058",
+              "and settles with only the selection large");
+        check(tiku_trk_switcher_icon_size(&t, 1, t0 + 5) ==
+              tiku_trk_switcher_icon_size(&t, 1, t0 + 19000), "DB-058",
+              "the steps are QUANTISED, not a smooth slide: a continuous "
+              "one would be a different animation wearing these numbers");
+    }
+
+    printf("\nthe end scrollers (DB-058)\n");
+    {
+        tiku_trk_switcher_t t;
+        char nm[16];
+        int i;
+
+        tiku_trk_switcher_init(&t);
+        for (i = 0; i < 3; i++) {
+            snprintf(nm, sizeof nm, "app%d", i);
+            (void)tiku_trk_switcher_app(&t, nm, 0);
+        }
+        check(!tiku_trk_switcher_scroller(&t, 0) &&
+              !tiku_trk_switcher_scroller(&t, 1), "DB-058",
+              "with fewer apps than slots there is nothing to reach, so no "
+              "arrows");
+        for (i = 3; i < 12; i++) {
+            snprintf(nm, sizeof nm, "app%d", i);
+            (void)tiku_trk_switcher_app(&t, nm, 0);
+        }
+        t.scroll = 0;
+        check(!tiku_trk_switcher_scroller(&t, 0) &&
+              tiku_trk_switcher_scroller(&t, 1), "DB-058",
+              "at the left end only the right arrow shows");
+        t.scroll = 12 - TIKU_TRK_SW_SLOTS;
+        check(tiku_trk_switcher_scroller(&t, 0) &&
+              !tiku_trk_switcher_scroller(&t, 1), "DB-058",
+              "and at the right end only the left one");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the switcher holds");
     return fails ? 1 : 0;
 }
