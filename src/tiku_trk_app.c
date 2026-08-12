@@ -1530,6 +1530,7 @@ main(int argc, char **argv)
 
                 sst.status = a.status;
                 sst.title = a.title;
+                sst.alert = NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {

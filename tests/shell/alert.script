@@ -1,0 +1,18 @@
+# shell: desktop
+# FS-018/FS-035: a collision now ASKS instead of the shell answering for it.
+# Copying a.txt onto a folder that already holds one must stop and put the
+# question up, and the answer must reach the engine.
+note copy a.txt into sub, which already has one of that name
+press 200 97
+move 200 90
+move 200 77
+release 200 77
+wait 25
+note the job stops with the question up rather than choosing for the user
+expect-alert exists
+shot /tmp/trk_script/alert.png
+note Escape presses Cancel, which abandons the job and destroys nothing
+key Escape
+wait 15
+expect-file /tmp/trk_script/a.txt
+quit

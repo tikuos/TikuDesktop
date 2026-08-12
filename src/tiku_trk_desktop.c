@@ -29,6 +29,7 @@
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_thumb.h"
+#include "tiku_trk_alert.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -162,6 +163,8 @@ typedef struct desktop {
     char                 drop_dst[TIKU_TRK_PATH_MAX];
     tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
+    tiku_trk_alert_t     alert;     /* the question, when there is one */
+    tiku_trk_progress_win_t prog;   /* the shared status window        */
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -1869,6 +1872,171 @@ publish_windows(desktop_t *app)
                                  (focused != NULL));
 }
 
+/** @brief Where the alert sits: centred, and the same size every time. */
+#define ALERT_W 420
+#define ALERT_H 150
+
+static tiku_desk_rect_t
+alert_frame(void)
+{
+    tiku_desk_rect_t r;
+
+    r.x = (DESK_W - ALERT_W) / 2;
+    r.y = (DESK_H - ALERT_H) / 3;   /* a third down reads better than half */
+    r.w = ALERT_W;
+    r.h = ALERT_H;
+    return r;
+}
+
+/**
+ * @brief Draw the alert over everything.
+ *
+ * Above the menus as well as the windows: it is the one thing that must be
+ * answered before anything else happens.
+ */
+static void
+alert_draw(desktop_t *app)
+{
+    tiku_desk_rect_t f = alert_frame();
+    const tiku_desk_font_t *fo = tiku_desk_font_plain();
+    int i, ty;
+
+    if (!app->alert.open) {
+        return;
+    }
+    tiku_desk_fill(app->surf, f, TIKU_DESK_C_PANEL);
+    tiku_desk_bevel(app->surf, f,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    ty = f.y + 24;
+    {   /* Wrapped by hand: the message is a sentence about a file, and a
+         * file name is exactly the thing that makes it too long. */
+        const char *p = app->alert.text;
+        char line[80];
+        size_t n = 0;
+
+        while (*p != '\0' && ty < f.y + f.h - 46) {
+            size_t k = 0;
+            const char *sp = NULL;
+
+            while (p[k] != '\0' && k < sizeof line - 1u) {
+                if (p[k] == ' ') { sp = p + k; }
+                if (tiku_desk_text_width(fo, line) > f.w - 32) { break; }
+                line[k] = p[k];
+                k++;
+                line[k] = '\0';
+            }
+            if (p[k] != '\0' && sp != NULL && sp > p) {
+                k = (size_t)(sp - p);
+                line[k] = '\0';
+            }
+            tiku_desk_text(app->surf, fo, f.x + 16, ty, line,
+                           TIKU_DESK_C_TEXT);
+            ty += fo->height + 4;
+            p += k;
+            while (*p == ' ') { p++; }
+            n++;
+            if (n > 6u) { break; }
+        }
+    }
+    for (i = 0; i < app->alert.nbutton; i++) {
+        tiku_desk_rect_t b;
+        int bx, by, bw, bh;
+
+        tiku_trk_alert_button_rect(&app->alert, i, f.w, f.h, &bx, &by, &bw,
+                                   &bh);
+        b.x = f.x + bx; b.y = f.y + by; b.w = bw; b.h = bh;
+        tiku_desk_fill(app->surf, b, TIKU_DESK_C_PANEL);
+        tiku_desk_bevel(app->surf, b,
+                         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+                         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+        tiku_desk_text(app->surf, fo, b.x + 10, b.y + 16,
+                       app->alert.button[i], TIKU_DESK_C_TEXT);
+    }
+}
+
+/** @brief Draw the shared status window, if any job is running. */
+static void
+progress_draw(desktop_t *app)
+{
+    tiku_desk_rect_t f;
+    const tiku_desk_font_t *fo = tiku_desk_font_plain();
+    int i, row = 0;
+
+    if (!app->prog.open) {
+        return;
+    }
+    f.w = 380;
+    f.h = 22 + TIKU_TRK_PROGRESS_ROWS * 34;
+    f.x = DESK_W - f.w - 24;
+    f.y = DESK_H - f.h - 24;
+    tiku_desk_fill(app->surf, f, TIKU_DESK_C_PANEL);
+    tiku_desk_bevel(app->surf, f,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
+        char line[160];
+        const char *leaf;
+        tiku_desk_rect_t bar;
+        int y;
+
+        if (!app->prog.row[i].used) {
+            continue;
+        }
+        y = f.y + 14 + row * 34;
+        leaf = strrchr(app->prog.row[i].current, '/');
+        leaf = (leaf != NULL) ? leaf + 1 : app->prog.row[i].current;
+        snprintf(line, sizeof line, "%s%.40s", app->prog.row[i].caption,
+                 leaf);
+        tiku_desk_text(app->surf, fo, f.x + 10, y, line, TIKU_DESK_C_TEXT);
+        snprintf(line, sizeof line, "%d of %d", app->prog.row[i].done,
+                 app->prog.row[i].total);
+        tiku_desk_text(app->surf, fo, f.x + f.w - 70, y, line,
+                       TIKU_DESK_C_TEXT);
+        bar.x = f.x + 10;
+        bar.y = y + 6;
+        bar.w = f.w - 20;
+        bar.h = 8;
+        tiku_desk_fill(app->surf, bar, TIKU_DESK_C_DOC);
+        if (app->prog.row[i].total > 0) {
+            bar.w = (f.w - 20) * app->prog.row[i].done /
+                    app->prog.row[i].total;
+            if (bar.w > 0) {
+                tiku_desk_fill(app->surf, bar, TIKU_DESK_C_SELECT);
+            }
+        }
+        row++;
+    }
+}
+
+/**
+ * @brief Hand the alert's answer back to whoever asked.
+ *
+ * The alert carries its own tag, so the shell does not have to remember
+ * which question it put up -- which it could not do reliably once a job can
+ * ask twice.
+ */
+static void
+answer_alert(desktop_t *app)
+{
+    if (!app->alert.open || app->alert.chosen < 0) {
+        return;
+    }
+    if (app->alert.tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
+        if (app->alert.chosen == app->alert.cancel) {
+            /* Cancel abandons the whole job, not just this collision. */
+            tiku_trk_fs_cancel(app->fs);
+        } else {
+            tiku_trk_fs_resolve(app->fs,
+                                tiku_trk_alert_conflict_answer(&app->alert));
+        }
+    } else if (app->alert.tag == TIKU_TRK_ALERT_TAG_ERROR) {
+        tiku_trk_fs_resolve_error(app->fs,
+                                  app->alert.chosen != app->alert.cancel);
+    }
+    tiku_trk_alert_reset(&app->alert);
+}
+
 static void
 draw_all(desktop_t *app)
 {
@@ -1884,6 +2052,8 @@ draw_all(desktop_t *app)
                                app->popup_sub_frame);
         }
     }
+    progress_draw(app);
+    alert_draw(app);
     app->dirty = 0;
 }
 
@@ -2237,6 +2407,7 @@ main(int argc, char **argv)
                 sst.title = (fw != NULL) ? fw->title : NULL;
                 sst.scroll = 0;
                 sst.rows = 0;
+                sst.alert = app.alert.open ? app.alert.text : NULL;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
 
@@ -2336,6 +2507,22 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case ButtonPress: {
+                if (app.alert.open) {
+                    /* Modal: while a question is up nothing else takes a
+                     * click, which is what makes it a question rather than
+                     * a notice. */
+                    tiku_desk_rect_t af = alert_frame();
+                    int pick = tiku_trk_alert_button_at(&app.alert, af.w,
+                                   af.h, ev.xbutton.x - af.x,
+                                   ev.xbutton.y - af.y);
+
+                    if (pick >= 0) {
+                        app.alert.chosen = pick;
+                        answer_alert(&app);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 tiku_trk_win_t *w = NULL;
                 tiku_trk_hit_t hit;
                 tiku_trk_db_pick_t pick;
@@ -3086,6 +3273,19 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
+                if (app.alert.open) {
+                    if (ks == XK_Escape && app.alert.cancel >= 0) {
+                        app.alert.chosen = app.alert.cancel;
+                        answer_alert(&app);
+                    } else if (ks == XK_Return &&
+                               app.alert.nbutton > 0) {
+                        /* Return presses the default: the rightmost. */
+                        app.alert.chosen = app.alert.nbutton - 1;
+                        answer_alert(&app);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if (ks == XK_n && (ev.xkey.state & ControlMask) &&
                     fl != NULL) {
                     menu_invoke(&app, fl, TIKU_TRK_CMD_NEW_FOLDER);
@@ -3402,24 +3602,25 @@ sel_done:
             (void)tiku_trk_fs_step(app.fs, 4);
             pr = tiku_trk_fs_progress(app.fs);
             if (pr->conflict) {
-                const char *slash = strrchr(pr->conflict_path, '/');
-                const char *leaf = (slash != NULL) ? slash + 1
-                                                   : pr->conflict_path;
-
-                /* With no alert layer the answer that loses least is to
-                 * keep both: nothing is overwritten and nothing is lost. */
-                snprintf(app.status, sizeof app.status,
-                         "'%.40s' exists -- keeping both", leaf);
-                tiku_trk_fs_resolve(app.fs, TIKU_TRK_CONFLICT_RENAME);
+                /* Asked, not assumed.  The engine worked out which form
+                 * the question takes; this puts it up and waits. */
+                if (!app.alert.open) {
+                    tiku_trk_alert_for_conflict(&app.alert, pr);
+                }
             } else if (pr->error_ask) {
-                snprintf(app.status, sizeof app.status, "%.150s", pr->error);
-                tiku_trk_fs_resolve_error(app.fs, 1);
+                if (!app.alert.open) {
+                    tiku_trk_alert_for_error(&app.alert, pr);
+                }
             } else {
                 snprintf(app.status, sizeof app.status, "%d of %d%s%s",
                          pr->done + pr->skipped, pr->total,
                          pr->skipped ? " (some skipped)" : "",
                          pr->failed ? " -- some failed" : "");
             }
+            tiku_trk_progress_update(&app.prog, 0, pr, 1, NULL);
+            app.dirty = 1;
+        } else if (app.prog.open) {
+            tiku_trk_progress_update(&app.prog, 0, NULL, 0, NULL);
             app.dirty = 1;
         }
         if (deadline > 0 && tiku_trk_now() > deadline) {

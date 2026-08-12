@@ -22,7 +22,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -201,6 +201,9 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-title") == 0 && n >= 2) {
             st->op = OP_EXPECT_TITLE;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-alert") == 0 && n >= 2) {
+            st->op = OP_EXPECT_ALERT;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-scroll") == 0 && n >= 2) {
             st->op = OP_EXPECT_SCROLL;
             st->count = atoi(w[1]);
@@ -370,6 +373,14 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, st != NULL && st->rows == cur->count, "rows:", n);
         return 1;
     }
+    case OP_EXPECT_ALERT:
+        /* "exists" asks only that one is up; anything else must appear in
+         * its words. */
+        verdict(s, st != NULL && st->alert != NULL &&
+                   (strcmp(cur->text, "exists") == 0 ||
+                    strstr(st->alert, cur->text) != NULL),
+                "an alert says", cur->text);
+        return 1;
     case OP_EXPECT_FILE:
         verdict(s, there(cur->text), "exists:", cur->text);
         return 1;

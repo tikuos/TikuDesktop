@@ -46,6 +46,7 @@ typedef struct {
     const char *title;      /* the focused window's title, or NULL      */
     int         scroll;     /* the focused view's first visible row     */
     int         rows;       /* how many rows it holds                   */
+    const char *alert;      /* the open alert's text, or NULL           */
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;

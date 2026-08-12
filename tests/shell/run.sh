@@ -30,6 +30,7 @@ for s in "$here"/*.script; do
         case $(basename "$s") in
             scroll.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
+            alert.script)  echo other > "$work/sub/a.txt" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys
 w,h=64,48

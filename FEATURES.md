@@ -1411,12 +1411,13 @@ In the same-window case, DragSelectionContains(targetPose, message) nulls target
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
 **PORT:** A pose in the drag never highlights, so a drop on it resolves to the window's own folder: the rule falls out of the target test rather than needing a case of its own.  
 *Shell: desktop*  
-#### PVS-043 · important · open
+#### PVS-043 · important · partial
 **Refused drops raise a specific alert instead of failing silently: onto the Disks/root window, onto a read-only volume, a copy into Trash, or a link into Trash.**  
 Four separate BAlerts in MoveSelectionInto, each B_WARNING_ALERT with Cancel and B_CLOSE_ON_ESCAPE; okToMove is cleared and the destination BEntry is deleted.  
-`PoseView.cpp` → `BPoseView::MoveSelectionInto`
-**SUBSYSTEM:** Alert layer plus the missing drop pipeline. Both shells state the absence themselves: 'The original puts up a Cancel/OK alert here. With no alert layer...' (src/tiku_trk_app.c:1767-1768) and 'With no alert layer...' (src/tiku_trk_desktop.c:2738). Two of the four refusal texts already exist as status-line messages on the Paste path — copy-into-Trash and link-into-Trash (src/tiku_trk_desktop.c:1321-1328) — but no drop exists to refuse.  
-
+`PoseView.cpp` → `BPoseView::MoveSelectionInto`  
+**PORT:** The alert layer exists now, so a refusal has somewhere to go.  
+**MISSING:** Nothing raises one yet for the four refusals this row names -- the drop path still declines silently.  
+*Shell: desktop*  
 #### PVS-044 · important · open
 **Dropping files on an application or document pose launches it with those files as arguments, passing only the files that target claims to handle; holding Control bypasses the type check and forces all of them through.**  
 HandleDropCommon: ignoreTypes = (modifiers() & B_CONTROL_KEY) != 0; LaunchAppWithSelection filters via Model::IsDropTarget(pose->TargetModel(), true) per pose and launches only if at least one ref survived.  
@@ -2948,12 +2949,14 @@ PreFlightNameCheck counts collisions (only for items whose parent differs from d
 **A single file-vs-file collision asks "You are trying to replace the item: <name> <size, date> with: <name> <size, date>" and offers only Cancel / Replace.**  
 CheckName builds kReplaceStr and calls FileStatToString for both sides (byte count via a plural BStringFormat plus strftime "%b %d %Y, %I:%M:%S %p"); the two-button alert is used when !multipleCollisions && !sourceIsDirectory, with Escape bound to Cancel.  
 `FSUtils.cpp` → `CheckName`  
-
+**PORT:** Asked now, not assumed: the alert names the item by its leaf and offers Cancel and Replace, with Escape on Cancel -- the answer that destroys nothing is the one a reflex reaches.  
+*Shell: desktop*  
 #### FS-019 · core · done
 **A folder collision, or any collision while multiple collisions exist, asks with four buttons Skip / Skip all / Replace / Replace all, and Skip all suppresses every later prompt in the job.**  
 CheckName: alert used when multipleCollisions || sourceIsDirectory. Button 0 sets conflictResolution = kCanceled and returns B_ERROR (skips this item), 1 sets kSkipAll, 2 kReplace, 3 kReplaceAll. conflictResolution is threaded by reference through the whole MoveTask loop, so kSkipAll returns B_ERROR immediately on every subsequent item and kReplaceAll bypasses the prompt.  
 `FSUtils.cpp` → `CheckName`  
-
+**PORT:** The four-way form appears whenever the engine says the question needs it, and each button maps to the conflict answer the engine already understood.  
+*Shell: desktop*  
 #### FS-020 · core · done
 **Replacing a folder merges into it rather than deleting it: existing files with non-conflicting names survive, conflicting ones are overwritten.**  
 CheckName returns B_OK without removing the destination when destIsDir. CopyFolder then calls OverwriteOnConflict and, for kMerge (or kReplace on a directory, which falls through), sets newDir to the existing entry and skips CreateDirectory, so directory attributes are NOT re-copied (the CopyAttributes call is guarded by createDirectory).  
@@ -3050,7 +3053,8 @@ CopyFile catches status_t from LowLevelCopy, re-throws kCopyCanceled unchanged, 
 `FSUtils.cpp` → `CopyFile`  
 **PORT:** A failed item stops the job with `error_ask` up and the message in `prog.error`; answering continue counts it failed and carries on, cancelling abandons the rest.  A delete failure sets `error_can_continue` to 0, which is the original's single-button alert.  
 **TIKU:** The shell has no modal alert layer, so it shows the message on the status line and answers continue -- the Cancel half of the question is not reachable from the window yet.  
-
+**PORT:** The alert is real: continuing counts the item failed and carries on, cancelling abandons the job, and a delete failure offers no way on at all because the engine says it cannot continue.  
+*Shell: desktop*  
 #### FS-036 · important · done
 **Copying a folder does not descend into mounted volumes underneath it, and non-file/folder/symlink entries are silently ignored.**  
 CopyFolder records the source directory's st_dev and skips any child directory whose st_dev differs ("Avoiding mount point"); the else branch of the S_ISREG/S_ISLNK test is an explicit "Ignore special files".  
@@ -3254,10 +3258,9 @@ UndoItem replays call FSMoveToFolder with FSUndoMoveMode(mode), which sets the t
 BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items..."/"Copying: ", kMoveState "Moving: ", kCreateLinkState "Creating links: ", kTrashState "Emptying Trash... ", kDeleteState "Deleting: ", kRestoreFromTrashState "Restoring: ". InitStatus builds the trailing "of %items" text and sets max value 1; _DestinationString renders "To: %dir" from the destination entry's leaf name.  
 `StatusWindow.cpp` → `BStatusView::InitStatus`  
 **TIKU:** On a shell/console front end this is a line of progress output; the per-job identity and the cancel channel still have to exist.  
-**MISSING:** Progress is a single status line carrying the "n of N" counter (plus skipped/failed suffixes) while the operation is stepped without blocking the window; the current file name is tracked in prog.current but never shown, and there is no per-operation caption, no "To: <dir>", no progress bar and no way to cancel from the window (the engine's cancel check exists and is tested, but nothing in the shell calls it).  
-*src/tiku_trk_app.c:1509-1546; src/tiku_trk_fs.c:435*  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** The window exists: one row per job with the operation's caption, the file being processed, the n-of-N counter and a bar.  It opens with the first job and closes with the last, so it is never an empty window.  
+**MISSING:** No "To: <dir>" -- the row is plumbed for a destination and the desktop shell does not yet pass one -- and no pause or stop buttons (FS-074).  
+*Shell: desktop*  
 #### FS-070 · polish · open
 **Creating links only shows a progress window when more than ten items are involved.**  
 InitCopy's kCreateLink case: if (numItems > 10) it calls Init(kCreateLinkState) and Init(numItems, numItems, destRef) — otherwise no status item is ever created and the operation runs invisibly.  
@@ -3270,12 +3273,12 @@ StatusBackgroundView::Pulse (pulse rate 1 s) toggles the file-static sShowSpeed 
 `StatusWindow.cpp` → `BStatusView::_TimeStatusString`  
 **BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
-#### FS-072 · important · open
+#### FS-072 · important · done
 **Each concurrent file operation gets its own row in one shared status window; the window appears when the first job starts and hides when the last one finishes.**  
 BStatusWindow::CreateStatusItem stacks a new BStatusView below the last one and grows the window; RemoveStatusItem removes the row, shifts the ones below up, shrinks the window and Hide()s it when the count reaches zero. Rows are matched to jobs by thread_id.  
 `StatusWindow.cpp` → `BStatusWindow::CreateStatusItem`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** One shared window, a row per concurrent job; it appears when the first starts and goes when the last ends.  
+*Shell: desktop*  
 #### FS-073 · polish · open
 **If the Desktop was the active window when an operation started, focus is handed back to it when the status window closes.**  
 CreateStatusItem scans be_app's windows for an active BDeskWindow and records fRetainDesktopFocus; a second job ANDs into the same flag, and WindowActivated(false) clears it. RemoveStatusItem re-Activate()s the desk window when the last row goes away.  
@@ -3289,12 +3292,12 @@ kPauseButton toggles fIsPaused, zeroes the speed samples and, on resume, resets 
 **TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.
 **BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
-#### FS-075 · polish · open
+#### FS-075 · polish · done
 **Progress text updates are throttled to roughly ten per second, but the name of the file being processed is never lost — it is stashed and shown at the next real update.**  
 BStatusView::UpdateStatus only redraws when !optional or (now - fLastUpdateTime) > kMaxUpdateInterval (100000 us); otherwise a supplied curItem is copied into fPendingStatusString (127 chars) and used on the next update. Bytes are always accumulated into fItemSize/fSizeProcessed regardless of throttling. LowLevelCopy splits chunks larger than 32 KB into two status updates, one after the read and one after the write, for smoother movement.  
 `StatusWindow.cpp` → `BStatusView::UpdateStatus`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** The name is carried over when an update brings none, which is the one field a throttled repaint must not lose; the repaint itself is the loop's own dirty flag rather than a timer.  
+*Shell: desktop*  
 #### FS-076 · important · open
 **Quitting Tracker cancels every running copy/move/Empty Trash job rather than killing it mid-write.**  
 BStatusWindow::AttemptToQuit returns true only when no status items exist; otherwise it calls SetWasCanceled() on every row and returns false so the quit is retried after the jobs unwind.  
