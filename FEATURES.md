@@ -223,9 +223,17 @@ the question and exposes both answers through the API, but the shell has no
 modal layer to put it in and answers with the option that loses least.  Those
 rows are graded `done` on the engine, which is the standard the delete
 question (FS-044) was already held to, with a `TIKU:` line saying the alert
-itself is not drawn.  That is now a gap spanning FS, Q and AW rather than one
-row's footnote; it wants its own cluster, and until it has one the honest
-reading of those `done`s is "the decision is right and nobody is asked yet".
+itself is not drawn.  Three rows record that gap today -- FS-027, FS-035 and
+PVK-047 -- and the true number is not known, because only the FS area has
+been read for what its open rows wait on.  Until the alert layer exists, the
+honest reading of those `done`s is "the decision is right and nobody is asked
+yet".
+
+One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
+because FS is the only area whose open rows have been read against the port
+to find out what they wait on.  The other eleven areas hold 396 open rows
+with no such reading behind them, so "open" there means "not looked at",
+not "not blocked".
 
 What remains in FS is blocked rather than undone, and every one of the 19
 still-open rows now says so on a `BLOCKED:` line: five wait on item
