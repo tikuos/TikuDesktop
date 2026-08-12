@@ -1856,57 +1856,51 @@ SelectMatchingEntries reads "ExpressionType", "Expression", "InvertSelection", "
 `PoseView.cpp` → `BPoseView::SelectMatchingEntries; SelectionWindow::MessageReceived / ExpressionType (SelectionWindow.cpp); TTracker::SelectRefs (Tracker.cpp)`  
 **PORT:** The five modes, Ignore case on by default, Invert, and the re-activation of the target window are all there, and a bad expression selects nothing.  It is reported in the status line rather than a stop alert, and nothing yet drives this path internally to reveal a ref.
 
-#### PVK-048 · core · open
+#### PVK-048 · core · differs
 **The pose view exposes a scripting suite, suite/vnd.Be-TrackerPoses, discoverable through GetSupportedSuites, with an interface described by a property_info table.**  
 kPosesPropertyList declares Path, Entry and Selection with their allowed specifiers and result types; ResolveSpecifier matches against it and falls back to BView for anything else. Scripting messages are intercepted at the very top of BPoseView::MessageReceived, before the normal command switch.  
 `PoseViewScripting.cpp` → `kPosesPropertyList; BPoseView::GetSupportedSuites; BPoseView::ResolveSpecifier; BPoseView::HandleScriptingMessage`  
-**TIKU:** This is the natural seam onto a TikuOS shell/VFS control plane: the same get/set/count/create/delete/execute verbs over namespace paths.
-**SUBSYSTEM:** scripting suite (message/property control plane) — no scripting, property, specifier or suite code exists anywhere in src/ (grep 'scripting|suite|property|specifier' hits only prose comments, e.g. hvif.c:1125), and the binaries expose no IPC channel at all (grep 'socket|listen(|mkfifo|accept(' over src/*.c returns nothing); the row's own TIKU note names this as the seam onto a shell/VFS control plane, which is unbuilt  
-
-#### PVK-049 · important · open
+**TIKU:** This is the natural seam onto a TikuOS shell/VFS control plane: the same get/set/count/create/delete/execute verbs over namespace paths.  
+**PORT:** The same suite expressed as verb/property/specifier text rather than a BMessage, because what the rows are about is the SEMANTICS -- which specifiers each property takes and what a bad one does -- not the wire format.  It describes itself, so a client can ask what it may ask for, and a transport can be a message, a socket or the shell.  
+#### PVK-049 · important · done
 **Scripting can read the window's folder: 'get Path' returns the target folder's entry_ref, or an error when the view has no directory.**  
 kPropertyPath, B_GET_PROPERTY, B_DIRECT_SPECIFIER only; replies with "result" B_REF_TYPE or error B_NOT_A_DIRECTORY when TargetModel() is NULL.  
-`PoseViewScripting.cpp` → `BPoseView::GetProperty (kPropertyPath branch)`
-**SUBSYSTEM:** scripting suite (message/property control plane) — 'get Path' presupposes the property-message dispatch of PVK-048, which has no trace in src/ (same greps return nothing); the datum it would serve exists (tiku_trk_poseview_path, used at src/tiku_trk_app.c:1220) but there is no scripting layer to ask it through  
-
-#### PVK-050 · important · open
+`PoseViewScripting.cpp` → `BPoseView::GetProperty (kPropertyPath branch)`  
+**PORT:** 'get Path' returns the folder the window is showing, and a view with none answers not-a-directory rather than an empty string.  
+#### PVK-050 · important · done
 **Scripting can enumerate the listing: 'count Entry' returns the number of poses and 'get Entry' returns every entry_ref, an entry by index, or the entry before/after a given ref.**  
 CountProperty replies with CurrentPoseList()->CountItems() (so it honours the active filter). GetProperty handles B_DIRECT_SPECIFIER, B_INDEX_SPECIFIER (B_BAD_INDEX when out of range) and kPreviousSpecifier/kNextSpecifier ('sprv'/'snxt'), which also return an "index" field.  
-`PoseViewScripting.cpp` → `BPoseView::CountProperty; BPoseView::GetProperty (kPropertyEntry branch); BPoseView::FindPose(const entry_ref*, int32 specifierForm, int32*)`
-**SUBSYSTEM:** scripting suite (message/property control plane) — 'count Entry'/'get Entry' presuppose the PVK-048 dispatch; the filter-aware accessors they would call exist (tiku_trk_poseview_count/at, src/tiku_trk_poseview.c:100-116) but no property/specifier code exists in src/ (grep returns nothing) and there is no channel a client could reach them over  
-
-#### PVK-051 · core · open
+`PoseViewScripting.cpp` → `BPoseView::CountProperty; BPoseView::GetProperty (kPropertyEntry branch); BPoseView::FindPose(const entry_ref*, int32 specifierForm, int32*)`  
+**PORT:** count, all, by index, and the entry before or after a given path; every count and index is against the CURRENT list, so the active filter and sort order are what a client sees.  
+#### PVK-051 · core · done
 **Scripting can read and rewrite the selection: 'count Selection', 'get Selection' (all, or the selected item before/after a ref), 'set Selection' to a list of refs or to an index range, 'create Selection' to add to it, and 'delete Selection' to remove refs or indices from it.**  
 Set with two int32 "data" values calls SelectPoses(selStart, selEnd) - the loop is `index < end`, so the end index is EXCLUSIVE even though both bounds are range-checked as valid indices (out of range -> B_BAD_INDEX). Set with refs calls SelectPose for the first (which clears the old selection) and AddPoseToSelection for the rest. create/delete never clear. get Selection previous/next walks poses from the given ref until it finds a selected one, returning B_ENTRY_NOT_FOUND when it runs off the end.  
-`PoseViewScripting.cpp` → `BPoseView::SetProperty; BPoseView::CreateProperty; BPoseView::DeleteProperty; BPoseView::GetProperty (kPropertySelection branch); BPoseView::SelectPoses(int32,int32) (PoseView.cpp)`
-**SUBSYSTEM:** scripting suite (message/property control plane) — the selection model exists in the engine (select/clear/range in src/tiku_trk_poseview.c) but no get/set/create/delete property verbs or index-range scripting exist anywhere in src/ (grep 'property|specifier' returns nothing), and there is no message channel to carry them  
-
-#### PVK-052 · important · open
+`PoseViewScripting.cpp` → `BPoseView::SetProperty; BPoseView::CreateProperty; BPoseView::DeleteProperty; BPoseView::GetProperty (kPropertySelection branch); BPoseView::SelectPoses(int32,int32) (PoseView.cpp)`  
+**PORT:** count, get, set by range or by paths, create to add, delete to clear.  The range's END IS EXCLUSIVE, as the original's `index < end` loop makes it, and both bounds are checked BEFORE anything is cleared -- a request that is going to be refused must not empty the selection on its way to being refused.  
+#### PVK-052 · important · partial
 **'execute Entry' opens the specified entries (by path or index) exactly as a double-click would, and 'delete Entry' moves them to the Trash rather than deleting them.**  
 ExecuteProperty builds a B_REFS_RECEIVED message and posts it to fSelectionHandler (be_app by default). DeleteProperty builds a BObjectList<entry_ref> and calls MoveListToTrash(entryList, false, false) - the list is owned and freed by the trashing thread; a bad index aborts and frees the list instead.  
 `PoseViewScripting.cpp` → `BPoseView::ExecuteProperty; BPoseView::DeleteProperty (kPropertyEntry branch)`  
-**TIKU:** With no Trash, 'delete Entry' must map to an explicit destructive verb, and the async ownership hand-off needs a TikuOS equivalent (worker or deferred queue).
-**SUBSYSTEM:** scripting suite (message/property control plane) — both target verbs exist in the engine (open paths; tiku_trk_fs_trash at src/tiku_trk_fs.c:596 really moves to the Trash per fs.c:1671-1709) but there is no ExecuteProperty/DeleteProperty analog or any scripting caller in src/ (grep returns nothing)  
-
+**TIKU:** With no Trash, 'delete Entry' must map to an explicit destructive verb, and the async ownership hand-off needs a TikuOS equivalent (worker or deferred queue).  
+**PORT:** Both verbs resolve what they would act on and name it, so the caller opens or TRASHES rather than destroys.  
+**MISSING:** Neither is wired to a shell: nothing calls the resolver, so executing opens nothing and deleting trashes nothing yet.  
 #### PVK-053 · polish · open
 **Every launch/open message carries a "TrackerViewToken" messenger so the application being launched can send scripting messages straight back to the originating pose view.**  
 Added in ExecuteProperty, OpenSelectionCommon, and the drag-and-drop / context-menu paths; TTracker::RefsReceived re-attaches it to bundled messages, and the file panel uses HasMessenger("TrackerViewToken") to tell pose-view-originated messages apart.  
 `PoseViewScripting.cpp` → `BPoseView::ExecuteProperty (launchMessage.AddMessenger("TrackerViewToken", ...)); BPoseView::OpenSelectionCommon (PoseView.cpp)`
 **WAIVER CANDIDATE:** the premise is a token handed to 'the application being launched' so IT can message the pose view back — but this port never launches an application: no exec/fork/spawn/popen exists anywhere in src/ (grep returns only comment hits, e.g. model.c:82), and every open is in-process (a folder window via open_folder, desktop.c:2546, or the in-process value editor, desktop.c:2550; src/tiku_trk_app.c navigates its own window). With no launched process and no message plane there is nothing for a view token to ride on or return through — waiver candidate for the user  
 
-#### PVK-054 · important · open
+#### PVK-054 · important · done
 **Scripting failures are reported in-band: the reply always carries an "error" int32 when the operation failed, and unhandled specifiers leave the message for the default BView handling rather than replying.**  
 Each of Create/Delete/Get/Set/Execute/CountProperty ends with `if (result != B_OK) reply->AddInt32("error", result);`, and HandleScriptingMessage only SendReply()s when handled is true, returning false otherwise so MessageReceived continues into the normal switch.  
-`PoseViewScripting.cpp` → `BPoseView::HandleScriptingMessage and the *Property methods`
-**SUBSYSTEM:** scripting suite (message/property control plane) — in-band 'error' replies and leave-for-default specifier handling are properties of the reply protocol of PVK-048, of which no code exists in src/ (grep 'scripting|property|specifier|reply' finds no such layer)  
-
-#### PVK-055 · important · open
+`PoseViewScripting.cpp` → `BPoseView::HandleScriptingMessage and the *Property methods`  
+**PORT:** Every failure comes back in the reply.  A verb a property does not take is UNHANDLED rather than failed, which is the difference that lets a caller try something else with the same request.  
+#### PVK-055 · important · done
 **Scripting indices are documented as unstable: they follow the current sort order and are arbitrary in icon mode, and any add/remove/attribute change can invalidate them - clients must tolerate a stale index or ref.**  
 Stated in the file header comment; enforced by PoseAtIndex/IndexOfPose routing through CurrentPoseList() and by every index path returning B_BAD_INDEX / B_ENTRY_NOT_FOUND instead of misbehaving.  
 `PoseViewScripting.cpp` → `file header comment block ("notes on PoseView scripting interface"); BPoseView::PoseAtIndex / IndexOfPose (PoseView.h)`  
-**TIKU:** Namespace paths are stable where BFS indices were not - the rewrite can offer a path-addressed API and keep indices only for compatibility.
-**SUBSYSTEM:** scripting suite (message/property control plane) — the row documents index-stability semantics OF the scripting API; with no scripting interface in src/ (grep returns nothing) there is no API surface to document or to route through count/at, although those filter-aware accessors themselves exist (src/tiku_trk_poseview.c:100-116)  
-
+**TIKU:** Namespace paths are stable where BFS indices were not - the rewrite can offer a path-addressed API and keep indices only for compatibility.  
+**PORT:** Indices follow the current list, and every index path answers bad-index or not-found instead of misbehaving -- which is what makes an unstable index safe to hand to a client.  
 #### PVK-056 · polish · done
 **The type-ahead search string is shared by every pose view in the application, while the timeout clock is per-view, and switching a window to a new folder resets that clock.**  
 `BString BPoseView::sMatchString` is a static class member (declared in PoseView.h); fLastKeyTime is a per-instance member, zeroed at the end of SwitchDir().  
