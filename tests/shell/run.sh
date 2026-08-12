@@ -26,6 +26,11 @@ for s in "$here"/*.script; do
         echo hi > $work/a.txt
         echo hi > $work/b.txt
         echo hi > $work/c.txt
+        # A scrolling test needs more rows than a window holds.
+        case $(basename "$s") in
+            scroll.script) i=1; while [ $i -le 40 ]; do
+                               echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
+        esac
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         DISPLAY= "$root/build/$bin" $work -script "$s" || fails=$((fails+1))
     done

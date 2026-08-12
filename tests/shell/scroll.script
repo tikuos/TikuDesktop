@@ -1,0 +1,21 @@
+# shell: desktop
+# PVS-050: a drag held in the band at the list's edge scrolls it, after a
+# hold delay.  Both halves matter, so both are checked against their own
+# negative: the middle of the list never scrolls however long you hold, and
+# the band does not scroll until the delay has passed.
+press 200 97
+move 200 120
+note the middle of the list is not a scroll zone, however long it is held
+move 200 200
+wait 45
+expect-scroll-at-most 0
+note entering the band does not scroll at once -- crossing an edge on the
+note way somewhere else must not start it
+move 200 316
+wait 5
+expect-scroll-at-most 0
+note but holding there past the delay does
+wait 45
+expect-scroll 1
+release 200 316
+quit

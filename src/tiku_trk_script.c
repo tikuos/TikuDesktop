@@ -22,8 +22,8 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
-    OP_NOTE, OP_QUIT
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
 typedef struct {
@@ -189,6 +189,9 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
             st->op = OP_WAIT;
             st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "menu-pick") == 0 && n >= 2) {
+            st->op = OP_MENU_PICK;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "shot") == 0 && n >= 2) {
             st->op = OP_SHOT;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
@@ -198,6 +201,16 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-title") == 0 && n >= 2) {
             st->op = OP_EXPECT_TITLE;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-scroll") == 0 && n >= 2) {
+            st->op = OP_EXPECT_SCROLL;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-scroll-at-most") == 0 && n >= 2) {
+            st->op = OP_EXPECT_SCROLL;
+            st->count = atoi(w[1]);
+            st->x = 1;
+        } else if (strcmp(w[0], "expect-rows") == 0 && n >= 2) {
+            st->op = OP_EXPECT_ROWS;
+            st->count = atoi(w[1]);
         } else if (strcmp(w[0], "expect-file") == 0 && n >= 2) {
             st->op = OP_EXPECT_FILE;
             rest(w, n, 1, st->text, sizeof st->text);
@@ -308,6 +321,10 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_WAIT:
         s->waiting = (cur->count > 0) ? cur->count : 1;
         return 1;
+    case OP_MENU_PICK:
+        out->what = TIKU_TRK_SC_MENU_PICK;
+        out->path = cur->text;
+        return 1;
     case OP_SHOT:
         out->what = TIKU_TRK_SC_SHOT;
         out->path = cur->text;
@@ -330,6 +347,29 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                    strstr(st->title, cur->text) != NULL,
                 "title says", cur->text);
         return 1;
+    case OP_EXPECT_SCROLL: {
+        char n[32];
+
+        snprintf(n, sizeof n, "%d", cur->count);
+        if (cur->x != 0) {
+            /* The "at most" form.  A >= test against 0 is always true and
+             * asserts nothing, which is how three mutations survived the
+             * first version of this check. */
+            verdict(s, st != NULL && st->scroll <= cur->count,
+                    "scrolled at most", n);
+        } else {
+            verdict(s, st != NULL && st->scroll >= cur->count,
+                    "scrolled at least", n);
+        }
+        return 1;
+    }
+    case OP_EXPECT_ROWS: {
+        char n[32];
+
+        snprintf(n, sizeof n, "%d", cur->count);
+        verdict(s, st != NULL && st->rows == cur->count, "rows:", n);
+        return 1;
+    }
     case OP_EXPECT_FILE:
         verdict(s, there(cur->text), "exists:", cur->text);
         return 1;

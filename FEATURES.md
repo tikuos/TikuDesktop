@@ -47,7 +47,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 282   partial 165   differs 71   open 371
+    done 285   partial 166   differs 71   open 367
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -404,15 +404,27 @@ double speed rather than not at all -- the armed rename, the barber pole and
 the poll are all timed, and a loop that spun without time passing tested none
 of them.
 
+A second pass closed the rest of what is reachable.  The harness learned to
+NAME a menu item -- `menu-pick Move here` finds the label and clicks its
+centre, so a script never hardcodes a coordinate that a new item above would
+break -- and with that the secondary-button drop menu is proven: picking
+"Move here" leaves the source GONE, an assertion a copy or a link would fail,
+where the first version of the check could not tell the three apart.
+
+Spring-loading and auto-scroll went in with it, and both taught the same
+lesson.  The spring check first sat in the motion handler, where a drag
+holding perfectly still -- exactly the case -- produces no events at all; it
+belongs on the idle tick.  And auto-scroll's first two checks asserted
+`scroll >= 0`, which is always true: three mutations survived it.  The
+harness gained an "at most" form, and two of the four then fired.
+
 What is NOT closed, and why, since a gesture cluster is easy to overclaim:
-the drag image is still an outline (PVS-034), there is no auto-scroll or
-spring-loading (PVS-050, PVS-051), the copy cursor needs a cursor API the
-multi-window shell does not have (PVS-036), refused drops need the alert
-layer (PVS-043), and the four foreign-drag rows remain impossible in a
-one-process desktop.  The secondary-button menu appears and its verbs are
-dispatched, but no script can pick an item yet: the harness cannot compute a
-popup item's coordinates.  That one gap blocks several CW rows too, and is
-the next thing the harness should learn.
+the drag image is still an outline (PVS-034), the copy cursor needs a cursor
+API the multi-window shell does not have (PVS-036), refused drops need the
+alert layer (PVS-043), spring-loading opens a window rather than a navigable
+menu (PVS-051), auto-scroll has no rubber-band or horizontal case and two
+implemented clauses whose mutations still survive (PVS-050), and the four
+foreign-drag rows remain impossible in a one-process desktop.
 
 One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
 because FS is the only area whose open rows have been read against the port
@@ -1385,15 +1397,14 @@ Detected by *srcWindow->PoseView()->TargetModel()->NodeRef() == *destFolder->Nod
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** Icon positions are persisted as BFS attributes; a device namespace has no attribute store, so pose locations for /dev nodes need a sidecar.  
 
-#### PVS-041 · important · partial
+#### PVS-041 · important · done
 **Forcing a copy (Option or the drop menu) onto the selection's own folder duplicates the items instead of erroring.**  
 targetView->DuplicateSelection(&where, &loc); volumes and Trash are stripped from the selection first because they cannot be duplicated, and the pivots are nulled if they pointed at a stripped pose.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto / BPoseView::DuplicateSelection`  
 **VERIFIER CORRECTION:** Only the drop context menu's "Copy here" (kCopySelectionTo) — or a caller passing forceCopy explicitly — reaches DuplicateSelection; the Option modifier does not (see the ordering above). The rest of the row (volumes and Trash stripped from the selection, pivots nulled) is correct (PoseView.cpp:6070).  
-**MISSING:** Duplicate exists as its own operation with the 'copy'-suffixed free-name rule and destructive selections strip the Trash, but a copy whose destination is the item's own parent is silently SKIPPED rather than turned into a duplicate, and there is no drop menu / forceCopy caller to reach it.  
-*src/tiku_trk_fs.c:477-486 (step_one same-dir skip) vs :364 tiku_trk_fs_duplicate and :333 Trash strip*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Only the fs queue skips (src/tiku_trk_fs.c:1796-1805, FS-005). The desktop shell's Paste path detects copied clipboard entries already living in the destination folder and routes them to tiku_trk_fs_duplicate BEFORE the queue is built, with a 'duplicating N items already here' status message — so the port's one UI flow that can produce a same-parent copy DOES turn it into a duplicate, and not silently. Also 'there is no drop menu' is imprecise: the drop menu exists unwired (src/tiku_trk_cwmenu.c:331-364, tests-only callers). `src/tiku_trk_desktop.c:1282-1315 (same-parent copied entries -> tiku_trk_fs_duplicate + status) vs src/tiku_trk_fs.c:1796-1805 (engine same-dir skip)`  
-
+**PORT:** Falls out of the drop decision rather than needing a case: an Option-drop whose destination is the source folder returns COPY, and the copy engine's duplicate naming does the rest.  
+*Shell: desktop*  
 #### PVS-042 · important · done
 **Dropping onto one of the poses being dragged is treated as a drop on the window background, not on that item.**  
 In the same-window case, DragSelectionContains(targetPose, message) nulls targetModel so control falls through to MoveSelectionTo; the same-window case also activates the window and resets the pose placement hint.  
@@ -1442,19 +1453,21 @@ canCopy = true fallback when no be:actions were negotiated; kCreateRelativeLink/
 `PoseView.cpp` → `BPoseView::HandleDropCommon`
 **SUBSYSTEM:** Cross-application drag (XDND). No foreign refs can arrive (grep XDND over src/ returns nothing), so the default-copy rule and the Move/Copy/Link/Cancel dispatch have no entry point — note the menu those verbs would use exists unwired (src/tiku_trk_cwmenu.c:331-364; see PVS-039).  
 
-#### PVS-050 · important · open
+#### PVS-050 · important · partial
 **Dragging (or rubber-banding) toward a view edge auto-scrolls, after a hold-still delay, faster the further past the edge the pointer is.**  
 Two trigger geometries: while dragging, the pointer must be in a border band OUTSIDE the view (20 px above the top plus the title view height, B_H_SCROLL_BAR_HEIGHT below, 6 px left, B_V_SCROLL_BAR_WIDTH right); while rubber-banding, simply past the bounds edge, at fAutoScrollInc/1.5 beyond kSlowScrollBucket (30 px) and fAutoScrollInc/4 within it. State machine kWaitForTransition (must first NOT be in a scroll zone) -> kDelayAutoScroll (condition true, snooze 600 ms, re-check) -> kAutoScrollOn, driven from Pulse; releasing all buttons resets to off and restores a 500 ms pulse. Band scrolling re-runs _UpdateSelectionRect so the rectangle grows without pointer motion.  
-`PoseView.cpp` → `BPoseView::CheckAutoScroll / BPoseView::HandleAutoScroll`
-**SUBSYSTEM:** Auto-scroll. No scroll-on-edge code exists anywhere: grep autoscroll/auto_scroll/spring over src/ returns nothing, and neither band motion (src/tiku_trk_app.c:1655-1666) nor drag motion (src/tiku_trk_app.c:1667-1688) ever adjusts scroll; there is no hold-still delay or speed bucket.  
-
-#### PVS-051 · important · open
+`PoseView.cpp` → `BPoseView::CheckAutoScroll / BPoseView::HandleAutoScroll`  
+**PORT:** A drag held in a 6 px band at the list's edge scrolls it after a 600 ms hold, faster past 30 px of overshoot -- the original's two buckets.  The band sits just INSIDE the list where Tracker's is just outside it: Tracker's lives in the scroll-bar gutter, these windows have none, and a pointer past the list edge is over no window at all, so a band out there could never be reached.  
+**MISSING:** Rubber-band scrolling has no auto-scroll (only a drag does), and the horizontal bands are not implemented -- these listings do not scroll sideways.  Two clauses are implemented but UNTESTED, and the mutations for them survive: leaving and re-entering the band re-arming the delay, and the speed actually following the overshoot.  A test that enters, leaves and re-enters would close both.  
+*Shell: desktop*  
+#### PVS-051 · important · partial
 **Spring-loaded folders: hovering a drag over a folder pose without moving pops up a navigable menu of that folder's contents, and choosing an entry drops the dragged items there.**  
 B_MOUSE_IDLE -> MouseIdle requires buttons != 0 and IsDragging(); with fDropTarget set it records the target frame (FrameForPose) and calls ShowContextMenu, which in the dragging case opens fDragContextMenu (BPopUpNavMenu) asynchronously on the resolved directory ref - never for Printers, never for a non-directory, and never twice (IsShowing guard). Selecting an item posts B_REFS_RECEIVED, which BContainerWindow answers by calling HandleDropCommon with the cached DragMessage() against that folder, then DragStop.  
 `PoseView.cpp` → `BPoseView::MouseIdle / BContainerWindow::ShowContextMenu / BContainerWindow::MessageReceived case B_REFS_RECEIVED`  
-**TIKU:** Spring-loading a device directory means enumerating live nodes on hover; decide whether that is allowed to have side effects, and whether watch notifications should refresh an open menu.
-**SUBSYSTEM:** Spring-loaded folders. grep spring/hover over src/ returns nothing; the only press-hold timer in either shell is the long-press context menu (src/tiku_trk_desktop.c:2580-2599), which fires on a plain press, not on a drag hover — and there is no drag message to re-target at a chosen folder.  
-
+**TIKU:** Spring-loading a device directory means enumerating live nodes on hover; decide whether that is allowed to have side effects, and whether watch notifications should refresh an open menu.  
+**PORT:** A drag resting on a folder for 700 ms opens it, checked on the IDLE tick rather than on motion -- a drag holding perfectly still is exactly the case, and it produces no motion events at all.  
+**MISSING:** It opens a WINDOW rather than a navigable menu of the folder's contents, so there is no in-place descent through several levels and no choosing an entry from the popup; and nothing springs closed again.  
+*Shell: desktop*  
 #### PVS-052 · polish · open
 **Entries in the spring-loaded menu are enabled or greyed by whether they can accept the dragged types; containers are always enabled.**  
 SpringLoadedFolderSetMenuStates walks ModelMenuItems and calls Model::SupportsMimeType(NULL, typeslist) for files/executables; directories, roots and volumes are unconditionally enabled; symlinks are resolved first and a broken symlink is disabled.  
@@ -1474,18 +1487,19 @@ kMenuTrackMargin = 20 px inset applied to the menu bounds and to each visible su
 `PoseView.cpp` → `BPoseView::MenuTrackingHook`
 **SUBSYSTEM:** Spring-loaded folders (see PVS-051). No spring menu exists, and the shells' popup menus have no pointer-leave tracking at all — they close only when the next click lands (src/tiku_trk_desktop.c:1858-1902); no margin test exists anywhere.  
 
-#### PVS-055 · polish · open
+#### PVS-055 · polish · done
 **Hovering a drag over the empty part of an inactive window raises that window.**  
 MouseIdle else-branch: with a button down and a drag in progress but no drop target under the pointer, Window()->Activate().  
-`PoseView.cpp` → `BPoseView::MouseIdle`
-**SUBSYSTEM:** Drag-and-drop (hover tracking). No drag-hover concept exists, and window activation is called only for chrome clicks (src/tiku_trk_desktop.c:1980-1986); nothing activates a window from a hovering drag because no drag can hover.  
-
-#### PVS-056 · polish · open
+`PoseView.cpp` → `BPoseView::MouseIdle`  
+**PORT:** Hovering the empty part of a window behind brings it forward, so a drag can reach what it covers without being dropped first.  
+*Shell: desktop*  
+#### PVS-056 · polish · partial
 **Leaving the view with a drag drops the highlight, restores the default cursor and discards the cached drag state; entering (re)arms auto-scroll.**  
 MouseMoved B_EXITED_VIEW -> DragStop(), SetViewCursor(B_CURSOR_SYSTEM_DEFAULT), fCursorCheck = false, and if a context menu is up, HiliteDropTarget(false) + fDropTarget = NULL. B_ENTERED_VIEW/B_INSIDE_VIEW -> UpdateDropTarget and, if auto-scroll was off, kWaitForTransition at a 100 ms pulse. Drop handling and the next MouseDown also call DragStop to dispose of drag data lazily.  
-`PoseView.cpp` → `BPoseView::MouseMoved / BPoseView::DragStop`
-**SUBSYSTEM:** Drag-and-drop (cached drag state). There is no drag state to discard on exit, and neither shell even receives crossing events: the XSelectInput masks omit EnterWindowMask/LeaveWindowMask (src/tiku_trk_desktop.c:1643-1646; src/tiku_trk_app.c:1324-1327) and grep EnterNotify/LeaveNotify over src/ returns nothing.  
-
+`PoseView.cpp` → `BPoseView::MouseMoved / BPoseView::DragStop`  
+**PORT:** Leaving a target drops the highlight and restarts the hover clock, so the spring does not fire on a folder the drag has already left.  
+**MISSING:** No cursor to restore (the multi-window shell has no cursor API, the same absence as PVS-036), no cached drag state to discard (there is no types cache -- PVS-053), and no auto-scroll to re-arm (PVS-050).  
+*Shell: desktop*  
 #### PVS-057 · important · done
 **When a pose disappears (deleted, unmounted, or filtered out) it is silently removed from the selection, and any drop-target or pivot reference to it is dropped so later shift-clicks and drops do not act on a dead item.**  
 DeletePose and EnsurePoseUnselected both clear fDropTarget, commit the active pose, remove from fSelectionList, null fSelectionPivotPose/fRealPivotPose, and fire the SelectionChanged hook if the removed pose was selected.  
@@ -2841,13 +2855,13 @@ forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated after the 
 **PORT:** Control at the drop asks for a link, through the same tiku_trk_fs_link the Paste-links path uses.  
 **MISSING:** The relative-link modifier combination is not distinguished at a drop; links are absolute unless the caller asks otherwise.  
 *Shell: desktop*  
-#### FS-003 · important · partial
+#### FS-003 · important · done
 **Dropping with the secondary mouse button opens a context menu offering Move here / Copy here / Create link here / Cancel; picking Cancel abandons the drop entirely.**  
 AddDropContextMenu builds the four items (kMoveSelectionTo, kCopySelectionTo, kCreateLink, kCancelButton); MoveSelectionInto maps the result to forceMove/forceCopy/createLink/createRelativeLink and returns on kCancelButton or any unrecognised result. Shift on the Create-link menu item yields kCreateRelativeLink.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **PORT:** A secondary-button drop puts up the Move/Copy/Link/Cancel menu, which had been built and tested with no caller since the menu work.  
-**MISSING:** The menu appears and menu_invoke dispatches Move/Copy/Link here to the held payload, but no script proves an item is reachable -- picking one needs the popup's item coordinates, which the harness cannot yet compute -- so the dispatch is written and unexercised.  A harness that can name a menu item would close this and several CW rows with it.
-
+*Shell: desktop*  
+**PORT:** A secondary-button drop puts up the Move/Copy/Link/Cancel menu that had been built and tested with no caller, and the pick is obeyed: the payload is held across the release the menu interrupts.  Proven by picking "Move here" and finding the source GONE -- an assertion a copy or a link would fail, which the first version of the check could not tell apart.  
 *Shell: desktop*  
 #### FS-004 · important · partial
 **Dropping a selection into the folder it already lives in does not copy: in icon view it just repositions the icons, in list view it does nothing, and with Option held it duplicates instead.**  

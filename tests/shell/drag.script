@@ -23,4 +23,27 @@ wait 20
 expect-file /tmp/trk_script/sub/b.txt
 expect-file /tmp/trk_script/b.txt
 
+note FS-003: a secondary-button drop offers Move/Copy/Link and obeys the pick
+press 200 117
+move 200 105
+move 200 77
+release 200 77 3
+wait 3
+menu-pick Move here
+wait 25
+expect-file /tmp/trk_script/sub/c.txt
+note and Move is what it obeyed: a copy or a link would leave the source
+expect-no-file /tmp/trk_script/c.txt
+note PVS-051: a drag resting on a folder springs it open
+press 200 97
+move 200 90
+move 200 77
+wait 60
+expect-title sub
+note PVS-056: moving off the target drops the highlight, and the drop is
+note then on nothing rather than on the folder it used to be over
+move 700 500
+release 700 500
+wait 20
+expect-file /tmp/trk_script/b.txt
 quit

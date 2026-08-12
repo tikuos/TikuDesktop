@@ -64,6 +64,23 @@
  * the reason rows do not tighten onto the text. */
 #define LIST_ROW_H 20
 
+/**
+ * @brief How long a drag must rest on a folder before it springs open.
+ *
+ * Long enough that crossing a folder on the way somewhere else does not
+ * open it, short enough to feel like an answer rather than a delay.
+ */
+#define TIKU_TRK_SPRING_US 700000
+
+/** @brief The band, outside the list, in which a drag scrolls it. */
+#define AUTOSCROLL_BAND 6
+
+/** @brief Past this much overshoot the scroll speeds up (kSlowScrollBucket). */
+#define AUTOSCROLL_FAST 30
+
+/** @brief How long the pointer must hold in the band before it starts. */
+#define AUTOSCROLL_DELAY_US 600000
+
 /** @brief One folder window: a pose view plus the path that identifies it. */
 typedef struct folder {
     tiku_trk_poseview_t *view;
@@ -143,6 +160,9 @@ typedef struct desktop {
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
     char                 drop_dst[TIKU_TRK_PATH_MAX];
     tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
+    int64_t              hover_at;  /* when the drag settled on a target  */
+    int64_t              scroll_at; /* when it entered the scroll band    */
+    int                  sprung;    /* that target has already opened     */
     folder_t            *drop_fl;   /* window the pointer is over         */
     int                  drop_row;  /* pose highlighted as target, or -1  */
     int                  press_down;
@@ -2184,6 +2204,16 @@ main(int argc, char **argv)
 
                 sst.status = app.status;
                 sst.title = (fw != NULL) ? fw->title : NULL;
+                sst.scroll = 0;
+                sst.rows = 0;
+                {
+                    folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
+
+                    if (sfl != NULL) {
+                        sst.scroll = tiku_trk_poseview_scroll(sfl->view);
+                        sst.rows = tiku_trk_poseview_count(sfl->view);
+                    }
+                }
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     app.running = 0;
                     break;
@@ -2213,6 +2243,43 @@ main(int argc, char **argv)
                     ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
                     have = 1;
                     break;
+                case TIKU_TRK_SC_MENU_PICK: {
+                    /* Name the item rather than guess its pixels: a menu's
+                     * layout is the menu's business, and a script that
+                     * hardcoded coordinates would break every time an item
+                     * was added above the one it meant. */
+                    tiku_trk_menu_t *m = (app.popup_sub != NULL)
+                                             ? app.popup_sub : app.popup;
+                    tiku_desk_rect_t fr = (app.popup_sub != NULL)
+                                              ? app.popup_sub_frame
+                                              : app.popup_frame;
+                    int k;
+
+                    if (m == NULL) {
+                        fprintf(stderr, "script: no menu is open for "
+                                        "'%s'\n", sp.path);
+                        break;
+                    }
+                    for (k = 0; k < m->count; k++) {
+                        if (!m->item[k].separator &&
+                            strstr(m->item[k].label, sp.path) != NULL) {
+                            ev.type = ButtonPress;
+                            ev.xbutton.x = fr.x + 8;
+                            ev.xbutton.y = fr.y +
+                                tiku_trk_menu_item_top(m, k) +
+                                tiku_trk_menu_item_height(m, k) / 2;
+                            ev.xbutton.button = 1u;
+                            ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
+                            have = 1;
+                            break;
+                        }
+                    }
+                    if (!have) {
+                        fprintf(stderr, "script: no menu item matching "
+                                        "'%s'\n", sp.path);
+                    }
+                    break;
+                }
                 case TIKU_TRK_SC_SHOT:
                     draw_all(&app);
                     (void)tiku_desk_surface_png(app.surf, sp.path);
@@ -2673,6 +2740,19 @@ main(int argc, char **argv)
                     if (ofl != app.drop_fl || orow != app.drop_row) {
                         app.drop_fl = ofl;
                         app.drop_row = orow;
+                        /* Leaving takes the highlight with it: a target
+                         * still lit while the pointer is elsewhere is a
+                         * promise the release will not keep (PVS-056). */
+                        app.hover_at = tiku_trk_now();
+                        app.sprung = 0;
+                        app.dirty = 1;
+                    }
+                    if (ofl != NULL && orow < 0 &&
+                        ow != tiku_trk_desk_focused(app.desk)) {
+                        /* Hovering the empty part of a window behind
+                         * brings it forward, so a drag can reach what it
+                         * covers without being dropped first (PVS-055). */
+                        tiku_trk_desk_activate(app.desk, ow);
                         app.dirty = 1;
                     }
                 }
@@ -3068,6 +3148,66 @@ sel_done:
             if (sc != NULL) {
                 break;              /* one instruction per turn */
             }
+        }
+
+        if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL) {
+            /* Auto-scroll.  The band is OUTSIDE the list, which is what
+             * makes it reachable: a drag that has to leave the view to
+             * scroll it can still see where it is going.  Held still for
+             * the delay first, so crossing an edge on the way past does
+             * not start it (PVS-050). */
+            tiku_desk_rect_t c = tiku_trk_win_content(app.drop_fl->win);
+            int over = 0;
+
+            int top = c.y + 2;
+            int bot = c.y + c.h - COUNT_H;
+
+
+            /* The band sits just INSIDE the list, where Tracker's is just
+             * outside it.  Tracker's lives in the scroll-bar gutter; these
+             * windows have none, and a pointer past the list edge is over
+             * no window at all, so a band out there could never be
+             * reached. */
+            if (app.drag.y < top + AUTOSCROLL_BAND) {
+                over = -((top + AUTOSCROLL_BAND) - app.drag.y);
+            } else if (app.drag.y > bot - AUTOSCROLL_BAND) {
+                over = app.drag.y - (bot - AUTOSCROLL_BAND);
+            }
+            if (over == 0) {
+                app.scroll_at = 0;  /* out of the zone: re-arm */
+            } else if (app.scroll_at == 0) {
+                app.scroll_at = tiku_trk_now();
+            } else if (tiku_trk_now() - app.scroll_at >
+                           AUTOSCROLL_DELAY_US) {
+                /* Faster the further past the edge, in the original's two
+                 * buckets rather than continuously. */
+                int step = (over > AUTOSCROLL_FAST) ? 3 : 1;
+
+
+                tiku_trk_poseview_scroll_to(app.drop_fl->view,
+                    tiku_trk_poseview_scroll(app.drop_fl->view) +
+                        ((over < 0) ? -step : step));
+                app.dirty = 1;
+            }
+        }
+        if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL &&
+            app.drop_row >= 0 && !app.sprung &&
+            tiku_trk_now() - app.hover_at > TIKU_TRK_SPRING_US) {
+            /* Held still over a folder: open it, so a drag can be delivered
+             * somewhere the window does not show without abandoning the
+             * gesture (PVS-051).  Checked on the IDLE tick and not on
+             * motion, because a drag resting perfectly still is exactly the
+             * case and it produces no motion at all.  The original pops a
+             * navigable menu; a window is what this shell has, and it lands
+             * the drag in the same place. */
+            tiku_trk_pose_t *q = tiku_trk_poseview_at(app.drop_fl->view,
+                                                      app.drop_row);
+
+            app.sprung = 1;
+            if (q != NULL) {
+                (void)open_folder(&app, q->model.path);
+            }
+            app.dirty = 1;
         }
 
         /* PVS-017: a button held still for the click interval opens the

@@ -25,6 +25,7 @@ typedef enum {
     TIKU_TRK_SC_PRESS,
     TIKU_TRK_SC_MOVE,
     TIKU_TRK_SC_RELEASE,
+    TIKU_TRK_SC_MENU_PICK,
     TIKU_TRK_SC_SHOT,
     TIKU_TRK_SC_QUIT
 } tiku_trk_script_do_t;
@@ -36,13 +37,15 @@ typedef struct {
     unsigned    state;      /* X modifier mask                          */
     int         x, y;       /* PRESS / RELEASE                          */
     unsigned    button;
-    const char *path;       /* SHOT: where to write                     */
+    const char *path;       /* SHOT: where to write; MENU_PICK: label   */
 } tiku_trk_script_step_t;
 
 /** @brief What the driver can tell the script about itself. */
 typedef struct {
     const char *status;     /* the shell's status line, or NULL         */
     const char *title;      /* the focused window's title, or NULL      */
+    int         scroll;     /* the focused view's first visible row     */
+    int         rows;       /* how many rows it holds                   */
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
