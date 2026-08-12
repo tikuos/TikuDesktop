@@ -38,6 +38,9 @@
  * a folder falls back to when neither it nor its parent has one. */
 #define TIKU_TRK_ATTR_SESSION     "_trk/session"
 #define TIKU_TRK_ATTR_DEFAULTS    "_trk/window_default"
+/* Where the Deskbar is docked and how wide it is.  Under the session slot
+ * because the bar belongs to the desktop, not to any folder. */
+#define TIKU_TRK_ATTR_DOCK        "_trk/dock"
 
 /* Reserved node keys reproducing Tracker's three-slot split: state for
  * things that cannot hold it goes to a well-known slot rather than to the

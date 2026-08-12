@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "tiku_trk_fs.h"
@@ -329,6 +330,62 @@ main(void)
         m.facts.vol_flags = tiku_trk_volume_flags(&s2);
         check(strcmp(tiku_trk_model_icon_name(&m), "volume") == 0, "IV-006",
               "and any other disk gets the plain one");
+    }
+
+    printf("\none Trash per filesystem (FS-081, PVN-027)\n");
+    {
+        tiku_trk_backend_t *b3 = tiku_trk_backend_posix_open();
+        tiku_trk_fs_t *fs3 = tiku_trk_fs_new(b3);
+        char dirs[TIKU_TRK_VOLUME_MAX][TIKU_TRK_PATH_MAX];
+        int n = tiku_trk_fs_trash_dirs(fs3, dirs, TIKU_TRK_VOLUME_MAX);
+        int i, k, dupes = 0;
+
+        check(n > 0, "FS-081",
+              "every writable volume has a Trash of its own -- which is "
+              "what keeps trashing a rename rather than a copy");
+        for (i = 1; i < n; i++) {
+            for (k = 0; k < i; k++) {
+                if (strcmp(dirs[i], dirs[k]) == 0) { dupes++; }
+            }
+        }
+        check(dupes == 0, "PVN-027",
+              "and each of this machine's appears once");
+        {   /* A table we control, so the two rules can be ASKED rather
+             * than hoped for: whatever this machine has mounted may
+             * happen to satisfy them by accident. */
+            tiku_trk_volumes_t made;
+            char got[8][TIKU_TRK_PATH_MAX];
+            int m;
+
+            memset(&made, 0, sizeof made);
+            snprintf(made.v[0].mount, sizeof made.v[0].mount, "%s",
+                     getenv("HOME"));
+            snprintf(made.v[1].mount, sizeof made.v[1].mount, "%s",
+                     getenv("HOME"));   /* the same place twice */
+            snprintf(made.v[2].mount, sizeof made.v[2].mount, "%s",
+                     getenv("HOME"));
+            made.v[2].read_only = 1;
+            made.n = 3;
+            m = tiku_trk_fs_trash_dirs_of(fs3,
+                    (const struct tiku_trk_volumes *)&made, got, 8);
+            check(m == 1, "PVN-027",
+                  "three mounts, one writable place: the Trash is a UNION "
+                  "of places, and a place listed twice would show every "
+                  "item in it twice");
+            memset(&made, 0, sizeof made);
+            snprintf(made.v[0].mount, sizeof made.v[0].mount, "%s",
+                     getenv("HOME"));
+            made.v[0].read_only = 1;
+            made.n = 1;
+            check(tiku_trk_fs_trash_dirs_of(fs3,
+                      (const struct tiku_trk_volumes *)&made, got, 8) == 0,
+                  "FS-081",
+                  "and a read-only volume gets none at all: nothing can be "
+                  "trashed onto it, and asking would try to make a "
+                  "directory on a disc");
+        }
+        tiku_trk_fs_free(fs3);
+        tiku_trk_backend_close(b3);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the volume model holds");

@@ -1862,14 +1862,21 @@ case B_FUNCTION_KEY reads the "key" field of the current message and posts kEdit
 `case B_INSERT: break;`  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_INSERT)`  
 
-#### PVK-038 · core · partial
+#### PVK-038 · core · done
 **The Delete key with no Command moves the selection to the Trash; Shift+Delete deletes outright; inside the Trash, Delete deletes immediately without confirmation.**  
 AddShortcut(B_DELETE, B_NO_COMMAND_KEY, kMoveSelectionToTrash) and AddShortcut(B_DELETE, B_NO_COMMAND_KEY|B_SHIFT_KEY, kDeleteSelection). DoMoveToTrash re-reads the live Shift state from the message and calls DeleteSelection() instead of MoveSelectionToTrash(); when TargetModel()->IsTrash() it goes straight to DeleteSelection(true, false).  
 `ContainerWindow.cpp` → `BContainerWindow::AddShortcuts / BContainerWindow::Init; BPoseView::DoMoveToTrash (PoseView.cpp)`  
 **TIKU:** No Trash in a device namespace - the destructive/undoable split needs a decision, and read-only nodes must refuse.  
-**MISSING:** Delete acts on the selection but always destructively — OP_TRASH is handled identically to OP_DELETE (unlink/remove) — with only a status-line warning and no confirmation; the Shift modifier is never read on the Delete key, and the in-Trash case does not exist, so only the 'Shift+Delete deletes outright' clause holds while the no-modifier trash clause is not implemented by any route (the Shift 'Delete' relabel in tiku_trk_shortcuts.c maps to a command no window handles).  
-*/home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:978-993 (XK_Delete, no shift test); /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_fs.c:372-376 and :438-462 (OP_TRASH == OP_DELETE); /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_shortcuts.c:65,129-130*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- OP_TRASH now renames the item into a per-volume Trash directory with an origin record and undo entry (src/tiku_trk_fs.c:1671-1709); the Delete key reads Shift (src/tiku_trk_app.c:1144) and routes through tiku_trk_fs_delete_question, which returns straight-delete when Shift is held (fs.c:1448-1449) and inside the Trash (fs.c:1463-1466). `src/tiku_trk_fs.c:1442-1469 and :1671-1709; src/tiku_trk_app.c:1134-1163`  
+**PORT:** The multi-window shell had no Delete key at all; it has one now,
+and it asks the engine what the key MEANS rather than deciding: a move that
+can be undone where the item's filesystem has a Trash, a deletion where it
+has none or where Shift says the user has decided.  The split is real on this
+host -- a file in the home directory goes to the Trash, the same file under
+/tmp is deleted, because /tmp has no writable Trash -- which is why the
+shell test runs its fixture under home.
+*src/tiku_trk_desktop.c (the XK_Delete arm) through
+tiku_trk_fs_delete_question; tests/shell/trash.script*  
+*Shell: desktop, tracker*  
 
 #### PVK-039 · important · partial
 **When a text field has focus, the Delete key and the Cut/Copy/Paste/Select-all shortcuts are forwarded to that text view instead of acting on files.**  
@@ -2157,11 +2164,17 @@ EntryMoved stats '/' and, if the notice's dirNode matches it, stats "/" + name a
 EntryMoved tail: `else if (oldDir == thisDirNode.node) DeletePose(&itemNode); else if (dirNode.node == thisDirNode.node) EntryCreated(&dirNode, &itemNode, name);`  
 `PoseView.cpp` → `BPoseView::EntryMoved`  
 
-#### PVN-027 · important · open
+#### PVN-027 · important · partial
 **The Trash window shows the union of every volume's trash, so a move into any volume's trash appears there.**  
 EntryMoved resolves thisDirNode via FSGetTrashDir(&trashDir, itemNode.device) when TargetModel()->IsTrash(), instead of using the target model's node_ref.  
 `PoseView.cpp` → `BPoseView::EntryMoved`
-**SUBSYSTEM:** Trash model. No Trash window exists: TIKU_TRK_KIND_TRASH is never produced by either backend (assignments are only FILE/DIRECTORY/SYMLINK/UNKNOWN/VOLUME/VIRTUAL_DIR/DEVICE_NODE — src/tiku_trk_backend_posix.c:48-54,132 and src/tiku_trk_backend_tiku.c:73-86), so a .Trash directory opens as a plain single-volume folder; there is no per-device FSGetTrashDir resolution in any view and no union of volumes (one backend per session, src/tiku_trk_desktop.c:1576-1577; trash dir resolved per item's own volume root only in the fs layer, src/tiku_trk_fs.c:1359-1392).  
+**MISSING:** The union's INPUT exists: every Trash on the machine, each
+listed once however many mounts resolve to it -- a place listed twice would
+show every item in it twice.  What is missing is the window: nothing opens a
+view over that set, and the merge machinery that would do it
+(tiku_trk_vdir) has never been pointed at the Trash.
+*src/tiku_trk_fs.c:tiku_trk_fs_trash_dirs; src/tiku_trk_vdir.c (the merge,
+unused for this); tests/test_volume.c*
 
 #### PVN-028 · important · done
 **In query and virtual-directory windows every move is treated as an in-place rename, because 'the folder' has no single parent directory.**  
@@ -3511,7 +3524,14 @@ ShouldEditRefName alerts "The entered folder/file name is too long." (B_NAME_TOO
 **Every mounted volume gets a Trash folder created at startup, and the Trash folder is (re)marked invisible every time it is looked up.**  
 FSCreateTrashDirs walks BVolumeRoster skipping read-only, non-persistent and zero-capacity volumes and calls FSGetTrashDir for each; FSGetTrashDir create_directory()s the path with mode 0755 when missing and then unconditionally writes a PoseInfo with fInvisible = true (icon attributes are left to TrashWatcher).  
 `FSUtils.cpp` → `FSCreateTrashDirs / FSGetTrashDir`
-**BLOCKED:** Waits on per-volume Trash at startup, which needs the volume model.  
+**MISSING:** Every writable volume's Trash can be named, made on demand, and
+a read-only volume gets none -- nothing can be trashed onto it, and asking
+would try to make a directory on a disc.  What is not done is the row's
+startup pass: they are made when something is trashed rather than at boot,
+which is a deliberate difference (making them all at boot touches every disk
+on the machine to no purpose) but a difference.
+*src/tiku_trk_fs.c:tiku_trk_fs_trash_dirs/_trash_dirs_of;
+tests/test_volume.c*
 
 #### FS-082 · polish · open ⟨found by verification⟩
 **The Desktop folder gets its icon written into it the first time Tracker looks it up, so the Desktop always has the right icon even on a foreign disk.**  
@@ -6713,17 +6733,32 @@ Truncation budget is menu MaxContentWidth minus padding, minus kSwitchWidth when
 **MISSING:** Truncation with an ellipsis against a real width budget is implemented for both app names and window titles, and the budget correctly subtracts the expander width — but the tooltip half is missing entirely: the deskbar has no hover/MouseMoved path and the string 'tooltip' does not appear anywhere in src.  
 *src/tiku_trk_deskbar.c:fit_label, called at lines 488 and 511*
 
-#### DB-033 · important · open
+#### DB-033 · important · partial
 **In horizontal mode the application buttons shrink as more apps launch and grow back as they quit, between a font/icon-derived minimum and 1.25x that; once even the minimum will not fit, scroll arrows appear at the ends of the list**  
 CheckItemSizes recomputes on every add/remove (delta +1/-1) using MinHorizontalItemWidth/MaxHorizontalItemWidth against MaxHorizontalWidth (screen width minus drag region and leaf menu); CheckForSizeOverrunHorizontal drives TInlineScrollView::AttachScrollers/DetachScrollers through TBarView::CheckForScrolling  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::CheckItemSizes`
-**BLOCKED:** waits on a horizontal mode: the dock enum has only LEFT_EXPANDED / RIGHT_EXPANDED / RIGHT_MINI (src/tiku_trk_deskbar.h:29-33) and the bar width is the constant BAR_W (src/tiku_trk_deskbar.c:28, applied at :470) — there are no horizontal items to shrink and no scroller widget anywhere in src  
+**MISSING:** A horizontal dock exists -- along the top or the bottom,
+spanning the screen, one row deep -- and it is a different shape rather than
+the vertical bar turned: it explicitly draws no application list.  The row's
+own subject, application buttons that shrink as more launch, is therefore
+still absent, and now absent deliberately rather than for want of a dock.
+*src/tiku_trk_deskbar.c (the horizontal arm of _draw);
+tests/test_deskbar_dock.c*
 
-#### DB-034 · important · open
+#### DB-034 · important · partial
 **In vertical mode scroll arrows appear as soon as the app list runs past the bottom of the screen, and the mouse wheel over the list scrolls it — a modifier key (Option/Cmd/Ctrl) or Shift on the arrows scrolls three times as fast**  
 CheckForSizeOverrunVertical compares Window()->Frame().bottom against the screen frame; default small step 19px, large step = 3x small; detaching the scrollers resets the scroll position to the start  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MessageReceived case B_MOUSE_WHEEL_CHANGED`
-**BLOCKED:** no wheel path exists (no Button4/Button5 case in tiku_trk_desktop.c's event loop — grep returns nothing) and no overflow state exists for arrows to appear in: frame.h is content-derived with no clamp against the surface height (src/tiku_trk_deskbar.c:473-474)  
+**MISSING:** The bar has the overflow state and the wheel now reaches it: a
+list longer than the room left by the tray and the clock scrolls, one that
+fits does not move at all, and the wheel over the bar no longer falls through
+to whatever window is under it.  Two clauses remain: there are no scroll
+ARROWS drawn, and with the surface fixed at 1000x680 and eight application
+slots the list cannot actually overflow on this screen -- the rule is proven
+against a short surface, which is honest but not the same as reachable.
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_scroll/_scrollable and the overflow
+computation in _draw; src/tiku_trk_desktop.c (the wheel);
+tests/test_deskbar_dock.c*
 
 #### DB-035 · important · done
 **Dragging files over the application list highlights the app under the cursor and dropping hands the files to it; apps that cannot open the dragged types are drawn/behaved as unavailable unless Ctrl is held to force acceptance**  
@@ -6744,8 +6779,12 @@ MenuTrackingHook returns 'end the menu' only when the point is outside the menu 
 **In mini mode the application list collapses into a second icon next to the leaf logo which pops up the running-apps menu; with no apps running that menu shows a disabled 'no application running'**  
 PlaceDeskbarMenu adds the team title in kMiniState and removes it in vertical expando (replacing it with a separator in horizontal); the title is inserted at index 0 when docked left, index 1 when docked right. TTeamMenu rebuilds its whole item list in AttachedToWindow and computes a max content width from the widest app name (capped at gMaximumWindowWidth)  
 `BarView.cpp` → `TBarView::PlaceDeskbarMenu`  
-**MISSING:** Only the collapse half exists — in TIKU_TRK_DB_RIGHT_MINI the draw path sets rows = 0 and lifts the tray to the leaf — and it is unreachable in practice (no caller of tiku_trk_deskbar_set_dock anywhere); there is no second team-title icon beside the leaf and no running-apps popup, so the 'no application running' disabled item does not exist either.  
-*src/tiku_trk_deskbar.c:tiku_trk_deskbar_draw line 445 and 524; no set_dock caller in src*
+**MISSING:** Both collapsed docks exist now, left and right, and collapsing
+is what drops the application list.  The row's second icon -- the one that
+pops the running-app list, disabled when nothing is running -- does not: the
+mini bar shows the leaf and the tray and nothing between them.
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_mini and the mini arms of _draw;
+tests/test_deskbar_dock.c*
 
 #### DB-038 · core · partial
 **Replicants can be added to the tray by any application, by archived view or by add-on file, and are addressable afterwards by numeric id or by view name**  
@@ -6815,34 +6854,71 @@ ShowHideTime flips fTime's hidden state, re-flows the tray, writes Settings()->s
 `StatusView.cpp` → `TReplicantTray::ShowHideTime`
 **SUBSYSTEM:** clock options/settings: the clock is drawn unconditionally in every draw pass (src/tiku_trk_deskbar.c:573-590), no hide flag exists in struct tiku_trk_deskbar (src/tiku_trk_deskbar.c:44-55), the deskbar touches no settings store, and no Time-preferences peer exists in this port to sync with  
 
-#### DB-048 · core · open
+#### DB-048 · core · partial
 **Dragging the tray's dragger handle re-docks Deskbar into one of ten screen zones: four vertical mini corners, four horizontal mini corners, and left/right vertical expanded or top/bottom horizontal expanded**  
 CalculateRegions divides the screen into quarters horizontally and halves vertically; corner zones are menuBarHeight tall (horizontal) or menuBarHeight..2.9x menuBarHeight (vertical); MouseMoved tests the regions in a fixed short-circuit order and calls ChangeState(..., async=true) only when the target differs from the current state. Regions are recomputed on every ScreenChanged  
 `StatusView.cpp` → `TDragRegion::MouseMoved`  
-**BLOCKED:** `set_dock` re-lays the bar but the enum holds 3 of the row's 10 states and there is no drag region or zone hit-testing.  Reclassified from WIRING 2026-08-12: wiring a caller would close a third of the row and read as done.  
-#### DB-049 · polish · open
+**MISSING:** The destination half is built and reachable: a point maps to a
+dock the way the original's little monitor does -- the nearer half decides
+the edge, how far into the corner decides expanded or collapsed -- and a
+release in the MIDDLE keeps the dock it started from, so a mis-drag costs
+nothing.  Six of the ten states exist; the four horizontal corners do not,
+because a horizontal bar here spans its edge rather than sitting in a corner.
+There is no dragger HANDLE: the gesture is Ctrl and a drag (DB-049).
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_dock_at and the dock-driven
+geometry in _draw; src/tiku_trk_desktop.c (the Ctrl drag);
+tests/test_deskbar_dock.c; tests/shell/dock.script*
+#### DB-049 · polish · done
 **Holding Ctrl+Cmd and clicking anywhere on Deskbar starts the same dock-drag as grabbing the dragger handle**  
 Exact modifier match (Ctrl|Cmd with neither Option nor Shift) and only when the click is inside the window; forwards to fDragRegion->MouseDown at the dragger's top-left. The dragger's own hit area is DragRegion() inset by -2 because that rect is sized for drawing  
 `BarView.cpp` → `TBarView::MouseDown`
-**BLOCKED:** waits on DB-048's dock-drag: there is no drag to start — set_dock is uncalled and no drag-region code exists; the desktop's deskbar click path maps no Ctrl+Cmd chord (only ControlMask is forwarded, as CMD, src/tiku_trk_desktop.c:1909-1917)  
+**PORT:** Ctrl and a drag anywhere on the bar moves it, which is the gesture
+the row describes minus the Command key this port has no separate one for.
+It is tested before every other click handler, because a Ctrl+click on the
+bar means only one thing and every handler below would read it as something
+else.  Where it is left is remembered across sessions.
+*src/tiku_trk_desktop.c (the ButtonPress arm, the motion arm, and the dock
+record); tests/shell/dock.script*  
+*Shell: desktop*  
 
-#### DB-050 · important · open
+#### DB-050 · important · partial
 **In vertical mode a resize strip along the inner edge lets the user drag the bar wider or narrower, clamped between the minimum and twice the minimum width, and the width is remembered across restarts**  
 TResizeControl::MouseMoved resizes (and also moves, when docked right) the window by the cursor delta, refusing to grow past gMaximumWindowWidth or shrink below gMinimumWindowWidth; FrameResized writes Settings()->width, pushes the new max content width into the expando bar and re-runs UpdatePlacement. The control is hidden in horizontal mode  
 `StatusView.cpp` → `TResizeControl::MouseMoved`
-**BLOCKED:** the bar width is the compile-time constant BAR_W 134 (src/tiku_trk_deskbar.c:28) reapplied on every draw (:470): there is nothing for a resize strip to change and nothing persisted  
+**MISSING:** The short axis is the user's to set and is clamped at both ends
+-- below the minimum a row's text is unreadable, above the maximum the bar is
+taking the screen from the windows it exists to list -- and the width is
+remembered across sessions.  What is absent is the resize STRIP: nothing on
+the edge starts the drag, so the width can be set but not by hand.
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_set_width/_width and the frame it
+drives; src/tiku_trk_desktop.c (the dock record); tests/test_deskbar_dock.c*
 
-#### DB-051 · important · open
+#### DB-051 · important · done
 **Auto-hide slides Deskbar off to a 1px sliver when the pointer leaves its neighbourhood and brings it back when the pointer touches the screen edge it lives on**  
 Hidden size is kHiddenDimension (1), except horizontal expanded which keeps full screen width; re-show requires the pointer to be exactly on a screen edge inside the window frame; hiding requires the pointer to be more than kMaxPreventHidingDist (80px) outside the window. Suppressed while a menu or the calendar is open  
 `BarView.cpp` → `TBarView::MouseMoved`
-**BLOCKED:** no pointer-motion path reaches the deskbar (MotionNotify: press-radius cancel and window tracking only, src/tiku_trk_desktop.c:2201-2221) and no auto-hide state exists in struct tiku_trk_deskbar (src/tiku_trk_deskbar.c:44-55)  
+**PORT:** Hidden, the bar is a sliver against its own edge -- and the frame
+is what both the drawing and the hit test read, so hiding is a geometry
+change rather than a second drawing path.  Touching the sliver brings it
+back, judged against the EDGE and not the hidden frame, or the pointer could
+never reach it.  It stays out while its own menu is open: a bar that slid
+away under its menu would take the menu with it.
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_pointer/_shown and the sliver
+geometry; src/tiku_trk_desktop.c (motion reaching the bar);
+tests/test_deskbar_dock.c*  
+*Shell: desktop*  
 
-#### DB-052 · important · open
+#### DB-052 · important · done
 **Auto-raise floats Deskbar above other windows when the pointer touches its screen edge (and while any of its menus is open) and drops it back afterwards, without changing which window is active**  
 RaiseDeskbar(true) sets floating feel then immediately normal feel; RaiseDeskbar(false) does SendBehind(itself). Auto-raise is mutually exclusive with always-on-top (the setter forces it off, and the preference checkbox disables) and is suppressed while a mouse-down that started outside the window is still held  
 `BarView.cpp` → `TBarView::RaiseDeskbar`
-**BLOCKED:** the bar's z-order is fixed by draw order: draw_all paints the deskbar after every window on every frame (src/tiku_trk_desktop.c:1514-1516), so no state exists in which the bar is below a window — raise/lower has no substrate  
+**PORT:** Draw order IS the z-order here -- there is no window server to ask
+-- and it had one branch missing: the bar was painted after every window on
+every frame, so no state existed in which a window covered it.  With
+auto-raise on it is painted BEFORE the windows until the pointer touches it.
+*src/tiku_trk_deskbar.c:tiku_trk_deskbar_raised;
+src/tiku_trk_desktop.c:draw_all; tests/test_deskbar_dock.c*  
+*Shell: desktop*  
 
 #### DB-053 · important · open
 **Deskbar refuses to be minimized, refuses to be closed, and Cmd+Q closes its preferences window instead of quitting**  
@@ -6940,11 +7016,15 @@ B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from t
 `BarApp.cpp` → `TBarApp::MessageReceived case B_LOCALE_CHANGED`
 **BLOCKED:** no locale facility exists anywhere in the port: month names are hardcoded English arrays (src/tiku_trk_deskbar.c:582-584, 633-636) and grep locale/setlocale over src returns nothing  
 
-#### DB-068 · important · open
+#### DB-068 · important · partial
 **Deskbar re-lays itself out when the workspace is activated and when the screen resolution changes, keeping itself docked to the correct edge**  
 WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where it only re-sizes/re-positions/invalidates, to avoid rebuilding the app list); ScreenChanged re-applies size limits, recalculates the dock regions and re-runs UpdatePlacement  
 `BarWindow.cpp` → `TBarWindow::WorkspaceActivated`
-**BLOCKED:** both triggers are absent: workspaces do not exist (grep workspace hits one command-label string, src/tiku_trk_shortcuts.c:88) and the screen cannot change — the surface is created once at fixed DESK_W x DESK_H (src/tiku_trk_desktop.c:1583) and ConfigureNotify is never handled (grep returns nothing). The re-dock mechanic itself is already inherent: the frame is recomputed from s->w on every draw (src/tiku_trk_deskbar.c:470-474)  
+**MISSING:** The bar re-lays itself out from the surface on every draw, so a
+screen that changed size is answered inherently -- and now that includes the
+dock, the width and the hidden sliver.  There is no workspace in this port
+for the other half of the row to be activated.
+*src/tiku_trk_deskbar.c (the geometry recompute in _draw)*
 
 #### DB-069 · important · open ⟨found by verification⟩
 **The preloaded app/preferences icons stay live: the preloader node-monitors the directories and each preloaded file, re-icons on change and force-removes permanent entries when a file disappears.**  

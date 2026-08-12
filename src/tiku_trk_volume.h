@@ -40,7 +40,7 @@ typedef struct {
 } tiku_trk_volume_t;
 
 /** @brief Every volume the system has mounted. */
-typedef struct {
+typedef struct tiku_trk_volumes {
     tiku_trk_volume_t v[TIKU_TRK_VOLUME_MAX];
     int               n;
 } tiku_trk_volumes_t;

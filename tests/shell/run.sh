@@ -27,10 +27,19 @@ for s in "$here"/*.script; do
             session2.script) ;;
             *) rm -f "$HOME/.local/share/tracker/devices/local.state" ;;
         esac
+        # A script that says "# work: home" gets its fixture under $HOME
+        # instead of /tmp.  It matters for anything about the Trash: a
+        # Trash is per filesystem, and on this host /tmp has no writable
+        # one -- so a trash there is a deletion, and a test run there
+        # cannot tell the two apart.
+        work=/tmp/trk_script
+        if grep -q '^# work: home' "$s"; then
+            work="$HOME/.trk-shell-fixture"
+        fi
         # The fixture every script starts from.  Rows sort folders first,
         # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
         # the click coordinates in the scripts are aimed at.
-        rm -rf $work && mkdir -p $work/sub
+        rm -rf /tmp/trk_script "$HOME/.trk-shell-fixture" && mkdir -p $work/sub
         echo hi > $work/a.txt
         echo hi > $work/b.txt
         echo hi > $work/c.txt

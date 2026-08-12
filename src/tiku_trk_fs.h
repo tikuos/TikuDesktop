@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include "tiku_trk_model.h"
 
+struct tiku_trk_volumes;
+
 /** @brief What an operation is doing, for the progress window. */
 typedef enum {
     TIKU_TRK_OP_IDLE = 0,
@@ -186,6 +188,31 @@ int tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n);
  *
  * @return 0 on success.
  */
+/**
+ * @brief Every Trash there is, one per mounted volume (PVN-027, FS-081).
+ *
+ * A Trash is per filesystem -- that is what keeps trashing a rename rather
+ * than a copy -- so "the Trash" is a UNION and not a place.  Made on demand
+ * rather than at startup: a volume mounted read-only cannot have one, and
+ * making them all at boot would touch every disk on the machine to no
+ * purpose.
+ *
+ * @return how many were written.
+ */
+int tiku_trk_fs_trash_dirs(tiku_trk_fs_t *fs, char out[][TIKU_TRK_PATH_MAX],
+                           int max);
+
+/**
+ * @brief The same over a volume table the caller supplies.
+ *
+ * Separated so the rules -- skip the read-only, list each place once --
+ * can be asked of a table that is known, rather than only of whatever this
+ * machine happens to have mounted.
+ */
+int tiku_trk_fs_trash_dirs_of(tiku_trk_fs_t *fs,
+                              const struct tiku_trk_volumes *vs,
+                              char out[][TIKU_TRK_PATH_MAX], int max);
+
 int tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
                           size_t max);
 

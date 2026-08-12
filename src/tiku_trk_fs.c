@@ -1446,6 +1446,66 @@ trash_under(const char *dir, char *out, size_t max)
 }
 
 int
+tiku_trk_fs_trash_dirs(tiku_trk_fs_t *fs, char out[][TIKU_TRK_PATH_MAX],
+                       int max)
+{
+    tiku_trk_volumes_t vs;
+
+    if (fs == NULL || out == NULL || max <= 0 ||
+        !tiku_trk_fs_has_trash(fs)) {
+        return 0;
+    }
+    if (fs->backend->devid[0] != '\0' ||
+        tiku_trk_volumes_scan(&vs) <= 0) {
+        /* A device namespace has one Trash at most, and it is wherever the
+         * item's own resolution puts it. */
+        if (tiku_trk_fs_trash_dir(fs, NULL, out[0], TIKU_TRK_PATH_MAX) ==
+                0) {
+            return 1;
+        }
+        return 0;
+    }
+    return tiku_trk_fs_trash_dirs_of(fs,
+               (const struct tiku_trk_volumes *)&vs, out, max);
+}
+
+int
+tiku_trk_fs_trash_dirs_of(tiku_trk_fs_t *fs, const struct tiku_trk_volumes *v,
+                          char out[][TIKU_TRK_PATH_MAX], int max)
+{
+    const tiku_trk_volumes_t *vsp = (const tiku_trk_volumes_t *)v;
+    int i, n = 0;
+
+    if (fs == NULL || vsp == NULL || out == NULL || max <= 0) {
+        return 0;
+    }
+    for (i = 0; i < vsp->n && n < max; i++) {
+        char here[TIKU_TRK_PATH_MAX];
+        int k, dupe = 0;
+
+        if (vsp->v[i].read_only) {
+            /* Nothing can be trashed onto it, so it has no Trash -- and
+             * asking would try to create a directory on a disc. */
+            continue;
+        }
+        if (tiku_trk_fs_trash_dir(fs, vsp->v[i].mount, here,
+                                  sizeof here) != 0) {
+            continue;
+        }
+        for (k = 0; k < n; k++) {
+            if (strcmp(out[k], here) == 0) {
+                dupe = 1;       /* two mounts resolving to one Trash */
+                break;
+            }
+        }
+        if (!dupe) {
+            snprintf(out[n++], TIKU_TRK_PATH_MAX, "%s", here);
+        }
+    }
+    return n;
+}
+
+int
 tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
                       size_t max)
 {

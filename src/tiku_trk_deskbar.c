@@ -50,6 +50,12 @@ struct tiku_trk_deskbar {
     int                  team_count;
     tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
     int                  tray_count;
+    int                  width;     /* the short axis, user-set        */
+    int                  autohide;
+    int                  autoraise;
+    int                  pointer_on;  /* the pointer is over the bar    */
+    int                  scroll;      /* first application row shown    */
+    int                  overflow;    /* the list ran past the tray     */
     int                  menu_open;
     int                  calendar_open;
     int                  win_menu_team;    /* -1 = none showing        */
@@ -78,9 +84,183 @@ tiku_trk_deskbar_free(tiku_trk_deskbar_t *db)
 void
 tiku_trk_deskbar_set_dock(tiku_trk_deskbar_t *db, tiku_trk_db_dock_t dock)
 {
-    if (db != NULL) {
+    if (db != NULL && dock >= 0 && dock < TIKU_TRK_DB_DOCKS) {
         db->dock = dock;
     }
+}
+
+int
+tiku_trk_deskbar_vertical(tiku_trk_db_dock_t d)
+{
+    return (d != TIKU_TRK_DB_TOP && d != TIKU_TRK_DB_BOTTOM);
+}
+
+int
+tiku_trk_deskbar_mini(tiku_trk_db_dock_t d)
+{
+    return (d == TIKU_TRK_DB_RIGHT_MINI || d == TIKU_TRK_DB_LEFT_MINI);
+}
+
+tiku_trk_db_dock_t
+tiku_trk_deskbar_dock_at(int x, int y, int sw, int sh,
+                         tiku_trk_db_dock_t now)
+{
+    int dl = x, dr = sw - x, dt = y, db_ = sh - y;
+    int nearest;
+
+    if (sw <= 0 || sh <= 0) {
+        return now;
+    }
+    nearest = dl;
+    if (dr < nearest) { nearest = dr; }
+    if (dt < nearest) { nearest = dt; }
+    if (db_ < nearest) { nearest = db_; }
+    /* A drop in the MIDDLE keeps the dock it started from: a drag that
+     * ended nowhere in particular is a mis-drag, and moving the bar for it
+     * would be worse than ignoring it (DB-048). */
+    if (nearest > sw / 4 && nearest > sh / 4) {
+        return now;
+    }
+    if (nearest == dt) { return TIKU_TRK_DB_TOP; }
+    if (nearest == db_) { return TIKU_TRK_DB_BOTTOM; }
+    {
+        /* Down the top third of an edge is the expanded form; further down
+         * is the collapsed one -- the same split the little monitor makes
+         * between a tall strip and a corner. */
+        int mini = (y > sh / 3);
+
+        if (nearest == dl) {
+            return mini ? TIKU_TRK_DB_LEFT_MINI : TIKU_TRK_DB_LEFT_EXPANDED;
+        }
+        return mini ? TIKU_TRK_DB_RIGHT_MINI : TIKU_TRK_DB_RIGHT_EXPANDED;
+    }
+}
+
+int
+tiku_trk_deskbar_set_width(tiku_trk_deskbar_t *db, int w)
+{
+    if (db == NULL) {
+        return 0;
+    }
+    if (w < TIKU_TRK_DB_MIN_W) { w = TIKU_TRK_DB_MIN_W; }
+    if (w > TIKU_TRK_DB_MAX_W) { w = TIKU_TRK_DB_MAX_W; }
+    db->width = w;
+    return w;
+}
+
+int
+tiku_trk_deskbar_width(const tiku_trk_deskbar_t *db)
+{
+    if (db == NULL || db->width < TIKU_TRK_DB_MIN_W) {
+        return TIKU_TRK_DB_MIN_W;
+    }
+    return db->width;
+}
+
+void
+tiku_trk_deskbar_set_autohide(tiku_trk_deskbar_t *db, int on)
+{
+    if (db != NULL) {
+        db->autohide = on;
+    }
+}
+
+void
+tiku_trk_deskbar_set_autoraise(tiku_trk_deskbar_t *db, int on)
+{
+    if (db != NULL) {
+        db->autoraise = on;
+    }
+}
+
+int
+tiku_trk_deskbar_pointer(tiku_trk_deskbar_t *db, int x, int y)
+{
+    int was, on;
+
+    if (db == NULL) {
+        return 0;
+    }
+    was = db->pointer_on;
+    /* Judged against the frame the bar would have if it were SHOWN: a
+     * hidden bar that tested its sliver could never be reached, because
+     * the pointer would have to be inside two pixels to bring it back. */
+    on = (x >= db->frame.x && x < db->frame.x + db->frame.w &&
+          y >= db->frame.y && y < db->frame.y + db->frame.h);
+    if (!on && db->autohide) {
+        /* The edge the bar hides against still answers: that sliver is the
+         * whole of what is left to touch. */
+        if (tiku_trk_deskbar_vertical(db->dock)) {
+            on = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+                  db->dock == TIKU_TRK_DB_LEFT_MINI)
+                     ? (x <= TIKU_TRK_DB_SLIVER)
+                     : (x >= db->frame.x + db->frame.w -
+                            TIKU_TRK_DB_SLIVER);
+        } else {
+            on = (db->dock == TIKU_TRK_DB_TOP)
+                     ? (y <= TIKU_TRK_DB_SLIVER)
+                     : (y >= db->frame.y + db->frame.h -
+                            TIKU_TRK_DB_SLIVER);
+        }
+    }
+    db->pointer_on = on;
+    return (was != on);
+}
+
+int
+tiku_trk_deskbar_scroll(tiku_trk_deskbar_t *db, int step)
+{
+    int was;
+
+    if (db == NULL || !db->overflow) {
+        /* Nothing hidden, nothing to scroll: a wheel that slid a list
+         * which was entirely visible would move it away for no reason
+         * (DB-034). */
+        return 0;
+    }
+    was = db->scroll;
+    db->scroll += step;
+    if (db->scroll < 0) {
+        db->scroll = 0;
+    }
+    if (db->scroll > db->team_count - 1) {
+        db->scroll = (db->team_count > 0) ? db->team_count - 1 : 0;
+    }
+    return (was != db->scroll);
+}
+
+int
+tiku_trk_deskbar_scroll_at(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->scroll : 0;
+}
+
+int
+tiku_trk_deskbar_scrollable(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->overflow : 0;
+}
+
+int
+tiku_trk_deskbar_shown(const tiku_trk_deskbar_t *db)
+{
+    if (db == NULL) {
+        return 0;
+    }
+    /* An open menu keeps the bar out whatever the pointer is doing: a bar
+     * that slid away under its own menu would take the menu with it. */
+    return (!db->autohide || db->pointer_on || db->menu_open ||
+            db->calendar_open);
+}
+
+int
+tiku_trk_deskbar_raised(const tiku_trk_deskbar_t *db)
+{
+    if (db == NULL) {
+        return 1;
+    }
+    return (!db->autoraise || db->pointer_on || db->menu_open ||
+            db->calendar_open);
 }
 
 tiku_trk_db_dock_t
@@ -410,7 +590,8 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
     m.w = 156;
     m.h = rows * rowh + 4;
     m.y = LEAF_H + 2;
-    m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED)
+    m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+           db->dock == TIKU_TRK_DB_LEFT_MINI)
           ? db->frame.x + db->frame.w + 2
           : db->frame.x - m.w - 2;
     if (m.x < 0) {
@@ -519,12 +700,62 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     if (db == NULL || s == NULL) {
         return;
     }
-    rows = (db->dock == TIKU_TRK_DB_RIGHT_MINI) ? 0 : list_rows(db);
-    db->frame.w = BAR_W;
-    db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED) ? 0 : s->w - BAR_W;
+    rows = tiku_trk_deskbar_mini(db->dock) ? 0 : list_rows(db);
+    {
+        /* How much room the list actually has, once the leaf, the tray and
+         * the clock have taken theirs.  A list longer than that is what
+         * makes the bar scrollable (DB-034). */
+        int room = s->h - (LEAF_H + PAD) - (db->tray_count * TRAY_ROW) -
+                   CLOCK_H - 2 * PAD;
+
+        db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
+                        room > 0);
+        if (!db->overflow) {
+            db->scroll = 0;     /* nothing hidden: nothing scrolled past */
+        }
+        if (db->overflow && rows > room) {
+            rows = room;
+        }
+    }
+    db->frame.w = tiku_trk_deskbar_width(db);
     db->frame.y = 0;
-    db->frame.h = LEAF_H + PAD + rows + PAD +
-                  db->tray_count * TRAY_ROW + CLOCK_H + PAD;
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+                       db->dock == TIKU_TRK_DB_LEFT_MINI)
+                          ? 0 : s->w - db->frame.w;
+        db->frame.h = LEAF_H + PAD + rows + PAD +
+                      db->tray_count * TRAY_ROW + CLOCK_H + PAD;
+    } else {
+        /* Along an edge: the bar spans the screen and is as deep as one
+         * row needs.  The list is not drawn in this mode -- a horizontal
+         * application strip is a different control, not this one rotated
+         * (DB-033). */
+        db->frame.x = 0;
+        db->frame.w = s->w;
+        db->frame.h = LEAF_H + PAD;
+        db->frame.y = (db->dock == TIKU_TRK_DB_TOP)
+                          ? 0 : s->h - db->frame.h;
+        rows = 0;
+    }
+    if (!tiku_trk_deskbar_shown(db)) {
+        /* Hidden: a sliver against its own edge, which is all there is
+         * left to touch (DB-051).  The frame is what the hit test and the
+         * drawing both read, so hiding is a geometry change and not a
+         * second drawing path. */
+        if (tiku_trk_deskbar_vertical(db->dock)) {
+            if (db->frame.x > 0) {
+                db->frame.x = s->w - TIKU_TRK_DB_SLIVER;
+            }
+            db->frame.w = TIKU_TRK_DB_SLIVER;
+        } else {
+            if (db->frame.y > 0) {
+                db->frame.y = s->h - TIKU_TRK_DB_SLIVER;
+            }
+            db->frame.h = TIKU_TRK_DB_SLIVER;
+        }
+        tiku_desk_fill(s, db->frame, TIKU_DESK_C_PANEL);
+        return;
+    }
 
     tiku_desk_fill(s, db->frame, TIKU_DESK_C_PANEL);
     tiku_desk_bevel(s, db->frame,
@@ -541,7 +772,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                     tiku_desk_tint(TIKU_DESK_C_TAB, TIKU_DESK_DARKEN_2));
     (void)tiku_desk_text_centered(s, fb, leaf, "TikuOS", TIKU_DESK_C_TEXT);
 
-    if (db->dock != TIKU_TRK_DB_RIGHT_MINI) {
+    if (!tiku_trk_deskbar_mini(db->dock) &&
+        tiku_trk_deskbar_vertical(db->dock)) {
         y = list_y(db);
         for (i = 0; i < db->team_count; i++) {
             tiku_trk_team_t *t = &db->teams[i];
@@ -605,7 +837,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     /* The tray, then the clock beneath it: the original reserves the
      * clock's room in the first row, and stacking it here is the vertical
      * equivalent. */
-    y = (db->dock == TIKU_TRK_DB_RIGHT_MINI) ? LEAF_H + PAD : tray_y(db);
+    y = tiku_trk_deskbar_mini(db->dock) ? LEAF_H + PAD : tray_y(db);
     tiku_desk_hline(s, db->frame.x + 4, y - 3, db->frame.w - 8,
                     tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
     tiku_desk_hline(s, db->frame.x + 4, y - 2, db->frame.w - 8,

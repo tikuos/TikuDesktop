@@ -54,6 +54,7 @@ typedef struct {
     const char *find_type;  /* the type it is narrowed to                */
     int         win_x, win_y;   /* the focused window's frame            */
     int         columns;        /* how many its list shows               */
+    int         bar_x, bar_y;   /* where the Deskbar has put itself      */
     /* Bit 0: a row whose type is NOT the one the panel asked for.  Bit 1:
      * at least one row was looked at.  Together they say whether a search
      * really was narrowed. */
@@ -87,6 +88,7 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-type-narrowed                -- every row is of the asked type
  *     expect-window-at <x> <y>            -- the focused window's corner
  *     expect-columns <n>
+ *     expect-deskbar-at <x> <y>
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

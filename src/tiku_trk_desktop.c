@@ -227,6 +227,7 @@ typedef struct desktop {
     folder_t            *drop_fl;   /* window the pointer is over         */
     int                  drop_row;  /* pose highlighted as target, or -1  */
     int                  press_down;
+    int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
     /* Renaming an ENTRY, which is a different thing from editing a node's
@@ -3550,8 +3551,16 @@ static void
 draw_all(desktop_t *app)
 {
     publish_windows(app);
-    tiku_trk_desk_draw(app->desk);
-    tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    if (!tiku_trk_deskbar_raised(app->deskbar)) {
+        /* Under the windows: with auto-raise on, a window may cover the
+         * bar until the user reaches for it.  Draw order IS the z-order
+         * here -- there is no window server to ask (DB-052). */
+        tiku_trk_deskbar_draw(app->deskbar, app->surf);
+        tiku_trk_desk_draw(app->desk);
+    } else {
+        tiku_trk_desk_draw(app->desk);
+        tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    }
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {
@@ -3712,6 +3721,20 @@ main(int argc, char **argv)
         app.store = tiku_trk_store_memory_open();
     }
     tiku_trk_find_set_store(&app.panel, app.store);
+    {
+        /* Where the bar was docked and how wide it was left.  Kept with
+         * the session rather than with any folder: the bar belongs to the
+         * desktop (DB-048, DB-050). */
+        int32_t rec[2];
+
+        if (tiku_trk_state_read(app.store, TIKU_TRK_KEY_SESSION,
+                                TIKU_TRK_ATTR_DOCK, rec, sizeof rec) ==
+                (int)sizeof rec) {
+            tiku_trk_deskbar_set_dock(app.deskbar,
+                                      (tiku_trk_db_dock_t)rec[0]);
+            (void)tiku_trk_deskbar_set_width(app.deskbar, (int)rec[1]);
+        }
+    }
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -4044,6 +4067,13 @@ main(int argc, char **argv)
                 sst.find_text = app.panel.name_text;
                 sst.find_type = tiku_trk_find_type_label(&app.panel);
                 sst.columns = 0;
+                {
+                    tiku_desk_rect_t bf =
+                        tiku_trk_deskbar_frame(app.deskbar);
+
+                    sst.bar_x = bf.x;
+                    sst.bar_y = bf.y;
+                }
                 sst.win_x = (fw != NULL) ? fw->frame.x : -1;
                 sst.win_y = (fw != NULL) ? fw->frame.y : -1;
                 sst.kinds = 0;
@@ -4182,6 +4212,22 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case ButtonPress: {
+                if (ev.xbutton.button == 1u &&
+                    (ev.xbutton.state & ControlMask)) {
+                    /* Before anything else, because a Ctrl+click on the
+                     * bar means only one thing and every handler below
+                     * would read it as something else (DB-049). */
+                    tiku_desk_rect_t bf =
+                        tiku_trk_deskbar_frame(app.deskbar);
+
+                    if (ev.xbutton.x >= bf.x &&
+                        ev.xbutton.x < bf.x + bf.w &&
+                        ev.xbutton.y >= bf.y &&
+                        ev.xbutton.y < bf.y + bf.h) {
+                        app.dock_drag = 1;
+                        break;
+                    }
+                }
                 {   /* An info window takes its own clicks first. */
                     tiku_trk_win_t *iw = tiku_trk_desk_focused(app.desk);
                     int islot = -1, k;
@@ -4605,7 +4651,22 @@ main(int argc, char **argv)
                      * has always done. */
                     tiku_trk_win_t *ww = NULL;
                     folder_t *wfl;
+                    tiku_desk_rect_t bf =
+                        tiku_trk_deskbar_frame(app.deskbar);
 
+                    if (ev.xbutton.x >= bf.x &&
+                        ev.xbutton.x < bf.x + bf.w &&
+                        ev.xbutton.y >= bf.y &&
+                        ev.xbutton.y < bf.y + bf.h) {
+                        /* Over the bar: the list scrolls rather than
+                         * whatever window happens to be under it
+                         * (DB-034). */
+                        if (tiku_trk_deskbar_scroll(app.deskbar,
+                                (ev.xbutton.button == 4u) ? -1 : 1)) {
+                            app.dirty = 1;
+                        }
+                        break;
+                    }
                     (void)tiku_trk_desk_hit(app.desk, ev.xbutton.x,
                                             ev.xbutton.y, &ww);
                     wfl = folder_of(&app, ww);
@@ -4985,6 +5046,28 @@ main(int argc, char **argv)
                         app.dirty = 1;
                     }
                 }
+                if (app.dock_drag) {
+                    /* Ctrl held on the bar: the pointer IS the picker.
+                     * Where it lets go decides the dock, and a release in
+                     * the middle keeps the one it started from (DB-049). */
+                    tiku_trk_db_dock_t want =
+                        tiku_trk_deskbar_dock_at(ev.xmotion.x, ev.xmotion.y,
+                            DESK_W, DESK_H,
+                            tiku_trk_deskbar_dock(app.deskbar));
+
+                    if (want != tiku_trk_deskbar_dock(app.deskbar)) {
+                        tiku_trk_deskbar_set_dock(app.deskbar, want);
+                        app.dirty = 1;
+                    }
+                }
+                if (tiku_trk_deskbar_pointer(app.deskbar, ev.xmotion.x,
+                                             ev.xmotion.y)) {
+                    /* The one input the bar never had.  Auto-hide and
+                     * auto-raise are both answers to "where is the
+                     * pointer", and neither could be asked (DB-051,
+                     * DB-052). */
+                    app.dirty = 1;
+                }
                 if (tiku_trk_desk_tracking(app.desk)) {
                     if (tiku_trk_desk_track(app.desk, ev.xmotion.x,
                                             ev.xmotion.y)) {
@@ -4993,6 +5076,7 @@ main(int argc, char **argv)
                 }
                 break;
             case ButtonRelease:
+                app.dock_drag = 0;
                 if (tiku_trk_drag_active(&app.drag)) {
                     do_drop(&app, ev.xbutton.x, ev.xbutton.y,
                             ev.xbutton.state, ev.xbutton.button);
@@ -5366,6 +5450,35 @@ sel_done:
                 if (ks == XK_a && (ev.xkey.state & ControlMask) &&
                     fl != NULL) {
                     tiku_trk_poseview_select_all(fl->view);
+                    app.dirty = 1;
+                    break;
+                }
+                if (ks == XK_Delete && fl != NULL) {
+                    /* What the key MEANS depends on where the items are: a
+                     * move that can be undone where there is a Trash to
+                     * move them to, and a deletion inside it or when Shift
+                     * says the user has already decided (PVK-038).  This
+                     * shell had no Delete key at all. */
+                    char paths[64][TIKU_TRK_PATH_MAX];
+                    const char *sel[64];
+                    int n = folder_selection(&app, fl, paths, sel, 64);
+
+                    if (n > 0) {
+                        int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
+
+                        if (tiku_trk_fs_delete_question(app.fs, sel[0],
+                                shift) == TIKU_TRK_DELETE_STRAIGHT) {
+                            (void)tiku_trk_fs_delete(app.fs, sel, n);
+                            snprintf(app.status, sizeof app.status,
+                                     "deleting %d item%s", n,
+                                     (n == 1) ? "" : "s");
+                        } else {
+                            (void)tiku_trk_fs_trash(app.fs, sel, n);
+                            snprintf(app.status, sizeof app.status,
+                                     "moving %d item%s to the Trash", n,
+                                     (n == 1) ? "" : "s");
+                        }
+                    }
                     app.dirty = 1;
                     break;
                 }
@@ -6043,6 +6156,14 @@ sel_done:
     /* The sidecar batches; without this the session's queries, frames and
      * recent lists are held in memory and dropped on the way out -- saved
      * in every sense except the one that matters. */
+    {
+        int32_t rec[2];
+
+        rec[0] = (int32_t)tiku_trk_deskbar_dock(app.deskbar);
+        rec[1] = (int32_t)tiku_trk_deskbar_width(app.deskbar);
+        (void)tiku_trk_state_write(app.store, TIKU_TRK_KEY_SESSION,
+                                   TIKU_TRK_ATTR_DOCK, rec, sizeof rec);
+    }
     (void)tiku_trk_store_flush(app.store);
     tiku_trk_deskbar_free(app.deskbar);
     tiku_trk_desk_free(app.desk);

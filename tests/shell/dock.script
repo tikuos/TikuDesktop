@@ -1,0 +1,19 @@
+# shell: desktop
+# DB-048/DB-049/DB-051: the bar can be moved to another edge by dragging it
+# with Ctrl held, and where it ends up is remembered.
+note the bar starts docked right
+expect-deskbar-at 866 0
+note Ctrl-dragging it to the top edge re-docks it
+press 900 120 1 ctrl
+move 500 200
+move 500 3
+release 500 3
+wait 5
+expect-deskbar-at 0 0
+note and a Ctrl-drag that ends in the MIDDLE leaves it where it is
+press 500 3 1 ctrl
+move 500 300
+release 500 300
+wait 5
+expect-deskbar-at 0 0
+quit
