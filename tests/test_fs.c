@@ -9,10 +9,13 @@
  */
 
 #include <dirent.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "tiku_trk_fs.h"
@@ -660,6 +663,279 @@ main(void)
         }
     }
 
+
+    /* --- links (FS-009, FS-010, FS-011, FS-032) ------------------------- */
+    printf("\nlinks, and what a copy carries with it\n");
+    {
+        char victim[600], made[700], seen[600];
+        const char *sel[1];
+        ssize_t n;
+
+        snprintf(victim, sizeof victim, "%s/linkme.txt", A);
+        put(victim, "L");
+        sel[0] = victim;
+
+        /* Into another folder: the plain name is free, so it is kept. */
+        (void)tiku_trk_fs_link(fs, sel, 1, B, 0);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/linkme.txt", B);
+        n = readlink(made, seen, sizeof seen - 1);
+        check(n > 0, "FS-009", "Create link makes a real symbolic link");
+        if (n > 0) {
+            seen[n] = '\0';
+            check(strcmp(seen, victim) == 0, "FS-010",
+                  "pointing at the original by absolute path");
+        }
+
+        /* Into the SAME folder: the plain name is taken, so " link". */
+        (void)tiku_trk_fs_link(fs, sel, 1, A, 0);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/linkme.txt link", A);
+        check(there(made), "FS-009",
+              "and only a name already taken turns into \"<name> link\"");
+
+        /* A relative link, same device. */
+        {
+            char sub[600];
+
+            snprintf(sub, sizeof sub, "%s/reldir", A);
+            (void)mkdir(sub, 0755);
+            (void)tiku_trk_fs_link(fs, sel, 1, sub, 1);
+            run_to_end(fs);
+            snprintf(made, sizeof made, "%s/linkme.txt", sub);
+            n = readlink(made, seen, sizeof seen - 1);
+            if (n > 0) {
+                seen[n] = '\0';
+            } else {
+                seen[0] = '\0';
+            }
+            check(strcmp(seen, "../linkme.txt") == 0, "FS-010",
+                  "a relative link is computed against the folder it lands "
+                  "in, not against the root");
+            check(there(made), "FS-010",
+                  "and resolves -- a relative path that did not would be a "
+                  "link to nothing");
+        }
+
+        /* Across devices there is no relative path, so it degrades. */
+        (void)tiku_trk_fs_link(fs, sel, 1, B, 1);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/linkme.txt link", B);
+        if (!there(made)) {
+            snprintf(made, sizeof made, "%s/linkme.txt", B);
+        }
+        n = readlink(made, seen, sizeof seen - 1);
+        if (n > 0) { seen[n] = '\0'; } else { seen[0] = '\0'; }
+        check(seen[0] == '/' || strncmp(seen, "..", 2) == 0, "FS-010",
+              "asking for a relative link never yields a broken one");
+
+        /* Copying a link copies the LINK. */
+        {
+            char lnk[600], out[600];
+
+            snprintf(lnk, sizeof lnk, "%s/pointer", A);
+            (void)remove(lnk);
+            if (symlink(victim, lnk) != 0) { check(0, "FS-032", "symlink"); }
+            sel[0] = lnk;
+            (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+            run_to_end(fs);
+            snprintf(out, sizeof out, "%s/pointer", B);
+            n = readlink(out, seen, sizeof seen - 1);
+            check(n > 0, "FS-032",
+                  "copying a symbolic link copies the link itself, not a "
+                  "snapshot of what it points at");
+        }
+    }
+
+    /* --- a copy keeps mode and modification time (FS-031) --------------- */
+    {
+        char src[600], out[600];
+        const char *sel[1];
+        struct stat a1, b1;
+        struct timespec back[2];
+
+        snprintf(src, sizeof src, "%s/stamped.txt", A);
+        put(src, "s");
+        (void)chmod(src, 0640);
+        back[0].tv_sec = 1000000000; back[0].tv_nsec = 0;
+        back[1].tv_sec = 1000000000; back[1].tv_nsec = 0;
+        (void)utimensat(AT_FDCWD, src, back, 0);
+
+        sel[0] = src;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+        run_to_end(fs);
+        snprintf(out, sizeof out, "%s/stamped.txt", B);
+        if (stat(src, &a1) == 0 && stat(out, &b1) == 0) {
+            check((b1.st_mode & 07777) == (a1.st_mode & 07777), "FS-031",
+                  "a copy keeps the source's permissions rather than "
+                  "landing world-readable");
+            check(b1.st_mtime == a1.st_mtime, "FS-031",
+                  "and its modification time, so a copy is not stamped now");
+        }
+    }
+
+    /* --- what a folder copy skips (FS-036) ------------------------------ */
+    {
+        char dir[500], fifo[600], out[500], oname[600];
+        const char *sel[1];
+
+        snprintf(dir, sizeof dir, "%s/withodd", A);
+        (void)mkdir(dir, 0755);
+        {
+            char plain[600];
+
+            snprintf(plain, sizeof plain, "%s/plain.txt", dir);
+            put(plain, "p");
+        }
+        snprintf(fifo, sizeof fifo, "%s/pipe", dir);
+        (void)mkfifo(fifo, 0644);
+
+        sel[0] = dir;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+        run_to_end(fs);
+        snprintf(out, sizeof out, "%s/withodd", B);
+        snprintf(oname, sizeof oname, "%s/plain.txt", out);
+        check(there(oname), "FS-036", "a folder copy takes the ordinary "
+              "files inside it");
+        snprintf(oname, sizeof oname, "%s/pipe", out);
+        check(!there(oname), "FS-036",
+              "and silently ignores what is neither file, folder nor link "
+              "-- a pipe has no bytes to copy");
+        (void)remove(fifo);
+
+        /* The mount-point rule is about the SOURCE's filesystem, and only
+         * shows itself when source and destination are on different ones:
+         * a walker that compared each child against the destination would
+         * take every subfolder for a mount point and skip the lot.  HOME
+         * and /tmp are different filesystems on this host, which is what
+         * makes this checkable without mounting anything. */
+        {
+            const char *home = getenv("HOME");
+
+            if (home != NULL && home[0] != '\0') {
+                char work[500], top[600], inner[700], leaf[800], arrived[700];
+
+                snprintf(work, sizeof work, "%s/.tiku_trk_fs_test", home);
+                (void)mkdir(work, 0755);
+                snprintf(top, sizeof top, "%s/crossdev", work);
+                (void)mkdir(top, 0755);
+                snprintf(inner, sizeof inner, "%s/inner", top);
+                (void)mkdir(inner, 0755);
+                snprintf(leaf, sizeof leaf, "%s/deep.txt", inner);
+                put(leaf, "d");
+
+                {   /* The destination folder must already BE there:
+                     * merging into one is the case where the walker has
+                     * stat()ed the destination, and so the case where a
+                     * comparison against the wrong stat shows up. */
+                    char pre[600];
+
+                    snprintf(pre, sizeof pre, "%s/crossdev", B);
+                    (void)mkdir(pre, 0755);
+                }
+                sel[0] = top;
+                (void)tiku_trk_fs_copy(fs, sel, 1, B,
+                                       TIKU_TRK_CONFLICT_REPLACE);
+                run_to_end(fs);
+                snprintf(arrived, sizeof arrived, "%s/crossdev/inner/deep.txt",
+                         B);
+                check(there(arrived), "FS-036",
+                      "a folder copied to another filesystem still takes its "
+                      "subfolders -- the mount test asks about the source's "
+                      "filesystem, not the destination's");
+                (void)remove(leaf);
+                (void)rmdir(inner);
+                (void)rmdir(top);
+                (void)rmdir(work);
+            }
+        }
+    }
+
+    /* --- moves that stop and ask first (FS-027) ------------------------- */
+    {
+        const char *home = getenv("HOME");
+        char inside[600], cfg[600];
+
+        check(tiku_trk_fs_confirm_move("/usr") ==
+              TIKU_TRK_CONFIRM_OVERRIDE, "FS-027",
+              "moving a system folder needs the held-modifier confirmation");
+        check(tiku_trk_fs_confirm_move("/usr/share/doc") ==
+              TIKU_TRK_CONFIRM_OVERRIDE, "FS-027",
+              "and so does anything inside one -- the system test is a "
+              "containment test");
+        check(tiku_trk_fs_confirm_move("/usr-not-really") ==
+              TIKU_TRK_CONFIRM_NONE, "FS-027",
+              "while a folder that merely starts with the same letters is "
+              "not a system folder");
+        check(tiku_trk_fs_confirm_move("/tmp/anything") ==
+              TIKU_TRK_CONFIRM_NONE, "FS-027",
+              "an ordinary path asks nothing");
+
+        if (home != NULL && home[0] != '\0') {
+            check(tiku_trk_fs_confirm_move(home) ==
+                  TIKU_TRK_CONFIRM_OVERRIDE, "FS-027",
+                  "the home folder itself needs the same confirmation");
+            snprintf(inside, sizeof inside, "%s/ordinary.txt", home);
+            check(tiku_trk_fs_confirm_move(inside) ==
+                  TIKU_TRK_CONFIRM_NONE, "FS-027",
+                  "but a file INSIDE home asks nothing: home is an exact "
+                  "match where the system folder is a containment one");
+            snprintf(cfg, sizeof cfg, "%s/.config/somewhere", home);
+            check(tiku_trk_fs_confirm_move(cfg) == TIKU_TRK_CONFIRM_ASK,
+                  "FS-027",
+                  "and the settings folder asks, without needing the "
+                  "modifier");
+        }
+    }
+
+    /* --- free space (FS-015, FS-016) ------------------------------------ */
+    {
+        char f1[600], dir[500], f2[600];
+        const char *sel[2];
+        uint64_t one, two, tree;
+
+        snprintf(f1, sizeof f1, "%s/sized.bin", A);
+        put(f1, "0123456789");           /* ten bytes, one block charged */
+        sel[0] = f1;
+        one = tiku_trk_fs_items_size(sel, 1);
+        check(one >= 10u + 1024u && one <= 10u + 8192u, "FS-015",
+              "a file is charged its bytes plus one block, the block "
+              "clamped between 1 KB and 8 KB");
+
+        snprintf(dir, sizeof dir, "%s/sizedir", A);
+        (void)mkdir(dir, 0755);
+        snprintf(f2, sizeof f2, "%s/inner.bin", dir);
+        put(f2, "0123456789");
+        sel[0] = dir;
+        tree = tiku_trk_fs_items_size(sel, 1);
+        check(tree == one + 1024u, "FS-015",
+              "and a folder costs one block of its own on top of what is "
+              "inside it -- the walk descends");
+
+        sel[0] = f1;
+        sel[1] = f2;
+        two = tiku_trk_fs_items_size(sel, 2);
+        check(two == one * 2u, "FS-015",
+              "several items are summed, not measured one at a time");
+
+        /* The decision itself, at both sides of its boundary. */
+        check(tiku_trk_fs_fits(1000u, 1000u + 4u * 1024u + 1u), "FS-015",
+              "a copy that leaves more than 4 KB spare may start");
+        check(!tiku_trk_fs_fits(1000u, 1000u + 4u * 1024u), "FS-015",
+              "one that leaves exactly the headroom may not: the boundary "
+              "counts as full");
+        check(!tiku_trk_fs_fits(1000u, 500u), "FS-015",
+              "and one that does not fit at all certainly may not");
+        check(tiku_trk_fs_fits(~(uint64_t)0u / 2u, 0u), "FS-015",
+              "a filesystem that will not say how much is free is not a "
+              "reason to refuse");
+
+        check(tiku_trk_fs_free_bytes(A) > 0u, "FS-015",
+              "and a real directory does say");
+        check(tiku_trk_fs_free_bytes("/no/such/place") == 0u, "FS-015",
+              "while one that is not there says nothing rather than "
+              "guessing");
+    }
 
     /* --- cancelling (FS-033, FS-034) ------------------------------------ */
     printf("\ncancelling a job\n");

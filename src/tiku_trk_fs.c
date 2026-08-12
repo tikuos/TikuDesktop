@@ -20,7 +20,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <time.h>
 #include <unistd.h>
 
 #define FS_QUEUE_MAX 512
@@ -74,6 +77,7 @@ struct tiku_trk_fs {
     tiku_trk_cancel_fn  cancel_fn;
     void               *cancel_ctx;
     int                 cancelling;   /* the flag cancel() itself sets  */
+    int                 link_relative;
 };
 
 /** @brief Whether the job should stop where it stands. */
@@ -528,6 +532,38 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
         }
         fs->prog.collisions = collisions;
     }
+    if (op == TIKU_TRK_OP_COPY && dst != NULL &&
+        !tiku_trk_fs_in_trash(fs, dst) && fs->backend->devid[0] == '\0') {
+        /* Summed before a byte moves: a copy that runs out half way leaves
+         * the user with a truncated tree AND less space than they started
+         * with.  Skipped for the Trash, where a move is what happens, and
+         * for a device store, whose free space is not a number this side
+         * knows (FS-015). */
+        const char *q[FS_QUEUE_MAX];
+        int k;
+        uint64_t total;
+
+        for (k = 0; k < fs->qcount; k++) {
+            q[k] = fs->queue[k];
+        }
+        total = tiku_trk_fs_items_size(q, fs->qcount);
+        if (!tiku_trk_fs_fits(total, tiku_trk_fs_free_bytes(dst))) {
+            snprintf(fs->prog.error, sizeof fs->prog.error,
+                     "There is not enough free space on the destination "
+                     "volume.");
+            fs->prog.error_ask = 1;
+            fs->prog.error_can_continue = 0;
+            fs->qcursor = fs->qcount;
+            return -1;
+        }
+    }
+    if (op == TIKU_TRK_OP_COPY && dst != NULL &&
+        tiku_trk_fs_in_trash(fs, dst)) {
+        /* Copying INTO the Trash would leave the original where it was and
+         * put a second copy somewhere the user cannot see, so the gesture
+         * means the move it looks like (FS-014). */
+        op = TIKU_TRK_OP_MOVE;
+    }
     fs->prog.op = op;
     fs->prog.total = fs->qcount;
     fs->cancelling = 0;             /* a new job is not the cancelled one */
@@ -564,6 +600,172 @@ tiku_trk_fs_trash(tiku_trk_fs_t *fs, const char *const *paths, int n)
 }
 
 
+/**
+ * @brief Bytes @p path's filesystem has left, or 0 when it will not say.
+ */
+uint64_t
+tiku_trk_fs_free_bytes(const char *path)
+{
+    struct statvfs v;
+
+    if (path == NULL || statvfs(path, &v) != 0) {
+        return 0u;
+    }
+    return (uint64_t)v.f_bavail * (uint64_t)v.f_frsize;
+}
+
+uint64_t
+tiku_trk_fs_items_size(const char *const *paths, int n)
+{
+    uint64_t total = 0u;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        struct stat st;
+        DIR *d;
+
+        if (paths[i] == NULL || lstat(paths[i], &st) != 0) {
+            continue;
+        }
+        if (!S_ISDIR(st.st_mode)) {
+            /* Charged a whole block, because that is what a file costs on
+             * the destination however few bytes it holds; the original
+             * clamps the block size to [1024, 8192] and assumes 2048 when
+             * the filesystem will not say. */
+            unsigned long blk = (st.st_blksize > 0)
+                                    ? (unsigned long)st.st_blksize : 2048ul;
+
+            if (blk < 1024ul) { blk = 1024ul; }
+            if (blk > 8192ul) { blk = 8192ul; }
+            total += (uint64_t)st.st_size + (uint64_t)blk;
+            continue;
+        }
+        total += 1024u;             /* one block for the directory itself */
+        d = opendir(paths[i]);
+        if (d != NULL) {
+            struct dirent *e;
+
+            while ((e = readdir(d)) != NULL) {
+                char child[TIKU_TRK_PATH_MAX];
+                const char *one[1];
+
+                if (strcmp(e->d_name, ".") == 0 ||
+                    strcmp(e->d_name, "..") == 0) {
+                    continue;
+                }
+                if (join(child, sizeof child, paths[i], e->d_name) != 0) {
+                    continue;
+                }
+                one[0] = child;
+                total += tiku_trk_fs_items_size(one, 1);
+            }
+            (void)closedir(d);
+        }
+    }
+    return total;
+}
+
+int
+tiku_trk_fs_fits(uint64_t total, uint64_t free_bytes)
+{
+    /* Four kilobytes of headroom, and >= rather than >: a destination left
+     * with exactly nothing is a destination the next write fails on, so
+     * the boundary counts as not fitting. */
+    if (free_bytes == 0u) {
+        return 1;                   /* unknown: not a reason to refuse    */
+    }
+    return !((total + 4u * 1024u) >= free_bytes);
+}
+
+/** @brief Whether @p path is @p dir or something under it. */
+static int
+under(const char *path, const char *dir)
+{
+    size_t n;
+
+    if (path == NULL || dir == NULL || dir[0] == '\0') {
+        return 0;
+    }
+    n = strlen(dir);
+    while (n > 1u && dir[n - 1u] == '/') {
+        n--;
+    }
+    return (strncmp(path, dir, n) == 0 &&
+            (path[n] == '\0' || path[n] == '/'));
+}
+
+tiku_trk_confirm_t
+tiku_trk_fs_confirm_move(const char *path)
+{
+    /* The system directories, as this platform spells them.  Moving
+     * anything out of one of these breaks the machine, which is why the
+     * original makes the confirmation button need a modifier. */
+    static const char *system_dirs[] = {
+        "/bin", "/boot", "/etc", "/lib", "/lib64", "/sbin", "/usr", "/var"
+    };
+    const char *home = getenv("HOME");
+    size_t i;
+
+    if (path == NULL || path[0] == '\0') {
+        return TIKU_TRK_CONFIRM_NONE;
+    }
+    for (i = 0; i < sizeof system_dirs / sizeof system_dirs[0]; i++) {
+        if (under(path, system_dirs[i])) {
+            return TIKU_TRK_CONFIRM_OVERRIDE;
+        }
+    }
+    if (home != NULL && home[0] != '\0') {
+        char cfg[TIKU_TRK_PATH_MAX];
+        const char *xdg = getenv("XDG_CONFIG_HOME");
+
+        /* HOME itself, and ONLY home itself: the original tests the home
+         * folder for an exact match where it tests the system folder for
+         * containment, so an ordinary file inside home is moved without a
+         * word.  Ported as it is -- a browser that asked before every move
+         * inside the home folder would train the answer out of the user. */
+        if (strcmp(path, home) == 0) {
+            return TIKU_TRK_CONFIRM_OVERRIDE;
+        }
+        if (xdg != NULL && xdg[0] != '\0' && under(path, xdg)) {
+            return TIKU_TRK_CONFIRM_ASK;
+        }
+        if (snprintf(cfg, sizeof cfg, "%s/.config", home) > 0 &&
+            under(path, cfg)) {
+            return TIKU_TRK_CONFIRM_ASK;
+        }
+    }
+    return TIKU_TRK_CONFIRM_NONE;
+}
+
+int
+tiku_trk_fs_in_trash(tiku_trk_fs_t *fs, const char *path)
+{
+    char trash[TIKU_TRK_PATH_MAX];
+    size_t n;
+
+    if (fs == NULL || path == NULL ||
+        tiku_trk_fs_trash_dir(fs, path, trash, sizeof trash) != 0) {
+        return 0;
+    }
+    n = strlen(trash);
+    /* A prefix test on a whole component, so a sibling named ".Trashcan"
+     * is not mistaken for something inside the Trash. */
+    return (strncmp(path, trash, n) == 0 &&
+            (path[n] == '\0' || path[n] == '/'));
+}
+
+int
+tiku_trk_fs_link(tiku_trk_fs_t *fs, const char *const *paths, int n,
+                 const char *dst, int relative)
+{
+    if (fs == NULL) {
+        return -1;
+    }
+    fs->link_relative = relative;
+    return start(fs, TIKU_TRK_OP_LINK, paths, n, dst,
+                 TIKU_TRK_CONFLICT_ASK);
+}
+
 int
 tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n)
 {
@@ -575,6 +777,39 @@ tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n)
 /*---------------------------------------------------------------------------*/
 
 /** @brief Copy one file's bytes through the backend. */
+/**
+ * @brief Give @p dst the source's permissions, owner, group and times.
+ *
+ * A copy that lands as a fresh file owned by whoever ran the browser, world
+ * readable and stamped now, is not the same file: mode and mtime are part of
+ * what was copied (FS-031).  Ownership is attempted and allowed to fail --
+ * only root may give a file away.
+ *
+ * @param link  Non-zero when @p dst is a symlink, which must not be followed.
+ */
+static void
+carry_over(const char *src, const char *dst, int link)
+{
+    struct stat st;
+    struct timespec times[2];
+
+    if ((link ? lstat(src, &st) : stat(src, &st)) != 0) {
+        return;
+    }
+    times[0] = st.st_atim;
+    times[1] = st.st_mtim;
+    if (link) {
+        /* Only root may give a file away, so a refusal here is the normal
+         * case and not a failure of the copy. */
+        if (lchown(dst, st.st_uid, st.st_gid) != 0) { errno = 0; }
+        (void)utimensat(AT_FDCWD, dst, times, AT_SYMLINK_NOFOLLOW);
+        return;
+    }
+    if (chown(dst, st.st_uid, st.st_gid) != 0) { errno = 0; }
+    (void)chmod(dst, st.st_mode & 07777u);
+    (void)utimensat(AT_FDCWD, dst, times, 0);
+}
+
 static int
 copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
            size_t errmax)
@@ -593,6 +828,25 @@ copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
         }
         return fs->backend->ops->write(fs->backend, dst, buf, (size_t)len,
                                        err, errmax);
+    }
+    {   /* Re-checked per file, not only up front: another process may
+         * have taken the space between the two, and finding out at the
+         * write is finding out too late (FS-016). */
+        struct stat st;
+        char dir[TIKU_TRK_PATH_MAX];
+
+        uint64_t freeb;
+
+        parent_of(dst, dir, sizeof dir);
+        freeb = tiku_trk_fs_free_bytes(dir);
+        /* One kilobyte of headroom here, not the four the whole job was
+         * checked against: this is the last look before the write. */
+        if (freeb != 0u && stat(src, &st) == 0 &&
+            (uint64_t)st.st_size + 1024u >= freeb) {
+            snprintf(err, errmax, "There is not enough free space on the "
+                                  "destination volume.");
+            return -1;
+        }
     }
     in = fopen(src, "rb");
     if (in == NULL) {
@@ -698,19 +952,56 @@ copy_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
           size_t errmax)
 {
     struct stat st;
+    dev_t sdev;
     DIR *d;
     struct dirent *e;
 
     /* The full destination PATH, not the folder: the name may have been
      * chosen by a collision answer, and recomputing it from the source
      * leaf would quietly undo that choice. */
-    if (stat(src, &st) != 0) {
+    /* lstat, so a LINK is seen as a link: stat() follows it and would
+     * report whatever it points at, which is how a link gets copied as a
+     * duplicate of its target (FS-032). */
+    if (lstat(src, &st) != 0) {
         snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
         return -1;
     }
-    if (!S_ISDIR(st.st_mode)) {
-        return copy_bytes(fs, src, dstpath, err, errmax);
+    if (S_ISLNK(st.st_mode)) {
+        /* The LINK, not what it points at.  Following it would turn a
+         * one-line pointer into a copy of a whole tree, and a link into a
+         * device node into a snapshot of one moment of it (FS-032). */
+        char target[TIKU_TRK_PATH_MAX];
+        ssize_t n = readlink(src, target, sizeof target - 1u);
+
+        if (n < 0) {
+            snprintf(err, errmax, "cannot read the link '%.50s'",
+                     leaf_of(src));
+            return -1;
+        }
+        target[n] = '\0';
+        (void)remove(dstpath);
+        if (symlink(target, dstpath) != 0) {
+            snprintf(err, errmax, "cannot create the link '%.50s' (%.40s)",
+                     leaf_of(dstpath), strerror(errno));
+            return -1;
+        }
+        /* Permissions and times, but no attributes: the original does not
+         * copy those for a link either. */
+        carry_over(src, dstpath, 1);
+        return 0;
     }
+    if (!S_ISDIR(st.st_mode)) {
+        int rc = copy_bytes(fs, src, dstpath, err, errmax);
+
+        if (rc == 0) {
+            carry_over(src, dstpath, 0);
+        }
+        return rc;
+    }
+    /* Held before `st` is re-used for the destination, because the
+     * mount-point test below compares each child against the SOURCE's
+     * filesystem and would otherwise compare against the wrong one. */
+    sdev = st.st_dev;
     if (stat(dstpath, &st) == 0) {
         if (!S_ISDIR(st.st_mode)) {
             snprintf(err, errmax,
@@ -726,6 +1017,8 @@ copy_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
         snprintf(err, errmax, "cannot create '%.60s' (%.40s)",
                  leaf_of(dstpath), strerror(errno));
         return -1;
+    } else {
+        carry_over(src, dstpath, 0);
     }
     d = opendir(src);
     if (d == NULL) {
@@ -748,6 +1041,23 @@ copy_tree(tiku_trk_fs_t *fs, const char *src, const char *dstpath, char *err,
             /* A failure on one child does not abandon the rest: the loop
              * is best-effort, as the original's is, so one unreadable file
              * does not cost the user the whole folder. */
+            {   /* A directory on a DIFFERENT filesystem is a mount
+                 * point: descending into it would copy a whole other
+                 * volume that the user pointed at nothing of.  And an
+                 * entry that is neither file, folder nor link is
+                 * ignored -- a device node has no bytes to copy (FS-036). */
+                struct stat cs;
+
+                if (lstat(child, &cs) == 0) {
+                    if (S_ISDIR(cs.st_mode) && cs.st_dev != sdev) {
+                        continue;
+                    }
+                    if (!S_ISDIR(cs.st_mode) && !S_ISREG(cs.st_mode) &&
+                        !S_ISLNK(cs.st_mode)) {
+                        continue;
+                    }
+                }
+            }
             if (copy_tree(fs, child, cdst, err, errmax) == -2) {
                 /* Cancelled.  The folder already made and the children
                  * already written STAY: only the file being written when
@@ -1262,6 +1572,61 @@ tiku_trk_fs_empty_trash(tiku_trk_fs_t *fs)
 }
 
 /**
+ * @brief Write the path of @p target as seen from inside @p dir.
+ *
+ * Built by walking the two absolute paths while they agree, then one ".."
+ * per component of @p dir that is left, then the rest of the target.  The
+ * original chdir()s to do this; a string walk gets the same answer without
+ * moving the process's working directory out from under everything else.
+ *
+ * @return 0 on success.
+ */
+static int
+relative_path(const char *dir, const char *target, char *out, size_t max)
+{
+    size_t i = 0, cut = 0;
+    size_t n = 0;
+
+    if (dir == NULL || target == NULL || dir[0] != '/' || target[0] != '/') {
+        return -1;
+    }
+    while (dir[i] != '\0' && target[i] != '\0' && dir[i] == target[i]) {
+        if (dir[i] == '/') {
+            cut = i;                /* last slash they still share */
+        }
+        i++;
+    }
+    if (dir[i] == '\0' && (target[i] == '/' || target[i] == '\0')) {
+        cut = i;
+    }
+    if (target[i] == '\0' && (dir[i] == '/' || dir[i] == '\0')) {
+        cut = i;
+    }
+    out[0] = '\0';
+    for (i = cut; dir[i] != '\0'; i++) {
+        if (dir[i] == '/' && dir[i + 1] != '\0') {
+            if (n + 3u >= max) {
+                return -1;
+            }
+            memcpy(out + n, "../", 3u);
+            n += 3u;
+        }
+    }
+    {
+        const char *rest = target + cut;
+
+        while (*rest == '/') {
+            rest++;
+        }
+        if (n + strlen(rest) + 1u > max) {
+            return -1;
+        }
+        memcpy(out + n, rest, strlen(rest) + 1u);
+    }
+    return (out[0] != '\0') ? 0 : -1;
+}
+
+/**
  * @brief Stop on a failure and put "would you like to continue?" up.
  *
  * The item is NOT counted yet: whether it counts as failed or as the last
@@ -1374,6 +1739,47 @@ step_one(tiku_trk_fs_t *fs)
         return 1;
     }
 
+    if (fs->prog.op == TIKU_TRK_OP_LINK) {
+        char target[TIKU_TRK_PATH_MAX];
+        struct stat ss, ds;
+
+        /* "<name> link" ONLY when the plain name is taken, so linking into
+         * another folder keeps the original name (FS-009). */
+        if (tiku_trk_fs_link_name(fs, fs->dst, leaf_of(src), name,
+                                  sizeof name) != 0 ||
+            join(dstpath, sizeof dstpath, fs->dst, name) != 0) {
+            fs->prog.failed++;
+            fs->qcursor++;
+            return 1;
+        }
+        snprintf(target, sizeof target, "%s", src);
+        if (fs->link_relative && stat(src, &ss) == 0 &&
+            stat(fs->dst, &ds) == 0 && ss.st_dev == ds.st_dev) {
+            char rel[TIKU_TRK_PATH_MAX];
+
+            /* Across devices a relative path cannot be walked, so the
+             * request degrades to an absolute link rather than failing --
+             * silently, as the original does (FS-010). */
+            if (relative_path(fs->dst, src, rel, sizeof rel) == 0) {
+                snprintf(target, sizeof target, "%s", rel);
+            }
+        }
+        if (symlink(target, dstpath) != 0) {
+            char msg[240];
+
+            /* A store that cannot hold a link says so in its own terms
+             * rather than reporting a generic failure (FS-011). */
+            snprintf(msg, sizeof msg, "%s",
+                     (errno == EPERM || errno == ENOSYS)
+                         ? "The target disk does not support creating links."
+                         : "Error creating link.");
+            return fail_ask(fs, msg, 1);
+        }
+        undo_push(fs, dstpath, src, 1);
+        fs->prog.done++;
+        fs->qcursor++;
+        return 1;
+    }
     if (fs->prog.op == TIKU_TRK_OP_DUPLICATE) {
         /* Each item duplicates into its OWN parent, even when the selection
          * spans folders (FS-008). */

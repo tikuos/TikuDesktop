@@ -29,7 +29,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 245   partial 145   differs 71   open 428
+    done 260   partial 143   differs 71   open 415
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -189,6 +189,34 @@ step function had grown a second, disagreeing copy of the same rule.  The
 check that would have caught a real regression did not exist yet; writing it
 also collapsed the two copies into one.
 
+A second batch went in after that, once the first count showed 17 FS rows
+sitting at `open` with no reason attached — which reads as "not done yet"
+when several of them were a call away:
+
+- **Create link** exists now, with the naming rule it already had and the
+  relative form built by walking two strings rather than by chdir()ing the
+  process into the destination to ask a question about paths.  Across a
+  device boundary it degrades to an absolute link, silently, as the original
+  does.
+- **A copy carries the file over**, not just its bytes: permissions, owner,
+  group and both times, for files, folders and links.
+- **A link is copied as a link.**  The walker had been `stat`ing, which
+  follows one — so a link to a tree had been copying the tree.
+- **A folder copy skips what it should**: a subdirectory on another
+  filesystem is a mount point, and an entry that is neither file, folder nor
+  link is ignored.  That second guard is load-bearing in a way the row does
+  not say — removing it makes a folder holding a FIFO wedge the copy inside
+  `fopen` forever, which is how the mutation run was found to hang rather
+  than fail.
+- **Free space is checked** before the job and again per file, with the
+  original's 4 KB and 1 KB of headroom.
+- **Cut items are drawn faded** in every window at once, and trashing a
+  folder closes its windows and the windows of everything inside it.
+- **Some folders ask first**: the system directories by containment, the
+  home folder by exact match, so a file inside home moves without a word.
+  That asymmetry is the original's, and a verifier had already caught the
+  first reading of it that made both containment tests.
+
 One grading decision, stated rather than left implicit.  Several FS rows are
 rules about an ALERT -- two buttons and what each does.  The port computes
 the question and exposes both answers through the API, but the shell has no
@@ -199,13 +227,14 @@ itself is not drawn.  That is now a gap spanning FS, Q and AW rather than one
 row's footnote; it wants its own cluster, and until it has one the honest
 reading of those `done`s is "the decision is right and nobody is asked yet".
 
-What remains in FS is blocked rather than undone, and now says so: five
-drag-and-drop rows wait on cluster 13 (the engine underneath them is built
-and tested -- nothing drags into it), four wait on a volume model the port
-does not have, and eight wait on a progress window (the engine already
-carries everything one would show, and the cancel channel exists; there is
-nowhere to put them).  Each of those rows carries a `BLOCKED:` line naming
-what it waits on, so the count reads honestly.
+What remains in FS is blocked rather than undone, and every one of the 19
+still-open rows now says so on a `BLOCKED:` line: five wait on item
+drag-and-drop (cluster 13 -- the engine underneath them is built and tested,
+nothing drags into it), six on a volume model the port does not have, eight
+on a progress window (the engine already carries everything one would show,
+and the cancel channel exists; there is nowhere to put them), and one on the
+pose-position attribute.  The FS area stands at 53 done, 5 partial, 5
+differs, 19 blocked.
 
 ## Inventory
 
@@ -2495,25 +2524,23 @@ CheckName returns B_OK immediately when moveMode == kDuplicateSelection ("when d
 MoveTask re-points destDir/deststat/volume to BEntry(srcRef).GetParent(&destDir) at the top of every loop iteration when moveMode == kDuplicateSelection.  
 `FSUtils.cpp` → `MoveTask`  
 
-#### FS-009 · important · partial
+#### FS-009 · important · done
 **A symbolic link created by Create Link is named "<name> link", "<name> link 2", ... only when the plain name is taken, so linking into a different folder keeps the original name.**  
 MoveItem's link branch always calls FSMakeOriginalName(name, destDir, " link") — which no-ops unless destDir already contains the name — and reports the chosen name to the undo record via undo.UpdateEntry.  
 `FSUtils.cpp` → `MoveItem`  
-**MISSING:** The naming rule is exactly right and tested (plain name kept when free, else "<name> link", "link 2"), but no link is ever created: there is no symlink() call in the port and TIKU_TRK_CMD_CREATE_LINK is only added to menus, never dispatched.  
-*src/tiku_trk_fs.c:241 tiku_trk_fs_link_name*
-
-#### FS-010 · important · open
+**PORT:** The link is created now, and the name rule stands: the plain name when the destination has it free, "<name> link" and upward when it does not.  
+#### FS-010 · important · done
 **A relative link is computed against the destination folder, but silently degrades to an absolute link when source and destination are on different devices.**  
 kCreateRelativeLink only takes the relative path if statbuf.st_dev == destNode.device; otherwise moveMode is reassigned to kCreateLink. The relative path is built by chdir()ing to the destination, walking source and destination path strings while they match, prepending "../" per remaining destination component, then appending the leaf. The working directory is restored with chdir(oldwd).  
 `FSUtils.cpp` → `MoveItem`  
 **TIKU:** chdir-based path math has no equivalent; relative-link resolution across a device namespace and a local FS needs an explicit mount-relative form or must be refused.  
-
-#### FS-011 · polish · open
+**PORT:** The relative path is walked as a string rather than by chdir(): moving the process's working directory to answer a question about two paths changes it for everything else running.  Across a device boundary it degrades to an absolute link, silently, as the original does.  
+#### FS-011 · polish · done
 **Creating a link on a file system that cannot store symlinks reports "The target disk does not support creating links."**  
 err == B_UNSUPPORTED from CreateSymLink throws FailWithAlert with that message; any other failure throws FailWithAlert with "Error creating link to \"%name\"."  
 `FSUtils.cpp` → `MoveItem`  
 **TIKU:** Capability bits should gate the link menu item up front rather than failing at execution time.  
-
+**PORT:** EPERM or ENOSYS from symlink() is reported as "The target disk does not support creating links."; anything else is a plain link error.  
 #### FS-012 · core · open
 **Copying refuses to start when the destination volume is read-only, and dropping onto a read-only volume shows "You can't move or copy items to read-only volumes."**  
 Two separate checks: InitCopy returns B_READ_ONLY_DEVICE with NO alert (so a paste onto a read-only volume fails silently), while BPoseView::MoveSelectionInto raises the alert before launching the job.  
@@ -2527,22 +2554,22 @@ MoveTask captures sourceIsReadOnly = BVolume(srcVolumeDevice).IsReadOnly() befor
 `FSUtils.cpp` → `MoveTask`  
 **BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
-#### FS-014 · important · open
+#### FS-014 · important · done
 **An attempted copy into the Trash is turned into a move; a paste of copied items into Trash is refused outright with "Sorry, you can't copy items to the Trash."**  
 MoveTask: if (moveMode == kCopySelectionTo && destIsTrash) moveMode = kMoveSelectionTo. FSClipboardPaste and BPoseView::MoveSelectionInto instead show the alert and abort. MoveSelectionInto also refuses links into Trash with "Sorry, you can't create links in the Trash."  
 `FSUtils.cpp` → `MoveTask`  
-
-#### FS-015 · important · open
+**PORT:** A copy whose destination is inside the Trash becomes a move in the engine, and the Paste path refuses copies and links into the Trash in the original's words.  
+#### FS-015 · important · done
 **Before a copy starts, Tracker sums every file and folder to be copied and refuses with "there is not enough free space on the destination volume" if the total plus 4 KB exceeds the destination's free bytes.**  
 InitCopy calls CalcItemsAndSize (which recurses via FSRecursiveCalcSize and charges one block per directory plus st_size+blockSize per file, block size clamped to [1024,8192], 2048 when unknown) then tests (totalSize + 4*kKBSize) >= dstVol->FreeBytes(). The whole calculation is skipped when the move is same-volume or the destination is Trash (needSizeCalculation false).  
 `FSUtils.cpp` → `InitCopy`  
 **TIKU:** A device-namespace destination has no FreeBytes(); the precheck needs a capability query or must be skipped, and skipping it changes the failure mode from a dialog to a mid-copy error.  
-
-#### FS-016 · important · open
+**PORT:** The sum charges a block per file and a block per directory, block clamped to [1024, 8192], and the refusal is `total + 4 KB >= free`.  Skipped for the Trash and for a device store, whose free space is not a number this side knows.  
+#### FS-016 · important · done
 **Each individual file copy re-checks free space and aborts the whole job with a device-full error if the file plus 1 KB would not fit.**  
 CopyFile computes BVolume from the destination directory's node_ref and, if (srcStat->st_size + kKBSize) >= volume.FreeBytes(), calls FileError(kNoFreeSpace, "", B_DEVICE_FULL, false) and throws B_DEVICE_FULL.  
 `FSUtils.cpp` → `CopyFile`  
-
+**PORT:** Re-checked per file against the destination's live free bytes, with the original's 1 KB rather than the job-level 4 KB.  
 #### FS-017 · core · done
 **When more than one name would collide in the destination, Tracker asks once up front with Cancel / Prompt / Skip all / Replace all before copying anything.**  
 PreFlightNameCheck counts collisions (only for items whose parent differs from destDir) and shows kReplaceManyStr with the verb "moving" or "copying" only when collisionCount > 1; the four buttons map to kCanceled/kPrompt/kSkipAll/kReplaceAll and Escape is button 0. A single collision deliberately falls through to the per-item prompt.  
@@ -2601,12 +2628,13 @@ InitCopy pre-scans the whole source list: FSIsRootDir -> "You cannot copy or mov
 **TIKU:** The equivalent list becomes namespace roots and device-namespace mount points; these need a "not movable" capability bit rather than hard-coded well-known paths.  
 **PORT:** The Trash refuses to be moved or copied; the root and printer directories have no counterpart in this store.
 
-#### FS-027 · important · open
+#### FS-027 · important · done
 **Moving the system folder, the home folder, the config or settings folders (or anything inside them) demands confirmation, and for system/home the confirmation button only works while Shift is held.**  
 ConfirmChangeIfWellKnownDirectory: returns false outright for Desktop/Printers/root/Trash; short-circuits true unless the entry is in B_SYSTEM_DIRECTORY or B_USER_DIRECTORY, and always true inside B_SYSTEM_TEMP_DIRECTORY. Uses OverrideAlert with B_SHIFT_KEY required for system/home (requireOverride true) and no modifier for MIME settings/config/settings folders. The %osName token comes from uname(). The confirmedAlready state machine (kNotConfirmed/kConfirmedHomeMove/kConfirmedAll) means a Shift-confirmed system move is not asked again for later items in the same job, while a non-override confirmation is only remembered for other non-override cases. MoveTask reaches this only via InitCopy and only for kMoveSelectionTo.  
 `FSUtils.cpp` → `ConfirmChangeIfWellKnownDirectory`  
 **VERIFIER CORRECTION:** FSUtils.cpp ConfirmChangeIfWellKnownDirectory: the system folder uses DirectoryMatchesOrContains(B_SYSTEM_DIRECTORY) (folder *and* contents), but home uses DirectoryMatches(entry, B_USER_DIRECTORY) — an EXACT match. An ordinary file inside home falls through to the config/settings tests and, failing those, returns true with no prompt at all. Only home itself is protected.  
-
+**PORT:** The system directories are this platform's (/usr, /etc, /bin and the rest), matched by containment; the home folder is matched exactly, so a file inside home moves without a word -- the original's own asymmetry, kept because a browser that asked before every move inside home would train the answer out of the user.  
+**TIKU:** The shell says what is needed on the status line instead of graying a button until Shift is held; the override is refused rather than confirmable until there is an alert layer.  
 #### FS-028 · core · done
 **A same-volume move is a rename, so it is instant regardless of file size and the progress bar counts one unit per item rather than bytes.**  
 MoveItem: when statbuf.st_dev == destNode.device and the mode is neither kCopySelectionTo nor kDuplicateSelection, it calls loopControl->UpdateStatus(ref.name, ref, 1) with the comment that size is irrelevant, then BEntry::MoveTo(destDir, newName).  
@@ -2625,19 +2653,17 @@ MoveItem's else-branch: directories go to CopyFolder(..., removeSource = (moveMo
 **TIKU:** Durable-media targets make the ordering matter more: the rewrite should decide whether the source delete is allowed before the destination write is committed/flushed.  
 **PORT:** A cross-boundary move is a copy followed by a delete, taken only when rename reports the boundary rather than guessed at from the paths.
 
-#### FS-031 · core · open
+#### FS-031 · core · done
 **File copy preserves every attribute except the icon-position attribute, plus permissions, owner, group, modification time and creation time.**  
 LowLevelCopy copies data in a buffer sized 128 KB minimum, 1 MB maximum, otherwise a quarter of free RAM rounded to 16 KB, calls destFile.Sync() after every write, then CopyAttributes, then SetPermissions/SetOwner/SetGroup/SetModificationTime/SetCreationTime from the source stat. CopyAttributes skips names for which SkipAttribute() is true — TrackerCopyLoopControl::SkipAttribute matches kSkipAttributes, which contains only kAttrPoseInfo — and specially writes zero-length attributes so they are not lost.  
 `FSUtils.cpp` → `LowLevelCopy`  
 **TIKU:** With typed VFS descriptors instead of BFS attributes, this is the row that decides what "copying a node" even means: which descriptor fields travel, which are re-derived at the destination, and what happens copying a device node onto a plain file.  
-
-#### FS-032 · important · open
+**PORT:** Permissions, owner, group and both times are carried over for files, folders and links.  Ownership is attempted and allowed to fail -- only root may give a file away, so a refusal there is the normal case and not a failed copy.  Extended attributes are not copied; the port has no attribute store yet (MA area).  
+#### FS-032 · important · done
 **Copying a symbolic link copies the link itself, not its target, and stamps it with the link MIME type.**  
 LowLevelCopy's S_ISLNK branch reads the link text with ReadLink into a MAXPATHLEN buffer, calls destDir->CreateSymLink, sets B_LINK_MIMETYPE via BNodeInfo, and copies permissions/owner/group/mtime/crtime. Attributes are NOT copied for symlinks.  
 `FSUtils.cpp` → `LowLevelCopy`  
-**CHECKED:** Nothing in the port creates or preserves a symlink on copy: there is no symlink()/readlink() call anywhere in src, and copy_bytes opens the source with fopen so a link's target bytes are copied into a plain file.  
-*none found*
-
+**PORT:** The walker lstat()s, so a link is seen as a link rather than as whatever it points at; the link text is read and re-created, with permissions and times but no attributes, which is the original's asymmetry.  
 #### FS-033 · important · done
 **Cancelling during a file copy removes the half-written destination file.**  
 The read/write loop checks CheckUserCanceled() before every chunk; on cancel it Unset()s the destination BFile, re-finds it by name in destDir and Remove()s it, then throws kCopyCanceled. The same cleanup runs when ChecksumFile() returns false.  
@@ -2657,18 +2683,19 @@ CopyFile catches status_t from LowLevelCopy, re-throws kCopyCanceled unchanged, 
 **PORT:** A failed item stops the job with `error_ask` up and the message in `prog.error`; answering continue counts it failed and carries on, cancelling abandons the rest.  A delete failure sets `error_can_continue` to 0, which is the original's single-button alert.  
 **TIKU:** The shell has no modal alert layer, so it shows the message on the status line and answers continue -- the Cancel half of the question is not reachable from the window yet.  
 
-#### FS-036 · important · open
+#### FS-036 · important · done
 **Copying a folder does not descend into mounted volumes underneath it, and non-file/folder/symlink entries are silently ignored.**  
 CopyFolder records the source directory's st_dev and skips any child directory whose st_dev differs ("Avoiding mount point"); the else branch of the S_ISREG/S_ISLNK test is an explicit "Ignore special files".  
 `FSUtils.cpp` → `CopyFolder`  
 **TIKU:** With a device namespace mounted alongside files, this rule is what stops a folder copy from trying to serialize /dev; capability bits should make the skip explicit rather than device-id based.  
-
+**PORT:** The child's device is compared against the SOURCE's, held before the destination stat overwrites it -- comparing against the destination would take every subfolder of a cross-filesystem copy for a mount point.  Anything that is not file, folder or link is skipped, which also stops a folder holding a FIFO from wedging the copy in fopen() forever.  
+**MISSING:** The mount-point skip itself is unexercised: the suite cannot create a mount point, so only the device comparison it rests on is checked.  
 #### FS-037 · polish · open
 **A copied item lands at the same icon position as the original when copied into a different folder and no drop position was supplied.**  
 SetupPoseLocation only inherits the source's position when loc == NULL, sourceParentIno != destParentIno, and the source has a valid kAttrPoseInfo; a loc of (BPoint*)-1 means "autoplace" and writes nothing. MoveTask defaults loc to (BPoint*)-1 and only reads pointList when one was supplied (and, for the pre-write of the source's own position, only when moveMode != kCopySelectionTo).  
 `FSUtils.cpp` → `SetupPoseLocation`  
 **TIKU:** Icon position is a per-folder view-state concern; if it lives in a view-state store instead of a node attribute, this must be re-implemented as a view-state copy keyed by destination folder.  
-
+**BLOCKED:** Waits on the pose-position attribute.  The port's spatial memory is per-window state, not an attribute written into the item, so there is nothing for a copy to inherit yet (IV/MA area).  
 #### FS-038 · core · done
 **Sending items to the Trash uses the Trash folder of the item's own volume, and colliding names get the "<name> copy" treatment there.**  
 MoveEntryToTrash calls FSGetTrashDir(&trashDir, nodeRef.device) — which find_directory()s per-volume, creates the directory with mode 0755 if missing and marks it invisible by writing a PoseInfo with fInvisible = true — then FSMakeOriginalName(name, &trashDir, " copy") when trashDir.Contains(name), reporting the new name to the undo record.  
@@ -2695,11 +2722,11 @@ MoveEntryToTrash tests BDirectory(entry).IsRootDirectory(); compares against BVo
 `FSUtils.cpp` → `MoveEntryToTrash`  
 **BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
 
-#### FS-042 · polish · open
+#### FS-042 · polish · done
 **Trashing a folder closes its window and all windows of folders inside it.**  
 MoveEntryToTrash posts kCloseWindowAndChildren to be_app with the folder's own node_ref as raw data before performing the move.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
-
+**PORT:** Matched on a whole path component, so a sibling sharing a prefix keeps its window; runs for a straight delete as well as a trash, since the folder is just as gone either way.  
 #### FS-043 · important · done
 **The Trash folder itself, and any folder that contains the Trash, cannot be put in the Trash: "You cannot put the selected item(s) into the trash."**  
 MoveEntryToTrash compares dir == trashDir || dir.Contains(&trashEntry) and returns B_OK deliberately so the caller does not raise a second error dialog.  
@@ -2767,28 +2794,28 @@ In the non-clearing path FSClipboardAddPoses first tries ReplaceInt32/ReplaceRef
 `FSClipboard.cpp` → `FSClipboardAddPoses`  
 **PORT:** Uniqueness is structural rather than searched: entries are keyed by the node's identity, so a second gesture on the same item rewrites the entry it already has and updates its mode.
 
-#### FS-054 · important · open
+#### FS-054 · important · done
 **Cut items are drawn semi-transparent in every window that shows them, and the dimming clears as soon as the clipboard is cleared or the item is pasted.**  
 BPose::Draw switches to B_OP_ALPHA with B_CONSTANT_ALPHA and alpha 128 when fClipboardMode == kMoveSelectionTo; BPose::DrawTextWidget additionally blends the selection rectangle with grey for cut items. fClipboardMode is set only from the kFSClipboardChanges broadcast via BPoseView::UpdatePosesClipboardModeFromClipboard / SetPosesClipboardMode.  
 `Pose.cpp` → `BPose::Draw`  
 **TIKU:** The broadcast becomes a VFS watch notification; every window showing the node must re-render, which is exactly the watch semantics ("touched, re-read").  
-
+**PORT:** Icon and label both fade, in every window at once, because the clipboard is one object the windows share.  Only a CUT fades -- a copied item has nothing about to happen to it.  Verified on screen; the fade is not something a unit check can see.  
 #### FS-055 · core · differs
 **Paste moves the items when they were Cut and copies them when they were Copied, and a second Paste always copies — Cut is consumed by the first paste.**  
 FSClipboardPaste sorts each clipboard ref into moveList (linksMode or moveMode == kMoveSelectionTo), copyList (kCopySelectionTo) or duplicateList, then for any entry whose moveMode was kMoveSelectionTo sets newMoveMode = kCopySelectionTo and rewrites the clipboard field with clip->ReplaceInt32(modeName, kCopySelectionTo), emitting a kDelete tcnode so the dimming clears.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
 **PORT:** Paste moves cut items and copies copied ones, and a cut is spent by its paste while a copy stays.  A mixed clipboard is treated as a move rather than split into two operations, there being one queue.
 
-#### FS-056 · important · open
+#### FS-056 · important · done
 **Pasting copied items into the folder they already live in duplicates them ("<name> copy"); pasting cut items into their own folder does nothing.**  
 sameDirectory is destNodeRef->device == ref.device && destNodeRef->node == ref.directory; in that case the item goes to duplicateList only when moveMode != kMoveSelectionTo, and duplicateList is dispatched as FSMoveToFolder(..., kDuplicateSelection). Note that in links mode moveMode is never read (the FindInt32 is skipped), so it stays 0 and a Paste-links into the item's own folder falls into the duplicate path rather than creating a link.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
-
-#### FS-057 · important · open
+**PORT:** An item pasted into the folder it already lives in duplicates when it was copied and is dropped when it was cut; a Paste-links into the item's own folder makes the link, which is where the original's own uninitialised moveMode sends it to the duplicate path instead.  
+#### FS-057 · important · done
 **Shift+Paste ("Paste links") creates symbolic links to the clipboard items instead of moving or copying them, regardless of whether they were cut or copied.**  
 kPasteLinksFromClipboard -> FSClipboardPaste(TargetModel(), kCreateLink); inside, linksMode routes every existing entry into moveList and the dispatch is FSMoveToFolder(moveList, entry, linksMode). TShortcuts::PasteLabel/PasteCommand swap on B_SHIFT_KEY.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
-
+**PORT:** Shift+Paste is its own command and creates links whatever mode the clipboard carries.  
 #### FS-058 · important · done
 **Clipboard entries whose files no longer exist are dropped from the clipboard at paste time instead of producing an error.**  
 FSClipboardPaste: !entry.Exists() -> clip->RemoveName(refName); clip->RemoveName(modeName); newMoveMode = kDelete, which also emits a tcnode so the poses stop being drawn as cut.  
@@ -2799,7 +2826,7 @@ FSClipboardPaste: !entry.Exists() -> clip->RemoveName(refName); clip->RemoveName
 **Paste is refused into the Disks root with "You must drop items on one of the disk icons in the \"Disks\" window."**  
 FSClipboardPaste checks model->IsRoot() after processing the clipboard (so the clipboard has already been mutated) and, together with the copy-into-Trash check, sets okToMove = false and deletes all three lists before returning false. BPoseView::MoveSelectionInto raises the identical alert for drops.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
-
+**BLOCKED:** Waits on the Disks root, which needs the volume model.  
 #### FS-060 · important · done
 **Clipboard entries follow their files: renaming or moving a cut file updates the clipboard, deleting it or unmounting its volume removes it.**  
 BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus a global B_WATCH_MOUNT. B_ENTRY_MOVED -> UpdateNode(node, new ref) which ReplaceRefs, or removes both fields and stops watching if the replace fails; B_ENTRY_REMOVED -> RemoveNode(node, removeFromClipboard=true); B_DEVICE_UNMOUNTED -> RemoveNodesByDevice(device), which matches clipboard field names by the "r<dev>_" prefix.  
@@ -2826,14 +2853,11 @@ kUndoRedoListMaxCount = 20 on each of sUndoList/sRedoList under one BLocker; Add
 **TIKU:** An undo stack over durable nodes could itself be durable; also, undoing a write to a device-namespace node is generally not possible, so those operations must be marked non-undoable.  
 **PORT:** Twenty operations on each stack, oldest dropped when full; any new operation empties the redo stack.  Undo is Ctrl+Z and redo Ctrl+Shift+Z.  Redo replays the records forwards, which is why a copy record carries its source as well as what it made.  
 
-#### FS-064 · important · partial
+#### FS-064 · important · done
 **Undoing a copy or a link deletes the copies that were made, without asking for confirmation.**  
 UndoItemCopy::Undo calls FSDeleteRefList(new list(fTargetList), async=true, confirm=false). fTargetList is the source list with every ref's device/directory rewritten to the destination folder by ChangeListSource, and individual names patched by UndoItemCopy::UpdateEntry whenever FSMakeOriginalName renamed a destination. Redo re-runs FSMoveToFolder with the original moveMode, stamped as an undo-mode operation.  
 `FSUndoRedo.cpp` → `UndoItemCopy::Undo`  
-**MISSING:** The copy half is complete -- undo removes exactly what the copy  
-made and redo copies it again -- but the link half cannot happen, because the  
-port has no Create Link operation (FS-030).  
-
+**PORT:** Undoing a copy or a link deletes exactly what it made, with no confirmation; a link record is a created record like any other.  
 #### FS-065 · important · done
 **Undoing a move (including a move to the Trash) moves the items back to the folder the first item came from.**  
 UndoItemMove records fSourceRef = parent of sourceList->ItemAt(0) and fTargetRef = the destination; Undo() copies the source list, ChangeListSource()s it to the target folder and FSMoveToFolder()s it back to fSourceRef. Because only the first item's parent is recorded, a selection spanning several folders is restored into one folder. MoveTask builds this undo item even for the Trash case, since the trash move uses kMoveSelectionTo.  
@@ -2941,7 +2965,8 @@ ShouldEditRefName alerts "The entered folder/file name is too long." (B_NAME_TOO
 #### FS-081 · polish · open ⟨found by verification⟩
 **Every mounted volume gets a Trash folder created at startup, and the Trash folder is (re)marked invisible every time it is looked up.**  
 FSCreateTrashDirs walks BVolumeRoster skipping read-only, non-persistent and zero-capacity volumes and calls FSGetTrashDir for each; FSGetTrashDir create_directory()s the path with mode 0755 when missing and then unconditionally writes a PoseInfo with fInvisible = true (icon attributes are left to TrashWatcher).  
-`FSUtils.cpp` → `FSCreateTrashDirs / FSGetTrashDir`  
+`FSUtils.cpp` → `FSCreateTrashDirs / FSGetTrashDir`
+**BLOCKED:** Waits on per-volume Trash at startup, which needs the volume model.  
 
 #### FS-082 · polish · open ⟨found by verification⟩
 **The Desktop folder gets its icon written into it the first time Tracker looks it up, so the Desktop always has the right icon even on a foreign disk.**  
@@ -2954,6 +2979,7 @@ FSGetDeskDir writes kAttrIcon (B_VECTOR_ICON_TYPE, resource R_DeskIcon) when abs
 ## Model, attributes, editable text widgets
 
 Architecture notes: [`spec/ARCH-model-attributes.md`](spec/ARCH-model-attributes.md)
+**BLOCKED:** Waits on an attribute store to write the Desktop icon into.  
 
 #### MA-001 · core · differs
 **Every entry is classified into one of eleven kinds, and that kind decides icon, sort bucket, what window it opens, and whether it can be renamed.**  

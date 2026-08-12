@@ -233,7 +233,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
         int ty = row.y + (row_h - f->height) / 2 + f->ascent;
         char val[64];
 
-        int drawn_sel;
+        int drawn_sel, cut;
 
         if (p == NULL) {
             break;
@@ -242,6 +242,12 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
          * pose is IN it is the pose's.  An inactive window still owns its
          * selection, it just stops showing it (PVS-023). */
         drawn_sel = tiku_trk_poseview_draws_selected(fl->view, p);
+        /* A CUT item is drawn faded wherever it shows, in this window and
+         * every other: it is still where it was, and the fade is the only
+         * thing saying it is on its way out (FS-054).  A copied item is
+         * not faded -- nothing is going to happen to it. */
+        cut = (tiku_trk_clip_mode_of(&fl->app->clip, p->model.node_id)
+                   == TIKU_TRK_CLIP_MOVE);
         tiku_desk_fill(s, row, drawn_sel ? TIKU_DESK_C_SELECT
                                          : TIKU_DESK_C_DOC);
         {   /* A mini icon at the head of the name, as list mode has. */
@@ -253,7 +259,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             }
             /* A link with nowhere to go is drawn faded: the art is the same
              * as a live link's, so the state has to show some other way. */
-            if ((p->model.facts.link_broken
+            if (((p->model.facts.link_broken || cut)
                      ? tiku_trk_icon_paint_dim(s,
                            tiku_trk_model_icon_name(&p->model), row.x + 2,
                            row.y + (row_h - mini) / 2, mini, 0.55f,
@@ -274,7 +280,10 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
                            tiku_trk_poseview_is_query(fl->view)
                                ? p->model.path : p->model.name,
                            drawn_sel ? TIKU_DESK_C_SELTEXT
-                                     : TIKU_DESK_C_TEXT);
+                                     : (cut ? tiku_desk_tint(
+                                                  TIKU_DESK_C_TEXT,
+                                                  TIKU_DESK_LIGHTEN_2)
+                                            : TIKU_DESK_C_TEXT));
         }
         /* The value column earns its place on a device: it is the reason a
          * namespace browser is not just a file list. */
@@ -432,6 +441,35 @@ close_window(desktop_t *app, tiku_trk_win_t *w)
     }
     tiku_trk_desk_close(app->desk, w);
     app->dirty = 1;
+}
+
+/**
+ * @brief Close every window showing @p path or anything under it (FS-042).
+ *
+ * A window onto a folder that has just gone to the Trash is a window onto
+ * nothing; leaving it up would let the user keep working in a folder whose
+ * every path has changed underneath them.
+ */
+static void
+close_windows_under(desktop_t *app, const char *path)
+{
+    size_t n;
+    int i;
+
+    if (app == NULL || path == NULL || path[0] == '\0') {
+        return;
+    }
+    n = strlen(path);
+    /* Backwards, because closing compacts the array. */
+    for (i = app->folder_count - 1; i >= 0; i--) {
+        const char *p = app->folders[i].path;
+
+        /* The folder itself, or a folder INSIDE it -- matched on a whole
+         * component so a sibling sharing the same prefix is left alone. */
+        if (strncmp(p, path, n) == 0 && (p[n] == '\0' || p[n] == '/')) {
+            close_window(app, app->folders[i].win);
+        }
+    }
 }
 
 /** @brief Collect a directory's entries into @p out.  @return how many. */
@@ -1125,11 +1163,53 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                          "deleting %d item%s -- this cannot be undone", n,
                          (n == 1) ? "" : "s");
                 (void)tiku_trk_fs_delete(app->fs, sel, n);
+                {
+                    int j;
+
+                    for (j = 0; j < n; j++) {
+                        close_windows_under(app, sel[j]);
+                    }
+                }
             } else {
                 snprintf(app->status, sizeof app->status,
                          "moving %d item%s to the Trash", n,
                          (n == 1) ? "" : "s");
+                {   /* Some folders are not the user's to move without
+                     * being asked twice; Shift is the second answer, and
+                     * the check runs before a byte moves (FS-027). */
+                    int j, stop = 0;
+
+                    for (j = 0; j < n && !stop; j++) {
+                        tiku_trk_confirm_t c =
+                            tiku_trk_fs_confirm_move(sel[j]);
+
+                        if (c == TIKU_TRK_CONFIRM_OVERRIDE &&
+                            !(command == TIKU_TRK_CMD_DELETE)) {
+                            snprintf(app->status, sizeof app->status,
+                                     "'%.60s' is a system folder -- hold "
+                                     "Shift to confirm",
+                                     sel[j]);
+                            stop = 1;
+                        } else if (c == TIKU_TRK_CONFIRM_ASK) {
+                            snprintf(app->status, sizeof app->status,
+                                     "'%.60s' holds settings -- moving it "
+                                     "anyway", sel[j]);
+                        }
+                    }
+                    if (stop) {
+                        break;
+                    }
+                }
                 (void)tiku_trk_fs_trash(app->fs, sel, n);
+                {   /* A window onto a folder that has just gone is a
+                     * window onto nothing, and so is a window onto
+                     * anything inside it (FS-042). */
+                    int j;
+
+                    for (j = 0; j < n; j++) {
+                        close_windows_under(app, sel[j]);
+                    }
+                }
             }
         }
         break;
@@ -1185,10 +1265,13 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                  (tiku_trk_clip_count(&app->clip) == 1) ? "" : "s");
         break;
     }
-    case TIKU_TRK_CMD_PASTE: {
+    case TIKU_TRK_CMD_PASTE:
+    case TIKU_TRK_CMD_PASTE_LINKS: {
         char paths[64][TIKU_TRK_PATH_MAX];
-        const char *sel[64];
-        int i2, k = 0, moving = 0;
+        char here[64][TIKU_TRK_PATH_MAX];
+        const char *sel[64], *same[64];
+        int i2, k = 0, nsame = 0, moving = 0;
+        int links = (command == TIKU_TRK_CMD_PASTE_LINKS);
 
         /* Entries whose files have gone are dropped rather than pasted:
          * a reference to nothing is not something to hand to a copy. */
@@ -1196,6 +1279,24 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         for (i2 = 0; i2 < tiku_trk_clip_count(&app->clip) && k < 64; i2++) {
             const tiku_trk_clip_entry_t *e = tiku_trk_clip_at(&app->clip, i2);
 
+            {   /* An item pasted into the folder it already lives in is
+                 * a DUPLICATE when it was copied, and nothing at all when
+                 * it was cut: moving something to where it is has no
+                 * meaning (FS-056). */
+                const char *slash = strrchr(e->path, '/');
+                size_t dl = (slash != NULL) ? (size_t)(slash - e->path) : 0u;
+
+                if (!links && slash != NULL && strlen(fl->path) == dl &&
+                    strncmp(fl->path, e->path, dl) == 0) {
+                    if (e->mode != TIKU_TRK_CLIP_MOVE && nsame < 64) {
+                        snprintf(here[nsame], sizeof here[nsame], "%s",
+                                 e->path);
+                        same[nsame] = here[nsame];
+                        nsame++;
+                    }
+                    continue;
+                }
+            }
             snprintf(paths[k], sizeof paths[k], "%s", e->path);
             sel[k] = paths[k];
             if (e->mode == TIKU_TRK_CLIP_MOVE) {
@@ -1203,13 +1304,38 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             }
             k++;
         }
+        if (nsame > 0) {
+            (void)tiku_trk_fs_duplicate(app->fs, same, nsame);
+            snprintf(app->status, sizeof app->status,
+                     "duplicating %d item%s already here", nsame,
+                     (nsame == 1) ? "" : "s");
+            if (k == 0) {
+                break;
+            }
+        }
         if (k == 0) {
             snprintf(app->status, sizeof app->status,
                      "the clipboard is empty");
             break;
         }
+        /* Neither a copy nor a link belongs in the Trash: one would hide
+         * a second copy where nothing looks, the other would leave a link
+         * behind when the Trash is emptied (FS-014). */
+        if (tiku_trk_fs_in_trash(app->fs, fl->path) && (links || !moving)) {
+            snprintf(app->status, sizeof app->status, "%s",
+                     links ? "Sorry, you can't create links in the Trash."
+                           : "Sorry, you can't copy items to the Trash.");
+            break;
+        }
         /* What a Paste DOES is the mode the clipboard carries: cut items
-         * move, copied items copy. */
+         * move, copied items copy -- unless Shift asked for links, which
+         * overrides both (FS-057). */
+        if (links) {
+            (void)tiku_trk_fs_link(app->fs, sel, k, fl->path, 0);
+            snprintf(app->status, sizeof app->status,
+                     "linking %d item%s here", k, (k == 1) ? "" : "s");
+            break;
+        }
         if (moving) {
             (void)tiku_trk_fs_move(app->fs, sel, k, fl->path,
                                    TIKU_TRK_CONFLICT_ASK);
@@ -2344,6 +2470,21 @@ sel_done:
                 if (ks == XK_a && (ev.xkey.state & ControlMask) &&
                     fl != NULL) {
                     tiku_trk_poseview_select_all(fl->view);
+                    app.dirty = 1;
+                    break;
+                }
+                if ((ev.xkey.state & ControlMask) && fl != NULL &&
+                    (ks == XK_x || ks == XK_c || ks == XK_v)) {
+                    /* The clipboard chords, which until now only the menu
+                     * could reach here; Shift turns each into its "more"
+                     * or "links" variant, as the menu labels do. */
+                    unsigned m = (ev.xkey.state & ShiftMask)
+                                     ? TIKU_TRK_MOD_SHIFT : 0u;
+                    int base = (ks == XK_x) ? TIKU_TRK_CMD_CUT
+                             : (ks == XK_c) ? TIKU_TRK_CMD_COPY
+                                            : TIKU_TRK_CMD_PASTE;
+
+                    menu_invoke(&app, fl, tiku_trk_sc_command(base, m));
                     app.dirty = 1;
                     break;
                 }

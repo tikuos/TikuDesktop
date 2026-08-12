@@ -16,6 +16,7 @@
 #define TIKU_TRK_FS_H_
 
 #include <stddef.h>
+#include <stdint.h>
 #include "tiku_trk_model.h"
 
 /** @brief What an operation is doing, for the progress window. */
@@ -284,6 +285,54 @@ int tiku_trk_fs_busy(const tiku_trk_fs_t *fs);
 /*---------------------------------------------------------------------------*/
 /* Undo                                                                      */
 /*---------------------------------------------------------------------------*/
+
+/** @brief Bytes free on @p path's filesystem, 0 when it will not say. */
+uint64_t tiku_trk_fs_free_bytes(const char *path);
+
+/**
+ * @brief What @p paths would cost on a destination, blocks included.
+ *
+ * Recurses; a directory costs one block of its own and a file costs its
+ * size plus a block, the block clamped to [1024, 8192].
+ */
+uint64_t tiku_trk_fs_items_size(const char *const *paths, int n);
+
+/**
+ * @brief Whether @p total plus 4 KB of headroom still fits.
+ *
+ * @return 1 when the copy may start.  A @p free_bytes of 0 means the
+ *         filesystem would not say, which is not a reason to refuse.
+ */
+int tiku_trk_fs_fits(uint64_t total, uint64_t free_bytes);
+
+/** @brief How much ceremony a move of @p path needs (FS-027). */
+typedef enum {
+    TIKU_TRK_CONFIRM_NONE = 0,
+    TIKU_TRK_CONFIRM_ASK,        /* config or settings: a plain question */
+    TIKU_TRK_CONFIRM_OVERRIDE    /* system or home: Shift must be held   */
+} tiku_trk_confirm_t;
+
+/**
+ * @brief Whether moving @p path should stop and ask first.
+ *
+ * The system directories are matched by CONTAINMENT and the home folder by
+ * exact match, which is the original's own asymmetry: a file inside home
+ * moves without a word.
+ */
+tiku_trk_confirm_t tiku_trk_fs_confirm_move(const char *path);
+
+/** @brief Whether @p path is the Trash or something inside it (FS-014). */
+int tiku_trk_fs_in_trash(tiku_trk_fs_t *fs, const char *path);
+
+/**
+ * @brief Create symbolic links to @p paths in @p dst.
+ *
+ * @param relative Non-zero asks for a link relative to @p dst; it degrades
+ *                 to an absolute one across a device boundary, where a
+ *                 relative path cannot be walked (FS-010).
+ */
+int tiku_trk_fs_link(tiku_trk_fs_t *fs, const char *const *paths, int n,
+                     const char *dst, int relative);
 
 /**
  * @brief The name a new folder would get in @p dir, collisions avoided.
