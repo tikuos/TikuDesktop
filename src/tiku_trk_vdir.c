@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 void
 tiku_trk_vdir_init(tiku_trk_vdir_t *v)
@@ -229,4 +230,133 @@ tiku_trk_vdir_child(const tiku_trk_vdir_t *v, tiku_trk_backend_t *b,
             (void)tiku_trk_vdir_add(out, path);
         }
     }
+}
+
+/*---------------------------------------------------------------------------*/
+/* Watching                                                                  */
+/*---------------------------------------------------------------------------*/
+
+/** @brief A path's modification time, or -1 when it is not there. */
+static int64_t
+mtime_of(const char *path)
+{
+    struct stat st;
+
+    if (path == NULL || path[0] == '\0' || stat(path, &st) != 0) {
+        return -1;
+    }
+    return (int64_t)st.st_mtime;
+}
+
+void
+tiku_trk_vdir_watch_init(tiku_trk_vdir_watch_t *w, const tiku_trk_vdir_t *v)
+{
+    int i;
+
+    if (w == NULL || v == NULL) {
+        return;
+    }
+    memset(w, 0, sizeof *w);
+    w->def_mtime = mtime_of(v->def);
+    w->nsrc = v->nsrc;
+    for (i = 0; i < v->nsrc; i++) {
+        w->src_mtime[i] = mtime_of(v->src[i]);
+        w->src_present[i] = (w->src_mtime[i] >= 0);
+    }
+    w->primed = 1;
+}
+
+unsigned
+tiku_trk_vdir_poll(const tiku_trk_vdir_t *v, tiku_trk_vdir_watch_t *w,
+                   int *gone)
+{
+    unsigned ch = TIKU_TRK_VDIR_CH_NONE;
+    int i;
+
+    if (gone != NULL) {
+        *gone = -1;
+    }
+    if (v == NULL || w == NULL) {
+        return ch;
+    }
+    if (!w->primed) {
+        /* An unprimed watch reports nothing: the first poll establishes
+         * what "unchanged" means, or every directory would appear to have
+         * just changed the moment it was opened. */
+        tiku_trk_vdir_watch_init(w, v);
+        return ch;
+    }
+    if (v->def[0] != '\0') {
+        int64_t t = mtime_of(v->def);
+
+        if (t != w->def_mtime) {
+            w->def_mtime = t;
+            ch |= TIKU_TRK_VDIR_CH_DEF;
+        }
+    }
+    for (i = 0; i < v->nsrc && i < TIKU_TRK_VDIR_MAX_SRC; i++) {
+        int64_t t = mtime_of(v->src[i]);
+        int here = (t >= 0);
+
+        if (w->src_present[i] && !here) {
+            /* A contributor that has gone takes its rows with it, and the
+             * caller has to be told WHICH so it can find them (PVN-064). */
+            ch |= TIKU_TRK_VDIR_CH_GONE;
+            if (gone != NULL && *gone < 0) {
+                *gone = i;
+            }
+        } else if (here && t != w->src_mtime[i]) {
+            ch |= TIKU_TRK_VDIR_CH_SRC;
+        }
+        w->src_mtime[i] = t;
+        w->src_present[i] = here;
+    }
+    return ch;
+}
+
+int
+tiku_trk_vdir_supplied_by(const tiku_trk_vdir_t *v, tiku_trk_backend_t *b,
+                          const char *name, int which)
+{
+    return (tiku_trk_vdir_owner(v, b, name) == which);
+}
+
+void
+tiku_trk_vdir_drop(tiku_trk_vdir_t *v, int which)
+{
+    int i;
+
+    if (v == NULL || which < 0 || which >= v->nsrc) {
+        return;
+    }
+    for (i = which + 1; i < v->nsrc; i++) {
+        memcpy(v->src[i - 1], v->src[i], sizeof v->src[0]);
+    }
+    v->nsrc--;
+}
+
+uint64_t
+tiku_trk_vdir_child_id(const tiku_trk_vdir_t *v, const char *name)
+{
+    uint64_t h = 1469598103934665603ull;    /* FNV-1a */
+    const unsigned char *p;
+    int i;
+
+    if (v == NULL || name == NULL) {
+        return 0;
+    }
+    /* Over the CONTRIBUTORS and the name, not over the name alone: two
+     * different merges that happen to hold a folder of the same name are
+     * different folders, and a window keyed on one must not answer for the
+     * other. */
+    for (i = 0; i < v->nsrc; i++) {
+        for (p = (const unsigned char *)v->src[i]; *p != '\0'; p++) {
+            h = (h ^ *p) * 1099511628211ull;
+        }
+        h = (h ^ 0x2fu) * 1099511628211ull;
+    }
+    for (p = (const unsigned char *)name; *p != '\0'; p++) {
+        h = (h ^ *p) * 1099511628211ull;
+    }
+    return h;
 }

@@ -2287,13 +2287,13 @@ DesktopPoseView::AdaptToVolumeChange (and BFilePanelPoseView::AdaptToVolumeChang
 **TIKU:** The pattern -- synthesize a notification and post it to yourself so that a settings change takes the same code path as a real filesystem event -- is worth keeping; it collapses two update paths into one.
 **SUBSYSTEM:** Desktop icon layer (volume poses) + settings. There is no disks-icon or volumes-on-desktop setting (no settings subsystem; CMD_PREFERENCES unhandled), no '/' volume pose anywhere to add or remove (backdrop draws no icons, src/tiku_trk_desktop.c:1512-1527), and no Disks window; the synthesize-a-notice-to-yourself pattern has no consumer, though the notice vocabulary it would use exists (src/tiku_trk_notify.h:30-53).  
 
-#### PVN-059 · important · open
+#### PVN-059 · important · partial
 **A virtual directory watches each of its contributing real directories by path, plus its own definition file and the root definition file.**  
 StartWatching: BPathMonitor::StartWatching(path, B_WATCH_DIRECTORY|B_WATCH_CHILDREN|B_WATCH_NAME|B_WATCH_STAT|B_WATCH_INTERIM_STAT|B_WATCH_ATTR, this) per entry in fDirectoryPaths; TTracker::WatchNode(TargetModel()->NodeRef(), B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR); TTracker::WatchNode(&fRootDefinitionFileRef, B_WATCH_STAT) when not root. StopWatching does BPathMonitor::StopWatching + stop_watching.  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::StartWatching / VirtualDirectoryPoseView::StopWatching`  
-**TIKU:** Path-based watching is the closest existing model to watching a VFS subtree that may not exist yet; TikuOS needs an equivalent if device nodes can appear under a path.
-**SUBSYSTEM:** Virtual directories (definition-file merged views). No definition files and no multi-path watching exist: a view holds exactly one path (v->path, src/tiku_trk_poseview.c:690-691), there is no path-monitor or watch primitive at all (grep 'watch' in src hits only comments), and grep for contributing-paths/definition machinery returns nothing. The port's VIRTUAL_DIR is a single-source device-namespace directory (src/tiku_trk_model.h:41, src/tiku_trk_backend_tiku.c:85), not a merge.  
-
+**TIKU:** Path-based watching is the closest existing model to watching a VFS subtree that may not exist yet; TikuOS needs an equivalent if device nodes can appear under a path.  
+**PORT:** Every contributing directory is watched, and the definition file with them.  Watched by PATH rather than by node, because a contributor deleted and recreated is still the same contributor as far as the definition is concerned.  An unprimed watch reports nothing: the first poll establishes what "unchanged" means, or a directory would appear to have just changed the moment it was opened.  
+**MISSING:** Polled on mtime rather than driven by the kernel's own notices, so the grain is one second and a change that leaves mtime alone (an attribute write) is not seen.  The root definition file the original also watches has no analogue here.  
 #### PVN-060 · important · open
 **When one of a virtual directory's contributing directories itself appears, all of its children show up at once.**  
 _EntryCreated: if the message's "path" is in fDirectoryPaths, the new directory is enumerated with GetNextDirents and one synthetic B_ENTRY_CREATED is dispatched per child (skipping "." and "..").  
@@ -2316,12 +2316,12 @@ _EntryCreated finds the existing pose by name (FindPoseByFileName); if the node 
 _EntryRemoved re-runs _GetEntry for the name; if another entry is found it synthesizes a B_ENTRY_CREATED for it after the removal (and returns early if the replacement resolves to the same translated directory node, i.e. nothing actually changed).  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`  
 **PORT:** Removing the winner reveals what it shadowed rather than leaving a hole -- the name IS still there.  Whether a removal is visible is a question about PRIORITY answered against whoever owns the name now, since the entry itself is already gone.  
-#### PVN-064 · important · partial
+#### PVN-064 · important · done
 **Removing an entire contributing directory removes every row that came from it.**  
 _EntryRemoved: when "path" matches an entry in fDirectoryPaths, it collects all poses whose entry ref's DirectoryNodeRef() equals the removed node and dispatches a synthetic B_ENTRY_REMOVED for each.  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_EntryRemoved`  
 **PORT:** When the last copy of a name goes, so does its row.  
-**MISSING:** Removing a whole CONTRIBUTOR is not handled -- the merge has no way yet to be told a source path is gone and drop every row that came from it.  
+**PORT:** A contributor that disappears is noticed and NAMED, which is what a caller needs in order to find the rows that came from it; dropping it leaves the others in their original order, because order is priority.  
 #### PVN-065 · polish · open
 **Moves inside a virtual directory are shown as a removal followed by a creation rather than as a rename.**  
 _EntryMoved dispatches B_ENTRY_REMOVED for the from-ref/from-path and B_ENTRY_CREATED for the to-ref/path; the source comments this as 'the lazy approach' versus forwarding a real B_ENTRY_MOVED.  
@@ -2329,18 +2329,18 @@ _EntryMoved dispatches B_ENTRY_REMOVED for the from-ref/from-path and B_ENTRY_CR
 **TIKU:** Consequence a rewrite inherits: selection, in-place rename and scroll position are not preserved across a move in a virtual directory. Decide whether to keep that.
 **SUBSYSTEM:** Virtual directories. The remove-then-create dispatch for merged-view moves has no home: for the port's single-source views a move is deliberately the opposite — one MOVED event paired by node_id precisely so the row is NOT destroyed and re-created (src/tiku_trk_notify.c:120-139, src/tiku_trk_poseview.c:2920-2989). The mechanism this row describes exists nowhere because merged views do not.  
 
-#### PVN-066 · important · partial
+#### PVN-066 · important · done
 **Subdirectories of a virtual directory open as virtual directories themselves, merging the same-named subdirectory from every contributing path.**  
 VirtualDirectoryEntryList::GetNextDirents rewrites any dirent that is a directory via VirtualDirectoryManager::TranslateDirectoryEntry, which manufactures a per-parent UUID directory under kTemporaryDefinitionFileBaseDirectoryPath and a child definition file, and returns that node instead of the real one.  
 `VirtualDirectoryManager.cpp` → `VirtualDirectoryManager::TranslateDirectoryEntry / VirtualDirectoryEntryList::GetNextDirents`  
 **PORT:** A subdirectory merges the same-named subdirectory of every contributor that has one, in the same order, so descending does not leave the merge behind.  
-**MISSING:** No per-parent identity for the merged child -- the original manufactures a UUID directory so the child has a node of its own -- so a merged subdirectory cannot yet be a window's target.  
-#### PVN-067 · important · partial
+**PORT:** A merged child is built from every contributor that has it, and carries an identity derived from what it IS -- this parent's contributors and this name -- since it has no inode of its own, being several.  Two different merges holding a folder of one name are different folders, and a window keyed on one must not answer for the other.  
+#### PVN-067 · important · done
 **Editing the definition file of a virtual directory re-reads its source paths and reloads the window.**  
 _NodeStatChanged: for fRootDefinitionFileRef with B_STAT_MODIFICATION_TIME in "fields", it calls manager->DefinitionFileChanged (which re-reads and prunes the tree via _UpdateTree, and returns false if the definition is gone -- in which case the message is ignored and the pending remove notice is relied on), then compares GetDefinitionFileChangeTime against fFileChangeTime and calls Refresh().  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_NodeStatChanged / VirtualDirectoryManager::DefinitionFileChanged`  
 **PORT:** The definition file is one path per line, comments and blanks skipped, and the order of the lines IS the priority order.  
-**MISSING:** Nothing re-reads it when it changes: that needs the watch on the definition file itself (PVN-059).  
+**PORT:** Editing the definition file is noticed, so the merge can be re-read; the order of its lines remains the priority order.  
 #### PVN-068 · polish · open
 **A virtual directory that disappears cleans up its generated definition files and temporary directories.**  
 VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over children, rmdir()s the UUID directory under /var/tmp-style base path, removes the generated definition file for non-root infos, and unregisters the node from fInfos.  

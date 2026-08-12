@@ -56,6 +56,7 @@ main(void)
     char got[600];
     int n;
 
+
     (void)system("rm -rf /tmp/trk_vd_a /tmp/trk_vd_b /tmp/trk_vd_c");
     (void)mkdir(A, 0755); (void)mkdir(B, 0755); (void)mkdir(C, 0755);
     put(A, "only_a.txt", "a");
@@ -172,6 +173,85 @@ main(void)
         (void)remove(def);
     }
 
+    printf("\nwatching (PVN-059, PVN-064, PVN-067)\n");
+    {
+        tiku_trk_vdir_watch_t w;
+        char def[600], gonedir[600];
+        FILE *f;
+        int which = -99;
+        unsigned ch;
+
+        snprintf(def, sizeof def, "/tmp/trk_vd_def2");
+        f = fopen(def, "w");
+        if (f != NULL) { fprintf(f, "%s\n%s\n", A, B); (void)fclose(f); }
+        check(tiku_trk_vdir_load(&v, def) == 2, "PVN-067",
+              "a definition names its contributors");
+
+        tiku_trk_vdir_watch_init(&w, &v);
+        ch = tiku_trk_vdir_poll(&v, &w, &which);
+        check(ch == TIKU_TRK_VDIR_CH_NONE, "PVN-059",
+              "a poll with nothing changed reports nothing -- the first "
+              "one establishes what unchanged means");
+
+        /* A contributor's contents moving. */
+        sleep(1);                   /* mtime has one-second resolution */
+        put(A, "brand_new.txt", "x");
+        ch = tiku_trk_vdir_poll(&v, &w, &which);
+        check((ch & TIKU_TRK_VDIR_CH_SRC) != 0u, "PVN-059",
+              "a file appearing in a contributor is noticed");
+        check(tiku_trk_vdir_poll(&v, &w, &which) == TIKU_TRK_VDIR_CH_NONE,
+              "PVN-059", "and reported once, not on every poll after");
+
+        /* The definition file being edited. */
+        sleep(1);
+        f = fopen(def, "w");
+        if (f != NULL) { fprintf(f, "%s\n", A); (void)fclose(f); }
+        ch = tiku_trk_vdir_poll(&v, &w, &which);
+        check((ch & TIKU_TRK_VDIR_CH_DEF) != 0u, "PVN-067",
+              "editing the definition file is noticed, so the merge can be "
+              "re-read");
+
+        /* A whole contributor disappearing. */
+        snprintf(gonedir, sizeof gonedir, "/tmp/trk_vd_gone");
+        (void)mkdir(gonedir, 0755);
+        put(gonedir, "from_gone.txt", "g");
+        tiku_trk_vdir_init(&v);
+        (void)tiku_trk_vdir_add(&v, A);
+        (void)tiku_trk_vdir_add(&v, gonedir);
+        tiku_trk_vdir_watch_init(&w, &v);
+        check(tiku_trk_vdir_supplied_by(&v, b, "from_gone.txt", 1),
+              "PVN-064", "a name is known to come from its contributor");
+        (void)remove("/tmp/trk_vd_gone/from_gone.txt");
+        (void)rmdir(gonedir);
+        ch = tiku_trk_vdir_poll(&v, &w, &which);
+        check((ch & TIKU_TRK_VDIR_CH_GONE) != 0u && which == 1, "PVN-064",
+              "a contributor disappearing is noticed, and says WHICH -- "
+              "the caller has to find its rows");
+        tiku_trk_vdir_drop(&v, 1);
+        check(v.nsrc == 1 && strcmp(v.src[0], A) == 0, "PVN-064",
+              "dropping it leaves the others in their original order");
+        (void)remove(def);
+    }
+
+    printf("\na merged child has an identity of its own (PVN-066)\n");
+    {
+        tiku_trk_vdir_t two;
+        uint64_t a1, a2, b1;
+
+        tiku_trk_vdir_init(&two);
+        (void)tiku_trk_vdir_add(&two, B);
+        a1 = tiku_trk_vdir_child_id(&v, "sub");
+        a2 = tiku_trk_vdir_child_id(&v, "sub");
+        b1 = tiku_trk_vdir_child_id(&two, "sub");
+        check(a1 == a2 && a1 != 0, "PVN-066",
+              "the same merged child gets the same identity every time");
+        check(a1 != b1, "PVN-066",
+              "and two different merges holding a folder of one name are "
+              "different folders -- a window keyed on one must not answer "
+              "for the other");
+        check(tiku_trk_vdir_child_id(&v, "other") != a1, "PVN-066",
+              "as are two children of one merge");
+    }
     (void)system("rm -rf /tmp/trk_vd_a /tmp/trk_vd_b /tmp/trk_vd_c");
     tiku_trk_backend_close(b);
     printf("\n%s\n", fails ? "FAILURES" : "the virtual directory holds");
