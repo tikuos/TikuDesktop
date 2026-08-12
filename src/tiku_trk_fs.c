@@ -924,6 +924,7 @@ copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
         if (n == 0) {
             break;
         }
+        fs->prog.bytes += (int64_t)n;
         if (fwrite(buf, 1, n, out) != n) {
             (void)fclose(in);
             (void)fclose(out);

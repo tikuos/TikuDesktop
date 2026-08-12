@@ -286,3 +286,97 @@ tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p, int i)
     return p->row[i].paused ? "Paused: click to resume or stop"
                             : p->row[i].current;
 }
+
+int
+tiku_trk_progress_wanted(tiku_trk_op_t op, int items)
+{
+    if (op == TIKU_TRK_OP_LINK) {
+        /* Links are instantaneous; a window that appeared and vanished
+         * would be a flash nobody can read (FS-070). */
+        return (items > TIKU_TRK_PROGRESS_LINK_MIN);
+    }
+    return 1;
+}
+
+void
+tiku_trk_progress_sample(tiku_trk_progress_win_t *p, int i, int64_t bytes,
+                         int64_t now)
+{
+    tiku_trk_progress_row_t *r;
+    int k;
+
+    if (p == NULL || i < 0 || i >= TIKU_TRK_PROGRESS_ROWS) {
+        return;
+    }
+    r = &p->row[i];
+    r->total_bytes = bytes;
+    /* A ring of the last few samples: the mean over them is the speed,
+     * and one huge file must not set it for the rest of the job. */
+    for (k = TIKU_TRK_PROGRESS_SLOTS - 1; k > 0; k--) {
+        r->bytes[k] = r->bytes[k - 1];
+        r->at[k] = r->at[k - 1];
+    }
+    r->bytes[0] = bytes;
+    r->at[0] = now;
+    if (r->nsample < TIKU_TRK_PROGRESS_SLOTS) {
+        r->nsample++;
+    }
+}
+
+int64_t
+tiku_trk_progress_speed(const tiku_trk_progress_win_t *p, int i)
+{
+    const tiku_trk_progress_row_t *r;
+    int last;
+    int64_t db, dt;
+
+    if (p == NULL || i < 0 || i >= TIKU_TRK_PROGRESS_ROWS) {
+        return 0;
+    }
+    r = &p->row[i];
+    if (r->nsample < 2) {
+        return 0;                   /* not enough to average anything */
+    }
+    last = r->nsample - 1;
+    db = r->bytes[0] - r->bytes[last];
+    dt = r->at[0] - r->at[last];
+    if (dt <= 0 || db <= 0) {
+        return 0;
+    }
+    return db * 1000000 / dt;
+}
+
+int64_t
+tiku_trk_progress_eta(const tiku_trk_progress_win_t *p, int i)
+{
+    int64_t speed = tiku_trk_progress_speed(p, i);
+    const tiku_trk_progress_row_t *r;
+    int64_t left;
+
+    if (speed <= 0 || p == NULL) {
+        return -1;                  /* a job just started has no estimate
+                                     * rather than a wild one */
+    }
+    r = &p->row[i];
+    if (r->total <= 0 || r->done <= 0 || r->done >= r->total) {
+        return -1;
+    }
+    /* Scaled from the items done: bytes are what the speed is in, and the
+     * item count is the only measure of what is left. */
+    left = r->total_bytes * (r->total - r->done) / r->done;
+    return left / speed;
+}
+
+int
+tiku_trk_progress_show_speed(int64_t since_open)
+{
+    int64_t cycle = TIKU_TRK_PROGRESS_SPEED_US +
+                    TIKU_TRK_PROGRESS_ESTIMATE_US;
+    int64_t at;
+
+    if (since_open < 0) {
+        return 1;
+    }
+    at = since_open % cycle;
+    return (at < TIKU_TRK_PROGRESS_SPEED_US);
+}

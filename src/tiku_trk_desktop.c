@@ -174,6 +174,8 @@ typedef struct desktop {
     char                 prefs_path[TIKU_TRK_PATH_MAX];
     tiku_trk_switcher_t  sw;
     tiku_trk_win_t      *sw_win;
+    int64_t              prog_opened;
+    tiku_trk_win_t      *prog_was_active;  /* focus to give back */
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -2092,8 +2094,33 @@ progress_draw(desktop_t *app)
                  app->prog.row[i].paused ? "" : app->prog.row[i].caption,
                  leaf);
         tiku_desk_text(app->surf, fo, f.x + 10, y, line, TIKU_DESK_C_TEXT);
-        snprintf(line, sizeof line, "%d of %d", app->prog.row[i].done,
-                 app->prog.row[i].total);
+        {   /* Speed for eight seconds, then the estimate for four: the
+             * cycle is shared by every row, since two alternating out of
+             * step would be harder to read than one (FS-071). */
+            int64_t open_for = tiku_trk_now() - app->prog_opened;
+
+            if (tiku_trk_progress_show_speed(open_for)) {
+                int64_t sp = tiku_trk_progress_speed(&app->prog, i);
+
+                if (sp > 0) {
+                    snprintf(line, sizeof line, "%lld KB/s",
+                             (long long)(sp / 1024));
+                } else {
+                    snprintf(line, sizeof line, "%d of %d",
+                             app->prog.row[i].done, app->prog.row[i].total);
+                }
+            } else {
+                int64_t eta = tiku_trk_progress_eta(&app->prog, i);
+
+                if (eta >= 0) {
+                    snprintf(line, sizeof line, "%lld s left",
+                             (long long)eta);
+                } else {
+                    snprintf(line, sizeof line, "%d of %d",
+                             app->prog.row[i].done, app->prog.row[i].total);
+                }
+            }
+        }
         tiku_desk_text(app->surf, fo, f.x + f.w - 70, y, line,
                        TIKU_DESK_C_TEXT);
         bar.x = f.x + 10;
@@ -4102,10 +4129,27 @@ sel_done:
                          pr->skipped ? " (some skipped)" : "",
                          pr->failed ? " -- some failed" : "");
             }
-            tiku_trk_progress_update(&app.prog, 0, pr, 1, NULL);
+            if (tiku_trk_progress_wanted(pr->op, pr->total)) {
+                tiku_trk_progress_update(&app.prog, 0, pr, 1, NULL);
+                tiku_trk_progress_sample(&app.prog, 0, pr->bytes,
+                                         tiku_trk_now());
+            }
             app.dirty = 1;
+            if (app.prog_opened == 0) {
+                app.prog_opened = tiku_trk_now();
+                /* Whoever was in front when the job began gets the focus
+                 * back when it ends: an operation is not a reason to be
+                 * left looking at something else (FS-073). */
+                app.prog_was_active = tiku_trk_desk_focused(app.desk);
+            }
         } else if (app.prog.open) {
             tiku_trk_progress_update(&app.prog, 0, NULL, 0, NULL);
+            app.prog_opened = 0;
+            if (app.prog_was_active != NULL &&
+                app.prog_was_active->open) {
+                tiku_trk_desk_activate(app.desk, app.prog_was_active);
+            }
+            app.prog_was_active = NULL;
             app.dirty = 1;
         }
         if (deadline > 0 && tiku_trk_now() > deadline) {

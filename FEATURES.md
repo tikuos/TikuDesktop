@@ -3245,30 +3245,30 @@ BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items
 **PORT:** The window exists: one row per job with the operation's caption, the file being processed, the n-of-N counter and a bar.  It opens with the first job and closes with the last, so it is never an empty window.  
 **MISSING:** No "To: <dir>" -- the row is plumbed for a destination and the desktop shell does not yet pass one -- and no pause or stop buttons (FS-074).  
 *Shell: desktop*  
-#### FS-070 · polish · open
+#### FS-070 · polish · done
 **Creating links only shows a progress window when more than ten items are involved.**  
 InitCopy's kCreateLink case: if (numItems > 10) it calls Init(kCreateLinkState) and Init(numItems, numItems, destRef) — otherwise no status item is ever created and the operation runs invisibly.  
 `FSUtils.cpp` → `InitCopy`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
-#### FS-071 · polish · open
+**PORT:** More than ten, not ten: a window that appeared and vanished for three links would be a flash nobody can read.  
+*Shell: desktop*  
+#### FS-071 · polish · done
 **The status line alternates between transfer speed and estimated finish time, showing speed for 8 seconds then the estimate for 4 seconds.**  
 StatusBackgroundView::Pulse (pulse rate 1 s) toggles the file-static sShowSpeed using kShowSpeedInterval = 8 s and kShowEstimatedFinishInterval = 4 s; the toggle state is shared by all concurrent jobs and reset when the first status item is created. Speed is a rolling mean over kBytesPerSecondSlots samples taken every kSpeedReferenceInterval = 2 s. Long estimates degrade to "Finish: after several years", estimates beyond a day include the date, and both speed and time strings have short forms used when the full one does not fit; the tooltip carries both.  
 `StatusWindow.cpp` → `BStatusView::_TimeStatusString`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** Eight seconds of speed then four of the estimate, on a cycle shared by every row -- two rows alternating out of step would be harder to read than one.  Speed is a rolling mean over four samples, so one large file does not set it for the rest of the job, and a job with only one sample reports NO speed and therefore no estimate rather than a wild one.  
+*Shell: desktop*  
 #### FS-072 · important · done
 **Each concurrent file operation gets its own row in one shared status window; the window appears when the first job starts and hides when the last one finishes.**  
 BStatusWindow::CreateStatusItem stacks a new BStatusView below the last one and grows the window; RemoveStatusItem removes the row, shifts the ones below up, shrinks the window and Hide()s it when the count reaches zero. Rows are matched to jobs by thread_id.  
 `StatusWindow.cpp` → `BStatusWindow::CreateStatusItem`  
 **PORT:** One shared window, a row per concurrent job; it appears when the first starts and goes when the last ends.  
 *Shell: desktop*  
-#### FS-073 · polish · open
+#### FS-073 · polish · done
 **If the Desktop was the active window when an operation started, focus is handed back to it when the status window closes.**  
 CreateStatusItem scans be_app's windows for an active BDeskWindow and records fRetainDesktopFocus; a second job ANDs into the same flag, and WindowActivated(false) clears it. RemoveStatusItem re-Activate()s the desk window when the last row goes away.  
 `StatusWindow.cpp` → `BStatusWindow::RemoveStatusItem`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** Whoever was in front when the job began gets the focus back when it ends: an operation is not a reason to be left looking at something else.  Applies to any window rather than only the Desktop, there being no Desktop window here to be a special case.  
+*Shell: desktop*  
 #### FS-074 · core · done
 **Each progress row has a pause and a stop button; pause freezes the operation and the row reads "Paused: click to resume or stop", stop cancels it.**  
 kPauseButton toggles fIsPaused, zeroes the speed samples and, on resume, resets the estimate reference and resume_thread(Thread()). kStopButton sets fWasCanceled and also resumes a paused thread so the copy loop can notice the cancel and unwind. BStatusWindow::CheckCanceledOrPaused returns wasCanceled immediately, and otherwise suspend_thread()s the calling worker.  
@@ -3282,12 +3282,12 @@ BStatusView::UpdateStatus only redraws when !optional or (now - fLastUpdateTime)
 `StatusWindow.cpp` → `BStatusView::UpdateStatus`  
 **PORT:** The name is carried over when an update brings none, which is the one field a throttled repaint must not lose; the repaint itself is the loop's own dirty flag rather than a timer.  
 *Shell: desktop*  
-#### FS-076 · important · open
+#### FS-076 · important · differs
 **Quitting Tracker cancels every running copy/move/Empty Trash job rather than killing it mid-write.**  
 BStatusWindow::AttemptToQuit returns true only when no status items exist; otherwise it calls SetWasCanceled() on every row and returns false so the quit is retried after the jobs unwind.  
 `StatusWindow.cpp` → `BStatusWindow::AttemptToQuit`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**PORT:** Quitting DRAINS rather than cancels: the queue is run to completion for up to five seconds, answering any question that stops it, and only then does the process go (AW-009).  The original cancels and retries the quit until the jobs unwind.  Both avoid a half-written file; this one also finishes the work, which is what the user asked for -- and the five-second bound is what stops a job that cannot finish from holding the application open.  
+*Shell: both*  
 #### FS-077 · important · open
 **Dropping files from another application onto a folder copies them there, laid out in rows of four starting at the drop point.**  
 BPoseView::HandleDropCommon's HasRef("refs") branch: defaults to canCopy (kCopySelectionTo) unless a drop context menu chose otherwise, bails when the target is not a directory or virtual directory, collects every "refs" entry into a list, builds a pointList that advances four columns per row using fGrid and PinToGrid, and hands it to FSMoveToFolder.  

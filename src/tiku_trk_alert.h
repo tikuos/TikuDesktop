@@ -92,6 +92,21 @@ tiku_trk_conflict_t tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a);
 /* The progress window                                                        */
 /*---------------------------------------------------------------------------*/
 
+/**
+ * @brief A link job shows no window unless it is bigger than this.
+ *
+ * Making a couple of links is instantaneous; a window that appeared and
+ * vanished for it would be a flash the user cannot read (FS-070).
+ */
+#define TIKU_TRK_PROGRESS_LINK_MIN 10
+
+/** @brief How long the status line shows speed, then the estimate. */
+#define TIKU_TRK_PROGRESS_SPEED_US    8000000
+#define TIKU_TRK_PROGRESS_ESTIMATE_US 4000000
+
+/** @brief How many samples the rolling speed is averaged over. */
+#define TIKU_TRK_PROGRESS_SLOTS 4
+
 /** @brief How many jobs the shared window can show at once. */
 #define TIKU_TRK_PROGRESS_ROWS 4
 
@@ -103,6 +118,12 @@ typedef struct {
     char  dest[TIKU_TRK_PATH_MAX];
     int   done, total;
     int   paused;
+    /* A rolling mean rather than the last sample: a copy that hits one
+     * large file would otherwise report a speed that is true of nothing. */
+    int64_t bytes[TIKU_TRK_PROGRESS_SLOTS];
+    int64_t at[TIKU_TRK_PROGRESS_SLOTS];
+    int     nsample;
+    int64_t total_bytes;
 } tiku_trk_progress_row_t;
 
 /** @brief The shared status window: it exists only while a job does. */
@@ -112,6 +133,35 @@ typedef struct {
 } tiku_trk_progress_win_t;
 
 void tiku_trk_progress_reset(tiku_trk_progress_win_t *p);
+
+/**
+ * @brief Whether a job of @p op over @p items should show a window at all.
+ */
+int tiku_trk_progress_wanted(tiku_trk_op_t op, int items);
+
+/** @brief Note that @p bytes have been transferred by row @p i, at @p now. */
+void tiku_trk_progress_sample(tiku_trk_progress_win_t *p, int i,
+                              int64_t bytes, int64_t now);
+
+/** @brief Bytes per second, averaged over the samples.  0 when unknown. */
+int64_t tiku_trk_progress_speed(const tiku_trk_progress_win_t *p, int i);
+
+/**
+ * @brief Seconds still to go, or -1 when it cannot be estimated.
+ *
+ * From the rolling speed and what is left, which is why a job that has
+ * only just started has no estimate rather than a wild one.
+ */
+int64_t tiku_trk_progress_eta(const tiku_trk_progress_win_t *p, int i);
+
+/**
+ * @brief Whether the status line should show speed rather than the estimate.
+ *
+ * Eight seconds of one then four of the other, on a cycle shared by every
+ * row: two rows alternating out of step would be harder to read than
+ * either alone (FS-071).
+ */
+int tiku_trk_progress_show_speed(int64_t since_open);
 
 /** @brief The caption a job of kind @p op shows. */
 const char *tiku_trk_progress_caption(tiku_trk_op_t op);

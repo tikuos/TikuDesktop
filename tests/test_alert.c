@@ -175,6 +175,72 @@ main(void)
               "FS-074", "a row that is not in use has no buttons");
     }
 
+
+    printf("\nwhen a window is worth showing (FS-070)\n");
+    check(tiku_trk_progress_wanted(TIKU_TRK_OP_COPY, 1), "FS-070",
+          "a copy of one file still shows progress");
+    check(!tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 3), "FS-070",
+          "three links do not -- a window that appeared and vanished would "
+          "be a flash nobody can read");
+    check(!tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 10), "FS-070",
+          "nor do exactly ten: the rule is MORE than ten");
+    check(tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 11), "FS-070",
+          "but eleven do, which is where the original draws it");
+
+    printf("\nspeed and the estimate (FS-071)\n");
+    {
+        tiku_trk_progress_win_t q;
+        tiku_trk_progress_t pr2;
+        int64_t t0 = 1000000;
+
+        tiku_trk_progress_reset(&q);
+        memset(&pr2, 0, sizeof pr2);
+        pr2.op = TIKU_TRK_OP_COPY;
+        pr2.total = 10;
+        pr2.done = 2;
+        tiku_trk_progress_update(&q, 0, &pr2, 1, NULL);
+
+        tiku_trk_progress_sample(&q, 0, 500, t0);
+        check(tiku_trk_progress_speed(&q, 0) == 0, "FS-071",
+              "one sample is not a rate -- a speed needs two moments to "
+              "be a speed at all");
+        check(tiku_trk_progress_eta(&q, 0) == -1, "FS-071",
+              "and with no speed there is no estimate, rather than a "
+              "division by nothing");
+        tiku_trk_progress_reset(&q);
+        tiku_trk_progress_update(&q, 0, &pr2, 1, NULL);
+        check(tiku_trk_progress_eta(&q, 0) == -1, "FS-071",
+              "and a job that has just started has NO estimate rather than "
+              "a wild one");
+
+        tiku_trk_progress_sample(&q, 0, 0, t0);
+        tiku_trk_progress_sample(&q, 0, 1000000, t0 + 1000000);
+        check(tiku_trk_progress_speed(&q, 0) == 1000000, "FS-071",
+              "a megabyte in a second is a megabyte a second");
+        tiku_trk_progress_sample(&q, 0, 3000000, t0 + 2000000);
+        check(tiku_trk_progress_speed(&q, 0) == 1500000, "FS-071",
+              "and the speed is a ROLLING MEAN, so one large file does not "
+              "set it for the rest of the job");
+        {
+            int64_t eta = tiku_trk_progress_eta(&q, 0);
+
+            check(eta > 0, "FS-071",
+                  "once there is a speed there is an estimate");
+        }
+
+        check(tiku_trk_progress_show_speed(0), "FS-071",
+              "the line starts on speed");
+        check(tiku_trk_progress_show_speed(7000000), "FS-071",
+              "and stays there for eight seconds");
+        check(!tiku_trk_progress_show_speed(9000000), "FS-071",
+              "then shows the estimate");
+        check(!tiku_trk_progress_show_speed(11000000), "FS-071",
+              "for four");
+        check(tiku_trk_progress_show_speed(13000000), "FS-071",
+              "and comes back round -- the cycle is shared, since two rows "
+              "alternating out of step would be harder to read than one");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the alert and the progress hold");
     return fails ? 1 : 0;
 }

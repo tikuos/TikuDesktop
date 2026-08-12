@@ -68,6 +68,10 @@ typedef struct {
     int           error_ask;
     int           error_can_continue;  /* a delete failure cannot         */
     int           cancelled;      /* the job was stopped part-way          */
+    /* Bytes actually written so far.  The counter the speed is computed
+     * from: items done says nothing about rate when their sizes differ by
+     * orders of magnitude. */
+    int64_t       bytes;
 } tiku_trk_progress_t;
 
 /**
