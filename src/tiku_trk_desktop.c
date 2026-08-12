@@ -2721,6 +2721,36 @@ sel_done:
                 shot_at = 0;
             }
         }
+        if (app.fs != NULL && tiku_trk_fs_busy(app.fs)) {
+            const tiku_trk_progress_t *pr;
+
+            /* Stepped here, not inside the command: start() only builds the
+             * queue, so a shell that never steps reports work it has not
+             * done.  Membership changes reach the windows through the
+             * notice poll above, which is why nothing is reloaded here. */
+            (void)tiku_trk_fs_step(app.fs, 4);
+            pr = tiku_trk_fs_progress(app.fs);
+            if (pr->conflict) {
+                const char *slash = strrchr(pr->conflict_path, '/');
+                const char *leaf = (slash != NULL) ? slash + 1
+                                                   : pr->conflict_path;
+
+                /* With no alert layer the answer that loses least is to
+                 * keep both: nothing is overwritten and nothing is lost. */
+                snprintf(app.status, sizeof app.status,
+                         "'%.40s' exists -- keeping both", leaf);
+                tiku_trk_fs_resolve(app.fs, TIKU_TRK_CONFLICT_RENAME);
+            } else if (pr->error_ask) {
+                snprintf(app.status, sizeof app.status, "%.150s", pr->error);
+                tiku_trk_fs_resolve_error(app.fs, 1);
+            } else {
+                snprintf(app.status, sizeof app.status, "%d of %d%s%s",
+                         pr->done + pr->skipped, pr->total,
+                         pr->skipped ? " (some skipped)" : "",
+                         pr->failed ? " -- some failed" : "");
+            }
+            app.dirty = 1;
+        }
         if (deadline > 0 && tiku_trk_now() > deadline) {
             app.running = 0;
         }

@@ -229,6 +229,36 @@ been read for what its open rows wait on.  Until the alert layer exists, the
 honest reading of those `done`s is "the decision is right and nobody is asked
 yet".
 
+### What the assessment sweep found, the day after
+
+Seven agents read the port against the contract, each one adversarially
+checked by a second that was told to refute it.  The headline is not the
+ranking it produced; it is that three claims in this file were wrong, and
+all three were mine, written from the ROW TEXT rather than from the code.
+
+The worst of them was not a documentation error at all.  `nm -u` on the
+multi-window shell showed no reference to `tiku_trk_fs_step` -- so every
+file operation that shell started built a queue and never advanced it.
+Delete, trash, duplicate, paste: all of them printed a status line for work
+that did not happen.  It is fixed, and confirmed by a Copy-then-Paste in the
+real window producing a real file; but it stood for as long as it did
+because the FS engine has 781 checks and the shell that drives it has none.
+A test suite that deep can make an untested caller look tested.
+
+The other two: `BLOCKED: waits on a progress window ... the shell has no
+window to put them in` was false on eight rows -- `tiku_trk_desk_open` with
+a draw callback is exactly how the Select panel is already built.  And
+FS-037's `BLOCKED: waits on the pose-position attribute` was false -- the
+attribute store exists with three backends and pose position is already
+written per item; only the copy engine's inheritance of it is missing.  A
+fourth, older error was found too: FS-001 claimed `tiku_trk_fs_copy` and
+`_move` were called nowhere in the UI, while the Paste path calls both.
+
+The pattern is the same one this file keeps recording, one level up: a
+BLOCKED line is a claim about code, and writing it from a row's own
+description is exactly as unreliable as writing a verdict that way.  Every
+`BLOCKED:` line here should be read as unverified unless it cites a file.
+
 One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
 because FS is the only area whose open rows have been read against the port
 to find out what they wait on.  The other eleven areas hold 396 open rows
@@ -2484,7 +2514,7 @@ Architecture notes: [`spec/ARCH-fsutils.md`](spec/ARCH-fsutils.md)
 moveMode chosen by a fixed ladder: forceCopy -> kCopySelectionTo, forceMove -> kMoveSelectionTo, createRelativeLink, createLink, else !CheckDevicesEqual(srcList->ItemAt(0), destFolder) -> kCopySelectionTo, else kMoveSelectionTo. Device equality is tested on the FIRST source ref only.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** "Same volume" must be redefined: a device-namespace node and a local file are never the same store, so the default for any drop involving /dev must be an explicit decision, not a device-id compare.  
-**MISSING:** The same-volume/cross-volume decision ladder is implemented and tested (st_dev compare, force_copy first rung, device backends treated as one volume), but nothing invokes it: no item drag-and-drop between folders exists and neither tiku_trk_fs_copy nor tiku_trk_fs_move is called anywhere in the UI.  
+**MISSING:** The same-volume/cross-volume decision ladder is implemented and tested (st_dev compare, force_copy first rung, device backends treated as one volume), but nothing invokes it: no item drag-and-drop between folders exists, so `tiku_trk_fs_drop_action` has no caller outside the tests.  (An earlier version of this line also claimed fs_copy and fs_move were called nowhere in the UI; that is false -- the Paste path calls both.)  
 *src/tiku_trk_fs.c:274 tiku_trk_fs_drop_action*  
 **BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
 
@@ -2703,7 +2733,7 @@ CopyFolder records the source directory's st_dev and skips any child directory w
 SetupPoseLocation only inherits the source's position when loc == NULL, sourceParentIno != destParentIno, and the source has a valid kAttrPoseInfo; a loc of (BPoint*)-1 means "autoplace" and writes nothing. MoveTask defaults loc to (BPoint*)-1 and only reads pointList when one was supplied (and, for the pre-write of the source's own position, only when moveMode != kCopySelectionTo).  
 `FSUtils.cpp` → `SetupPoseLocation`  
 **TIKU:** Icon position is a per-folder view-state concern; if it lives in a view-state store instead of a node attribute, this must be re-implemented as a view-state copy keyed by destination folder.  
-**BLOCKED:** Waits on the pose-position attribute.  The port's spatial memory is per-window state, not an attribute written into the item, so there is nothing for a copy to inherit yet (IV/MA area).  
+**MISSING:** Not blocked, and the earlier BLOCKED line saying so was wrong: pose position IS written as a per-ITEM attribute (src/tiku_trk_poseview.c:2540 keys TIKU_TRK_ATTR_POSE_INFO on the item's path, read back at :2462), over a real store with xattr, sidecar and memory backends.  What is absent is the inheritance itself -- the copy engine never carries a source's pose info to its destination.
 #### FS-038 · core · done
 **Sending items to the Trash uses the Trash folder of the item's own volume, and colliding names get the "<name> copy" treatment there.**  
 MoveEntryToTrash calls FSGetTrashDir(&trashDir, nodeRef.device) — which find_directory()s per-volume, creates the directory with mode 0755 if missing and marks it invisible by writing a PoseInfo with fInvisible = true — then FSMakeOriginalName(name, &trashDir, " copy") when trashDir.Contains(name), reporting the new name to the undo record.  
@@ -2896,50 +2926,50 @@ BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items
 **TIKU:** On a shell/console front end this is a line of progress output; the per-job identity and the cancel channel still have to exist.  
 **MISSING:** Progress is a single status line carrying the "n of N" counter (plus skipped/failed suffixes) while the operation is stepped without blocking the window; the current file name is tracked in prog.current but never shown, and there is no per-operation caption, no "To: <dir>", no progress bar and no way to cancel from the window (the engine's cancel check exists and is tested, but nothing in the shell calls it).  
 *src/tiku_trk_app.c:1509-1546; src/tiku_trk_fs.c:435*  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-070 · polish · open
 **Creating links only shows a progress window when more than ten items are involved.**  
 InitCopy's kCreateLink case: if (numItems > 10) it calls Init(kCreateLinkState) and Init(numItems, numItems, destRef) — otherwise no status item is ever created and the operation runs invisibly.  
 `FSUtils.cpp` → `InitCopy`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-071 · polish · open
 **The status line alternates between transfer speed and estimated finish time, showing speed for 8 seconds then the estimate for 4 seconds.**  
 StatusBackgroundView::Pulse (pulse rate 1 s) toggles the file-static sShowSpeed using kShowSpeedInterval = 8 s and kShowEstimatedFinishInterval = 4 s; the toggle state is shared by all concurrent jobs and reset when the first status item is created. Speed is a rolling mean over kBytesPerSecondSlots samples taken every kSpeedReferenceInterval = 2 s. Long estimates degrade to "Finish: after several years", estimates beyond a day include the date, and both speed and time strings have short forms used when the full one does not fit; the tooltip carries both.  
 `StatusWindow.cpp` → `BStatusView::_TimeStatusString`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-072 · important · open
 **Each concurrent file operation gets its own row in one shared status window; the window appears when the first job starts and hides when the last one finishes.**  
 BStatusWindow::CreateStatusItem stacks a new BStatusView below the last one and grows the window; RemoveStatusItem removes the row, shifts the ones below up, shrinks the window and Hide()s it when the count reaches zero. Rows are matched to jobs by thread_id.  
 `StatusWindow.cpp` → `BStatusWindow::CreateStatusItem`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-073 · polish · open
 **If the Desktop was the active window when an operation started, focus is handed back to it when the status window closes.**  
 CreateStatusItem scans be_app's windows for an active BDeskWindow and records fRetainDesktopFocus; a second job ANDs into the same flag, and WindowActivated(false) clears it. RemoveStatusItem re-Activate()s the desk window when the last row goes away.  
 `StatusWindow.cpp` → `BStatusWindow::RemoveStatusItem`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-074 · core · open
 **Each progress row has a pause and a stop button; pause freezes the operation and the row reads "Paused: click to resume or stop", stop cancels it.**  
 kPauseButton toggles fIsPaused, zeroes the speed samples and, on resume, resets the estimate reference and resume_thread(Thread()). kStopButton sets fWasCanceled and also resumes a paused thread so the copy loop can notice the cancel and unwind. BStatusWindow::CheckCanceledOrPaused returns wasCanceled immediately, and otherwise suspend_thread()s the calling worker.  
 `StatusWindow.cpp` → `BStatusView::MessageReceived`  
 **TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-075 · polish · open
 **Progress text updates are throttled to roughly ten per second, but the name of the file being processed is never lost — it is stashed and shown at the next real update.**  
 BStatusView::UpdateStatus only redraws when !optional or (now - fLastUpdateTime) > kMaxUpdateInterval (100000 us); otherwise a supplied curItem is copied into fPendingStatusString (127 chars) and used on the next update. Bytes are always accumulated into fItemSize/fSizeProcessed regardless of throttling. LowLevelCopy splits chunks larger than 32 KB into two status updates, one after the read and one after the write, for smoother movement.  
 `StatusWindow.cpp` → `BStatusView::UpdateStatus`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-076 · important · open
 **Quitting Tracker cancels every running copy/move/Empty Trash job rather than killing it mid-write.**  
 BStatusWindow::AttemptToQuit returns true only when no status items exist; otherwise it calls SetWasCanceled() on every row and returns false so the quit is retried after the jobs unwind.  
 `StatusWindow.cpp` → `BStatusWindow::AttemptToQuit`  
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel; the shell has no window to put them in.  
+**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
 #### FS-077 · important · open
 **Dropping files from another application onto a folder copies them there, laid out in rows of four starting at the drop point.**  
