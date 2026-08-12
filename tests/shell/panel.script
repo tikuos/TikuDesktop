@@ -1,0 +1,23 @@
+# shell: desktop
+# AW-050/AW-053/AW-055: Copy to opens a picker on the folder the window is
+# showing; a folder row is ENTERED rather than chosen, and the button with
+# nothing picked answers with the folder being shown.
+note the picker opens on the folder the window is showing
+click 200 97 3
+wait 3
+menu-pick Copy to
+wait 5
+expect-title Tracker: Open
+note a double-click on a folder goes INTO it: the picker is showing sub,
+note which is empty, rather than still showing the three rows behind it
+click 400 168
+click 400 168
+wait 5
+expect-rows 0
+note and the button, with nothing picked, answers with the folder shown
+click 675 413
+wait 30
+expect-file /tmp/trk_script/sub/a.txt
+note a COPY, so the original is still where it was
+expect-file /tmp/trk_script/a.txt
+quit

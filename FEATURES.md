@@ -1192,11 +1192,18 @@ Tail of the function: if (fSelectionList->IsEmpty()) { pivot=NULL; realPivot=NUL
 **MISSING:** The invariant holds on the plain, Cmd and Shift branches (empty -> pivot -1 at :610/:721, non-empty -> pivot set at :718/:730/:743), but the Shift+Cmd branch returns without re-checking, so deselecting the whole range leaves a stale pivot on an empty selection, and select_none never clears real_pivot.  
 *src/tiku_trk_poseview.c:705-713 vs :605-613*
 
-#### PVS-009 · important · open
+#### PVS-009 · important · done
 **Multiple selection can be disabled per view (single-select file panels): Command-toggle, shift-range and additive rubber-banding all degrade to single selection.**  
 fMultipleSelection gates extendSelection in MouseDown/MouseDragged and the shift branch in AddRemoveSelectionRange; set via BPoseView::SetMultipleSelection (called from FilePanelPriv.cpp).  
 `PoseView.cpp` → `BPoseView::MouseDown`
-**SUBSYSTEM:** File panels. The per-view multiple-selection gate does not exist in the engine: tiku_trk_poseview_t has no such field and every branch of tiku_trk_poseview_click (src/tiku_trk_poseview.c:915-986) plus the band paths is unconditionally multi-select — grep multiple_selection/multi_selection/fMultiple over src/ returns nothing — and the only original consumer, the file-panel layer, is unbuilt (grep file_panel/FilePanel over src/ returns nothing).  
+**PORT:** The gate is on the view, not at the shells, and every way of
+extending degrades: the modifier clicks become plain clicks, Select All
+selects the one thing it can, a swept band stops at the first pose it
+touches, and turning the gate off cuts an existing selection down to one
+rather than leaving a choice the view will not honour.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_set_multiple and the four gated
+sites (click, key_nav, select_rect, select_all); tests/test_panel.c*  
+*Shell: desktop*  
 
 #### PVS-010 · core · partial
 **Double-clicking a pose opens the selection.**  
@@ -1556,11 +1563,14 @@ if (pose->IsSelected()) { RemovePoseFromSelection(fSelectionList->LastItem()); f
 `PoseView.cpp` → `BPoseView::KeyDown (arrow case, B_SHIFT_KEY branch)`  
 **PORT:** The walk-back branch now moves its mark: on a shift-arrow into an already-selected pose it clears the pose named by last_added and then sets `v->last_added = t->index` (the target the walk is standing on), so successive steps drop different poses. Probe: click row 0 then three Shift+Down gives 4 selected, three Shift+Up gives 3, 2, 1 — it keeps shrinking. The index-space mix-up is also gone: last_added is stored as a POSE index everywhere (click(), select_all(), context_click(), the insert/remove fixups at :2469/:2505) and is read back through display_of(), so it survives filtering — probed with a filter on (7 of 12 rows shown): grow 3 -> back 2 -> back 1. Residual nit (in the citation, not the row's bold rule): Haiku's shrink branch also does `fSelectionPivotPose = pose`, while the port only seeds the pivot when it is unset (`if (v->pivot < 0 ...)`), so the anchor does not follow the walk.
 
-#### PVK-006 · important · open
+#### PVK-006 · important · done
 **Shift+arrow does nothing extra in single-selection views (file panels opened without multiple selection) - it behaves as a plain arrow.**  
 Guarded by `fMultipleSelection &&` before the shift test; fMultipleSelection is set via SetMultipleSelection().  
 `PoseView.cpp` → `BPoseView::KeyDown (arrow case); BPoseView::SetMultipleSelection (PoseView.h)`
-**SUBSYSTEM:** file panels — the premise is a view opened WITHOUT multiple selection, and no such view exists in either shell: both binaries only open ordinary folder views, no single-selection flag exists anywhere (grep 'multiple|single_sel' over src/ hits only an unrelated comment at src/tiku_trk_app.c:380), and key_nav's Shift branch is unconditional (src/tiku_trk_poseview.c:1269-1292)  
+**PORT:** Shift+arrow in a single-selection view is a plain arrow -- the
+same gate the clicks read, tested by walking a picker's list.
+*src/tiku_trk_poseview.c (the shift arm of key_nav); tests/test_panel.c*  
+*Shell: desktop*  
 
 #### PVK-007 · important · open
 **In icon/mini-icon modes the arrow keys navigate geometrically: the chosen pose is the nearest one in the arrow's direction whose rectangle overlaps the current pose's horizontal band (for Left/Right) or vertical band (for Up/Down).**  
@@ -1669,11 +1679,17 @@ sMatchString is seeded from fSelectionList->FirstItem()'s name (or emptied when 
 *src/tiku_trk_app.c:908-912 (case XK_Tab -> tiku_trk_poseview_set_filtering(!is_filtering)); no XK_Tab pose handling in src/tiku_trk_desktop.c (2040 is the Select dialog)*
 **SUBSYSTEM:** preferences/settings — the row's gate is the Type-ahead filtering SETTING and the port has no settings layer: TIKU_TRK_CMD_PREFERENCES is a menu label with no menu_invoke case (added at src/tiku_trk_cwmenu.c:180, absent from the desktop.c:1044-1366 command switch), and Tab is itself the filter's only on/off control (src/tiku_trk_app.c:1063-1067), so swallowing it without a settings-driven alternative would strand the mode  
 
-#### PVK-022 · polish · open
+#### PVK-022 · polish · partial
 **In a file panel, and in the Open With window, Tab moves keyboard focus between controls instead of walking poses.**  
 File panel: `if (IsFilePanel()) _inherited::KeyDown(bytes, count);`. Open With: OpenWithPoseView::KeyDown routes B_TAB to BView::KeyDown, bypassing BPoseView entirely.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_TAB); OpenWithPoseView::KeyDown (OpenWithWindow.cpp)`
-**SUBSYSTEM:** file panels / Open With window — neither window type exists: TIKU_TRK_CMD_OPEN_WITH is added to menus (src/tiku_trk_cwmenu.c:130,229) but has no handler in the menu_invoke switch (src/tiku_trk_desktop.c:1044-1366 falls to default), no file-panel code exists anywhere in src/, and the only Tab-moves-focus analog is the Select dialog cycling its match rule (src/tiku_trk_desktop.c:2355-2359)  
+**MISSING:** Tab in a panel moves between the controls rather than walking
+the poses, and the shell moves the focus between the list and the name
+field -- but an OPEN panel has only a list to reach, so the visible effect
+waits on a save panel (AW-052); and the Open With window, the row's other
+half, does not exist.
+*src/tiku_trk_panel.c:tiku_trk_panel_key (the Tab arm);
+src/tiku_trk_desktop.c (the panel's key branch); tests/test_panel.c*
 
 #### PVK-023 · important · partial
 **While a pose name is being edited, Return commits the edit, Escape cancels it, and Tab / Shift+Tab commit and move to the next / previous editable text widget of the same pose.**  
@@ -2082,11 +2098,18 @@ EntryMoved's first branch condition is `oldDir == dirNode.node || targetModel->I
 `PoseView.cpp` → `BPoseView::EntryMoved`  
 **TIKU:** Directly relevant: a TikuOS view merging device-namespace nodes with local files has the same 'no single parent' property and should take this branch.  
 
-#### PVN-029 · important · open
+#### PVN-029 · important · done
 **In a file panel, moving the folder being browsed re-points the panel at the new location rather than closing it; deleting it falls back to the boot volume's root.**  
 TFilePanel::FSFilter, installed as a B_NODE_MONITOR common filter: case B_ENTRY_MOVED updates the target model ref and calls SwitchDirectory, returning B_SKIP_MESSAGE; case B_ENTRY_REMOVED switches to the boot root.  
 `FilePanelPriv.cpp` → `TFilePanel::FSFilter`
-**SUBSYSTEM:** File panels. No open/save panel exists in either shell — the only non-folder windows are the Find panel and the Select window (src/tiku_trk_desktop.c:874-891, 115-133); tiku_trk_poseview_allow_editing names file panels only as a hypothetical caller (src/tiku_trk_poseview.h:832-838); grep for a TFilePanel/FSFilter equivalent returns nothing.  
+**PORT:** A panel whose folder is renamed follows it and one whose folder is
+deleted falls back to home, both through the view's own notice handler -- the
+distinction the row is about (a window closes, a panel does not) is enforced
+at the two call sites rather than inside the handler.
+*src/tiku_trk_panel.c:tiku_trk_panel_dir_moved/_dir_gone;
+src/tiku_trk_desktop.c (the panel's poll versus a folder window's);
+tests/shell/panelgone.script*  
+*Shell: desktop*  
 
 #### PVN-030 · core · done
 **Stat changes and attribute changes are handled by one routine, so a size change and an attribute edit update a row identically.**  
@@ -2733,12 +2756,17 @@ AddNextItem applies HideDotFiles, model.IsTrash(), the query-results-in-trash ru
 **TIKU:** "Volumes" and "the union of all trashes" have direct analogues only if TikuOS has multiple mounts; device nodes may need an explicit visible/hidden bit like pose info's fInvisible.  
 **PORT:** The menu hides what the window hides -- dot files when the setting is on, and the Trash always, for being the Trash rather than for its name.  One that showed a dot file the window does not would be a second, disagreeing view of one folder.  
 **MISSING:** Pose-info invisibility and the query-results-in-Trash rule are not applied, and a menu on the root lists directories rather than volumes.  
-#### CW-058 · important · open
+#### CW-058 · important · partial
 **"Recent folders" inside the Move to/Copy to pickers, and the file panel's Favorites menu, list recently used items with the counts the user configured; an empty list shows a disabled "<No recent items>" placeholder.**  
 RecentsMenu reads its cap from TrackerSettings().RecentCounts(apps, docs, folders) selected by fWhich (0=documents, 1=apps, 2=folders) and pulls from BRoster::GetRecent*; DoneBuildingItemList adds the disabled placeholder when nothing was added. FavoritesMenu builds three titled sections in order - Favorites (links in the user's Go directory), Recent documents (suppressed in save panels), Recent folders (skipping refs already listed under Favorites) - and re-filters everything through the panel's BRefFilter.  
 `FavoritesMenu.cpp` → `RecentsMenu::AddRecents / RecentsMenu::DoneBuildingItemList / FavoritesMenu::AddNextItem`  
 **VERIFIER CORRECTION:** RecentItems.cpp:154 returns fCount < fMaxCount - 1 && fSanityCount < fMaxCount + 20, so at most maxItems-1 items are ever added (one fewer than the configured recent count). The +20 sanity cap is correct.
-**SUBSYSTEM:** Recent-items lists + file panels. grep -rni 'recent|favorite' src/ matches only two unrelated comments (src/tiku_trk_query.h:222, src/tiku_trk_fs.c:376); no recents store, no configured counts, no Favorites menu, and no file panels exist in this port.  
+**MISSING:** The recent lists exist with the original's own arithmetic -- a
+configured count of N yields N-1 items, which is what its loop actually
+produces -- and are read back most-recent-first.  What is missing is every
+place they would be SHOWN: there is no Recent folders submenu in a picker and
+no Favorites menu, so nothing displays a list yet.
+*src/tiku_trk_panel.c:tiku_trk_recent_list (the N-1 cap); tests/test_panel.c*
 
 #### CW-059 · polish · open
 **Recent-item menus show folders as navigable submenus when asked, resolve symlinks to their targets, and truncate long names the same way folder menus do.**  
@@ -5566,98 +5594,195 @@ BFilePanel constructs a TFilePanel (a BContainerWindow subclass) and raises that
 **TIKU:** In TikuOS the picker is a shell mode/service in one process; the 'runs in the caller' property disappears, but the degradation rules it forced (no privileged helpers available) should be re-checked.
 **WAIVER CANDIDATE:** there are no other applications to serve and no IPC to serve them over: both binaries are self-contained processes whose only external channel is the device serial session (src/tiku_trk_backend_tiku.c:517-519), so a panel 'running inside the requesting app's team' has neither a requester nor teams -- waiver candidate  
 
-#### AW-050 · important · open
+#### AW-050 · important · done
 **The panel's start directory falls back from the requested directory to the user's home to the boot volume root.**  
 Requested entry must SetTo OK and IsDirectory; otherwise B_USER_DIRECTORY; otherwise BVolumeRoster boot volume root.  
 `FilePanelPriv.cpp` → `TFilePanel::TFilePanel`
-**SUBSYSTEM:** file panels -- no file-panel code exists anywhere in src/; the only panel either shell has is the Find panel (open_panel, src/tiku_trk_desktop.c:876-893), so there is no start directory to fall back from  
+**PORT:** Three rungs, and the last cannot fail: the folder asked for if it
+IS a folder, else the user's home, else the root.  A path that exists but is
+a file falls through like one that does not -- existing is not enough, it has
+to be somewhere the panel can browse.
+*src/tiku_trk_panel.c:tiku_trk_panel_open; tests/test_panel.c;
+tests/shell/panel.script*  
+*Shell: desktop*  
 
-#### AW-051 · core · open
+#### AW-051 · core · differs
 **Open panels reply B_REFS_RECEIVED with the chosen refs; save panels reply B_SAVE_REQUESTED with a "directory" ref plus a "name" string; cancelling a client-owned panel sends B_CANCEL carrying the original what and the panel pointer.**  
 Default fMessage is chosen by mode; QuitRequested with fClientObject hides the window, calls WasHidden(), and sends B_CANCEL with int32 "old_what" and pointer "source". Without a client object the window really quits.  
 `FilePanelPriv.cpp` → `TFilePanel::TFilePanel / TFilePanel::QuitRequested / TFilePanel::HandleSaveButton`
-**WAIVER CANDIDATE:** the reply protocol (B_REFS_RECEIVED / B_SAVE_REQUESTED / B_CANCEL with old_what and a panel pointer, delivered to a client object) presupposes a requesting client application and a message system; neither exists in this single-process port (no IPC beyond the device serial link, src/tiku_trk_backend_tiku.c:8) -- waiver candidate  
+**PORT:** The substance holds in the terms this port has: a panel is opened
+by whoever is asking, its answer is a folder (or a folder and a name) handed
+straight back to that caller, and cancelling closes without one so the two
+are never confused.  The BMessage protocol itself -- B_REFS_RECEIVED /
+B_SAVE_REQUESTED / B_CANCEL carrying "old_what" and a panel pointer to a
+client object -- has no counterpart, since the caller is in the same process
+and there are no messages to reply to.
+*src/tiku_trk_desktop.c:fpanel_commit/fpanel_close (the answer and the
+cancel); src/tiku_trk_panel.h*  
+*Shell: desktop*  
 
-#### AW-052 · core · open
+#### AW-052 · core · partial
 **Saving refuses illegal or conflicting destinations: the system root, "." and "..", an unopenable folder, and a name already used by a folder; an existing file prompts Replace / Cancel with Cancel first.**  
 Each refusal shows a centered alert and re-selects the text; the replace prompt returning 0 (Cancel) aborts, otherwise the app is left to overwrite. Success adds "directory" and "name" and, if fHideWhenDone, quits the window.  
 `FilePanelPriv.cpp` → `TFilePanel::HandleSaveButton / TFilePanel::ShowCenteredAlert`
-**SUBSYSTEM:** file panels -- no save panel, no name field and no destination validation exist (no file-panel code in src/, see AW-050), and the Replace/Cancel prompt would also need the absent alert layer (src/tiku_trk_desktop.c:2738-2741)  
+**MISSING:** Every refusal is implemented and tested -- the system root,
+"." and "..", a folder that will not be written in, a name a folder already
+has, and an existing file as a REPLACE question rather than a refusal -- but
+nothing raises a save panel in either shell yet, so none of them is reachable
+by a user.  The natural first caller is saving a query from the Find panel.
+*src/tiku_trk_panel.c:tiku_trk_panel_save_check/_save_text;
+tests/test_panel.c*
 
-#### AW-053 · important · open
+#### AW-053 · important · done
 **The default button's label and enabled state track the selection against the requested node flavors, and a single selected folder always enables it (relabelled "Open" in a save panel).**  
 AdjustButton runs after every B_KEY_DOWN/B_MOUSE_DOWN via DispatchMessage; in a save panel the button follows the text field being non-empty; with no selection the button is enabled only if B_DIRECTORY_NODE is requested; both the unresolved and link-resolved flavor are tested per selected item.  
 `FilePanelPriv.cpp` → `TFilePanel::AdjustButton / TFilePanel::DispatchMessage / GetLinkFlavor`
-**SUBSYSTEM:** file panels — no open/save picker exists in either binary; the only 'panel' in src is the Find panel (src/tiku_trk_desktop.c:876 open_panel). The one prepared pose-view hook for panels, tiku_trk_poseview_allow_editing (src/tiku_trk_poseview.h:838, doc says 'Open With, file panels'), has no caller outside the poseview module.  
+**PORT:** The label and the enabling come from one place, so what the button
+says and what it will do cannot disagree.  A lone folder always enables it
+and relabels it Open, whatever the panel is for; a save panel otherwise
+follows the name field rather than the selection; an open panel follows the
+selection against the flavours asked for, and with nothing picked answers
+with the folder being shown when a folder is a legal answer.
+*src/tiku_trk_panel.c:tiku_trk_panel_button_label/_button_enabled;
+src/tiku_trk_desktop.c:fpanel_draw/fpanel_default; tests/test_panel.c;
+tests/shell/panel.script*  
+*Shell: desktop*  
 
-#### AW-054 · polish · open
+#### AW-054 · polish · partial
 **In a save panel, selecting a single non-directory file copies its name into the save text field without stealing focus.**  
 Only when the pose view has focus and exactly one pose is selected; a selected directory instead enables the button and relabels it Open.  
 `FilePanelPriv.cpp` → `TFilePanel::AdjustButton`
-**SUBSYSTEM:** file panels — no save panel or save text field exists anywhere (grep for file_panel/save_panel/picker over src hits only the Find panel, src/tiku_trk_desktop.c:876).  
+**MISSING:** The rule is implemented and tested -- a lone non-directory
+copies its name into the save field and the focus is deliberately not taken,
+a folder does not -- but no shell raises a save panel for it to happen in
+(the same absence as AW-052).
+*src/tiku_trk_panel.c:tiku_trk_panel_pick_name; tests/test_panel.c*
 
-#### AW-055 · core · open
+#### AW-055 · core · done
 **Double-clicking a folder (or a link to one) in a panel always navigates into it rather than choosing it; if several are selected the first is entered.**  
 B_REFS_RECEIVED handler resolves the link, and if IsDirectory() calls SwitchDirectory. For files, a message carrying "TrackerViewToken" (i.e. from the pose view) is ignored when the default button is disabled. Attempting to save more than one item shows "saving more than one item is not allowed".  
 `FilePanelPriv.cpp` → `TFilePanel::MessageReceived (case B_REFS_RECEIVED)`
-**SUBSYSTEM:** file panels — no panel to double-click in; the only navigate-instead-of-choose logic lives in the folder-window open paths (src/tiku_trk_app.c:880 open_selection), which are not panels.  
+**PORT:** A folder is entered even by a panel that would accept one as its
+answer, which is what keeps the tree walkable past its first level; choosing
+it is what the default button is for.  A file is the answer when its flavour
+was asked for and nothing at all when it was not.
+*src/tiku_trk_panel.c:tiku_trk_panel_activate;
+src/tiku_trk_desktop.c (double-click) ; tests/test_panel.c;
+tests/shell/panel.script*  
+*Shell: desktop*  
 
-#### AW-056 · important · open
+#### AW-056 · important · partial
 **Everything chosen through a panel, plus the folder it was chosen from, is added to the recent documents / recent folders lists.**  
 OpenSelectionCommon adds each ref via BRoster::AddToRecentFolders or AddToRecentDocuments, then always AddToRecentFolders(TargetModel()->EntryRef()).  
 `FilePanelPriv.cpp` → `TFilePanel::OpenSelectionCommon`
-**SUBSYSTEM:** file panels — additionally no recent-documents/recent-folders lists exist anywhere: grep -rn 'recent' src/ returns only unrelated comments (src/tiku_trk_query.h:222, src/tiku_trk_fs.c:376).  
+**MISSING:** The lists exist, are separate per kind, keep most-recent-first
+with no duplicates, and the folder a panel answered with is added on the way
+out -- but only that one: nothing adds a chosen DOCUMENT (no shell opens
+files through a panel yet), and no menu displays any of the lists.
+*src/tiku_trk_panel.c:tiku_trk_recent_add/_recent_list;
+src/tiku_trk_desktop.c:fpanel_commit; tests/test_panel.c*
 
-#### AW-057 · important · open
+#### AW-057 · important · done
 **Panel keyboard rules: Cmd+W or Escape cancels, Cmd+Up goes to the parent, Cmd+Down opens the selected folder, Cmd+D Desktop, Cmd+H home, Cmd+Shift+A select-by-expression, Shift+Delete deletes; Escape first commits an in-progress rename or clears type-ahead filtering.**  
 key_down_filter handles Cmd+Up and Cmd+w itself and, for bare Escape, prefers CommitActivePose(false), then cancelling type-ahead filtering, then cancelling the panel; Return commits an active pose. The shortcut set is registered in Init and re-added after directory switches and AddPosesCompleted because the kit drops them.  
 `FilePanelPriv.cpp` → `key_down_filter / TFilePanel::Init / TFilePanel::SwitchDirectory / BFilePanelPoseView::AddPosesCompleted`
-**SUBSYSTEM:** file panels — the row's chords exist only as folder-window bindings in the shells (e.g. Cmd+Up parent at src/tiku_trk_desktop.c:2527-2533, Cmd+W close at :2523), not as a panel key filter; there is no panel for them to apply to.  
+**PORT:** Escape and Cmd+W cancel, Cmd+Up is the parent, Cmd+Down opens what
+is picked, Cmd+H home and Cmd+D the Desktop; Return is the default button and
+a bare letter is typing rather than a chord.  Read as a chord table rather
+than at the key handler, so the panel and the folder window cannot drift into
+disagreeing about what Cmd+Up means.
+*src/tiku_trk_panel.c:tiku_trk_panel_key; src/tiku_trk_desktop.c (the panel's
+key branch); tests/test_panel.c*  
+*Shell: desktop*  
 
-#### AW-058 · polish · open
+#### AW-058 · polish · done
 **Cmd+D duplicates the selection instead of jumping to the Desktop when the pose view has focus and the selection can be duplicated.**  
 kSwitchToDesktop handler checks PoseView()->IsFocus() && CanMoveToTrashOrDuplicate() and re-posts the message as kDuplicateSelection.  
 `FilePanelPriv.cpp` → `TFilePanel::MessageReceived (case kSwitchToDesktop)`
-**SUBSYSTEM:** file panels — no panel, no Cmd+D-desktop shortcut anywhere to override (grep for SWITCH_TO_DESKTOP/switch_to_desktop over src returns nothing).  
+**PORT:** Cmd+D is the Desktop unless the LIST has the keyboard and the
+selection could be duplicated, when it means what it means in a folder
+window -- the override is on the same table as the chord it overrides.
+*src/tiku_trk_panel.c:tiku_trk_panel_key (the pose_focus/can_duplicate
+arms); tests/test_panel.c*  
+*Shell: desktop*  
 
-#### AW-059 · important · open
+#### AW-059 · important · partial
 **Dropping one entry on a panel navigates to it; dropping a file navigates to its parent and selects the file, and in a save panel also fills in the file's name.**  
 MessageDropFilter accepts exactly one ref, resolves symlinks to directories, and for non-directories schedules SelectChildInParent (delay 0 if already in that directory, else 100ms; period 200ms, timeout 5s) before switching. Drops of other counts are swallowed.  
 `FilePanelPriv.cpp` → `TFilePanel::MessageDropFilter`
-**SUBSYSTEM:** file panels — no panel drop target; also no drag-and-drop of refs onto windows exists in either shell (no drop-message filter anywhere in src/tiku_trk_desktop.c or src/tiku_trk_app.c).  
+**MISSING:** The rule is implemented and tested -- a dropped folder is
+navigated into, a dropped file lands on its parent with the file pointed at
+and, in a save panel, its name in the field -- but the shells' drag layer
+only knows folder windows and the Deskbar as drop targets, so nothing can be
+dropped on a panel yet.
+*src/tiku_trk_panel.c:tiku_trk_panel_drop; tests/test_panel.c;
+src/tiku_trk_desktop.c:do_drop (targets folder windows and the bar only)*
 
-#### AW-060 · important · open
+#### AW-060 · important · done
 **If the folder a panel is showing gets moved it follows it; if that folder is deleted the panel falls back to the boot volume root.**  
 FSFilter on B_NODE_MONITOR: B_ENTRY_MOVED updates the model's entry ref and re-switches (deliberately not retitling); B_ENTRY_REMOVED switches to the boot root.  
 `FilePanelPriv.cpp` → `TFilePanel::FSFilter`  
 **TIKU:** Same rule needed for a device node that disappears while a picker is open — the picker must not be left pointing at a dead node.
-**SUBSYSTEM:** file panels — no panel to follow a moved folder; the analogous folder-window behaviour is separately tracked (folder_t.gone flag, src/tiku_trk_desktop.c:76), but the row's subject is the panel.  
+**PORT:** The panel's own view answers both through the handler a folder
+window uses: a move retitles and the panel follows it (at a component
+boundary, so "/a/b" does not claim "/a/bc"), and a removal falls back to home
+rather than closing -- a folder WINDOW has nothing left to be, a panel is in
+the middle of a question and closing it would answer that question as cancel.
+*src/tiku_trk_panel.c:tiku_trk_panel_dir_moved/_dir_gone;
+src/tiku_trk_desktop.c (the panel's poll); tests/test_panel.c;
+tests/shell/panelgone.script*  
+*Shell: desktop*  
 
-#### AW-061 · important · open
+#### AW-061 · important · partial
 **With "Desktop is root" enabled, navigating up from the root lands on the Desktop and the panel's Desktop shows the integrated volumes; the setting change is picked up live from Tracker.**  
 SwitchDirToDesktopIfNeeded maps the desktop dir, and (when the Disks icon is off) the root dir, onto the Desktop; OpenParent uses the desktop dir as the parent of the root; SwitchDirectory calls AddVolumePoses when the target is the Desktop. kDesktopFilePanelRootChanged arrives via BHandler::StartWatching on the Tracker messenger.  
 `FilePanelPriv.cpp` → `TFilePanel::SwitchDirToDesktopIfNeeded / TFilePanel::OpenParent / TFilePanel::MessageReceived (B_OBSERVER_NOTICE_CHANGE)`  
 **TIKU:** Cross-process settings observation becomes a watch on a settings node; the 'panel re-reads and re-navigates immediately' behavior should be kept.
-**SUBSYSTEM:** file panels — no panel and no 'Desktop is root' setting anywhere (grep for desktop_is_root/DesktopFilePanelRoot over src returns nothing).  
+**MISSING:** The navigation rule is implemented and tested: with "Desktop is
+root" on, up from the root lands on the Desktop and the Desktop is the top;
+without it the root is.  What is absent is the SETTING -- no preference
+carries it, so nothing turns it on, and the row's re-navigate-on-change
+clause has no change to answer.
+*src/tiku_trk_panel.c:tiku_trk_panel_parent (desktop_is_root);
+tests/test_panel.c; src/tiku_trk_prefs.c (no such setting)*
 
-#### AW-062 · polish · open
+#### AW-062 · polish · partial
 **The panel's Favorites menu can add the current folder as a favorite and open the favorites folder for editing.**  
 kAddCurrentDir creates a symlink named after the current folder inside <settings>/kGoDirectory; kEditFavorites sends that folder to the Tracker as B_REFS_RECEIVED. The Favorites submenu is also re-filtered whenever the panel's ref filter changes.  
 `FilePanelPriv.cpp` → `TFilePanel::MessageReceived (kAddCurrentDir / kEditFavorites) / TFilePanel::SetRefFilter`  
 **VERIFIER CORRECTION:** ContainerWindow.cpp:796-809 calls keymap.GetModifiedCharacters("+", B_SHIFT_KEY, 0, unmodified) — i.e. it collects the UNMODIFIED characters whose SHIFTED form is '+' (on a US layout, '='), and binds Cmd+<that unmodified key>. It also skips any key that already has a shortcut (if (!HasShortcut(key, 0))).
-**SUBSYSTEM:** file panels — additionally no favorites feature at all: grep -rn 'favorite' src/ returns nothing.  
+**MISSING:** The current folder can be added to the favourites and the list
+reads back in the order it was added, once per folder -- but no menu shows
+them and nothing opens the favourites for editing, so they are written and
+never seen.
+*src/tiku_trk_panel.c:tiku_trk_panel_add_favorite/_favorites;
+tests/test_panel.c*
 
-#### AW-063 · important · open
+#### AW-063 · important · done
 **Panel geometry and columns persist across panels and applications in one shared settings template, and a panel with nothing restored is positioned like an alert relative to its parent window or the screen.**  
 RestoreState/SaveState use DefaultStateSourceNode(kDefaultFilePanelTemplate); only kAttrWindowFrame is applied on restore, with SetSizeLimits(360,10000,200,10000). BFilePanel::Show positions via AlertPosition unless DefaultStateRestored(); a panel already open in another workspace is pulled to the current workspace rather than switching workspaces. State is saved once at construction if setup dirtied it, so one panel cannot clobber another's saved state.  
 `FilePanelPriv.cpp` → `TFilePanel::RestoreState / TFilePanel::SaveState / BFilePanel::Show (FilePanel.cpp)`
-**SUBSYSTEM:** file panels — no panel geometry to persist; the state store (src/tiku_trk_state.c) exists but holds no panel template (grep for panel over src/tiku_trk_state.* returns nothing).  
+**PORT:** ONE frame for every panel of every caller, in a shared slot rather
+than per folder, saved when a panel closes -- including when it is cancelled,
+since changing your mind does not undo the size you chose.  Clamped to the
+size limits on the way OUT as well as in, so a template written by a bigger
+screen cannot open a panel with its buttons off the bottom.
+*src/tiku_trk_panel.c:tiku_trk_panel_restore_frame/_save_frame;
+src/tiku_trk_desktop.c:fpanel_open/fpanel_close; tests/test_panel.c*  
+*Shell: desktop*  
 
-#### AW-064 · polish · open
+#### AW-064 · polish · done
 **File panels are list mode only, never save icon positions, have no Window menu, no navigation submenu and no drop context menu, and their title reads "<Application>: Open" / "<Application>: Save".**  
 BFilePanelPoseView::RestoreState forces kListMode, SavePoseLocations is a no-op, DisableSaveLocation() is called in Init; AddWindowMenu / SetupNavigationMenu / AddDropContextMenu are empty; title built from be_app's app_info (localized file name if preferred) plus the button label.  
 `FilePanelPriv.cpp` → `TFilePanel::Init / TFilePanel::AddWindowMenu / TFilePanel::SetupNavigationMenu / BFilePanelPoseView::RestoreState`
-**SUBSYSTEM:** file panels — no panel window, so no forced list mode or '<Application>: Open' title anywhere (grep for ': Open'/': Save' title composition over src returns nothing).  
+**PORT:** List mode is forced, positions are never saved, the panel carries
+no window or navigation menu and no drop menu, and the title is the caller
+and what it asks -- "Tracker: Open" -- rather than the folder being shown, so
+it does not stop saying whose question it is as the user browses.
+*src/tiku_trk_panel.c:tiku_trk_panel_title;
+src/tiku_trk_desktop.c:fpanel_reload (list mode, no state restore);
+tests/test_panel.c; tests/shell/panel.script*  
+*Shell: desktop*  
 
 #### AW-065 · important · open
 **Get Info is one window per node: asking again for an already-open node just activates the existing window, and several info windows cascade rather than stacking.**  

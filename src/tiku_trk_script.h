@@ -65,6 +65,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-status <substring>
  *     expect-file <path>
  *     expect-no-file <path>
+ *     expect-rows-at-least <n>
+ *     remove <path>                       -- change the world behind it
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

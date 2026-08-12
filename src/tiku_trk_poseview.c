@@ -113,6 +113,10 @@ struct tiku_trk_poseview {
     /* The shared icon cache, or NULL.  Kept in step from the notice
      * handler: see tiku_trk_poseview_set_icons. */
     tiku_trk_nodeicon_t *icons;
+    /* Whether several poses may be selected at once.  Stored inverted so a
+     * zeroed view is a normal multi-select one, which every existing
+     * caller expects. */
+    int single_only;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -856,6 +860,11 @@ tiku_trk_poseview_select_all(tiku_trk_poseview_t *v)
         return;
     }
     n = tiku_trk_poseview_count(v);
+    if (v->single_only) {
+        /* Nothing to select ALL of.  The command stays reachable and does
+         * the only thing it can mean here (PVS-009). */
+        n = (n > 0) ? 1 : 0;
+    }
     for (i = 0; i < n; i++) {
         set_selected(tiku_trk_poseview_at(v, i), 1);
     }
@@ -915,12 +924,49 @@ select_range(tiku_trk_poseview_t *v, int from_pose, int to_pose, int on)
 }
 
 void
+tiku_trk_poseview_set_multiple(tiku_trk_poseview_t *v, int on)
+{
+    if (v != NULL) {
+        v->single_only = !on;
+        if (!on) {
+            /* Whatever was already gathered goes down to one: the view is
+             * about to be shown as a picker, and leaving three rows lit
+             * would offer a choice it will not honour. */
+            int i, n = tiku_trk_poseview_count(v), kept = 0;
+
+            for (i = 0; i < n; i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+
+                if (p != NULL && p->selected) {
+                    if (kept) {
+                        p->selected = 0;
+                    } else {
+                        kept = 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+int
+tiku_trk_poseview_multiple(const tiku_trk_poseview_t *v)
+{
+    return (v != NULL) ? !v->single_only : 1;
+}
+
+void
 tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
 {
     tiku_trk_pose_t *p;
 
     if (v == NULL) {
         return;
+    }
+    if (v->single_only) {
+        /* Every extending modifier is dropped rather than handled, so a
+         * modifier click is a plain click (PVS-009). */
+        mods &= ~(TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD);
     }
     if (index < 0) {
         /* PVS-001: clicking empty space clears the whole selection, and with
@@ -1269,9 +1315,10 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
         return 1;
     }
 
-    if (mods & TIKU_TRK_MOD_SHIFT) {
+    if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only) {
         /* PVK-005: grow by one, or walk back when the target is already in
-         * the selection. */
+         * the selection.  In a single-selection view Shift adds nothing --
+         * it is a plain arrow (PVK-006). */
         tiku_trk_pose_t *t = tiku_trk_poseview_at(v, target);
 
         if (t != NULL && t->selected && v->last_added >= 0) {
@@ -2246,6 +2293,12 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         return 0;
     }
     n = tiku_trk_poseview_count(v);
+    if (v->single_only) {
+        /* A band cannot gather in a single-selection view: the additive
+         * modifiers mean nothing, and the sweep stops at the first pose it
+         * touches rather than lighting the row under every one (PVS-009). */
+        mods &= ~(TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD);
+    }
     /* Outside a tracked band the rectangle simply selects: with a modifier it
      * adds to what is there, without one it replaces. */
     if (!v->band && !(mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD))) {
@@ -2276,6 +2329,9 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         } else if (inside) {
             set_selected(p, 1);
             hits++;
+            if (v->single_only) {
+                break;
+            }
             if (v->pivot < 0) {
                 v->pivot = p->index;
             }

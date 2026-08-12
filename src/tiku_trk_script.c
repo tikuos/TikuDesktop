@@ -22,7 +22,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -214,6 +214,16 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-rows") == 0 && n >= 2) {
             st->op = OP_EXPECT_ROWS;
             st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-rows-at-least") == 0 && n >= 2) {
+            st->op = OP_EXPECT_ROWS;
+            st->count = atoi(w[1]);
+            st->x = 1;
+        } else if (strcmp(w[0], "remove") == 0 && n >= 2) {
+            /* The one way a script can change the world behind the shell's
+             * back, which is what liveness means: everything else it does
+             * arrives through the shell's own hands. */
+            st->op = OP_REMOVE;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-file") == 0 && n >= 2) {
             st->op = OP_EXPECT_FILE;
             rest(w, n, 1, st->text, sizeof st->text);
@@ -369,10 +379,17 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_ROWS: {
         char n[32];
 
-        snprintf(n, sizeof n, "%d", cur->count);
-        verdict(s, st != NULL && st->rows == cur->count, "rows:", n);
+        snprintf(n, sizeof n, "%s%d", cur->x ? ">= " : "", cur->count);
+        verdict(s, st != NULL && (cur->x ? st->rows >= cur->count
+                                         : st->rows == cur->count),
+                "rows:", n);
         return 1;
     }
+    case OP_REMOVE:
+        if (remove(cur->text) != 0) {
+            fprintf(stderr, "script: cannot remove '%s'\n", cur->text);
+        }
+        return 1;
     case OP_EXPECT_ALERT:
         /* "exists" asks only that one is up; anything else must appear in
          * its words. */

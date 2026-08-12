@@ -29,6 +29,7 @@
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_nodeicon.h"
+#include "tiku_trk_panel.h"
 #include "tiku_trk_thumb.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
@@ -176,6 +177,14 @@ typedef struct desktop {
      * windows is one entry, and an icon edited on disk is dropped once
      * rather than per window (IV-038). */
     tiku_trk_nodeicon_t  nicons;
+    /* The Open/Save panel.  ONE, because it is asking one question at a
+     * time and a second would be a second answer to the same ask. */
+    tiku_trk_panel_t     fpanel;
+    tiku_trk_win_t      *fpanel_win;
+    tiku_trk_poseview_t *fpanel_view;
+    folder_t            *fpanel_for;   /* whose selection it is moving   */
+    int                  fpanel_cmd;   /* the menu command that opened it */
+    tiku_trk_edit_t      fpanel_name;  /* the save field                 */
     tiku_trk_alert_t     alert;     /* the question, when there is one */
     tiku_trk_progress_win_t prog;   /* the shared status window        */
     tiku_trk_prefs_t     prefs;
@@ -1544,6 +1553,343 @@ folder_selection(desktop_t *app, folder_t *fl,
     return k;
 }
 
+/*---------------------------------------------------------------------------*/
+/* The Open/Save panel (AW-050..AW-064)                                       */
+/*---------------------------------------------------------------------------*/
+
+#define FPANEL_BTN_W   78
+#define FPANEL_BTN_H   22
+#define FPANEL_PAD     10
+#define FPANEL_FIELD 22
+
+/** @brief What a click inside a panel landed on. */
+typedef enum {
+    FPANEL_HIT_NONE = 0,
+    FPANEL_HIT_LIST,
+    FPANEL_HIT_NAME,
+    FPANEL_HIT_DEFAULT,
+    FPANEL_HIT_CANCEL
+} fpanel_hit_t;
+
+/** @brief The panel's parts inside @p c. */
+static void
+fpanel_layout(const desktop_t *app, tiku_desk_rect_t c, tiku_desk_rect_t *list,
+             tiku_desk_rect_t *name, tiku_desk_rect_t *def,
+             tiku_desk_rect_t *cancel)
+{
+    int bottom = c.y + c.h - FPANEL_PAD - FPANEL_BTN_H;
+    int field = (app->fpanel.mode == TIKU_TRK_PANEL_SAVE)
+                    ? FPANEL_FIELD + FPANEL_PAD : 0;
+
+    list->x = c.x + FPANEL_PAD;
+    list->y = c.y + FPANEL_PAD;
+    list->w = c.w - 2 * FPANEL_PAD;
+    list->h = bottom - list->y - FPANEL_PAD - field;
+    if (list->h < 40) {
+        list->h = 40;
+    }
+    name->x = list->x;
+    name->y = list->y + list->h + FPANEL_PAD;
+    name->w = list->w;
+    name->h = FPANEL_FIELD;
+    def->w = FPANEL_BTN_W;
+    def->h = FPANEL_BTN_H;
+    def->x = c.x + c.w - FPANEL_PAD - FPANEL_BTN_W;
+    def->y = bottom;
+    *cancel = *def;
+    cancel->x = def->x - FPANEL_PAD - FPANEL_BTN_W;
+}
+
+/** @brief The models the panel's own view has selected. */
+static int
+fpanel_selection(const desktop_t *app, tiku_trk_model_t *out, int max)
+{
+    int i, n, k = 0;
+
+    if (app->fpanel_view == NULL) {
+        return 0;
+    }
+    n = tiku_trk_poseview_count(app->fpanel_view);
+    for (i = 0; i < n && k < max; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(app->fpanel_view, i);
+
+        if (p != NULL && p->selected) {
+            out[k++] = p->model;
+        }
+    }
+    return k;
+}
+
+static void
+fpanel_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+           void *ctx)
+{
+    desktop_t *app = ctx;
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    tiku_desk_rect_t list, name, def, cancel;
+    tiku_trk_model_t sel[8];
+    int nsel = fpanel_selection(app, sel, 8);
+    int rows, scroll, total, i;
+
+    (void)w;
+    tiku_desk_ui_panel(s, c);
+    fpanel_layout(app, c, &list, &name, &def, &cancel);
+    tiku_desk_ui_sunken(s, list, TIKU_DESK_C_DOC);
+    rows = (list.h - 4) / app->row_h;
+    tiku_trk_poseview_set_visible_rows(app->fpanel_view, rows);
+    scroll = tiku_trk_poseview_scroll(app->fpanel_view);
+    total = tiku_trk_poseview_count(app->fpanel_view);
+    tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
+    for (i = 0; i < rows && scroll + i < total; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(app->fpanel_view,
+                                                  scroll + i);
+        tiku_desk_rect_t row;
+        int mini = app->row_h - 4;
+
+        if (p == NULL) {
+            continue;
+        }
+        row.x = list.x + 2;
+        row.y = list.y + 2 + i * app->row_h;
+        row.w = list.w - 4;
+        row.h = app->row_h;
+        if (mini > MINI_ICON) {
+            mini = MINI_ICON;
+        }
+        if (p->selected) {
+            tiku_desk_fill(s, row, TIKU_DESK_C_SELECT);
+        }
+        (void)tiku_trk_icon_paint(s, tiku_trk_model_icon_name(&p->model),
+                                  row.x + 2, row.y + (app->row_h - mini) / 2,
+                                  mini);
+        tiku_desk_text(s, f, row.x + 2 + mini + 4,
+                       row.y + (app->row_h + f->height) / 2 - 2,
+                       p->model.name,
+                       p->selected ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+    }
+    tiku_desk_clip_reset(s);
+    if (app->fpanel.mode == TIKU_TRK_PANEL_SAVE) {
+        tiku_desk_ui_textfield_sel(s, name, app->fpanel_name.text,
+            (app->fpanel.focus == TIKU_TRK_PANEL_FOCUS_NAME)
+                ? app->fpanel_name.caret : -1,
+            app->fpanel_name.sel_a, app->fpanel_name.sel_b,
+            (app->fpanel.focus == TIKU_TRK_PANEL_FOCUS_NAME)
+                ? TIKU_DESK_S_FOCUS : 0u);
+    }
+    tiku_desk_ui_button(s, cancel, "Cancel", 0u);
+    /* The label and the enabling both come from the panel, so what the
+     * button SAYS and what it will do cannot disagree (AW-053). */
+    tiku_desk_ui_button(s, def,
+                        tiku_trk_panel_button_label(&app->fpanel, sel, nsel),
+                        tiku_trk_panel_button_enabled(&app->fpanel, sel,
+                                                      nsel)
+                            ? TIKU_DESK_S_DEFAULT : TIKU_DESK_S_DISABLED);
+}
+
+/** @brief Point the panel's view at whatever folder the panel now shows. */
+static void
+fpanel_reload(desktop_t *app, const char *select)
+{
+    if (app->fpanel_view != NULL) {
+        tiku_trk_poseview_free(app->fpanel_view);
+    }
+    app->fpanel_view = tiku_trk_poseview_new(app->backend, app->fpanel.dir);
+    if (app->fpanel_view == NULL) {
+        return;
+    }
+    tiku_trk_poseview_set_icons(app->fpanel_view, &app->nicons);
+    /* List mode, and positions are never saved: a panel is a way through a
+     * tree, not a place the user arranges (AW-064). */
+    tiku_trk_poseview_set_mode(app->fpanel_view, TIKU_TRK_MODE_LIST);
+    tiku_trk_poseview_set_multiple(app->fpanel_view, app->fpanel.multiple);
+    (void)tiku_trk_poseview_reload(app->fpanel_view);
+    if (select != NULL && select[0] != '\0') {
+        int i, n = tiku_trk_poseview_count(app->fpanel_view);
+
+        for (i = 0; i < n; i++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(app->fpanel_view, i);
+
+            if (p != NULL && strcmp(p->model.name, select) == 0) {
+                tiku_trk_poseview_click(app->fpanel_view, i, 0u);
+                break;
+            }
+        }
+    }
+    if (app->fpanel_win != NULL) {
+        tiku_trk_panel_title(&app->fpanel, app->fpanel_win->title,
+                             sizeof app->fpanel_win->title);
+    }
+    app->dirty = 1;
+}
+
+/** @brief Open a panel for @p command over @p fl's selection. */
+static void
+fpanel_open(desktop_t *app, folder_t *fl, int command)
+{
+    tiku_desk_rect_t fr;
+    int x = 0, y = 0, w = 460, h = 320;
+
+    if (fl == NULL) {
+        return;
+    }
+    app->fpanel_for = fl;
+    app->fpanel_cmd = command;
+    /* Asking WHERE, so folders are the answer and only one of them; the
+     * files being moved are already chosen in the window behind it. */
+    tiku_trk_panel_open(&app->fpanel, TIKU_TRK_PANEL_OPEN,
+                        TIKU_TRK_PANEL_DIR, fl->path, app->backend,
+                        "Tracker");
+    app->fpanel.multiple = 0;
+    if (!tiku_trk_panel_restore_frame(app->store, &x, &y, &w, &h)) {
+        /* Nothing restored: centred, which is where a question belongs. */
+        x = (DESK_W - w) / 2;
+        y = (DESK_H - h) / 3;
+    }
+    fr.x = x;
+    fr.y = y;
+    fr.w = w;
+    fr.h = h;
+    tiku_trk_edit_start(&app->fpanel_name, "");
+    if (app->fpanel_win != NULL && app->fpanel_win->open) {
+        app->fpanel_win->frame = fr;
+        tiku_trk_desk_activate(app->desk, app->fpanel_win);
+    } else {
+        char title[TIKU_TRK_WIN_TITLE_MAX];
+
+        tiku_trk_panel_title(&app->fpanel, title, sizeof title);
+        app->fpanel_win = tiku_trk_desk_open(app->desk, title, fr, fpanel_draw,
+                                            app, &app->panel);
+    }
+    fpanel_reload(app, NULL);
+}
+
+/** @brief Close the panel, remembering the frame every panel will use. */
+static void
+fpanel_close(desktop_t *app)
+{
+    if (app->fpanel_win != NULL) {
+        tiku_trk_panel_save_frame(app->store, app->fpanel_win->frame.x,
+                                  app->fpanel_win->frame.y,
+                                  app->fpanel_win->frame.w,
+                                  app->fpanel_win->frame.h);
+        tiku_trk_desk_close(app->desk, app->fpanel_win);
+        app->fpanel_win = NULL;
+    }
+    if (app->fpanel_view != NULL) {
+        tiku_trk_poseview_free(app->fpanel_view);
+        app->fpanel_view = NULL;
+    }
+    app->fpanel_for = NULL;
+    app->dirty = 1;
+}
+
+/** @brief Carry out what the panel was opened to ask. */
+static void
+fpanel_commit(desktop_t *app)
+{
+    char paths[16][TIKU_TRK_PATH_MAX];
+    const char *sel[16];
+    tiku_trk_model_t chosen[8];
+    char dst[TIKU_TRK_PATH_MAX];
+    int n, nsel;
+
+    if (app->fpanel_for == NULL) {
+        return;
+    }
+    /* A picked folder is the destination; nothing picked means the folder
+     * being SHOWN, which is how "put it here" works without a row for it. */
+    nsel = fpanel_selection(app, chosen, 8);
+    if (nsel == 1 && tiku_trk_model_is_container(&chosen[0])) {
+        snprintf(dst, sizeof dst, "%s", chosen[0].path);
+    } else {
+        snprintf(dst, sizeof dst, "%s", app->fpanel.dir);
+    }
+    n = folder_selection(app, app->fpanel_for, paths, sel, 16);
+    if (n > 0) {
+        if (app->fpanel_cmd == TIKU_TRK_CMD_COPY_TO) {
+            (void)tiku_trk_fs_copy(app->fs, sel, n, dst,
+                                   TIKU_TRK_CONFLICT_ASK);
+            snprintf(app->status, sizeof app->status, "copying %d item%s",
+                     n, (n == 1) ? "" : "s");
+        } else {
+            (void)tiku_trk_fs_move(app->fs, sel, n, dst,
+                                   TIKU_TRK_CONFLICT_ASK);
+            snprintf(app->status, sizeof app->status, "moving %d item%s",
+                     n, (n == 1) ? "" : "s");
+        }
+        /* Chosen THROUGH a panel, so it joins the recent folders -- which
+         * is what makes the list a record of where the user works rather
+         * than of where they browsed (AW-056). */
+        tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS, dst);
+    }
+    fpanel_close(app);
+}
+
+/** @brief Go somewhere else, keeping the panel open. */
+static void
+fpanel_go(desktop_t *app, const char *dir)
+{
+    if (dir == NULL || dir[0] == '\0') {
+        return;
+    }
+    snprintf(app->fpanel.dir, sizeof app->fpanel.dir, "%s", dir);
+    fpanel_reload(app, NULL);
+}
+
+/** @brief What a point inside the panel is over. */
+static fpanel_hit_t
+fpanel_hit(desktop_t *app, int x, int y, int *row)
+{
+    tiku_desk_rect_t c, list, name, def, cancel;
+
+    if (row != NULL) {
+        *row = -1;
+    }
+    if (app->fpanel_win == NULL || !app->fpanel_win->open) {
+        return FPANEL_HIT_NONE;
+    }
+    c = tiku_trk_win_content(app->fpanel_win);
+    fpanel_layout(app, c, &list, &name, &def, &cancel);
+#define IN(r) (x >= (r).x && x < (r).x + (r).w && \
+               y >= (r).y && y < (r).y + (r).h)
+    if (IN(def))    { return FPANEL_HIT_DEFAULT; }
+    if (IN(cancel)) { return FPANEL_HIT_CANCEL; }
+    if (app->fpanel.mode == TIKU_TRK_PANEL_SAVE && IN(name)) {
+        return FPANEL_HIT_NAME;
+    }
+    if (IN(list)) {
+        int i = (y - list.y - 2) / app->row_h;
+
+        if (row != NULL) {
+            i += tiku_trk_poseview_scroll(app->fpanel_view);
+            *row = (i >= 0 && i < tiku_trk_poseview_count(app->fpanel_view))
+                       ? i : -1;
+        }
+        return FPANEL_HIT_LIST;
+    }
+#undef IN
+    return FPANEL_HIT_NONE;
+}
+
+/** @brief The default button, however it was pressed. */
+static void
+fpanel_default(desktop_t *app)
+{
+    tiku_trk_model_t sel[8];
+    int n = fpanel_selection(app, sel, 8);
+
+    if (!tiku_trk_panel_button_enabled(&app->fpanel, sel, n)) {
+        return;
+    }
+    /* A lone folder is ENTERED rather than chosen, which is what the
+     * button relabelled itself to say (AW-053, AW-055). */
+    if (n == 1 && tiku_trk_model_is_container(&sel[0])) {
+        fpanel_go(app, sel[0].path);
+        return;
+    }
+    fpanel_commit(app);
+}
+
 /** @brief Carry out a menu choice on the focused folder. */
 static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
@@ -1572,6 +1918,13 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         }
         break;
     }
+    case TIKU_TRK_CMD_MOVE_TO:
+    case TIKU_TRK_CMD_COPY_TO:
+        /* Both ask the same question -- WHERE -- so both open the same
+         * picker and it is the command that decides what happens with the
+         * answer. */
+        fpanel_open(app, fl, command);
+        break;
     case TIKU_TRK_CMD_SELECT_ALL:
         tiku_trk_poseview_select_all(fl->view);
         break;
@@ -2973,6 +3326,12 @@ main(int argc, char **argv)
                     if (sfl != NULL) {
                         sst.scroll = tiku_trk_poseview_scroll(sfl->view);
                         sst.rows = tiku_trk_poseview_count(sfl->view);
+                    } else if (fw != NULL && fw == app.fpanel_win &&
+                               app.fpanel_view != NULL) {
+                        /* The panel has a view too, and it is the one the
+                         * script is looking at while the panel is up. */
+                        sst.scroll = tiku_trk_poseview_scroll(app.fpanel_view);
+                        sst.rows = tiku_trk_poseview_count(app.fpanel_view);
                     }
                 }
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
@@ -3068,6 +3427,56 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case ButtonPress: {
+                if (app.fpanel_win != NULL && app.fpanel_win->open &&
+                    !app.alert.open &&
+                    tiku_trk_desk_focused(app.desk) == app.fpanel_win) {
+                    int prow = -1;
+                    fpanel_hit_t fh = fpanel_hit(&app, ev.xbutton.x,
+                                                 ev.xbutton.y, &prow);
+
+                    if (fh == FPANEL_HIT_CANCEL) {
+                        /* Cancelling answers the question too, and the
+                         * frame is still remembered: the size the user
+                         * chose is not undone by changing their mind. */
+                        fpanel_close(&app);
+                        break;
+                    }
+                    if (fh == FPANEL_HIT_DEFAULT) {
+                        fpanel_default(&app);
+                        break;
+                    }
+                    if (fh == FPANEL_HIT_NAME) {
+                        app.fpanel.focus = TIKU_TRK_PANEL_FOCUS_NAME;
+                        app.dirty = 1;
+                        break;
+                    }
+                    if (fh == FPANEL_HIT_LIST) {
+                        app.fpanel.focus = TIKU_TRK_PANEL_FOCUS_LIST;
+                        tiku_trk_poseview_click(app.fpanel_view, prow,
+                                                0u);
+                        if (prow >= 0 &&
+                            tiku_trk_now() - app.press_at < 500000 &&
+                            app.press_row == prow) {
+                            tiku_trk_pose_t *pp =
+                                tiku_trk_poseview_at(app.fpanel_view, prow);
+
+                            /* A double-click on a folder goes in; on
+                             * anything else it is the answer (AW-055). */
+                            if (pp != NULL &&
+                                tiku_trk_panel_activate(&app.fpanel,
+                                    &pp->model) ==
+                                    TIKU_TRK_PANEL_ACT_ENTER) {
+                                fpanel_go(&app, pp->model.path);
+                            } else if (pp != NULL) {
+                                fpanel_commit(&app);
+                            }
+                        }
+                        app.press_at = tiku_trk_now();
+                        app.press_row = prow;
+                        app.dirty = 1;
+                        break;
+                    }
+                }
                 if (app.prefs_win != NULL && app.prefs_win->open &&
                     !app.alert.open) {
                     tiku_desk_rect_t pc =
@@ -3767,6 +4176,74 @@ main(int argc, char **argv)
                 /* While editing, the keyboard belongs to the field: the
                  * shortcuts underneath must not fire, or typing "w" in a
                  * value would close the window. */
+                if (app.fpanel_win != NULL && app.fpanel_win->open &&
+                    tiku_trk_desk_focused(app.desk) == app.fpanel_win) {
+                    tiku_trk_model_t psel[8];
+                    int pn = fpanel_selection(&app, psel, 8);
+                    int pkey = 0;
+                    tiku_trk_panel_key_t what;
+
+                    if (ks == XK_Escape)          { pkey = 27; }
+                    else if (ks == XK_Return)     { pkey = '\n'; }
+                    else if (ks == XK_Tab)        { pkey = '\t'; }
+                    else if (ks == XK_Up)         { pkey = TIKU_TRK_KEY_UP; }
+                    else if (ks == XK_Down)       { pkey = TIKU_TRK_KEY_DOWN; }
+                    else if (ks >= 'a' && ks <= 'z') { pkey = (int)ks; }
+                    what = tiku_trk_panel_key(&app.fpanel, pkey, mods,
+                               app.fpanel.focus == TIKU_TRK_PANEL_FOCUS_LIST,
+                               pn > 0);
+                    switch (what) {
+                    case TIKU_TRK_PANEL_KEY_CANCEL:
+                        fpanel_close(&app);
+                        break;
+                    case TIKU_TRK_PANEL_KEY_DEFAULT:
+                        fpanel_default(&app);
+                        break;
+                    case TIKU_TRK_PANEL_KEY_PARENT: {
+                        char up[TIKU_TRK_PATH_MAX];
+
+                        if (tiku_trk_panel_parent(&app.fpanel, up,
+                                                  sizeof up)) {
+                            fpanel_go(&app, up);
+                        }
+                        break;
+                    }
+                    case TIKU_TRK_PANEL_KEY_ENTER:
+                        if (pn == 1 &&
+                            tiku_trk_model_is_container(&psel[0])) {
+                            fpanel_go(&app, psel[0].path);
+                        }
+                        break;
+                    case TIKU_TRK_PANEL_KEY_HOME:
+                        fpanel_go(&app, app.fpanel.home);
+                        break;
+                    case TIKU_TRK_PANEL_KEY_DESKTOP:
+                        fpanel_go(&app, app.fpanel.desktop);
+                        break;
+                    case TIKU_TRK_PANEL_KEY_FOCUS:
+                        /* Only where there is a second control to reach:
+                         * an open panel has one list and nothing else, and
+                         * a Tab that moved nowhere would look broken. */
+                        if (app.fpanel.mode == TIKU_TRK_PANEL_SAVE) {
+                            app.fpanel.focus =
+                                (app.fpanel.focus ==
+                                 TIKU_TRK_PANEL_FOCUS_LIST)
+                                    ? TIKU_TRK_PANEL_FOCUS_NAME
+                                    : TIKU_TRK_PANEL_FOCUS_LIST;
+                        }
+                        break;
+                    default:
+                        if (app.fpanel.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
+                            (ks == XK_Up || ks == XK_Down)) {
+                            (void)tiku_trk_poseview_key_nav(app.fpanel_view,
+                                (ks == XK_Up) ? TIKU_TRK_KEY_UP
+                                              : TIKU_TRK_KEY_DOWN, mods);
+                        }
+                        break;
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if (app.panel_win != NULL && app.panel_win->open &&
                     tiku_trk_desk_focused(app.desk) == app.panel_win) {
                     if (ks == XK_Return) {
@@ -4356,6 +4833,30 @@ sel_done:
                         snprintf(fl->path, sizeof fl->path, "%s",
                                  tiku_trk_poseview_path(fl->view));
                     }
+                    changed++;
+                }
+            }
+            if (app.fpanel_win != NULL && app.fpanel_win->open &&
+                app.fpanel_view != NULL) {
+                /* The panel's own view answers the two questions that
+                 * matter to it, through the same handler a folder window
+                 * uses: did the folder move, or did it go (AW-060)? */
+                unsigned pf = tiku_trk_poseview_poll(app.fpanel_view,
+                                  tiku_trk_now(), ch, nch, complete);
+
+                if ((pf & TIKU_TRK_NOTIFY_GONE) != 0u) {
+                    /* A folder WINDOW closes here; a panel falls back,
+                     * because closing it would answer the question the
+                     * user is in the middle of (PVN-029). */
+                    tiku_trk_panel_dir_gone(&app.fpanel, app.backend);
+                    fpanel_reload(&app, NULL);
+                    changed++;
+                } else if ((pf & TIKU_TRK_NOTIFY_RETITLE) != 0u) {
+                    (void)tiku_trk_panel_dir_moved(&app.fpanel,
+                              app.fpanel.dir,
+                              tiku_trk_poseview_path(app.fpanel_view));
+                    changed++;
+                } else if (pf != TIKU_TRK_NOTIFY_NOTHING) {
                     changed++;
                 }
             }

@@ -237,6 +237,18 @@ tiku_trk_pose_t *tiku_trk_poseview_active(tiku_trk_poseview_t *v);
 #define TIKU_TRK_MOD_SHIFT  0x1u
 #define TIKU_TRK_MOD_CMD    0x2u   /* Control on Linux, Command on BeOS     */
 
+/**
+ * @brief Whether more than one pose may be selected at a time (PVS-009).
+ *
+ * On by default.  Turned off for a picker asking for ONE thing, and the gate
+ * belongs here rather than at the shells: every way of extending a selection
+ * -- the modifier clicks, shift+arrow, a swept band, Select All -- has to
+ * degrade to a plain single selection, and a rule enforced at four call
+ * sites is a rule that will hold at three of them.
+ */
+void tiku_trk_poseview_set_multiple(tiku_trk_poseview_t *v, int on);
+int tiku_trk_poseview_multiple(const tiku_trk_poseview_t *v);
+
 /** @brief Apply a click at row @p index (-1 = empty space) with modifiers. */
 void tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index,
                              unsigned mods);

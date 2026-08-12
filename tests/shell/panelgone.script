@@ -1,0 +1,20 @@
+# shell: desktop
+# AW-060/PVN-029: the folder a picker is showing goes away.  A folder WINDOW
+# closes; the picker falls back and stays up, because closing it would answer
+# the question the user is in the middle of.
+note the picker is showing sub
+click 200 97 3
+wait 3
+menu-pick Copy to
+wait 5
+click 400 168
+click 400 168
+wait 5
+expect-rows 0
+note sub is deleted underneath it -- the picker is still there
+remove /tmp/trk_script/sub
+wait 40
+expect-title Tracker: Open
+note and it is showing somewhere real again
+expect-rows-at-least 1
+quit
