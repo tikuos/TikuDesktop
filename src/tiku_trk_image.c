@@ -11,47 +11,41 @@
 #include "tiku_trk_image.h"
 
 #include "tiku_trk_inflate.h"
+#include "tiku_trk_jpeg.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/** @brief Case-blind suffix test. */
-static int
-ends_with(const char *s, const char *suffix)
-{
-    size_t n = strlen(s), m = strlen(suffix);
-    size_t i;
-
-    if (m > n) {
-        return 0;
-    }
-    for (i = 0; i < m; i++) {
-        char a = s[n - m + i], b = suffix[i];
-
-        if (a >= 'A' && a <= 'Z') { a = (char)(a - 'A' + 'a'); }
-        if (a != b) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 int
 tiku_trk_image_is_image(const char *path)
 {
-    static const char *ext[] = {
-        ".png", ".bmp", ".jpg", ".jpeg", ".gif", ".webp", ".tga", ".ppm"
-    };
-    size_t i;
+    unsigned char magic[8];
+    FILE *f;
+    size_t n;
 
     if (path == NULL) {
         return 0;
     }
-    for (i = 0; i < sizeof ext / sizeof ext[0]; i++) {
-        if (ends_with(path, ext[i])) {
-            return 1;
-        }
+    /* By CONTENT, not by name.  A file called .txt that holds a PNG is a
+     * PNG, and one called .jpg that holds nothing is not a picture; the
+     * extension is a hint the file's author may not have meant.  Eight
+     * bytes is one block the filesystem has already fetched. */
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    n = fread(magic, 1u, sizeof magic, f);
+    (void)fclose(f);
+    if (n >= 8 && magic[0] == 137 && memcmp(magic + 1, "PNG", 3) == 0) {
+        return 1;
+    }
+    if (n >= 3 && magic[0] == 0xff && magic[1] == 0xd8 &&
+        magic[2] == 0xff) {
+        return 1;
+    }
+    if (n >= 2 && magic[0] == 'B' && magic[1] == 'M') {
+        return 1;
     }
     return 0;
 }
@@ -193,15 +187,152 @@ unfilter(unsigned char *cur, const unsigned char *prev, long len, int bpp,
     }
 }
 
+/** @brief One sample of @p depth bits at index @p i of a packed row. */
+static unsigned
+sample(const unsigned char *row, int depth, long i)
+{
+    switch (depth) {
+    case 8:  return row[i];
+    case 4:  return (row[i >> 1] >> ((i & 1) ? 0 : 4)) & 0x0fu;
+    case 2:  return (row[i >> 2] >> (6 - 2 * (i & 3))) & 0x03u;
+    case 1:  return (row[i >> 3] >> (7 - (i & 7))) & 0x01u;
+    default: return row[i];
+    }
+}
+
+/** @brief Spread an n-bit sample over the full 0..255 range. */
+static unsigned
+scale_up(unsigned v, int depth)
+{
+    switch (depth) {
+    case 8:  return v;
+    case 4:  return v * 17u;                 /* 0..15  -> 0..255 */
+    case 2:  return v * 85u;                 /* 0..3   -> 0..255 */
+    case 1:  return v ? 255u : 0u;
+    default: return v;
+    }
+}
+
+/** @brief The seven Adam7 passes: x origin, y origin, x step, y step. */
+static const int adam7[7][4] = {
+    { 0, 0, 8, 8 }, { 4, 0, 8, 8 }, { 0, 4, 4, 8 }, { 2, 0, 4, 4 },
+    { 0, 2, 2, 4 }, { 1, 0, 2, 2 }, { 0, 1, 1, 2 }
+};
+
+/** @brief Everything one pass of a PNG needs in order to place its pixels. */
+typedef struct {
+    int             colour, depth, bpp, chan;
+    const uint32_t *pal;
+    int             npal;
+} png_fmt_t;
+
+/**
+ * @brief Unfilter and place one pass (or the whole image, uninterlaced).
+ *
+ * @return bytes consumed, or -1.
+ */
+static long
+png_pass(const unsigned char *raw, long avail, int pw, int ph,
+         const png_fmt_t *f, tiku_trk_image_t *out, int x0, int y0,
+         int dx, int dy)
+{
+    long rowbytes = ((long)pw * f->chan * f->depth + 7L) / 8L;
+    long used = 0;
+    unsigned char *prev = NULL, *cur = NULL;
+    int y;
+
+    if (pw <= 0 || ph <= 0) {
+        return 0;
+    }
+    prev = calloc((size_t)rowbytes, 1u);
+    cur = malloc((size_t)rowbytes);
+    if (prev == NULL || cur == NULL) {
+        free(prev);
+        free(cur);
+        return -1;
+    }
+    for (y = 0; y < ph; y++) {
+        int type, x;
+
+        if (used + 1 + rowbytes > avail) {
+            free(prev); free(cur);
+            return -1;
+        }
+        type = raw[used++];
+        memcpy(cur, raw + used, (size_t)rowbytes);
+        used += rowbytes;
+        unfilter(cur, (y > 0) ? prev : NULL, rowbytes, f->bpp, type);
+
+        for (x = 0; x < pw; x++) {
+            int ox = x0 + x * dx, oy = y0 + y * dy;
+            unsigned r, g, bl, a = 255u;
+
+            if (ox >= out->w || oy >= out->h) {
+                continue;
+            }
+            switch (f->colour) {
+            case 0:                 /* greyscale */
+                r = g = bl = scale_up(sample(cur, f->depth, x), f->depth);
+                break;
+            case 4:                 /* greyscale + alpha */
+                r = g = bl = scale_up(sample(cur, f->depth, (long)x * 2),
+                                      f->depth);
+                a = scale_up(sample(cur, f->depth, (long)x * 2 + 1),
+                             f->depth);
+                break;
+            case 3: {               /* palette */
+                unsigned idx = sample(cur, f->depth, x);
+                uint32_t e = (idx < (unsigned)f->npal) ? f->pal[idx]
+                                                       : 0xff000000u;
+
+                r = (e >> 16) & 0xffu;
+                g = (e >> 8) & 0xffu;
+                bl = e & 0xffu;
+                a = (e >> 24) & 0xffu;
+                break;
+            }
+            case 6:                 /* truecolour + alpha */
+                r = cur[(long)x * 4];
+                g = cur[(long)x * 4 + 1];
+                bl = cur[(long)x * 4 + 2];
+                a = cur[(long)x * 4 + 3];
+                break;
+            default:                /* truecolour */
+                r = cur[(long)x * 3];
+                g = cur[(long)x * 3 + 1];
+                bl = cur[(long)x * 3 + 2];
+                break;
+            }
+            out->px[(long)oy * out->w + ox] =
+                (a << 24) | (r << 16) | (g << 8) | bl;
+        }
+        {
+            unsigned char *t = prev;
+
+            prev = cur;
+            cur = t;
+        }
+    }
+    free(prev);
+    free(cur);
+    return used;
+}
+
 static tiku_trk_image_err_t
 load_png(const unsigned char *b, long n, tiku_trk_image_t *out)
 {
     static const unsigned char sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
     unsigned char *idat = NULL, *raw = NULL;
-    long ilen = 0, i = 8, rawlen;
-    int w = 0, h = 0, depth = 0, colour = 0, bpp = 0, y;
+    uint32_t pal[256];
+    long ilen = 0, i = 8, rawlen, got;
+    int w = 0, h = 0, interlace = 0, npal = 0, p;
+    png_fmt_t f;
     tiku_trk_image_err_t rc = TIKU_TRK_IMG_BAD;
 
+    memset(&f, 0, sizeof f);
+    for (p = 0; p < 256; p++) {
+        pal[p] = 0xff000000u;
+    }
     if (n < 8 || memcmp(b, sig, 8) != 0) {
         return TIKU_TRK_IMG_NOT_IMAGE;
     }
@@ -215,11 +346,29 @@ load_png(const unsigned char *b, long n, tiku_trk_image_t *out)
         if (memcmp(type, "IHDR", 4) == 0 && len >= 13u) {
             w = (int)be32(b + i + 8);
             h = (int)be32(b + i + 12);
-            depth = b[i + 16];
-            colour = b[i + 17];
-            if (b[i + 20] != 0) {
-                free(idat);
-                return TIKU_TRK_IMG_UNSUPPORTED;  /* interlaced */
+            f.depth = b[i + 16];
+            f.colour = b[i + 17];
+            interlace = b[i + 20];
+        } else if (memcmp(type, "PLTE", 4) == 0) {
+            uint32_t k;
+
+            npal = (int)(len / 3u);
+            if (npal > 256) { npal = 256; }
+            for (k = 0; k < (uint32_t)npal; k++) {
+                pal[k] = 0xff000000u |
+                         ((uint32_t)b[i + 8 + k * 3u] << 16) |
+                         ((uint32_t)b[i + 9 + k * 3u] << 8) |
+                         b[i + 10 + k * 3u];
+            }
+        } else if (memcmp(type, "tRNS", 4) == 0 && f.colour == 3) {
+            uint32_t k;
+
+            /* Per-entry alpha for a palette: the only transparency a
+             * palette image can carry, and what makes a cut-out icon a
+             * cut-out rather than a white square. */
+            for (k = 0; k < len && k < 256u; k++) {
+                pal[k] = (pal[k] & 0x00ffffffu) |
+                         ((uint32_t)b[i + 8 + k] << 24);
             }
         } else if (memcmp(type, "IDAT", 4) == 0) {
             unsigned char *grown = realloc(idat, (size_t)(ilen + len));
@@ -236,49 +385,82 @@ load_png(const unsigned char *b, long n, tiku_trk_image_t *out)
         }
         i += 12 + (long)len;
     }
-    if (w <= 0 || h <= 0 || idat == NULL || depth != 8 ||
-        (colour != 2 && colour != 6)) {
-        free(idat);
-        return (w > 0) ? TIKU_TRK_IMG_UNSUPPORTED : TIKU_TRK_IMG_BAD;
-    }
-    bpp = (colour == 6) ? 4 : 3;
-    rawlen = ((long)w * bpp + 1L) * h;
-    raw = malloc((size_t)rawlen);
-    if (raw == NULL) {
+    if (w <= 0 || h <= 0 || idat == NULL || w > 30000 || h > 30000) {
         free(idat);
         return TIKU_TRK_IMG_BAD;
     }
-    if (tiku_trk_inflate_zlib(idat, ilen, raw, rawlen) != rawlen) {
-        rc = TIKU_TRK_IMG_BAD;
-        goto done;
+    switch (f.colour) {
+    case 0: f.chan = 1; break;
+    case 2: f.chan = 3; break;
+    case 3: f.chan = 1; break;
+    case 4: f.chan = 2; break;
+    case 6: f.chan = 4; break;
+    default: free(idat); return TIKU_TRK_IMG_BAD;
     }
-    out->px = malloc((size_t)w * (size_t)h * sizeof *out->px);
-    if (out->px == NULL) {
+    /* Truecolour and alpha channels are 8 bits here; the sub-byte depths
+     * belong to greyscale and palette, which is where they buy anything. */
+    if ((f.colour == 2 || f.colour == 6) && f.depth != 8) {
+        free(idat);
+        return TIKU_TRK_IMG_UNSUPPORTED;
+    }
+    if (f.depth != 1 && f.depth != 2 && f.depth != 4 && f.depth != 8) {
+        free(idat);
+        return TIKU_TRK_IMG_UNSUPPORTED;   /* 16 bits per sample */
+    }
+    if (f.colour == 3 && npal == 0) {
+        free(idat);
+        return TIKU_TRK_IMG_BAD;
+    }
+    f.pal = pal;
+    f.npal = npal;
+    f.bpp = (f.chan * f.depth + 7) / 8;
+    if (f.bpp < 1) { f.bpp = 1; }
+
+    /* Room for every pass's rows plus one filter byte each; the
+     * uninterlaced case is the same sum with one pass. */
+    rawlen = ((long)w * f.chan * f.depth / 8L + f.chan + 1L) * h + h + 64L;
+    rawlen *= 2L;
+    raw = malloc((size_t)rawlen);
+    out->px = calloc((size_t)w * (size_t)h, sizeof *out->px);
+    if (raw == NULL || out->px == NULL) {
         goto done;
     }
     out->w = w;
     out->h = h;
-    for (y = 0; y < h; y++) {
-        unsigned char *cur = raw + (long)y * ((long)w * bpp + 1L);
-        int type = cur[0];
-        int x;
+    got = tiku_trk_inflate_zlib(idat, ilen, raw, rawlen);
+    if (got < 0) {
+        goto done;
+    }
+    if (!interlace) {
+        if (png_pass(raw, got, w, h, &f, out, 0, 0, 1, 1) < 0) {
+            goto done;
+        }
+    } else {
+        long used = 0;
 
-        cur++;
-        unfilter(cur, (y > 0) ? raw + (long)(y - 1) *
-                                    ((long)w * bpp + 1L) + 1 : NULL,
-                 (long)w * bpp, bpp, type);
-        for (x = 0; x < w; x++) {
-            const unsigned char *p = cur + (long)x * bpp;
-            uint32_t a = (bpp == 4) ? p[3] : 0xffu;
+        /* Adam7: seven sub-images, each filtered on its own rows, which is
+         * why the pass has to know its own width rather than the image's. */
+        for (p = 0; p < 7; p++) {
+            int x0 = adam7[p][0], y0 = adam7[p][1];
+            int dx = adam7[p][2], dy = adam7[p][3];
+            int pw = (w - x0 + dx - 1) / dx;
+            int ph = (h - y0 + dy - 1) / dy;
+            long k = png_pass(raw + used, got - used, pw, ph, &f, out,
+                              x0, y0, dx, dy);
 
-            out->px[(long)y * w + x] = (a << 24) | ((uint32_t)p[0] << 16) |
-                                       ((uint32_t)p[1] << 8) | p[2];
+            if (k < 0) {
+                goto done;
+            }
+            used += k;
         }
     }
     rc = TIKU_TRK_IMG_OK;
 done:
     free(idat);
     free(raw);
+    if (rc != TIKU_TRK_IMG_OK) {
+        tiku_trk_image_free(out);
+    }
     return rc;
 }
 
@@ -301,6 +483,19 @@ tiku_trk_image_load(const char *path, tiku_trk_image_t *out)
         rc = load_bmp(b, n, out);
     } else if (n >= 8 && b[0] == 137 && b[1] == 'P') {
         rc = load_png(b, n, out);
+    } else if (n >= 3 && b[0] == 0xff && b[1] == 0xd8 && b[2] == 0xff) {
+        int jw = 0, jh = 0, jrc;
+        uint32_t *jpx = NULL;
+
+        jrc = tiku_trk_jpeg_decode(b, n, &jw, &jh, &jpx);
+        if (jrc == 0) {
+            out->w = jw;
+            out->h = jh;
+            out->px = jpx;
+            rc = TIKU_TRK_IMG_OK;
+        } else {
+            rc = (jrc == 1) ? TIKU_TRK_IMG_UNSUPPORTED : TIKU_TRK_IMG_BAD;
+        }
     } else {
         rc = TIKU_TRK_IMG_NOT_IMAGE;
     }

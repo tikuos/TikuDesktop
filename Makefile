@@ -15,7 +15,7 @@ DESK  := ../desktop/src
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
          src/tiku_trk_attr.c src/tiku_trk_query.c src/tiku_trk_notify.c \
          src/tiku_trk_match.c src/tiku_trk_clip.c src/tiku_trk_drag.c \
-         src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c \
+         src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
          src/tiku_trk_model.c src/tiku_trk_backend_posix.c \
          src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c \
          $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c $(DESK)/tiku_desk_ns.c
@@ -79,10 +79,10 @@ $(BUILD)/test_inflate: src/tiku_trk_inflate.c tests/test_inflate.c | $(BUILD)
 	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_thumb: src/tiku_trk_thumb.c src/tiku_trk_image.c \
-                     src/tiku_trk_inflate.c \
+                     src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
                      src/tiku_trk_state.c $(DESK)/tiku_desk_gfx.c \
                      tests/test_thumb.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_drag: src/tiku_trk_drag.c src/tiku_trk_model.c \
                     tests/test_drag.c | $(BUILD)

@@ -35,6 +35,8 @@ static const unsigned char png_compressed[] = {
     0x82,
 };
 
+#include "image_fixtures.inc"
+
 static int fails;
 
 static void
@@ -136,6 +138,80 @@ main(void)
     tiku_trk_image_free(&im);
 
 
+
+    printf("\nthe formats a real disk holds (IV-028)\n");
+    {
+        char pth[128];
+        FILE *f;
+
+        snprintf(pth, sizeof pth, "/tmp/trk_thumb_fx.jpg");
+        f = fopen(pth, "wb");
+        if (f != NULL) {
+            (void)fwrite(jpeg_420, 1, sizeof jpeg_420, f);
+            (void)fclose(f);
+        }
+        check(tiku_trk_image_load(pth, &im) == TIKU_TRK_IMG_OK &&
+              im.w == 16 && im.h == 16, "IV-028",
+              "a baseline JPEG decodes -- most pictures on a disk are one");
+        if (im.px != NULL) {
+            /* The fixture is a smooth ramp, so the corners must differ
+             * hugely; a decoder that returned grey would pass a size
+             * check and fail this one. */
+            uint32_t tl = im.px[0], br = im.px[15 * 16 + 15];
+
+            check(((br >> 16) & 0xff) > ((tl >> 16) & 0xff) + 100,
+                  "IV-028", "with its ramp intact left to right");
+            check(((br >> 8) & 0xff) > ((tl >> 8) & 0xff) + 100,
+                  "IV-028", "and top to bottom -- chroma is upsampled, not "
+                  "dropped");
+            {   /* Sampled against a reference decoder.  The tolerance is
+                 * chroma subsampling's own loss plus this integer IDCT's
+                 * last bit -- wide enough to be stable, far tighter than
+                 * any wrong colour matrix or misplaced chroma block. */
+                size_t k;
+                int worst = 0;
+
+                for (k = 0; k < sizeof jpeg_expect / sizeof jpeg_expect[0];
+                     k++) {
+                    uint32_t g = im.px[(long)jpeg_expect[k].y * 16 +
+                                       jpeg_expect[k].x];
+                    int dr = (int)((g >> 16) & 0xff) - jpeg_expect[k].r;
+                    int dg = (int)((g >> 8) & 0xff) - jpeg_expect[k].g;
+                    int db = (int)(g & 0xff) - jpeg_expect[k].b;
+
+                    if (dr < 0) { dr = -dr; }
+                    if (dg < 0) { dg = -dg; }
+                    if (db < 0) { db = -db; }
+                    if (dr > worst) { worst = dr; }
+                    if (dg > worst) { worst = dg; }
+                    if (db > worst) { worst = db; }
+                }
+                check(worst <= 10, "IV-028",
+                      "and six sampled pixels match a reference decoder");
+            }
+            tiku_trk_image_free(&im);
+        }
+        (void)remove(pth);
+
+        snprintf(pth, sizeof pth, "/tmp/trk_thumb_fx.png");
+        f = fopen(pth, "wb");
+        if (f != NULL) {
+            (void)fwrite(png_palette, 1, sizeof png_palette, f);
+            (void)fclose(f);
+        }
+        check(tiku_trk_image_load(pth, &im) == TIKU_TRK_IMG_OK &&
+              im.w == 8 && im.h == 4, "IV-028",
+              "a 2-bit palette PNG decodes");
+        if (im.px != NULL) {
+            check((im.px[0] >> 24) == 0, "IV-028",
+                  "and its tRNS entry is transparent -- a cut-out icon is "
+                  "a cut-out, not a square");
+            check((im.px[1] >> 24) == 255, "IV-028",
+                  "while an opaque entry stays opaque");
+            tiku_trk_image_free(&im);
+        }
+        (void)remove(pth);
+    }
     printf("\ncompressed PNG (IV-028)\n");
     {
         char pn[128];
@@ -167,6 +243,27 @@ main(void)
     check(tiku_trk_thumb_wanted(&q, wide), "IV-028", "an image earns one");
     check(!tiku_trk_thumb_wanted(&q, txt), "IV-028",
           "a text file does not");
+    {   /* Recognition is by CONTENT: the name is a hint its author may
+         * not have meant. */
+        char liar[128];
+        FILE *lf;
+
+        snprintf(liar, sizeof liar, "/tmp/trk_thumb_liar.txt");
+        lf = fopen(liar, "wb");
+        if (lf != NULL) {
+            (void)fwrite(png_compressed, 1, sizeof png_compressed, lf);
+            (void)fclose(lf);
+        }
+        check(tiku_trk_thumb_wanted(&q, liar), "IV-028",
+              "a PNG called .txt is still a PNG");
+        (void)remove(liar);
+        snprintf(liar, sizeof liar, "/tmp/trk_thumb_liar.png");
+        lf = fopen(liar, "w");
+        if (lf != NULL) { fputs("not a picture", lf); (void)fclose(lf); }
+        check(!tiku_trk_thumb_wanted(&q, liar), "IV-028",
+              "and a text file called .png is not one");
+        (void)remove(liar);
+    }
     q.enabled = 0;
     check(!tiku_trk_thumb_wanted(&q, wide), "TS-053",
           "and with the setting off, nothing does");

@@ -34,11 +34,10 @@ typedef enum {
 } tiku_trk_image_err_t;
 
 /**
- * @brief Whether @p path looks like an image at all, by its name.
+ * @brief Whether @p path holds an image, by its first bytes.
  *
- * By extension rather than by content: the caller uses this to decide
- * whether a file is worth opening, and opening every file to find out is
- * the cost this avoids.
+ * By content, not by name: a file called .txt that holds a PNG is a PNG,
+ * and one called .jpg that holds nothing is not a picture.
  */
 int tiku_trk_image_is_image(const char *path);
 

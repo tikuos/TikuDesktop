@@ -4551,27 +4551,31 @@ The list-mode PointInPose overload returns true for any point inside _ListIconRe
 **PORT:** List-mode hit testing maps y to a row across the full row width including the icon strip with no alpha test, and a separate column scan then reports whether the name widget was hit, which is what arms the rename — both clauses present (the scan's origin is BORDER rather than BORDER+start_offset, so its boundaries sit ~21 px left of the drawn columns, a fidelity slip inside an implemented rule).  
 *src/tiku_trk_app.c:758-772 (row_at) and :1326-1341 (column scan) feeding :1364 on_name -> name_clicked*
 
-#### IV-028 · core · partial
+#### IV-028 · core · done
 **Image files show a thumbnail of their contents instead of a type icon.**  
 GetNodeIcon calls GetThumbnailFromAttr before GetFileIconFromAttr for non-executables; ShouldGenerateThumbnail gates on the 'Generate image thumbnails' setting (default true) AND the MIME type case-insensitively starting with "image".  
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr / ShouldGenerateThumbnail`  
 **TIKU:** Translator-based decode does not exist on TikuOS; decide which formats (if any) generate thumbnails and whether generation is even affordable.  
 *Shell: desktop*  
-**PORT:** Every ordinary PNG decodes now: `tiku_trk_inflate` is a from-scratch
-DEFLATE -- stored, fixed and dynamic Huffman -- written rather than linked,
-because the one thing this port wanted from zlib was the decompressor.
-Checked pixel-for-pixel against a reference decoder across all five PNG
-filter types and five geometries, on the project's own stored-deflate
-screenshots, and on a 2160x3760 photograph; 300 corrupted PNGs produced no
-crashes.
-**MISSING:** Images are still recognised by EXTENSION rather than MIME type
-(the port has no type registry), colour types are RGB and RGBA only (no
-palette, greyscale or interlace), and JPEG is a separate decoder that does
-not exist.  Three of inflate's defensive checks are unexercised -- an
-over-subscribed code table, a dynamic block with no end-of-block symbol, and
-an RLE-16 with nothing to repeat -- because reaching them needs a bit-level
-stream writer the tests do not have; their mutations survive and the row says
-so.
+*Shell: desktop*  
+**PORT:** Complete for the formats a disk actually holds.  PNG: every colour
+type (greyscale, truecolour, palette with tRNS, and both with alpha), bit
+depths 1/2/4/8, all five filters, and Adam7 interlace -- verified pixel-exact
+against a reference decoder.  JPEG: baseline sequential, 4:4:4 / 4:2:2 /
+4:2:0 and greyscale, restart intervals, byte unstuffing; sampled against a
+reference decoder within 10 levels, which is chroma subsampling's own loss.
+BMP 24- and 32-bit either way up.  Recognition is by CONTENT, not by name: a
+PNG called .txt is a PNG and a text file called .png is not a picture.
+**TIKU:** Tracker asks a MIME database whether a type begins with "image";
+this port has no runtime type registry, so the question is answered by the
+file's first bytes instead.  That is a better answer for a browser that must
+also show device nodes, whose "type" is a descriptor rather than a
+registration.
+**MISSING:** Progressive JPEG, arithmetic coding and 12-bit samples are
+detected and refused rather than half-decoded -- a progressive file needs a
+different scan structure, not a bigger switch.  16-bit-per-sample PNG is
+refused the same way.  Two IDCT rounding mutations survive the sampled check
+because a half-level bias sits under a lossy format's noise floor.
 *Shell: desktop*  
 #### IV-029 · core · done
 **A cached thumbnail is reused only while the file has not been modified since the thumbnail was made.**  
