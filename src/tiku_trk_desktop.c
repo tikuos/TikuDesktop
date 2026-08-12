@@ -708,6 +708,81 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
 
     (void)x;
     (void)y;
+    {   /* The Deskbar first: it overlays the desktop, so a drop there is
+         * a drop on IT rather than on whatever window is behind. */
+        int team = -1;
+        tiku_trk_db_drop_t d = tiku_trk_deskbar_drop_at(app->deskbar, x, y,
+                                                        &team);
+
+        if (d != TIKU_TRK_DB_DROP_NONE) {
+            const char *sel2[TIKU_TRK_DRAG_MAX];
+            int k, n2 = 0;
+
+            for (k = 0; k < app->drag.count; k++) {
+                sel2[n2++] = app->drag.path[k];
+            }
+            if (n2 == 0) {
+                return;
+            }
+            if (d == TIKU_TRK_DB_DROP_LEAF) {
+                /* Links, not copies: the Deskbar menu is a set of
+                 * pointers at things, and copying into it would make a
+                 * second one of everything (DB-009). */
+                const char *home = getenv("HOME");
+                char into[TIKU_TRK_PATH_MAX];
+
+                if (home != NULL &&
+                    snprintf(into, sizeof into, "%s/.config/deskbar",
+                             home) > 0) {
+                    (void)mkdir(into, 0755);
+                    (void)tiku_trk_fs_link(app->fs, sel2, n2, into, 0);
+                    snprintf(app->status, sizeof app->status,
+                             "linking %d item%s into the Deskbar", n2,
+                             (n2 == 1) ? "" : "s");
+                }
+                return;
+            }
+            if (d == TIKU_TRK_DB_DROP_TEAM && team >= 0) {
+                const char *types[TIKU_TRK_DRAG_TYPES];
+                int nt = tiku_trk_drag_types(&app->drag), ti;
+
+                for (ti = 0; ti < nt; ti++) {
+                    types[ti] = app->drag.type[ti];
+                }
+                if (!tiku_trk_deskbar_team_accepts(app->deskbar, team,
+                        types, nt, (state & ControlMask) != 0u)) {
+                    snprintf(app->status, sizeof app->status,
+                             "%.40s cannot open %s",
+                             tiku_trk_deskbar_team_name(app->deskbar, team),
+                             (n2 == 1) ? "that" : "those");
+                    return;
+                }
+                snprintf(app->status, sizeof app->status,
+                         "handing %d item%s to %.40s", n2,
+                         (n2 == 1) ? "" : "s",
+                         tiku_trk_deskbar_team_name(app->deskbar, team));
+                return;
+            }
+            {   /* The bar itself launches, and folders are silently
+                 * passed over (DB-066, DB-075). */
+                int launched = 0;
+
+                for (k = 0; k < n2; k++) {
+                    tiku_trk_model_t lm;
+
+                    if (app->backend->ops->stat(app->backend, sel2[k],
+                                                &lm) == 0 &&
+                        tiku_trk_deskbar_launchable(&lm)) {
+                        launched++;
+                    }
+                }
+                snprintf(app->status, sizeof app->status,
+                         "launching %d item%s", launched,
+                         (launched == 1) ? "" : "s");
+            }
+            return;
+        }
+    }
     if (app->drop_fl == NULL) {
         return;                     /* dropped on nothing */
     }
@@ -3413,6 +3488,7 @@ main(int argc, char **argv)
                         }
                         orow = r;
                     }
+                    tiku_trk_deskbar_set_dragging(app.deskbar, 1);
                     if (ofl != app.drop_fl || orow != app.drop_row) {
                         app.drop_fl = ofl;
                         app.drop_row = orow;
@@ -3445,6 +3521,7 @@ main(int argc, char **argv)
                             ev.xbutton.state, ev.xbutton.button);
                 }
                 tiku_trk_drag_reset(&app.drag);
+                tiku_trk_deskbar_set_dragging(app.deskbar, 0);
                 app.drop_fl = NULL;
                 app.drop_row = -1;
                 /* A long press already put the menu up, so its release must

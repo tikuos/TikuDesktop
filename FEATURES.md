@@ -4739,9 +4739,8 @@ The (label, message, iconType, which) and (submenu, message, iconType, which) co
 **The window's folder icon is itself an icon-cache draw and is drag-startable only from opaque pixels.**  
 DraggableContainerIcon::Draw blits the target model's icon centred in the view with B_OP_ALPHA; MouseDown only arms a drag when IconCache::IconHitTest passes, and the drag bitmap is icon plus middle-truncated name at text alpha 192. The icon repaints when the folder's own attributes change (AttributeChanged calls IconCache::IconChanged and invalidates the view).  
 `src/kits/tracker/DraggableContainerIcon.cpp` → `DraggableContainerIcon::Draw / DraggableContainerIcon::MouseDown`  
-**UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.
-**SUBSYSTEM:** drag-and-drop: the window chrome draws no folder icon anywhere (grep -i icon in src/tiku_trk_win.c, src/tiku_trk_win.h, src/tiku_trk_titleview.c: nothing), and there is no drag-source/drag-bitmap layer for it to start a drag from (same absence as IV-053)  
-
+**UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
+**BLOCKED:** Waits on the window having a folder icon at all.  Neither shell draws one in its title bar, so there is nothing to hit-test for opaque pixels and nothing to start a drag from (CW-017).  
 #### IV-058 · polish · open
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  
@@ -5955,19 +5954,20 @@ kToggleDraggers -> BDragger::ShowAllDraggers()/HideAllDraggers(); mark set from 
 **TIKU:** Needs an equivalent global 'show handles' flag on the namespace-hosted widgets
 **BLOCKED:** no dragger/handle concept exists to toggle: tiku_trk_replicant_t is label/path/value/desc/valid only (src/tiku_trk_deskbar.h:59-66), and the leaf menu has no 'Show replicants' item or checkmark facility (fixed items[], src/tiku_trk_deskbar.c:594-597)  
 
-#### DB-008 · important · open
+#### DB-008 · important · done
 **While files are being dragged, every fixed leaf-menu item (About, Find, Show replicants, Power off, Restart) is disabled, leaving only folder entries and recents as drop targets**  
 item->SetEnabled(!dragging) on each, where dragging == fBarView->Dragging()  
-`DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`
-**SUBSYSTEM:** drag-and-drop: no file-drag state exists in either shell (poseview's set_drop_point has no caller in tiku_trk_desktop.c or tiku_trk_app.c — grep returns nothing; MotionNotify handles only press-radius cancel and window tracking, src/tiku_trk_desktop.c:2201-2221), and the menu widget has no disabled-item concept (drawn with hot = -1, src/tiku_trk_deskbar.c:600)  
-
-#### DB-009 · important · open
+`DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
+**PORT:** Only the FIXED items go dead while a drag is in flight; folders and recents stay live, because those are exactly the drop targets the menu exists to offer during one.  Leaving About and Power off live would invite a drop that does something unrelated to dropping.  
+*Shell: desktop*  
+#### DB-009 · important · partial
 **Dropping files on the leaf logo creates symlinks to them in the Deskbar folder; dropping on a folder entry inside the menu creates the symlinks in that subfolder; dropping on a file entry launches it with the dropped refs**  
 TBarMenuTitle::Invoke calls HandleDeskbarMenu(NULL) (top level); a B_REFS_RECEIVED retargeted to the bar view carries the destination ref — directory => AddRefsToDeskbarMenu, file => SendDragMessage(NULL,&ref) which FSLaunchItem's it. In vertical mini-mode a drop landing in the team title is ignored  
 `BarView.cpp` → `TBarView::HandleDeskbarMenu`  
-**TIKU:** Symlink creation needs a VFS link primitive; if absent, record the target path in a menu manifest instead
-**SUBSYSTEM:** drag-and-drop: the deskbar has no drop path at all — its only input is tiku_trk_deskbar_click (src/tiku_trk_deskbar.h:144-146); no file drag exists in the shells, and there is no Deskbar folder (DB-003) or link primitive to target  
-
+**TIKU:** Symlink creation needs a VFS link primitive; if absent, record the target path in a menu manifest instead  
+**PORT:** A drop on the leaf makes LINKS in the Deskbar folder, not copies: the bar is a set of pointers at things, and copying into it would make a second one of everything.  Proven by the shell script and by the link itself, which dangles if its target goes.  
+**MISSING:** The menu's own entries are not drop targets yet -- dropping on a folder inside it, or on a file to launch it with the drop, needs the menu to hit-test during a drag.  
+*Shell: desktop*  
 #### DB-010 · polish · done
 **In vertical expanded mode the leaf menu pops out to the side of the bar (right of it when docked left, left of it when docked right) instead of below the title**  
 point = supermenu rect.RightTop()+ (0,3) when left, rect.LeftTop()-(menuWidth,0)+(0,3) when right; all other modes use BMenu::ScreenLocation()  
@@ -6135,13 +6135,14 @@ CheckForSizeOverrunVertical compares Window()->Frame().bottom against the screen
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MessageReceived case B_MOUSE_WHEEL_CHANGED`
 **BLOCKED:** no wheel path exists (no Button4/Button5 case in tiku_trk_desktop.c's event loop — grep returns nothing) and no overflow state exists for arrows to appear in: frame.h is content-derived with no clamp against the surface height (src/tiku_trk_deskbar.c:473-474)  
 
-#### DB-035 · important · open
+#### DB-035 · important · partial
 **Dragging files over the application list highlights the app under the cursor and dropping hands the files to it; apps that cannot open the dragged types are drawn/behaved as unavailable unless Ctrl is held to force acceptance**  
 Types are cached once per drag (CacheDragData/SpringLoadedFolderCacheDragData); AppCanHandleTypes checks the app's supported types via BAppFileInfo::IsSupportedType, always true for Tracker, always true with B_CONTROL_KEY. Drop sends B_REFS_RECEIVED to a running app, else launches it with the refs. Leaving the view or a drop-less mouse-up clears the highlight and the cached drag  
 `BarView.cpp` → `TBarView::AppCanHandleTypes`  
-**TIKU:** Type matching must come from the namespace descriptor's declared types; capability bits could gate whether a target may receive a drop at all
-**SUBSYSTEM:** drag-and-drop: no file drag exists in either shell (no set_drop_point caller; the deskbar's only input is click, src/tiku_trk_deskbar.h:144-146), so drag-over highlight, type matching and drop-to-app have no substrate; there is also no app-launch primitive — the desktop only opens folders (open_folder)  
-
+**TIKU:** Type matching must come from the namespace descriptor's declared types; capability bits could gate whether a target may receive a drop at all  
+**PORT:** An application row is a target and says which app; one that cannot open the dragged types refuses, unless Ctrl forces it.  EVERY type must be one it opens -- a mixed selection it can only half read is a drop that half works -- and knowing nothing about the types is a refusal rather than a guess.  The seam between two rows belongs to neither.  
+**MISSING:** No highlight under the cursor while hovering, and the refusal is a status line rather than the row being drawn unavailable.  
+*Shell: desktop*  
 #### DB-036 · polish · open
 **Hovering off an open Deskbar submenu does not close it while the cursor is still within 20px of the menu, or over the leaf menu or any application item**  
 MenuTrackingHook returns 'end the menu' only when the point is outside the menu bounds inset by -kMenuTrackMargin (20) AND not inside the deskbar menu frame AND not over a team item  
@@ -6336,12 +6337,12 @@ OpenWithTracker(B_USER_DESKBAR_DIRECTORY)
 **TIKU:** Becomes 'open this VFS directory in the file browser'
 **BLOCKED:** waits on DB-061 (the button's host window) and DB-003 (the Deskbar folder it would open); neither exists in src  
 
-#### DB-066 · polish · open
+#### DB-066 · polish · done
 **Dropping files onto the Deskbar icon (or passing refs to it) launches them, but directories are silently ignored**  
 Each ref is re-wrapped in its own B_REFS_RECEIVED and passed to TrackerLaunch only when !entry.IsDirectory()  
-`BarApp.cpp` → `TBarApp::RefsReceived`
-**SUBSYSTEM:** drag-and-drop: nothing can be dropped on the bar — its only input is tiku_trk_deskbar_click (src/tiku_trk_deskbar.h:144-146) and no file drag exists in the shells; there is also no file-launch primitive (the desktop opens folders only, via open_folder)  
-
+`BarApp.cpp` → `TBarApp::RefsReceived`  
+**PORT:** A drop on the bar launches the files and passes silently over directories: launching one has no meaning, and complaining about something the user very likely did by accident would be noise.  
+*Shell: desktop*  
 #### DB-067 · polish · open
 **Changing the system locale re-reads localized application names, reformats the clock and re-flows the tray without a restart**  
 B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from the "filesys" field, then falls through to forward to the tray, which calls UpdateTimeFormat/Update and jumps to the realign path. Team names are taken from BLocaleRoster::GetLocalizedFileName when that preference is on, falling back to ref->name  
@@ -6394,9 +6395,9 @@ kUpdateRecentCounts sets `fSettings.recentAppsEnabled = enabled && count > 0` (s
 **TIKU:** "count 0 means off" is a settings-normalisation rule worth reproducing rather than storing two independent fields.
 **BLOCKED:** waits on the recents subsystem (DB-002): no recents exist anywhere in src (grep 'recent' hits only unrelated comments, tiku_trk_query.h:222 and tiku_trk_fs.c:376) — no counts, no enabled flags, no submenus to drop  
 
-#### DB-075 · polish · open ⟨found by verification⟩
+#### DB-075 · polish · done ⟨found by verification⟩
 **Files dropped on the Deskbar application itself (not on the menu) are launched through Tracker, and dropped folders are silently ignored.**  
 TBarApp::RefsReceived iterates the refs, skips any whose BEntry IsDirectory(), and for each remaining ref builds a fresh single-ref B_REFS_RECEIVED and calls TrackerLaunch(&refsReceived, false).  
-`BarApp.cpp` → `TBarApp::RefsReceived`
-**SUBSYSTEM:** drag-and-drop: near-duplicate of DB-066 — no drop path onto the bar exists (click-only input, src/tiku_trk_deskbar.h:144-146), no file drag in the shells, and no launch primitive to hand refs to  
-
+`BarApp.cpp` → `TBarApp::RefsReceived`  
+**PORT:** The same rule and the same code path -- what is dropped on the application is what is dropped on its bar, so a volume is skipped for the reason a folder is.  
+*Shell: desktop*

@@ -45,6 +45,7 @@ struct tiku_trk_deskbar {
     tiku_trk_backend_t  *backend;
     tiku_trk_db_dock_t   dock;
     tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
+    int                  dragging;
     int                  team_count;
     tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
     int                  tray_count;
@@ -122,6 +123,9 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
     i = db->team_count++;
     memset(&db->teams[i], 0, sizeof db->teams[i]);
     snprintf(db->teams[i].name, sizeof db->teams[i].name, "%s", name);
+    /* Tracker opens everything: it is the thing that would be asked to
+     * open anything nothing else claims. */
+    db->teams[i].takes_anything = (strcmp(name, "Tracker") == 0);
     db->teams[i].expanded = 1;
     return i;
 }
@@ -795,4 +799,121 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         db->calendar_open = 1;
     }
     return 1;
+}
+
+/*---------------------------------------------------------------------------*/
+/* Drops                                                                     */
+/*---------------------------------------------------------------------------*/
+
+tiku_trk_db_drop_t
+tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
+                         int *which)
+{
+    tiku_desk_rect_t f;
+    int ry, i;
+
+    if (which != NULL) {
+        *which = -1;
+    }
+    if (db == NULL || !tiku_trk_deskbar_hit(db, x, y)) {
+        return TIKU_TRK_DB_DROP_NONE;
+    }
+    f = tiku_trk_deskbar_frame(db);
+    ry = y - f.y;
+    if (ry < LEAF_H) {
+        return TIKU_TRK_DB_DROP_LEAF;
+    }
+    ry -= LEAF_H + PAD;
+    for (i = 0; i < db->team_count; i++) {
+        if (ry >= 0 && ry < TEAM_H) {
+            if (which != NULL) { *which = i; }
+            return TIKU_TRK_DB_DROP_TEAM;
+        }
+        ry -= TEAM_H + SEAM;
+        if (db->teams[i].expanded) {
+            /* A window row is not a drop target of its own: the drop
+             * belongs to the application that owns it. */
+            ry -= db->teams[i].win_count * (WIN_H + SEAM);
+        }
+    }
+    return TIKU_TRK_DB_DROP_BAR;
+}
+
+void
+tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging)
+{
+    if (db != NULL) {
+        db->dragging = dragging;
+    }
+}
+
+int
+tiku_trk_deskbar_item_enabled(const tiku_trk_deskbar_t *db, int fixed)
+{
+    if (db == NULL) {
+        return 1;
+    }
+    /* Only the FIXED items go dead while a drag is in flight; folders and
+     * recents stay live, because those are exactly the drop targets the
+     * menu exists to offer during one (DB-008). */
+    return fixed ? !db->dragging : 1;
+}
+
+int
+tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i, const char *type)
+{
+    if (db == NULL || i < 0 || i >= db->team_count || type == NULL ||
+        db->teams[i].ntype >= 8) {
+        return -1;
+    }
+    snprintf(db->teams[i].type[db->teams[i].ntype],
+             sizeof db->teams[i].type[0], "%s", type);
+    db->teams[i].ntype++;
+    return 0;
+}
+
+int
+tiku_trk_deskbar_team_accepts(const tiku_trk_deskbar_t *db, int i,
+                              const char *const *types, int ntypes,
+                              int force)
+{
+    int t, k;
+
+    if (db == NULL || i < 0 || i >= db->team_count) {
+        return 0;
+    }
+    if (force || db->teams[i].takes_anything) {
+        return 1;
+    }
+    if (ntypes <= 0) {
+        return 0;                   /* nothing known about them: refuse */
+    }
+    /* EVERY type must be one it opens: handing an application a mixed
+     * selection it can only half read is a drop that half works. */
+    for (t = 0; t < ntypes; t++) {
+        int ok = 0;
+
+        for (k = 0; k < db->teams[i].ntype; k++) {
+            if (strcmp(db->teams[i].type[k], types[t]) == 0) {
+                ok = 1;
+                break;
+            }
+        }
+        if (!ok) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int
+tiku_trk_deskbar_launchable(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return 0;
+    }
+    /* A directory is silently ignored rather than refused: launching one
+     * has no meaning, and complaining about something the user very likely
+     * did by accident would be noise (DB-066). */
+    return !tiku_trk_model_is_container(m);
 }

@@ -53,6 +53,11 @@ typedef struct {
     int              active;             /* owns the focused window        */
     tiku_trk_dbwin_t wins[TIKU_TRK_DB_WINS_MAX];
     int              win_count;
+    /* The types this application can open.  A drop on one that cannot
+     * read the file would appear to work and do nothing (DB-035). */
+    char             type[8][TIKU_TRK_TYPE_MAX];
+    int              ntype;
+    int              takes_anything;
 } tiku_trk_team_t;
 
 /** @brief A tray item: a namespace node rendered as label + value. */
@@ -150,6 +155,64 @@ int tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y);
 int tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y,
                            unsigned mods, int secondary,
                            tiku_trk_db_pick_t *pick);
+
+/*---------------------------------------------------------------------------*/
+/* Drops (DB-008, DB-009, DB-035, DB-066)                                    */
+/*---------------------------------------------------------------------------*/
+
+/** @brief What sits under a drag hovering the Deskbar. */
+typedef enum {
+    TIKU_TRK_DB_DROP_NONE = 0,
+    TIKU_TRK_DB_DROP_LEAF,      /* the logo: links go in the Deskbar folder */
+    TIKU_TRK_DB_DROP_TEAM,      /* an application: hand the files to it     */
+    TIKU_TRK_DB_DROP_MENU_DIR,  /* a folder in the menu: links go there     */
+    TIKU_TRK_DB_DROP_MENU_FILE, /* a file in the menu: launch it with them  */
+    TIKU_TRK_DB_DROP_BAR        /* the strip itself: launch the files       */
+} tiku_trk_db_drop_t;
+
+/**
+ * @brief What a drag hovering @p x, @p y would drop onto.
+ *
+ * @param which Receives the team index for DROP_TEAM, or -1.
+ */
+tiku_trk_db_drop_t tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db,
+                                            int x, int y, int *which);
+
+/**
+ * @brief Tell the bar a drag is in flight, so its menu can answer for it.
+ *
+ * While one is, the fixed leaf-menu items are disabled: About and Power off
+ * are not drop targets, and leaving them live invites a drop that does
+ * something unrelated to dropping (DB-008).
+ */
+void tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging);
+
+/** @brief Whether a fixed leaf-menu item may be chosen right now. */
+int tiku_trk_deskbar_item_enabled(const tiku_trk_deskbar_t *db, int fixed);
+
+/**
+ * @brief Whether team @p i can be handed files of these types (DB-035).
+ *
+ * Unknown types are refused unless @p force -- Ctrl is the override, and
+ * without it a drop on an application that cannot read the file is a drop
+ * that appears to work and does nothing.  Tracker itself takes anything.
+ */
+int tiku_trk_deskbar_team_accepts(const tiku_trk_deskbar_t *db, int i,
+                                  const char *const *types, int ntypes,
+                                  int force);
+
+/** @brief Give team @p i a type it can open. */
+int tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i,
+                               const char *type);
+
+/**
+ * @brief Whether @p path should be launched by a Deskbar drop (DB-066).
+ *
+ * A directory is silently ignored: launching one has no meaning, and
+ * refusing out loud for something the user very likely did by accident
+ * would be noise.
+ */
+int tiku_trk_deskbar_launchable(const tiku_trk_model_t *m);
 
 int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
 /** @brief Open the leaf menu, as the Menu key does (DB-011). */
