@@ -288,6 +288,57 @@ main(void)
         n = tiku_trk_query_list(st, names, 8);
         check(n == 1 && strcmp(names[0], "big memory") == 0,
               "forgetting removes it from the list");
+
+        /* What a record has to carry to be re-openable and sweepable. */
+        a.kind = TIKU_TRK_QREC_TEMPLATE;
+        a.temporary = 1;
+        a.saved_at = 1700000000;
+        snprintf(a.type, sizeof a.type, "text/plain");
+        a.scope_was[0].dev = 4242u;
+        snprintf(a.scope_was[0].volume, sizeof a.scope_was[0].volume,
+                 "Backup");
+        (void)tiku_trk_query_save(&a, "record", st);
+        check(tiku_trk_query_load(&b, "record", st) == 0 &&
+              b.kind == TIKU_TRK_QREC_TEMPLATE, "Q-028: a record says "
+              "whether opening it RUNS it or opens the panel filled in");
+        check(b.temporary == 1 && b.saved_at == 1700000000,
+              "MA-053: and whether anyone meant to keep it, and when it "
+              "was written -- the two things a sweep of stale by-products "
+              "needs and neither of which existed");
+        check(strcmp(b.type, "text/plain") == 0,
+              "Q-004: the type it was narrowed to comes back with it");
+        check(b.scope_was[0].dev == 4242u &&
+              strcmp(b.scope_was[0].volume, "Backup") == 0,
+              "Q-027: and a scope remembers WHICH volume it meant, not "
+              "only the path -- mount points are reused, and a query that "
+              "kept only the path searches whatever took its place");
+        check(strcmp(b.scope[0], a.scope[0]) == 0,
+              "with the path still there beside it");
+        {   /* An identity line with no scope before it belongs to nothing. */
+            tiku_trk_query_t stray;
+
+            (void)tiku_trk_state_write(st, "stray", "_trk/query",
+                                       "v2\nmode 0\nd 77 Ghost\n", 22);
+            check(tiku_trk_query_load(&stray, "stray", st) == 0 &&
+                  stray.scope_count == 0 && stray.dropped == 1 &&
+                  stray.scope_was[0].dev == 0u,
+                  "Q-027: an identity line that arrives BEFORE any scope is "
+                  "dropped rather than attached to the next one -- a scope "
+                  "wearing another volume's identity is worse than a scope "
+                  "with none");
+        }
+        {   /* A v1 record still reads: the new fields take defaults. */
+            tiku_trk_query_t old;
+
+            (void)tiku_trk_state_write(st, "ancient", "_trk/query",
+                                       "v1\nmode 0\nt 0 0 0 hello\n", 25);
+            check(tiku_trk_query_load(&old, "ancient", st) == 0 &&
+                  old.term_count == 1 &&
+                  strcmp(old.term[0].value, "hello") == 0 &&
+                  old.kind == TIKU_TRK_QREC_QUERY && old.temporary == 0,
+                  "a record written before any of this still loads, with "
+                  "the fields it does not carry taking their defaults");
+        }
         tiku_trk_store_free(st);
     }
 
@@ -433,6 +484,73 @@ main(void)
         tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_ATTRIBUTE);
         check(f.focus_row == f.row_count - 1,
               "the caret lands on the row still being filled in");
+    }
+
+    printf("\nre-opening a query in the panel (Q-026)\n");
+    {
+        tiku_trk_find_t f;
+        tiku_trk_query_t q;
+
+        tiku_trk_find_init(&f);
+        (void)tiku_trk_find_add_place(&f, "sys");
+        (void)tiku_trk_find_add_place(&f, "dev");
+        tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_ATTRIBUTE);
+        f.row_count = 2;
+        f.row[0].field = TIKU_TRK_QF_NAME;
+        f.row[0].op = TIKU_TRK_OP_CONTAINS;
+        snprintf(f.row[0].value, sizeof f.row[0].value, "log");
+        f.row[0].join = TIKU_TRK_JOIN_OR;
+        f.row[1].field = TIKU_TRK_QF_SIZE;
+        f.row[1].op = TIKU_TRK_OP_GREATER;
+        snprintf(f.row[1].value, sizeof f.row[1].value, "500");
+        f.everywhere = 0;
+        f.place_mask = 0x2u;            /* the second place */
+        tiku_trk_find_build(&f, &q);
+        {
+            tiku_trk_find_t back;
+
+            tiku_trk_find_init(&back);
+            (void)tiku_trk_find_add_place(&back, "sys");
+            (void)tiku_trk_find_add_place(&back, "dev");
+            check(tiku_trk_find_from_query(&back, &q) == 1,
+                  "Q-026: a query the panel can express restores whole");
+            check(back.mode == TIKU_TRK_QMODE_ATTRIBUTE &&
+                  back.row_count == 2, "with its mode and its rows");
+            check(back.row[0].field == TIKU_TRK_QF_NAME &&
+                  back.row[1].op == TIKU_TRK_OP_GREATER &&
+                  strcmp(back.row[1].value, "500") == 0,
+                  "each row's field, operator and value");
+            check(back.row[0].join == TIKU_TRK_JOIN_OR,
+                  "and the join, which belongs to the row BEFORE the one "
+                  "it joins -- the asymmetry the builder writes out");
+            check(!back.everywhere && back.place_mask == 0x2u,
+                  "the scope ticks the place it named, not the first one");
+        }
+        {   /* A scope this panel cannot offer. */
+            tiku_trk_find_t back;
+
+            tiku_trk_find_init(&back);
+            (void)tiku_trk_find_add_place(&back, "sys");
+            check(tiku_trk_find_from_query(&back, &q) == 0,
+                  "a query naming somewhere the panel does not offer is "
+                  "reported rather than silently narrowed");
+            check(back.everywhere,
+                  "and falls back to everywhere: a search that quietly "
+                  "lost its scope searches somewhere else");
+        }
+        {   /* By name: what was TYPED comes back. */
+            tiku_trk_query_t byname;
+            tiku_trk_find_t back;
+
+            tiku_trk_query_init(&byname);
+            tiku_trk_query_set_name(&byname, "report");
+            tiku_trk_find_init(&back);
+            check(tiku_trk_find_from_query(&back, &byname) == 1 &&
+                  back.mode == TIKU_TRK_QMODE_NAME &&
+                  strcmp(back.name_text, "report") == 0, "Q-026: a by-name "
+                  "query comes back with the text in the field, not as a "
+                  "term the user never typed as one");
+        }
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");

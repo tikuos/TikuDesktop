@@ -50,6 +50,7 @@ typedef struct {
     int         windows;    /* how many windows are open                */
     int         selected;   /* how many poses the focused view has       */
     const char *sel_name;   /* the first selected pose's name, or NULL   */
+    const char *find_text;  /* what the Find panel is asking for         */
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
@@ -74,6 +75,7 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-windows <n>
  *     expect-selected <n>
  *     expect-selected-name <name>
+ *     expect-find-text <text>             -- the Find panel's own field
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

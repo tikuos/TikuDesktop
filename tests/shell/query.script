@@ -1,0 +1,23 @@
+# shell: desktop
+# Q-023/Q-045/CW-033: a search leaves a record, and the window it produced
+# offers Edit query, which reopens the panel ON that query rather than
+# running the same search again.
+note a search from the Find panel
+key f ctrl
+wait 5
+key z
+key q
+key x
+key j
+key v
+wait 3
+click 595 433
+wait 25
+expect-find-text zqxjv
+note the results window answers Cmd+G, which every menu advertises
+key g ctrl
+wait 8
+expect-title Find
+note and it came back holding what was searched for, not empty
+expect-find-text zqxjv
+quit

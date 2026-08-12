@@ -22,7 +22,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -228,6 +228,9 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-selected-name") == 0 && n >= 2) {
             st->op = OP_EXPECT_SELNAME;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-find-text") == 0 && n >= 2) {
+            st->op = OP_EXPECT_FINDTEXT;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-perm") == 0 && n >= 3) {
             st->op = OP_EXPECT_PERM;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
@@ -416,6 +419,11 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_SELNAME:
         verdict(s, st != NULL && st->sel_name != NULL &&
                 strcmp(st->sel_name, cur->text) == 0, "selected:",
+                cur->text);
+        return 1;
+    case OP_EXPECT_FINDTEXT:
+        verdict(s, st != NULL && st->find_text != NULL &&
+                strcmp(st->find_text, cur->text) == 0, "find text:",
                 cur->text);
         return 1;
     case OP_EXPECT_PERM: {

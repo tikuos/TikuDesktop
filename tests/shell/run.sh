@@ -31,6 +31,11 @@ for s in "$here"/*.script; do
             scroll.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
             dbdrop.script) rm -rf "$HOME/.config/deskbar" ;;
+            # A name that exists nowhere else on the machine, so a search
+            # for it has exactly one answer and an emptied panel -- which
+            # matches everything -- cannot be mistaken for a restored one.
+            query.script) touch "$work/zqxjv.txt"
+                          rm -f "$HOME/.local/share/tracker/devices/local.state" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys

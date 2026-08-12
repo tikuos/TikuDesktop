@@ -188,6 +188,88 @@ tiku_trk_find_remove_row(tiku_trk_find_t *f)
     return 1;
 }
 
+int
+tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
+{
+    int i, k, all = 1;
+
+    if (f == NULL || q == NULL) {
+        return 0;
+    }
+    {
+        /* The PLACES survive the reset.  They are what this panel offers --
+         * supplied by the shell from what is mounted -- not part of the
+         * query being restored, and a restore that wiped them would leave
+         * a panel that can no longer name where to search. */
+        char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+        int nkept = f->place_count, k;
+
+        for (k = 0; k < nkept; k++) {
+            memcpy(kept[k], f->place[k], TIKU_TRK_NAME_MAX);
+        }
+        tiku_trk_find_init(f);
+        for (k = 0; k < nkept; k++) {
+            memcpy(f->place[k], kept[k], TIKU_TRK_NAME_MAX);
+        }
+        f->place_count = nkept;
+    }
+    f->mode = q->mode;
+    f->row_count = 0;
+    for (i = 0; i < q->term_count && i < TIKU_TRK_FIND_ROWS_MAX; i++) {
+        f->row[i].field = q->term[i].field;
+        f->row[i].op = q->term[i].op;
+        snprintf(f->row[i].value, sizeof f->row[i].value, "%s",
+                 q->term[i].value);
+        /* The join belongs to the row BEFORE, which is where the control
+         * sits -- the same asymmetry _build writes out. */
+        if (i > 0) {
+            f->row[i - 1].join = q->term[i].join;
+        }
+        f->row_count++;
+    }
+    if (f->row_count == 0) {
+        f->row_count = 1;       /* the panel always shows one row */
+    }
+    if (q->mode == TIKU_TRK_QMODE_NAME && q->term_count > 0) {
+        /* A by-name query is one term over the name; the panel shows what
+         * was TYPED, which is that term's value. */
+        snprintf(f->name_text, sizeof f->name_text, "%s", q->term[0].value);
+    }
+    if (q->mode == TIKU_TRK_QMODE_FORMULA) {
+        (void)tiku_trk_query_predicate(q, f->formula, sizeof f->formula);
+    }
+    f->everywhere = (q->scope_count == 0);
+    f->place_mask = 0u;
+    for (i = 0; i < q->scope_count; i++) {
+        int found = 0;
+
+        for (k = 0; k < f->place_count; k++) {
+            char path[TIKU_TRK_PATH_MAX];
+
+            /* With the separator the scope list keeps: a scope is stored
+             * normalised so its prefix test cannot admit a sibling, and
+             * comparing an un-normalised path against it never matches. */
+            snprintf(path, sizeof path, "/%s/", f->place[k]);
+            if (strcmp(path, q->scope[i]) == 0) {
+                f->place_mask |= (1u << k);
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            /* Somewhere this panel does not offer -- a disk that has gone,
+             * or a place another session knew about.  Reported rather than
+             * dropped silently: a search that quietly lost its scope
+             * searches somewhere else. */
+            all = 0;
+        }
+    }
+    if (f->place_mask == 0u && q->scope_count > 0 && !all) {
+        f->everywhere = 1;
+    }
+    return all;
+}
+
 void
 tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
 {

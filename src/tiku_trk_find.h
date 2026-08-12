@@ -102,6 +102,21 @@ int tiku_trk_find_remove_row(tiku_trk_find_t *f);
 void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q);
 
 /**
+ * @brief Fill the panel FROM a query, for Edit query (Q-026).
+ *
+ * The inverse of _build, and the reason a saved query is a thing you can
+ * open rather than only a thing you can run: the mode comes back, the rows
+ * come back with their joins, the name text comes back out of the single
+ * term a by-name query is, and a scope that names a place the panel offers
+ * ticks that place.  A scope naming somewhere the panel does not offer
+ * leaves it on "everywhere" rather than silently narrowing the search to
+ * nothing.
+ *
+ * @return 1 when every scope in the query was recognised.
+ */
+int tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q);
+
+/**
  * @brief The name a saved query would get.
  *
  * A description of the criteria, then " - " and a timestamp, sanitised of

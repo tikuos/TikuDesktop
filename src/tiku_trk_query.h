@@ -33,6 +33,8 @@
 #include "tiku_trk_attr.h"
 #include "tiku_trk_model.h"
 
+#include <stdint.h>
+
 #define TIKU_TRK_QUERY_TERMS_MAX   6
 #define TIKU_TRK_QUERY_SCOPES_MAX  4
 #define TIKU_TRK_QUERY_VALUE_MAX  64
@@ -81,6 +83,27 @@ typedef enum {
     TIKU_TRK_QMODE_FORMULA
 } tiku_trk_qmode_t;
 
+/** @brief What a saved record IS, which decides what opening it does. */
+typedef enum {
+    TIKU_TRK_QREC_QUERY = 0,     /* opening it runs it                    */
+    TIKU_TRK_QREC_TEMPLATE       /* opening it opens the panel, filled in */
+} tiku_trk_qrec_t;
+
+/**
+ * @brief What a scope was when it was written.
+ *
+ * A path alone cannot say whether the volume it names is the one that was
+ * searched: mount points are reused.  The identity is carried beside it and
+ * checked on the way back, so a query saved against a disk that is no longer
+ * there says so rather than quietly searching whatever took its place
+ * (Q-027).
+ */
+typedef struct {
+    char     path[TIKU_TRK_PATH_MAX];
+    uint64_t dev;                /* 0 when it was not recorded            */
+    char     volume[TIKU_TRK_NAME_MAX];
+} tiku_trk_qscope_t;
+
 typedef struct {
     tiku_trk_qmode_t mode;
     tiku_trk_qterm_t term[TIKU_TRK_QUERY_TERMS_MAX];
@@ -89,7 +112,23 @@ typedef struct {
      * namespace, which is the "All disks" case. */
     char             scope[TIKU_TRK_QUERY_SCOPES_MAX][TIKU_TRK_PATH_MAX];
     int              scope_count;
+    /* What each scope was, in the same order.  Kept beside the paths rather
+     * than replacing them so a v1 record still loads. */
+    tiku_trk_qscope_t scope_was[TIKU_TRK_QUERY_SCOPES_MAX];
     int              max_results;
+    /* What the record is and how it should be treated.  A query the user
+     * never named is TEMPORARY: it is a by-product of a search, and it is
+     * swept up later rather than accumulating for ever (MA-053, AW-090). */
+    tiku_trk_qrec_t  kind;
+    int              temporary;
+    int64_t          saved_at;   /* seconds; 0 when never written         */
+    /* The type the panel had selected, ANDed onto everything (Q-004). */
+    char             type[TIKU_TRK_TYPE_MAX];
+    /* Lines a record carried that could not be placed.  Kept because a
+     * record that half-loaded is worth knowing about: silently dropping
+     * part of a saved search is how a query comes back meaning something
+     * else. */
+    int              dropped;
 } tiku_trk_query_t;
 
 /** @brief Start an empty query over the whole namespace. */

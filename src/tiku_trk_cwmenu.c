@@ -127,6 +127,9 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
     SEP(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
+    /* Between Open and Open with: a query is edited rather than opened,
+     * and the item is present only when there is one (CW-033, CW-042). */
+    ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_OPEN_WITH);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
@@ -226,6 +229,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     m = &cw->pose_ctx;
     tiku_trk_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
+    /* Between Open and Open with: a query is edited rather than opened,
+     * and the item is present only when there is one (CW-033, CW-042). */
+    ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_OPEN_WITH);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
@@ -271,6 +277,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     m = &cw->volume_ctx;
     tiku_trk_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
+    /* Between Open and Open with: a query is edited rather than opened,
+     * and the item is present only when there is one (CW-033, CW-042). */
+    ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
 
@@ -279,6 +288,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     tiku_trk_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_EMPTY_TRASH);
     ADD(m, TIKU_TRK_CMD_OPEN);
+    /* Between Open and Open with: a query is edited rather than opened,
+     * and the item is present only when there is one (CW-033, CW-042). */
+    ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
 }
 

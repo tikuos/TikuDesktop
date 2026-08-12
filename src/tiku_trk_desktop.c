@@ -186,6 +186,9 @@ typedef struct desktop {
     /* What is mounted, and what it was last time we looked: the port's
      * only source of mount and unmount notices (PVN-008). */
     tiku_trk_volwatch_t  volwatch;
+    /* The record the last search wrote, so Edit query has something to
+     * reopen when the window it came from is the one asking. */
+    char                 last_query[TIKU_TRK_NAME_MAX];
     tiku_trk_panel_t     fpanel;
     tiku_trk_win_t      *fpanel_win;
     tiku_trk_poseview_t *fpanel_view;
@@ -295,6 +298,9 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
                        strncmp(fl->path, "/dev", 4) == 0 ||
                        strncmp(fl->path, "/proc", 5) == 0);
         c.is_root = (strcmp(fl->path, "/") == 0);
+        /* A results window IS a query, which is what makes Edit query
+         * reachable from the window it produced (CW-033). */
+        c.is_query = tiku_trk_poseview_is_query(fl->view);
     }
     return c;
 }
@@ -1589,6 +1595,21 @@ panel_search(desktop_t *app)
         }
     }
     (void)tiku_trk_find_scope_label(&app->panel, scope, sizeof scope);
+    {
+        /* Every run leaves a record, marked TEMPORARY: a search is a thing
+         * that can be re-opened and edited, not only a window that appears
+         * -- and one the user never named is swept up later rather than
+         * accumulating for ever (Q-023, MA-053). */
+        char name[TIKU_TRK_NAME_MAX];
+
+        q.temporary = 1;
+        q.saved_at = tiku_trk_now() / 1000000;
+        if (tiku_trk_find_default_name(&app->panel, (long)q.saved_at, name,
+                                       sizeof name) > 0) {
+            (void)tiku_trk_query_save(&q, name, app->store);
+            snprintf(app->last_query, sizeof app->last_query, "%s", name);
+        }
+    }
     snprintf(title, sizeof title, "find #%d", ++app->find_serial);
     {
         folder_t *fl = open_results(app, title, run);
@@ -2454,6 +2475,27 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * folder it is showing. */
         info_open(app, (p != NULL && p->selected) ? p->model.path
                                                  : fl->path);
+        break;
+    }
+    case TIKU_TRK_CMD_EDIT_QUERY: {
+        /* Re-open the panel ON the query rather than running it again:
+         * what the user wants from a result set is usually one more
+         * condition, not the same search a second time (Q-045). */
+        tiku_trk_query_t q;
+
+        if (app->last_query[0] == '\0' ||
+            tiku_trk_query_load(&q, app->last_query, app->store) != 0) {
+            snprintf(app->status, sizeof app->status,
+                     "that query cannot be opened");
+            break;
+        }
+        if (!tiku_trk_find_from_query(&app->panel, &q)) {
+            /* Said rather than swallowed: a scope this panel cannot offer
+             * means the restored search is not the saved one. */
+            snprintf(app->status, sizeof app->status,
+                     "one of its places is no longer here");
+        }
+        open_panel(app);
         break;
     }
     case TIKU_TRK_CMD_MOVE_TO:
@@ -3586,7 +3628,22 @@ main(int argc, char **argv)
      * zeroed struct is neither -- it is "starts with", case-sensitive. */
     tiku_trk_select_init(&app.sel);
     tiku_trk_clip_init(&app.clip);
-    app.store = tiku_trk_store_memory_open();
+    /*
+     * A SIDECAR, not a volatile store.  Everything kept here -- saved
+     * queries, the panel's frame, the recent lists, favourites, the
+     * thumbnails' stamps -- was written to a store documented as being for
+     * "tests, and nodes whose state must not persist", so every one of them
+     * was forgotten at exit while appearing to be saved.  It cannot be the
+     * backend's own store either: several of these live under reserved KEYS
+     * rather than under paths, and the file-keyed store can only write
+     * where there is a file.
+     */
+    app.store = tiku_trk_store_sidecar_open(
+                    (app.backend->devid[0] != '\0') ? app.backend->devid
+                                                    : "local");
+    if (app.store == NULL) {
+        app.store = tiku_trk_store_memory_open();
+    }
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -3899,6 +3956,7 @@ main(int argc, char **argv)
                 }
                 sst.selected = 0;
                 sst.sel_name = NULL;
+                sst.find_text = app.panel.name_text;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
 
@@ -5208,6 +5266,13 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
+                if (ks == XK_g && (ev.xkey.state & ControlMask) &&
+                    fl != NULL) {
+                    /* Cmd+G, which the menus now advertise (CW-033). */
+                    menu_invoke(&app, fl, TIKU_TRK_CMD_EDIT_QUERY);
+                    app.dirty = 1;
+                    break;
+                }
                 if (ks == XK_i && (ev.xkey.state & ControlMask) &&
                     fl != NULL) {
                     /* The chord the menus have always advertised; until
@@ -5849,6 +5914,10 @@ sel_done:
         }
         tiku_trk_poseview_free(app.folders[i].view);
     }
+    /* The sidecar batches; without this the session's queries, frames and
+     * recent lists are held in memory and dropped on the way out -- saved
+     * in every sense except the one that matters. */
+    (void)tiku_trk_store_flush(app.store);
     tiku_trk_deskbar_free(app.deskbar);
     tiku_trk_desk_free(app.desk);
     /* Quitting waits for work already under way, up to five seconds

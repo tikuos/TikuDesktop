@@ -730,8 +730,18 @@ serialise(const tiku_trk_query_t *q, char *out, size_t max)
     size_t o = 0;
     int i;
 
+    /* v2 adds what a record has to carry to be re-openable and sweepable:
+     * what it IS, whether anyone meant to keep it, when it was written, and
+     * what its scopes were.  A v1 record still reads -- the fields it does
+     * not carry simply keep their defaults. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
-                          "v1\nmode %d\n", (int)q->mode);
+                          "v2\nmode %d\nkind %d %d %lld\n", (int)q->mode,
+                          (int)q->kind, q->temporary,
+                          (long long)q->saved_at);
+    if (q->type[0] != '\0') {
+        o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
+                              "y %s\n", q->type);
+    }
     for (i = 0; i < q->term_count; i++) {
         o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                               "t %d %d %d %s\n", (int)q->term[i].field,
@@ -739,8 +749,16 @@ serialise(const tiku_trk_query_t *q, char *out, size_t max)
                               q->term[i].value);
     }
     for (i = 0; i < q->scope_count; i++) {
-        o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u, "s %s\n",
-                              q->scope[i]);
+        /* The identity goes on the SAME line as the path, so a reader that
+         * only understands "s <path>" still gets the path. */
+        o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
+                              "s %s\n", q->scope[i]);
+        if (q->scope_was[i].dev != 0u || q->scope_was[i].volume[0] != '\0') {
+            o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
+                                  "d %llu %s\n",
+                                  (unsigned long long)q->scope_was[i].dev,
+                                  q->scope_was[i].volume);
+        }
     }
     return (o < max) ? (int)o : -1;
 }
@@ -751,7 +769,8 @@ deserialise(tiku_trk_query_t *q, const char *in)
     const char *p = in;
 
     tiku_trk_query_init(q);
-    if (in == NULL || strncmp(in, "v1\n", 3) != 0) {
+    if (in == NULL ||
+        (strncmp(in, "v1\n", 3) != 0 && strncmp(in, "v2\n", 3) != 0)) {
         return -1;              /* an unknown version is not guessed at   */
     }
     p += 3;
@@ -776,8 +795,38 @@ deserialise(tiku_trk_query_t *q, const char *in)
                                               line + 2 + used,
                                               (tiku_trk_qjoin_t)j);
             }
+        } else if (strncmp(line, "kind ", 5) == 0) {
+            int k = 0, t = 0;
+            long long at = 0;
+
+            if (sscanf(line + 5, "%d %d %lld", &k, &t, &at) >= 2) {
+                q->kind = (tiku_trk_qrec_t)k;
+                q->temporary = t;
+                q->saved_at = (int64_t)at;
+            }
+        } else if (line[0] == 'y' && line[1] == ' ') {
+            snprintf(q->type, sizeof q->type, "%.*s",
+                     (int)(sizeof q->type - 1u), line + 2);
         } else if (line[0] == 's' && line[1] == ' ') {
             (void)tiku_trk_query_add_scope(q, line + 2);
+        } else if (line[0] == 'd' && line[1] == ' ') {
+            /* Belongs to the scope just read: the writer emits it directly
+             * after, and a stray one with no scope before it is dropped
+             * rather than attached to the wrong place. */
+            unsigned long long dev = 0ull;
+            int used = 0;
+
+            if (q->scope_count <= 0) {
+                q->dropped++;   /* nothing for it to describe */
+            } else if (sscanf(line + 2, "%llu %n", &dev, &used) >= 1) {
+                tiku_trk_qscope_t *sc = &q->scope_was[q->scope_count - 1];
+
+                sc->dev = (uint64_t)dev;
+                memcpy(sc->path, q->scope[q->scope_count - 1],
+                       sizeof sc->path);
+                snprintf(sc->volume, sizeof sc->volume, "%.*s",
+                         (int)(sizeof sc->volume - 1u), line + 2 + used);
+            }
         }
         if (nl == NULL) {
             break;

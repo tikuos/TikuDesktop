@@ -2671,11 +2671,18 @@ SetupOpenWithMenu rebuilds an OpenWithMenu from a fresh B_REFS_RECEIVED message 
 **MISSING:** "Open with…" is added directly after Open in both the File and pose menus with the Ctrl+Cmd+O shortcut and is absent from the volume menu, but it is a plain item with no application submenu and no handler in menu_invoke, and it is not gated off for the Trash, trashed items or the root.  
 *src/tiku_trk_cwmenu.c:build_file / build_contexts + src/tiku_trk_shortcuts.c:tiku_trk_sc_mods (CMD|CTRL)*
 
-#### CW-033 · important · open
+#### CW-033 · important · done
 **"Edit query" (Cmd+G) is inserted between Open and Open with… when the clicked item is a query or query template, or when the window itself is the Queries folder; query windows always have it.**  
 SetupEditQueryItem inserts at IndexOf(kOpenSelection)+1. ShouldHaveEditQueryItem: with no ref, FSIsQueriesDir(window ref); with a ref, model.IsQuery() || model.IsQueryTemplate(). BQueryContainerWindow overrides it to always true. Enabled when the window is a query or something is selected.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupEditQueryItem / ShouldHaveEditQueryItem`
-**SUBSYSTEM:** Query editing UI. No EDIT_QUERY command exists in the command enum (src/tiku_trk_shortcuts.h:28-90), and while the Find panel can SAVE a query (src/tiku_trk_desktop.c:2070-2087), tiku_trk_query_load and tiku_trk_query_list are called only from tests/test_query.c:269-288 — nothing in either shell lists, opens, or re-edits a saved query, and no Cmd+G binding exists.  
+**PORT:** The command exists now -- it did not, which is why nothing in this
+area could be built -- and sits between Open and Open with in every menu that
+carries Open, enabled only where there is a query: a results window, or a
+query item.  Cmd+G, as the original binds it.
+*src/tiku_trk_shortcuts.h/.c (TIKU_TRK_CMD_EDIT_QUERY, its label, key and
+enable rule); src/tiku_trk_cwmenu.c (the four insertions);
+src/tiku_trk_desktop.c:menu_ctx (is_query); tests/shell/query.script*  
+*Shell: desktop*  
 
 #### CW-034 · important · open
 **Volume, root and Desktop menus grow a "Mount >" submenu listing every partition (mounted ones check-marked) plus Mount all and Settings…, and an "Unmount" item (Cmd+U) - except on the Desktop and on the root popup, which get no Unmount. The boot volume's entry is disabled so it cannot be unmounted.**  
@@ -3872,12 +3879,17 @@ positive half has no implementation and is not claimed.
 *src/tiku_trk_fs.c:tiku_trk_fs_rename (the volume arms); tests/test_volume.c*  
 *Shell: desktop*  
 
-#### MA-053 · polish · open
+#### MA-053 · polish · partial
 **Renaming a query also clears its "temporary" flag, so a query the user bothered to name is kept instead of being reaped.**  
 The IsQuery() branch opens the model for writing and calls MoreOptionsStruct::SetQueryTemporary(model->Node(), false) before doing the entry rename under a RenameUndo.  
 `FSUtils.cpp` → `EditModelName`  
 **TIKU:** Only relevant if saved queries survive into TikuOS.
-**BLOCKED:** A temporary flag on saved queries: serialise writes v1/mode/terms/scopes and nothing else (query.c:728-746), grep 'temporary' over src/ is empty, no reaper exists, and nothing renames a saved query anyway (they live under names in a store-side index, query.c:791-830) — so there is no flag for a rename to clear and no rename to clear it.  
+**MISSING:** The flag exists and round-trips, and every run's record is
+written with it set -- a search nobody named is a by-product.  The other two
+limbs are absent: nothing renames a saved query (so nothing clears the flag),
+and nothing sweeps.
+*src/tiku_trk_query.h (temporary, saved_at) and the v2 record;
+src/tiku_trk_desktop.c:panel_search; tests/test_query.c*
 
 #### MA-054 · core · partial
 **A rename is validated before it happens: over-length names, names that already exist in the folder, and renames inside system directories each get their own alert and are refused.**  
@@ -4173,11 +4185,17 @@ ShowOrHideMimeTypeMenu hides "MimeTypeMenu" and gives the hidden "MimeTypeMenuSp
 `FindPanel.cpp` → `FindPanel::ShowOrHideMimeTypeMenu`
 **SUBSYSTEM:** Find-panel type menu — no type menu exists to hide in formula mode or show elsewhere (the panel's controls are enumerated at src/tiku_trk_find.c:551-635; none is a type menu).  
 
-#### Q-013 · important · open
+#### Q-013 · important · differs
 **Changing the MIME type while in by-attribute mode throws away the existing attribute rows and starts over with one fresh row.**  
 MessageReceived case kMIMETypeItem: after SetCurrentMimeType, if fMode == kByAttributeItem it calls RemoveAttrViewItems(false) then AddAttrRow() — deliberate, because the available attributes differ per type; entered criteria are lost.  
 `FindPanel.cpp` → `FindPanel::MessageReceived (case kMIMETypeItem)`
-**SUBSYSTEM:** Find-panel type menu — no type selection exists whose change could throw away the attribute rows (tiku_trk_find_t, src/tiku_trk_find.h:53-79, carries no type state).  
+**PORT:** Deliberately not reproduced.  This port already took the opposite
+position ten lines away in the same file: leaving formula mode KEEPS the
+attribute rows, with the reason stated -- losing a half-built query to a
+mis-click is a defect rather than a behaviour worth porting.  Discarding the
+rows when a type is picked is the same loss with a different trigger, so the
+type will narrow what the rows ask rather than replacing them.
+*src/tiku_trk_find.c:tiku_trk_find_set_mode (the stated policy)*
 
 #### Q-014 · important · done
 **Add and Remove buttons grow and shrink the attribute row list; Remove is disabled while only one row remains.**  
@@ -4238,8 +4256,15 @@ FindPanel::FindPanel creates either a "find" button posting kFindButton or, when
 FindSaveCommon creates/overwrites the file (GetQueriesDirectory = B_USER_DIRECTORY/queries, mkdir 0777 if absent), then Find() posts B_REFS_RECEIVED with fRef to be_app; TTracker::OpenRef sees Model::IsContainer() (true for queries) and opens a BQueryContainerWindow.  
 `FindPanel.cpp` → `FindWindow::Find / FindWindow::FindSaveCommon / FindWindow::GetQueriesDirectory (Tracker.cpp TTracker::OpenRef)`  
 **TIKU:** The "query is a file you open" indirection needs a decision: TikuOS could keep it (query record in the NVM filestore, opened by the shell) or collapse it to a direct command that prints results.  
-**MISSING:** Results genuinely appear in a separate window, but the row's stated mechanism — writing a query file into ~/queries and asking Tracker to open it — is simply gone: panel_search runs the walk inline and hands the live run to a new window, and no query record is written or reopened on the run path (saving is an unrelated explicit action), so a user never gets the reopenable query object the row describes.  
-*src/tiku_trk_desktop.c:837-865 (panel_search: query_start/step loop then open_results) and :525-550 (open_results); save is a separate button at :1754-1770*
+**MISSING:** Every run now leaves a record, marked temporary, and the record
+survives the session -- the store the desktop kept all of this in was the
+VOLATILE one, so saved queries, panel frames, recent lists and favourites
+were forgotten at exit while appearing to be saved.  What is still absent is
+the query as an OBJECT: nothing hands out a model of kind QUERY, so a record
+is reachable through Edit query but not as a file to double-click.
+*src/tiku_trk_desktop.c:panel_search (the record) and the sidecar store it
+now writes to; src/tiku_trk_query.c:tiku_trk_query_save;
+tests/shell/query.script*
 
 #### Q-024 · important · done
 **A new query file gets an auto-generated name describing the criteria plus a timestamp.**  
@@ -4254,27 +4279,50 @@ FindSaveCommon: replaceOriginal = fFile && (!fFromTemplate || fEditTemplateOnly)
 **TIKU:** The delete-to-close idiom relies on node monitoring of the query file. With VFS watch notifications the same trick works, but the 5 s bounded spin should become an event wait.
 **BLOCKED:** The run-writes-a-record mechanism (the Q-023 gap): panel_search (src/tiku_trk_desktop.c:896-927) runs the walk inline, writes no record and binds no window to one, so there is no 'same file' to replace, no old window for its removal to close, and no stored frame/columns to reopen with. The record loader tiku_trk_query_load is called only by tests (tests/test_query.c:269-277).  
 
-#### Q-026 · core · open
+#### Q-026 · core · done
 **Opening a saved query for editing (Edit query, Alt+G) restores the whole panel: mode, MIME type, text or attribute rows, target volumes, the Trash option, keyboard focus and even the text selection.**  
 RestoreWindowState reads kAttrQueryInitialMode, kAttrQueryInitialMime, kAttrQueryMoreOptions, kAttrQueryVolume, _trk/directories, then per mode either kAttrQueryInitialString or kAttrQueryInitialNumAttrs + kAttrQueryInitialAttrs (RestoreAttrState per row: menuSelection, subMenuSelection, attrViewText, logicalRelation index), and finally _trk/focusedView plus _trk/focusedSelStart/_trk/focusedSelEnd (selection only re-applied in formula mode).  
 `FindPanel.cpp` → `FindPanel::RestoreWindowState / FindPanel::RestoreAttrState / FindPanel::InitialMode / FindPanel::InitialAttrCount`  
 **TIKU:** Attributes become fields of one serialized query record; TikuOS has no per-file attribute namespace, so the split between the executable predicate and the UI state must be an explicit record layout.  
 **CHECKED:** Nothing opens a saved query for editing: tiku_trk_query_load/deserialise restores mode, terms and scopes into a query record but has no caller outside tests, there is no path back into tiku_trk_find_t, and no focus or text-selection state is stored at all.  
 *none found (tiku_trk_query_load unwired — only tests/test_query.c:269 calls it)*
-**WIRING:** The code exists: tiku_trk_query_load + deserialise restore mode, terms and scopes from a stored record (src/tiku_trk_query.c:832-848, 749-788). The caller is absent: its only invocations are tests/test_query.c:269-277, no UI command opens a saved query, and no converter exists from a query record back into tiku_trk_find_t (the find.h API, src/tiku_trk_find.h:82-144, is one-way panel-to-query via find_build). Focus and text-selection state are additionally never serialised (serialise, src/tiku_trk_query.c:728-746).  
+**PORT:** The inverse of the panel's own builder, and the reason a saved
+search is a thing you can open rather than only a thing you can run: mode,
+rows, each row's field, operator and value, the join (which belongs to the
+row BEFORE the one it joins), the typed text of a by-name query, and the
+scope ticking the place it named.  The panel's PLACES survive the restore --
+they are what this panel offers, not part of the query -- and a scope naming
+somewhere it cannot offer is reported rather than silently narrowing the
+search to nothing.
+*src/tiku_trk_find.c:tiku_trk_find_from_query; tests/test_query.c;
+tests/shell/query.script*  
+*Shell: desktop*  
 
-#### Q-027 · important · open
+#### Q-027 · important · partial
 **Target volumes are remembered by volume identity, not by device number, so a query reopened after a remount still targets the right disk — and a volume that is not mounted this time is skipped rather than dropped.**  
 SaveQueryAsAttributes embeds creationDate, capacity, deviceName, volumeName, fshName per selected volume (EmbedUniqueVolumeInfo) into kAttrQueryVolume. MatchArchivedVolume scores candidates 5/4/3/2/1 for those five fields and accepts the best with score >= 9; B_DEV_BAD_DRIVE_NUM means "not mounted, keep looking", any other error stops the scan. If a query names every mounted volume it reopens showing "All disks".  
 `FindPanel.cpp` → `FindWindow::SaveQueryAsAttributes / FindPanel::RestoreWindowState (Utilities.cpp EmbedUniqueVolumeInfo, MatchArchivedVolume)`  
 **TIKU:** Needs a stable device identity in the VFS (serial/UID) to survive re-enumeration — the direct analogue of the score-based match.
-**BLOCKED:** Identity-stamped scope records. serialise writes scopes as bare paths ('s <path>', src/tiku_trk_query.c:741-743) with no device identity to re-match on reopen. The scored-match machinery the row wants actually exists — tiku_trk_ident (src/tiku_trk_ident.h:8-11) is explicitly modelled on MatchArchivedVolume with weighted fields and a uid veto — but it keys the per-device state stores (src/tiku_trk_backend_tiku.c:543-544), and nothing applies it to query scopes; the load path is itself unwired (Q-026).  
+**MISSING:** A scope now remembers WHICH volume it meant -- the device and
+the volume's name beside the path -- and the pair round-trips, with an
+identity line that arrives before any scope dropped rather than attached to
+the wrong one.  What is not built is the CHECK on the way back: nothing
+compares the remembered identity against what is mounted now, so a query
+saved against a disk that has gone still searches whatever took its
+mount point.
+*src/tiku_trk_query.h (tiku_trk_qscope_t) and the v2 record;
+tests/test_query.c*
 
-#### Q-028 · core · open
+#### Q-028 · core · partial
 **A query saved as a template opens the Find window (pre-filled) instead of running, while a plain saved query opens its results.**  
 The distinction is the file's MIME type: B_QUERY_TEMPLATE_MIMETYPE vs B_QUERY_MIMETYPE (FindWindow::IsQueryTemplate uses strcasecmp on BNodeInfo::GetType). TTracker::OpenRef opens a container window for Model::IsQuery() and a `new FindWindow(ref)` for Model::IsQueryTemplate().  
 `FindPanel.cpp` → `FindWindow::IsQueryTemplate / FindPanel::SaveAsQueryOrTemplate (Tracker.cpp TTracker::OpenRef)`
-**BLOCKED:** A template type on saved-query records. serialise writes only v1/mode/t/s lines with no type marker (src/tiku_trk_query.c:728-746); grep -i template over src/*.c matches only the dormant query_template icon asset (src/tiku_trk_icons.c:499-500, 1661-1662). With no template/query distinction on records, open-pre-filled vs open-results cannot branch.  
+**MISSING:** A record now says what it IS -- a query to run or a template to
+open the panel with -- and the marker round-trips.  What is missing is the
+second save ACTION that would set it: the panel has one Save button, so
+nothing writes a template yet, and nothing opens one.
+*src/tiku_trk_query.h (TIKU_TRK_QREC_TEMPLATE) and the v2 record;
+tests/test_query.c*
 
 #### Q-029 · core · open
 **Running a search from a template creates a NEW query file and leaves the template untouched; editing a template in place (Edit Query template) saves back over it.**  
@@ -4387,11 +4435,17 @@ BPoseView::TargetVolumeIsReadOnly() returns true whenever the target model IsQue
 *none found — is_query declared at src/tiku_trk_shortcuts.h:100, unused in src/tiku_trk_shortcuts.c and src/tiku_trk_desktop.c:menu_ctx (149-196)*
 **SUBSYSTEM:** Query-window specialisation (is_query gating). is_query is declared in the shortcut context (src/tiku_trk_shortcuts.h:114) but menu_ctx never sets it (src/tiku_trk_desktop.c:152-203) and shortcuts.c never reads it (grep is_query src/tiku_trk_shortcuts.c returns nothing); target_ro is a /sys,/dev,/proc path-prefix test (src/tiku_trk_desktop.c:197-199) that a results window's pseudo-path 'find #N' never matches, so New folder and Paste stay enabled; and cwmenu has volume/trash context variants but no query variant (grep quer src/tiku_trk_cwmenu.c returns nothing).  
 
-#### Q-045 · important · open
+#### Q-045 · important · done
 **"Edit query" (Alt+G) reopens the Find window on the query — either the query the window is showing, or the query/template files selected in a folder.**  
 BQueryPoseView::EditQueries sends kEditQuery with the window's own target ref to the Tracker signature; BPoseView::EditQueries sends the selection with onlyQueries=true (SendSelectionAsRefs filters non-query models) and "editQueryOnPose"; TTracker::EditQueries opens a FindWindow per existing ref. The item is enabled when the window is a query or something is selected, and lives between Open and Open with in the menu; a plain folder window only shows it for query/template poses (or inside ~/queries).  
 `QueryPoseView.cpp` → `BQueryPoseView::EditQueries (PoseView.cpp BPoseView::EditQueries, Tracker.cpp TTracker::EditQueries, ContainerWindow.cpp BContainerWindow::SetupEditQueryItem / ShouldHaveEditQueryItem, Shortcuts.cpp TShortcuts::UpdateEditQueryItem)`
-**BLOCKED:** A record-to-panel restore path and an Edit-query command. No function converts a query back into tiku_trk_find_t (the find.h API, src/tiku_trk_find.h:82-144, is one-way via find_build); a results window carries only the live run, not a record reference (folder_t holds run/live, src/tiku_trk_desktop.c:71-72); and grep for any edit-query command or Alt+G binding over src/ returns nothing.  
+**PORT:** Cmd+G on a results window reopens the Find panel on the query that
+produced it, filled in.  A scope the panel can no longer offer is said aloud
+in the status line rather than swallowed, because a restored search missing
+one of its places is not the search that was saved.
+*src/tiku_trk_desktop.c (the EDIT_QUERY command and its Cmd+G binding);
+src/tiku_trk_find.c:tiku_trk_find_from_query; tests/shell/query.script*  
+*Shell: desktop*  
 
 #### Q-046 · important · open
 **Unmounting a volume force-closes any query window that is searching it, so the unmount can proceed.**  
@@ -6201,12 +6255,17 @@ fNeedToQuit set under the lock, then up to 10000 iterations of snooze(1000) wait
 *src/tiku_trk_task.c:87-102 tiku_trk_loop_free*
 **WAIVER CANDIDATE:** the row's premise is a preemptive worker thread to hand-shake with, and the port's task loop is threadless by design: no thread/pthread anywhere in src/tiku_trk_task.c (grep returns nothing) — tasks are pumped synchronously by tiku_trk_loop_run from the caller, so there is no worker to ask to quit or wait ten seconds for. tiku_trk_loop_free (src/tiku_trk_task.c:87-102) frees the pending list and returns, which is the complete teardown for a threadless loop. Waiver candidate for the user.  
 
-#### AW-090 · important · open
+#### AW-090 · important · partial
 **Temporary queries older than a week that are not open in any window are deleted automatically, but only while the machine is idle and never in the first half hour after boot.**  
 RunWhenIdle(worker, 30*60s initial delay, 5*60s idle requirement, 10s heartbeat); a query must be MoreOptionsStruct::QueryTemporary, older than kDaysToExpire (7) by ctime, and !EntryHasWindowOpen before entry.Remove(). Batched kBatchCount refs per invocation.  
 `FindPanel.cpp` → `DeleteTransientQueriesTask::StartUpTransientQueryCleaner / DeleteTransientQueriesTask::ProcessOneRef / DeleteTransientQueriesTask::QueryOldEnough`  
 **TIKU:** Background deletion of user data on an idle timer is a policy decision worth re-confirming; on a durable-NVM device the write cost also matters.
-**BLOCKED:** waits on two absences: (a) transient queries do not exist — queries reach the store only through the explicit save at src/tiku_trk_desktop.c:2080 (tiku_trk_query_save), and grep for temporary/transient over src returns nothing; (b) no idle-task pump runs in any binary — tiku_trk_run_when_idle and tiku_trk_loop_run have no caller outside tests/test_task.c.  
+**MISSING:** Both facts a sweep needs now exist on the record -- the
+temporary flag and the time it was written -- and every run writes them.
+The sweep itself does not exist, and neither does the "not open in any
+window" test it has to make first.
+*src/tiku_trk_query.h (temporary, saved_at); src/tiku_trk_desktop.c:
+panel_search*
 
 #### AW-091 · important · open
 **Icons for the apps and preferences folders are pre-cached in the background about ten seconds after startup, and only for Tracker and the Deskbar — never for a file panel hosted in someone else's application.**  

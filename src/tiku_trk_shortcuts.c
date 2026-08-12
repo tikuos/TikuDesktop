@@ -67,6 +67,7 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_FIND:              return "Find" "\xe2\x80\xa6";
     case TIKU_TRK_CMD_NEW_FOLDER:        return "New folder";
     case TIKU_TRK_CMD_OPEN:              return "Open";
+    case TIKU_TRK_CMD_EDIT_QUERY:        return "Edit query";
     case TIKU_TRK_CMD_OPEN_WITH:         return "Open with" "\xe2\x80\xa6";
     case TIKU_TRK_CMD_GET_INFO:          return "Get info";
     case TIKU_TRK_CMD_EDIT_NAME:         return "Edit name";
@@ -148,6 +149,7 @@ tiku_trk_sc_key(int command)
     case TIKU_TRK_CMD_FIND:              return 'F';
     case TIKU_TRK_CMD_NEW_FOLDER:        return 'N';
     case TIKU_TRK_CMD_OPEN:              return 'O';
+    case TIKU_TRK_CMD_EDIT_QUERY:        return 'G';
     case TIKU_TRK_CMD_OPEN_WITH:         return 'O';   /* with Ctrl added   */
     case TIKU_TRK_CMD_GET_INFO:          return 'I';
     case TIKU_TRK_CMD_EDIT_NAME:         return 'E';
@@ -238,6 +240,11 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_MOVE_TO:
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return c->selection > 0 && !c->selection_ro;
+
+    /* Only where there is a query to edit: the item clicked is one, or
+     * the window itself is a results window (CW-033). */
+    case TIKU_TRK_CMD_EDIT_QUERY:
+        return c->is_query;
 
     case TIKU_TRK_CMD_DUPLICATE:
         return c->can_trash_or_dup;

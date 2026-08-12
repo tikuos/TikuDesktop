@@ -29,6 +29,9 @@ enum {
     TIKU_TRK_CMD_FIND,
     TIKU_TRK_CMD_NEW_FOLDER,
     TIKU_TRK_CMD_OPEN,
+    /* Between Open and Open with, where the original puts it: it is what
+     * you do with a query instead of opening it (CW-033). */
+    TIKU_TRK_CMD_EDIT_QUERY,
     TIKU_TRK_CMD_OPEN_WITH,
     TIKU_TRK_CMD_GET_INFO,
     TIKU_TRK_CMD_EDIT_NAME,
