@@ -28,6 +28,7 @@
 #include "tiku_trk_attr.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
+#include "tiku_trk_nodeicon.h"
 #include "tiku_trk_thumb.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
@@ -54,6 +55,10 @@
 #define DESK_H  680
 #define COUNT_H  16
 #define MINI_ICON 16
+
+/* How many entries per turn are asked whether they carry a picture of their
+ * own.  A bound rather than the whole listing: the ask opens the file. */
+#define HINTS_PER_TURN 24
 
 /* The clear space a row keeps between a name and a right-aligned value; a
  * value that would cross it is dropped rather than overlapping the name. */
@@ -167,6 +172,10 @@ typedef struct desktop {
     char                 drop_dst[TIKU_TRK_PATH_MAX];
     tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
+    /* ONE node-icon cache for the desktop: the same file shown in two
+     * windows is one entry, and an icon edited on disk is dropped once
+     * rather than per window (IV-038). */
+    tiku_trk_nodeicon_t  nicons;
     tiku_trk_alert_t     alert;     /* the question, when there is one */
     tiku_trk_progress_win_t prog;   /* the shared status window        */
     tiku_trk_prefs_t     prefs;
@@ -323,6 +332,14 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             int mini = row_h - 2;
             int tx = row.x + 4;
             int thumbed = 0;
+            /* Where the row's picture comes from, and its name.  Resolved
+             * ONCE per row rather than per paint call: the fallback walk
+             * is the same walk whether the row is selected, cut or plain
+             * (IV-001). */
+            char art[TIKU_TRK_NAME_MAX];
+            tiku_trk_icon_from_t src =
+                tiku_trk_nodeicon_resolve(&fl->app->nicons, fl->app->store,
+                                          &p->model, art, sizeof art);
 
             if (mini > MINI_ICON) {
                 mini = MINI_ICON;
@@ -369,11 +386,12 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             {   /* An image shows its own picture.  A HIT draws it; a
                  * miss QUEUES the work and falls through to a type icon,
                  * so the row is never waiting on a decode (IV-028,
-                 * IV-031). */
+                 * IV-031).  Which rows those are is the HINT, taken once
+                 * when the entry arrived -- asking here would sniff every
+                 * file's first bytes once per frame (IV-005). */
                 tiku_trk_image_t th;
 
-                if (tiku_trk_thumb_wanted(&fl->app->thumbs,
-                                          p->model.path)) {
+                if (src == TIKU_TRK_ICON_FROM_THUMB) {
                     if (tiku_trk_thumb_fresh(fl->app->store, p->model.path,
                                              p->model.facts.mtime) &&
                         tiku_trk_thumb_load(fl->app->store, p->model.path,
@@ -396,19 +414,16 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             if (thumbed) {
                 tx = row.x + 2 + mini + 4;
             } else if (((p->model.facts.link_broken || cut)
-                     ? tiku_trk_icon_paint_dim(s,
-                           tiku_trk_model_icon_name(&p->model), row.x + 2,
+                     ? tiku_trk_icon_paint_dim(s, art, row.x + 2,
                            row.y + (row_h - mini) / 2, mini, 0.55f,
                            TIKU_DESK_C_DOC)
                      : drawn_sel
                      /* PVL-082: selection reads on the icon as well as the
                       * label, so a row whose label is scrolled away still
                       * shows it. */
-                     ? tiku_trk_icon_paint_selected(s,
-                           tiku_trk_model_icon_name(&p->model), row.x + 2,
+                     ? tiku_trk_icon_paint_selected(s, art, row.x + 2,
                            row.y + (row_h - mini) / 2, mini)
-                     : tiku_trk_icon_paint(s,
-                           tiku_trk_model_icon_name(&p->model), row.x + 2,
+                     : tiku_trk_icon_paint(s, art, row.x + 2,
                            row.y + (row_h - mini) / 2, mini))) {
                 tx = row.x + 2 + mini + 4;
             }
@@ -1960,6 +1975,9 @@ open_folder(desktop_t *app, const char *path)
     if (fl->view == NULL) {
         return NULL;
     }
+    /* Every window shares the one cache, so a file open in two of them has
+     * one icon and an edit to it is dropped once. */
+    tiku_trk_poseview_set_icons(fl->view, &app->nicons);
     (void)tiku_trk_poseview_restore_state(fl->view);
 
     /* Cascade, so a new window never lands exactly on the last one. */
@@ -2657,6 +2675,7 @@ main(int argc, char **argv)
     tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_store_memory_open();
     tiku_trk_thumb_init(&app.thumbs);
+    tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_prefs_init(&app.prefs);
     app.prefs_page = TIKU_TRK_PAGE_DESKTOP;
     {
@@ -4130,6 +4149,35 @@ sel_done:
             }
         } else if (app.nav_on && app.popup == NULL) {
             app.nav_on = 0;         /* the menu went; so does the walk */
+        }
+        {   /* Ask the entries that have not been asked whether they have
+             * a picture of their own -- a bounded batch per turn, for the
+             * same reason the thumbnails are made in one: a folder of a
+             * thousand images must not open a thousand files inside one
+             * tick (IV-005, IV-037). */
+            int budget = HINTS_PER_TURN;
+
+            for (i = 0; i < app.folder_count && budget > 0; i++) {
+                folder_t *fl = &app.folders[i];
+                int k, n;
+
+                if (fl->win == NULL || !fl->win->open) {
+                    continue;
+                }
+                n = tiku_trk_poseview_count(fl->view);
+                for (k = 0; k < n && budget > 0; k++) {
+                    tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, k);
+
+                    if (p == NULL || p->model.facts.icon_hint !=
+                                         TIKU_TRK_ICONHINT_UNASKED) {
+                        continue;
+                    }
+                    (void)tiku_trk_nodeicon_hint(app.store, &app.thumbs,
+                                                 &p->model);
+                    budget--;
+                    app.dirty = 1;
+                }
+            }
         }
         if (tiku_trk_thumb_step(&app.thumbs, app.store)) {
             /* One picture per turn, on the idle tick: the window keeps

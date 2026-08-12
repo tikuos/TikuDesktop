@@ -4346,13 +4346,19 @@ FindPanel::AttachedToWindow, after RestoreWindowState: if `!findWindow->CurrentF
 
 Architecture notes: [`spec/ARCH-icons-visuals.md`](spec/ARCH-icons-visuals.md)
 
-#### IV-001 · core · open
+#### IV-001 · core · done
 **An icon defined by the file itself always wins over any type-based icon.**  
 GetNodeIcon opens the node and tries, in order: BAppFileInfo::GetIcon for executables (so app icons come from resources too), else the thumbnail, else BNodeInfo::GetIcon. Success sets source = kNode.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetNodeIcon`  
 **TIKU:** Device-namespace nodes have no BFS attributes; decide whether a typed descriptor carries icon bits, or whether device nodes are type-icon-only and the node tier simply never fires.
-**SUBSYSTEM:** node-icon tier (file-supplied icon bits): no code reads icon data from a node — tiku_trk_hvif_parse's only non-test caller is the compiled-in table (src/tiku_trk_icons.c:1774), the model struct carries no icon or icon-source field (src/tiku_trk_model.h), and icon_name() derives art purely from kind/type/path (src/tiku_trk_model.c:184-260)  
-
+**PORT:** The three tiers exist and are ordered: an entry's own icon
+attribute beats its type's, and a type only counts as the source when it
+actually supplies art rather than landing on the same document icon an
+untyped file gets.  A thumbnail is the node's picture too and is reported
+separately, because the caller draws a bitmap rather than naming one.
+*src/tiku_trk_nodeicon.c:tiku_trk_nodeicon_resolve; src/tiku_trk_desktop.c
+(resolved once per row, drawn by every paint variant); tests/test_nodeicon.c*
+*Shell: desktop*  
 #### IV-002 · core · differs
 **When no node icon exists the icon is found by walking a fixed fallback chain and the first hit wins.**  
 Order (file header comment, implemented in Preload/GetIconFromFileTypes): node icon -> preferred app named by the node -> the MIME type's own icon -> icon supplied by the MIME type's preferred app -> the supertype's MIME icon -> generic 'application/octet-stream' icon -> hard-coded R_FileIcon resource.  
@@ -4371,16 +4377,29 @@ GetGenericIcon fetches B_FILE_MIMETYPE from the MIME db; if even that fails GetF
 **Once an icon has been located, later redraws of the same file skip the search.**  
 Model stores IconSource (kNode/kVolume/kMetaMime/kPreferredAppForNode/kTrackerSupplied/...); Preload's else-branch switches straight to that source. A total miss resets it to kUnknownSource so the next draw re-searches.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::Preload`  
-**MISSING:** The stated clause fails — there is no per-model icon-source memo and icon_name() re-runs the whole fallback walk inside every draw call — but a real memo does exist one stage later (the rasterised bitmap keyed on icon name and size), so redraws skip the render though not the search.  
-*src/tiku_trk_app.c:266-269 and 435-440, src/tiku_trk_desktop.c:252-264 (icon_name called per draw); src/tiku_trk_model.h:92-101 (model carries no icon-source field); src/tiku_trk_icons.c:1755-1799 (cache keyed on icon index + size)*
-
-#### IV-005 · important · open
+**MISSING:** Half of it now holds: the NODE tier is memoised, on the model
+(has it a picture at all) and in a shared cache (which art), so a redraw
+neither sniffs the file nor reads the attribute again.  The type and generic
+rungs are still re-walked inside every draw call, and the source a row
+resolved to is not kept on the pose.
+*src/tiku_trk_nodeicon.c:tiku_trk_nodeicon_resolve (node tier cached, the
+type walk re-run per call); src/tiku_trk_icons.c:1755-1799 (rasterised
+bitmap cached on name + size)*
+#### IV-005 · important · done
 **Tracker avoids touching the disk for a node icon on files that obviously have none.**  
 Model::CheckAppIconHint requires either a vector icon attribute or BOTH mini and large icon attributes; failing that, icon source is pre-set to kUnknownNotFromNode and GetNodeIcon is skipped entirely.  
 `src/kits/tracker/Model.cpp` → `Model::CheckAppIconHint / Model::FinishSettingUpType`  
 **TIKU:** The equivalent hint is a capability bit on the VFS node ('has own icon'), which is cheaper than the two attribute probes.
-**SUBSYSTEM:** node-icon tier: the disk probe this hint would skip does not exist — there is no node-icon read anywhere in src/ (same absence as IV-001), so there is nothing to pre-empt with a capability bit  
-
+**PORT:** The hint is a fact on the model, asked ONCE when the entry is taken
+in (a bounded batch per idle turn) and never from the draw path: a thumbnail
+it has or would be given, else an icon attribute, else none.  The draw path
+reads the store only for entries that said yes, and remembers what it found.
+Before this, every row of every frame sniffed the file's first bytes and read
+an attribute to answer a question that had not changed.
+*src/tiku_trk_nodeicon.c:tiku_trk_nodeicon_hint/_possible;
+src/tiku_trk_model.h (facts.icon_hint); src/tiku_trk_desktop.c
+(HINTS_PER_TURN batch on the idle tick); tests/test_nodeicon.c*
+*Shell: desktop*  
 #### IV-006 · important · partial
 **Volumes get the icon the filesystem itself supplies; network shares get a distinct share icon.**  
 GetVolumeIcon: BVolume::IsShared() -> R_ShareIcon resource; else BVolume::GetIcon() sets source = kVolume; else fall back to the B_VOLUME_MIMETYPE icon. A volume with its own node icon still beats all of this (Preload tries GetNodeIcon first).  
@@ -4543,7 +4562,6 @@ GetNodeIcon calls GetThumbnailFromAttr before GetFileIconFromAttr for non-execut
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr / ShouldGenerateThumbnail`  
 **TIKU:** Translator-based decode does not exist on TikuOS; decide which formats (if any) generate thumbnails and whether generation is even affordable.  
 *Shell: desktop*  
-*Shell: desktop*  
 **PORT:** Complete for the formats a disk actually holds.  PNG: every colour
 type (greyscale, truecolour, palette with tRNS, and both with alpha), bit
 depths 1/2/4/8, all five filters, and Adam7 interlace -- verified pixel-exact
@@ -4607,19 +4625,30 @@ If the attribute write failed, Execute posts kUpdateThumbnail with the node_ref 
 `src/kits/tracker/Tracker.cpp` → `TTracker::MessageReceived, case kUpdateThumbnail`  
 **TIKU:** The VFS watch notification (TIKU_EVENT_VFS) replaces node monitoring here; the explicit message path is still needed for nodes that cannot be watched.  
 **PORT:** The job runs and counts whether or not the store took the result; a null store is exercised by a test rather than assumed.  
-#### IV-037 · important · open
+#### IV-037 · important · done
 **A file that already carries a thumbnail is known up-front to have its own icon.**  
 Model::FinishSettingUpType sets fIconFrom = kNode when GetAttrInfo(kAttrThumbnail) succeeds or ShouldGenerateThumbnail(type) is true, so the node path is taken on the very first draw.  
 `src/kits/tracker/Model.cpp` → `Model::FinishSettingUpType`
-**SUBSYSTEM:** thumbnails: no thumbnail attribute exists to detect up-front, and the model has no icon-source field to pre-set (src/tiku_trk_model.h; grep -ri thumb src/: nothing)  
-
-#### IV-038 · core · open
+**PORT:** A file that would be given a thumbnail is hinted as having its own
+picture before one exists -- waiting for the attribute would mean the first
+draw of every image took the type icon and nothing asked again.  Turning the
+"generate thumbnails" setting off makes it a plain file again.
+*src/tiku_trk_nodeicon.c:tiku_trk_nodeicon_hint; tests/test_nodeicon.c*  
+*Shell: desktop*  
+#### IV-038 · core · done
 **Editing a file's icon attribute updates its icon everywhere immediately.**  
 Model::IconAttrChanged returns true for kAttrIcon, kAttrLargeIcon, kAttrMiniIcon and kAttrThumbnail; BPose::UpdateWidgetAndModel then calls UpdateIcon, which calls IconCache::IconChanged(model) - dropping the node-cache entry (for kNode or kVolume sources) and calling Model::ResetIconFrom - and invalidates just the icon rect.  
 `src/kits/tracker/Pose.cpp` → `BPose::UpdateIcon / Model::IconAttrChanged`  
 **TIKU:** Maps onto VFS watch events; note the rewrite must distinguish 'icon data changed' from 'type changed', which drive different cache evictions.
-**SUBSYSTEM:** node-icon tier: there is no icon attribute to edit — models carry no icon bits (src/tiku_trk_model.h) and no code reads icon data from a node; the notify layer's TIKU_TRK_EV_ATTR (src/tiku_trk_notify.h:35) covers value/descriptor changes and nothing maps any attribute change to an icon eviction  
-
+**PORT:** Every notice goes through the view's handler, which drops the
+cached icon there rather than at the call sites; the model's hint comes back
+with the freshly listed model, so a file GIVEN an icon is looked at again
+instead of staying what it was.  The attribute test covers the icon and both
+thumbnail attributes and not, say, a pose position.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_notify (eviction) and
+_set_icons; src/tiku_trk_nodeicon.c:_changed/_attr_matters/_unhint;
+tests/test_nodeicon.c*
+*Shell: desktop*  
 #### IV-039 · important · open
 **Changing a MIME type's icon in the FileTypes preference repaints every affected file, batched rather than one at a time.**  
 NoticeMetaMimeChanged reads be:which (B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED / B_APP_HINT_CHANGED / B_PREFERRED_APP_CHANGED) and defers through a MetaMimeChangedAccumulator with a 200 ms delay and 5 s cap; MetaMimeChanged then evicts the shared entry, sleeps 10 ms, and re-icons poses whose IconFrom is not kNode/kUnknown* and whose MimeType matches case-insensitively.  
@@ -4634,12 +4663,18 @@ IconChanged retires an entry's four bitmaps into SharedIconCache::fRetiredBitmap
 **PORT:** The invariant the row states does hold: compositing is fully synchronous inside paint(), which fetches the bitmap and finishes blending into the app's own surface within one call and nothing else retains the pointer, so the evicting free() in icons_bitmap can never land under a draw in flight — the condition the TIKU note put on dropping the retirement list.  
 *src/tiku_trk_iconpaint.c:33-81 (bitmap fetched at :44, consumed in the same call); src/tiku_trk_icons.c:1786-1795 (evict + free); only caller of icons_bitmap outside tests*
 
-#### IV-041 · polish · open
+#### IV-041 · polish · partial
 **Deleting a file drops its cached icon, unless the entry was preloaded as permanent.**  
 IconCache::Deleting(Model*) only touches the node cache and only when IconFrom() == kNode; NodeIconCache::Deleting refuses to remove entries flagged Permanent(). NodePreloader preloads /boot/system/apps and /boot/system/preferences icons with permanent = true and calls IconCache::Removing (which ignores the flag) when such an entry disappears.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::Deleting / NodeIconCache::Deleting / NodePreloader::PreloadOne`
-**SUBSYSTEM:** node-icon tier: the only icon cache is keyed on shared art name + size (src/tiku_trk_icons.c:1745-1799), never on a node, so there is no per-file entry a deletion could drop and no permanent flag to respect; per-node entries arrive only with the node-icon tier  
-
+**MISSING:** Both rules hold -- a deletion drops the entry's cached icon
+through the notice handler, a preloaded one survives that, and the stronger
+removal for whoever preloaded it takes the permanent entry as well -- but
+nothing preloads: the port has no directory of applications whose icons are
+shown constantly, so the permanent tier has no producer and is exercised only
+by its test.
+*src/tiku_trk_nodeicon.c:_deleted/_removing/_preload;
+src/tiku_trk_poseview.c:tiku_trk_poseview_notify; tests/test_nodeicon.c*
 #### IV-042 · core · partial
 **A symlink shows its target's icon; a broken symlink shows a broken-link icon.**  
 BPose::ResolvedModel returns LinkTo() when the link resolves and the symlink Model itself when it does not; the unresolved Model's MIME type is B_LINK_MIMETYPE ("application/x-vnd.Be-symlink"), which Tracker installs with R_BrokenLinkIcon. Attributes and label always come from the symlink, only the icon from the target.  

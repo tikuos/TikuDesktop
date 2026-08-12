@@ -110,6 +110,9 @@ struct tiku_trk_poseview {
      * both arrives twice (PVL-090). */
     uint64_t           *inserted;
     int                 inserted_count;
+    /* The shared icon cache, or NULL.  Kept in step from the notice
+     * handler: see tiku_trk_poseview_set_icons. */
+    tiku_trk_nodeicon_t *icons;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -2759,6 +2762,14 @@ remove_pose(tiku_trk_poseview_t *v, int at)
     }
 }
 
+void
+tiku_trk_poseview_set_icons(tiku_trk_poseview_t *v, tiku_trk_nodeicon_t *c)
+{
+    if (v != NULL) {
+        v->icons = c;
+    }
+}
+
 unsigned
 tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 {
@@ -2767,6 +2778,24 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 
     if (v == NULL || e == NULL) {
         return flags;
+    }
+    if (v->icons != NULL) {
+        /* Before anything else, and whether or not this view holds the row:
+         * the cache is shared, so a notice that turns out to be about some
+         * other window's entry still describes an icon this one may be
+         * showing.  The MODEL's own hint needs no clearing here -- every
+         * branch below overwrites it with the freshly listed one, which has
+         * not been asked yet. */
+        if (e->op == TIKU_TRK_EV_REMOVED) {
+            (void)tiku_trk_nodeicon_deleted(v->icons, e->path);
+        } else {
+            (void)tiku_trk_nodeicon_changed(v->icons, e->path);
+            if (e->op == TIKU_TRK_EV_MOVED && e->from[0] != '\0') {
+                /* Keyed by path, so the name it USED to have is a key that
+                 * now describes nothing. */
+                (void)tiku_trk_nodeicon_changed(v->icons, e->from);
+            }
+        }
     }
     /* A notice about the folder ITSELF is not about its contents.  A rename
      * names the folder by its OLD path -- the new one is where it has just

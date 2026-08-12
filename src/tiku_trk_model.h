@@ -81,7 +81,18 @@ typedef struct {
     uint64_t total, avail;
     int64_t  size;
     int64_t  mtime;
+    /* Whether the node carries a picture of its own, asked ONCE when the
+     * entry is taken in rather than on every draw.  Unasked is a distinct
+     * answer from none: a zeroed model has not been probed, and treating
+     * that as "no icon" is how a file's own art silently never appears. */
+    int      icon_hint;
 } tiku_trk_facts_t;
+
+/** @brief The answers facts.icon_hint can hold. */
+#define TIKU_TRK_ICONHINT_UNASKED 0
+#define TIKU_TRK_ICONHINT_NONE    1
+#define TIKU_TRK_ICONHINT_ATTR    2  /* an icon attribute of its own       */
+#define TIKU_TRK_ICONHINT_THUMB   3  /* its own picture IS its icon        */
 
 typedef struct tiku_trk_backend tiku_trk_backend_t;
 

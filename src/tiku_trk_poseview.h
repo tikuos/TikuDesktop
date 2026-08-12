@@ -19,6 +19,7 @@
 #include "tiku_trk_attr.h"
 #include "tiku_trk_match.h"
 #include "tiku_trk_model.h"
+#include "tiku_trk_nodeicon.h"
 #include "tiku_trk_notify.h"
 
 #define TIKU_TRK_COLUMNS_MAX   6
@@ -576,6 +577,18 @@ void tiku_trk_poseview_set_secondary(tiku_trk_poseview_t *v, int field);
 #define TIKU_TRK_NOTIFY_REDRAW   0x1u
 #define TIKU_TRK_NOTIFY_GONE     0x2u   /* the folder itself was removed  */
 #define TIKU_TRK_NOTIFY_RETITLE  0x4u   /* it was renamed                 */
+
+/**
+ * @brief Give the view the icon cache to keep in step (IV-038, IV-041).
+ *
+ * Optional, and shared: passing the same cache to every view is the point,
+ * since a file shown in two windows has one icon.  Held here rather than
+ * dropped at the call sites because the notice handler is where a change
+ * is already known to have happened, and a second place that has to
+ * remember to evict is a place that will not.
+ */
+void tiku_trk_poseview_set_icons(tiku_trk_poseview_t *v,
+                                 tiku_trk_nodeicon_t *c);
 
 /**
  * @brief Apply one change notice.
