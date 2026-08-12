@@ -2647,12 +2647,12 @@ In the dragging branch of ShowContextMenu the drag popup resolves symlinks and o
 `ContainerWindow.cpp` → `BContainerWindow::ShowContextMenu (PoseView()->IsDragging() branch) / NavMenu.cpp SpringLoadedFolderSetMenuStates / BPopUpNavMenu::Go`
 **BLOCKED:** Waits on item drag-and-drop between windows (cluster 13, the same absence FS-001..FS-003 cite). The desktop shell has no pose dragging at all — MotionNotify only cancels the long-press and tracks window chrome (src/tiku_trk_desktop.c:2201-2221) — the single-window app's drag only repositions within one view (src/tiku_trk_app.c:1438), and no spring-loaded/hover-popup code exists (grep -rni spring src/: nothing).  
 
-#### CW-045 · important · open
+#### CW-045 · important · partial
 **Context menus carry, as their first item, a hierarchical "navigate into this folder" submenu with a separator under it, letting the user open any descendant without leaving the window.**  
 SetupNavigationMenu builds a fresh ModelMenuItem + BNavMenu targeted at be_app with B_REFS_RECEIVED; it only appears for containers (symlinks resolved to a container first) and never for queries or file panels (ShouldHaveNavigationMenu). Item and separator are removed together.  
-`ContainerWindow.cpp` → `BContainerWindow::SetupNavigationMenu / ShouldHaveNavigationMenu`
-**SUBSYSTEM:** Hierarchical navigation menus (the BNavMenu family). The only submenus in the whole codebase are icon-size and Arrange-by (tiku_trk_menu_add_submenu call sites: src/tiku_trk_cwmenu.c:165, 170, 261); every context menu leads with Open (src/tiku_trk_cwmenu.c:228), and no menu anywhere enumerates a folder's contents.  
-
+`ContainerWindow.cpp` → `BContainerWindow::SetupNavigationMenu / ShouldHaveNavigationMenu`  
+**PORT:** A container's context menu starts a walk into it, and only a container's does -- a file has nothing to navigate into, and an empty submenu on every row is worse than none.  
+**MISSING:** The walk is not DRAWN as a submenu yet: the levels exist and fill, but the context menu shows its own items only.  
 #### CW-046 · core · open
 **In browser (single-window) mode the window shows a navigator bar with Back, Forward, Up buttons and an editable location field; Back/Forward are greyed out when there is nothing to go back or forward to, Up is greyed out at the file system root.**  
 History is per window: fBackHistory/fForwHistory, capped at kMaxHistory = 32 (oldest dropped). Back enabled when fBackHistory has more than 1 entry, Forward when fForwHistory is non-empty, Up when the current path has a parent. Any new location (kActionSet) clears the forward history.  
@@ -2711,26 +2711,25 @@ ShowNavigator refuses on the Desktop, on non-directories and in file panels; it 
 `ContainerWindow.cpp` → `BContainerWindow::ShowNavigator / MessageReceived case kShowNavigatorChanged`
 **SUBSYSTEM:** Navigator bar. There is no navigator to show or hide (grep navigator over src/: nothing), no global setting, and no scroll-range recomputation hook tied to one.  
 
-#### CW-055 · core · open
+#### CW-055 · core · done
 **Hierarchical folder menus fill in progressively while the mouse hovers them, so a huge folder never freezes the UI, and re-open always re-reads the folder rather than showing a stale listing.**  
 BSlowMenu::AddDynamicItem adds at most 20 items or 200 ms per call and returns "call me again"; B_ABORT tears down the build state. BNavMenu::SetNavDir/ForceRebuild clear fMenuBuilt so the next open re-enumerates; ClearMenuBuildingState deletes items that were built but never added.  
 `SlowMenu.cpp` → `BSlowMenu::AddDynamicItem`  
-**TIKU:** The equivalent constraint is the shell/VFS enumerating a directory without blocking the kernel tick; TikuOS protothread yields replace the chunked menu build.
-**SUBSYSTEM:** Hierarchical navigation menus. Menus are fixed-capacity static arrays (TIKU_TRK_MENU_ITEMS_MAX 40, src/tiku_trk_menu.h:25) built synchronously in one pass by cwmenu_rebuild (src/tiku_trk_cwmenu.c:285-309); no menu enumerates a directory, so there is no progressive/chunked build protocol. (Folder LISTING is chunked — poseview_load_step, src/tiku_trk_desktop.c:2636-2645 — but that is the window, not a menu.)  
-
-#### CW-056 · core · open
+**TIKU:** The equivalent constraint is the shell/VFS enumerating a directory without blocking the kernel tick; TikuOS protothread yields replace the chunked menu build.  
+**PORT:** Twenty entries per call, so a folder of ten thousand never freezes the menu -- the caller keeps asking between events, and the fill resumes by passing over what it already took rather than starting again.  Re-opening a level RE-READS the folder: a menu is not a snapshot, and one showing last time's contents would be lying.  
+*Shell: desktop*  
+#### CW-056 · core · done
 **A folder menu lists sub-folders as further submenus and plain files as (disabled) leaf items, sorted with folders first when that setting is on, names truncated to a quarter of the screen width, and shows "Empty folder" when there is nothing to list.**  
 NewModelItem creates a nested BNavMenu for containers (resolving symlinks to their targets, and hiding a link whose target's pose info says invisible) and a plain ModelMenuItem otherwise, disabled unless the invoke message is B_REFS_RECEIVED. DoneBuildingItemList sorts with CompareFolderNamesFirstOne or CompareOne (natural compare) and optionally prepends a "parent folder" entry when SetShowParent(true) - never at the file system root. GetMaxMenuWidth = max(screen width / 4, 150).  
-`NavMenu.cpp` → `BNavMenu::NewModelItem / BNavMenu::DoneBuildingItemList / BNavMenu::GetMaxMenuWidth`
-**SUBSYSTEM:** Hierarchical navigation menus. No menu lists a folder's contents at all — submenu call sites are icon-size and Arrange-by only (src/tiku_trk_cwmenu.c:165, 170, 261) — so folders-as-submenus, disabled leaf items, truncation and the Empty-folder placeholder have nowhere to exist.  
-
-#### CW-057 · important · open
+`NavMenu.cpp` → `BNavMenu::NewModelItem / BNavMenu::DoneBuildingItemList / BNavMenu::GetMaxMenuWidth`  
+**PORT:** Sub-folders open further levels and plain files are listed but not choosable -- this menu exists to reach a folder, and a live file row would be a second way to open things that behaves differently.  Folders sort first when the setting says so.  The arrows walk in and out, do not wrap at the ends, and walking into a file does nothing at all.  
+#### CW-057 · important · partial
 **Folder menus hide the same things the folder window hides: dot files (when that setting is on), items marked invisible in their pose info, the Trash, and query results that live in the Trash; a menu on the root lists volumes; a menu on the Desktop lists volumes (or the Disks icon) plus Trash; a menu on the Trash lists the union of every volume's trash.**  
 AddNextItem applies HideDotFiles, model.IsTrash(), the query-results-in-trash rule and BPoseView::PoseVisible(kAttrPoseInfo). StartBuildingItemList picks the container: QueryEntryListCollection / VirtualDirectoryEntryList / desktop dirent iterator (+AddVolumeItems or AddRootItem, +AddTrashItem) / per-volume trash EntryIteratorList / plain DirectoryEntryList, and sets the volumes-only flag when the entry has no parent.  
 `NavMenu.cpp` → `BNavMenu::AddNextItem / BNavMenu::StartBuildingItemList / BNavMenu::BuildVolumeMenu`  
-**TIKU:** "Volumes" and "the union of all trashes" have direct analogues only if TikuOS has multiple mounts; device nodes may need an explicit visible/hidden bit like pose info's fInvisible.
-**SUBSYSTEM:** Hierarchical navigation menus. There is no folder-menu enumeration to filter: no dot-file, pose-info-invisible, Trash, root-volumes or trash-union handling exists at the menu layer (src/tiku_trk_menu.c contains no visibility or filtering code — grep dotfile/hidden/invisible over it: nothing). The invisible bit itself exists in pose views (POSE_INFO_INVISIBLE, src/tiku_trk_poseview.c:2414) but no menu consumes it.  
-
+**TIKU:** "Volumes" and "the union of all trashes" have direct analogues only if TikuOS has multiple mounts; device nodes may need an explicit visible/hidden bit like pose info's fInvisible.  
+**PORT:** The menu hides what the window hides -- dot files when the setting is on, and the Trash always, for being the Trash rather than for its name.  One that showed a dot file the window does not would be a second, disagreeing view of one folder.  
+**MISSING:** Pose-info invisibility and the query-results-in-Trash rule are not applied, and a menu on the root lists directories rather than volumes.  
 #### CW-058 · important · open
 **"Recent folders" inside the Move to/Copy to pickers, and the file panel's Favorites menu, list recently used items with the counts the user configured; an empty list shows a disabled "<No recent items>" placeholder.**  
 RecentsMenu reads its cap from TrackerSettings().RecentCounts(apps, docs, folders) selected by fWhich (0=documents, 1=apps, 2=folders) and pulls from BRoster::GetRecent*; DoneBuildingItemList adds the disabled placeholder when nothing was added. FavoritesMenu builds three titled sections in order - Favorites (links in the user's Go directory), Recent documents (suppressed in save panels), Recent folders (skipping refs already listed under Favorites) - and re-filters everything through the panel's BRefFilter.  

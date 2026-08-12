@@ -103,7 +103,7 @@ main(void)
     printf("\nthe menu's own entries (DB-009)\n");
     {
         char into[256], seen[8][256];
-        int y2, nseen = 0, lo = -1, hi = -1, k, all_paths = 1;
+        int y2, nseen = 0, lo = -1, k, all_paths = 1;
 
         tiku_trk_deskbar_open_menu(db);
         for (y2 = 0; y2 < 400; y2++) {
@@ -113,7 +113,6 @@ main(void)
                 int dup = 0;
 
                 if (lo < 0) { lo = y2; }
-                hi = y2;
                 for (k = 0; k < nseen; k++) {
                     if (strcmp(seen[k], into) == 0) { dup = 1; }
                 }

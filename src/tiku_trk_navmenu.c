@@ -1,0 +1,258 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_navmenu.c - progressive filling, descent, and what a menu hides.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "tiku_trk_navmenu.h"
+
+#include <stdio.h>
+#include <string.h>
+
+void
+tiku_trk_nav_open(tiku_trk_nav_t *nav, tiku_trk_backend_t *b,
+                  const char *path)
+{
+    if (nav == NULL) {
+        return;
+    }
+    memset(nav, 0, sizeof *nav);
+    nav->backend = b;
+    nav->folders_first = 1;
+    if (path != NULL) {
+        snprintf(nav->level[0].path, sizeof nav->level[0].path, "%s", path);
+    }
+    nav->level[0].sel = -1;
+    nav->depth = 1;
+}
+
+tiku_trk_nav_level_t *
+tiku_trk_nav_top(tiku_trk_nav_t *nav)
+{
+    if (nav == NULL || nav->depth <= 0) {
+        return NULL;
+    }
+    return &nav->level[nav->depth - 1];
+}
+
+int
+tiku_trk_nav_wanted(const tiku_trk_model_t *m)
+{
+    /* A file has nothing to navigate into, and an empty submenu hanging
+     * off every row is worse than none at all (CW-045). */
+    return (m != NULL && tiku_trk_model_is_container(m));
+}
+
+/** @brief What one level's fill is carrying between calls. */
+struct fill_ctx {
+    tiku_trk_nav_t       *nav;
+    tiku_trk_nav_level_t *lv;
+    int                   skip;     /* entries already taken             */
+    int                   seen;     /* entries walked this call          */
+    int                   added;
+};
+
+/** @brief Whether a menu shows @p m at all (CW-057). */
+static int
+visible(const tiku_trk_nav_t *nav, const tiku_trk_model_t *m)
+{
+    /* Exactly what the window hides: a menu that showed a dot file the
+     * window does not would be a second, disagreeing view of one folder. */
+    if (nav->hide_dotfiles && m->name[0] == '.') {
+        return 0;
+    }
+    if (m->kind == TIKU_TRK_KIND_TRASH) {
+        return 0;
+    }
+    return 1;
+}
+
+static int
+fill_one(const tiku_trk_model_t *m, void *ctx)
+{
+    struct fill_ctx *c = ctx;
+    tiku_trk_nav_item_t *it;
+
+    if (!visible(c->nav, m)) {
+        return 0;
+    }
+    /* Skipped rather than restarted: the walk has no cursor of its own, so
+     * a chunk resumes by passing over what it already took. */
+    if (c->seen++ < c->skip) {
+        return 0;
+    }
+    if (c->lv->n >= TIKU_TRK_NAV_MAX || c->added >= TIKU_TRK_NAV_CHUNK) {
+        return 1;                   /* enough for this slice */
+    }
+    it = &c->lv->item[c->lv->n];
+    memset(it, 0, sizeof *it);
+    snprintf(it->name, sizeof it->name, "%s", m->name);
+    snprintf(it->path, sizeof it->path, "%s", m->path);
+    it->is_container = tiku_trk_model_is_container(m);
+    /* A file is listed but not choosable from a NAVIGATION menu: the menu
+     * exists to reach a folder, and a live file row would make it a second
+     * way to open things that behaves differently (CW-056). */
+    it->enabled = it->is_container;
+    c->lv->n++;
+    c->added++;
+    return 0;
+}
+
+/** @brief Folders before files, then by name. */
+static void
+sort_level(tiku_trk_nav_t *nav, tiku_trk_nav_level_t *lv)
+{
+    int i, j;
+
+    for (i = 1; i < lv->n; i++) {
+        tiku_trk_nav_item_t t = lv->item[i];
+
+        for (j = i; j > 0; j--) {
+            const tiku_trk_nav_item_t *p = &lv->item[j - 1];
+            int before;
+
+            if (nav->folders_first && p->is_container != t.is_container) {
+                before = p->is_container;
+            } else {
+                before = (strcmp(p->name, t.name) <= 0);
+            }
+            if (before) {
+                break;
+            }
+            lv->item[j] = lv->item[j - 1];
+        }
+        lv->item[j] = t;
+    }
+}
+
+int
+tiku_trk_nav_fill(tiku_trk_nav_t *nav, int level)
+{
+    tiku_trk_nav_level_t *lv;
+    struct fill_ctx c;
+    int before;
+
+    if (nav == NULL || level < 0 || level >= nav->depth ||
+        nav->backend == NULL) {
+        return 0;
+    }
+    lv = &nav->level[level];
+    if (lv->done) {
+        return 0;
+    }
+    before = lv->n;
+    c.nav = nav;
+    c.lv = lv;
+    c.skip = lv->n;
+    c.seen = 0;
+    c.added = 0;
+    (void)nav->backend->ops->list(nav->backend, lv->path, fill_one, &c);
+    if (lv->n == before || lv->n >= TIKU_TRK_NAV_MAX) {
+        /* Nothing new arrived: the folder is exhausted, and the level can
+         * be sorted and shown as final. */
+        lv->done = 1;
+        sort_level(nav, lv);
+        return 0;
+    }
+    sort_level(nav, lv);
+    return 1;                       /* ask again */
+}
+
+void
+tiku_trk_nav_fill_all(tiku_trk_nav_t *nav, int level)
+{
+    int guard = 0;
+
+    while (tiku_trk_nav_fill(nav, level) && guard++ < TIKU_TRK_NAV_MAX) {
+        /* nothing */
+    }
+}
+
+int
+tiku_trk_nav_enter(tiku_trk_nav_t *nav, int i)
+{
+    tiku_trk_nav_level_t *lv = tiku_trk_nav_top(nav);
+    tiku_trk_nav_level_t *to;
+
+    if (lv == NULL || i < 0 || i >= lv->n || !lv->item[i].is_container) {
+        return 0;
+    }
+    if (nav->depth >= TIKU_TRK_NAV_DEPTH) {
+        return 0;
+    }
+    to = &nav->level[nav->depth];
+    /* Cleared, not reused: re-opening must RE-READ, because a menu is not
+     * a snapshot and one showing last time's contents would be lying
+     * (CW-055). */
+    {   /* Copied out first: `to` and `lv->item[i]` live in the same
+         * array, and clearing the destination would erase the source. */
+        char into[TIKU_TRK_PATH_MAX];
+
+        snprintf(into, sizeof into, "%s", lv->item[i].path);
+        memset(to, 0, sizeof *to);
+        snprintf(to->path, sizeof to->path, "%s", into);
+    }
+    to->sel = -1;
+    nav->depth++;
+    return 1;
+}
+
+int
+tiku_trk_nav_leave(tiku_trk_nav_t *nav)
+{
+    if (nav == NULL || nav->depth <= 1) {
+        return 0;                   /* the first level is the menu itself */
+    }
+    nav->depth--;
+    memset(&nav->level[nav->depth], 0, sizeof nav->level[0]);
+    return 1;
+}
+
+int
+tiku_trk_nav_move(tiku_trk_nav_t *nav, tiku_trk_nav_key_t k)
+{
+    tiku_trk_nav_level_t *lv = tiku_trk_nav_top(nav);
+
+    if (lv == NULL) {
+        return 0;
+    }
+    switch (k) {
+    case TIKU_TRK_NAV_DOWN:
+        if (lv->n == 0) {
+            return 0;
+        }
+        /* No wrap: a menu is a list with ends, and wrapping from the last
+         * row to the first reads as the key having been missed. */
+        if (lv->sel + 1 >= lv->n) {
+            return 0;
+        }
+        lv->sel++;
+        return 1;
+    case TIKU_TRK_NAV_UP:
+        if (lv->sel <= 0) {
+            return 0;
+        }
+        lv->sel--;
+        return 1;
+    case TIKU_TRK_NAV_IN:
+        return (lv->sel >= 0) ? tiku_trk_nav_enter(nav, lv->sel) : 0;
+    case TIKU_TRK_NAV_OUT:
+    default:
+        return tiku_trk_nav_leave(nav);
+    }
+}
+
+const char *
+tiku_trk_nav_chosen(tiku_trk_nav_t *nav)
+{
+    tiku_trk_nav_level_t *lv = tiku_trk_nav_top(nav);
+
+    if (lv == NULL || lv->sel < 0 || lv->sel >= lv->n) {
+        return NULL;
+    }
+    return lv->item[lv->sel].path;
+}

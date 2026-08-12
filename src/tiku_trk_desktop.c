@@ -33,6 +33,7 @@
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_volume.h"
 #include "tiku_trk_switcher.h"
+#include "tiku_trk_navmenu.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -174,6 +175,8 @@ typedef struct desktop {
     char                 prefs_path[TIKU_TRK_PATH_MAX];
     tiku_trk_switcher_t  sw;
     tiku_trk_win_t      *sw_win;
+    tiku_trk_nav_t       nav;      /* the open navigation walk   */
+    int                  nav_on;
     int64_t              prog_opened;
     tiku_trk_win_t      *prog_was_active;  /* focus to give back */
     int64_t              hover_at;  /* when the drag settled on a target  */
@@ -3363,6 +3366,22 @@ main(int argc, char **argv)
                             app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (row >= 0 && p != NULL)
                                                 ? &p->model : NULL, &c);
+                            /* A container's context menu carries a walk
+                             * into it, so a descendant can be reached
+                             * without leaving the window (CW-045). */
+                            app.nav_on = 0;
+                            if (row >= 0 && p != NULL &&
+                                tiku_trk_nav_wanted(&p->model)) {
+                                tiku_trk_nav_open(&app.nav, app.backend,
+                                                  p->model.path);
+                                app.nav.hide_dotfiles =
+                                    tiku_trk_prefs_get(&app.prefs,
+                                                       "HideDotFiles");
+                                app.nav.folders_first =
+                                    tiku_trk_prefs_get(&app.prefs,
+                                                       "SortFolderNamesFirst");
+                                app.nav_on = 1;
+                            }
                             app.popup_sub = NULL;
                             app.popup_frame = tiku_trk_menu_place(app.popup,
                                 ev.xbutton.x, ev.xbutton.y,
@@ -4005,6 +4024,15 @@ sel_done:
             }
         }
 
+        if (app.nav_on && app.popup != NULL) {
+            /* A chunk per turn: the menu answers the mouse while a large
+             * folder is still arriving (CW-055). */
+            if (tiku_trk_nav_fill(&app.nav, app.nav.depth - 1)) {
+                app.dirty = 1;
+            }
+        } else if (app.nav_on && app.popup == NULL) {
+            app.nav_on = 0;         /* the menu went; so does the walk */
+        }
         if (tiku_trk_thumb_step(&app.thumbs, app.store)) {
             /* One picture per turn, on the idle tick: the window keeps
              * answering while a folder of images fills in (IV-031). */
