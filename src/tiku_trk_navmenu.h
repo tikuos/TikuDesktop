@@ -114,6 +114,23 @@ const char *tiku_trk_nav_chosen(tiku_trk_nav_t *nav);
  */
 int tiku_trk_nav_wanted(const tiku_trk_model_t *m);
 
+/**
+ * @brief Where a level sits, given where its parent item is.
+ *
+ * Off the parent's right edge, flipped to the left when that would leave
+ * the screen -- the same rule a submenu of an ordinary menu follows.
+ */
+void tiku_trk_nav_place(const tiku_trk_nav_t *nav, int level, int px,
+                        int py, int screen_w, int screen_h,
+                        int *x, int *y, int *w, int *h);
+
+/** @brief The item at a point in @p level, or -1. */
+int tiku_trk_nav_item_at(const tiku_trk_nav_t *nav, int level, int fx,
+                         int fy, int x, int y);
+
+/** @brief One row's height, and the width a level needs. */
+#define TIKU_TRK_NAV_ROW 18
+
 /** @brief What an empty level shows instead of nothing. */
 #define TIKU_TRK_NAV_EMPTY "Empty folder"
 

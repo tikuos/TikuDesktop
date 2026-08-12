@@ -256,3 +256,58 @@ tiku_trk_nav_chosen(tiku_trk_nav_t *nav)
     }
     return lv->item[lv->sel].path;
 }
+
+void
+tiku_trk_nav_place(const tiku_trk_nav_t *nav, int level, int px, int py,
+                   int screen_w, int screen_h, int *x, int *y, int *w,
+                   int *h)
+{
+    const tiku_trk_nav_level_t *lv;
+    int rows, ww, hh, xx, yy;
+
+    if (nav == NULL || level < 0 || level >= nav->depth) {
+        return;
+    }
+    lv = &nav->level[level];
+    rows = (lv->n > 0) ? lv->n : 1;      /* an empty level still shows a row */
+    ww = 190;
+    hh = rows * TIKU_TRK_NAV_ROW + 4;
+    xx = px;
+    yy = py;
+    /* Flipped rather than clipped: a level that ran off the screen would
+     * put its rows where they cannot be clicked. */
+    if (xx + ww > screen_w) {
+        xx = px - ww;
+    }
+    if (xx < 0) {
+        xx = 0;
+    }
+    if (yy + hh > screen_h) {
+        yy = screen_h - hh;
+    }
+    if (yy < 0) {
+        yy = 0;
+    }
+    if (x != NULL) { *x = xx; }
+    if (y != NULL) { *y = yy; }
+    if (w != NULL) { *w = ww; }
+    if (h != NULL) { *h = hh; }
+}
+
+int
+tiku_trk_nav_item_at(const tiku_trk_nav_t *nav, int level, int fx, int fy,
+                     int x, int y)
+{
+    const tiku_trk_nav_level_t *lv;
+    int i, ww = 190;
+
+    if (nav == NULL || level < 0 || level >= nav->depth) {
+        return -1;
+    }
+    lv = &nav->level[level];
+    if (x < fx || x >= fx + ww || y < fy + 2) {
+        return -1;
+    }
+    i = (y - fy - 2) / TIKU_TRK_NAV_ROW;
+    return (i >= 0 && i < lv->n) ? i : -1;
+}

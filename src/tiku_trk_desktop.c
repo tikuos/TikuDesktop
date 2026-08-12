@@ -2526,6 +2526,61 @@ draw_all(desktop_t *app)
                                app->popup_sub_frame);
         }
     }
+    if (app->nav_on && app->popup != NULL) {
+        /* Every open level, outermost first, each hanging off the row that
+         * opened it -- so the trail back out is on screen (CW-045). */
+        const tiku_desk_font_t *nf = tiku_desk_font_plain();
+        int px = app->popup_frame.x + app->popup_frame.w - 4;
+        int py = app->popup_frame.y + 4;
+        int k;
+
+        for (k = 0; k < app->nav.depth; k++) {
+            tiku_trk_nav_level_t *lv = &app->nav.level[k];
+            tiku_desk_rect_t r;
+            int i;
+
+            tiku_trk_nav_place(&app->nav, k, px, py, DESK_W, DESK_H,
+                               &r.x, &r.y, &r.w, &r.h);
+            tiku_desk_fill(app->surf, r, TIKU_DESK_C_PANEL);
+            tiku_desk_bevel(app->surf, r,
+                tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+                tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+            if (lv->n == 0) {
+                tiku_desk_text(app->surf, nf, r.x + 8,
+                               r.y + 2 + nf->ascent, TIKU_TRK_NAV_EMPTY,
+                               tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                              TIKU_DESK_LIGHTEN_2));
+            }
+            for (i = 0; i < lv->n; i++) {
+                int ty = r.y + 2 + i * TIKU_TRK_NAV_ROW;
+                tiku_desk_rect_t row2;
+
+                row2.x = r.x + 1; row2.y = ty; row2.w = r.w - 2;
+                row2.h = TIKU_TRK_NAV_ROW;
+                if (i == lv->sel) {
+                    tiku_desk_fill(app->surf, row2, TIKU_DESK_C_SELECT);
+                }
+                tiku_desk_text(app->surf, nf, r.x + 8, ty + nf->ascent + 2,
+                               lv->item[i].name,
+                               (i == lv->sel) ? TIKU_DESK_C_SELTEXT
+                               : (lv->item[i].enabled ? TIKU_DESK_C_TEXT
+                                  : tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                                   TIKU_DESK_LIGHTEN_2)));
+                if (lv->item[i].is_container) {
+                    /* The arrow says a row goes further, which is the one
+                     * thing a nested menu must announce. */
+                    tiku_desk_text(app->surf, nf, r.x + r.w - 12,
+                                   ty + nf->ascent + 2, ">",
+                                   (i == lv->sel) ? TIKU_DESK_C_SELTEXT
+                                                  : TIKU_DESK_C_TEXT);
+                }
+            }
+            /* The next level hangs off this level's chosen row. */
+            px = r.x + r.w - 4;
+            py = r.y + 2 + ((lv->sel >= 0) ? lv->sel : 0) *
+                 TIKU_TRK_NAV_ROW;
+        }
+    }
     progress_draw(app);
     alert_draw(app);
     app->dirty = 0;
@@ -3088,6 +3143,49 @@ main(int argc, char **argv)
 
                 /* A menu that is showing eats the next click wherever it
                  * lands: choosing an item, or dismissing. */
+                if (app.nav_on && app.popup != NULL) {
+                    /* A click inside a level chooses: a folder walks in,
+                     * and anything else is not choosable, so the click is
+                     * simply consumed (CW-056). */
+                    const tiku_desk_font_t *nf = tiku_desk_font_plain();
+                    int px2 = app.popup_frame.x + app.popup_frame.w - 4;
+                    int py2 = app.popup_frame.y + 4;
+                    int k, took = 0;
+
+                    (void)nf;
+                    for (k = 0; k < app.nav.depth && !took; k++) {
+                        tiku_desk_rect_t r;
+                        int at;
+
+                        tiku_trk_nav_place(&app.nav, k, px2, py2, DESK_W,
+                                           DESK_H, &r.x, &r.y, &r.w, &r.h);
+                        at = tiku_trk_nav_item_at(&app.nav, k, r.x, r.y,
+                                                  ev.xbutton.x,
+                                                  ev.xbutton.y);
+                        if (at >= 0) {
+                            /* Levels deeper than the one clicked go: the
+                             * walk follows the pointer rather than
+                             * accumulating every branch visited. */
+                            while (app.nav.depth > k + 1) {
+                                (void)tiku_trk_nav_leave(&app.nav);
+                            }
+                            app.nav.level[k].sel = at;
+                            if (app.nav.level[k].item[at].is_container) {
+                                (void)tiku_trk_nav_enter(&app.nav, at);
+                            }
+                            took = 1;
+                        }
+                        px2 = r.x + r.w - 4;
+                        py2 = r.y + 2 +
+                              ((app.nav.level[k].sel >= 0)
+                                   ? app.nav.level[k].sel : 0) *
+                              TIKU_TRK_NAV_ROW;
+                    }
+                    if (took) {
+                        app.dirty = 1;
+                        break;
+                    }
+                }
                 if (app.popup != NULL) {
                     tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
                     folder_t *ffl = folder_of(&app, fw);
