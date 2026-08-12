@@ -14,6 +14,7 @@
 
 #include "tiku_trk_fs.h"
 #include "tiku_trk_state.h"
+#include "tiku_trk_volume.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -531,6 +532,51 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
             }
         }
         fs->prog.collisions = collisions;
+    }
+    {   /* What the VOLUME allows, before a byte moves.  A move off a
+         * read-only volume becomes a copy rather than failing, which is
+         * the only way to get a file off a disc at all (FS-013); a
+         * destination that will not take a write refuses outright
+         * (FS-012); and a delete or a move OF a read-only item is
+         * refused with the volume named (FS-045). */
+        tiku_trk_volumes_t vs;
+        char why[200];
+        int k;
+
+        if (fs->backend->devid[0] == '\0' &&
+            tiku_trk_volumes_scan(&vs) > 0) {
+            if (dst != NULL &&
+                !tiku_trk_volume_may_write(&vs, dst, 1, why, sizeof why)) {
+                snprintf(fs->prog.error, sizeof fs->prog.error,
+                         "You can't move or copy items to read-only "
+                         "volumes.");
+                fs->prog.error_ask = 1;
+                fs->prog.error_can_continue = 0;
+                fs->qcursor = fs->qcount;
+                return -1;
+            }
+            if (op == TIKU_TRK_OP_MOVE) {
+                for (k = 0; k < fs->qcount; k++) {
+                    if (!tiku_trk_volume_may_write(&vs, fs->queue[k], 1,
+                                                   why, sizeof why)) {
+                        op = TIKU_TRK_OP_COPY;
+                        break;
+                    }
+                }
+            } else if (op == TIKU_TRK_OP_TRASH || op == TIKU_TRK_OP_DELETE) {
+                for (k = 0; k < fs->qcount; k++) {
+                    if (!tiku_trk_volume_may_write(&vs, fs->queue[k], 1,
+                                                   why, sizeof why)) {
+                        snprintf(fs->prog.error, sizeof fs->prog.error,
+                                 "%s", why);
+                        fs->prog.error_ask = 1;
+                        fs->prog.error_can_continue = 0;
+                        fs->qcursor = fs->qcount;
+                        return -1;
+                    }
+                }
+            }
+        }
     }
     if (op == TIKU_TRK_OP_COPY && dst != NULL &&
         !tiku_trk_fs_in_trash(fs, dst) && fs->backend->devid[0] == '\0') {

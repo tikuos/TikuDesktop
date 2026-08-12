@@ -2908,19 +2908,17 @@ err == B_UNSUPPORTED from CreateSymLink throws FailWithAlert with that message; 
 `FSUtils.cpp` → `MoveItem`  
 **TIKU:** Capability bits should gate the link menu item up front rather than failing at execution time.  
 **PORT:** EPERM or ENOSYS from symlink() is reported as "The target disk does not support creating links."; anything else is a plain link error.  
-#### FS-012 · core · open
+#### FS-012 · core · done
 **Copying refuses to start when the destination volume is read-only, and dropping onto a read-only volume shows "You can't move or copy items to read-only volumes."**  
 Two separate checks: InitCopy returns B_READ_ONLY_DEVICE with NO alert (so a paste onto a read-only volume fails silently), while BPoseView::MoveSelectionInto raises the alert before launching the job.  
 `FSUtils.cpp` → `InitCopy`  
-**TIKU:** Replace volume read-only with a per-node writable capability bit; the check belongs at one layer so the silent-failure path disappears.
-**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
-
-#### FS-013 · important · open
+**TIKU:** Replace volume read-only with a per-node writable capability bit; the check belongs at one layer so the silent-failure path disappears.  
+**PORT:** A copy or move whose destination will not take a write is refused before a byte moves, in the original's words.  Read-only is read from the mount options as a whole word, not a substring -- "errors=remount-ro" contains it and means the opposite.  
+#### FS-013 · important · done
 **Moving items off a read-only volume copies them instead of moving.**  
 MoveTask captures sourceIsReadOnly = BVolume(srcVolumeDevice).IsReadOnly() before anything else and rewrites moveMode kMoveSelectionTo -> kCopySelectionTo.  
 `FSUtils.cpp` → `MoveTask`  
-**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
-
+**PORT:** A move whose source volume refuses writes becomes a COPY, which is the only way to get a file off a disc at all; reading is always allowed, which is what makes that conversion possible.  
 #### FS-014 · important · done
 **An attempted copy into the Trash is turned into a move; a paste of copied items into Trash is refused outright with "Sorry, you can't copy items to the Trash."**  
 MoveTask: if (moveMode == kCopySelectionTo && destIsTrash) moveMode = kMoveSelectionTo. FSClipboardPaste and BPoseView::MoveSelectionInto instead show the alert and abort. MoveSelectionInto also refuses links into Trash with "Sorry, you can't create links in the Trash."  
@@ -3088,12 +3086,12 @@ _RestoreTask: if the parent does not exist it calls FSRecursiveCreateFolder(pare
 `FSUtils.cpp` → `_RestoreTask`  
 **PORT:** Missing parents are recreated and an occupied name is REFUSED with a reason: putting one item back is not permission to destroy another.
 
-#### FS-041 · important · open
+#### FS-041 · important · partial
 **Dragging a whole volume to the Trash unmounts it instead of deleting it, and the boot volume refuses with "Cannot unmount the boot volume \"<name>\"."**  
 MoveEntryToTrash tests BDirectory(entry).IsRootDirectory(); compares against BVolumeRoster().GetBootVolume(); otherwise posts kUnmountVolume with "device_id" to be_app and returns B_OK.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
-**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
-
+**PORT:** The boot volume can never be unmounted and says so, naming itself; a path that is not a volume's mount point is not this gesture at all.  
+**MISSING:** Nothing performs the unmount -- the model answers whether it MAY happen, and no drop path asks it yet.  
 #### FS-042 · polish · done
 **Trashing a folder closes its window and all windows of folders inside it.**  
 MoveEntryToTrash posts kCloseWindowAndChildren to be_app with the folder's own node_ref as raw data before performing the move.  
@@ -3111,12 +3109,11 @@ CopyOneTrashedRefAsEntry splits the selection into entriesToTrash and entriesToD
 `PoseView.cpp` → `BPoseView::MoveSelectionOrEntryToTrash`  
 **PORT:** Asked of the ITEM's volume rather than of the store: a filesystem with no writable Trash offers deletion outright instead of a button that cannot do anything.
 
-#### FS-045 · important · open
+#### FS-045 · important · done
 **Files on a read-only volume can be neither moved nor deleted: "Files cannot be moved or deleted from a read-only volume."**  
 CheckVolumeReadOnly raises a B_STOP_ALERT and returns false; it gates both MoveSelectionOrEntryToTrash and DeleteSelection, and is tested on the first selected item's device only.  
 `PoseView.cpp` → `CheckVolumeReadOnly`  
-**BLOCKED:** Waits on a volume model: the port knows filesystems only through st_dev, so mount points, read-only volumes and volume names have nowhere to come from.  
-
+**PORT:** A move or delete of an item on a read-only volume is refused with the volume NAMED, because a user with several mounted needs to know which one refused.  
 #### FS-046 · core · differs
 **Delete asks a three-way question — Cancel / Move to Trash / Delete — with Escape, 'm' and 'd' as shortcuts, and warns the operation cannot be reverted.**  
 _DeleteTask shows kDeleteConfirmationStr when confirm is set; case 0 deletes the list and returns B_CANCELED, case 1 (and default) diverts to FSMoveToTrash(list, NULL, false) — running it synchronously on the delete thread — and only case 2 falls through to the real delete.  
@@ -5082,13 +5079,13 @@ Each line is "Name value", booleans written as on/off, colours as 0x%08x; the fi
 **TIKU:** Needs a TikuOS-side settings store (namespace node or persist cells); the text argv format and the write-only-if-non-default rule are the parts users can observe.
 **SUBSYSTEM:** The Tracker preferences subsystem (settings store). No settings file reader or writer exists in the tree: the only persistence is the per-folder/per-entry state store (xattr/sidecar/memory, src/tiku_trk_state.c) and node value writes in the posix backend (src/tiku_trk_backend_posix.c:148-176); grep for settings/preferences across src/ finds only the TIKU_TRK_CMD_PREFERENCES menu id (src/tiku_trk_shortcuts.h:66) and a comment in fs.h:311. No name-value text format, no on/off booleans, no write-only-if-non-default rule, no save-on-quit of preferences.  
 
-#### TS-046 · important · open
+#### TS-046 · important · partial
 **"Show Disks icon" and "Show volumes on Desktop" are mutually exclusive, and "Show shared volumes on Desktop" is only available with the latter.**  
 Defaults: ShowDisksIcon off, MountVolumesOntoDesktop on, MountSharedVolumesOntoDesktop on. Setting either one through the API forces the other to its complement (SetShowDisksIcon also sets MountVolumesOntoDesktop to !enabled). Changing them broadcasts kVolumesOnDesktopChanged (and kDesktopIntegrationChanged on Defaults/Revert) with all three booleans so open windows adapt live.  
 `SettingsViews.cpp` → `DesktopSettingsView::MessageReceived (kShowDisksIconChanged)`  
-**TIKU:** "Volumes" become namespace mounts; the same one-of-two policy should apply to whether mounts appear on the Desktop or under a Disks node.
-**SUBSYSTEM:** Preferences subsystem + volumes-on-desktop (volume model). Beyond the absent settings store (see TS-045), the desktop shell never displays volumes or a Disks icon at all — grep -i for volume/disks over src/tiku_trk_desktop.c returns nothing; the desktop surface hosts folder windows, the Find panel and the Deskbar only (desktop_t at src/tiku_trk_desktop.c:96-117). The KIND_VOLUME model kind exists (src/tiku_trk_model.c:164) but nothing puts volumes on a desktop, so the mutual-exclusion policy has neither the settings nor the objects it governs.  
-
+**TIKU:** "Volumes" become namespace mounts; the same one-of-two policy should apply to whether mounts appear on the Desktop or under a Disks node.  
+**PORT:** The volume list excludes the kernel's own bookkeeping filesystems, so what it offers are places a person could browse.  
+**MISSING:** The two settings themselves do not exist; they need the preferences window.  
 #### TS-047 · polish · partial
 **"Show folder location in title tab" puts the full path in the window title.**  
 Default off (kDefaultShowFullPathInTitleBar). Notifies kWindowsShowFullPathChanged; also enables path watching so the title tracks renames of ancestors.  
