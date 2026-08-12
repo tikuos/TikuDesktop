@@ -204,6 +204,12 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
          * a panel that can no longer name where to search. */
         char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
         int nkept = f->place_count, k;
+        /* The STORE survives too, for the same reason: it is where this
+         * panel keeps its most-used types and reads its saved searches
+         * from, not part of the query being restored.  A restore that
+         * dropped it left a panel that could no longer find anything it
+         * had itself saved. */
+        struct tiku_trk_store *store = f->store;
 
         for (k = 0; k < nkept; k++) {
             memcpy(kept[k], f->place[k], TIKU_TRK_NAME_MAX);
@@ -213,6 +219,7 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
             memcpy(f->place[k], kept[k], TIKU_TRK_NAME_MAX);
         }
         f->place_count = nkept;
+        f->store = store;
     }
     f->mode = q->mode;
     f->row_count = 0;
@@ -670,7 +677,9 @@ button_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr, int which)
     if (which == 0) {
         r.x = fr.x + fr.w - PAD - w;
     } else {
-        r.x = fr.x + fr.w - PAD - (BTN_W + 8) - GAP - w;
+        /* Leftward from the default in the order they are numbered, so
+         * adding one never moves the two that were there. */
+        r.x = fr.x + fr.w - PAD - (BTN_W + 8) - which * (GAP + w);
         r.y += 4;                 /* centred against the ringed default   */
     }
     return r;
@@ -813,6 +822,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 
     draw_button(s, button_rect(f, frame, 0), "Search", TIKU_DESK_S_DEFAULT);
     draw_button(s, button_rect(f, frame, 1), "Save", TIKU_DESK_S_NORMAL);
+    draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_DESK_S_NORMAL);
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
         tiku_trk_menu_draw(&f->popup, s, f->popup_frame);
@@ -850,6 +860,9 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     }
     if (in(button_rect(f, frame, 1), x, y)) {
         return TIKU_TRK_FIND_HIT_SAVE;
+    }
+    if (in(button_rect(f, frame, 2), x, y)) {
+        return TIKU_TRK_FIND_HIT_QUERIES;
     }
     if (tiku_trk_find_type_shown(f) &&
         in(type_rect(f, frame), x, y)) {
@@ -965,6 +978,32 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         (void)tiku_trk_menu_add(m, "or", 1, 0, 0u, 1);
         m->item[f->row[row].join].marked = 1;
         break;
+    case TIKU_TRK_FIND_HIT_QUERIES: {
+        char names[TIKU_TRK_QUERY_LIST_MAX][128];
+        int n;
+
+        (void)tiku_trk_menu_add(m, "Save as template", 0, 0, 0u, 1);
+        /* Templates ABOVE the queries that were run, which is the order
+         * the original's menu has them in: a template is a thing you keep,
+         * a run is a thing that happened (Q-032). */
+        n = tiku_trk_query_list_kind(f->store, TIKU_TRK_QREC_TEMPLATE,
+                                     names, TIKU_TRK_QUERY_LIST_MAX);
+        if (n > 0) {
+            (void)tiku_trk_menu_add_separator(m);
+            for (i = 0; i < n; i++) {
+                (void)tiku_trk_menu_add(m, names[i], 100 + i, 0, 0u, 1);
+            }
+        }
+        n = tiku_trk_query_list_kind(f->store, TIKU_TRK_QREC_QUERY, names,
+                                     TIKU_TRK_FIND_RECENT_MAX);
+        if (n > 0) {
+            (void)tiku_trk_menu_add_separator(m);
+            for (i = 0; i < n; i++) {
+                (void)tiku_trk_menu_add(m, names[i], 200 + i, 0, 0u, 1);
+            }
+        }
+        break;
+    }
     case TIKU_TRK_FIND_HIT_SCOPE:
         (void)tiku_trk_menu_add(m, "Everywhere", 0, 0, 0u, 1);
         m->item[0].marked = f->everywhere;
@@ -1021,6 +1060,69 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                                          screen);
 }
 
+int
+tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name)
+{
+    tiku_trk_query_t q;
+    int whole;
+
+    if (f == NULL || f->store == NULL || name == NULL) {
+        return -1;
+    }
+    if (tiku_trk_query_load(&q, name, f->store) != 0) {
+        snprintf(f->note, sizeof f->note, "no query called %.40s", name);
+        return -1;
+    }
+    whole = tiku_trk_find_from_query(f, &q);
+    snprintf(f->note, sizeof f->note, "%s %.30s%s",
+             (q.kind == TIKU_TRK_QREC_TEMPLATE) ? "template" : "query",
+             name, whole ? "" : " -- a place is no longer here");
+    return whole ? 1 : 0;
+}
+
+int
+tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
+                            int64_t now)
+{
+    tiku_trk_query_t q;
+
+    if (f == NULL || f->store == NULL || name == NULL || name[0] == '\0') {
+        return -1;
+    }
+    tiku_trk_find_build(f, &q);
+    q.kind = TIKU_TRK_QREC_TEMPLATE;
+    /* Never a by-product: a template is saved deliberately, and the sweep
+     * that reaps unnamed searches must not reach it (AW-090). */
+    q.temporary = 0;
+    q.saved_at = now;
+    if (tiku_trk_query_save(&q, name, f->store) != 0) {
+        snprintf(f->note, sizeof f->note, "that template cannot be saved");
+        return -1;
+    }
+    snprintf(f->note, sizeof f->note, "template %.50s", name);
+    return 0;
+}
+
+int
+tiku_trk_find_popup_open(const tiku_trk_find_t *f)
+{
+    return (f != NULL && f->popup_for != TIKU_TRK_FIND_HIT_NONE) ? 1 : 0;
+}
+
+const char *
+tiku_trk_find_note(const tiku_trk_find_t *f)
+{
+    return (f != NULL) ? f->note : "";
+}
+
+void
+tiku_trk_find_clear_note(tiku_trk_find_t *f)
+{
+    if (f != NULL) {
+        f->note[0] = '\0';
+    }
+}
+
 tiku_trk_find_hit_t
 tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
 {
@@ -1072,6 +1174,35 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                     }
                 }
                 break;
+            case TIKU_TRK_FIND_HIT_QUERIES: {
+                char names[TIKU_TRK_QUERY_LIST_MAX][128];
+
+                if (cmd == 0) {
+                    char nm[128];
+
+                    (void)tiku_trk_find_default_name(f, (long)time(NULL),
+                                                     nm, sizeof nm);
+                    (void)tiku_trk_find_save_template(f, nm,
+                                                      (int64_t)time(NULL));
+                } else if (cmd >= 200) {
+                    int n = tiku_trk_query_list_kind(f->store,
+                                TIKU_TRK_QREC_QUERY, names,
+                                TIKU_TRK_QUERY_LIST_MAX);
+
+                    if (cmd - 200 < n) {
+                        (void)tiku_trk_find_load_named(f, names[cmd - 200]);
+                    }
+                } else if (cmd >= 100) {
+                    int n = tiku_trk_query_list_kind(f->store,
+                                TIKU_TRK_QREC_TEMPLATE, names,
+                                TIKU_TRK_QUERY_LIST_MAX);
+
+                    if (cmd - 100 < n) {
+                        (void)tiku_trk_find_load_named(f, names[cmd - 100]);
+                    }
+                }
+                break;
+            }
             case TIKU_TRK_FIND_HIT_TYPE:
                 if (cmd == 0) {
                     tiku_trk_find_set_type(f, "", f->store);
@@ -1096,6 +1227,9 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
 
     what = tiku_trk_find_hit(f, frame, x, y, &row);
     switch (what) {
+    case TIKU_TRK_FIND_HIT_QUERIES:
+        open_popup(f, what, 0, button_rect(f, frame, 2), screen);
+        break;
     case TIKU_TRK_FIND_HIT_MODE:
         open_popup(f, what, 0, mode_rect(frame), screen);
         break;

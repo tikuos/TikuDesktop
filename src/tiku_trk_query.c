@@ -903,6 +903,9 @@ tiku_trk_query_load(tiku_trk_query_t *q, const char *name,
     if (n < 0) {
         return -1;
     }
+    if (n == 0) {
+        return -1;              /* emptied: the record has been reclaimed */
+    }
     buf[n] = '\0';
     return deserialise(q, buf);
 }
@@ -945,6 +948,83 @@ tiku_trk_query_list(struct tiku_trk_store *store, char names[][128], int max)
 }
 
 int
+tiku_trk_query_list_kind(struct tiku_trk_store *store, tiku_trk_qrec_t kind,
+                         char names[][128], int max)
+{
+    char all[TIKU_TRK_QUERY_LIST_MAX][128];
+    int n, i, count = 0;
+
+    if (store == NULL || names == NULL || max <= 0) {
+        return 0;
+    }
+    n = tiku_trk_query_list(store, all, TIKU_TRK_QUERY_LIST_MAX);
+    for (i = 0; i < n && count < max; i++) {
+        tiku_trk_query_t q;
+
+        if (tiku_trk_query_load(&q, all[i], store) != 0) {
+            /* Indexed but not readable: the index is a list of names, and
+             * a name whose record has gone is not one of this kind or of
+             * any other. */
+            continue;
+        }
+        if (q.kind != kind) {
+            continue;
+        }
+        snprintf(names[count], 128, "%s", all[i]);
+        count++;
+    }
+    return count;
+}
+
+int
+tiku_trk_query_sweep(struct tiku_trk_store *store, int64_t now,
+                     int64_t up_for, const char *const *open, int nopen)
+{
+    char all[TIKU_TRK_QUERY_LIST_MAX][128];
+    int n, i, k, went = 0;
+
+    if (store == NULL) {
+        return -1;
+    }
+    if (up_for < TIKU_TRK_QUERY_SWEEP_WAIT) {
+        /* Not yet.  Nothing here is urgent, and a machine that has just
+         * started has better things to do than delete week-old records. */
+        return -1;
+    }
+    n = tiku_trk_query_list(store, all, TIKU_TRK_QUERY_LIST_MAX);
+    for (i = 0; i < n; i++) {
+        tiku_trk_query_t q;
+        int shown = 0;
+
+        if (tiku_trk_query_load(&q, all[i], store) != 0) {
+            continue;
+        }
+        if (!q.temporary || q.kind == TIKU_TRK_QREC_TEMPLATE) {
+            continue;           /* named, or a template: kept */
+        }
+        if (q.saved_at == 0 || now - q.saved_at < TIKU_TRK_QUERY_STALE_SEC) {
+            continue;           /* young enough to still be wanted */
+        }
+        for (k = 0; k < nopen; k++) {
+            if (open != NULL && open[k] != NULL &&
+                strcmp(open[k], all[i]) == 0) {
+                shown = 1;
+                break;
+            }
+        }
+        if (shown) {
+            /* A window is showing it.  Deleting the record under an open
+             * window would leave the window unable to say what it is. */
+            continue;
+        }
+        if (tiku_trk_query_forget(all[i], store) == 0) {
+            went++;
+        }
+    }
+    return went;
+}
+
+int
 tiku_trk_query_forget(const char *name, struct tiku_trk_store *store)
 {
     char index[2048], merged[2048];
@@ -978,6 +1058,10 @@ tiku_trk_query_forget(const char *name, struct tiku_trk_store *store)
         }
         p = nl + 1;
     }
+    /* The RECORD goes too, not only its line in the index: a name dropped
+     * from the index while its fields stay behind is a query that cannot
+     * be found and cannot be reclaimed either (Q-037). */
+    (void)tiku_trk_state_write(store, name, TIKU_TRK_QUERY_ATTR, "", 0);
     return tiku_trk_state_write(store, TIKU_TRK_QUERY_STORE_NODE,
                                 TIKU_TRK_QUERY_INDEX_ATTR, merged,
                                 strlen(merged));

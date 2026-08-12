@@ -115,6 +115,10 @@ typedef struct folder {
      * Without it every window is written back on every close (CW-002). */
     tiku_trk_frame_t     opened_with;
     int                  had_frame;
+    /* For a results window, the saved record it is showing.  The sweep
+     * needs it: a by-product with a window open on it is one the user is
+     * still looking at (Q-037). */
+    char                 qname[TIKU_TRK_NAME_MAX];
 } folder_t;
 
 typedef struct desktop {
@@ -1918,7 +1922,10 @@ panel_search(desktop_t *app)
         char name[TIKU_TRK_NAME_MAX];
 
         q.temporary = 1;
-        q.saved_at = tiku_trk_now() / 1000000;
+        /* The WALL clock, not the running one: how old a record is has to
+         * mean the same thing after a restart, and it is also the date its
+         * name carries. */
+        q.saved_at = (int64_t)time(NULL);
         if (tiku_trk_find_default_name(&app->panel, (long)q.saved_at, name,
                                        sizeof name) > 0) {
             (void)tiku_trk_query_save(&q, name, app->store);
@@ -1930,6 +1937,7 @@ panel_search(desktop_t *app)
         folder_t *fl = open_results(app, title, run);
 
         if (fl != NULL) {
+            snprintf(fl->qname, sizeof fl->qname, "%s", app->last_query);
             snprintf(app->status, sizeof app->status,
                      "%d result%s in %.30s -- live",
                      tiku_trk_query_count(fl->run),
@@ -3996,6 +4004,7 @@ main(int argc, char **argv)
     int rc = 0;
     int baud = 115200, use_device = 0, i;
     int64_t shot_at = 0, deadline = 0, last_pump = 0, last_requery = 0;
+    int64_t last_sweep = 0, started_at = tiku_trk_now();
     int shot_menu = 0;
     const char *shot_edit = NULL, *shot_find = NULL;
     int shot_panel = 0, shot_live = 0, shot_shift = 0, shot_zoom = 0;
@@ -5097,6 +5106,15 @@ main(int argc, char **argv)
                 }
                 hit = tiku_trk_desk_hit(app.desk, ev.xbutton.x, ev.xbutton.y,
                                         &w);
+                if (app.panel_win != NULL && app.panel_win->open &&
+                    tiku_trk_find_popup_open(&app.panel)) {
+                    /* Its menus hang below the panel's window and over
+                     * whatever is behind it, so the click goes to the
+                     * panel wherever it lands -- the panel eats it either
+                     * way, which is what closes a menu clicked off. */
+                    w = app.panel_win;
+                    hit = TIKU_TRK_HIT_CONTENT;
+                }
                 if (w == NULL && app.dfl.view != NULL) {
                     /* The backdrop is a pose area, so a click on it is a
                      * click in a view -- the same branch every window's
@@ -5225,6 +5243,14 @@ main(int argc, char **argv)
                                          "could not save the query");
                             }
                         }
+                    }
+                    if (tiku_trk_find_note(&app.panel)[0] != '\0') {
+                        /* A menu that loaded a saved search without saying
+                         * which one leaves the user looking at a panel
+                         * that changed by itself. */
+                        snprintf(app.status, sizeof app.status, "%.90s",
+                                 tiku_trk_find_note(&app.panel));
+                        tiku_trk_find_clear_note(&app.panel);
                     }
                     /* The panel grows and shrinks with its rows. */
                     w->frame.h = tiku_trk_find_height(&app.panel) +

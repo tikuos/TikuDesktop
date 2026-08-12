@@ -740,6 +740,69 @@ main(void)
         tiku_trk_store_free(st2);
     }
 
+    printf("\ntemplates, and the sweep of what nobody named "
+           "(Q-031, Q-032, Q-037, AW-090)\n");
+    {
+        tiku_trk_store_t *st3 = tiku_trk_store_memory_open();
+        tiku_trk_query_t q;
+        char names[8][128];
+        const int64_t now = 2000000000;
+        const int64_t week = TIKU_TRK_QUERY_STALE_SEC;
+        int n;
+
+        /* Four records: a template, a query the user named, a stale
+         * by-product, and a by-product from this morning. */
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_term(&q, TIKU_TRK_QF_NAME,
+                                      TIKU_TRK_OP_CONTAINS, "report",
+                                      TIKU_TRK_JOIN_AND);
+        q.kind = TIKU_TRK_QREC_TEMPLATE;
+        q.temporary = 1;            /* templates are never by-products   */
+        q.saved_at = now - 4 * week;
+        (void)tiku_trk_query_save(&q, "reports template", st3);
+        q.kind = TIKU_TRK_QREC_QUERY;
+        q.temporary = 0;
+        q.saved_at = now - 4 * week;
+        (void)tiku_trk_query_save(&q, "the one I named", st3);
+        q.temporary = 1;
+        q.saved_at = now - 2 * week;
+        (void)tiku_trk_query_save(&q, "find #1", st3);
+        q.saved_at = now - 60;
+        (void)tiku_trk_query_save(&q, "find #2", st3);
+
+        n = tiku_trk_query_list_kind(st3, TIKU_TRK_QREC_TEMPLATE, names, 8);
+        check(n == 1 && strcmp(names[0], "reports template") == 0,
+              "Q-031: the templates menu is the saved records of that "
+              "kind, and only those");
+        n = tiku_trk_query_list_kind(st3, TIKU_TRK_QREC_QUERY, names, 8);
+        check(n == 3 && strcmp(names[0], "find #2") == 0,
+              "Q-032: and the recent-queries menu is the others, newest "
+              "first -- the order the index is already kept in");
+
+        check(tiku_trk_query_sweep(st3, now, 60, NULL, 0) == -1,
+              "AW-090: the sweep does not run in the first half hour: a "
+              "machine that has just come up is busy, and this is the "
+              "least urgent work there is");
+        {
+            const char *open[] = { "find #1" };
+
+            check(tiku_trk_query_sweep(st3, now, 3600, open, 1) == 0,
+                  "Q-037: a stale by-product that a window is SHOWING is "
+                  "left alone -- deleting the record under an open window "
+                  "would leave the window unable to say what it is");
+        }
+        check(tiku_trk_query_sweep(st3, now, 3600, NULL, 0) == 1,
+              "Q-037: with nothing showing it, the week-old by-product "
+              "goes");
+        check(tiku_trk_query_load(&q, "find #1", st3) != 0 &&
+              tiku_trk_query_load(&q, "find #2", st3) == 0 &&
+              tiku_trk_query_load(&q, "the one I named", st3) == 0 &&
+              tiku_trk_query_load(&q, "reports template", st3) == 0,
+              "AW-090: and only that one -- this morning's search, the "
+              "query with a name and the template are all still there");
+        tiku_trk_store_free(st3);
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");
     return fails ? 1 : 0;
 }

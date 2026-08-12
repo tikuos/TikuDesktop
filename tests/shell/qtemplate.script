@@ -1,0 +1,37 @@
+# shell: desktop
+# Q-028/Q-031/Q-032: a saved search can be a TEMPLATE -- a panel filled in
+# rather than a search run -- and the Queries menu offers every template
+# above the searches that were actually run.  The panel had one Save button
+# and no way to reach anything it had ever saved.
+key f ctrl
+wait 6
+key z
+key q
+key x
+wait 2
+note with nothing saved yet the menu offers only the second save action
+click 440 460
+wait 3
+click 450 487
+wait 4
+expect-status template
+note a letter more, so the run is a different search from the template
+key y
+wait 2
+note running it leaves a record of its own, marked temporary
+click 595 460
+wait 20
+key f ctrl
+wait 6
+note the menu now has both, the template ABOVE the run
+click 440 460
+wait 4
+click 500 515
+wait 4
+expect-status template
+click 440 460
+wait 4
+click 500 541
+wait 4
+expect-status query
+quit

@@ -293,6 +293,9 @@ int tiku_trk_query_save(const tiku_trk_query_t *q, const char *name,
 int tiku_trk_query_load(tiku_trk_query_t *q, const char *name,
                         struct tiku_trk_store *store);
 
+/** @brief How many saved records the index is read into at once. */
+#define TIKU_TRK_QUERY_LIST_MAX 32
+
 /**
  * @brief Names of the saved queries, newest first.
  *
@@ -303,5 +306,44 @@ int tiku_trk_query_list(struct tiku_trk_store *store, char names[][128],
 
 /** @brief Forget a saved query. */
 int tiku_trk_query_forget(const char *name, struct tiku_trk_store *store);
+
+/**
+ * @brief The saved records of ONE kind, newest first (Q-031, Q-032).
+ *
+ * The two menus the panel offers are the same index read twice: every
+ * template, and the queries that were actually run.  Reading the index
+ * once and filtering here keeps the newest-first order both of them
+ * depend on.
+ *
+ * @return how many were written to @p names.
+ */
+int tiku_trk_query_list_kind(struct tiku_trk_store *store,
+                             tiku_trk_qrec_t kind, char names[][128],
+                             int max);
+
+/** @brief How old a temporary query may get before the sweep takes it. */
+#define TIKU_TRK_QUERY_STALE_SEC  (7 * 24 * 60 * 60)
+
+/** @brief How long after a start the sweep holds off (AW-090). */
+#define TIKU_TRK_QUERY_SWEEP_WAIT (30 * 60)
+
+/**
+ * @brief Delete the temporary records nobody is looking at (Q-037, AW-090).
+ *
+ * A search nobody named is a by-product: it is kept long enough to be
+ * re-opened and then reaped.  Three things spare a record -- being a
+ * template or a named query, being younger than a week, or being SHOWN in
+ * a window right now, because deleting the record behind an open window
+ * would leave the window unable to say what it is.
+ *
+ * @param now      Seconds, the same clock saved_at is stamped from.
+ * @param up_for   Seconds since this Tracker started.  The sweep does not
+ *                 run in the first half hour: a machine that has just come
+ *                 up is busy, and this is the least urgent work there is.
+ * @param open     Names currently shown in a window; may be NULL.
+ * @return how many were deleted, or -1 when it did not run.
+ */
+int tiku_trk_query_sweep(struct tiku_trk_store *store, int64_t now,
+                         int64_t up_for, const char *const *open, int nopen);
 
 #endif /* TIKU_TRK_QUERY_H_ */

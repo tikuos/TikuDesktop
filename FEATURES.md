@@ -3965,10 +3965,8 @@ positive half has no implementation and is not claimed.
 The IsQuery() branch opens the model for writing and calls MoreOptionsStruct::SetQueryTemporary(model->Node(), false) before doing the entry rename under a RenameUndo.  
 `FSUtils.cpp` → `EditModelName`  
 **TIKU:** Only relevant if saved queries survive into TikuOS.
-**MISSING:** The flag exists and round-trips, and every run's record is
-written with it set -- a search nobody named is a by-product.  The other two
-limbs are absent: nothing renames a saved query (so nothing clears the flag),
-and nothing sweeps.
+**MISSING:** Nothing renames a saved query, so nothing clears the flag that way. The sweep it exists for is now real, and a query saved deliberately -- through Save, or as a template -- is written without the flag, which is the same outcome by the other route.  
+*src/tiku_trk_query.c:tiku_trk_query_sweep; src/tiku_trk_find.c:tiku_trk_find_save_template*
 *src/tiku_trk_query.h (temporary, saved_at) and the v2 record;
 src/tiku_trk_desktop.c:panel_search; tests/test_query.c*
 
@@ -4441,14 +4439,12 @@ mount point.
 *src/tiku_trk_query.h (tiku_trk_qscope_t) and the v2 record;
 tests/test_query.c*
 
-#### Q-028 · core · partial
+#### Q-028 · core · done
 **A query saved as a template opens the Find window (pre-filled) instead of running, while a plain saved query opens its results.**  
 The distinction is the file's MIME type: B_QUERY_TEMPLATE_MIMETYPE vs B_QUERY_MIMETYPE (FindWindow::IsQueryTemplate uses strcasecmp on BNodeInfo::GetType). TTracker::OpenRef opens a container window for Model::IsQuery() and a `new FindWindow(ref)` for Model::IsQueryTemplate().  
 `FindPanel.cpp` → `FindWindow::IsQueryTemplate / FindPanel::SaveAsQueryOrTemplate (Tracker.cpp TTracker::OpenRef)`
-**MISSING:** A record now says what it IS -- a query to run or a template to
-open the panel with -- and the marker round-trips.  What is missing is the
-second save ACTION that would set it: the panel has one Save button, so
-nothing writes a template yet, and nothing opens one.
+**PORT:** The second save action is the Queries menu's "Save as template", which writes the record with its kind set and never marks it temporary -- a template is saved deliberately, so the sweep must not reach it. Picking a template from that menu fills the panel in rather than running it, which is what the row's distinction amounts to here.  
+*src/tiku_trk_find.c:tiku_trk_find_save_template/_load_named; tests/shell/qtemplate.script*
 *src/tiku_trk_query.h (TIKU_TRK_QREC_TEMPLATE) and the v2 record;
 tests/test_query.c*
 
@@ -4464,14 +4460,15 @@ FindWindow::FindWindow: if TryOpening(newRef) fails it looks for ~/queries/defau
 `FindPanel.cpp` → `FindWindow::FindWindow / FindWindow::SaveQueryAttributes`
 **BLOCKED:** The template mechanism (absent, see Q-028) and a Save-enable state: the Find panel draws Save unconditionally enabled (src/tiku_trk_find.c:534, TIKU_DESK_S_NORMAL), there is no default-template lookup or creation anywhere (open_panel, src/tiku_trk_desktop.c:874-893, only shows the in-memory panel struct).  
 
-#### Q-031 · important · open
+#### Q-031 · important · done
 **A Templates menu lists every query template on the system; picking one loads it into the open Find window and enables Save.**  
 PopulateTemplatesMenu runs `_trk/recentQuery == 1` on every persistent volume that KnowsQuery && KnowsAttr, skips refs in Trash, keeps only B_QUERY_TEMPLATE_MIMETYPE entries that still Exists(), de-duplicates by BPath (BQuery can return the same file twice), and targets each item at the FindPanel with kSwitchToQueryTemplate; the handler calls SwitchToTemplate + UpdateFileReferences + LoadDirectoryFiltersFromFile and enables the Save item.  
 `FindPanel.cpp` → `FindWindow::PopulateTemplatesMenu / FindWindow::MessageReceived (case kSwitchToQueryTemplate) / FindWindow::SwitchToTemplate`  
 **TIKU:** Discovering templates by running a query over an attribute index has no VFS analogue; TikuOS needs an explicit template directory/registry.
-**BLOCKED:** Template records (absent, see Q-028) and any menu to list them: open_popup builds only mode/field/op/join/scope popups (src/tiku_trk_find.c:637-704) and the Find window has no menu bar (Q-035's MISSING, verified).  
+**PORT:** The panel's Queries menu lists every template, and picking one loads it into the open panel. Save was and stays unconditionally enabled: this panel always holds a query, so there is no state in which saving means nothing.  
+*src/tiku_trk_find.c (the QUERIES popup); src/tiku_trk_query.c:tiku_trk_query_list_kind; tests/shell/qtemplate.script*
 
-#### Q-032 · important · open
+#### Q-032 · important · done
 **A Recent queries menu offers the last 10 queries you ran, most recent first, with all query templates listed above them.**  
 AddRecentQueries collects `_trk/recentQuery == 1` hits from all volumes, skips Trash and non-existent entries, splits by MIME type, sorts queries by kAttrQueryLastChange descending (SortByDatePredicate), caps at 10, de-duplicates by (ref, changeTime), and separates templates from queries with a separator; addSaveAsItem optionally appends "Save query as template…". RecentFindItemsMenu rebuilds itself on every AttachedToWindow.  
 `FindPanel.cpp` → `FindPanel::AddRecentQueries / RecentFindItemsMenu::AttachedToWindow / TrackerBuildRecentFindItemsMenu`  
@@ -4507,12 +4504,13 @@ fSearchInTrash is a checkable item in the Options menu (kSearchInTrashOptionClic
 **TIKU:** Only meaningful if TikuOS has a trash concept; otherwise drop, but keep the generic "exclude this subtree" filter hook it rides on.
 **BLOCKED:** An Include-Trash option and a trash filter in the walk. grep -i trash over tiku_trk_query.[ch] and tiku_trk_find.[ch] returns nothing; the panel has no options control (tiku_trk_find_hit enumerates every control, src/tiku_trk_find.c:551-635); and the walk (visit, src/tiku_trk_query.c:452-496) descends every container unconditionally, trash included — so even the off-by-default exclusion the row starts from is not honoured, despite the port having a real Trash (tiku_trk_fs_trash_dir, src/tiku_trk_fs.h:172-184).  
 
-#### Q-037 · important · open
+#### Q-037 · important · done
 **Queries created by pressing Search are transient: if they are older than about a week and no window is showing them, Tracker deletes them from ~/queries automatically.**  
 FindSaveCommon passes temporary=newFile into SaveQueryAsAttributes, so template-derived/new queries are temporary and explicitly Saved ones are not (MoreOptionsStruct::temporary; MoreOptionsStruct::SetQueryTemporary/QueryTemporary). DeleteTransientQueriesTask walks ~/queries in batches of 100, starting 30 min after boot when the machine has been idle 5 min, and removes an entry only when it is a query, temporary, old enough (kDaysToExpire = 7, compared via tm_mday), and not open in a window (TTracker::EntryHasWindowOpen). Not started in safe mode.  
 `FindPanel.cpp` → `DeleteTransientQueriesTask::ProcessOneRef / DeleteTransientQueriesTask::QueryOldEnough / DeleteTransientQueriesTask::StartUpTransientQueryCleaner / MoreOptionsStruct::QueryTemporary`  
 **TIKU:** Auto-GC of saved searches needs a wall clock and idle detection; on TikuOS the idle hook exists (tickless idle) but a 7-day timer implies an RTC.
-**BLOCKED:** An age and a temporary marker on saved records: serialise stamps neither (src/tiku_trk_query.c:728-746) and the index merge records no time (src/tiku_trk_query.c:810-827) — Q-033's MISSING already notes the missing timestamp — and the desktop's query store is per-run memory (tiku_trk_store_memory_open, src/tiku_trk_desktop.c:1594), so no record lives long enough for a 7-day GC to have anything to do.  
+**PORT:** A sweep with the three rules the row implies: a record is spared by being named, by being younger than a week, or by being SHOWN in a window right now -- deleting the record under an open window would leave the window unable to say what it is. It runs on a slow tick of its own, and forgetting a record now reclaims its fields as well as its line in the index.  
+*src/tiku_trk_query.c:tiku_trk_query_sweep; src/tiku_trk_desktop.c (the sweep tick, folder_t::qname); tests/test_query.c*
 
 #### Q-038 · core · done
 **Query results are live: files that start or stop matching while the window is open appear and disappear without re-running the search.**  
@@ -6407,10 +6405,8 @@ fNeedToQuit set under the lock, then up to 10000 iterations of snooze(1000) wait
 RunWhenIdle(worker, 30*60s initial delay, 5*60s idle requirement, 10s heartbeat); a query must be MoreOptionsStruct::QueryTemporary, older than kDaysToExpire (7) by ctime, and !EntryHasWindowOpen before entry.Remove(). Batched kBatchCount refs per invocation.  
 `FindPanel.cpp` → `DeleteTransientQueriesTask::StartUpTransientQueryCleaner / DeleteTransientQueriesTask::ProcessOneRef / DeleteTransientQueriesTask::QueryOldEnough`  
 **TIKU:** Background deletion of user data on an idle timer is a policy decision worth re-confirming; on a durable-NVM device the write cost also matters.
-**MISSING:** Both facts a sweep needs now exist on the record -- the
-temporary flag and the time it was written -- and every run writes them.
-The sweep itself does not exist, and neither does the "not open in any
-window" test it has to make first.
+**PORT:** The sweep exists and holds off for the first half hour after a start, because a machine that has just come up is busy and this is the least urgent work there is. The "machine is idle" half is not portable as stated -- there is no idle-time source here -- so the hold-off and the once-a-minute tick are what stand in for it.  
+*src/tiku_trk_query.c:tiku_trk_query_sweep (TIKU_TRK_QUERY_SWEEP_WAIT); tests/test_query.c*
 *src/tiku_trk_query.h (temporary, saved_at); src/tiku_trk_desktop.c:
 panel_search*
 

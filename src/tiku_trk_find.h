@@ -50,7 +50,8 @@ typedef enum {
     TIKU_TRK_FIND_HIT_SCOPE,
     TIKU_TRK_FIND_HIT_TYPE,        /* the "of type" menu (Q-004)           */
     TIKU_TRK_FIND_HIT_SEARCH,
-    TIKU_TRK_FIND_HIT_SAVE
+    TIKU_TRK_FIND_HIT_SAVE,
+    TIKU_TRK_FIND_HIT_QUERIES      /* the templates and recent queries     */
 } tiku_trk_find_hit_t;
 
 typedef struct {
@@ -59,6 +60,9 @@ typedef struct {
     char              value[TIKU_TRK_FIND_TEXT_MAX];
     tiku_trk_qjoin_t  join;        /* joins this row to the NEXT one       */
 } tiku_trk_find_row_t;
+
+/** @brief How many past runs the Queries menu offers (Q-032). */
+#define TIKU_TRK_FIND_RECENT_MAX 10
 
 /** @brief How many types the most-used list keeps at the top (Q-016). */
 #define TIKU_TRK_FIND_MOST_USED 4
@@ -86,11 +90,53 @@ typedef struct {
     tiku_trk_find_hit_t   popup_for;
     int                   popup_row;
     tiku_desk_rect_t      popup_frame;
+    /* What the last action through the Queries menu did, for the shell's
+     * status line: a menu that loads a saved search without saying which
+     * one leaves the user looking at a panel that changed by itself. */
+    char                  note[80];
     /* Where the most-used type list lives.  Held on the panel because the
      * menu is built where the click lands, and passing it through every
      * hit-testing call would put a store in the geometry's signature. */
     struct tiku_trk_store *store;
 } tiku_trk_find_t;
+
+/**
+ * @brief Load the record @p name into the panel (Q-031, Q-032, Q-035).
+ *
+ * The same call whether it is a template or a query: what differs is what
+ * the record SAYS it is, and a template loaded into the panel is exactly
+ * a panel filled in and not run.
+ *
+ * @return 1 when it loaded whole, 0 when it loaded with something lost,
+ *         -1 when there is no such record.
+ */
+int tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name);
+
+/**
+ * @brief Save what the panel holds as a TEMPLATE under @p name (Q-028).
+ *
+ * A template is not run when it is opened -- it fills the panel in -- so
+ * this is the second save action the Save button could never be.
+ *
+ * @return 0 when written.
+ */
+int tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
+                                int64_t now);
+
+/**
+ * @brief Whether one of the panel's popups is showing.
+ *
+ * A popup hangs BELOW the panel's window, over whatever is behind it, so
+ * the shell has to send it the click wherever it lands -- otherwise the
+ * menu is drawn over the Desktop and clicked on the Desktop.
+ */
+int tiku_trk_find_popup_open(const tiku_trk_find_t *f);
+
+/** @brief What the last Queries-menu action did, for a status line. */
+const char *tiku_trk_find_note(const tiku_trk_find_t *f);
+
+/** @brief Forget it, once it has been said. */
+void tiku_trk_find_clear_note(tiku_trk_find_t *f);
 
 /** @brief Tell the panel where its most-used list lives (Q-016). */
 void tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s);
