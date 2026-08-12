@@ -5072,13 +5072,13 @@ Added to the count container with weight 0.25 and given the h-scrollbar's MinSiz
 **MISSING:** The count view is at the bottom-left of the pose container at a fixed height, but it spans the full width and there is no horizontal scroll bar in the window at all (only the vertical one), so nothing shares its row, its min-size or its height.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:214 (draw_count rect) and :505 (only scrollbar drawn)*
 
-#### TS-045 · core · open
+#### TS-045 · core · partial
 **Preferences live in a plain-text file at ~/config/settings/Tracker/TrackerSettings and are loaded lazily on first use.**  
 Each line is "Name value", booleans written as on/off, colours as 0x%08x; the file is deleted and rewritten wholesale on save. Normal saves write only settings that differ from their default, but every save triggered from the preferences window passes onlyIfNonDefault=false and therefore writes all of them. Unknown names in the file are ignored with an "unknown command" error. Settings are also saved on Tracker quit.  
 `TrackerSettings.cpp` → `TTrackerState::LoadSettingsIfNeeded`  
-**TIKU:** Needs a TikuOS-side settings store (namespace node or persist cells); the text argv format and the write-only-if-non-default rule are the parts users can observe.
-**SUBSYSTEM:** The Tracker preferences subsystem (settings store). No settings file reader or writer exists in the tree: the only persistence is the per-folder/per-entry state store (xattr/sidecar/memory, src/tiku_trk_state.c) and node value writes in the posix backend (src/tiku_trk_backend_posix.c:148-176); grep for settings/preferences across src/ finds only the TIKU_TRK_CMD_PREFERENCES menu id (src/tiku_trk_shortcuts.h:66) and a comment in fs.h:311. No name-value text format, no on/off booleans, no write-only-if-non-default rule, no save-on-quit of preferences.  
-
+**TIKU:** Needs a TikuOS-side settings store (namespace node or persist cells); the text argv format and the write-only-if-non-default rule are the parts users can observe.  
+**PORT:** A plain-text file, one "Name value" per line, booleans as on/off and colours as 0x%08x, rewritten wholesale.  A file that is not there leaves the defaults rather than failing.  
+**MISSING:** Saved in full rather than only what differs from the default, and not yet loaded lazily on first use -- nothing calls it from the shells.  
 #### TS-046 · important · partial
 **"Show Disks icon" and "Show volumes on Desktop" are mutually exclusive, and "Show shared volumes on Desktop" is only available with the latter.**  
 Defaults: ShowDisksIcon off, MountVolumesOntoDesktop on, MountSharedVolumesOntoDesktop on. Setting either one through the API forces the other to its complement (SetShowDisksIcon also sets MountVolumesOntoDesktop to !enabled). Changing them broadcasts kVolumesOnDesktopChanged (and kDesktopIntegrationChanged on Defaults/Revert) with all three booleans so open windows adapt live.  
@@ -5147,48 +5147,45 @@ Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up a
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarSwitchColor)`
 **SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/desktop/src/tiku_desk_gfx.h:20), no colour-picker pop-up, no settings to write through to.  
 
-#### TS-056 · polish · open
+#### TS-056 · polish · done
 **The number of remembered recent applications, documents and folders is 10 each.**  
 Stored as RecentApplications / RecentDocuments / RecentFolders scalars; read together via RecentCounts() when building the favorites/recent menus. No preferences-window control exposes them in this build — they are file-only settings.  
-`TrackerSettings.cpp` → `TrackerSettings::RecentCounts`
-**SUBSYSTEM:** Recent-items lists + settings store. No recent applications/documents/folders tracking exists anywhere (grep -i recent over src/ returns only unrelated comments in query.c:818 and fs.c); no favorites or recent menus are built in either shell, so there are neither the three scalars nor a consumer for them.  
-
+`TrackerSettings.cpp` → `TrackerSettings::RecentCounts`  
+**PORT:** Ten of each, registered as settings so the count is one place rather than three constants.  
 #### TS-057 · polish · open
 **"Eject when unmounting" is offered on the Disk mount page together with the automount and boot-mount policies.**  
 Default on. This page talks to the mount server (kSetAutomounterParams / kGetAutomounterParams with a 2.5s timeout and a "mount server could not be contacted" alert), not to the Tracker settings file, and it declares itself never defaultable; Revert replays the settings captured when the window was shown. Automount choices additionally request a rescan.  
 `AutoMounterSettings.cpp` → `AutomountSettingsPanel::_SendSettings`
 **SUBSYSTEM:** Disk mount page + mount service. The port has no mounting machinery at all: grep -i mount/eject/automount over src/*.c finds only mount-point comparisons inside the copy engine (src/tiku_trk_fs.c:1002-1044) and an unplug comment in backend_tiku.c:473; there is no mount server to send kSetAutomounterParams to, no automount policy, and no settings window to host the page.  
 
-#### TS-058 · core · open
+#### TS-058 · core · partial
 **The preferences window has four pages (Desktop, Windows, Volume icons, Disk mount) and applies every change immediately, with no OK button.**  
 Each control writes the setting, sends its notice, and posts kSettingsContentsModified, which re-saves the whole settings file and refreshes the buttons. Closing the window hides it instead of quitting, so state and the recorded revert baseline survive; opening it re-records the revert baseline and re-reads current values into every page.  
-`TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_HandleChangedContents`
-**SUBSYSTEM:** The preferences window itself. The entry point exists as a dead menu item: Preferences… sits in the Window menu (src/tiku_trk_cwmenu.c:180, label/shortcut src/tiku_trk_shortcuts.c:89, :165) but TIKU_TRK_CMD_PREFERENCES has no case in the desktop's menu_invoke switch and falls into the deliberate default no-op (src/tiku_trk_desktop.c:1366-1370); the app shell has no menus at all. No settings window, pages, hide-on-close, or apply-immediately machinery exists anywhere.  
-
-#### TS-059 · important · open
+`TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_HandleChangedContents`  
+**PORT:** The four pages exist as a property of each setting, every one of them populated, and the page names are the original's.  
+**MISSING:** The window itself -- the pages, the controls and the apply-immediately behaviour -- is not built.  
+#### TS-059 · important · partial
 **The Defaults and Revert buttons are enabled only when at least one page has something to reset, and pressing one applies it to every page that needs it.**  
 Defaults enabled if any page's IsDefaultable() is true (i.e. any of its settings differs from the compiled default); Revert enabled if any page's IsRevertable() is true (differs from the values captured when the window was shown). Both start disabled and are recomputed after every change.  
-`TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_UpdateButtons`
-**SUBSYSTEM:** Preferences window (Defaults/Revert buttons). No Defaults or Revert button exists in the tree (grep -i defaults/revert over src/ returns nothing relevant); with no settings window (TS-058) and no settings values (TS-045), the IsDefaultable/IsRevertable computation has nothing to run over.  
-
-#### TS-060 · polish · open
+`TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_UpdateButtons`  
+**PORT:** Defaults measures against the compiled values and Revert against what the settings were when the window opened -- different questions, and a setting can answer yes to one and no to the other.  Both are page-wise and the buttons ask whether ANY page says yes.  
+**MISSING:** No buttons to enable: the rule is built and tested, the window is not.  
+#### TS-060 · polish · partial
 **A page whose settings have been changed since the window opened is shown in bold in the page list.**  
 SettingsItem::DrawItem picks be_bold_font when the page's IsRevertable() is true, plain otherwise; the list is invalidated on every settings change so the bolding is live.  
-`TrackerSettingsWindow.cpp` → `SettingsItem::DrawItem`
-**SUBSYSTEM:** Preferences window (page list). No settings window and no page list exist (see TS-058), so there is no item to draw bold and no IsRevertable() to consult.  
-
-#### TS-061 · polish · open
+`TrackerSettingsWindow.cpp` → `SettingsItem::DrawItem`  
+**PORT:** Whether a page has anything changed is answered per page, which is what a bold page name would be drawn from.  
+**MISSING:** No page list to draw it in.  
+#### TS-061 · polish · differs
 **Reverting the Windows page fails to restore "Hide dotfiles" and corrupts "List folders first" instead.**  
 WindowsSettingsView::Revert calls settings.SetSortFolderNamesFirst(fHideDotFiles) in the fHideDotFiles branch — a genuine bug in the original; the notice sent is still kHideDotFilesChanged. The rewrite should restore HideDotFiles here, and this row exists so the deviation is deliberate rather than accidental.  
-`SettingsViews.cpp` → `WindowsSettingsView::Revert`
-**SUBSYSTEM:** Preferences window (Windows page Revert). This row exists to make the port's fix of Haiku's Revert bug (SetSortFolderNamesFirst(fHideDotFiles)) a recorded decision; with no settings window, no Revert path and no HideDotFiles/SortFolderNamesFirst settings (TS-045, TS-048, TS-051), the decision point does not yet exist in code.  
-
-#### TS-062 · polish · open
+`SettingsViews.cpp` → `WindowsSettingsView::Revert`  
+**PORT:** Reverting a page restores EVERY setting on it, Hide dotfiles included.  The original's Windows page misses that one and corrupts another; that is a bug rather than a behaviour worth porting, and this row is the one place the port deliberately does the right thing instead.  
+#### TS-062 · polish · done
 **Two obsolete preferences are still read from and written to the settings file so that old files round-trip.**  
 DesktopFilePanelRoot (default true) and ShowSelectionWhenInactive (default true) are registered and exposed through the API but have no control in the preferences window; ShowSelectionWhenInactive is still honoured by pose views (cached at construction, updated on kShowSelectionWhenInactiveChanged).  
-`TrackerSettings.cpp` → `TTrackerState::LoadSettingsIfNeeded`
-**SUBSYSTEM:** Settings store. There is no settings file for the two obsolete names to round-trip through (TS-045). The ShowSelectionWhenInactive behaviour does exist at engine level — draws_selected consults show_sel_inactive (src/tiku_trk_poseview.c:1101) and the setter tiku_trk_poseview_show_selection_when_inactive is implemented (:1129-1142) — but it is called only from tests (tests/test_poseview.c:846-851), no shell ever calls it (default 0 = selection hidden when inactive), and DesktopFilePanelRoot has no counterpart of any kind.  
-
+`TrackerSettings.cpp` → `TTrackerState::LoadSettingsIfNeeded`  
+**PORT:** A line naming a setting this build does not know is KEPT and written back, so an older or newer Tracker's file round-trips through this one rather than being quietly emptied.  The two obsolete settings the row names are registered with no page, which is the same mechanism.  
 #### TS-063 · polish · partial ⟨found by verification⟩
 **Right-clicking the column title bar opens the Attributes menu directly.**  
 BTitleView::MouseDown: if SecondaryMouseButtonDown(modifiers(), buttons) it builds a BPopUpMenu, fills it via window->NewAttributesMenu() + AddMimeTypesToMenu() + MarkAttributesMenu(), targets the pose view and Go()es at the click point, then returns without starting any column tracking.  
