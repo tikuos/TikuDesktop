@@ -182,3 +182,67 @@ tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
      * when they have to. */
     return same_volume ? TIKU_TRK_DROP_MOVE : TIKU_TRK_DROP_COPY;
 }
+
+int
+tiku_trk_drag_add_at(tiku_trk_drag_t *d, const char *path, const char *type,
+                     int x, int y, int from_list)
+{
+    int at;
+
+    if (d == NULL) {
+        return -1;
+    }
+    at = d->count;
+    if (tiku_trk_drag_add(d, path) != 0) {
+        return -1;
+    }
+    d->ox[at] = x;
+    d->oy[at] = y;
+    d->from_list = from_list;
+    if (type != NULL && type[0] != '\0' && !d->types_built &&
+        d->ntype < TIKU_TRK_DRAG_TYPES) {
+        int i;
+
+        for (i = 0; i < d->ntype; i++) {
+            if (strcmp(d->type[i], type) == 0) {
+                return 0;
+            }
+        }
+        snprintf(d->type[d->ntype], sizeof d->type[0], "%s", type);
+        d->ntype++;
+    }
+    return 0;
+}
+
+void
+tiku_trk_drag_landing(const tiku_trk_drag_t *d, int i, int dx, int dy,
+                      int *x, int *y)
+{
+    if (d == NULL || i < 0 || i >= d->count) {
+        return;
+    }
+    if (d->from_list) {
+        /* A list has no positions to preserve, so a column at the drop
+         * point is the only arrangement that is not a heap. */
+        if (x != NULL) { *x = dx; }
+        if (y != NULL) { *y = dy + i * TIKU_TRK_DRAG_STACK; }
+        return;
+    }
+    /* One delta for the whole selection: what the user picked up is what
+     * they put down, in the same shape. */
+    if (x != NULL) { *x = dx + (d->ox[i] - d->ox[0]); }
+    if (y != NULL) { *y = dy + (d->oy[i] - d->oy[0]); }
+}
+
+int
+tiku_trk_drag_types(tiku_trk_drag_t *d)
+{
+    if (d == NULL) {
+        return 0;
+    }
+    /* Sealed on the first ask.  Re-entering a view with the same drag must
+     * not rebuild the list: the drag has not changed, and rebuilding on
+     * every entry is how a hover becomes expensive. */
+    d->types_built = 1;
+    return d->ntype;
+}

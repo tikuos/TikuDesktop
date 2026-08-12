@@ -48,6 +48,12 @@ typedef enum {
     TIKU_TRK_DROP_LINK
 } tiku_trk_drop_t;
 
+/** @brief How many distinct types one drag's cache holds. */
+#define TIKU_TRK_DRAG_TYPES 16
+
+/** @brief How far apart stacked icons land. */
+#define TIKU_TRK_DRAG_STACK 20
+
 /** @brief One drag in flight. */
 typedef struct {
     int      armed;                 /* pressed on a pose, not yet moved  */
@@ -60,6 +66,17 @@ typedef struct {
     char     path[TIKU_TRK_DRAG_MAX][TIKU_TRK_PATH_MAX];
     char     src_dir[TIKU_TRK_PATH_MAX];
     void    *src_win;               /* opaque owner token                */
+    /* Where each item sat when the drag began, so a drop can put them
+     * down in the same arrangement rather than in a heap (PVS-045). */
+    int      ox[TIKU_TRK_DRAG_MAX], oy[TIKU_TRK_DRAG_MAX];
+    int      from_list;             /* the source view was a list        */
+    /* The distinct types the drag carries, worked out ONCE.  Re-entering
+     * a view with the same drag must not rebuild them: the drag has not
+     * changed, and rebuilding is how a hover becomes expensive
+     * (PVS-053). */
+    char     type[TIKU_TRK_DRAG_TYPES][TIKU_TRK_TYPE_MAX];
+    int      ntype;
+    int      types_built;
 } tiku_trk_drag_t;
 
 /** @brief Forget everything; a drag that is not happening. */
@@ -78,6 +95,33 @@ void tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
 
 /** @brief Add one item to what the drag carries (PVS-033). */
 int tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path);
+
+/**
+ * @brief Add one item, remembering where it sat and what it is.
+ *
+ * @param from_list Non-zero when the source view was a list, which has no
+ *                  positions to preserve.
+ */
+int tiku_trk_drag_add_at(tiku_trk_drag_t *d, const char *path,
+                         const char *type, int x, int y, int from_list);
+
+/**
+ * @brief Where item @p i should land for a drop at @p dx, @p dy.
+ *
+ * From an icon view the arrangement is preserved -- the whole selection
+ * moves by one delta, so what the user picked up is what they put down.
+ * From a list there are no positions to preserve, so they stack in a
+ * column at the drop point (PVL-027, PVS-045).
+ */
+void tiku_trk_drag_landing(const tiku_trk_drag_t *d, int i, int dx, int dy,
+                           int *x, int *y);
+
+/**
+ * @brief The distinct types this drag carries, built once (PVS-053).
+ *
+ * @return how many.
+ */
+int tiku_trk_drag_types(tiku_trk_drag_t *d);
 
 /**
  * @brief Report pointer movement.

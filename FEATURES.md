@@ -622,12 +622,12 @@ PlaceFolder reads "be:invoke_origin" and converts from screen; otherwise (non-li
 MoveSelectionInto detects source folder == destination folder: list mode returns without moving, force-copy turns into DuplicateSelection, otherwise each selected pose is removed from the vertical-sort list, moved by (loc - where), optionally PinToGrid'd, then the extent is updated (RemoveFromExtent old, AddToExtent new) and the pose is re-inserted into the vertical-sort list. dropOnGrid comes from B_COMMAND_KEY in MoveSelectionTo.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto (static overload) / BPoseView::MoveSelectionTo`  
 
-#### PVL-027 · polish · open
+#### PVL-027 · polish · partial
 **Icons dropped from a list-mode window into an icon-mode window are stacked in a vertical column at the drop point.**  
 GetDropPointList: if the source was in list mode, each pose gets dropEnd + (0, index * (IconPoseHeight() + 3)); otherwise it keeps its relative offset dropEnd + (poseLocation - dropStart). Grid pinning applied afterwards if requested. Returns NULL entirely when the destination is in list mode.  
-`PoseView.cpp` → `BPoseView::GetDropPointList`
-**SUBSYSTEM:** Drag-and-drop (inter-window pose drag): the app shell is a single window, and the desktop shell has no pose dragging at all — a press on a row either opens the context menu on long-press or is a click (src/tiku_trk_desktop.c:2203-2210); no drop-point-list or cross-window drop code exists (grep for pose drag/drop in tiku_trk_desktop.c: only window-frame drags).  
-
+`PoseView.cpp` → `BPoseView::GetDropPointList`  
+**PORT:** Dragged out of a list there is no arrangement to preserve, so they stack in a column at the drop point rather than in a heap.  
+**MISSING:** Same as PVS-045 -- the destination view is not drawn in icon mode, so the column has nowhere to land.  
 #### PVL-028 · polish · done
 **A saved icon position that is nonsense is ignored and the icon is auto-placed instead.**  
 ReadPoseInfo rejects |x| or |y| > kSanePoseLocation (50000) and any pose info whose fInitedDirectory matches neither the item's parent directory nor the view's target node, by setting fInitedDirectory = -1. In icon modes only, a failed read on a file created within the last 5 seconds is retried up to 10 times at 10 ms intervals so freshly created items land where they were told to.  
@@ -1352,9 +1352,8 @@ B_SIMPLE_DATA with "src_window" (raw BContainerWindow*), "click_pt", "buttons", 
 #### PVS-034 · important · open
 **The drag image is a translucent rendering of the actually-selected poses, cropped to a box around the cursor with faded edges when the selection is larger than that box.**  
 Union of visible selected pose rects = drag rect (GetDragRect); an inner box of kTransparentDragThreshold (ComposeIconSize(256)) is centred on the cursor and nudged inside the drag rect; each clipped side is extended by a ComposeIconSize(32) fade band (FadeRGBA32Horizontal/Vertical). Alpha is 192, or 164 when faded; white or black tint depending on HighColor().IsDark(). If the cursor is outside the drag rect no bitmap is produced and BView::DragMessage falls back to the plain outline rect.  
-`PoseView.cpp` → `BPoseView::MakeDragBitmap / BPoseView::GetDragRect`
-**SUBSYSTEM:** Drag-and-drop (inter-view drag message + drag image). The only drag is an in-view live move of the actual poses — each selected pose is relocated by the drag delta (src/tiku_trk_app.c:1667-1687) — so nothing is ever rendered as a cursor-attached bitmap; no drag-image, fade, or translucency code exists (grep hilite/highlight/fade over src/ returns nothing).  
-
+`PoseView.cpp` → `BPoseView::MakeDragBitmap / BPoseView::GetDragRect`  
+**BLOCKED:** Waits on translucent compositing.  The surface draws opaque pixels and has no alpha blend, so a drag image can be an outline or nothing; the fade at its edges needs the same.  
 #### PVS-035 · core · done
 **While a drag hovers the view, the folder pose under the cursor is highlighted as the drop target, and poses that are part of the dragged selection are never valid targets.**  
 UpdateDropTarget: targetPose is nulled if DragSelectionContains(targetPose); symlinks are resolved before validity testing; the target is accepted only if CanHandleDragSelection(...) passes, otherwise fDropTarget is cleared. HiliteDropTarget draws by transiently BPose::Select()ing the pose and remembers via fAlreadySelectedDropTarget that an already-user-selected target must not be deselected on exit. While a drop/context menu is tracking, moving off a pose does not un-hilite (trackingContextMenu && !targetPose returns "no change").  
@@ -1366,9 +1365,8 @@ UpdateDropTarget: targetPose is nulled if DragSelectionContains(targetPose); sym
 **The cursor changes to the copy cursor when the drag is over a directory on a different device than the source.**  
 Only when the target is a directory, the message has refs, !CheckDevicesEqual(&srcRef, targetModel), and the source is neither a volume nor root; otherwise the system default cursor is restored. fCursorCheck suppresses redundant cursor churn.  
 `PoseView.cpp` → `BPoseView::UpdateDropTarget`  
-**TIKU:** "Different device" has no analogue for namespace nodes; needs a same-store predicate to decide whether a transfer is a move or a copy.
-**SUBSYSTEM:** Drag-and-drop (hover tracking). The same-volume predicate the rule needs exists (volume_of, src/tiku_trk_fs.c:314-332) but there is no drag-over-target tracking, and the only cursor either shell ever sets is the column-resize cursor (src/tiku_trk_app.c:1632; grep cursor over src/tiku_trk_desktop.c returns nothing).  
-
+**TIKU:** "Different device" has no analogue for namespace nodes; needs a same-store predicate to decide whether a transfer is a move or a copy.  
+**BLOCKED:** Waits on a cursor API in the multi-window shell, which has none at all; the single-window shell has one but no cross-window drop for a cursor to change over.  
 #### PVS-037 · core · done
 **Dropping items on a folder moves them when source and destination are on the same volume, and copies them when they are on different volumes.**  
 moveMode selection order in MoveSelectionInto: forceCopy > forceMove > createRelativeLink > createLink > (!CheckDevicesEqual(srcList->ItemAt(0), destFolder) ? copy : move). Virtual-directory sources with no explicit mode default to creating links instead.  
@@ -1422,12 +1420,12 @@ HandleDropCommon: ignoreTypes = (modifiers() & B_CONTROL_KEY) != 0; LaunchAppWit
 `PoseView.cpp` → `BPoseView::HandleDropCommon / BPoseView::LaunchAppWithSelection`
 **BLOCKED:** Waits on launch machinery that exists nowhere in the port: grep execv/execl/fork/posix_spawn/system( over src/ returns nothing (PVS-010's audit already records 'the port has no launch path'), and on the missing drop pipeline to hand refs to it.  
 
-#### PVS-045 · important · open
+#### PVS-045 · important · partial
 **Icons dropped on the background of an icon-mode window land at the drop point preserving their relative layout; a selection dragged out of a list-mode window stacks vertically at the drop point.**  
 GetDropPointList: sourceInListMode -> dropEnd + (0, index * (IconPoseHeight() + 3)); else dropEnd + (pose->Location(this) - dropStart), where dropStart is the drag's "click_pt". Returns NULL (no positioning) when the destination is in list mode. Foreign ref drops onto a pose instead lay out in rows of 4 grid cells.  
-`PoseView.cpp` → `BPoseView::GetDropPointList / BPoseView::MoveSelectionTo`
-**SUBSYSTEM:** Drag-and-drop (inter-window drops). No drop from one view into another exists to position anything: the app shell's drag never leaves its one view (src/tiku_trk_app.c:1667-1687) and the desktop shell has no pose drag at all (src/tiku_trk_desktop.c:2201-2221 MotionNotify handles only rename-cancel and window tracking).  
-
+`PoseView.cpp` → `BPoseView::GetDropPointList / BPoseView::MoveSelectionTo`  
+**PORT:** One delta for the whole selection, so what the user picked up is what they put down, in the same shape.  
+**MISSING:** Nothing consumes the landing positions: neither shell draws an icon-mode window, so there is nowhere for a preserved arrangement to appear.  
 #### PVS-046 · polish · done
 **Holding Command while dropping snaps the dropped icons to the icon grid.**  
 MoveSelectionTo computes pinToGrid = (modifiers() & B_COMMAND_KEY) != 0 and passes it as dropOnGrid; TrySettingPoseLocation applies PinToGrid for clipping files and skips positioning entirely in list mode, then removes the stale kAttrPoseInfoForeign attribute.  
@@ -1474,12 +1472,11 @@ SpringLoadedFolderSetMenuStates walks ModelMenuItems and calls Model::SupportsMi
 **TIKU:** Type support becomes a capability-bit query on the typed descriptor.
 **SUBSYSTEM:** Spring-loaded folders (see PVS-051). With no spring menu there is nothing to enable or grey, and no per-item type-acceptance query exists (grep SupportsMimeType-analogues/accepts over src/ finds only unrelated hits).  
 
-#### PVS-053 · polish · open
+#### PVS-053 · polish · done
 **The dragged message and its unique MIME-type list are cached once per drag and reused; re-entering the view with the same drag does not rebuild them.**  
 DragStart returns early when IsDragging() && SpringLoadedFolderCompareMessages(...), which compares every ref AND the "click_pt" so a fresh drag of the same files is still treated as new. IsDragging() == (fDragMessage != NULL && fCachedTypesList != NULL). Symlink refs contribute both the link type and the resolved type.  
-`PoseView.cpp` → `BPoseView::DragStart / SpringLoadedFolderCompareMessages / SpringLoadedFolderCacheDragData`
-**SUBSYSTEM:** Drag-and-drop (drag message). There is no drag message or cached type list to reuse: the in-view drag carries no payload — the press merely records each selected pose's start location (src/tiku_trk_app.c:1502-1520) — as PVS-033's audit already establishes.  
-
+`PoseView.cpp` → `BPoseView::DragStart / SpringLoadedFolderCompareMessages / SpringLoadedFolderCacheDragData`  
+**PORT:** The distinct types are collected as the drag is built and the list is SEALED on the first ask: re-entering a view with the same drag must not rebuild it, which is how a hover becomes expensive.  
 #### PVS-054 · polish · open
 **A spring-loaded menu closes when the pointer leaves it (and all of its open submenus) by more than a margin.**  
 kMenuTrackMargin = 20 px inset applied to the menu bounds and to each visible submenu window frame; returns true (go away) only when the pointer is outside all of them. Installed via InitTrackingHook with BPoseView::MenuTrackingHook.  
@@ -4164,9 +4161,8 @@ kAttrQueryLastChange (B_INT32_TYPE, time(0)) and "_trk/recentQuery" = 1 are writ
 **Dragging the Find window's icon into a folder saves the current search there; the drop menu lets you choose "Create a Query" or "Create a Query template".**  
 A DraggableQueryIcon carries B_SIMPLE_DATA with be:actions=B_COPY_TARGET, two be:filetypes (query, query template) and two be:actionspecifier strings. The B_COPY_TARGET reply is resolved in FindPanel::MessageReceived by matching either the action specifier or the file type, then SaveAsQueryOrTemplate creates the file and posts kAttachFile so the window re-attaches to it. DragStarted sets be:clip_name (always "New Query" in practice). The icon is absent in template-edit-only mode.  
 `FindPanel.cpp` → `FindPanel::MessageReceived (case B_COPY_TARGET) / FindPanel::SaveAsQueryOrTemplate / DraggableQueryIcon::DragStarted / FindWindow::MessageReceived (case kAttachFile)`  
-**TIKU:** No drag and drop; the equivalent is `find … > /path/name.query` — i.e. an explicit save-to-path argument.
-**SUBSYSTEM:** Drag-and-drop. No pose or icon drag exists anywhere in the desktop — the only drag tracking is window tab/resize (tiku_trk_desk_begin_track, src/tiku_trk_desktop.c:2033-2034) and a long-press radius check for rows (src/tiku_trk_desktop.c:2207); the row's own TIKU fallback (an explicit save-to-path) is also absent, since Save always writes to the fixed store under an auto-generated name (src/tiku_trk_desktop.c:2070-2087).  
-
+**TIKU:** No drag and drop; the equivalent is `find … > /path/name.query` — i.e. an explicit save-to-path argument.  
+**BLOCKED:** Waits on the Find window's icon being draggable, which waits on a window-icon that can start a drag at all (IV-057, CW-017).  
 #### Q-035 · important · partial
 **Query menu commands: Open… (Alt+O) loads an existing query into the panel, Save (Alt+S) writes it back in place and makes it permanent, Save as query… / Save as template… write a new file via a save panel.**  
 BuildMenuBar wires kOpenLoadQueryPanel, fSaveQueryOrTemplateItem (kSaveQueryOrTemplate, 'S'), and two kOpenSaveAsPanel items differing by the bool "saveastemplate"; the save panel's B_SAVE_REQUESTED is completed by FindPanel (accepting either a direct ref or directory+name). kSaveQueryOrTemplate calls SaveQueryAsAttributes(..., temporary=false), which is what un-marks a query as transient.  

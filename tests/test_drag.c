@@ -124,6 +124,56 @@ main(void)
           TIKU_TRK_DROP_COPY,
           "PVS-038", "though Option-dropping there duplicates");
 
+
+    printf("\nwhere dropped icons land (PVL-027, PVS-045)\n");
+    {
+        tiku_trk_drag_t g;
+        int x = -1, y = -1;
+
+        /* From an ICON view: three poses in an L, dropped elsewhere. */
+        tiku_trk_drag_arm(&g, 10, 10, 1u, 0u, 1, NULL, "/src");
+        (void)tiku_trk_drag_add_at(&g, "/src/a", "text", 100, 100, 0);
+        (void)tiku_trk_drag_add_at(&g, "/src/b", "text", 140, 100, 0);
+        (void)tiku_trk_drag_add_at(&g, "/src/c", "image", 100, 160, 0);
+        tiku_trk_drag_landing(&g, 0, 500, 300, &x, &y);
+        check(x == 500 && y == 300, "PVS-045",
+              "the item under the pointer lands at the drop point");
+        tiku_trk_drag_landing(&g, 1, 500, 300, &x, &y);
+        check(x == 540 && y == 300, "PVS-045",
+              "and the rest keep their offsets -- what the user picked up "
+              "is what they put down, in the same shape");
+        tiku_trk_drag_landing(&g, 2, 500, 300, &x, &y);
+        check(x == 500 && y == 360, "PVS-045",
+              "in both directions");
+
+        /* From a LIST: no positions to preserve. */
+        tiku_trk_drag_arm(&g, 10, 10, 1u, 0u, 1, NULL, "/src");
+        (void)tiku_trk_drag_add_at(&g, "/src/a", "text", 0, 0, 1);
+        /* A row spacing deliberately UNLIKE the stack spacing, so a
+         * landing that preserved it would not look like a stack. */
+        (void)tiku_trk_drag_add_at(&g, "/src/b", "text", 0, 55, 1);
+        tiku_trk_drag_landing(&g, 0, 500, 300, &x, &y);
+        check(x == 500 && y == 300, "PVL-027",
+              "dragged out of a list, the first lands at the drop point");
+        tiku_trk_drag_landing(&g, 1, 500, 300, &x, &y);
+        check(x == 500 && y == 320, "PVL-027",
+              "and they stack in a COLUMN rather than a heap: a list has "
+              "no arrangement to preserve");
+
+        printf("\ntypes are worked out once (PVS-053)\n");
+        tiku_trk_drag_arm(&g, 10, 10, 1u, 0u, 1, NULL, "/src");
+        (void)tiku_trk_drag_add_at(&g, "/src/a", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/src/b", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/src/c", "image", 0, 0, 1);
+        check(tiku_trk_drag_types(&g) == 2, "PVS-053",
+              "the DISTINCT types are counted, not the items");
+        (void)tiku_trk_drag_add_at(&g, "/src/d", "audio", 0, 0, 1);
+        check(tiku_trk_drag_types(&g) == 2, "PVS-053",
+              "and once asked the list is sealed -- re-entering a view "
+              "with the same drag must not rebuild it, which is how a "
+              "hover becomes expensive");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the drag gesture holds");
     return fails ? 1 : 0;
 }
