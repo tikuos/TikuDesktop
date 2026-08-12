@@ -4556,8 +4556,22 @@ The list-mode PointInPose overload returns true for any point inside _ListIconRe
 GetNodeIcon calls GetThumbnailFromAttr before GetFileIconFromAttr for non-executables; ShouldGenerateThumbnail gates on the 'Generate image thumbnails' setting (default true) AND the MIME type case-insensitively starting with "image".  
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr / ShouldGenerateThumbnail`  
 **TIKU:** Translator-based decode does not exist on TikuOS; decide which formats (if any) generate thumbnails and whether generation is even affordable.  
-**PORT:** An image row shows its own picture; the gate is the setting and then the file's kind, and a miss queues the work instead of doing it.  
-**MISSING:** Recognised by EXTENSION, not by MIME type -- the port has no type registry -- and only BMP and stored-deflate PNG decode.  A compressed PNG or a JPEG is recognised and refused (TIKU_TRK_IMG_UNSUPPORTED) rather than half-read; both need a real inflate and a JPEG decoder.  
+*Shell: desktop*  
+**PORT:** Every ordinary PNG decodes now: `tiku_trk_inflate` is a from-scratch
+DEFLATE -- stored, fixed and dynamic Huffman -- written rather than linked,
+because the one thing this port wanted from zlib was the decompressor.
+Checked pixel-for-pixel against a reference decoder across all five PNG
+filter types and five geometries, on the project's own stored-deflate
+screenshots, and on a 2160x3760 photograph; 300 corrupted PNGs produced no
+crashes.
+**MISSING:** Images are still recognised by EXTENSION rather than MIME type
+(the port has no type registry), colour types are RGB and RGBA only (no
+palette, greyscale or interlace), and JPEG is a separate decoder that does
+not exist.  Three of inflate's defensive checks are unexercised -- an
+over-subscribed code table, a dynamic block with no end-of-block symbol, and
+an RLE-16 with nothing to repeat -- because reaching them needs a bit-level
+stream writer the tests do not have; their mutations survive and the row says
+so.
 *Shell: desktop*  
 #### IV-029 · core · done
 **A cached thumbnail is reused only while the file has not been modified since the thumbnail was made.**  

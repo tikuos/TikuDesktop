@@ -10,6 +10,8 @@
 
 #include "tiku_trk_image.h"
 
+#include "tiku_trk_inflate.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -161,56 +163,6 @@ load_bmp(const unsigned char *b, long n, tiku_trk_image_t *out)
 /* PNG, stored-deflate only                                                  */
 /*---------------------------------------------------------------------------*/
 
-/**
- * @brief Copy a zlib stream that uses only STORED blocks.
- *
- * Enough to read back what this project's own writer emits, which is what
- * makes its screenshots thumbnailable.  A compressed stream needs a real
- * inflate and is refused rather than half-read.
- *
- * @return bytes written, or -1.
- */
-static long
-inflate_stored(const unsigned char *z, long n, unsigned char *out, long max)
-{
-    long i = 2, w = 0;              /* skip the two-byte zlib header */
-
-    if (n < 2 || (z[0] & 0x0fu) != 8u) {
-        return -1;
-    }
-    if ((z[1] & 0x20u) != 0u) {
-        return -1;                  /* a preset dictionary: not ours */
-    }
-    for (;;) {
-        int final;
-        long len;
-
-        if (i >= n) {
-            return -1;
-        }
-        final = z[i] & 1;
-        if (((z[i] >> 1) & 3) != 0) {
-            return -1;              /* a compressed block: needs inflate */
-        }
-        i++;                        /* stored blocks are byte-aligned    */
-        if (i + 4 > n) {
-            return -1;
-        }
-        len = (long)z[i] | ((long)z[i + 1] << 8);
-        i += 4;                     /* LEN and its complement            */
-        if (i + len > n || w + len > max) {
-            return -1;
-        }
-        memcpy(out + w, z + i, (size_t)len);
-        w += len;
-        i += len;
-        if (final) {
-            break;
-        }
-    }
-    return w;
-}
-
 /** @brief Undo one scanline's PNG filter, in place. */
 static void
 unfilter(unsigned char *cur, const unsigned char *prev, long len, int bpp,
@@ -296,9 +248,8 @@ load_png(const unsigned char *b, long n, tiku_trk_image_t *out)
         free(idat);
         return TIKU_TRK_IMG_BAD;
     }
-    if (inflate_stored(idat, ilen, raw, rawlen) != rawlen) {
-        /* Compressed: recognised, and honestly out of reach for now. */
-        rc = TIKU_TRK_IMG_UNSUPPORTED;
+    if (tiku_trk_inflate_zlib(idat, ilen, raw, rawlen) != rawlen) {
+        rc = TIKU_TRK_IMG_BAD;
         goto done;
     }
     out->px = malloc((size_t)w * (size_t)h * sizeof *out->px);
