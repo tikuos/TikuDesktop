@@ -146,6 +146,9 @@ int tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y,
                            tiku_trk_db_pick_t *pick);
 
 int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
+/** @brief Open the leaf menu, as the Menu key does (DB-011). */
+void tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db);
+
 void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
 
 /** @brief Whether the clock's calendar is showing. */

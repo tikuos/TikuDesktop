@@ -756,6 +756,42 @@ settle_writability(app_t *a)
 }
 
 /** @brief Refresh the listing after an operation changed the folder. */
+/**
+ * @brief Let queued file work finish before the process goes.
+ *
+ * Bounded, because a job that cannot finish must not hold the application
+ * open forever: the original gives up after five seconds and so does this.
+ * What is already done stays done either way -- the engine has no
+ * transaction above one item.
+ */
+static void
+drain_fs(tiku_trk_fs_t *fs)
+{
+    int guard = 0;
+
+    if (fs == NULL) {
+        return;
+    }
+    /* 50 turns of 100 ms, the original's own budget. */
+    while (tiku_trk_fs_busy(fs) && guard++ < 50) {
+        if (tiku_trk_fs_step(fs, 16) == 0) {
+            const tiku_trk_progress_t *pr = tiku_trk_fs_progress(fs);
+
+            /* A question stops the queue and there is nobody left to
+             * answer it, so answer it the way the running shell would and
+             * keep going rather than spinning out the whole budget. */
+            if (pr->conflict) {
+                tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_RENAME);
+            } else if (pr->error_ask) {
+                tiku_trk_fs_resolve_error(fs, 1);
+            } else {
+                break;
+            }
+        }
+        usleep(100000);
+    }
+}
+
 static void
 after_op(app_t *a)
 {
@@ -1827,6 +1863,10 @@ main(int argc, char **argv)
     XFreeGC(a.dpy, a.gc);
     XCloseDisplay(a.dpy);
     tiku_desk_surface_free(a.surf);
+    /* Quitting waits for work already under way, up to five seconds
+     * (AW-009): the alternative is a copy abandoned mid-file with
+     * nothing to say so. */
+    drain_fs(a.fs);
     tiku_trk_fs_free(a.fs);
     tiku_trk_poseview_free(a.view);
     tiku_trk_backend_close(a.backend);

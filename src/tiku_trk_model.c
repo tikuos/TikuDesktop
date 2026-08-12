@@ -189,7 +189,9 @@ tiku_trk_model_icon_name(const tiku_trk_model_t *m)
     }
     switch (m->kind) {
     case TIKU_TRK_KIND_TRASH:
-        return "trash_empty";
+        /* Two icons, one kind: whether the Trash has anything in it is the
+         * one piece of state the icon exists to show. */
+        return m->facts.trash_full ? "trash_full" : "trash_empty";
     case TIKU_TRK_KIND_DESKTOP:
         return "desktop";
     case TIKU_TRK_KIND_SYMLINK:

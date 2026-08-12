@@ -19,8 +19,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "tiku_trk_attr.h"
@@ -183,6 +185,21 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
      * finally be enabled -- it has been permanently grey until now. */
     c.clipboard_has_refs = (tiku_trk_clip_count(&app->clip) > 0);
     c.can_open_parent = (strcmp(fl->path, "/") != 0);
+    {   /* Empty Trash is offered only when there is something to empty, and
+         * the answer comes from the store rather than from a guess: without
+         * it the item is disabled forever (AW-029). */
+        char trash[TIKU_TRK_PATH_MAX];
+
+        if (app->fs != NULL &&
+            tiku_trk_fs_trash_dir(app->fs, fl->path, trash,
+                                  sizeof trash) == 0) {
+            tiku_trk_model_t tm;
+
+            if (app->backend->ops->stat(app->backend, trash, &tm) == 0) {
+                c.trash_full = tm.facts.trash_full;
+            }
+        }
+    }
     {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
 
@@ -450,6 +467,114 @@ close_window(desktop_t *app, tiku_trk_win_t *w)
  * nothing; leaving it up would let the user keep working in a folder whose
  * every path has changed underneath them.
  */
+/**
+ * @brief Let queued file work finish before the process goes.
+ *
+ * Bounded, because a job that cannot finish must not hold the application
+ * open forever: the original gives up after five seconds and so does this.
+ * What is already done stays done either way -- the engine has no
+ * transaction above one item.
+ */
+/**
+ * @brief Seed and refresh the Deskbar's team list from the live process set.
+ *
+ * On this host the process registry IS /proc; on TikuOS it is the kernel's
+ * own, which is why the reader is small and local rather than a subsystem.
+ * A background process has no window, and the Deskbar never lists itself.
+ */
+static void
+scan_teams(desktop_t *app)
+{
+    DIR *d = opendir("/proc");
+    struct dirent *e;
+
+    if (d == NULL) {
+        return;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char comm[TIKU_TRK_PATH_MAX], name[64];
+        FILE *f;
+        size_t n;
+        struct stat ps;
+
+        if (e->d_name[0] < '1' || e->d_name[0] > '9') {
+            continue;               /* not a pid */
+        }
+        /* Somebody else's processes are not in this user's Deskbar. */
+        if (snprintf(comm, sizeof comm, "/proc/%s", e->d_name) < 0 ||
+            stat(comm, &ps) != 0 || ps.st_uid != getuid()) {
+            continue;
+        }
+        /* An empty cmdline is a KERNEL thread: it has no image, no window
+         * and nothing to raise.  This is the closest thing this host has
+         * to the background-app flag the rule is written against. */
+        if (snprintf(comm, sizeof comm, "/proc/%s/cmdline", e->d_name) < 0) {
+            continue;
+        }
+        f = fopen(comm, "r");
+        if (f == NULL) {
+            continue;
+        }
+        n = fread(name, 1, sizeof name, f);
+        (void)fclose(f);
+        if (n == 0u) {
+            continue;
+        }
+        if (snprintf(comm, sizeof comm, "/proc/%s/comm", e->d_name) < 0) {
+            continue;
+        }
+        f = fopen(comm, "r");
+        if (f == NULL) {
+            continue;               /* gone between readdir and open */
+        }
+        if (fgets(name, sizeof name, f) == NULL) {
+            (void)fclose(f);
+            continue;
+        }
+        (void)fclose(f);
+        n = strlen(name);
+        while (n > 0u && (name[n - 1u] == '\n' || name[n - 1u] == ' ')) {
+            name[--n] = '\0';
+        }
+        /* Kernel threads are bracketed and own nothing a user can raise;
+         * and the Deskbar does not list the application it is part of
+         * twice, which the seed already added (DB-014). */
+        if (name[0] == '\0' || strcmp(name, "desktop") == 0) {
+            continue;
+        }
+        (void)tiku_trk_deskbar_add_team(app->deskbar, name);
+    }
+    (void)closedir(d);
+}
+
+static void
+drain_fs(tiku_trk_fs_t *fs)
+{
+    int guard = 0;
+
+    if (fs == NULL) {
+        return;
+    }
+    /* 50 turns of 100 ms, the original's own budget. */
+    while (tiku_trk_fs_busy(fs) && guard++ < 50) {
+        if (tiku_trk_fs_step(fs, 16) == 0) {
+            const tiku_trk_progress_t *pr = tiku_trk_fs_progress(fs);
+
+            /* A question stops the queue and there is nobody left to
+             * answer it, so answer it the way the running shell would and
+             * keep going rather than spinning out the whole budget. */
+            if (pr->conflict) {
+                tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_RENAME);
+            } else if (pr->error_ask) {
+                tiku_trk_fs_resolve_error(fs, 1);
+            } else {
+                break;
+            }
+        }
+        usleep(100000);
+    }
+}
+
 static void
 close_windows_under(desktop_t *app, const char *path)
 {
@@ -1585,6 +1710,7 @@ main(int argc, char **argv)
     app.desk = tiku_trk_desk_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
+    scan_teams(&app);               /* everything else that is running */
     tiku_trk_cwmenu_init(&app.menus);
     tiku_trk_find_init(&app.panel);
     /* The Select window's defaults are wildcard and ignore-case, and a
@@ -2017,6 +2143,19 @@ main(int argc, char **argv)
                         }
                         app.dirty = 1;
                         break;
+                    }
+                    /* Option+close takes the folder's whole subtree with
+                     * it: the windows a descent through a deep folder left
+                     * behind are exactly the ones nobody wants to close one
+                     * at a time (AW-012). */
+                    if (ev.xbutton.state & Mod1Mask) {
+                        folder_t *cf = folder_of(&app, w);
+
+                        if (cf != NULL) {
+                            close_windows_under(&app, cf->path);
+                            app.dirty = 1;
+                            break;
+                        }
                     }
                 }
                 if (hit == TIKU_TRK_HIT_CLOSE) {
@@ -2511,6 +2650,19 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
+                if (ks == XK_Menu && (ev.xkey.state &
+                        (ControlMask | ShiftMask | Mod1Mask)) == 0) {
+                    /* The Menu key alone opens the leaf menu -- the one
+                     * gesture that reaches the Deskbar without the
+                     * pointer (DB-011). */
+                    if (tiku_trk_deskbar_menu_open(app.deskbar)) {
+                        tiku_trk_deskbar_close_menu(app.deskbar);
+                    } else {
+                        tiku_trk_deskbar_open_menu(app.deskbar);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if (ks == XK_s && (ev.xkey.state & ControlMask) &&
                     fl != NULL) {
                     /* PVK-046: invert -- the only way to say "everything
@@ -2543,7 +2695,16 @@ sel_done:
                             tiku_trk_poseview_active(fl->view);
                         if (p != NULL &&
                             tiku_trk_model_is_container(&p->model)) {
-                            (void)open_folder(&app, p->model.path);
+                            /* Option+Return opens and takes the window it
+                             * came from with it, the keyboard's version of
+                             * an Option double-click (PVK-017). */
+                            int chase = (ev.xkey.state & Mod1Mask) != 0;
+                            tiku_trk_win_t *from = fl->win;
+
+                            if (open_folder(&app, p->model.path) != NULL &&
+                                chase) {
+                                close_window(&app, from);
+                            }
                         } else if (p != NULL) {
                             /* Opening a leaf means editing its value: there
                              * is no other window for it to open. */
@@ -2768,6 +2929,10 @@ sel_done:
     }
     tiku_trk_deskbar_free(app.deskbar);
     tiku_trk_desk_free(app.desk);
+    /* Quitting waits for work already under way, up to five seconds
+     * (AW-009): the alternative is a copy abandoned mid-file with
+     * nothing to say so. */
+    drain_fs(app.fs);
     tiku_trk_fs_free(app.fs);
     tiku_trk_backend_close(app.backend);
     XDestroyImage(app.img);

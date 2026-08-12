@@ -301,6 +301,19 @@ tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db)
 }
 
 void
+tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db)
+{
+    if (db != NULL) {
+        /* The same state a click on the leaf sets.  Exposed because the
+         * keyboard has to reach it too, and a synthetic click would have
+         * to invent coordinates for a button whose position is layout's
+         * business (DB-011). */
+        db->menu_open = 1;
+        db->win_menu_team = -1;
+    }
+}
+
+void
 tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db)
 {
     if (db != NULL) {

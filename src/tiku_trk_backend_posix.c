@@ -28,6 +28,24 @@ typedef struct {
 } posix_impl_t;
 
 /** @brief Fill a Model from a stat buffer. */
+/** @brief Whether @p path holds anything at all, "." and ".." aside. */
+static int
+dir_has_entries(const char *path)
+{
+    DIR *d = opendir(path);
+    struct dirent *e;
+    int any = 0;
+
+    if (d == NULL) {
+        return 0;
+    }
+    while (!any && (e = readdir(d)) != NULL) {
+        any = (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0);
+    }
+    (void)closedir(d);
+    return any;
+}
+
 static void
 from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
           int is_link)
@@ -48,7 +66,15 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
     if (is_link) {
         m->kind = TIKU_TRK_KIND_SYMLINK;
     } else if (S_ISDIR(st->st_mode)) {
-        m->kind = TIKU_TRK_KIND_DIRECTORY;
+        /* A directory called ".Trash" IS the Trash, recognised by name the
+         * way a folder called "Desktop" is (tiku_trk_model.c).  The store
+         * has no other way to know: the Trash is a convention about a
+         * location, not a property of the inode. */
+        m->kind = (strcmp(m->name, ".Trash") == 0) ? TIKU_TRK_KIND_TRASH
+                                                   : TIKU_TRK_KIND_DIRECTORY;
+        if (m->kind == TIKU_TRK_KIND_TRASH) {
+            m->facts.trash_full = dir_has_entries(path);
+        }
     } else {
         m->kind = TIKU_TRK_KIND_FILE;
     }

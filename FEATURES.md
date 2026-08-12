@@ -47,7 +47,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 271   partial 163   differs 71   open 384
+    done 276   partial 165   differs 71   open 377
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -309,6 +309,36 @@ The sweep also found 17 partial rows whose MISSING line had gone stale --
 describing work that has since been done.  Each carries a STALE MISSING
 correction now.  A MISSING line is a claim about code with a shelf life, and
 nothing in the process was refreshing them.
+
+### The wiring pass (2026-08-12)
+
+Of the 14 rows the sweep called WIRING, **five closed, two went partial, five
+were not wiring at all, and two are left**.  What closed: the quit drain
+(both shells; 50 turns of 100 ms, the original's budget), Option+close taking
+a folder's whole subtree, the Trash icon's full/empty state, Option+Return,
+and the Menu key opening the leaf menu.  What went partial: the Trash icon is
+not yet LIVE, and the Deskbar's team list cannot exclude background apps.
+
+The two partials are worth stating plainly, because both are the same shape:
+the port can do the thing, and the host cannot supply the fact it needs.
+Trash fullness follows a listing refresh rather than a change notice, and
+/proc has no window-ownership flag, so daemons appear beside applications.
+Both want the same missing source and both name it.
+
+Five rows were reclassified out of WIRING after being opened -- PVS-038 to
+the drag-and-drop subsystem (no drop site at which to read a modifier),
+TS-014 and DB-048 and PVN-054 to BLOCKED (a title strip, seven dock states, a
+flood source), and PVS-022 to WAIVER CANDIDATE, because honouring it means
+reversing the click-through decision the shell's own comment declares.  A
+class assigned by an agent reading code is better than one assigned from row
+text, and still not the same as one assigned by trying to do the work: a
+third of this batch changed class the moment somebody tried.
+
+One row's fix was larger than its class suggested and worth recording: the
+Trash icon needed a KIND_TRASH classification that nothing produced, a
+fullness fact that nothing computed, and a menu-context assignment that
+nothing made -- three absences behind one icon, which is why Empty Trash had
+been permanently disabled.
 
 One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
 because FS is the only area whose open rows have been read against the port
@@ -1166,9 +1196,8 @@ Icon mode iterates poseCount-1 down to 0; list mode index = (int32)(where.y / fL
 fTrackMouseUp = !secondaryMouseButtonDown set in MouseDown; MouseUp does Window()->Activate() if still set; MouseDragged and MouseLongDown clear it. The empty-space branch of MouseDown calls window->Activate() + UpdateIfNeeded() directly.  
 `PoseView.cpp` → `BPoseView::MouseDown / BPoseView::MouseUp / BPoseView::MouseDragged`  
 **CHECKED:** The port has no deferred-raise mechanism at all: a content click never activates the window on press or release, there is no fTrackMouseUp-style flag for a drag to clear, and an empty-space click does not raise either — the drag-out-of-a-background-window property is a byproduct of never raising, not an implementation of the rule.  
-*src/tiku_trk_desktop.c:1663-1671 (activate only when hit != TIKU_TRK_HIT_CONTENT); ButtonRelease at :1907-1913 does no activation*
-**WIRING:** The activation primitive exists (tiku_trk_desk_activate, src/tiku_trk_win.c:108) but only chrome clicks call it (src/tiku_trk_desktop.c:1980-1986, whose comment declares content click-through deliberate); ButtonRelease (src/tiku_trk_desktop.c:2222-2228) performs no activation and no fTrackMouseUp-style flag exists anywhere, so there is no deferred raise for pose clicks and no immediate raise for empty-space clicks. The shell's comment frames never-raising as the spatial design, so this may be a waiver candidate for the user; the single-window app binary delegates raising to the X window manager and cannot express the rule.  
-
+*src/tiku_trk_desktop.c:1663-1671 (activate only when hit != TIKU_TRK_HIT_CONTENT); ButtonRelease at :1907-1913 does no activation*  
+**WAIVER CANDIDATE:** The multi-window shell deliberately does not raise on a content click (the click-through comment states it), and the single-window shell delegates raising to the host window manager and cannot express the rule at all.  Reclassified from WIRING 2026-08-12: honouring it means reversing a stated design decision, which is the user's call.  
 #### PVS-023 · important · done
 **When the window deactivates the selection stops being drawn as selected (unless "show selection when inactive" is on) and is restored on reactivation; the pivot survives the round trip.**  
 WindowActivated -> ShowSelection(active); ShowSelection moves fSelectionPivotPose into fRealPivotPose on hide and back on show. With fShowSelectionWhenInactive the pose flags are left set and only redrawn. Deactivating also commits any active inline edit.  
@@ -1269,9 +1298,8 @@ moveMode selection order in MoveSelectionInto: forceCopy > forceMove > createRel
 **Holding Option during a drop forces a copy even within the same volume.**  
 forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated at drop time, after the same-folder branch (so Option-dropping into the same folder duplicates instead).  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
-**VERIFIER CORRECTION:** Backwards. `forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0` sits AFTER the same-folder branch returns (PoseView.cpp:5040 vs 5085). Option-dropping inside the source folder therefore just moves the icons by the drag delta; it does not duplicate. Option only forces a copy for drops into a *different* folder.
-**WIRING:** The engine honours the forced-copy override — tiku_trk_fs_drop_action(force_copy=1) returns COPY even on the same volume (src/tiku_trk_fs.c:335-348, proven at tests/test_fs.c:136-138) — but nothing evaluates the Option modifier at drop time and no UI drop site exists: grep shows tiku_trk_fs_drop_action called only from tests/test_fs.c.  
-
+**VERIFIER CORRECTION:** Backwards. `forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0` sits AFTER the same-folder branch returns (PoseView.cpp:5040 vs 5085). Option-dropping inside the source folder therefore just moves the icons by the drag delta; it does not duplicate. Option only forces a copy for drops into a *different* folder.  
+**SUBSYSTEM:** drag-and-drop.  Reclassified 2026-08-12 during the wiring pass: the engine honours force_copy and is tested, but there is no drop site at which to read the Option modifier, so this cannot be wired -- it arrives with the drag gesture.  
 #### PVS-039 · important · partial
 **Dropping with the secondary button (or Control held) pops a menu offering Move here / Copy here / Create link here / Cancel; Cancel abandons the drop.**  
 SecondaryMouseButtonDown(modifiers(), buttons) where buttons came from the drag message. ShowDropContextMenu disables every item when the target volume is read-only, and additionally disables "Move here" when the SOURCE volume is read-only. kCancelButton and any unrecognized result return without acting. Shift on the Create-link menu item selects a relative link (kCreateRelativeLink).  
@@ -1521,14 +1549,14 @@ case B_RETURN -> OpenSelection(); with no selection OpenSelectionCommon returns 
 After OpenSelection(): `if (IsTypeAheadFiltering() && (modifiers() & B_SHIFT_KEY) != 0) StopTypeAheadFiltering();`.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_RETURN)`  
 
-#### PVK-017 · polish · open
+#### PVK-017 · polish · done
 **Option+Return also opens the selection, even though it has no Command key.**  
 Installed as a ShortcutFilter (B_RETURN, B_OPTION_KEY -> kOpenSelection) because BWindow::AddShortcut cannot express Command-less shortcuts. ShortcutFilter requires EXACT modifier equality after stripping caps/num lock.  
 `PoseView.cpp` → `BPoseView::AttachedToWindow (AddFilter(new ShortcutFilter(B_RETURN, B_OPTION_KEY, kOpenSelection, this))); ShortcutFilter::Filter (Utilities.cpp)`  
 **CHECKED:** No Alt/Option modifier is inspected anywhere in the single-window key handler; the only Mod1Mask use in the port is Option-click to close the source window on a double-click open.  
-*none found (grep Mod1Mask in src/tiku_trk_app.c returns nothing; only src/tiku_trk_desktop.c:1845)*
-**WIRING:** the open-selection code exists and plain Return calls it in both shells (src/tiku_trk_app.c:1026-1038; src/tiku_trk_desktop.c:2541-2551), but no key path tests the Option modifier — the only Mod1Mask use in the whole port is a button-press handler (src/tiku_trk_desktop.c:2160), and the poseview modifier vocabulary has no Option bit at all (src/tiku_trk_poseview.h:236-237 defines only MOD_SHIFT and MOD_CMD)  
-
+*none found (grep Mod1Mask in src/tiku_trk_app.c returns nothing; only src/tiku_trk_desktop.c:1845)*  
+**PORT:** Option+Return opens the selection and closes the window it came from, the keyboard's form of the Option double-click; the source window is closed only when the open succeeded.  
+*Shell: desktop*  
 #### PVK-018 · important · done
 **Holding Option while opening closes the parent window as the items open.**  
 OpenSelectionCommon adds a "nodeRefsToClose" B_RAW_TYPE node_ref per ref, suppressed when the app is not Tracker, Option is up, the view is a file panel, the Desktop, or SingleWindowBrowse is on.  
@@ -2142,9 +2170,8 @@ Refresh(): OpenNode, StopWatching, fInsertedNodes.Clear, ClearPoses, StartWatchi
 **A flood of MIME-database icon changes repaints the window once, not once per notice.**  
 NoticeMetaMimeChanged reacts to B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED / B_APP_HINT_CHANGED / B_PREFERRED_APP_CHANGED by queueing a MetaMimeChangedAccumulator on the window's DelayedTaskLoop with AccumulatedRunLater(..., 200000, 5000000); CanAccumulate merges notices with the same type+preferredApp.  
 `PoseView.cpp` → `BPoseView::NoticeMetaMimeChanged / MetaMimeChangedAccumulator`  
-**TIKU:** This is the ONLY coalescing in the live-update path. TikuOS watch events explicitly do not coalesce ('same-value writes ring'), so a debounce of this shape must be added by the view for high-rate device nodes.
-**WIRING:** The accumulator itself was ported and nothing calls it: tiku_trk_run_accumulating implements exactly the CanAccumulate/fold/slide-deadline discipline (src/tiku_trk_task.c:185-232, API src/tiku_trk_task.h:33-46,96-116) but its only callers are tests/test_task.c — neither shell ever creates a tiku_trk_loop_t (grep tiku_trk_loop_new outside task.c hits tests only). The flood source is also absent (no MIME database; icons static, src/tiku_trk_model.h:126-131); the desktop's 400 ms poll cadence plus the single dirty-flag draw (src/tiku_trk_desktop.c:2646, 2714-2716) is the only repaint batching in force.  
-
+**TIKU:** This is the ONLY coalescing in the live-update path. TikuOS watch events explicitly do not coalesce ('same-value writes ring'), so a debounce of this shape must be added by the view for high-rate device nodes.  
+**BLOCKED:** The accumulator is ported and correct, but the flood it exists to fold -- a MIME database announcing icon changes -- does not exist, so a caller could not be shown to work.  Reclassified from WIRING 2026-08-12.  
 #### PVN-055 · polish · open
 **Icons for applications and preferences are pre-warmed at startup and kept correct afterwards, so those folders open with icons already drawn.**  
 NodePreloader::PreloadOne watches each preloaded directory with B_WATCH_DIRECTORY and each file model with B_WATCH_STAT|B_WATCH_ATTR, then IconCache::sIconCache->Preload(); MessageReceived drops the model from the cache on B_ENTRY_REMOVED and re-caches its icon on B_ATTR_CHANGED / B_STAT_CHANGED.  
@@ -4552,13 +4579,12 @@ BPose ctor registers a periodic update for non-root volumes that are not "cdda" 
 **TIKU:** Directly reusable for durable-store fill level; the -2-percent warning encoding is a wart worth replacing with an explicit flag.
 **BLOCKED:** a periodic free-space poll and a bar renderer for volume poses, neither of which exists: the only caller of tiku_trk_fs_free_bytes (src/tiku_trk_fs.c:607-616) is the copy pre-flight fit check at src/tiku_trk_fs.c:550, and grep for any free-space/bar drawing in the draw code returns nothing  
 
-#### IV-046 · important · open
+#### IV-046 · important · done
 **The Trash icon changes between empty and full as items are moved in and out.**  
 BTrashWatcher watches every writable persistent volume's trash dir and, on transitions, writes R_TrashIcon or R_TrashFullIcon into the boot volume's trash directory as kAttrIcon (vector) or kAttrLargeIcon/kAttrMiniIcon; the ordinary attribute-changed path then re-icons the pose.  
 `src/kits/tracker/TrashWatcher.cpp` → `BTrashWatcher::UpdateTrashIcon`  
-**TIKU:** State-dependent icons via a write-back to the node's own icon attribute is a hack; with typed VFS descriptors the state should be a descriptor field the icon resolver reads.
-**WIRING:** the "trash_full" art is in the set and retrievable by name (src/tiku_trk_icons.c:1651-1654 via icons_find/icons_bitmap) but no caller ever selects it: model_icon_name returns "trash_empty" unconditionally (src/tiku_trk_model.c:191-192); the fullness fact the switch needs, tiku_trk_sc_ctx_t.trash_full (src/tiku_trk_shortcuts.h:119), is read at src/tiku_trk_shortcuts.c:249 but assigned nowhere in src/ or tests/, and the posix backend never classifies a node as KIND_TRASH (grep: only a clip.c guard, a cwmenu.c case, and a test fixture)  
-
+**TIKU:** State-dependent icons via a write-back to the node's own icon attribute is a hack; with typed VFS descriptors the state should be a descriptor field the icon resolver reads.  
+**PORT:** `tiku_trk_model_icon_name` returns trash_full or trash_empty from the fact; the art was already in the set and had no caller.  
 #### IV-047 · core · differs
 **Pose labels are a single line, ellipsised in the middle when too long.**  
 NameAttributeText::FitValue truncates with B_TRUNCATE_MIDDLE; the width budget is the column width in list mode and StringWidth("M") * 30 in icon and mini-icon modes. TruncStringBase only truncates when the string actually exceeds the width, using BFont::GetTruncatedStrings. There is no wrapping anywhere - the label rect is exactly one ActualFontHeight tall.  
@@ -4744,9 +4770,8 @@ Reverts to the system default cursor elsewhere and on B_EXITED_VIEW.
 **Right-clicking the column title bar opens the Attributes menu as a pop-up, including the per-MIME-type submenus.**  
 Built fresh each time via NewAttributesMenu + AddMimeTypesToMenu + MarkAttributesMenu, targeted at the pose view; the popup is not opened when the window was inactive (the click just activates).  
 `TitleView.cpp` → `BTitleView::MouseDown`  
-**TIKU:** MIME-type-derived attribute lists become descriptor enumeration over the device namespace; capability bits decide which descriptors are offerable as columns.
-**WIRING:** The right-click recognition exists in the tracker: titleview_mouse_down returns TIKU_TRK_TT_MENU for buttons==2 wherever the press lands so a right-click never starts a resize or drag (src/tiku_trk_titleview.c:136-139), and the inactive-window suppression is there too (:128-133 returns ACTIVATE only). Nothing consumes the flag: the app shell — the only binary with a title strip — casts the mouse_down return to void (src/tiku_trk_app.c:1471) and has no menu layer at all, while the desktop shell owns both the Attributes menu (src/tiku_trk_cwmenu.c:194-218) and a working popup mechanism (tiku_trk_cwmenu_context popups, src/tiku_trk_desktop.c:1817, 2122) but draws its folder windows without any column strip (folder_draw paints name+value rows only, src/tiku_trk_desktop.c:205-307; grep for titleview in desktop.c returns nothing). The per-MIME-type-submenu half additionally waits on TS-025's absent attribute source. Same gap TS-063 (partial) records for the plain popup.  
-
+**TIKU:** MIME-type-derived attribute lists become descriptor enumeration over the device namespace; capability bits decide which descriptors are offerable as columns.  
+**BLOCKED:** The desktop shell -- the only one with a menu layer -- draws no column strip at all (folder_draw paints name and value rows), and the app shell has a strip but no menus.  Reclassified from WIRING 2026-08-12: consuming the flag needs a title strip in the multi-window shell, which is a build, not a call.  
 #### TS-015 · polish · done
 **A click in the title bar of an inactive window only activates the window; it does not sort or resize.**  
 Also: any in-progress inline rename is committed (CommitActivePose) before title tracking starts, and the mouse is captured with B_NO_POINTER_HISTORY | B_LOCK_WINDOW_FOCUS for the duration of the drag.  
@@ -5148,13 +5173,13 @@ If CurrentMessage() has bool "shortcut", walk WindowAt() for fSettingsWindow, hi
 *none found; contradicted by src/tiku_trk_desktop.c:main (XK_q + ControlMask -> app.running = 0) and src/tiku_trk_app.c:handle_key (XK_q)*
 **SUBSYSTEM:** settings/preferences window -- TIKU_TRK_CMD_PREFERENCES is a menu item (src/tiku_trk_cwmenu.c:180) with no case in menu_invoke (default no-op, src/tiku_trk_desktop.c:1366-1371), so there is no settings window to hide; and the quit shortcut is not intercepted -- Ctrl+Q exits outright in both shells (src/tiku_trk_desktop.c:2446-2448, src/tiku_trk_app.c:1068-1069), the opposite of the row  
 
-#### AW-009 · important · open
+#### AW-009 · important · done
 **Quitting waits for in-flight copy/move/empty-trash work to stop, up to five seconds, before the application exits.**  
 gStatusWindow->AttemptToQuit() once up front, then 50 iterations of AttemptToQuit()+snooze(100000).  
 `Tracker.cpp` → `TTracker::QuitRequested`  
-**TIKU:** Long-running namespace operations must have the same 'ask to stop, bounded wait' contract; a device write that cannot be aborted needs an explicit rule.
-**WIRING:** the drain primitives exist and run inside the event loop (tiku_trk_fs_busy/tiku_trk_fs_step at src/tiku_trk_fs.c:120/1913, stepped at src/tiku_trk_desktop.c:2724-2731 and src/tiku_trk_app.c:1739-1744) but no quit path calls them: both teardowns free the fs with the queue unstepped (src/tiku_trk_desktop.c:2760-2772, src/tiku_trk_app.c:1826-1832), and fs_free itself only clears undo stacks (src/tiku_trk_fs.c:108-117)  
-
+**TIKU:** Long-running namespace operations must have the same 'ask to stop, bounded wait' contract; a device write that cannot be aborted needs an explicit rule.  
+**PORT:** Both shells drain the queue before exit, 50 turns of 100 ms -- the original's own budget -- and answer a question that stops the queue the way the running shell answers it, so a collision cannot spend the whole budget waiting for nobody.  
+*Shell: both*  
 #### AW-010 · important · done
 **A quit request from the Deskbar means 'close all your windows', not 'exit': every window except the Desktop and the status window is asked to quit and Tracker keeps running.**  
 kCloseAllWindows; BDeskWindow and BStatusWindow are skipped in both the WindowAt() pass and the fWindowList removal pass.  
@@ -5168,12 +5193,12 @@ currentWorkspace = 1 << current_workspace(); iterates the window list backwards 
 `Tracker.cpp` → `TTracker::CloseAllInWorkspace`
 **WAIVER CANDIDATE:** no workspace model exists in this port: the desktop is one X window compositing every folder window (src/tiku_trk_win.h:8-10), the window struct carries no workspace field (src/tiku_trk_win.h:46-58), and the word appears only in the menu label (src/tiku_trk_shortcuts.c:88); TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE is handled identically to Close All (src/tiku_trk_desktop.c:1355-1364), which in a one-workspace desktop is vacuously the row's behaviour -- waiver candidate  
 
-#### AW-012 · polish · open
+#### AW-012 · polish · done
 **Closing a folder window can close every window showing that folder or anything inside it.**  
 kCloseWindowAndChildren with a node_ref in B_RAW_TYPE data; matches window->TargetModel()->NodeRef() == node or BDirectory(node).Contains(window entry).  
-`Tracker.cpp` → `TTracker::CloseWindowAndChildren`
-**WIRING:** close_windows_under() implements exactly close-this-folder's-window-and-everything-inside-it, matched on whole path components (src/tiku_trk_desktop.c:453-473), but its only callers are the trash and delete paths (src/tiku_trk_desktop.c:1167-1172 and 1207-1212); no close gesture or command invokes it -- Ctrl+close closes ALL windows, not children (src/tiku_trk_desktop.c:2002-2020)  
-
+`Tracker.cpp` → `TTracker::CloseWindowAndChildren`  
+**PORT:** Option+close takes the folder's whole subtree, matched on whole path components; `close_windows_under` already existed for the trash path and had no gesture.  Vacuous in the single-window shell, which has one window to close.  
+*Shell: desktop*  
 #### AW-013 · important · open
 **On first run Tracker installs the system metamime types with icons, short/long descriptions and preferred apps, and installs extra viewable/editable attribute columns for bookmarks, People files and print spool files.**  
 InstallMimeIfNeeded for B_APP/B_FILE/B_VOLUME/B_QUERY/B_QUERY_TEMPLATE/B_LINK/B_ROOT/B_BOOKMARK/B_PERSON/B_PRINTER_SPOOL/B_PRINTER; ExtraAttributeLazyInstaller adds e.g. META:url, META:name..META:nickname with per-column width and alignment. Only rewrites what is missing unless a force mask is set.  
@@ -5278,13 +5303,14 @@ SetHighColor(LowColor().Brightness() <= ui_color(B_DESKTOP_COLOR).Brightness() ?
 `DesktopPoseView.cpp` → `DesktopPoseView::AdaptToBackgroundColorChange`
 **SUBSYSTEM:** desktop pose area -- the backdrop draws no labels (desk_draw fills and composites only, src/tiku_trk_win.c:493-510), so there is no desktop label colour to flip  
 
-#### AW-029 · important · open
+#### AW-029 · important · partial
 **The Trash icon shows full vs empty, updated live as items enter or leave the trash on any volume, including volumes mounted later.**  
 BTrashWatcher watches every persistent writable volume's trash dir plus B_WATCH_MOUNT; ENTRY_CREATED sets full, MOVED (only across directories) / REMOVED / DEVICE_UNMOUNTED re-check all trash dirs; UpdateTrashIcon writes R_TrashIcon/R_TrashFullIcon into the boot trash dir's icon attributes.  
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon / BTrashWatcher::WatchTrashDirs`  
-**TIKU:** Writing the icon into the object's own attributes is how state is published; with typed VFS descriptors the fullness would be a readable node value plus a notify, not a stored icon.
-**WIRING:** both states' art ships (trash_empty at src/tiku_trk_icons.c:232, trash_full at :265, registered :1651-1654) but nothing ever selects full: tiku_trk_model_icon_name hardcodes 'trash_empty' for KIND_TRASH (src/tiku_trk_model.c:191-192), no code computes trash fullness anywhere, and neither shell sets ctx.trash_full (menu_ctx zeroes the ctx and never assigns it, src/tiku_trk_desktop.c:152-203), which also leaves the Empty Trash menu item permanently disabled (src/tiku_trk_shortcuts.c:249)  
-
+**TIKU:** Writing the icon into the object's own attributes is how state is published; with typed VFS descriptors the fullness would be a readable node value plus a notify, not a stored icon.  
+**PORT:** A directory named ".Trash" is classified KIND_TRASH by the store and carries a `trash_full` fact read from the directory, so the icon switches and Empty Trash stops being permanently disabled -- it had no assignment anywhere before.  
+**MISSING:** Not live.  Fullness is read when the model is read, so it follows a listing refresh rather than a change notice, and there is no multi-volume sweep or mount watch -- both wait on the volume model.  
+*Shell: desktop*  
 #### AW-030 · core · partial
 **Double-clicking an item opens it as a window if it is a container, opens a Find window if it is a query template, and otherwise launches it — but a folder or query with a non-Tracker preferred app is handed to that app instead.**  
 OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::GetPreferredApp() != kTrackerSignature (skipped when the selector is kOpenWith). Query templates spawn FindWindow(model->EntryRef()).  
@@ -5858,12 +5884,12 @@ point = supermenu rect.RightTop()+ (0,3) when left, rect.LeftTop()-(menuWidth,0)
 `DeskbarMenu.cpp` → `TDeskbarMenu::ScreenLocation`  
 **PORT:** The hardcoded x is gone. A new shared helper leaf_menu_rect() computes the panel from the dock: LEFT_EXPANDED puts it at frame.x + frame.w + 2 (right of the bar, which sits at x=0), otherwise frame.x - m.w - 2 (left of the bar for RIGHT_EXPANDED and RIGHT_MINI), with a clamp at 0 for a screen too narrow to hold it. Crucially the draw path and the click hit-test now call the SAME helper with the same rowh/rows, so the popup and its hit rectangle can no longer disagree. It still pops to the side of the bar rather than below the title, as the row requires; y = LEAF_H + 2 sits just under the leaf rather than the original's top+3, a 20-odd-pixel difference in the same direction, not a placement change. Not fixed, but not part of this row: the window menu (frame.x - 130) and the clock calendar (frame.x - 190) are still hardcoded left of the bar and go off-screen at negative x when docked left.
 
-#### DB-011 · important · open
+#### DB-011 · important · done
 **Pressing the keyboard Menu key with no other key held opens the leaf menu; Deskbar can also be told to open the running-apps menu the same way**  
 input_server sends 'BeMn' (kShowDeskbarMenu) to the Deskbar signature; TBarApp locks the bar window and calls ShowDeskbarMenu(), which StartMenuBar(0, sticky, showMenu). kShowTeamMenu ('TmMn') opens index 0 of the key menu bar, or index 2 when there is no bar menu bar  
-`BarApp.cpp` → `TBarApp::MessageReceived case kShowDeskbarMenu`
-**WIRING:** the menu-open code exists (a leaf click sets menu_open, src/tiku_trk_deskbar.c:724-727) but no keyboard caller does: no XK_Menu binding anywhere in tiku_trk_desktop.c's key switch (grep returns nothing), and the deskbar API exposes no programmatic open — only close_menu (src/tiku_trk_deskbar.h:148-149)  
-
+`BarApp.cpp` → `TBarApp::MessageReceived case kShowDeskbarMenu`  
+**PORT:** `tiku_trk_deskbar_open_menu` is the programmatic open the keyboard needs -- a synthetic click would have to invent coordinates for a button whose position belongs to layout -- and the Menu key with no other modifier toggles it.  
+*Shell: desktop*  
 #### DB-012 · polish · done
 **Cmd+F anywhere in Deskbar opens Tracker's Find window, and the leaf menu's Find… item does the same**  
 AddShortcut('F', B_COMMAND_KEY, kFindButton) in the window constructor; the kFindButton case forwards the message to the Tracker signature; ResetTargets re-points the Find item at Tracker every open  
@@ -5878,13 +5904,14 @@ DefaultTarget() returns BMessenger(kTrackerSignature) if valid else BMessenger(b
 `DeskbarMenu.cpp` → `TDeskbarMenu::ResetTargets`
 **WAIVER CANDIDATE:** the two-target routing (items aimed at Tracker when running, at Deskbar when not, re-pointed each open) requires Deskbar and Tracker to be separate applications with message targets; in this port they are one process and leaf picks are dispatched inline in the desktop's own event loop (src/tiku_trk_desktop.c:1920-1973) — no messenger/target concept exists to re-point. Waiver candidate  
 
-#### DB-014 · core · open
+#### DB-014 · core · partial
 **Every running application appears once in the list; background apps and Deskbar itself never appear**  
 Refused when (flags & B_BACKGROUND_APP) != 0 or signature matches kDeskbarSignature case-insensitively; the initial list is seeded from be_roster->GetAppList() at startup and kept live by be_roster->StartWatching(this)  
 `BarApp.cpp` → `TBarApp::AddTeam`  
-**TIKU:** Replace roster watching with the TikuOS process registry plus watch notifications on a /proc-like subtree
-**WIRING:** add_team with once-per-app dedupe exists (src/tiku_trk_deskbar.c:91-112) but its only caller ever is the Tracker seed (src/tiku_trk_desktop.c:1587); nothing enumerates running processes to feed the list — no /proc reader in either shell (grep add_team outside deskbar.c/h hits only desktop.c:1587) — so no second application can ever appear and the background-app/Deskbar exclusions have nothing to exclude  
-
+**TIKU:** Replace roster watching with the TikuOS process registry plus watch notifications on a /proc-like subtree  
+**PORT:** The team list is seeded from the live process set: /proc on this host, the kernel's own registry on TikuOS, which is why the reader is small and local.  Kernel threads (empty cmdline) and other users' processes are excluded, and the once-per-app dedupe that already existed now has real input.  
+**MISSING:** The background-app exclusion cannot be honoured here.  Haiku tests a B_BACKGROUND_APP flag; this host has no window-ownership fact in /proc, so daemons the user runs (pipewire, dbus-daemon) appear alongside real applications.  It needs a window-owner source, which on TikuOS is the process registry.  
+*Shell: desktop*  
 #### DB-015 · core · partial
 **Launching a second instance of an already-running application adds it to the existing entry rather than creating a new one; the entry disappears only when its last instance quits**  
 Matched case-insensitively by signature into BarTeamInfo::teams; second and later launches broadcast kAddTeam, and quits broadcast kRemoveTeam until the last one, which broadcasts B_SOME_APP_QUIT and deletes the BarTeamInfo  
@@ -6109,9 +6136,8 @@ ShowHideTime flips fTime's hidden state, re-flows the tray, writes Settings()->s
 #### DB-048 · core · open
 **Dragging the tray's dragger handle re-docks Deskbar into one of ten screen zones: four vertical mini corners, four horizontal mini corners, and left/right vertical expanded or top/bottom horizontal expanded**  
 CalculateRegions divides the screen into quarters horizontally and halves vertically; corner zones are menuBarHeight tall (horizontal) or menuBarHeight..2.9x menuBarHeight (vertical); MouseMoved tests the regions in a fixed short-circuit order and calls ChangeState(..., async=true) only when the target differs from the current state. Regions are recomputed on every ScreenChanged  
-`StatusView.cpp` → `TDragRegion::MouseMoved`
-**WIRING:** the dock-state switch exists and re-lays the bar (set_dock src/tiku_trk_deskbar.c:77-82; layout branches on dock at :469-471 and :548) but nothing ever calls set_dock (grep: definition and header declaration only) and no drag region or zone hit-testing exists; the enum also holds 3 of the row's 10 states (src/tiku_trk_deskbar.h:29-33)  
-
+`StatusView.cpp` → `TDragRegion::MouseMoved`  
+**BLOCKED:** `set_dock` re-lays the bar but the enum holds 3 of the row's 10 states and there is no drag region or zone hit-testing.  Reclassified from WIRING 2026-08-12: wiring a caller would close a third of the row and read as done.  
 #### DB-049 · polish · open
 **Holding Ctrl+Cmd and clicking anywhere on Deskbar starts the same dock-drag as grabbing the dragger handle**  
 Exact modifier match (Ctrl|Cmd with neither Option nor Shift) and only when the click is inside the window; forwards to fDragRegion->MouseDown at the dragger's top-left. The dragger's own hit area is DragRegion() inset by -2 because that rect is sized for drawing  

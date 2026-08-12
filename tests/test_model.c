@@ -158,6 +158,33 @@ test_posix(void)
     check(tiku_trk_model_is_mutable_container(&m),
           "a writable local directory accepts new entries");
 
+    {   /* The Trash is recognised by name, and its icon is the one piece
+         * of state it exists to show (AW-029, IV-046). */
+        char tr[80], junk[128];
+
+        snprintf(tr, sizeof tr, "%s/.Trash", dir);
+        (void)mkdir(tr, 0755);
+        check(b->ops->stat(b, tr, &m) == 0 && m.kind == TIKU_TRK_KIND_TRASH,
+              "a directory called .Trash IS the Trash");
+        check(m.facts.trash_full == 0 &&
+              strcmp(tiku_trk_model_icon_name(&m), "trash_empty") == 0,
+              "an empty Trash reports empty and draws the empty icon");
+
+        snprintf(junk, sizeof junk, "%s/thrown.txt", tr);
+        {
+            FILE *f = fopen(junk, "w");
+            if (f != NULL) { fputs("x", f); (void)fclose(f); }
+        }
+        check(b->ops->stat(b, tr, &m) == 0 && m.facts.trash_full == 1 &&
+              strcmp(tiku_trk_model_icon_name(&m), "trash_full") == 0,
+              "one item in it makes it full, and the icon follows");
+        (void)remove(junk);
+        check(b->ops->stat(b, tr, &m) == 0 && m.facts.trash_full == 0,
+              "and emptying it again makes it empty -- the fact is read, "
+              "not remembered");
+        (void)rmdir(tr);
+    }
+
     check(b->ops->stat(b, f1, &m) == 0, "stat a file");
     check(m.kind == TIKU_TRK_KIND_FILE && m.facts.size == 5,
           "kind and size are right");

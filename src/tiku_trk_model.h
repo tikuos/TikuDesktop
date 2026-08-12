@@ -69,6 +69,11 @@ typedef struct {
      * the row stays and says so, rather than disappearing as though the
      * link itself had been deleted. */
     int      link_broken;
+    /* A Trash that has something in it.  Carried as a FACT rather than
+     * recomputed at draw time: the icon, the menu item's enablement and
+     * the delete question all ask the same question, and a directory read
+     * per draw to answer it would be a read per frame. */
+    int      trash_full;
     int64_t  size;
     int64_t  mtime;
 } tiku_trk_facts_t;
