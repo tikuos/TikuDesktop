@@ -510,12 +510,11 @@ fListElemHeight = ceilf(be_plain_font->Size() * 1.65f) set in the constructor; s
 **MISSING:** Heights do differ per mode, but none is font-derived: pose height is the grid cell (icon = iconSize*1.875, mini = 16*1.25) and the list row is the compile-time constant LIST_ROW_H 20, which set_font_size never touches (it only rescales column widths) — so the fontHeight term the row states is absent everywhere and a larger font does not grow a row.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:1616-1646 (layout_info), :1709-1716 (pose_extent), :1893-1894 (pose_rect h = cell h), :3155-3165/:3200-3214 (font_px scales widths only); /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:47-48,1090*
 
-#### PVL-008 · important · open
+#### PVL-008 · important · done
 **The Desktop can never be in list mode; a saved list-mode state on the Desktop is coerced back to icon mode.**  
 Both RestoreState overloads: `if (IsDesktopView() && ViewMode() == kListMode) fViewState->SetViewMode(kIconMode);`  
-`PoseView.cpp` → `BPoseView::RestoreState(AttributeStreamNode*) and BPoseView::RestoreState(const BMessage&)`
-**SUBSYSTEM:** Desktop icon layer: the desktop shell's backdrop is a plain fill with no pose view on it (src/tiku_trk_win.c:502 tiku_desk_fill(all, TIKU_DESK_C_BACKDROP); desktop_t holds only folder windows, src/tiku_trk_desktop.c:78-149), so there is no Desktop view whose restored mode could be coerced; restore_state has no desktop branch (src/tiku_trk_poseview.c:2445-2447 restores whatever mode is saved).  
-
+`PoseView.cpp` → `BPoseView::RestoreState(AttributeStreamNode*) and BPoseView::RestoreState(const BMessage&)`  
+**PORT:** Coerced rather than refused at save time: a state file written by another build is not ours to reject, and the Desktop has to come up either way.  
 #### PVL-009 · important · partial
 **List mode and icon mode each remember their own scroll position, so switching modes and back returns you to where you were.**  
 ScrollTo() writes Extent().LeftTop() into fViewState->SetListOrigin() or SetIconOrigin() depending on mode; SetViewMode/InitCommon/SwitchDir read the matching origin back and PinPointToValidRange() it before scrolling.  
@@ -568,12 +567,11 @@ fHintLocation = PinToGrid(LeftTop() + fOffset). Called from InitCommon, ClearPos
 `PoseView.cpp` → `BPoseView::ResetPosePlacementHint`  
 **MISSING:** Re-seeded on a directory switch and a mode change; a bare reload and a window resize still leave the old hint.
 
-#### PVL-018 · important · open
+#### PVL-018 · important · done
 **On the Desktop, icons are never placed on top of the Deskbar, on a replicant, or off-screen.**  
 IsValidLocation(rect) requires Bounds().Contains(rect), rejects intersection with the Deskbar frame inset by (-10,-10), and rejects intersection with any child view frame inset by (-5,-5). The Deskbar frame is re-queried at most every 500 ms and cached otherwise. Off the Desktop this check always returns true.  
-`PoseView.cpp` → `BPoseView::IsValidLocation / BPoseView::GetDeskbarFrame`
-**SUBSYSTEM:** Desktop icon layer: no poses exist on the backdrop to keep off the Deskbar or on screen (src/tiku_trk_win.c:502; no backdrop pose view anywhere in src/tiku_trk_desktop.c — pose placement runs only inside the app shell's single window).  
-
+`PoseView.cpp` → `BPoseView::IsValidLocation / BPoseView::GetDeskbarFrame`  
+**PORT:** Wholly on screen, ten pixels clear of the Deskbar and five of any replicant.  Off-screen is refused outright -- an icon that cannot be picked up is worse than one in an awkward place.  
 #### PVL-019 · polish · done
 **If no valid free slot exists anywhere, the icon is dropped at the grid origin rather than left unplaced.**  
 PlacePose breaks out of the search when the candidate rect no longer intersects viewBounds (Desktop only) and resets fHintLocation to PinToGrid(0,0).  
@@ -642,12 +640,11 @@ SavePoseLocations writes kAttrPoseInfo (killing the foreign-endian twin) for eve
 `PoseView.cpp` → `BPoseView::SavePoseLocations`  
 **TIKU:** Device-namespace nodes have no attribute store to hang a position on; TikuOS needs a view-owned position map keyed by node path (and must decide whether it is durable).  
 
-#### PVL-030 · important · open
+#### PVL-030 · important · done
 **After a screen resolution change, Desktop icons move to the positions recorded for that resolution, and any icon that no longer fits is pulled back on screen.**  
 CheckPoseVisibility (called from DeskWindow with the new frame) reads ExtendedPoseInfo and applies LocationForFrame if one exists and differs. Independently, any pose whose rect does not intersect Bounds() inset by (20,20) has its location ConstrainTo'd into those bounds. Moved poses are flagged for save, re-inserted into the vertical-sort list, and both old and new rects invalidated.  
-`PoseView.cpp` → `BPoseView::CheckPoseVisibility`
-**SUBSYSTEM:** Desktop icon layer: no desktop poses, no per-resolution position records (the saved record is one x,y + flags, src/tiku_trk_poseview.c:2407-2411 pose_info_t — no per-frame variants), and the host window is fixed at DESK_W x DESK_H (src/tiku_trk_desktop.c:43-44).  
-
+`PoseView.cpp` → `BPoseView::CheckPoseVisibility`  
+**PORT:** One position per screen SIZE, so plugging a monitor back in puts the icons where they were on that monitor rather than where they drifted to on the other.  Anything that no longer fits is pulled back, near edges clamped last so something wider than the screen lands against the near corner rather than off the far one.  
 #### PVL-031 · core · done
 **List rows are fixed height and pose N always occupies the strip starting at N * rowHeight.**  
 CalcPoseRectList(pose, index) = pose->CalcRect(BPoint(0, index * fListElemHeight), ...). Every list-mode iteration derives its start index as (int32)(y / fListElemHeight), so the mapping row index ↔ y must stay exact.  
@@ -2230,13 +2227,13 @@ CachedDirectoryEntryList is a CachedEntryIterator(0, 40, true) -- 40-entry cache
 **PORT:** Batching is really implemented on the device backend — tk_list makes one tiku_desk_ns_ls_kinds round trip into a 128-name buffer and then hands entries to the callback one at a time — with only the inode ordering dropped, which the row's TIKU note explicitly directs.  
 *src/tiku_trk_backend_tiku.c:296-360 (tk_list: char names[128][64] + kinds, single ns_ls_kinds call, per-entry fn())*
 
-#### PVN-051 · important · open
+#### PVN-051 · important · partial
 **The Desktop shows the union of several directories by chaining iterators, so entries from every integrated volume's Desktop folder appear in one view.**  
 DesktopPoseView::InitDesktopDirentIterator builds a CachedEntryIteratorList and AddItem()s a CachedDirectoryEntryList per source, watching each source node with the full directory mask; EntryIteratorList::GetNextDirents advances fCurrentIndex to the next sub-iterator on exhaustion.  
 `DesktopPoseView.cpp` → `DesktopPoseView::InitDesktopDirentIterator / EntryIteratorList::GetNextDirents`  
-**TIKU:** This is exactly the shape the TikuOS requirement needs: device-namespace nodes and local files as two chained iterators feeding one view, each with its own watch registration.
-**SUBSYSTEM:** Desktop icon layer (backdrop pose view). The backdrop shows no entries from anywhere: draw_all paints folder windows, the Deskbar and popups only (src/tiku_trk_desktop.c:1512-1527), KIND_DESKTOP is never assigned by any backend (grep), and no iterator-chaining or multi-source listing exists — every listing enumerates exactly one path (src/tiku_trk_backend_posix.c:95-143, src/tiku_trk_backend_tiku.c:296-408); the two backends are alternatives, never combined (src/tiku_trk_desktop.c:1576-1577).  
-
+**TIKU:** This is exactly the shape the TikuOS requirement needs: device-namespace nodes and local files as two chained iterators feeding one view, each with its own watch registration.  
+**PORT:** The Desktop's source is a virtual directory of every showing volume's Desktop folder -- the union the row describes, built on the merge that already existed.  Volumes with no Desktop folder contribute nothing, and one mounted inside another is skipped, since its folder is the same folder seen twice.  
+**MISSING:** Nothing displays it: the backdrop is still a plain fill with no pose view on it, so the union has no window.  
 #### PVN-052 · important · open
 **Dot files are filtered out at load time and toggling the setting re-reads the whole folder rather than just repainting.**  
 AddPosesTask skips per `(!hideDotFiles && (name=="." || name=="..")) || (hideDotFiles && name[0]=='.')`, reading TrackerSettings().HideDotFiles() once per load; the kHideDotFilesChanged observer case calls Refresh().  
@@ -2273,13 +2270,13 @@ BContainerWindow::SetPathWatchingEnabled walks GetParent() up to '/' installing 
 `ContainerWindow.cpp` → `BContainerWindow::SetPathWatchingEnabled / BContainerWindow::MessageReceived (case B_NODE_MONITOR)`  
 **PORT:** An ancestor's move is recognised by prefix at a component boundary -- "/a/b" moving does not claim "/a/bc" -- and the window's own path is rebuilt under the new name.
 
-#### PVN-058 · important · open
+#### PVN-058 · important · partial
 **Toggling the Disks-icon or volumes-on-Desktop setting adds or removes the / icon immediately, and closes the Disks window if it was open.**  
 DesktopPoseView::AdaptToVolumeChange (and BFilePanelPoseView::AdaptToVolumeChange) hand-build a B_NODE_MONITOR message with opcode B_ENTRY_CREATED or B_ENTRY_REMOVED for '/' and post it to the view, then ToggleDisksVolumes(); BPoseView::AddVolumePoses does the same synthesis when ShowDisksIcon is set.  
 `DesktopPoseView.cpp` → `DesktopPoseView::AdaptToVolumeChange / BPoseView::AddVolumePoses / BPoseView::ToggleDisksVolumes`  
-**TIKU:** The pattern -- synthesize a notification and post it to yourself so that a settings change takes the same code path as a real filesystem event -- is worth keeping; it collapses two update paths into one.
-**SUBSYSTEM:** Desktop icon layer (volume poses) + settings. There is no disks-icon or volumes-on-desktop setting (no settings subsystem; CMD_PREFERENCES unhandled), no '/' volume pose anywhere to add or remove (backdrop draws no icons, src/tiku_trk_desktop.c:1512-1527), and no Disks window; the synthesize-a-notice-to-yourself pattern has no consumer, though the notice vocabulary it would use exists (src/tiku_trk_notify.h:30-53).  
-
+**TIKU:** The pattern -- synthesize a notification and post it to yourself so that a settings change takes the same code path as a real filesystem event -- is worth keeping; it collapses two update paths into one.  
+**PORT:** Whether the root shows is answered from the two settings, and either alone puts it there -- the preferences make them exclusive and this does not depend on that holding.  
+**MISSING:** Nothing adds or removes the icon when a setting changes, and there is no Disks window to close.  
 #### PVN-059 · important · partial
 **A virtual directory watches each of its contributing real directories by path, plus its own definition file and the root definition file.**  
 StartWatching: BPathMonitor::StartWatching(path, B_WATCH_DIRECTORY|B_WATCH_CHILDREN|B_WATCH_NAME|B_WATCH_STAT|B_WATCH_INTERIM_STAT|B_WATCH_ATTR, this) per entry in fDirectoryPaths; TTracker::WatchNode(TargetModel()->NodeRef(), B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR); TTracker::WatchNode(&fRootDefinitionFileRef, B_WATCH_STAT) when not root. StopWatching does BPathMonitor::StopWatching + stop_watching.  

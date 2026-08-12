@@ -24,7 +24,7 @@ CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -74,6 +74,12 @@ $(BUILD)/test_title: $(CORE) src/tiku_trk_poseview.c src/tiku_trk_titleview.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_match: src/tiku_trk_match.c tests/test_match.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_deskicons: $(CORE) src/tiku_trk_deskicons.c \
+                         src/tiku_trk_poseview.c $(DESK)/tiku_desk_gfx.c \
+                         $(DESK)/tiku_desk_font.c tests/test_deskicons.c \
+                         | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_scripting: $(CORE) src/tiku_trk_poseview.c \
@@ -137,13 +143,13 @@ $(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c $(DESK)/tiku_desk_g
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
-                  src/tiku_trk_script_api.c \
+                  src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_edit.c src/tiku_trk_titleview.c \
                   src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 $(BUILD)/desktop: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
-                  src/tiku_trk_script_api.c \
+                  src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_script.c \
                   src/tiku_trk_edit.c src/tiku_trk_select.c \
                   src/tiku_trk_titleview.c \
@@ -182,6 +188,7 @@ test: all
 	@$(BUILD)/test_volume
 	@$(BUILD)/test_prefs
 	@$(BUILD)/test_scripting
+	@$(BUILD)/test_deskicons
 	@# The shells are the other half of the product and have no unit
 	@# tests of their own; these drive the real binaries with no display.
 	@tests/shell/run.sh
