@@ -23,6 +23,7 @@ typedef enum {
     TIKU_TRK_SC_IDLE = 0,   /* nothing to inject; run one loop turn      */
     TIKU_TRK_SC_KEY,
     TIKU_TRK_SC_PRESS,
+    TIKU_TRK_SC_MOVE,
     TIKU_TRK_SC_RELEASE,
     TIKU_TRK_SC_SHOT,
     TIKU_TRK_SC_QUIT

@@ -10,6 +10,6 @@ expect-status clipboard
 note FS-056: pasting a COPIED item into its own folder duplicates it
 key v ctrl
 wait 20
-expect-file /tmp/trk_script/b.txt copy
-expect-file /tmp/trk_script/b.txt
+expect-file /tmp/trk_script/a.txt copy
+expect-file /tmp/trk_script/a.txt
 quit

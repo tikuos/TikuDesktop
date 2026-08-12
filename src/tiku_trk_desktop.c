@@ -27,6 +27,7 @@
 
 #include "tiku_trk_attr.h"
 #include "tiku_trk_clip.h"
+#include "tiku_trk_drag.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -139,6 +140,11 @@ typedef struct desktop {
     int64_t              press_at;
     int                  press_x, press_y;
     int                  press_row;
+    tiku_trk_drag_t      drag;      /* the gesture between press and drop */
+    char                 drop_dst[TIKU_TRK_PATH_MAX];
+    tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
+    folder_t            *drop_fl;   /* window the pointer is over         */
+    int                  drop_row;  /* pose highlighted as target, or -1  */
     int                  press_down;
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
@@ -266,6 +272,12 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
          * not faded -- nothing is going to happen to it. */
         cut = (tiku_trk_clip_mode_of(&fl->app->clip, p->model.node_id)
                    == TIKU_TRK_CLIP_MOVE);
+        /* The pose a hovering drag would land in is drawn selected, which
+         * is how the original highlights a drop target -- it transiently
+         * selects it rather than inventing a third state (PVS-035). */
+        if (fl->app->drop_fl == fl && fl->app->drop_row == i) {
+            drawn_sel = 1;
+        }
         tiku_desk_fill(s, row, drawn_sel ? TIKU_DESK_C_SELECT
                                          : TIKU_DESK_C_DOC);
         {   /* A mini icon at the head of the name, as list mode has. */
@@ -572,6 +584,97 @@ key_char(desktop_t *app, XKeyEvent *ev, KeySym ks)
         return c;
     }
     return (char)0;
+}
+
+/**
+ * @brief Resolve and perform the drop the pointer is over.
+ *
+ * The destination is the highlighted pose when there is one and the hovered
+ * window's own folder otherwise -- which is also what a drop onto one of the
+ * dragged poses means, since such a pose never highlights (PVS-042).
+ */
+static void
+do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
+{
+    const char *sel[TIKU_TRK_DRAG_MAX];
+    char dst[TIKU_TRK_PATH_MAX];
+    unsigned mods = 0;
+    tiku_trk_drop_t what;
+    int i, n = 0, same;
+
+    (void)x;
+    (void)y;
+    if (app->drop_fl == NULL) {
+        return;                     /* dropped on nothing */
+    }
+    if (app->drop_row >= 0) {
+        tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view,
+                                                  app->drop_row);
+
+        if (q == NULL) {
+            return;
+        }
+        snprintf(dst, sizeof dst, "%s", q->model.path);
+    } else {
+        snprintf(dst, sizeof dst, "%s", app->drop_fl->path);
+    }
+    if ((state & Mod1Mask) != 0u)    { mods |= TIKU_TRK_DRAG_MOD_COPY; }
+    if ((state & ControlMask) != 0u) { mods |= TIKU_TRK_DRAG_MOD_LINK; }
+
+    /* Same store or not is the engine's question, not a path comparison:
+     * it already knows how to tell, and it is what decides move or copy. */
+    same = (tiku_trk_fs_drop_action(app->fs, app->drag.path[0], dst, 0) ==
+            TIKU_TRK_OP_MOVE);
+    what = tiku_trk_drag_action(&app->drag, dst, mods, same);
+    if (what == TIKU_TRK_DROP_NOTHING) {
+        return;
+    }
+    for (i = 0; i < app->drag.count; i++) {
+        sel[n++] = app->drag.path[i];
+    }
+    if (n == 0) {
+        return;
+    }
+    /* The secondary button asks rather than assumes: the menu already
+     * exists and had no caller (PVS-039, FS-003). */
+    if (button == 3u) {
+        tiku_trk_model_t dm;
+        int dst_ro = 0, src_ro = 0;
+
+        if (app->backend->ops->stat(app->backend, dst, &dm) == 0) {
+            dst_ro = !tiku_trk_model_is_mutable_container(&dm);
+        }
+        if (app->backend->ops->stat(app->backend, app->drag.src_dir,
+                                    &dm) == 0) {
+            src_ro = !tiku_trk_model_is_mutable_container(&dm);
+        }
+        snprintf(app->drop_dst, sizeof app->drop_dst, "%s", dst);
+        app->pending = app->drag;   /* the release is about to clear it */
+        app->popup = tiku_trk_cwmenu_drop(&app->menus, dst_ro, src_ro,
+                                          (state & ShiftMask) ?
+                                              TIKU_TRK_MOD_SHIFT : 0u);
+        app->popup_sub = NULL;
+        app->popup_frame = tiku_trk_menu_place(app->popup, x, y,
+                               (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+        return;
+    }
+    switch (what) {
+    case TIKU_TRK_DROP_COPY:
+        (void)tiku_trk_fs_copy(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
+        snprintf(app->status, sizeof app->status, "copying %d item%s", n,
+                 (n == 1) ? "" : "s");
+        break;
+    case TIKU_TRK_DROP_LINK:
+        (void)tiku_trk_fs_link(app->fs, sel, n, dst, 0);
+        snprintf(app->status, sizeof app->status, "linking %d item%s", n,
+                 (n == 1) ? "" : "s");
+        break;
+    default:
+        (void)tiku_trk_fs_move(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
+        snprintf(app->status, sizeof app->status, "moving %d item%s", n,
+                 (n == 1) ? "" : "s");
+        break;
+    }
 }
 
 static void
@@ -1417,6 +1520,42 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                  (tiku_trk_clip_count(&app->clip) == 1) ? "" : "s");
         break;
     }
+    case TIKU_TRK_CMD_MOVE_HERE:
+    case TIKU_TRK_CMD_COPY_HERE:
+    case TIKU_TRK_CMD_LINK_HERE:
+    case TIKU_TRK_CMD_REL_LINK_HERE: {
+        /* The answer to the secondary-button drop.  The payload is still
+         * held because the release deliberately did not clear it when the
+         * menu went up (FS-003). */
+        const char *sel[TIKU_TRK_DRAG_MAX];
+        int i, n = 0;
+
+        for (i = 0; i < app->pending.count; i++) {
+            sel[n++] = app->pending.path[i];
+        }
+        if (n == 0 || app->drop_dst[0] == '\0') {
+            break;
+        }
+        if (command == TIKU_TRK_CMD_COPY_HERE) {
+            (void)tiku_trk_fs_copy(app->fs, sel, n, app->drop_dst,
+                                   TIKU_TRK_CONFLICT_ASK);
+            snprintf(app->status, sizeof app->status, "copying %d item%s",
+                     n, (n == 1) ? "" : "s");
+        } else if (command == TIKU_TRK_CMD_MOVE_HERE) {
+            (void)tiku_trk_fs_move(app->fs, sel, n, app->drop_dst,
+                                   TIKU_TRK_CONFLICT_ASK);
+            snprintf(app->status, sizeof app->status, "moving %d item%s",
+                     n, (n == 1) ? "" : "s");
+        } else {
+            (void)tiku_trk_fs_link(app->fs, sel, n, app->drop_dst,
+                       command == TIKU_TRK_CMD_REL_LINK_HERE);
+            snprintf(app->status, sizeof app->status, "linking %d item%s",
+                     n, (n == 1) ? "" : "s");
+        }
+        tiku_trk_drag_reset(&app->pending);
+        app->drop_dst[0] = '\0';
+        break;
+    }
     case TIKU_TRK_CMD_NEW_FOLDER: {
         char made[TIKU_TRK_PATH_MAX], err[200];
 
@@ -2056,6 +2195,13 @@ main(int argc, char **argv)
                     ev_ks = sp.ks;
                     have = 1;
                     break;
+                case TIKU_TRK_SC_MOVE:
+                    ev.type = MotionNotify;
+                    ev.xmotion.x = sp.x;
+                    ev.xmotion.y = sp.y;
+                    ev.xmotion.state = sp.state;
+                    have = 1;
+                    break;
                 case TIKU_TRK_SC_PRESS:
                 case TIKU_TRK_SC_RELEASE:
                     ev.type = (sp.what == TIKU_TRK_SC_PRESS) ? ButtonPress
@@ -2394,6 +2540,33 @@ main(int argc, char **argv)
                             app.press_fl = fl;
                             app.press_down = 1;
                             app.press_menu = 0;
+                            /* Armed on a pose, started only if the pointer
+                             * then moves far enough (PVS-032).  The whole
+                             * selection travels, not the pose under the
+                             * pointer (PVS-033). */
+                            tiku_trk_drag_arm(&app.drag, ev.xbutton.x,
+                                              ev.xbutton.y,
+                                              ev.xbutton.button, mods,
+                                              (row >= 0 && row == last_row &&
+                                               now - last_click <
+                                                   TIKU_TRK_CLICK_SPEED_US)
+                                                  ? 2 : 1,
+                                              w, fl->path);
+                            if (row >= 0) {
+                                int k, kn = tiku_trk_poseview_count(fl->view);
+
+                                for (k = 0; k < kn; k++) {
+                                    tiku_trk_pose_t *q =
+                                        tiku_trk_poseview_at(fl->view, k);
+
+                                    if (q != NULL && q->selected) {
+                                        (void)tiku_trk_drag_add(&app.drag,
+                                                                q->model.path);
+                                    }
+                                }
+                            }
+                            app.drop_fl = NULL;
+                            app.drop_row = -1;
                             if (row >= 0) {
                                 /* Armed, not started: the rename begins only
                                  * once the double-click window passes with
@@ -2466,6 +2639,43 @@ main(int argc, char **argv)
                     }
                     app.press_down = 0;
                 }
+                if (tiku_trk_drag_moved(&app.drag, ev.xmotion.x,
+                                        ev.xmotion.y) ||
+                    tiku_trk_drag_active(&app.drag)) {
+                    /* Where the pointer is now decides the target, and it
+                     * is resolved across WINDOWS: the whole point of a
+                     * spatial desktop is dragging between them (FS-001). */
+                    tiku_trk_win_t *ow = NULL;
+                    folder_t *ofl = NULL;
+                    int orow = -1;
+
+                    (void)tiku_trk_desk_hit(app.desk, ev.xmotion.x,
+                                            ev.xmotion.y, &ow);
+                    ofl = (ow != NULL) ? folder_of(&app, ow) : NULL;
+                    if (ofl != NULL) {
+                        int r = folder_row_at(&app, ofl, ev.xmotion.x,
+                                              ev.xmotion.y);
+                        if (r >= 0) {
+                            tiku_trk_pose_t *q =
+                                tiku_trk_poseview_at(ofl->view, r);
+
+                            /* Only a pose that will actually take the drop
+                             * lights up; one being dragged never does
+                             * (MA-016, PVS-042). */
+                            if (q == NULL ||
+                                !tiku_trk_drag_can_drop(&app.drag,
+                                                        &q->model)) {
+                                r = -1;
+                            }
+                        }
+                        orow = r;
+                    }
+                    if (ofl != app.drop_fl || orow != app.drop_row) {
+                        app.drop_fl = ofl;
+                        app.drop_row = orow;
+                        app.dirty = 1;
+                    }
+                }
                 if (tiku_trk_desk_tracking(app.desk)) {
                     if (tiku_trk_desk_track(app.desk, ev.xmotion.x,
                                             ev.xmotion.y)) {
@@ -2474,6 +2684,13 @@ main(int argc, char **argv)
                 }
                 break;
             case ButtonRelease:
+                if (tiku_trk_drag_active(&app.drag)) {
+                    do_drop(&app, ev.xbutton.x, ev.xbutton.y,
+                            ev.xbutton.state, ev.xbutton.button);
+                }
+                tiku_trk_drag_reset(&app.drag);
+                app.drop_fl = NULL;
+                app.drop_row = -1;
                 /* A long press already put the menu up, so its release must
                  * not put a second one up (PVS-017). */
                 app.press_down = 0;
@@ -3032,9 +3249,10 @@ sel_done:
         if (deadline > 0 && tiku_trk_now() > deadline) {
             app.running = 0;
         }
-        if (sc == NULL) {
-            usleep(10000);          /* a script has no reason to wait */
-        }
+        /* A script still lets the clock run, just faster: the notice
+         * poll, the armed rename and the barber pole are all timed, and a
+         * loop that spun without time passing would test none of them. */
+        usleep((sc != NULL) ? 20000 : 10000);
     }
 
     for (i = 0; i < app.folder_count; i++) {

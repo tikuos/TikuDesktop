@@ -1541,6 +1541,13 @@ main(int argc, char **argv)
                     ev_ks = sp.ks;
                     have = 1;
                     break;
+                case TIKU_TRK_SC_MOVE:
+                    ev.type = MotionNotify;
+                    ev.xmotion.x = sp.x;
+                    ev.xmotion.y = sp.y;
+                    ev.xmotion.state = sp.state;
+                    have = 1;
+                    break;
                 case TIKU_TRK_SC_PRESS:
                 case TIKU_TRK_SC_RELEASE:
                     ev.type = (sp.what == TIKU_TRK_SC_PRESS) ? ButtonPress
@@ -1967,9 +1974,10 @@ main(int argc, char **argv)
         if (deadline_us > 0 && tiku_trk_now() > deadline_us) {
             a.running = 0;
         }
-        if (sc == NULL) {
-            usleep(10000);          /* a script has no reason to wait */
-        }
+        /* A script still lets the clock run, just faster: the notice
+         * poll, the armed rename and the barber pole are all timed, and a
+         * loop that spun without time passing would test none of them. */
+        usleep((sc != NULL) ? 20000 : 10000);
     }
 
     if (a.dpy != NULL) {

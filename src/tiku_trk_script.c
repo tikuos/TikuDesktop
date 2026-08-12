@@ -21,7 +21,7 @@
 
 /** @brief What one line was asking for. */
 typedef enum {
-    OP_KEY = 0, OP_PRESS, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
+    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
     OP_NOTE, OP_QUIT
 } sc_op_t;
@@ -175,9 +175,11 @@ tiku_trk_script_open(const char *path)
             st->state = mods_of(w, n, 2);
         } else if ((strcmp(w[0], "click") == 0 ||
                     strcmp(w[0], "press") == 0 ||
+                    strcmp(w[0], "move") == 0 ||
                     strcmp(w[0], "release") == 0) && n >= 3) {
             st->op = (w[0][0] == 'c') ? OP_CLICK
-                   : (w[0][0] == 'p') ? OP_PRESS : OP_RELEASE;
+                   : (w[0][0] == 'p') ? OP_PRESS
+                   : (w[0][0] == 'm') ? OP_MOVE : OP_RELEASE;
             st->x = atoi(w[1]);
             st->y = atoi(w[2]);
             if (n >= 4) {
@@ -288,6 +290,13 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->button = cur->button;
         out->state = cur->state;
         s->pending_release = (cur->op == OP_CLICK);
+        return 1;
+    case OP_MOVE:
+        out->what = TIKU_TRK_SC_MOVE;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->state = cur->state;
+        out->button = cur->button;
         return 1;
     case OP_RELEASE:
         out->what = TIKU_TRK_SC_RELEASE;

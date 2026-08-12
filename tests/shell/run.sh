@@ -19,9 +19,13 @@ for s in "$here"/*.script; do
             "$bin") ;;
             *) continue ;;
         esac
-        rm -rf $work && mkdir -p $work
+        # The fixture every script starts from.  Rows sort folders first,
+        # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
+        # the click coordinates in the scripts are aimed at.
+        rm -rf $work && mkdir -p $work/sub
         echo hi > $work/a.txt
         echo hi > $work/b.txt
+        echo hi > $work/c.txt
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         DISPLAY= "$root/build/$bin" $work -script "$s" || fails=$((fails+1))
     done

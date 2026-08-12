@@ -47,7 +47,7 @@ states is implemented and matches, **differs** means something in that area
 exists but behaves differently (the row says how, in a `PORT:` line), **open**
 means absent.
 
-    done 276   partial 165   differs 71   open 377
+    done 282   partial 165   differs 71   open 371
 
 The last pass built the pose engine: multi-term filtering over column text,
 the selection commands (invert, select-by-expression, the context-menu
@@ -371,6 +371,48 @@ defect that shipped undetected two days ago.
 A script that asserts nothing reports "no checks were made" and exits
 non-zero, because a green suite that cannot go red is the failure mode this
 harness exists to stop.
+
+### Drag-and-drop: the gesture (2026-08-12)
+
+The engine under a drop was built and tested long before anything could
+reach it, so this pass built only the part between the press and the drop:
+`tiku_trk_drag` is the arming rule, the payload and the drop decision, and
+the multi-window shell is where it is wired.
+
+A press arms; the drag starts when the pointer leaves a 4 px radius, compared
+squared; the second click of a double-click never arms one, and a drag
+carrying nothing is a rubber band.  The origin stays the PRESS point, so the
+frame sits where the user grabbed it.  The whole selection travels.  The
+target is resolved across WINDOWS -- the point of a spatial desktop -- and
+only a pose that would actually accept the drop highlights, which makes
+"dropping on the selection means the window behind it" fall out of the target
+test rather than needing a case.  Option is read at the DROP, not the press,
+because the user decides what the gesture means while it is in the air.
+
+Nine mutations against the gesture rules and four against the shell wiring
+all fire.  The drag itself is proven end to end by `tests/shell/drag.script`
+in 1.3 seconds with no display: press, motion, hover, release, and the file
+is in the other folder.  That script is the whole argument for having built
+the harness first -- the same proof by hand is a minute of clicking that
+nobody would repeat.
+
+The harness needed two things this pass.  A `move` instruction, since a drag
+IS motion and the language only had press and release.  And real time: `wait`
+gave loop turns but no clock, so the 400 ms notice poll never fired and a
+second drag aimed at a stale listing.  Scripts now let the clock run at
+double speed rather than not at all -- the armed rename, the barber pole and
+the poll are all timed, and a loop that spun without time passing tested none
+of them.
+
+What is NOT closed, and why, since a gesture cluster is easy to overclaim:
+the drag image is still an outline (PVS-034), there is no auto-scroll or
+spring-loading (PVS-050, PVS-051), the copy cursor needs a cursor API the
+multi-window shell does not have (PVS-036), refused drops need the alert
+layer (PVS-043), and the four foreign-drag rows remain impossible in a
+one-process desktop.  The secondary-button menu appears and its verbs are
+dispatched, but no script can pick an item yet: the harness cannot compute a
+popup item's coordinates.  That one gap blocks several CW rows too, and is
+the next thing the harness should learn.
 
 One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
 because FS is the only area whose open rows have been read against the port
@@ -1284,34 +1326,33 @@ Transparent: DrawAfterChildren strokes with B_NAVIGATION_BASE_COLOR alpha 128 an
 if (windowActive || isDrawingSelectionRect) InvertRect(invertRect); isDrawingSelectionRect comes from BPoseView::IsDrawingSelectionRect().  
 `Pose.cpp` → `BPose::DrawTextWidget`  
 
-#### PVS-032 · core · partial
+#### PVS-032 · core · done
 **A drag starts only after the pointer moves more than the radius threshold while a button is held, and only if that happens before the long-press timer fires.**  
 squaredDelta >= radiusThreshold^2 with radiusThreshold defaulting to 4.0 px; tracking is armed only for clicks == 1 (a double-click never starts a drag), any B_MOUSE_UP cancels tracking, and the synthesized message carries the ORIGINAL click point as "be:view_where" so the drag frame is positioned from where the press began.  
 `LongAndDragTrackingFilter.cpp` → `LongAndDragTrackingFilter::Filter`  
-**MISSING:** A 4 px movement threshold does arbitrate against the long press and the armed rename (crossing it cancels both before the long-press timer fires), but crossing the threshold never STARTS a drag — the icon drag is armed on the press itself, and there is no clicks==1 gating.  
-*src/tiku_trk_app.c:1417-1425 and :1289; src/tiku_trk_desktop.c:1887-1899 vs :2206*
-
+**PORT:** Armed on the press, started only when the pointer leaves a 4 px radius, compared squared.  The second click of a double-click never arms one, and a drag carrying nothing is a rubber band rather than a drag.  The drag's origin is the PRESS point, so the frame sits where the user grabbed it.  
+*Shell: desktop*  
 #### PVS-033 · core · partial
 **Dragging a pose drags the whole current selection; the drag message carries every selected item's ref plus the source window, the click point and the button state.**  
 B_SIMPLE_DATA with "src_window" (raw BContainerWindow*), "click_pt", "buttons", a "TrackerViewToken" BMessenger for scripting, and one "refs" entry per selected pose in forward selection order. Each ref's MIME type is forced to exist first (update_mime_info if BNodeInfo::GetType fails). The drag aborts silently if the pose is no longer selected (it was Command-deselected by the same press) or if buttons == 0, and never starts when fDragEnabled is false (file panels).  
 `PoseView.cpp` → `BPoseView::DragSelectedPoses / AddPoseRefToMessage`  
 **TIKU:** Refs are entry_refs; a namespace-aware drag needs a typed descriptor handle for /dev nodes, and "src_window as raw pointer" cannot survive a process boundary.  
-**MISSING:** Dragging does carry the whole selection — every selected pose moves by the same delta from its own press-time location — but this is an in-view icon move only: no drag message exists, so there are no refs, no source window, click point or button state, and nothing can be dragged to another view.  
-*src/tiku_trk_app.c:1275-1291 and :1438-1458*
-
+**PORT:** The whole selection travels, gathered at the press, with the source window and folder and the buttons held.  
+**MISSING:** No MIME synthesis (the port has no type registry to force a type into) and no scripting messenger; the source window is a local token rather than anything that could cross a process boundary.  
+*Shell: desktop*  
 #### PVS-034 · important · open
 **The drag image is a translucent rendering of the actually-selected poses, cropped to a box around the cursor with faded edges when the selection is larger than that box.**  
 Union of visible selected pose rects = drag rect (GetDragRect); an inner box of kTransparentDragThreshold (ComposeIconSize(256)) is centred on the cursor and nudged inside the drag rect; each clipped side is extended by a ComposeIconSize(32) fade band (FadeRGBA32Horizontal/Vertical). Alpha is 192, or 164 when faded; white or black tint depending on HighColor().IsDark(). If the cursor is outside the drag rect no bitmap is produced and BView::DragMessage falls back to the plain outline rect.  
 `PoseView.cpp` → `BPoseView::MakeDragBitmap / BPoseView::GetDragRect`
 **SUBSYSTEM:** Drag-and-drop (inter-view drag message + drag image). The only drag is an in-view live move of the actual poses — each selected pose is relocated by the drag delta (src/tiku_trk_app.c:1667-1687) — so nothing is ever rendered as a cursor-attached bitmap; no drag-image, fade, or translucency code exists (grep hilite/highlight/fade over src/ returns nothing).  
 
-#### PVS-035 · core · open
+#### PVS-035 · core · done
 **While a drag hovers the view, the folder pose under the cursor is highlighted as the drop target, and poses that are part of the dragged selection are never valid targets.**  
 UpdateDropTarget: targetPose is nulled if DragSelectionContains(targetPose); symlinks are resolved before validity testing; the target is accepted only if CanHandleDragSelection(...) passes, otherwise fDropTarget is cleared. HiliteDropTarget draws by transiently BPose::Select()ing the pose and remembers via fAlreadySelectedDropTarget that an already-user-selected target must not be deselected on exit. While a drop/context menu is tracking, moving off a pose does not un-hilite (trackingContextMenu && !targetPose returns "no change").  
 `PoseView.cpp` → `BPoseView::UpdateDropTarget / BPoseView::HiliteDropTarget`  
-**TIKU:** Drop-target validity is MIME-type based (Model::IsDropTargetForList); for device nodes this must become a capability-bit test (accepts-write / accepts-payload-type).
-**SUBSYSTEM:** Drag-and-drop (drop-target tracking). The port has no pose-valued drop target at all — the drop state is a bare coordinate (src/tiku_trk_poseview.c:74 drop_x/drop_y, as PVS-057's PORT note records) and grep hilite/highlight over src/ returns nothing.  
-
+**TIKU:** Drop-target validity is MIME-type based (Model::IsDropTargetForList); for device nodes this must become a capability-bit test (accepts-write / accepts-payload-type).  
+**PORT:** The pose under the pointer is resolved across WINDOWS -- the point of a spatial desktop -- and drawn selected, which is how the original highlights a target rather than inventing a third state.  Only a pose that would actually accept the drop lights up.  
+*Shell: desktop*  
 #### PVS-036 · polish · open
 **The cursor changes to the copy cursor when the drag is over a directory on a different device than the source.**  
 Only when the target is a directory, the message has refs, !CheckDevicesEqual(&srcRef, targetModel), and the source is neither a volume nor root; otherwise the system default cursor is restored. fCursorCheck suppresses redundant cursor churn.  
@@ -1319,19 +1360,19 @@ Only when the target is a directory, the message has refs, !CheckDevicesEqual(&s
 **TIKU:** "Different device" has no analogue for namespace nodes; needs a same-store predicate to decide whether a transfer is a move or a copy.
 **SUBSYSTEM:** Drag-and-drop (hover tracking). The same-volume predicate the rule needs exists (volume_of, src/tiku_trk_fs.c:314-332) but there is no drag-over-target tracking, and the only cursor either shell ever sets is the column-resize cursor (src/tiku_trk_app.c:1632; grep cursor over src/tiku_trk_desktop.c returns nothing).  
 
-#### PVS-037 · core · partial
+#### PVS-037 · core · done
 **Dropping items on a folder moves them when source and destination are on the same volume, and copies them when they are on different volumes.**  
 moveMode selection order in MoveSelectionInto: forceCopy > forceMove > createRelativeLink > createLink > (!CheckDevicesEqual(srcList->ItemAt(0), destFolder) ? copy : move). Virtual-directory sources with no explicit mode default to creating links instead.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
-**MISSING:** The rule itself is implemented and unit-tested — same volume gives MOVE, different volume gives COPY, force_copy overrides — but no UI drop reaches it (nothing calls tiku_trk_fs_drop_action outside tests), and the link / relative-link / virtual-directory modes of the ladder are absent.  
-*src/tiku_trk_fs.c:274 tiku_trk_fs_drop_action (tests/test_fs.c:94)*
-
-#### PVS-038 · core · open
+**PORT:** The drop reaches the engine that was built and tested for it: same volume moves, different volume copies, and the ladder's force-copy rung is what Option sets.  
+*Shell: desktop*  
+#### PVS-038 · core · done
 **Holding Option during a drop forces a copy even within the same volume.**  
 forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated at drop time, after the same-folder branch (so Option-dropping into the same folder duplicates instead).  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **VERIFIER CORRECTION:** Backwards. `forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0` sits AFTER the same-folder branch returns (PoseView.cpp:5040 vs 5085). Option-dropping inside the source folder therefore just moves the icons by the drag delta; it does not duplicate. Option only forces a copy for drops into a *different* folder.  
-**SUBSYSTEM:** drag-and-drop.  Reclassified 2026-08-12 during the wiring pass: the engine honours force_copy and is tested, but there is no drop site at which to read the Option modifier, so this cannot be wired -- it arrives with the drag gesture.  
+**PORT:** Read at the DROP, not at the press -- the user decides what the gesture means while it is in the air -- and an Option-drop back into the source folder duplicates rather than doing nothing, which is the branch order the verifier corrected.  
+*Shell: desktop*  
 #### PVS-039 · important · partial
 **Dropping with the secondary button (or Control held) pops a menu offering Move here / Copy here / Create link here / Cancel; Cancel abandons the drop.**  
 SecondaryMouseButtonDown(modifiers(), buttons) where buttons came from the drag message. ShowDropContextMenu disables every item when the target volume is read-only, and additionally disables "Move here" when the SOURCE volume is read-only. kCancelButton and any unrecognized result return without acting. Shift on the Create-link menu item selects a relative link (kCreateRelativeLink).  
@@ -1353,12 +1394,12 @@ targetView->DuplicateSelection(&where, &loc); volumes and Trash are stripped fro
 *src/tiku_trk_fs.c:477-486 (step_one same-dir skip) vs :364 tiku_trk_fs_duplicate and :333 Trash strip*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Only the fs queue skips (src/tiku_trk_fs.c:1796-1805, FS-005). The desktop shell's Paste path detects copied clipboard entries already living in the destination folder and routes them to tiku_trk_fs_duplicate BEFORE the queue is built, with a 'duplicating N items already here' status message — so the port's one UI flow that can produce a same-parent copy DOES turn it into a duplicate, and not silently. Also 'there is no drop menu' is imprecise: the drop menu exists unwired (src/tiku_trk_cwmenu.c:331-364, tests-only callers). `src/tiku_trk_desktop.c:1282-1315 (same-parent copied entries -> tiku_trk_fs_duplicate + status) vs src/tiku_trk_fs.c:1796-1805 (engine same-dir skip)`  
 
-#### PVS-042 · important · open
+#### PVS-042 · important · done
 **Dropping onto one of the poses being dragged is treated as a drop on the window background, not on that item.**  
 In the same-window case, DragSelectionContains(targetPose, message) nulls targetModel so control falls through to MoveSelectionTo; the same-window case also activates the window and resets the pose placement hint.  
-`PoseView.cpp` → `BPoseView::HandleDropCommon`
-**SUBSYSTEM:** Drag-and-drop (drop targets). There is no drop-on-pose handling to fall through from: releasing the in-view drag just ends the move and saves state (src/tiku_trk_app.c:1706-1714), and the desktop shell has no pose drag at all (its MotionNotify only cancels the armed rename and window tracking, src/tiku_trk_desktop.c:2201-2221).  
-
+`PoseView.cpp` → `BPoseView::HandleDropCommon`  
+**PORT:** A pose in the drag never highlights, so a drop on it resolves to the window's own folder: the rule falls out of the target test rather than needing a case of its own.  
+*Shell: desktop*  
 #### PVS-043 · important · open
 **Refused drops raise a specific alert instead of failing silently: onto the Disks/root window, onto a read-only volume, a copy into Trash, or a link into Trash.**  
 Four separate BAlerts in MoveSelectionInto, each B_WARNING_ALERT with Cancel and B_CLOSE_ON_ESCAPE; okToMove is cleared and the destination BEntry is deleted.  
@@ -2783,30 +2824,31 @@ BContainerWindow::NewArrangeByMenu appends a separator, Shortcuts()->ReverseOrde
 
 Architecture notes: [`spec/ARCH-fsutils.md`](spec/ARCH-fsutils.md)
 
-#### FS-001 · core · partial
+#### FS-001 · core · done
 **A drag-and-drop between two different folders moves the items when source and destination are on the same volume, and copies them when they are on different volumes.**  
 moveMode chosen by a fixed ladder: forceCopy -> kCopySelectionTo, forceMove -> kMoveSelectionTo, createRelativeLink, createLink, else !CheckDevicesEqual(srcList->ItemAt(0), destFolder) -> kCopySelectionTo, else kMoveSelectionTo. Device equality is tested on the FIRST source ref only.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** "Same volume" must be redefined: a device-namespace node and a local file are never the same store, so the default for any drop involving /dev must be an explicit decision, not a device-id compare.  
-**MISSING:** The same-volume/cross-volume decision ladder is implemented and tested (st_dev compare, force_copy first rung, device backends treated as one volume), but nothing invokes it: no item drag-and-drop between folders exists, so `tiku_trk_fs_drop_action` has no caller outside the tests.  (An earlier version of this line also claimed fs_copy and fs_move were called nowhere in the UI; that is false -- the Paste path calls both.)  
-*src/tiku_trk_fs.c:274 tiku_trk_fs_drop_action*  
-**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
-
-#### FS-002 · core · open
+**PORT:** The drop ladder now has a caller: a drag between two folder windows resolves move-or-copy from the engine's own same-store test.  
+*Shell: desktop*  
+#### FS-002 · core · partial
 **Holding Option while dropping forces a copy instead of a move.**  
 forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated after the destination checks and after any drop context menu.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **VERIFIER CORRECTION:** PoseView.cpp BPoseView::MoveSelectionInto:5091 — forceCopy |= (modifiers() & B_OPTION_KEY) happens after the same-folder shortcut and the drop context menu but BEFORE the destination checks (root / read-only volume / Trash). That ordering is load-bearing: Option-dropping onto the Trash trips the "Sorry, you can't copy items to the Trash." refusal at line 5117 instead of silently moving.  
 **CHECKED:** No modifier is ever bound to a drop: the drag path in tiku_trk_trk_app reads only Ctrl (grid snap) and Mod1 is bound to Option-open-closes-window, the force_copy parameter of tiku_trk_fs_drop_action is passed non-zero only by tests, and there is no Trash-copy refusal at all.  
-*none found*
-**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
-
-#### FS-003 · important · open
+*none found*  
+**PORT:** Control at the drop asks for a link, through the same tiku_trk_fs_link the Paste-links path uses.  
+**MISSING:** The relative-link modifier combination is not distinguished at a drop; links are absolute unless the caller asks otherwise.  
+*Shell: desktop*  
+#### FS-003 · important · partial
 **Dropping with the secondary mouse button opens a context menu offering Move here / Copy here / Create link here / Cancel; picking Cancel abandons the drop entirely.**  
 AddDropContextMenu builds the four items (kMoveSelectionTo, kCopySelectionTo, kCreateLink, kCancelButton); MoveSelectionInto maps the result to forceMove/forceCopy/createLink/createRelativeLink and returns on kCancelButton or any unrecognised result. Shift on the Create-link menu item yields kCreateRelativeLink.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
-**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
+**PORT:** A secondary-button drop puts up the Move/Copy/Link/Cancel menu, which had been built and tested with no caller since the menu work.  
+**MISSING:** The menu appears and menu_invoke dispatches Move/Copy/Link here to the held payload, but no script proves an item is reachable -- picking one needs the popup's item coordinates, which the harness cannot yet compute -- so the dispatch is written and unexercised.  A harness that can name a menu item would close this and several CW rows with it.
 
+*Shell: desktop*  
 #### FS-004 · important · partial
 **Dropping a selection into the folder it already lives in does not copy: in icon view it just repositions the icons, in list view it does nothing, and with Option held it duplicates instead.**  
 Guarded by *srcWindow->PoseView()->TargetModel()->NodeRef() == *destFolder->NodeRef(). forceCopy -> DuplicateSelection(&where,&loc); createLink/createRelativeLink -> return (no link in same folder); kListMode -> return; otherwise each selected pose is moved by delta = loc - where, pinned to grid if Command is held, and re-inserted into the vertical-sort list.  
@@ -3405,13 +3447,14 @@ CheckAppIconHint returns true if BEOS:ICON exists, or if BOTH BEOS:M:STD_ICON an
 **TIKU:** Becomes "does this VFS node advertise an icon descriptor"; the two-attribute mini+large rule disappears.
 **BLOCKED:** The same absence as MA-013: no node-carried icon exists to hint about (model.h:126-130). Icon lookup never touches the disk (pure function of the model, model.c:184-261), so the open-time hint has nothing to save; building it requires per-node icon descriptors to exist first.  
 
-#### MA-016 · important · open
+#### MA-016 · important · partial
 **Whether a pose highlights as a drop target depends on what it is: folders take anything, symlinks defer to their target, applications take only the types they declare, and everything else refuses.**  
 CanHandleDrops: directory or virtual directory -> kCanHandle; symlink -> resolve and recurse, refusing a self-referencing link to avoid infinite recursion; executable -> kNeedToCheckType; anything else -> kCannotHandle. IsDropTarget with a NULL document accepts any kCanHandle/kNeedToCheckType target; with traverse it re-reads the dropped file's type through the resolved entry.  
 `Model.cpp` → `Model::CanHandleDrops`  
-**TIKU:** Writable VFS nodes are drop targets for text/values, not for files. The capability bit (writable) replaces the executable/supported-types test.
-**SUBSYSTEM:** Drag-and-drop (file drops onto poses). No drop gesture exists in either shell: the only fs_move/fs_copy callers are the Paste path (desktop.c:1340-1346), icon drag only repositions poses (app.c:1667-1684), and grep drop_target/can_drop over src/ is empty. The drop context menu is already built and enablement-wired (cwmenu.c:346-361) but nothing can invoke it — kind-based target acceptance has nowhere to run.  
-
+**TIKU:** Writable VFS nodes are drop targets for text/values, not for files. The capability bit (writable) replaces the executable/supported-types test.  
+**PORT:** A writable container takes the drop and nothing else does, answered during the hover rather than after it.  
+**MISSING:** The per-kind ladder is coarse: symlinks are not resolved to their target before testing, and there is no per-type acceptance (a query, a printer, an application that opens what is dropped on it).  
+*Shell: desktop*  
 #### MA-017 · important · open
 **Application type matching is wildcard-aware and ranked: an exact type beats a supertype match, which beats a superhandler that accepts everything.**  
 MatchMimeTypeString: a handler type with no '/' is a supertype pattern and matches any document type whose supertype is equal (case-insensitive), returning kMatchSupertype; otherwise a full case-insensitive compare returns kMatch. IsSuperHandlerSignature is a case-insensitive compare against "application/octet-stream". SupportsMimeType returns the ranked constants kDoesNotSupportType < kSuperhandlerModel < kModelSupportsSupertype < kModelSupportsType, and with exactReason=false returns as soon as any match is found.  
