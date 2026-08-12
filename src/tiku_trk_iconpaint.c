@@ -103,3 +103,31 @@ tiku_trk_icon_paint_selected(tiku_desk_surface_t *s, const char *name, int x,
      * it conveys. */
     return paint(s, name, x, y, size, 0.35f, TIKU_DESK_C_SELECT);
 }
+
+void
+tiku_trk_thumb_paint(tiku_desk_surface_t *s, const tiku_trk_image_t *th,
+                     int x, int y, int size)
+{
+    int py, px;
+
+    if (s == NULL || th == NULL || th->px == NULL || size <= 0) {
+        return;
+    }
+    for (py = 0; py < size; py++) {
+        long sy = (long)py * th->h / size;
+
+        for (px = 0; px < size; px++) {
+            long sx = (long)px * th->w / size;
+            uint32_t p = th->px[sy * th->w + sx];
+
+            /* The transparent margin is left alone rather than painted:
+             * that is what makes the thumbnail sit ON the row instead of
+             * inside a square of its own (IV-034). */
+            if ((p >> 24) != 0u) {
+                tiku_desk_pixel(s, x + px, y + py,
+                                TIKU_DESK_RGB((p >> 16) & 0xffu,
+                                              (p >> 8) & 0xffu, p & 0xffu));
+            }
+        }
+    }
+}

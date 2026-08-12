@@ -28,6 +28,7 @@
 #include "tiku_trk_attr.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
+#include "tiku_trk_thumb.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -160,6 +161,7 @@ typedef struct desktop {
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
     char                 drop_dst[TIKU_TRK_PATH_MAX];
     tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
+    tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -303,13 +305,41 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
         {   /* A mini icon at the head of the name, as list mode has. */
             int mini = row_h - 2;
             int tx = row.x + 4;
+            int thumbed = 0;
 
             if (mini > MINI_ICON) {
                 mini = MINI_ICON;
             }
+            {   /* An image shows its own picture.  A HIT draws it; a
+                 * miss QUEUES the work and falls through to a type icon,
+                 * so the row is never waiting on a decode (IV-028,
+                 * IV-031). */
+                tiku_trk_image_t th;
+
+                if (tiku_trk_thumb_wanted(&fl->app->thumbs,
+                                          p->model.path)) {
+                    if (tiku_trk_thumb_fresh(fl->app->store, p->model.path,
+                                             p->model.facts.mtime) &&
+                        tiku_trk_thumb_load(fl->app->store, p->model.path,
+                                            &th) == 0) {
+                        tiku_trk_thumb_paint(s, &th, row.x + 2,
+                                             row.y + (row_h - mini) / 2,
+                                             mini);
+                        tiku_trk_image_free(&th);
+                        thumbed = 1;
+                    } else {
+                        (void)tiku_trk_thumb_queue(&fl->app->thumbs,
+                                                   p->model.path,
+                                                   p->model.facts.size,
+                                                   mini);
+                    }
+                }
+            }
             /* A link with nowhere to go is drawn faded: the art is the same
              * as a live link's, so the state has to show some other way. */
-            if (((p->model.facts.link_broken || cut)
+            if (thumbed) {
+                tx = row.x + 2 + mini + 4;
+            } else if (((p->model.facts.link_broken || cut)
                      ? tiku_trk_icon_paint_dim(s,
                            tiku_trk_model_icon_name(&p->model), row.x + 2,
                            row.y + (row_h - mini) / 2, mini, 0.55f,
@@ -1927,6 +1957,7 @@ main(int argc, char **argv)
     tiku_trk_select_init(&app.sel);
     tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_store_memory_open();
+    tiku_trk_thumb_init(&app.thumbs);
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether
@@ -3150,6 +3181,11 @@ sel_done:
             }
         }
 
+        if (tiku_trk_thumb_step(&app.thumbs, app.store)) {
+            /* One picture per turn, on the idle tick: the window keeps
+             * answering while a folder of images fills in (IV-031). */
+            app.dirty = 1;
+        }
         if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL) {
             /* Auto-scroll.  The band is OUTSIDE the list, which is what
              * makes it reachable: a drag that has to leave the view to

@@ -4551,63 +4551,58 @@ The list-mode PointInPose overload returns true for any point inside _ListIconRe
 **PORT:** List-mode hit testing maps y to a row across the full row width including the icon strip with no alpha test, and a separate column scan then reports whether the name widget was hit, which is what arms the rename — both clauses present (the scan's origin is BORDER rather than BORDER+start_offset, so its boundaries sit ~21 px left of the drawn columns, a fidelity slip inside an implemented rule).  
 *src/tiku_trk_app.c:758-772 (row_at) and :1326-1341 (column scan) feeding :1364 on_name -> name_clicked*
 
-#### IV-028 · core · open
+#### IV-028 · core · partial
 **Image files show a thumbnail of their contents instead of a type icon.**  
 GetNodeIcon calls GetThumbnailFromAttr before GetFileIconFromAttr for non-executables; ShouldGenerateThumbnail gates on the 'Generate image thumbnails' setting (default true) AND the MIME type case-insensitively starting with "image".  
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr / ShouldGenerateThumbnail`  
-**TIKU:** Translator-based decode does not exist on TikuOS; decide which formats (if any) generate thumbnails and whether generation is even affordable.
-**SUBSYSTEM:** thumbnails: grep -ri thumb src/ returns nothing — no image decoder, no generation path, no gating setting anywhere in the port  
-
-#### IV-029 · core · open
+**TIKU:** Translator-based decode does not exist on TikuOS; decide which formats (if any) generate thumbnails and whether generation is even affordable.  
+**PORT:** An image row shows its own picture; the gate is the setting and then the file's kind, and a miss queues the work instead of doing it.  
+**MISSING:** Recognised by EXTENSION, not by MIME type -- the port has no type registry -- and only BMP and stored-deflate PNG decode.  A compressed PNG or a JPEG is recognised and refused (TIKU_TRK_IMG_UNSUPPORTED) rather than half-read; both need a real inflate and a JPEG decoder.  
+*Shell: desktop*  
+#### IV-029 · core · done
 **A cached thumbnail is reused only while the file has not been modified since the thumbnail was made.**  
 GetThumbnailFromAttr compares the Media:Thumbnail:CreationTime attribute (B_TIME_TYPE, int64) against the node's modification time; it must be strictly greater. Otherwise every attribute whose name starts with "Media:Thumbnail" is removed and the thumbnail is regenerated.  
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr`  
-**TIKU:** Attribute-carried thumbnails have no equivalent for read-only/device nodes; a side cache keyed by node identity plus mtime is the likely replacement.
-**SUBSYSTEM:** thumbnails: no thumbnail exists to cache or invalidate (grep -ri thumb src/: nothing), and no mtime-keyed side cache exists either  
-
-#### IV-030 · important · open
+**TIKU:** Attribute-carried thumbnails have no equivalent for read-only/device nodes; a side cache keyed by node identity plus mtime is the likely replacement.  
+**PORT:** The stamp must be STRICTLY newer than the file: a thumbnail made in the same second as an edit is not evidence the edit is in it.  
+#### IV-030 · important · differs
 **Thumbnails are stored on the file itself as a 128x128 WebP image.**  
 GenerateThumbnailJob::Execute scales to B_XXL_ICON (redefined to 128 in this file), translates to B_WEBP_FORMAT and writes it to the kAttrThumbnail ("Media:Thumbnail") attribute as B_RAW_TYPE, plus the creation time. Reading back at exactly 128 imports without rescaling; any other size is down-scaled.  
-`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnailJob::Execute`
-**SUBSYSTEM:** thumbnails: no thumbnail generation or storage exists (grep -ri thumb src/: nothing; no WebP or any image encoder in the tree)  
-
-#### IV-031 · core · open
+`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnailJob::Execute`  
+**PORT:** 128 square as the row says, but the pixels live in a cache beside the state store rather than on the file, and raw rather than WebP.  There is no WebP encoder, so the choice was 64 KB of raw pixels per file in an attribute store whose values cap at 4 KB, or a blob cache.  The cap is a decision about what attributes are FOR, and bulk data is not it.  The stamp and the dimensions stay attributes, so freshness remains a property of the file itself.  
+#### IV-031 · core · done
 **Generating a thumbnail never blocks the window; the pose shows a type icon and switches to the thumbnail when it is ready.**  
 GenerateThumbnail returns B_BUSY after queueing; GetNodeIcon treats B_BUSY specially (it does not fall through to GetFileIconFromAttr), so the lookup proceeds to type-based icons for now. Workers run as spawned threads over a JobQueue.  
-`src/kits/tracker/IconCache.cpp` → `IconCache::GetNodeIcon`
-**SUBSYSTEM:** thumbnails: no generation exists to make non-blocking — grep -ri thumb src/ returns nothing and there is no job queue or worker thread anywhere in the port  
-
-#### IV-032 · important · open
+`src/kits/tracker/IconCache.cpp` → `IconCache::GetNodeIcon`  
+**PORT:** A miss queues and draws a type icon; the queue is stepped one job per idle turn, so a folder of images fills in while the window answers.  
+*Shell: desktop*  
+#### IV-032 · important · done
 **Big images are thumbnailed on a separate queue from small ones so one huge file cannot stall the rest.**  
 GenerateThumbnail picks sThumbnailWorkers[LARGER_FILES_WORKER] when st_size >= 128 * 1024, else SMALLER_FILES_WORKER; each queue's worker thread is spawned lazily at B_NORMAL_PRIORITY.  
-`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnail`
-**SUBSYSTEM:** thumbnails: no thumbnail workers exist at all (grep -ri thumb src/: nothing), so there are no queues to split by file size  
-
-#### IV-033 · important · open
+`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnail`  
+**PORT:** Past 128 KB a file goes on the second queue, and a step always takes the small queue first -- one enormous image cannot hold up the dozen small ones behind it.  
+#### IV-033 · important · done
 **The same file is never thumbnailed twice concurrently.**  
 GenerateThumbnail scans the sActiveJobs list (guarded by sActiveJobsLock) for a job with the same node_ref and returns B_BUSY if found; jobs add/remove themselves in their ctor/dtor.  
-`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnail`
-**SUBSYSTEM:** thumbnails: no thumbnail jobs exist (grep -ri thumb src/: nothing), so concurrent-duplicate suppression has no subject  
-
-#### IV-034 · important · open
+`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnail`  
+**PORT:** A path already queued or running is refused, which is what stops two windows on one folder both asking for the same picture.  
+#### IV-034 · important · done
 **A thumbnail preserves the image's aspect ratio, centred inside the square icon with transparent margins.**  
 ThumbBounds computes a wide or tall sub-rect of the icon bounds and offsets it by half the leftover; ScaleBitmap fills with B_TRANSPARENT_COLOR then draws with B_OP_ALPHA / B_ALPHA_COMPOSITE and B_FILTER_BITMAP_BILINEAR.  
-`src/kits/tracker/Thumbnails.cpp` → `ThumbBounds / ScaleBitmap`
-**SUBSYSTEM:** thumbnails: no scaling or thumbnail compositing code exists (grep -ri thumb src/: nothing)  
-
-#### IV-035 · polish · open
+`src/kits/tracker/Thumbnails.cpp` → `ThumbBounds / ScaleBitmap`  
+**PORT:** The longer side sets the scale and the margins are left fully transparent by construction -- calloc, not a fill -- so the thumbnail sits on the row rather than inside a square of its own.  
+#### IV-035 · polish · partial
 **Thumbnailing an image also records its pixel dimensions on the file, and gives up quietly on volumes that reject attributes.**  
 Execute writes Media:Width (B_INT32_TYPE) first; only if exactly sizeof(int32) bytes were written does it write Media:Height and the thumbnail itself.  
-`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnailJob::Execute`
-**SUBSYSTEM:** thumbnails: nothing writes Media:Width/Media:Height or any thumbnail attribute (grep -ri 'thumb\|Media:' src/: nothing)  
-
-#### IV-036 · important · open
+`src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnailJob::Execute`  
+**PORT:** The source's pixel dimensions are recorded alongside the thumbnail, and a store that refuses is not an error.  
+**MISSING:** Nothing reads the dimensions back yet -- no column and no Get Info panel to show them in.  
+#### IV-036 · important · done
 **When the thumbnail cannot be persisted the icon still refreshes on screen.**  
 If the attribute write failed, Execute posts kUpdateThumbnail with the node_ref to be_app; TTracker walks every open container window, finds the pose by node_ref and calls BPoseView::UpdateIcon, stopping at the first match. When the write succeeded, node monitoring does it instead.  
 `src/kits/tracker/Tracker.cpp` → `TTracker::MessageReceived, case kUpdateThumbnail`  
-**TIKU:** The VFS watch notification (TIKU_EVENT_VFS) replaces node monitoring here; the explicit message path is still needed for nodes that cannot be watched.
-**SUBSYSTEM:** thumbnails: there is no thumbnail persistence to fail nor a kUpdateThumbnail-style refresh message (grep -ri thumb src/: nothing)  
-
+**TIKU:** The VFS watch notification (TIKU_EVENT_VFS) replaces node monitoring here; the explicit message path is still needed for nodes that cannot be watched.  
+**PORT:** The job runs and counts whether or not the store took the result; a null store is exercised by a test rather than assumed.  
 #### IV-037 · important · open
 **A file that already carries a thumbnail is known up-front to have its own icon.**  
 Model::FinishSettingUpType sets fIconFrom = kNode when GetAttrInfo(kAttrThumbnail) succeeds or ShouldGenerateThumbnail(type) is true, so the node path is taken on the very first draw.  
@@ -5114,13 +5109,13 @@ Default off. While on, Tab-based type-select is disabled in list mode. If the pr
 **MISSING:** Type-to-filter genuinely swaps for type-to-select (tiku_trk_poseview_type_ahead branches on v->filtering), it is off by default, and turning it off drops the terms and rebuilds the listing — but it is a per-view runtime mode toggled by Tab in one window, so the stated clauses "Tab-based type-select is disabled" and "filtering is stopped on every open view via the notice" have no counterpart at all.  
 *src/tiku_trk_poseview.c:1205-1228 (filter-vs-select branch) and :1318-1333 (set_filtering drops terms); src/tiku_trk_app.c:908-912 (Tab is the per-view toggle, no cross-view propagation)*
 
-#### TS-053 · polish · open
+#### TS-053 · polish · partial
 **"Generate image thumbnails" controls whether image files show a thumbnail instead of a type icon.**  
 Default on; consulted per file when deciding whether a thumbnail should be produced.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kGenerateImageThumbnailsChanged)`  
-**TIKU:** Thumbnail generation is a per-node capability question in a device namespace; nodes without readable bulk content must not be probed.
-**SUBSYSTEM:** Thumbnails. No thumbnail code exists (grep -i thumb over src/ returns nothing); icon art is chosen purely from the model kind/type via a static compiled HVIF set (src/tiku_trk_model.c:203-243 icon_name mapping; src/tiku_trk_icons.c is a generated static table) and no file content is ever decoded into an image. With no thumbnail production there is no per-file decision for the setting to gate, and no setting exists either.  
-
+**TIKU:** Thumbnail generation is a per-node capability question in a device namespace; nodes without readable bulk content must not be probed.  
+**PORT:** The setting exists and gates thumbnailing, on by default.  
+**MISSING:** Nothing surfaces it: there is no preferences window to turn it off from, so it can only be changed in code (the preferences subsystem).  
 #### TS-054 · important · open
 **"Show space bars on volumes" draws a used/free capacity bar on volume icons, with three user-chosen colours.**  
 Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0, all with alpha 192 (the alpha is forced to 192 on every pick because BColorControl ignores alpha but equality checks do not). The bar is drawn along the right edge of the icon, 7/32 of icon width (min 4px); the warning colour replaces the used colour when free space is below 5%. Toggling the setting or a colour makes Tracker force a periodic update of all volume poses; with the setting off, Tracker's Pulse skips that update entirely.  

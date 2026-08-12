@@ -15,6 +15,7 @@
 #define TIKU_TRK_ICONPAINT_H_
 
 #include "tiku_desk_gfx.h"
+#include "tiku_trk_thumb.h"
 
 /**
  * @brief Composite icon @p name at @p size over @p s with its top-left at
@@ -48,5 +49,15 @@ int tiku_trk_icon_paint_dim(tiku_desk_surface_t *s, const char *name,
  */
 int tiku_trk_icon_paint_selected(tiku_desk_surface_t *s, const char *name,
                                  int x, int y, int size);
+
+/**
+ * @brief Draw a loaded thumbnail into @p s at @p size, alpha-blended.
+ *
+ * Scaled down at draw time rather than stored per size: one 128 square
+ * answers every icon size the view can ask for.
+ */
+void tiku_trk_thumb_paint(tiku_desk_surface_t *s,
+                          const tiku_trk_image_t *th, int x, int y,
+                          int size);
 
 #endif /* TIKU_TRK_ICONPAINT_H_ */

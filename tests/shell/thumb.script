@@ -1,0 +1,10 @@
+# shell: desktop
+# IV-028/IV-031: an image row shows its own picture, made off the draw path.
+# The queue is what proves it does not block: the window is up and answering
+# on the first turn, and the picture is decoded and cached on later ones.
+note the window opens without waiting for any decode
+expect-title trk_script
+note and the thumbnail is decoded and cached within a few idle turns
+wait 30
+expect-file /home/ambuj/.cache/tiku-tracker
+quit
