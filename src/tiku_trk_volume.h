@@ -31,6 +31,11 @@ typedef struct {
     int      read_only;
     int      is_boot;               /* the volume "/" lives on           */
     int      removable;             /* can be unmounted at all           */
+    /* The filesystem's type, which the scan already had to read in order to
+     * reject the kernel's own bookkeeping ones, and which is the only place
+     * "this is a share rather than a disk" can come from. */
+    char     fstype[24];
+    int      shared;
     uint64_t total, avail;
 } tiku_trk_volume_t;
 
@@ -88,6 +93,17 @@ int tiku_trk_volume_may_write(const tiku_trk_volumes_t *vs, const char *path,
 int tiku_trk_volume_shows_icon(const tiku_trk_volumes_t *vs,
                                const tiku_trk_volume_t *v);
 
+/**
+ * @brief Whether a filesystem type names something served over a network.
+ *
+ * The one fact that separates a share from a disk, and the only place it
+ * can come from: nothing about the mount point says it.
+ */
+int tiku_trk_volume_shared_type(const char *fstype);
+
+/** @brief The flags a model on @p v should carry (TIKU_TRK_VOL_*). */
+unsigned tiku_trk_volume_flags(const tiku_trk_volume_t *v);
+
 /** @brief Below this share free, the bar warns (TS-054). */
 #define TIKU_TRK_VOLUME_WARN_PCT 5
 
@@ -117,5 +133,47 @@ tiku_trk_space_t tiku_trk_volume_space(const tiku_trk_volume_t *v,
  */
 tiku_trk_space_t tiku_trk_volume_space_facts(uint64_t total, uint64_t avail,
                                              int *used_pct);
+
+/*---------------------------------------------------------------------------*/
+/* Watching what is mounted (PVN-008, PVN-043)                               */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief What a poll of the mount table found.
+ *
+ * There is no mount NOTIFICATION on either target: the host publishes a
+ * table and the device has no concept of mounting at all.  So the notice is
+ * derived, the way the port derives every other notice -- by diffing a
+ * re-reading against what was there before.  The vocabulary is the real
+ * one, and a channel that can push these would replace only the source.
+ */
+typedef struct {
+    tiku_trk_volumes_t was;
+    int                primed;
+} tiku_trk_volwatch_t;
+
+/** @brief How many changes one poll will report. */
+#define TIKU_TRK_VOLWATCH_MAX 8
+
+/** @brief One volume that arrived or left. */
+typedef struct {
+    tiku_trk_volume_t v;
+    int               mounted;      /* 1 arrived, 0 left                 */
+} tiku_trk_volchange_t;
+
+/** @brief Take the current table as the baseline; reports nothing. */
+void tiku_trk_volwatch_init(tiku_trk_volwatch_t *w);
+
+/**
+ * @brief Re-read the table and report what moved.
+ *
+ * Keyed on the MOUNT POINT and the device together: the same directory with
+ * a different device behind it is one volume leaving and another arriving,
+ * not a volume that stayed.
+ *
+ * @return how many changes were written.
+ */
+int tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w,
+                           tiku_trk_volchange_t *out, int max);
 
 #endif /* TIKU_TRK_VOLUME_H_ */

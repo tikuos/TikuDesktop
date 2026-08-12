@@ -183,6 +183,9 @@ typedef struct desktop {
     tiku_trk_nodeicon_t  nicons;
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
+    /* What is mounted, and what it was last time we looked: the port's
+     * only source of mount and unmount notices (PVN-008). */
+    tiku_trk_volwatch_t  volwatch;
     tiku_trk_panel_t     fpanel;
     tiku_trk_win_t      *fpanel_win;
     tiku_trk_poseview_t *fpanel_view;
@@ -323,6 +326,60 @@ pose_icon_hit(const tiku_trk_model_t *m, int size, int px, int py, void *ctx)
 }
 
 /**
+ * @brief The capacity bar of a volume pose, inside its icon rect.
+ *
+ * Down the RIGHT edge of the icon in an icon mode and along the bottom in a
+ * list row, which is where each has room: a horizontal bar under a 32 px
+ * icon would sit on the name.
+ */
+static void
+draw_space_bar(desktop_t *app, tiku_desk_surface_t *s,
+               const tiku_trk_model_t *m, int ix, int iy, int size,
+               int vertical)
+{
+    tiku_desk_rect_t bar;
+    int used = 0;
+    tiku_trk_space_t which = tiku_trk_volume_space_facts(m->facts.total,
+                                                        m->facts.avail,
+                                                        &used);
+    const char *key = (which == TIKU_TRK_SPACE_WARNING)
+                          ? "WarningSpaceColor" : "UsedSpaceColor";
+    int32_t c = tiku_trk_prefs_get(&app->prefs, key);
+    uint32_t fc = (uint32_t)tiku_trk_prefs_get(&app->prefs,
+                                               "FreeSpaceColor");
+    int thick = (size >= 32) ? (7 * (size + 1)) / 32 : 3;
+
+    if (thick < 2) {
+        thick = 2;
+    }
+    if (vertical) {
+        bar.x = ix + size - thick;
+        bar.y = iy;
+        bar.w = thick;
+        bar.h = size;
+    } else {
+        bar.x = ix;
+        bar.y = iy + size - 3;
+        bar.w = size;
+        bar.h = 3;
+    }
+    tiku_desk_fill(s, bar, TIKU_DESK_RGB((fc >> 16) & 0xffu,
+                                        (fc >> 8) & 0xffu, fc & 0xffu));
+    /* The USED part grows from the same edge the bar is anchored to, so a
+     * nearly-full disk reads as nearly full at a glance. */
+    if (vertical) {
+        bar.h = size * used / 100;
+    } else {
+        bar.w = size * used / 100;
+    }
+    if (bar.w > 0 && bar.h > 0) {
+        tiku_desk_fill(s, bar, TIKU_DESK_RGB(((uint32_t)c >> 16) & 0xffu,
+                                             ((uint32_t)c >> 8) & 0xffu,
+                                             (uint32_t)c & 0xffu));
+    }
+}
+
+/**
  * @brief Draw one pose as an icon with its name under it (CW-065).
  *
  * The coordinates are the VIEW's, so the caller subtracts the origin: a
@@ -352,6 +409,13 @@ draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
                                       TIKU_DESK_C_DOC);
     } else {
         (void)tiku_trk_icon_paint(s, art, ix, iy, iw);
+    }
+    if (p->model.kind == TIKU_TRK_KIND_VOLUME &&
+        tiku_trk_prefs_get(&app->prefs, "ShowVolumeSpaceBar")) {
+        /* An icon-mode ornament in the original, and it was drawn only in
+         * the list rows here -- so the mode the bar was designed for was
+         * the one mode that had none (IV-045). */
+        draw_space_bar(app, s, &p->model, ix, iy, iw, 1);
     }
     /* The label is filled behind when selected, not the whole cell: in an
      * icon mode the cell is mostly empty, and a filled cell would read as a
@@ -482,38 +546,8 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
                  * the FACTS the store already read, so a listing of a
                  * dozen volumes is a dozen rows and not a dozen
                  * statvfs calls (PVL-072, TS-054). */
-                tiku_desk_rect_t bar;
-                int used = 0;
-                tiku_trk_space_t which =
-                    tiku_trk_volume_space_facts(p->model.facts.total,
-                                                p->model.facts.avail,
-                                                &used);
-                const char *key = (which == TIKU_TRK_SPACE_WARNING)
-                                      ? "WarningSpaceColor"
-                                      : "UsedSpaceColor";
-                int32_t c = tiku_trk_prefs_get(&fl->app->prefs, key);
-
-                bar.x = row.x + 2;
-                bar.y = row.y + row_h - 5;
-                bar.w = mini;
-                bar.h = 3;
-                {   /* The settings hold 0xAARRGGBB; the surface wants
-                     * three channels, and the alpha is the original's
-                     * forced 192 rather than anything a picker chose. */
-                    uint32_t fc = (uint32_t)tiku_trk_prefs_get(
-                                      &fl->app->prefs, "FreeSpaceColor");
-
-                    tiku_desk_fill(s, bar,
-                        TIKU_DESK_RGB((fc >> 16) & 0xffu,
-                                      (fc >> 8) & 0xffu, fc & 0xffu));
-                }
-                bar.w = mini * used / 100;
-                if (bar.w > 0) {
-                    tiku_desk_fill(s, bar,
-                        TIKU_DESK_RGB(((uint32_t)c >> 16) & 0xffu,
-                                      ((uint32_t)c >> 8) & 0xffu,
-                                      (uint32_t)c & 0xffu));
-                }
+                draw_space_bar(app, s, &p->model, row.x + 2,
+                               row.y + (row_h - mini) / 2 + 2, mini, 0);
             }
             {   /* An image shows its own picture.  A HIT draws it; a
                  * miss QUEUES the work and falls through to a type icon,
@@ -3555,6 +3589,7 @@ main(int argc, char **argv)
     app.store = tiku_trk_store_memory_open();
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
+    tiku_trk_volwatch_init(&app.volwatch);
     /* Not zero: slot 0 is a real window, and "0" would mean the first info
      * window opens with its name already being edited. */
     app.info_renaming = -1;
@@ -5628,6 +5663,62 @@ sel_done:
                     changed++;
                 } else if (pf != TIKU_TRK_NOTIFY_NOTHING) {
                     changed++;
+                }
+            }
+            {   /* What has been mounted or unmounted since the last look.
+                 * Polled with everything else rather than on a timer of its
+                 * own: a volume arriving is a change like any other. */
+                tiku_trk_volchange_t vc[TIKU_TRK_VOLWATCH_MAX];
+                int nv = tiku_trk_volwatch_poll(&app.volwatch, vc,
+                                                TIKU_TRK_VOLWATCH_MAX);
+                int k;
+
+                for (k = 0; k < nv; k++) {
+                    if (vc[k].mounted) {
+                        /* A folder window showing the parent finds it by
+                         * re-listing, which the poll above already did.
+                         * Nothing else to do until there is a Desktop to
+                         * put an icon on (PVN-040). */
+                        changed++;
+                        continue;
+                    }
+                    /* Unmounted.  A window ON the volume closes -- and its
+                     * arrangement is deliberately NOT saved, because the
+                     * disk it belongs to has gone; a window merely SHOWING
+                     * rows from it drops those rows (PVN-043). */
+                    for (i = 0; i < app.folder_count; i++) {
+                        folder_t *fl = &app.folders[i];
+
+                        if (fl->win == NULL || !fl->win->open) {
+                            continue;
+                        }
+                        if (strncmp(fl->path, vc[k].v.mount,
+                                    strlen(vc[k].v.mount)) == 0) {
+                            fl->gone = 1;
+                            tiku_trk_desk_close(app.desk, fl->win);
+                            changed++;
+                        } else if (tiku_trk_poseview_device_gone(fl->view,
+                                       (uint64_t)vc[k].v.dev) > 0) {
+                            changed++;
+                        }
+                    }
+                    if (app.fpanel_win != NULL && app.fpanel_win->open &&
+                        strncmp(app.fpanel.dir, vc[k].v.mount,
+                                strlen(vc[k].v.mount)) == 0) {
+                        /* A picker jumps home rather than closing: it is
+                         * in the middle of a question (PVN-043). */
+                        tiku_trk_panel_dir_gone(&app.fpanel, app.backend);
+                        fpanel_reload(&app, NULL);
+                        changed++;
+                    }
+                    for (i = 0; i < INFO_MAX; i++) {
+                        if (app.info[i].used &&
+                            app.info[i].model.facts.dev ==
+                                (uint64_t)vc[k].v.dev) {
+                            info_close(&app, i);
+                            changed++;
+                        }
+                    }
                 }
             }
             for (i = 0; i < INFO_MAX; i++) {

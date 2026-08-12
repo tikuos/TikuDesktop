@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_trk_fs.h"
 #include "tiku_trk_volume.h"
 
 static int fails;
@@ -176,6 +177,158 @@ main(void)
         s1.avail = 0;
         check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_WARNING &&
               pct == 100, "PVL-072", "and a full one is full");
+    }
+
+    printf("\na whole disk is not an item (FS-041)\n");
+    {
+        tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+        tiku_trk_fs_t *fs = tiku_trk_fs_new(b);
+        char msg[240];
+        const char *one[1];
+
+        /* "/" is a mount point on any host this runs on. */
+        check(tiku_trk_fs_check_move(fs, "/", "/tmp", msg, sizeof msg) ==
+              TIKU_TRK_REFUSE_VOLUME, "FS-041",
+              "a volume is refused by the gate every copy and move passes "
+              "-- and NOT as a failure afterwards: a mount point moved off "
+              "its own device gets EXDEV, and the fallback copies every "
+              "byte of the disk and then deletes what it copied from");
+        check(strstr(msg, "disk") != NULL &&
+              strstr(msg, "unmounted") != NULL, "FS-041",
+              "and it says what the gesture MEANS -- unmount -- rather "
+              "than reporting an error for something it should not have "
+              "attempted");
+        check(tiku_trk_fs_check_move(fs, "/tmp", "/", msg, sizeof msg) ==
+              TIKU_TRK_REFUSE_VOLUME ||
+              tiku_trk_fs_check_move(fs, "/etc", "/tmp", msg,
+                                     sizeof msg) == TIKU_TRK_REFUSE_NONE,
+              "FS-041",
+              "an ordinary directory is not refused by this rule");
+        one[0] = "/";
+        (void)tiku_trk_fs_trash(fs, one, 1);
+        {
+            const tiku_trk_progress_t *pr = tiku_trk_fs_progress(fs);
+
+            check(pr->skipped == 1 && strstr(pr->error, "disk") != NULL,
+                  "FS-041",
+                  "and the Trash refuses it too, which the copy/move gate "
+                  "cannot say because it never runs for a trash or a "
+                  "delete -- a disk trashed as a directory is a disk "
+                  "emptied into its own Trash");
+        }
+        tiku_trk_fs_free(fs);
+        tiku_trk_backend_close(b);
+    }
+
+    printf("\nwatching what is mounted (PVN-008)\n");
+    {
+        tiku_trk_volwatch_t w;
+        tiku_trk_volchange_t ch[TIKU_TRK_VOLWATCH_MAX];
+
+        {   /* Never looked before: the first poll is the baseline, not a
+             * report that every volume on the machine has just arrived. */
+            tiku_trk_volwatch_t fresh;
+
+            memset(&fresh, 0, sizeof fresh);
+            check(tiku_trk_volwatch_poll(&fresh, ch,
+                                         TIKU_TRK_VOLWATCH_MAX) == 0,
+                  "PVN-008",
+                  "the first look reports nothing: it IS the baseline, and "
+                  "a shell that opened to a flood of mount notices would "
+                  "act on every disk in the machine at startup");
+            check(fresh.primed && fresh.was.n > 0, "PVN-008",
+                  "having taken one");
+        }
+        tiku_trk_volwatch_init(&w);
+        check(tiku_trk_volwatch_poll(&w, ch, TIKU_TRK_VOLWATCH_MAX) == 0,
+              "PVN-008",
+              "a poll with nothing moved reports nothing");
+        {   /* One taken out of the baseline by hand reads as an unmount. */
+            tiku_trk_volume_t kept = w.was.v[w.was.n - 1];
+
+            w.was.n--;
+            check(tiku_trk_volwatch_poll(&w, ch, TIKU_TRK_VOLWATCH_MAX) == 1
+                  && ch[0].mounted == 1 &&
+                  strcmp(ch[0].v.mount, kept.mount) == 0, "PVN-008",
+                  "a volume the baseline has not seen reads as a mount");
+            check(tiku_trk_volwatch_poll(&w, ch,
+                                         TIKU_TRK_VOLWATCH_MAX) == 0,
+                  "PVN-008",
+                  "and only once: the baseline moves whether or not the "
+                  "caller had room, or a change dropped for want of space "
+                  "would be reported for ever");
+        }
+        {   /* The same mount point with a different device is two events. */
+            tiku_trk_volwatch_t w2;
+
+            tiku_trk_volwatch_init(&w2);
+            w2.was.v[0].dev ^= 0xffu;
+            {
+                int n = tiku_trk_volwatch_poll(&w2, ch,
+                                               TIKU_TRK_VOLWATCH_MAX);
+                int went = 0, came = 0, k;
+
+                for (k = 0; k < n; k++) {
+                    if (ch[k].mounted) { came++; } else { went++; }
+                }
+                check(went == 1 && came == 1, "PVN-008",
+                      "a mount point whose DEVICE changed is one volume "
+                      "leaving and another arriving, not a volume that "
+                      "stayed -- which is what an eject-and-replace is");
+            }
+        }
+    }
+
+    printf("\na disk's name is the disk's (MA-052)\n");
+    {
+        tiku_trk_backend_t *b2 = tiku_trk_backend_posix_open();
+        tiku_trk_fs_t *fs2 = tiku_trk_fs_new(b2);
+        char err[240];
+
+        check(tiku_trk_fs_rename(fs2, "/", "Boot", err, sizeof err) != 0 &&
+              strstr(err, "disk") != NULL, "MA-052",
+              "renaming a volume is refused rather than attempted: the "
+              "entry it is mounted on is not its name, so renaming the "
+              "entry would move the mount point and leave the disk called "
+              "what it was");
+        tiku_trk_fs_free(fs2);
+        tiku_trk_backend_close(b2);
+    }
+
+    printf("\na share is not a disk (IV-006)\n");
+    {
+        tiku_trk_volume_t s2;
+        tiku_trk_model_t m;
+
+        check(tiku_trk_volume_shared_type("nfs4") &&
+              tiku_trk_volume_shared_type("cifs") &&
+              tiku_trk_volume_shared_type("fuse.sshfs"), "IV-006",
+              "a filesystem served over a network is recognised by its "
+              "TYPE -- nothing about the mount point says it");
+        check(!tiku_trk_volume_shared_type("ext4") &&
+              !tiku_trk_volume_shared_type("vfat") &&
+              !tiku_trk_volume_shared_type(""), "IV-006",
+              "and an ordinary one is not");
+
+        memset(&s2, 0, sizeof s2);
+        memset(&m, 0, sizeof m);
+        m.kind = TIKU_TRK_KIND_VOLUME;
+        s2.shared = 1;
+        m.facts.vol_flags = tiku_trk_volume_flags(&s2);
+        check(strcmp(tiku_trk_model_icon_name(&m), "share") == 0, "IV-006",
+              "a share gets the share art, which the set has always "
+              "carried and nothing ever selected");
+        s2.shared = 0;
+        s2.is_boot = 1;
+        m.facts.vol_flags = tiku_trk_volume_flags(&s2);
+        check(strcmp(tiku_trk_model_icon_name(&m), "root") == 0, "IV-006",
+              "the boot volume gets the root art -- read off the volume "
+              "table rather than off the path, so a boot volume mounted "
+              "somewhere unusual is still the boot volume");
+        s2.is_boot = 0;
+        m.facts.vol_flags = tiku_trk_volume_flags(&s2);
+        check(strcmp(tiku_trk_model_icon_name(&m), "volume") == 0, "IV-006",
+              "and any other disk gets the plain one");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the volume model holds");

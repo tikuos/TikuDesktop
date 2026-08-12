@@ -79,6 +79,12 @@ typedef struct {
      * space question all ask it, and a statvfs per draw would be one per
      * frame.  Both zero on anything that is not a volume. */
     uint64_t total, avail;
+    /* Which filesystem the entry is ON, and what that filesystem allows.
+     * Carried rather than re-derived: "every window showing something on
+     * the volume that just left" cannot be asked of a path, and re-stat()ing
+     * for st_dev on every drop question is a syscall per question. */
+    uint64_t dev;
+    unsigned vol_flags;
     int64_t  size;
     int64_t  mtime;
     /* Whether the node carries a picture of its own, asked ONCE when the
@@ -87,6 +93,12 @@ typedef struct {
      * that as "no icon" is how a file's own art silently never appears. */
     int      icon_hint;
 } tiku_trk_facts_t;
+
+/** @brief What facts.vol_flags says about the volume the entry is on. */
+#define TIKU_TRK_VOL_READ_ONLY 0x1u
+#define TIKU_TRK_VOL_BOOT      0x2u
+#define TIKU_TRK_VOL_REMOVABLE 0x4u
+#define TIKU_TRK_VOL_SHARED    0x8u   /* a network share, not a disk      */
 
 /** @brief The answers facts.icon_hint can hold. */
 #define TIKU_TRK_ICONHINT_UNASKED 0

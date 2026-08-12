@@ -504,6 +504,24 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
              * Trash -- copying a home directory would quietly do nothing. */
             continue;
         }
+        if ((op == TIKU_TRK_OP_TRASH || op == TIKU_TRK_OP_DELETE) &&
+            fs->backend->devid[0] == '\0') {
+            /* And a whole VOLUME, out loud.  The copy/move gate above does
+             * not run for these two ops, and a disk trashed as an ordinary
+             * directory is a disk emptied: its own Trash is inside it, so
+             * the move either fails or copies the volume into itself. */
+            tiku_trk_volumes_t vs;
+
+            if (tiku_trk_volumes_scan(&vs) > 0 &&
+                tiku_trk_volume_is_root(&vs, paths[i])) {
+                snprintf(fs->prog.error, sizeof fs->prog.error,
+                         "\"%.40s\" is a disk, not an item: it can be "
+                         "unmounted but not moved, copied or deleted.",
+                         leaf_of(paths[i]));
+                fs->prog.skipped++;
+                continue;
+            }
+        }
         snprintf(fs->queue[fs->qcount++], TIKU_TRK_PATH_MAX, "%s", paths[i]);
     }
     fs->qcursor = 0;
@@ -1248,6 +1266,30 @@ tiku_trk_fs_check_move(tiku_trk_fs_t *fs, const char *src, const char *dst_dir,
             snprintf(msg, max, "You can't move or copy the trash.");
         }
         return TIKU_TRK_REFUSE_TRASH;
+    }
+    /*
+     * A whole VOLUME is not an item.  Refused here, at the one gate every
+     * copy and move passes, because the alternative is not a failure: a
+     * mount point moved off its own device gets rename(EXDEV), and the
+     * fallback copies every byte of the volume and then deletes what it
+     * copied from.  Dragging a disk to the Trash must not empty the disk.
+     */
+    if (fs->backend->devid[0] == '\0') {
+        tiku_trk_volumes_t vs;
+
+        if (tiku_trk_volumes_scan(&vs) > 0 &&
+            tiku_trk_volume_is_root(&vs, src)) {
+            if (msg != NULL) {
+                /* What the gesture MEANS is unmount, which this port
+                 * cannot do -- so it says what it cannot do rather than
+                 * doing something else. */
+                snprintf(msg, max,
+                         "\"%.40s\" is a disk, not an item: it can be "
+                         "unmounted but not moved, copied or deleted.",
+                         leaf_of(src));
+            }
+            return TIKU_TRK_REFUSE_VOLUME;
+        }
     }
     /* Into ITSELF, or into anything underneath it.  Tested on the source
      * directory, because that is the thing that would end up inside a copy
@@ -2060,6 +2102,35 @@ tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path, const char *new_name,
     }
     if (!tiku_trk_fs_name_ok(new_name, err, errmax)) {
         return -1;
+    }
+    if (fs->backend->devid[0] == '\0') {
+        tiku_trk_volumes_t vs;
+        char why[200];
+
+        if (tiku_trk_volumes_scan(&vs) > 0) {
+            /* A volume's name is the FILESYSTEM's label, not the directory
+             * entry it happens to be mounted on: renaming the entry would
+             * move the mount point and leave the volume called what it was.
+             * Refused rather than attempted, because this port has no way
+             * to write a label (MA-052). */
+            if (tiku_trk_volume_is_root(&vs, path)) {
+                if (err != NULL) {
+                    snprintf(err, errmax,
+                             "\"%.40s\" is a disk: its name is the disk's "
+                             "own, which cannot be changed from here.",
+                             leaf_of(path));
+                }
+                return -1;
+            }
+            /* And the volume has to allow the write at all, said in the
+             * words it already has for refusing one. */
+            if (!tiku_trk_volume_may_write(&vs, path, 1, why, sizeof why)) {
+                if (err != NULL) {
+                    snprintf(err, errmax, "%s", why);
+                }
+                return -1;
+            }
+        }
     }
     parent_of(path, dir, sizeof dir);
     if (exists(fs, dir, new_name)) {

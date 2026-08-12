@@ -3316,6 +3316,45 @@ remove_pose(tiku_trk_poseview_t *v, int at)
     }
 }
 
+int
+tiku_trk_poseview_on_device(const tiku_trk_poseview_t *v, uint64_t dev)
+{
+    int i;
+
+    if (v == NULL || dev == 0u) {
+        return 0;
+    }
+    /* The FOLDER's own device, taken from any row that is on it: the view
+     * keeps no model of the directory it shows, and every row of a folder
+     * on one volume carries that volume. */
+    for (i = 0; i < v->count; i++) {
+        if (v->poses[i].model.facts.dev == dev) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_trk_poseview_device_gone(tiku_trk_poseview_t *v, uint64_t dev)
+{
+    int i, went = 0;
+
+    if (v == NULL || dev == 0u) {
+        return 0;
+    }
+    for (i = v->count - 1; i >= 0; i--) {
+        if (v->poses[i].model.facts.dev == dev) {
+            remove_pose(v, i);
+            went++;
+        }
+    }
+    if (went > 0 && v->filtering) {
+        rebuild_filter(v);
+    }
+    return went;
+}
+
 void
 tiku_trk_poseview_set_icons(tiku_trk_poseview_t *v, tiku_trk_nodeicon_t *c)
 {

@@ -92,6 +92,12 @@ tiku_trk_volumes_scan(tiku_trk_volumes_t *vs)
                 if (o != NULL) { o++; }
             }
         }
+        snprintf(v->fstype, sizeof v->fstype, "%.*s",
+                 (int)(sizeof v->fstype - 1u), type);
+        /* Served over a network rather than by a disk.  It matters twice:
+         * such a volume gets its own icon, and the setting that puts disks
+         * on the desktop treats shares separately (IV-006, PVN-040). */
+        v->shared = tiku_trk_volume_shared_type(type);
         v->is_boot = (strcmp(mount, "/") == 0);
         v->removable = !v->is_boot;
         if (statvfs(mount, &sv) == 0) {
@@ -102,6 +108,33 @@ tiku_trk_volumes_scan(tiku_trk_volumes_t *vs)
     }
     (void)fclose(f);
     return vs->n;
+}
+
+int
+tiku_trk_volume_shared_type(const char *fstype)
+{
+    if (fstype == NULL) {
+        return 0;
+    }
+    return (strcmp(fstype, "nfs") == 0 || strcmp(fstype, "nfs4") == 0 ||
+            strcmp(fstype, "cifs") == 0 || strcmp(fstype, "smb3") == 0 ||
+            strcmp(fstype, "smbfs") == 0 || strcmp(fstype, "9p") == 0 ||
+            strncmp(fstype, "fuse.sshfs", 10) == 0);
+}
+
+unsigned
+tiku_trk_volume_flags(const tiku_trk_volume_t *v)
+{
+    unsigned f = 0u;
+
+    if (v == NULL) {
+        return 0u;
+    }
+    if (v->read_only) { f |= TIKU_TRK_VOL_READ_ONLY; }
+    if (v->is_boot)   { f |= TIKU_TRK_VOL_BOOT; }
+    if (v->removable) { f |= TIKU_TRK_VOL_REMOVABLE; }
+    if (v->shared)    { f |= TIKU_TRK_VOL_SHARED; }
+    return f;
 }
 
 const tiku_trk_volume_t *
@@ -264,4 +297,78 @@ tiku_trk_volume_space_facts(uint64_t total, uint64_t avail, int *used_pct)
         return TIKU_TRK_SPACE_WARNING;
     }
     return TIKU_TRK_SPACE_USED;
+}
+
+/*---------------------------------------------------------------------------*/
+/* Watching                                                                  */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Whether @p a names the same mounted volume as @p b. */
+static int
+same_volume(const tiku_trk_volume_t *a, const tiku_trk_volume_t *b)
+{
+    /* Both, not either: a mount point reused by another device is one
+     * volume leaving and another arriving, and a device remounted
+     * somewhere else is too. */
+    return strcmp(a->mount, b->mount) == 0 && a->dev == b->dev;
+}
+
+void
+tiku_trk_volwatch_init(tiku_trk_volwatch_t *w)
+{
+    if (w == NULL) {
+        return;
+    }
+    memset(w, 0, sizeof *w);
+    if (tiku_trk_volumes_scan(&w->was) >= 0) {
+        w->primed = 1;
+    }
+}
+
+int
+tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w, tiku_trk_volchange_t *out,
+                       int max)
+{
+    tiku_trk_volumes_t now;
+    int i, j, n = 0;
+
+    if (w == NULL || out == NULL || max <= 0) {
+        return 0;
+    }
+    if (!w->primed) {
+        tiku_trk_volwatch_init(w);
+        return 0;               /* the first look is the baseline */
+    }
+    if (tiku_trk_volumes_scan(&now) < 0) {
+        return 0;
+    }
+    for (i = 0; i < w->was.n && n < max; i++) {
+        for (j = 0; j < now.n; j++) {
+            if (same_volume(&w->was.v[i], &now.v[j])) {
+                break;
+            }
+        }
+        if (j == now.n) {
+            out[n].v = w->was.v[i];
+            out[n].mounted = 0;
+            n++;
+        }
+    }
+    for (j = 0; j < now.n && n < max; j++) {
+        for (i = 0; i < w->was.n; i++) {
+            if (same_volume(&w->was.v[i], &now.v[j])) {
+                break;
+            }
+        }
+        if (i == w->was.n) {
+            out[n].v = now.v[j];
+            out[n].mounted = 1;
+            n++;
+        }
+    }
+    /* The baseline moves whether or not anything was reported, and whether
+     * or not the caller had room: a change dropped for want of space must
+     * not be reported for ever. */
+    w->was = now;
+    return n;
 }

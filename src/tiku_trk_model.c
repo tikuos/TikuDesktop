@@ -203,7 +203,12 @@ tiku_trk_model_icon_name(const tiku_trk_model_t *m)
     case TIKU_TRK_KIND_QUERY:
         return "query";
     case TIKU_TRK_KIND_VOLUME:
-        return strcmp(m->path, "/") == 0 ? "root" : "volume";
+        /* A share is not a disk, and the art set has always carried a
+         * separate blob for one that nothing ever selected (IV-006). */
+        if (m->facts.vol_flags & TIKU_TRK_VOL_SHARED) {
+            return "share";
+        }
+        return (m->facts.vol_flags & TIKU_TRK_VOL_BOOT) ? "root" : "volume";
     case TIKU_TRK_KIND_PRINTER:
         return "printer";
     case TIKU_TRK_KIND_DEVICE_NODE:

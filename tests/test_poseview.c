@@ -1039,6 +1039,34 @@ main(void)
         tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     }
 
+    printf("\nsweeping a volume that left (PVN-043)\n");
+    {
+        int before = tiku_trk_poseview_count(v);
+        uint64_t dev = 0;
+        int i;
+
+        for (i = 0; i < before; i++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+
+            if (p != NULL) {
+                p->model.facts.dev = (i == 0) ? 4242u : 7u;
+                if (i == 0) { dev = 4242u; }
+            }
+        }
+        check(tiku_trk_poseview_on_device(v, dev), "PVN-043",
+              "a view can say whether it is showing anything on a volume, "
+              "by IDENTITY -- a window on a mount point stays stat-able "
+              "after the volume under it goes, so the deletion test that "
+              "closes a vanished folder cannot see an unmount at all");
+        check(!tiku_trk_poseview_on_device(v, 99999u), "PVN-043",
+              "and it says no about a volume it has nothing from");
+        check(tiku_trk_poseview_device_gone(v, dev) == 1 &&
+              tiku_trk_poseview_count(v) == before - 1, "PVN-043",
+              "the rows that lived on it go, and only those: an unmount "
+              "takes entries out of other folders too, and leaving them "
+              "offers the user things that are not there");
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

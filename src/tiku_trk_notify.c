@@ -85,6 +85,14 @@ facts_differ(const tiku_trk_model_t *a, const tiku_trk_model_t *b)
             * so without this term the diff cannot see it happen and the row
             * goes on claiming the link is live. */
            a->facts.link_broken != b->facts.link_broken ||
+           /* A Trash filling or emptying changes nothing else about the
+            * folder, so without this term the icon goes on showing the
+            * state it had when the window opened (AW-029). */
+           a->facts.trash_full != b->facts.trash_full ||
+           /* And a volume's free space moves without anything else moving,
+            * which is the whole of what a space bar shows (AW-097). */
+           a->facts.total != b->facts.total ||
+           a->facts.avail != b->facts.avail ||
            strcmp(a->facts.meta, b->facts.meta) != 0 ||
            strcmp(a->type, b->type) != 0;
 }

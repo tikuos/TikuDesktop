@@ -146,7 +146,8 @@ typedef enum {
     TIKU_TRK_REFUSE_INTO_SELF,   /* a folder into itself or its own child */
     TIKU_TRK_REFUSE_BY_CHILD,    /* replacing a folder with its own child */
     TIKU_TRK_REFUSE_KIND,        /* a file over a folder, or the reverse   */
-    TIKU_TRK_REFUSE_TRASH        /* the Trash cannot be moved or copied    */
+    TIKU_TRK_REFUSE_TRASH,       /* the Trash cannot be moved or copied    */
+    TIKU_TRK_REFUSE_VOLUME       /* a whole volume is not an item to move  */
 } tiku_trk_refusal_t;
 
 /**

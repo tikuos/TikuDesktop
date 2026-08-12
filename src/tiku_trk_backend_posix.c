@@ -54,6 +54,13 @@ volume_here(const char *path, tiku_trk_model_t *m)
         if (strcmp(vs.v[i].mount, path) == 0) {
             m->facts.total = vs.v[i].total;
             m->facts.avail = vs.v[i].avail;
+            m->facts.vol_flags = tiku_trk_volume_flags(&vs.v[i]);
+            /* A volume is shown by the VOLUME's name, not by the directory
+             * entry it is mounted on: the boot volume's entry is "/", which
+             * is a path and not a name (MA-021). */
+            if (vs.v[i].name[0] != '\0') {
+                snprintf(m->name, sizeof m->name, "%s", vs.v[i].name);
+            }
             return 1;
         }
     }
@@ -88,6 +95,9 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
     snprintf(m->name, sizeof m->name, "%s",
              (slash != NULL && slash[1] != '\0') ? slash + 1 : path);
     m->node_id = (uint64_t)st->st_ino;
+    /* Which filesystem it is on, carried so a departing volume can be
+     * swept for without re-stat()ing every open window (PVN-043). */
+    m->facts.dev = (uint64_t)st->st_dev;
     m->facts.size = (int64_t)st->st_size;
     m->facts.mtime = (int64_t)st->st_mtime;
     m->facts.cap_known = 1;

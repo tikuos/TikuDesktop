@@ -681,6 +681,27 @@ void tiku_trk_poseview_set_secondary(tiku_trk_poseview_t *v, int field);
 #define TIKU_TRK_NOTIFY_RETITLE  0x4u   /* it was renamed                 */
 
 /**
+ * @brief Whether this view is showing something on the volume @p dev.
+ *
+ * Asked by IDENTITY rather than by path: a window on a mount point stays
+ * stat-able and listable after the volume under it goes, so the deletion
+ * test that closes an ordinary vanished folder cannot see an unmount at
+ * all (PVN-043).
+ */
+int tiku_trk_poseview_on_device(const tiku_trk_poseview_t *v, uint64_t dev);
+
+/**
+ * @brief Drop every row that lived on the volume @p dev.
+ *
+ * For the windows that are NOT showing that volume: an unmount takes rows
+ * out of other folders too, and leaving them is a listing that offers
+ * entries which are no longer there.
+ *
+ * @return how many rows went.
+ */
+int tiku_trk_poseview_device_gone(tiku_trk_poseview_t *v, uint64_t dev);
+
+/**
  * @brief Give the view the icon cache to keep in step (IV-038, IV-041).
  *
  * Optional, and shared: passing the same cache to every view is the point,

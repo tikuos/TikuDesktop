@@ -120,7 +120,7 @@ $(BUILD)/test_scripting: $(CORE) src/tiku_trk_poseview.c \
 $(BUILD)/test_prefs: src/tiku_trk_prefs.c tests/test_prefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_volume: src/tiku_trk_volume.c tests/test_volume.c | $(BUILD)
+$(BUILD)/test_volume: $(CORE) tests/test_volume.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_vdir: $(CORE) tests/test_vdir.c | $(BUILD)

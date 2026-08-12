@@ -2040,9 +2040,15 @@ Both AddPosesTask and EntryCreated call WatchNewNode(&itemNode, ...) with the co
 StartWatching(): TTracker::WatchNode(NULL, B_WATCH_MOUNT, this); TTracker::WatchNode(targetModel->NodeRef(), B_WATCH_ATTR, this); BMimeType::StartWatching(BMessenger(this)).  
 `PoseView.cpp` → `BPoseView::StartWatching`  
 **TIKU:** 'Volume mounted' maps to a device node appearing in the TikuOS device namespace; there is no mount opcode, so this becomes a watch on the namespace root's children.  
-**MISSING:** an attribute change on the folder itself is consumed with no effect (a CHANGED/ATTR notice whose path equals v->path returns TIKU_TRK_NOTIFY_NOTHING, src/tiku_trk_poseview.c:2771-2789), and there is no MIME-database subscription because there is no MIME database — kinds and icons come from compiled-in tables (src/tiku_trk_model.h:126-131, src/tiku_trk_model.c:69-89); only the mount/unmount analogue (namespace-shape change -> relist+diff) is delivered, and only in the desktop shell — the single-window app never calls tiku_trk_poseview_poll (its loop only pumps values, src/tiku_trk_app.c:1793-1801).  
-*Audited 2026-08-12: `src/tiku_trk_poseview.c:3188-3296 (change records: unheld/shape ops force relist)` `src/tiku_trk_backend_tiku.c:197-202 (manifest reloaded on created/removed/moved so the new node is listable)` `src/tiku_trk_desktop.c:2654-2674 (ring drained once, every open window polled)`*  
-*Shell: desktop*  
+**MISSING:** The mount and unmount source exists now -- derived by diffing a
+re-reading of the mount table, keyed on mount point AND device so a disk
+swapped for another is one leaving and one arriving rather than a volume that
+stayed -- and the shell acts on it.  Two of the row's three subscriptions are
+still absent: the folder's OWN attributes (the view keeps no model of the
+directory it shows, so a notice about it has nowhere to land) and the MIME
+database, which does not exist in this port.
+*src/tiku_trk_volume.c:tiku_trk_volwatch_init/_poll;
+src/tiku_trk_desktop.c (the 400 ms pump); tests/test_volume.c*
 #### PVN-009 · core · differs
 **Tearing down a view drops every watch it holds in one call, so switching folders must re-establish all of them from scratch.**  
 StopWatching() is stop_watching(this) + BMimeType::StopWatching; SwitchDir and Refresh call StopWatching then StartWatching.  
@@ -2256,12 +2262,22 @@ taskLoop->RunLater(NewMemberFunctionObject(&BPoseView::TryUpdatingBrokenLinks, t
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`
 **SUBSYSTEM:** Volume model (mount events). No mount event exists to hang the 500 ms deferral on; the run-later primitive was ported (src/tiku_trk_task.c:140-146) but no shell instantiates a task loop (only tests/test_task.c calls the loop API). Broken links instead re-resolve on every periodic re-list via facts.link_broken flipping in the diff (src/tiku_trk_backend_posix.c:76-87, src/tiku_trk_notify.c:78-90).  
 
-#### PVN-043 · core · open
+#### PVN-043 · core · done
 **Unmounting the volume a window is showing closes that window (a file panel jumps to home instead); unmounting any other volume removes that volume's rows and breaks symlinks pointing into it.**  
 case B_DEVICE_UNMOUNTED: if targetModel device matches -> IsFilePanel() ? PostMessage(kSwitchToHome) : DisableSaveLocation()+Window()->Close(); else EachPoseAndModel(fPoseList, &PoseHandleDeviceUnmounted, this, device), which DeletePose()s matching models and DeleteSymLinkPoseTarget()s links whose LinkTo() is on that device.  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_UNMOUNTED) / BPoseView::PoseHandleDeviceUnmounted`  
 **TIKU:** Device-node removal must produce the same two-part behavior: close views rooted at the departed device, and mark aliases into it as broken.
-**SUBSYSTEM:** Volume model (unmount events / per-device sweep). Models carry no device identity to sweep by (src/tiku_trk_model.h:96-105 — path, node_id, generation only) and no unmount event source exists (grep 'unmount' returns only the tk_close comment, src/tiku_trk_backend_tiku.c:473-474). The GONE close (src/tiku_trk_poseview.c:3313-3325, acted on at src/tiku_trk_desktop.c:2675-2682) keys on the folder's path failing to stat — a real POSIX unmount leaves the mountpoint stat-able as an empty dir, and a device unplug leaves tk_list serving the cached manifest (src/tiku_trk_backend_tiku.c:359-374), so neither clause fires on an actual unmount. There is also no file panel to jump home (see PVN-029).  
+**PORT:** By IDENTITY, which is the whole difficulty: a window on a mount
+point stays stat-able and listable after the volume under it goes, so the
+deletion test that closes an ordinary vanished folder cannot see an unmount
+at all.  A window on the volume closes and its arrangement is deliberately
+not saved; a window merely SHOWING rows from it loses those rows; a picker
+falls back to home rather than closing; an info window on it closes.
+*src/tiku_trk_volume.c:tiku_trk_volwatch_poll;
+src/tiku_trk_poseview.c:tiku_trk_poseview_on_device/_device_gone;
+src/tiku_trk_desktop.c (the unmount sweep); tests/test_poseview.c;
+tests/test_volume.c*  
+*Shell: desktop*  
 
 #### PVN-044 · important · partial
 **A symlink whose target does not exist is registered as broken and the nearest existing ancestor of its target path is watched, so the link repairs itself the moment the missing folder is created.**  
@@ -3176,12 +3192,22 @@ _RestoreTask: if the parent does not exist it calls FSRecursiveCreateFolder(pare
 `FSUtils.cpp` → `_RestoreTask`  
 **PORT:** Missing parents are recreated and an occupied name is REFUSED with a reason: putting one item back is not permission to destroy another.
 
-#### FS-041 · important · partial
+#### FS-041 · important · differs
 **Dragging a whole volume to the Trash unmounts it instead of deleting it, and the boot volume refuses with "Cannot unmount the boot volume \"<name>\"."**  
 MoveEntryToTrash tests BDirectory(entry).IsRootDirectory(); compares against BVolumeRoster().GetBootVolume(); otherwise posts kUnmountVolume with "device_id" to be_app and returns B_OK.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
-**PORT:** The boot volume can never be unmounted and says so, naming itself; a path that is not a volume's mount point is not this gesture at all.  
-**MISSING:** Nothing performs the unmount -- the model answers whether it MAY happen, and no drop path asks it yet.  
+**PORT:** The half that matters is now enforced, and it was worse than open:
+a mount point moved off its own device gets EXDEV, and this engine's fallback
+copies every byte and then deletes what it copied from -- so dragging a disk
+anywhere emptied the disk.  Both gates now refuse a volume by name, the
+copy/move one and the trash/delete one (which never ran the first), and the
+refusal SAYS that the gesture means unmount.  It cannot unmount: umount(2)
+needs CAP_SYS_ADMIN and the alternatives are a privileged external service
+this port does not have.  So the boot-volume wording has no branch to sit in
+either -- nothing is unmountable here, not just the boot volume.
+*src/tiku_trk_fs.c:tiku_trk_fs_check_move (the volume arm) and the
+trash/delete arm of the queue builder; tests/test_volume.c*  
+*Shell: desktop*  
 #### FS-042 · polish · done
 **Trashing a folder closes its window and all windows of folders inside it.**  
 MoveEntryToTrash posts kCloseWindowAndChildren to be_app with the folder's own node_ref as raw data before performing the move.  
@@ -3462,13 +3488,19 @@ kDirectoryNode -> application/x-vnd.Be-directory (overridden by the node's own B
 **PORT:** The row's outcome — the Kind column is never blank whatever the node carries — is delivered by a per-kind/per-type string table that always returns a non-empty label (falling through to "Unknown"), backed by synthetic type strings the backends stamp on every node, instead of by synthesising a MIME type per kind.  
 *src/tiku_trk_model.c:136-166 (kind_string, exhaustive with default) reached from src/tiku_trk_poseview.c:178-180 (COL_KIND); src/tiku_trk_backend_tiku.c:130-135 (synthetic type strings)*
 
-#### MA-004 · important · partial
+#### MA-004 · important · done
 **A directory that is the root of its device is shown as a volume, and a volume that is its own parent is shown as the filesystem root ("Disks").**  
 OpenNodeCommon promotes kDirectoryNode -> kVolumeNode when BDirectory::IsRootDirectory() is true. FinishSettingUpType promotes kVolumeNode -> kRootNode when NodeRef()->node == fEntryRef.directory && device matches. A volume's displayed name is fetched with BVolume::GetName and cached in the union field.  
 `Model.cpp` → `Model::OpenNodeCommon`  
 **TIKU:** Mount points become durable mounts in the TikuOS namespace; the promotion rule should key off a mount-root flag on the VFS node instead of an inode identity trick.  
-**MISSING:** The device root is promoted to a volume (and draws the "root" icon) by a path=="/" test rather than a mount-root flag, but the second clause is missing entirely: nothing promotes a volume to a filesystem root, there is no "Disks" pose, and the posix backend never yields a volume at all.  
-*src/tiku_trk_backend_tiku.c:76 kind_of / src/tiku_trk_model.c:202 tiku_trk_model_icon_name*
+**PORT:** Both clauses.  A directory that is a mount point is promoted to a
+volume by the mount TABLE, not by comparing the path to "/", and a volume is
+displayed by the VOLUME's name rather than by the directory entry it is
+mounted on -- the boot volume's entry is "/", which is a path and not a name.
+The "volume that is its own parent becomes Disks" clause has no counterpart:
+there is no Disks root in this port.
+*src/tiku_trk_backend_posix.c:volume_here/from_stat; tests/test_volume.c*  
+*Shell: desktop, tracker*  
 
 #### MA-005 · important · partial
 **Trash and Desktop folders are recognized as special kinds regardless of their path, which is what makes them undeletable/unrenameable and gives them their own icons.**  
@@ -3590,12 +3622,18 @@ Only removes the foreign attribute when the write wrote exactly `length` bytes. 
 **PORT:** Differs-shaped done: the TIKU note says the native/foreign twin collapses to one name 'but only deliberately', and the port did it deliberately — one attribute name per record (state.h names are unsuffixed), with byte order carried IN the record for columns (the TCOL key stamp; a foreign-order record is swapped field-by-field on read, mixed-order blobs refused), a text view-state record that has no byte order, and pose-info positions whose byte-swapped values always fail the ±50000 sanity bound and auto-place. The row's protective outcome — state moved between architectures is never misread as stale garbage — holds with nothing to delete because no twin ever exists. Tested at tests/test_title.c:752-786.  
 *Audited 2026-08-12: `src/tiku_trk_state.h:26-32` `src/tiku_trk_poseview.c:3572-3588` `src/tiku_trk_poseview.c:3695-3719`*  
 *Shell: both*  
-#### MA-021 · polish · open
+#### MA-021 · polish · partial
 **A volume that is renamed under Tracker's feet updates its displayed name, and the boot volume additionally watches its mount point so renames there are noticed.**  
 UpdateEntryRef replaces fVolumeName for volume models before updating the entry ref. WatchVolumeAndMountPoint watches the node with B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR, and when the entry is named "boot" it additionally builds "/" + volume name and watches that node too.  
 `Model.cpp` → `Model::WatchVolumeAndMountPoint`  
 **TIKU:** Watch registration is idempotent in TikuOS and the table is only 8 slots, per-boot; a second watch for the mount point is affordable but the slot budget must be checked.  
-**BLOCKED:** The volume model exists now and supplies the name, but nothing watches a volume for a rename: the mount table is re-read on a one-second timer rather than on notice, so a rename is picked up late and the boot volume's extra mount-point watch has no analogue.  
+**MISSING:** The displayed name now comes from the volume rather than from
+its mount directory, so a volume shows what it is called.  What is still
+absent is noticing a rename UNDER the port's feet: the mount-table poll
+reports arrivals and departures, not a label edited in place, and nothing
+watches a volume for one.
+*src/tiku_trk_backend_posix.c:volume_here (the name); src/tiku_trk_volume.c
+(the poll reports mount/unmount only)*
 #### MA-022 · core · differs
 **Which formatter a column uses is decided by the column's attribute name first and its "display as" hint second; unknown attributes fall back to a generic reader.**  
 Name-keyed: _trk/path -> Path, BEOS:TYPE -> Kind, _stat/name -> Name, _stat/realname -> RealName, _stat/size -> Size, _stat/modified -> ModificationTime, _stat/created -> CreationTime, _stat/mode -> Mode, _trk/open_with_relation -> OpenWithRelation, _trk/app_version and _trk/system_version -> short version, _trk/original_path -> OriginalPath. Then DisplayAs() prefix matches: "checkbox", "duration", "rating". Everything else -> GenericAttributeText.  
@@ -3819,12 +3857,20 @@ EditModelName returns B_BAD_VALUE for a NULL/empty name, then B_NOT_ALLOWED when
 **MISSING:** Virtual directories and device nodes are refused up front, but Trash, Desktop and the filesystem root have no refusal at all, and the refusal is a hardcoded kind test rather than the capability bit the row's TIKU note asks for.  
 *src/tiku_trk_app.c:657 / src/tiku_trk_desktop.c:615 (begin_rename kind check)*
 
-#### MA-052 · important · open
+#### MA-052 · important · differs
 **Renaming a volume renames the volume itself rather than a directory entry, and fails cleanly on a read-only volume.**  
 EditModelName's IsVolume() branch checks BVolume::InitCheck and IsReadOnly (returning B_READ_ONLY_DEVICE), then calls BVolume::SetName under a RenameVolumeUndo which is removed if the rename fails. Model::UpdateEntryRef then refreshes the cached fVolumeName so the pose relabels.  
 `FSUtils.cpp` → `EditModelName`  
 **TIKU:** Renaming a mount is a namespace operation; decide whether durable mounts carry a user-settable label.
-**BLOCKED:** A volume-label operation that exists nowhere: the backend op table has no rename/label op (model.h:148-199 — stat/list/read/write/pump/changes/path_of_id/state_store/close), tiku_trk_fs_rename is a POSIX rename() of a directory entry with no volume branch and no read-only-volume refusal (fs.c:2006-2036), and there is no volume-name field to refresh afterwards (model.h:63-74).  
+**PORT:** Refused, with the reason, rather than attempted: renaming the
+directory entry a volume is mounted on would move the mount point and leave
+the disk called what it was, so the rename path now says a disk's name is the
+disk's own.  A read-only volume is refused separately, in the words the
+volume model already had.  Writing a label is not possible here -- it is
+filesystem-specific and privileged on a mounted volume -- so the row's
+positive half has no implementation and is not claimed.
+*src/tiku_trk_fs.c:tiku_trk_fs_rename (the volume arms); tests/test_volume.c*  
+*Shell: desktop*  
 
 #### MA-053 · polish · open
 **Renaming a query also clears its "temporary" flag, so a query the user bothered to name is kept instead of being reaped.**  
@@ -4506,13 +4552,20 @@ an attribute to answer a question that had not changed.
 src/tiku_trk_model.h (facts.icon_hint); src/tiku_trk_desktop.c
 (HINTS_PER_TURN batch on the idle tick); tests/test_nodeicon.c*
 *Shell: desktop*  
-#### IV-006 · important · partial
+#### IV-006 · important · done
 **Volumes get the icon the filesystem itself supplies; network shares get a distinct share icon.**  
 GetVolumeIcon: BVolume::IsShared() -> R_ShareIcon resource; else BVolume::GetIcon() sets source = kVolume; else fall back to the B_VOLUME_MIMETYPE icon. A volume with its own node icon still beats all of this (Preload tries GetNodeIcon first).  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetVolumeIcon`  
 **TIKU:** Mounted durable stores / remote mounts are the natural analogue; decide whether a mount descriptor can publish its own icon.  
-**MISSING:** Volumes do get distinct art ("root" for path "/", otherwise "volume"), but nothing lets a mount/store descriptor publish its own icon and the share clause is missing — the "share" HVIF blob is in the set yet no code path ever selects it.  
-*src/tiku_trk_model.c:tiku_trk_model_icon_name (case TIKU_TRK_KIND_VOLUME)*
+**PORT:** Read off the volume table rather than off the path: a share gets
+the share art -- which the set has always carried and nothing ever selected
+-- the boot volume gets the root art wherever it is mounted, and any other
+disk the plain one.  The row's parenthetical clause already held: the
+node-icon tier probes an entry's own icon attribute before its kind, so a
+volume carrying one still beats all of this.
+*src/tiku_trk_volume.c:tiku_trk_volume_shared_type/_flags;
+src/tiku_trk_model.c (the KIND_VOLUME arm); tests/test_volume.c*  
+*Shell: desktop*  
 
 #### IV-007 · important · differs
 **Well-known system folders show special icons instead of the plain folder icon.**  
@@ -4811,12 +4864,19 @@ UpdateWasBrokenSymlink stops watching the old target, clears LinkTo and re-icons
 `src/kits/tracker/Pose.cpp` → `BPose::UpdateWasBrokenSymlink / BPose::UpdateBrokenSymLink`  
 **PORT:** A link that loses or regains its target re-draws from the change notice, which carries link_broken; the target itself is not watched, so the repaint waits for the next notice rather than arriving with it.
 
-#### IV-045 · important · open
+#### IV-045 · important · done
 **Writable volume poses carry a free-space bar down the right edge of their icon, red when nearly full.**  
 BPose ctor registers a periodic update for non-root volumes that are not "cdda" and not read-only. DrawBar: bar width = 7/32 * (iconSize+1), floored at 4 (yOffset 0, else 2), a 32,32,32,92 shadow line, a 76,76,76,192 frame, free part in FreeSpaceColor, used part in UsedSpaceColor - or WarningSpaceColor when free space is under 5% (CalcFreeSpace encodes that as -2 - percent). Capacity 0 reports 100%.  
 `src/kits/tracker/Pose.cpp` → `BPose::DrawBar / CalcFreeSpace / BPose::UpdateVolumeSpaceBar`  
 **TIKU:** Directly reusable for durable-store fill level; the -2-percent warning encoding is a wart worth replacing with an explicit flag.
-**BLOCKED:** a periodic free-space poll and a bar renderer for volume poses, neither of which exists: the only caller of tiku_trk_fs_free_bytes (src/tiku_trk_fs.c:607-616) is the copy pre-flight fit check at src/tiku_trk_fs.c:550, and grep for any free-space/bar drawing in the draw code returns nothing  
+**PORT:** Down the right edge of the icon in an icon mode -- where the
+original puts it, and where there is room -- and along the bottom in a list
+row; one function draws both, so the two cannot disagree about the colour a
+nearly-full disk takes.  Drawn from the facts the listing already read, so a
+dozen volumes is a dozen rows and not a dozen statvfs calls.
+*src/tiku_trk_desktop.c:draw_space_bar and its two callers;
+src/tiku_trk_volume.c:tiku_trk_volume_space_facts*  
+*Shell: desktop*  
 
 #### IV-046 · important · done
 **The Trash icon changes between empty and full as items are moved in and out.**  
@@ -5552,9 +5612,15 @@ SetHighColor(LowColor().Brightness() <= ui_color(B_DESKTOP_COLOR).Brightness() ?
 BTrashWatcher watches every persistent writable volume's trash dir plus B_WATCH_MOUNT; ENTRY_CREATED sets full, MOVED (only across directories) / REMOVED / DEVICE_UNMOUNTED re-check all trash dirs; UpdateTrashIcon writes R_TrashIcon/R_TrashFullIcon into the boot trash dir's icon attributes.  
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon / BTrashWatcher::WatchTrashDirs`  
 **TIKU:** Writing the icon into the object's own attributes is how state is published; with typed VFS descriptors the fullness would be a readable node value plus a notify, not a stored icon.  
-**PORT:** A directory named ".Trash" is classified KIND_TRASH by the store and carries a `trash_full` fact read from the directory, so the icon switches and Empty Trash stops being permanently disabled -- it had no assignment anywhere before.  
-**MISSING:** Not live.  Fullness is read when the model is read, so it follows a listing refresh rather than a change notice, and there is no multi-volume sweep or mount watch -- both wait on the volume model.  
-*Shell: desktop*  
+**MISSING:** The liveness half now holds, and it had been worse than the row
+said: the 400 ms diff did not compare the fullness fact at all, so a Trash
+filling produced no notice and the icon showed whatever it had when the
+window opened -- not even a listing refresh could fix it.  What remains is
+the scope: fullness is per-entry, so a Trash on another volume that fills
+does not change this one's icon, and there is no boot-Trash icon attribute to
+write.
+*src/tiku_trk_notify.c:facts_differ (the trash_full term);
+tests/test_notify.c*
 #### AW-030 · core · partial
 **Double-clicking an item opens it as a window if it is a container, opens a Find window if it is a query template, and otherwise launches it — but a folder or query with a non-Tracker preferred app is handed to that app instead.**  
 OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::GetPreferredApp() != kTrackerSignature (skipped when the selector is kOpenWith). Query templates spawn FindWindow(model->EntryRef()).  
@@ -6183,12 +6249,18 @@ kUnmountVolume calls SaveAllPoseLocations() then falls through to forwarding the
 **TIKU:** Device removal is the direct analogue: pending state must be flushed to NVM and dependent views torn down before the node disappears.
 **SUBSYSTEM:** volume model — no mount/unmount machinery anywhere: grep -rn MOUNT/unmount over src finds only the device-unplug comment in src/tiku_trk_backend_tiku.c:473-475 (tk_close does flush the sidecar store before the link goes — the port's nearest analogue), and no query-window-close-before-unmount logic exists (query windows are torn down only with the app, src/tiku_trk_desktop.c folder teardown).  
 
-#### AW-097 · polish · open
+#### AW-097 · polish · partial
 **Volume free-space bars refresh once per second, only while the setting is enabled, and refresh immediately when the setting or its color changes.**  
 SetPulseRate(1000000) in the constructor; Pulse() returns early unless ShowVolumeSpaceBar(), then gPeriodicUpdatePoses.DoPeriodicUpdate(false); kShowVolumeSpaceBar / kSpaceBarColorChanged force DoPeriodicUpdate(true).  
 `Tracker.cpp` → `TTracker::Pulse / TTracker::MessageReceived`  
 **TIKU:** A once-per-second poll is a power cost on a microwatt target; prefer a watch notification on the volume node.
-**SUBSYSTEM:** volume model — no free-space bars on volume poses (grep for space_bar/spacebar over src returns nothing; nothing in src/tiku_trk_iconpaint.c or src/tiku_trk_poseview.c draws one); the only free-space display is the Deskbar 'free' tray replicant (src/tiku_trk_desktop.c:1603).  
+**MISSING:** The refresh works now, and the hole was not a missing timer: the
+400 ms diff compared neither capacity nor free space, so a bar could only
+change when something else about the volume did.  The two remaining clauses
+are the setting's: the poll runs whether or not bars are shown, and a colour
+change cannot force one because the colour settings have no editor.
+*src/tiku_trk_notify.c:facts_differ (the total/avail terms);
+tests/test_notify.c; src/tiku_trk_desktop.c (prefs edit only BOOL rows)*
 
 #### AW-098 · polish · open
 **A generated thumbnail replaces the placeholder icon in whichever open window is showing that file.**  

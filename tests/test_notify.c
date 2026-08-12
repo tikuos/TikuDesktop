@@ -124,6 +124,37 @@ main(void)
         (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
         check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "PVN-001",
               "a changed size is one change");
+
+        /* The three facts that move on their OWN, with nothing else about
+         * the entry changing.  A diff blind to them is a diff that reports
+         * nothing, and a row that reports nothing never repaints. */
+        now[0] = was[0];
+        now[0].facts.trash_full = 1;
+        now[1] = was[1];
+        tiku_trk_evlist_clear(&l);
+        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-029",
+              "a Trash filling is a change, though nothing else about the "
+              "folder moved -- without this the icon shows the state it "
+              "had when the window opened");
+
+        now[0] = was[0];
+        now[0].facts.avail = 4096;
+        now[1] = was[1];
+        tiku_trk_evlist_clear(&l);
+        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-097",
+              "and so is free space moving, which is the whole of what a "
+              "space bar shows");
+
+        now[0] = was[0];
+        now[0].facts.total = 8192;
+        now[1] = was[1];
+        tiku_trk_evlist_clear(&l);
+        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-097",
+              "as is a capacity, which changes when a volume is replaced "
+              "under a mount point that kept its name");
     }
 
     printf("\nparking a notice that arrives before its row\n");

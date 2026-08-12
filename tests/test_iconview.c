@@ -286,7 +286,7 @@ main(void)
 
     printf("\nwhat is on screen (PVK-011, PVL-062)\n");
     {
-        int first = -1, last = -1, px, py, pw, ph, i, n;
+        int first = -1, last = -1, px, py, pw, ph, n;
 
         /* Parked on one pose's own corner, because the corner of the
          * BOUNDING BOX need not contain any pose at all: the extreme x can
