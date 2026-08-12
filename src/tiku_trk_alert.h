@@ -116,6 +116,29 @@ void tiku_trk_progress_reset(tiku_trk_progress_win_t *p);
 /** @brief The caption a job of kind @p op shows. */
 const char *tiku_trk_progress_caption(tiku_trk_op_t op);
 
+/** @brief What a click on a progress row landed on. */
+typedef enum {
+    TIKU_TRK_PROGRESS_HIT_NONE = 0,
+    TIKU_TRK_PROGRESS_HIT_PAUSE,
+    TIKU_TRK_PROGRESS_HIT_STOP
+} tiku_trk_progress_hit_t;
+
+/** @brief The pause or stop button of row @p i, in window coordinates. */
+void tiku_trk_progress_button_rect(int i, int which, int w, int *bx, int *by,
+                                   int *bw, int *bh);
+
+/**
+ * @brief What a point hits inside a @p w wide progress window.
+ *
+ * @param row Receives which row was hit.
+ */
+tiku_trk_progress_hit_t tiku_trk_progress_hit(const tiku_trk_progress_win_t *p,
+                                              int w, int x, int y, int *row);
+
+/** @brief The text a row shows; a paused row says how to get going again. */
+const char *tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p,
+                                       int i);
+
 /**
  * @brief Take the engine's state into row @p i, opening the window if this
  * is the first job and closing it when the last one ends (FS-072).

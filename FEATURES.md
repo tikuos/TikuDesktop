@@ -1411,12 +1411,13 @@ In the same-window case, DragSelectionContains(targetPose, message) nulls target
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
 **PORT:** A pose in the drag never highlights, so a drop on it resolves to the window's own folder: the rule falls out of the target test rather than needing a case of its own.  
 *Shell: desktop*  
-#### PVS-043 · important · partial
+#### PVS-043 · important · done
 **Refused drops raise a specific alert instead of failing silently: onto the Disks/root window, onto a read-only volume, a copy into Trash, or a link into Trash.**  
 Four separate BAlerts in MoveSelectionInto, each B_WARNING_ALERT with Cancel and B_CLOSE_ON_ESCAPE; okToMove is cleared and the destination BEntry is deleted.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **PORT:** The alert layer exists now, so a refusal has somewhere to go.  
-**MISSING:** Nothing raises one yet for the four refusals this row names -- the drop path still declines silently.  
+*Shell: desktop*  
+**PORT:** All four refusals are said out loud -- a read-only destination, a copy into the Trash, a link into the Trash, and the engine's own refusals (a folder into itself, the Trash itself, a file over a folder) in its own words.  Each is a Cancel-only warning that Escape closes.  A drop that quietly did nothing looked like a drop that missed, and the user tried again harder.  
 *Shell: desktop*  
 #### PVS-044 · important · open
 **Dropping files on an application or document pose launches it with those files as arguments, passing only the files that target claims to handle; holding Control bypasses the type check and forces all of them through.**  
@@ -3006,6 +3007,8 @@ ConfirmChangeIfWellKnownDirectory: returns false outright for Desktop/Printers/r
 **VERIFIER CORRECTION:** FSUtils.cpp ConfirmChangeIfWellKnownDirectory: the system folder uses DirectoryMatchesOrContains(B_SYSTEM_DIRECTORY) (folder *and* contents), but home uses DirectoryMatches(entry, B_USER_DIRECTORY) — an EXACT match. An ordinary file inside home falls through to the config/settings tests and, failing those, returns true with no prompt at all. Only home itself is protected.  
 **PORT:** The system directories are this platform's (/usr, /etc, /bin and the rest), matched by containment; the home folder is matched exactly, so a file inside home moves without a word -- the original's own asymmetry, kept because a browser that asked before every move inside home would train the answer out of the user.  
 **TIKU:** The shell says what is needed on the status line instead of graying a button until Shift is held; the override is refused rather than confirmable until there is an alert layer.  
+**PORT:** The system directories are this platform's, matched by containment; the home folder is matched exactly, so a file inside home moves without a word -- the original's own asymmetry.  The confirmation is a real alert now the layer exists, and it names the modifier rather than refusing outright.  
+*Shell: desktop*  
 #### FS-028 · core · done
 **A same-volume move is a rename, so it is instant regardless of file size and the progress bar counts one unit per item rather than bytes.**  
 MoveItem: when statbuf.st_dev == destNode.device and the mode is neither kCopySelectionTo nor kDuplicateSelection, it calls loopControl->UpdateStatus(ref.name, ref, 1) with the comment that size is irrelevant, then BEntry::MoveTo(destDir, newName).  
@@ -3285,13 +3288,13 @@ CreateStatusItem scans be_app's windows for an active BDeskWindow and records fR
 `StatusWindow.cpp` → `BStatusWindow::RemoveStatusItem`  
 **BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
 
-#### FS-074 · core · open
+#### FS-074 · core · done
 **Each progress row has a pause and a stop button; pause freezes the operation and the row reads "Paused: click to resume or stop", stop cancels it.**  
 kPauseButton toggles fIsPaused, zeroes the speed samples and, on resume, resets the estimate reference and resume_thread(Thread()). kStopButton sets fWasCanceled and also resumes a paused thread so the copy loop can notice the cancel and unwind. BStatusWindow::CheckCanceledOrPaused returns wasCanceled immediately, and otherwise suspend_thread()s the calling worker.  
 `StatusWindow.cpp` → `BStatusView::MessageReceived`  
-**TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.
-**BLOCKED:** Waits on a progress window.  The engine already carries everything one would show -- op, total, done, skipped, failed, the current path -- and `tiku_trk_fs_set_cancel_check` is the cancel channel.  The window system is NOT the obstacle: `tiku_trk_desk_open` with a draw callback is how the Select panel is already built.  What is missing is the panel itself, a destination field on the progress record, and a caller for `tiku_trk_fs_cancel`, which has none in src/ or tests/.  
-
+**TIKU:** suspend_thread on the worker has no cooperative equivalent — pause must become a flag the copy protothread checks at its yield points.  
+**PORT:** Each row carries pause and stop, with stop outermost so the destructive button is furthest from the one being aimed for.  A paused job is not stepped and its row says how to get going again -- a frozen counter with no explanation reads as a hang.  Stop cancels rather than killing, so what is written stays and the file in hand is cleaned up.  
+*Shell: desktop*  
 #### FS-075 · polish · done
 **Progress text updates are throttled to roughly ten per second, but the name of the file being processed is never lost — it is stashed and shown at the next real update.**  
 BStatusView::UpdateStatus only redraws when !optional or (now - fLastUpdateTime) > kMaxUpdateInterval (100000 us); otherwise a supplied curItem is copied into fPendingStatusString (127 chars) and used on the next update. Bytes are always accumulated into fItemSize/fSizeProcessed regardless of throttling. LowLevelCopy splits chunks larger than 32 KB into two status updates, one after the read and one after the write, for smoother movement.  

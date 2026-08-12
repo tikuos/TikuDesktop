@@ -221,3 +221,68 @@ tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
     }
     p->open = any;
 }
+
+/*---------------------------------------------------------------------------*/
+/* The pause and stop buttons (FS-074)                                       */
+/*---------------------------------------------------------------------------*/
+
+#define PROG_ROW_H  34
+#define PROG_TOP    14
+#define PROG_BTN    18
+#define PROG_BTN_GAP 4
+
+void
+tiku_trk_progress_button_rect(int i, int which, int w, int *bx, int *by,
+                              int *bw, int *bh)
+{
+    /* Right-hand end of the row, stop outermost: the destructive one is
+     * furthest from the pause a user is aiming for. */
+    int right = w - 10;
+    int x = right - PROG_BTN - (which == TIKU_TRK_PROGRESS_HIT_STOP
+                                    ? 0 : PROG_BTN + PROG_BTN_GAP);
+
+    if (bx != NULL) { *bx = x; }
+    if (by != NULL) { *by = PROG_TOP + i * PROG_ROW_H + 4; }
+    if (bw != NULL) { *bw = PROG_BTN; }
+    if (bh != NULL) { *bh = PROG_BTN; }
+}
+
+tiku_trk_progress_hit_t
+tiku_trk_progress_hit(const tiku_trk_progress_win_t *p, int w, int x, int y,
+                      int *row)
+{
+    int i, k;
+
+    if (p == NULL || !p->open) {
+        return TIKU_TRK_PROGRESS_HIT_NONE;
+    }
+    for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
+        if (!p->row[i].used) {
+            continue;
+        }
+        for (k = TIKU_TRK_PROGRESS_HIT_PAUSE; k <= TIKU_TRK_PROGRESS_HIT_STOP;
+             k++) {
+            int bx, by, bw, bh;
+
+            tiku_trk_progress_button_rect(i, k, w, &bx, &by, &bw, &bh);
+            if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+                if (row != NULL) { *row = i; }
+                return (tiku_trk_progress_hit_t)k;
+            }
+        }
+    }
+    return TIKU_TRK_PROGRESS_HIT_NONE;
+}
+
+const char *
+tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p, int i)
+{
+    if (p == NULL || i < 0 || i >= TIKU_TRK_PROGRESS_ROWS ||
+        !p->row[i].used) {
+        return "";
+    }
+    /* A paused row says what to do about it: a frozen counter with no
+     * explanation reads as a hang. */
+    return p->row[i].paused ? "Paused: click to resume or stop"
+                            : p->row[i].current;
+}

@@ -674,6 +674,42 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
     if ((state & Mod1Mask) != 0u)    { mods |= TIKU_TRK_DRAG_MOD_COPY; }
     if ((state & ControlMask) != 0u) { mods |= TIKU_TRK_DRAG_MOD_LINK; }
 
+    {   /* A refusal is SAID, not swallowed.  A drop that quietly does
+         * nothing looks like a drop that missed, and the user tries again
+         * harder (PVS-043). */
+        tiku_trk_model_t dm;
+        const char *why = NULL;
+
+        if (app->backend->ops->stat(app->backend, dst, &dm) != 0 ||
+            !tiku_trk_model_is_mutable_container(&dm)) {
+            why = "You can't move or copy items to read-only volumes.";
+        } else if (tiku_trk_fs_in_trash(app->fs, dst)) {
+            if ((mods & TIKU_TRK_DRAG_MOD_LINK) != 0u) {
+                why = "Sorry, you can't create links in the Trash.";
+            } else if ((mods & TIKU_TRK_DRAG_MOD_COPY) != 0u) {
+                why = "Sorry, you can't copy items to the Trash.";
+            }
+        }
+        if (why == NULL) {
+            char refused[200];
+
+            /* The engine's own refusals -- a folder into itself, the Trash
+             * itself, a file over a folder -- said in its words. */
+            if (tiku_trk_fs_check_move(app->fs, app->drag.path[0], dst,
+                                       refused, sizeof refused) !=
+                    TIKU_TRK_REFUSE_NONE) {
+                tiku_trk_alert_open(&app->alert, TIKU_TRK_ALERT_WARN,
+                                    TIKU_TRK_ALERT_TAG_REFUSAL, refused,
+                                    "Cancel");
+                return;
+            }
+        } else {
+            tiku_trk_alert_open(&app->alert, TIKU_TRK_ALERT_WARN,
+                                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
+            return;
+        }
+    }
+
     /* Same store or not is the engine's question, not a path comparison:
      * it already knows how to tell, and it is what decides move or copy. */
     same = (tiku_trk_fs_drop_action(app->fs, app->drag.path[0], dst, 0) ==
@@ -1493,10 +1529,19 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 
                         if (c == TIKU_TRK_CONFIRM_OVERRIDE &&
                             !(command == TIKU_TRK_CMD_DELETE)) {
-                            snprintf(app->status, sizeof app->status,
-                                     "'%.60s' is a system folder -- hold "
-                                     "Shift to confirm",
+                            char msg[300];
+
+                            /* Asked properly now the layer exists: the
+                             * confirmation needs Shift, so the alert says
+                             * which key rather than refusing outright
+                             * (FS-027). */
+                            snprintf(msg, sizeof msg,
+                                     "\"%.60s\" is a system folder.  Hold "
+                                     "Shift and choose Move to confirm.",
                                      sel[j]);
+                            tiku_trk_alert_open(&app->alert,
+                                TIKU_TRK_ALERT_STOP,
+                                TIKU_TRK_ALERT_TAG_REFUSAL, msg, "Cancel");
                             stop = 1;
                         } else if (c == TIKU_TRK_CONFIRM_ASK) {
                             snprintf(app->status, sizeof app->status,
@@ -1984,9 +2029,15 @@ progress_draw(desktop_t *app)
             continue;
         }
         y = f.y + 14 + row * 34;
-        leaf = strrchr(app->prog.row[i].current, '/');
-        leaf = (leaf != NULL) ? leaf + 1 : app->prog.row[i].current;
-        snprintf(line, sizeof line, "%s%.40s", app->prog.row[i].caption,
+        {   /* A paused row says how to get going again; a frozen counter
+             * with no explanation reads as a hang (FS-074). */
+            const char *t = tiku_trk_progress_row_text(&app->prog, i);
+
+            leaf = strrchr(t, '/');
+            leaf = (leaf != NULL) ? leaf + 1 : t;
+        }
+        snprintf(line, sizeof line, "%s%.40s",
+                 app->prog.row[i].paused ? "" : app->prog.row[i].caption,
                  leaf);
         tiku_desk_text(app->surf, fo, f.x + 10, y, line, TIKU_DESK_C_TEXT);
         snprintf(line, sizeof line, "%d of %d", app->prog.row[i].done,
@@ -2003,6 +2054,28 @@ progress_draw(desktop_t *app)
                     app->prog.row[i].total;
             if (bar.w > 0) {
                 tiku_desk_fill(app->surf, bar, TIKU_DESK_C_SELECT);
+            }
+        }
+        {   /* Pause and stop.  Stop is outermost: the destructive one is
+             * furthest from the pause a user is aiming for. */
+            int k;
+
+            for (k = TIKU_TRK_PROGRESS_HIT_PAUSE;
+                 k <= TIKU_TRK_PROGRESS_HIT_STOP; k++) {
+                tiku_desk_rect_t b;
+                int bx, by, bw, bh;
+
+                tiku_trk_progress_button_rect(row, k, f.w, &bx, &by, &bw,
+                                              &bh);
+                b.x = f.x + bx; b.y = f.y + by; b.w = bw; b.h = bh;
+                tiku_desk_fill(app->surf, b, TIKU_DESK_C_PANEL);
+                tiku_desk_bevel(app->surf, b,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+                tiku_desk_text(app->surf, fo, b.x + 6, b.y + 13,
+                    (k == TIKU_TRK_PROGRESS_HIT_STOP) ? "x"
+                        : (app->prog.row[i].paused ? ">" : "|"),
+                    TIKU_DESK_C_TEXT);
             }
         }
         row++;
@@ -2507,6 +2580,33 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case ButtonPress: {
+                if (!app.alert.open && app.prog.open) {
+                    tiku_desk_rect_t pf;
+                    int prow = 0;
+                    tiku_trk_progress_hit_t ph;
+
+                    pf.w = 380;
+                    pf.h = 22 + TIKU_TRK_PROGRESS_ROWS * 34;
+                    pf.x = DESK_W - pf.w - 24;
+                    pf.y = DESK_H - pf.h - 24;
+                    ph = tiku_trk_progress_hit(&app.prog, pf.w,
+                             ev.xbutton.x - pf.x, ev.xbutton.y - pf.y,
+                             &prow);
+                    if (ph == TIKU_TRK_PROGRESS_HIT_PAUSE) {
+                        app.prog.row[prow].paused =
+                            !app.prog.row[prow].paused;
+                        app.dirty = 1;
+                        break;
+                    }
+                    if (ph == TIKU_TRK_PROGRESS_HIT_STOP) {
+                        /* Stop cancels rather than killing: what is
+                         * already written stays, and the file in hand is
+                         * cleaned up (FS-033). */
+                        tiku_trk_fs_cancel(app.fs);
+                        app.dirty = 1;
+                        break;
+                    }
+                }
                 if (app.alert.open) {
                     /* Modal: while a question is up nothing else takes a
                      * click, which is what makes it a question rather than
@@ -3592,7 +3692,8 @@ sel_done:
                 shot_at = 0;
             }
         }
-        if (app.fs != NULL && tiku_trk_fs_busy(app.fs)) {
+        if (app.fs != NULL && tiku_trk_fs_busy(app.fs) &&
+            !app.prog.row[0].paused) {
             const tiku_trk_progress_t *pr;
 
             /* Stepped here, not inside the command: start() only builds the

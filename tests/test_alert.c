@@ -138,6 +138,43 @@ main(void)
               "does");
     }
 
+    printf("\npause and stop (FS-074)\n");
+    {
+        tiku_trk_progress_t p2;
+        int bx, by, bw, bh, sx, r = -1;
+
+        memset(&p2, 0, sizeof p2);
+        p2.op = TIKU_TRK_OP_COPY;
+        p2.total = 5;
+        snprintf(p2.current, sizeof p2.current, "/src/x");
+        tiku_trk_progress_reset(&w);
+        tiku_trk_progress_update(&w, 0, &p2, 1, NULL);
+
+        tiku_trk_progress_button_rect(0, TIKU_TRK_PROGRESS_HIT_PAUSE, 380,
+                                      &bx, &by, &bw, &bh);
+        tiku_trk_progress_button_rect(0, TIKU_TRK_PROGRESS_HIT_STOP, 380,
+                                      &sx, NULL, NULL, NULL);
+        check(sx > bx, "FS-074",
+              "stop sits outside pause: the destructive button is furthest "
+              "from the one being aimed for");
+        check(tiku_trk_progress_hit(&w, 380, bx + 2, by + 2, &r) ==
+              TIKU_TRK_PROGRESS_HIT_PAUSE && r == 0,
+              "FS-074", "a click on pause finds it, and says which row");
+        check(tiku_trk_progress_hit(&w, 380, 12, by + 2, NULL) ==
+              TIKU_TRK_PROGRESS_HIT_NONE,
+              "FS-074", "and a click on the file name hits nothing");
+        check(strcmp(tiku_trk_progress_row_text(&w, 0), "/src/x") == 0,
+              "FS-074", "a running row shows the file it is working on");
+        w.row[0].paused = 1;
+        check(strstr(tiku_trk_progress_row_text(&w, 0), "resume") != NULL,
+              "FS-074",
+              "and a paused one says how to get going again -- a frozen "
+              "counter with no explanation reads as a hang");
+        check(tiku_trk_progress_hit(&w, 380, bx + 2, by + 2 + 34, NULL) ==
+              TIKU_TRK_PROGRESS_HIT_NONE,
+              "FS-074", "a row that is not in use has no buttons");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the alert and the progress hold");
     return fails ? 1 : 0;
 }
