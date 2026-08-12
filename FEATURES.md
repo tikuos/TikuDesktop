@@ -4735,12 +4735,13 @@ The (label, message, iconType, which) and (submenu, message, iconType, which) co
 `src/kits/tracker/IconMenuItem.cpp` → `IconMenuItem::IconMenuItem`
 **BLOCKED:** the absent menu-item icon field (src/tiku_trk_menu.h:36-46); no constructor builds a menu item from a MIME type anywhere, so the supertype-icon fallback has no place to live — the only supertype walk in the port is the model's type_row (src/tiku_trk_model.c:110-141), which menus never consult  
 
-#### IV-057 · polish · open
+#### IV-057 · polish · partial
 **The window's folder icon is itself an icon-cache draw and is drag-startable only from opaque pixels.**  
 DraggableContainerIcon::Draw blits the target model's icon centred in the view with B_OP_ALPHA; MouseDown only arms a drag when IconCache::IconHitTest passes, and the drag bitmap is icon plus middle-truncated name at text alpha 192. The icon repaints when the folder's own attributes change (AttributeChanged calls IconCache::IconChanged and invalidates the view).  
 `src/kits/tracker/DraggableContainerIcon.cpp` → `DraggableContainerIcon::Draw / DraggableContainerIcon::MouseDown`  
 **UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
-**BLOCKED:** Waits on the window having a folder icon at all.  Neither shell draws one in its title bar, so there is nothing to hit-test for opaque pixels and nothing to start a drag from (CW-017).  
+**PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
+**MISSING:** No folder icon is drawn in either shell's title bar, so there is nothing on screen to hit-test yet (CW-017).  
 #### IV-058 · polish · open
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  
@@ -5960,13 +5961,14 @@ item->SetEnabled(!dragging) on each, where dragging == fBarView->Dragging()
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **PORT:** Only the FIXED items go dead while a drag is in flight; folders and recents stay live, because those are exactly the drop targets the menu exists to offer during one.  Leaving About and Power off live would invite a drop that does something unrelated to dropping.  
 *Shell: desktop*  
-#### DB-009 · important · partial
+#### DB-009 · important · done
 **Dropping files on the leaf logo creates symlinks to them in the Deskbar folder; dropping on a folder entry inside the menu creates the symlinks in that subfolder; dropping on a file entry launches it with the dropped refs**  
 TBarMenuTitle::Invoke calls HandleDeskbarMenu(NULL) (top level); a B_REFS_RECEIVED retargeted to the bar view carries the destination ref — directory => AddRefsToDeskbarMenu, file => SendDragMessage(NULL,&ref) which FSLaunchItem's it. In vertical mini-mode a drop landing in the team title is ignored  
 `BarView.cpp` → `TBarView::HandleDeskbarMenu`  
 **TIKU:** Symlink creation needs a VFS link primitive; if absent, record the target path in a menu manifest instead  
 **PORT:** A drop on the leaf makes LINKS in the Deskbar folder, not copies: the bar is a set of pointers at things, and copying into it would make a second one of everything.  Proven by the shell script and by the link itself, which dangles if its target goes.  
-**MISSING:** The menu's own entries are not drop targets yet -- dropping on a folder inside it, or on a file to launch it with the drop, needs the menu to hit-test during a drag.  
+*Shell: desktop*  
+**PORT:** A drop on the leaf makes LINKS in the Deskbar folder, not copies: the bar is a set of pointers at things.  The menu's own folder entries take a drop too, and only entries that NAME a path do -- About and Shut down are not places to put a file.  One item list serves both the drawing and the hit test, so a menu whose targets came from a second copy cannot drift into dropping on the wrong thing.  
 *Shell: desktop*  
 #### DB-010 · polish · done
 **In vertical expanded mode the leaf menu pops out to the side of the bar (right of it when docked left, left of it when docked right) instead of below the title**  
@@ -6135,13 +6137,14 @@ CheckForSizeOverrunVertical compares Window()->Frame().bottom against the screen
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MessageReceived case B_MOUSE_WHEEL_CHANGED`
 **BLOCKED:** no wheel path exists (no Button4/Button5 case in tiku_trk_desktop.c's event loop — grep returns nothing) and no overflow state exists for arrows to appear in: frame.h is content-derived with no clamp against the surface height (src/tiku_trk_deskbar.c:473-474)  
 
-#### DB-035 · important · partial
+#### DB-035 · important · done
 **Dragging files over the application list highlights the app under the cursor and dropping hands the files to it; apps that cannot open the dragged types are drawn/behaved as unavailable unless Ctrl is held to force acceptance**  
 Types are cached once per drag (CacheDragData/SpringLoadedFolderCacheDragData); AppCanHandleTypes checks the app's supported types via BAppFileInfo::IsSupportedType, always true for Tracker, always true with B_CONTROL_KEY. Drop sends B_REFS_RECEIVED to a running app, else launches it with the refs. Leaving the view or a drop-less mouse-up clears the highlight and the cached drag  
 `BarView.cpp` → `TBarView::AppCanHandleTypes`  
 **TIKU:** Type matching must come from the namespace descriptor's declared types; capability bits could gate whether a target may receive a drop at all  
 **PORT:** An application row is a target and says which app; one that cannot open the dragged types refuses, unless Ctrl forces it.  EVERY type must be one it opens -- a mixed selection it can only half read is a drop that half works -- and knowing nothing about the types is a refusal rather than a guess.  The seam between two rows belongs to neither.  
-**MISSING:** No highlight under the cursor while hovering, and the refusal is a status line rather than the row being drawn unavailable.  
+*Shell: desktop*  
+**PORT:** The row a drag would be handed to is lit while hovering, so the promise is visible before the drop is made, and the highlight is held on the BAR rather than in the shell -- one that the drawing had to be told about separately could disagree with the drop.  An application that cannot open the types refuses unless Ctrl forces it, and every type must match.  
 *Shell: desktop*  
 #### DB-036 · polish · open
 **Hovering off an open Deskbar submenu does not close it while the cursor is still within 20px of the menu, or over the leaf menu or any application item**  

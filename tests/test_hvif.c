@@ -24,6 +24,7 @@
 
 #include "tiku_desk_gfx.h"
 #include "tiku_trk_hvif.h"
+#include "tiku_trk_iconpaint.h"
 #include "tiku_trk_icons.h"
 
 /* An icon must put ink on at least this share of its square, and must not
@@ -288,6 +289,47 @@ main(void)
            "max %.3f\n", parsed, n, rendered, (double)ink_lo,
            (double)(parsed ? ink_sum / (float)parsed : 0.0f), (double)ink_hi);
     printf("contact sheet: build/icons.png\n");
+    {   /* An icon is not a rectangle: a drag must start only from a pixel
+         * that is part of the picture, or the gap between two icons
+         * becomes draggable (IV-057). */
+        int x, y, opaque = 0, clear = 0;
+
+        for (y = 0; y < 32; y++) {
+            for (x = 0; x < 32; x++) {
+                if (tiku_trk_icon_hit("folder", 32, x, y)) {
+                    opaque++;
+                } else {
+                    clear++;
+                }
+            }
+        }
+        printf("\nicon hit testing (IV-057)\n");
+        if (opaque == 0 || clear == 0) {
+            printf("  [FAIL] IV-057    a folder icon is neither wholly "
+                   "opaque nor wholly empty (%d/%d)\n", opaque, clear);
+            fails++;
+        } else {
+            printf("  [PASS] IV-057    a folder icon has both opaque and "
+                   "transparent pixels (%d opaque, %d clear)\n", opaque,
+                   clear);
+        }
+        if (tiku_trk_icon_hit("folder", 32, 40, 40)) {
+            printf("  [FAIL] IV-057    a point outside the icon hits it\n");
+            fails++;
+        } else {
+            printf("  [PASS] IV-057    a point outside the icon does not "
+                   "hit it\n");
+        }
+        if (!tiku_trk_icon_hit("no-such-icon", 32, 3, 3)) {
+            printf("  [FAIL] IV-057    an icon with no art cannot be "
+                   "picked up at all\n");
+            fails++;
+        } else {
+            printf("  [PASS] IV-057    an icon with no art answers over its "
+                   "whole square, rather than being unpickable\n");
+        }
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every icon parses and renders");
     return fails ? 1 : 0;
 }

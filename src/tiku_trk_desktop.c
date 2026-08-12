@@ -714,6 +714,29 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
         tiku_trk_db_drop_t d = tiku_trk_deskbar_drop_at(app->deskbar, x, y,
                                                         &team);
 
+        if (d == TIKU_TRK_DB_DROP_NONE) {
+            /* The open menu sits beside the bar, not on it, so it is
+             * asked separately (DB-009). */
+            char into[TIKU_TRK_PATH_MAX];
+
+            if (tiku_trk_deskbar_menu_drop_at(app->deskbar, x, y, into,
+                                              sizeof into) ==
+                    TIKU_TRK_DB_DROP_MENU_DIR) {
+                const char *sel3[TIKU_TRK_DRAG_MAX];
+                int k, n3 = 0;
+
+                for (k = 0; k < app->drag.count; k++) {
+                    sel3[n3++] = app->drag.path[k];
+                }
+                if (n3 > 0) {
+                    (void)tiku_trk_fs_link(app->fs, sel3, n3, into, 0);
+                    snprintf(app->status, sizeof app->status,
+                             "linking %d item%s into %.40s", n3,
+                             (n3 == 1) ? "" : "s", into);
+                }
+                return;
+            }
+        }
         if (d != TIKU_TRK_DB_DROP_NONE) {
             const char *sel2[TIKU_TRK_DRAG_MAX];
             int k, n2 = 0;
@@ -3489,6 +3512,19 @@ main(int argc, char **argv)
                         orow = r;
                     }
                     tiku_trk_deskbar_set_dragging(app.deskbar, 1);
+                    {   /* What the bar would take, worked out during the
+                         * hover rather than at the drop, so the highlight
+                         * and the drop cannot disagree. */
+                        int hteam = -1;
+
+                        (void)tiku_trk_deskbar_drop_at(app.deskbar,
+                                  ev.xmotion.x, ev.xmotion.y, &hteam);
+                        if (hteam != tiku_trk_deskbar_drop_team(app.deskbar)) {
+                            tiku_trk_deskbar_set_drop_team(app.deskbar,
+                                                           hteam);
+                            app.dirty = 1;
+                        }
+                    }
                     if (ofl != app.drop_fl || orow != app.drop_row) {
                         app.drop_fl = ofl;
                         app.drop_row = orow;

@@ -147,7 +147,9 @@ $(BUILD)/test_menu: src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c $(DESK)/tiku_desk_gfx.c tests/test_hvif.c \
+$(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c \
+                    src/tiku_trk_iconpaint.c $(DESK)/tiku_desk_gfx.c \
+                    tests/test_hvif.c \
                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 

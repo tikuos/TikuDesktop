@@ -60,4 +60,13 @@ void tiku_trk_thumb_paint(tiku_desk_surface_t *s,
                           const tiku_trk_image_t *th, int x, int y,
                           int size);
 
+/**
+ * @brief Whether the pixel at @p px, @p py of icon @p name is opaque.
+ *
+ * A drag starts only from a pixel that is actually part of the picture: an
+ * icon is not a rectangle, and arming a drag from its transparent corner
+ * would make the gap between two icons draggable (IV-057).
+ */
+int tiku_trk_icon_hit(const char *name, int size, int px, int py);
+
 #endif /* TIKU_TRK_ICONPAINT_H_ */

@@ -131,3 +131,23 @@ tiku_trk_thumb_paint(tiku_desk_surface_t *s, const tiku_trk_image_t *th,
         }
     }
 }
+
+int
+tiku_trk_icon_hit(const char *name, int size, int px, int py)
+{
+    const uint32_t *bm;
+
+    if (name == NULL || size <= 0 || px < 0 || py < 0 ||
+        px >= size || py >= size) {
+        return 0;
+    }
+    bm = tiku_trk_icons_bitmap(name, size);
+    if (bm == NULL) {
+        /* No art: the whole square answers, which is better than an icon
+         * that cannot be picked up at all. */
+        return 1;
+    }
+    /* Any alpha at all counts.  A threshold would make the antialiased
+     * rim undraggable, and the rim is most of what a small icon is. */
+    return ((bm[(long)py * size + px] >> 24) != 0u);
+}

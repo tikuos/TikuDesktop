@@ -46,6 +46,7 @@ struct tiku_trk_deskbar {
     tiku_trk_db_dock_t   dock;
     tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
     int                  dragging;
+    int                  drop_team;
     int                  team_count;
     tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
     int                  tray_count;
@@ -381,6 +382,26 @@ draw_win_icon(tiku_desk_surface_t *s, int x, int y, int minimized,
  * "left of the bar" offset put it at a negative x, i.e. off the screen
  * entirely (DB-010).
  */
+/**
+ * @brief The leaf menu's fixed contents.
+ *
+ * One list, so the hit test and the drawing cannot drift apart -- a menu
+ * whose targets are computed from a second copy is a menu that eventually
+ * drops on the wrong thing.
+ */
+static const char *const *
+leaf_items(void)
+{
+    static const char *const items[] = {
+        "About this system", "Find…", "-", "Deskbar preferences…",
+        "-", "/sys", "/dev", "/data", "-", "Shut down…"
+    };
+
+    return items;
+}
+
+#define LEAF_ITEMS 10
+
 static tiku_desk_rect_t
 leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 {
@@ -530,7 +551,14 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                       ICON_SZ, ICON_SZ };
             char label[TIKU_TRK_DB_LABEL_MAX];
 
-            draw_row_bg(s, row, t->active);
+            /* A hovering drag lights the row it would be handed to, so
+             * the promise the drop makes is visible before it is made
+             * (DB-035). */
+            if (db->drop_team == i) {
+                tiku_desk_fill(s, row, TIKU_DESK_C_SELECT);
+            } else {
+                draw_row_bg(s, row, t->active);
+            }
             /* The application's icon.  Tracker's own team is the one we can
              * name; anything else gets the generic application icon rather
              * than a blank, so the column never has a hole in it. */
@@ -623,10 +651,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
 
     /* The leaf menu, with the fixed head the original always shows. */
     if (db->menu_open) {
-        static const char *const items[] = {
-            "About this system", "Find…", "-", "Deskbar preferences…",
-            "-", "/sys", "/dev", "/data", "-", "Shut down…"
-        };
+        const char *const *items = leaf_items();
         int rowh = f->height + 6;
         tiku_desk_rect_t m = leaf_menu_rect(db, rowh, 10);
         tiku_desk_ui_menu(s, m, items, 10, -1);
@@ -844,7 +869,26 @@ tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging)
 {
     if (db != NULL) {
         db->dragging = dragging;
+        if (!dragging) {
+            /* The highlight belongs to the drag: when one ends there is
+             * nothing for it to be promising. */
+            db->drop_team = -1;
+        }
     }
+}
+
+void
+tiku_trk_deskbar_set_drop_team(tiku_trk_deskbar_t *db, int i)
+{
+    if (db != NULL) {
+        db->drop_team = i;
+    }
+}
+
+int
+tiku_trk_deskbar_drop_team(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->drop_team : -1;
 }
 
 int
@@ -916,4 +960,41 @@ tiku_trk_deskbar_launchable(const tiku_trk_model_t *m)
      * has no meaning, and complaining about something the user very likely
      * did by accident would be noise (DB-066). */
     return !tiku_trk_model_is_container(m);
+}
+
+tiku_trk_db_drop_t
+tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
+                              char *path, size_t max)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const char *const *items = leaf_items();
+    tiku_desk_rect_t m;
+    int rowh, i;
+
+    if (path != NULL && max > 0u) {
+        path[0] = '\0';
+    }
+    if (db == NULL || !db->menu_open) {
+        return TIKU_TRK_DB_DROP_NONE;
+    }
+    rowh = f->height + 6;
+    m = leaf_menu_rect(db, rowh, LEAF_ITEMS);
+    if (x < m.x || x >= m.x + m.w || y < m.y + 2 ||
+        y >= m.y + 2 + LEAF_ITEMS * rowh) {
+        return TIKU_TRK_DB_DROP_NONE;
+    }
+    i = (y - m.y - 2) / rowh;
+    if (i < 0 || i >= LEAF_ITEMS || items[i][0] == '-') {
+        return TIKU_TRK_DB_DROP_NONE;   /* a separator is nobody's */
+    }
+    /* An entry naming a path is a folder and takes the links; everything
+     * else is fixed, and fixed items are not drop targets at all while a
+     * drag is in flight (DB-008). */
+    if (items[i][0] == '/') {
+        if (path != NULL) {
+            snprintf(path, max, "%s", items[i]);
+        }
+        return TIKU_TRK_DB_DROP_MENU_DIR;
+    }
+    return TIKU_TRK_DB_DROP_NONE;
 }

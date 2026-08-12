@@ -187,6 +187,30 @@ tiku_trk_db_drop_t tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db,
  */
 void tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging);
 
+/**
+ * @brief What a drag over the OPEN leaf menu is on (DB-009).
+ *
+ * A folder entry takes the links; a fixed entry takes nothing, since
+ * those are disabled while a drag is in flight.
+ *
+ * @param path Receives the folder's path for DROP_MENU_DIR.
+ */
+tiku_trk_db_drop_t tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db,
+                                                 int x, int y, char *path,
+                                                 size_t max);
+
+/**
+ * @brief Light the application a hovering drag would be handed to.
+ *
+ * Pass -1 for none.  Held on the bar rather than in the shell because the
+ * bar is what draws it, and a highlight the drawing has to be told about
+ * separately is one that can disagree with the drop (DB-035).
+ */
+void tiku_trk_deskbar_set_drop_team(tiku_trk_deskbar_t *db, int i);
+
+/** @brief Which application is lit, or -1. */
+int tiku_trk_deskbar_drop_team(const tiku_trk_deskbar_t *db);
+
 /** @brief Whether a fixed leaf-menu item may be chosen right now. */
 int tiku_trk_deskbar_item_enabled(const tiku_trk_deskbar_t *db, int fixed);
 

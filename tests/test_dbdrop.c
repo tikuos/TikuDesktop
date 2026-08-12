@@ -100,6 +100,56 @@ main(void)
     check(tiku_trk_deskbar_item_enabled(db, 1), "DB-008",
           "and it comes back when the drag ends");
 
+    printf("\nthe menu's own entries (DB-009)\n");
+    {
+        char into[256], seen[8][256];
+        int y2, nseen = 0, lo = -1, hi = -1, k, all_paths = 1;
+
+        tiku_trk_deskbar_open_menu(db);
+        for (y2 = 0; y2 < 400; y2++) {
+            if (tiku_trk_deskbar_menu_drop_at(db, f.x - 20, y2, into,
+                                              sizeof into) ==
+                    TIKU_TRK_DB_DROP_MENU_DIR) {
+                int dup = 0;
+
+                if (lo < 0) { lo = y2; }
+                hi = y2;
+                for (k = 0; k < nseen; k++) {
+                    if (strcmp(seen[k], into) == 0) { dup = 1; }
+                }
+                if (!dup && nseen < 8) {
+                    snprintf(seen[nseen], sizeof seen[0], "%s", into);
+                    if (into[0] != '/') { all_paths = 0; }
+                    nseen++;
+                }
+            }
+        }
+        check(nseen == 3 && all_paths, "DB-009",
+              "exactly the three folder entries take a drop, and only "
+              "entries that name a path -- About and Shut down are not "
+              "places to put a file");
+        tiku_trk_deskbar_close_menu(db);
+        check(lo >= 0 &&
+              tiku_trk_deskbar_menu_drop_at(db, f.x - 20, lo, into,
+                                            sizeof into) ==
+                  TIKU_TRK_DB_DROP_NONE, "DB-009",
+              "and with the menu closed the same point takes nothing: a "
+              "menu that is not there is not a target");
+    }
+
+    printf("\nthe highlight under a hovering drag (DB-035)\n");
+    check(tiku_trk_deskbar_drop_team(db) == -1, "DB-035",
+          "nothing is lit to begin with");
+    tiku_trk_deskbar_set_dragging(db, 1);
+    tiku_trk_deskbar_set_drop_team(db, 1);
+    check(tiku_trk_deskbar_drop_team(db) == 1, "DB-035",
+          "a hover lights the row the drop would be handed to, so the "
+          "promise is visible before it is made");
+    tiku_trk_deskbar_set_dragging(db, 0);
+    check(tiku_trk_deskbar_drop_team(db) == -1, "DB-035",
+          "and the drag ending takes it away -- there is nothing left for "
+          "it to be promising");
+
     printf("\nwhat a drop launches (DB-066, DB-075)\n");
     memset(&m, 0, sizeof m);
     m.kind = TIKU_TRK_KIND_FILE;
