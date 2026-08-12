@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_find.h"
+#include "tiku_trk_state.h"
 #include "tiku_desk_ui.h"
 
 #include <stdio.h>
@@ -230,6 +231,22 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
     if (f->row_count == 0) {
         f->row_count = 1;       /* the panel always shows one row */
     }
+    snprintf(f->type, sizeof f->type, "%s", q->type);
+    if (q->type[0] != '\0' && f->row_count > 0) {
+        /* The type term is the panel's control, not one of its rows: it was
+         * appended by _build, so restoring it as a row would show the user
+         * a condition they never typed and duplicate it on the next run. */
+        int last = f->row_count - 1;
+
+        if (f->row[last].field == TIKU_TRK_QF_TYPE) {
+            f->row_count = (last > 0) ? last : 1;
+            if (last == 0) {
+                memset(&f->row[0], 0, sizeof f->row[0]);
+                f->row[0].field = TIKU_TRK_QF_NAME;
+                f->row[0].op = TIKU_TRK_OP_CONTAINS;
+            }
+        }
+    }
     if (q->mode == TIKU_TRK_QMODE_NAME && q->term_count > 0) {
         /* A by-name query is one term over the name; the panel shows what
          * was TYPED, which is that term's value. */
@@ -304,6 +321,14 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
                                                    : f->row[i - 1].join);
         }
         break;
+    }
+    if (f->type[0] != '\0' && f->mode != TIKU_TRK_QMODE_FORMULA) {
+        /* ANDed onto everything the rows ask, which is what "of type" means
+         * -- and recorded on the query so a saved one comes back with its
+         * narrowing intact (Q-004). */
+        snprintf(q->type, sizeof q->type, "%s", f->type);
+        (void)tiku_trk_query_add_term(q, TIKU_TRK_QF_TYPE, TIKU_TRK_OP_IS,
+                                      f->type, TIKU_TRK_JOIN_AND);
     }
     if (!f->everywhere) {
         for (i = 0; i < f->place_count; i++) {
@@ -403,14 +428,169 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
 /* layout                                                                    */
 /*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+/* The type menu (Q-004, Q-012, Q-015, Q-016)                                */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Where the most-used list lives. */
+#define TYPE_SLOT "\x01types"
+#define TYPE_ATTR "_trk/types_used"
+
+void
+tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s)
+{
+    if (f != NULL) {
+        f->store = s;
+    }
+}
+
+int
+tiku_trk_find_type_shown(const tiku_trk_find_t *f)
+{
+    /* Not in formula mode: the formula IS the question there, and a control
+     * quietly ANDing a type onto it would make the text on screen a lie
+     * about what is being asked (Q-012). */
+    return (f != NULL && f->mode != TIKU_TRK_QMODE_FORMULA);
+}
+
+const char *
+tiku_trk_find_type_label(const tiku_trk_find_t *f)
+{
+    int i;
+    const char *t, *label;
+
+    if (f == NULL || f->type[0] == '\0') {
+        return "All files and folders";
+    }
+    for (i = 0; (t = tiku_trk_model_type_at(i, &label)) != NULL; i++) {
+        if (strcmp(t, f->type) == 0) {
+            return label;
+        }
+    }
+    return f->type;             /* one the table does not name */
+}
+
+/** @brief Read the most-used list, newest first. */
+static int
+used_read(struct tiku_trk_store *store, char out[][TIKU_TRK_TYPE_MAX],
+          int max)
+{
+    char buf[TIKU_TRK_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
+    int n = 0, len;
+    char *line, *save;
+
+    if (store == NULL || max <= 0) {
+        return 0;
+    }
+    len = tiku_trk_state_read(store, TYPE_SLOT, TYPE_ATTR, buf,
+                              sizeof buf - 1u);
+    if (len <= 0) {
+        return 0;
+    }
+    buf[len] = '\0';
+    for (line = strtok_r(buf, "\n", &save); line != NULL && n < max;
+         line = strtok_r(NULL, "\n", &save)) {
+        if (line[0] != '\0') {
+            snprintf(out[n++], TIKU_TRK_TYPE_MAX, "%.*s",
+                     (int)(TIKU_TRK_TYPE_MAX - 1), line);
+        }
+    }
+    return n;
+}
+
+void
+tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
+                       struct tiku_trk_store *store)
+{
+    char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+    char keep[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+    int n, i, k = 0;
+
+    if (f == NULL) {
+        return;
+    }
+    snprintf(f->type, sizeof f->type, "%s", (type != NULL) ? type : "");
+    /* The attribute rows are deliberately NOT discarded here.  The original
+     * throws them away on a type change; this panel already refuses the
+     * same loss when the mode changes, for the same reason -- a half-built
+     * query is worth more than a clean slate (Q-013). */
+    if (store == NULL || f->type[0] == '\0') {
+        return;
+    }
+    n = used_read(store, used, TIKU_TRK_FIND_MOST_USED);
+    snprintf(keep[k++], TIKU_TRK_TYPE_MAX, "%.*s",
+             (int)(TIKU_TRK_TYPE_MAX - 1), f->type);
+    for (i = 0; i < n && k < TIKU_TRK_FIND_MOST_USED; i++) {
+        /* Promoted, not appended: picking one again moves it up, which is
+         * what makes the head of the menu the types this user works in. */
+        if (strcmp(used[i], f->type) != 0) {
+            memcpy(keep[k++], used[i], TIKU_TRK_TYPE_MAX);
+        }
+    }
+    {
+        char buf[TIKU_TRK_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
+        size_t at = 0u;
+
+        for (i = 0; i < k && at + 1u < sizeof buf; i++) {
+            int w = snprintf(buf + at, sizeof buf - at, "%s\n", keep[i]);
+
+            if (w <= 0 || (size_t)w >= sizeof buf - at) {
+                break;
+            }
+            at += (size_t)w;
+        }
+        (void)tiku_trk_state_write(store, TYPE_SLOT, TYPE_ATTR, buf, at);
+    }
+}
+
+int
+tiku_trk_find_type_menu(struct tiku_trk_store *store, const char **out,
+                        int max)
+{
+    static char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+    int n = 0, nu, i, k;
+    const char *t;
+
+    if (out == NULL || max <= 0) {
+        return 0;
+    }
+    nu = used_read(store, used, TIKU_TRK_FIND_MOST_USED);
+    for (i = 0; i < nu && n < max; i++) {
+        out[n++] = used[i];
+    }
+    /* Then every type the port knows, minus the ones already at the top:
+     * the table IS the type database here, so a menu offering more would
+     * offer types nothing can recognise. */
+    for (i = 0; (t = tiku_trk_model_type_at(i, NULL)) != NULL && n < max;
+         i++) {
+        int seen = 0;
+
+        for (k = 0; k < nu; k++) {
+            if (strcmp(used[k], t) == 0) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            out[n++] = t;
+        }
+    }
+    return n;
+}
+
 /** @brief Rows of controls the current mode needs. */
 static int
 control_rows(const tiku_trk_find_t *f)
 {
+    int n;
+
     switch (f->mode) {
-    case TIKU_TRK_QMODE_ATTRIBUTE: return f->row_count;
-    default:                       return 1;
+    case TIKU_TRK_QMODE_ATTRIBUTE: n = f->row_count; break;
+    default:                       n = 1; break;
     }
+    /* The type control is a row of its own when it is shown, so the panel
+     * grows and shrinks with it rather than overlapping the scope row. */
+    return n + (tiku_trk_find_type_shown(f) ? 1 : 0);
 }
 
 int
@@ -442,6 +622,20 @@ row_rect(tiku_desk_rect_t f, int i)
     r.x = f.x + PAD;
     r.y = f.y + PAD + ROW_H + GAP + i * (ROW_H + GAP);
     r.w = f.w - 2 * PAD;
+    r.h = ROW_H;
+    return r;
+}
+
+/** @brief Rectangle of the type control, the row above the scope. */
+static tiku_desk_rect_t
+type_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
+{
+    tiku_desk_rect_t r;
+    int rows = control_rows(f) - 1;     /* its own row is the last one */
+
+    r.x = fr.x + PAD + LABEL_W;
+    r.y = fr.y + PAD + ROW_H + GAP + rows * (ROW_H + GAP);
+    r.w = FIELD_W + OP_W;
     r.h = ROW_H;
     return r;
 }
@@ -589,6 +783,11 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
         }
     }
 
+    if (tiku_trk_find_type_shown(f)) {
+        r = type_rect(f, frame);
+        label_at(s, frame.x + PAD, r, "Of type");
+        draw_popup_button(s, r, tiku_trk_find_type_label(f));
+    }
     r = scope_rect(f, frame);
     label_at(s, frame.x + PAD, r, "Search in");
     (void)tiku_trk_find_scope_label(f, buf, sizeof buf);
@@ -651,6 +850,10 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     }
     if (in(button_rect(f, frame, 1), x, y)) {
         return TIKU_TRK_FIND_HIT_SAVE;
+    }
+    if (tiku_trk_find_type_shown(f) &&
+        in(type_rect(f, frame), x, y)) {
+        return TIKU_TRK_FIND_HIT_TYPE;
     }
     r = scope_rect(f, frame);
     if (in(r, x, y)) {
@@ -776,6 +979,39 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             }
         }
         break;
+    case TIKU_TRK_FIND_HIT_TYPE: {
+        /* The same shape the scope menu has: a fixed first item that is
+         * not one of the things listed, a separator, then the list -- with
+         * the ones this user picks most at its head (Q-015, Q-016). */
+        const char *types[24];
+        int n = tiku_trk_find_type_menu(f->store, types,
+                                        (int)(sizeof types /
+                                              sizeof types[0]));
+
+        (void)tiku_trk_menu_add(m, "All files and folders", 0, 0, 0u, 1);
+        m->item[0].marked = (f->type[0] == '\0');
+        (void)tiku_trk_menu_add_separator(m);
+        for (i = 0; i < n; i++) {
+            const char *label = NULL;
+            int k;
+
+            /* Named by what it MEANS where the table knows it, and by the
+             * type itself where it does not. */
+            for (k = 0; tiku_trk_model_type_at(k, NULL) != NULL; k++) {
+                if (strcmp(tiku_trk_model_type_at(k, &label), types[i]) ==
+                        0) {
+                    break;
+                }
+                label = NULL;
+            }
+            (void)tiku_trk_menu_add(m, (label != NULL) ? label : types[i],
+                                    100 + i, 0, 0u, 1);
+            if (strcmp(f->type, types[i]) == 0) {
+                m->item[m->count - 1].marked = 1;
+            }
+        }
+        break;
+    }
     default:
         return;
     }
@@ -836,6 +1072,20 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                     }
                 }
                 break;
+            case TIKU_TRK_FIND_HIT_TYPE:
+                if (cmd == 0) {
+                    tiku_trk_find_set_type(f, "", f->store);
+                } else {
+                    const char *types[24];
+                    int n = tiku_trk_find_type_menu(f->store, types,
+                                (int)(sizeof types / sizeof types[0]));
+                    int at = cmd - 100;
+
+                    if (at >= 0 && at < n) {
+                        tiku_trk_find_set_type(f, types[at], f->store);
+                    }
+                }
+                break;
             default:
                 break;
             }
@@ -851,6 +1101,9 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
         break;
     case TIKU_TRK_FIND_HIT_SCOPE:
         open_popup(f, what, 0, scope_rect(f, frame), screen);
+        break;
+    case TIKU_TRK_FIND_HIT_TYPE:
+        open_popup(f, what, 0, type_rect(f, frame), screen);
         break;
     case TIKU_TRK_FIND_HIT_FIELD: {
         tiku_desk_rect_t c = row_rect(frame, row);

@@ -11,7 +11,7 @@ key x
 key j
 key v
 wait 3
-click 595 433
+click 595 452
 wait 25
 expect-find-text zqxjv
 note the results window answers Cmd+G, which every menu advertises

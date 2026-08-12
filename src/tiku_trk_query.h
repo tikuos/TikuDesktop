@@ -49,7 +49,10 @@ typedef enum {
     TIKU_TRK_QF_SIZE,
     TIKU_TRK_QF_CAP,
     TIKU_TRK_QF_UNIT,        /* the descriptor's unit: bytes, Hz, s ...    */
-    TIKU_TRK_QF_WRITABLE
+    TIKU_TRK_QF_WRITABLE,
+    /* The entry's TYPE, matched as a type rather than as text: picking a
+     * supertype admits everything under it (Q-004). */
+    TIKU_TRK_QF_TYPE
 } tiku_trk_qfield_t;
 
 /** @brief The operator vocabulary, in the original's order. */

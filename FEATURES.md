@@ -4125,12 +4125,23 @@ GetByNamePredicate: PushAttr("name"); PushString(text, true) (true = case-insens
 `FindPanel.cpp` → `FindPanel::GetByNamePredicate`  
 **TIKU:** TikuOS VFS has no query engine or attribute index; the '*' → B_EQ trick must be reimplemented as an explicit glob matcher over node names walked from the namespace.  
 
-#### Q-004 · core · open
+#### Q-004 · core · done
 **The selected MIME type is ANDed onto every by-name and by-attribute query; picking a supertype searches all of its subtypes.**  
 PushMimeType: skips the constraint when type == "mime/ALLTYPES" (the "All files and folders" item); if the type has no '/', appends "/*"; then PushAttr("BEOS:TYPE"), PushString(type), PushOp(B_EQ), PushOp(B_AND).  
 `FindPanel.cpp` → `FindPanel::PushMimeType`  
 **TIKU:** Replace MIME type with the VFS node's typed descriptor / capability bits; "supertype" becomes a descriptor class, and the "/*" widening becomes a mask test.
-**SUBSYSTEM:** Find-panel type menu. tiku_trk_find_t has no type member (src/tiku_trk_find.h:53-79) and the panel's entire control set is mode/rows/scope/add-remove/search/save (tiku_trk_find_hit, src/tiku_trk_find.c:551-635) — nothing selects a type to AND onto a by-name or by-attribute query, and no supertype/class widening exists. Kind is only a manual attribute row (src/tiku_trk_find.c:49), a different mechanism that does not touch by-name mode.  
+**PORT:** The panel carries a type, the query carries it, and it is ANDed
+onto whatever the rows ask -- narrowing them rather than replacing them.  A
+type is matched AS a type: a supertype admits everything under it, which is
+what lets a table of a dozen entries answer for types it has never heard of,
+and the slash is required so "text" cannot claim "textual/plain".  There is
+no MIME database here, so the table IS the type registry; the widening rule
+it already used for icons and kinds is now reachable from a query.
+*src/tiku_trk_model.c:tiku_trk_model_type_is/_type_at;
+src/tiku_trk_query.c (TIKU_TRK_QF_TYPE and its arm of term_matches);
+src/tiku_trk_find.c:tiku_trk_find_build; tests/test_query.c;
+tests/shell/qtype.script*  
+*Shell: desktop*  
 
 #### Q-005 · core · done
 **By-attribute mode shows rows of [attribute menu → operator submenu] + value field; rows are combined with an And/Or menu placed on the preceding row.**  
@@ -4149,7 +4160,11 @@ Name (attr "name", B_STRING_TYPE): contains / is / is not / starts with / ends w
 AddMimeTypeAttrs adds supertype attributes first (skipped when the type is supertype-only), then the type's own; AddAttributes reads BMimeType::GetAttrInfo and requires attr:public_name, attr:name and attr:type; strings get contains/is/is not/starts with/ends with, numerics get is/greater than/less than, B_TIME_TYPE gets before/after.  
 `FindPanel.cpp` → `FindPanel::AddMimeTypeAttrs / FindPanel::AddAttributes`  
 **TIKU:** The MIME attribute registry has no TikuOS analogue; the natural replacement is the VFS node's typed descriptor advertising which named fields are searchable.
-**SUBSYSTEM:** Find-panel type menu. The attribute menu is the fixed kFields table (src/tiku_trk_find.c:41-56); nothing reads a node descriptor to extend it, and there is no selected type to extend it from — find.c never references tiku_trk_desc outside the query engine.  
+**SUBSYSTEM:** per-type attribute declarations -- the attribute menu is a
+compiled-in list of eight fields and there is nowhere for a type to declare
+more.  The half of the row that is about operators is already built: each
+field offers only the operators it can answer, and a field change drops the
+row to that field's own starting operator.
 
 #### Q-008 · important · partial
 **Typed values are parsed per attribute type before being pushed into the query.**  
@@ -4179,11 +4194,20 @@ FindWindow::GetPredicateString for kByFormulaItem copies the "TextControl" text 
 SwitchMode's kByFormulaItem case builds a BQuery via GetByAttrPredicate/GetByNamePredicate, calls GetPredicate() and then sets that string into the newly created TextControl; the conversion is one-way (there is no formula → attribute rows path).  
 `FindPanel.cpp` → `FindPanel::SwitchMode`  
 
-#### Q-012 · polish · open
+#### Q-012 · polish · done
 **The MIME type menu is hidden in by-formula mode and shown again in the other two modes, without the panel jumping in width.**  
 ShowOrHideMimeTypeMenu hides "MimeTypeMenu" and gives the hidden "MimeTypeMenuSpacer" box its min/max size so the layout keeps the same footprint.  
 `FindPanel.cpp` → `FindPanel::ShowOrHideMimeTypeMenu`
-**SUBSYSTEM:** Find-panel type menu — no type menu exists to hide in formula mode or show elsewhere (the panel's controls are enumerated at src/tiku_trk_find.c:551-635; none is a type menu).  
+**PORT:** Shown in by-name and by-attribute modes, hidden in formula mode --
+and in formula mode nothing is ANDed on either, because a hidden control that
+still narrowed the search would make the text on screen a lie about what is
+being asked.  The control takes a row of its own, so the panel grows and
+shrinks with it rather than overlapping the scope row; the original's
+width-jump hazard has no counterpart here, where the panel is a fixed width
+and the height is what moves.
+*src/tiku_trk_find.c:tiku_trk_find_type_shown, control_rows and the draw and
+hit-test arms; tests/test_query.c; tests/shell/qtype.script*  
+*Shell: desktop*  
 
 #### Q-013 · important · differs
 **Changing the MIME type while in by-attribute mode throws away the existing attribute rows and starts over with one fresh row.**  
@@ -4202,18 +4226,34 @@ type will narrow what the rows ask rather than replacing them.
 AddAttrRow appends a row and adds the And/Or menu to the previous row, then enables "remove button" when CountRows() > 1; RemoveAttrRow returns early below 2 rows, deletes the last row's views, moves focus to the previous row's TextEntry, and removes the now-dangling Logic field.  
 `FindPanel.cpp` → `FindPanel::AddAttrRow / FindPanel::RemoveAttrRow / FindPanel::SetupAddRemoveButtons`  
 
-#### Q-015 · important · open
+#### Q-015 · important · partial
 **The MIME type menu lists "All files and folders" first, then the user's most-used types, then a tree of supertypes with their subtypes; empty supertypes are omitted.**  
 AddMimeTypesToMenu: first item + separator, then up to 5 names from MostUsedNames("MostUsedMimeTypes","Tracker") + separator, then GetInstalledSupertypes() submenus filled by AddOneMimeTypeToMenu; supertype submenus with 0 items are removed. Two subtypes sharing a short description get " (subtype)" appended to both labels.  
 `FindPanel.cpp` → `FindPanel::AddMimeTypesToMenu / FindPanel::AddOneMimeTypeToMenu`
-**SUBSYSTEM:** Find-panel type menu — the menu itself (All files / most-used / supertype tree) is absent; open_popup builds only mode/field/op/join/scope popups (src/tiku_trk_find.c:637-704).  
+**MISSING:** The menu is built and has the original's shape: "All files and
+folders" first as a fixed item that is not one of the types, a separator,
+then the most-used at the head and the rest of the table below, each named by
+what it MEANS and the current one ticked.  What is absent is the HIERARCHY --
+a supertype with its members under it -- because the panel owns one menu and
+submenus are non-owned pointers, so a tree needs per-supertype storage the
+panel does not have; the supertypes are offered as flat entries instead.
+*src/tiku_trk_find.c:tiku_trk_find_type_menu and the HIT_TYPE popup;
+tests/test_query.c*
 
-#### Q-016 · polish · open
+#### Q-016 · polish · done
 **Picking a MIME type promotes it in a persistent most-used list, so frequently searched types stay near the top of the menu across reboots.**  
 kMIMETypeItem calls gMostUsedMimeTypes.AddName(label) for every item except index 0; the list lives in ~/config/settings/Tracker/MostUsedMimeTypes as "<count> <name>" lines, sorted by count then case-insensitive name, counts are decremented on write, clamped to 20, and entries below -10 are dropped (never the first).  
 `FindPanel.cpp` → `MostUsedNames::AddName / MostUsedNames::LoadList / MostUsedNames::~MostUsedNames / MostUsedNames::CompareNames`  
 **TIKU:** A decaying most-used list is a persist-cell-sized amount of state; on TikuOS it would be a small durable record rather than a settings file.
-**SUBSYSTEM:** Find-panel type menu — no type menu, so no most-used promotion; the decaying persistent list also has nowhere durable to live, since the desktop's query store is per-run memory (tiku_trk_store_memory_open, src/tiku_trk_desktop.c:1594).  
+**PORT:** Picking a type promotes it to the head of the menu, and picking one
+again MOVES it rather than listing it twice -- the head of the menu is the
+types this user works in, not a log of every pick.  The list is kept in the
+store, which is durable now, and a promoted type is not offered a second time
+further down.  The original's decay-by-count has no counterpart: this list is
+four entries, and a most-recently-used order is the same answer without a
+score to age.
+*src/tiku_trk_find.c:tiku_trk_find_set_type/used_read; tests/test_query.c*  
+*Shell: desktop*  
 
 #### Q-017 · core · done
 **A Target menu scopes the search: "All disks", or any subset of the mounted, query-capable volumes.**  

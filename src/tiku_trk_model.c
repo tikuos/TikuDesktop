@@ -88,6 +88,18 @@ static const struct {
 };
 #define NTYPES ((int)(sizeof kTypes / sizeof kTypes[0]))
 
+const char *
+tiku_trk_model_type_at(int i, const char **label)
+{
+    if (i < 0 || i >= NTYPES) {
+        return NULL;
+    }
+    if (label != NULL) {
+        *label = kTypes[i].kind;
+    }
+    return kTypes[i].type;
+}
+
 /** @brief Case-folded comparison of @p n bytes. */
 static int
 fold_eq(const char *a, const char *b, size_t n)
@@ -138,6 +150,27 @@ type_row(const char *type)
         }
     }
     return -1;
+}
+
+int
+tiku_trk_model_type_is(const char *type, const char *want)
+{
+    size_t n;
+
+    if (want == NULL || want[0] == '\0') {
+        return 1;               /* asking for nothing admits everything */
+    }
+    if (type == NULL || type[0] == '\0') {
+        return 0;
+    }
+    n = strlen(want);
+    if (fold_eq(type, want, n) && type[n] == '\0') {
+        return 1;               /* the type itself */
+    }
+    /* A SUPERTYPE ends at the slash and admits everything under it, which
+     * is what lets a table of a dozen entries answer for types it has
+     * never heard of. */
+    return (want[n - 1u] == '/' && fold_eq(type, want, n));
 }
 
 const char *

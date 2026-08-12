@@ -51,6 +51,11 @@ typedef struct {
     int         selected;   /* how many poses the focused view has       */
     const char *sel_name;   /* the first selected pose's name, or NULL   */
     const char *find_text;  /* what the Find panel is asking for         */
+    const char *find_type;  /* the type it is narrowed to                */
+    /* Bit 0: a row whose type is NOT the one the panel asked for.  Bit 1:
+     * at least one row was looked at.  Together they say whether a search
+     * really was narrowed. */
+    int         kinds;
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
@@ -76,6 +81,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-selected <n>
  *     expect-selected-name <name>
  *     expect-find-text <text>             -- the Find panel's own field
+ *     expect-find-type <label>
+ *     expect-type-narrowed                -- every row is of the asked type
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

@@ -23,6 +23,8 @@
 #include "tiku_trk_menu.h"
 #include "tiku_trk_query.h"
 
+struct tiku_trk_store;
+
 #define TIKU_TRK_FIND_ROWS_MAX   4
 #define TIKU_TRK_FIND_PLACES_MAX 8
 #define TIKU_TRK_FIND_TEXT_MAX   64
@@ -46,6 +48,7 @@ typedef enum {
     TIKU_TRK_FIND_HIT_ADD,
     TIKU_TRK_FIND_HIT_REMOVE,
     TIKU_TRK_FIND_HIT_SCOPE,
+    TIKU_TRK_FIND_HIT_TYPE,        /* the "of type" menu (Q-004)           */
     TIKU_TRK_FIND_HIT_SEARCH,
     TIKU_TRK_FIND_HIT_SAVE
 } tiku_trk_find_hit_t;
@@ -57,8 +60,15 @@ typedef struct {
     tiku_trk_qjoin_t  join;        /* joins this row to the NEXT one       */
 } tiku_trk_find_row_t;
 
+/** @brief How many types the most-used list keeps at the top (Q-016). */
+#define TIKU_TRK_FIND_MOST_USED 4
+
 typedef struct {
     tiku_trk_qmode_t      mode;
+    /* The type every term is narrowed to, or "" for all.  Held as the type
+     * STRING rather than as an index into the table, because it is what
+     * goes into the query and what comes back out of a saved one. */
+    char                  type[TIKU_TRK_TYPE_MAX];
     char                  name_text[TIKU_TRK_FIND_TEXT_MAX];
     tiku_trk_find_row_t   row[TIKU_TRK_FIND_ROWS_MAX];
     int                   row_count;
@@ -76,10 +86,47 @@ typedef struct {
     tiku_trk_find_hit_t   popup_for;
     int                   popup_row;
     tiku_desk_rect_t      popup_frame;
+    /* Where the most-used type list lives.  Held on the panel because the
+     * menu is built where the click lands, and passing it through every
+     * hit-testing call would put a store in the geometry's signature. */
+    struct tiku_trk_store *store;
 } tiku_trk_find_t;
+
+/** @brief Tell the panel where its most-used list lives (Q-016). */
+void tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s);
 
 /** @brief Start a panel with one attribute row and no scope restriction. */
 void tiku_trk_find_init(tiku_trk_find_t *f);
+
+/**
+ * @brief Whether the type menu is shown at all (Q-012).
+ *
+ * Hidden in formula mode, where the formula says what it asks for and a
+ * control that silently ANDed something onto it would make the text a lie.
+ */
+int tiku_trk_find_type_shown(const tiku_trk_find_t *f);
+
+/** @brief The label the type control shows. */
+const char *tiku_trk_find_type_label(const tiku_trk_find_t *f);
+
+/**
+ * @brief Choose a type, and promote it in the most-used list (Q-016).
+ *
+ * @param store Where the list lives, or NULL not to keep one.
+ */
+void tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
+                            struct tiku_trk_store *store);
+
+/**
+ * @brief The types the menu offers, most-used first (Q-015).
+ *
+ * "All files and folders" is not in this list: it is the fixed first item,
+ * which is a different thing from a type.
+ *
+ * @return how many were written.
+ */
+int tiku_trk_find_type_menu(struct tiku_trk_store *store,
+                            const char **out, int max);
 
 /** @brief Offer @p name as a place the search can be scoped to. */
 int tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name);

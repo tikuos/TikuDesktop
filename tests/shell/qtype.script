@@ -1,0 +1,21 @@
+# shell: desktop
+# Q-004/Q-012/Q-015: the Find panel narrows a search to a type, the menu
+# offers what the port can actually recognise, and the control is gone in
+# formula mode -- where the formula is the question.
+note the panel opens with the type control showing everything
+key f ctrl
+wait 5
+expect-find-type All files and folders
+note picking Folder narrows it
+click 300 400
+wait 3
+click 200 452
+wait 3
+expect-find-type Folder
+note and a search then finds only things of that type, whatever the name
+note asks -- the type is ANDed onto the rows rather than replacing them
+click 595 452
+wait 30
+expect-status results
+expect-type-narrowed
+quit

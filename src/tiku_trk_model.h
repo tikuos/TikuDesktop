@@ -150,6 +150,29 @@ int tiku_trk_model_is_mutable_container(const tiku_trk_model_t *m);
 /** @brief Is its value writable (a file, or a writable device node). */
 int tiku_trk_model_is_writable(const tiku_trk_model_t *m);
 
+/**
+ * @brief Walk the type table (Q-015).
+ *
+ * The port has no type DATABASE: what a type means comes from a compiled-in
+ * table, so "every type the system knows" is exactly this list.  A menu that
+ * offered more would be offering types nothing can recognise.
+ *
+ * @param i     Row index, from zero.
+ * @param label Receives the human name ("Text file"), or NULL.
+ * @return the type string, or NULL past the end.
+ */
+const char *tiku_trk_model_type_at(int i, const char **label);
+
+/**
+ * @brief Whether @p type is the type @p want asks for (Q-004).
+ *
+ * A supertype admits its members -- picking "text/" finds
+ * "text/x-source-code" -- which is the same widening the icon and kind
+ * lookups already do, and the reason a menu of a dozen entries is useful
+ * at all.
+ */
+int tiku_trk_model_type_is(const char *type, const char *want);
+
 /** @brief Human "Kind" column text. */
 const char *tiku_trk_model_kind_string(const tiku_trk_model_t *m);
 

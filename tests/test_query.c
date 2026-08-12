@@ -553,6 +553,193 @@ main(void)
         }
     }
 
+    printf("\nwhat a type admits (Q-004)\n");
+    check(tiku_trk_model_type_is("text/plain", "text/plain"),
+          "a type is itself");
+    check(tiku_trk_model_type_is("TEXT/Plain", "text/plain"),
+          "case-folded, as every other type lookup here is");
+    check(tiku_trk_model_type_is("text/x-source-code", "text/"),
+          "a supertype admits what is under it");
+    check(!tiku_trk_model_type_is("textual/plain", "text"),
+          "a want with no slash is not a supertype: without the slash "
+          "\"text\" would claim \"textual/plain\", and a menu entry that "
+          "quietly widened would be worse than one that found nothing");
+    check(!tiku_trk_model_type_is("text/plain", "text/x"),
+          "and a longer want is not admitted by a shorter type");
+    check(tiku_trk_model_type_is("anything", ""),
+          "asking for no type admits everything -- that is what the "
+          "menu's first item means");
+    check(!tiku_trk_model_type_is("", "text/"),
+          "while an entry with no type of its own is admitted by nothing");
+
+    printf("\nnarrowing to a type (Q-004)\n");
+    {
+        tiku_trk_find_t f;
+        tiku_trk_query_t q;
+        tiku_trk_model_t dir, file, src;
+
+        memset(&dir, 0, sizeof dir);
+        dir.kind = TIKU_TRK_KIND_DIRECTORY;
+        snprintf(dir.name, sizeof dir.name, "papers");
+        snprintf(dir.type, sizeof dir.type,
+                 "application/x-vnd.Be-directory");
+        memset(&file, 0, sizeof file);
+        file.kind = TIKU_TRK_KIND_FILE;
+        snprintf(file.name, sizeof file.name, "paper.bin");
+        snprintf(file.type, sizeof file.type, "application/octet-stream");
+        memset(&src, 0, sizeof src);
+        src.kind = TIKU_TRK_KIND_FILE;
+        snprintf(src.name, sizeof src.name, "paper.c");
+        snprintf(src.type, sizeof src.type, "text/x-source-code");
+
+        tiku_trk_find_init(&f);
+        tiku_trk_find_set_type(&f, "application/x-vnd.be-directory", NULL);
+        tiku_trk_find_build(&f, &q);
+        check(tiku_trk_query_matches(&q, &dir, NULL, NULL),
+              "Q-004: a type is ANDed onto what the rows ask");
+        check(!tiku_trk_query_matches(&q, &file, NULL, NULL),
+              "so anything of another type is out, whatever its name says");
+
+        tiku_trk_find_set_type(&f, "text/", NULL);
+        tiku_trk_find_build(&f, &q);
+        check(tiku_trk_query_matches(&q, &src, NULL, NULL),
+              "a SUPERTYPE admits its members: picking text finds "
+              "text/x-source-code, which is what makes a table of a dozen "
+              "entries able to answer for types it has never heard of");
+        check(!tiku_trk_query_matches(&q, &file, NULL, NULL),
+              "and still excludes what is not under it");
+
+        {   /* A prefix that is not a supertype must not admit. */
+            tiku_trk_model_t near;
+
+            memset(&near, 0, sizeof near);
+            near.kind = TIKU_TRK_KIND_FILE;
+            snprintf(near.name, sizeof near.name, "trap");
+            snprintf(near.type, sizeof near.type, "textual/plain");
+            check(!tiku_trk_query_matches(&q, &near, NULL, NULL),
+                  "a type that merely STARTS the same is not under it: "
+                  "the supertype ends at the slash, or \"text\" would "
+                  "claim \"textual/plain\"");
+        }
+
+        tiku_trk_find_set_type(&f, "", NULL);
+        tiku_trk_find_build(&f, &q);
+        check(tiku_trk_query_matches(&q, &file, NULL, NULL) &&
+              tiku_trk_query_matches(&q, &dir, NULL, NULL) &&
+              q.term_count == 1,
+              "asking for no type admits everything again, and adds no "
+              "term to say so");
+
+        {   /* A formula asks for itself; nothing is ANDed onto it. */
+            tiku_trk_find_t g;
+            tiku_trk_query_t fq;
+
+            tiku_trk_find_init(&g);
+            tiku_trk_find_set_type(&g, "text/", NULL);
+            tiku_trk_find_set_mode(&g, TIKU_TRK_QMODE_FORMULA);
+            tiku_trk_find_build(&g, &fq);
+            {
+                int i, has_type = 0;
+
+                for (i = 0; i < fq.term_count; i++) {
+                    if (fq.term[i].field == TIKU_TRK_QF_TYPE) {
+                        has_type = 1;
+                    }
+                }
+                check(fq.type[0] == '\0' && !has_type,
+                      "Q-012: in "
+                      "formula mode the type is not ANDed on -- the "
+                      "control is hidden there, and a hidden one that "
+                      "still narrowed the search would make the formula "
+                      "on screen a lie");
+            }
+        }
+    }
+
+    printf("\nthe type menu itself (Q-012, Q-015, Q-016)\n");
+    {
+        tiku_trk_find_t f;
+        tiku_trk_store_t *st2 = tiku_trk_store_memory_open();
+        const char *menu[24];
+        int n;
+
+        tiku_trk_find_init(&f);
+        check(tiku_trk_find_type_shown(&f), "Q-012: the control shows in "
+              "by-name mode");
+        tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_ATTRIBUTE);
+        check(tiku_trk_find_type_shown(&f), "and in by-attribute mode");
+        tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_FORMULA);
+        check(!tiku_trk_find_type_shown(&f), "Q-012: and is hidden in "
+              "formula mode, where the formula IS the question and a "
+              "control quietly ANDing a type onto it would make the text "
+              "on screen a lie");
+        tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_NAME);
+
+        check(strcmp(tiku_trk_find_type_label(&f),
+                     "All files and folders") == 0,
+              "Q-015: it starts on the fixed first item, which is not one "
+              "of the types");
+        n = tiku_trk_find_type_menu(NULL, menu, 24);
+        check(n > 0, "Q-015: the menu offers what the port can recognise");
+        {
+            int i, seen = 0;
+
+            for (i = 0; i < n; i++) {
+                if (strcmp(menu[i], "text/") == 0) { seen = 1; }
+            }
+            check(seen, "including the supertypes, which are what make it "
+                  "useful on types the table has never heard of");
+        }
+
+        tiku_trk_find_set_type(&f, "image/", st2);
+        check(strcmp(tiku_trk_find_type_label(&f), "Image") == 0,
+              "Q-015: a chosen type is named by what it MEANS");
+        n = tiku_trk_find_type_menu(st2, menu, 24);
+        check(n > 0 && strcmp(menu[0], "image/") == 0,
+              "Q-016: and picking one promotes it to the head of the menu");
+        tiku_trk_find_set_type(&f, "audio/", st2);
+        n = tiku_trk_find_type_menu(st2, menu, 24);
+        check(strcmp(menu[0], "audio/") == 0 &&
+              strcmp(menu[1], "image/") == 0,
+              "the most recently picked first, the one before it next");
+        tiku_trk_find_set_type(&f, "image/", st2);
+        n = tiku_trk_find_type_menu(st2, menu, 24);
+        check(strcmp(menu[0], "image/") == 0 &&
+              strcmp(menu[1], "audio/") == 0,
+              "and picking one again MOVES it rather than listing it "
+              "twice -- the head of the menu is the types this user works "
+              "in, not a log of every pick");
+        {
+            int i, dupes = 0;
+
+            for (i = 1; i < n; i++) {
+                int k;
+
+                for (k = 0; k < i; k++) {
+                    if (strcmp(menu[i], menu[k]) == 0) { dupes++; }
+                }
+            }
+            check(dupes == 0, "Q-015: and a promoted type is not offered "
+                  "a second time further down");
+        }
+        {   /* The panel keeps its rows when the type changes. */
+            tiku_trk_find_t g;
+
+            tiku_trk_find_init(&g);
+            tiku_trk_find_set_mode(&g, TIKU_TRK_QMODE_ATTRIBUTE);
+            (void)tiku_trk_find_add_row(&g);
+            snprintf(g.row[0].value, sizeof g.row[0].value, "half typed");
+            tiku_trk_find_set_type(&g, "text/", NULL);
+            check(g.row_count == 2 &&
+                  strcmp(g.row[0].value, "half typed") == 0,
+                  "Q-013: choosing a type does NOT throw the rows away -- "
+                  "this panel already refuses that loss when the mode "
+                  "changes, and the same loss with a different trigger is "
+                  "still a half-built query lost to a mis-click");
+        }
+        tiku_trk_store_free(st2);
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");
     return fails ? 1 : 0;
 }

@@ -3644,6 +3644,7 @@ main(int argc, char **argv)
     if (app.store == NULL) {
         app.store = tiku_trk_store_memory_open();
     }
+    tiku_trk_find_set_store(&app.panel, app.store);
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -3957,6 +3958,8 @@ main(int argc, char **argv)
                 sst.selected = 0;
                 sst.sel_name = NULL;
                 sst.find_text = app.panel.name_text;
+                sst.find_type = tiku_trk_find_type_label(&app.panel);
+                sst.kinds = 0;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
 
@@ -3967,6 +3970,13 @@ main(int argc, char **argv)
                             tiku_trk_pose_t *sp =
                                 tiku_trk_poseview_at(sfl->view, si);
 
+                            if (sp != NULL) {
+                                sst.kinds |= 2;
+                                if (!tiku_trk_model_type_is(sp->model.type,
+                                        app.panel.type)) {
+                                    sst.kinds |= 1;
+                                }
+                            }
                             if (sp != NULL && sp->selected) {
                                 if (sst.sel_name == NULL) {
                                     sst.sel_name = sp->model.name;

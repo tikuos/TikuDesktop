@@ -255,6 +255,7 @@ field_text(tiku_trk_qfield_t f, const tiku_trk_model_t *m,
         return buf;
     case TIKU_TRK_QF_WRITABLE:
         return tiku_trk_model_is_writable(m) ? "yes" : "no";
+    case TIKU_TRK_QF_TYPE:  return m->type;
     default:
         return m->name;
     }
@@ -298,6 +299,15 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
     char buf[64], pat[TIKU_TRK_QUERY_VALUE_MAX * 4 + 8];
     const char *text = field_text(t->field, m, d, value, buf, sizeof buf);
 
+    if (t->field == TIKU_TRK_QF_TYPE &&
+        (t->op == TIKU_TRK_OP_IS || t->op == TIKU_TRK_OP_IS_NOT)) {
+        /* A type is not a string to compare: "text/" IS the type of
+         * "text/x-source-code", which no text operator can say.  The other
+         * operators are left as text, so "contains vnd" still works. */
+        int yes = tiku_trk_model_type_is(text, t->value);
+
+        return (t->op == TIKU_TRK_OP_IS) ? yes : !yes;
+    }
     if (t->op == TIKU_TRK_OP_GREATER || t->op == TIKU_TRK_OP_LESS) {
         long a, b;
         int text_num = looks_numeric(text, &a);
@@ -367,6 +377,7 @@ field_name(tiku_trk_qfield_t f)
     case TIKU_TRK_QF_CAP:      return "cap";
     case TIKU_TRK_QF_UNIT:     return "unit";
     case TIKU_TRK_QF_WRITABLE: return "writable";
+    case TIKU_TRK_QF_TYPE:     return "type";
     default:                   return "name";
     }
 }
