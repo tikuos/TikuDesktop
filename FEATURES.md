@@ -920,13 +920,13 @@ When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw
 **VERIFIER CORRECTION:** The halo is NOT skipped for cut items. The guard is `if (!selected && direct && view->WidgetTextOutline())` — only selection and non-direct (offscreen) drawing suppress it. clipboardMode == kMoveSelectionTo only suppresses the B_OP_ALPHA/B_ALPHA_OVERLAY mode switch around the halo passes (TextWidget.cpp:690-745). Alpha values are right: dark text 30 then 65 at false-bold 2.0/1.0; light text black 30 at 1.0 and 200 at +(1,1).
 **SUBSYSTEM:** Background images: no background-image support exists anywhere (grep 'background' over src/ hits only comments about empty-window context menus), so the halo's trigger (Tracker's fWidgetTextOutline, set by BackgroundImage) has no source; no outline/halo text drawing exists in either shell.  
 
-#### PVL-072 · polish · open
+#### PVL-072 · polish · partial
 **Volume icons carry a free-space bar drawn over the icon, which turns a warning colour below 5% free.**  
 BPose::DrawBar draws a shadowed frame of width 7/32 of the icon (minimum 4px) at the icon's right edge, fills the free portion with FreeSpaceColor and the used portion with UsedSpaceColor, or WarningSpaceColor when fPercent < -1 (encoded as -2-percent for <5% free). Poses are re-polled periodically via gPeriodicUpdatePoses, and no bar is drawn on CDDA or read-only volumes.  
 `Pose.cpp` → `BPose::DrawBar / CalcFreeSpace / BPose::UpdateVolumeSpaceBar`  
-**TIKU:** A device node with a capacity descriptor could reuse this gauge; the periodic poll would be replaced by a watch notification.
-**SUBSYSTEM:** Volume model: no volume poses carry capacity — icons are compiled-in HVIF blobs painted verbatim (src/tiku_trk_icons.c, src/tiku_trk_iconpaint.c; no bar/percent/capacity drawing, grep empty), and no free-space polling of mounted volumes exists. The nearest thing, /sys/mem/nvmfree, is a Deskbar replicant value (src/tiku_trk_desktop.c:1600-1607), not a pose overlay.  
-
+**TIKU:** A device node with a capacity descriptor could reuse this gauge; the periodic poll would be replaced by a watch notification.  
+**PORT:** The volume model supplies the numbers and the fill is computed from them; below a twentieth free the used part takes the warning colour instead of being drawn beside it, which is what makes a nearly-full volume read at a glance.  A volume that will not say its size shows an EMPTY bar, not a full one -- guessing full would warn about every device whose driver has no free-space call.  
+**MISSING:** Nothing draws it: volume poses are not distinguished from folders in either shell, so there is no icon to draw a bar over.  
 #### PVL-073 · polish · differs
 **Opening an item plays a short expanding-rectangle animation over the item.**  
 DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects outward from the pose rect's centre with a 10 ms snooze per step, drawn in list mode over CalcPoseRectList(clickedPose, index, firstColumnOnly=true) and in icon mode over the pose rect.  
@@ -5135,13 +5135,13 @@ Default on; consulted per file when deciding whether a thumbnail should be produ
 **TIKU:** Thumbnail generation is a per-node capability question in a device namespace; nodes without readable bulk content must not be probed.  
 **PORT:** The setting exists and gates thumbnailing, on by default.  
 **MISSING:** Nothing surfaces it: there is no preferences window to turn it off from, so it can only be changed in code (the preferences subsystem).  
-#### TS-054 · important · open
+#### TS-054 · important · partial
 **"Show space bars on volumes" draws a used/free capacity bar on volume icons, with three user-chosen colours.**  
 Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0, all with alpha 192 (the alpha is forced to 192 on every pick because BColorControl ignores alpha but equality checks do not). The bar is drawn along the right edge of the icon, 7/32 of icon width (min 4px); the warning colour replaces the used colour when free space is below 5%. Toggling the setting or a colour makes Tracker force a periodic update of all volume poses; with the setting off, Tracker's Pulse skips that update entirely.  
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarColorChanged)`  
-**TIKU:** Capacity/free reporting for a namespace mount needs a typed descriptor; nodes that cannot report capacity must simply have no bar rather than a zero bar.
-**SUBSYSTEM:** Volume space-bar overlay + preferences. Nothing draws a capacity bar on any icon: icon painting is the shared HVIF paint with selected/dim washes only (src/tiku_trk_iconpaint.c:33-105); grep for space-bar/used/free-colour code returns nothing. The nearest machinery is cell text, not icon overlays — the CAP column is a capability string compared with strcmp (src/tiku_trk_poseview.c:363-364) and the text gauges render into value cells (gauge_cells, src/tiku_trk_attr.c:602+). No three colours, no 5% warning switch, no Pulse-driven volume refresh, no setting.  
-
+**TIKU:** Capacity/free reporting for a namespace mount needs a typed descriptor; nodes that cannot report capacity must simply have no bar rather than a zero bar.  
+**PORT:** The three colours are settings with defaults, on the Volume icons page of the preferences window, and the threshold is measured on what is LEFT rather than on a rounded used-share -- 95% used covers anything from 94.5 to 95.5, and the volume that matters is the one with under a twentieth free.  
+**MISSING:** The setting is not consulted by any drawing, since nothing draws the bar yet (PVL-072).  
 #### TS-055 · polish · open
 **The space-bar colour editor edits one of the three colours at a time, chosen from a pop-up above the colour control.**  
 Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up and the control is preloaded with the used colour. Switching the menu item reloads the control from the corresponding setting; every colour control change writes straight through to the setting and posts kSettingsContentsModified.  

@@ -189,3 +189,33 @@ tiku_trk_volume_may_write(const tiku_trk_volumes_t *vs, const char *path,
     }
     return 0;
 }
+
+tiku_trk_space_t
+tiku_trk_volume_space(const tiku_trk_volume_t *v, int *used_pct)
+{
+    uint64_t used;
+    int pct = 0;
+
+    if (used_pct != NULL) {
+        *used_pct = 0;
+    }
+    if (v == NULL || v->total == 0u) {
+        /* A volume that will not say its size shows an empty bar rather
+         * than a full one: guessing "full" would warn about every device
+         * whose driver has no free-space call. */
+        return TIKU_TRK_SPACE_FREE;
+    }
+    used = (v->total > v->avail) ? (v->total - v->avail) : 0u;
+    pct = (int)((used * 100u + v->total / 2u) / v->total);
+    if (pct > 100) { pct = 100; }
+    if (used_pct != NULL) {
+        *used_pct = pct;
+    }
+    /* The threshold is on what is LEFT, not on what is used: a rounded
+     * used-share of 95 covers anything from 94.5 to 95.5, and the volume
+     * that matters is the one with under a twentieth free. */
+    if (v->avail * 100u < v->total * (uint64_t)TIKU_TRK_VOLUME_WARN_PCT) {
+        return TIKU_TRK_SPACE_WARNING;
+    }
+    return TIKU_TRK_SPACE_USED;
+}

@@ -77,4 +77,25 @@ int tiku_trk_volume_may_unmount(const tiku_trk_volumes_t *vs,
 int tiku_trk_volume_may_write(const tiku_trk_volumes_t *vs, const char *path,
                               int write, char *why, size_t max);
 
+/** @brief Below this share free, the bar warns (TS-054). */
+#define TIKU_TRK_VOLUME_WARN_PCT 5
+
+/** @brief Which of the three space-bar colours a volume calls for. */
+typedef enum {
+    TIKU_TRK_SPACE_USED = 0,
+    TIKU_TRK_SPACE_FREE,
+    TIKU_TRK_SPACE_WARNING
+} tiku_trk_space_t;
+
+/**
+ * @brief How full @p v is, and whether it is low enough to warn.
+ *
+ * @param used_pct Receives the used share, 0..100.
+ * @return the colour the USED part of the bar takes: the warning colour
+ *         replaces the used one rather than being drawn beside it, which
+ *         is what makes a nearly-full volume read at a glance.
+ */
+tiku_trk_space_t tiku_trk_volume_space(const tiku_trk_volume_t *v,
+                                       int *used_pct);
+
 #endif /* TIKU_TRK_VOLUME_H_ */

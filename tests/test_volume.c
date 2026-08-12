@@ -111,6 +111,46 @@ main(void)
         }
     }
 
+
+    printf("\nthe space bar (PVL-072, TS-054)\n");
+    {
+        tiku_trk_volume_t s1;
+        int pct = -1;
+
+        memset(&s1, 0, sizeof s1);
+        s1.total = 1000;
+        s1.avail = 500;
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_USED &&
+              pct == 50, "PVL-072",
+              "a half-full volume reads half full, in the ordinary colour");
+
+        s1.avail = 60;              /* 6% free */
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_USED &&
+              pct == 94, "PVL-072",
+              "six per cent free is not yet a warning");
+        s1.avail = 40;              /* 4% free */
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_WARNING,
+              "TS-054", "four per cent free is");
+        s1.avail = 50;              /* exactly 5% */
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_USED,
+              "TS-054", "and exactly five per cent is not -- the threshold "
+              "is BELOW, and it is measured on what is left rather than on "
+              "a rounded used-share");
+
+        s1.total = 0;
+        s1.avail = 0;
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_FREE &&
+              pct == 0, "PVL-072",
+              "a volume that will not say its size shows an empty bar, not "
+              "a full one -- guessing full would warn about every device "
+              "whose driver has no free-space call");
+
+        s1.total = 3;
+        s1.avail = 0;
+        check(tiku_trk_volume_space(&s1, &pct) == TIKU_TRK_SPACE_WARNING &&
+              pct == 100, "PVL-072", "and a full one is full");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the volume model holds");
     return fails ? 1 : 0;
 }
