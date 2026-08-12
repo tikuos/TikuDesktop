@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "tiku_trk_deskbar.h"
 
@@ -160,6 +161,62 @@ main(void)
     m.kind = TIKU_TRK_KIND_VOLUME;
     check(!tiku_trk_deskbar_launchable(&m), "DB-075",
           "and neither is a volume, for the same reason");
+
+    printf("\nwhat the leaf menu is made of (DB-002, DB-003, DB-004, "
+           "DB-074)\n");
+    {
+        char recent[3][TIKU_TRK_PATH_MAX];
+        int i, dirs = 0, recents = 0, disabled = 0, count;
+        const tiku_trk_db_item_t *it;
+
+        (void)system("rm -rf /tmp/trk_dbmenu && mkdir -p "
+                     "/tmp/trk_dbmenu/tools && touch /tmp/trk_dbmenu/notes");
+        tiku_trk_deskbar_set_menu_dir(db, "/tmp/trk_dbmenu_missing",
+                                      "/tmp/trk_dbmenu");
+        tiku_trk_deskbar_open_menu(db);
+        count = tiku_trk_deskbar_leaf_count(db);
+        for (i = 0; i < count; i++) {
+            it = tiku_trk_deskbar_leaf_item(db, i);
+            if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
+            if (it->kind == TIKU_TRK_DB_ITEM_RECENT) { recents++; }
+            if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
+        }
+        check(dirs == 1 && disabled == 0, "DB-003",
+              "with no folder of the user's own the menu shows the system "
+              "copy rather than nothing");
+        check(recents == 0, "DB-074",
+              "a recents list with nothing in it is not offered at all: "
+              "an empty submenu is a promise of nothing");
+        snprintf(recent[0], sizeof recent[0], "/tmp/trk_dbmenu");
+        tiku_trk_deskbar_set_recent(db, TIKU_TRK_DB_RECENT_FOLDERS,
+                                    (const char (*)[TIKU_TRK_PATH_MAX])recent,
+                                    1);
+        tiku_trk_deskbar_open_menu(db);
+        recents = 0;
+        count = tiku_trk_deskbar_leaf_count(db);
+        for (i = 0; i < count; i++) {
+            it = tiku_trk_deskbar_leaf_item(db, i);
+            if (it->kind == TIKU_TRK_DB_ITEM_RECENT) { recents++; }
+        }
+        check(recents == 1, "DB-002",
+              "and one with something in it is");
+        (void)system("rm -rf /tmp/trk_dbmenu/tools /tmp/trk_dbmenu/notes");
+        tiku_trk_deskbar_open_menu(db);
+        disabled = 0;
+        dirs = 0;
+        count = tiku_trk_deskbar_leaf_count(db);
+        for (i = 0; i < count; i++) {
+            it = tiku_trk_deskbar_leaf_item(db, i);
+            if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
+            if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
+        }
+        check(disabled == 1 && dirs == 0, "DB-004",
+              "an empty Deskbar folder says so in one item that cannot be "
+              "chosen, rather than showing an empty menu -- and it is read "
+              "again on every open, so emptying it took effect without a "
+              "restart (DB-005)");
+        (void)system("rm -rf /tmp/trk_dbmenu");
+    }
 
     tiku_trk_deskbar_free(db);
     tiku_trk_backend_close(b);

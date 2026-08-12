@@ -1,0 +1,29 @@
+# shell: desktop
+# DB-002: below the fixed head the leaf menu shows the recent lists, then
+# the live contents of the Deskbar folder.  It was a compile-time array of
+# ten strings, so nothing the user did could ever appear in it.
+wait 8
+note two folders opened, so both are in the recent list
+click 100 77
+wait 2
+click 100 77
+wait 10
+expect-windows 2
+note and both closed again, so what reopens one can only be the menu
+key w ctrl
+wait 3
+key w ctrl
+wait 3
+expect-windows 0
+click 980 20
+wait 3
+note the recents row EXPANDS rather than choosing: the menu stays up
+click 780 200
+wait 3
+expect-windows 0
+note and its entry opens the folder it names
+click 600 202
+wait 8
+expect-windows 1
+expect-title sub
+quit

@@ -3241,6 +3241,10 @@ open_folder(desktop_t *app, const char *path)
     fl = &app->folders[app->folder_count];
     memset(fl, 0, sizeof *fl);
     snprintf(fl->path, sizeof fl->path, "%s", path);
+    /* Opening a folder is what puts it in the recent list the Deskbar
+     * menu offers -- the list is a record of where the user has been, and
+     * this is the one place that knows (DB-002, AW-056). */
+    tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS, path);
     fl->app = app;
     fl->view = tiku_trk_poseview_new(app->backend, path);
     if (fl->view == NULL) {
@@ -4100,6 +4104,19 @@ main(int argc, char **argv)
                                       (tiku_trk_db_dock_t)rec[0]);
             (void)tiku_trk_deskbar_set_width(app.deskbar, (int)rec[1]);
         }
+    }
+    {
+        /* Where the menu's own folder is, and the lists it shows above it.
+         * Fed rather than read by the bar: the recent lists are the same
+         * ones the Open panel keeps, and a second copy would disagree
+         * (DB-002, DB-003). */
+        const char *home = getenv("HOME");
+        char user[TIKU_TRK_PATH_MAX];
+
+        snprintf(user, sizeof user, "%s/.config/deskbar",
+                 (home != NULL && home[0] != '\0') ? home : "");
+        tiku_trk_deskbar_set_menu_dir(app.deskbar, user,
+                                      "/usr/share/tiku-tracker/deskbar");
     }
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
@@ -6439,8 +6456,46 @@ sel_done:
                 app.dirty = 1;
             }
         }
+        if (tiku_trk_now() - last_sweep > 60000000) {
+            /* The reaping of searches nobody named.  On a slow tick of its
+             * own and skipped for the first half hour, because it is the
+             * least urgent work there is (Q-037, AW-090). */
+            const char *open[TIKU_TRK_WIN_MAX];
+            int nopen = 0;
+
+            for (i = 0; i < app.folder_count; i++) {
+                if (app.folders[i].qname[0] != '\0' &&
+                    app.folders[i].win != NULL && app.folders[i].win->open) {
+                    open[nopen++] = app.folders[i].qname;
+                }
+            }
+            (void)tiku_trk_query_sweep(app.store, (int64_t)time(NULL),
+                                       (tiku_trk_now() - started_at) /
+                                           1000000, open, nopen);
+            last_sweep = tiku_trk_now();
+        }
         if (tiku_trk_now() - last_pump > 400000) {
             int changed = 0;
+            {
+                /* What the leaf menu offers above the Deskbar folder.
+                 * Refreshed on the tick rather than read by the bar: they
+                 * are the same lists the Open panel keeps (DB-002). */
+                static const tiku_trk_recent_t kWhich[] = {
+                    TIKU_TRK_RECENT_DOCS, TIKU_TRK_RECENT_FOLDERS,
+                    TIKU_TRK_RECENT_APPS
+                };
+                char paths[TIKU_TRK_DB_RECENT_MAX][TIKU_TRK_PATH_MAX];
+                int k;
+
+                for (k = 0; k < 3; k++) {
+                    int nr = tiku_trk_recent_list(app.store, kWhich[k],
+                                 TIKU_TRK_DB_RECENT_MAX, paths,
+                                 TIKU_TRK_DB_RECENT_MAX);
+
+                    tiku_trk_deskbar_set_recent(app.deskbar,
+                        (tiku_trk_db_recent_t)k, paths, nr);
+                }
+            }
             /*
              * Drained ONCE for the whole desktop: reading the device's ring
              * takes the records out of it, so a per-window drain would let

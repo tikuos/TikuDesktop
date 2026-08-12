@@ -77,7 +77,71 @@ typedef struct {
     int             valid;
 } tiku_trk_replicant_t;
 
+/** @brief How many rows the leaf menu holds, and its submenu. */
+#define TIKU_TRK_DB_LEAF_MAX 24
+#define TIKU_TRK_DB_SUB_MAX  16
+
+/** @brief What one leaf-menu row IS, which decides what a click does. */
+typedef enum {
+    TIKU_TRK_DB_ITEM_SEP = 0,
+    TIKU_TRK_DB_ITEM_ABOUT,
+    TIKU_TRK_DB_ITEM_FIND,
+    TIKU_TRK_DB_ITEM_PREFS,
+    TIKU_TRK_DB_ITEM_QUIT,
+    TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
+    TIKU_TRK_DB_ITEM_DIR,       /* expand it: its contents are a submenu */
+    TIKU_TRK_DB_ITEM_RECENT,    /* one of the three recent lists         */
+    TIKU_TRK_DB_ITEM_DISABLED   /* said, not chosen                      */
+} tiku_trk_db_item_kind_t;
+
+/** @brief Which recent list a RECENT row shows. */
+typedef enum {
+    TIKU_TRK_DB_RECENT_DOCS = 0,
+    TIKU_TRK_DB_RECENT_FOLDERS,
+    TIKU_TRK_DB_RECENT_APPS,
+    TIKU_TRK_DB_RECENT_KINDS
+} tiku_trk_db_recent_t;
+
+/** @brief How many entries one recent list shows. */
+#define TIKU_TRK_DB_RECENT_MAX 10
+
+typedef struct {
+    char                    label[TIKU_TRK_DB_LABEL_MAX];
+    char                    path[TIKU_TRK_PATH_MAX];
+    tiku_trk_db_item_kind_t kind;
+    int                     which;   /* RECENT: which list              */
+} tiku_trk_db_item_t;
+
 typedef struct tiku_trk_deskbar tiku_trk_deskbar_t;
+
+/**
+ * @brief Where the folder whose contents the leaf menu shows lives (DB-003).
+ *
+ * The user's own, with a fallback: a system copy is what a machine with no
+ * per-user menu folder shows, rather than an empty menu.
+ */
+void tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
+                                   const char *fallback);
+
+/** @brief The folder the menu is actually reading, or "" (DB-065). */
+const char *tiku_trk_deskbar_menu_dir(const tiku_trk_deskbar_t *db);
+
+/**
+ * @brief Hand the bar one of the recent lists (DB-002, DB-074).
+ *
+ * Fed rather than read: the lists are the shell's, shared with the Open
+ * panel, and a bar that read them itself would keep a second copy that
+ * disagreed.  A list with nothing in it is not shown at all.
+ */
+void tiku_trk_deskbar_set_recent(tiku_trk_deskbar_t *db,
+                                 tiku_trk_db_recent_t which,
+                                 const char paths[][TIKU_TRK_PATH_MAX],
+                                 int n);
+
+/** @brief How many rows the leaf menu has, and what row @p i is. */
+int tiku_trk_deskbar_leaf_count(const tiku_trk_deskbar_t *db);
+const tiku_trk_db_item_t *tiku_trk_deskbar_leaf_item(
+    const tiku_trk_deskbar_t *db, int i);
 
 /** @brief Whether @p d lays the bar out down an edge rather than along one. */
 int tiku_trk_deskbar_vertical(tiku_trk_db_dock_t d);

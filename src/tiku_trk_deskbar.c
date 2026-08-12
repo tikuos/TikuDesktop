@@ -59,8 +59,224 @@ struct tiku_trk_deskbar {
     int                  menu_open;
     int                  calendar_open;
     int                  win_menu_team;    /* -1 = none showing        */
+    /* The leaf menu, built from the namespace every time it opens rather
+     * than compiled in: a file put in the Deskbar folder has to appear
+     * without restarting anything (DB-005). */
+    tiku_trk_db_item_t   leaf[TIKU_TRK_DB_LEAF_MAX];
+    int                  leaf_count;
+    int                  sub_of;           /* leaf row whose submenu is
+                                            * open, or -1              */
+    tiku_trk_db_item_t   sub[TIKU_TRK_DB_SUB_MAX];
+    int                  sub_count;
+    char                 menu_dir[TIKU_TRK_PATH_MAX];
+    char                 menu_dir_fallback[TIKU_TRK_PATH_MAX];
+    char                 recent[TIKU_TRK_DB_RECENT_KINDS]
+                               [TIKU_TRK_DB_RECENT_MAX][TIKU_TRK_PATH_MAX];
+    int                  recent_count[TIKU_TRK_DB_RECENT_KINDS];
     tiku_desk_rect_t     frame;
 };
+
+/** @brief The last component of @p path, which is what a menu row shows. */
+static const char *
+leaf_name(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+
+    return (slash != NULL && slash[1] != '\0') ? slash + 1 : path;
+}
+
+static void
+add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
+         const char *label, const char *path, int which)
+{
+    tiku_trk_db_item_t *it;
+
+    if (db->leaf_count >= TIKU_TRK_DB_LEAF_MAX) {
+        return;
+    }
+    it = &db->leaf[db->leaf_count++];
+    memset(it, 0, sizeof *it);
+    it->kind = kind;
+    it->which = which;
+    snprintf(it->label, sizeof it->label, "%.*s", (int)sizeof it->label - 1,
+             (label != NULL) ? label : "");
+    snprintf(it->path, sizeof it->path, "%s", (path != NULL) ? path : "");
+}
+
+/** @brief Collects one directory entry into the menu being built. */
+struct menu_walk {
+    tiku_trk_deskbar_t *db;
+    int                 n;
+    tiku_trk_db_item_t *into;
+    int                 max;
+};
+
+static int
+menu_entry(const tiku_trk_model_t *m, void *ctx)
+{
+    struct menu_walk *w = ctx;
+
+    if (m == NULL || w->n >= w->max || m->name[0] == '.') {
+        return 0;               /* a dot file is not a menu entry */
+    }
+    if (w->into != NULL) {
+        tiku_trk_db_item_t *it = &w->into[w->n++];
+
+        memset(it, 0, sizeof *it);
+        it->kind = tiku_trk_model_is_container(m) ? TIKU_TRK_DB_ITEM_DIR
+                                                  : TIKU_TRK_DB_ITEM_PATH;
+        snprintf(it->label, sizeof it->label, "%.*s",
+                 (int)sizeof it->label - 1, m->name);
+        snprintf(it->path, sizeof it->path, "%s", m->path);
+    } else {
+        add_item(w->db, tiku_trk_model_is_container(m)
+                            ? TIKU_TRK_DB_ITEM_DIR : TIKU_TRK_DB_ITEM_PATH,
+                 m->name, m->path, 0);
+        w->n++;
+    }
+    return 0;
+}
+
+/** @brief The Deskbar folder to read: the user's, or the system copy. */
+static const char *
+menu_dir_of(const tiku_trk_deskbar_t *db)
+{
+    tiku_trk_model_t m;
+
+    if (db->backend == NULL || db->backend->ops->stat == NULL) {
+        return "";
+    }
+    if (db->menu_dir[0] != '\0' &&
+        db->backend->ops->stat(db->backend, db->menu_dir, &m) == 0 &&
+        tiku_trk_model_is_container(&m)) {
+        return db->menu_dir;
+    }
+    if (db->menu_dir_fallback[0] != '\0' &&
+        db->backend->ops->stat(db->backend, db->menu_dir_fallback, &m) == 0 &&
+        tiku_trk_model_is_container(&m)) {
+        /* No per-user folder: the system copy is what the menu shows,
+         * rather than nothing at all (DB-003). */
+        return db->menu_dir_fallback;
+    }
+    return "";
+}
+
+/** @brief Build the leaf menu from what is there NOW (DB-002, DB-005). */
+static void
+build_leaf(tiku_trk_deskbar_t *db)
+{
+    static const char *const kRecentLabel[TIKU_TRK_DB_RECENT_KINDS] = {
+        "Recent documents", "Recent folders", "Recent applications"
+    };
+    const char *dir;
+    int i;
+
+    db->leaf_count = 0;
+    db->sub_of = -1;
+    add_item(db, TIKU_TRK_DB_ITEM_ABOUT, "About this system", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_FIND, "Find\xe2\x80\xa6", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_PREFS, "Deskbar preferences\xe2\x80\xa6",
+             NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
+    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/dev", "/dev", 0);
+    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/data", "/data", 0);
+    {
+        int any = 0;
+
+        for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
+            if (db->recent_count[i] > 0) {
+                if (!any) {
+                    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+                    any = 1;
+                }
+                /* A list nobody has anything in is not shown at all --
+                 * an empty submenu is a promise of nothing (DB-074). */
+                add_item(db, TIKU_TRK_DB_ITEM_RECENT, kRecentLabel[i], NULL,
+                         i);
+            }
+        }
+    }
+    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+    dir = menu_dir_of(db);
+    if (dir[0] != '\0' && db->backend->ops->list != NULL) {
+        struct menu_walk w;
+
+        w.db = db;
+        w.n = 0;
+        w.into = NULL;
+        w.max = TIKU_TRK_DB_LEAF_MAX;
+        (void)db->backend->ops->list(db->backend, dir, menu_entry, &w);
+        if (w.n == 0) {
+            add_item(db, TIKU_TRK_DB_ITEM_DISABLED,
+                     "<Deskbar folder is empty>", NULL, 0);
+        }
+    } else {
+        add_item(db, TIKU_TRK_DB_ITEM_DISABLED, "<Deskbar folder is empty>",
+                 NULL, 0);
+    }
+    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_QUIT, "Shut down\xe2\x80\xa6", NULL, 0);
+}
+
+void
+tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
+                              const char *fallback)
+{
+    char u[TIKU_TRK_PATH_MAX], fb[TIKU_TRK_PATH_MAX];
+
+    if (db == NULL) {
+        return;
+    }
+    /* Copied through the stack: a caller may well hand back the strings
+     * this very bar reported, and a snprintf onto its own source is
+     * undefined. */
+    snprintf(u, sizeof u, "%s", (user != NULL) ? user : "");
+    snprintf(fb, sizeof fb, "%s", (fallback != NULL) ? fallback : "");
+    memcpy(db->menu_dir, u, sizeof db->menu_dir);
+    memcpy(db->menu_dir_fallback, fb, sizeof db->menu_dir_fallback);
+}
+
+const char *
+tiku_trk_deskbar_menu_dir(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? menu_dir_of(db) : "";
+}
+
+void
+tiku_trk_deskbar_set_recent(tiku_trk_deskbar_t *db,
+                            tiku_trk_db_recent_t which,
+                            const char paths[][TIKU_TRK_PATH_MAX], int n)
+{
+    int i;
+
+    if (db == NULL || (int)which < 0 ||
+        (int)which >= TIKU_TRK_DB_RECENT_KINDS) {
+        return;
+    }
+    if (n > TIKU_TRK_DB_RECENT_MAX) {
+        n = TIKU_TRK_DB_RECENT_MAX;
+    }
+    for (i = 0; i < n && paths != NULL; i++) {
+        snprintf(db->recent[which][i], TIKU_TRK_PATH_MAX, "%s", paths[i]);
+    }
+    db->recent_count[which] = (paths != NULL && n > 0) ? n : 0;
+}
+
+int
+tiku_trk_deskbar_leaf_count(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->leaf_count : 0;
+}
+
+const tiku_trk_db_item_t *
+tiku_trk_deskbar_leaf_item(const tiku_trk_deskbar_t *db, int i)
+{
+    if (db == NULL || i < 0 || i >= db->leaf_count) {
+        return NULL;
+    }
+    return &db->leaf[i];
+}
 
 tiku_trk_deskbar_t *
 tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
@@ -508,6 +724,7 @@ tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db)
          * keyboard has to reach it too, and a synthetic click would have
          * to invent coordinates for a button whose position is layout's
          * business (DB-011). */
+        build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
         db->win_menu_team = -1;
     }
@@ -562,25 +779,6 @@ draw_win_icon(tiku_desk_surface_t *s, int x, int y, int minimized,
  * "left of the bar" offset put it at a negative x, i.e. off the screen
  * entirely (DB-010).
  */
-/**
- * @brief The leaf menu's fixed contents.
- *
- * One list, so the hit test and the drawing cannot drift apart -- a menu
- * whose targets are computed from a second copy is a menu that eventually
- * drops on the wrong thing.
- */
-static const char *const *
-leaf_items(void)
-{
-    static const char *const items[] = {
-        "About this system", "Find…", "-", "Deskbar preferences…",
-        "-", "/sys", "/dev", "/data", "-", "Shut down…"
-    };
-
-    return items;
-}
-
-#define LEAF_ITEMS 10
 
 static tiku_desk_rect_t
 leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
@@ -598,6 +796,77 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
         m.x = 0;
     }
     return m;
+}
+
+/** @brief Where a submenu hangs: beside its row, on the menu's open side. */
+static tiku_desk_rect_t
+sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_desk_rect_t m, int rowh)
+{
+    tiku_desk_rect_t r;
+
+    r.w = 190;
+    r.h = db->sub_count * rowh + 4;
+    r.y = m.y + 2 + db->sub_of * rowh;
+    r.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+           db->dock == TIKU_TRK_DB_LEFT_MINI)
+              ? m.x + m.w + 2 : m.x - r.w - 2;
+    if (r.x < 0) {
+        r.x = 0;
+    }
+    return r;
+}
+
+/** @brief Fill the submenu for leaf row @p at, or close it. */
+static void
+open_sub(tiku_trk_deskbar_t *db, int at)
+{
+    const tiku_trk_db_item_t *it;
+
+    db->sub_count = 0;
+    db->sub_of = -1;
+    if (at < 0 || at >= db->leaf_count) {
+        return;
+    }
+    it = &db->leaf[at];
+    if (it->kind == TIKU_TRK_DB_ITEM_RECENT) {
+        int i;
+
+        for (i = 0; i < db->recent_count[it->which] &&
+                    i < TIKU_TRK_DB_SUB_MAX; i++) {
+            tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
+
+            memset(si, 0, sizeof *si);
+            si->kind = TIKU_TRK_DB_ITEM_PATH;
+            memcpy(si->path, db->recent[it->which][i], sizeof si->path);
+            si->path[sizeof si->path - 1u] = '\0';
+            /* The NAME, not the path: a menu of paths is a menu nobody
+             * can read across at a glance. */
+            {
+                char nm[TIKU_TRK_PATH_MAX];
+
+                /* Through a local: source and destination are both inside
+                 * this bar, and an snprintf between two members of one
+                 * object is not something to leave to chance. */
+                snprintf(nm, sizeof nm, "%s",
+                         leaf_name(db->recent[it->which][i]));
+                snprintf(si->label, sizeof si->label, "%.*s",
+                         (int)sizeof si->label - 1, nm);
+            }
+        }
+    } else if (it->kind == TIKU_TRK_DB_ITEM_DIR &&
+               db->backend != NULL && db->backend->ops->list != NULL) {
+        struct menu_walk w;
+
+        w.db = db;
+        w.n = 0;
+        w.into = db->sub;
+        w.max = TIKU_TRK_DB_SUB_MAX;
+        (void)db->backend->ops->list(db->backend, it->path, menu_entry, &w);
+        db->sub_count = w.n;
+    }
+    if (db->sub_count > 0) {
+        db->sub_of = at;
+    }
 }
 
 static void
@@ -881,12 +1150,50 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                        TIKU_DESK_C_TEXT);
     }
 
-    /* The leaf menu, with the fixed head the original always shows. */
+    /* The leaf menu: the head the original always shows, then the recent
+     * lists, then whatever is in the Deskbar folder right now. */
     if (db->menu_open) {
-        const char *const *items = leaf_items();
+        const char *items[TIKU_TRK_DB_LEAF_MAX];
         int rowh = f->height + 6;
-        tiku_desk_rect_t m = leaf_menu_rect(db, rowh, 10);
-        tiku_desk_ui_menu(s, m, items, 10, -1);
+        tiku_desk_rect_t m = leaf_menu_rect(db, rowh, db->leaf_count);
+
+        for (i = 0; i < db->leaf_count; i++) {
+            items[i] = (db->leaf[i].kind == TIKU_TRK_DB_ITEM_SEP)
+                           ? "-" : db->leaf[i].label;
+        }
+        tiku_desk_ui_menu(s, m, items, db->leaf_count, -1);
+        for (i = 0; i < db->leaf_count; i++) {
+            /* A row that cannot be chosen is drawn as such, and the menu
+             * layer has one ink: dimmed here, over what it already drew
+             * (DB-004). */
+            if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DISABLED) {
+                tiku_desk_rect_t r = { m.x + 2, m.y + 2 + i * rowh,
+                                       m.w - 4, rowh };
+
+                tiku_desk_fill(s, r, TIKU_DESK_C_PANEL);
+                tiku_desk_text(s, f, r.x + 10,
+                               r.y + (rowh - f->height) / 2 + f->ascent,
+                               db->leaf[i].label,
+                               tiku_desk_tint(TIKU_DESK_C_PANEL, 1.55f));
+            } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT) {
+                /* What expands says so, the way every hierarchical menu
+                 * marks the rows that go somewhere (DB-002). */
+                tiku_desk_text(s, f, m.x + m.w - 12,
+                               m.y + 2 + i * rowh +
+                                   (rowh - f->height) / 2 + f->ascent,
+                               ">", TIKU_DESK_C_TEXT);
+            }
+        }
+        if (db->sub_of >= 0 && db->sub_count > 0) {
+            const char *sitems[TIKU_TRK_DB_SUB_MAX];
+            tiku_desk_rect_t sm = sub_menu_rect(db, m, rowh);
+
+            for (i = 0; i < db->sub_count; i++) {
+                sitems[i] = db->sub[i].label;
+            }
+            tiku_desk_ui_menu(s, sm, sitems, db->sub_count, -1);
+        }
     }
     /* The window menu for one application: Hide all / Show all / Close all,
      * which the original appends to every application's window list. */
@@ -987,30 +1294,62 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
     if (db->menu_open) {
         int rowh = f->height + 6;
-        tiku_desk_rect_t m = leaf_menu_rect(db, rowh, 10);
+        tiku_desk_rect_t m = leaf_menu_rect(db, rowh, db->leaf_count);
         int idx = (y - m.y - 2) / rowh;
 
-        db->menu_open = 0;
-        if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h) {
-            switch (idx) {
-            case 0: pick->what = TIKU_TRK_DB_SHOW_ABOUT; break;
-            case 1: pick->what = TIKU_TRK_DB_FIND; break;
-            case 5: pick->what = TIKU_TRK_DB_OPEN_PATH;
-                    snprintf(pick->path, sizeof pick->path, "/sys"); break;
-            case 6: pick->what = TIKU_TRK_DB_OPEN_PATH;
-                    snprintf(pick->path, sizeof pick->path, "/dev"); break;
-            case 7: pick->what = TIKU_TRK_DB_OPEN_PATH;
-                    snprintf(pick->path, sizeof pick->path, "/data"); break;
-            case 9: pick->what = TIKU_TRK_DB_QUIT; break;
-            default: break;
+        if (db->sub_of >= 0 && db->sub_count > 0) {
+            tiku_desk_rect_t sm = sub_menu_rect(db, m, rowh);
+            int si = (y - sm.y - 2) / rowh;
+
+            if (x >= sm.x && x < sm.x + sm.w && y >= sm.y &&
+                y < sm.y + sm.h && si >= 0 && si < db->sub_count) {
+                pick->what = TIKU_TRK_DB_OPEN_PATH;
+                snprintf(pick->path, sizeof pick->path, "%s",
+                         db->sub[si].path);
+                db->menu_open = 0;
+                db->sub_of = -1;
+                return 1;
             }
         }
+        if (x >= m.x && x < m.x + m.w && idx >= 0 && idx < db->leaf_count) {
+            const tiku_trk_db_item_t *it = &db->leaf[idx];
+
+            switch (it->kind) {
+            case TIKU_TRK_DB_ITEM_DIR:
+            case TIKU_TRK_DB_ITEM_RECENT:
+                /* Expanding is not choosing: the menu stays up, with the
+                 * row's contents beside it. */
+                open_sub(db, idx);
+                return 1;
+            case TIKU_TRK_DB_ITEM_DISABLED:
+            case TIKU_TRK_DB_ITEM_SEP:
+                return 1;       /* said, not chosen */
+            case TIKU_TRK_DB_ITEM_ABOUT:
+                pick->what = TIKU_TRK_DB_SHOW_ABOUT;
+                break;
+            case TIKU_TRK_DB_ITEM_FIND:
+                pick->what = TIKU_TRK_DB_FIND;
+                break;
+            case TIKU_TRK_DB_ITEM_QUIT:
+                pick->what = TIKU_TRK_DB_QUIT;
+                break;
+            case TIKU_TRK_DB_ITEM_PATH:
+                pick->what = TIKU_TRK_DB_OPEN_PATH;
+                snprintf(pick->path, sizeof pick->path, "%s", it->path);
+                break;
+            default:
+                break;
+            }
+        }
+        db->menu_open = 0;
+        db->sub_of = -1;
         return 1;
     }
     if (!tiku_trk_deskbar_hit(db, x, y)) {
         return 0;
     }
     if (y < LEAF_H + 2) {
+        build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
         return 1;
     }
@@ -1199,7 +1538,6 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
                               char *path, size_t max)
 {
     const tiku_desk_font_t *f = tiku_desk_font_plain();
-    const char *const *items = leaf_items();
     tiku_desk_rect_t m;
     int rowh, i;
 
@@ -1210,23 +1548,31 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         return TIKU_TRK_DB_DROP_NONE;
     }
     rowh = f->height + 6;
-    m = leaf_menu_rect(db, rowh, LEAF_ITEMS);
+    m = leaf_menu_rect(db, rowh, db->leaf_count);
     if (x < m.x || x >= m.x + m.w || y < m.y + 2 ||
-        y >= m.y + 2 + LEAF_ITEMS * rowh) {
+        y >= m.y + 2 + db->leaf_count * rowh) {
         return TIKU_TRK_DB_DROP_NONE;
     }
     i = (y - m.y - 2) / rowh;
-    if (i < 0 || i >= LEAF_ITEMS || items[i][0] == '-') {
-        return TIKU_TRK_DB_DROP_NONE;   /* a separator is nobody's */
+    if (i < 0 || i >= db->leaf_count) {
+        return TIKU_TRK_DB_DROP_NONE;
     }
-    /* An entry naming a path is a folder and takes the links; everything
-     * else is fixed, and fixed items are not drop targets at all while a
-     * drag is in flight (DB-008). */
-    if (items[i][0] == '/') {
+    /* A FOLDER takes the links; a file in the menu is launched with them;
+     * everything else is fixed, and fixed items are not drop targets at
+     * all while a drag is in flight (DB-008). */
+    if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
+        (db->leaf[i].kind == TIKU_TRK_DB_ITEM_PATH &&
+         db->leaf[i].path[0] == '/' && db->leaf[i].label[0] == '/')) {
         if (path != NULL) {
-            snprintf(path, max, "%s", items[i]);
+            snprintf(path, max, "%s", db->leaf[i].path);
         }
         return TIKU_TRK_DB_DROP_MENU_DIR;
+    }
+    if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_PATH) {
+        if (path != NULL) {
+            snprintf(path, max, "%s", db->leaf[i].path);
+        }
+        return TIKU_TRK_DB_DROP_MENU_FILE;
     }
     return TIKU_TRK_DB_DROP_NONE;
 }

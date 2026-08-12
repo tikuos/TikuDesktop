@@ -4477,11 +4477,12 @@ AddRecentQueries collects `_trk/recentQuery == 1` hits from all volumes, skips T
 *none found (tiku_trk_query_list has no non-test caller)*
 **WIRING:** The code exists: tiku_trk_query_save maintains a newest-first name index (src/tiku_trk_query.c:810-827) and tiku_trk_query_list reads it back (src/tiku_trk_query.c:851-885). The caller is absent: only tests/test_query.c:280-288 invoke the lister; no panel popup (src/tiku_trk_find.c:637-704), no cwmenu entry and no deskbar item surfaces it (grep quer over src/tiku_trk_deskbar.c, src/tiku_trk_cwmenu.c, src/tiku_trk_menu.c returns nothing). The index also has no template notion and no timestamp ordering beyond insertion.  
 
-#### Q-033 · important · partial
+#### Q-033 · important · done
 **Every query or template written stamps a change time and a marker attribute, which is what makes it show up in the recent/templates menus.**  
 kAttrQueryLastChange (B_INT32_TYPE, time(0)) and "_trk/recentQuery" = 1 are written in SaveQueryAttributes, FindSaveCommon and SaveQueryAsAttributes; TTracker::InstallIndices creates fs indices for both on every writable, query-capable volume at boot so the menus' own queries can find them.  
 `FindPanel.cpp` → `FindWindow::SaveQueryAttributes / FindWindow::FindSaveCommon (TrackerInitialState.cpp TTracker::InstallIndices)`  
-**MISSING:** query_save does register each written query in a newest-first index attribute, but no change time is stamped and the index has no consumer anywhere in the application — tiku_trk_query_list is called only from tests, and there is no recent/templates menu — so the clause the row hangs the behaviour on ('what makes it show up in the menus') does not reach a user.  
+**PORT:** Every record carries the time it was written, stamped from the WALL clock rather than the running one -- how old a record is has to mean the same thing after a restart, and it is also the date its name carries. The index has two consumers now: the templates menu and the recent-queries menu, both reading it through one kind-filtered lister.  
+*src/tiku_trk_query.c:tiku_trk_query_list_kind; src/tiku_trk_desktop.c:panel_search*
 *src/tiku_trk_query.c:791-830 (query_save index merge, no timestamp) and :851 (query_list, whose only callers are tests/test_query.c:280-288)*
 
 #### Q-034 · polish · open
@@ -6529,34 +6530,38 @@ Built in one shot as the first build state (kStart); 'About Haiku' vs 'About thi
 **MISSING:** The leaf menu is a fixed one-shot head (About this system / Find… / sep / Deskbar preferences… / sep / /sys /dev /data / sep / Shut down…) with Mount correctly adapted to the VFS roots, but 'Show replicants' is absent entirely and 'Deskbar preferences…' is a dead label (index 3 falls to `default: break` in the click switch).  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_draw (items[] at line 570) and tiku_trk_deskbar_click (switch at line 684)*
 
-#### DB-002 · core · open
+#### DB-002 · core · done
 **Below the fixed head the leaf menu shows Recent documents / Recent folders / Recent applications, then a separator, then the live contents of the user's Deskbar folder as a navigable file menu**  
 Three-phase state machine kStart -> kAddingRecents -> kAddingDeskbarMenu -> kDone; the whole recents block (both separators) is omitted when all three recent types are disabled; each enabled type is added individually  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddNextItem`  
 **TIKU:** The folder-backed part becomes a VFS directory listing; recents need a kernel-side MRU list since there is no BRoster  
 **VERIFIER CORRECTION:** Only the LEADING separator is skipped. In TDeskbarMenu::AddNextItem the `AddSeparatorItem()` before the recents submenus is inside the `if (enabled)` branch, but the trailing `AddSeparatorItem()` is unconditional — a separator is always emitted before the Deskbar-folder contents even when all three recent types are disabled.
-**SUBSYSTEM:** recents (MRU) + Deskbar-folder leaf-menu section: the leaf menu is a fixed compile-time array (src/tiku_trk_deskbar.c:594-597); no MRU tracking exists anywhere in src (grep 'recent' hits only unrelated comments, tiku_trk_query.h:222 and tiku_trk_fs.c:376); no directory-backed menu builder exists for the leaf  
+**PORT:** The leaf menu is built from what is there when it opens: the fixed head, then whichever recent lists have anything in them, then the live contents of the Deskbar folder as rows that expand. The recent lists are FED to the bar by the shell rather than read by it -- they are the same lists the Open panel keeps, and a second copy would disagree with the first.  
+*src/tiku_trk_deskbar.c:build_leaf/open_sub; src/tiku_trk_desktop.c (the recents feed); tests/test_dbdrop.c; tests/shell/dbmenu.script*
 
-#### DB-003 · important · open
+#### DB-003 · important · done
 **The Deskbar folder shown in the leaf menu is ~/config/settings/deskbar/menu, falling back to the system data directory copy if the user one is missing**  
 Resolved fresh on every menu open in MenusBeginning; kDeskbarMenuEntriesFileName == "menu_entries"; if neither exists the menu is not populated at all  
 `BarWindow.cpp` → `TBarWindow::MenusBeginning`  
 **TIKU:** Path becomes a VFS path; the two-tier user/system fallback is worth keeping  
 **VERIFIER CORRECTION:** TBarWindow::MenusBeginning appends kDeskbarMenuEntriesFileName ("menu_entries") to GetDeskbarSettingsDirectory() → ~/config/settings/deskbar/**menu_entries**, with the system fallback /system/data/deskbar/menu_entries; the entry is opened with symlink traversal. The path "~/config/settings/deskbar/menu" is B_USER_DESKBAR_DIRECTORY, which is the DROP target used by AddRefsToDeskbarMenu — a different constant from the one that supplies the menu contents.
-**SUBSYSTEM:** Deskbar-folder menu: no folder-backed menu or settings-path resolution exists — leaf items are compile-time strings (src/tiku_trk_deskbar.c:594-597) and nothing in src resolves a menu directory or fallback path  
+**PORT:** The user's folder, and a system copy when there is none -- a machine with no per-user menu folder shows the system one rather than an empty menu. The path is the port's own (~/.config/deskbar, which is already where a Deskbar drop puts its links).  
+*src/tiku_trk_deskbar.c:menu_dir_of; tests/test_dbdrop.c*
 
-#### DB-004 · polish · open
+#### DB-004 · polish · done
 **If the Deskbar folder is empty the menu shows a single disabled '<Deskbar folder is empty>' item rather than an empty menu**  
 Only when the built item list is empty; otherwise the normal BNavMenu sort/finish runs  
 `DeskbarMenu.cpp` → `TDeskbarMenu::DoneBuildingItemList`
-**BLOCKED:** waits on DB-003's folder-backed menu: the empty-folder placeholder guards a listing that does not exist — the leaf menu is the fixed items[] at src/tiku_trk_deskbar.c:594-597  
+**PORT:** One item that says so and cannot be chosen. The menu layer has a single ink, so the row is drawn dimmed over what it already drew.  
+*src/tiku_trk_deskbar.c:build_leaf (the DISABLED item); tests/test_dbdrop.c*
 
-#### DB-005 · important · open
+#### DB-005 · important · done
 **The leaf menu is rebuilt from disk every time it is opened, so files added to the Deskbar folder appear without restarting Deskbar**  
 ClearMenuBuildingState sets fMenuBuilt=false; MenusEnded additionally calls sDeskbarMenu->ForceRebuild() under the menu's looper lock  
 `DeskbarMenu.cpp` → `TDeskbarMenu::ClearMenuBuildingState`  
 **TIKU:** With VFS watch notifications this could become event-driven instead of rebuild-on-open
-**BLOCKED:** waits on DB-002/DB-003: rebuild-on-open has nothing to rebuild — the leaf menu is a compile-time array (src/tiku_trk_deskbar.c:594-597); nothing about it is read from the namespace at open time  
+**PORT:** Rebuilt on every open, from both entry points -- the click on the leaf and the keyboard's own -- so a file put in the Deskbar folder appears without restarting anything.  
+*src/tiku_trk_deskbar.c (build_leaf from the click path and from tiku_trk_deskbar_open_menu); tests/test_dbdrop.c*
 
 #### DB-006 · important · partial
 **Choosing the 'Shutdown…' parent item asks for confirmation; choosing 'Power off' or 'Restart system' inside its submenu acts immediately**  
@@ -7069,12 +7074,13 @@ kAlwaysTop toggles fSettings.alwaysOnTop and immediately calls fBarWindow->SetFe
 `BarApp.cpp` → `TBarApp::MessageReceived (kAlwaysTop / kAutoRaise / kAutoHide)`
 **SUBSYSTEM:** Deskbar preferences/settings: none of the three settings exists (no settings fields in struct tiku_trk_deskbar, src/tiku_trk_deskbar.c:44-55; topmost-ness is hardwired draw order, src/tiku_trk_desktop.c:1516), so their mutual constraints have nothing to constrain  
 
-#### DB-074 · important · open ⟨found by verification⟩
+#### DB-074 · important · done ⟨found by verification⟩
 **A recents type with a count of zero counts as disabled, and its submenu disappears from the leaf menu entirely.**  
 kUpdateRecentCounts sets `fSettings.recentAppsEnabled = enabled && count > 0` (same for folders and documents) and then refreshes the preferences window. TRecentsMenu reads recentXxxCount/recentXxxEnabled at construction, and TDeskbarMenu::AddNextItem only adds the submenus whose RecentsEnabled() is true — dropping the whole block when none is.  
 `BarApp.cpp` → `TBarApp::MessageReceived (case kUpdateRecentCounts) / TRecentsMenu::TRecentsMenu`  
 **TIKU:** "count 0 means off" is a settings-normalisation rule worth reproducing rather than storing two independent fields.
-**BLOCKED:** waits on the recents subsystem (DB-002): no recents exist anywhere in src (grep 'recent' hits only unrelated comments, tiku_trk_query.h:222 and tiku_trk_fs.c:376) — no counts, no enabled flags, no submenus to drop  
+**PORT:** A list whose count is zero is not offered at all: an empty submenu is a promise of nothing.  
+*src/tiku_trk_deskbar.c:build_leaf; tests/test_dbdrop.c*
 
 #### DB-075 · polish · done ⟨found by verification⟩
 **Files dropped on the Deskbar application itself (not on the menu) are launched through Tracker, and dropped folders are silently ignored.**  
