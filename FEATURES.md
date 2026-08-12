@@ -920,13 +920,14 @@ When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw
 **VERIFIER CORRECTION:** The halo is NOT skipped for cut items. The guard is `if (!selected && direct && view->WidgetTextOutline())` — only selection and non-direct (offscreen) drawing suppress it. clipboardMode == kMoveSelectionTo only suppresses the B_OP_ALPHA/B_ALPHA_OVERLAY mode switch around the halo passes (TextWidget.cpp:690-745). Alpha values are right: dark text 30 then 65 at false-bold 2.0/1.0; light text black 30 at 1.0 and 200 at +(1,1).
 **SUBSYSTEM:** Background images: no background-image support exists anywhere (grep 'background' over src/ hits only comments about empty-window context menus), so the halo's trigger (Tracker's fWidgetTextOutline, set by BackgroundImage) has no source; no outline/halo text drawing exists in either shell.  
 
-#### PVL-072 · polish · partial
+#### PVL-072 · polish · done
 **Volume icons carry a free-space bar drawn over the icon, which turns a warning colour below 5% free.**  
 BPose::DrawBar draws a shadowed frame of width 7/32 of the icon (minimum 4px) at the icon's right edge, fills the free portion with FreeSpaceColor and the used portion with UsedSpaceColor, or WarningSpaceColor when fPercent < -1 (encoded as -2-percent for <5% free). Poses are re-polled periodically via gPeriodicUpdatePoses, and no bar is drawn on CDDA or read-only volumes.  
 `Pose.cpp` → `BPose::DrawBar / CalcFreeSpace / BPose::UpdateVolumeSpaceBar`  
 **TIKU:** A device node with a capacity descriptor could reuse this gauge; the periodic poll would be replaced by a watch notification.  
 **PORT:** The volume model supplies the numbers and the fill is computed from them; below a twentieth free the used part takes the warning colour instead of being drawn beside it, which is what makes a nearly-full volume read at a glance.  A volume that will not say its size shows an EMPTY bar, not a full one -- guessing full would warn about every device whose driver has no free-space call.  
-**MISSING:** Nothing draws it: volume poses are not distinguished from folders in either shell, so there is no icon to draw a bar over.  
+**PORT:** A mount point is now a VOLUME rather than a folder that happens to sit where one is, and carries its capacity as facts the store read -- so a listing of a dozen volumes is a dozen rows and not a dozen statvfs calls.  The bar is drawn along the bottom of the icon and the used part takes the warning colour below a twentieth free.  
+*Shell: desktop*  
 #### PVL-073 · polish · differs
 **Opening an item plays a short expanding-rectangle animation over the item.**  
 DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects outward from the pose rect's centre with a 10 ms snooze per step, drawn in list mode over CalcPoseRectList(clickedPose, index, firstColumnOnly=true) and in icon mode over the pose rect.  
@@ -936,9 +937,8 @@ DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects 
 #### PVL-074 · polish · open
 **A volume pose showing a space bar is repainted by invalidation rather than drawn directly, so the bar never smears.**  
 DrawPose: if TrackerSettings().ShowVolumeSpaceBar() and the target is a volume, Invalidate(rect); otherwise pose->Draw(rect, rect, this, fullDraw) directly. BPose::Draw itself also defers to Invalidate once when its background was not cleared and this is a partial draw (fBackgroundClean).  
-`PoseView.cpp` → `BPoseView::DrawPose / BPose::Draw`
-**SUBSYSTEM:** Volume model (and the repaint layer behind it): with no space-bar poses (see PVL-072) the invalidate-instead-of-direct-draw rule has no subject; there is also no Invalidate/direct-draw distinction in the drawing floor (full-frame redraws only).  
-
+`PoseView.cpp` → `BPoseView::DrawPose / BPose::Draw`  
+**BLOCKED:** Waits on partial repaint.  The shells redraw whole windows from a dirty flag, so there is no invalidate-versus-draw distinction for the bar to need; it cannot smear because nothing draws incrementally.  
 #### PVL-075 · polish · open
 **Changing an item's icon repaints only that icon, not the row or the label.**  
 BPose::UpdateIcon tells the icon cache the icon changed and invalidates _ListIconRect (list mode) or _IconRect (icon modes) only. The list icon rect is at ListOffset() from the row's left, vertically centred in the row.  
@@ -2169,12 +2169,11 @@ case B_DEVICE_MOUNTED: CreateVolumePose when targetModel->IsRoot(), or when IsVo
 **TIKU:** In TikuOS the device namespace is the mount analogue: a device node appearing must add a row in the same live way, gated by a capability bit rather than volume.IsPersistent().
 **SUBSYSTEM:** Volume model + Desktop icon layer. There are no mount events (grep 'mount' in src returns only the tk_close unplug comment, src/tiku_trk_backend_tiku.c:473-474), no CreateVolumePose, no disks-icon/shared-volume settings, and no desktop icons at all — draw_all paints windows, Deskbar and popups only (src/tiku_trk_desktop.c:1512-1527) and KIND_DESKTOP is never assigned. The only surviving sliver is generic: a node appearing at '/' shows in an open '/' window via relist+diff (src/tiku_trk_poseview.c:3188-3296).  
 
-#### PVN-041 · polish · open
+#### PVN-041 · polish · done
 **Only persistent volumes that are not mounted inside another persistent volume get an icon.**  
 CreateVolumePose returns early if !volume->IsPersistent(), and again if BVolume(ref.device) of the mount point is itself persistent (comment: 'the file system root, /pipe, /dev, etc. are all non-persistent').  
-`PoseView.cpp` → `BPoseView::CreateVolumePose`
-**SUBSYSTEM:** Volume model (persistence property). Nothing represents volume persistence: the model's facts carry perm/cap/meta/size/mtime/link_broken only (src/tiku_trk_model.h:63-74), grep for persistent/IsPersistent over src hits one unrelated comment in tiku_trk_select.h, and there is no CreateVolumePose to gate.  
-
+`PoseView.cpp` → `BPoseView::CreateVolumePose`  
+**PORT:** A volume mounted inside another gets no icon of its own -- it is a detail of that volume, not a second disk -- matched on a whole path component so a sibling whose name merely starts the same keeps its icon.  The boot volume is the exception, since everything is inside it and it is the disk.  
 #### PVN-042 · polish · open
 **Broken-symlink repair after a mount is deliberately delayed half a second so that a link to a volume resolves as a volume rather than a plain directory.**  
 taskLoop->RunLater(NewMemberFunctionObject(&BPoseView::TryUpdatingBrokenLinks, this), 500000) at the end of case B_DEVICE_MOUNTED.  
@@ -3504,9 +3503,8 @@ Only removes the foreign attribute when the write wrote exactly `length` bytes. 
 **A volume that is renamed under Tracker's feet updates its displayed name, and the boot volume additionally watches its mount point so renames there are noticed.**  
 UpdateEntryRef replaces fVolumeName for volume models before updating the entry ref. WatchVolumeAndMountPoint watches the node with B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR, and when the entry is named "boot" it additionally builds "/" + volume name and watches that node too.  
 `Model.cpp` → `Model::WatchVolumeAndMountPoint`  
-**TIKU:** Watch registration is idempotent in TikuOS and the table is only 8 slots, per-boot; a second watch for the mount point is affordable but the slot budget must be checked.
-**SUBSYSTEM:** Volume model. POSIX never yields a volume (from_stat assigns only FILE/DIRECTORY/SYMLINK, backend_posix.c:48-54), the model has no volume-name field to update (model.h:63-74), and the POSIX backend has no watch at all (px_pump is an explicit stub, backend_posix.c:186-193) — a volume rename cannot be noticed, let alone the boot mount point double-watched.  
-
+**TIKU:** Watch registration is idempotent in TikuOS and the table is only 8 slots, per-boot; a second watch for the mount point is affordable but the slot budget must be checked.  
+**BLOCKED:** The volume model exists now and supplies the name, but nothing watches a volume for a rename: the mount table is re-read on a one-second timer rather than on notice, so a rename is picked up late and the boot volume's extra mount-point watch has no analogue.  
 #### MA-022 · core · differs
 **Which formatter a column uses is decided by the column's attribute name first and its "display as" hint second; unknown attributes fall back to a generic reader.**  
 Name-keyed: _trk/path -> Path, BEOS:TYPE -> Kind, _stat/name -> Name, _stat/realname -> RealName, _stat/size -> Size, _stat/modified -> ModificationTime, _stat/created -> CreationTime, _stat/mode -> Mode, _trk/open_with_relation -> OpenWithRelation, _trk/app_version and _trk/system_version -> short version, _trk/original_path -> OriginalPath. Then DisplayAs() prefix matches: "checkbox", "duration", "rating". Everything else -> GenericAttributeText.  
@@ -4258,9 +4256,8 @@ BQueryPoseView::EditQueries sends kEditQuery with the window's own target ref to
 **Unmounting a volume force-closes any query window that is searching it, so the unmount can proceed.**  
 TTracker::CloseActiveQueryWindows posts B_QUIT_REQUESTED to every BQueryContainerWindow whose ActiveOnDevice(device) is true, then waits for them to close; ActiveOnDevice asks the pose view whether any BQuery in fQueryList has TargetDevice() == device. TTracker::QueryActiveForDevice answers the same question without closing.  
 `QueryPoseView.cpp` → `BQueryPoseView::ActiveOnDevice (Tracker.cpp TTracker::CloseActiveQueryWindows, TTracker::QueryActiveForDevice)`  
-**TIKU:** Direct analogue: a device disappearing from the VFS must tear down live searches bound to it, or their watch slots leak.
-**SUBSYSTEM:** Volume model. No mount/unmount lifecycle exists to hook: the desktop drives one backend for its whole life, grep mount over src/*.c finds only a comment about unplug flushing the sidecar store (src/tiku_trk_backend_tiku.c:473), and no code closes query windows on device departure — window close is user-driven only, and a vanished scope merely shows up as 'gone' counts in refresh_results (src/tiku_trk_desktop.c:634-641).  
-
+**TIKU:** Direct analogue: a device disappearing from the VFS must tear down live searches bound to it, or their watch slots leak.  
+**BLOCKED:** Waits on unmounting existing at all.  The model answers whether a volume MAY be unmounted (FS-041) and nothing performs one, so there is no unmount for a query window to be closed by.  
 #### Q-047 · important · done
 **The Select window matches poses by name with five rules — starts with, ends with, contains, matches wildcard expression, matches regular expression — plus Invert and Ignore case; wildcard and Ignore case are the defaults.**  
 SelectionWindow builds the popup in that order, marks item 3 (wildcard) and sets fIgnoreCaseCheckBox to 1; ExpressionType maps the menu index through {kStartsWith,kEndsWith,kContains,kGlobMatch,kRegexpMatch}. kSelectMatchingEntries carries ExpressionType/Expression/InvertSelection/IgnoreCase; BPoseView::SelectMatchingEntries clears the selection, enables multiple selection, and adds each pose where `name.Matches(expr, !ignoreCase, type) ^ invertSelection`. TrackerString::Matches dispatches, and kNone matches nothing.  
@@ -5135,13 +5132,14 @@ Default on; consulted per file when deciding whether a thumbnail should be produ
 **TIKU:** Thumbnail generation is a per-node capability question in a device namespace; nodes without readable bulk content must not be probed.  
 **PORT:** The setting exists and gates thumbnailing, on by default.  
 **MISSING:** Nothing surfaces it: there is no preferences window to turn it off from, so it can only be changed in code (the preferences subsystem).  
-#### TS-054 · important · partial
+#### TS-054 · important · done
 **"Show space bars on volumes" draws a used/free capacity bar on volume icons, with three user-chosen colours.**  
 Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0, all with alpha 192 (the alpha is forced to 192 on every pick because BColorControl ignores alpha but equality checks do not). The bar is drawn along the right edge of the icon, 7/32 of icon width (min 4px); the warning colour replaces the used colour when free space is below 5%. Toggling the setting or a colour makes Tracker force a periodic update of all volume poses; with the setting off, Tracker's Pulse skips that update entirely.  
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarColorChanged)`  
 **TIKU:** Capacity/free reporting for a namespace mount needs a typed descriptor; nodes that cannot report capacity must simply have no bar rather than a zero bar.  
 **PORT:** The three colours are settings with defaults, on the Volume icons page of the preferences window, and the threshold is measured on what is LEFT rather than on a rounded used-share -- 95% used covers anything from 94.5 to 95.5, and the volume that matters is the one with under a twentieth free.  
-**MISSING:** The setting is not consulted by any drawing, since nothing draws the bar yet (PVL-072).  
+**PORT:** The three colours are settings on the Volume icons page and the drawing reads them, so changing one repaints the bars.  The threshold is measured on what is LEFT rather than on a rounded used-share.  
+*Shell: desktop*  
 #### TS-055 · polish · open
 **The space-bar colour editor edits one of the three colours at a time, chosen from a pop-up above the colour control.**  
 Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up and the control is preloaded with the used colour. Switching the menu item reloads the control from the corresponding setting; every colour control change writes straight through to the setting and posts kSettingsContentsModified.  

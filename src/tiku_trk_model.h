@@ -74,6 +74,11 @@ typedef struct {
      * the delete question all ask the same question, and a directory read
      * per draw to answer it would be a read per frame. */
     int      trash_full;
+    /* A VOLUME's capacity.  Carried as facts for the same reason the
+     * Trash's fullness is: the space bar, the Kind column and the free-
+     * space question all ask it, and a statvfs per draw would be one per
+     * frame.  Both zero on anything that is not a volume. */
+    uint64_t total, avail;
     int64_t  size;
     int64_t  mtime;
 } tiku_trk_facts_t;

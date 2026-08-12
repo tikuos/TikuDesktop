@@ -13,6 +13,7 @@
  */
 
 #include "tiku_trk_model.h"
+#include "tiku_trk_volume.h"
 #include "tiku_trk_state.h"
 
 #include <dirent.h>
@@ -21,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct {
@@ -29,6 +31,35 @@ typedef struct {
 
 /** @brief Fill a Model from a stat buffer. */
 /** @brief Whether @p path holds anything at all, "." and ".." aside. */
+/**
+ * @brief Whether @p path is a volume's mount point, and its capacity.
+ *
+ * The mount table is re-read at most once a second: it changes when a
+ * device is plugged in, which is rare, and a listing of a hundred rows
+ * must not read /proc a hundred times.
+ */
+static int
+volume_here(const char *path, tiku_trk_model_t *m)
+{
+    static tiku_trk_volumes_t vs;
+    static time_t seen;
+    time_t now = time(NULL);
+    int i;
+
+    if (now != seen) {
+        (void)tiku_trk_volumes_scan(&vs);
+        seen = now;
+    }
+    for (i = 0; i < vs.n; i++) {
+        if (strcmp(vs.v[i].mount, path) == 0) {
+            m->facts.total = vs.v[i].total;
+            m->facts.avail = vs.v[i].avail;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int
 dir_has_entries(const char *path)
 {
@@ -65,6 +96,12 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
 
     if (is_link) {
         m->kind = TIKU_TRK_KIND_SYMLINK;
+    } else if (S_ISDIR(st->st_mode) && volume_here(path, m)) {
+        /* A mount point is a VOLUME, not a folder that happens to sit
+         * where one is: what may be done to it differs at every turn --
+         * it cannot be renamed, dragging it to the Trash unmounts it, and
+         * it is the only kind that has a capacity. */
+        m->kind = TIKU_TRK_KIND_VOLUME;
     } else if (S_ISDIR(st->st_mode)) {
         /* A directory called ".Trash" IS the Trash, recognised by name the
          * way a folder called "Desktop" is (tiku_trk_model.c).  The store

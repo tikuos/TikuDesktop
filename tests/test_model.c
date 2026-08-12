@@ -185,6 +185,20 @@ test_posix(void)
         (void)rmdir(tr);
     }
 
+    {   /* A mount point is a VOLUME, not a folder that happens to sit
+         * where one is (PVN-041, PVL-072). */
+        check(b->ops->stat(b, "/", &m) == 0 &&
+              m.kind == TIKU_TRK_KIND_VOLUME,
+              "the root of a filesystem is a volume, not a directory");
+        check(m.facts.total > 0u && m.facts.avail <= m.facts.total,
+              "and carries its capacity, which is what the space bar "
+              "is drawn from");
+        check(b->ops->stat(b, dir, &m) == 0 &&
+              m.kind == TIKU_TRK_KIND_DIRECTORY &&
+              m.facts.total == 0u,
+              "while an ordinary directory is neither");
+    }
+
     check(b->ops->stat(b, f1, &m) == 0, "stat a file");
     check(m.kind == TIKU_TRK_KIND_FILE && m.facts.size == 5,
           "kind and size are right");

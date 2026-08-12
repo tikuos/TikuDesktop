@@ -190,23 +190,69 @@ tiku_trk_volume_may_write(const tiku_trk_volumes_t *vs, const char *path,
     return 0;
 }
 
+int
+tiku_trk_volume_shows_icon(const tiku_trk_volumes_t *vs,
+                           const tiku_trk_volume_t *v)
+{
+    size_t n;
+    int i;
+
+    if (vs == NULL || v == NULL) {
+        return 0;
+    }
+    if (v->is_boot) {
+        return 1;                   /* everything is inside it */
+    }
+    n = strlen(v->mount);
+    for (i = 0; i < vs->n; i++) {
+        const char *o = vs->v[i].mount;
+        size_t on = strlen(o);
+
+        if (&vs->v[i] == v || vs->v[i].is_boot) {
+            continue;
+        }
+        /* Mounted under another volume, on a whole path component: a
+         * detail of that one rather than a second disk. */
+        if (on < n && strncmp(v->mount, o, on) == 0 &&
+            (o[on - 1u] == '/' || v->mount[on] == '/')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 tiku_trk_space_t
 tiku_trk_volume_space(const tiku_trk_volume_t *v, int *used_pct)
 {
+    if (v == NULL) {
+        if (used_pct != NULL) { *used_pct = 0; }
+        return TIKU_TRK_SPACE_FREE;
+    }
+    return tiku_trk_volume_space_facts(v->total, v->avail, used_pct);
+}
+
+tiku_trk_space_t
+tiku_trk_volume_space_facts(uint64_t total, uint64_t avail, int *used_pct)
+{
+    struct { uint64_t total, avail; } vv;
+    const void *vp = &vv;
     uint64_t used;
     int pct = 0;
 
+    vv.total = total;
+    vv.avail = avail;
+    (void)vp;
     if (used_pct != NULL) {
         *used_pct = 0;
     }
-    if (v == NULL || v->total == 0u) {
+    if (total == 0u) {
         /* A volume that will not say its size shows an empty bar rather
          * than a full one: guessing "full" would warn about every device
          * whose driver has no free-space call. */
         return TIKU_TRK_SPACE_FREE;
     }
-    used = (v->total > v->avail) ? (v->total - v->avail) : 0u;
-    pct = (int)((used * 100u + v->total / 2u) / v->total);
+    used = (total > avail) ? (total - avail) : 0u;
+    pct = (int)((used * 100u + total / 2u) / total);
     if (pct > 100) { pct = 100; }
     if (used_pct != NULL) {
         *used_pct = pct;
@@ -214,7 +260,7 @@ tiku_trk_volume_space(const tiku_trk_volume_t *v, int *used_pct)
     /* The threshold is on what is LEFT, not on what is used: a rounded
      * used-share of 95 covers anything from 94.5 to 95.5, and the volume
      * that matters is the one with under a twentieth free. */
-    if (v->avail * 100u < v->total * (uint64_t)TIKU_TRK_VOLUME_WARN_PCT) {
+    if (avail * 100u < total * (uint64_t)TIKU_TRK_VOLUME_WARN_PCT) {
         return TIKU_TRK_SPACE_WARNING;
     }
     return TIKU_TRK_SPACE_USED;

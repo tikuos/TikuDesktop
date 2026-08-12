@@ -31,6 +31,7 @@
 #include "tiku_trk_thumb.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
+#include "tiku_trk_volume.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -317,6 +318,45 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
 
             if (mini > MINI_ICON) {
                 mini = MINI_ICON;
+            }
+            if (p->model.kind == TIKU_TRK_KIND_VOLUME &&
+                tiku_trk_prefs_get(&fl->app->prefs, "ShowVolumeSpaceBar")) {
+                /* A capacity bar along the bottom of the icon.  Drawn from
+                 * the FACTS the store already read, so a listing of a
+                 * dozen volumes is a dozen rows and not a dozen
+                 * statvfs calls (PVL-072, TS-054). */
+                tiku_desk_rect_t bar;
+                int used = 0;
+                tiku_trk_space_t which =
+                    tiku_trk_volume_space_facts(p->model.facts.total,
+                                                p->model.facts.avail,
+                                                &used);
+                const char *key = (which == TIKU_TRK_SPACE_WARNING)
+                                      ? "WarningSpaceColor"
+                                      : "UsedSpaceColor";
+                int32_t c = tiku_trk_prefs_get(&fl->app->prefs, key);
+
+                bar.x = row.x + 2;
+                bar.y = row.y + row_h - 5;
+                bar.w = mini;
+                bar.h = 3;
+                {   /* The settings hold 0xAARRGGBB; the surface wants
+                     * three channels, and the alpha is the original's
+                     * forced 192 rather than anything a picker chose. */
+                    uint32_t fc = (uint32_t)tiku_trk_prefs_get(
+                                      &fl->app->prefs, "FreeSpaceColor");
+
+                    tiku_desk_fill(s, bar,
+                        TIKU_DESK_RGB((fc >> 16) & 0xffu,
+                                      (fc >> 8) & 0xffu, fc & 0xffu));
+                }
+                bar.w = mini * used / 100;
+                if (bar.w > 0) {
+                    tiku_desk_fill(s, bar,
+                        TIKU_DESK_RGB(((uint32_t)c >> 16) & 0xffu,
+                                      ((uint32_t)c >> 8) & 0xffu,
+                                      (uint32_t)c & 0xffu));
+                }
             }
             {   /* An image shows its own picture.  A HIT draws it; a
                  * miss QUEUES the work and falls through to a type icon,

@@ -77,6 +77,17 @@ int tiku_trk_volume_may_unmount(const tiku_trk_volumes_t *vs,
 int tiku_trk_volume_may_write(const tiku_trk_volumes_t *vs, const char *path,
                               int write, char *why, size_t max);
 
+/**
+ * @brief Whether @p v should get an icon of its own (PVN-041).
+ *
+ * A volume mounted INSIDE another one is a detail of that volume, not a
+ * second disk: showing both puts two icons on the desktop for one thing
+ * the user plugged in.  The boot volume is the exception -- everything is
+ * inside it, and it is the disk.
+ */
+int tiku_trk_volume_shows_icon(const tiku_trk_volumes_t *vs,
+                               const tiku_trk_volume_t *v);
+
 /** @brief Below this share free, the bar warns (TS-054). */
 #define TIKU_TRK_VOLUME_WARN_PCT 5
 
@@ -97,5 +108,14 @@ typedef enum {
  */
 tiku_trk_space_t tiku_trk_volume_space(const tiku_trk_volume_t *v,
                                        int *used_pct);
+
+/**
+ * @brief The same question asked of the facts a model already carries.
+ *
+ * Drawing has the numbers and not the table, and re-reading the mount
+ * table to colour a bar would be a read per row per frame.
+ */
+tiku_trk_space_t tiku_trk_volume_space_facts(uint64_t total, uint64_t avail,
+                                             int *used_pct);
 
 #endif /* TIKU_TRK_VOLUME_H_ */

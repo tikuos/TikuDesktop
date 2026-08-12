@@ -61,7 +61,8 @@ $(BUILD)/test_notify: src/tiku_trk_notify.c src/tiku_trk_poseview.c \
                       src/tiku_trk_match.c src/tiku_trk_clip.c \
                       src/tiku_trk_state.c src/tiku_trk_backend_posix.c \
                       src/tiku_trk_task.c $(DESK)/tiku_desk_gfx.c \
-                      $(DESK)/tiku_desk_font.c tests/test_notify.c | $(BUILD)
+                      $(DESK)/tiku_desk_font.c tests/test_notify.c src/tiku_trk_volume.c \
+                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_attr: src/tiku_trk_attr.c src/tiku_trk_model.c \

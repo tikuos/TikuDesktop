@@ -112,6 +112,33 @@ main(void)
     }
 
 
+
+    printf("\nwhich volumes get an icon (PVN-041)\n");
+    {
+        tiku_trk_volumes_t t;
+
+        memset(&t, 0, sizeof t);
+        t.n = 4;
+        snprintf(t.v[0].mount, sizeof t.v[0].mount, "/");
+        t.v[0].is_boot = 1;
+        snprintf(t.v[1].mount, sizeof t.v[1].mount, "/media/stick");
+        snprintf(t.v[2].mount, sizeof t.v[2].mount, "/media/stick/inner");
+        snprintf(t.v[3].mount, sizeof t.v[3].mount, "/media/stick-two");
+
+        check(tiku_trk_volume_shows_icon(&t, &t.v[0]), "PVN-041",
+              "the boot volume always shows: everything is inside it, and "
+              "it is the disk");
+        check(tiku_trk_volume_shows_icon(&t, &t.v[1]), "PVN-041",
+              "a volume mounted under the boot volume still shows -- "
+              "otherwise nothing but the boot volume ever would");
+        check(!tiku_trk_volume_shows_icon(&t, &t.v[2]), "PVN-041",
+              "one mounted INSIDE another does not: it is a detail of that "
+              "volume, not a second disk");
+        check(tiku_trk_volume_shows_icon(&t, &t.v[3]), "PVN-041",
+              "while one whose path merely starts with another's does -- "
+              "the test is on a whole path component");
+    }
+
     printf("\nthe space bar (PVL-072, TS-054)\n");
     {
         tiku_trk_volume_t s1;
