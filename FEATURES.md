@@ -5072,13 +5072,14 @@ Added to the count container with weight 0.25 and given the h-scrollbar's MinSiz
 **MISSING:** The count view is at the bottom-left of the pose container at a fixed height, but it spans the full width and there is no horizontal scroll bar in the window at all (only the vertical one), so nothing shares its row, its min-size or its height.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:214 (draw_count rect) and :505 (only scrollbar drawn)*
 
-#### TS-045 · core · partial
+#### TS-045 · core · done
 **Preferences live in a plain-text file at ~/config/settings/Tracker/TrackerSettings and are loaded lazily on first use.**  
 Each line is "Name value", booleans written as on/off, colours as 0x%08x; the file is deleted and rewritten wholesale on save. Normal saves write only settings that differ from their default, but every save triggered from the preferences window passes onlyIfNonDefault=false and therefore writes all of them. Unknown names in the file are ignored with an "unknown command" error. Settings are also saved on Tracker quit.  
 `TrackerSettings.cpp` → `TTrackerState::LoadSettingsIfNeeded`  
 **TIKU:** Needs a TikuOS-side settings store (namespace node or persist cells); the text argv format and the write-only-if-non-default rule are the parts users can observe.  
 **PORT:** A plain-text file, one "Name value" per line, booleans as on/off and colours as 0x%08x, rewritten wholesale.  A file that is not there leaves the defaults rather than failing.  
-**MISSING:** Saved in full rather than only what differs from the default, and not yet loaded lazily on first use -- nothing calls it from the shells.  
+**PORT:** A plain-text file, one "Name value" per line, booleans as on/off and colours as 0x%08x, rewritten wholesale on every change.  Loaded at startup and saved the moment a control is clicked.  A file that is not there leaves the defaults rather than failing.  
+*Shell: desktop*  
 #### TS-046 · important · partial
 **"Show Disks icon" and "Show volumes on Desktop" are mutually exclusive, and "Show shared volumes on Desktop" is only available with the latter.**  
 Defaults: ShowDisksIcon off, MountVolumesOntoDesktop on, MountSharedVolumesOntoDesktop on. Setting either one through the API forces the other to its complement (SetShowDisksIcon also sets MountVolumesOntoDesktop to !enabled). Changing them broadcasts kVolumesOnDesktopChanged (and kDesktopIntegrationChanged on Defaults/Revert) with all three booleans so open windows adapt live.  
@@ -5158,24 +5159,28 @@ Default on. This page talks to the mount server (kSetAutomounterParams / kGetAut
 `AutoMounterSettings.cpp` → `AutomountSettingsPanel::_SendSettings`
 **SUBSYSTEM:** Disk mount page + mount service. The port has no mounting machinery at all: grep -i mount/eject/automount over src/*.c finds only mount-point comparisons inside the copy engine (src/tiku_trk_fs.c:1002-1044) and an unplug comment in backend_tiku.c:473; there is no mount server to send kSetAutomounterParams to, no automount policy, and no settings window to host the page.  
 
-#### TS-058 · core · partial
+#### TS-058 · core · done
 **The preferences window has four pages (Desktop, Windows, Volume icons, Disk mount) and applies every change immediately, with no OK button.**  
 Each control writes the setting, sends its notice, and posts kSettingsContentsModified, which re-saves the whole settings file and refreshes the buttons. Closing the window hides it instead of quitting, so state and the recorded revert baseline survive; opening it re-records the revert baseline and re-reads current values into every page.  
 `TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_HandleChangedContents`  
 **PORT:** The four pages exist as a property of each setting, every one of them populated, and the page names are the original's.  
-**MISSING:** The window itself -- the pages, the controls and the apply-immediately behaviour -- is not built.  
-#### TS-059 · important · partial
+**PORT:** Four pages in a list, the controls of the page beside them, and every click applies AND saves at once -- with no OK button there is no moment at which a change is pending.  The table's order is the window's order, so there is one list to keep in step rather than two.  
+*Shell: desktop*  
+#### TS-059 · important · done
 **The Defaults and Revert buttons are enabled only when at least one page has something to reset, and pressing one applies it to every page that needs it.**  
 Defaults enabled if any page's IsDefaultable() is true (i.e. any of its settings differs from the compiled default); Revert enabled if any page's IsRevertable() is true (differs from the values captured when the window was shown). Both start disabled and are recomputed after every change.  
 `TrackerSettingsWindow.cpp` → `TrackerSettingsWindow::_UpdateButtons`  
 **PORT:** Defaults measures against the compiled values and Revert against what the settings were when the window opened -- different questions, and a setting can answer yes to one and no to the other.  Both are page-wise and the buttons ask whether ANY page says yes.  
-**MISSING:** No buttons to enable: the rule is built and tested, the window is not.  
+**PORT:** Both buttons are drawn always and greyed when they would do nothing -- a button that vanishes teaches the user it was never there.  Defaults measures against the compiled values, Revert against the moment the window was shown, and pressing either applies it to every page.  
+*Shell: desktop*  
 #### TS-060 · polish · partial
 **A page whose settings have been changed since the window opened is shown in bold in the page list.**  
 SettingsItem::DrawItem picks be_bold_font when the page's IsRevertable() is true, plain otherwise; the list is invalidated on every settings change so the bolding is live.  
 `TrackerSettingsWindow.cpp` → `SettingsItem::DrawItem`  
 **PORT:** Whether a page has anything changed is answered per page, which is what a bold page name would be drawn from.  
-**MISSING:** No page list to draw it in.  
+**PORT:** A page with something changed since the window opened is marked in its list entry, so the user can see WHICH page they touched.  
+**MISSING:** Marked rather than bold: the port has one font face.  
+*Shell: desktop*  
 #### TS-061 · polish · differs
 **Reverting the Windows page fails to restore "Hide dotfiles" and corrupts "List folders first" instead.**  
 WindowsSettingsView::Revert calls settings.SetSortFolderNamesFirst(fHideDotFiles) in the fHideDotFiles branch — a genuine bug in the original; the notice sent is still kHideDotFilesChanged. The rewrite should restore HideDotFiles here, and this row exists so the deviation is deliberate rather than accidental.  
@@ -5875,12 +5880,13 @@ Requires a "cwd" string in the current message; BEntry(&workingDirectory, argv[i
 `Tracker.cpp` → `TTracker::ArgvReceived`  
 **PORT:** The multi-window shell no longer ignores paths: every non-flag argument from i = 1 is collected into openme[] (bounded by TIKU_TRK_WIN_MAX) and each one gets its own open_folder() call, cascaded, with the HOME default only when none was given. argv[0] is still skipped and relative paths still resolve through the process cwd in the backend with absolute paths passing through unchanged, which is the two-stage resolution collapsed onto a CLI launcher. The flag chain is not broken by the new branch — "-seconds" and the other flags start with '-' so they fall past the path branch, and their values are consumed by argv[++i]. Residual, not the row's clause: the single-window tracker binary still does start = argv[i] last-wins (src/tiku_trk_app.c:1103), so with two paths it shows the last rather than the first; it has exactly one view, so it cannot open a window per path either way.
 
-#### AW-101 · polish · open
+#### AW-101 · polish · partial
 **The preferences window is a singleton that is hidden rather than destroyed, and is re-shown or merely activated on subsequent requests; a request can jump straight to a specific page.**  
 ShowSettingsWindow creates it once; if hidden -> Show, else Activate. kRunAutomounterSettings shows it and then selects TrackerSettingsWindow::kAutomountSettings.  
-`Tracker.cpp` → `TTracker::ShowSettingsWindow / TTracker::MessageReceived (kRunAutomounterSettings)`
-**SUBSYSTEM:** preferences window — no settings UI in either shell (grep for preference/prefs/settings_win over src/tiku_trk_app.c and src/tiku_trk_desktop.c returns nothing); settings live in the state store (src/tiku_trk_state.c) with no window over them.  
-
+`Tracker.cpp` → `TTracker::ShowSettingsWindow / TTracker::MessageReceived (kRunAutomounterSettings)`  
+**PORT:** Opening it again brings the existing window forward rather than making a second, and the Revert baseline is re-taken each time it is shown.  
+**MISSING:** Closing destroys the window rather than hiding it, so the page last looked at is not remembered.  
+*Shell: desktop*  
 #### AW-102 · polish · open ⟨found by verification⟩
 **Tracker add-ons get user-assignable Command shortcuts that run the add-on against the current selection.**  
 AddOneShortcut posts kLoadAddOn with the add-on's ref via window->AddShortcut(key, modifiers, ...); AddOnShortcuts/ApplyShortcutPreferences maintain the key per add-on and RemoveShortcut/re-add on change, with kDefaultModifiers as the default chord.  

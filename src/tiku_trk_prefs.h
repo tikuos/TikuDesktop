@@ -93,4 +93,49 @@ void tiku_trk_prefs_revert(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 /** @brief The name a page shows in the list. */
 const char *tiku_trk_prefs_page_name(tiku_trk_page_t page);
 
+/*---------------------------------------------------------------------------*/
+/* The window's layout (TS-058, TS-059, TS-060)                              */
+/*---------------------------------------------------------------------------*/
+
+/** @brief What a click in the window landed on. */
+typedef enum {
+    TIKU_TRK_PREF_HIT_NONE = 0,
+    TIKU_TRK_PREF_HIT_PAGE,     /* a page in the list; `which` is which  */
+    TIKU_TRK_PREF_HIT_SETTING,  /* a control; `which` indexes the table  */
+    TIKU_TRK_PREF_HIT_DEFAULTS,
+    TIKU_TRK_PREF_HIT_REVERT
+} tiku_trk_pref_hit_t;
+
+#define TIKU_TRK_PREF_W        420
+#define TIKU_TRK_PREF_H        280
+#define TIKU_TRK_PREF_LIST_W   120
+
+/** @brief The rectangle of page @p k in the list. */
+void tiku_trk_prefs_page_rect(int k, int *x, int *y, int *w, int *h);
+
+/**
+ * @brief The rectangle of the @p nth control shown on @p page.
+ *
+ * Controls are laid out in the order they appear in the table, which is
+ * why the table's order is the window's order.
+ */
+void tiku_trk_prefs_control_rect(int nth, int *x, int *y, int *w, int *h);
+
+/** @brief Settings shown on @p page, in order.  @return how many. */
+int tiku_trk_prefs_page_controls(tiku_trk_prefs_t *p, tiku_trk_page_t page,
+                                 int *out, int max);
+
+/** @brief The rectangle of the Defaults or Revert button. */
+void tiku_trk_prefs_button_rect(int revert, int *x, int *y, int *w, int *h);
+
+/**
+ * @brief What a point hits.
+ *
+ * @param page  The page currently shown, since the controls depend on it.
+ * @param which Receives the page index or the setting index.
+ */
+tiku_trk_pref_hit_t tiku_trk_prefs_hit(tiku_trk_prefs_t *p,
+                                       tiku_trk_page_t page, int x, int y,
+                                       int *which);
+
 #endif /* TIKU_TRK_PREFS_H_ */

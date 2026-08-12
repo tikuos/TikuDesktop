@@ -158,6 +158,55 @@ main(void)
               "and every one of them has something on it");
     }
 
+
+    printf("\nthe window's layout (TS-058)\n");
+    {
+        int idx[32], n, x, y, w, h, x2, which = -1;
+
+        n = tiku_trk_prefs_page_controls(&p, TIKU_TRK_PAGE_MOUNT, idx, 32);
+        check(n == 2, "TS-057",
+              "the Disk mount page shows its two settings");
+        n = tiku_trk_prefs_page_controls(&p, TIKU_TRK_PAGE_NONE, idx, 32);
+        check(n > 0, "TS-062",
+              "settings with no page exist but are not on one -- which is "
+              "how an obsolete one keeps round-tripping without a control");
+
+        tiku_trk_prefs_page_rect(0, &x, &y, &w, &h);
+        check(x + w <= TIKU_TRK_PREF_LIST_W, "TS-058",
+              "the page list stays in its column");
+        tiku_trk_prefs_control_rect(0, &x2, NULL, &w, NULL);
+        check(x2 >= TIKU_TRK_PREF_LIST_W, "TS-058",
+              "and the controls start after it");
+
+        check(tiku_trk_prefs_hit(&p, TIKU_TRK_PAGE_WINDOWS, x + 2, y + 2,
+                                 &which) == TIKU_TRK_PREF_HIT_PAGE &&
+              which == 0, "TS-058",
+              "a click in the list picks a page, and says which");
+
+        n = tiku_trk_prefs_page_controls(&p, TIKU_TRK_PAGE_WINDOWS, idx, 32);
+        tiku_trk_prefs_control_rect(1, &x, &y, &w, &h);
+        check(tiku_trk_prefs_hit(&p, TIKU_TRK_PAGE_WINDOWS, x + 2, y + 2,
+                                 &which) == TIKU_TRK_PREF_HIT_SETTING &&
+              which == idx[1], "TS-058",
+              "a click on a control picks the setting the table has in "
+              "that position -- one order, not two");
+        check(tiku_trk_prefs_hit(&p, TIKU_TRK_PAGE_MOUNT, x + 2, y + 2,
+                                 &which) == TIKU_TRK_PREF_HIT_SETTING &&
+              which != idx[1], "TS-058",
+              "and the same spot on another page picks that page's control");
+
+        tiku_trk_prefs_button_rect(0, &x, &y, &w, &h);
+        tiku_trk_prefs_button_rect(1, &x2, NULL, NULL, NULL);
+        check(x2 > x, "TS-059",
+              "Revert sits to the right of Defaults");
+        check(tiku_trk_prefs_hit(&p, TIKU_TRK_PAGE_WINDOWS, x + 2, y + 2,
+                                 NULL) == TIKU_TRK_PREF_HIT_DEFAULTS,
+              "TS-059", "and both are clickable");
+        check(tiku_trk_prefs_hit(&p, TIKU_TRK_PAGE_WINDOWS, 4, 250, NULL)
+              == TIKU_TRK_PREF_HIT_NONE, "TS-058",
+              "while empty space is nothing");
+    }
+
     (void)remove(path);
     tiku_trk_prefs_free(&p);
     printf("\n%s\n", fails ? "FAILURES" : "the settings hold");

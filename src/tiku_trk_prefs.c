@@ -337,3 +337,97 @@ tiku_trk_prefs_page_name(tiku_trk_page_t page)
     default:                    return "";
     }
 }
+
+/*---------------------------------------------------------------------------*/
+/* The window's layout                                                       */
+/*---------------------------------------------------------------------------*/
+
+#define PAGE_H   24
+#define PAGE_TOP 12
+#define CTRL_H   22
+#define CTRL_TOP 12
+#define BTN_W    88
+#define BTN_H    24
+#define BTN_PAD  12
+
+void
+tiku_trk_prefs_page_rect(int k, int *x, int *y, int *w, int *h)
+{
+    if (x != NULL) { *x = 8; }
+    if (y != NULL) { *y = PAGE_TOP + k * PAGE_H; }
+    if (w != NULL) { *w = TIKU_TRK_PREF_LIST_W - 12; }
+    if (h != NULL) { *h = PAGE_H - 2; }
+}
+
+void
+tiku_trk_prefs_control_rect(int nth, int *x, int *y, int *w, int *h)
+{
+    if (x != NULL) { *x = TIKU_TRK_PREF_LIST_W + 12; }
+    if (y != NULL) { *y = CTRL_TOP + nth * CTRL_H; }
+    if (w != NULL) { *w = TIKU_TRK_PREF_W - TIKU_TRK_PREF_LIST_W - 24; }
+    if (h != NULL) { *h = CTRL_H - 2; }
+}
+
+int
+tiku_trk_prefs_page_controls(tiku_trk_prefs_t *p, tiku_trk_page_t page,
+                             int *out, int max)
+{
+    int i, n = 0;
+
+    if (p == NULL || out == NULL) {
+        return 0;
+    }
+    /* The table's order IS the window's order: one list to keep in step
+     * instead of two. */
+    for (i = 0; i < p->n && n < max; i++) {
+        if (p->pref[i].page == page) {
+            out[n++] = i;
+        }
+    }
+    return n;
+}
+
+void
+tiku_trk_prefs_button_rect(int revert, int *x, int *y, int *w, int *h)
+{
+    if (x != NULL) {
+        *x = TIKU_TRK_PREF_W - BTN_PAD - BTN_W -
+             (revert ? 0 : BTN_W + 8);
+    }
+    if (y != NULL) { *y = TIKU_TRK_PREF_H - BTN_PAD - BTN_H; }
+    if (w != NULL) { *w = BTN_W; }
+    if (h != NULL) { *h = BTN_H; }
+}
+
+tiku_trk_pref_hit_t
+tiku_trk_prefs_hit(tiku_trk_prefs_t *p, tiku_trk_page_t page, int x, int y,
+                   int *which)
+{
+    int idx[32], n, i, bx, by, bw, bh;
+
+    if (p == NULL) {
+        return TIKU_TRK_PREF_HIT_NONE;
+    }
+    for (i = 0; i < 2; i++) {
+        tiku_trk_prefs_button_rect(i, &bx, &by, &bw, &bh);
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+            return i ? TIKU_TRK_PREF_HIT_REVERT : TIKU_TRK_PREF_HIT_DEFAULTS;
+        }
+    }
+    for (i = 0; i < TIKU_TRK_PAGES; i++) {
+        tiku_trk_prefs_page_rect(i, &bx, &by, &bw, &bh);
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+            if (which != NULL) { *which = i; }
+            return TIKU_TRK_PREF_HIT_PAGE;
+        }
+    }
+    n = tiku_trk_prefs_page_controls(p, page, idx, 32);
+    for (i = 0; i < n; i++) {
+        tiku_trk_prefs_control_rect(i, &bx, &by, &bw, &bh);
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+            if (which != NULL) { *which = idx[i]; }
+            return TIKU_TRK_PREF_HIT_SETTING;
+        }
+    }
+    return TIKU_TRK_PREF_HIT_NONE;
+}

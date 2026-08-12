@@ -30,6 +30,7 @@
 #include "tiku_trk_drag.h"
 #include "tiku_trk_thumb.h"
 #include "tiku_trk_alert.h"
+#include "tiku_trk_prefs.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -165,6 +166,10 @@ typedef struct desktop {
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     tiku_trk_alert_t     alert;     /* the question, when there is one */
     tiku_trk_progress_win_t prog;   /* the shared status window        */
+    tiku_trk_prefs_t     prefs;
+    tiku_trk_win_t      *prefs_win;
+    tiku_trk_page_t      prefs_page;
+    char                 prefs_path[TIKU_TRK_PATH_MAX];
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -454,6 +459,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
 }
 
 static folder_t *open_folder(desktop_t *app, const char *path);
+static void prefs_open(desktop_t *app);
 static folder_t *folder_of(desktop_t *app, tiku_trk_win_t *w);
 
 /**
@@ -1654,6 +1660,9 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         app->drop_dst[0] = '\0';
         break;
     }
+    case TIKU_TRK_CMD_PREFERENCES:
+        prefs_open(app);
+        break;
     case TIKU_TRK_CMD_NEW_FOLDER: {
         char made[TIKU_TRK_PATH_MAX], err[200];
 
@@ -2110,6 +2119,103 @@ answer_alert(desktop_t *app)
     tiku_trk_alert_reset(&app->alert);
 }
 
+/**
+ * @brief Draw the preferences window.
+ *
+ * Every control writes its setting as it is clicked and the file is saved
+ * at once: there is no OK button, so there is no moment at which a change
+ * is pending (TS-058).
+ */
+static void
+prefs_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+           void *ctx)
+{
+    desktop_t *app = ctx;
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    int idx[32], n, i, x, y, bw, bh;
+
+    (void)w;
+    tiku_desk_fill(s, c, TIKU_DESK_C_PANEL);
+    for (i = 0; i < TIKU_TRK_PAGES; i++) {
+        tiku_desk_rect_t r;
+        int on = (i == (int)app->prefs_page);
+
+        tiku_trk_prefs_page_rect(i, &x, &y, &bw, &bh);
+        r.x = c.x + x; r.y = c.y + y; r.w = bw; r.h = bh;
+        tiku_desk_fill(s, r, on ? TIKU_DESK_C_SELECT : TIKU_DESK_C_PANEL);
+        /* A page with something changed is named in bold; with no bold
+         * face to hand, it is marked instead -- the point is that the
+         * user can see WHICH page they touched (TS-060). */
+        tiku_desk_text(s, f, r.x + 6, r.y + 15,
+                       tiku_trk_prefs_page_name((tiku_trk_page_t)i),
+                       on ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+        if (tiku_trk_prefs_revertable(&app->prefs, (tiku_trk_page_t)i)) {
+            tiku_desk_text(s, f, r.x + bw - 10, r.y + 15, "*",
+                           on ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+        }
+    }
+    n = tiku_trk_prefs_page_controls(&app->prefs, app->prefs_page, idx, 32);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pref_t *pr = &app->prefs.pref[idx[i]];
+        tiku_desk_rect_t box;
+
+        tiku_trk_prefs_control_rect(i, &x, &y, &bw, &bh);
+        box.x = c.x + x; box.y = c.y + y + 4; box.w = 12; box.h = 12;
+        if (pr->type == TIKU_TRK_PREF_BOOL) {
+            tiku_desk_fill(s, box, TIKU_DESK_C_DOC);
+            tiku_desk_frame(s, box, TIKU_DESK_C_TEXT);
+            if (pr->value) {
+                tiku_desk_text(s, f, box.x + 2, box.y + 11, "x",
+                               TIKU_DESK_C_TEXT);
+            }
+        }
+        tiku_desk_text(s, f, c.x + x + 18, c.y + y + 14, pr->name,
+                       TIKU_DESK_C_TEXT);
+    }
+    for (i = 0; i < 2; i++) {
+        tiku_desk_rect_t b;
+        int live = i ? tiku_trk_prefs_any_revertable(&app->prefs)
+                     : tiku_trk_prefs_any_defaultable(&app->prefs);
+
+        tiku_trk_prefs_button_rect(i, &x, &y, &bw, &bh);
+        b.x = c.x + x; b.y = c.y + y; b.w = bw; b.h = bh;
+        tiku_desk_fill(s, b, TIKU_DESK_C_PANEL);
+        tiku_desk_bevel(s, b,
+            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+        /* Disabled is drawn, not hidden: a button that vanishes when it
+         * has nothing to do teaches the user it was never there. */
+        tiku_desk_text(s, f, b.x + 12, b.y + 16, i ? "Revert" : "Defaults",
+                       live ? TIKU_DESK_C_TEXT
+                            : tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                             TIKU_DESK_LIGHTEN_2));
+    }
+}
+
+/** @brief Open the preferences window, or bring it forward (AW-101). */
+static void
+prefs_open(desktop_t *app)
+{
+    tiku_desk_rect_t fr;
+
+    if (app->prefs_win != NULL && app->prefs_win->open) {
+        tiku_trk_desk_activate(app->desk, app->prefs_win);
+        return;
+    }
+    fr.x = (DESK_W - TIKU_TRK_PREF_W) / 2;
+    fr.y = (DESK_H - TIKU_TRK_PREF_H) / 3;
+    fr.w = TIKU_TRK_PREF_W;
+    /* The layout's height is the CONTENT's; the frame has to carry the
+     * title bar on top of it or the buttons fall off the bottom. */
+    fr.h = TIKU_TRK_PREF_H + 26;
+    /* The baseline Revert measures against is taken when the window is
+     * SHOWN, not when it was built: reopening it starts the comparison
+     * again (TS-059). */
+    tiku_trk_prefs_mark_opened(&app->prefs);
+    app->prefs_win = tiku_trk_desk_open(app->desk, "Tracker preferences",
+                                        fr, prefs_draw, app, NULL);
+}
+
 static void
 draw_all(desktop_t *app)
 {
@@ -2201,6 +2307,17 @@ main(int argc, char **argv)
     tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_store_memory_open();
     tiku_trk_thumb_init(&app.thumbs);
+    tiku_trk_prefs_init(&app.prefs);
+    app.prefs_page = TIKU_TRK_PAGE_DESKTOP;
+    {
+        const char *home = getenv("HOME");
+
+        if (home != NULL && home[0] != '\0') {
+            snprintf(app.prefs_path, sizeof app.prefs_path,
+                     "%s/.config/TrackerSettings", home);
+            (void)tiku_trk_prefs_load(&app.prefs, app.prefs_path);
+        }
+    }
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether
@@ -2580,6 +2697,51 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case ButtonPress: {
+                if (app.prefs_win != NULL && app.prefs_win->open &&
+                    !app.alert.open) {
+                    tiku_desk_rect_t pc =
+                        tiku_trk_win_content(app.prefs_win);
+                    int which = -1;
+                    tiku_trk_pref_hit_t ph;
+
+                    ph = tiku_trk_prefs_hit(&app.prefs, app.prefs_page,
+                                            ev.xbutton.x - pc.x,
+                                            ev.xbutton.y - pc.y, &which);
+                    if (ph != TIKU_TRK_PREF_HIT_NONE) {
+                        if (ph == TIKU_TRK_PREF_HIT_PAGE) {
+                            app.prefs_page = (tiku_trk_page_t)which;
+                        } else if (ph == TIKU_TRK_PREF_HIT_SETTING) {
+                            tiku_trk_pref_t *pr = &app.prefs.pref[which];
+
+                            if (pr->type == TIKU_TRK_PREF_BOOL) {
+                                pr->value = !pr->value;
+                            }
+                        } else if (ph == TIKU_TRK_PREF_HIT_DEFAULTS) {
+                            int k;
+
+                            for (k = 0; k < TIKU_TRK_PAGES; k++) {
+                                tiku_trk_prefs_defaults(&app.prefs,
+                                    (tiku_trk_page_t)k);
+                            }
+                        } else {
+                            int k;
+
+                            for (k = 0; k < TIKU_TRK_PAGES; k++) {
+                                tiku_trk_prefs_revert(&app.prefs,
+                                    (tiku_trk_page_t)k);
+                            }
+                        }
+                        /* Applied and saved at once: with no OK button
+                         * there is no moment at which a change is
+                         * pending (TS-058). */
+                        if (app.prefs_path[0] != '\0') {
+                            (void)tiku_trk_prefs_save(&app.prefs,
+                                                      app.prefs_path);
+                        }
+                        app.dirty = 1;
+                        break;
+                    }
+                }
                 if (!app.alert.open && app.prog.open) {
                     tiku_desk_rect_t pf;
                     int prow = 0;
@@ -3383,6 +3545,13 @@ sel_done:
                         app.alert.chosen = app.alert.nbutton - 1;
                         answer_alert(&app);
                     }
+                    app.dirty = 1;
+                    break;
+                }
+                if (ks == XK_comma && (ev.xkey.state & ControlMask)) {
+                    /* The settings are the application's, not a window's,
+                     * so this works with no folder focused. */
+                    prefs_open(&app);
                     app.dirty = 1;
                     break;
                 }
