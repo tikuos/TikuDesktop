@@ -75,6 +75,10 @@ typedef struct {
      * already in and the icon would never move at all. */
     int              drag_x0, drag_y0;
     int              auto_placed;   /* placed by us, not by the user        */
+    /* Shown here while living somewhere else -- the Desktop's Trash and
+     * its Disks icon.  A re-listing of the view's own directory will not
+     * find it, and must not take it for a row that has gone. */
+    int              adopted;
     /* When this pose last JOINED the selection.  The slow-second-click
      * rename refuses to arm on the click that selected the pose, and the
      * only way to tell those apart is the moment selection happened. */
@@ -204,6 +208,30 @@ int tiku_trk_poseview_generation(const tiku_trk_poseview_t *v);
  */
 int tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
                                   const tiku_trk_model_t *m, int n);
+
+/**
+ * @brief Fill the view from a set the caller assembled (AW-018).
+ *
+ * The same as a result set without being a QUERY: the Desktop is a real
+ * place whose contents come from several directories at once, so its poses
+ * are opened and dropped on like any folder's, not treated as answers that
+ * happen to have paths.
+ */
+int tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
+                                 const tiku_trk_model_t *m, int n);
+
+/**
+ * @brief Add one pose that does not live in this view's directory.
+ *
+ * The Desktop's Trash and its Disks icon are the reason: they are shown
+ * ON the Desktop while living elsewhere, and a change notice cannot carry
+ * them because a notice is addressed to the directory it happened in.
+ * Left unplaced, so the next placement pass puts it in the next free slot.
+ *
+ * @return 0 when it was added.
+ */
+int tiku_trk_poseview_adopt(tiku_trk_poseview_t *v,
+                            const tiku_trk_model_t *m);
 
 /** @brief Whether this view is showing query results. */
 int tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v);
@@ -474,6 +502,15 @@ void tiku_trk_poseview_set_font_metrics(tiku_trk_poseview_t *v, int height,
 /** @brief The list-mode row height for the font in use (PVL-007). */
 int tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v);
 
+/**
+ * @brief Tell the view the row height its owner DRAWS with (0 = derive).
+ *
+ * The derived height is Tracker's own formula; a shell that lays its list
+ * out differently has to say so, or every rectangle the view answers with
+ * is a row out of step with what is on screen.
+ */
+void tiku_trk_poseview_set_row_height(tiku_trk_poseview_t *v, int h);
+
 /** @brief Grid cell and origin offset for the current mode (PVL-013). */
 void tiku_trk_poseview_layout_info(const tiku_trk_poseview_t *v,
                                    int *grid_x, int *grid_y,
@@ -515,8 +552,23 @@ void tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v);
  */
 int tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at);
 
-/** @brief Re-lay out every pose from the top-left in sort order (Clean up). */
+/**
+ * @brief Re-lay out every pose from the top-left in sort order.
+ *
+ * What "Arrange by" does: the order changes, so every icon moves (PVL-024).
+ */
 void tiku_trk_poseview_cleanup(tiku_trk_poseview_t *v, int view_w);
+
+/**
+ * @brief Snap every icon to its nearest grid point, keeping the order.
+ *
+ * What "Clean up" does, and a different thing from arranging: the icons the
+ * user placed stay where they roughly were, tidied -- an arrangement is not
+ * a mess to be replaced, it is a mess to be straightened (PVL-021).
+ *
+ * @return how many actually moved.
+ */
+int tiku_trk_poseview_snap_to_grid(tiku_trk_poseview_t *v);
 
 /** @brief Pose at a screen point in icon mode, or NULL. */
 tiku_trk_pose_t *tiku_trk_poseview_pose_at(tiku_trk_poseview_t *v,
@@ -631,6 +683,23 @@ int tiku_trk_poseview_visible_range(tiku_trk_poseview_t *v, int *first,
  */
 void tiku_trk_poseview_set_drop_point(tiku_trk_poseview_t *v, int x, int y);
 void tiku_trk_poseview_clear_drop_point(tiku_trk_poseview_t *v);
+
+/** @brief How many landings a single drop can reserve. */
+#define TIKU_TRK_LAND_MAX 32
+
+/**
+ * @brief Reserve where @p name will land when it appears (PVS-045, PVL-027).
+ *
+ * A drop is decided before the entries are in the folder, so the positions
+ * have to be waiting for them: applied afterwards, the icons would be
+ * auto-placed first and then jump into the arrangement they were dropped
+ * in.  Unclaimed reservations are harmless -- they are consumed by name.
+ */
+void tiku_trk_poseview_drop_land(tiku_trk_poseview_t *v, const char *name,
+                                 int x, int y);
+
+/** @brief Forget every reservation (a drop that was refused). */
+void tiku_trk_poseview_clear_landings(tiku_trk_poseview_t *v);
 
 /** @brief Select every pose intersecting the rectangle (rubber band). */
 int tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0,

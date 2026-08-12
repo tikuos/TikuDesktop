@@ -25,8 +25,24 @@ for s in "$here"/*.script; do
         # PAIR is the exception -- inheriting is what it tests.
         case $(basename "$s") in
             session2.script) ;;
-            *) rm -f "$HOME/.local/share/tracker/devices/local.state" ;;
+            # EVERY device file, not just the home one: the fixture lives
+            # on /tmp, which is its own device with its own state file, and
+            # leaving that one behind carried a previous script's view mode
+            # into the next one -- which moves every coordinate it clicks.
+            *) rm -f "$HOME"/.local/share/tracker/devices/*.state
+               # And the settings, for the same reason: a script that
+               # turns a setting off leaves it off for every script after
+               # it, including its own next run.
+               rm -f "$HOME/.config/TrackerSettings" ;;
         esac
+        # A script that says "# home: fixture" is run with HOME pointing at
+        # a fixture of its own, which is the only way to exercise the
+        # DESKTOP: what it shows is the user's Desktop folder, and the real
+        # one is whatever this machine happens to have on it.
+        deskhome=""
+        if grep -q '^# home: fixture' "$s"; then
+            deskhome="$work/home"
+        fi
         # A script that says "# work: home" gets its fixture under $HOME
         # instead of /tmp.  It matters for anything about the Trash: a
         # Trash is per filesystem, and on this host /tmp has no writable
@@ -51,8 +67,7 @@ for s in "$here"/*.script; do
             # A name that exists nowhere else on the machine, so a search
             # for it has exactly one answer and an emptied panel -- which
             # matches everything -- cannot be mistaken for a restored one.
-            query.script) touch "$work/zqxjv.txt"
-                          rm -f "$HOME/.local/share/tracker/devices/local.state" ;;
+            query.script) touch "$work/zqxjv.txt" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys
@@ -70,10 +85,17 @@ PYEOF
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         # A script that says "# argv: none" is started with no path at all,
         # which is the only way to exercise what the shell opens on its own.
+        if [ -n "$deskhome" ]; then
+            mkdir -p "$deskhome/Desktop/photos"
+            echo hi > "$deskhome/Desktop/notes.txt"
+            echo hi > "$deskhome/Desktop/todo.txt"
+        fi
         if grep -q '^# argv: none' "$s"; then
-            DISPLAY= "$root/build/$bin" -script "$s" || fails=$((fails+1))
+            DISPLAY= HOME="${deskhome:-$HOME}" "$root/build/$bin" \
+                -script "$s" || fails=$((fails+1))
         else
-            DISPLAY= "$root/build/$bin" $work -script "$s" || fails=$((fails+1))
+            DISPLAY= HOME="${deskhome:-$HOME}" "$root/build/$bin" $work \
+                -script "$s" || fails=$((fails+1))
         fi
     done
 done

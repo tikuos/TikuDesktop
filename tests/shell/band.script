@@ -1,0 +1,43 @@
+# shell: desktop
+# PVS-024/PVS-029: a sweep from empty space selects what it crosses.  This
+# shell had no band at all -- the only way to gather several icons was one
+# modifier click at a time.
+key 1 ctrl
+wait 10
+note a press on empty space and a drag across the first row
+press 60 75
+move 200 90
+move 460 120
+release 460 120
+wait 5
+expect-selected 4
+note and a sweep over nothing clears it again
+press 60 260
+move 200 300
+release 200 300
+wait 5
+expect-selected 0
+note the click that starts a sweep also ends a half-finished double click:
+note clicking an icon, then the space beside it, then the icon again is
+note three separate clicks and must not open anything
+click 88 100
+wait 2
+click 150 100
+wait 2
+click 88 100
+wait 5
+expect-windows 1
+note and a LIST is swept by the same rectangle: from the empty space
+note below the last row, up across the two rows above it
+key 3 ctrl
+wait 6
+press 300 220
+move 320 160
+move 340 112
+wait 3
+expect-selected 2
+expect-selected-name b.txt
+release 340 112
+wait 3
+expect-selected 2
+quit

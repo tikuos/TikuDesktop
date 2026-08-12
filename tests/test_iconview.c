@@ -328,6 +328,51 @@ main(void)
               "the view to the top-left");
     }
 
+    printf("\nstraightening versus rearranging (PVL-021, PVL-024)\n");
+    {
+        tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
+        tiku_trk_pose_t *p1 = tiku_trk_poseview_at(v, 1);
+        int gx, gy, ox, oy, x0, y0, x1, y1;
+
+        tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
+        /* Put two icons deliberately out of order and off the grid. */
+        tiku_trk_poseview_move_pose(v, p0, ox + 3 * gx + 5, oy + 2, 0);
+        tiku_trk_poseview_move_pose(v, p1, ox + 3, oy + 4, 0);
+        check(tiku_trk_poseview_snap_to_grid(v) > 0, "PVL-021",
+              "Clean up moves what is off the grid");
+        tiku_trk_poseview_pose_location(v, p0, &x0, &y0);
+        tiku_trk_poseview_pose_location(v, p1, &x1, &y1);
+        check(((x0 - ox) % gx) == 0 && ((y0 - oy) % gy) == 0, "PVL-021",
+              "onto a grid point");
+        check(x0 > x1, "PVL-021",
+              "and it does NOT reorder them: the icon the user put on the "
+              "right is still on the right, because straightening an "
+              "arrangement and replacing it are two different commands");
+        check(tiku_trk_poseview_snap_to_grid(v) == 0, "PVL-021",
+              "a second Clean up moves nothing, since everything is "
+              "already on a point");
+        {   /* And it is an ICON-mode command. */
+            int lx, ly;
+
+            tiku_trk_poseview_pose_location(v, p1, &lx, &ly);
+            tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
+            p1->loc_x += 7;     /* deliberately off any grid */
+            check(tiku_trk_poseview_snap_to_grid(v) == 0, "PVL-021",
+                  "in list mode it does nothing at all: there is no grid "
+                  "to snap to, and laying out against one would clear an "
+                  "arrangement made in icon mode");
+            p1->loc_x -= 7;
+            tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+            (void)lx; (void)ly;
+        }
+        tiku_trk_poseview_cleanup(v, 400);
+        tiku_trk_poseview_pose_location(v, p0, &x0, &y0);
+        tiku_trk_poseview_pose_location(v, p1, &x1, &y1);
+        check(x0 < x1 || y0 < y1, "PVL-024",
+              "Arrange by is the other command: it lays them out in SORT "
+              "order, so the first by name comes first");
+    }
+
     printf("\nwhere an arrow goes (PVK-007, PVK-008)\n");
     {
         tiku_trk_pose_t *a, *bb, *cc;
@@ -384,6 +429,73 @@ main(void)
         check(tiku_trk_poseview_at(v, 1)->selected, "PVK-007",
               "with nothing that way the selection stays where it is "
               "rather than wrapping to the other side of the window");
+    }
+
+    printf("\nwhat the folder remembers (MA-061)\n");
+    {
+        int ox, oy;
+
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        tiku_trk_poseview_set_viewport(v, 60, 40);
+        tiku_trk_poseview_set_origin(v, 30, 20);
+        tiku_trk_poseview_origin(v, &ox, &oy);
+        (void)tiku_trk_poseview_save_state(v);
+        {
+            tiku_trk_poseview_t *again = tiku_trk_poseview_new(b, work);
+            int rx = -1, ry = -1;
+
+            tiku_trk_poseview_set_measure(again, measure, NULL);
+            tiku_trk_poseview_set_font_metrics(again, 12, 9);
+            (void)tiku_trk_poseview_reload(again);
+            (void)tiku_trk_poseview_restore_state(again);
+            check(tiku_trk_poseview_mode(again) == TIKU_TRK_MODE_ICON,
+                  "MA-061", "the mode comes back");
+            tiku_trk_poseview_origin(again, &rx, &ry);
+            check(rx == ox && ry == oy, "MA-061",
+                  "and so does where the icon view was SCROLLED to, which "
+                  "the record had no room for -- a folder left half way "
+                  "down reopened at the top");
+            tiku_trk_poseview_set_mode(again, TIKU_TRK_MODE_LIST);
+            check(tiku_trk_poseview_scroll(again) >= 0, "MA-061",
+                  "the list's row and the icon view's pixels are different "
+                  "numbers, kept apart");
+            tiku_trk_poseview_free(again);
+        }
+    }
+
+    printf("\nwhat a sweep leaves behind (PVS-029)\n");
+    {
+        tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
+        int i, sel = 0, px, py, pw, ph;
+
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        tiku_trk_poseview_select_none(v);
+        /* Clicked by hand, so the pivot is a real one, then swept far away
+         * from it. */
+        tiku_trk_poseview_click(v, 0, 0u);
+        tiku_trk_poseview_pose_rect(v, p0, &px, &py, &pw, &ph);
+        /* Command held, so the sweep keeps what is already selected and
+         * toggles on top of it -- and sweeping ACROSS the clicked pose
+         * toggles the pivot itself off. */
+        tiku_trk_poseview_set_band(v, 1);
+        (void)tiku_trk_poseview_select_rect(v, px, py, px + pw, py + ph,
+                                            TIKU_TRK_MOD_CMD);
+        check(p0->selected == 0, "PVS-029",
+              "a sweep back over the pose it was anchored on takes it out "
+              "of the selection");
+        tiku_trk_poseview_set_band(v, 0);
+        tiku_trk_poseview_click(v, 3, TIKU_TRK_MOD_SHIFT);
+        for (i = 0; i < tiku_trk_poseview_count(v); i++) {
+            tiku_trk_pose_t *q = tiku_trk_poseview_at(v, i);
+
+            if (q != NULL && q->selected) {
+                sel++;
+            }
+        }
+        check(sel == 1, "PVS-029",
+              "so the release drops the pivot with it: the shift-click "
+              "after a sweep selects one pose rather than extending from "
+              "a pose the sweep had already let go of");
     }
 
     tiku_trk_poseview_free(v);

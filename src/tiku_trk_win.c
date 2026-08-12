@@ -37,6 +37,8 @@ struct tiku_trk_desk {
     tiku_trk_hit_t       track_what;
     int                  track_win;
     int                  track_x, track_y;
+    void               (*backdrop)(tiku_desk_surface_t *s, void *ctx);
+    void                *backdrop_ctx;
 };
 
 tiku_trk_desk_t *
@@ -490,6 +492,17 @@ draw_window(tiku_trk_desk_t *d, tiku_trk_win_t *w, int active)
 }
 
 void
+tiku_trk_desk_set_backdrop(tiku_trk_desk_t *d,
+                           void (*fn)(tiku_desk_surface_t *s, void *ctx),
+                           void *ctx)
+{
+    if (d != NULL) {
+        d->backdrop = fn;
+        d->backdrop_ctx = ctx;
+    }
+}
+
+void
 tiku_trk_desk_draw(tiku_trk_desk_t *d)
 {
     tiku_desk_rect_t all;
@@ -500,6 +513,9 @@ tiku_trk_desk_draw(tiku_trk_desk_t *d)
     }
     all = (tiku_desk_rect_t){ 0, 0, d->surf->w, d->surf->h };
     tiku_desk_fill(d->surf, all, TIKU_DESK_C_BACKDROP);
+    if (d->backdrop != NULL) {
+        d->backdrop(d->surf, d->backdrop_ctx);
+    }
     /* Back to front, so a window in front covers the one behind it. */
     for (i = 0; i < d->count; i++) {
         tiku_trk_win_t *w = &d->wins[d->order[i]];

@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 #define SC_MAX_STEPS 512
@@ -22,7 +23,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -247,6 +248,26 @@ tiku_trk_script_open(const char *path)
             st->op = OP_EXPECT_WINAT;
             st->x = atoi(w[1]);
             st->y = atoi(w[2]);
+        } else if (strcmp(w[0], "expect-icon-at") == 0 && n >= 4) {
+            st->op = OP_EXPECT_ICONAT;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            st->x = atoi(w[2]);
+            st->y = atoi(w[3]);
+        } else if (strcmp(w[0], "expect-pixel") == 0 && n >= 4) {
+            st->op = OP_EXPECT_PIXEL;
+            st->x = atoi(w[1]);
+            st->y = atoi(w[2]);
+            snprintf(st->text, sizeof st->text, "%s", w[3]);
+        } else if (strcmp(w[0], "expect-desk-selected") == 0 && n >= 2) {
+            st->op = OP_EXPECT_DESKSEL;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-desk-selected-name") == 0 &&
+                   n >= 2) {
+            st->op = OP_EXPECT_DESKSELNAME;
+            rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-desk-icon") == 0 && n >= 2) {
+            st->op = OP_EXPECT_DESKICON;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-perm") == 0 && n >= 3) {
             st->op = OP_EXPECT_PERM;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
@@ -428,14 +449,17 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_SEL: {
         char n[32];
 
-        snprintf(n, sizeof n, "%d", cur->count);
+        /* What was COUNTED, not what was asked for: a verdict that reads
+         * back the expectation says nothing when it fails. */
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->selected : -1);
         verdict(s, st != NULL && st->selected == cur->count, "selected:", n);
         return 1;
     }
     case OP_EXPECT_SELNAME:
         verdict(s, st != NULL && st->sel_name != NULL &&
                 strcmp(st->sel_name, cur->text) == 0, "selected:",
-                cur->text);
+                (st != NULL && st->sel_name != NULL) ? st->sel_name
+                                                     : "nothing");
         return 1;
     case OP_EXPECT_FINDTEXT:
         verdict(s, st != NULL && st->find_text != NULL &&
@@ -472,6 +496,63 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         snprintf(at, sizeof at, "%d,%d", cur->x, cur->y);
         verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
                 "window at:", at);
+        return 1;
+    }
+    case OP_EXPECT_ICONAT: {
+        char at[64];
+        int px = 0, py = 0, got = 0;
+
+        if (st != NULL && st->pose_at != NULL) {
+            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
+        }
+        if (got) {
+            snprintf(at, sizeof at, "%s at %d,%d", cur->text, px, py);
+        } else {
+            snprintf(at, sizeof at, "%s is not there", cur->text);
+        }
+        /* Within a few pixels: the position is stored unscaled and scaled
+         * back for the view, and a rounding of one pixel each way is not
+         * the arrangement being wrong. */
+        verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
+                       py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
+        return 1;
+    }
+    case OP_EXPECT_PIXEL: {
+        char got[16];
+        unsigned rgb = 0u;
+
+        if (st != NULL && st->pixel_at != NULL) {
+            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
+        }
+        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
+        verdict(s, strcasecmp(got, cur->text) == 0, "pixel:", got);
+        return 1;
+    }
+    case OP_EXPECT_DESKSEL: {
+        char n[32];
+
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->desk_selected : -1);
+        verdict(s, st != NULL && st->desk_selected == cur->count,
+                "desktop selected:", n);
+        return 1;
+    }
+    case OP_EXPECT_DESKSELNAME:
+        verdict(s, st != NULL && st->desk_sel_name != NULL &&
+                strcmp(st->desk_sel_name, cur->text) == 0,
+                "desktop selected:",
+                (st != NULL && st->desk_sel_name != NULL)
+                    ? st->desk_sel_name : "nothing");
+        return 1;
+    case OP_EXPECT_DESKICON: {
+        int px = 0, py = 0, got = 0;
+        char at[64];
+
+        if (st != NULL && st->pose_at != NULL) {
+            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
+        }
+        snprintf(at, sizeof at, "%s %s", cur->text,
+                 got ? "is on the Desktop" : "is not there");
+        verdict(s, got, "desktop:", at);
         return 1;
     }
     case OP_EXPECT_PERM: {

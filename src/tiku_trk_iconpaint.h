@@ -69,4 +69,25 @@ void tiku_trk_thumb_paint(tiku_desk_surface_t *s,
  */
 int tiku_trk_icon_hit(const char *name, int size, int px, int py);
 
+/**
+ * @brief Blend @p c over the pixels of @p r at @p a / 255.
+ *
+ * The floor draws opaque colours; the tinted rubber band is the one place
+ * a rectangle has to be visible AND let what it covers show through -- a
+ * solid fill over the icons hides exactly what is being selected.  It
+ * lives here because this is the file that owns alpha (PVL-069, PVS-030).
+ */
+void tiku_trk_paint_tint(tiku_desk_surface_t *s, tiku_desk_rect_t r,
+                         tiku_desk_rgb_t c, int a);
+
+/**
+ * @brief Draw a rubber band the way @p transparent asks for.
+ *
+ * Tinted (Tracker's default) puts an edge and a lighter interior over what
+ * it covers; otherwise the outline is INVERTED, which is visible over
+ * whatever it lands on and undoes itself (PVL-069, PVS-030, TS-049).
+ */
+void tiku_trk_paint_band(tiku_desk_surface_t *s, tiku_desk_rect_t r,
+                         int transparent);
+
 #endif /* TIKU_TRK_ICONPAINT_H_ */

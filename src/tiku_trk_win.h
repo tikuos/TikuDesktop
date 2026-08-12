@@ -117,6 +117,17 @@ int tiku_trk_desk_tracking(const tiku_trk_desk_t *d);
 void tiku_trk_desk_draw(tiku_trk_desk_t *d);
 
 /**
+ * @brief What to paint on the backdrop, between the fill and the windows.
+ *
+ * The backdrop is a pose area, not a colour: the Desktop's own icons are
+ * BEHIND every window and in front of the fill, and that order is decided
+ * here because this is what owns the z-order (AW-018).
+ */
+void tiku_trk_desk_set_backdrop(tiku_trk_desk_t *d,
+                                void (*fn)(tiku_desk_surface_t *s, void *ctx),
+                                void *ctx);
+
+/**
  * @brief Zoom: fit the window to its contents, or restore what it left.
  *
  * The first click saves the current frame and resizes to fit; a second click

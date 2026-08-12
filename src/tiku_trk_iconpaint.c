@@ -151,3 +151,72 @@ tiku_trk_icon_hit(const char *name, int size, int px, int py)
      * rim undraggable, and the rim is most of what a small icon is. */
     return ((bm[(long)py * size + px] >> 24) != 0u);
 }
+
+void
+tiku_trk_paint_tint(tiku_desk_surface_t *s, tiku_desk_rect_t r,
+                    tiku_desk_rgb_t c, int a)
+{
+    int x, y;
+    int cr = (int)((c >> 16) & 0xffu), cg = (int)((c >> 8) & 0xffu);
+    int cb = (int)(c & 0xffu);
+
+    if (s == NULL || s->px == NULL || a <= 0) {
+        return;
+    }
+    for (y = r.y; y < r.y + r.h; y++) {
+        if (y < s->clip.y || y >= s->clip.y + s->clip.h ||
+            y < 0 || y >= s->h) {
+            continue;
+        }
+        for (x = r.x; x < r.x + r.w; x++) {
+            tiku_desk_rgb_t *px;
+            int pr, pg, pb;
+
+            if (x < s->clip.x || x >= s->clip.x + s->clip.w ||
+                x < 0 || x >= s->w) {
+                continue;
+            }
+            px = &s->px[(size_t)y * (size_t)s->w + (size_t)x];
+            pr = (int)((*px >> 16) & 0xffu);
+            pg = (int)((*px >> 8) & 0xffu);
+            pb = (int)(*px & 0xffu);
+            pr = (pr * (255 - a) + cr * a) / 255;
+            pg = (pg * (255 - a) + cg * a) / 255;
+            pb = (pb * (255 - a) + cb * a) / 255;
+            *px = TIKU_DESK_RGB(pr, pg, pb);
+        }
+    }
+}
+
+void
+tiku_trk_paint_band(tiku_desk_surface_t *s, tiku_desk_rect_t r,
+                    int transparent)
+{
+    if (s == NULL || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    if (!transparent) {
+        tiku_desk_invert_frame(s, r);
+        return;
+    }
+    {
+        /* The edge is tinted harder than the middle, so the band has a
+         * definite boundary without hiding the row under it -- four
+         * strips, because a fill of the whole rect would put the edge
+         * colour under the interior too. */
+        tiku_desk_rect_t in = { r.x + 1, r.y + 1, r.w - 2, r.h - 2 };
+        tiku_desk_rect_t e;
+
+        e = (tiku_desk_rect_t){ r.x, r.y, r.w, 1 };
+        tiku_trk_paint_tint(s, e, TIKU_DESK_C_FOCUS, 128);
+        e = (tiku_desk_rect_t){ r.x, r.y + r.h - 1, r.w, 1 };
+        tiku_trk_paint_tint(s, e, TIKU_DESK_C_FOCUS, 128);
+        e = (tiku_desk_rect_t){ r.x, r.y, 1, r.h };
+        tiku_trk_paint_tint(s, e, TIKU_DESK_C_FOCUS, 128);
+        e = (tiku_desk_rect_t){ r.x + r.w - 1, r.y, 1, r.h };
+        tiku_trk_paint_tint(s, e, TIKU_DESK_C_FOCUS, 128);
+        if (in.w > 0 && in.h > 0) {
+            tiku_trk_paint_tint(s, in, TIKU_DESK_C_SELECT, 90);
+        }
+    }
+}

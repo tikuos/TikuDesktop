@@ -41,6 +41,7 @@
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
+#include "tiku_trk_deskicons.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_gfx_dep.h"
@@ -163,6 +164,13 @@ typedef struct desktop {
      * window on the first. */
     int                  cascade_x, cascade_y;
     struct tiku_trk_store *store;
+    /* The Desktop itself: a pose view with no window, over the backdrop.
+     * Its source is the union of every volume's Desktop folder, so a
+     * second disk's items appear beside the boot volume's (PVN-051). */
+    folder_t             dfl;
+    tiku_trk_vdir_t      dvdir;
+    tiku_trk_vdir_watch_t dwatch;
+    int                  desk_row;      /* pose under the pointer, or -1 */
     /* ONE clipboard for the desktop, as the system's is one: cutting in a
      * window and pasting in another is the whole point of it. */
     tiku_trk_clip_t      clip;
@@ -228,6 +236,11 @@ typedef struct desktop {
     int                  drop_row;  /* pose highlighted as target, or -1  */
     int                  press_down;
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
+    /* The rubber band.  In WINDOW coordinates, because that is where the
+     * press arrives and where it is drawn; the view is handed view-space
+     * coordinates when it is asked to sweep. */
+    folder_t            *band_fl;
+    int                  band_x0, band_y0, band_x1, band_y1;
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
     /* Renaming an ENTRY, which is a different thing from editing a node's
@@ -439,8 +452,186 @@ draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
     if (drawn_sel) {
         tiku_desk_fill(s, label, TIKU_DESK_C_SELECT);
     }
-    tiku_desk_text(s, f, lx, ly + f->ascent, p->model.name,
-                   drawn_sel ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+    {
+        /* On the Desktop the ink follows the BACKDROP's brightness rather
+         * than the window colour: a dark backdrop takes white labels, and
+         * the folder windows are unaffected either way (AW-028). */
+        tiku_desk_rgb_t ink = TIKU_DESK_C_TEXT;
+
+        if (fl->win == NULL) {
+            tiku_desk_rgb_t bg = TIKU_DESK_C_BACKDROP;
+            int lum = ((int)((bg >> 16) & 0xffu) * 299 +
+                       (int)((bg >> 8) & 0xffu) * 587 +
+                       (int)(bg & 0xffu) * 114) / 1000;
+
+            ink = (lum <= 127) ? TIKU_DESK_RGB(255, 255, 255)
+                               : TIKU_DESK_RGB(0, 0, 0);
+        }
+        tiku_desk_text(s, f, lx, ly + f->ascent, p->model.name,
+                       drawn_sel ? TIKU_DESK_C_SELTEXT : ink);
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+/* The Desktop: a pose view with no window, over the backdrop                */
+/*---------------------------------------------------------------------------*/
+
+/** @brief The pose area, which for the Desktop is the whole screen. */
+static tiku_desk_rect_t
+folder_content(desktop_t *app, folder_t *fl)
+{
+    (void)app;
+    if (fl != NULL && fl->win != NULL) {
+        return tiku_trk_win_content(fl->win);
+    }
+    /* No chrome to inset: the Desktop has no menu bar, no scroll bars and
+     * no border view, so its pose area IS the screen (AW-018). */
+    return (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H };
+}
+
+/**
+ * @brief Where a Desktop icon may sit: the screen, less the Deskbar strip.
+ *
+ * The Desktop cannot scroll, so the area an icon is placed in has to be the
+ * area it can be reached in -- an icon under the bar is an icon behind
+ * something that is always on top (PVL-018).
+ */
+static tiku_trk_rect_t
+desk_area(desktop_t *app)
+{
+    tiku_desk_rect_t bf = tiku_trk_deskbar_frame(app->deskbar);
+    tiku_trk_rect_t a = { 0, 0, DESK_W, DESK_H };
+
+    if (bf.w <= 0 || bf.h <= 0) {
+        return a;
+    }
+    if (bf.w < bf.h) {
+        if (bf.x > DESK_W / 2) {
+            a.w = bf.x - TIKU_TRK_DESK_BAR_MARGIN;
+        } else {
+            a.x = bf.x + bf.w + TIKU_TRK_DESK_BAR_MARGIN;
+            a.w = DESK_W - a.x;
+        }
+    } else {
+        if (bf.y > DESK_H / 2) {
+            a.h = bf.y - TIKU_TRK_DESK_BAR_MARGIN;
+        } else {
+            a.y = bf.y + bf.h + TIKU_TRK_DESK_BAR_MARGIN;
+            a.h = DESK_H - a.y;
+        }
+    }
+    return a;
+}
+
+/** @brief Put a node on the Desktop that does not live in a Desktop folder. */
+static void
+desk_add_pose(desktop_t *app, const char *path)
+{
+    tiku_trk_model_t m;
+
+    if (path == NULL || path[0] == '\0' ||
+        app->backend->ops->stat(app->backend, path, &m) != 0) {
+        return;
+    }
+    /* Through the view's own insert rather than a code path of its own:
+     * the arrival machinery already knows how to place a pose in the next
+     * free slot, and a second way in would place it by different rules
+     * (AW-026, AW-027). */
+    (void)tiku_trk_poseview_adopt(app->dfl.view, &m);
+}
+
+/**
+ * @brief Pull every Desktop icon back somewhere it can be reached (PVL-018).
+ *
+ * Never a grid remap and never a scroll: the Desktop cannot scroll, so an
+ * icon off the screen or under the Deskbar is an icon that is simply gone
+ * (AW-019).
+ */
+static int
+desk_ensure_visible(desktop_t *app)
+{
+    tiku_trk_rect_t screen = { 0, 0, DESK_W, DESK_H };
+    tiku_trk_rect_t area = desk_area(app);
+    tiku_desk_rect_t bf = tiku_trk_deskbar_frame(app->deskbar);
+    tiku_trk_rect_t bar = { bf.x, bf.y, bf.w, bf.h };
+    int i, n = tiku_trk_poseview_count(app->dfl.view), moved = 0;
+
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(app->dfl.view, i);
+        tiku_trk_rect_t r;
+        int px, py, pw, ph;
+
+        if (p == NULL || !p->placed) {
+            continue;
+        }
+        tiku_trk_poseview_pose_rect(app->dfl.view, p, &px, &py, &pw, &ph);
+        r = (tiku_trk_rect_t){ px, py, pw, ph };
+        if (tiku_trk_deskicons_valid(r, screen, bar, NULL, 0)) {
+            continue;
+        }
+        if (tiku_trk_deskicons_pull_back(&r, area)) {
+            int lx, ly;
+
+            /* Moved by the same DELTA the rectangle needed: the pose's
+             * location is not its rectangle's corner -- the label may hang
+             * wider than the art -- so setting the location to the
+             * rectangle would leave it short by the overhang. */
+            tiku_trk_poseview_pose_location(app->dfl.view, p, &lx, &ly);
+            tiku_trk_poseview_move_pose(app->dfl.view, p, lx + (r.x - px),
+                                        ly + (r.y - py), 0);
+            moved++;
+        }
+    }
+    return moved;
+}
+
+/** @brief Build the Desktop's contents: the union, then Disks, then Trash. */
+static void
+desk_icons_rebuild(desktop_t *app)
+{
+    tiku_trk_volumes_t vs;
+    tiku_trk_model_t set[64];
+    char trash[TIKU_TRK_PATH_MAX];
+    int n = 0;
+
+    if (app->dfl.view == NULL) {
+        return;
+    }
+    if (tiku_trk_volumes_scan(&vs) >= 0) {
+        const char *home = getenv("HOME");
+        char hd[TIKU_TRK_PATH_MAX];
+
+        snprintf(hd, sizeof hd, "%s/Desktop",
+                 (home != NULL && home[0] != '\0') ? home : "");
+        tiku_trk_deskicons_sources(&vs, app->backend, hd, &app->dvdir);
+    }
+    n = tiku_trk_vdir_list(&app->dvdir, app->backend, set,
+                           (int)(sizeof set / sizeof set[0]));
+    if (n < 0) {
+        n = 0;
+    }
+    (void)tiku_trk_poseview_set_models(app->dfl.view, set, n);
+    (void)tiku_trk_poseview_restore_state(app->dfl.view);
+    /* Never a list, whatever a saved state says: a Desktop in list mode is
+     * one the user cannot put an icon on (MA-069, PVL-008). */
+    tiku_trk_poseview_set_mode(app->dfl.view,
+        tiku_trk_deskicons_mode(tiku_trk_poseview_mode(app->dfl.view)));
+    (void)tiku_trk_poseview_place_unplaced(app->dfl.view,
+                                           desk_area(app).w);
+    /* Added AFTER the folder's own items are placed, so each lands in the
+     * next free slot rather than in the middle of them. */
+    if (tiku_trk_deskicons_show_disks(
+            tiku_trk_prefs_get(&app->prefs, "ShowDisksIcon"),
+            tiku_trk_prefs_get(&app->prefs, "MountVolumesOntoDesktop"))) {
+        desk_add_pose(app, "/");
+    }
+    if (tiku_trk_fs_trash_dir(app->fs, app->dfl.path, trash,
+                              sizeof trash) == 0) {
+        desk_add_pose(app, trash);
+    }
+    (void)tiku_trk_poseview_place_unplaced(app->dfl.view,
+                                           desk_area(app).w);
+    (void)desk_ensure_visible(app);
 }
 
 /** @brief Draw the poses of an icon mode, and only the ones on screen. */
@@ -469,6 +660,19 @@ folder_draw_icons(folder_t *fl, tiku_desk_surface_t *s,
     }
 }
 
+/** @brief Paint the Desktop's icons on the backdrop, under every window. */
+static void
+desk_icons_draw(tiku_desk_surface_t *s, void *ctx)
+{
+    desktop_t *app = (desktop_t *)ctx;
+
+    if (app == NULL || app->dfl.view == NULL) {
+        return;
+    }
+    folder_draw_icons(&app->dfl, s, folder_content(app, &app->dfl));
+}
+
+
 static void
 folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             tiku_desk_rect_t content, void *ctx)
@@ -487,6 +691,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
      * used to be given cannot answer where an icon layout is scrolled to
      * or what is on screen (PVL-049). */
     tiku_trk_poseview_set_viewport(fl->view, list.w - 4, list.h - 4);
+    tiku_trk_poseview_set_row_height(fl->view, row_h);
     icons = (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST);
     if (icons) {
         /* Anything with no position of its own gets one, wrapping at the
@@ -632,6 +837,29 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
                                              : TIKU_DESK_C_TEXT);
                 }
             }
+        }
+    }
+    if (app->band_fl == fl) {
+        /* Two styles, chosen by the setting on every frame: tinted (the
+         * default) draws the band over the icons and lets them show
+         * through; the other inverts its outline, which is visible over
+         * whatever it lands on and needs nothing saved underneath
+         * (PVL-069, PVS-030, TS-049). */
+        tiku_desk_rect_t b;
+        int lox = (app->band_x0 < app->band_x1) ? app->band_x0
+                                                : app->band_x1;
+        int loy = (app->band_y0 < app->band_y1) ? app->band_y0
+                                                : app->band_y1;
+
+        b.x = lox;
+        b.y = loy;
+        b.w = (app->band_x0 > app->band_x1) ? app->band_x0 - app->band_x1
+                                            : app->band_x1 - app->band_x0;
+        b.h = (app->band_y0 > app->band_y1) ? app->band_y0 - app->band_y1
+                                            : app->band_y1 - app->band_y0;
+        if (b.w > 0 && b.h > 0) {
+            tiku_trk_paint_band(s, b,
+                tiku_trk_prefs_get(&app->prefs, "TransparentSelection"));
         }
     }
     if (app->renaming && app->ren_fl == fl && !icons) {
@@ -1029,6 +1257,42 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
     if (app->drop_fl == NULL) {
         return;                     /* dropped on nothing */
     }
+    if (app->drop_row < 0 && app->drop_fl->view != NULL &&
+        tiku_trk_poseview_mode(app->drop_fl->view) != TIKU_TRK_MODE_LIST &&
+        strcmp(app->drag.src_dir, app->drop_fl->path) == 0) {
+        /* Dropped in the view it came from: an ARRANGEMENT, not a file
+         * operation.  The whole selection moves by the drag's delta, so
+         * what was picked up is put down in the same shape, and holding
+         * Command snaps the landing points to the grid (PVL-026,
+         * PVS-046). */
+        int dx = x - app->drag.x0, dy = y - app->drag.y0;
+        int k, kn = tiku_trk_poseview_count(app->drop_fl->view);
+        int snap = (state & ControlMask) != 0u;
+
+        for (k = 0; k < kn; k++) {
+            tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view, k);
+            int px, py;
+
+            if (q == NULL || !q->selected) {
+                continue;
+            }
+            /* Its LOCATION, not the rectangle it draws in: the rect is
+             * the union of the art and a label that may be wider, so
+             * moving to a rect corner would shift the icon sideways by
+             * however long its name is. */
+            tiku_trk_poseview_pose_location(app->drop_fl->view, q, &px, &py);
+            tiku_trk_poseview_move_pose(app->drop_fl->view, q, px + dx,
+                                        py + dy, snap);
+        }
+        if (app->drop_fl == &app->dfl) {
+            /* The Desktop cannot scroll, so an icon dropped off the edge
+             * is one that is simply gone (PVS-058). */
+            (void)desk_ensure_visible(app);
+        }
+        (void)tiku_trk_poseview_save_state(app->drop_fl->view);
+        app->dirty = 1;
+        return;
+    }
     if (app->drop_row >= 0) {
         tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view,
                                                   app->drop_row);
@@ -1115,6 +1379,27 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
         app->popup_frame = tiku_trk_menu_place(app->popup, x, y,
                                (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
         return;
+    }
+    if (app->drop_row < 0 &&
+        tiku_trk_poseview_mode(app->drop_fl->view) != TIKU_TRK_MODE_LIST) {
+        /* Reserved BEFORE the operation runs: the entries appear from the
+         * folder watch, and a view told nothing about them auto-places
+         * them at the top-left -- so the arrangement has to be waiting
+         * (PVS-045, PVL-027). */
+        tiku_desk_rect_t c = folder_content(app, app->drop_fl);
+        int ox = 0, oy = 0;
+
+        tiku_trk_poseview_origin(app->drop_fl->view, &ox, &oy);
+        for (i = 0; i < n; i++) {
+            const char *name = strrchr(sel[i], '/');
+            int lx = 0, ly = 0;
+
+            tiku_trk_drag_landing(&app->drag, i, x - (c.x + 2) + ox,
+                                  y - (c.y + 2) + oy, &lx, &ly);
+            tiku_trk_poseview_drop_land(app->drop_fl->view,
+                                        (name != NULL) ? name + 1 : sel[i],
+                                        lx, ly);
+        }
     }
     switch (what) {
     case TIKU_TRK_DROP_COPY:
@@ -2548,47 +2833,56 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_MINI);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_32:
+        /* Choosing a size also switches INTO icon mode: the sizes are the
+         * icon view's own submenu, and picking one in list mode otherwise
+         * changes a number nothing on screen reads (CW-024). */
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 32);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_48:
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 48);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_40:
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 40);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_64:
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 64);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_96:
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 96);
         break;
     case TIKU_TRK_CMD_ICON_SIZE_128:
+        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
         tiku_trk_poseview_set_icon_size(fl->view, 128);
         break;
     case TIKU_TRK_CMD_SORT_BY_NAME:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_NAME);
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_KIND:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_KIND);
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_SIZE:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_SIZE);
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_VALUE:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_VALUE);
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_CAP:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_CAP);
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_COL_KIND:
         (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_KIND);
@@ -2609,12 +2903,18 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         tiku_trk_poseview_sort_by(fl->view,
                                   tiku_trk_poseview_sort_field(fl->view));
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_CLEANUP:
+        /* SNAP, not re-lay-out: Clean up straightens the arrangement the
+         * user made, and replacing it with sort order would throw away
+         * exactly what they were tidying (PVL-021). */
+        (void)tiku_trk_poseview_snap_to_grid(fl->view);
+        break;
     case TIKU_TRK_CMD_CLEANUP_ALL:
+        /* Shift is the stronger one, and it IS the re-lay-out. */
         tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_win_content(fl->win).w);
+                                  folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_RESIZE_TO_FIT:
         (void)tiku_trk_desk_zoom(app->desk, fl->win, folder_fit_w(app, fl),
@@ -3037,7 +3337,7 @@ folder_of(desktop_t *app, tiku_trk_win_t *w)
 static int
 folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
 {
-    tiku_desk_rect_t c = tiku_trk_win_content(fl->win);
+    tiku_desk_rect_t c = folder_content(app, fl);
     int rel;
 
     if (x < c.x || x > c.x + c.w || y < c.y + 2 ||
@@ -3060,6 +3360,63 @@ folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
     rel = (y - c.y - 2) / app->row_h;
     rel += tiku_trk_poseview_scroll(fl->view);
     return (rel < tiku_trk_poseview_count(fl->view)) ? rel : -1;
+}
+
+
+/** @brief What is drawn at @p x, @p y right now, 0xRRGGBB (script). */
+static unsigned
+script_pixel_at(void *ctx, int x, int y)
+{
+    desktop_t *app = (desktop_t *)ctx;
+
+    if (app == NULL || app->surf == NULL || app->surf->px == NULL ||
+        x < 0 || y < 0 || x >= app->surf->w || y >= app->surf->h) {
+        return 0u;
+    }
+    return (unsigned)app->surf->px[(size_t)y * (size_t)app->surf->w +
+                                   (size_t)x] & 0xffffffu;
+}
+
+/**
+ * @brief Where the pose named @p name sits in the focused view (script).
+ *
+ * In view pixels, which is the space a drop is expressed in -- the check
+ * is about the ARRANGEMENT a drop left behind, not about the window.
+ */
+static int
+script_pose_at(void *ctx, const char *name, int *x, int *y)
+{
+    desktop_t *app = (desktop_t *)ctx;
+    tiku_trk_win_t *fw;
+    folder_t *fl;
+    int i, n;
+
+    if (app == NULL || name == NULL) {
+        return 0;
+    }
+    fw = tiku_trk_desk_focused(app->desk);
+    fl = (fw != NULL) ? folder_of(app, fw) : NULL;
+    for (;;) {
+        if (fl != NULL && fl->view != NULL) {
+            n = tiku_trk_poseview_count(fl->view);
+            for (i = 0; i < n; i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
+                int pw, ph;
+
+                if (p == NULL || strcmp(p->model.name, name) != 0) {
+                    continue;
+                }
+                tiku_trk_poseview_pose_rect(fl->view, p, x, y, &pw, &ph);
+                return 1;
+            }
+        }
+        if (fl == &app->dfl) {
+            return 0;
+        }
+        /* The other place a pose can be.  The Desktop has no window, so it
+         * is never the focused one and would otherwise be unaskable. */
+        fl = &app->dfl;
+    }
 }
 
 static void
@@ -3754,6 +4111,35 @@ main(int argc, char **argv)
         }
     }
 
+    {
+        /* The Desktop itself.  Its identity is the boot volume's Desktop
+         * folder -- the state has to be filed under something, and the
+         * union it shows is a rule about contents, not a place. */
+        const char *home = getenv("HOME");
+
+        snprintf(app.dfl.path, sizeof app.dfl.path, "%s/Desktop",
+                 (home != NULL && home[0] != '\0') ? home : "");
+        app.dfl.app = &app;
+        app.dfl.win = NULL;
+        app.dfl.view = tiku_trk_poseview_new(app.backend, app.dfl.path);
+        app.desk_row = -1;
+        if (app.dfl.view != NULL) {
+            const tiku_desk_font_t *df = tiku_desk_font_plain();
+
+            tiku_trk_poseview_set_icons(app.dfl.view, &app.nicons);
+            tiku_trk_poseview_set_measure(app.dfl.view, measure_label, &app);
+            tiku_trk_poseview_set_font_metrics(app.dfl.view, df->height,
+                                               df->ascent);
+            tiku_trk_poseview_set_icon_hit(app.dfl.view, pose_icon_hit,
+                                           &app);
+            tiku_trk_poseview_set_viewport(app.dfl.view, DESK_W, DESK_H);
+            tiku_trk_poseview_set_mode(app.dfl.view, TIKU_TRK_MODE_ICON);
+            desk_icons_rebuild(&app);
+            tiku_trk_vdir_watch_init(&app.dwatch, &app.dvdir);
+            tiku_trk_desk_set_backdrop(app.desk, desk_icons_draw, &app);
+        }
+    }
+
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether
          * the board is alive and what it is doing. */
@@ -4077,6 +4463,26 @@ main(int argc, char **argv)
                 sst.win_x = (fw != NULL) ? fw->frame.x : -1;
                 sst.win_y = (fw != NULL) ? fw->frame.y : -1;
                 sst.kinds = 0;
+                sst.desk_selected = 0;
+                sst.desk_sel_name = NULL;
+                if (app.dfl.view != NULL) {
+                    int di, dn = tiku_trk_poseview_count(app.dfl.view);
+
+                    for (di = 0; di < dn; di++) {
+                        tiku_trk_pose_t *dp =
+                            tiku_trk_poseview_at(app.dfl.view, di);
+
+                        if (dp != NULL && dp->selected) {
+                            if (sst.desk_sel_name == NULL) {
+                                sst.desk_sel_name = dp->model.name;
+                            }
+                            sst.desk_selected++;
+                        }
+                    }
+                }
+                sst.pose_at = script_pose_at;
+                sst.pixel_at = script_pixel_at;
+                sst.pose_ctx = &app;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
 
@@ -4691,6 +5097,13 @@ main(int argc, char **argv)
                 }
                 hit = tiku_trk_desk_hit(app.desk, ev.xbutton.x, ev.xbutton.y,
                                         &w);
+                if (w == NULL && app.dfl.view != NULL) {
+                    /* The backdrop is a pose area, so a click on it is a
+                     * click in a view -- the same branch every window's
+                     * content goes through, which is what keeps the
+                     * Desktop's icons behaving like a folder's (AW-018). */
+                    hit = TIKU_TRK_HIT_CONTENT;
+                }
                 if (w != NULL && hit != TIKU_TRK_HIT_CONTENT) {
                     /* The CHROME activates a window; the content does not.
                      * That is what lets a click reach a list in a window
@@ -4759,7 +5172,7 @@ main(int argc, char **argv)
                     }
                     tiku_trk_desk_begin_track(app.desk, w, hit, ev.xbutton.x,
                                               ev.xbutton.y);
-                } else if (hit == TIKU_TRK_HIT_CONTENT &&
+                } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&
                            w == app.sel_win) {
                     switch (select_hit(&app, ev.xbutton.x, ev.xbutton.y)) {
                     case SEL_HIT_EXPR:
@@ -4785,7 +5198,7 @@ main(int argc, char **argv)
                         break;
                     }
                     app.dirty = 1;
-                } else if (hit == TIKU_TRK_HIT_CONTENT &&
+                } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&
                            w == app.panel_win) {
                     tiku_trk_find_hit_t what =
                         tiku_trk_find_click(&app.panel,
@@ -4818,8 +5231,9 @@ main(int argc, char **argv)
                                  TIKU_TRK_WIN_TAB_H + 2 * TIKU_TRK_WIN_BORDER;
                     app.dirty = 1;
                 } else if (hit == TIKU_TRK_HIT_CONTENT) {
-                    folder_t *fl = folder_of(&app, w);
-                    if (fl != NULL) {
+                    folder_t *fl = (w != NULL) ? folder_of(&app, w)
+                                               : &app.dfl;
+                    if (fl != NULL && fl->view != NULL) {
                         int row = folder_row_at(&app, fl, ev.xbutton.x,
                                                 ev.xbutton.y);
                         unsigned mods = 0;
@@ -4895,17 +5309,67 @@ main(int argc, char **argv)
                                                    TIKU_TRK_CLICK_SPEED_US)
                                                   ? 2 : 1,
                                               w, fl->path);
+                            if (row < 0 && ev.xbutton.button == 1u) {
+                                /* Empty space: a sweep, not a click.  In
+                                 * EVERY mode -- a list's rows are swept by
+                                 * the same rectangle, and this shell had
+                                 * no band at all, so the only way to
+                                 * gather several was one modifier click at
+                                 * a time (PVS-024). */
+                                unsigned bm = 0u;
+
+                                if (ev.xbutton.state & ShiftMask) {
+                                    bm |= TIKU_TRK_MOD_SHIFT;
+                                }
+                                if (ev.xbutton.state & ControlMask) {
+                                    bm |= TIKU_TRK_MOD_CMD;
+                                }
+                                if (bm == 0u) {
+                                    /* Without a modifier the band starts
+                                     * from nothing; with one it toggles on
+                                     * top of what is there (PVS-027). */
+                                    tiku_trk_poseview_select_none(fl->view);
+                                }
+                                tiku_trk_poseview_set_band(fl->view, 1);
+                                app.band_fl = fl;
+                                app.band_x0 = app.band_x1 = ev.xbutton.x;
+                                app.band_y0 = app.band_y1 = ev.xbutton.y;
+                                /* A sweep between two icons also ENDS any
+                                 * half-finished double click: without this
+                                 * the click that starts the band is
+                                 * invisible to the counter, and the next
+                                 * click on the icon just left completes a
+                                 * double click the user did not make. */
+                                last_row = -1;
+                                last_click = 0;
+                                app.dirty = 1;
+                                break;
+                            }
                             if (row >= 0) {
                                 int k, kn = tiku_trk_poseview_count(fl->view);
+                                int lst = (tiku_trk_poseview_mode(fl->view) ==
+                                           TIKU_TRK_MODE_LIST);
 
                                 for (k = 0; k < kn; k++) {
                                     tiku_trk_pose_t *q =
                                         tiku_trk_poseview_at(fl->view, k);
+                                    int qx = 0, qy = 0, qw, qh;
 
-                                    if (q != NULL && q->selected) {
-                                        (void)tiku_trk_drag_add(&app.drag,
-                                                                q->model.path);
+                                    if (q == NULL || !q->selected) {
+                                        continue;
                                     }
+                                    if (!lst) {
+                                        /* Where it sat, so a drop can put
+                                         * the selection down in the shape
+                                         * it was picked up in (PVS-045). */
+                                        tiku_trk_poseview_pose_rect(fl->view,
+                                                                    q, &qx,
+                                                                    &qy, &qw,
+                                                                    &qh);
+                                    }
+                                    (void)tiku_trk_drag_add_at(
+                                        &app.drag, q->model.path,
+                                        q->model.type, qx, qy, lst);
                                 }
                             }
                             app.drop_fl = NULL;
@@ -4994,7 +5458,10 @@ main(int argc, char **argv)
 
                     (void)tiku_trk_desk_hit(app.desk, ev.xmotion.x,
                                             ev.xmotion.y, &ow);
-                    ofl = (ow != NULL) ? folder_of(&app, ow) : NULL;
+                    ofl = (ow != NULL) ? folder_of(&app, ow) : &app.dfl;
+                    if (ofl != NULL && ofl->view == NULL) {
+                        ofl = NULL;
+                    }
                     if (ofl != NULL) {
                         int r = folder_row_at(&app, ofl, ev.xmotion.x,
                                               ev.xmotion.y);
@@ -5046,6 +5513,30 @@ main(int argc, char **argv)
                         app.dirty = 1;
                     }
                 }
+                if (app.band_fl != NULL) {
+                    tiku_desk_rect_t c = folder_content(&app, app.band_fl);
+                    unsigned bm = 0u;
+                    int ox = 0, oy = 0;
+
+                    if (ev.xmotion.state & ShiftMask) {
+                        bm |= TIKU_TRK_MOD_SHIFT;
+                    }
+                    if (ev.xmotion.state & ControlMask) {
+                        bm |= TIKU_TRK_MOD_CMD;
+                    }
+                    app.band_x1 = ev.xmotion.x;
+                    app.band_y1 = ev.xmotion.y;
+                    /* Handed VIEW coordinates: the band is drawn where the
+                     * pointer is, but what it sweeps is where the icons
+                     * are, and those two differ by the scroll origin. */
+                    tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
+                    (void)tiku_trk_poseview_select_rect(app.band_fl->view,
+                        app.band_x0 - (c.x + 2) + ox,
+                        app.band_y0 - (c.y + 2) + oy,
+                        app.band_x1 - (c.x + 2) + ox,
+                        app.band_y1 - (c.y + 2) + oy, bm);
+                    app.dirty = 1;
+                }
                 if (app.dock_drag) {
                     /* Ctrl held on the bar: the pointer IS the picker.
                      * Where it lets go decides the dock, and a release in
@@ -5077,6 +5568,17 @@ main(int argc, char **argv)
                 break;
             case ButtonRelease:
                 app.dock_drag = 0;
+                if (app.band_fl != NULL) {
+                    /* The sweep's own selection is already what the view
+                     * holds -- membership is a per-pose flag, so there is
+                     * no list to rebuild on release (PVS-029) -- and the
+                     * arrangement is saved because a sweep can move the
+                     * origin under auto-scroll. */
+                    tiku_trk_poseview_set_band(app.band_fl->view, 0);
+                    (void)tiku_trk_poseview_save_state(app.band_fl->view);
+                    app.band_fl = NULL;
+                    app.dirty = 1;
+                }
                 if (tiku_trk_drag_active(&app.drag)) {
                     do_drop(&app, ev.xbutton.x, ev.xbutton.y,
                             ev.xbutton.state, ev.xbutton.button);
@@ -5531,7 +6033,7 @@ sel_done:
                     (void)tiku_trk_poseview_step_icon_size(fl->view,
                         (ks == XK_minus || ks == XK_KP_Subtract) ? 0 : 1);
                     tiku_trk_poseview_cleanup(fl->view,
-                                              tiku_trk_win_content(fl->win).w);
+                                              folder_content(&app, fl).w);
                     app.dirty = 1;
                     break;
                 }
@@ -5747,13 +6249,37 @@ sel_done:
              * answering while a folder of images fills in (IV-031). */
             app.dirty = 1;
         }
+        if (app.band_fl != NULL) {
+            /* A sweep scrolls at the edges too: a band that could only
+             * reach what was already on screen would be a band that stops
+             * at the window's edge (PVS-050). */
+            tiku_desk_rect_t c = folder_content(&app, app.band_fl);
+            int top = c.y + 2, bot = c.y + c.h - COUNT_H, over = 0;
+
+            if (app.band_y1 < top + AUTOSCROLL_BAND) {
+                over = -((top + AUTOSCROLL_BAND) - app.band_y1);
+            } else if (app.band_y1 > bot - AUTOSCROLL_BAND) {
+                over = app.band_y1 - (bot - AUTOSCROLL_BAND);
+            }
+            if (over != 0 &&
+                tiku_trk_poseview_mode(app.band_fl->view) !=
+                    TIKU_TRK_MODE_LIST) {
+                int ox = 0, oy = 0;
+                int step = (over > AUTOSCROLL_FAST) ? 3 : 1;
+
+                tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
+                tiku_trk_poseview_set_origin(app.band_fl->view, ox,
+                    oy + ((over < 0) ? -step : step) * app.row_h);
+                app.dirty = 1;
+            }
+        }
         if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL) {
             /* Auto-scroll.  The band is OUTSIDE the list, which is what
              * makes it reachable: a drag that has to leave the view to
              * scroll it can still see where it is going.  Held still for
              * the delay first, so crossing an edge on the way past does
              * not start it (PVS-050). */
-            tiku_desk_rect_t c = tiku_trk_win_content(app.drop_fl->win);
+            tiku_desk_rect_t c = folder_content(&app, app.drop_fl);
             int over = 0;
 
             int top = c.y + 2;
@@ -5781,9 +6307,21 @@ sel_done:
                 int step = (over > AUTOSCROLL_FAST) ? 3 : 1;
 
 
-                tiku_trk_poseview_scroll_to(app.drop_fl->view,
-                    tiku_trk_poseview_scroll(app.drop_fl->view) +
-                        ((over < 0) ? -step : step));
+                if (tiku_trk_poseview_mode(app.drop_fl->view) !=
+                        TIKU_TRK_MODE_LIST) {
+                    /* An icon view scrolls in PIXELS, so the same two
+                     * buckets move a row's worth rather than a row
+                     * (PVL-056). */
+                    int ox = 0, oy = 0;
+
+                    tiku_trk_poseview_origin(app.drop_fl->view, &ox, &oy);
+                    tiku_trk_poseview_set_origin(app.drop_fl->view, ox,
+                        oy + ((over < 0) ? -step : step) * app.row_h);
+                } else {
+                    tiku_trk_poseview_scroll_to(app.drop_fl->view,
+                        tiku_trk_poseview_scroll(app.drop_fl->view) +
+                            ((over < 0) ? -step : step));
+                }
                 app.dirty = 1;
             }
         }
@@ -5919,6 +6457,30 @@ sel_done:
                         snprintf(fl->path, sizeof fl->path, "%s",
                                  tiku_trk_poseview_path(fl->view));
                     }
+                    changed++;
+                }
+            }
+            if (app.dfl.view != NULL) {
+                /* The Desktop is polled with the windows: a file dropped
+                 * on it, or put in a Desktop folder by something else,
+                 * appears without anyone reopening anything. */
+                unsigned df = tiku_trk_poseview_poll(app.dfl.view,
+                                  tiku_trk_now(), ch, nch, complete);
+                int gone = -1;
+
+                if (df != TIKU_TRK_NOTIFY_NOTHING) {
+                    (void)tiku_trk_poseview_place_unplaced(app.dfl.view,
+                                                       desk_area(&app).w);
+                    /* Anything that arrived off the edge is pulled back:
+                     * the Desktop cannot scroll to reach it (PVS-058). */
+                    (void)desk_ensure_visible(&app);
+                    changed++;
+                }
+                if (tiku_trk_vdir_poll(&app.dvdir, &app.dwatch, &gone) !=
+                        TIKU_TRK_VDIR_CH_NONE) {
+                    /* A contributing Desktop folder came, went or was
+                     * edited: the union is a different set now (PVN-059). */
+                    desk_icons_rebuild(&app);
                     changed++;
                 }
             }
@@ -6152,6 +6714,13 @@ sel_done:
             save_frame_of(&app, &app.folders[i]);
         }
         tiku_trk_poseview_free(app.folders[i].view);
+    }
+    if (app.dfl.view != NULL) {
+        /* The Desktop has no window to close, so nothing else would ever
+         * write its arrangement back. */
+        (void)tiku_trk_poseview_save_state(app.dfl.view);
+        tiku_trk_poseview_free(app.dfl.view);
+        app.dfl.view = NULL;
     }
     /* The sidecar batches; without this the session's queries, frames and
      * recent lists are held in memory and dropped on the way out -- saved

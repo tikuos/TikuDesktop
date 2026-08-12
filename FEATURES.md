@@ -601,12 +601,12 @@ PlacePose breaks out of the search when the candidate rect no longer intersects 
 CreatePoses marks each auto-placed pose with SetAutoPlaced(true) (unless fAlwaysAutoPlace); AddPosesCompleted calls CheckAutoPlacedPoses which, for each flagged pose, removes it from the vertical-sort list, re-places it starting from its own location, clears the flag, extends the extent and invalidates both old and new rects.  
 `PoseView.cpp` → `BPoseView::CreatePoses / BPoseView::AddPosesCompleted / BPoseView::CheckAutoPlacedPoses`  
 
-#### PVL-021 · core · partial
+#### PVL-021 · core · done
 **"Clean up" (Cmd-K) snaps every icon to the nearest grid point without reordering them.**  
 Cleanup(false): for each pose compute PinToGrid(location); if the result differs from the current location or the location became invalid (Desktop obstacle), remove it from the vertical-sort list, MoveTo the grid point, and if that slot was already occupied (or invalid) fall back to a fresh PlacePose from a reset hint. Old and new rects are both invalidated.  
 `PoseView.cpp` → `BPoseView::Cleanup (doAll == false)`  
-**MISSING:** Every icon does end on a grid point, but the "without reordering" clause fails: cleanup re-sorts, clears every pose's placed flag and re-lays out from the top-left in sort order (Tracker's Cleanup(doAll=true)), and Cmd-K and Cmd-Shift-K both run it.  
-*src/tiku_trk_poseview.c:tiku_trk_poseview_cleanup (1826-1849); src/tiku_trk_desktop.c:menu_invoke (1040-1044)*
+**PORT:** tiku_trk_poseview_snap_to_grid() rounds each placed icon to the nearest cell and leaves the order alone, so Cmd-K and Cmd-Shift-K are now different commands in both shells (Cmd-Shift-K keeps the re-layout, PVL-022). It snaps in the space positions are STORED in rather than on screen: a screen point converted to storage and back does not always return itself, so a snap done in screen pixels would move the same icon again every time it was asked.  
+*src/tiku_trk_poseview.c:tiku_trk_poseview_snap_to_grid; src/tiku_trk_desktop.c:menu_invoke (CMD_CLEANUP); src/tiku_trk_app.c (XK_k); tests/test_iconview.c*
 
 #### PVL-022 · core · done
 **"Clean up all" (Cmd-Shift-K) re-sorts the icons and re-lays them out from the top-left of the view.**  
@@ -640,12 +640,13 @@ PlaceFolder reads "be:invoke_origin" and converts from screen; otherwise (non-li
 MoveSelectionInto detects source folder == destination folder: list mode returns without moving, force-copy turns into DuplicateSelection, otherwise each selected pose is removed from the vertical-sort list, moved by (loc - where), optionally PinToGrid'd, then the extent is updated (RemoveFromExtent old, AddToExtent new) and the pose is re-inserted into the vertical-sort list. dropOnGrid comes from B_COMMAND_KEY in MoveSelectionTo.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto (static overload) / BPoseView::MoveSelectionTo`  
 
-#### PVL-027 · polish · partial
+#### PVL-027 · polish · done
 **Icons dropped from a list-mode window into an icon-mode window are stacked in a vertical column at the drop point.**  
 GetDropPointList: if the source was in list mode, each pose gets dropEnd + (0, index * (IconPoseHeight() + 3)); otherwise it keeps its relative offset dropEnd + (poseLocation - dropStart). Grid pinning applied afterwards if requested. Returns NULL entirely when the destination is in list mode.  
 `PoseView.cpp` → `BPoseView::GetDropPointList`  
 **PORT:** Dragged out of a list there is no arrangement to preserve, so they stack in a column at the drop point rather than in a heap.  
-**MISSING:** Same as PVS-045 -- the destination view is not drawn in icon mode, so the column has nowhere to land.  
+**PORT:** Same reservation as PVS-045; the drag records whether its source was a list, and from a list the items stack a fixed step apart at the drop point.  
+*src/tiku_trk_drag.c:tiku_trk_drag_landing; tests/shell/dropcol.script*  
 #### PVL-028 · polish · done
 **A saved icon position that is nonsense is ignored and the icon is auto-placed instead.**  
 ReadPoseInfo rejects |x| or |y| > kSanePoseLocation (50000) and any pose info whose fInitedDirectory matches neither the item's parent directory nor the view's target node, by setting fInitedDirectory = -1. In icon modes only, a failed read on a file created within the last 5 seconds is retried up to 10 times at 10 ms intervals so freshly created items land where they were told to.  
@@ -846,7 +847,9 @@ KeyDown: list mode maps Home/End to MoveOrChangePoseSelection(0 / count-1) and P
 CheckAutoScroll defines a kBorderHeight (20) band above the top (extended by the title view height in list mode), a B_H_SCROLL_BAR_HEIGHT band below, a 6px band left and a B_V_SCROLL_BAR_WIDTH band right, and only scrolls in a direction where bounds still lie inside the extent. A drag scrolls at fAutoScrollInc (20); a rubber-band selection scrolls at fAutoScrollInc/4 within kSlowScrollBucket (30) of the edge and fAutoScrollInc/1.5 beyond it, and re-evaluates the selection rect afterwards so the rubber band follows the scroll without mouse movement.  
 `PoseView.cpp` → `BPoseView::CheckAutoScroll`  
 **VERIFIER CORRECTION:** Speed is variable only for rubber-band selection (fAutoScrollInc/4 within kSlowScrollBucket=30 px, fAutoScrollInc/1.5 beyond). During a *drag* the increment is the constant fAutoScrollInc (20) and the trigger is containment in a fixed border band outside the view — no distance scaling (BPoseView::CheckAutoScroll, PoseView.cpp:10023). The details field of both rows states this correctly; only the headline is wrong.
-**BLOCKED:** Drag auto-scroll: no auto-scroll code exists anywhere (grep 'auto_scroll|autoscroll|AutoScroll' over src/ returns nothing), and the one shell with a pose drag (the app's icon-mode move, src/tiku_trk_app.c:1502-1520/1667-1690) has a viewport that cannot scroll (src/tiku_trk_poseview.c:2118-2120), so there is nothing for an edge band to move.  
+**MISSING:** Only the VERTICAL edges scroll. The desktop's drag and its band both cross a border band and then scroll, at two speeds -- the further past the edge, the bigger the step -- but the left and right bands are absent, so a wide icon arrangement cannot be reached by dragging toward its side.  
+*src/tiku_trk_desktop.c (AUTOSCROLL_BAND/AUTOSCROLL_FAST: the drag block and the band block)*  
+*Shell: desktop*  
 
 #### PVL-057 · polish · open
 **Auto-scroll does not start instantly: the pointer must leave the hot border and then sit in it for over half a second.**  
@@ -936,12 +939,12 @@ fClipboardMode == kMoveSelectionTo switches the draw view to B_OP_ALPHA with con
 **PORT:** Cut items draw faded until the cut ends: every list row asks the live clipboard whether its node is in CLIP_MOVE mode and, if so, paints the icon through icon_paint_dim at 0.55 and lightens the label; because the test runs against clip state on every draw, the fade ends exactly when the cut is committed (paste of a cut clears the clipboard) or superseded/cancelled. The app shell has no clipboard, so this is desktop-shell only.  
 *Audited 2026-08-12: `src/tiku_trk_desktop.c:245-250 (cut = tiku_trk_clip_mode_of(...) == TIKU_TRK_CLIP_MOVE, per row per draw)` `src/tiku_trk_desktop.c:260-268 (tiku_trk_icon_paint_dim 0.55f for cut rows)` `src/tiku_trk_desktop.c:280-287 (label tinted lighter for cut rows)`*  
 *Shell: desktop*  
-#### PVL-069 · important · partial
+#### PVL-069 · important · done
 **The rubber-band selection rectangle draws either as a translucent tinted rectangle over the icons or as an inverted XOR outline, following the "transparent selection" setting live.**  
 Transparent: DrawAfterChildren strokes B_NAVIGATION_BASE_COLOR at alpha 128 and fills the interior with B_CONTROL_HIGHLIGHT_COLOR at alpha 90 (degenerate rects draw a single line). Non-transparent: _BeginSelectionRect/_UpdateSelectionRect/_EndSelectionRect stroke and re-stroke with B_OP_INVERT and B_MIXED_COLORS. The setting arrives via kTransparentSelectionChanged.  
 `PoseView.cpp` → `BPoseView::DrawAfterChildren / BPoseView::_UpdateSelectionRect / BPoseView::_EndSelectionRect`  
-**MISSING:** The rubber band draws as a single solid outline frame; the translucent tinted style, the B_OP_INVERT/mixed-colours outline and the live "transparent selection" setting that chooses between them are all absent.  
-*src/tiku_trk_app.c:draw_icons band block (331-345)*
+**PORT:** Both styles exist and the setting picks between them on every frame, so it is live by construction rather than by a change notice. Transparent tints the edge harder than the interior -- four strips, since a fill of the whole rect would put the edge colour under the middle -- and the alternative inverts the outline, which is visible over whatever it lands on and needs nothing saved underneath. The blend is the port's own: the drawing floor has no per-rect alpha, so it lives in the module that owns alpha and both shells call it. The degenerate zero-width rect is skipped rather than drawn as a line.  
+*src/tiku_trk_iconpaint.c:tiku_trk_paint_band/tiku_trk_paint_tint; src/tiku_trk_desktop.c (band block reads TransparentSelection); tests/shell/bandstyle.script*
 
 #### PVL-070 · polish · open
 **Growing or shrinking the rubber band only repaints the sliver of difference, not the whole band.**  
@@ -1188,7 +1191,8 @@ Architecture notes: [`spec/ARCH-poseview-selection.md`](spec/ARCH-poseview-selec
 **Clicking empty space in the view clears the whole selection.**  
 Only when NOT (extendSelection && fSelectionRectEnabled && fMultipleSelection); also nulls fLastClickedPose, cancels a pending rename, and activates+updates the window immediately.  
 `PoseView.cpp` → `BPoseView::MouseDown`  
-**MISSING:** Empty-space click clears the selection, nulls the last-clicked/active pose and cancels the armed rename, but the window is never activated/updated by the click (the desktop deliberately makes content clicks click-through) and the modifier exception is honoured only on the icon-mode band path, not for a shift-click on empty space in list mode.  
+**MISSING:** The window is never activated or updated by the click -- the desktop deliberately makes content clicks click-through, so a click in a background window selects without raising it.  
+**PORT:** The modifier exception now holds in every mode: an empty-space press starts a band in a list too, and with a modifier held it keeps what is already selected instead of clearing.  
 *src/tiku_trk_poseview.c:686 (tiku_trk_poseview_click, index<0) + src/tiku_trk_app.c:1299*
 
 #### PVS-002 · core · done
@@ -1343,8 +1347,9 @@ WindowActivated -> ShowSelection(active); ShowSelection moves fSelectionPivotPos
 **Dragging from empty space with the primary button starts a rubber-band selection rectangle.**  
 MouseDragged: FindPose(where) == NULL && buttons == B_PRIMARY_MOUSE_BUTTON -> _BeginSelectionRect; the band is anchored at the ORIGINAL click point carried in "be:view_where", not the current pointer. _BeginSelectionRect also switches the window pulse to 20 ms and turns auto-scroll on.  
 `PoseView.cpp` → `BPoseView::MouseDragged / BPoseView::_BeginSelectionRect`  
-**MISSING:** A band anchored at the original press point does start from empty space and sweeps the selection, but only in icon mode (list mode has no band at all), it starts on the press rather than after the drag threshold, and there is no pulse change or auto-scroll.  
-*src/tiku_trk_app.c:1293-1307 and :1426-1437*
+**MISSING:** The band starts on the PRESS rather than after the drag threshold, and there is no pulse-rate change (this shell has no pulse to raise).  
+**PORT:** The desktop shell now sweeps in every mode -- a list's rows are caught by the same rectangle, which is why a pose's rect in list mode is the whole ROW rather than the union of its icon and name -- and the sweep auto-scrolls at the edges (PVS-050). The press that starts a band also ends any half-finished double click: without that the click starting the band is invisible to the counter and the next click on the icon beside it completes a double click the user did not make.  
+*src/tiku_trk_desktop.c (ButtonPress band branch, MotionNotify select_rect); src/tiku_trk_poseview.c:tiku_trk_poseview_pose_rect (list branch); tests/shell/band.script*
 
 #### PVS-025 · important · done
 **The rubber band INVERTS selection state relative to the selection that existed before the drag: sweeping over a previously-selected pose deselects it, and a pose that leaves the rectangle flips back to its prior state.**  
@@ -1368,19 +1373,19 @@ The retention comes from MouseDown NOT calling ClearSelection when extendSelecti
 if (fSelectionPivotPose == NULL && selected == false) fSelectionPivotPose = pose; inside the enclosed-pose loop.  
 `PoseView.cpp` → `BPoseView::SelectPoses(BRect, BList**)`  
 
-#### PVS-029 · core · partial
+#### PVS-029 · core · done
 **Releasing the band rebuilds the selection list from scratch by polling every pose, and drops pivots that are no longer selected.**  
 _EndSelectionRect: fSelectionList->MakeEmpty(); fMimeTypesInSelectionCache.MakeEmpty(); CurrentPoseList()->EachListItem(AddIfPoseSelected, fSelectionList); then nulls fSelectionPivotPose / fRealPivotPose if absent from the list. The rect is invalidated and reset to (0,0,-1,-1).  
 `PoseView.cpp` → `BPoseView::_EndSelectionRect`  
-**MISSING:** Selection being a per-pose flag genuinely removes the need for the list rebuild, but the row's second clause is simply missing: band release only clears the band flag, saves state and marks dirty, so a pivot the band left unselected survives and still anchors the next shift-click.  
-*src/tiku_trk_app.c:1477-1485 (ButtonRelease: set_band(0), save_state, dirty — no pivot revalidation); src/tiku_trk_poseview.c:1955-1959 pivot only ever set, never dropped, on band exit*
+**PORT:** The list rebuild has nothing to port to -- selection is a per-pose flag, so there is no fSelectionList to empty and refill, and no rect to reset (the band flag is the state). The second clause is now honoured where it lives, in the view: leaving the band drops a pivot the sweep left unselected, so a Command-sweep back across the pose it was anchored on leaves the next shift-click with nothing to extend from rather than extending from a pose that is no longer selected.  
+*src/tiku_trk_poseview.c:tiku_trk_poseview_set_band; tests/test_iconview.c (PVS-029)*
 
-#### PVS-030 · polish · partial
+#### PVS-030 · polish · done
 **The band is drawn either as a translucent filled rectangle (default) or as an XOR mixed-colors outline, switchable live from Tracker settings.**  
 Transparent: DrawAfterChildren strokes with B_NAVIGATION_BASE_COLOR alpha 128 and fills the 1 px-inset interior with B_CONTROL_HIGHLIGHT_COLOR alpha 90; a zero-width/height rect degrades to a line. Opaque: B_OP_INVERT StrokeRect erase/redraw in _BeginSelectionRect/_UpdateSelectionRect/_EndSelectionRect. fTransparentSelection is seeded from TrackerSettings and updated on kTransparentSelectionChanged.  
 `PoseView.cpp` → `BPoseView::DrawAfterChildren / BPoseView::_UpdateSelectionRect`  
-**MISSING:** Only one style exists: a solid 1 px outline stroked in the selection colour; the default translucent fill (and its degenerate line case), the B_OP_INVERT erase/redraw variant, and the live TrackerSettings toggle are all absent.  
-*src/tiku_trk_app.c:331-345 (draw_icons band block)*
+**PORT:** Same two styles as PVL-069, chosen by the same setting read per frame; the degenerate line case is skipped rather than drawn.  
+*src/tiku_trk_iconpaint.c:tiku_trk_paint_band; tests/shell/bandstyle.script*
 
 #### PVS-031 · polish · done
 **While a band is in progress, pose labels are drawn in the selected (inverted) style even if the window is not active.**  
@@ -1472,12 +1477,13 @@ HandleDropCommon: ignoreTypes = (modifiers() & B_CONTROL_KEY) != 0; LaunchAppWit
 `PoseView.cpp` → `BPoseView::HandleDropCommon / BPoseView::LaunchAppWithSelection`
 **BLOCKED:** Waits on launch machinery that exists nowhere in the port: grep execv/execl/fork/posix_spawn/system( over src/ returns nothing (PVS-010's audit already records 'the port has no launch path'), and on the missing drop pipeline to hand refs to it.  
 
-#### PVS-045 · important · partial
+#### PVS-045 · important · done
 **Icons dropped on the background of an icon-mode window land at the drop point preserving their relative layout; a selection dragged out of a list-mode window stacks vertically at the drop point.**  
 GetDropPointList: sourceInListMode -> dropEnd + (0, index * (IconPoseHeight() + 3)); else dropEnd + (pose->Location(this) - dropStart), where dropStart is the drag's "click_pt". Returns NULL (no positioning) when the destination is in list mode. Foreign ref drops onto a pose instead lay out in rows of 4 grid cells.  
 `PoseView.cpp` → `BPoseView::GetDropPointList / BPoseView::MoveSelectionTo`  
 **PORT:** One delta for the whole selection, so what the user picked up is what they put down, in the same shape.  
-**MISSING:** Nothing consumes the landing positions: neither shell draws an icon-mode window, so there is nowhere for a preserved arrangement to appear.  
+**PORT:** The landing is reserved by NAME before the operation runs, because the entries appear from the folder watch and a view told nothing about them auto-places them at the top-left -- an arrangement applied afterwards is one the user watches assemble itself. Unclaimed reservations are harmless: they are consumed by the name that arrives, and a name that arrives twice is a new entry the second time.  
+*src/tiku_trk_poseview.c:tiku_trk_poseview_drop_land/take_landing; src/tiku_trk_desktop.c:do_drop; tests/shell/drop.script*  
 #### PVS-046 · polish · done
 **Holding Command while dropping snaps the dropped icons to the icon grid.**  
 MoveSelectionTo computes pinToGrid = (modifiers() & B_COMMAND_KEY) != 0 and passes it as dropOnGrid; TrySettingPoseLocation applies PinToGrid for clipping files and skips positioning entirely in list mode, then removes the stale kAttrPoseInfoForeign attribute.  
@@ -1556,11 +1562,12 @@ DeletePose and EnsurePoseUnselected both clear fDropTarget, commit the active po
 **PORT:** remove_pose splices the row out and clears or renumbers active, pivot, real_pivot, last_added and the armed rename in one place, and it is the single door for every removal notice (removed, moved-out, re-sorted); the filter paths deselect rows that leave the listing, and the drop point is a coordinate so no pose-valued drop target can dangle.  
 *src/tiku_trk_poseview.c:2389-2412 remove_pose; :2565/:2589/:2607/:2667 call sites; :1099-1112 rebuild_filter and :1160-1170 filter_changed; :74-75 drop_x/drop_y as the drop state*
 
-#### PVS-058 · polish · open
+#### PVS-058 · polish · done
 **After a drop on the Desktop, icons that would land off-screen are pushed back inside the visible area and their new positions are saved.**  
 HandleDropCommon calls CheckPoseVisibility when fEnsurePosesVisible (set only by BDeskWindow); the bounds are inset by 20 px, off-screen poses are ConstrainTo'd, SetSaveLocation is set and the VS list is rebuilt.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon / BPoseView::CheckPoseVisibility`
-**BLOCKED:** Waits on a Desktop pose view: the backdrop is a flat colour surface with no poseview behind it (src/tiku_trk_desktop.c:1583 tiku_desk_surface_new(..., TIKU_DESK_C_BACKDROP); poseviews exist only inside folder windows) — and on the missing drop pipeline; no constrain-to-visible code exists (grep constrain/off-screen over src/ finds only unrelated comments).  
+**PORT:** A drop on the Desktop, and anything that arrives in a Desktop folder afterwards, is followed by a pass that pulls every icon back into the area it can be reached in -- the screen, less the strip the Deskbar reserves. The moved positions are saved with the rest of the arrangement.  
+*src/tiku_trk_desktop.c:desk_ensure_visible (the drop path and the poll); tests/shell/desktop.script*  
 
 #### PVS-059 · polish · open
 **A colour dropped on the view is not treated as a file drop - it is forwarded to the containing window (which sets the desktop colour).**  
@@ -2341,7 +2348,7 @@ CachedDirectoryEntryList is a CachedEntryIterator(0, 40, true) -- 40-entry cache
 **PORT:** Batching is really implemented on the device backend — tk_list makes one tiku_desk_ns_ls_kinds round trip into a 128-name buffer and then hands entries to the callback one at a time — with only the inode ordering dropped, which the row's TIKU note explicitly directs.  
 *src/tiku_trk_backend_tiku.c:296-360 (tk_list: char names[128][64] + kinds, single ns_ls_kinds call, per-entry fn())*
 
-#### PVN-051 · important · partial
+#### PVN-051 · important · done
 **The Desktop shows the union of several directories by chaining iterators, so entries from every integrated volume's Desktop folder appear in one view.**  
 DesktopPoseView::InitDesktopDirentIterator builds a CachedEntryIteratorList and AddItem()s a CachedDirectoryEntryList per source, watching each source node with the full directory mask; EntryIteratorList::GetNextDirents advances fCurrentIndex to the next sub-iterator on exhaustion.  
 `DesktopPoseView.cpp` → `DesktopPoseView::InitDesktopDirentIterator / EntryIteratorList::GetNextDirents`  
@@ -2658,11 +2665,11 @@ Preferences and Close-all-in-workspace target be_app, not the window. Query wind
 `ContainerWindow.cpp` → `BContainerWindow::AddWindowMenu (and BQueryContainerWindow::AddWindowMenu)`  
 **MISSING:** Open parent carries Cmd+Up; the query-window variant of the menu does not exist.
 
-#### CW-024 · important · partial
+#### CW-024 · important · done
 **Icon view has a submenu of fixed icon sizes (32/40/48/64/96/128) in radio mode plus Decrease size (Cmd+-) and Increase size (Cmd++); the current size is check-marked only while actually in icon mode, and the three view-mode items are radio-marked to the current mode.**  
 UpdateWindowMenuOrWindowContextMenu marks the item whose message "size" equals PoseView()->UnscaledIconSizeInt() and unmarks everything when not in icon mode; MarkNamedMenuItem marks kIconMode/kListMode/kMiniIconMode. Invoking the "Icon view" super item itself switches to icon mode at the current size.  
 `ContainerWindow.cpp` → `BContainerWindow::AddIconSizeMenu / UpdateWindowMenuOrWindowContextMenu`  
-**MISSING:** All six sizes are offered and marked; choosing one does not also switch into icon mode, and the submenu holder carries no command.
+**PORT:** Choosing a size now switches into icon mode as well, which is what makes the size items reachable from a list window at all; the submenu holder carries the same command, so invoking "Icon view" itself switches at the current size.
 
 #### CW-025 · important · partial
 **Attributes menu lists Copy layout / Paste layout, then one check-markable item per column (Name, [Real name], Size, Modified, Created, Kind, Location, Permissions); checking one adds that column, unchecking removes it.**  
@@ -4024,7 +4031,7 @@ _ArchiveToStream writes AttrHashString("BViewState", B_OBJECT_TYPE) then kViewSt
 **TIKU:** Same storage decision as columns. Since TikuOS is single-architecture the endian-swap paths and the paired _le/_be attribute names can go away — deliberately, not by accident.  
 **MISSING:** Only the view mode is written ("list"/"icon"/"mini"); last icon mode, both scroll origins, primary and secondary sort attribute and type, reverse-sort and both icon sizes are never stored, so a folder comes back sorted and scrolled by the defaults.  
 *src/tiku_trk_poseview.c:2195 (save_state writes only the mode string)*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The icon size IS stored and restored with the mode: save_state writes the record as "%s %d" (mode, icon_size) at poseview.c:2517-2523, and restore_state reads the number back and applies it when in 16..128 (poseview.c:2448-2453) — the IV-014 comment marks it deliberate. The scroll-origin, sort-key and reverse-sort clauses of the MISSING line do remain absent, so the row stays partial, but its MISSING line must be rewritten without the icon-size claim (and the cited line 2195 is stale; save_state is now at 2501). `src/tiku_trk_poseview.c:2517-2523, 2448-2453`  
+**PORT:** The record now carries the mode, the icon size, the list's row scroll and BOTH icon origins, so a folder left half way down an icon arrangement reopens there rather than at the top, and a mode round-trip returns to where each mode was. Still absent: the primary and secondary sort attribute and type, and reverse-sort, so a folder comes back sorted by the defaults. `src/tiku_trk_poseview.c:2517-2523, 2448-2453`  
 
 #### MA-062 · core · differs
 **A newly opened folder with no saved state shows Name / Size / Modified in list mode, sorted by name ascending, with large icons.**  
@@ -4079,11 +4086,12 @@ AddColumnList sorts by CompareColumns, then walks assigning column->SetOffset(ne
 **PORT:** Restored columns keep saved widths and order but always get fresh left-to-right offsets: the saved offsets are used ONCE to sort (rec_cmp) and thrown away, then reflow_columns re-derives every position from start_offset advancing by width + margin — so overlap and gaps cannot come back. Resize and reorder recompute the same way (both call reflow_columns and set state_dirty), matching ResizeColumn/MoveColumnTo. The test asserts 'positions are re-derived from the start, never restored' (tests/test_title.c:640-647). The date-format-change watch in AddColumnList has no counterpart (no locale date-format machinery), but that is the source's mechanism note, not this row's promise. Reachable from the app shell (titleview gestures + restore at app.c:1346).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3752-3770` `src/tiku_trk_poseview.c:3798-3811` `src/tiku_trk_poseview.c:3828-3849`*  
 *Shell: both*  
-#### MA-069 · polish · open
+#### MA-069 · polish · done
 **The Desktop can never end up in list mode, even if a saved state says so.**  
 Both RestoreState overloads end with: if (IsDesktopView() && ViewMode() == kListMode) fViewState->SetViewMode(kIconMode), described in the source as recovering from a wrongly-set desktop window view state.  
 `PoseView.cpp` → `BPoseView::RestoreState`
-**SUBSYSTEM:** Desktop view. There are no poses on the backdrop to have a view mode: the backdrop is a plain color fill (desktop.c:1583) and the only pose views are folder windows (open_folder, desktop.c:1376-1403); no Desktop view state exists that could wrongly say list mode. The guard becomes buildable only when a Desktop poseview exists.  
+**PORT:** The Desktop restores its saved state like any view and then coerces the mode through the Desktop's own rule, so a record that says list -- from another build, or from a window -- comes up as icons rather than as a Desktop nothing can be put on.  
+*src/tiku_trk_desktop.c:desk_icons_rebuild; src/tiku_trk_deskicons.c:tiku_trk_deskicons_mode*  
 
 #### MA-070 · important · partial
 **A folder opened for the first time inherits its window size and column layout from its parent folder (staggered so it does not land exactly on top) or from a template folder, but never inherits the parent's scroll position.**  
@@ -5473,12 +5481,13 @@ Defaults: both off. Turning single-window off forces ShowNavigator to 0 and disa
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kSingleWindowBrowseChanged)`
 **SUBSYSTEM:** Preferences subsystem + navigator. No navigator exists (grep -i navigat over src/*.c yields only prose comments); no back/forward/up bar, no history. The desktop shell opens one window per place unconditionally and raises it when already open (open_folder, src/tiku_trk_desktop.c:1383-1391); the app shell is single-window by construction but has no navigator bar either. Neither the single-window-browse setting, the ShowNavigator dependency, nor the two change notices have any counterpart.  
 
-#### TS-049 · important · partial
+#### TS-049 · important · done
 **"Outline selection rectangle only" switches rubber-band selection from a translucent filled rectangle to an outline.**  
 The checkbox is the inverse of the stored TransparentSelection setting (default on, i.e. checkbox off). Pose views cache the value at construction and update it from the kTransparentSelectionChanged notice; the translucent rectangle is drawn in B_NAVIGATION_BASE_COLOR at alpha 128 with a B_CONTROL_HIGHLIGHT_COLOR interior at alpha 90.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kTransparentSelectionChanged)`  
-**MISSING:** The band is always drawn as an outline (the setting's ON state), but there is no setting, no cached value, no change notice and no translucent alternative -- the graphics layer has no alpha compositing at all, only opaque fills and tints.  
-*/home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:331-344 (draw band, tiku_desk_frame); no alpha in /home/ambuj/tikuOS/applications/desktop/src/tiku_desk_gfx.h*
+**PORT:** TransparentSelection is a real setting (default on, as in Tracker), and the desktop's band reads it on every frame -- there is no cached copy to invalidate and so no change notice to send, which is the same shape as every other setting in this port. The translucent alternative is drawn by a blend written for it, since the floor composites alpha only inside icons. The single-window shell carries no settings at all, so it draws the default.  
+*src/tiku_trk_prefs.c:31; src/tiku_trk_desktop.c (band block); src/tiku_trk_iconpaint.c:tiku_trk_paint_band; tests/shell/bandstyle.script*  
+*Shell: desktop*
 
 #### TS-050 · important · partial
 **"List folders first" sorts directories ahead of files regardless of name.**  
@@ -5722,25 +5731,27 @@ kDesktopWindowLook/kDesktopWindowFeel plus B_NOT_MOVABLE|B_WILL_ACCEPT_FIRST_CLI
 **VERIFIER CORRECTION:** It is disabled for EVERY container window — BContainerWindow::CreatePoseView (ContainerWindow.cpp:621) calls EnableBorderHighlight(false) unconditionally, and QueryContainerWindow.cpp:87 / VirtualDirectoryWindow.cpp:83 repeat it. The only place it is turned ON is FilePanelPriv.cpp:792. In practice the B_KEYBOARD_NAVIGATION_COLOR border appears only in file panels.
 **WAIVER CANDIDATE:** there is no Desktop window for look/feel/flags to attach to: the backdrop is the root surface of the single host window (src/tiku_trk_win.h:8-10) and is never a tiku_trk_win_t (windows exist only via tiku_trk_desk_open, src/tiku_trk_win.h:73-76), so not-movable/not-closable/not-zoomable/all-workspaces hold vacuously and accept-first-click has nothing to gate -- waiver candidate  
 
-#### AW-018 · core · open
+#### AW-018 · core · done
 **The Desktop has no menu bar, no scroll bars and no container/border view — it is the bare pose area sized to the screen.**  
 ShouldAddMenus/ShouldAddScrollBars/ShouldAddContainerView all return false; Init() resizes to BScreen().Frame() before the inherited Init so volume poses are not clipped.  
 `DeskWindow.cpp` → `BDeskWindow::ShouldAddMenus / ShouldAddScrollBars / ShouldAddContainerView / BDeskWindow::Init`  
 **CHECKED:** The backdrop is chrome-less only because it is not a Desktop window at all: desk_draw fills the surface and composites folder windows over it, there is no pose view, no volume poses and no screen-sized pose area, and root is opened in an ordinary cascaded window like any other folder.  
 *src/tiku_trk_win.c:493-510 tiku_trk_desk_draw (fill C_BACKDROP then draw_window per window); src/tiku_trk_desktop.c:1073-1084 open_folder used for "/" and every other path*
-**SUBSYSTEM:** desktop pose area -- as the row's CHECKED note already records: the backdrop has no pose view and no volume poses, desk_draw just fills and composites folder windows (src/tiku_trk_win.c:493-510), and root opens in an ordinary cascaded folder window like any path (src/tiku_trk_desktop.c:1376-1437 open_folder)  
+**PORT:** The backdrop IS the pose area now: it draws the Desktop's poses between the fill and the windows, and a click on it goes through the same branch a window's content does -- which is what makes its icons behave like a folder's. There is no chrome to leave out because there is no Desktop window: the pose area is the screen, less the strip the Deskbar reserves.  
+*src/tiku_trk_desktop.c:desk_icons_draw/folder_content/desk_area; src/tiku_trk_win.c:tiku_trk_desk_set_backdrop; tests/shell/desktop.script*  
 
-#### AW-019 · important · open
+#### AW-019 · important · done
 **Desktop icons never auto-scroll, are never remapped into a grid, and are always forced to stay on-screen.**  
 SetIconMapping(false), SetEnsurePosesVisible(true), SetAutoScroll(false); pose view adopts the screen's desktop color as view+low color (forcing alpha to 255).  
 `DeskWindow.cpp` → `BDeskWindow::CreatePoseView`
-**SUBSYSTEM:** desktop pose area -- no desktop icons exist (the backdrop hosts nothing, src/tiku_trk_win.c:493-510), so icon-mapping, ensure-visible and auto-scroll rules have nothing to act on  
+**PORT:** All three hold on icons that are actually there: the Desktop never scrolls (its viewport is the screen and nothing moves its origin), a drop keeps the position it was dropped at unless Command asks for the grid, and every drop and every arrival is followed by a pull-back into the area an icon can be reached in.  
+*src/tiku_trk_desktop.c:desk_ensure_visible; tests/shell/desktop.script*  
 
 #### AW-020 · important · open
 **Changing screen resolution saves the icon positions against the old frame first, then re-lays icons that would fall off the new screen.**  
 SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibility(frameChanged ? &frame : 0) so old-frame pose info can drive rearrangement.  
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
-**SUBSYSTEM:** desktop pose area -- no desktop icons to re-lay, and no resolution-change path at all: the surface is fixed 1000x680 (DESK_W/DESK_H, src/tiku_trk_desktop.c:43-44) and the event loop has no ConfigureNotify case (switch at src/tiku_trk_desktop.c:1849-2575 handles Expose/Button/Motion/Key/ClientMessage only)  
+**SUBSYSTEM:** Screen resolution changes. Desktop icons exist now and are pulled back into the reachable area whenever they are dropped or arrive (PVS-058), and one position per screen SIZE is already implemented and tested (PVL-030) -- what is missing is the event: the surface is fixed 1000x680 (DESK_W/DESK_H, src/tiku_trk_desktop.c:43-44) and the event loop has no ConfigureNotify case (switch at src/tiku_trk_desktop.c:1849-2575 handles Expose/Button/Motion/Key/ClientMessage only)  
 
 #### AW-021 · polish · open
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  
@@ -5775,24 +5786,27 @@ kIconMode / kMiniIconMode messages targeted at the pose view; the +/- variants c
 `DeskWindow.cpp` → `BDeskWindow::Init`  
 **PORT:** The desktop shell's key handler now binds the chords it was missing: ControlMask + XK_1/2/3 dispatches menu_invoke() with CMD_ICON_VIEW / CMD_MINI_ICON_VIEW / CMD_LIST_VIEW (which call tiku_trk_poseview_set_mode), and ControlMask + XK_plus/XK_equal/XK_KP_Add/XK_minus/XK_KP_Subtract calls tiku_trk_poseview_step_icon_size() followed by a cleanup relayout. Accepting both XK_plus and XK_equal matters — with Ctrl held, an unshifted '+' key reports XK_equal. The target is the focused folder window (fl != NULL) rather than a desktop pose view, but this port's desktop background has no poses at all (desktop_t holds only folder windows; there is no root view), so there is nothing else these could act on. No keysym collision: XK_1/2/3 and the +/- set appear nowhere else in the handler, and the blocks sit after the editing/renaming/select modal branches so they cannot eat typed characters.
 
-#### AW-026 · polish · open
+#### AW-026 · polish · done
 **With the Disks setting on, a root ("/") icon appears on the Desktop; it is added by synthesizing an entry-created notification rather than by a special code path.**  
 Hand-built B_NODE_MONITOR message with opcode B_ENTRY_CREATED for the root model, posted to the pose view. The same trick removes it (B_ENTRY_REMOVED) when the setting changes.  
 `DeskWindow.cpp` → `BDeskWindow::Init / DesktopPoseView::AdaptToVolumeChange`  
 **TIKU:** Synthesized watch events are a useful idiom for TIKU_EVENT_VFS: mounting a device can be announced as a create on the parent directory node.
-**SUBSYSTEM:** desktop pose area -- there are no desktop poses to add a root icon to, no Disks setting (the port has no settings at all, see AW-008), and no synthesized-notification path; the 'root' icon exists only as the row icon for the '/' volume inside folder windows (src/tiku_trk_model.c:204)  
+**PORT:** Either setting puts the root on the Desktop, read through the rule that keeps the two from having to be exclusive. It is added through the view's own insert rather than a synthesized notice: a notice is addressed to the directory it happened in, and the root does not live in a Desktop folder -- so a pose shown here while living elsewhere is marked ADOPTED, which is also what stops the next re-listing taking it for a row that has gone.  
+*src/tiku_trk_desktop.c:desk_add_pose; src/tiku_trk_poseview.c:tiku_trk_poseview_adopt*  
 
-#### AW-027 · core · open
+#### AW-027 · core · done
 **The Trash pose is created after all other desktop poses so it lands in the next free slot, and its icon is watched so it redraws when it changes.**  
 CreateTrashPose() called from AddPosesCompleted; WatchNewNode(&nref, B_WATCH_ATTR) on the trash dir.  
 `DesktopPoseView.cpp` → `DesktopPoseView::AddPosesCompleted / DesktopPoseView::CreateTrashPose`
-**SUBSYSTEM:** desktop pose area -- no desktop poses, so no Trash pose, no add-after-others ordering and no attr-watch on its icon; KIND_TRASH surfaces only as a row in folder windows (src/tiku_trk_model.c:79,169,191-192)  
+**PORT:** The Trash is added after the Desktop folders' own items are placed, so it takes the next free slot rather than one in the middle of them, and it is adopted like the Disks icon because it lives outside the Desktop folder. Its icon needs no watch of its own: every pose's art comes from the one node-icon cache, which already asks whether a changed attribute is one that decides an icon.  
+*src/tiku_trk_desktop.c:desk_icons_rebuild; tests/shell/desktop.script*  
 
-#### AW-028 · polish · open
+#### AW-028 · polish · done
 **Desktop label color flips between black and white based on the desktop background brightness, independently of the color used in folder windows.**  
 SetHighColor(LowColor().Brightness() <= ui_color(B_DESKTOP_COLOR).Brightness() ? kWhite : kBlack).  
 `DesktopPoseView.cpp` → `DesktopPoseView::AdaptToBackgroundColorChange`
-**SUBSYSTEM:** desktop pose area -- the backdrop draws no labels (desk_draw fills and composites only, src/tiku_trk_win.c:493-510), so there is no desktop label colour to flip  
+**PORT:** The Desktop's labels take their ink from the BACKDROP's brightness -- white on the dark fill this port ships -- and a window's labels are unaffected, which is the independence the row is about.  
+*src/tiku_trk_desktop.c:draw_pose_icon; tests/shell/desktop.script (a pixel of the one label no window covers)*  
 
 #### AW-029 · important · partial
 **The Trash icon shows full vs empty, updated live as items enter or leave the trash on any volume, including volumes mounted later.**  
@@ -6496,7 +6510,7 @@ key_down_filter is a window-level common filter: with B_COMMAND_KEY it maps B_UP
 **The Desktop window creates the replicant shelf and its own view-mode shortcuts, and skips the shelf entirely in safe mode.**  
 BDeskWindow::Init: unless BootedInSafeMode(), it creates/open()s the shelf file under the Tracker settings dir and builds a BShelf on the pose view with SetDisplaysZombies(true); then adds Cmd+1 (icon), Cmd+2 (mini icon), Cmd++ / Cmd+- (scale) shortcuts — which show up in the Desktop context menu even though those menu items are not what invokes them; then injects the root "/" pose when "show Disks icon" is on.  
 `DeskWindow.cpp` → `BDeskWindow::Init`
-**SUBSYSTEM:** Desktop window (pose view on the backdrop) — the desktop shell's backdrop is a plain fill (src/tiku_trk_win.c:502 tiku_desk_fill C_BACKDROP) with no desktop pose view, so no shelf, no safe-mode skip, and no root '/' pose injection; the Cmd+1/Cmd+2 view-mode and Cmd+plus/minus scale chords do exist but are bound per folder window (src/tiku_trk_desktop.c:2491-2513, comment attributes them to AW-025/CW-065), not created by a Desktop window.  
+**SUBSYSTEM:** Replicants (the shelf). The Desktop pose view now exists, and the root '/' pose is injected into it when the setting asks (AW-026), so what is left of this row is the shelf itself: there are no replicants to display, nothing to write a shelf file for, and so nothing for safe mode to skip; the Cmd+1/Cmd+2 view-mode and Cmd+plus/minus scale chords do exist but are bound per folder window (src/tiku_trk_desktop.c:2491-2513, comment attributes them to AW-025/CW-065), not created by a Desktop window.  
 
 #### AW-105 · polish · done ⟨found by verification⟩
 **The Select window is reused rather than destroyed: closing it hides it, so the previous expression, rule and checkboxes are still there next time; it opens centred on the mouse but clamped 20 px inside the screen.**  

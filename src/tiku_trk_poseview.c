@@ -73,6 +73,14 @@ struct tiku_trk_poseview {
     void               *measure_ctx;
     int                 drop_x, drop_y; /* where the next new entry lands   */
     int                 drop_valid;
+    /* Where NAMED entries about to arrive should land.  A drop is decided
+     * before the entries exist here, and an arrangement that is applied
+     * after they appear is one the user watches assemble itself. */
+    struct {
+        char            name[TIKU_TRK_NAME_MAX];
+        int             x, y;
+    }                   land[TIKU_TRK_LAND_MAX];
+    int                 land_count;
 
     int                 mode;           /* TIKU_TRK_MODE_*                  */
     int                 icon_size;
@@ -84,6 +92,7 @@ struct tiku_trk_poseview {
     /* The font the labels are drawn in.  Zero until the owner says, and
      * every icon-mode height falls back to the art size until it does. */
     int                 font_h, font_a;
+    int                 row_h;      /* what the owner draws, 0 = derive  */
     tiku_trk_hit_fn     icon_hit;
     void               *icon_hit_ctx;
     /* The pixel origin of each icon mode, kept apart from the list's row
@@ -362,6 +371,7 @@ natural_cmp(const char *a, const char *b)
 static void rebuild_filter(tiku_trk_poseview_t *v);
 static void note_inserted(tiku_trk_poseview_t *v, uint64_t id);
 static int pose_index(const tiku_trk_poseview_t *v, const char *path);
+static int insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p);
 static int pose_is_hidden(tiku_trk_poseview_t *v, const char *path);
 static int poses_sorted(tiku_trk_poseview_t *v);
 
@@ -649,9 +659,10 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
     return v->count;
 }
 
-int
-tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
-                              const tiku_trk_model_t *m, int n)
+/** @brief Fill from a model set; a query view also says it is one. */
+static int
+fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
+          int as_query)
 {
     int i;
 
@@ -662,7 +673,7 @@ tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
     v->pivot = -1;
     v->active = -1;
     v->last_added = -1;
-    v->is_query = 1;
+    v->is_query = as_query ? 1 : 0;
     for (i = 0; i < n && v->count < POSES_MAX; i++) {
         memset(&v->poses[v->count], 0, sizeof v->poses[0]);
         v->poses[v->count].model = m[i];
@@ -678,6 +689,42 @@ tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
     }
     (void)tiku_trk_poseview_refresh_values(v, 0, 64);
     return v->count;
+}
+
+int
+tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
+                              const tiku_trk_model_t *m, int n)
+{
+    return fill_from(v, m, n, 1);
+}
+
+int
+tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
+                             const tiku_trk_model_t *m, int n)
+{
+    return fill_from(v, m, n, 0);
+}
+
+int
+tiku_trk_poseview_adopt(tiku_trk_poseview_t *v, const tiku_trk_model_t *m)
+{
+    tiku_trk_pose_t p;
+
+    if (v == NULL || m == NULL) {
+        return -1;
+    }
+    if (pose_index(v, m->path) >= 0) {
+        return -1;              /* already here: adopting twice is a copy */
+    }
+    memset(&p, 0, sizeof p);
+    p.model = *m;
+    (void)tiku_trk_desc_parse(m->facts.meta, &p.desc);
+    p.adopted = 1;
+    if (insert_sorted(v, &p) < 0) {
+        return -1;
+    }
+    note_inserted(v, m->node_id);
+    return 0;
 }
 
 int
@@ -1220,6 +1267,13 @@ tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on)
         for (i = 0; i < v->count; i++) {
             v->band_was[i] = (unsigned char)(v->poses[i].selected ? 1 : 0);
         }
+    }
+    if (!on && v->pivot >= 0 && v->pivot < v->count &&
+        !v->poses[v->pivot].selected) {
+        /* A pivot the sweep left UNSELECTED is dropped: the next
+         * shift-click would otherwise extend from a pose that is no longer
+         * part of anything (PVS-029). */
+        v->pivot = -1;
     }
     v->band = on ? 1 : 0;
 }
@@ -2377,6 +2431,57 @@ tiku_trk_poseview_cleanup(tiku_trk_poseview_t *v, int view_w)
     v->state_dirty = 1;
 }
 
+int
+tiku_trk_poseview_snap_to_grid(tiku_trk_poseview_t *v)
+{
+    int i, moved = 0;
+
+    if (v == NULL || v->mode == TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    {
+        /* Snapped in the space positions are STORED in, not in screen
+         * pixels: a screen point converted to storage and back does not
+         * always return itself, so a snap done on screen would move the
+         * same icon again every time it was asked. */
+        int gx, gy, ox, oy;
+        float sc = mode_scale(v->mode, v->icon_size);
+        float ugx, ugy, uox, uoy;
+
+        tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
+        if (gx <= 0 || gy <= 0 || sc <= 0.0f) {
+            return 0;
+        }
+        ugx = (float)gx / sc;
+        ugy = (float)gy / sc;
+        uox = (float)ox / sc;
+        uoy = (float)oy / sc;
+        for (i = 0; i < v->count; i++) {
+            tiku_trk_pose_t *p = &v->poses[i];
+            int nx, ny;
+
+            if (!p->placed) {
+                continue;
+            }
+            nx = (int)(((float)p->loc_x - uox) / ugx + 0.5f) *
+                 (int)(ugx + 0.5f) + (int)(uox + 0.5f);
+            ny = (int)(((float)p->loc_y - uoy) / ugy + 0.5f) *
+                 (int)(ugy + 0.5f) + (int)(uoy + 0.5f);
+            if (nx == p->loc_x && ny == p->loc_y) {
+                continue;
+            }
+            p->loc_x = nx;
+            p->loc_y = ny;
+            extent_add(v, p);
+            moved++;
+        }
+    }
+    if (moved > 0) {
+        v->state_dirty = 1;
+    }
+    return moved;
+}
+
 void
 tiku_trk_poseview_set_measure(tiku_trk_poseview_t *v, tiku_trk_measure_fn fn,
                               void *ctx)
@@ -2400,12 +2505,30 @@ tiku_trk_poseview_set_font_metrics(tiku_trk_poseview_t *v, int height,
 int
 tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v)
 {
-    if (v == NULL || v->font_h <= 0) {
+    if (v == NULL) {
         return 20;              /* the reference face's row */
+    }
+    if (v->row_h > 0) {
+        /* What the owner actually DRAWS with.  Deriving a second answer
+         * here is how a band came to sweep rows 27 px apart over a list
+         * drawn 20 px apart, catching the row above the one under the
+         * pointer. */
+        return v->row_h;
+    }
+    if (v->font_h <= 0) {
+        return 20;
     }
     /* Tracker's own: ceil(font height * 1.65), which is what leaves a mini
      * icon room in the row rather than touching both edges. */
     return (int)((float)v->font_h * 1.65f + 0.999f);
+}
+
+void
+tiku_trk_poseview_set_row_height(tiku_trk_poseview_t *v, int h)
+{
+    if (v != NULL) {
+        v->row_h = (h > 0) ? h : 0;
+    }
 }
 
 void
@@ -2434,6 +2557,23 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
     tiku_trk_poseview_pose_location(v, p, &px, &py);
     if (v->measure != NULL) {
         tw = v->measure(p->model.name, v->measure_ctx);
+    }
+    if (v->mode == TIKU_TRK_MODE_LIST) {
+        /* A row, not a saved location: in a list the pose's place is its
+         * INDEX, and the icon-mode location it also carries belongs to a
+         * different arrangement entirely.  Answering with that one is how
+         * a band swept over rows would catch the wrong ones. */
+        int rh = tiku_trk_poseview_row_height(v);
+
+        py = p->index * rh;
+        if (ix != NULL) { *ix = 2; *iy = py; *iw = art; *ih = rh; }
+        if (lx != NULL) {
+            *lx = 2 + art + 4;
+            *ly = py;
+            *lw = tw;
+            *lh = rh;
+        }
+        return;
     }
     if (v->mode == TIKU_TRK_MODE_MINI) {
         if (ix != NULL) { *ix = px; *iy = py; *iw = art; *ih = art; }
@@ -2469,6 +2609,19 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     int ix, iy, iw, ih, lx, ly, lw, lh, x0, y0, x1, y1;
 
     if (v == NULL || p == NULL) {
+        return;
+    }
+    if (v->mode == TIKU_TRK_MODE_LIST) {
+        /* The whole ROW, not the union of the icon and the name: a list is
+         * judged by row -- a click anywhere across it hits the pose -- so
+         * a band that only caught the rows whose NAME it crossed would
+         * sweep a different box from the one a click is judged against. */
+        int rh = tiku_trk_poseview_row_height(v);
+
+        *x = 0;
+        *y = p->index * rh;
+        *w = (v->view_w > 0) ? v->view_w : 1;
+        *h = rh;
         return;
     }
     /* The UNION of the parts, derived rather than computed a second time:
@@ -2575,7 +2728,11 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
         int px, py, pw, ph, inside;
 
-        if (p == NULL || !p->placed) {
+        if (p == NULL ||
+            (!p->placed && v->mode != TIKU_TRK_MODE_LIST)) {
+            /* An unplaced pose has no rectangle to sweep -- except in a
+             * list, where the row IS the place and nothing was ever
+             * placed. */
             continue;
         }
         tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
@@ -2623,6 +2780,73 @@ tiku_trk_poseview_clear_drop_point(tiku_trk_poseview_t *v)
     if (v != NULL) {
         v->drop_valid = 0;
     }
+}
+
+void
+tiku_trk_poseview_drop_land(tiku_trk_poseview_t *v, const char *name, int x,
+                            int y)
+{
+    int i;
+
+    if (v == NULL || name == NULL || name[0] == '\0') {
+        return;
+    }
+    for (i = 0; i < v->land_count; i++) {
+        if (strcmp(v->land[i].name, name) == 0) {
+            break;              /* a second drop of the same name wins */
+        }
+    }
+    if (i == v->land_count) {
+        if (v->land_count >= TIKU_TRK_LAND_MAX) {
+            /* More names than the table holds: the rest are auto-placed,
+             * which is what a view does for an entry it was told nothing
+             * about.  Dropping the OLDEST instead would scatter the items
+             * the user is watching. */
+            return;
+        }
+        v->land_count++;
+        snprintf(v->land[i].name, sizeof v->land[i].name, "%s", name);
+    }
+    v->land[i].x = x;
+    v->land[i].y = y;
+}
+
+void
+tiku_trk_poseview_clear_landings(tiku_trk_poseview_t *v)
+{
+    if (v != NULL) {
+        v->land_count = 0;
+    }
+}
+
+/**
+ * @brief Take the landing reserved for @p path, if there is one.
+ *
+ * Consumed rather than read: a name that arrives twice is a new entry the
+ * second time, and giving it the old drop point would put it under the
+ * thing already there.
+ */
+static int
+take_landing(tiku_trk_poseview_t *v, const char *path, int *x, int *y)
+{
+    const char *name;
+    int i;
+
+    if (v == NULL || v->land_count <= 0 || path == NULL) {
+        return 0;
+    }
+    name = strrchr(path, '/');
+    name = (name != NULL) ? name + 1 : path;
+    for (i = 0; i < v->land_count; i++) {
+        if (strcmp(v->land[i].name, name) == 0) {
+            *x = v->land[i].x;
+            *y = v->land[i].y;
+            v->land[i] = v->land[v->land_count - 1];
+            v->land_count--;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2760,7 +2984,7 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
     }
     /* View state belongs to the FOLDER; pose info to each ENTRY. */
     {
-        char rec[32];
+        char rec[64];
         int len = tiku_trk_state_read(store, v->path,
                                       TIKU_TRK_ATTR_VIEW_STATE, rec,
                                       sizeof rec - 1);
@@ -2774,8 +2998,24 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
             /* IV-014: the size comes back with the mode.  A record written
              * before sizes were saved simply has no number, and the
              * constructor's size stands. */
-            if (sscanf(rec, "%*s %d", &px) == 1 && px >= 16 && px <= 128) {
-                v->icon_size = px;
+            {
+                int sc = 0, ix = 0, iy = 0, mx = 0, my = 0;
+                int got = sscanf(rec, "%*s %d %d %d %d %d %d", &px, &sc,
+                                 &ix, &iy, &mx, &my);
+
+                if (got >= 1 && px >= 16 && px <= 128) {
+                    v->icon_size = px;
+                }
+                if (got >= 6) {
+                    /* Clamped when the view is next given a viewport: a
+                     * record written on a bigger screen would otherwise
+                     * open the folder looking empty (PVL-053). */
+                    v->scroll = (sc > 0) ? sc : 0;
+                    v->icon_x = ix;
+                    v->icon_y = iy;
+                    v->mini_x = mx;
+                    v->mini_y = my;
+                }
             }
         }
     }
@@ -2844,7 +3084,13 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
                          : (v->mode == TIKU_TRK_MODE_MINI) ? "mini" : "list";
         char rec[32];
 
-        snprintf(rec, sizeof rec, "%s %d", mode, v->icon_size);
+        /* Both origins go with the mode and the size: a folder scrolled
+         * somewhere and closed reopens where it was, and the list's row
+         * and the icon view's pixels are different numbers that must not
+         * be confused for one another (MA-061). */
+        snprintf(rec, sizeof rec, "%s %d %d %d %d %d %d", mode,
+                 v->icon_size, v->scroll, v->icon_x, v->icon_y, v->mini_x,
+                 v->mini_y);
         (void)tiku_trk_state_write(store, v->path, TIKU_TRK_ATTR_VIEW_STATE,
                                    rec, strlen(rec));
     }
@@ -3052,8 +3298,13 @@ tiku_trk_poseview_origin(const tiku_trk_poseview_t *v, int *x, int *y)
            : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_x : 0;
     }
     if (y != NULL) {
+        /* A list scrolls in ROWS, and its origin is that scroll in the
+         * same pixels every other mode answers in -- a caller converting
+         * screen to view coordinates must not have to know which mode it
+         * is looking at. */
         *y = (v->mode == TIKU_TRK_MODE_ICON) ? v->icon_y
-           : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_y : 0;
+           : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_y
+           : v->scroll * tiku_trk_poseview_row_height(v);
     }
 }
 
@@ -3472,7 +3723,23 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
             memset(&p, 0, sizeof p);
             p.model = e->model;
             (void)tiku_trk_desc_parse(e->model.facts.meta, &p.desc);
-            if (v->drop_valid && v->mode != TIKU_TRK_MODE_LIST) {
+            {
+                int lx, ly;
+
+                if (v->mode != TIKU_TRK_MODE_LIST &&
+                    take_landing(v, e->path, &lx, &ly)) {
+                    /* Dropped here: the position was worked out at the
+                     * drop, from the shape the selection had when it was
+                     * picked up (PVS-045, PVL-027). */
+                    float scale = mode_scale(v->mode, v->icon_size);
+
+                    p.loc_x = (int)((float)lx / scale);
+                    p.loc_y = (int)((float)ly / scale);
+                    p.placed = 1;
+                    p.auto_placed = 0;
+                }
+            }
+            if (v->drop_valid && v->mode != TIKU_TRK_MODE_LIST && !p.placed) {
                 /* The position was asked for BEFORE the entry existed -- at
                  * the click that made it -- and is consumed by the first
                  * entry to appear.  Placing it afterwards would let
@@ -3681,9 +3948,11 @@ tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
     if (was == NULL) {
         return TIKU_TRK_NOTIFY_NOTHING;
     }
-    nwas = v->count;
-    for (i = 0; i < nwas; i++) {
-        was[i] = v->poses[i].model;
+    nwas = 0;
+    for (i = 0; i < v->count; i++) {
+        if (!v->poses[i].adopted) {
+            was[nwas++] = v->poses[i].model;
+        }
     }
     tiku_trk_evlist_clear(&evs);
     (void)tiku_trk_notify_diff(was, nwas, set, n, now, &evs);
@@ -3924,9 +4193,14 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
         free(is);
         return flags;
     }
-    nwas = v->count;
-    for (i = 0; i < nwas; i++) {
-        was[i] = v->poses[i].model;
+    nwas = 0;
+    for (i = 0; i < v->count; i++) {
+        /* An adopted pose is left out of the comparison entirely: it does
+         * not live in this directory, so a re-listing that cannot find it
+         * is not evidence that it has gone. */
+        if (!v->poses[i].adopted) {
+            was[nwas++] = v->poses[i].model;
+        }
     }
     r.set = is;
     r.n = 0;

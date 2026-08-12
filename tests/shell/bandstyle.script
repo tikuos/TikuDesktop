@@ -1,0 +1,33 @@
+# shell: desktop
+# PVL-069/PVS-030/TS-049: the band has TWO styles and the setting picks
+# between them on every frame.  The port drew one solid outline whatever
+# the setting said, and the setting had no reader at all.
+key 1 ctrl
+wait 6
+note swept over the empty white below the icons
+press 60 200
+move 300 260
+wait 2
+note the edge is tinted harder than the middle, and the middle lets the
+note white it covers show through instead of hiding it
+expect-pixel 60 230 7f7ff1
+expect-pixel 200 230 b7c9da
+release 300 260
+wait 3
+note with transparent selection turned off in the settings
+key comma ctrl
+wait 5
+click 335 205
+wait 3
+click 432 246
+wait 3
+key Escape
+wait 5
+press 60 200
+move 300 260
+wait 2
+note the middle is left alone and the outline is INVERTED -- black on the
+note white it is drawn over, and it needs nothing saved underneath
+expect-pixel 200 230 ffffff
+expect-pixel 60 230 000000
+quit

@@ -1,0 +1,30 @@
+# shell: desktop
+# PVL-027: dragged out of a LIST there is no arrangement to preserve, so
+# the icons stack in a column at the drop point rather than in a heap.
+note window one is a list; open sub with a double click on its row
+click 100 77
+wait 2
+click 100 77
+wait 8
+key 1 ctrl
+wait 6
+press 200 78
+move 400 300
+move 620 420
+release 620 420
+wait 6
+note two rows, dropped on the icon window's background at 600,500
+click 100 97
+wait 2
+click 100 117 1 ctrl
+wait 2
+press 100 97
+move 300 200
+move 600 500
+release 600 500
+wait 20
+click 580 414
+wait 5
+expect-icon-at a.txt 120 68
+expect-icon-at b.txt 120 88
+quit

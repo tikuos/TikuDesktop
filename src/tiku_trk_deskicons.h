@@ -86,9 +86,15 @@ int tiku_trk_deskicons_recall(const tiku_trk_deskpos_set_t *s, int sw,
  *
  * A union rather than one directory, so a second disk's Desktop items
  * appear beside the boot volume's (PVN-051).
+ *
+ * @param home The boot volume's Desktop folder, which on a system with a
+ *             home directory is the user's own rather than one at the
+ *             mount point.  It contributes FIRST, so a name it holds is
+ *             the one that shows.  NULL or "" leaves it out.
  */
 void tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
-                                tiku_trk_backend_t *b, tiku_trk_vdir_t *out);
+                                tiku_trk_backend_t *b, const char *home,
+                                tiku_trk_vdir_t *out);
 
 /**
  * @brief Whether the "/" icon should be shown, given the two settings.

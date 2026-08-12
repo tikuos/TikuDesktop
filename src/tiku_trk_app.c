@@ -448,8 +448,9 @@ draw_icons(app_t *a, tiku_desk_rect_t list)
         draw_pose_icon(a, p, list.x + px, list.y + py, size);
     }
     if (a->band_active) {
-        /* The band is drawn as an outline over the icons rather than a
-         * filled tint, which is the cheap half of Tracker's two styles. */
+        /* Tinted, the way Tracker draws it when the setting is left alone:
+         * this shell carries no settings of its own, so it gets the
+         * default rather than a third style nobody asked for. */
         tiku_desk_rect_t r;
         int lox = (a->band_x0 < a->band_x1) ? a->band_x0 : a->band_x1;
         int loy = (a->band_y0 < a->band_y1) ? a->band_y0 : a->band_y1;
@@ -460,7 +461,7 @@ draw_icons(app_t *a, tiku_desk_rect_t list)
                                        : a->band_x1 - a->band_x0);
         r.h = (a->band_y0 > a->band_y1 ? a->band_y0 - a->band_y1
                                        : a->band_y1 - a->band_y0);
-        tiku_desk_frame(s, r, TIKU_DESK_C_SELECT);
+        tiku_trk_paint_band(s, r, 1);
     }
     tiku_desk_clip_reset(s);
 }
@@ -1312,7 +1313,15 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
     case XK_k:
         if (ev->state & ControlMask) {
             tiku_desk_rect_t lr = list_rect(a);
-            tiku_trk_poseview_cleanup(a->view, lr.w - 4);
+
+            /* Cmd+K snaps what is there; Shift re-lays it out in sort
+             * order.  Straightening an arrangement and replacing it are
+             * two different commands (PVL-021). */
+            if (ev->state & ShiftMask) {
+                tiku_trk_poseview_cleanup(a->view, lr.w - 4);
+            } else {
+                (void)tiku_trk_poseview_snap_to_grid(a->view);
+            }
             (void)tiku_trk_poseview_save_state(a->view);
             a->dirty = 1;
             return;

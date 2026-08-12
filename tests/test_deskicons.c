@@ -134,14 +134,37 @@ main(void)
         (void)mkdir("/tmp/trk_di_a", 0755);
         (void)mkdir("/tmp/trk_di_b", 0755);
         (void)mkdir("/tmp/trk_di_a/Desktop", 0755);
-        tiku_trk_deskicons_sources(&vs, b, &src);
+        tiku_trk_deskicons_sources(&vs, b, NULL, &src);
         check(src.nsrc == 1, "PVN-051",
               "only volumes that HAVE a Desktop folder contribute");
         (void)mkdir("/tmp/trk_di_b/Desktop", 0755);
-        tiku_trk_deskicons_sources(&vs, b, &src);
+        tiku_trk_deskicons_sources(&vs, b, NULL, &src);
         check(src.nsrc == 2, "PVN-051",
               "and a second disk's Desktop items appear beside the first's "
               "-- the Desktop is a union, not a directory");
+
+        {
+            /* The home Desktop contributes ahead of the mount points, so a
+             * name it holds is the one that shows. */
+            tiku_trk_vdir_t withhome;
+            char resolved[TIKU_TRK_PATH_MAX];
+
+            (void)mkdir("/tmp/trk_di_home", 0755);
+            (void)system("touch /tmp/trk_di_a/Desktop/shared "
+                         "/tmp/trk_di_home/shared");
+            tiku_trk_deskicons_sources(&vs, b, "/tmp/trk_di_home",
+                                       &withhome);
+            check(withhome.nsrc == 3, "PVN-051",
+                  "the user's own Desktop folder contributes as well as "
+                  "the volumes'");
+            check(tiku_trk_vdir_resolve(&withhome, b, "shared", resolved,
+                                        sizeof resolved) == 0 &&
+                  strcmp(resolved, "/tmp/trk_di_home/shared") == 0,
+                  "PVN-051",
+                  "and it goes FIRST, so a name it shares with a volume's "
+                  "Desktop shows the user's copy");
+            (void)system("rm -rf /tmp/trk_di_home");
+        }
 
         check(tiku_trk_deskicons_show_disks(1, 0) &&
               tiku_trk_deskicons_show_disks(0, 1), "PVN-058",

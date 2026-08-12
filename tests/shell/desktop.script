@@ -1,0 +1,43 @@
+# shell: desktop
+# home: fixture
+# AW-018/AW-027/AW-028/PVL-018: the backdrop is a pose area, not a colour.
+# deskicons.c held the rules for a Desktop nothing drew; these are the
+# rules acting on icons that are actually there.
+wait 12
+note what it shows is the union of the Desktop folders, plus the Trash
+expect-desk-icon notes.txt
+expect-desk-icon .Trash
+note its labels take their ink from the BACKDROP's brightness, so a dark
+note backdrop gets white ones -- checked on the one icon no window covers
+expect-pixel 520 58 ffffff
+note a click on the backdrop is a click in a view
+click 166 35
+wait 3
+expect-desk-selected-name notes.txt
+note an icon is DRAGGED to where it should sit, and stays there
+expect-icon-at photos 29 20
+press 52 35
+move 200 300
+move 400 400
+release 400 400
+wait 6
+expect-icon-at photos 377 385
+note waited out, so the press that starts the next drag is not read as
+note the second click of a double click on the icon just let go of
+wait 40
+note dragged against the Deskbar it comes back clear of it: the Desktop
+note cannot scroll, so an icon behind the bar is an icon that is gone
+press 400 400
+move 700 200
+move 850 150
+release 850 150
+wait 6
+expect-icon-at photos 815 135
+note and a double click opens the folder's own window
+click 838 150
+wait 2
+click 838 150
+wait 12
+expect-windows 2
+expect-title photos
+quit

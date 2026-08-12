@@ -141,7 +141,8 @@ tiku_trk_deskicons_recall(const tiku_trk_deskpos_set_t *s, int sw, int sh,
 
 void
 tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
-                           tiku_trk_backend_t *b, tiku_trk_vdir_t *out)
+                           tiku_trk_backend_t *b, const char *home,
+                           tiku_trk_vdir_t *out)
 {
     int i;
 
@@ -151,6 +152,16 @@ tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
     tiku_trk_vdir_init(out);
     if (vs == NULL || b == NULL) {
         return;
+    }
+    if (home != NULL && home[0] != '\0') {
+        tiku_trk_model_t hm;
+
+        /* First, so what the user put on their own Desktop is what shows
+         * when another volume happens to hold the same name. */
+        if (b->ops->stat(b, home, &hm) == 0 &&
+            tiku_trk_model_is_container(&hm)) {
+            (void)tiku_trk_vdir_add(out, home);
+        }
     }
     for (i = 0; i < vs->n; i++) {
         char path[TIKU_TRK_PATH_MAX];

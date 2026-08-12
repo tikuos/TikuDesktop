@@ -59,6 +59,19 @@ typedef struct {
      * at least one row was looked at.  Together they say whether a search
      * really was narrowed. */
     int         kinds;
+    /* The Desktop is a surface of its own: it has no window to be focused,
+     * so what it holds cannot be read through the focused-window fields. */
+    int         desk_selected;
+    const char *desk_sel_name;
+    /* Where a named pose sits in the focused view, in view pixels.  A
+     * position is the only way to check an ARRANGEMENT -- how many rows a
+     * window holds says nothing about where a drop put them. */
+    int       (*pose_at)(void *ctx, const char *name, int *x, int *y);
+    /* One pixel of what is actually on screen, 0xRRGGBB.  Drawing is the
+     * only evidence for a rule about how something LOOKS -- a band style
+     * changes no state a checker could otherwise read. */
+    unsigned  (*pixel_at)(void *ctx, int x, int y);
+    void       *pose_ctx;
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
