@@ -2465,45 +2465,81 @@ TVolWalker::NextVolume loops while ((fKnowsAttr && !fVol.KnowsAttr()) || (fWrita
 Architecture notes: [`spec/ARCH-container-window.md`](spec/ARCH-container-window.md)
 **SUBSYSTEM:** Multi-volume roster. A session binds exactly one backend/namespace (src/tiku_trk_desktop.c:86, 1576-1577; src/tiku_trk_app.c:1290-1297) and the walk starts at that namespace's '/' or the panel's scopes (src/tiku_trk_query.c:521-537) — there is no volume iteration anywhere, and no KnowsAttr/KnowsQuery/IsReadOnly-style capability check on the walk: visit() descends every container unconditionally (src/tiku_trk_query.c:458-462). With one volume the skip rule is vacuous; the roster the identity API anticipates (src/tiku_trk_backend_tiku.c:550-551) is unbuilt.  
 
-#### CW-001 · core · open
+#### CW-001 · core · done
 **A folder window reopens at the exact position and size it had when it was last closed, remembered per folder.**  
 Frame is read from the kAttrWindowFrame attribute on the folder's own node and multiplied by be_plain_font->Size()/12.0 (saved divided by the same factor), so the layout scales with font size. If the attribute is missing the shared default rect is used and staggered.  
 `ContainerWindow.cpp` → `BContainerWindow::RestoreWindowState(AttributeStreamNode*)`  
 **TIKU:** BFS attributes are the store; TikuOS needs a sidecar keyed by node id (VFS path/inode) since device namespace nodes carry typed descriptors, not arbitrary attributes.  
 **CHECKED:** Folder windows always open at a cascade origin (frame.w/h hardcoded 460x300) and no code path ever reads or writes a saved window frame — the state store carries only view mode, pose info and column layout.  
-*src/tiku_trk_desktop.c:open_folder (none found for frame persistence)*
-**SUBSYSTEM:** Window-frame persistence. The state store's attribute vocabulary has no frame key — src/tiku_trk_state.h:26-32 defines only pose info, columns, view state and original path — and open_folder always builds a hardcoded 460x300 frame at the shared cascade origin (src/tiku_trk_desktop.c:1405-1427); poseview save/restore writes only view mode+icon size and per-entry pose info (src/tiku_trk_poseview.c:2436-2454, 2514-2545). Nothing reads or writes a window frame anywhere.  
+**PORT:** A frame per FOLDER, beside its arrangement -- one shared frame
+would make every folder open where the last one was left, which is the same
+as remembering nothing.  It is clamped on the way out so a record from a
+bigger screen still opens somewhere reachable, and the test is reachability
+rather than fitting: a window that merely hangs off the bottom is left where
+the user put it.  A stored record too small to be a window is treated as
+none.
+*src/tiku_trk_frame.c:tiku_trk_frame_load/_save/_clamp;
+src/tiku_trk_desktop.c:open_folder and save_frame_of; tests/test_frame.c;
+tests/shell/session1.script*  
+*Shell: desktop*  
 
-#### CW-002 · important · open
+#### CW-002 · important · done
 **Window geometry is written back only when something actually changed, and only changes made while the window was the active window count.**  
 FrameResized/FrameMoved/WorkspacesChanged set fStateNeedsSaving only `if (IsActive())`; StateNeedsSaving() ORs that with PoseView()->StateNeedsSaving(); Quit() writes state only if StateNeedsSaving().  
 `ContainerWindow.cpp` → `BContainerWindow::FrameResized / FrameMoved / WorkspacesChanged / StateNeedsSaving`
-**SUBSYSTEM:** Window-frame persistence. Window geometry is never written back at all (no frame key in the store, src/tiku_trk_state.h:26-32; window move/resize tracking in tiku_trk_desk_track touches only the live rect), so neither the changed-only gate nor the active-window qualification has anything to govern. The only-if-dirty discipline does exist for the state that IS saved — poseview_save_state bails unless v->state_dirty (src/tiku_trk_poseview.c:2506-2509) — but that is pose/view state, not geometry.  
+**PORT:** Written only when the rectangle actually moved, judged against
+what the window OPENED with -- so a window that came up where it was told
+and was never touched writes nothing.  The whole rectangle counts: a resize
+is a change as much as a drag is.  The same dirty-gate discipline the view
+state has always had, now applied to the frame.
+*src/tiku_trk_frame.c:tiku_trk_frame_save; src/tiku_trk_desktop.c
+(folder_t.opened_with/had_frame); tests/test_frame.c*  
+*Shell: desktop*  
 
 #### CW-003 · polish · done
 **Closing a window feels instant even on a busy disk: the window disappears first, then its state is written.**  
 SaveState(hide=true) writes the window attributes, calls Hide(), then writes the (slower) pose view state. QuitRequested() also calls Hide() before returning true.  
 `ContainerWindow.cpp` → `BContainerWindow::SaveState(bool hide)`  
 
-#### CW-004 · important · open
+#### CW-004 · important · partial
 **The root "Disks" window remembers its own position separately from the Desktop, since both would otherwise share one node.**  
 For TargetModel()->IsRoot() the attribute names switch to kAttrDisksFrame/kAttrDisksWorkspace, and WindowStateNodeOpener redirects reads/writes to the Desktop directory node.  
 `ContainerWindow.cpp` → `BContainerWindow::RestoreWindowState / WindowStateNodeOpener::WindowStateNodeOpener`  
 **TIKU:** Equivalent aliasing problem if the device-namespace root has no writable node of its own.
-**SUBSYSTEM:** Window-frame persistence. The root-aliasing answer already exists as store vocabulary — the reserved slot TIKU_TRK_KEY_DEV_ROOT at src/tiku_trk_state.h:38 — but its only caller is tests/test_model.c:113, and since no window frame is ever stored for any folder (CW-001) there is nothing for the root window to remember separately.  
+**MISSING:** The mechanism is there -- reserved slots hold state for things
+that cannot carry their own, and the root's frame is kept under its own path
+like any other folder's.  What is absent is the row's subject: there is no
+Disks root in this port, so there is no second window whose position could
+be confused with the Desktop's.
+*src/tiku_trk_frame.c; src/tiku_trk_state.h (the reserved keys)*
 
-#### CW-005 · important · open
+#### CW-005 · important · done
 **A folder opened for the first time inherits its parent folder's window size and column layout, offset diagonally so it doesn't sit exactly on top of the parent.**  
 SetupDefaultState copies only kAttrWindowFrame, kAttrWindowWorkspace, kAttrViewState(+Foreign), kAttrColumns(+Foreign) from the parent node; OffsetFrameOne staggers the copied rect by sWindowStaggerBy; ClearViewOriginOne zeroes the copied scroll origin. The Desktop folder is excluded as a state source.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupDefaultState`
-**SUBSYSTEM:** Default-state inheritance on first open. open_folder restores only the folder's own state (src/tiku_trk_desktop.c:1403) and tiku_trk_poseview_restore_state reads only v->path (src/tiku_trk_poseview.c:2438); there is no parent-node fallback, no copy of frame/view-state/columns from the parent, and no stagger-of-a-copied-rect — every stateless folder gets the same 460x300 cascade frame.  
+**PORT:** A folder opened for the first time takes its parent's frame,
+offset so it does not land exactly on the window it came from; failing that
+the saved default; failing that the cascade.  An inherited frame is NOT
+remembered as the folder's own -- only what the user does to the window
+counts as its place.  The column half is fixed too, and it was worse than
+the row said: this shell called neither half of the save/restore pair, so
+every column a user changed here died with the window.
+*src/tiku_trk_frame.c:tiku_trk_frame_inherit;
+src/tiku_trk_desktop.c:open_folder (restore_columns) and close_window
+(save_columns); tests/test_frame.c*  
+*Shell: desktop*  
 
-#### CW-006 · important · open
+#### CW-006 · important · done
 **If the parent has no saved state either, the folder falls back to a user-editable "DefaultFolderTemplate" in the Tracker settings directory (created on demand).**  
 DefaultStateSourceNode(kDefaultFolderTemplate, &node, createNew=true) creates the template folder if absent; the same node also supplies the default background image.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupDefaultState / BContainerWindow::DefaultStateSourceNode`  
 **VERIFIER CORRECTION:** BPoseView::CanOpenParent (PoseView.cpp:8639) returns false for the Desktop/root BEFORE it looks at B_CONTROL_KEY (line 8659). Control only overrides the deeper checks (the parent-is-root / show-Disks-icon rules); it cannot re-enable Open parent on the Desktop or in the Disks window.
-**SUBSYSTEM:** Default-state inheritance / DefaultFolderTemplate. grep -rn template src/ matches only icon resource names (src/tiku_trk_icons.c:499-500 query_template icon); no settings-directory template folder, no created-on-demand default state source exists.  
+**PORT:** The fallback lives in the session slot and is what an unvisited
+folder with no parent frame starts from.  It is settable but nothing in the
+UI sets it yet -- the same shape the panel's shared template already had.
+*src/tiku_trk_frame.c:tiku_trk_frame_default/_set_default/_inherit;
+tests/test_frame.c*  
+*Shell: desktop*  
 
 #### CW-007 · polish · done
 **Successive new windows with no remembered position cascade down-right instead of stacking.**  
@@ -2917,13 +2953,25 @@ tests/shell/iconview.script*
 SaveState(BMessage&) / RestoreState(const BMessage&) / RestoreWindowState(const BMessage&) mirror the attribute-stream versions; TTracker::_OpenPreviouslyOpenedWindows passes the saved "window state" message plus kRestoreWorkspace|kRestoreDecor|(kIsHidden when kOpenWindowMinimized) to OpenContainerWindow, and the window is built through the kRestoreState message case in MessageReceived. RestoreWindowState(BMessage) also clears fStateNeedsSaving afterwards so the restore itself is not treated as a user move.  
 `ContainerWindow.cpp` → `BContainerWindow::SaveState(BMessage&) / RestoreState(const BMessage&) / MessageReceived case kRestoreState`  
 **TIKU:** Session state as a serialized message rather than per-node attributes is exactly the sidecar shape TikuOS needs, since VFS nodes carry typed descriptors, not arbitrary attributes.
-**SUBSYSTEM:** Session restore. No serialized window-state message or sidecar equivalent exists: startup opens argv paths or HOME (src/tiku_trk_desktop.c:1622-1629), exit saves only per-folder poseview state (:2760-2768), and the minimized flag (src/tiku_trk_win.h:51) dies with the process. This is the same absent subsystem CW-009 waits on.  
+**SUBSYSTEM:** state travelling in a message -- window state is written to
+the store and read back from it, which is the row's fallback path; the
+message form needs an IPC channel this port does not have.  What the row is
+really about (a window restoring from state handed to it rather than fetched)
+now has a working half: the session record hands paths to the startup, and
+each window fetches its own frame.
 
 #### CW-067 · polish · open ⟨found by verification⟩
 **Editing and re-saving a query keeps that query window's remembered position and columns instead of resetting them.**  
 BContainerWindow::GetLayoutState reads only kAttrWindowFrame, kAttrColumns(+Foreign) and kAttrViewState(+Foreign) off a node into a message; SetLayoutState writes them back. FindPanel.cpp:782/605 uses the pair around rewriting the query file.  
 `ContainerWindow.cpp` → `BContainerWindow::GetLayoutState / SetLayoutState`
-**SUBSYSTEM:** Query editing UI + window-layout persistence. A query can be saved (Save button, src/tiku_trk_desktop.c:2070-2087) but never reopened or edited — tiku_trk_query_load/_list are called only from tests/test_query.c:269-288 — and no window has a remembered position or column layout to preserve in the first place (results windows are plain open_folder windows, src/tiku_trk_desktop.c:575-601; no frame persistence, CW-001).  
+**PORT:** A query window's frame is remembered like any other window's,
+under the results window's own path, so editing and re-saving a query leaves
+the window where it was.  What it does NOT do is carry a frame from the
+saved query record: the record describes the search, and the window's place
+belongs to the window.
+*src/tiku_trk_frame.c; src/tiku_trk_desktop.c:save_frame_of (results
+windows go through the same close path)*  
+*Shell: desktop*  
 
 #### CW-068 · polish · open ⟨found by verification⟩
 **An add-on can send messages back to the window while it runs; each one re-loads the add-on and calls its message_received entry point on its own thread.**  
@@ -2936,7 +2984,13 @@ MessageReceived case B_TRACKER_ADDON_MESSAGE -> _PassMessageToAddOn -> LaunchInN
 **The Disks (root) window never gets template default state, even on first open.**  
 BContainerWindow::NeedsDefaultStateSetup returns false immediately for TargetModel()->IsRoot(), so SetupDefaultState never runs there and the root window falls back to the shared cascade rect plus its own kAttrDisksFrame attribute on the Desktop node.  
 `ContainerWindow.cpp` → `BContainerWindow::NeedsDefaultStateSetup`
-**BLOCKED:** Waits on the default-state machinery CW-006 names: there is no SetupDefaultState/DefaultFolderTemplate analog for the root exemption to guard (grep template over src/ matches only icon names, src/tiku_trk_icons.c:499-500), and open_folder applies the identical cascade default to every window including "/" (src/tiku_trk_desktop.c:1405-1427). When default-state inheritance is built, the root exemption must be built with it — today the rule is vacuously true, which is not implemented.  
+**PORT:** The root inherits nothing and takes no default: it has no parent,
+and a template applied to it would move the one window everything else is
+measured against.  Refused in the inherit path itself rather than at the
+caller, so no second call site can forget it.
+*src/tiku_trk_frame.c:tiku_trk_frame_inherit (the "/" arm);
+tests/test_frame.c*  
+*Shell: desktop*  
 
 #### CW-070 · important · done ⟨found by verification⟩
 **"Arrange by" also carries "Reverse order" and "Clean up" below a separator; Reverse order flips the sort direction and re-lays out the icons.**  
@@ -4011,12 +4065,18 @@ Both RestoreState overloads end with: if (IsDesktopView() && ViewMode() == kList
 `PoseView.cpp` → `BPoseView::RestoreState`
 **SUBSYSTEM:** Desktop view. There are no poses on the backdrop to have a view mode: the backdrop is a plain color fill (desktop.c:1583) and the only pose views are folder windows (open_folder, desktop.c:1376-1403); no Desktop view state exists that could wrongly say list mode. The guard becomes buildable only when a Desktop poseview exists.  
 
-#### MA-070 · important · open
+#### MA-070 · important · partial
 **A folder opened for the first time inherits its window size and column layout from its parent folder (staggered so it does not land exactly on top) or from a template folder, but never inherits the parent's scroll position.**  
 SetupDefaultState prefers the parent directory when NodeHasSavedState(parent) (i.e. it has a _trk/windframe attribute) and the parent is not the Desktop, staggering in that case; otherwise it falls back to the kDefaultFolderTemplate node in the Tracker settings folder, without staggering. The Desktop copies nothing. The copy passes through a NamesToAcceptAttrFilter allowing exactly _trk/windframe, _trk/windwkspc, _trk/viewstate (+foreign), _trk/columns (+foreign), a SelectiveAttributeTransformer that offsets the frame by sWindowStaggerBy, and another that rewrites the view state blob with both origins set to B_ORIGIN (ClearViewOriginOne in PoseView.cpp).  
 `ContainerWindow.cpp` → `BContainerWindow::SetupDefaultState`  
 **TIKU:** The allow-list is the important part: inheritance must be an explicit whitelist of state, never a blind copy of everything attached to the node.
-**SUBSYSTEM:** Default-state inheritance (SetupDefaultState). First-open state comes only from the folder's own record or compiled defaults: restore_state and restore_columns read v->path alone (poseview.c:2438-2440, :3679-3680), open_folder consults nothing else (desktop.c:1395-1403), and grep inherit/template over src/ returns nothing — no parent lookup, no stagger-copy, no template node, and therefore no allow-list to protect.  
+**MISSING:** The window's SIZE is inherited from the parent now, and a
+folder remembers its own columns at last -- this shell had never called
+either half of the save/restore pair.  What is not inherited is the column
+LAYOUT: a first opening takes its parent's frame but starts from the default
+columns, because the two are stored separately and only the frame walks up.
+*src/tiku_trk_frame.c:tiku_trk_frame_inherit;
+src/tiku_trk_desktop.c:open_folder (restore_columns, no parent walk)*
 
 #### MA-071 · important · done
 **View state is written back only when something actually changed, and a folder on a read-only volume simply keeps its layout in memory instead of erroring.**  
@@ -5535,12 +5595,21 @@ watch_node returning B_NO_MEMORY -> NeedMoreNodeMonitors() bumps RLIMIT_NOVMON b
 **TIKU:** VFS watch slots are a fixed table (TIKU_VFS_WATCH_MAX, 8 by default) with no growth path; the rewrite must either grow it or define an explicit eviction/refusal rule, and the 'silently stops updating' failure mode must not be inherited.  
 **PORT:** This Tracker never allocates a per-folder watch: the device's liveness comes from the global change ring, one drain per cycle for every window.  The limit is the ring's DEPTH, not a slot count, and exhaustion is explicit -- the board counts drops, the drain reports them, and a set that moved the counter is treated as incomplete and answered with a full re-read rather than a quietly partial picture.
 
-#### AW-004 · core · open
+#### AW-004 · core · done
 **On quit, the set of open folder windows is written to an attribute on the Desktop directory so the same windows reopen next boot; if no windows were open the attribute is deleted.**  
 Flattened BMessage with "paths" strings (deduped), a per-path int8 flag (kOpenWindowNoFlags/kOpenWindowMinimized/kOpenWindowHasState), an "open_disks_window" bool for the root window, and optional "window state" sub-messages; written to kAttrOpenWindows on FSGetDeskDir(). Skipped entirely in safe mode.  
 `Tracker.cpp` → `TTracker::QuitRequested`  
 **TIKU:** Attribute-on-a-directory becomes a persist cell / durable node in the device namespace; the message must be replaced with an explicit serialized record, and the write must sit inside an NVM unlock window.
-**SUBSYSTEM:** session save/restore -- no open-window-set record exists: the only persisted keys are _trk/pinfo, _trk/columns, _trk/viewstate, _trk/original_path (src/tiku_trk_state.h:26-32), and the desktop teardown saves only per-folder view state before freeing (src/tiku_trk_desktop.c:2760-2768); nothing writes which windows were open  
+**PORT:** The set of open folder windows is written on the way out, in the
+order they were opened -- which is the order they come back in, and
+therefore which ends up in front -- and reopened when the shell is started
+with no path of its own.  A results window is not in it: reopening one would
+re-run a search nobody asked for again.  Quitting with nothing open CLEARS
+the record rather than leaving the last session to be restored for ever.
+*src/tiku_trk_frame.c:tiku_trk_session_save/_load/_clear;
+src/tiku_trk_desktop.c (the exit sweep and startup); tests/test_frame.c;
+tests/shell/session1.script and session2.script*  
+*Shell: desktop*  
 
 #### AW-005 · important · partial
 **Per-window state is embedded in the saved session only for windows that cannot save state to their own folder — a duplicate window, or a folder on a volume without writable attributes / read-only; such windows are then barred from writing state on close.**  
@@ -5556,12 +5625,16 @@ kRestoreWorkspace | (minimized ? kIsHidden : 0) | kRestoreDecor; state messages 
 `Tracker.cpp` → `TTracker::_OpenPreviouslyOpenedWindows`
 **SUBSYSTEM:** session save/restore -- startup opens hardcoded windows instead of a saved set: /sys/mem and /dev in device mode, argv paths or $HOME otherwise (src/tiku_trk_desktop.c:1620-1629); nothing reads a stored window list because none is ever written (see AW-004)  
 
-#### AW-007 · important · open
+#### AW-007 · important · partial
 **Booting in safe mode suppresses session restore, the desktop replicant shelf, the transient-query cleaner and the open-windows attribute write.**  
 BootedInSafeMode() guards in ReadyToRun, QuitRequested and BDeskWindow::Init.  
 `Tracker.cpp` → `TTracker::ReadyToRun / TTracker::QuitRequested`  
 **TIKU:** Equivalent is a recovery/minimal boot flag; worth keeping so a corrupt persisted namespace view cannot brick the shell.
-**BLOCKED:** everything safe mode would suppress is itself unbuilt: session restore is absent (no open-window key in src/tiku_trk_state.h:26-32), the replicant shelf is absent (AW-024's MISSING), and there is no transient-query cleaner (grep -i transient over src/ hits only unrelated comments at src/tiku_trk_backend_posix.c:122 and src/tiku_trk_poseview.c:250); no boot-mode flag exists anywhere in src/  
+**MISSING:** The one clause that has a subject here is built: started with
+-safe the shell restores no session and opens home instead.  The row's other
+clauses have nothing to suppress -- there are no replicants on a desktop
+that has no Desktop, and no add-ons.
+*src/tiku_trk_desktop.c (the -safe switch and the session branch)*
 
 #### AW-008 · important · open
 **The user cannot quit Tracker with the quit shortcut; pressing it while the settings window is active hides that window instead.**  

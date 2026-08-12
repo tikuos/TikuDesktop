@@ -52,6 +52,8 @@ typedef struct {
     const char *sel_name;   /* the first selected pose's name, or NULL   */
     const char *find_text;  /* what the Find panel is asking for         */
     const char *find_type;  /* the type it is narrowed to                */
+    int         win_x, win_y;   /* the focused window's frame            */
+    int         columns;        /* how many its list shows               */
     /* Bit 0: a row whose type is NOT the one the panel asked for.  Bit 1:
      * at least one row was looked at.  Together they say whether a search
      * really was narrowed. */
@@ -83,6 +85,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-find-text <text>             -- the Find panel's own field
  *     expect-find-type <label>
  *     expect-type-narrowed                -- every row is of the asked type
+ *     expect-window-at <x> <y>            -- the focused window's corner
+ *     expect-columns <n>
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

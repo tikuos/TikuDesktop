@@ -19,6 +19,14 @@ for s in "$here"/*.script; do
             "$bin") ;;
             *) continue ;;
         esac
+        # Every script starts from a clean desktop: window frames and the
+        # session persist now, so a script that inherited the last one's
+        # would be clicking wherever that left its windows.  The session
+        # PAIR is the exception -- inheriting is what it tests.
+        case $(basename "$s") in
+            session2.script) ;;
+            *) rm -f "$HOME/.local/share/tracker/devices/local.state" ;;
+        esac
         # The fixture every script starts from.  Rows sort folders first,
         # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
         # the click coordinates in the scripts are aimed at.
@@ -51,7 +59,13 @@ PYEOF
                            ;;
         esac
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
-        DISPLAY= "$root/build/$bin" $work -script "$s" || fails=$((fails+1))
+        # A script that says "# argv: none" is started with no path at all,
+        # which is the only way to exercise what the shell opens on its own.
+        if grep -q '^# argv: none' "$s"; then
+            DISPLAY= "$root/build/$bin" -script "$s" || fails=$((fails+1))
+        else
+            DISPLAY= "$root/build/$bin" $work -script "$s" || fails=$((fails+1))
+        fi
     done
 done
 rm -rf $work

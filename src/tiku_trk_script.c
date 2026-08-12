@@ -22,7 +22,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_FILE, OP_EXPECT_NO_FILE,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -236,6 +236,13 @@ tiku_trk_script_open(const char *path)
             rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-type-narrowed") == 0) {
             st->op = OP_EXPECT_FOLDERS;
+        } else if (strcmp(w[0], "expect-columns") == 0 && n >= 2) {
+            st->op = OP_EXPECT_COLS;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-window-at") == 0 && n >= 3) {
+            st->op = OP_EXPECT_WINAT;
+            st->x = atoi(w[1]);
+            st->y = atoi(w[2]);
         } else if (strcmp(w[0], "expect-perm") == 0 && n >= 3) {
             st->op = OP_EXPECT_PERM;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
@@ -440,6 +447,21 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, st != NULL && (st->kinds & 2) != 0 &&
                 (st->kinds & 1) == 0, "every row is of the asked type", "");
         return 1;
+    case OP_EXPECT_COLS: {
+        char n[32];
+
+        snprintf(n, sizeof n, "%d", cur->count);
+        verdict(s, st != NULL && st->columns == cur->count, "columns:", n);
+        return 1;
+    }
+    case OP_EXPECT_WINAT: {
+        char at[48];
+
+        snprintf(at, sizeof at, "%d,%d", cur->x, cur->y);
+        verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
+                "window at:", at);
+        return 1;
+    }
     case OP_EXPECT_PERM: {
         struct stat sb;
         char got[4];

@@ -1,0 +1,37 @@
+# shell: desktop
+# CW-001/AW-004, part one: a window is moved, and the session ends.  What it
+# left behind is what session2.script starts from -- the two scripts are one
+# test that a process boundary runs through.
+note the window opens where the cascade put it
+expect-window-at 45 40
+note it is dragged somewhere deliberate
+press 120 50
+move 300 200
+release 300 200
+wait 5
+expect-window-at 225 190
+note the columns it is left with are remembered too: this shell called
+note neither half of the pair, so every column change died with the window
+expect-columns 4
+note a second window, moved and CLOSED, is remembered by the close too --
+note not only by the quit
+click 260 227
+click 260 227
+wait 8
+expect-title /tmp/trk_script/sub
+note it opens cascaded, since its parent has no saved frame yet
+expect-window-at 67 62
+press 150 71
+move 500 400
+release 500 400
+wait 5
+expect-window-at 417 391
+key w ctrl
+wait 5
+note re-opening it brings it back where it was closed
+click 260 227
+click 260 227
+wait 8
+expect-title /tmp/trk_script/sub
+expect-window-at 417 391
+quit

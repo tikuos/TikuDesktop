@@ -29,6 +29,7 @@
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_nodeicon.h"
+#include "tiku_trk_frame.h"
 #include "tiku_trk_info.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_thumb.h"
@@ -109,6 +110,10 @@ typedef struct folder {
     tiku_trk_qrun_t     *run;
     int                  live;
     int                  gone;      /* the folder itself was removed      */
+    /* What the window opened with, so a close can tell whether it MOVED.
+     * Without it every window is written back on every close (CW-002). */
+    tiku_trk_frame_t     opened_with;
+    int                  had_frame;
 } folder_t;
 
 typedef struct desktop {
@@ -751,6 +756,28 @@ commit_edit(desktop_t *app, folder_t *fl)
  * Here the backdrop and the Deskbar ARE the application, so closing the last
  * folder must leave them standing.
  */
+/**
+ * @brief Write a folder window's frame back, if it moved (CW-001, CW-002).
+ *
+ * A folder that has GONE keeps no frame, for the same reason it keeps no
+ * arrangement: there is nothing left for the position to be the position of.
+ */
+static void
+save_frame_of(desktop_t *app, folder_t *fl)
+{
+    tiku_trk_frame_t now;
+
+    if (fl == NULL || fl->win == NULL || fl->gone) {
+        return;
+    }
+    now.x = (int32_t)fl->win->frame.x;
+    now.y = (int32_t)fl->win->frame.y;
+    now.w = (int32_t)fl->win->frame.w;
+    now.h = (int32_t)fl->win->frame.h;
+    (void)tiku_trk_frame_save(app->store, fl->path, &now,
+                              fl->had_frame ? &fl->opened_with : NULL);
+}
+
 static void
 close_window(desktop_t *app, tiku_trk_win_t *w)
 {
@@ -762,6 +789,8 @@ close_window(desktop_t *app, tiku_trk_win_t *w)
     fl = folder_of(app, w);
     if (fl != NULL) {
         (void)tiku_trk_poseview_save_state(fl->view);
+        (void)tiku_trk_poseview_save_columns(fl->view);
+        save_frame_of(app, fl);
     }
     tiku_trk_desk_close(app->desk, w);
     app->dirty = 1;
@@ -2920,6 +2949,11 @@ open_folder(desktop_t *app, const char *path)
         tiku_trk_poseview_set_font_metrics(fl->view, f->height, f->ascent);
     }
     tiku_trk_poseview_set_icon_hit(fl->view, pose_icon_hit, app);
+    /* The columns this folder was left with.  The pair has existed since
+     * the single-window shell was built and this shell called neither, so
+     * every column a user added, moved or resized here was discarded when
+     * the window closed (CW-005, MA-070). */
+    (void)tiku_trk_poseview_restore_columns(fl->view);
     (void)tiku_trk_poseview_restore_state(fl->view);
 
     /* Cascade, so a new window never lands exactly on the last one. */
@@ -2933,6 +2967,34 @@ open_folder(desktop_t *app, const char *path)
     frame.h = 300;
     app->cascade_x += CASCADE_STEP;
     app->cascade_y += CASCADE_STEP;
+    {
+        /* Where this folder's window WAS, if it has ever been open; failing
+         * that what its parent's window is, offset; failing that the
+         * cascade above.  This is the spatial promise: a folder opens where
+         * you left it (CW-001, CW-005). */
+        tiku_trk_frame_t fr;
+
+        fl->had_frame = tiku_trk_frame_load(app->store, path, &fr);
+        if (!fl->had_frame) {
+            /* Inherited frames are not the folder's own, so they are not
+             * remembered as one: only what the user does to the window
+             * counts as its place. */
+            if (tiku_trk_frame_inherit(app->store, path, &fr)) {
+                tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
+                frame.x = fr.x;
+                frame.y = fr.y;
+                frame.w = fr.w;
+                frame.h = fr.h;
+            }
+        } else {
+            tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
+            frame.x = fr.x;
+            frame.y = fr.y;
+            frame.w = fr.w;
+            frame.h = fr.h;
+            fl->opened_with = fr;
+        }
+    }
     if (app->cascade_x + frame.w > DESK_W ||
         app->cascade_y + frame.h > DESK_H) {
         app->cascade_x = CASCADE_HOME_X;
@@ -3576,6 +3638,10 @@ main(int argc, char **argv)
     int last_row = -1;
     const char *openme[TIKU_TRK_WIN_MAX];
     int nopen = 0;
+    /* Started deliberately plain: no session is restored.  The row's other
+     * clauses -- replicants, add-ons -- have nothing here to suppress
+     * (AW-007). */
+    int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
     for (i = 1; i < argc; i++) {
@@ -3593,6 +3659,7 @@ main(int argc, char **argv)
         }
         else if (strcmp(argv[i], "-shotpanel") == 0) { shot_panel = 1; }
         else if (strcmp(argv[i], "-shotlive") == 0) { shot_live = 1; }
+        else if (strcmp(argv[i], "-safe") == 0) { safe_mode = 1; }
         else if (strcmp(argv[i], "-shotshift") == 0) { shot_shift = 1; }
         else if (strcmp(argv[i], "-shotzoom") == 0) { shot_zoom = 1; }
         else if (strcmp(argv[i], "-shotcascade") == 0) { shot_cascade = 1; }
@@ -3695,8 +3762,25 @@ main(int argc, char **argv)
             (void)open_folder(&app, openme[i]);
         }
     } else {
-        const char *home = getenv("HOME");
-        (void)open_folder(&app, home ? home : "/");
+        /* What was open last time, if anything -- the windows come back
+         * where they were, which is the whole of the spatial promise
+         * (AW-004).  A safe start asks for nothing and gets home. */
+        char sess[TIKU_TRK_SESSION_MAX][TIKU_TRK_PATH_MAX];
+        int nsess = safe_mode ? 0
+                              : tiku_trk_session_load(app.store, sess,
+                                                      TIKU_TRK_SESSION_MAX);
+        int opened = 0;
+
+        for (i = 0; i < nsess; i++) {
+            if (open_folder(&app, sess[i]) != NULL) {
+                opened++;
+            }
+        }
+        if (opened == 0) {
+            const char *home = getenv("HOME");
+
+            (void)open_folder(&app, home ? home : "/");
+        }
     }
 
     if (script_path != NULL) {
@@ -3959,6 +4043,9 @@ main(int argc, char **argv)
                 sst.sel_name = NULL;
                 sst.find_text = app.panel.name_text;
                 sst.find_type = tiku_trk_find_type_label(&app.panel);
+                sst.columns = 0;
+                sst.win_x = (fw != NULL) ? fw->frame.x : -1;
+                sst.win_y = (fw != NULL) ? fw->frame.y : -1;
                 sst.kinds = 0;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
@@ -3986,6 +4073,12 @@ main(int argc, char **argv)
                         }
                     }
                     if (sfl != NULL) {
+                        {
+                            const tiku_trk_column_t *cols = NULL;
+
+                            sst.columns =
+                                tiku_trk_poseview_columns(sfl->view, &cols);
+                        }
                         sst.scroll = tiku_trk_poseview_scroll(sfl->view);
                         sst.rows = tiku_trk_poseview_count(sfl->view);
                     } else if (fw != NULL && fw == app.fpanel_win &&
@@ -5915,12 +6008,35 @@ sel_done:
         usleep((sc != NULL) ? 20000 : 10000);
     }
 
+    {
+        /* The set of windows that were open, in the order they were opened,
+         * which is the order they will come back in and therefore which
+         * ends up in front (AW-004). */
+        char open_now[TIKU_TRK_SESSION_MAX][TIKU_TRK_PATH_MAX];
+        int nsess = 0;
+
+        for (i = 0; i < app.folder_count && nsess < TIKU_TRK_SESSION_MAX;
+             i++) {
+            folder_t *fl = &app.folders[i];
+
+            if (fl->win == NULL || !fl->win->open || fl->gone ||
+                tiku_trk_poseview_is_query(fl->view)) {
+                /* A results window is not a place: reopening it would
+                 * re-run a search the user has not asked for again. */
+                continue;
+            }
+            snprintf(open_now[nsess++], TIKU_TRK_PATH_MAX, "%s", fl->path);
+        }
+        (void)tiku_trk_session_save(app.store, open_now, nsess);
+    }
     for (i = 0; i < app.folder_count; i++) {
         /* A folder that was deleted under us keeps no arrangement: writing
          * one at exit would resurrect a position for something that is not
          * there, and undo the deliberate skip taken when it went. */
         if (!app.folders[i].gone) {
             (void)tiku_trk_poseview_save_state(app.folders[i].view);
+            (void)tiku_trk_poseview_save_columns(app.folders[i].view);
+            save_frame_of(&app, &app.folders[i]);
         }
         tiku_trk_poseview_free(app.folders[i].view);
     }

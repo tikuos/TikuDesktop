@@ -30,6 +30,14 @@
  * so it travels with the file; this store is keyed by path, so the record
  * is written under the item's TRASHED path and moves with it there. */
 #define TIKU_TRK_ATTR_ORIGINAL    "_trk/original_path"
+/* Where a folder's WINDOW was.  Kept per folder, beside its arrangement,
+ * because a window belongs to the place it shows: one shared frame would
+ * make every folder open where the last one was left. */
+#define TIKU_TRK_ATTR_FRAME       "_trk/frame"
+/* The set of windows that were open when the session ended, and the state
+ * a folder falls back to when neither it nor its parent has one. */
+#define TIKU_TRK_ATTR_SESSION     "_trk/session"
+#define TIKU_TRK_ATTR_DEFAULTS    "_trk/window_default"
 
 /* Reserved node keys reproducing Tracker's three-slot split: state for
  * things that cannot hold it goes to a well-known slot rather than to the
@@ -37,6 +45,8 @@
  * Trash). */
 #define TIKU_TRK_KEY_DEV_ROOT  "\x01root"
 #define TIKU_TRK_KEY_DESKTOP   "\x01desk"
+/* The session's own slot: the set of open windows belongs to no folder. */
+#define TIKU_TRK_KEY_SESSION   "\x01session"
 
 typedef struct tiku_trk_store tiku_trk_store_t;
 

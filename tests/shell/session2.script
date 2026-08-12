@@ -1,0 +1,14 @@
+# shell: desktop
+# argv: none
+# CW-001/AW-004, part two: started with NO path at all, the shell reopens
+# what was open when it last quit, and each window comes back where it was.
+wait 8
+note the windows nobody asked for are the ones that were open last time
+expect-windows 2
+note reopened in the order they were opened, so the last one is in front
+expect-title /tmp/trk_script/sub
+note and each is where it was left, not where the cascade would put it
+expect-window-at 417 391
+note with the same columns the folder was left showing
+expect-columns 4
+quit
