@@ -1,0 +1,15 @@
+# shell: desktop
+# Copy-then-Paste in the multi-window shell: the operation the shell
+# silently dropped until the fs step was wired (cf468f8).
+key Down
+key Down
+note FS-051: Ctrl+C puts the selection on the clipboard
+key c ctrl
+wait 2
+expect-status clipboard
+note FS-056: pasting a COPIED item into its own folder duplicates it
+key v ctrl
+wait 20
+expect-file /tmp/trk_script/b.txt copy
+expect-file /tmp/trk_script/b.txt
+quit

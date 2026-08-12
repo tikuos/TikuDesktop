@@ -27,6 +27,7 @@
 
 #include "tiku_trk_attr.h"
 #include "tiku_trk_clip.h"
+#include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_iconpaint.h"
@@ -545,6 +546,32 @@ scan_teams(desktop_t *app)
         (void)tiku_trk_deskbar_add_team(app->deskbar, name);
     }
     (void)closedir(d);
+}
+
+/**
+ * @brief The character a key event types, or 0.
+ *
+ * With no display there is no keyboard map to consult, so a Latin-1 keysym
+ * stands for itself -- which is all a script needs in order to type.
+ */
+static char
+key_char(desktop_t *app, XKeyEvent *ev, KeySym ks)
+{
+    char buf[8];
+
+    if (app->dpy != NULL) {
+        return (XLookupString(ev, buf, sizeof buf, NULL, NULL) == 1)
+                   ? buf[0] : (char)0;
+    }
+    if (ks >= 0x20 && ks < 0x7f) {
+        char c = (char)ks;
+
+        if ((ev->state & ShiftMask) != 0u && c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        return c;
+    }
+    return (char)0;
 }
 
 static void
@@ -1390,6 +1417,22 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                  (tiku_trk_clip_count(&app->clip) == 1) ? "" : "s");
         break;
     }
+    case TIKU_TRK_CMD_NEW_FOLDER: {
+        char made[TIKU_TRK_PATH_MAX], err[200];
+
+        if (app->fs != NULL &&
+            tiku_trk_fs_new_folder(app->fs, fl->path, made, sizeof made,
+                                   err, sizeof err) == 0) {
+            const char *slash = strrchr(made, '/');
+
+            snprintf(app->status, sizeof app->status, "created '%.60s'",
+                     (slash != NULL) ? slash + 1 : made);
+        } else {
+            snprintf(app->status, sizeof app->status, "%.150s",
+                     err[0] ? err : "could not create a new folder");
+        }
+        break;
+    }
     case TIKU_TRK_CMD_PASTE:
     case TIKU_TRK_CMD_PASTE_LINKS: {
         char paths[64][TIKU_TRK_PATH_MAX];
@@ -1594,6 +1637,10 @@ folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
 static void
 blit(desktop_t *app)
 {
+    if (app->dpy == NULL) {
+        return;                     /* displayless: the surface IS the
+                                     * output, and -shot writes it */
+    }
     memcpy(app->img->data, app->surf->px,
            (size_t)app->surf->w * (size_t)app->surf->h * 4u);
     XPutImage(app->dpy, app->win, app->gc, app->img, 0, 0, 0, 0,
@@ -1655,7 +1702,9 @@ int
 main(int argc, char **argv)
 {
     desktop_t app;
-    const char *port = NULL, *shot = NULL;
+    const char *port = NULL, *shot = NULL, *script_path = NULL;
+    tiku_trk_script_t *sc = NULL;
+    int rc = 0;
     int baud = 115200, use_device = 0, i;
     int64_t shot_at = 0, deadline = 0, last_pump = 0, last_requery = 0;
     int shot_menu = 0;
@@ -1674,6 +1723,7 @@ main(int argc, char **argv)
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { baud = atoi(argv[++i]); }
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { shot = argv[++i]; }
         else if (strcmp(argv[i], "-shotmenu") == 0) { shot_menu = 1; }
+        else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { script_path = argv[++i]; }
         else if (strcmp(argv[i], "-shotedit") == 0 && i + 1 < argc) {
             shot_edit = argv[++i];
         }
@@ -1754,12 +1804,22 @@ main(int argc, char **argv)
         (void)open_folder(&app, home ? home : "/");
     }
 
-    app.dpy = XOpenDisplay(NULL);
-    if (app.dpy == NULL) {
-        fprintf(stderr, "tracker: no display\n");
-        return 1;
+    if (script_path != NULL) {
+        /* Displayless.  The shell draws into the same surface either way,
+         * so a scripted run exercises the real draw path -- it just has
+         * nobody to show it to (see tiku_trk_script.h). */
+        sc = tiku_trk_script_open(script_path);
+        if (sc == NULL) {
+            return 2;
+        }
+    } else {
+        app.dpy = XOpenDisplay(NULL);
+        if (app.dpy == NULL) {
+            fprintf(stderr, "tracker: no display\n");
+            return 1;
+        }
     }
-    {
+    if (app.dpy != NULL) {
         int scr = DefaultScreen(app.dpy);
         app.win = XCreateSimpleWindow(app.dpy, RootWindow(app.dpy, scr), 0, 0,
                                       DESK_W, DESK_H, 0,
@@ -1969,9 +2029,64 @@ main(int argc, char **argv)
     app.dirty = 1;
 
     while (app.running) {
-        while (XPending(app.dpy) > 0) {
+        for (;;) {
             XEvent ev;
-            XNextEvent(app.dpy, &ev);
+            KeySym ev_ks = NoSymbol;
+            int have = 0;
+
+            memset(&ev, 0, sizeof ev);
+            if (sc != NULL) {
+                /* One instruction per turn, so the deferred work between
+                 * turns -- a stepped copy, the armed rename, the notice
+                 * poll -- happens where it happens on a real clock. */
+                tiku_trk_script_step_t sp;
+                tiku_trk_script_state_t sst;
+                tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+
+                sst.status = app.status;
+                sst.title = (fw != NULL) ? fw->title : NULL;
+                if (!tiku_trk_script_pump(sc, &sst, &sp)) {
+                    app.running = 0;
+                    break;
+                }
+                switch (sp.what) {
+                case TIKU_TRK_SC_KEY:
+                    ev.type = KeyPress;
+                    ev.xkey.state = sp.state;
+                    ev_ks = sp.ks;
+                    have = 1;
+                    break;
+                case TIKU_TRK_SC_PRESS:
+                case TIKU_TRK_SC_RELEASE:
+                    ev.type = (sp.what == TIKU_TRK_SC_PRESS) ? ButtonPress
+                                                             : ButtonRelease;
+                    ev.xbutton.x = sp.x;
+                    ev.xbutton.y = sp.y;
+                    ev.xbutton.state = sp.state;
+                    ev.xbutton.button = sp.button;
+                    ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
+                    have = 1;
+                    break;
+                case TIKU_TRK_SC_SHOT:
+                    draw_all(&app);
+                    (void)tiku_desk_surface_png(app.surf, sp.path);
+                    break;
+                case TIKU_TRK_SC_QUIT:
+                    app.running = 0;
+                    break;
+                default:
+                    break;
+                }
+            } else if (app.dpy != NULL && XPending(app.dpy) > 0) {
+                XNextEvent(app.dpy, &ev);
+                if (ev.type == KeyPress) {
+                    ev_ks = XLookupKeysym(&ev.xkey, 0);
+                }
+                have = 1;
+            }
+            if (!have) {
+                break;
+            }
             switch (ev.type) {
             case Expose:
                 app.dirty = 1;
@@ -2373,7 +2488,7 @@ main(int argc, char **argv)
                  * edge that tells it to.  Handled on BOTH key edges, since
                  * releasing Shift has to put the labels back. */
                 if (app.popup != NULL) {
-                    KeySym mk = XLookupKeysym(&ev.xkey, 0);
+                    KeySym mk = ev_ks;
 
                     if (mk == XK_Shift_L || mk == XK_Shift_R ||
                         mk == XK_Control_L || mk == XK_Control_R) {
@@ -2409,7 +2524,7 @@ main(int argc, char **argv)
                     break;
                 }
                 {
-                KeySym ks = XLookupKeysym(&ev.xkey, 0);
+                KeySym ks = ev_ks;
                 tiku_trk_win_t *w = tiku_trk_desk_focused(app.desk);
                 folder_t *fl = folder_of(&app, w);
                 unsigned mods = 0;
@@ -2428,11 +2543,10 @@ main(int argc, char **argv)
                     } else if (ks == XK_BackSpace) {
                         tiku_trk_find_backspace(&app.panel);
                     } else {
-                        char ch[8];
-                        int n = XLookupString(&ev.xkey, ch, sizeof ch, NULL,
-                                              NULL);
-                        if (n == 1) {
-                            tiku_trk_find_key(&app.panel, ch[0]);
+                        char typed = key_char(&app, &ev.xkey, ks);
+
+                        if (typed != '\0') {
+                            tiku_trk_find_key(&app.panel, typed);
                         }
                     }
                     app.dirty = 1;
@@ -2452,12 +2566,11 @@ main(int argc, char **argv)
                         }
                         app.dirty = 1;
                     } else {
-                        char ch[8];
-                        int n = XLookupString(&ev.xkey, ch, sizeof ch, NULL,
-                                              NULL);
-                        if (n == 1 && ch[0] >= 0x20 && ch[0] < 0x7F &&
+                        char typed = key_char(&app, &ev.xkey, ks);
+
+                        if (typed >= 0x20 && typed < 0x7F &&
                             app.find_len < (int)sizeof app.find_buf - 1) {
-                            app.find_buf[app.find_len++] = ch[0];
+                            app.find_buf[app.find_len++] = typed;
                             app.find_buf[app.find_len] = '\0';
                             app.dirty = 1;
                         }
@@ -2469,7 +2582,6 @@ main(int argc, char **argv)
                 if (app.sel_win != NULL && app.sel_win->open &&
                     tiku_trk_desk_focused(app.desk) == app.sel_win) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    char ch[8];
                     int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
                     char c = '\0';
 
@@ -2499,11 +2611,10 @@ main(int argc, char **argv)
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        if (XLookupString(&ev.xkey, ch, sizeof ch, NULL,
-                                          NULL) != 1) {
+                        c = key_char(&app, &ev.xkey, ks);
+                        if (c == '\0') {
                             goto sel_done;
                         }
-                        c = ch[0];
                     }
                     (void)tiku_trk_edit_key(&app.sel.expr, k, shift, c);
                     app.dirty = 1;
@@ -2512,7 +2623,6 @@ sel_done:
                 }
                 if (app.renaming) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    char ch[8];
                     int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
                     char c = '\0';
 
@@ -2529,11 +2639,10 @@ sel_done:
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        if (XLookupString(&ev.xkey, ch, sizeof ch, NULL,
-                                          NULL) != 1) {
+                        c = key_char(&app, &ev.xkey, ks);
+                        if (c == '\0') {
                             break;
                         }
-                        c = ch[0];
                     }
                     switch (tiku_trk_edit_key(&app.ren, k, shift, c)) {
                     case TIKU_TRK_EDIT_COMMITTED: commit_rename(&app, 1); break;
@@ -2545,7 +2654,6 @@ sel_done:
                 }
                 if (app.editing) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    char ch[8];
                     int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
                     char c = '\0';
 
@@ -2562,11 +2670,10 @@ sel_done:
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        if (XLookupString(&ev.xkey, ch, sizeof ch, NULL,
-                                          NULL) != 1) {
+                        c = key_char(&app, &ev.xkey, ks);
+                        if (c == '\0') {
                             break;
                         }
-                        c = ch[0];
                     }
                     switch (tiku_trk_edit_key(&app.ed, k, shift, c)) {
                     case TIKU_TRK_EDIT_COMMITTED:
@@ -2598,7 +2705,8 @@ sel_done:
                     int rx, ry, wx, wy;
                     unsigned msk;
 
-                    if (!XQueryPointer(app.dpy, app.win, &r1, &c1, &rx, &ry,
+                    if (app.dpy == NULL ||
+                        !XQueryPointer(app.dpy, app.win, &r1, &c1, &rx, &ry,
                                        &wx, &wy, &msk)) {
                         wx = DESK_W / 2;
                         wy = DESK_H / 2;
@@ -2647,6 +2755,12 @@ sel_done:
                         (ks == XK_minus || ks == XK_KP_Subtract) ? 0 : 1);
                     tiku_trk_poseview_cleanup(fl->view,
                                               tiku_trk_win_content(fl->win).w);
+                    app.dirty = 1;
+                    break;
+                }
+                if (ks == XK_n && (ev.xkey.state & ControlMask) &&
+                    fl != NULL) {
+                    menu_invoke(&app, fl, TIKU_TRK_CMD_NEW_FOLDER);
                     app.dirty = 1;
                     break;
                 }
@@ -2733,6 +2847,9 @@ sel_done:
                 break;
             default:
                 break;
+            }
+            if (sc != NULL) {
+                break;              /* one instruction per turn */
             }
         }
 
@@ -2915,7 +3032,9 @@ sel_done:
         if (deadline > 0 && tiku_trk_now() > deadline) {
             app.running = 0;
         }
-        usleep(10000);
+        if (sc == NULL) {
+            usleep(10000);          /* a script has no reason to wait */
+        }
     }
 
     for (i = 0; i < app.folder_count; i++) {
@@ -2933,10 +3052,16 @@ sel_done:
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
     drain_fs(app.fs);
+    if (sc != NULL) {
+        rc = tiku_trk_script_report(sc, "desktop");
+        tiku_trk_script_free(sc);
+    }
     tiku_trk_fs_free(app.fs);
     tiku_trk_backend_close(app.backend);
-    XDestroyImage(app.img);
-    XCloseDisplay(app.dpy);
+    if (app.dpy != NULL) {
+        XDestroyImage(app.img);
+        XCloseDisplay(app.dpy);
+    }
     tiku_desk_surface_free(app.surf);
-    return 0;
+    return rc;
 }

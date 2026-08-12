@@ -340,6 +340,38 @@ fullness fact that nothing computed, and a menu-context assignment that
 nothing made -- three absences behind one icon, which is why Empty Trash had
 been permanently disabled.
 
+### The shell harness (2026-08-12)
+
+Both front-ends are the product, so every shell row costs double to prove,
+and the engine's 781 checks had already hidden a shell that queued file work
+and never ran it.  `tests/shell/*.script` now drives the real binaries with
+**no X server**: each has one `XOpenDisplay`, all drawing goes to an
+in-memory surface, and `-shot` already wrote that surface to a PNG -- so a
+scripted run exercises the true draw and event path and simply has nobody to
+show it to.  A script is a contract row written as keystrokes and assertions:
+
+    note FS-056: pasting a COPIED item into its own folder duplicates it
+    key c ctrl
+    wait 2
+    expect-status clipboard
+    key v ctrl
+    wait 20
+    expect-file /tmp/trk_script/b.txt copy
+
+`# shell: both` runs it against both binaries, which is the whole point.
+`make test` runs them after the unit suites.
+
+Two things it proved on its first run.  It caught a real gap immediately --
+Ctrl+N created a folder in the single-window shell and did nothing in the
+multi-window one, exactly as AW-033's audit note predicted -- and that is now
+fixed rather than papered over by narrowing the script.  And a mutation
+removing `tiku_trk_fs_step` from the desktop shell is CAUGHT, which is the
+defect that shipped undetected two days ago.
+
+A script that asserts nothing reports "no checks were made" and exits
+non-zero, because a green suite that cannot go red is the failure mode this
+harness exists to stop.
+
 One caveat on the count as a whole: `BLOCKED:` lines exist only in FS,
 because FS is the only area whose open rows have been read against the port
 to find out what they wait on.  The other eleven areas hold 396 open rows
@@ -436,7 +468,7 @@ ScrollTo() writes Extent().LeftTop() into fViewState->SetListOrigin() or SetIcon
 `PoseView.cpp` → `BPoseView::ScrollTo / BPoseView::SetViewMode / BPoseView::InitCommon`  
 **MISSING:** Only the list origin survives a mode round-trip, and only because set_mode never touches v->scroll (poseview.c:1891-1914); the icon modes have no scroll origin to remember at all — the icon viewport cannot scroll (poseview.c:2118-2120 "this view does not scroll in icon mode yet"; app.c:439-448 draw_icons ignores any scroll) — and neither origin is pinned or restored per mode.  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:1891-1914 (set_mode leaves v->scroll alone)` `src/tiku_trk_poseview.c:2118-2120 (no icon-mode scrolling)` `src/tiku_trk_app.c:1119-1122 (Ctrl+1/2/3 mode switch), :1451-1455 (wheel scrolls the list)`*  
-*Shell: app*  
+*Shell: both*  
 #### PVL-010 · polish · open
 **Changing icon size keeps the visual centre of the view roughly fixed instead of jumping to the top-left.**  
 SetViewMode converts the bounds centre into unscaled (32px) space with oldScale = lastIconSize/32, back out with newScale = iconSize/32, and applies the difference as scaleOffset added to the restored icon origin. Skipped on the Desktop.  
@@ -626,7 +658,7 @@ TScrollBar (the horizontal bar) holds the title view and mirrors its value into 
 `PoseView.cpp` → `TScrollBar::ValueChanged / TScrollBar::SetTitleView`  
 **PORT:** Titles and rows are placed from one shared hscroll variable, so horizontal scrolling cannot desynchronise them: col_x() subtracts tiku_trk_poseview_hscroll() and is used by both draw_title() and the row cells (and the resize guide line); Shift+wheel writes the value through set_hscroll(), which clamps to the total column width. The desktop shell's folder windows have no horizontal scrolling at all, so the behaviour is reachable from the app shell only.  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:92 (hscroll field: "titles and rows share it")` `src/tiku_trk_poseview.c:4006-4024 (hscroll get/set, clamped to columns_width)` `src/tiku_trk_app.c:158-162 (col_x subtracts hscroll)`*  
-*Shell: app*  
+*Shell: both*  
 #### PVL-041 · core · partial
 **Column layout, sort keys, view mode, icon size and scroll origins persist per folder and reload with it.**  
 Columns are serialised to kAttrColumns and the view state to kAttrViewState (kAttrDesktopViewState for the Desktop, kAttrDisksColumns / kAttrDisksViewState for the Disks/root window), each with a byte-swapped "foreign" fallback attribute that is read when the native one is missing and deleted whenever the native one is written. Attributes larger than 10000 bytes are rejected as munged.  
@@ -1027,7 +1059,7 @@ BPoseView::NewFolder: FSCreateNewFolderIn -> PlaceFolder -> EntryCreated -> (re-
 `PoseView.cpp` → `BPoseView::NewFolder`  
 **MISSING:** The inline rename does not open after creation — the code says so itself ("Tracker opens the name for editing straight away; here the folder is at least selected", app.c:1227-1229) even though a rename editor exists (begin_rename); and in the desktop shell New folder is in the File menu and enabled by the rules (cwmenu.c:127, shortcuts.c:270-271) but menu_invoke has no TIKU_TRK_CMD_NEW_FOLDER case, so choosing it does nothing.  
 *Audited 2026-08-12: `src/tiku_trk_app.c:1215-1243 (Ctrl+N: fs_new_folder + select via poseview_click)` `src/tiku_trk_fs.c:2047-2092 (new_folder_name/new_folder + undo_reset)` `src/tiku_trk_desktop.c:1042-1370 (menu_invoke: no NEW_FOLDER case; default is a no-op)`*  
-*Shell: app*  
+*Shell: both*  
 #### PVL-100 · important · open ⟨found by verification⟩
 **Dropping data from another application that has no files yet negotiates a file into existence: Tracker creates an empty clipping file and replies B_COPY_TARGET/B_MOVE_TARGET so the originator fills it in; dropping such a drag on the Trash replies B_TRASH_TARGET instead.**  
 BPoseView::HandleDropCommon, the srcWindow == NULL branch: FindDragNDropAction decodes be:actions; canErase + CanTrashForeignDrag -> reply B_TRASH_TARGET; otherwise CanCopyOrMoveForeignDrag + CreateClippingFile("Untitled clipping") and a reply carrying be:types, "directory", "name", the originator data and the offered be:filetypes. With the secondary button held, a menu of "Create %s clipping" types (or of be:actionspecifier strings) is run first and cancelling it aborts the drop.  
@@ -3441,7 +3473,7 @@ ReadValue: volume -> BVolume::Capacity() with fValueIsDefined = (capacity != 0);
 *none found*  
 **MISSING:** Symlinks still print a size (KIND_SYMLINK is not a container — model.c:24-35 — so facts.size renders), and a volume shows '-' rather than its capacity: no capacity fact exists anywhere (tiku_trk_facts_t has only size/mtime, model.h:63-74; grep 'capacity' over src/ is empty). Also, no shell UI can add the Size column fresh (app shell: toggle only via titleview.c:250-269 remove-hysteresis; desktop shell toggles at desktop.c:1126 but draws only name+value, desktop.c:253-306).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:212-218` `src/tiku_trk_attr.c:395-416` `src/tiku_trk_model.c:24-35`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-025 · core · done
 **Dates pick the longest format that fits the column, degrading from long date + medium time down to short date + short time, then to a bare short date, and only then to an ellipsis.**  
 Tries in order {B_LONG_DATE_FORMAT,B_MEDIUM_TIME_FORMAT}, {B_LONG_DATE,B_SHORT_TIME}, {B_MEDIUM_DATE,B_SHORT_TIME}, {B_SHORT_DATE,B_SHORT_TIME}; stops at the first that fits. If none fit, formats with BDateFormat B_SHORT_DATE_FORMAT alone. If that still does not fit, TruncStringBase with the default middle-ellipsis. PreferredWidth measures the format at a 100000px width, i.e. the longest form.  
@@ -3687,21 +3719,21 @@ ArchiveToStream writes AttrHashString("BColumn", B_OBJECT_TYPE) then kColumnStat
 **TIKU:** BFS attributes are gone; per-folder column state needs a decided home (persist cell keyed by path hash, an NVM-region file, or a sidecar). Note the 4 KB durable budget on the smallest targets — one blob per folder will not fit there.  
 **MISSING:** The record identifies a column only by built-in field id (key/version/field/offset/width/alignment, poseview.c:3581-3588); attribute name and type, stat-field, editable and display-as are not recorded because arbitrary attribute columns do not exist — a column outside the six built-ins cannot be described, persisted or restored.  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3581-3591` `src/tiku_trk_poseview.c:3638-3651` `src/tiku_trk_poseview.c:3756-3768`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-059 · important · done
 **Column widths follow the system font size across sessions: a saved layout re-opened at a larger font comes back proportionally wider.**  
 Offsets and widths are divided by _Scale() = be_plain_font->Size() / 12.0f on write (floorf) and multiplied back on read (ceilf), in both the stream and message flavors. _Init also scales the width passed to the constructor.  
 `ViewState.cpp` → `BColumn::_Scale`  
 **PORT:** Widths and offsets are stored in reference-font units (TIKU_TRK_FONT_REF 12): scale_out divides by the live font px rounding DOWN on write, scale_in multiplies rounding UP on read — the same floor/ceil discipline as BColumn::_Scale — and the shell wires the real font (app.c passes the plain font height). Tested: a layout saved at 12 comes back doubled at 24 and returns to itself at 12 (tests/test_title.c:649-657); the corrupt-record bound is even checked on the scaled value so the ceiling cannot grow with the font (test_title.c:726-733). Reachable from the app shell (restore at startup app.c:1346, save on title-gesture release app.c:1701); the desktop shell has no column persistence at all.  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3608-3622` `src/tiku_trk_poseview.c:3643-3644` `src/tiku_trk_poseview.c:3763`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-060 · important · done
 **A corrupt or hostile saved column is discarded rather than producing a broken title bar.**  
 _Sanitize rejects the column when the title exceeds 500 characters, the offset is negative or above 10000, the width is negative or above 10000, the alignment is outside B_ALIGN_LEFT..B_ALIGN_CENTER, or the attribute name exceeds 500 characters. The caller simply gets NULL and stops reading further columns.  
 `ViewState.cpp` → `BColumn::_Sanitize`  
 **PORT:** A corrupt or hostile saved column is discarded, strictly harder than the source: restore_columns rejects the blob on non-whole-record size, record count over the max, wrong key or version, scaled width/offset outside 0..10000, alignment outside LEFT..CENTER, field id out of range, a duplicated field, or a missing Name column — and the old layout stands. The title/attr-name length checks have no counterpart because the record stores a field id, not strings (nothing hostile to overflow). Six forged-record cases assert the width is unchanged (tests/test_title.c:682-746). Adaptation vs source: whole-blob rejection instead of stop-at-first-bad NULL. App shell only (columns restore is wired only there).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3686-3751` `tests/test_title.c:682-746` `src/tiku_trk_app.c:1346`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-061 · core · partial
 **A folder's saved view state records view mode, last icon mode, both scroll origins, primary and secondary sort attribute and type, reverse-sort, and both icon sizes.**  
 _ArchiveToStream writes AttrHashString("BViewState", B_OBJECT_TYPE) then kViewStateArchiveVersion (11), then the eleven fields in that fixed order. Reads require an exact version match (ValidateStream / an explicit compare for the message flavor), so a version bump silently discards every stored folder layout.  
@@ -3741,7 +3773,7 @@ RestoreColumnState / RestoreState first ask node->Contains(nativeName, B_RAW_TYP
 **TIKU:** Single-architecture: delete the twin names, but keep the general shape — a stored blob whose layout does not match must be rejected, not misread.  
 **PORT:** Adapted exactly as the row's TIKU note directs (twin names deleted, reject-don't-misread kept) — and then some: a column layout written by a host of the other byte order IS still honored. The order is carried by the in-record key stamp instead of a foreign attribute name: when the key reads byte-swapped, every scalar in the record is swapped (key, version, field, offset, width, alignment), and a blob whose records disagree about their own order is refused whole. Tested both ways: a hand-byte-swapped layout restores with its widths intact, and a mixed blob returns 0 (tests/test_title.c:752-786). The view-state record is text and the pose-info record, which has no stamp, rejects any swapped position via the sanity bound. App shell only (restore_columns is wired only there).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3572-3588` `src/tiku_trk_poseview.c:3695-3719` `src/tiku_trk_poseview.c:2482-2485`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-066 · important · done
 **A missing, empty or absurdly large state attribute is ignored and the folder falls back to defaults instead of showing garbage.**  
 Both RestoreColumnState and RestoreState only proceed when 0 < size < 10000, explicitly to guard against munged attributes. Column instantiation loops until InstantiateFromStream returns NULL, so a truncated stream simply yields fewer columns.  
@@ -3763,7 +3795,7 @@ AddColumnList sorts by CompareColumns, then walks assigning column->SetOffset(ne
 `PoseView.cpp` → `BPoseView::AddColumnList`  
 **PORT:** Restored columns keep saved widths and order but always get fresh left-to-right offsets: the saved offsets are used ONCE to sort (rec_cmp) and thrown away, then reflow_columns re-derives every position from start_offset advancing by width + margin — so overlap and gaps cannot come back. Resize and reorder recompute the same way (both call reflow_columns and set state_dirty), matching ResizeColumn/MoveColumnTo. The test asserts 'positions are re-derived from the start, never restored' (tests/test_title.c:640-647). The date-format-change watch in AddColumnList has no counterpart (no locale date-format machinery), but that is the source's mechanism note, not this row's promise. Reachable from the app shell (titleview gestures + restore at app.c:1346).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:3752-3770` `src/tiku_trk_poseview.c:3798-3811` `src/tiku_trk_poseview.c:3828-3849`*  
-*Shell: app*  
+*Shell: both*  
 #### MA-069 · polish · open
 **The Desktop can never end up in list mode, even if a saved state says so.**  
 Both RestoreState overloads end with: if (IsDesktopView() && ViewMode() == kListMode) fViewState->SetViewMode(kIconMode), described in the source as recovering from a wrongly-set desktop window view state.  
@@ -5337,9 +5369,9 @@ Documents: Thread::Launch of LaunchAndCloseParentIfOK -> synchronous TrackerLaun
 SelectChildInParentSoon -> RunLater(SelectChildInParent, 100ms delay, 200ms period, 5s timeout); returns true (task done) only when FindPose succeeds.  
 `Tracker.cpp` → `TTracker::SelectChildInParentSoon / TTracker::SelectChildInParent`  
 **TIKU:** Polling for 'has the watcher delivered the create yet' maps directly onto TIKU_EVENT_VFS; the rewrite can make this event-driven, but must keep a timeout.  
-**MISSING:** only Ctrl+N in the single-window shell selects the created entry, and only because the create is synchronous (src/tiku_trk_app.c:1215-1243); there is no retry-until-it-shows-up with a 5 s timeout (the task-loop that would host it, tiku_trk_task.c:139-159, is instantiated only by tests/test_task.c -- tiku_trk_loop_new has no caller in src/), duplicate/paste/copy select nothing, and the desktop shell cannot create at all (TIKU_TRK_CMD_NEW_FOLDER falls through menu_invoke's default no-op, src/tiku_trk_desktop.c:1366-1371) and never selects a created entry.  
+**MISSING:** There is still no retry-until-it-shows-up with a 5 s timeout (the task loop that would host it is instantiated by no shell), and only the new-folder operation selects what it made -- duplicate and paste select nothing.  The desktop shell's half is no longer missing: Ctrl+N creates and names a folder there too, proven by tests/shell/smoke.script in both binaries.
 *Audited 2026-08-12: `src/tiku_trk_app.c:1215-1243 (fs_new_folder -> after_op -> index_of_path -> poseview_click)` `src/tiku_trk_desktop.c:1366-1371 (menu_invoke default: NEW_FOLDER does nothing in the desktop shell)` `src/tiku_trk_task.c:139-159 (unused retry machinery)`*  
-*Shell: app*  
+*Shell: both*  
 #### AW-034 · important · open
 **Refs forwarded to a handler keep the originating pose view's messenger and any be:* fields (e.g. be:line / be:column from /bin/open), so line-jumping and scripting-back still work.**  
 If "TrackerViewToken" messenger present it is copied alone; otherwise every field whose name starts with "be:" is copied into the bundled message. "nodeRefsToClose" / "nodeRefToSelect" are read per-index as B_RAW_TYPE data.  

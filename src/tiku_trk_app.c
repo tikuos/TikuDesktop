@@ -31,6 +31,7 @@
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_titleview.h"
+#include "tiku_trk_script.h"
 #include "tiku_trk_task.h"
 
 #define WIN_W 760
@@ -670,6 +671,10 @@ draw(app_t *a)
 static void
 blit(app_t *a)
 {
+    if (a->dpy == NULL) {
+        return;                     /* displayless: the surface IS the
+                                     * output, and -shot writes it */
+    }
     memcpy(a->img->data, a->surf->px,
            (size_t)a->surf->w * (size_t)a->surf->h * 4u);
     XPutImage(a->dpy, a->win, a->gc, a->img, 0, 0, 0, 0,
@@ -688,7 +693,9 @@ retitle(app_t *a)
         snprintf(a->title, sizeof a->title, "%s",
                  tiku_trk_poseview_path(a->view));
     }
-    XStoreName(a->dpy, a->win, a->title);
+    if (a->dpy != NULL) {
+        XStoreName(a->dpy, a->win, a->title);
+    }
 }
 
 /**
@@ -936,6 +943,32 @@ open_selection(app_t *a)
     a->dirty = 1;
 }
 
+/**
+ * @brief The character a key event types, or 0.
+ *
+ * With no display there is no keyboard map to consult, so a Latin-1 keysym
+ * stands for itself -- which is all a script needs in order to type.
+ */
+static char
+key_char(app_t *a, XKeyEvent *ev, KeySym ks)
+{
+    char buf[8];
+
+    if (a->dpy != NULL) {
+        return (XLookupString(ev, buf, sizeof buf, NULL, NULL) == 1)
+                   ? buf[0] : (char)0;
+    }
+    if (ks >= 0x20 && ks < 0x7f) {
+        char c = (char)ks;
+
+        if ((ev->state & ShiftMask) != 0u && c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        return c;
+    }
+    return (char)0;
+}
+
 /** @brief Row under a point, or -1 for empty space / the title bar. */
 static int
 row_at(app_t *a, int px, int py)
@@ -971,10 +1004,8 @@ title_hit(app_t *a, int px, int py, int *cx, int *cy)
 }
 
 static void
-handle_key(app_t *a, XKeyEvent *ev)
+handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
 {
-    KeySym ks = XLookupKeysym(ev, 0);
-    char buf[8];
     unsigned mods = 0;
     int nav = 0;
 
@@ -1002,10 +1033,10 @@ handle_key(app_t *a, XKeyEvent *ev)
         default: break;
         }
         if (k == TIKU_TRK_EDIT_CHAR) {
-            if (XLookupString(ev, buf, sizeof buf, NULL, NULL) != 1) {
+            ch = key_char(a, ev, ks);
+            if (ch == '\0') {
                 return;
             }
-            ch = buf[0];
         }
         switch (tiku_trk_edit_key(&a->ed, k, shift, ch)) {
         case TIKU_TRK_EDIT_COMMITTED: end_rename(a, 1); break;
@@ -1290,10 +1321,13 @@ handle_key(app_t *a, XKeyEvent *ev)
     default:
         break;
     }
-    if (XLookupString(ev, buf, sizeof buf, NULL, NULL) == 1 &&
-        buf[0] >= 0x20 && buf[0] < 0x7f) {
-        tiku_trk_poseview_type_ahead(a->view, buf[0]);
-        a->dirty = 1;
+    {
+        char typed = key_char(a, ev, ks);
+
+        if (typed >= 0x20 && typed < 0x7f) {
+            tiku_trk_poseview_type_ahead(a->view, typed);
+            a->dirty = 1;
+        }
     }
 }
 
@@ -1306,6 +1340,9 @@ main(int argc, char **argv)
     int64_t last_click_us = 0, deadline_us = 0;
     int last_click_row = -1;
     const char *shot = NULL;
+    const char *script_path = NULL;
+    tiku_trk_script_t *sc = NULL;
+    int rc = 0;
     int64_t shot_at_us = 0;
 
     memset(&a, 0, sizeof a);
@@ -1318,6 +1355,7 @@ main(int argc, char **argv)
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { port = argv[++i]; use_device = 1; }
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { baud = atoi(argv[++i]); }
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { shot = argv[++i]; }
+        else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { script_path = argv[++i]; }
         else if (strcmp(argv[i], "-seconds") == 0 && i + 1 < argc) { deadline_us = tiku_trk_now() + (int64_t)atoi(argv[++i]) * 1000000; }
         else                                                 { start = argv[i]; }
     }
@@ -1347,12 +1385,22 @@ main(int argc, char **argv)
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
     a.row_h = LIST_ROW_H;
 
-    a.dpy = XOpenDisplay(NULL);
-    if (a.dpy == NULL) {
-        fprintf(stderr, "tracker: no display\n");
-        return 1;
+    if (script_path != NULL) {
+        /* Displayless.  The shell draws into the same surface either way,
+         * so a scripted run exercises the real draw path -- it just has
+         * nobody to show it to (see tiku_trk_script.h). */
+        sc = tiku_trk_script_open(script_path);
+        if (sc == NULL) {
+            return 2;
+        }
+    } else {
+        a.dpy = XOpenDisplay(NULL);
+        if (a.dpy == NULL) {
+            fprintf(stderr, "tracker: no display\n");
+            return 1;
+        }
     }
-    {
+    if (a.dpy != NULL) {
         int scr = DefaultScreen(a.dpy);
         a.win = XCreateSimpleWindow(a.dpy, RootWindow(a.dpy, scr), 0, 0,
                                     WIN_W, WIN_H, 0, BlackPixel(a.dpy, scr),
@@ -1381,7 +1429,9 @@ main(int argc, char **argv)
                                     tiku_desk_font_plain()->height);
     (void)tiku_trk_poseview_restore_columns(a.view);
     tiku_trk_titleview_init(&a.tv, a.view, TITLE_H);
-    a.resize_cur = XCreateFontCursor(a.dpy, XC_sb_h_double_arrow);
+    if (a.dpy != NULL) {
+        a.resize_cur = XCreateFontCursor(a.dpy, XC_sb_h_double_arrow);
+    }
     settle_layout(&a);
     settle_writability(&a);
     retitle(&a);
@@ -1465,15 +1515,70 @@ main(int argc, char **argv)
         /* Events first, then the device: the window stays responsive while a
          * slow link is being read, which is the whole point of pumping here
          * rather than blocking on either one. */
-        while (XPending(a.dpy) > 0) {
+        for (;;) {
             XEvent ev;
-            XNextEvent(a.dpy, &ev);
+            KeySym ev_ks = NoSymbol;
+            int have = 0;
+
+            memset(&ev, 0, sizeof ev);
+            if (sc != NULL) {
+                /* One instruction per turn, so the deferred work between
+                 * turns -- a stepped copy, the armed rename -- happens
+                 * where it happens on a real clock. */
+                tiku_trk_script_step_t sp;
+                tiku_trk_script_state_t sst;
+
+                sst.status = a.status;
+                sst.title = a.title;
+                if (!tiku_trk_script_pump(sc, &sst, &sp)) {
+                    a.running = 0;
+                    break;
+                }
+                switch (sp.what) {
+                case TIKU_TRK_SC_KEY:
+                    ev.type = KeyPress;
+                    ev.xkey.state = sp.state;
+                    ev_ks = sp.ks;
+                    have = 1;
+                    break;
+                case TIKU_TRK_SC_PRESS:
+                case TIKU_TRK_SC_RELEASE:
+                    ev.type = (sp.what == TIKU_TRK_SC_PRESS) ? ButtonPress
+                                                             : ButtonRelease;
+                    ev.xbutton.x = sp.x;
+                    ev.xbutton.y = sp.y;
+                    ev.xbutton.state = sp.state;
+                    ev.xbutton.button = sp.button;
+                    ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
+                    have = 1;
+                    break;
+                case TIKU_TRK_SC_SHOT:
+                    draw(&a);
+                    (void)tiku_desk_surface_png(a.surf, sp.path);
+                    break;
+                case TIKU_TRK_SC_QUIT:
+                    a.running = 0;
+                    break;
+                default:
+                    break;
+                }
+            } else if (a.dpy != NULL && XPending(a.dpy) > 0) {
+                XNextEvent(a.dpy, &ev);
+                if (ev.type == KeyPress) {
+                    ev_ks = XLookupKeysym(&ev.xkey, 0);
+                }
+                have = 1;
+            }
+            if (!have) {
+                break;
+            }
+
             switch (ev.type) {
             case Expose:
                 a.dirty = 1;
                 break;
             case KeyPress:
-                handle_key(&a, &ev.xkey);
+                handle_key(&a, &ev.xkey, ev_ks);
                 break;
             case ButtonPress: {
                 if (ev.xbutton.button == 4 || ev.xbutton.button == 5) {
@@ -1664,7 +1769,10 @@ main(int argc, char **argv)
 
                         if (want != a.cursor_ew) {
                             a.cursor_ew = want;
-                            if (want) {
+                            if (a.dpy == NULL) {
+                                /* No pointer to dress, but the STATE is
+                                 * still the rule being tested. */
+                            } else if (want) {
                                 XDefineCursor(a.dpy, a.win, a.resize_cur);
                             } else {
                                 XUndefineCursor(a.dpy, a.win);
@@ -1771,6 +1879,9 @@ main(int argc, char **argv)
             default:
                 break;
             }
+            if (sc != NULL) {
+                break;              /* one instruction per turn */
+            }
         }
         if (a.fs != NULL && tiku_trk_fs_busy(a.fs)) {
             const tiku_trk_progress_t *pr;
@@ -1856,19 +1967,27 @@ main(int argc, char **argv)
         if (deadline_us > 0 && tiku_trk_now() > deadline_us) {
             a.running = 0;
         }
-        usleep(10000);
+        if (sc == NULL) {
+            usleep(10000);          /* a script has no reason to wait */
+        }
     }
 
-    XDestroyImage(a.img);
-    XFreeGC(a.dpy, a.gc);
-    XCloseDisplay(a.dpy);
+    if (a.dpy != NULL) {
+        XDestroyImage(a.img);
+        XFreeGC(a.dpy, a.gc);
+        XCloseDisplay(a.dpy);
+    }
     tiku_desk_surface_free(a.surf);
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
     drain_fs(a.fs);
+    if (sc != NULL) {
+        rc = tiku_trk_script_report(sc, "tracker");
+        tiku_trk_script_free(sc);
+    }
     tiku_trk_fs_free(a.fs);
     tiku_trk_poseview_free(a.view);
     tiku_trk_backend_close(a.backend);
-    return 0;
+    return rc;
 }

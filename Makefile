@@ -94,10 +94,11 @@ $(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c $(DESK)/tiku_desk_g
 
 $(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_edit.c src/tiku_trk_titleview.c \
-                  src/tiku_trk_app.c | $(BUILD)
+                  src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 $(BUILD)/desktop: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
+                  src/tiku_trk_script.c \
                   src/tiku_trk_edit.c src/tiku_trk_select.c \
                   src/tiku_trk_titleview.c \
                   src/tiku_trk_win.c src/tiku_trk_deskbar.c \
@@ -127,6 +128,9 @@ test: all
 	@$(BUILD)/test_edit
 	@$(BUILD)/test_title
 	@$(BUILD)/test_clip
+	@# The shells are the other half of the product and have no unit
+	@# tests of their own; these drive the real binaries with no display.
+	@tests/shell/run.sh
 
 clean:
 	rm -rf $(BUILD)

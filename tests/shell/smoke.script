@@ -1,0 +1,12 @@
+# shell: both
+# The harness proving itself: a new folder made from the keyboard.
+note AW-033: Ctrl+N creates a folder and selects it
+key n ctrl
+wait 3
+expect-status created
+expect-file /tmp/trk_script/New folder
+note the second one takes the next free name (FS-079)
+key n ctrl
+wait 3
+expect-file /tmp/trk_script/New folder 2
+quit
