@@ -3664,11 +3664,16 @@ FittingText recomputes if fDirty, or if ViewMode()==kListMode and fColumn->Width
 *src/tiku_trk_poseview.c:169-201 cell_text_at (no cache) called at src/tiku_trk_app.c:447 and re-fitted at :470 each draw*
 **SUBSYSTEM:** The widget-text layer (BTextWidget/WidgetAttributeText). Cell text is a pure recompute per draw (cell_text_at, poseview.c:187-227, called from both shells' draw loops every frame); no fitted-string cache, dirty flag or old-width compare exists anywhere. The only gate is row-level: refresh_values compares re-read VALUES to decide redraw (poseview.c:3414-3459), which is a different rule — the TIKU note's redraw-storm concern is currently answered by nothing at the text level.  
 
-#### MA-041 · polish · open
+#### MA-041 · polish · done
 **The Info window renders Created / Modified / Path through the same formatting code as the columns, so they read identically.**  
 AttrAsString handles B_TIME_TYPE for _stat/modified (st_mtime) and _stat/created (st_crtime) via TruncTimeBase, and B_STRING_TYPE for _trk/path via GetPath + TruncateLeaf (untruncated when width <= 0). kSizeType returns B_OK doing nothing (the call is commented out). Any other attribute/type combination TRESPASSes and returns B_ERROR.  
 `WidgetAttributeText.cpp` → `WidgetAttributeText::AttrAsString`
-**SUBSYSTEM:** Get Info panel. CMD_GET_INFO exists in menus (cwmenu.c:131,230,274,282) and shortcuts (shortcuts.c:71,152,214) but neither shell handles it — grep GET_INFO over app.c/desktop.c returns nothing and desktop.c's menu_invoke default is an explicit built-but-unimplemented no-op (desktop.c:1366-1370). With no Info window there is nothing to share the column formatters with.  
+**PORT:** Size and the dates go through the very functions the columns call,
+so the window and the list cannot word one fact differently; Kind is the
+model's own string.
+*src/tiku_trk_info.c (tiku_trk_attr_size_fit / _time_fit /
+tiku_trk_model_kind_string); tests/test_info.c*  
+*Shell: desktop*  
 
 #### MA-042 · core · done
 **Clicking a selected pose's name a second time, slowly, begins renaming it in place — but a click that merely completed the selection does not, and a fast second click (a double-click) does not either.**  
@@ -4641,12 +4646,17 @@ GenerateThumbnail scans the sActiveJobs list (guarded by sActiveJobsLock) for a 
 ThumbBounds computes a wide or tall sub-rect of the icon bounds and offsets it by half the leftover; ScaleBitmap fills with B_TRANSPARENT_COLOR then draws with B_OP_ALPHA / B_ALPHA_COMPOSITE and B_FILTER_BITMAP_BILINEAR.  
 `src/kits/tracker/Thumbnails.cpp` → `ThumbBounds / ScaleBitmap`  
 **PORT:** The longer side sets the scale and the margins are left fully transparent by construction -- calloc, not a fill -- so the thumbnail sits on the row rather than inside a square of its own.  
-#### IV-035 · polish · partial
+#### IV-035 · polish · done
 **Thumbnailing an image also records its pixel dimensions on the file, and gives up quietly on volumes that reject attributes.**  
 Execute writes Media:Width (B_INT32_TYPE) first; only if exactly sizeof(int32) bytes were written does it write Media:Height and the thumbnail itself.  
 `src/kits/tracker/Thumbnails.cpp` → `GenerateThumbnailJob::Execute`  
-**PORT:** The source's pixel dimensions are recorded alongside the thumbnail, and a store that refuses is not an error.  
-**MISSING:** Nothing reads the dimensions back yet -- no column and no Get Info panel to show them in.  
+**PORT:** The dimensions the thumbnail records are read back as the
+Information tab's Dimensions row -- the first thing that ever has -- and the
+row is absent, rather than saying "unknown", until a picture has actually
+been measured.
+*src/tiku_trk_info.c:field_list/TIKU_TRK_INFO_F_DIMENSIONS;
+tests/test_info.c*  
+*Shell: desktop*  
 #### IV-036 · important · done
 **When the thumbnail cannot be persisted the icon still refreshes on screen.**  
 If the attribute write failed, Execute posts kUpdateThumbnail with the node_ref to be_app; TTracker walks every open container window, finds the pose by node_ref and calls BPoseView::UpdateIcon, stopping at the first match. When the write succeeded, node monitoring does it instead.  
@@ -4811,7 +4821,9 @@ DraggableContainerIcon::Draw blits the target model's icon centred in the view w
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  
 `src/kits/tracker/infowindow/HeaderView.cpp` → `HeaderView::MouseMoved / HeaderView::MouseDown`
-**SUBSYSTEM:** Get Info panel: no info window exists — TIKU_TRK_CMD_GET_INFO is added to menus (src/tiku_trk_cwmenu.c:131,230,274,282) and named/enabled in shortcuts (src/tiku_trk_shortcuts.c:71,152,214), but no dispatcher case handles it in either shell (grep GET_INFO in src/tiku_trk_app.c and src/tiku_trk_desktop.c: nothing), so there is no header icon or drop-target state to highlight  
+**SUBSYSTEM:** drop targets outside a pose view -- the info window's icon
+draws, but nothing can be dropped on it to highlight (the same absence as
+AW-075).
 
 #### IV-059 · important · differs ⟨found by verification⟩
 **The legacy bitmap-icon fallback exists at only two sizes: any requested size other than mini is loaded as a large icon, and the resource must be exactly size*size bytes or the load fails outright.**  
@@ -5473,11 +5485,16 @@ OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::
 **MISSING:** Only the container clause is implemented — a double-click on a container opens its own window (and in a query view opens the folder holding the result); there is no query-template-opens-Find path (tiku_trk_query_load is never called from a view), nothing launches a non-container, and no preferred-handler override of container-ness exists anywhere in the tree.  
 *src/tiku_trk_desktop.c:main, ButtonPress double-click branch (open_folder on is_container)*
 
-#### AW-031 · important · open
+#### AW-031 · important · partial
 **Opening an entry whose link target cannot be resolved offers a Get Info panel instead of a bare error.**  
 BEntry(ref, true).InitCheck() failure -> warning alert with buttons Get info / Cancel (Escape closes); choosing Get info sends kGetInfo with the ref to the Tracker.  
 `Tracker.cpp` → `TTracker::OpenRef`
-**SUBSYSTEM:** Get Info panel / alert layer -- TIKU_TRK_CMD_GET_INFO sits in every context menu (src/tiku_trk_cwmenu.c:131,230,274,282) but has no case in menu_invoke (default no-op, src/tiku_trk_desktop.c:1366-1371); opening a broken link simply does nothing (open paths test is_container only, src/tiku_trk_desktop.c:2152-2159, src/tiku_trk_app.c:879-901), and both shells document the missing alert layer in comments (src/tiku_trk_desktop.c:2738-2741, src/tiku_trk_app.c:1766-1770)  
+**MISSING:** Get Info now exists and a broken link's own window offers the
+picker rather than an error (AW-072), so the row's substance is reachable --
+but OPENING a broken link still reports the failure without offering the
+window: the open path has no branch for it.
+*src/tiku_trk_info.c:tiku_trk_info_link_target (the offer);
+src/tiku_trk_desktop.c (the open path, which does not make it)*
 
 #### AW-032 · important · partial
 **Option-opening a document closes the parent window about a second after the launch succeeds; option-opening a folder closes the parent only once the child window has actually appeared, and gives up after five seconds.**  
@@ -5784,102 +5801,189 @@ src/tiku_trk_desktop.c:fpanel_reload (list mode, no state restore);
 tests/test_panel.c; tests/shell/panel.script*  
 *Shell: desktop*  
 
-#### AW-065 · important · open
+#### AW-065 · important · done
 **Get Info is one window per node: asking again for an already-open node just activates the existing window, and several info windows cascade rather than stacking.**  
 FindInfoWindow(model->NodeRef()) under the window-list lock; new windows get an index and offset by (index*8, index*8), with odd indices first shifted right by 320, and are pulled to (50,50) if they would land off-screen.  
 `Tracker.cpp` → `TTracker::OpenInfoWindows / BInfoWindow::Show (infowindow/InfoWindow.cpp)`
-**SUBSYSTEM:** Get Info panel — TIKU_TRK_CMD_GET_INFO exists only as a dead menu entry (src/tiku_trk_cwmenu.c:131,230,274,282; label/shortcut src/tiku_trk_shortcuts.c:71,152): neither shell's dispatch has a GET_INFO case (grep GET_INFO over src/tiku_trk_app.c and src/tiku_trk_desktop.c returns nothing), so no info window, no per-node uniqueness, no cascade.  
+**PORT:** One window per node: asking again brings the open one forward
+rather than opening a rival, and windows cascade so several are all readable
+instead of one hiding the rest.  Reached by Ctrl+I, which every menu has
+advertised since the shells were built and nothing was listening for.
+*src/tiku_trk_desktop.c:info_open/info_slot_of; tests/shell/info.script*  
+*Shell: desktop*  
 
-#### AW-066 · core · open
+#### AW-066 · core · done
 **The Get Info window has three tabs — Information, Permissions, Attributes — above a header showing the item's icon and name.**  
 HeaderView + BTabView with GeneralInfoView (SetName "Information"), FilePermissionsView ("Permissions"), AttributesView (SetName "Attributes"). Shortcuts: Cmd+E edit name, Cmd+O open, Cmd+U unmount, Cmd+P jump to the Permissions tab.  
 `infowindow/InfoWindow.cpp` → `BInfoWindow::BInfoWindow / BInfoWindow::MessageReceived (kPermissionsSelected)`  
 **TIKU:** For a device node the 'Attributes' tab becomes the typed descriptor + capability bits view; Permissions maps onto capability bits rather than POSIX mode.
-**SUBSYSTEM:** Get Info panel — no info window exists (dead menu entry only, src/tiku_trk_cwmenu.c:131 with no handler in either shell), so no tabs, header, or tab shortcuts.  
+**PORT:** Information, Permissions and Attributes over a header carrying the
+entry's icon and its name.  The tabs are named in one place, so what is drawn
+and what is hit-tested cannot drift apart.
+*src/tiku_trk_info.c:tiku_trk_info_tab_name; src/tiku_trk_desktop.c:info_draw
+/info_layout; tests/test_info.c*  
+*Shell: desktop*  
 
-#### AW-067 · core · open
+#### AW-067 · core · done
 **The Information tab shows Size (or Capacity for volumes/root), Created, Modified, Kind and Location, plus Link to for symlinks, Version and Description for executables, and Filesystem for volumes.**  
 Field set and layout in Draw(); strings built in InitStrings — created/modified via WidgetAttributeText, Kind from the MIME short description falling back to the raw type, symlink target read raw from the link with " (broken)" appended when the target is missing, executable description from the long version string with newlines/tabs flattened, volume filesystem string as "<fsh_name> (block size: N[, indexed])".  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::Draw / GeneralInfoView::InitStrings`
-**SUBSYSTEM:** Get Info panel — no Information tab; the size/kind/modified strings exist only as pose-view list columns (src/tiku_trk_poseview.c), not as an info view.  
+**PORT:** Size (or Capacity for a volume), Created, Modified, Kind and
+Location, with Link to for a symlink, Filesystem for a volume and Dimensions
+for a measured image.  Which rows exist follows from what the entry IS, so a
+file has no capacity row rather than an empty one.  Version and Description
+have no counterpart: this port has no executable metadata to read them from.
+*src/tiku_trk_info.c:field_list/tiku_trk_info_field; tests/test_info.c*  
+*Shell: desktop*  
 
-#### AW-068 · important · open
+#### AW-068 · important · done
 **Folder sizes are computed in the background: the field reads "calculating…" until done, and clicking the size field (or the context-menu item) recalculates it.**  
 CalcSize thread spawned in Show for directories (skipped for volumes/root, which use stat/volume data); fStopCalc plus wait_for_thread joins it before the window quits or a recalculation restarts. Clicking is only armed for directories that are not volumes or root. Get Info on the Trash sums every persistent volume's trash directory.  
 `infowindow/InfoWindow.cpp` → `BInfoWindow::CalcSize / BInfoWindow::MessageReceived (kRecalculateSize) / GeneralInfoView::MouseDown / GeneralInfoView::MouseUp`  
 **TIKU:** A recursive size walk over a device namespace must be interruptible the same way; the fStopCalc + join discipline is the part to keep.
-**SUBSYSTEM:** Get Info panel — no background folder-size calculation anywhere (grep for calc_size/calculating over src returns nothing); would also need the task pump no binary runs (tiku_trk_loop_run called only from tests/test_task.c).  
+**PORT:** A queue of directories rather than recursion, stepped one per idle
+turn from the same tick the thumbnails use, so a window on a deep tree fills
+in while the desktop keeps answering.  The field says "calculating" until it
+finishes, clicking it starts again, and stopping half way reports NOTHING
+rather than the part counted -- a smaller number than the truth, stated with
+the same confidence, is the worst of the three answers.
+*src/tiku_trk_info.c:tiku_trk_info_calc_start/_step/_stop;
+src/tiku_trk_desktop.c (the idle tick); tests/test_info.c*  
+*Shell: desktop*  
 
-#### AW-069 · important · open
+#### AW-069 · important · done
 **Volume and root info shows "capacity (used used -- free free)" refreshed once a second, and file sizes are re-polled because they are not reported by node monitoring until the file is closed.**  
 SetPulseRate(1000000) in the window; CheckAndSetSize returns early when free bytes are unchanged, prints "-" when capacity is 0, and for root sums FreeBytes/Capacity over all volumes.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::CheckAndSetSize / GeneralInfoView::Pulse`
-**SUBSYSTEM:** Get Info panel — no info view to refresh, and no capacity/used/free source either: the only free-space display in the port is the Deskbar 'free' tray replicant reading /sys/mem/nvmfree (src/tiku_trk_desktop.c:1603).  
+**PORT:** Volumes and plain files re-read once a second; a folder does not,
+because its contents arrive as notices and a poll would be a directory read
+a second for nothing.  A re-read that finds nothing changed reports nothing,
+so an idle window is not repainted once a second forever.
+*src/tiku_trk_info.c:tiku_trk_info_refresh; src/tiku_trk_desktop.c (the
+400 ms pump); tests/test_info.c*  
+*Shell: desktop*  
 
-#### AW-070 · core · open
+#### AW-070 · core · done
 **The item's name is renamed in place from the info window: click the title or press Cmd+E, Return commits, Escape cancels, and deactivating the window commits; a rejected name (too long / already in use) reopens the editor.**  
 BeginEditingTitle builds a BTextView with DisallowFilenameKeys and a key filter; FinishEditingTitle calls EditModelName and reopens on B_NAME_TOO_LONG / B_NAME_IN_USE; MakeFocus(false) and WindowActivated(false) both commit.  
 `infowindow/HeaderView.cpp` → `HeaderView::BeginEditingTitle / HeaderView::FinishEditingTitle / HeaderView::TextViewFilter`  
 **TIKU:** Renaming a device node may be forbidden; the rewrite needs an explicit 'name is read-only' state instead of a silently failing editor.
-**SUBSYSTEM:** Get Info panel — in-place rename exists in the pose views (src/tiku_trk_poseview.c edit paths, src/tiku_trk_edit.c) but there is no info-window header to rename from; the row's subject is absent.  
+**PORT:** Click the name or press Cmd+E, Return commits and Escape cancels;
+a refused name is said aloud and the old one kept, rather than leaving the
+window showing a name the entry does not have.  The illegal-character set
+comes from the file layer, so the header refuses exactly what a row rename
+refuses.
+*src/tiku_trk_desktop.c:info_rename_begin/info_rename_end;
+tests/shell/info.script*  
+*Shell: desktop*  
 
 #### AW-071 · important · open
 **Non-executable files get an "Opens with:" pop-up listing the type's supporting apps plus "Default application"; choosing one writes that file's preferred app immediately.**  
 Menu built from BMimeType::GetSupportingApps, items labelled with the resolved application's file name (falling back to the signature), current preference pre-marked, "Default application" marked by default; kSetPreferredApp writes via BNodeInfo::SetPreferredApp and updates the model. Not offered for executables, directories or volumes.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::GeneralInfoView / GeneralInfoView::MessageReceived (kSetPreferredApp)`
-**SUBSYSTEM:** Get Info panel — no 'Opens with' popup and no preferred-app storage anywhere (grep for preferred/open_with over src finds only the dead TIKU_TRK_CMD_OPEN_WITH menu entry, src/tiku_trk_cwmenu.c:130, likewise handler-less).  
+**SUBSYSTEM:** application registry -- the window exists now, but there is
+nothing to populate an "Opens with" list from: no application knows which
+types it reads and nothing is ever launched (the same absence AW-035..048
+wait on).
 
-#### AW-072 · important · open
+#### AW-072 · important · done
 **Location and "Link to" are clickable: Location opens the item's parent folder with the item selected, Link to does the same for the target, and a broken link instead opens a file panel to pick a new target.**  
 OpenParentAndSelectOriginal posts B_REFS_RECEIVED with the parent ref and "nodeRefToSelect" raw data; a missing target routes to BInfoWindow::OpenFilePanel. Fields invert while pressed and only fire if the mouse is still inside on release.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::OpenLinkSource / GeneralInfoView::OpenLinkTarget / GeneralInfoView::MouseUp`
-**SUBSYSTEM:** Get Info panel — no Location/Link-to fields; no open-parent-and-select entry point exists outside the folder windows (grep for select_child/node_to_select over src returns nothing).  
+**PORT:** Location opens the parent with the entry SELECTED and scrolled to,
+not merely the parent -- landing there with nothing picked would leave the
+user to find it again.  Link to does the same for the target, and a broken
+one opens the picker instead of showing an error.
+*src/tiku_trk_info.c:tiku_trk_info_location/_link_target;
+src/tiku_trk_desktop.c:select_named and the field click; tests/test_info.c*  
+*Shell: desktop*  
 
 #### AW-073 · polish · open
 **A truncated Location, Link to or Description reveals its full text in a floating pop-up when hovered, and that pop-up is itself clickable to follow the link; it disappears when the mouse leaves or the window deactivates.**  
 OpenToolTipWindow creates a borderless floating window clamped to the screen containing a TrackingView; only opened when the string is wider than the available width and the info window is active with no button held. WindowActivated(false) quits all three pop-ups.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::MouseMoved / OpenToolTipWindow / TrackingView::MouseUp`
-**SUBSYSTEM:** Get Info panel — no info view and no floating tooltip layer anywhere (grep for tooltip/tool_tip over src returns nothing).  
+**SUBSYSTEM:** floating tooltip layer -- the fields exist and truncate, but
+no shell can put a transient window over another (grep tooltip/tool_tip over
+src returns nothing).
 
-#### AW-074 · important · open
+#### AW-074 · important · done
 **Re-pointing a broken symlink from the info window preserves the link's name and all of its attributes.**  
 Node watching is stopped first (so the deletion does not close the window), the old attributes are copied into an AttributeStreamMemoryNode, the old link is removed, a new link with the same name is created via BDirectory::CreateSymLink, attributes are copied back, watching restarts and both views are re-linked. Triggered by kSetLinkTarget, by the file panel's reply, or by dropping an item on the window when the model is a symlink.  
 `infowindow/InfoWindow.cpp` → `BInfoWindow::MessageReceived (case kNewTargetSelected / B_SIMPLE_DATA)`
-**SUBSYSTEM:** Get Info panel — no re-point-broken-symlink flow; also depends on file panels (the target picker), equally absent (only 'panel' is the Find panel, src/tiku_trk_desktop.c:876).  
+**PORT:** The link is replaced under its own name and everything it carried
+is read RAW beforehand and written back after, so a number comes back a
+number rather than the text the window was showing for it.  One clause is
+not falsifiable here and is stated rather than claimed: both of this port's
+stores are keyed by path, so state survives the replace on its own -- the
+carry-across code is what makes it survive on a store keyed by the file.
+*src/tiku_trk_info.c:tiku_trk_info_relink/keep_attr; tests/test_info.c*  
+*Shell: desktop*  
 
-#### AW-075 · important · open
+#### AW-075 · important · partial
 **The icon in the info window is draggable (Option makes it a copy), is a drop target, and double-clicking it opens the item; the Trash icon can only be opened, never dragged.**  
 Drag starts after kDragSlop (3px) with a composed translucent icon+label bitmap, be:actions = B_COPY_TARGET when Option is held else B_MOVE_TARGET; drops are accepted through BPoseView::CanHandleDragSelection / HandleDropCommon and highlight the icon; fTrackingState is open_only_track for the Trash. Double-click posts B_REFS_RECEIVED with a TrackerViewToken back to be_app.  
 `infowindow/HeaderView.cpp` → `HeaderView::MouseDown / HeaderView::MouseMoved / HeaderView::MouseUp / HeaderView::MessageReceived`
-**SUBSYSTEM:** Get Info panel — no info-window icon; also no drag-source/drop-target machinery in either shell (no drag-message composition anywhere in src/tiku_trk_desktop.c or src/tiku_trk_app.c).  
+**MISSING:** The icon is drawn and double-clicking it opens the item, but it
+is neither a drag SOURCE nor a drop target: the drag layer arms from a pose
+view and nothing else, so an icon outside one cannot start a drag or accept
+one.
+*src/tiku_trk_desktop.c (the info icon's click); src/tiku_trk_drag.c (armed
+from pose views only)*
 
 #### AW-076 · important · open
 **Right-clicking the info window icon gives a context menu with a navigation submenu for folders/volumes, Open, Edit name, Unmount (disabled for the boot volume), Identify (Option forces a re-identify), Empty Trash, Recalculate folder size, Set new link target and Permissions.**  
 Items are conditional on the model: no Edit name/Unmount for desktop/root/trash, no Identify for root/volume/trash, Empty Trash only for the trash, size item only for non-volume non-root directories, link target only for symlinks. Identify calls update_mime_info with force level 2 when Option is down, else 1.  
 `infowindow/HeaderView.cpp` → `HeaderView::BuildContextMenu / BInfoWindow::MessageReceived (kIdentifyEntry)`  
 **VERIFIER CORRECTION:** Only half true. ActivateWindowFilter (ContainerWindow.cpp:143) does skip BPoseView and DraggableContainerIcon, but DraggableContainerIcon activates the window itself: MouseDown calls Window()->Activate(true) when the click misses the icon's opaque pixels, and MouseUp activates whenever no drag was started. So a plain click on the folder icon still activates on mouse-up; only a click that becomes a drag does not.
-**SUBSYSTEM:** Get Info panel — no info-window icon to right-click; the context menus that do exist are the pose-view/window ones built in src/tiku_trk_cwmenu.c, which carry the dead GET_INFO entry rather than being launched from one.  
+**SUBSYSTEM:** context menus outside a pose view -- the info window's icon is
+hit-tested for clicks but the context menus are built for pose views and
+carry pose-view commands (src/tiku_trk_cwmenu.c).
 
-#### AW-077 · important · open
+#### AW-077 · important · done
 **An info window closes itself when its item is deleted or its volume is unmounted, and follows renames and moves by updating the title and the Location field.**  
 Watches B_WATCH_ALL | B_WATCH_MOUNT on the node; B_ENTRY_REMOVED for our node and B_DEVICE_UNMOUNTED for our device call Close(); B_ENTRY_MOVED/B_STAT_CHANGED/B_ATTR_CHANGED are forwarded to the general view first, then the header, then the permissions view (order matters, the general view mutates the model). Icon attribute changes invalidate the cached icon; a MIME type change re-reads the strings.  
 `infowindow/InfoWindow.cpp` → `BInfoWindow::MessageReceived (B_NODE_MONITOR) / GeneralInfoView::ModelChanged`  
 **TIKU:** Maps cleanly onto TIKU_EVENT_VFS, but note the ordering dependency between the three sub-views — that must be reproduced or removed deliberately.
-**SUBSYSTEM:** Get Info panel — no info window to auto-close; the port's change-notification plumbing exists (src/tiku_trk_notify.c, TIKU_TRK_EV_CHANGED src/tiku_trk_notify.h:34) but has no info-window subscriber.  
+**PORT:** An entry that stops being where it was is looked for again by
+IDENTITY in the folder it was in -- a rename changes the name and nothing
+else -- and the title follows it; anything not found closes the window, which
+has nothing left to describe.  A different file taking the same name is NOT
+adopted: the window is about a node, and the impostor would show one entry's
+facts under another's history.
+*src/tiku_trk_info.c:tiku_trk_info_refind/_moved/_gone;
+src/tiku_trk_desktop.c (the pump); tests/test_info.c; tests/shell/info.script*  
+*Shell: desktop*  
 
-#### AW-078 · important · open
+#### AW-078 · important · done
 **The Permissions tab is a 3x3 read/write/execute grid applied the moment a box is toggled, with owner and group fields that only accept numeric ids and are disabled unless you are root or the owner.**  
 Checkboxes map to S_IRUSR..S_IXOTH and call BNode::SetPermissions with the recomposed mode; failures re-read the node and beep. Owner/group parsed with sscanf("%d"); a non-numeric entry re-reads and beeps. Text controls disabled when teamInfo.uid != 0 && nodeOwner != teamInfo.uid; the whole grid is hidden if permissions cannot be read.  
 `infowindow/FilePermissionsView.cpp` → `FilePermissionsView::ModelChanged / FilePermissionsView::MessageReceived`  
 **TIKU:** Direct analogue is the VFS node's capability bits; the immediate-apply-and-beep-on-failure interaction is the part to preserve.
-**SUBSYSTEM:** Get Info panel — no Permissions tab; permissions exist in the model (src/tiku_trk_model.h:51 perm bits) and are preserved by fs copies (src/tiku_trk_fs.c:781), but no UI reads or writes them.  
+**PORT:** Read/write/execute applied the moment a box is ticked -- with no OK
+button there is no moment at which a change is pending -- and a toggle the
+store refuses leaves the tick where it was, because the tick IS the claim.
+Where a backend has no way to set them the grid says so instead of offering
+an edit that fails after the fact, which is what a device's capability bits
+need.  Owner and group ids have no counterpart in this port.
+*src/tiku_trk_info.c:tiku_trk_info_perm_toggle;
+src/tiku_trk_backend_posix.c:px_setperm (and its deliberate absence in
+src/tiku_trk_backend_tiku.c); tests/test_info.c; tests/shell/info.script*  
+*Shell: desktop*  
 
-#### AW-079 · important · open
+#### AW-079 · important · done
 **The Attributes tab lists every attribute with its name, a decoded value and a human-readable type name; BEOS:TYPE is hidden, long strings are truncated and multi-valued blobs collapse to "<N values>".**  
 Iterates GetNextAttrName; strings read into a 64-byte buffer; per-type decoding for bool/int8..int64/uint8..uint64/float/double/rect/time (32- and 64-bit time both handled, formatted with BDateTimeFormat); unknown types show "<N bytes of data>"; ~50 type names mapped, unknown -> "(unknown)". Column order shown is Name, Value, Type.  
 `infowindow/AttributesView.cpp` → `AttributesView::AttributesView`  
 **TIKU:** This is the natural home for a device node's typed descriptor dump (type, unit, range, capability bits) — the row set is richer than BFS attributes, not poorer.
-**SUBSYSTEM:** Get Info panel — no Attributes tab; attribute decoding exists as pose-view list columns (src/tiku_trk_attr.c) but there is no per-node attributes view.  
+**PORT:** Every attribute the entry carries, with a decoded value and a type
+name: text reads as text, a four- or eight-byte value as a number, and
+anything else is DESCRIBED by its size rather than spelled -- printing a
+thumbnail as mojibake tells the reader nothing and costs a screenful.  Only
+the port's own attributes are listed; another program's are on the file too
+and are none of this window's business.
+*src/tiku_trk_info.c:tiku_trk_info_attrs/attr_row;
+src/tiku_trk_state.c:tiku_trk_state_each; tests/test_info.c*  
+*Shell: desktop*  
 
 #### AW-080 · important · done
 **The Select window matches names by starts with / ends with / contains / wildcard / regular expression, defaults to wildcard with case ignored and invert off, and applies to the window it was opened from.**  

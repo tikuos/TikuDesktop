@@ -15,7 +15,7 @@ DESK  := ../desktop/src
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
          src/tiku_trk_attr.c src/tiku_trk_query.c src/tiku_trk_notify.c \
          src/tiku_trk_match.c src/tiku_trk_clip.c src/tiku_trk_drag.c \
-         src/tiku_trk_alert.c src/tiku_trk_vdir.c src/tiku_trk_volume.c src/tiku_trk_prefs.c src/tiku_trk_switcher.c src/tiku_trk_navmenu.c src/tiku_trk_nodeicon.c src/tiku_trk_panel.c src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
+         src/tiku_trk_alert.c src/tiku_trk_vdir.c src/tiku_trk_volume.c src/tiku_trk_prefs.c src/tiku_trk_switcher.c src/tiku_trk_navmenu.c src/tiku_trk_nodeicon.c src/tiku_trk_panel.c src/tiku_trk_info.c src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
          src/tiku_trk_model.c src/tiku_trk_backend_posix.c \
          src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c \
          $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c $(DESK)/tiku_desk_ns.c
@@ -24,7 +24,7 @@ CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -77,6 +77,9 @@ $(BUILD)/test_title: $(CORE) src/tiku_trk_poseview.c src/tiku_trk_titleview.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_match: src/tiku_trk_match.c tests/test_match.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_info: $(CORE) tests/test_info.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_panel: $(CORE) src/tiku_trk_poseview.c tests/test_panel.c \
@@ -218,6 +221,7 @@ test: all
 	@$(BUILD)/test_navmenu
 	@$(BUILD)/test_nodeicon
 	@$(BUILD)/test_panel
+	@$(BUILD)/test_info
 	@# The shells are the other half of the product and have no unit
 	@# tests of their own; these drive the real binaries with no display.
 	@# The contract is data every count is drawn from; a copy of it that

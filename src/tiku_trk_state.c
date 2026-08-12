@@ -382,6 +382,65 @@ tiku_trk_state_write(tiku_trk_store_t *s, const char *node, const char *attr,
 }
 
 int
+tiku_trk_state_each(tiku_trk_store_t *s, const char *node,
+                    int (*fn)(const char *attr, const void *val, size_t len,
+                              void *ctx), void *ctx)
+{
+    int n = 0;
+
+    if (s == NULL || node == NULL || fn == NULL) {
+        return 0;
+    }
+    if (s->kind == STORE_XATTR) {
+#if defined(__linux__)
+        char names[4096];
+        ssize_t len = listxattr(node, names, sizeof names);
+        ssize_t at;
+
+        if (len <= 0) {
+            return 0;
+        }
+        for (at = 0; at < len; at += (ssize_t)strlen(names + at) + 1) {
+            char val[512];
+            const char *nm = names + at;
+            ssize_t got;
+
+            /* Only ours.  Another program's attributes are on the file too
+             * and are none of this window's business. */
+            if (strncmp(nm, "user._trk/", 10) != 0) {
+                continue;
+            }
+            got = getxattr(node, nm, val, sizeof val);
+            if (got < 0) {
+                got = 0;
+            }
+            n++;
+            if (fn(nm + 5, val, (size_t)got, ctx) != 0) {
+                break;
+            }
+        }
+        return n;
+#else
+        return 0;
+#endif
+    }
+    {
+        state_rec_t *r;
+
+        for (r = s->recs; r != NULL; r = r->next) {
+            if (strcmp(r->node, node) != 0) {
+                continue;
+            }
+            n++;
+            if (fn(r->attr, r->val, r->len, ctx) != 0) {
+                break;
+            }
+        }
+    }
+    return n;
+}
+
+int
 tiku_trk_state_forget(tiku_trk_store_t *s, const char *node)
 {
     state_rec_t **p;

@@ -1,0 +1,53 @@
+# shell: desktop
+# AW-065/AW-070/AW-077/AW-078: Get Info is one window per node; its
+# permissions apply as they are ticked; its name renames the entry; and it
+# closes itself when the entry goes.
+note Ctrl+I opens the window the menus have advertised all along
+click 200 97
+key i ctrl
+wait 10
+expect-title a.txt info
+note asking twice brings the same one forward rather than opening a rival,
+note so ONE close is enough to be rid of it
+expect-windows 2
+note back to the folder window by its TAB, since a click on content is
+note deliberately click-through and does not raise
+click 80 50
+wait 3
+key i ctrl
+wait 5
+expect-windows 2
+key w ctrl
+wait 5
+expect-windows 1
+expect-title /tmp/trk_script
+note a permission is applied the moment it is ticked, with no OK button
+key i ctrl
+wait 10
+expect-perm /tmp/trk_script/a.txt rw-
+click 320 168
+wait 3
+click 160 240
+wait 10
+expect-perm /tmp/trk_script/a.txt rwx
+note the header renames the entry
+click 320 168
+wait 3
+click 320 133
+wait 3
+key r
+key e
+key n
+key a
+key m
+key e
+key d
+key Return
+wait 30
+expect-file /tmp/trk_script/renamed
+expect-no-file /tmp/trk_script/a.txt
+note and the window goes when the entry does
+remove /tmp/trk_script/renamed
+wait 40
+expect-title /tmp/trk_script
+quit

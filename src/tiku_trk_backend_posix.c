@@ -278,12 +278,38 @@ px_close(tiku_trk_backend_t *b)
     free(b);
 }
 
+/** @brief Apply read/write/execute to a local file. */
+static int
+px_setperm(tiku_trk_backend_t *b, const char *path, unsigned perm, char *err,
+           size_t errmax)
+{
+    struct stat st;
+    mode_t mode;
+
+    (void)b;
+    if (path == NULL || stat(path, &st) != 0) {
+        snprintf(err, errmax, "%s", strerror(errno));
+        return -1;
+    }
+    /* The OWNER's three bits, which is what the grid edits; group and other
+     * are left exactly as they were rather than being derived from it. */
+    mode = st.st_mode & (mode_t)~(S_IRUSR | S_IWUSR | S_IXUSR);
+    if (perm & TIKU_TRK_P_READ)  { mode |= S_IRUSR; }
+    if (perm & TIKU_TRK_P_WRITE) { mode |= S_IWUSR; }
+    if (perm & TIKU_TRK_P_EXEC)  { mode |= S_IXUSR; }
+    if (chmod(path, mode) != 0) {
+        snprintf(err, errmax, "%s", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
 static const tiku_trk_backend_ops_t POSIX_OPS = {
     /* A local filesystem has no change ring to ask, so it says so and
      * the view polls -- which is what NULL here means. */
     /* No change ring, so no identity to resolve either. */
     "posix", px_stat, px_list, px_read, px_write, px_pump, NULL, NULL,
-    px_store, px_close
+    px_setperm, px_store, px_close
 };
 
 tiku_trk_backend_t *

@@ -213,6 +213,17 @@ typedef struct {
     int (*path_of_id)(tiku_trk_backend_t *b, uint64_t id, char *out,
                       size_t max);
 
+    /**
+     * @brief Change what an entry permits.  0, or -1 with @p err filled.
+     *
+     * NULL where the idea does not apply.  A device node's capability bits
+     * are not the user's to set, and a backend that says so by leaving this
+     * out is what lets the caller show the grid as read-only rather than
+     * offering an edit that silently fails.
+     */
+    int (*setperm)(tiku_trk_backend_t *b, const char *path, unsigned perm,
+                   char *err, size_t errmax);
+
     /** @brief The state store for entries of this backend. */
     struct tiku_trk_store *(*state_store)(tiku_trk_backend_t *b);
 

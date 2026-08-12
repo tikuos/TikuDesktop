@@ -47,6 +47,7 @@ typedef struct {
     int         scroll;     /* the focused view's first visible row     */
     int         rows;       /* how many rows it holds                   */
     const char *alert;      /* the open alert's text, or NULL           */
+    int         windows;    /* how many windows are open                */
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
@@ -67,6 +68,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-no-file <path>
  *     expect-rows-at-least <n>
  *     remove <path>                       -- change the world behind it
+ *     expect-perm <path> <rwx>            -- the owner bits, e.g. "rw-"
+ *     expect-windows <n>
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

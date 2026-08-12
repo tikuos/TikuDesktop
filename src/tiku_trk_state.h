@@ -103,6 +103,17 @@ int tiku_trk_store_flush(tiku_trk_store_t *s);
  */
 int tiku_trk_state_forget(tiku_trk_store_t *s, const char *node);
 
+/**
+ * @brief Visit every attribute @p node carries.
+ *
+ * @param fn Called with the attribute name and its raw bytes; returning
+ *           non-zero stops the walk.
+ * @return how many were visited.
+ */
+int tiku_trk_state_each(tiku_trk_store_t *s, const char *node,
+                        int (*fn)(const char *attr, const void *val,
+                                  size_t len, void *ctx), void *ctx);
+
 /** @brief Records held (tests and the store's own reporting). */
 int tiku_trk_store_count(const tiku_trk_store_t *s);
 

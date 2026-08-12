@@ -484,8 +484,12 @@ tk_close(tiku_trk_backend_t *b)
 }
 
 static const tiku_trk_backend_ops_t TIKU_OPS = {
+    /* No setperm: a device node's capability bits are the device's to
+     * declare, not the user's to set, and saying so by leaving it out is
+     * what makes the permissions grid read-only rather than an edit that
+     * fails after the fact (AW-078). */
     "tiku", tk_stat, tk_list, tk_read, tk_write, tk_pump, tk_changes,
-    tk_path_of_id, tk_store, tk_close
+    tk_path_of_id, NULL, tk_store, tk_close
 };
 
 tiku_trk_backend_t *
