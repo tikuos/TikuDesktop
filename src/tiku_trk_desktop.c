@@ -297,6 +297,102 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
 }
 
 /** @brief Draw a folder window's contents: list rows, then the count. */
+/** @brief How wide a label is, for the view's own geometry. */
+static int
+measure_label(const char *text, void *ctx)
+{
+    (void)ctx;
+    return tiku_desk_text_width(tiku_desk_font_plain(), text);
+}
+
+/**
+ * @brief Whether a point lands on a pose's icon PIXELS (IV-026).
+ *
+ * The art is resolved the way the drawing resolves it -- through the
+ * node-icon tier -- so what is hit is what is painted.
+ */
+static int
+pose_icon_hit(const tiku_trk_model_t *m, int size, int px, int py, void *ctx)
+{
+    desktop_t *app = ctx;
+    char art[TIKU_TRK_NAME_MAX];
+
+    (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, m, art,
+                                    sizeof art);
+    return tiku_trk_icon_hit(art, size, px, py);
+}
+
+/**
+ * @brief Draw one pose as an icon with its name under it (CW-065).
+ *
+ * The coordinates are the VIEW's, so the caller subtracts the origin: a
+ * renderer that scrolled by moving the poses would move the things the hit
+ * test asks about too.
+ */
+static void
+draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
+               int ox, int oy)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    desktop_t *app = fl->app;
+    int ix, iy, iw, ih, lx, ly, lw, lh;
+    int drawn_sel = tiku_trk_poseview_draws_selected(fl->view, p);
+    char art[TIKU_TRK_NAME_MAX];
+    tiku_desk_rect_t label;
+
+    tiku_trk_poseview_pose_parts(fl->view, p, &ix, &iy, &iw, &ih,
+                                 &lx, &ly, &lw, &lh);
+    ix -= ox; iy -= oy; lx -= ox; ly -= oy;
+    (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &p->model,
+                                    art, sizeof art);
+    if (drawn_sel) {
+        (void)tiku_trk_icon_paint_selected(s, art, ix, iy, iw);
+    } else if (p->model.facts.link_broken) {
+        (void)tiku_trk_icon_paint_dim(s, art, ix, iy, iw, 0.55f,
+                                      TIKU_DESK_C_DOC);
+    } else {
+        (void)tiku_trk_icon_paint(s, art, ix, iy, iw);
+    }
+    /* The label is filled behind when selected, not the whole cell: in an
+     * icon mode the cell is mostly empty, and a filled cell would read as a
+     * block rather than as a name that is chosen (PVL-082). */
+    label.x = lx - 2;
+    label.y = ly;
+    label.w = lw + 4;
+    label.h = (lh > 0) ? lh : f->height;
+    if (drawn_sel) {
+        tiku_desk_fill(s, label, TIKU_DESK_C_SELECT);
+    }
+    tiku_desk_text(s, f, lx, ly + f->ascent, p->model.name,
+                   drawn_sel ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+}
+
+/** @brief Draw the poses of an icon mode, and only the ones on screen. */
+static void
+folder_draw_icons(folder_t *fl, tiku_desk_surface_t *s,
+                  tiku_desk_rect_t list)
+{
+    int first = -1, last = -1, i, ox = 0, oy = 0;
+
+    tiku_trk_poseview_origin(fl->view, &ox, &oy);
+    /* Shifted so the view's own coordinates land in the window. */
+    ox -= list.x + 2;
+    oy -= list.y + 2;
+    if (!tiku_trk_poseview_visible_range(fl->view, &first, &last)) {
+        return;
+    }
+    /* Only what can be seen.  A walk of every pose is a walk of the whole
+     * folder on every frame, which is what a folder of ten thousand makes
+     * unaffordable (PVL-062). */
+    for (i = first; i <= last; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
+
+        if (p != NULL && p->placed) {
+            draw_pose_icon(fl, s, p, ox, oy);
+        }
+    }
+}
+
 static void
 folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             tiku_desk_rect_t content, void *ctx)
@@ -306,11 +402,22 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
     desktop_t *app = fl->app;
     tiku_desk_rect_t list = content;
     int row_h = app->row_h;
-    int rows, scroll, total, i;
+    int rows, scroll, total, i, icons;
 
     (void)w;
     list.h -= COUNT_H;
     tiku_desk_ui_sunken(s, list, TIKU_DESK_C_DOC);
+    /* The view is told how big its window is, in pixels: the row count it
+     * used to be given cannot answer where an icon layout is scrolled to
+     * or what is on screen (PVL-049). */
+    tiku_trk_poseview_set_viewport(fl->view, list.w - 4, list.h - 4);
+    icons = (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST);
+    if (icons) {
+        /* Anything with no position of its own gets one, wrapping at the
+         * window's width.  Done here because this is where the width is
+         * known, and a pose with no position is not drawn at all. */
+        (void)tiku_trk_poseview_place_unplaced(fl->view, list.w - 4);
+    }
 
     rows = (list.h - 4) / row_h;
     /* The view cannot see its own window; the rules stated in terms of what
@@ -320,7 +427,10 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
     total = tiku_trk_poseview_count(fl->view);
 
     tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
-    for (i = 0; i < rows && scroll + i < total; i++) {
+    if (icons) {
+        folder_draw_icons(fl, s, list);
+    }
+    for (i = 0; !icons && i < rows && scroll + i < total; i++) {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, scroll + i);
         tiku_desk_rect_t row = { list.x + 2, list.y + 2 + i * row_h,
                                  list.w - 4, row_h };
@@ -478,7 +588,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             }
         }
     }
-    if (app->renaming && app->ren_fl == fl) {
+    if (app->renaming && app->ren_fl == fl && !icons) {
         /* The editor sits ON the row, not in the count view: an in-place
          * rename has to show the name being changed where the name is. */
         int at = app->ren_row - scroll;
@@ -2725,6 +2835,15 @@ open_folder(desktop_t *app, const char *path)
     /* Every window shares the one cache, so a file open in two of them has
      * one icon and an edit to it is dropped once. */
     tiku_trk_poseview_set_icons(fl->view, &app->nicons);
+    tiku_trk_poseview_set_measure(fl->view, measure_label, app);
+    {
+        const tiku_desk_font_t *f = tiku_desk_font_plain();
+
+        /* Every icon-mode height is a function of the label's, so the view
+         * has to be told what it is being drawn in (PVL-007). */
+        tiku_trk_poseview_set_font_metrics(fl->view, f->height, f->ascent);
+    }
+    tiku_trk_poseview_set_icon_hit(fl->view, pose_icon_hit, app);
     (void)tiku_trk_poseview_restore_state(fl->view);
 
     /* Cascade, so a new window never lands exactly on the last one. */
@@ -2785,6 +2904,19 @@ folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
     if (x < c.x || x > c.x + c.w || y < c.y + 2 ||
         y > c.y + c.h - COUNT_H) {
         return -1;
+    }
+    if (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
+        /* An icon layout has no rows to divide by: the point goes to the
+         * view, which knows where every pose is and answers on its ART
+         * rather than on its cell (PVS-019). */
+        int ox = 0, oy = 0;
+        tiku_trk_pose_t *p;
+
+        tiku_trk_poseview_origin(fl->view, &ox, &oy);
+        p = tiku_trk_poseview_pose_at(fl->view,
+                                      x - (c.x + 2) + ox,
+                                      y - (c.y + 2) + oy);
+        return (p != NULL) ? p->index : -1;
     }
     rel = (y - c.y - 2) / app->row_h;
     rel += tiku_trk_poseview_scroll(fl->view);
@@ -3730,9 +3862,26 @@ main(int argc, char **argv)
                     }
                     sst.windows = wn;
                 }
+                sst.selected = 0;
+                sst.sel_name = NULL;
                 {
                     folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
 
+                    if (sfl != NULL) {
+                        int si, sn = tiku_trk_poseview_count(sfl->view);
+
+                        for (si = 0; si < sn; si++) {
+                            tiku_trk_pose_t *sp =
+                                tiku_trk_poseview_at(sfl->view, si);
+
+                            if (sp != NULL && sp->selected) {
+                                if (sst.sel_name == NULL) {
+                                    sst.sel_name = sp->model.name;
+                                }
+                                sst.selected++;
+                            }
+                        }
+                    }
                     if (sfl != NULL) {
                         sst.scroll = tiku_trk_poseview_scroll(sfl->view);
                         sst.rows = tiku_trk_poseview_count(sfl->view);
@@ -4253,6 +4402,35 @@ main(int argc, char **argv)
                         app.dirty = 1;
                         break;
                     }
+                }
+                if (ev.xbutton.button == 4u || ev.xbutton.button == 5u) {
+                    /* The wheel.  In an icon mode it moves the pixel
+                     * origin; in a list it steps rows, which is what it
+                     * has always done. */
+                    tiku_trk_win_t *ww = NULL;
+                    folder_t *wfl;
+
+                    (void)tiku_trk_desk_hit(app.desk, ev.xbutton.x,
+                                            ev.xbutton.y, &ww);
+                    wfl = folder_of(&app, ww);
+                    if (wfl != NULL) {
+                        int step = (ev.xbutton.button == 4u) ? -1 : 1;
+
+                        if (tiku_trk_poseview_mode(wfl->view) !=
+                                TIKU_TRK_MODE_LIST) {
+                            int ox = 0, oy = 0;
+
+                            tiku_trk_poseview_origin(wfl->view, &ox, &oy);
+                            tiku_trk_poseview_set_origin(wfl->view, ox,
+                                oy + step * 3 * app.row_h);
+                        } else {
+                            tiku_trk_poseview_scroll_to(wfl->view,
+                                tiku_trk_poseview_scroll(wfl->view) +
+                                    step * 3);
+                        }
+                        app.dirty = 1;
+                    }
+                    break;
                 }
                 hit = tiku_trk_desk_hit(app.desk, ev.xbutton.x, ev.xbutton.y,
                                         &w);
@@ -5136,8 +5314,16 @@ sel_done:
                     break;
                 }
                 if (fl != NULL) {
+                    /* Left and Right matter in an icon mode, where the
+                     * arrangement is two-dimensional; the pages matter in
+                     * both and were bound in neither shell's multi-window
+                     * half (PVK-007, PVK-011). */
                     int nav = (ks == XK_Up)    ? TIKU_TRK_KEY_UP
                             : (ks == XK_Down)  ? TIKU_TRK_KEY_DOWN
+                            : (ks == XK_Left)  ? TIKU_TRK_KEY_LEFT
+                            : (ks == XK_Right) ? TIKU_TRK_KEY_RIGHT
+                            : (ks == XK_Prior) ? TIKU_TRK_KEY_PGUP
+                            : (ks == XK_Next)  ? TIKU_TRK_KEY_PGDN
                             : (ks == XK_Home)  ? TIKU_TRK_KEY_HOME
                             : (ks == XK_End)   ? TIKU_TRK_KEY_END : 0;
                     if (nav != 0) {

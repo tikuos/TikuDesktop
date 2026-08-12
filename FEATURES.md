@@ -503,30 +503,48 @@ SetViewMode: oldMode==kListMode → ClearTypeAheadFiltering(), window->HideAttri
 SetIconPoseHeight() forces fViewState->SetIconSize(B_MINI_ICON) for kMiniIconMode and kListMode; only kIconMode honours the user-chosen size.  
 `PoseView.cpp` → `BPoseView::SetIconPoseHeight`  
 
-#### PVL-007 · core · partial
+#### PVL-007 · core · done
 **Row/pose height is derived per mode: icon = iconSize + fontHeight + 1, mini-icon = max(iconSize, fontHeight+1), list = a fixed font-derived row height.**  
 fListElemHeight = ceilf(be_plain_font->Size() * 1.65f) set in the constructor; sFontHeight = ascent+descent+1 computed once statically in InitCommon().  
 `PoseView.cpp` → `BPoseView::SetIconPoseHeight / BPoseView::BPoseView / BPoseView::InitCommon`  
-**MISSING:** Heights do differ per mode, but none is font-derived: pose height is the grid cell (icon = iconSize*1.875, mini = 16*1.25) and the list row is the compile-time constant LIST_ROW_H 20, which set_font_size never touches (it only rescales column widths) — so the fontHeight term the row states is absent everywhere and a larger font does not grow a row.  
-*/home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:1616-1646 (layout_info), :1709-1716 (pose_extent), :1893-1894 (pose_rect h = cell h), :3155-3165/:3200-3214 (font_px scales widths only); /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:47-48,1090*
+**PORT:** Every height is a function of the LABEL's, not of the art: an icon
+cell is the icon plus the font's height, a mini cell is the taller of the
+two, and a list row is the font scaled by Tracker's own 1.65.  The view is
+told what it is drawn in, as it is told how to measure a name, because it
+owns no font -- and a cell derived from the icon alone clips the name at one
+face and leaves it floating at another.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_layout_info/_set_font_metrics/
+_row_height; tests/test_iconview.c*  
+*Shell: desktop, tracker*  
 
 #### PVL-008 · important · done
 **The Desktop can never be in list mode; a saved list-mode state on the Desktop is coerced back to icon mode.**  
 Both RestoreState overloads: `if (IsDesktopView() && ViewMode() == kListMode) fViewState->SetViewMode(kIconMode);`  
 `PoseView.cpp` → `BPoseView::RestoreState(AttributeStreamNode*) and BPoseView::RestoreState(const BMessage&)`  
 **PORT:** Coerced rather than refused at save time: a state file written by another build is not ours to reject, and the Desktop has to come up either way.  
-#### PVL-009 · important · partial
+#### PVL-009 · important · done
 **List mode and icon mode each remember their own scroll position, so switching modes and back returns you to where you were.**  
 ScrollTo() writes Extent().LeftTop() into fViewState->SetListOrigin() or SetIconOrigin() depending on mode; SetViewMode/InitCommon/SwitchDir read the matching origin back and PinPointToValidRange() it before scrolling.  
 `PoseView.cpp` → `BPoseView::ScrollTo / BPoseView::SetViewMode / BPoseView::InitCommon`  
-**MISSING:** Only the list origin survives a mode round-trip, and only because set_mode never touches v->scroll (poseview.c:1891-1914); the icon modes have no scroll origin to remember at all — the icon viewport cannot scroll (poseview.c:2118-2120 "this view does not scroll in icon mode yet"; app.c:439-448 draw_icons ignores any scroll) — and neither origin is pinned or restored per mode.  
-*Audited 2026-08-12: `src/tiku_trk_poseview.c:1891-1914 (set_mode leaves v->scroll alone)` `src/tiku_trk_poseview.c:2118-2120 (no icon-mode scrolling)` `src/tiku_trk_app.c:1119-1122 (Ctrl+1/2/3 mode switch), :1451-1455 (wheel scrolls the list)`*  
-*Shell: both*  
-#### PVL-010 · polish · open
+**PORT:** Three origins, not one: the list's row scroll, and a pixel origin
+for each icon mode.  Switching to list and back returns to where the icons
+were, and the two icon modes do not share one either -- their cells are
+different shapes, so the same pixel is a different place.  Each is clamped to
+the extent, so an origin past the end cannot leave a folder looking empty.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_set_origin/_origin/origin_of;
+tests/test_iconview.c*  
+*Shell: desktop*  
+#### PVL-010 · polish · done
 **Changing icon size keeps the visual centre of the view roughly fixed instead of jumping to the top-left.**  
 SetViewMode converts the bounds centre into unscaled (32px) space with oldScale = lastIconSize/32, back out with newScale = iconSize/32, and applies the difference as scaleOffset added to the restored icon origin. Skipped on the Desktop.  
 `PoseView.cpp` → `BPoseView::SetViewMode (scaleOffset block)`
-**BLOCKED:** Icon-mode scrolling: set_icon_size changes only the size (src/tiku_trk_poseview.c:1761-1768) and there is no icon viewport to re-centre — "this view does not scroll in icon mode yet" (src/tiku_trk_poseview.c:2118-2120); draw_icons ignores any scroll offset (src/tiku_trk_app.c:439-448).  
+**PORT:** The point in the middle of the window is converted into the
+unscaled space positions are stored in, the size changes, and it is put back
+in the middle.  Without it the view jumps to the top-left on every size
+change, because the origin is in pixels and every pixel moved.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_step_icon_size;
+tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### PVL-011 · important · done
 **Switching between icon and mini-icon mode remaps existing icon positions into the new grid, preserving their relative arrangement.**  
@@ -768,18 +786,29 @@ DeletePose computes the invalid rect from the row index, calls CloseGapInList (w
 `PoseView.cpp` → `BPoseView::DeletePose / BPoseView::CloseGapInList`
 **SUBSYSTEM:** Incremental-repaint layer: deletion itself works (remove_pose with the visible-rows scroll correction, src/tiku_trk_poseview.c:2713-2759) but the gap 'closes' only by full-window redraw — no CloseGapInList blit is possible without an invalidation/copy API (none exists in src/tiku_trk_gfx_dep.h).  
 
-#### PVL-049 · core · partial
+#### PVL-049 · core · done
 **The scrollable area is the list's column width by row count in list mode, and the bounding box of all icons (outset by the layout offset) in icon modes.**  
 ListModeExtent: right = lastColumn->Offset() + Width() + kTitleColumnRightExtraMargin - kRoomForLine/2, bottom = fListElemHeight * CurrentPoseList()->CountItems(), origin always (0,0). IconModeExtent: fExtent.InsetByCopy(-fOffset), collapsing to a point at LeftTop() when invalid.  
 `PoseView.cpp` → `BPoseView::Extent / BPoseView::ListModeExtent / BPoseView::IconModeExtent`  
-**MISSING:** The icon-mode extent (bounding box of all icons outset by the layout offset) does not exist — there is no view extent structure at all, only the per-cell pose_extent() footprint (poseview.c:2008-2017), and the icon viewport cannot scroll (poseview.c:2118-2120) — so only the list-mode columns-width-by-row-count area is enforced.  
-*Audited 2026-08-12: `src/tiku_trk_poseview.c:4012-4039 (set_hscroll clamps to columns_width = start_offset + widths + margins)` `src/tiku_trk_poseview.c:2556-2576 and :4058-4070 (vertical scroll clamped to shown count / visible rows)`*  
-*Shell: both*  
-#### PVL-050 · important · open
+**PORT:** The list's columns by its rows; an icon mode's bounding box over
+every placed pose, outset by the layout's own margin so an icon at the origin
+is not flush to the window's edge.  The view is told its size in PIXELS,
+which is the thing it never knew: a row count cannot answer where an icon
+layout is scrolled to.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_extent/_set_viewport;
+tests/test_iconview.c*  
+*Shell: desktop*  
+#### PVL-050 · important · done
 **The icon-mode extent is grown incrementally as icons are added or moved and only fully recomputed when a removal touched one of its edges.**  
 AddToExtent unions a rect in; RemoveFromExtent triggers RecalcExtent only if the removed rect touched or exceeded any edge of fExtent; ClearExtent sets the inverted sentinel (INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN). RecalcExtent walks fVSPoseList (or fFilteredPoseList when filtering).  
 `PoseView.cpp` → `BPoseView::RemoveFromExtent / BPoseView::RecalcExtent / BPoseView::AddToExtent (PoseView.h inline)`
-**BLOCKED:** An icon-mode extent: no view extent structure exists to maintain incrementally — the only extent code is the per-cell footprint pose_extent() (src/tiku_trk_poseview.c:2008-2017), and the icon viewport cannot scroll (src/tiku_trk_poseview.c:2118-2120), so there is nothing for AddToExtent/RemoveFromExtent analogues to update.  
+**PORT:** Grown in place as poses arrive and move, and walked again only on
+a removal -- the one change a running box cannot absorb.  A move can only
+push the box outwards, so moving an icon back does not shrink it; a deletion
+does, which is what stops a removed icon leaving empty space to scroll into.
+*src/tiku_trk_poseview.c:extent_add/extent_recalc and their callers in
+move_pose and remove_pose; tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### PVL-051 · core · partial
 **Scrollbar range, step and thumb proportion track the content: half a row per click, a full page per page-jump, thumb sized by visible fraction.**  
@@ -854,15 +883,25 @@ AddPosesCompleted (list mode): if bounds.top > (count-1) * fListElemHeight, scro
 **Drawing walks only the poses that can intersect the update rect and stops early.**  
 DrawViewCommon list mode: startIndex = (updateRect.top - fListElemHeight) / fListElemHeight clamped to 0, walking down and breaking once location.y >= updateRect.bottom. Icon modes iterate CurrentPoseList() (= fVSPoseList, sorted by y) and break once a pose's location.y passes updateRect.bottom — which is why the vertical-sort list must stay ordered.  
 `PoseView.cpp` → `BPoseView::DrawViewCommon`  
-**MISSING:** List mode walks only from the scroll offset for the visible row count and stops, but icon mode iterates every pose with no early break, and there is no update-rect at all (the window is fully redrawn whenever dirty).  
-*src/tiku_trk_app.c:draw (409-410) vs draw_icons (321-330)*
+**MISSING:** The early-out half now holds: the view answers which poses are
+inside the viewport and the icon renderer draws only those, where it used to
+walk every pose in the folder on every frame.  The UPDATE-RECT half does not
+and cannot yet -- the drawing floor has no damage, invalidate or copy-bits
+primitive, so every frame is a whole-window repaint and there is no update
+rect for a walk to be clipped against.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_visible_range;
+src/tiku_trk_desktop.c:folder_draw_icons; ../desktop/src/tiku_desk_gfx.h
+(fill/frame/line/clip only)*
 
-#### PVL-063 · important · partial
+#### PVL-063 · important · done
 **In icon modes, hit testing scans the list backwards so the icon painted last (on top) is the one you click.**  
 FindPose(BPoint) iterates from poseCount-1 downwards in icon modes and uses BPose::PointInPose, which does a real per-pixel icon hit test through IconCache::IconHitTest and otherwise tests the label rect. In list mode it maps y directly to a row index and tests only that row.  
 `PoseView.cpp` → `BPoseView::FindPose(BPoint, int32*) / BPose::PointInPose`  
-**MISSING:** Hit testing does scan backwards so the last-drawn icon wins, and list mode maps y straight to a row index, but the icon-mode test is a plain rectangle containment against the pose rect — there is no per-pixel icon hit test, so transparent icon corners still select.  
-*src/tiku_trk_poseview.c:tiku_trk_poseview_pose_at (1899-1921); src/tiku_trk_app.c:row_at (759)*
+**PORT:** The scan runs last-drawn-first and now asks each pose about its
+parts rather than its cell, so the icon painted on top is the one hit even
+where two cells overlap.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_pose_at; tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### PVL-064 · important · done
 **An icon-mode label is centred under the icon and truncated at about 30 characters; a mini-icon label sits to the right of the icon.**  
@@ -1261,13 +1300,19 @@ LongAndDragTrackingFilter fires kMsgMouseLongDown after get_click_speed() if the
 Also activates and synchronously updates the window before the menu goes up, and fires the SelectionChanged hook afterwards.  
 `PoseView.cpp` → `BPoseView::ShowContextMenu`  
 
-#### PVS-019 · important · partial
+#### PVS-019 · important · done
 **In icon mode a click only hits a pose on opaque icon pixels or inside the name text rect - clicking the transparent corner of an icon misses.**  
 IconCache::sIconCache->IconHitTest(where - location, ResolvedModel(), kNormalIcon, IconSize()) for the icon rect; otherwise the first column's widget rect, and only if the widget IsVisible().  
 `Pose.cpp` → `BPose::PointInPose(const BPoseView*, BPoint)`  
 **TIKU:** Device-namespace nodes need an icon source; per-pixel hit testing implies a real alpha bitmap per node type.  
-**MISSING:** Icon-mode hit testing exists and covers the label (the pose rect is widened and re-centred to the measured name width), but it is a plain rectangle test — there is no per-pixel alpha test against the rendered icon, so a click on a transparent icon corner still hits.  
-*src/tiku_trk_poseview.c:1898 (tiku_trk_poseview_pose_at) / pose_rect:1861*
+**PORT:** A pose is its ICON and its LABEL, not the cell around them.  A
+click on either hits; the gap between them, the space beside a short name and
+the empty bottom of the cell hit nothing.  On the icon it is judged per
+PIXEL through a hook the shell fills in, so what is hit is what was painted.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_pose_parts/_pose_at/
+_set_icon_hit; src/tiku_trk_desktop.c:pose_icon_hit; tests/test_iconview.c;
+tests/shell/iconview.script*  
+*Shell: desktop*  
 
 #### PVS-020 · important · partial
 **In list mode a click hits the row if it lands in the icon rect or in any column's click rect, and reports which text widget was hit.**  
@@ -1572,22 +1617,33 @@ same gate the clicks read, tested by walking a picker's list.
 *src/tiku_trk_poseview.c (the shift arm of key_nav); tests/test_panel.c*  
 *Shell: desktop*  
 
-#### PVK-007 · important · open
+#### PVK-007 · important · done
 **In icon/mini-icon modes the arrow keys navigate geometrically: the chosen pose is the nearest one in the arrow's direction whose rectangle overlaps the current pose's horizontal band (for Left/Right) or vertical band (for Up/Down).**  
 LinesIntersect(top,bottom,...) for Left/Right and LinesIntersect(left,right,...) for Up/Down; among candidates the one with the closest facing edge wins (max left / min right / max top / min bottom), tracked in bestRect. No wraparound.  
 `PoseView.cpp` → `BPoseView::FindNearbyPose (icon-mode loop over fPoseList) + static LinesIntersect`  
 **TIKU:** A namespace-node view with no free icon placement can drop this, but grid-mode navigation must still be spatial if icons are ever positioned.  
 **CHECKED:** Arrow keys are purely list-index in every view mode; nothing consults pose rectangles, bands or facing edges, and pose_rect/loc_x are never read from the key path.  
 *none found (src/tiku_trk_poseview.c:tiku_trk_poseview_key_nav is index-only)*
-**SUBSYSTEM:** icon-mode spatial keyboard navigation — key_nav is index-only in every view mode (src/tiku_trk_poseview.c:1204-1225 walks the list by ±1); the geometry it would need exists (loc_x/loc_y, tiku_trk_poseview_pose_rect at poseview.c:2173) but no key path reads it, and no band-overlap/nearest-edge search (LinesIntersect analog) exists anywhere in src/  
+**PORT:** Among the poses in the half-plane the key points at, the nearest --
+with movement ACROSS the key's axis counting double, which is what keeps a
+step down inside its own column when the next column's icon is marginally
+closer.  A direction key is a half-plane, not a distance: an icon that is
+nearer but the wrong way is not a candidate at all.
+*src/tiku_trk_poseview.c:nearest_in_direction; tests/test_iconview.c;
+tests/shell/iconview.script*  
+*Shell: desktop*  
 
-#### PVK-008 · polish · open
+#### PVK-008 · polish · done
 **Arrow key in icon mode with nothing selected picks the upper-left-most pose.**  
 Scans fVSPoseList comparing CalcRect tops/lefts, stopping at the first pose on a lower row. (The loop double-increments `index`, so it inspects every other entry.)  
 `PoseView.cpp` → `BPoseView::FindNearbyPose (`if (fSelectionList->IsEmpty())` branch)`  
 **CHECKED:** With an empty selection the port seeds at list index 0 (Down/Right) or n-1 (Up/Left) with no geometry consulted anywhere in key_nav, so on a hand-dragged icon layout (move_pose is reachable from the drag path) the upper-left-most pose is simply not what gets picked — the mechanism is absent, not replaced.  
-*src/tiku_trk_poseview.c:960-981 (no CalcRect/geometry in key_nav); drag placement src/tiku_trk_app.c:1449-1457 via tiku_trk_poseview_move_pose*
-**SUBSYSTEM:** icon-mode spatial keyboard navigation — with an empty selection the port seeds at list index 0 (Down/Right) or n-1 (Up/Left) with no geometry consulted (src/tiku_trk_poseview.c:1207-1219), so on a hand-dragged layout the upper-left-most pose is not what gets picked; same absent mechanism as PVK-007  
+**PORT:** With nothing selected the first arrow picks the upper-left-most
+pose, whichever key it was -- not the first in sort order, which in a
+two-dimensional arrangement is wherever that entry happens to sit.
+*src/tiku_trk_poseview.c:nearest_in_direction (the row < 0 arm);
+tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### PVK-009 · polish · differs
 **An arrow key in icon mode that finds no pose in that direction leaves the selection exactly as it was (no deselect, no beep).**  
@@ -1596,19 +1652,28 @@ Scans fVSPoseList comparing CalcRect tops/lefts, stopping at the first pose on a
 **PORT:** There is a real alternative implementation to point at — the end-of-list clamps (UP at row 0 -> 0, DOWN at row n-1 -> n-1) feed the same plain-arrow path, so the pose is re-selected onto itself with no deselect and no beep, the same outcome Tracker gets from FindNearbyPose returning selectedPose.  
 *src/tiku_trk_poseview.c:966-983 combined with 1006-1018*
 
-#### PVK-010 · important · partial
+#### PVK-010 · important · done
 **Home selects the first entry in list mode; in icon modes it only scrolls the view to the top without changing the selection. End is the mirror image.**  
 kListMode -> MoveOrChangePoseSelection(0) / (CountItems()-1); otherwise ScrollView(B_HOME) / ScrollView(B_END) which sets the vertical scrollbar to 0 / max.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_HOME, case B_END) -> BPoseView::ScrollView`  
-**MISSING:** The selection no longer moves in an icon mode; the scroll it sets instead is not yet read by the icon renderer, which does not scroll.
+**PORT:** In an icon mode Home and End move the view's own pixel origin and
+leave the selection alone: there is no last ROW to select in a
+two-dimensional arrangement, and the row index these keys used to write was
+read by nothing that draws icons.
+*src/tiku_trk_poseview.c (the icon branch of key_nav); tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### PVK-011 · important · partial
 **Page Up selects the first fully visible pose; if that pose is already the first selected one, the view scrolls up one page first and then selects the new first-visible pose. Page Down is the mirror image using the last visible pose.**  
 Compares FirstVisiblePose()'s index with CurrentPoseList()->IndexOf(fSelectionList->FirstItem()) (Page Down uses LastItem()); ScrollView(B_PAGE_UP/DOWN) moves the scrollbar by its own `max` step. In icon modes Page Up/Down only scroll.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_PAGE_UP, case B_PAGE_DOWN); BPoseView::FirstVisiblePose / LastVisiblePose`  
-**MISSING:** Page Up/Down move the selection by a hardcoded 20 rows; neither the 'select the first/last fully visible pose' step nor the 'already selected -> scroll a page first' step exists, and icon modes are not scroll-only.  
-*src/tiku_trk_poseview.c:tiku_trk_poseview_key_nav lines 987-989*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The page is derived from the window: page = visible_rows-1 (src/tiku_trk_poseview.c:1233) and both shells feed visible_rows from their layout (src/tiku_trk_app.c:486, src/tiku_trk_desktop.c:224); and in icon modes PgUp/PgDn (with Home/End) are scroll-only, leaving the selection alone (src/tiku_trk_poseview.c:1252-1267). The still-true residue is only the first/last-fully-VISIBLE-pose selection step and the already-selected-scroll-first step. `src/tiku_trk_poseview.c:1228-1243 and :1252-1267`  
+**MISSING:** The icon half holds -- a page is exactly the window's height in
+pixels, and the keys are now bound in the multi-window shell, which bound
+neither of them.  The LIST half is unchanged: paging still steps from the
+selected row rather than from the first VISIBLE one, so a page from a
+selection scrolled out of sight goes to the wrong place.
+*src/tiku_trk_poseview.c (the icon branch of key_nav, and the list branch
+which still pages from the active row); tests/test_iconview.c*
 
 #### PVK-012 · important · partial
 **Home/End/PageUp/PageDown with Shift held extend the selection from the existing anchor to the destination instead of replacing it.**  
@@ -2814,7 +2879,15 @@ RepopulateMenus detaches the shared items, deletes and re-adds File/Window/Attri
 **Cmd-1 / Cmd-2 / Cmd-3 switch to icon / mini-icon / list view from the Window menu, and the icon-size submenu is radio-marked to the current size.**  
 AddIconSizeMenu builds an "Icon view" submenu in radio mode with the six sizes, gives its superitem the shortcut '1' and a bare kIconMode message (so invoking the parent restores LastIconSize); "Mini icon view" is '2' (kMiniIconMode) and "List view" is '3' (kListMode), all targeted at the pose view. Decrease/Increase size items ('-' / '+') live inside the same submenu.  
 `ContainerWindow.cpp` → `BContainerWindow::AddIconSizeMenu / BContainerWindow::AddWindowMenu`  
-**MISSING:** Both shells bind Ctrl+1/2/3; the Icon view row is a submenu holder, so it has no shortcut of its own.
+**PORT:** The chords were bound in both shells already; what was missing is
+that the multi-window shell drew list mode whatever the setting said, so two
+of the three did nothing visible.  It now renders icon and mini-icon modes --
+icons at the view's own positions, names centred beneath, the selection on
+the label rather than the whole cell -- and dispatches clicks through the
+view rather than by dividing by a row height.
+*src/tiku_trk_desktop.c:folder_draw_icons/draw_pose_icon/folder_row_at;
+tests/shell/iconview.script*  
+*Shell: desktop, tracker*  
 
 #### CW-066 · important · open ⟨found by verification⟩
 **Window state can travel in a BMessage instead of node attributes, which is how Tracker reopens the exact set of windows (including minimized ones) after a restart.**  
@@ -4575,12 +4648,17 @@ IconHitTest returns true unconditionally inside the icon rect inset by (width+1)
 *src/tiku_trk_poseview.c:1899-1918 (pose_at rect test) with :1862-1894 (pose_rect, w = min(cw, art)); no alpha test exists in src/*
 **BLOCKED:** an alpha-sample or mask hit API that does not exist: pose_at is a pure rectangle test (src/tiku_trk_poseview.c:2210-2232 over pose_rect at :2173-2207) and grep for 'alpha' in the hit-test paths of poseview/app/desktop returns nothing — the decoded RGBA bitmaps are resident in the cache (src/tiku_trk_icons.c:1755-1799), so only the sampling code is missing  
 
-#### IV-026 · core · partial
+#### IV-026 · core · done
 **In icon mode a click counts as hitting the pose if it lands on opaque icon pixels or anywhere in the label rect.**  
 BPose::PointInPose (icon-mode overload) tests _IconRect first and defers to IconCache::IconHitTest(where - location); otherwise it tests the first column widget's CalcRect and only if the widget IsVisible().  
 `src/kits/tracker/Pose.cpp` → `BPose::PointInPose`  
-**MISSING:** The label half of the rule is there — the pose rect is widened (re-centred both ways in icon mode) to the measured label width so the name is clickable where it is drawn — but the "opaque icon pixels" clause is missing: the whole icon+label bounding box hits, including the gap between them.  
-*src/tiku_trk_poseview.c:tiku_trk_poseview_pose_rect (PVL-065 branch)*
+**PORT:** The alpha sample was already there and had never been called from
+anything but its own test; it now answers every icon-mode click.  A
+transparent corner is not the pose, which is what makes the gap between two
+adjacent icons sweepable at all.
+*src/tiku_trk_iconpaint.c:tiku_trk_icon_hit (now reached);
+src/tiku_trk_poseview.c:tiku_trk_poseview_pose_at; tests/test_iconview.c*  
+*Shell: desktop*  
 
 #### IV-027 · important · done
 **In list mode the whole icon rect is clickable - no alpha test.**  

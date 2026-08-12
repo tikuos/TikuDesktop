@@ -1,0 +1,33 @@
+# shell: desktop
+# CW-065/PVS-019/PVK-007: the multi-window shell draws an icon mode at all,
+# a click lands on the ART rather than anywhere in its cell, and an arrow
+# key moves geometrically rather than along the sort order.
+note Cmd+1 switches this window to icon mode
+key 1 ctrl
+wait 10
+note clicking an icon selects that one thing
+click 88 100
+wait 3
+expect-selected 1
+expect-selected-name sub
+note the space BETWEEN two icons is nobody's: it clears the selection,
+note which is what makes a band sweepable between them
+click 150 100
+wait 3
+expect-selected 0
+note Right moves to the icon beside it, not to the next name in the list
+click 88 100
+wait 3
+key Right
+wait 3
+expect-selected 1
+expect-selected-name a.txt
+note Left comes back, and Down from the only row goes nowhere rather than
+note wrapping to the far side of the window
+key Left
+wait 3
+expect-selected-name sub
+key Down
+wait 3
+expect-selected-name sub
+quit

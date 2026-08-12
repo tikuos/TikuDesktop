@@ -322,12 +322,13 @@ main(void)
     }
     {   /* hit-testing finds the icon under a point */
         tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
-        int px, py;
+        int ix, iy, iw, ih;
 
-        tiku_trk_poseview_pose_location(v, p0, &px, &py);
-        check(tiku_trk_poseview_pose_at(v, px + 4, py + 4) == p0, "PVL-hit",
-              "a point inside an icon's cell finds that icon");
-        check(tiku_trk_poseview_pose_at(v, px - 300, py - 300) == NULL,
+        tiku_trk_poseview_pose_parts(v, p0, &ix, &iy, &iw, &ih,
+                                     NULL, NULL, NULL, NULL);
+        check(tiku_trk_poseview_pose_at(v, ix + 4, iy + 4) == p0, "PVL-hit",
+              "a point on an icon finds that icon");
+        check(tiku_trk_poseview_pose_at(v, ix - 300, iy - 300) == NULL,
               "PVL-hit", "and empty space finds nothing");
     }
     {   /* spatial memory survives a reload */
@@ -700,12 +701,19 @@ main(void)
     tiku_trk_poseview_select_none(v);
     tiku_trk_poseview_click(v, 1, 0);
     tiku_trk_poseview_scroll_to(v, 0);
+    tiku_trk_poseview_set_viewport(v, 200, 100);
     (void)tiku_trk_poseview_key_nav(v, TIKU_TRK_KEY_END, 0);
-    check(sel_at(v, 1) && tiku_trk_poseview_selection_count(v) == 1 &&
-          tiku_trk_poseview_scroll(v) > 0, "PVK-010",
-          "in icon mode End scrolls the view and leaves the selection "
-          "alone -- there is no last ROW to select in a two-dimensional "
-          "arrangement");
+    {
+        int ox = 0, oy = 0;
+
+        tiku_trk_poseview_origin(v, &ox, &oy);
+        check(sel_at(v, 1) && tiku_trk_poseview_selection_count(v) == 1 &&
+              oy > 0, "PVK-010",
+              "in icon mode End moves the view's own pixel ORIGIN and "
+              "leaves the selection alone -- there is no last ROW to "
+              "select in a two-dimensional arrangement, and the row index "
+              "it used to write was read by nothing that draws icons");
+    }
     tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     tiku_trk_poseview_scroll_to(v, 0);
 

@@ -80,6 +80,21 @@ struct tiku_trk_poseview {
     int                 state_dirty;    /* fStateNeedsSaving                */
     int                 is_query;       /* results, not a directory         */
     int                 visible_rows;   /* what the window can show         */
+    int                 view_w, view_h; /* the window, in PIXELS            */
+    /* The font the labels are drawn in.  Zero until the owner says, and
+     * every icon-mode height falls back to the art size until it does. */
+    int                 font_h, font_a;
+    tiku_trk_hit_fn     icon_hit;
+    void               *icon_hit_ctx;
+    /* The pixel origin of each icon mode, kept apart from the list's row
+     * scroll so a mode round-trip returns to where it was (PVL-009). */
+    int                 icon_x, icon_y;
+    int                 mini_x, mini_y;
+    /* The bounding box of everything placed, maintained as poses arrive and
+     * move rather than walked on every ask (PVL-050).  Inverted while empty,
+     * so the first pose DEFINES it instead of the origin doing so. */
+    int                 ext_x0, ext_y0, ext_x1, ext_y1;
+    int                 ext_valid;
     /* Notices that arrived before the row they concern, and entries seen but
      * not readable -- neither is dropped, because a change lost is a row
      * that lies and an unreadable entry is not an absent one. */
@@ -1233,6 +1248,96 @@ active_row(tiku_trk_poseview_t *v)
     return -1;
 }
 
+/**
+ * @brief The pose an arrow from @p row lands on in an icon mode (PVK-007).
+ *
+ * Tracker's own rule: among the poses in the half-plane the key points at,
+ * the nearest by distance, with movement ALONG the key's axis counting for
+ * more than movement across it -- otherwise "down" from a lone icon picks
+ * whatever happens to be nearest, which is usually beside it.
+ *
+ * @return a display index, or -1 when there is nothing that way.
+ */
+static int
+nearest_in_direction(tiku_trk_poseview_t *v, int row, int key)
+{
+    int i, n = tiku_trk_poseview_count(v), best = -1;
+    long best_score = 0;
+    int cx = 0, cy = 0;
+
+    if (n == 0) {
+        return -1;
+    }
+    if (row < 0) {
+        /* PVK-008: with nothing selected the first arrow picks the
+         * upper-left-most pose, whichever key it was. */
+        for (i = 0; i < n; i++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+            int px, py, pw, ph;
+
+            if (p == NULL || !p->placed) {
+                continue;
+            }
+            tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
+            if (best < 0 || py < cy || (py == cy && px < cx)) {
+                best = i;
+                cx = px;
+                cy = py;
+            }
+        }
+        return best;
+    }
+    {
+        tiku_trk_pose_t *from = tiku_trk_poseview_at(v, row);
+        int px, py, pw, ph;
+
+        if (from == NULL) {
+            return -1;
+        }
+        tiku_trk_poseview_pose_rect(v, from, &px, &py, &pw, &ph);
+        cx = px + pw / 2;
+        cy = py + ph / 2;
+    }
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+        int px, py, pw, ph, mx, my;
+        long along, across, score;
+
+        if (p == NULL || !p->placed || i == row) {
+            continue;
+        }
+        tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
+        mx = px + pw / 2;
+        my = py + ph / 2;
+        switch (key) {
+        case TIKU_TRK_KEY_UP:
+            if (my >= cy) { continue; }
+            along = cy - my;  across = (mx > cx) ? mx - cx : cx - mx;
+            break;
+        case TIKU_TRK_KEY_DOWN:
+            if (my <= cy) { continue; }
+            along = my - cy;  across = (mx > cx) ? mx - cx : cx - mx;
+            break;
+        case TIKU_TRK_KEY_LEFT:
+            if (mx >= cx) { continue; }
+            along = cx - mx;  across = (my > cy) ? my - cy : cy - my;
+            break;
+        default:
+            if (mx <= cx) { continue; }
+            along = mx - cx;  across = (my > cy) ? my - cy : cy - my;
+            break;
+        }
+        /* Across counts double, which is what keeps a step down inside its
+         * own column when the next column's icon is marginally closer. */
+        score = along + 2 * across;
+        if (best < 0 || score < best_score) {
+            best = i;
+            best_score = score;
+        }
+    }
+    return best;
+}
+
 int
 tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
 {
@@ -1250,6 +1355,17 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
      * the last-clicked pose is still remembered. */
     row = (tiku_trk_poseview_selection_count(v) == 0) ? -1 : active_row(v);
 
+    if (v->mode != TIKU_TRK_MODE_LIST &&
+        (key == TIKU_TRK_KEY_UP || key == TIKU_TRK_KEY_DOWN ||
+         key == TIKU_TRK_KEY_LEFT || key == TIKU_TRK_KEY_RIGHT)) {
+        /* Geometrically, not by index: icons are laid out in two
+         * dimensions and walking the sort order would jump across the
+         * window (PVK-007). */
+        target = nearest_in_direction(v, row, key);
+        if (target < 0) {
+            return 1;           /* nothing that way; the selection stays */
+        }
+    } else {
     switch (key) {
     case TIKU_TRK_KEY_UP:
     case TIKU_TRK_KEY_LEFT:
@@ -1301,20 +1417,28 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
     if (v->mode != TIKU_TRK_MODE_LIST &&
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
-        int page = (v->visible_rows > 1) ? v->visible_rows - 1 : 1;
+        /* In pixels, against the extent: an icon layout has no rows to
+         * count, and the row index these keys used to write was read by
+         * nothing that draws icons (PVK-010). */
+        int ex, ey, ew, eh, ox, oy;
+        int page = (v->view_h > 1) ? v->view_h : 1;
 
+        tiku_trk_poseview_extent(v, &ex, &ey, &ew, &eh);
+        tiku_trk_poseview_origin(v, &ox, &oy);
         switch (key) {
-        case TIKU_TRK_KEY_HOME: v->scroll = 0; break;
-        case TIKU_TRK_KEY_END:  v->scroll = (n > 0) ? n - 1 : 0; break;
-        case TIKU_TRK_KEY_PGUP: v->scroll -= page; break;
-        default:                v->scroll += page; break;
+        case TIKU_TRK_KEY_HOME: oy = ey; break;
+        case TIKU_TRK_KEY_END:  oy = ey + eh; break;
+        case TIKU_TRK_KEY_PGUP: oy -= page; break;
+        default:                oy += page; break;
         }
-        if (v->scroll < 0) {
-            v->scroll = 0;
-        }
+        /* The SELECTION is deliberately untouched: in an icon mode these
+         * keys move the view, and moving the selection as well would lose
+         * what the user gathered before scrolling to look at something. */
+        tiku_trk_poseview_set_origin(v, ox, oy);
         return 1;
     }
 
+    }
     if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only) {
         /* PVK-005: grow by one, or walk back when the target is already in
          * the selection.  In a single-selection view Shift adds nothing --
@@ -1820,6 +1944,12 @@ tiku_trk_poseview_set_icon_size(tiku_trk_poseview_t *v, int px)
 /** @brief The size ladder, in the order Cmd-+ walks it (PVL-003). */
 static const int icon_ladder[] = { 32, 40, 48, 64, 96, 128 };
 
+static void extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p);
+static void extent_clear(tiku_trk_poseview_t *v);
+static void extent_recalc(tiku_trk_poseview_t *v);
+
+static float mode_scale(int mode, int size);
+
 int
 tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up)
 {
@@ -1841,12 +1971,32 @@ tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up)
     }
     /* The ends are a no-op, not a wrap: 128 stepping to 32 would look like
      * the display broke. */
-    if (up && i + 1 < n) {
-        v->icon_size = icon_ladder[i + 1];
-    } else if (!up && i > 0) {
-        v->icon_size = icon_ladder[i - 1];
-    } else {
-        return 0;
+    {
+        /* What the middle of the window is looking at, in the UNSCALED
+         * space positions are stored in -- the one thing that does not
+         * change when the size does. */
+        float was = mode_scale(v->mode, v->icon_size);
+        float cx = ((float)v->icon_x + (float)v->view_w / 2.0f) / was;
+        float cy = ((float)v->icon_y + (float)v->view_h / 2.0f) / was;
+
+        if (up && i + 1 < n) {
+            v->icon_size = icon_ladder[i + 1];
+        } else if (!up && i > 0) {
+            v->icon_size = icon_ladder[i - 1];
+        } else {
+            return 0;
+        }
+        /* Put that same point back in the middle.  Without this the view
+         * jumps to the top-left on every size change, because the origin
+         * is in pixels and the pixels all moved (PVL-010). */
+        extent_clear(v);
+        {
+            float now = mode_scale(v->mode, v->icon_size);
+
+            tiku_trk_poseview_set_origin(v,
+                (int)(cx * now - (float)v->view_w / 2.0f),
+                (int)(cy * now - (float)v->view_h / 2.0f));
+        }
     }
     v->state_dirty = 1;
     return 1;
@@ -1960,6 +2110,16 @@ tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode)
     if (mode != TIKU_TRK_MODE_LIST && old_mode != TIKU_TRK_MODE_LIST) {
         map_icons(v, old_mode, v->icon_size);
     }
+    /* Every rect changed shape, so the box built from the old ones is a
+     * box around nothing; and the origin this mode kept is re-clamped
+     * against it, since the mode it was saved under may have been bigger. */
+    extent_clear(v);
+    {
+        int x, y;
+
+        tiku_trk_poseview_origin(v, &x, &y);
+        tiku_trk_poseview_set_origin(v, x, y);
+    }
     tiku_trk_poseview_reset_hint(v);
 }
 
@@ -1975,15 +2135,20 @@ tiku_trk_poseview_layout_info(const tiku_trk_poseview_t *v, int *gx, int *gy,
     s = tiku_trk_poseview_art_size(v);
     switch (v->mode) {
     case TIKU_TRK_MODE_MINI:
-        /* PVL-013: a wide, short cell, because a mini-icon row is a label. */
+        /* PVL-013: a wide, short cell, because a mini-icon row is a label.
+         * Its HEIGHT is the taller of the art and the label, since the two
+         * sit side by side (PVL-007). */
         *gx = s * 6;
-        *gy = (int)(s * 1.25f + 0.999f);
+        *gy = (v->font_h > 0 && v->font_h + 1 > s) ? v->font_h + 1 : s;
         *ox = (int)(s * 0.6f + 0.999f);
         *oy = (int)(s * 0.3f + 0.999f);
         break;
     case TIKU_TRK_MODE_ICON:
         *gx = s + (int)(s * 0.875f + 0.999f);
-        *gy = *gx;
+        /* The label sits UNDER the icon, so the cell is as tall as both:
+         * a height derived from the art alone clips the name at one font
+         * and leaves it floating at another (PVL-007). */
+        *gy = (v->font_h > 0) ? s + v->font_h + 1 : *gx;
         *ox = (int)(s * 0.625f + 0.999f);
         *oy = *ox;
         break;
@@ -2052,6 +2217,9 @@ tiku_trk_poseview_move_pose(tiku_trk_poseview_t *v, tiku_trk_pose_t *p,
     p->loc_y = (int)((float)y / scale);
     p->placed = 1;
     p->auto_placed = 0;           /* the user put it there */
+    /* Grown in place.  A pose can only ever move the box OUTWARDS from
+     * here; shrinking it needs the walk, and that is what removal does. */
+    extent_add(v, p);
     v->state_dirty = 1;
 }
 
@@ -2220,8 +2388,41 @@ tiku_trk_poseview_set_measure(tiku_trk_poseview_t *v, tiku_trk_measure_fn fn,
 }
 
 void
-tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
-                            int *x, int *y, int *w, int *h)
+tiku_trk_poseview_set_font_metrics(tiku_trk_poseview_t *v, int height,
+                                   int ascent)
+{
+    if (v != NULL && height > 0) {
+        v->font_h = height;
+        v->font_a = ascent;
+    }
+}
+
+int
+tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v)
+{
+    if (v == NULL || v->font_h <= 0) {
+        return 20;              /* the reference face's row */
+    }
+    /* Tracker's own: ceil(font height * 1.65), which is what leaves a mini
+     * icon room in the row rather than touching both edges. */
+    return (int)((float)v->font_h * 1.65f + 0.999f);
+}
+
+void
+tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v, tiku_trk_hit_fn fn,
+                               void *ctx)
+{
+    if (v != NULL) {
+        v->icon_hit = fn;
+        v->icon_hit_ctx = ctx;
+    }
+}
+
+void
+tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
+                             const tiku_trk_pose_t *p, int *ix, int *iy,
+                             int *iw, int *ih, int *lx, int *ly, int *lw,
+                             int *lh)
 {
     int px, py, cw, ch, art, tw = 0;
 
@@ -2235,25 +2436,72 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
         tw = v->measure(p->model.name, v->measure_ctx);
     }
     if (v->mode == TIKU_TRK_MODE_MINI) {
-        /* The label sits to the RIGHT of a mini icon, so the rect grows that
-         * way only (kMiniIconSeparator). */
-        *x = px;
-        *w = art + 4 + tw;
-        if (*w < cw) {
-            *w = cw;
+        if (ix != NULL) { *ix = px; *iy = py; *iw = art; *ih = art; }
+        if (lx != NULL) {
+            *lx = px + art + 4;
+            *ly = py;
+            *lw = tw;
+            *lh = (v->font_h > 0) ? v->font_h : art;
         }
-    } else if (tw > art) {
-        /* PVL-065: a label wider than its icon re-centres the rect and
-         * widens it both ways, because that is where the name is DRAWN --
-         * an icon-wide rect leaves half the name unclickable. */
-        *x = px + ((art - tw) / 2);
-        *w = tw;
-    } else {
-        *x = px;
-        *w = (cw > art) ? art : cw;
+        return;
     }
-    *y = py;
-    *h = ch;
+    /* Icon mode: the art centred in the cell, the label under it. */
+    if (ix != NULL) {
+        *ix = px + ((cw > art) ? (cw - art) / 2 : 0);
+        *iy = py;
+        *iw = art;
+        *ih = art;
+    }
+    if (lx != NULL) {
+        int h = (v->font_h > 0) ? v->font_h : 0;
+
+        *lx = px + ((cw - tw) / 2);
+        *ly = py + art + 1;
+        *lw = tw;
+        *lh = h;
+    }
+}
+
+void
+tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
+                            int *x, int *y, int *w, int *h)
+{
+    int ix, iy, iw, ih, lx, ly, lw, lh, x0, y0, x1, y1;
+
+    if (v == NULL || p == NULL) {
+        return;
+    }
+    /* The UNION of the parts, derived rather than computed a second time:
+     * two pieces of arithmetic for one rectangle is how a band comes to
+     * sweep a different box from the one a click is judged against. */
+    tiku_trk_poseview_pose_parts(v, p, &ix, &iy, &iw, &ih, &lx, &ly, &lw,
+                                 &lh);
+    x0 = (lw > 0 && lx < ix) ? lx : ix;
+    y0 = (lh > 0 && ly < iy) ? ly : iy;
+    x1 = (lw > 0 && lx + lw > ix + iw) ? lx + lw : ix + iw;
+    y1 = (lh > 0 && ly + lh > iy + ih) ? ly + lh : iy + ih;
+    {
+        /* Never narrower than the cell in mini mode, where the row IS the
+         * cell and a short name would leave a gap nothing can be clicked
+         * in. */
+        int cw, ch;
+
+        pose_extent(v, &cw, &ch);
+        if (v->mode == TIKU_TRK_MODE_MINI && x1 - x0 < cw) {
+            x1 = x0 + cw;
+        }
+    }
+    *x = x0;
+    *y = y0;
+    *w = x1 - x0;
+    *h = y1 - y0;
+}
+
+/** @brief Whether a point is inside a rectangle. */
+static int
+in_rect(int x, int y, int rx, int ry, int rw, int rh)
+{
+    return (x >= rx && x < rx + rw && y >= ry && y < ry + rh);
 }
 
 tiku_trk_pose_t *
@@ -2268,15 +2516,34 @@ tiku_trk_poseview_pose_at(tiku_trk_poseview_t *v, int x, int y)
     /* Last drawn wins, so the topmost icon under the point is the one hit. */
     for (i = n - 1; i >= 0; i--) {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
-        int px, py, pw, ph;
+        int ix, iy, iw, ih, lx, ly, lw, lh;
 
         if (p == NULL || !p->placed) {
             continue;
         }
-        tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
-        if (x >= px && x < px + pw && y >= py && y < py + ph) {
-            return p;
+        tiku_trk_poseview_pose_parts(v, p, &ix, &iy, &iw, &ih, &lx, &ly,
+                                     &lw, &lh);
+        if (in_rect(x, y, lx, ly, lw, lh)) {
+            return p;           /* the name is hit where it is drawn */
         }
+        if (!in_rect(x, y, ix, iy, iw, ih)) {
+            /* The gap between an icon and its name, and the space beside a
+             * short label, belong to neither: in an icon mode the cell is
+             * mostly empty, and treating the cell as the pose makes the
+             * space BETWEEN icons undraggable (PVS-019). */
+            continue;
+        }
+        if (v->icon_hit != NULL) {
+            /* Opaque pixels only.  An icon is not a rectangle, and arming
+             * from its transparent corner is what makes the gap between two
+             * adjacent icons draggable at all (IV-026). */
+            if (v->icon_hit(&p->model, iw, x - ix, y - iy,
+                            v->icon_hit_ctx)) {
+                return p;
+            }
+            continue;
+        }
+        return p;               /* no hook: the square, as before */
     }
     return NULL;
 }
@@ -2611,6 +2878,234 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
 /* Change notices                                                            */
 /*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+/* The viewport and the extent                                               */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Take one pose's rectangle into the running bounding box. */
+static void
+extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
+{
+    int px, py, pw, ph;
+
+    if (p == NULL || !p->placed) {
+        return;
+    }
+    tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
+    if (!v->ext_valid) {
+        v->ext_x0 = px;
+        v->ext_y0 = py;
+        v->ext_x1 = px + pw;
+        v->ext_y1 = py + ph;
+        v->ext_valid = 1;
+        return;
+    }
+    if (px < v->ext_x0)           { v->ext_x0 = px; }
+    if (py < v->ext_y0)           { v->ext_y0 = py; }
+    if (px + pw > v->ext_x1)      { v->ext_x1 = px + pw; }
+    if (py + ph > v->ext_y1)      { v->ext_y1 = py + ph; }
+}
+
+/** @brief Forget the box; the next pose to arrive defines it again. */
+static void
+extent_clear(tiku_trk_poseview_t *v)
+{
+    v->ext_valid = 0;
+    v->ext_x0 = v->ext_y0 = v->ext_x1 = v->ext_y1 = 0;
+}
+
+/** @brief Walk every pose again.  Only for what cannot grow a box: removal. */
+static void
+extent_recalc(tiku_trk_poseview_t *v)
+{
+    int i;
+
+    extent_clear(v);
+    for (i = 0; i < v->count; i++) {
+        extent_add(v, &v->poses[i]);
+    }
+}
+
+void
+tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
+{
+    if (v == NULL || w < 0 || h < 0) {
+        return;
+    }
+    v->view_w = w;
+    v->view_h = h;
+    /* The row count follows from the height, so a caller that says how big
+     * the window is has said everything: two numbers that could disagree
+     * are two numbers that will. */
+    tiku_trk_poseview_set_visible_rows(v,
+        h / (tiku_trk_poseview_row_height(v) > 0
+                 ? tiku_trk_poseview_row_height(v) : 1));
+    {
+        /* The CURRENT origin, put through the clamp again: a window that
+         * grew can leave the view scrolled past content that now fits.
+         * Passing zero here instead would reset the view to the top-left
+         * on every resize, which is a different bug wearing this one's
+         * clothes. */
+        int x, y;
+
+        tiku_trk_poseview_origin(v, &x, &y);
+        tiku_trk_poseview_set_origin(v, x, y);
+    }
+}
+
+void
+tiku_trk_poseview_viewport(const tiku_trk_poseview_t *v, int *w, int *h)
+{
+    if (v == NULL) {
+        return;
+    }
+    if (w != NULL) { *w = v->view_w; }
+    if (h != NULL) { *h = v->view_h; }
+}
+
+void
+tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y, int *w,
+                         int *h)
+{
+    int gx, gy, ox, oy;
+
+    if (v == NULL) {
+        return;
+    }
+    if (v->mode == TIKU_TRK_MODE_LIST) {
+        /* The columns by the rows.  A list has no origin of its own: it
+         * scrolls by whole rows, which is what v->scroll counts. */
+        int shown = v->filtering ? v->filtered_count : v->count;
+
+        if (x != NULL) { *x = 0; }
+        if (y != NULL) { *y = 0; }
+        if (w != NULL) { *w = tiku_trk_poseview_columns_width(v); }
+        if (h != NULL) { *h = shown * tiku_trk_poseview_row_height(v); }
+        return;
+    }
+    if (!v->ext_valid) {
+        extent_recalc(v);
+    }
+    tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
+    /* Outset by the layout offset, so an icon at the origin is not flush
+     * against the window's edge -- the same margin auto-placement leaves. */
+    if (x != NULL) { *x = v->ext_valid ? v->ext_x0 - ox : 0; }
+    if (y != NULL) { *y = v->ext_valid ? v->ext_y0 - oy : 0; }
+    if (w != NULL) { *w = v->ext_valid ? (v->ext_x1 - v->ext_x0) + 2 * ox
+                                       : 0; }
+    if (h != NULL) { *h = v->ext_valid ? (v->ext_y1 - v->ext_y0) + 2 * oy
+                                       : 0; }
+}
+
+/** @brief The origin pair the current mode uses, or NULL in list mode. */
+static void
+origin_of(tiku_trk_poseview_t *v, int **x, int **y)
+{
+    if (v->mode == TIKU_TRK_MODE_ICON) {
+        *x = &v->icon_x;
+        *y = &v->icon_y;
+    } else if (v->mode == TIKU_TRK_MODE_MINI) {
+        *x = &v->mini_x;
+        *y = &v->mini_y;
+    } else {
+        *x = NULL;
+        *y = NULL;
+    }
+}
+
+void
+tiku_trk_poseview_set_origin(tiku_trk_poseview_t *v, int x, int y)
+{
+    int *ox, *oy, ex, ey, ew, eh, maxx, maxy;
+
+    if (v == NULL) {
+        return;
+    }
+    origin_of(v, &ox, &oy);
+    if (ox == NULL) {
+        return;
+    }
+    tiku_trk_poseview_extent(v, &ex, &ey, &ew, &eh);
+    /* Clamped to what there IS to see: an origin past the end is rows of
+     * blank space with nothing to scroll back to, and a saved one from a
+     * bigger window would open the folder looking empty (PVL-053). */
+    maxx = ew - v->view_w;
+    maxy = eh - v->view_h;
+    if (maxx < 0) { maxx = 0; }
+    if (maxy < 0) { maxy = 0; }
+    if (x < ex) { x = ex; }
+    if (y < ey) { y = ey; }
+    if (x > ex + maxx) { x = ex + maxx; }
+    if (y > ey + maxy) { y = ey + maxy; }
+    *ox = x;
+    *oy = y;
+}
+
+void
+tiku_trk_poseview_origin(const tiku_trk_poseview_t *v, int *x, int *y)
+{
+    if (v == NULL) {
+        return;
+    }
+    if (x != NULL) {
+        *x = (v->mode == TIKU_TRK_MODE_ICON) ? v->icon_x
+           : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_x : 0;
+    }
+    if (y != NULL) {
+        *y = (v->mode == TIKU_TRK_MODE_ICON) ? v->icon_y
+           : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_y : 0;
+    }
+}
+
+int
+tiku_trk_poseview_visible_range(tiku_trk_poseview_t *v, int *first, int *last)
+{
+    int i, n, ox, oy, lo = -1, hi = -1;
+
+    if (first != NULL) { *first = -1; }
+    if (last != NULL)  { *last = -1; }
+    if (v == NULL) {
+        return 0;
+    }
+    n = tiku_trk_poseview_count(v);
+    if (n == 0) {
+        return 0;
+    }
+    if (v->mode == TIKU_TRK_MODE_LIST) {
+        lo = v->scroll;
+        hi = v->scroll + ((v->visible_rows > 0) ? v->visible_rows : 1) - 1;
+        if (lo < 0)      { lo = 0; }
+        if (hi > n - 1)  { hi = n - 1; }
+        if (lo > n - 1)  { return 0; }
+        if (first != NULL) { *first = lo; }
+        if (last != NULL)  { *last = hi; }
+        return 1;
+    }
+    tiku_trk_poseview_origin(v, &ox, &oy);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+        int px, py, pw, ph;
+
+        if (p == NULL || !p->placed) {
+            continue;
+        }
+        tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
+        if (px + pw <= ox || py + ph <= oy ||
+            (v->view_w > 0 && px >= ox + v->view_w) ||
+            (v->view_h > 0 && py >= oy + v->view_h)) {
+            continue;
+        }
+        if (lo < 0) { lo = i; }
+        hi = i;
+    }
+    if (lo < 0) {
+        return 0;
+    }
+    if (first != NULL) { *first = lo; }
+    if (last != NULL)  { *last = hi; }
+    return 1;
+}
+
 void
 tiku_trk_poseview_set_visible_rows(tiku_trk_poseview_t *v, int rows)
 {
@@ -2795,6 +3290,9 @@ remove_pose(tiku_trk_poseview_t *v, int at)
     for (i = 0; i < v->count; i++) {
         v->poses[i].index = i;
     }
+    /* The one thing a running box cannot do is shrink, so a removal is the
+     * one thing that pays for the walk (PVL-050). */
+    extent_recalc(v);
     /*
      * Stated in terms of what is VISIBLE: if the row that went was the last
      * one on screen and the view is scrolled, coming up by one keeps the

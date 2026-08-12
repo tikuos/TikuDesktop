@@ -48,6 +48,8 @@ typedef struct {
     int         rows;       /* how many rows it holds                   */
     const char *alert;      /* the open alert's text, or NULL           */
     int         windows;    /* how many windows are open                */
+    int         selected;   /* how many poses the focused view has       */
+    const char *sel_name;   /* the first selected pose's name, or NULL   */
 } tiku_trk_script_state_t;
 
 typedef struct tiku_trk_script tiku_trk_script_t;
@@ -70,6 +72,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     remove <path>                       -- change the world behind it
  *     expect-perm <path> <rwx>            -- the owner bits, e.g. "rw-"
  *     expect-windows <n>
+ *     expect-selected <n>
+ *     expect-selected-name <name>
  *     expect-title <substring>
  *     note <text>                         -- what the next check is for
  *     quit

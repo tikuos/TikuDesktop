@@ -460,6 +460,20 @@ int tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up);
 int tiku_trk_poseview_art_size(const tiku_trk_poseview_t *v);
 void tiku_trk_poseview_set_icon_size(tiku_trk_poseview_t *v, int px);
 
+/**
+ * @brief Tell the view the font it is being drawn in (PVL-007).
+ *
+ * Every height in an icon mode is a function of the label's height, not of
+ * the icon size: a cell derived from the art alone leaves the name clipped
+ * at one font and floating at another.  Supplied by the owner, as the label
+ * MEASURE is, because only it owns a font.
+ */
+void tiku_trk_poseview_set_font_metrics(tiku_trk_poseview_t *v, int height,
+                                        int ascent);
+
+/** @brief The list-mode row height for the font in use (PVL-007). */
+int tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v);
+
 /** @brief Grid cell and origin offset for the current mode (PVL-013). */
 void tiku_trk_poseview_layout_info(const tiku_trk_poseview_t *v,
                                    int *grid_x, int *grid_y,
@@ -530,6 +544,82 @@ void tiku_trk_poseview_set_measure(tiku_trk_poseview_t *v,
 void tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v,
                                  const tiku_trk_pose_t *p, int *x, int *y,
                                  int *w, int *h);
+
+/**
+ * @brief A pose's icon square and label box separately (PVS-019, IV-026).
+ *
+ * pose_rect is their union, which is what a band sweeps and what the extent
+ * unions; these are what a CLICK is judged against, because the gap between
+ * an icon and its name is not part of either.  Either pointer may be NULL.
+ */
+void tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
+                                  const tiku_trk_pose_t *p,
+                                  int *ix, int *iy, int *iw, int *ih,
+                                  int *lx, int *ly, int *lw, int *lh);
+
+/**
+ * @brief Whether a point lands on an icon's opaque PIXELS (PVS-019).
+ *
+ * Supplied rather than derived, for the same reason the label measure is:
+ * the view owns no art.  It also keeps the two shells' different ways of
+ * resolving art -- one through the node-icon tier, one straight from the
+ * model -- out of the engine.  Without it a click is judged against the
+ * icon's square, as it was before.
+ *
+ * @param px,py Offsets INSIDE the icon square.
+ */
+typedef int (*tiku_trk_hit_fn)(const tiku_trk_model_t *m, int size, int px,
+                               int py, void *ctx);
+
+void tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v,
+                                    tiku_trk_hit_fn fn, void *ctx);
+
+/*---------------------------------------------------------------------------*/
+/* The viewport and the extent (PVL-049, PVL-050)                            */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief Tell the view how big the window showing it is, in pixels.
+ *
+ * The view knew only a ROW COUNT before, which is why nothing in an icon
+ * mode could scroll, clamp or page: none of those questions can be asked
+ * without knowing how much is on screen.
+ */
+void tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h);
+
+void tiku_trk_poseview_viewport(const tiku_trk_poseview_t *v, int *w,
+                                int *h);
+
+/**
+ * @brief The scrollable area: what there is to look at (PVL-049).
+ *
+ * In list mode the columns' width by the row count; in an icon mode the
+ * bounding box of every placed pose, outset by the layout offset so an icon
+ * at the origin is not flush against the edge.
+ */
+void tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y,
+                              int *w, int *h);
+
+/**
+ * @brief The pixel origin of an icon mode, and how to move it.
+ *
+ * Kept per mode: switching to list and back returns to where the icons
+ * were, which one shared origin cannot do (PVL-009).  Always clamped to
+ * what there is to see.
+ */
+void tiku_trk_poseview_set_origin(tiku_trk_poseview_t *v, int x, int y);
+void tiku_trk_poseview_origin(const tiku_trk_poseview_t *v, int *x, int *y);
+
+/**
+ * @brief The first and last poses inside the viewport (PVK-011, PVL-062).
+ *
+ * In list mode the first and last visible ROWS; in an icon mode the poses
+ * whose rects intersect the visible band.  Either pointer may be NULL.
+ *
+ * @return 1 when anything is visible at all.
+ */
+int tiku_trk_poseview_visible_range(tiku_trk_poseview_t *v, int *first,
+                                    int *last);
 
 /**
  * @brief Where the next created entry should land (PVL-025, PVL-098).

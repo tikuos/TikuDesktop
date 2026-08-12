@@ -1427,6 +1427,10 @@ main(int argc, char **argv)
                                   (void *)tiku_desk_font_plain());
     tiku_trk_poseview_set_font_size(a.view,
                                     tiku_desk_font_plain()->height);
+    /* And the metrics the icon-mode CELLS are derived from, which is a
+     * different question from the width columns are scaled against. */
+    tiku_trk_poseview_set_font_metrics(a.view, tiku_desk_font_plain()->height,
+                                       tiku_desk_font_plain()->ascent);
     (void)tiku_trk_poseview_restore_columns(a.view);
     tiku_trk_titleview_init(&a.tv, a.view, TITLE_H);
     if (a.dpy != NULL) {
