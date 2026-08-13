@@ -16,7 +16,7 @@
 #ifndef TIKU_TRK_SCRIPT_H_
 #define TIKU_TRK_SCRIPT_H_
 
-#include <X11/Xlib.h>
+#include "tiku_desk_event.h"
 
 /** @brief What the driver should do for one step. */
 typedef enum {
@@ -33,8 +33,8 @@ typedef enum {
 /** @brief One instruction, filled by the pump. */
 typedef struct {
     tiku_trk_script_do_t what;
-    KeySym      ks;         /* KEY: the keysym, already resolved        */
-    unsigned    state;      /* X modifier mask                          */
+    unsigned    key;        /* KEY: logical key or printable character */
+    unsigned    modifiers;  /* platform-neutral modifier mask          */
     int         x, y;       /* PRESS / RELEASE                          */
     unsigned    button;
     const char *path;       /* SHOT: where to write; MENU_PICK: label   */

@@ -10,7 +10,6 @@
 
 #include "tiku_trk_script.h"
 
-#include <X11/keysym.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,8 +32,8 @@ typedef enum {
 
 typedef struct {
     sc_op_t  op;
-    KeySym   ks;
-    unsigned state;
+    unsigned key;
+    unsigned modifiers;
     int      x, y;
     unsigned button;
     int      count;                     /* WAIT turns                    */
@@ -125,11 +124,61 @@ mods_of(char **w, int n, int from)
     int i;
 
     for (i = from; i < n; i++) {
-        if (strcmp(w[i], "ctrl") == 0)       { m |= ControlMask; }
-        else if (strcmp(w[i], "shift") == 0) { m |= ShiftMask; }
-        else if (strcmp(w[i], "alt") == 0)   { m |= Mod1Mask; }
+        if (strcmp(w[i], "ctrl") == 0) {
+            m |= TIKU_DESK_MOD_CMD;
+        } else if (strcmp(w[i], "shift") == 0) {
+            m |= TIKU_DESK_MOD_SHIFT;
+        } else if (strcmp(w[i], "alt") == 0) {
+            m |= TIKU_DESK_MOD_OPTION;
+        }
     }
     return m;
+}
+
+/** @brief Resolve the portable key names accepted by the script grammar. */
+static unsigned
+key_of(const char *name)
+{
+    static const struct {
+        const char *name;
+        unsigned key;
+    } named[] = {
+        { "Up", TIKU_DESK_KEY_UP },
+        { "Down", TIKU_DESK_KEY_DOWN },
+        { "Left", TIKU_DESK_KEY_LEFT },
+        { "Right", TIKU_DESK_KEY_RIGHT },
+        { "Home", TIKU_DESK_KEY_HOME },
+        { "End", TIKU_DESK_KEY_END },
+        { "Prior", TIKU_DESK_KEY_PAGE_UP },
+        { "Next", TIKU_DESK_KEY_PAGE_DOWN },
+        { "BackSpace", TIKU_DESK_KEY_BACKSPACE },
+        { "Delete", TIKU_DESK_KEY_DELETE },
+        { "Escape", TIKU_DESK_KEY_ESCAPE },
+        { "Return", TIKU_DESK_KEY_RETURN },
+        { "KP_Enter", TIKU_DESK_KEY_RETURN },
+        { "Tab", TIKU_DESK_KEY_TAB },
+        { "Menu", TIKU_DESK_KEY_MENU },
+        { "F2", TIKU_DESK_KEY_F2 },
+        { "space", ' ' },
+        { "comma", ',' },
+        { "plus", '+' },
+        { "equal", '=' },
+        { "minus", '-' }
+    };
+    size_t i;
+
+    if (name == NULL || name[0] == '\0') {
+        return 0u;
+    }
+    if (name[1] == '\0') {
+        return (unsigned char)name[0];
+    }
+    for (i = 0; i < sizeof named / sizeof named[0]; i++) {
+        if (strcmp(name, named[i].name) == 0) {
+            return named[i].key;
+        }
+    }
+    return 0u;
 }
 
 tiku_trk_script_t *
@@ -175,13 +224,13 @@ tiku_trk_script_open(const char *path)
 
         if (strcmp(w[0], "key") == 0 && n >= 2) {
             st->op = OP_KEY;
-            st->ks = XStringToKeysym(w[1]);
-            if (st->ks == NoSymbol) {
+            st->key = key_of(w[1]);
+            if (st->key == 0u) {
                 fprintf(stderr, "script:%d: unknown key '%s'\n", lineno,
                         w[1]);
                 continue;
             }
-            st->state = mods_of(w, n, 2);
+            st->modifiers = mods_of(w, n, 2);
         } else if ((strcmp(w[0], "click") == 0 ||
                     strcmp(w[0], "press") == 0 ||
                     strcmp(w[0], "move") == 0 ||
@@ -194,14 +243,14 @@ tiku_trk_script_open(const char *path)
             if (n >= 4) {
                 st->button = (unsigned)atoi(w[3]);
             }
-            st->state = mods_of(w, n, 4);
+            st->modifiers = mods_of(w, n, 4);
         } else if (strcmp(w[0], "click-row") == 0 && n >= 2) {
             st->op = OP_CLICK_ROW;
             st->count = atoi(w[1]);
             if (n >= 3) {
                 st->button = (unsigned)atoi(w[2]);
             }
-            st->state = mods_of(w, n, 3);
+            st->modifiers = mods_of(w, n, 3);
         } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
             st->op = OP_WAIT;
             st->count = atoi(w[1]);
@@ -403,7 +452,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->x = cur->x;
         out->y = cur->y;
         out->button = cur->button;
-        out->state = cur->state;
+        out->modifiers = cur->modifiers;
         return 1;
     }
     if (s->cursor >= s->count) {
@@ -413,8 +462,8 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     switch (cur->op) {
     case OP_KEY:
         out->what = TIKU_TRK_SC_KEY;
-        out->ks = cur->ks;
-        out->state = cur->state;
+        out->key = cur->key;
+        out->modifiers = cur->modifiers;
         return 1;
     case OP_PRESS:
     case OP_CLICK:
@@ -422,7 +471,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->x = cur->x;
         out->y = cur->y;
         out->button = cur->button;
-        out->state = cur->state;
+        out->modifiers = cur->modifiers;
         s->pending_release = (cur->op == OP_CLICK);
         return 1;
     case OP_CLICK_ROW:
@@ -438,14 +487,14 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->x = cur->x;
         out->y = cur->y;
         out->button = cur->button;
-        out->state = cur->state;
+        out->modifiers = cur->modifiers;
         s->pending_release = 1;
         return 1;
     case OP_MOVE:
         out->what = TIKU_TRK_SC_MOVE;
         out->x = cur->x;
         out->y = cur->y;
-        out->state = cur->state;
+        out->modifiers = cur->modifiers;
         out->button = cur->button;
         return 1;
     case OP_RELEASE:
@@ -453,7 +502,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->x = cur->x;
         out->y = cur->y;
         out->button = cur->button;
-        out->state = cur->state;
+        out->modifiers = cur->modifiers;
         return 1;
     case OP_WAIT:
         s->waiting = (cur->count > 0) ? cur->count : 1;

@@ -281,6 +281,43 @@ typedef struct desktop {
     int                  ren_row;
 } desktop_t;
 
+/** @brief Convert one platform-neutral key for the temporary X11 shell. */
+static KeySym
+native_key(unsigned key)
+{
+    switch (key) {
+    case TIKU_DESK_KEY_UP:        return XK_Up;
+    case TIKU_DESK_KEY_DOWN:      return XK_Down;
+    case TIKU_DESK_KEY_LEFT:      return XK_Left;
+    case TIKU_DESK_KEY_RIGHT:     return XK_Right;
+    case TIKU_DESK_KEY_HOME:      return XK_Home;
+    case TIKU_DESK_KEY_END:       return XK_End;
+    case TIKU_DESK_KEY_PAGE_UP:   return XK_Prior;
+    case TIKU_DESK_KEY_PAGE_DOWN: return XK_Next;
+    case TIKU_DESK_KEY_BACKSPACE: return XK_BackSpace;
+    case TIKU_DESK_KEY_DELETE:    return XK_Delete;
+    case TIKU_DESK_KEY_ESCAPE:    return XK_Escape;
+    case TIKU_DESK_KEY_RETURN:    return XK_Return;
+    case TIKU_DESK_KEY_TAB:       return XK_Tab;
+    case TIKU_DESK_KEY_MENU:      return XK_Menu;
+    case TIKU_DESK_KEY_F2:        return XK_F2;
+    default:                      return (KeySym)key;
+    }
+}
+
+/** @brief Convert logical modifiers at the native event-loop boundary. */
+static unsigned
+native_modifiers(unsigned modifiers)
+{
+    unsigned state = 0u;
+
+    if ((modifiers & TIKU_DESK_MOD_SHIFT) != 0u) { state |= ShiftMask; }
+    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) { state |= ControlMask; }
+    if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) { state |= Mod1Mask; }
+    if ((modifiers & TIKU_DESK_MOD_CAPS) != 0u) { state |= LockMask; }
+    return state;
+}
+
 /** @brief What the action table needs to know about the focused window. */
 static tiku_trk_sc_ctx_t
 menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
@@ -5269,15 +5306,15 @@ main(int argc, char **argv)
                 switch (sp.what) {
                 case TIKU_TRK_SC_KEY:
                     ev.type = KeyPress;
-                    ev.xkey.state = sp.state;
-                    ev_ks = sp.ks;
+                    ev.xkey.state = native_modifiers(sp.modifiers);
+                    ev_ks = native_key(sp.key);
                     have = 1;
                     break;
                 case TIKU_TRK_SC_MOVE:
                     ev.type = MotionNotify;
                     ev.xmotion.x = sp.x;
                     ev.xmotion.y = sp.y;
-                    ev.xmotion.state = sp.state;
+                    ev.xmotion.state = native_modifiers(sp.modifiers);
                     have = 1;
                     break;
                 case TIKU_TRK_SC_PRESS:
@@ -5286,7 +5323,7 @@ main(int argc, char **argv)
                                                              : ButtonRelease;
                     ev.xbutton.x = sp.x;
                     ev.xbutton.y = sp.y;
-                    ev.xbutton.state = sp.state;
+                    ev.xbutton.state = native_modifiers(sp.modifiers);
                     ev.xbutton.button = sp.button;
                     ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
                     have = 1;

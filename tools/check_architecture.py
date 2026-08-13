@@ -11,10 +11,7 @@ TRACKER_SRC = ROOT / "src"
 DESKTOP_SRC = ROOT.parent / "desktop" / "src"
 
 X11_LEGACY = {
-    "tiku_trk_app.c",
     "tiku_trk_desktop.c",
-    "tiku_trk_script.c",
-    "tiku_trk_script.h",
 }
 
 HEADLESS = {
