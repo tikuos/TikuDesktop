@@ -19,7 +19,8 @@ DESK_RUNTIME_LIB   := $(DESK_ROOT)/build/libtiku_desk_runtime.a
 DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
                       $(DESK_TRANSPORT_LIB)
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
-DESKTOP_CONTROLLERS := src/tiku_trk_prefs_window.c \
+DESKTOP_CONTROLLERS := src/tiku_trk_info_window.c \
+                       src/tiku_trk_prefs_window.c \
                        src/tiku_trk_select_window.c \
                        src/tiku_trk_switcher_window.c
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \

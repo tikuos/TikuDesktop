@@ -214,6 +214,7 @@ src/tiku_trk_scroll.[ch]     the scrollbar as an object (range, thumb,
                              tracking, detach)
 src/tiku_trk_nodeicon.[ch]   icon resolution tiers + the negative cache
 src/tiku_trk_desktop.c       multi-window shell composition and orchestration
+src/tiku_trk_info_window.*   Get Info slots, rendering, editing, and refresh
 src/tiku_trk_prefs_window.*  preferences rendering, events, and window lifetime
 src/tiku_trk_select_window.* Select-by-pattern rendering, input, and lifetime
 src/tiku_trk_switcher_window.* application-switcher rendering and lifetime

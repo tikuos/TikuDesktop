@@ -29,6 +29,7 @@
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_info.h"
+#include "tiku_trk_info_window.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_thumb.h"
 #include "tiku_trk_alert.h"
@@ -66,9 +67,6 @@
 /* How many entries per turn are asked whether they carry a picture of their
  * own.  A bound rather than the whole listing: the ask opens the file. */
 #define HINTS_PER_TURN 24
-
-/* How many Get Info windows may be open at once. */
-#define INFO_MAX 8
 
 /* The clear space a row keeps between a name and a right-aligned value; a
  * value that would cross it is dropped rather than overlapping the name. */
@@ -228,13 +226,7 @@ typedef struct desktop {
     folder_t            *fpanel_for;   /* whose selection it is moving   */
     int                  fpanel_cmd;   /* the menu command that opened it */
     tiku_trk_edit_t      fpanel_name;  /* the save field                 */
-    /* Get Info: one window per NODE, so a second ask for the same entry
-     * brings the first forward rather than opening a rival (AW-065). */
-    tiku_trk_info_t      info[INFO_MAX];
-    tiku_desk_window_t      *info_win[INFO_MAX];
-    struct info_ctx     *info_ctx;      /* one per slot; see info_open   */
-    int                  info_renaming; /* which slot's name is open     */
-    tiku_trk_edit_t      info_name;
+    tiku_trk_info_windows_t info_windows;
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
     tiku_trk_alert_t     alert;     /* the question, when there is one */
@@ -1341,8 +1333,14 @@ static void
 close_window(desktop_t *app, tiku_desk_window_t *w)
 {
     folder_t *fl;
+    int info_slot;
 
     if (w == NULL) {
+        return;
+    }
+    info_slot = tiku_trk_info_windows_slot(&app->info_windows, w);
+    if (info_slot >= 0) {
+        tiku_trk_info_windows_close(&app->info_windows, info_slot);
         return;
     }
     fl = folder_of(app, w);
@@ -2717,350 +2715,6 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
     }
 }
 
-/*---------------------------------------------------------------------------*/
-/* The Get Info window (AW-065..AW-079)                                       */
-/*---------------------------------------------------------------------------*/
-
-#define INFO_W       360
-#define INFO_H       300
-#define INFO_PAD      10
-#define INFO_ICON     32
-#define INFO_TAB_H    20
-#define INFO_ROW_H    18
-
-/** @brief What a click inside an info window landed on. */
-typedef enum {
-    IHIT_NONE = 0,
-    IHIT_TAB,
-    IHIT_NAME,
-    IHIT_ICON,
-    IHIT_FIELD,
-    IHIT_PERM
-} ihit_t;
-
-/** @brief Which desktop a draw callback belongs to, and which slot. */
-struct info_ctx {
-    desktop_t *app;
-    int        ix;
-};
-
-static struct info_ctx info_ctxs[INFO_MAX];
-
-/** @brief The parts of an info window inside @p c. */
-static void
-info_layout(tiku_desk_rect_t c, tiku_desk_rect_t *icon,
-            tiku_desk_rect_t *name, tiku_desk_rect_t *tabs,
-            tiku_desk_rect_t *body)
-{
-    icon->x = c.x + INFO_PAD;
-    icon->y = c.y + INFO_PAD;
-    icon->w = INFO_ICON;
-    icon->h = INFO_ICON;
-    name->x = icon->x + INFO_ICON + INFO_PAD;
-    name->y = icon->y + 6;
-    name->w = c.w - (name->x - c.x) - INFO_PAD;
-    name->h = 20;
-    tabs->x = c.x + INFO_PAD;
-    tabs->y = icon->y + INFO_ICON + INFO_PAD;
-    tabs->w = c.w - 2 * INFO_PAD;
-    tabs->h = INFO_TAB_H;
-    body->x = tabs->x;
-    body->y = tabs->y + INFO_TAB_H;
-    body->w = tabs->w;
-    body->h = c.y + c.h - INFO_PAD - body->y;
-    if (body->h < 20) {
-        body->h = 20;
-    }
-}
-
-/** @brief The rectangle of tab @p i. */
-static tiku_desk_rect_t
-info_tab_rect(tiku_desk_rect_t tabs, int i)
-{
-    tiku_desk_rect_t r = tabs;
-
-    r.w = tabs.w / TIKU_TRK_INFO_TABS;
-    r.x = tabs.x + i * r.w;
-    return r;
-}
-
-/** @brief The checkbox for permission @p i inside @p body. */
-static tiku_desk_rect_t
-info_perm_rect(tiku_desk_rect_t body, int i)
-{
-    tiku_desk_rect_t r;
-
-    r.x = body.x + 8;
-    r.y = body.y + 10 + i * (INFO_ROW_H + 4);
-    r.w = 120;
-    r.h = INFO_ROW_H;
-    return r;
-}
-
-static void
-info_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
-          void *ctx)
-{
-    struct info_ctx *ic = ctx;
-    desktop_t *app = ic->app;
-    tiku_trk_info_t *in = &app->info[ic->ix];
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    tiku_desk_rect_t icon, name, tabs, body;
-    int i;
-
-    (void)w;
-    tiku_desk_ui_panel(s, c);
-    info_layout(c, &icon, &name, &tabs, &body);
-    (void)tiku_trk_icon_paint(s, tiku_trk_model_icon_name(&in->model),
-                              icon.x, icon.y, INFO_ICON);
-    if (app->info_renaming == ic->ix) {
-        tiku_desk_ui_textfield_sel(s, name, app->info_name.text,
-                                   app->info_name.caret,
-                                   app->info_name.sel_a,
-                                   app->info_name.sel_b,
-                                   TIKU_DESK_S_FOCUS);
-    } else {
-        tiku_desk_text(s, f, name.x, name.y + f->height, in->model.name,
-                       TIKU_DESK_C_TEXT);
-    }
-    for (i = 0; i < TIKU_TRK_INFO_TABS; i++) {
-        tiku_desk_rect_t r = info_tab_rect(tabs, i);
-
-        tiku_desk_ui_button(s, r,
-                            tiku_trk_info_tab_name((tiku_trk_info_tab_t)i),
-                            (in->tab == (tiku_trk_info_tab_t)i)
-                                ? TIKU_DESK_S_DEFAULT : 0u);
-    }
-    tiku_desk_ui_sunken(s, body, TIKU_DESK_C_PANEL);
-    if (in->tab == TIKU_TRK_INFO_TAB_INFO) {
-        for (i = 0; i < TIKU_TRK_INFO_FIELDS; i++) {
-            char value[TIKU_TRK_INFO_VAL_MAX];
-            const char *label = "";
-            int y = body.y + 6 + i * INFO_ROW_H + f->height;
-
-            if (tiku_trk_info_field(in, app->store, i, &label, value,
-                                    sizeof value) == TIKU_TRK_INFO_F_NONE) {
-                break;
-            }
-            tiku_desk_text(s, f, body.x + 8, y, label, TIKU_DESK_C_TEXT);
-            tiku_desk_text(s, f, body.x + 96, y, value, TIKU_DESK_C_TEXT);
-        }
-    } else if (in->tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
-        static const char *const WHO[] = { "Read", "Write", "Execute" };
-
-        for (i = 0; i < 3; i++) {
-            tiku_desk_ui_checkbox(s, info_perm_rect(body, i), WHO[i],
-                (unsigned)(tiku_trk_info_perm(in, i) ? TIKU_DESK_S_ON : 0u) |
-                (unsigned)(in->perm_editable ? 0u : TIKU_DESK_S_DISABLED));
-        }
-        if (!in->perm_editable) {
-            tiku_desk_text(s, f, body.x + 8,
-                           body.y + 14 + 3 * (INFO_ROW_H + 4) + f->height,
-                           "This item's permissions are not yours to set.",
-                           TIKU_DESK_C_TEXT);
-        }
-    } else {
-        for (i = 0; i < in->nattr; i++) {
-            int y = body.y + 6 + i * INFO_ROW_H + f->height;
-
-            if (y > body.y + body.h) {
-                break;
-            }
-            tiku_desk_text(s, f, body.x + 8, y, in->attr[i].name,
-                           TIKU_DESK_C_TEXT);
-            tiku_desk_text(s, f, body.x + 150, y, in->attr[i].type,
-                           TIKU_DESK_C_TEXT);
-            tiku_desk_text(s, f, body.x + 210, y, in->attr[i].value,
-                           TIKU_DESK_C_TEXT);
-        }
-        if (in->nattr == 0) {
-            tiku_desk_text(s, f, body.x + 8, body.y + 6 + f->height,
-                           "No attributes.", TIKU_DESK_C_TEXT);
-        }
-    }
-}
-
-/** @brief The slot an info window for @p path is in, or -1. */
-static int
-info_slot_of(const desktop_t *app, const char *path)
-{
-    int i;
-
-    for (i = 0; i < INFO_MAX; i++) {
-        if (app->info[i].used && strcmp(app->info[i].path, path) == 0) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-/** @brief Close the info window in slot @p i. */
-static void
-info_close(desktop_t *app, int i)
-{
-    if (i < 0 || i >= INFO_MAX) {
-        return;
-    }
-    if (app->info_win[i] != NULL) {
-        tiku_desk_workspace_close(app->desk, app->info_win[i]);
-        app->info_win[i] = NULL;
-    }
-    if (app->info_renaming == i) {
-        app->info_renaming = -1;
-    }
-    memset(&app->info[i], 0, sizeof app->info[i]);
-    app->dirty = 1;
-}
-
-/** @brief Open Get Info on @p path, or bring its window forward (AW-065). */
-static void
-info_open(desktop_t *app, const char *path)
-{
-    tiku_desk_rect_t fr;
-    int i = info_slot_of(app, path);
-
-    if (i >= 0) {
-        /* One window per node: asking again is asking for the one that is
-         * already showing the answer. */
-        if (app->info_win[i] != NULL) {
-            tiku_desk_workspace_activate(app->desk, app->info_win[i]);
-        }
-        return;
-    }
-    for (i = 0; i < INFO_MAX; i++) {
-        if (!app->info[i].used) {
-            break;
-        }
-    }
-    if (i >= INFO_MAX || tiku_trk_info_open(&app->info[i], app->backend,
-                                            path) != 0) {
-        return;
-    }
-    (void)tiku_trk_info_attrs(&app->info[i], app->store);
-    /* Cascaded, so several info windows are all readable rather than one
-     * hiding the rest (AW-065). */
-    fr.x = 120 + i * CASCADE_STEP;
-    fr.y = 80 + i * CASCADE_STEP;
-    fr.w = INFO_W;
-    fr.h = INFO_H;
-    info_ctxs[i].app = app;
-    info_ctxs[i].ix = i;
-    {
-        char title[TIKU_DESK_WINDOW_TITLE_MAX];
-
-        tiku_trk_info_title(&app->info[i], title, sizeof title);
-        app->info_win[i] = tiku_desk_workspace_open(app->desk, title, fr,
-                                              info_draw, &info_ctxs[i],
-                                              &app->info[i]);
-    }
-    app->dirty = 1;
-}
-
-/** @brief What a point inside info window @p i is over. */
-static ihit_t
-info_hit(desktop_t *app, int i, int x, int y, int *which)
-{
-    tiku_desk_rect_t c, icon, name, tabs, body;
-    int k;
-
-    if (which != NULL) {
-        *which = -1;
-    }
-    if (i < 0 || i >= INFO_MAX || app->info_win[i] == NULL) {
-        return IHIT_NONE;
-    }
-    c = tiku_desk_window_content(app->info_win[i]);
-    info_layout(c, &icon, &name, &tabs, &body);
-#define IN(r) (x >= (r).x && x < (r).x + (r).w && \
-               y >= (r).y && y < (r).y + (r).h)
-    if (IN(icon)) { return IHIT_ICON; }
-    if (IN(name)) { return IHIT_NAME; }
-    for (k = 0; k < TIKU_TRK_INFO_TABS; k++) {
-        tiku_desk_rect_t r = info_tab_rect(tabs, k);
-
-        if (IN(r)) {
-            if (which != NULL) { *which = k; }
-            return IHIT_TAB;
-        }
-    }
-    if (app->info[i].tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
-        for (k = 0; k < 3; k++) {
-            tiku_desk_rect_t r = info_perm_rect(body, k);
-
-            if (IN(r)) {
-                if (which != NULL) { *which = k; }
-                return IHIT_PERM;
-            }
-        }
-    }
-    if (app->info[i].tab == TIKU_TRK_INFO_TAB_INFO && IN(body)) {
-        k = (y - body.y - 6) / INFO_ROW_H;
-        if (k >= 0 && k < TIKU_TRK_INFO_FIELDS) {
-            if (which != NULL) { *which = k; }
-            return IHIT_FIELD;
-        }
-    }
-#undef IN
-    return IHIT_NONE;
-}
-
-/** @brief Start renaming from the header (AW-070). */
-static void
-info_rename_begin(desktop_t *app, int i)
-{
-    if (i < 0 || i >= INFO_MAX || !app->info[i].used) {
-        return;
-    }
-    app->info_renaming = i;
-    tiku_trk_edit_start(&app->info_name, app->info[i].model.name);
-    tiku_trk_edit_deny(&app->info_name, tiku_trk_fs_name_deny());
-    app->dirty = 1;
-}
-
-/** @brief Finish renaming: @p keep says whether to apply it (AW-070). */
-static void
-info_rename_end(desktop_t *app, int keep)
-{
-    int i = app->info_renaming;
-    char err[160];
-
-    if (i < 0 || i >= INFO_MAX) {
-        return;
-    }
-    app->info_renaming = -1;
-    if (!keep || app->info_name.len == 0 ||
-        strcmp(app->info_name.text, app->info[i].model.name) == 0) {
-        app->dirty = 1;
-        return;
-    }
-    if (tiku_trk_fs_rename(app->fs, app->info[i].path, app->info_name.text,
-                           err, sizeof err) != 0) {
-        /* Said out loud and the old name kept: a rename that failed
-         * silently would leave the window showing a name the entry does
-         * not have (AW-070). */
-        tiku_trk_alert_open(&app->alert, TIKU_TRK_ALERT_WARN,
-                            TIKU_TRK_ALERT_TAG_ERROR, err, "Cancel");
-    } else {
-        char parent[TIKU_TRK_PATH_MAX], to[TIKU_TRK_PATH_MAX];
-
-        if (tiku_trk_info_location(&app->info[i], parent, sizeof parent,
-                                   NULL, 0)) {
-            snprintf(to, sizeof to, "%.*s/%.*s",
-                     (int)(sizeof to - sizeof app->info_name.text - 2u),
-                     (strcmp(parent, "/") == 0) ? "" : parent,
-                     (int)(sizeof app->info_name.text - 1u),
-                     app->info_name.text);
-            (void)tiku_trk_info_moved(&app->info[i], app->backend,
-                                      app->info[i].path, to);
-            if (app->info_win[i] != NULL) {
-                tiku_trk_info_title(&app->info[i], app->info_win[i]->title,
-                                    sizeof app->info_win[i]->title);
-            }
-        }
-    }
-    app->dirty = 1;
-}
-
 /** @brief Carry out a menu choice on the focused folder. */
 static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
@@ -3095,8 +2749,8 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         /* The selection if there is one, else the folder itself: asking
          * about "this window" with nothing picked is asking about the
          * folder it is showing. */
-        info_open(app, (p != NULL && p->selected) ? p->model.path
-                                                 : fl->path);
+        (void)tiku_trk_info_windows_open(&app->info_windows,
+            (p != NULL && p->selected) ? p->model.path : fl->path);
         break;
     }
     case TIKU_TRK_CMD_EDIT_QUERY: {
@@ -4385,10 +4039,9 @@ tracker_run(int argc, char **argv)
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
-    /* Not zero: slot 0 is a real window, and "0" would mean the first info
-     * window opens with its name already being edited. */
-    app.info_renaming = -1;
     app.info_relink = -1;
+    tiku_trk_info_windows_init(&app.info_windows, app.desk, app.backend,
+        app.store, app.fs, &app.alert, &app.dirty);
     {
         const char *home = getenv("HOME");
         char path[TIKU_TRK_PATH_MAX] = "";
@@ -4971,42 +4624,36 @@ tracker_run(int argc, char **argv)
                 }
                 {   /* An info window takes its own clicks first. */
                     tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
-                    int islot = -1, k;
-
-                    for (k = 0; k < INFO_MAX; k++) {
-                        if (app.info_win[k] != NULL && app.info_win[k] == iw
-                            && app.info_win[k]->open) {
-                            islot = k;
-                            break;
-                        }
-                    }
+                    int islot = tiku_trk_info_windows_slot(&app.info_windows,
+                                                           iw);
                     if (islot >= 0 && !app.alert.open) {
                         int which = -1;
-                        ihit_t ih = info_hit(&app, islot, ev.x,
-                                             ev.y, &which);
+                        tiku_trk_info_t *info = tiku_trk_info_windows_model(
+                            &app.info_windows, islot);
+                        tiku_trk_info_hit_t ih = tiku_trk_info_windows_hit(
+                            &app.info_windows, islot, ev.x, ev.y, &which);
 
-                        if (ih == IHIT_TAB && which >= 0) {
-                            app.info[islot].tab =
-                                (tiku_trk_info_tab_t)which;
-                            if (app.info[islot].tab ==
+                        if (ih == TIKU_TRK_INFO_HIT_TAB && which >= 0) {
+                            info->tab = (tiku_trk_info_tab_t)which;
+                            if (info->tab ==
                                     TIKU_TRK_INFO_TAB_ATTRIBUTES) {
                                 /* Re-read on the way in: an attribute
                                  * written since the window opened would
                                  * otherwise never appear. */
-                                (void)tiku_trk_info_attrs(&app.info[islot],
-                                                          app.store);
+                                (void)tiku_trk_info_attrs(info, app.store);
                             }
                             app.dirty = 1;
                             break;
                         }
-                        if (ih == IHIT_NAME) {
-                            info_rename_begin(&app, islot);
+                        if (ih == TIKU_TRK_INFO_HIT_NAME) {
+                            tiku_trk_info_windows_begin_rename(
+                                &app.info_windows, islot);
                             break;
                         }
-                        if (ih == IHIT_PERM && which >= 0) {
+                        if (ih == TIKU_TRK_INFO_HIT_PERMISSION && which >= 0) {
                             char perr[160];
 
-                            if (tiku_trk_info_perm_toggle(&app.info[islot],
+                            if (tiku_trk_info_perm_toggle(info,
                                     app.backend, which, perr,
                                     sizeof perr) != 0) {
                                 tiku_trk_alert_open(&app.alert,
@@ -5017,24 +4664,20 @@ tracker_run(int argc, char **argv)
                             app.dirty = 1;
                             break;
                         }
-                        if (ih == IHIT_ICON) {
+                        if (ih == TIKU_TRK_INFO_HIT_ICON) {
                             /* Double-clicking the icon opens the item, as
                              * double-clicking its row would (AW-075). */
                             if (tiku_trk_now() - app.press_at < 500000) {
-                                (void)open_folder(&app,
-                                    tiku_trk_model_is_container(
-                                        &app.info[islot].model)
-                                        ? app.info[islot].path
-                                        : app.info[islot].path);
+                                (void)open_folder(&app, info->path);
                             }
                             app.press_at = tiku_trk_now();
                             break;
                         }
-                        if (ih == IHIT_FIELD && which >= 0) {
+                        if (ih == TIKU_TRK_INFO_HIT_FIELD && which >= 0) {
                             char value[TIKU_TRK_INFO_VAL_MAX];
                             const char *label = "";
                             tiku_trk_info_field_t fk =
-                                tiku_trk_info_field(&app.info[islot],
+                                tiku_trk_info_field(info,
                                     app.store, which, &label, value,
                                     sizeof value);
                             char dir[TIKU_TRK_PATH_MAX];
@@ -5042,12 +4685,12 @@ tracker_run(int argc, char **argv)
 
                             if (fk == TIKU_TRK_INFO_F_SIZE &&
                                 tiku_trk_model_is_container(
-                                    &app.info[islot].model)) {
+                                    &info->model)) {
                                 /* Clicking the size asks again: a folder
                                  * counted an hour ago is a guess (AW-068). */
-                                tiku_trk_info_calc_start(&app.info[islot]);
+                                tiku_trk_info_calc_start(info);
                             } else if (fk == TIKU_TRK_INFO_F_LOCATION &&
-                                tiku_trk_info_location(&app.info[islot],
+                                tiku_trk_info_location(info,
                                     dir, sizeof dir, sel, sizeof sel)) {
                                 folder_t *nf = open_folder(&app, dir);
 
@@ -5056,7 +4699,7 @@ tracker_run(int argc, char **argv)
                                 }
                             } else if (fk == TIKU_TRK_INFO_F_LINK) {
                                 if (tiku_trk_info_link_target(
-                                        &app.info[islot], app.backend, dir,
+                                        info, app.backend, dir,
                                         sizeof dir, sel, sizeof sel)) {
                                     folder_t *nf = open_folder(&app, dir);
 
@@ -6089,51 +5732,11 @@ tracker_run(int argc, char **argv)
 
                 if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
                 if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-                /* While editing, the keyboard belongs to the field: the
-                 * shortcuts underneath must not fire, or typing "w" in a
-                 * value would close the window. */
-                {   /* An info window's own keys, while it has focus. */
-                    tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
-                    int islot = -1, k;
-
-                    for (k = 0; k < INFO_MAX; k++) {
-                        if (app.info_win[k] != NULL &&
-                            app.info_win[k] == iw && app.info_win[k]->open) {
-                            islot = k;
-                            break;
-                        }
-                    }
-                    if (islot >= 0) {
-                        if (app.info_renaming == islot) {
-                            if (key == TIKU_DESK_KEY_RETURN) {
-                                info_rename_end(&app, 1);
-                            } else if (key == TIKU_DESK_KEY_ESCAPE) {
-                                info_rename_end(&app, 0);
-                            } else if (key == TIKU_DESK_KEY_BACKSPACE) {
-                                (void)tiku_trk_edit_key(&app.info_name,
-                                    TIKU_TRK_EDIT_BACKSPACE, 0, '\0');
-                            } else {
-                                char typed = key_char(&ev);
-
-                                if (typed != '\0') {
-                                    (void)tiku_trk_edit_key(&app.info_name,
-                                        TIKU_TRK_EDIT_CHAR, 0, typed);
-                                }
-                            }
-                            app.dirty = 1;
-                            break;
-                        }
-                        if ((mods & TIKU_TRK_MOD_CMD) &&
-                            (key == 'e' || key == 'E')) {
-                            info_rename_begin(&app, islot);
-                            break;
-                        }
-                        if ((mods & TIKU_TRK_MOD_CMD) &&
-                            (key == 'w' || key == 'W')) {
-                            info_close(&app, islot);
-                            break;
-                        }
-                    }
+                /* Get Info owns its rename editor and window shortcuts. */
+                if (tiku_trk_info_windows_key(&app.info_windows, key,
+                                              ev.modifiers,
+                                              key_char(&ev))) {
+                    break;
                 }
                 if (app.fpanel_win != NULL && app.fpanel_win->open &&
                     tiku_desk_workspace_focused(app.desk) == app.fpanel_win) {
@@ -6661,17 +6264,9 @@ tracker_run(int argc, char **argv)
                 }
             }
         }
-        {   /* One directory of one folder-size walk per turn, so a Get
-             * Info window on a deep tree fills in while the desktop keeps
-             * answering (AW-068). */
-            for (i = 0; i < INFO_MAX; i++) {
-                if (app.info[i].used &&
-                    tiku_trk_info_calc_step(&app.info[i], app.backend)) {
-                    app.dirty = 1;
-                    break;
-                }
-            }
-        }
+        /* One directory of one folder-size walk per turn, so a Get Info
+         * window on a deep tree fills in while the desktop keeps answering. */
+        (void)tiku_trk_info_windows_calc_step(&app.info_windows);
         if (tiku_trk_thumb_step(&app.thumbs, app.store)) {
             /* One picture per turn, on the idle tick: the window keeps
              * answering while a folder of images fills in (IV-031). */
@@ -7066,46 +6661,12 @@ tracker_run(int argc, char **argv)
                         fpanel_reload(&app, NULL);
                         changed++;
                     }
-                    for (i = 0; i < INFO_MAX; i++) {
-                        if (app.info[i].used &&
-                            app.info[i].model.facts.dev ==
-                                (uint64_t)vc[k].v.dev) {
-                            info_close(&app, i);
-                            changed++;
-                        }
-                    }
+                    changed += tiku_trk_info_windows_device_gone(
+                        &app.info_windows, (uint64_t)vc[k].v.dev);
                 }
             }
-            for (i = 0; i < INFO_MAX; i++) {
-                if (!app.info[i].used) {
-                    continue;
-                }
-                if (tiku_trk_info_refresh(&app.info[i], app.backend,
-                                          tiku_trk_now())) {
-                    changed++;
-                }
-                {
-                    tiku_trk_model_t im;
-
-                    if (app.backend->ops->stat(app.backend,
-                            app.info[i].path, &im) != 0) {
-                        /* Gone from where it was.  A rename is the entry
-                         * still being there under another name, which is
-                         * asked by IDENTITY; anything else is a deletion
-                         * and the window has nothing left to describe
-                         * (AW-077). */
-                        if (tiku_trk_info_refind(&app.info[i],
-                                                 app.backend)) {
-                            tiku_trk_info_title(&app.info[i],
-                                app.info_win[i]->title,
-                                sizeof app.info_win[i]->title);
-                        } else {
-                            info_close(&app, i);
-                        }
-                        changed++;
-                    }
-                }
-            }
+            changed += tiku_trk_info_windows_refresh(&app.info_windows,
+                                                      tiku_trk_now());
             changed += tiku_trk_deskbar_refresh(app.deskbar);
             /* Live queries re-evaluate on a slower beat than values are
              * read: a re-walk costs a directory listing per subtree, and a
