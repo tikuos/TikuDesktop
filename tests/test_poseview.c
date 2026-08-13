@@ -1180,6 +1180,75 @@ main(void)
         (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM);
     }
 
+    printf("\ncolumns that show an ATTRIBUTE (CW-026)\n");
+    {
+        tiku_trk_store_t *st = (b->ops->state_store != NULL)
+                                   ? b->ops->state_store(b) : NULL;
+        tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
+        char buf[128];
+        int f;
+
+        f = tiku_trk_poseview_attr_column(v, "user.trk.author", "Author",
+                                          120);
+        check(f >= TIKU_TRK_COL_ATTR_BASE, "CW-026",
+              "an attribute can be given a column id, which is what lets "
+              "the rest of the column machinery carry it");
+        check(tiku_trk_poseview_attr_column(v, "user.trk.author", "Author",
+                                            120) == f, "CW-026",
+              "and asking again gives the same one rather than a second "
+              "column for one attribute");
+        check(tiku_trk_poseview_toggle_column(v, f) == 1 &&
+              tiku_trk_poseview_has_column(v, f), "CW-026",
+              "it is added and removed by the same toggle as every other "
+              "column");
+        if (st != NULL && p0 != NULL) {
+            (void)tiku_trk_state_write(st, p0->model.path,
+                                       "user.trk.author", "Ada", 3);
+            check(strcmp(tiku_trk_poseview_cell_text(v, p0, f, buf,
+                                                     sizeof buf),
+                         "Ada") == 0, "CW-026",
+                  "and the cell shows what the entry's attribute says");
+            check(strcmp(tiku_trk_poseview_cell_text(v,
+                             tiku_trk_poseview_at(v, 1), f, buf,
+                             sizeof buf), "-") == 0, "CW-026",
+                  "while an entry with none shows a dash: the column is "
+                  "the listing's, and a blank would read as not measured "
+                  "yet rather than as none");
+        }
+        {
+            /* The layout survives by NAME: a slot number means nothing to
+             * the next session. */
+            tiku_trk_poseview_t *again = tiku_trk_poseview_new(b, dir);
+
+            (void)tiku_trk_poseview_save_columns(v);
+            if (again != NULL) {
+                (void)tiku_trk_poseview_reload(again);
+                (void)tiku_trk_poseview_attr_column(again, "user.trk.other",
+                                                    "Other", 80);
+                (void)tiku_trk_poseview_restore_columns(again);
+                {
+                    const char *got = NULL;
+                    const tiku_trk_column_t *cs = NULL;
+                    int i, n = tiku_trk_poseview_columns(again, &cs);
+
+                    for (i = 0; i < n && cs != NULL; i++) {
+                        if (cs[i].field >= TIKU_TRK_COL_ATTR_BASE) {
+                            got = tiku_trk_poseview_attr_of(again,
+                                                            cs[i].field);
+                        }
+                    }
+                    check(got != NULL &&
+                          strcmp(got, "user.trk.author") == 0, "CW-026",
+                          "a saved layout comes back showing the same "
+                          "ATTRIBUTE even when this session numbered its "
+                          "columns differently");
+                }
+                tiku_trk_poseview_free(again);
+            }
+        }
+        (void)tiku_trk_poseview_toggle_column(v, f);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

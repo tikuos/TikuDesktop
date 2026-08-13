@@ -15,7 +15,7 @@ DESK  := ../desktop/src
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
          src/tiku_trk_attr.c src/tiku_trk_query.c src/tiku_trk_notify.c \
          src/tiku_trk_match.c src/tiku_trk_clip.c src/tiku_trk_drag.c \
-         src/tiku_trk_alert.c src/tiku_trk_launch.c src/tiku_trk_scroll.c src/tiku_trk_vdir.c src/tiku_trk_volume.c src/tiku_trk_prefs.c src/tiku_trk_switcher.c src/tiku_trk_navmenu.c src/tiku_trk_nodeicon.c src/tiku_trk_frame.c src/tiku_trk_panel.c src/tiku_trk_info.c src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
+         src/tiku_trk_alert.c src/tiku_trk_launch.c src/tiku_trk_scroll.c src/tiku_trk_types.c src/tiku_trk_vdir.c src/tiku_trk_volume.c src/tiku_trk_prefs.c src/tiku_trk_switcher.c src/tiku_trk_navmenu.c src/tiku_trk_nodeicon.c src/tiku_trk_frame.c src/tiku_trk_panel.c src/tiku_trk_info.c src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
          src/tiku_trk_model.c src/tiku_trk_backend_posix.c \
          src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c \
          $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c $(DESK)/tiku_desk_ns.c
@@ -24,7 +24,7 @@ CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -48,6 +48,9 @@ UI := $(DESK)/tiku_desk_gfx.c $(DESK)/tiku_desk_font.c $(DESK)/tiku_desk_ui.c
 
 # The HVIF icon set.  Needs -lm: the rasteriser is float throughout.
 ICONS := src/tiku_trk_hvif.c src/tiku_trk_icons.c src/tiku_trk_iconpaint.c
+
+$(BUILD)/test_types: $(CORE) tests/test_types.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_types.c
 
 $(BUILD)/test_scroll: $(CORE) tests/test_scroll.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_scroll.c
@@ -215,6 +218,7 @@ test: all
 	@$(BUILD)/test_task
 	@$(BUILD)/test_model $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD))
 	@$(BUILD)/test_poseview
+	@$(BUILD)/test_types
 	@$(BUILD)/test_scroll
 	@$(BUILD)/test_launch
 	@$(BUILD)/test_fs

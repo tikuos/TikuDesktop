@@ -679,14 +679,19 @@ main(void)
 
     printf("\ncorrupt saved data (TS-030, TS-032)\n");
     {
-        /* The record is six int32s; forge one by hand and check that the
-         * view refuses it rather than adopting nonsense. */
-        struct { int32_t k, ver, field, off, w, align; } rec[2];
+        /* Six int32s and the attribute name a column may carry; forge one
+         * by hand and check that the view refuses it rather than adopting
+         * nonsense. */
+        struct { int32_t k, ver, field, off, w, align;
+                 char attr[TIKU_TRK_ATTR_NAME_MAX]; } rec[2];
         tiku_trk_store_t *store = b->ops->state_store(b);
         int was_w = width_of(v, TIKU_TRK_COL_KIND);
 
         memset(rec, 0, sizeof rec);
-        rec[0].k = 0x54434f4c; rec[0].ver = 1;
+        /* The version is the one this build writes: the record grew a
+         * name when columns learned to show an attribute, and a
+         * record of the older shape is refused by design. */
+        rec[0].k = 0x54434f4c; rec[0].ver = 2;
         rec[0].field = TIKU_TRK_COL_NAME; rec[0].off = 22; rec[0].w = 100;
         rec[1] = rec[0];
         rec[1].field = TIKU_TRK_COL_KIND; rec[1].off = 138;
@@ -752,7 +757,8 @@ main(void)
         /* The same records with every scalar byte-swapped, as a host of the
          * other endianness would have written them. */
         {
-            struct { int32_t k, ver, field, off, w, align; } sw[2];
+            struct { int32_t k, ver, field, off, w, align;
+                     char attr[TIKU_TRK_ATTR_NAME_MAX]; } sw[2];
             int i;
             unsigned char *p;
             size_t j;
@@ -760,15 +766,19 @@ main(void)
             rec[1].w = 77;
             memcpy(sw, rec, sizeof rec);
             p = (unsigned char *)sw;
-            for (j = 0; j < sizeof sw; j += 4u) {
-                unsigned char a = p[j], bb = p[j + 1];
+            /* Each record's six scalars, at that record's own offset: the
+             * name after them is bytes and is not turned. */
+            for (i = 0; i < 2; i++) {
+                for (j = 0; j < 6u * sizeof(int32_t); j += 4u) {
+                    size_t at = (size_t)i * sizeof sw[0] + j;
+                    unsigned char a = p[at], bb = p[at + 1];
 
-                p[j] = p[j + 3];
-                p[j + 1] = p[j + 2];
-                p[j + 2] = bb;
-                p[j + 3] = a;
+                    p[at] = p[at + 3];
+                    p[at + 1] = p[at + 2];
+                    p[at + 2] = bb;
+                    p[at + 3] = a;
+                }
             }
-            (void)i;
             (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
                                        TIKU_TRK_ATTR_COLUMNS, sw, sizeof sw);
             check(tiku_trk_poseview_restore_columns(v) == 2 &&

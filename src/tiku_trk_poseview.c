@@ -94,6 +94,14 @@ struct tiku_trk_poseview {
     int                 font_h, font_a;
     int                 row_h;      /* what the owner draws, 0 = derive  */
     int                 folders_first;  /* the setting, on by default    */
+    /* Columns that show a named ATTRIBUTE rather than a fixed fact.  The
+     * slot is the field id; the name is what a saved layout carries. */
+    struct {
+        char name[TIKU_TRK_ATTR_NAME_MAX];
+        char title[24];
+        int  width;
+    }                   attrcol[TIKU_TRK_COL_ATTR_MAX];
+    int                 attrcol_count;
     tiku_trk_hit_fn     icon_hit;
     void               *icon_hit_ctx;
     /* The pixel origin of each icon mode, kept apart from the list's row
@@ -278,6 +286,32 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
                  p->model.path);
         return buf;
     }
+    default:
+        if (field >= TIKU_TRK_COL_ATTR_BASE) {
+            int at = field - TIKU_TRK_COL_ATTR_BASE;
+            tiku_trk_store_t *store = NULL;
+            int n = -1;
+
+            if (at < 0 || at >= v->attrcol_count ||
+                v->backend->ops->state_store == NULL) {
+                return "";
+            }
+            store = v->backend->ops->state_store(v->backend);
+            if (store != NULL) {
+                n = tiku_trk_state_read(store, p->model.path,
+                                        v->attrcol[at].name, buf, max - 1u);
+            }
+            if (n <= 0) {
+                /* Nothing written for this entry.  A dash rather than an
+                 * empty cell: the column exists for the whole listing, and
+                 * a blank reads as "not measured yet" rather than "this
+                 * one has none". */
+                return "-";
+            }
+            buf[n] = '\0';
+            return buf;
+        }
+        return "";
     case TIKU_TRK_COL_PERM: {
         unsigned perm = p->model.facts.perm;
 
@@ -290,8 +324,6 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
                  (perm & TIKU_TRK_P_EXEC) ? 'x' : '-');
         return buf;
     }
-    default:
-        return "";
     }
 }
 
@@ -4435,8 +4467,18 @@ tiku_trk_poseview_pump(tiku_trk_poseview_t *v, int timeout_ms)
 
 /** @brief Title and default width for a field. */
 static void
-column_def(int field, const char **title, int *width)
+column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
+             int *width)
 {
+    if (v != NULL && field >= TIKU_TRK_COL_ATTR_BASE) {
+        int at = field - TIKU_TRK_COL_ATTR_BASE;
+
+        if (at >= 0 && at < v->attrcol_count) {
+            *title = v->attrcol[at].title;
+            *width = v->attrcol[at].width;
+            return;
+        }
+    }
     switch (field) {
     case TIKU_TRK_COL_KIND:  *title = "Kind";  *width = 140; break;
     case TIKU_TRK_COL_VALUE: *title = "Value"; *width = 190; break;
@@ -4447,6 +4489,12 @@ column_def(int field, const char **title, int *width)
     case TIKU_TRK_COL_PERM:  *title = "Permissions"; *width = 90; break;
     default:                 *title = "Name";  *width = 240; break;
     }
+}
+
+static void
+column_def(int field, const char **title, int *width)
+{
+    column_def_v(NULL, field, title, width);
 }
 
 /** @brief A size column is a number, and numbers read right-aligned. */
@@ -4502,6 +4550,44 @@ tiku_trk_poseview_has_column(const tiku_trk_poseview_t *v, int field)
 }
 
 int
+tiku_trk_poseview_attr_column(tiku_trk_poseview_t *v, const char *attr,
+                              const char *title, int width)
+{
+    int i;
+
+    if (v == NULL || attr == NULL || attr[0] == '\0') {
+        return -1;
+    }
+    for (i = 0; i < v->attrcol_count; i++) {
+        if (strcmp(v->attrcol[i].name, attr) == 0) {
+            return TIKU_TRK_COL_ATTR_BASE + i;   /* already has an id */
+        }
+    }
+    if (v->attrcol_count >= TIKU_TRK_COL_ATTR_MAX) {
+        return -1;
+    }
+    i = v->attrcol_count++;
+    snprintf(v->attrcol[i].name, sizeof v->attrcol[i].name, "%s", attr);
+    snprintf(v->attrcol[i].title, sizeof v->attrcol[i].title, "%s",
+             (title != NULL && title[0] != '\0') ? title : attr);
+    v->attrcol[i].width = (width > TIKU_TRK_COL_MIN_WIDTH)
+                              ? width : TIKU_TRK_COL_MIN_WIDTH;
+    return TIKU_TRK_COL_ATTR_BASE + i;
+}
+
+const char *
+tiku_trk_poseview_attr_of(const tiku_trk_poseview_t *v, int field)
+{
+    int at = field - TIKU_TRK_COL_ATTR_BASE;
+
+    if (v == NULL || field < TIKU_TRK_COL_ATTR_BASE ||
+        at >= v->attrcol_count) {
+        return NULL;
+    }
+    return v->attrcol[at].name;
+}
+
+int
 tiku_trk_poseview_last_column(const tiku_trk_poseview_t *v, int field)
 {
     /* The name column is the one that cannot go, so it is also the one
@@ -4546,7 +4632,8 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
     if (v->column_count >= TIKU_TRK_COLUMNS_MAX) {
         return 0;
     }
-    column_def(field, &v->columns[v->column_count].title, &v->columns[v->column_count].width);
+    column_def_v(v, field, &v->columns[v->column_count].title,
+                 &v->columns[v->column_count].width);
     v->columns[v->column_count].field = field;
     v->columns[v->column_count].alignment = column_alignment(field);
     v->column_count++;
@@ -4587,10 +4674,14 @@ typedef struct {
     int32_t  offset;          /* order only; the position is re-derived    */
     int32_t  width;
     int32_t  alignment;
+    /* An attribute column is identified by its NAME: the field id is a
+     * slot in this session's table, and a slot number means nothing to the
+     * next one.  Empty for the fixed columns. */
+    char     attr[TIKU_TRK_ATTR_NAME_MAX];
 } column_rec_t;
 
 #define COLUMN_REC_KEY     0x54434f4cu      /* "TCOL"                      */
-#define COLUMN_REC_VERSION 1
+#define COLUMN_REC_VERSION 2
 
 static int column_index(const tiku_trk_poseview_t *v, int field);
 
@@ -4645,6 +4736,14 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
         rec[i].offset = scale_out(v, v->columns[i].offset);
         rec[i].width = scale_out(v, v->columns[i].width);
         rec[i].alignment = (int32_t)v->columns[i].alignment;
+        {
+            const char *a = tiku_trk_poseview_attr_of(v,
+                                                      v->columns[i].field);
+
+            if (a != NULL) {
+                snprintf(rec[i].attr, sizeof rec[i].attr, "%s", a);
+            }
+        }
     }
     if (tiku_trk_state_write(store, v->path, TIKU_TRK_ATTR_COLUMNS, rec,
                              sizeof rec[0] * (size_t)v->column_count) != 0) {
@@ -4708,6 +4807,18 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
             rec[i].width = swap32(rec[i].width);
             rec[i].alignment = swap32(rec[i].alignment);
         }
+        if (rec[i].attr[0] != '\0') {
+            /* Registered again under this session's numbering, so a layout
+             * saved with three attribute columns comes back with the same
+             * three whatever order they are registered in now. */
+            const char *ttl = NULL;
+            int w = 0;
+
+            column_def_v(v, rec[i].field, &ttl, &w);
+            rec[i].field = (int32_t)tiku_trk_poseview_attr_column(v,
+                               rec[i].attr, rec[i].attr,
+                               (int)rec[i].width);
+        }
         if (order < 0) {
             order = swapped;
         } else if (order != swapped) {
@@ -4733,7 +4844,14 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
             scale_in(v, rec[i].offset) > 10000 ||
             rec[i].alignment < TIKU_TRK_ALIGN_LEFT ||
             rec[i].alignment > TIKU_TRK_ALIGN_CENTER ||
-            rec[i].field < 0 || rec[i].field > TIKU_TRK_COL_DATE) {
+            rec[i].field < 0 ||
+            (rec[i].field > TIKU_TRK_COL_PERM &&
+             (rec[i].field < TIKU_TRK_COL_ATTR_BASE ||
+              rec[i].field >= TIKU_TRK_COL_ATTR_BASE +
+                              TIKU_TRK_COL_ATTR_MAX))) {
+            /* A field outside the fixed set is legal only when it is an
+             * attribute column's slot -- and one of THIS session's, since
+             * the name it carries has already been registered above. */
             return 0;
         }
         for (j = 0; j < i; j++) {
@@ -5047,7 +5165,11 @@ tiku_trk_poseview_columns(const tiku_trk_poseview_t *v,
     if (v == NULL) {
         return 0;
     }
-    *out = v->columns;
+    if (out != NULL) {
+        /* Asking only HOW MANY is a fair question, and answering it with a
+         * write through a null pointer is not an answer. */
+        *out = v->columns;
+    }
     return v->column_count;
 }
 

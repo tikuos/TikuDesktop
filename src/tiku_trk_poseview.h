@@ -137,6 +137,18 @@ typedef struct {
 #define TIKU_TRK_COL_PERM   7
 #define TIKU_TRK_COL_KINDS  8
 
+/**
+ * @brief Where the ATTRIBUTE columns start.
+ *
+ * A column beyond this is not one of the fixed set: it shows the value of
+ * a named attribute, which is what makes a type's own columns possible at
+ * all (CW-026).  The id is its slot; the NAME is what identifies it in a
+ * saved layout, because a slot number means nothing to the next session.
+ */
+#define TIKU_TRK_COL_ATTR_BASE 16
+#define TIKU_TRK_COL_ATTR_MAX   8
+#define TIKU_TRK_ATTR_NAME_MAX 32
+
 typedef struct tiku_trk_poseview tiku_trk_poseview_t;
 
 /** @brief Create a view over @p backend, showing @p path. */
@@ -1012,6 +1024,22 @@ int tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field);
  * (TS-023).
  */
 int tiku_trk_poseview_last_column(const tiku_trk_poseview_t *v, int field);
+
+/**
+ * @brief Register a column showing the attribute @p attr (CW-026).
+ *
+ * Registering is not showing: it gives the attribute a field id the rest
+ * of the column machinery can carry, and the column is added or removed
+ * with the same toggle as every other one.
+ *
+ * @return the field id, or -1.
+ */
+int tiku_trk_poseview_attr_column(tiku_trk_poseview_t *v, const char *attr,
+                                  const char *title, int width);
+
+/** @brief The attribute a registered column shows, or NULL. */
+const char *tiku_trk_poseview_attr_of(const tiku_trk_poseview_t *v,
+                                      int field);
 
 /**
  * @brief Tell the view how many rows its window can show.

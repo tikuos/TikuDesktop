@@ -2693,7 +2693,9 @@ AddMimeTypesToMenu builds supertype menus then subtype menus from BMimeType::Get
 `ContainerWindow.cpp` → `BContainerWindow::AddMimeTypesToMenu(BMenu*) / AddMimeMenu`  
 **TIKU:** Replaced by per-descriptor-type column sets from the VFS type registry.
 **PORT:** The menu reports the LISTING: each type the folder actually holds grows a submenu of the columns that mean something for it -- a device node offers its value and its capability, a document its size and its permissions -- and a folder holding none of them is offered none.  
-**MISSING:** Neither shell draws a menu bar, so the Attributes menu is reached in the model rather than on screen.  
+**PORT:** A column can show a named ATTRIBUTE now, not only one of the fixed facts: registering an attribute gives it a field id the rest of the column machinery carries, the cell reads that entry's attribute, and an entry with none shows a dash rather than a blank -- the column belongs to the listing, so a blank would read as "not measured yet". The menu already grows a submenu per type the folder holds; what a type OFFERS comes from the database.  
+**MISSING:** Nothing yet turns a type's column set into registered attribute columns automatically, and neither shell draws a menu bar to reach the Attributes menu from.  
+*src/tiku_trk_poseview.c:tiku_trk_poseview_attr_column/cell_text_at; src/tiku_trk_types.c; tests/test_poseview.c*
 *src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_cwmenu.c:build_attributes; src/tiku_trk_desktop.c:build_per_type; tests/test_menu.c*
 
 #### CW-027 · important · done
@@ -5368,8 +5370,8 @@ Adding the first B_TIME_TYPE column starts watching kDateFormatChanged; removing
 Columns go to the folder attribute _trk/columns (root/Disks window: _trk/d_columns) and view state to _trk/viewstate (Desktop: _trk/desk_viewstate) as raw streams; attributes larger than 10000 bytes or of the wrong type are ignored. Restored columns are sorted by stored offset then re-laid out contiguously from StartOffset(), so overlapping saved offsets self-heal.  
 `PoseView.cpp` → `BPoseView::RestoreColumnState`  
 **TIKU:** BFS attributes do not exist: per-folder view state needs an explicit store (sidecar keyed by path/node id, or a namespace metadata node). Device-namespace directories may be read-only, so the store must tolerate "cannot persist here".  
-**MISSING:** Columns (order/width/alignment) and view mode plus per-entry positions are stored per path through the state store, which degrades on a non-writable store -- but restore_columns is only called once at startup, so navigating into another folder restores its mode and icon positions and keeps the previous folder's columns, and sort keys and scroll origin are never persisted at all.  
-*/home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:3256 (restore_columns) and :2182 (save_state, writes mode only); sole restore call at /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:1124*
+**MISSING:** Columns, view mode, sort keys and per-entry positions are stored per folder and restored with it, and an attribute column is saved by its NAME rather than by the slot it happened to get -- a slot number means nothing to the next session. The record grew for it, so a layout written by an older build is refused by its version stamp rather than mis-read. Still true of the single-window shell: navigating within it restores state but not columns.  
+*src/tiku_trk_poseview.c:save_columns/restore_columns; tests/test_poseview.c; tests/test_title.c*
 
 #### TS-030 · polish · done
 **Column layouts written on a machine of the opposite endianness are still read correctly.**  
@@ -5724,7 +5726,8 @@ kCloseWindowAndChildren with a node_ref in B_RAW_TYPE data; matches window->Targ
 InstallMimeIfNeeded for B_APP/B_FILE/B_VOLUME/B_QUERY/B_QUERY_TEMPLATE/B_LINK/B_ROOT/B_BOOKMARK/B_PERSON/B_PRINTER_SPOOL/B_PRINTER; ExtraAttributeLazyInstaller adds e.g. META:url, META:name..META:nickname with per-column width and alignment. Only rewrites what is missing unless a force mask is set.  
 `TrackerInitialState.cpp` → `TTracker::InitMimeTypes / TTracker::InstallMimeIfNeeded / ExtraAttributeLazyInstaller::AddExtraAttribute`  
 **TIKU:** The type database becomes typed descriptors on VFS nodes; 'install once at first boot, don't clobber user edits' is the rule to keep.
-**MISSING:** The application half is installed and persisted: a registry file names the applications and what each reads, and the preferred handler per type is kept in the store. Absent: the TYPE database itself -- the table is compiled in, nothing is written on first run, and there are no per-type extra columns to install.  
+**MISSING:** There is a type database now, and it is written once on a first run and read from a file after -- a database the user has edited is not ours to overwrite, and re-installing on every start would undo every type they added. It carries a description, an icon and the extra columns a type is worth showing, answering by supertype for a type nobody named. Absent: the long descriptions, and the application half beyond the registry that already exists.  
+*src/tiku_trk_types.c; tests/test_types.c*
 *src/tiku_trk_launch.c:tiku_trk_launch_load; src/tiku_trk_desktop.c (the registry at startup)*
 
 #### AW-014 · polish · open
@@ -5733,11 +5736,12 @@ fs_create_index(device, kAttrQueryLastChange, B_INT32_TYPE) and "_trk/recentQuer
 `TrackerInitialState.cpp` → `TTracker::InstallIndices`
 **WAIVER CANDIDATE:** the port's queries are live namespace walks, not index scans -- src/tiku_trk_query.c:6 ('predicates, matching, and walking the namespace') with a scope queue and per-entry matching, and neither backend has any index concept (no create_index-like op in the ops struct, src/tiku_trk_model.h:180-200) -- so there are no query indices to create and nothing that depends on one; waiver candidate  
 
-#### AW-015 · polish · open
+#### AW-015 · polish · partial
 **Default column layouts for query result windows (generic, bookmark, person, e-mail) are written once into template nodes if absent.**  
 Per-type AttributeTemplate with kAttrWindowFrame (kDefaultFrame 40,40,695,350), kAttrViewState_be and generated kAttrColumns bits; written only when DefaultStateSourceNode(query,...,false) finds nothing.  
 `TrackerInitialState.cpp` → `TTracker::InstallDefaultTemplates / mkColumnsBits`
-**SUBSYSTEM:** per-type default state templates -- no template mechanism exists ('template' occurs in src/ only as icon art, src/tiku_trk_icons.c:499-500,1661-1662); query-result windows take compiled-in defaults and key their saved state on the synthetic 'find #N' window title (src/tiku_trk_desktop.c:915 and 959-961)  
+**MISSING:** The per-type column SETS exist and are written into the database on first use -- named in the file rather than numbered, and a name nothing stands for is left out rather than read as column zero. What is absent is a default per-type WINDOW layout: these are the columns a type offers, not the state a query window opens with.  
+*src/tiku_trk_types.c:tiku_trk_types_install; tests/test_types.c*
 
 #### AW-016 · polish · open
 **A default desktop background image is installed only when the boot desktop folder has no background attribute yet.**  
