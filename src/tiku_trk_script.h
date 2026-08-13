@@ -56,6 +56,8 @@ typedef struct {
     int         nav_back;   /* whether the browser can step backward     */
     int         nav_forward;
     int         nav_up;
+    int         nav_visible;
+    int         viewport_rows; /* rows that fit, rather than total poses */
     int         win_x, win_y;   /* the focused window's frame            */
     int         columns;        /* how many its list shows               */
     int         bar_x, bar_y;   /* where the Deskbar has put itself      */
@@ -116,6 +118,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-nav-back <0|1>
  *     expect-nav-forward <0|1>
  *     expect-nav-up <0|1>
+ *     expect-navigator <0|1>
+ *     expect-visible-rows <n>
  *     expect-type-narrowed                -- every row is of the asked type
  *     expect-window-at <x> <y>            -- the focused window's corner
  *     expect-columns <n>

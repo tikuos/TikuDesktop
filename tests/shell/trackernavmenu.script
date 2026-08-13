@@ -1,0 +1,16 @@
+# shell: tracker
+# argv: trash
+# CW-064: in-place navigation rebuilds special-folder menus.
+wait 8
+click 20 37
+wait 4
+expect-menu Empty Trash||Find
+
+note leaving the Trash replaces its destructive special menu immediately
+key Escape
+key Up ctrl
+wait 8
+click 20 37
+wait 4
+expect-menu Find…|New folder
+quit

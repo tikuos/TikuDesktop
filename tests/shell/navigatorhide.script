@@ -1,0 +1,28 @@
+# shell: tracker
+# home: fixture
+# work: home
+# prefs: navigator-off
+# CW-054: the shared setting hides and shows the navigator without history.
+wait 8
+expect-navigator 0
+expect-visible-rows 21
+
+note history continues to grow while its chrome is hidden
+click-row 0
+click-row 0
+wait 6
+key Left ctrl
+wait 6
+expect-location /home/ambuj/.trk-shell-fixture
+expect-nav-forward 1
+
+note removing the global override restores the bar and recomputes the view
+remove /tmp/trk_script/home/.config/TrackerSettings
+wait 20
+expect-navigator 1
+expect-visible-rows 20
+expect-nav-forward 1
+click 52 57
+wait 6
+expect-location /home/ambuj/.trk-shell-fixture/sub
+quit

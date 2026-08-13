@@ -113,8 +113,8 @@ $(BUILD)/test_nodeicon: $(CORE) tests/test_nodeicon.c | $(BUILD)
 $(BUILD)/test_navmenu: $(CORE) tests/test_navmenu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_navigator: src/tiku_trk_navigator.c tests/test_navigator.c \
-                         | $(BUILD)
+$(BUILD)/test_navigator: src/tiku_trk_navigator.c src/tiku_trk_model.c \
+                         tests/test_navigator.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_dbdrop: $(CORE) $(UI) $(ICONS) src/tiku_trk_deskbar.c \

@@ -2843,13 +2843,13 @@ SendNavigationMessage: with option the message becomes B_REFS_RECEIVED to be_app
 `Navigator.cpp` → `BNavigator::SendNavigationMessage`
 **WAIVER CANDIDATE:** The premise — a browser-mode shell that can alternatively open the destination in a NEW window — cannot exist in this port's architecture: browser mode is build/tracker, a single-window binary with exactly one pose view and no window system (src/tiku_trk_app.c never references tiku_trk_win/tiku_trk_desk — grep returns nothing), so there is no second window to spawn; and the multi-window shell has no navigator or Back/Forward/Up to Option-click (grep navigator over src/: nothing). Waiver candidate unless the two shells are ever merged.  
 
-#### CW-048 · important · partial
+#### CW-048 · important · done
 **Cmd+L focuses the location field; typing a path and pressing Enter navigates there; an empty field means "/"; an invalid path silently reverts the field to the current folder's path. Dropping a file or folder on the navigator bar navigates to it (to its parent, if a file was dropped).**  
 GoTo() posts kSwitchDirectory with action kActionLocation, which is the one action that does NOT overwrite the field text (so the caret and selection survive). The unhandled-message branch of MessageReceived handles the dropped refs.  
 `Navigator.cpp` → `BNavigator::GoTo / BNavigator::MessageReceived`  
 **TIKU:** A location field over the merged namespace must accept device paths (/dev/..., /sys/...) as first-class destinations.
-**MISSING:** Ctrl+L, typed navigation, empty-to-root and silent invalid-path reversion work, using the same backend path/stat operations as every other namespace destination.  The bar is not yet a drag-and-drop target, so dropping a folder or a file on it does nothing.
-*src/tiku_trk_app.c:begin_location/end_location/handle_key; tests/shell/navigator.script*
+**PORT:** Ctrl+L, typed navigation, empty-to-root and silent invalid-path reversion use the same backend path/stat operations as every other namespace destination.  A pose dropped on the navigator resolves a container to itself and a leaf to its parent before navigating, so device-namespace containers and leaves follow the same rule without path-type guesses in the shell.
+*src/tiku_trk_app.c:begin_location/end_location/handle_key (ButtonRelease navigator branch); src/tiku_trk_navigator.c:tiku_trk_navigator_drop_path; tests/test_navigator.c; tests/shell/navigator.script; tests/shell/navigatordrop.script*
 
 #### CW-049 · core · partial
 **Double-clicking a folder opens a new window in spatial mode but navigates the same window in browser mode; holding Option inverts this (Option-open in browser mode spawns a new window, Option-open in spatial mode closes the parent window behind it).**  
@@ -2872,11 +2872,12 @@ BContainerWindow::OpenParent resolves the parent virtual-directory-aware and fee
 **MISSING:** Cmd+Up now opens the parent in a spatial window and navigates in place in the browser; Cmd+Option+Up closes the spatial window left behind.  Root and Desktop remain disabled.  The menu does not implement the source's separate Control-held force-enable override.
 *src/tiku_trk_desktop.c (Cmd+Up branch); src/tiku_trk_app.c:handle_key; tests/shell/parent.script; tests/shell/navigator.script*
 
-#### CW-052 · important · open
+#### CW-052 · important · partial
 **Switching between spatial and browser mode rebinds the arrow-key shortcuts: browser mode gives Cmd+Left/Right/Up = Back/Forward/Up and Cmd+L = focus location; spatial mode gives Cmd+Up = open parent, Cmd+Option+Up = open parent and close this window, and Cmd+Option+Down = open selection.**  
 SetSingleWindowBrowseShortcuts removes the shortcuts of the other regime before installing its own; the browser bindings are duplicated with and without Option (Option = open in new window). It is a no-op on the Desktop, and browser bindings are skipped when the window has no Navigator.  
 `ContainerWindow.cpp` → `BContainerWindow::SetSingleWindowBrowseShortcuts`
-**WAIVER CANDIDATE:** There is no runtime spatial/browser toggle for the rebinding to observe: the two regimes are two binaries with fixed, compiled-in key switches (src/tiku_trk_app.c:handle_key vs src/tiku_trk_desktop.c:2446-2564), no SingleWindowBrowse setting exists (grep browse/single_window over src/: nothing), and neither shell installs or removes shortcuts at runtime. Waiver candidate: the premise (one window switching regimes live) cannot exist while the split stands.  
+**MISSING:** The fixed browser shell binds Cmd+Left/Right/Up and Cmd+L, while the fixed spatial shell binds Cmd+Up, Cmd+Option+Up and Cmd+Option+Down with the stated open/close behavior.  The two regimes remain separate binaries, so no running window can switch modes and dynamically remove one binding set before installing the other; browser Option-navigation also cannot spawn a second window in the single-window binary.
+*src/tiku_trk_app.c:handle_key; src/tiku_trk_desktop.c (Cmd+Option+Down and Cmd+Up branches); tests/shell/navigator.script; tests/shell/parent.script*
 
 #### CW-053 · important · open
 **Turning browser mode off closes redundant windows: any two open windows showing the same folder collapse to one, and the "Desktop" folder window closes (the Desktop itself stays).**  
@@ -2884,11 +2885,12 @@ The kSingleWindowBrowseChanged observer sorts all container windows by node ref 
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived case kSingleWindowBrowseChanged`
 **WAIVER CANDIDATE:** Same impossibility as CW-052: there is no browser-mode setting to turn off, so the collapse trigger cannot exist. The row's goal state is moreover invariant by construction in the desktop shell — open_folder raises the existing window for a path instead of making a second one (src/tiku_trk_desktop.c:1383-1391), so two windows showing the same folder can never arise. Waiver candidate.  
 
-#### CW-054 · polish · open
+#### CW-054 · polish · done
 **The navigator bar can be shown or hidden globally without losing history; hiding/showing it re-computes the scroll range so the pose view resizes correctly.**  
 ShowNavigator refuses on the Desktop, on non-directories and in file panels; it creates the Navigator lazily if the window never had one, and calls PoseView()->UpdateScrollRange() around the show/hide. Path watching is switched on/off with it (kShowNavigatorChanged observer).  
 `ContainerWindow.cpp` → `BContainerWindow::ShowNavigator / MessageReceived case kShowNavigatorChanged`
-**SUBSYSTEM:** Navigator bar. There is no navigator to show or hide (grep navigator over src/: nothing), no global setting, and no scroll-range recomputation hook tied to one.  
+**PORT:** The browser observes the shared `ShowNavigator` setting file live.  Hiding changes only the chrome and its layout height, retaining the navigator object and its history; showing it again restores the same Forward branch.  Each transition recomputes the pose view's visible-row range before drawing, so the hidden bar's space is immediately returned to the listing.
+*src/tiku_trk_app.c:sync_navigator_preference/navigator_height; tests/shell/navigatorhide.script*
 
 #### CW-055 · core · done
 **Hierarchical folder menus fill in progressively while the mouse hovers them, so a huge folder never freezes the UI, and re-open always re-reads the folder rather than showing a stale listing.**  
@@ -2958,12 +2960,12 @@ ShowSelectionWindow creates fSelectionWindow once, then MoveCloseToMouse()+Show(
 `ContainerWindow.cpp` → `BContainerWindow::ShowSelectionWindow / MessageReceived case kSelectMatchingEntries`  
 **PORT:** One Select window serves the desktop rather than one per container window; it remembers which window it was opened from and applies there. Its state survives closing, which is the behaviour the row is about.
 
-#### CW-064 · important · partial
+#### CW-064 · important · done
 **When a window changes into or out of a special folder (Trash, root, a volume) its whole menu bar and its pose/window context menus are rebuilt, so e.g. "Empty Trash" and "Restore" appear and disappear correctly during in-window navigation.**  
 RepopulateMenus detaches the shared items, deletes and re-adds File/Window/Attributes (re-adding Attributes at index 2 only in list mode), then recreates fPoseContextMenu and fWindowContextMenu. Called from SwitchDirectory only when the trash/root/volume predicates changed.  
 `ContainerWindow.cpp` → `BContainerWindow::RepopulateMenus`  
-**MISSING:** Every menu — bar menus and both context menus — is cleared and rebuilt from the current context each time one opens, so a stale menu is impossible and the Trash variants are unit-tested; but the live context never computes is_trash/in_trash/is_query, and the shell with menus has no in-window navigation, so at runtime a window never changes kind and Empty Trash/Restore never actually appear.  
-*src/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild + src/tiku_trk_desktop.c:menu_ctx*
+**PORT:** Every menu — bar menus and both context menus — is cleared and rebuilt from the current folder context each time it opens, rather than only when a special-folder predicate flips.  The browser context computes root, query, Trash and in-Trash state, so navigating out of Trash replaces Empty Trash/Delete/Restore with the normal inventory immediately and cannot leave a stale special action behind.
+*src/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild; src/tiku_trk_app.c:menu_ctx/draw; tests/shell/trackernavmenu.script*
 
 #### CW-065 · important · partial ⟨found by verification⟩
 **Cmd-1 / Cmd-2 / Cmd-3 switch to icon / mini-icon / list view from the Window menu, and the icon-size submenu is radio-marked to the current size.**  

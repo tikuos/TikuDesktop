@@ -28,6 +28,7 @@ int
 main(void)
 {
     tiku_trk_navigator_t n;
+    tiku_trk_model_t dropped;
     char path[TIKU_TRK_PATH_MAX];
     int i, steps = 0;
 
@@ -85,6 +86,19 @@ main(void)
           "Up ignores trailing separators");
     check(!tiku_trk_navigator_parent("/", path, sizeof path),
           "the root has no Up destination");
+
+    printf("\ndrop destinations\n");
+    memset(&dropped, 0, sizeof dropped);
+    dropped.kind = TIKU_TRK_KIND_DIRECTORY;
+    snprintf(dropped.path, sizeof dropped.path, "/a/folder");
+    check(tiku_trk_navigator_drop_path(&dropped, path, sizeof path) &&
+          strcmp(path, "/a/folder") == 0,
+          "dropping a folder navigates into that folder");
+    dropped.kind = TIKU_TRK_KIND_FILE;
+    snprintf(dropped.path, sizeof dropped.path, "/a/file");
+    check(tiku_trk_navigator_drop_path(&dropped, path, sizeof path) &&
+          strcmp(path, "/a") == 0,
+          "dropping a file navigates to its enclosing folder");
 
     printf("\n%s\n", fails ? "FAILURES" : "the navigator holds its history");
     return fails ? 1 : 0;

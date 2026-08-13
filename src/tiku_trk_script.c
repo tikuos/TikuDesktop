@@ -25,7 +25,8 @@
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW,
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
-    OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP,
+    OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
+    OP_EXPECT_VIEWPORT_ROWS,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
@@ -259,6 +260,12 @@ tiku_trk_script_open(const char *path)
             st->count = atoi(w[1]);
         } else if (strcmp(w[0], "expect-nav-up") == 0 && n >= 2) {
             st->op = OP_EXPECT_NAV_UP;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-navigator") == 0 && n >= 2) {
+            st->op = OP_EXPECT_NAV_VISIBLE;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-visible-rows") == 0 && n >= 2) {
+            st->op = OP_EXPECT_VIEWPORT_ROWS;
             st->count = atoi(w[1]);
         } else if (strcmp(w[0], "expect-type-narrowed") == 0) {
             st->op = OP_EXPECT_FOLDERS;
@@ -537,18 +544,24 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     case OP_EXPECT_NAV_BACK:
     case OP_EXPECT_NAV_FORWARD:
-    case OP_EXPECT_NAV_UP: {
+    case OP_EXPECT_NAV_UP:
+    case OP_EXPECT_NAV_VISIBLE:
+    case OP_EXPECT_VIEWPORT_ROWS: {
         int actual = (st == NULL) ? -1
                    : (cur->op == OP_EXPECT_NAV_BACK) ? st->nav_back
                    : (cur->op == OP_EXPECT_NAV_FORWARD) ? st->nav_forward
-                                                       : st->nav_up;
+                   : (cur->op == OP_EXPECT_NAV_UP) ? st->nav_up
+                   : (cur->op == OP_EXPECT_NAV_VISIBLE) ? st->nav_visible
+                                                       : st->viewport_rows;
         char value[16];
 
         snprintf(value, sizeof value, "%d", actual);
         verdict(s, actual == cur->count,
                 (cur->op == OP_EXPECT_NAV_BACK) ? "nav back:"
                 : (cur->op == OP_EXPECT_NAV_FORWARD) ? "nav forward:"
-                                                     : "nav up:", value);
+                : (cur->op == OP_EXPECT_NAV_UP) ? "nav up:"
+                : (cur->op == OP_EXPECT_NAV_VISIBLE) ? "navigator visible:"
+                                                     : "visible rows:", value);
         return 1;
     }
     case OP_EXPECT_FOLDERS:

@@ -123,3 +123,18 @@ tiku_trk_navigator_parent(const char *path, char *out, size_t max)
     }
     return 1;
 }
+
+int
+tiku_trk_navigator_drop_path(const tiku_trk_model_t *model, char *out,
+                             size_t max)
+{
+    if (model == NULL || out == NULL || max == 0u ||
+        model->path[0] == '\0') {
+        return 0;
+    }
+    if (tiku_trk_model_is_container(model)) {
+        snprintf(out, max, "%s", model->path);
+        return 1;
+    }
+    return tiku_trk_navigator_parent(model->path, out, max);
+}

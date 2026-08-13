@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "tiku_trk_gfx_dep.h"
@@ -32,6 +33,7 @@
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_navigator.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_prefs.h"
 #include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
 #include "tiku_trk_script.h"
@@ -107,6 +109,12 @@ typedef struct {
     tiku_trk_navigator_t nav;
     tiku_trk_edit_t      nav_edit;
     int                  nav_editing;
+    int                  show_nav;
+    char                 prefs_path[TIKU_TRK_PATH_MAX];
+    int                  prefs_present;
+    time_t               prefs_mtime;
+    off_t                prefs_size;
+    int64_t              prefs_checked;
 } app_t;
 
 /** @brief Index of the first selected row, or -1. */
@@ -144,6 +152,13 @@ index_of_path(app_t *a, const char *path)
 static void blit(app_t *a);
 static tiku_desk_rect_t menubar_rect(const app_t *a);
 
+/** @brief The navigator takes no layout space while globally hidden. */
+static int
+navigator_height(const app_t *a)
+{
+    return a->show_nav ? NAV_H : 0;
+}
+
 /** @brief Geometry of the row area, derived once per draw. */
 static tiku_desk_rect_t
 list_rect(const app_t *a)
@@ -155,7 +170,7 @@ list_rect(const app_t *a)
     r.x = BORDER;
     /* The column title bar belongs to list mode; icon mode gets the space
      * back, and hit-testing must use the same rectangle drawing does. */
-    r.y = TAB_H + BORDER + a->menus.bar.height + NAV_H +
+    r.y = TAB_H + BORDER + a->menus.bar.height + navigator_height(a) +
           (titled ? TITLE_H : 0);
     r.w = a->surf->w - 2 * BORDER - (titled ? SCROLL_W : 0);
     r.h = a->surf->h - r.y - BORDER - COUNT_H;
@@ -168,7 +183,8 @@ navigator_rect(const app_t *a)
 {
     tiku_desk_rect_t bar = menubar_rect(a);
     tiku_desk_rect_t r = { BORDER, bar.y + bar.h,
-                           a->surf->w - 2 * BORDER, NAV_H };
+                           a->surf->w - 2 * BORDER,
+                           navigator_height(a) };
 
     return r;
 }
@@ -232,6 +248,22 @@ menu_ctx(app_t *a, unsigned mods)
     c.target_ro = a->read_only;
     c.is_root = !c.can_open_parent;
     c.is_query = tiku_trk_poseview_is_query(a->view);
+    {
+        char trash[TIKU_TRK_PATH_MAX];
+
+        if (a->fs != NULL && tiku_trk_fs_trash_dir(
+                a->fs, tiku_trk_poseview_path(a->view), trash,
+                sizeof trash) == 0) {
+            tiku_trk_model_t tm;
+
+            c.is_trash = strcmp(tiku_trk_poseview_path(a->view), trash) == 0;
+            c.in_trash = !c.is_trash && tiku_trk_fs_in_trash(
+                a->fs, tiku_trk_poseview_path(a->view));
+            if (a->backend->ops->stat(a->backend, trash, &tm) == 0) {
+                c.trash_full = tm.facts.trash_full;
+            }
+        }
+    }
     if (p != NULL) {
         c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
         c.selection_ro = !tiku_trk_model_is_writable(&p->model);
@@ -596,6 +628,9 @@ draw_navigator(app_t *a)
     unsigned up_state = strcmp(tiku_trk_navigator_current(&a->nav), "/")
                             ? 0u : TIKU_DESK_S_DISABLED;
 
+    if (!a->show_nav) {
+        return;
+    }
     navigator_layout(a, &back, &forward, &up, &field);
     tiku_desk_ui_panel(a->surf, navigator_rect(a));
     tiku_desk_ui_button(a->surf, back, "<", back_state);
@@ -641,7 +676,8 @@ draw(app_t *a)
 
     /* The title strip.  Every title is placed from its column's OFFSET, so
      * a title and the cells beneath it cannot drift apart. */
-    title = (tiku_desk_rect_t){ list.x, bar.y + bar.h + NAV_H,
+    title = (tiku_desk_rect_t){ list.x,
+                                bar.y + bar.h + navigator_height(a),
                                 list.w, TITLE_H };
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
         tiku_desk_fill(s, title, TIKU_DESK_C_PANEL);
@@ -888,6 +924,48 @@ settle_layout(app_t *a)
     }
     lr = list_rect(a);
     (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
+}
+
+/** @brief Apply the shared ShowNavigator preference when its file changes. */
+static void
+sync_navigator_preference(app_t *a, int force)
+{
+    struct stat st;
+    int present, visible = 1;
+    int64_t now = tiku_trk_now();
+    time_t mtime = 0;
+    off_t size = 0;
+
+    if (!force && now - a->prefs_checked < 100000) {
+        return;
+    }
+    a->prefs_checked = now;
+    present = a->prefs_path[0] != '\0' && stat(a->prefs_path, &st) == 0;
+    if (present) {
+        mtime = st.st_mtime;
+        size = st.st_size;
+    }
+    if (!force && present == a->prefs_present &&
+        (!present || (mtime == a->prefs_mtime && size == a->prefs_size))) {
+        return;
+    }
+    if (present) {
+        tiku_trk_prefs_t prefs;
+
+        tiku_trk_prefs_init(&prefs);
+        (void)tiku_trk_prefs_load(&prefs, a->prefs_path);
+        visible = tiku_trk_prefs_get(&prefs, "ShowNavigator") != 0;
+        tiku_trk_prefs_free(&prefs);
+    }
+    a->prefs_present = present;
+    a->prefs_mtime = mtime;
+    a->prefs_size = size;
+    if (visible != a->show_nav) {
+        a->show_nav = visible;
+        tiku_trk_poseview_set_visible_rows(a->view, visible_rows(a));
+        settle_layout(a);
+        a->dirty = 1;
+    }
 }
 
 /**
@@ -1285,7 +1363,7 @@ static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
     tiku_desk_rect_t list = list_rect(a);
-    int top = TAB_H + BORDER + a->menus.bar.height + NAV_H;
+    int top = TAB_H + BORDER + a->menus.bar.height + navigator_height(a);
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
         return 0;
@@ -1843,7 +1921,7 @@ navigator_press(app_t *a, int x, int y)
 
 #define INSIDE(r) (x >= (r).x && x < (r).x + (r).w && \
                    y >= (r).y && y < (r).y + (r).h)
-    if (!INSIDE(nav)) {
+    if (!a->show_nav || !INSIDE(nav)) {
         return 0;
     }
     navigator_layout(a, &back, &forward, &up, &field);
@@ -1883,6 +1961,7 @@ main(int argc, char **argv)
     memset(&a, 0, sizeof a);
     tiku_trk_cwmenu_init(&a.menus);
     a.bar_open = -1;
+    a.show_nav = 1;
     /* Zero is a valid row, so the "nothing to select" state has to be set
      * rather than zeroed: left at 0 it would re-select the first row after
      * every operation (FS-050). */
@@ -1923,6 +2002,15 @@ main(int argc, char **argv)
     a.fs = tiku_trk_fs_new(a.backend);
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
     a.row_h = LIST_ROW_H;
+    {
+        const char *home = getenv("HOME");
+
+        if (home != NULL && home[0] != '\0') {
+            snprintf(a.prefs_path, sizeof a.prefs_path,
+                     "%s/.config/TrackerSettings", home);
+        }
+        sync_navigator_preference(&a, 1);
+    }
 
     if (script_path != NULL) {
         /* Displayless.  The shell draws into the same surface either way,
@@ -2059,6 +2147,7 @@ main(int argc, char **argv)
     }
 
     while (a.running) {
+        sync_navigator_preference(&a, 0);
         /* Events first, then the device: the window stays responsive while a
          * slow link is being read, which is the whole point of pumping here
          * rather than blocking on either one. */
@@ -2085,6 +2174,8 @@ main(int argc, char **argv)
                 sst.nav_back = tiku_trk_navigator_can_back(&a.nav);
                 sst.nav_forward = tiku_trk_navigator_can_forward(&a.nav);
                 sst.nav_up = strcmp(sst.location, "/") != 0;
+                sst.nav_visible = a.show_nav;
+                sst.viewport_rows = visible_rows(&a);
                 {
                     const tiku_trk_column_t *script_cols = NULL;
 
@@ -2514,6 +2605,26 @@ main(int argc, char **argv)
                     break;
                 }
                 a.press_down = 0;
+                if (a.drag_active) {
+                    tiku_desk_rect_t nr = navigator_rect(&a);
+
+                    if (ev.xbutton.x >= nr.x &&
+                        ev.xbutton.x < nr.x + nr.w &&
+                        ev.xbutton.y >= nr.y &&
+                        ev.xbutton.y < nr.y + nr.h) {
+                        tiku_trk_pose_t *p =
+                            tiku_trk_poseview_active(a.view);
+                        char dest[TIKU_TRK_PATH_MAX];
+
+                        a.drag_active = 0;
+                        if (p != NULL && tiku_trk_navigator_drop_path(
+                                &p->model, dest, sizeof dest)) {
+                            (void)navigate_to(&a, dest, 1);
+                        }
+                        a.dirty = 1;
+                        break;
+                    }
+                }
                 if (a.band_active || a.drag_active) {
                     a.band_active = 0;
                     a.drag_active = 0;

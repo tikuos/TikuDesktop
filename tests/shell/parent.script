@@ -11,4 +11,11 @@ key Up ctrl alt
 wait 8
 expect-title trk_script
 expect-windows 1
+
+note Cmd+Option+Down opens the selection and closes the spatial parent
+click-row 0
+key Down ctrl alt
+wait 8
+expect-title sub
+expect-windows 1
 quit

@@ -89,6 +89,15 @@ open(sys.argv[1]+"/picture.bmp","wb").write(d)
 PYEOF
                            ;;
         esac
+        # A shared navigator preference is written by the multi-window
+        # Preferences UI and observed by the browser process.  This fixture
+        # starts with that external setting off so the observer is real.
+        if grep -q '^# prefs: navigator-off' "$s"; then
+            prefhome=${deskhome:-$HOME}
+            mkdir -p "$prefhome/.config"
+            printf 'ShowNavigator off\n' > \
+                "$prefhome/.config/TrackerSettings"
+        fi
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         # A script that says "# argv: none" is started with no path at all,
         # which is the only way to exercise what the shell opens on its own.

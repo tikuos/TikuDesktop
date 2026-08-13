@@ -1,0 +1,13 @@
+# shell: tracker
+# CW-048: the navigator bar accepts a dragged pose as a destination.
+key 1 ctrl
+wait 8
+note dropping the folder anywhere on the navigator navigates into it
+press 65 120
+move 90 95
+move 150 57
+release 150 57
+wait 10
+expect-location /tmp/trk_script/sub
+expect-nav-back 1
+quit

@@ -6729,6 +6729,23 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
+                if (fl != NULL && ks == XK_Down &&
+                    (ev.xkey.state & ControlMask) &&
+                    (ev.xkey.state & Mod1Mask)) {
+                    tiku_trk_pose_t *p =
+                        tiku_trk_poseview_active(fl->view);
+
+                    if (p != NULL &&
+                        tiku_trk_model_is_container(&p->model)) {
+                        tiku_trk_win_t *from = fl->win;
+
+                        if (open_folder(&app, p->model.path) != NULL) {
+                            close_window(&app, from);
+                        }
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if (fl != NULL && ks == XK_Up &&
                     (ev.xkey.state & ControlMask)) {
                     /* PVK-040/CW-051: Cmd+Up opens the parent; Option
