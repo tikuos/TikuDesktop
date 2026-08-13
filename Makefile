@@ -23,6 +23,7 @@ DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
                       $(DESK_TRANSPORT_LIB)
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 DESKTOP_CONTROLLERS := src/ui/windows/tiku_trk_find_window.c \
+                       src/ui/windows/tiku_trk_folder_window.c \
                        src/ui/windows/tiku_trk_info_window.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \

@@ -56,6 +56,7 @@
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
+#include "tiku_trk_folder_window.h"
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_query.h"
@@ -65,15 +66,10 @@
 #define DESK_W 1000
 #define DESK_H  680
 #define COUNT_H  16
-#define MINI_ICON 16
 
 /* How many entries per turn are asked whether they carry a picture of their
  * own.  A bound rather than the whole listing: the ask opens the file. */
 #define HINTS_PER_TURN 24
-
-/* The clear space a row keeps between a name and a right-aligned value; a
- * value that would cross it is dropped rather than overlapping the name. */
-#define VALUE_GAP 120
 
 /* Where the cascade starts again once it has run off the screen, and how far
  * each window steps from the last. */
@@ -106,28 +102,7 @@
 /** @brief How long the pointer must hold in the band before it starts. */
 #define AUTOSCROLL_DELAY_US 600000
 
-/** @brief One folder window: a pose view plus the path that identifies it. */
-typedef struct folder {
-    tiku_trk_poseview_t *view;
-    char                 path[TIKU_TRK_PATH_MAX];
-    char                 state_path[TIKU_TRK_PATH_MAX];
-    tiku_desk_window_t      *win;
-    struct desktop      *app;
-    /* A results window keeps its run alive: the run IS the subscription, so
-     * stopping it when the first fill finishes would quietly make the window
-     * a snapshot instead of a live query. */
-    tiku_trk_qrun_t     *run;
-    int                  live;
-    int                  gone;      /* the folder itself was removed      */
-    /* What the window opened with, so a close can tell whether it MOVED.
-     * Without it every window is written back on every close (CW-002). */
-    tiku_trk_frame_t     opened_with;
-    int                  had_frame;
-    /* For a results window, the saved record it is showing.  The sweep
-     * needs it: a by-product with a window open on it is one the user is
-     * still looking at (Q-037). */
-    char                 qname[TIKU_TRK_NAME_MAX];
-} folder_t;
+typedef tiku_trk_folder_window_t folder_t;
 
 typedef struct desktop {
     tiku_desk_host_t    *host;
@@ -137,6 +112,7 @@ typedef struct desktop {
     tiku_trk_backend_t  *backend;
     tiku_trk_fs_t       *fs;
     folder_t             folders[TIKU_DESK_WINDOW_MAX];
+    tiku_trk_folder_render_t folder_render;
     int                  folder_count;
     int                  row_h;
     int                  team;
@@ -646,192 +622,21 @@ build_per_type(desktop_t *app, folder_t *fl)
     }
 }
 
-/** @brief Draw a folder window's contents: list rows, then the count. */
-/** @brief How wide a label is, for the view's own geometry. */
-static int
-measure_label(const char *text, void *ctx)
-{
-    (void)ctx;
-    return tiku_desk_text_width(tiku_desk_font_plain(), text);
-}
-
-/**
- * @brief Whether a point lands on a pose's icon PIXELS (IV-026).
- *
- * The art is resolved the way the drawing resolves it -- through the
- * node-icon tier -- so what is hit is what is painted.
- */
-static int
-pose_icon_hit(const tiku_trk_model_t *m, int size, int px, int py, void *ctx)
-{
-    desktop_t *app = ctx;
-    char art[TIKU_TRK_NAME_MAX];
-
-    (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, m, art,
-                                    sizeof art);
-    return tiku_trk_icon_hit(art, size, px, py);
-}
-
-/**
- * @brief The capacity bar of a volume pose, inside its icon rect.
- *
- * Down the RIGHT edge of the icon in an icon mode and along the bottom in a
- * list row, which is where each has room: a horizontal bar under a 32 px
- * icon would sit on the name.
- */
+/** @brief Rebuild the shared menu model for the folder being painted. */
 static void
-draw_space_bar(desktop_t *app, tiku_desk_surface_t *s,
-               const tiku_trk_model_t *m, int ix, int iy, int size,
-               int vertical)
+prepare_folder_menu(void *context, tiku_trk_folder_window_t *folder)
 {
-    tiku_desk_rect_t bar;
-    int used = 0;
-    tiku_trk_space_t which = tiku_trk_volume_space_facts(m->facts.total,
-                                                        m->facts.avail,
-                                                        &used);
-    const char *key = (which == TIKU_TRK_SPACE_WARNING)
-                          ? "WarningSpaceColor" : "UsedSpaceColor";
-    int32_t c = tiku_trk_prefs_get(prefs_model(app), key);
-    uint32_t fc = (uint32_t)tiku_trk_prefs_get(prefs_model(app),
-                                               "FreeSpaceColor");
-    int thick = (size >= 32) ? (7 * (size + 1)) / 32 : 3;
+    desktop_t *app = context;
+    tiku_trk_sc_ctx_t menu = menu_ctx(app, folder, 0u);
 
-    if (thick < 2) {
-        thick = 2;
-    }
-    if (vertical) {
-        bar.x = ix + size - thick;
-        bar.y = iy;
-        bar.w = thick;
-        bar.h = size;
-    } else {
-        bar.x = ix;
-        bar.y = iy + size - 3;
-        bar.w = size;
-        bar.h = 3;
-    }
-    tiku_desk_fill(s, bar, TIKU_DESK_RGB((fc >> 16) & 0xffu,
-                                        (fc >> 8) & 0xffu, fc & 0xffu));
-    /* The USED part grows from the same edge the bar is anchored to, so a
-     * nearly-full disk reads as nearly full at a glance. */
-    if (vertical) {
-        bar.h = size * used / 100;
-    } else {
-        bar.w = size * used / 100;
-    }
-    if (bar.w > 0 && bar.h > 0) {
-        tiku_desk_fill(s, bar, TIKU_DESK_RGB(((uint32_t)c >> 16) & 0xffu,
-                                             ((uint32_t)c >> 8) & 0xffu,
-                                             (uint32_t)c & 0xffu));
-    }
-}
-
-/**
- * @brief Draw one pose as an icon with its name under it (CW-065).
- *
- * The coordinates are the VIEW's, so the caller subtracts the origin: a
- * renderer that scrolled by moving the poses would move the things the hit
- * test asks about too.
- */
-static void
-draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
-               int ox, int oy)
-{
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    desktop_t *app = fl->app;
-    int ix, iy, iw, ih, lx, ly, lw, lh;
-    int drawn_sel = tiku_trk_poseview_draws_selected(fl->view, p);
-    char art[TIKU_TRK_NAME_MAX];
-    tiku_desk_rect_t label;
-
-    tiku_trk_poseview_pose_parts(fl->view, p, &ix, &iy, &iw, &ih,
-                                 &lx, &ly, &lw, &lh);
-    ix -= ox; iy -= oy; lx -= ox; ly -= oy;
-    (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &p->model,
-                                    art, sizeof art);
-    if (drawn_sel) {
-        (void)tiku_trk_icon_paint_selected(s, art, ix, iy, iw);
-    } else if (p->model.facts.link_broken) {
-        (void)tiku_trk_icon_paint_dim(s, art, ix, iy, iw, 0.55f,
-                                      TIKU_DESK_C_DOC);
-    } else {
-        (void)tiku_trk_icon_paint(s, art, ix, iy, iw);
-    }
-    if ((p->model.kind == TIKU_TRK_KIND_VOLUME ||
-         p->model.kind == TIKU_TRK_KIND_ROOT) &&
-        tiku_trk_prefs_get(prefs_model(app), "ShowVolumeSpaceBar")) {
-        /* An icon-mode ornament in the original, and it was drawn only in
-         * the list rows here -- so the mode the bar was designed for was
-         * the one mode that had none (IV-045). */
-        draw_space_bar(app, s, &p->model, ix, iy, iw, 1);
-    }
-    /* The label is filled behind when selected, not the whole cell: in an
-     * icon mode the cell is mostly empty, and a filled cell would read as a
-     * block rather than as a name that is chosen (PVL-082). */
-    label.x = lx - 2;
-    label.y = ly;
-    label.w = lw + 4;
-    label.h = (lh > 0) ? lh : f->height;
-    if (drawn_sel) {
-        tiku_desk_fill(s, label, TIKU_DESK_C_SELECT);
-    }
-    {
-        /* On the Desktop the ink follows the BACKDROP's brightness rather
-         * than the window colour: a dark backdrop takes white labels, and
-         * the folder windows are unaffected either way (AW-028). */
-        tiku_desk_rgb_t ink = TIKU_DESK_C_TEXT;
-
-        if (fl->win == NULL) {
-            tiku_desk_rgb_t bg = TIKU_DESK_C_BACKDROP;
-            int lum = ((int)((bg >> 16) & 0xffu) * 299 +
-                       (int)((bg >> 8) & 0xffu) * 587 +
-                       (int)(bg & 0xffu) * 114) / 1000;
-
-            ink = (lum <= 127) ? TIKU_DESK_RGB(255, 255, 255)
-                               : TIKU_DESK_RGB(0, 0, 0);
-        }
-        tiku_desk_text(s, f, lx, ly + f->ascent,
-                       tiku_trk_model_display_name(&p->model),
-                       drawn_sel ? TIKU_DESK_C_SELTEXT : ink);
-    }
+    build_per_type(app, folder);
+    tiku_trk_cwmenu_rebuild(&app->menus, &menu);
+    app->menus.bar.open = app->bar_fl == folder ? app->bar_open : -1;
 }
 
 /*---------------------------------------------------------------------------*/
 /* The Desktop: a pose view with no window, over the backdrop                */
 /*---------------------------------------------------------------------------*/
-
-/** @brief The pose area, which for the Desktop is the whole screen. */
-static tiku_desk_rect_t
-folder_content(desktop_t *app, folder_t *fl)
-{
-    if (fl != NULL && fl->win != NULL) {
-        tiku_desk_rect_t r = tiku_desk_window_content(fl->win);
-
-        r.y += app->menus.bar.height;
-        r.h -= app->menus.bar.height;
-        if (r.h < 0) {
-            r.h = 0;
-        }
-        return r;
-    }
-    /* No chrome to inset: the Desktop has no menu bar, no scroll bars and
-     * no border view, so its pose area IS the screen (AW-018). */
-    return (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H };
-}
-
-/** @brief Menu strip inside a folder window's unmodified content frame. */
-static tiku_desk_rect_t
-folder_bar_frame(desktop_t *app, folder_t *fl)
-{
-    tiku_desk_rect_t r = { 0, 0, 0, 0 };
-
-    if (app == NULL || fl == NULL || fl->win == NULL) {
-        return r;
-    }
-    r = tiku_desk_window_content(fl->win);
-    r.h = app->menus.bar.height;
-    return r;
-}
 
 /**
  * @brief Where a Desktop icon may sit: the screen, less the Deskbar strip.
@@ -978,318 +783,15 @@ desk_icons_rebuild(desktop_t *app)
     (void)desk_ensure_visible(app);
 }
 
-/** @brief Draw the poses of an icon mode, and only the ones on screen. */
+/** @brief Paint the Desktop pose controller below every window. */
 static void
-folder_draw_icons(folder_t *fl, tiku_desk_surface_t *s,
-                  tiku_desk_rect_t list)
+desk_icons_draw(tiku_desk_surface_t *surface, void *context)
 {
-    int first = -1, last = -1, i, ox = 0, oy = 0;
+    desktop_t *app = context;
 
-    tiku_trk_poseview_origin(fl->view, &ox, &oy);
-    /* Shifted so the view's own coordinates land in the window. */
-    ox -= list.x + 2;
-    oy -= list.y + 2;
-    if (!tiku_trk_poseview_visible_range(fl->view, &first, &last)) {
-        return;
-    }
-    /* Only what can be seen.  A walk of every pose is a walk of the whole
-     * folder on every frame, which is what a folder of ten thousand makes
-     * unaffordable (PVL-062). */
-    for (i = first; i <= last; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-
-        if (p != NULL && p->placed) {
-            draw_pose_icon(fl, s, p, ox, oy);
-        }
-    }
-}
-
-/** @brief Paint the Desktop's icons on the backdrop, under every window. */
-static void
-desk_icons_draw(tiku_desk_surface_t *s, void *ctx)
-{
-    desktop_t *app = (desktop_t *)ctx;
-
-    if (app == NULL || app->dfl.view == NULL) {
-        return;
-    }
-    folder_draw_icons(&app->dfl, s, folder_content(app, &app->dfl));
-}
-
-
-static void
-folder_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s,
-            tiku_desk_rect_t content, void *ctx)
-{
-    folder_t *fl = ctx;
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    desktop_t *app = fl->app;
-    tiku_desk_rect_t list = content;
-    int row_h = app->row_h;
-    int rows, scroll, total, i, icons;
-    tiku_trk_sc_ctx_t mc;
-    tiku_desk_rect_t bar;
-
-    (void)w;
-    bar = content;
-    bar.h = app->menus.bar.height;
-    build_per_type(app, fl);
-    mc = menu_ctx(app, fl, 0u);
-    tiku_trk_cwmenu_rebuild(&app->menus, &mc);
-    app->menus.bar.open = (app->bar_fl == fl) ? app->bar_open : -1;
-    tiku_trk_menubar_draw(&app->menus.bar, s, bar);
-    list.y += bar.h;
-    list.h -= bar.h;
-    list.h -= COUNT_H;
-    tiku_desk_ui_sunken(s, list,
-                        tiku_trk_poseview_background(fl->view));
-    /* The view is told how big its window is, in pixels: the row count it
-     * used to be given cannot answer where an icon layout is scrolled to
-     * or what is on screen (PVL-049). */
-    tiku_trk_poseview_set_viewport(fl->view, list.w - 4, list.h - 4);
-    tiku_trk_poseview_set_row_height(fl->view, row_h);
-    icons = (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST);
-    if (icons) {
-        /* Anything with no position of its own gets one, wrapping at the
-         * window's width.  Done here because this is where the width is
-         * known, and a pose with no position is not drawn at all. */
-        (void)tiku_trk_poseview_place_unplaced(fl->view, list.w - 4);
-    }
-
-    rows = (list.h - 4) / row_h;
-    /* The view cannot see its own window; the rules stated in terms of what
-     * is VISIBLE need this. */
-    tiku_trk_poseview_set_visible_rows(fl->view, rows);
-    scroll = tiku_trk_poseview_scroll(fl->view);
-    total = tiku_trk_poseview_count(fl->view);
-
-    tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
-    if (icons) {
-        folder_draw_icons(fl, s, list);
-    }
-    for (i = 0; !icons && i < rows && scroll + i < total; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, scroll + i);
-        tiku_desk_rect_t row = { list.x + 2, list.y + 2 + i * row_h,
-                                 list.w - 4, row_h };
-        int ty = row.y + (row_h - f->height) / 2 + f->ascent;
-        char val[64];
-
-        int drawn_sel, cut;
-
-        if (p == NULL) {
-            break;
-        }
-        /* Whether a selection is PAINTED is the window's business; whether a
-         * pose is IN it is the pose's.  An inactive window still owns its
-         * selection, it just stops showing it (PVS-023). */
-        drawn_sel = tiku_trk_poseview_draws_selected(fl->view, p);
-        /* A CUT item is drawn faded wherever it shows, in this window and
-         * every other: it is still where it was, and the fade is the only
-         * thing saying it is on its way out (FS-054).  A copied item is
-         * not faded -- nothing is going to happen to it. */
-        cut = (tiku_trk_clip_mode_of(&fl->app->clip, p->model.node_id)
-                   == TIKU_TRK_CLIP_MOVE);
-        /* The pose a hovering drag would land in is drawn selected, which
-         * is how the original highlights a drop target -- it transiently
-         * selects it rather than inventing a third state (PVS-035). */
-        if (fl->app->drop_fl == fl && fl->app->drop_row == i) {
-            drawn_sel = 1;
-        }
-        tiku_desk_fill(s, row, drawn_sel ? TIKU_DESK_C_SELECT
-                                         : TIKU_DESK_C_DOC);
-        {   /* A mini icon at the head of the name, as list mode has. */
-            int mini = row_h - 2;
-            int tx = row.x + 4;
-            int thumbed = 0;
-            /* Where the row's picture comes from, and its name.  Resolved
-             * ONCE per row rather than per paint call: the fallback walk
-             * is the same walk whether the row is selected, cut or plain
-             * (IV-001). */
-            char art[TIKU_TRK_NAME_MAX];
-            tiku_trk_icon_from_t src =
-                tiku_trk_nodeicon_resolve(&fl->app->nicons, fl->app->store,
-                                          &p->model, art, sizeof art);
-
-            if (mini > MINI_ICON) {
-                mini = MINI_ICON;
-            }
-            if ((p->model.kind == TIKU_TRK_KIND_VOLUME ||
-                 p->model.kind == TIKU_TRK_KIND_ROOT) &&
-                tiku_trk_prefs_get(prefs_model(fl->app),
-                                   "ShowVolumeSpaceBar")) {
-                /* A capacity bar along the bottom of the icon.  Drawn from
-                 * the FACTS the store already read, so a listing of a
-                 * dozen volumes is a dozen rows and not a dozen
-                 * statvfs calls (PVL-072, TS-054). */
-                draw_space_bar(app, s, &p->model, row.x + 2,
-                               row.y + (row_h - mini) / 2 + 2, mini, 0);
-            }
-            {   /* An image shows its own picture.  A HIT draws it; a
-                 * miss QUEUES the work and falls through to a type icon,
-                 * so the row is never waiting on a decode (IV-028,
-                 * IV-031).  Which rows those are is the HINT, taken once
-                 * when the entry arrived -- asking here would sniff every
-                 * file's first bytes once per frame (IV-005). */
-                tiku_trk_image_t th;
-
-                if (src == TIKU_TRK_ICON_FROM_THUMB) {
-                    if (tiku_trk_thumb_fresh(fl->app->store, p->model.path,
-                                             p->model.facts.mtime) &&
-                        tiku_trk_thumb_load(fl->app->store, p->model.path,
-                                            &th) == 0) {
-                        tiku_trk_thumb_paint(s, &th, row.x + 2,
-                                             row.y + (row_h - mini) / 2,
-                                             mini);
-                        tiku_trk_image_free(&th);
-                        thumbed = 1;
-                    } else {
-                        (void)tiku_trk_thumb_queue(&fl->app->thumbs,
-                                                   p->model.path,
-                                                   p->model.facts.size,
-                                                   mini);
-                    }
-                }
-            }
-            /* A link with nowhere to go is drawn faded: the art is the same
-             * as a live link's, so the state has to show some other way. */
-            if (thumbed) {
-                tx = row.x + 2 + mini + 4;
-            } else if (((p->model.facts.link_broken || cut)
-                     ? tiku_trk_icon_paint_dim(s, art, row.x + 2,
-                           row.y + (row_h - mini) / 2, mini, 0.55f,
-                           TIKU_DESK_C_DOC)
-                     : drawn_sel
-                     /* PVL-082: selection reads on the icon as well as the
-                      * label, so a row whose label is scrolled away still
-                      * shows it. */
-                     ? tiku_trk_icon_paint_selected(s, art, row.x + 2,
-                           row.y + (row_h - mini) / 2, mini)
-                     : tiku_trk_icon_paint(s, art, row.x + 2,
-                           row.y + (row_h - mini) / 2, mini))) {
-                tx = row.x + 2 + mini + 4;
-            }
-            tiku_desk_text(s, f, tx, ty,
-                           tiku_trk_poseview_is_query(fl->view)
-                               ? p->model.path : p->model.name,
-                           drawn_sel ? TIKU_DESK_C_SELTEXT
-                                     : (cut ? tiku_desk_tint(
-                                                  TIKU_DESK_C_TEXT,
-                                                  TIKU_DESK_LIGHTEN_2)
-                                            : TIKU_DESK_C_TEXT));
-        }
-        /* The value column earns its place on a device: it is the reason a
-         * namespace browser is not just a file list. */
-        if (!tiku_trk_model_is_container(&p->model)) {
-            {   /* The node's own descriptor decides how its reading reads:
-                 * 32768 is "32.0 KiB" on a bytes node and "32.768 kHz" on a
-                 * clock, and the raw integer on neither. */
-                (void)tiku_trk_attr_format(&p->desc,
-                                           p->value_valid ? p->value : "",
-                                           row.w / 3, val, sizeof val);
-            }
-            {
-                int vw = tiku_desk_text_width(f, val);
-                if (vw < row.w - VALUE_GAP) {
-                    tiku_desk_text(s, f, row.x + row.w - vw - 6, ty, val,
-                                   drawn_sel ? TIKU_DESK_C_SELTEXT
-                                             : TIKU_DESK_C_TEXT);
-                }
-            }
-        }
-    }
-    if (app->band_fl == fl) {
-        /* Two styles, chosen by the setting on every frame: tinted (the
-         * default) draws the band over the icons and lets them show
-         * through; the other inverts its outline, which is visible over
-         * whatever it lands on and needs nothing saved underneath
-         * (PVL-069, PVS-030, TS-049). */
-        tiku_desk_rect_t b;
-        int lox = (app->band_x0 < app->band_x1) ? app->band_x0
-                                                : app->band_x1;
-        int loy = (app->band_y0 < app->band_y1) ? app->band_y0
-                                                : app->band_y1;
-
-        b.x = lox;
-        b.y = loy;
-        b.w = (app->band_x0 > app->band_x1) ? app->band_x0 - app->band_x1
-                                            : app->band_x1 - app->band_x0;
-        b.h = (app->band_y0 > app->band_y1) ? app->band_y0 - app->band_y1
-                                            : app->band_y1 - app->band_y0;
-        if (b.w > 0 && b.h > 0) {
-            tiku_trk_paint_band(s, b,
-                tiku_trk_prefs_get(prefs_model(app), "TransparentSelection"));
-        }
-    }
-    if (app->renaming && app->ren_fl == fl && !icons) {
-        /* The editor sits ON the row, not in the count view: an in-place
-         * rename has to show the name being changed where the name is. */
-        int at = app->ren_row - scroll;
-
-        if (at >= 0 && at < rows) {
-            tiku_desk_rect_t box;
-
-            box.x = list.x + 2;
-            box.y = list.y + 2 + at * row_h;
-            box.w = (list.w - 4 > 260) ? 260 : list.w - 4;
-            box.h = row_h;
-            tiku_desk_ui_textfield_sel(s, box, app->ren.text, app->ren.caret,
-                                       app->ren.sel_a, app->ren.sel_b,
-                                       TIKU_DESK_S_FOCUS);
-        }
-    }
-    tiku_desk_clip_reset(s);
-    {
-        tiku_desk_rect_t count = { content.x, content.y + content.h - COUNT_H,
-                                   content.w, COUNT_H };
-        const char *typed = tiku_trk_poseview_type_string(fl->view);
-        char label[256];
-
-        if (app->finding && fl->win == tiku_desk_workspace_focused(app->desk)) {
-            tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
-            snprintf(label, sizeof label, "find: %.60s_", app->find_buf);
-        } else if (app->editing &&
-                   fl->win == tiku_desk_workspace_focused(app->desk)) {
-            /* The editor takes the count view on a document ground, the way
-             * type-ahead does: it is a field now, not a readout. */
-            tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
-            {   /* The leaf is what the user is looking at; the full path
-                 * would not fit and would not add anything. */
-                const char *slash = strrchr(app->edit_path, '/');
-
-                snprintf(label, sizeof label, "%.100s = %.64s_",
-                         (slash != NULL) ? slash + 1 : app->edit_path,
-                         app->ed.text);
-            }
-        } else if (app->status[0] != '\0') {
-            /* A refusal or a confirmation displaces the count until the next
-             * thing happens; it is what the user needs to read. */
-            tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-            snprintf(label, sizeof label, "%s", app->status);
-        } else if (typed[0] != '\0') {
-            tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-            snprintf(label, sizeof label, "%s", typed);
-        } else {
-            tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-            /* TS-037: an empty folder says so rather than counting to
-             * zero, which reads like a count that failed. */
-            int sel = tiku_trk_poseview_selection_count(fl->view);
-
-            if (total == 0) {
-                snprintf(label, sizeof label, "empty folder");
-            } else if (sel > 0) {
-                /* What is picked out is the thing being worked on, so the
-                 * count says how much of the folder that is (TS-037). */
-                snprintf(label, sizeof label, "%d/%d selected", sel, total);
-            } else {
-                snprintf(label, sizeof label, "%d item%s", total,
-                         (total == 1) ? "" : "s");
-            }
-            snprintf(fl->app->count_text, sizeof fl->app->count_text,
-                     "%.*s", TIKU_TRK_COUNT_TEXT_MAX - 1, label);
-        }
-        tiku_desk_text(s, f, count.x + 4,
-                       count.y + (COUNT_H - f->height) / 2 + f->ascent,
-                       label, TIKU_DESK_C_TEXT);
+    if (app != NULL && app->dfl.view != NULL) {
+        tiku_trk_folder_window_draw_icons(&app->dfl, surface,
+            tiku_trk_folder_window_content(&app->dfl));
     }
 }
 
@@ -1782,7 +1284,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
          * folder watch, and a view told nothing about them auto-places
          * them at the top-left -- so the arrangement has to be waiting
          * (PVS-045, PVL-027). */
-        tiku_desk_rect_t c = folder_content(app, app->drop_fl);
+        tiku_desk_rect_t c = tiku_trk_folder_window_content(app->drop_fl);
         int ox = 0, oy = 0;
 
         tiku_trk_poseview_origin(app->drop_fl->view, &ox, &oy);
@@ -1901,63 +1403,6 @@ list_children(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out,
     }
     (void)b->ops->list(b, path, collect_one, &c);
     return c.n;
-}
-
-/**
- * @brief Content width the widest row in @p fl wants.
- *
- * Measured from the text actually drawn, not from the column table: this
- * window paints a name and a value, and a width taken from columns it does
- * not use would fit something that is not on screen.
- */
-static int
-folder_fit_w(desktop_t *app, folder_t *fl)
-{
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    int i, n = tiku_trk_poseview_count(fl->view), widest = 0;
-    int query = tiku_trk_poseview_is_query(fl->view);
-
-    for (i = 0; i < n; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-        char val[64];
-        int w;
-
-        if (p == NULL) {
-            continue;
-        }
-        w = MINI_ICON + 6 + tiku_desk_text_width(f, query ? p->model.path
-                                                          : p->model.name);
-        if (!tiku_trk_model_is_container(&p->model)) {
-            int need;
-
-            (void)tiku_trk_attr_format(&p->desc,
-                                       p->value_valid ? p->value : "", 190,
-                                       val, sizeof val);
-            /* The row only PAINTS a value when it clears the gap the drawing
-             * keeps between the two columns, so a fit that merely made room
-             * for the text would produce a window whose values are still
-             * hidden.  The width has to satisfy the rule that decides, not a
-             * second guess at it -- VALUE_GAP is that rule's constant. */
-            need = tiku_desk_text_width(f, val) + VALUE_GAP + 8;
-            if (need > w) {
-                w = need;
-            }
-        }
-        if (w > widest) {
-            widest = w;
-        }
-    }
-    (void)app;
-    return (widest < 200) ? 200 : widest + 12;
-}
-
-/** @brief Content height every row plus the count view wants. */
-static int
-folder_fit_h(desktop_t *app, folder_t *fl)
-{
-    /* The same arithmetic folder_draw uses to decide how many rows fit,
-     * solved the other way round. */
-    return tiku_trk_poseview_count(fl->view) * app->row_h + 4 + COUNT_H;
 }
 
 /**
@@ -2541,27 +1986,27 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     case TIKU_TRK_CMD_SORT_BY_NAME:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_NAME);
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_KIND:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_KIND);
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_SIZE:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_SIZE);
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_VALUE:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_VALUE);
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_SORT_BY_CAP:
         tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_CAP);
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_COL_KIND:
         (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_KIND);
@@ -2591,7 +2036,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         tiku_trk_poseview_sort_by(fl->view,
                                   tiku_trk_poseview_sort_field(fl->view));
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_CLEANUP:
         /* SNAP, not re-lay-out: Clean up straightens the arrangement the
@@ -2602,11 +2047,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     case TIKU_TRK_CMD_CLEANUP_ALL:
         /* Shift is the stronger one, and it IS the re-lay-out. */
         tiku_trk_poseview_cleanup(fl->view,
-                                  folder_content(app, fl).w);
+                                  tiku_trk_folder_window_content(fl).w);
         break;
     case TIKU_TRK_CMD_RESIZE_TO_FIT:
-        (void)tiku_desk_workspace_zoom(app->desk, fl->win, folder_fit_w(app, fl),
-                                 folder_fit_h(app, fl));
+        (void)tiku_desk_workspace_zoom(app->desk, fl->win, tiku_trk_folder_window_fit_width(fl),
+                                 tiku_trk_folder_window_fit_height(fl));
         break;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
     case TIKU_TRK_CMD_DELETE: {
@@ -2941,18 +2386,7 @@ open_folder(desktop_t *app, const char *path)
     if (fl->view == NULL) {
         return NULL;
     }
-    /* Every window shares the one cache, so a file open in two of them has
-     * one icon and an edit to it is dropped once. */
-    tiku_trk_poseview_set_icons(fl->view, &app->nicons);
-    tiku_trk_poseview_set_measure(fl->view, measure_label, app);
-    {
-        const tiku_desk_font_t *f = tiku_desk_font_plain();
-
-        /* Every icon-mode height is a function of the label's, so the view
-         * has to be told what it is being drawn in (PVL-007). */
-        tiku_trk_poseview_set_font_metrics(fl->view, f->height, f->ascent);
-    }
-    tiku_trk_poseview_set_icon_hit(fl->view, pose_icon_hit, app);
+    tiku_trk_folder_window_configure(fl, &app->folder_render);
     /* The columns this folder was left with.  The pair has existed since
      * the single-window shell was built and this shell called neither, so
      * every column a user added, moved or resized here was discarded when
@@ -3013,8 +2447,8 @@ open_folder(desktop_t *app, const char *path)
         frame.x = CASCADE_HOME_X;
         frame.y = CASCADE_HOME_Y;
     }
-    fl->win = tiku_desk_workspace_open(app->desk, path, frame, folder_draw, fl,
-                                 fl->path);
+    fl->win = tiku_desk_workspace_open(app->desk, path, frame,
+        tiku_trk_folder_window_draw, fl, fl->path);
     if (fl->win == NULL) {
         tiku_trk_poseview_free(fl->view);
         return NULL;
@@ -3038,70 +2472,6 @@ folder_of(desktop_t *app, tiku_desk_window_t *w)
     return NULL;
 }
 
-/** @brief Row under a point inside a folder window's content. */
-static int
-folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
-{
-    tiku_desk_rect_t c = folder_content(app, fl);
-    int rel;
-
-    if (x < c.x || x > c.x + c.w || y < c.y + 2 ||
-        y > c.y + c.h - COUNT_H) {
-        return -1;
-    }
-    if (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
-        /* An icon layout has no rows to divide by: the point goes to the
-         * view, which knows where every pose is and answers on its ART
-         * rather than on its cell (PVS-019). */
-        int ox = 0, oy = 0;
-        tiku_trk_pose_t *p;
-
-        tiku_trk_poseview_origin(fl->view, &ox, &oy);
-        p = tiku_trk_poseview_pose_at(fl->view,
-                                      x - (c.x + 2) + ox,
-                                      y - (c.y + 2) + oy);
-        return (p != NULL) ? p->index : -1;
-    }
-    rel = (y - c.y - 2) / app->row_h;
-    rel += tiku_trk_poseview_scroll(fl->view);
-    return (rel < tiku_trk_poseview_count(fl->view)) ? rel : -1;
-}
-
-/** @brief Whether a pose click landed on the widget that carries its name. */
-static int
-folder_name_at(desktop_t *app, folder_t *fl, int row, int x, int y)
-{
-    tiku_desk_rect_t c = folder_content(app, fl);
-
-    if (row < 0) {
-        return 0;
-    }
-    if (tiku_trk_poseview_mode(fl->view) == TIKU_TRK_MODE_LIST) {
-        /* This compact shell paints Name and Value rather than the general
-         * column set.  Their click rectangles meet at the same two-thirds
-         * boundary used to reserve the right-aligned value field; a click in
-         * Value still selects the row but must not arm Name's editor
-         * (PVS-020). */
-        return x < c.x + (c.w * 2) / 3;
-    }
-    {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, row);
-        int ox = 0, oy = 0;
-        int ix, iy, iw, ih, lx, ly, lw, lh;
-        int vx, vy;
-
-        if (p == NULL) {
-            return 0;
-        }
-        tiku_trk_poseview_origin(fl->view, &ox, &oy);
-        vx = x - (c.x + 2) + ox;
-        vy = y - (c.y + 2) + oy;
-        tiku_trk_poseview_pose_parts(fl->view, p, &ix, &iy, &iw, &ih,
-                                     &lx, &ly, &lw, &lh);
-        return vx >= lx && vx < lx + lw && vy >= ly && vy < ly + lh;
-    }
-}
-
 /** @brief Re-evaluate a band in view coordinates, including any new scroll. */
 static void
 folder_band_select(desktop_t *app)
@@ -3112,7 +2482,7 @@ folder_band_select(desktop_t *app)
     if (app == NULL || app->band_fl == NULL) {
         return;
     }
-    c = folder_content(app, app->band_fl);
+    c = tiku_trk_folder_window_content(app->band_fl);
     tiku_trk_poseview_origin(app->band_fl->view, &ox, &oy);
     (void)tiku_trk_poseview_select_rect(app->band_fl->view,
         app->band_x0 - (c.x + 2) + ox,
@@ -3140,7 +2510,7 @@ script_row_point(void *ctx, int row, int *x, int *y)
         tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
         return 0;
     }
-    c = folder_content(app, fl);
+    c = tiku_trk_folder_window_content(fl);
     rel = row - tiku_trk_poseview_scroll(fl->view);
     visible = (c.h - COUNT_H - 4) / app->row_h;
     if (rel < 0 || rel >= visible ||
@@ -3560,6 +2930,39 @@ tracker_run(int argc, char **argv)
     tiku_trk_switcher_window_init(&app.switcher_window, app.desk,
         app.deskbar, DESK_W, DESK_H, &app.dirty, app.status,
         sizeof app.status);
+    app.folder_render = (tiku_trk_folder_render_t){
+        .workspace = app.desk,
+        .menus = &app.menus,
+        .prefs = prefs_model(&app),
+        .clip = &app.clip,
+        .icons = &app.nicons,
+        .store = app.store,
+        .thumbs = &app.thumbs,
+        .row_h = app.row_h,
+        .screen_w = DESK_W,
+        .screen_h = DESK_H,
+        .status = app.status,
+        .count_text = app.count_text,
+        .count_text_size = sizeof app.count_text,
+        .finding = &app.finding,
+        .find_text = app.find_buf,
+        .editing = &app.editing,
+        .edit_path = app.edit_path,
+        .value_edit = &app.ed,
+        .renaming = &app.renaming,
+        .rename_folder = &app.ren_fl,
+        .rename_row = &app.ren_row,
+        .rename_edit = &app.ren,
+        .band_folder = &app.band_fl,
+        .band_x0 = &app.band_x0,
+        .band_y0 = &app.band_y0,
+        .band_x1 = &app.band_x1,
+        .band_y1 = &app.band_y1,
+        .drop_folder = &app.drop_fl,
+        .drop_row = &app.drop_row,
+        .prepare_menu = prepare_folder_menu,
+        .prepare_context = &app
+    };
 
     {
         /* The Desktop itself.  Its identity is the boot volume's Desktop
@@ -3574,14 +2977,8 @@ tracker_run(int argc, char **argv)
         app.dfl.view = tiku_trk_poseview_new(app.backend, app.dfl.path);
         app.desk_row = -1;
         if (app.dfl.view != NULL) {
-            const tiku_desk_font_t *df = tiku_desk_font_plain();
-
-            tiku_trk_poseview_set_icons(app.dfl.view, &app.nicons);
-            tiku_trk_poseview_set_measure(app.dfl.view, measure_label, &app);
-            tiku_trk_poseview_set_font_metrics(app.dfl.view, df->height,
-                                               df->ascent);
-            tiku_trk_poseview_set_icon_hit(app.dfl.view, pose_icon_hit,
-                                           &app);
+            tiku_trk_folder_window_configure(&app.dfl,
+                                              &app.folder_render);
             tiku_trk_poseview_set_viewport(app.dfl.view, DESK_W, DESK_H);
             tiku_trk_poseview_set_mode(app.dfl.view, TIKU_TRK_MODE_ICON);
             desk_icons_rebuild(&app);
@@ -4488,7 +3885,7 @@ tracker_run(int argc, char **argv)
                     folder_t *bfl = folder_of(&app, w);
 
                     if (bfl != NULL) {
-                        tiku_desk_rect_t bf = folder_bar_frame(&app, bfl);
+                        tiku_desk_rect_t bf = tiku_trk_folder_window_bar(bfl);
                         int bi;
 
                         build_open_with(&app, bfl);
@@ -4530,8 +3927,8 @@ tracker_run(int argc, char **argv)
 
                     if (fl != NULL) {
                         (void)tiku_desk_workspace_zoom(app.desk, w,
-                                                 folder_fit_w(&app, fl),
-                                                 folder_fit_h(&app, fl));
+                                                 tiku_trk_folder_window_fit_width(fl),
+                                                 tiku_trk_folder_window_fit_height(fl));
                     }
                     app.dirty = 1;
                     break;
@@ -4592,8 +3989,8 @@ tracker_run(int argc, char **argv)
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : &app.dfl;
                     if (fl != NULL && fl->view != NULL) {
-                        int row = folder_row_at(&app, fl, ev.x,
-                                                ev.y);
+                        int row = tiku_trk_folder_window_row_at(fl, ev.x,
+                                                               ev.y);
                         unsigned mods = 0;
                         unsigned click_flags = 0;
                         int64_t now = tiku_trk_now();
@@ -4663,7 +4060,7 @@ tracker_run(int argc, char **argv)
                                 ev.button, click_flags, now);
 
                             {
-                                tiku_desk_rect_t c = folder_content(&app, fl);
+                                tiku_desk_rect_t c = tiku_trk_folder_window_content(fl);
                                 int ox = 0, oy = 0;
 
                                 tiku_trk_poseview_origin(fl->view, &ox, &oy);
@@ -4759,8 +4156,8 @@ tracker_run(int argc, char **argv)
                             }
                             app.drop_fl = NULL;
                             app.drop_row = -1;
-                            if (row >= 0 && folder_name_at(&app, fl, row,
-                                    ev.x, ev.y)) {
+                            if (row >= 0 && tiku_trk_folder_window_name_at(
+                                    fl, row, ev.x, ev.y)) {
                                 /* Armed, not started: the rename begins only
                                  * once the double-click window passes with
                                  * no further click (PVS-014, MA-043). */
@@ -4865,8 +4262,8 @@ tracker_run(int argc, char **argv)
                         ofl = NULL;
                     }
                     if (ofl != NULL) {
-                        int r = folder_row_at(&app, ofl, ev.x,
-                                              ev.y);
+                        int r = tiku_trk_folder_window_row_at(ofl, ev.x,
+                                                              ev.y);
                         if (r >= 0) {
                             tiku_trk_pose_t *q =
                                 tiku_trk_poseview_at(ofl->view, r);
@@ -5322,7 +4719,7 @@ tracker_run(int argc, char **argv)
                     (void)tiku_trk_poseview_step_icon_size(fl->view,
                         (key == '-') ? 0 : 1);
                     tiku_trk_poseview_cleanup(fl->view,
-                                              folder_content(&app, fl).w);
+                                              tiku_trk_folder_window_content(fl).w);
                     app.dirty = 1;
                     break;
                 }
@@ -5563,7 +4960,7 @@ tracker_run(int argc, char **argv)
             /* A sweep scrolls at the edges too: a band that could only
              * reach what was already on screen would be a band that stops
              * at the window's edge (PVS-050). */
-            tiku_desk_rect_t c = folder_content(&app, app.band_fl);
+            tiku_desk_rect_t c = tiku_trk_folder_window_content(app.band_fl);
             int top = c.y + 2, bot = c.y + c.h - COUNT_H, over = 0;
 
             if (app.band_y1 < top + AUTOSCROLL_BAND) {
@@ -5605,7 +5002,7 @@ tracker_run(int argc, char **argv)
              * scroll it can still see where it is going.  Held still for
              * the delay first, so crossing an edge on the way past does
              * not start it (PVS-050). */
-            tiku_desk_rect_t c = folder_content(&app, app.drop_fl);
+            tiku_desk_rect_t c = tiku_trk_folder_window_content(app.drop_fl);
             int over = 0;
 
             int top = c.y + 2;
