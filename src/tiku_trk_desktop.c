@@ -4588,9 +4588,9 @@ main(int argc, char **argv)
     tiku_trk_click_t click = { 0 };
     const char *openme[TIKU_TRK_WIN_MAX];
     int nopen = 0;
-    /* Started deliberately plain: no session is restored.  The row's other
-     * clauses -- replicants, add-ons -- have nothing here to suppress
-     * (AW-007). */
+    /* Safe mode starts deliberately plain: it restores no session.  The
+     * row's other clauses -- replicants and add-ons -- have nothing here to
+     * suppress (AW-007). */
     int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
@@ -4804,9 +4804,8 @@ main(int argc, char **argv)
                 }
             }
         }
-        (void)open_folder(&app, "/sys/mem");
-        (void)open_folder(&app, "/dev");
-    } else if (nopen > 0) {
+    }
+    if (nopen > 0) {
         for (i = 0; i < nopen; i++) {
             (void)open_folder(&app, openme[i]);
         }
@@ -4814,21 +4813,35 @@ main(int argc, char **argv)
         /* What was open last time, if anything -- the windows come back
          * where they were, which is the whole of the spatial promise
          * (AW-004).  A safe start asks for nothing and gets home. */
-        char sess[TIKU_TRK_SESSION_MAX][TIKU_TRK_PATH_MAX];
+        tiku_trk_session_entry_t sess[TIKU_TRK_SESSION_MAX];
         int nsess = safe_mode ? 0
-                              : tiku_trk_session_load(app.store, sess,
-                                                      TIKU_TRK_SESSION_MAX);
+                              : tiku_trk_session_load_entries(app.store, sess,
+                                                              TIKU_TRK_SESSION_MAX);
         int opened = 0;
 
         for (i = 0; i < nsess; i++) {
-            if (open_folder(&app, sess[i]) != NULL) {
+            folder_t *restored;
+
+            /* Root is the Disks window in this port.  Keeping a stale root
+             * record must not override the user's current icon setting. */
+            if (strcmp(sess[i].path, "/") == 0 && !app.disks_shown) {
+                continue;
+            }
+            restored = open_folder(&app, sess[i].path);
+            if (restored != NULL) {
+                restored->win->minimized = sess[i].minimized;
                 opened++;
             }
         }
         if (opened == 0) {
-            const char *home = getenv("HOME");
+            if (use_device) {
+                (void)open_folder(&app, "/sys/mem");
+                (void)open_folder(&app, "/dev");
+            } else {
+                const char *home = getenv("HOME");
 
-            (void)open_folder(&app, home ? home : "/");
+                (void)open_folder(&app, home ? home : "/");
+            }
         }
     }
 
@@ -7642,7 +7655,7 @@ sel_done:
         /* The set of windows that were open, in the order they were opened,
          * which is the order they will come back in and therefore which
          * ends up in front (AW-004). */
-        char open_now[TIKU_TRK_SESSION_MAX][TIKU_TRK_PATH_MAX];
+        tiku_trk_session_entry_t open_now[TIKU_TRK_SESSION_MAX];
         int nsess = 0;
 
         for (i = 0; i < app.folder_count && nsess < TIKU_TRK_SESSION_MAX;
@@ -7655,9 +7668,11 @@ sel_done:
                  * re-run a search the user has not asked for again. */
                 continue;
             }
-            snprintf(open_now[nsess++], TIKU_TRK_PATH_MAX, "%s", fl->path);
+            snprintf(open_now[nsess].path, TIKU_TRK_PATH_MAX, "%s", fl->path);
+            open_now[nsess].minimized = fl->win->minimized;
+            nsess++;
         }
-        (void)tiku_trk_session_save(app.store, open_now, nsess);
+        (void)tiku_trk_session_save_entries(app.store, open_now, nsess);
     }
     for (i = 0; i < app.folder_count; i++) {
         /* A folder that was deleted under us keeps no arrangement: writing

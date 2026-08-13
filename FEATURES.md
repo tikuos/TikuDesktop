@@ -5850,11 +5850,20 @@ Condition: window != FindContainerWindow(ref) || (deviceFlags & (B_FS_HAS_ATTR|B
 **MISSING:** The device backend does put state in a central per-device sidecar rather than on the object, which is the TIKU note's fallback-as-default, but there is no per-window condition and no fallback at all on the local backend: an unwritable store makes save_state return 0 and the arrangement is simply lost, and no window is ever flagged to stop writing state on close.  
 *src/tiku_trk_backend_tiku.c:457-465 tk_store (sidecar by devid); src/tiku_trk_poseview.c:2187-2194 save_state (store unwritable -> return 0, silent loss); no session-embedding or save-state-enabled flag exists in src/*
 
-#### AW-006 · core · open
+#### AW-006 · core · done
 **At startup the previously open windows reopen with their workspace, minimized state and window decor restored, and the Disks window reopens only if the Disks icon setting is on.**  
 kRestoreWorkspace | (minimized ? kIsHidden : 0) | kRestoreDecor; state messages consumed in order via stateMessageCounter; only models that still InitCheck OK and IsContainer() are opened. A pathFilter prefix can restrict which paths are reopened.  
 `Tracker.cpp` → `TTracker::_OpenPreviouslyOpenedWindows`
-**SUBSYSTEM:** session save/restore -- startup opens hardcoded windows instead of a saved set: /sys/mem and /dev in device mode, argv paths or $HOME otherwise (src/tiku_trk_desktop.c:1620-1629); nothing reads a stored window list because none is ever written (see AW-004)  
+**PORT:** The session record pairs every path with its minimized state and
+reopens each valid folder in saved order, then applies that state after its
+saved frame has restored.  Existing path-only records remain valid and mean
+shown windows.  Root is the port's Disks window, so a saved root record is
+honoured only while the Disks icon setting is on.  This one-desktop shell has
+no workspace or alternate decor state to restore; every folder window has the
+same decor and belongs to the current desktop.  With no valid saved windows it
+uses the usual device roots or home fallback.
+*src/tiku_trk_frame.c:tiku_trk_session_save_entries/_load_entries;
+src/tiku_trk_desktop.c (startup restore and exit sweep); tests/test_frame.c*
 
 #### AW-007 · important · partial
 **Booting in safe mode suppresses session restore, the desktop replicant shelf, the transient-query cleaner and the open-windows attribute write.**  

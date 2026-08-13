@@ -30,6 +30,14 @@ typedef struct {
 /** @brief How many windows a session record holds. */
 #define TIKU_TRK_SESSION_MAX 16
 
+/** One remembered window.  The path is the durable identity; the hidden
+ * flag is deliberately beside it rather than in the folder's frame, since a
+ * minimized window is a session choice, not a property of that folder. */
+typedef struct {
+    char path[TIKU_TRK_PATH_MAX];
+    int  minimized;
+} tiku_trk_session_entry_t;
+
 /** @brief How much of a window must stay reachable when it is clamped. */
 #define TIKU_TRK_FRAME_TAB  24
 #define TIKU_TRK_FRAME_GRAB 60
@@ -109,6 +117,17 @@ int tiku_trk_session_save(tiku_trk_store_t *s,
  */
 int tiku_trk_session_load(tiku_trk_store_t *s,
                           char out[][TIKU_TRK_PATH_MAX], int max);
+
+/**
+ * Read and write the full session record.  The older path-only helpers are
+ * retained for callers that do not have window state to preserve, and their
+ * records remain readable here as non-minimized entries.
+ */
+int tiku_trk_session_save_entries(tiku_trk_store_t *s,
+                                  const tiku_trk_session_entry_t *entries,
+                                  int n);
+int tiku_trk_session_load_entries(tiku_trk_store_t *s,
+                                  tiku_trk_session_entry_t *out, int max);
 
 /** @brief Forget it, so the next start opens the default instead. */
 void tiku_trk_session_clear(tiku_trk_store_t *s);

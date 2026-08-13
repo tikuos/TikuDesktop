@@ -175,6 +175,43 @@ int
 tiku_trk_session_save(tiku_trk_store_t *s,
                       const char paths[][TIKU_TRK_PATH_MAX], int n)
 {
+    tiku_trk_session_entry_t entries[TIKU_TRK_SESSION_MAX];
+    int i;
+
+    if (paths == NULL || n <= 0) {
+        return tiku_trk_session_save_entries(s, NULL, 0);
+    }
+    for (i = 0; i < n && i < TIKU_TRK_SESSION_MAX; i++) {
+        snprintf(entries[i].path, sizeof entries[i].path, "%s", paths[i]);
+        entries[i].minimized = 0;
+    }
+    return tiku_trk_session_save_entries(s, entries, i);
+}
+
+int
+tiku_trk_session_load(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
+                      int max)
+{
+    tiku_trk_session_entry_t entries[TIKU_TRK_SESSION_MAX];
+    int i, n;
+
+    if (out == NULL || max <= 0) {
+        return 0;
+    }
+    n = tiku_trk_session_load_entries(s, entries,
+        (max < TIKU_TRK_SESSION_MAX) ? max : TIKU_TRK_SESSION_MAX);
+    for (i = 0; i < n; i++) {
+        snprintf(out[i], TIKU_TRK_PATH_MAX, "%.*s",
+                 (int)(TIKU_TRK_PATH_MAX - 1), entries[i].path);
+    }
+    return n;
+}
+
+int
+tiku_trk_session_save_entries(tiku_trk_store_t *s,
+                              const tiku_trk_session_entry_t *entries,
+                              int n)
+{
     char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_SESSION_MAX];
     size_t at = 0u;
     int i;
@@ -182,14 +219,15 @@ tiku_trk_session_save(tiku_trk_store_t *s,
     if (s == NULL) {
         return 0;
     }
-    if (paths == NULL || n <= 0) {
+    if (entries == NULL || n <= 0) {
         tiku_trk_session_clear(s);
         return 0;
     }
     for (i = 0; i < n && i < TIKU_TRK_SESSION_MAX && at + 1u < sizeof buf;
          i++) {
-        int w = snprintf(buf + at, sizeof buf - at, "%.*s\n",
-                         (int)(TIKU_TRK_PATH_MAX - 1), paths[i]);
+        int w = snprintf(buf + at, sizeof buf - at, "%c %.*s\n",
+                         entries[i].minimized ? 'M' : 'O',
+                         (int)(TIKU_TRK_PATH_MAX - 1), entries[i].path);
 
         if (w <= 0 || (size_t)w >= sizeof buf - at) {
             break;
@@ -202,8 +240,8 @@ tiku_trk_session_save(tiku_trk_store_t *s,
 }
 
 int
-tiku_trk_session_load(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
-                      int max)
+tiku_trk_session_load_entries(tiku_trk_store_t *s,
+                              tiku_trk_session_entry_t *out, int max)
 {
     char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_SESSION_MAX];
     int n = 0, len;
@@ -220,9 +258,24 @@ tiku_trk_session_load(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
     buf[len] = '\0';
     for (line = strtok_r(buf, "\n", &save); line != NULL && n < max;
          line = strtok_r(NULL, "\n", &save)) {
-        if (line[0] != '\0') {
-            snprintf(out[n++], TIKU_TRK_PATH_MAX, "%.*s",
-                     (int)(TIKU_TRK_PATH_MAX - 1), line);
+        tiku_trk_session_entry_t *entry;
+        const char *path = line;
+
+        if (line[0] == '\0') {
+            continue;
+        }
+        entry = &out[n];
+        entry->minimized = 0;
+        /* 'M ' and 'O ' are the current format.  A path-only line is the
+         * original record and means an ordinary shown window. */
+        if ((line[0] == 'M' || line[0] == 'O') && line[1] == ' ') {
+            entry->minimized = (line[0] == 'M');
+            path = line + 2;
+        }
+        if (path[0] != '\0') {
+            snprintf(entry->path, sizeof entry->path, "%.*s",
+                     (int)(TIKU_TRK_PATH_MAX - 1), path);
+            n++;
         }
     }
     return n;

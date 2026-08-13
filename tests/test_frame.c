@@ -158,6 +158,33 @@ main(void)
               "the user deliberately emptied");
     }
 
+    printf("\nminimized windows survive a session (AW-006)\n");
+    {
+        tiku_trk_session_entry_t saved[2];
+        tiku_trk_session_entry_t back[TIKU_TRK_SESSION_MAX];
+        int n;
+
+        snprintf(saved[0].path, sizeof saved[0].path, "/shown");
+        saved[0].minimized = 0;
+        snprintf(saved[1].path, sizeof saved[1].path, "/hidden");
+        saved[1].minimized = 1;
+        check(tiku_trk_session_save_entries(st, saved, 2) == 2, "AW-006",
+              "each restored window carries its shown or minimized state");
+        n = tiku_trk_session_load_entries(st, back, TIKU_TRK_SESSION_MAX);
+        check(n == 2 && strcmp(back[0].path, "/shown") == 0 &&
+              !back[0].minimized && strcmp(back[1].path, "/hidden") == 0 &&
+              back[1].minimized, "AW-006",
+              "the state comes back with the same window, in order");
+        (void)tiku_trk_state_write(st, TIKU_TRK_KEY_SESSION,
+                                   TIKU_TRK_ATTR_SESSION,
+                                   "/old-format\n", 12);
+        check(tiku_trk_session_load_entries(st, back,
+                                            TIKU_TRK_SESSION_MAX) == 1 &&
+              strcmp(back[0].path, "/old-format") == 0 &&
+              !back[0].minimized, "AW-006",
+              "path-only sessions from older builds remain shown windows");
+    }
+
     tiku_trk_store_free(st);
     printf("\n%s\n", fails ? "FAILURES" : "windows come back where they were");
     return fails ? 1 : 0;
