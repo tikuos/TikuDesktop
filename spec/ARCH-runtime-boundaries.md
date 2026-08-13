@@ -20,6 +20,11 @@ The first application registry is statically linked. Dynamic loading is a
 separate decision after lifecycle and service ownership are proven by a
 second application.
 
+Tracker is selected from that registry as `org.tikuos.tracker`; the browser
+shell uses `org.tikuos.tracker.browser`. Their existing blocking loops enter
+through the runtime's compatibility callback. New embedded applications use
+the nonblocking start, event, tick, and stop lifecycle.
+
 ## Dependency rules
 
 1. `applications/desktop` never includes a `tiku_trk_*` header.

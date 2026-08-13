@@ -21,6 +21,7 @@
 
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_desk_host.h"
+#include "tiku_trk_application.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_edit.h"
@@ -1958,8 +1959,8 @@ navigator_press(app_t *a, int x, int y)
     return 1;
 }
 
-int
-main(int argc, char **argv)
+static int
+tracker_run(int argc, char **argv)
 {
     app_t a;
     const char *port = NULL, *start = NULL;
@@ -2806,3 +2807,9 @@ main(int argc, char **argv)
     tiku_trk_backend_close(a.backend);
     return rc;
 }
+
+const tiku_desk_app_descriptor_t tiku_trk_application = {
+    .id = "org.tikuos.tracker.browser",
+    .name = "Tracker",
+    .run = tracker_run
+};

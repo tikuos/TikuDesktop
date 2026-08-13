@@ -215,6 +215,7 @@ src/tiku_trk_scroll.[ch]     the scrollbar as an object (range, thumb,
 src/tiku_trk_nodeicon.[ch]   icon resolution tiers + the negative cache
 src/tiku_trk_desktop.c       the multi-window shell (~7k lines)
 src/tiku_trk_app.c           the single-window shell
+src/tiku_trk_launcher.c      registry lookup and selected-app entry point
 ```
 
 Conventions: `tiku_trk_` prefix, K&R braces, 4 spaces, **80 columns**, no

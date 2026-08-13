@@ -207,7 +207,8 @@ $(BUILD)/tracker: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_navigator.c \
                   src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                   src/tiku_trk_cwmenu.c \
-                  src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
+                  src/tiku_trk_script.c src/tiku_trk_app.c \
+                  src/tiku_trk_launcher.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 $(BUILD)/desktop: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
@@ -218,7 +219,7 @@ $(BUILD)/desktop: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_deskbar.c \
                   src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                   src/tiku_trk_cwmenu.c src/tiku_trk_find.c \
-                  src/tiku_trk_desktop.c | $(BUILD)
+                  src/tiku_trk_desktop.c src/tiku_trk_launcher.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 $(BUILD):

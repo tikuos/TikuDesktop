@@ -23,6 +23,7 @@
 
 #include "tiku_trk_attr.h"
 #include "tiku_desk_host.h"
+#include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_nodeicon.h"
@@ -4619,8 +4620,8 @@ draw_all(desktop_t *app)
     app->dirty = 0;
 }
 
-int
-main(int argc, char **argv)
+static int
+tracker_run(int argc, char **argv)
 {
     desktop_t app;
     const char *port = NULL, *shot = NULL, *script_path = NULL;
@@ -7707,3 +7708,9 @@ sel_done:
     tiku_desk_surface_free(app.surf);
     return rc;
 }
+
+const tiku_desk_app_descriptor_t tiku_trk_application = {
+    .id = "org.tikuos.tracker",
+    .name = "Tracker",
+    .run = tracker_run
+};
