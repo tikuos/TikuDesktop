@@ -54,6 +54,12 @@ Tracker will publish:
 - `libtiku_tracker_ui`: pose engine and Tracker-specific controllers;
 - `tracker_app`: lifecycle and composition only.
 
+The source tree mirrors those boundaries: `core/` contains portable models,
+`backends/` owns namespace and file-operation adapters, `ui/` owns Tracker
+views and controllers, `media/` owns icon and image handling, `deskbar/` owns
+the bar and Desktop-icon behavior, and `shell/` contains only front-end
+composition and application entry descriptors.
+
 ## Extraction order
 
 1. Move shared vocabulary out of implementation headers and enforce the

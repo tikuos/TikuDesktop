@@ -33,8 +33,13 @@ def tracker_stem(path: Path) -> str:
 def main() -> int:
     errors: list[str] = []
 
+    flat_sources = sorted(TRACKER_SRC.glob("*.[ch]"))
+    if flat_sources:
+        names = ", ".join(path.name for path in flat_sources)
+        errors.append(f"flat Tracker sources must live in a subsystem: {names}")
+
     for legacy in ("tiku_trk_win.c", "tiku_trk_win.h"):
-        if (TRACKER_SRC.joinpath(legacy).exists()):
+        if any(TRACKER_SRC.rglob(legacy)):
             errors.append(f"{legacy}: generic windows belong to desktop runtime")
 
     for path in sorted(DESKTOP_SRC.glob("*.[ch]")):
@@ -42,7 +47,7 @@ def main() -> int:
             if inc.startswith("tiku_trk_"):
                 errors.append(f"{path}: desktop runtime imports Tracker: {inc}")
 
-    for path in sorted(TRACKER_SRC.glob("*.[ch]")):
+    for path in sorted(TRACKER_SRC.rglob("*.[ch]")):
         includes = INCLUDE.findall(path.read_text(errors="replace"))
         x11 = [inc for inc in includes if inc.startswith("X11/")]
         if x11 and path.name not in X11_LEGACY:

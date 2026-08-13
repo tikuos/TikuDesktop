@@ -142,7 +142,7 @@ called done.
 
 ## Build order
 
-1. 0. Unify the prefix to `tiku_trk_` before a single header is written. Matches the one file that already exists (src/tiku_trk_task.h) and the project convention. Cheap now; six headers of churn later, and it currently hides the D1/D4 state-store duplication.
+1. 0. Unify the prefix to `tiku_trk_` before a single header is written. Matches the one file that already exists (src/core/tiku_trk_task.h) and the project convention. Cheap now; six headers of churn later, and it currently hides the D1/D4 state-store duplication.
 
 2. 1. ONE firmware commit, manifest rev 2->3, everything the host will parse: header row names all five columns; `'D'` type char for dynamic dirs (`n->dyn ? 'D' : 'd'`, one line — unblocks D2's store/file types and kills D4's /data whitelist); `meta[48]->[72]` plus D2's named `scale=` / `f=hex|secret` tokens; D5's multi-token cap column via `tiku_vfs_cap_str()`; `/sys/vfs/{epoch,nsgen,cap,cap_gen}` with TIKU_VFS_TREE_VFS_NCHILD 5->9 in ONE edit (the `_Static_assert` breaks if D3's and D5's nodes land separately); the 1-line `tiku_vfs_watch()` DIR fix (tiku_vfs.c:842 — the kernel already notifies parents at :221/:237 and nobody can subscribe); `vfs_cap_gen` bump + notify inside `tiku_vfs_caller_cap_set()`. Splitting this forks the version story and breaks the build.
 

@@ -139,7 +139,7 @@ Drive the **real binaries** headless (`DISPLAY=` empty) through
 `-script <file>`. One `XOpenDisplay`-free surface; the shell draws into its
 own surface either way, so a scripted run exercises the real draw path.
 
-Grammar (see `src/tiku_trk_script.h` for the full list):
+Grammar (see `src/shell/tiku_trk_script.h` for the full list):
 
 ```
 # shell: desktop        which binary runs it (desktop | tracker)
@@ -191,36 +191,19 @@ in the `case` block near the top.
 ## 5. The code, in one page
 
 ```
-src/tiku_trk_model.[ch]      one entry, whatever backend it came from; kinds,
-                             facts (perm, size, mtime, dev, capacity, ...)
-src/tiku_trk_backend_posix.c host files; type derived from the NAME
-src/tiku_trk_backend_tiku.c  the device namespace
-src/tiku_trk_poseview.[ch]   THE core: poses, selection, sort, filter,
-                             columns, icon layout, viewport, state save
-src/tiku_trk_notify.[ch]     change notices; one entry point for every view
-src/tiku_trk_fs.[ch]         the operation queue: copy/move/link/trash, the
-                             conflict and error questions, Trash per volume
-src/tiku_trk_query.[ch]      the engine, saved records, templates, the sweep
-src/tiku_trk_find.[ch]       the Find panel and its Queries menu
-src/tiku_trk_cwmenu.[ch]     File / Window / Attributes / the context menus
-src/tiku_trk_shortcuts.[ch]  the command enum + every enable rule
-src/tiku_trk_launch.[ch]     application registry, ranked matching, exec
-src/tiku_trk_types.[ch]      the type database: description, icon, columns
-src/tiku_trk_deskbar.[ch]    the bar, its leaf menu, the tray, docking
-src/tiku_trk_deskicons.[ch]  the Desktop's own rules (valid places, sources)
-../desktop/src/tiku_desk_window.[ch]
-                             reusable windows, focus, z-order, chrome, tracking
-src/tiku_trk_scroll.[ch]     the scrollbar as an object (range, thumb,
-                             tracking, detach)
-src/tiku_trk_nodeicon.[ch]   icon resolution tiers + the negative cache
-src/tiku_trk_desktop.c       multi-window shell composition and orchestration
-src/tiku_trk_info_window.*   Get Info slots, rendering, editing, and refresh
-src/tiku_trk_prefs_window.*  preferences rendering, events, and window lifetime
-src/tiku_trk_select_window.* Select-by-pattern rendering, input, and lifetime
-src/tiku_trk_switcher_window.* application-switcher rendering and lifetime
-src/tiku_trk_app.c           the single-window shell
-src/tiku_trk_launcher.c      registry lookup and selected-app entry point
+src/core/             UI-independent models, commands, queries, and state
+src/backends/         host/device namespace access, notices, file operations
+src/ui/               pose views, menus, navigation, and visual controllers
+src/ui/windows/       feature windows: Info, preferences, Select, switcher
+src/media/            HVIF icons, image decoding, thumbnails, icon painting
+src/deskbar/          Deskbar and Desktop-icon behavior
+src/shell/            application descriptors and front-end composition
+../desktop/src/       reusable runtime, windows, focus, graphics, native host
 ```
+
+Headers retain their `tiku_trk_*` names. The Makefile publishes the functional
+directories as include roots, so includes describe APIs without encoding where
+their current implementation lives.
 
 Conventions: `tiku_trk_` prefix, K&R braces, 4 spaces, **80 columns**, no
 dynamic allocation in the hot paths, Doxygen on anything public.

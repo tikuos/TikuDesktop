@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit src/tiku_trk_icons.c from the HVIF blobs in tools/hvif/.
+"""Emit src/media/tiku_trk_icons.c from the HVIF blobs in tools/hvif/.
 
 Each .hex there is one #'VICN' resource body, concatenated and stripped of
 its $"..." wrapping, out of Haiku's src/kits/tracker/TrackerIcons.rdef or
@@ -15,7 +15,8 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(HERE, "hvif")
-OUT = os.path.join(HERE, os.pardir, "src", "tiku_trk_icons.c")
+OUT = os.path.join(HERE, os.pardir, "src", "media",
+                   "tiku_trk_icons.c")
 
 # Inventory order: the general kinds first, then the volumes and places,
 # then the specialised folders and the odds and ends.
