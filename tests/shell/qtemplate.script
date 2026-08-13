@@ -10,28 +10,28 @@ key q
 key x
 wait 2
 note first use has created the default template beside the second save action
-click 440 460
+click 570 404
 wait 3
-click 450 487
+click 580 431
 wait 4
 expect-status template
 note a letter more, so the run is a different search from the template
 key y
 wait 2
 note running it leaves a record of its own, marked temporary
-click 595 460
+key Return
 wait 20
 key f ctrl
 wait 6
 note the menu now has both, the template ABOVE the run
-click 440 460
+click 570 404
 wait 4
-click 500 515
+click 630 459
 wait 4
 expect-status template
-click 440 460
+click 570 404
 wait 4
-click 500 550
+click 630 494
 wait 4
 expect-status query
 quit

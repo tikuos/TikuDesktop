@@ -38,6 +38,7 @@
 #define OPS_TEXT  0x1Fu       /* contains, is, is not, starts, ends       */
 #define OPS_NUM   0x62u       /* is, greater than, less than              */
 #define OPS_EXACT 0x06u       /* is, is not -- for a yes/no field         */
+#define OPS_DATE  0x60u       /* after, before                            */
 
 static const struct {
     tiku_trk_qfield_t field;
@@ -53,6 +54,7 @@ static const struct {
     { TIKU_TRK_QF_UNIT,     "Unit",       OPS_TEXT,  TIKU_TRK_OP_IS },
     { TIKU_TRK_QF_CAP,      "Capability", OPS_TEXT,  TIKU_TRK_OP_IS },
     { TIKU_TRK_QF_SIZE,     "Size",       OPS_NUM,   TIKU_TRK_OP_IS },
+    { TIKU_TRK_QF_MODIFIED, "Modified",   OPS_DATE,  TIKU_TRK_OP_LESS },
     { TIKU_TRK_QF_WRITABLE, "Writable",   OPS_EXACT, TIKU_TRK_OP_IS }
 };
 #define NFIELDS ((int)(sizeof kFields / sizeof kFields[0]))
@@ -62,6 +64,15 @@ static const char *kOps[] = {
     "contains", "is", "is not", "starts with", "ends with",
     "greater than", "less than"
 };
+
+static const char *
+op_label(tiku_trk_qfield_t field, tiku_trk_qop_t op)
+{
+    if (field == TIKU_TRK_QF_MODIFIED) {
+        return (op == TIKU_TRK_OP_GREATER) ? "after" : "before";
+    }
+    return kOps[op];
+}
 
 static const char *
 field_label(tiku_trk_qfield_t f)
@@ -442,7 +453,8 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
                                   : (f->row[k - 1].join == TIKU_TRK_JOIN_OR)
                                       ? " or " : " and ",
                                   field_label(f->row[k].field),
-                                  kOps[f->row[k].op], f->row[k].value);
+                                  op_label(f->row[k].field, f->row[k].op),
+                                  f->row[k].value);
         }
         break;
     }
@@ -813,7 +825,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
             draw_popup_button(s, c, field_label(f->row[i].field));
             c.x += FIELD_W + GAP;
             c.w = OP_W;
-            draw_popup_button(s, c, kOps[f->row[i].op]);
+            draw_popup_button(s, c,
+                              op_label(f->row[i].field, f->row[i].op));
             c.x += OP_W + GAP;
             c.w = VALUE_W;
             c.y += (ROW_H - TEXT_H) / 2;
@@ -1019,7 +1032,10 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             if ((ops & (1u << i)) == 0u) {
                 continue;
             }
-            (void)tiku_trk_menu_add(m, kOps[i], i, 0, 0u, 1);
+            (void)tiku_trk_menu_add(m,
+                                    op_label(f->row[row].field,
+                                             (tiku_trk_qop_t)i),
+                                    i, 0, 0u, 1);
             if ((tiku_trk_qop_t)i == f->row[row].op) {
                 m->item[m->count - 1].marked = 1;
             }

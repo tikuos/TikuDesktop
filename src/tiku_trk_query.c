@@ -14,9 +14,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <time.h>
 
 #define RESULTS_MAX 512
 #define QUEUE_MAX   256
+
+/** @brief Unit named by a relative date, in seconds. */
+static int64_t
+relative_unit(const char *unit)
+{
+    if (strcasecmp(unit, "second") == 0 ||
+        strcasecmp(unit, "seconds") == 0) {
+        return 1;
+    }
+    if (strcasecmp(unit, "minute") == 0 ||
+        strcasecmp(unit, "minutes") == 0) {
+        return 60;
+    }
+    if (strcasecmp(unit, "hour") == 0 ||
+        strcasecmp(unit, "hours") == 0) {
+        return 3600;
+    }
+    if (strcasecmp(unit, "day") == 0 ||
+        strcasecmp(unit, "days") == 0) {
+        return 86400;
+    }
+    return 0;
+}
+
+/** @brief Whether a date spelling moves when the wall clock moves. */
+static int
+relative_date(const char *text)
+{
+    long long amount;
+    char unit[16], direction[16], tail[16];
+    int n;
+
+    if (text == NULL) {
+        return 0;
+    }
+    if (strcasecmp(text, "now") == 0 || strcasecmp(text, "today") == 0 ||
+        strcasecmp(text, "yesterday") == 0 ||
+        strcasecmp(text, "tomorrow") == 0) {
+        return 1;
+    }
+    n = sscanf(text, "%lld %15s %15s %15s", &amount, unit, direction,
+               tail);
+    if (n == 3 && relative_unit(unit) != 0 &&
+        strcasecmp(direction, "ago") == 0) {
+        return 1;
+    }
+    return n == 4 && relative_unit(unit) != 0 &&
+           strcasecmp(direction, "from") == 0 &&
+           strcasecmp(tail, "now") == 0;
+}
 
 void
 tiku_trk_query_init(tiku_trk_query_t *q)
@@ -58,7 +110,8 @@ formula_field(const char *s, size_t n, tiku_trk_qfield_t *out)
         { "size", TIKU_TRK_QF_SIZE }, { "cap", TIKU_TRK_QF_CAP },
         { "unit", TIKU_TRK_QF_UNIT },
         { "writable", TIKU_TRK_QF_WRITABLE },
-        { "type", TIKU_TRK_QF_TYPE }
+        { "type", TIKU_TRK_QF_TYPE },
+        { "modified", TIKU_TRK_QF_MODIFIED }
     };
     size_t i;
 
@@ -172,6 +225,9 @@ tiku_trk_query_add_term(tiku_trk_query_t *q, tiku_trk_qfield_t field,
     t->op = op;
     t->join = join;
     snprintf(t->value, sizeof t->value, "%s", (value != NULL) ? value : "");
+    if (field == TIKU_TRK_QF_MODIFIED && relative_date(t->value)) {
+        q->dynamic_date = 1;
+    }
     return q->term_count++;
 }
 
@@ -319,6 +375,126 @@ tiku_trk_query_allows_path(const tiku_trk_query_t *q,
 /* matching                                                                  */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Scalar syntax used by typed attributes, including K/M/G. */
+static int
+parse_scalar(const char *text, long double *out)
+{
+    char *end;
+    long double value, scale = 1.0L;
+
+    if (text == NULL || text[0] == '\0' || out == NULL) {
+        return 0;
+    }
+    value = strtold(text, &end);
+    if (end == text) {
+        return 0;
+    }
+    if (*end == 'K' || *end == 'k') {
+        scale = 1024.0L; end++;
+    } else if (*end == 'M' || *end == 'm') {
+        scale = 1024.0L * 1024.0L; end++;
+    } else if (*end == 'G' || *end == 'g') {
+        scale = 1024.0L * 1024.0L * 1024.0L; end++;
+    }
+    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n') {
+        end++;
+    }
+    if (*end != '\0') {
+        return 0;
+    }
+    *out = value * scale;
+    return 1;
+}
+
+/** @brief Tracker's permissive boolean conversion, normalized to 0/1. */
+static int
+parse_bool(const char *text)
+{
+    char *end;
+    long value;
+
+    if (text == NULL || text[0] == '\0' || strcasecmp(text, "false") == 0 ||
+        strcasecmp(text, "off") == 0 || strcasecmp(text, "no") == 0) {
+        return 0;
+    }
+    if (strcasecmp(text, "true") == 0 || strcasecmp(text, "on") == 0 ||
+        strcasecmp(text, "yes") == 0) {
+        return 1;
+    }
+    value = strtol(text, &end, 0);
+    return (end != text && (value % 2) != 0) ? 1 : 0;
+}
+
+/** @brief Local midnight, shifted by calendar days rather than 86400 s. */
+static int64_t
+day_start(int64_t now, int days)
+{
+    time_t source = (time_t)now;
+    struct tm tmv;
+    time_t answer;
+
+    if (localtime_r(&source, &tmv) == NULL) {
+        return now;
+    }
+    tmv.tm_hour = tmv.tm_min = tmv.tm_sec = 0;
+    tmv.tm_mday += days;
+    tmv.tm_isdst = -1;
+    answer = mktime(&tmv);
+    return (answer == (time_t)-1) ? now : (int64_t)answer;
+}
+
+/** @brief Parse the absolute and relative spellings accepted by Modified. */
+static int
+parse_date(const char *text, int64_t now, int64_t *out)
+{
+    long long amount;
+    char unit[16], direction[16], tail[16];
+    int year, month, day, used = 0, n;
+    int64_t step;
+
+    if (text == NULL || out == NULL) {
+        return 0;
+    }
+    if (strcasecmp(text, "now") == 0) {
+        *out = now; return 1;
+    }
+    if (strcasecmp(text, "today") == 0) {
+        *out = day_start(now, 0); return 1;
+    }
+    if (strcasecmp(text, "yesterday") == 0) {
+        *out = day_start(now, -1); return 1;
+    }
+    if (strcasecmp(text, "tomorrow") == 0) {
+        *out = day_start(now, 1); return 1;
+    }
+    n = sscanf(text, "%lld %15s %15s %15s", &amount, unit, direction,
+               tail);
+    step = (n >= 3) ? relative_unit(unit) : 0;
+    if (n == 3 && step != 0 && strcasecmp(direction, "ago") == 0) {
+        *out = now - (int64_t)amount * step; return 1;
+    }
+    if (n == 4 && step != 0 && strcasecmp(direction, "from") == 0 &&
+        strcasecmp(tail, "now") == 0) {
+        *out = now + (int64_t)amount * step; return 1;
+    }
+    if (sscanf(text, "%d-%d-%d%n", &year, &month, &day, &used) == 3 &&
+        text[used] == '\0') {
+        struct tm tmv;
+        time_t answer;
+
+        memset(&tmv, 0, sizeof tmv);
+        tmv.tm_year = year - 1900;
+        tmv.tm_mon = month - 1;
+        tmv.tm_mday = day;
+        tmv.tm_isdst = -1;
+        answer = mktime(&tmv);
+        if (answer != (time_t)-1) {
+            *out = (int64_t)answer; return 1;
+        }
+    }
+    return 0;
+}
+
 static int
 is_alpha(int c)
 {
@@ -447,32 +623,15 @@ field_text(tiku_trk_qfield_t f, const tiku_trk_model_t *m,
     case TIKU_TRK_QF_SIZE:
         snprintf(buf, max, "%lld", (long long)m->facts.size);
         return buf;
+    case TIKU_TRK_QF_MODIFIED:
+        snprintf(buf, max, "%lld", (long long)m->facts.mtime);
+        return buf;
     case TIKU_TRK_QF_WRITABLE:
         return tiku_trk_model_is_writable(m) ? "yes" : "no";
     case TIKU_TRK_QF_TYPE:  return m->type;
     default:
         return m->name;
     }
-}
-
-/** @brief Whether @p s is entirely a number, and its value. */
-static int
-looks_numeric(const char *s, long *v)
-{
-    char *end;
-
-    *v = 0;
-    if (s == NULL || s[0] == '\0') {
-        return 0;
-    }
-    *v = strtol(s, &end, 0);
-    if (end == s) {
-        return 0;
-    }
-    while (*end == ' ' || *end == '\r' || *end == '\n') {
-        end++;
-    }
-    return (*end == '\0');
 }
 
 /** @brief Whether a field is compared as a number rather than as text. */
@@ -488,7 +647,7 @@ numeric_field(tiku_trk_qfield_t f, const tiku_trk_desc_t *d)
 
 static int
 term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
-             const tiku_trk_desc_t *d, const char *value)
+             const tiku_trk_desc_t *d, const char *value, int64_t now)
 {
     char buf[64], pat[TIKU_TRK_QUERY_VALUE_MAX * 4 + 8];
     const char *text = field_text(t->field, m, d, value, buf, sizeof buf);
@@ -502,10 +661,37 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
 
         return (t->op == TIKU_TRK_OP_IS) ? yes : !yes;
     }
+    if (!t->pattern_ready &&
+        (t->field == TIKU_TRK_QF_WRITABLE ||
+         (t->field == TIKU_TRK_QF_VALUE && d != NULL &&
+          d->vtype == TIKU_TRK_VT_BOOL)) &&
+        (t->op == TIKU_TRK_OP_IS || t->op == TIKU_TRK_OP_IS_NOT)) {
+        int yes = parse_bool(text) == parse_bool(t->value);
+
+        return (t->op == TIKU_TRK_OP_IS) ? yes : !yes;
+    }
+    if (t->field == TIKU_TRK_QF_MODIFIED &&
+        (t->op == TIKU_TRK_OP_GREATER || t->op == TIKU_TRK_OP_LESS)) {
+        int64_t boundary;
+
+        if (!parse_date(t->value, now, &boundary)) {
+            return 0;
+        }
+        return (t->op == TIKU_TRK_OP_GREATER)
+                   ? m->facts.mtime > boundary : m->facts.mtime < boundary;
+    }
+    if (!t->pattern_ready && numeric_field(t->field, d) &&
+        (t->op == TIKU_TRK_OP_IS || t->op == TIKU_TRK_OP_IS_NOT)) {
+        long double a, b;
+        int yes = parse_scalar(text, &a) && parse_scalar(t->value, &b) &&
+                  a == b;
+
+        return (t->op == TIKU_TRK_OP_IS) ? yes : !yes;
+    }
     if (t->op == TIKU_TRK_OP_GREATER || t->op == TIKU_TRK_OP_LESS) {
-        long a, b;
-        int text_num = looks_numeric(text, &a);
-        int want_num = looks_numeric(t->value, &b);
+        long double a, b;
+        int text_num = parse_scalar(text, &a);
+        int want_num = parse_scalar(t->value, &b);
 
         /* Tracker takes the type from the attribute registry and simply does
          * not offer an ordering operator on anything untyped.  Most nodes
@@ -521,7 +707,7 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
             return 0;
         }
         if (numeric_field(t->field, d)) {
-            return (t->op == TIKU_TRK_OP_GREATER) ? (a > b) : (a < b);
+            return 0;
         }
         return (t->op == TIKU_TRK_OP_GREATER)
                    ? (strcmp(text, t->value) > 0)
@@ -540,8 +726,10 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
 }
 
 int
-tiku_trk_query_matches(const tiku_trk_query_t *q, const tiku_trk_model_t *m,
-                       const tiku_trk_desc_t *d, const char *value)
+tiku_trk_query_matches_at(const tiku_trk_query_t *q,
+                          const tiku_trk_model_t *m,
+                          const tiku_trk_desc_t *d, const char *value,
+                          int64_t now)
 {
     int i, acc = 0;
 
@@ -551,13 +739,77 @@ tiku_trk_query_matches(const tiku_trk_query_t *q, const tiku_trk_model_t *m,
     /* Terms fold left, each joining the accumulated result the way its own
      * join says -- the same shape as the panel, where the and/or control
      * sits on the row ABOVE the one it governs. */
-    acc = term_matches(&q->term[0], m, d, value);
+    acc = term_matches(&q->term[0], m, d, value, now);
     for (i = 1; i < q->term_count; i++) {
-        int r = term_matches(&q->term[i], m, d, value);
+        int r = term_matches(&q->term[i], m, d, value, now);
 
         acc = (q->term[i].join == TIKU_TRK_JOIN_OR) ? (acc || r) : (acc && r);
     }
     return acc;
+}
+
+int
+tiku_trk_query_matches(const tiku_trk_query_t *q, const tiku_trk_model_t *m,
+                       const tiku_trk_desc_t *d, const char *value)
+{
+    return tiku_trk_query_matches_at(q, m, d, value,
+                                     (int64_t)time(NULL));
+}
+
+/** @brief Case-insensitive substring without locale-dependent allocation. */
+static int
+contains_ci(const char *text, const char *needle)
+{
+    size_t n = strlen(needle);
+
+    for (; text != NULL && *text != '\0'; text++) {
+        if (strncasecmp(text, needle, n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int64_t
+tiku_trk_query_next_refresh(const tiku_trk_query_t *q, int64_t now)
+{
+    time_t source = (time_t)now;
+    struct tm tmv;
+    int i, grain = 86400;
+    time_t answer;
+
+    if (q == NULL || !q->dynamic_date || localtime_r(&source, &tmv) == NULL) {
+        return 0;
+    }
+    for (i = 0; i < q->term_count; i++) {
+        const char *value = q->term[i].value;
+
+        if (q->term[i].field != TIKU_TRK_QF_MODIFIED) {
+            continue;
+        }
+        if (contains_ci(value, "second") || contains_ci(value, "minute") ||
+            strcasecmp(value, "now") == 0) {
+            grain = 60;
+            break;
+        }
+        if (contains_ci(value, "hour")) {
+            grain = 3600;
+        }
+    }
+    tmv.tm_isdst = -1;
+    tmv.tm_sec = 0;
+    if (grain == 60) {
+        tmv.tm_min++;
+    } else if (grain == 3600) {
+        tmv.tm_min = 0;
+        tmv.tm_hour++;
+    } else {
+        tmv.tm_min = 0;
+        tmv.tm_hour = 0;
+        tmv.tm_mday++;
+    }
+    answer = mktime(&tmv);
+    return (answer == (time_t)-1) ? now + grain : (int64_t)answer;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -576,6 +828,7 @@ field_name(tiku_trk_qfield_t f)
     case TIKU_TRK_QF_UNIT:     return "unit";
     case TIKU_TRK_QF_WRITABLE: return "writable";
     case TIKU_TRK_QF_TYPE:     return "type";
+    case TIKU_TRK_QF_MODIFIED: return "modified";
     default:                   return "name";
     }
 }
@@ -998,17 +1251,19 @@ serialise(const tiku_trk_query_t *q, char *out, size_t max)
     int i;
 
     /* v2 added what a record has to carry to be re-openable and sweepable;
-     * v3 adds formula patterns and the Include Trash choice:
+     * v3 adds formula patterns and Include Trash; v4 adds dynamic dates:
      * what it IS, whether anyone meant to keep it, when it was written, and
      * what its scopes were.  A v1 record still reads -- the fields it does
      * not carry simply keep their defaults. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
-                          "v3\nmode %d\nkind %d %d %lld\n", (int)q->mode,
+                          "v4\nmode %d\nkind %d %d %lld\n", (int)q->mode,
                           (int)q->kind, q->temporary,
                           (long long)q->saved_at);
     /* Persist the choice, not this machine's resolved Trash path. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                           "o %d\n", q->include_trash);
+    o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
+                          "r %d\n", q->dynamic_date);
     if (q->type[0] != '\0') {
         o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                               "y %s\n", q->type);
@@ -1043,7 +1298,7 @@ deserialise(tiku_trk_query_t *q, const char *in)
     tiku_trk_query_init(q);
     if (in == NULL ||
         (strncmp(in, "v1\n", 3) != 0 && strncmp(in, "v2\n", 3) != 0 &&
-         strncmp(in, "v3\n", 3) != 0)) {
+         strncmp(in, "v3\n", 3) != 0 && strncmp(in, "v4\n", 3) != 0)) {
         return -1;              /* an unknown version is not guessed at   */
     }
     p += 3;
@@ -1062,7 +1317,7 @@ deserialise(tiku_trk_query_t *q, const char *in)
         } else if (line[0] == 't' && line[1] == ' ') {
             int f = 0, op = 0, j = 0, ready = 0, used = 0;
 
-            if (in[1] == '3' && sscanf(line + 2, "%d %d %d %d %n", &f,
+            if (in[1] >= '3' && sscanf(line + 2, "%d %d %d %d %n", &f,
                                        &op, &j, &ready, &used) >= 4) {
                 int at = tiku_trk_query_add_term(q, (tiku_trk_qfield_t)f,
                            (tiku_trk_qop_t)op, line + 2 + used,
@@ -1094,6 +1349,8 @@ deserialise(tiku_trk_query_t *q, const char *in)
                 snprintf(q->trash_path, sizeof q->trash_path, "%.*s",
                          (int)(sizeof q->trash_path - 1u), line + 2 + used);
             }
+        } else if (line[0] == 'r' && line[1] == ' ') {
+            q->dynamic_date = atoi(line + 2) ? 1 : 0;
         } else if (line[0] == 's' && line[1] == ' ') {
             (void)tiku_trk_query_add_scope(q, line + 2);
         } else if (line[0] == 'd' && line[1] == ' ') {

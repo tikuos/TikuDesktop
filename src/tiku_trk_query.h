@@ -52,7 +52,8 @@ typedef enum {
     TIKU_TRK_QF_WRITABLE,
     /* The entry's TYPE, matched as a type rather than as text: picking a
      * supertype admits everything under it (Q-004). */
-    TIKU_TRK_QF_TYPE
+    TIKU_TRK_QF_TYPE,
+    TIKU_TRK_QF_MODIFIED     /* seconds since epoch, with date syntax     */
 } tiku_trk_qfield_t;
 
 /** @brief The operator vocabulary, in the original's order. */
@@ -128,6 +129,9 @@ typedef struct {
     /* A formula that did not parse must not degenerate into an empty
      * predicate, since an empty predicate matches the whole namespace. */
     int              invalid;
+    /* Relative Modified terms move with the wall clock and must be
+     * re-evaluated at their next minute/hour/day boundary (Q-009). */
+    int              dynamic_date;
     /* What the record is and how it should be treated.  A query the user
      * never named is TEMPORARY: it is a by-product of a search, and it is
      * swept up later rather than accumulating for ever (MA-053, AW-090). */
@@ -193,6 +197,15 @@ int tiku_trk_query_allows_path(const tiku_trk_query_t *q,
 int tiku_trk_query_matches(const tiku_trk_query_t *q,
                            const tiku_trk_model_t *m,
                            const tiku_trk_desc_t *d, const char *value);
+
+/** @brief Match using an explicit wall-clock time (dynamic-date tests). */
+int tiku_trk_query_matches_at(const tiku_trk_query_t *q,
+                              const tiku_trk_model_t *m,
+                              const tiku_trk_desc_t *d, const char *value,
+                              int64_t now);
+
+/** @brief Next wall-clock boundary a dynamic query should refresh at. */
+int64_t tiku_trk_query_next_refresh(const tiku_trk_query_t *q, int64_t now);
 
 /**
  * @brief Match @p name against @p pattern, with '*', '?' and [class].

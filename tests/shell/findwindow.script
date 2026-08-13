@@ -1,0 +1,13 @@
+# shell: desktop
+# Q-001: Find is a centred, fixed-size utility window that closes on Escape.
+note Find opens centred and titled
+key f ctrl
+wait 5
+expect-title Find
+expect-window-at 220 244
+expect-windows 2
+note Escape closes Find
+key Escape
+wait 3
+expect-windows 1
+quit

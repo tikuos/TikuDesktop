@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "tiku_trk_query.h"
 #include "tiku_trk_state.h"
@@ -268,6 +269,54 @@ main(void)
         }
     }
 
+    printf("\ntyped values and relative dates (Q-008, Q-009, Q-040)\n");
+    {
+        const int64_t now = 1723550400;
+        tiku_trk_query_t q;
+        tiku_trk_model_t m = node("/data/report", "report",
+                                  TIKU_TRK_KIND_FILE, "-", 3u, 8192);
+
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_term(&q, TIKU_TRK_QF_SIZE,
+                                      TIKU_TRK_OP_GREATER, "4K",
+                                      TIKU_TRK_JOIN_AND);
+        check(tiku_trk_query_matches(&q, &m, NULL, ""),
+              "Q-008: scalar K/M/G suffixes are parsed for numeric fields");
+        m.facts.size = 4096;
+        check(!tiku_trk_query_matches(&q, &m, NULL, ""),
+              "the suffix boundary is compared numerically");
+
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_term(&q, TIKU_TRK_QF_VALUE,
+                                      TIKU_TRK_OP_GREATER, "2.5",
+                                      TIKU_TRK_JOIN_AND);
+        check(tiku_trk_query_matches(&q, &m, NULL, "3.25"),
+              "Q-008: floating-point values compare as numbers");
+
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_term(&q, TIKU_TRK_QF_WRITABLE,
+                                      TIKU_TRK_OP_IS, "true",
+                                      TIKU_TRK_JOIN_AND);
+        check(tiku_trk_query_matches(&q, &m, NULL, ""),
+              "Q-008: boolean spellings are normalized before comparison");
+
+        m.facts.mtime = now - 3600;
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_term(&q, TIKU_TRK_QF_MODIFIED,
+                                      TIKU_TRK_OP_GREATER, "today",
+                                      TIKU_TRK_JOIN_AND);
+        check(q.dynamic_date,
+              "Q-009: a relative Modified term marks the query dynamic");
+        check(tiku_trk_query_matches_at(&q, &m, NULL, "", now),
+              "the current relative-date boundary admits the file");
+        check(tiku_trk_query_matches_at(&q, &m, NULL, "", now) &&
+              !tiku_trk_query_matches_at(&q, &m, NULL, "", now + 86400),
+              "Q-040: the same file falls out after the date boundary");
+        check(tiku_trk_query_next_refresh(&q, now) > now &&
+              tiku_trk_query_next_refresh(&q, now) <= now + 86400,
+              "Q-040: a dynamic query schedules its next boundary refresh");
+    }
+
     printf("\nscope is a path prefix, enforced outside the predicate\n");
     {
         tiku_trk_query_t q;
@@ -492,6 +541,9 @@ main(void)
         a.include_trash = 1;
         snprintf(a.trash_path, sizeof a.trash_path, "/home/me/.Trash");
         snprintf(a.type, sizeof a.type, "text/plain");
+        (void)tiku_trk_query_add_term(&a, TIKU_TRK_QF_MODIFIED,
+                                      TIKU_TRK_OP_GREATER, "today",
+                                      TIKU_TRK_JOIN_AND);
         a.scope_was[0].dev = 4242u;
         snprintf(a.scope_was[0].volume, sizeof a.scope_was[0].volume,
                  "Backup");
@@ -508,6 +560,8 @@ main(void)
         check(b.include_trash == 1 && b.trash_path[0] == '\0',
               "Q-036: the Include Trash choice survives a saved-query "
               "round trip without pinning it to this machine's Trash path");
+        check(b.dynamic_date == 1, "Q-009: the dynamic-date marker survives "
+              "a saved-query round trip");
         check(b.scope_was[0].dev == 4242u &&
               strcmp(b.scope_was[0].volume, "Backup") == 0,
               "Q-027: and a scope remembers WHICH volume it meant, not "

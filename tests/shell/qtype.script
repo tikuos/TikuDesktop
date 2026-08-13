@@ -7,14 +7,14 @@ key f ctrl
 wait 5
 expect-find-type All files and folders
 note picking Folder narrows it
-click 300 400
+click 430 344
 wait 3
-click 200 452
+click 330 396
 wait 3
 expect-find-type Folder
 note and a search then finds only things of that type, whatever the name
 note asks -- the type is ANDed onto the rows rather than replacing them
-click 595 452
+key Return
 wait 30
 expect-status results
 expect-type-narrowed

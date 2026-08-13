@@ -2233,10 +2233,11 @@ open_panel(desktop_t *app)
     frame.w = 560;
     frame.h = tiku_trk_find_height(&app->panel) + TIKU_TRK_WIN_TAB_H +
               2 * TIKU_TRK_WIN_BORDER;
-    frame.x = 90;
-    frame.y = 300;
+    frame.x = (DESK_W - frame.w) / 2;
+    frame.y = (DESK_H - frame.h) / 2;
     app->panel_win = tiku_trk_desk_open(app->desk, "Find", frame, panel_draw,
                                         &app->panel, &app->panel);
+    tiku_trk_win_set_size_controls(app->panel_win, 0, 0);
     app->dirty = 1;
 }
 
@@ -2248,6 +2249,8 @@ panel_search(desktop_t *app)
     tiku_trk_qrun_t *run;
     char title[TIKU_TRK_PATH_MAX];
     char scope[64];
+    char record_name[TIKU_TRK_NAME_MAX];
+    int replacing;
 
     tiku_trk_find_build(&app->panel, &q);
     if (q.invalid) {
@@ -2272,22 +2275,47 @@ panel_search(desktop_t *app)
         }
     }
     (void)tiku_trk_find_scope_label(&app->panel, scope, sizeof scope);
+    replacing = app->panel.loaded_kind == TIKU_TRK_QREC_QUERY &&
+                app->panel.loaded_name[0] != '\0';
+    record_name[0] = '\0';
     {
         /* Every run leaves a record, marked TEMPORARY: a search is a thing
          * that can be re-opened and edited, not only a window that appears
          * -- and one the user never named is swept up later rather than
          * accumulating for ever (Q-023, MA-053). */
-        char name[TIKU_TRK_NAME_MAX];
+        tiku_trk_query_t previous;
+        int i;
 
         q.temporary = 1;
+        if (replacing) {
+            snprintf(record_name, sizeof record_name, "%s",
+                     app->panel.loaded_name);
+            if (tiku_trk_query_load(&previous, record_name, app->store) ==
+                    0) {
+                q.temporary = previous.temporary;
+            }
+            /* The old window owns the layout being inherited.  Close it
+             * first so its frame and columns reach the store before the
+             * replacement reads them (Q-025). */
+            for (i = 0; i < app->folder_count; i++) {
+                if (app->folders[i].win != NULL &&
+                    app->folders[i].win->open &&
+                    strcmp(app->folders[i].qname, record_name) == 0) {
+                    close_window(app, app->folders[i].win);
+                }
+            }
+        }
         /* The WALL clock, not the running one: how old a record is has to
          * mean the same thing after a restart, and it is also the date its
          * name carries. */
         q.saved_at = (int64_t)time(NULL);
-        if (tiku_trk_find_default_name(&app->panel, (long)q.saved_at, name,
-                                       sizeof name) > 0) {
-            (void)tiku_trk_query_save(&q, name, app->store);
-            snprintf(app->last_query, sizeof app->last_query, "%s", name);
+        if (record_name[0] != '\0' ||
+            tiku_trk_find_default_name(&app->panel, (long)q.saved_at,
+                                       record_name,
+                                       sizeof record_name) > 0) {
+            (void)tiku_trk_query_save(&q, record_name, app->store);
+            snprintf(app->last_query, sizeof app->last_query, "%s",
+                     record_name);
         }
     }
     snprintf(title, sizeof title, "find #%d", ++app->find_serial);
@@ -3188,15 +3216,16 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         /* Re-open the panel ON the query rather than running it again:
          * what the user wants from a result set is usually one more
          * condition, not the same search a second time (Q-045). */
-        tiku_trk_query_t q;
+        int whole = (fl->qname[0] != '\0')
+                        ? tiku_trk_find_load_named(&app->panel, fl->qname)
+                        : -1;
 
-        if (app->last_query[0] == '\0' ||
-            tiku_trk_query_load(&q, app->last_query, app->store) != 0) {
+        if (whole < 0) {
             snprintf(app->status, sizeof app->status,
                      "that query cannot be opened");
             break;
         }
-        if (!tiku_trk_find_from_query(&app->panel, &q)) {
+        if (!whole) {
             /* Said rather than swallowed: a scope this panel cannot offer
              * means the restored search is not the saved one. */
             snprintf(app->status, sizeof app->status,
@@ -5748,10 +5777,6 @@ main(int argc, char **argv)
                         (void)tiku_trk_desk_zoom(app.desk, w,
                                                  folder_fit_w(&app, fl),
                                                  folder_fit_h(&app, fl));
-                    } else if (w == app.panel_win) {
-                        (void)tiku_trk_desk_zoom(app.desk, w, 544,
-                                                 tiku_trk_find_height(
-                                                     &app.panel));
                     }
                     app.dirty = 1;
                     break;
@@ -5793,13 +5818,6 @@ main(int argc, char **argv)
                     close_window(&app, w);
                 } else if (hit == TIKU_TRK_HIT_TAB ||
                            hit == TIKU_TRK_HIT_RESIZE) {
-                    /* The Find window is not resizable: its height is its
-                     * contents, and dragging its corner would only tear the
-                     * layout away from the controls (Q-001). */
-                    if (hit == TIKU_TRK_HIT_RESIZE && w == app.panel_win) {
-                        app.dirty = 1;
-                        break;
-                    }
                     tiku_trk_desk_begin_track(app.desk, w, hit, ev.xbutton.x,
                                               ev.xbutton.y);
                 } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&

@@ -49,6 +49,8 @@ struct tiku_trk_win {
     int                  z;            /* higher is nearer the front       */
     int                  open;
     int                  minimized;
+    int                  resizable;
+    int                  zoomable;
     tiku_trk_win_draw_fn draw;
     void                *ctx;          /* the owner's data (a pose view)   */
     void                *tag;          /* owner's identity, for lookups    */
@@ -101,6 +103,10 @@ tiku_trk_hit_t tiku_trk_desk_hit(tiku_trk_desk_t *d, int x, int y,
 
 /** @brief The content rectangle inside a window's chrome. */
 tiku_desk_rect_t tiku_trk_win_content(const tiku_trk_win_t *w);
+
+/** @brief Set whether the window exposes its resize grip and zoom button. */
+void tiku_trk_win_set_size_controls(tiku_trk_win_t *w, int resizable,
+                                    int zoomable);
 
 /** @brief Begin dragging or resizing at a point. */
 void tiku_trk_desk_begin_track(tiku_trk_desk_t *d, tiku_trk_win_t *w,

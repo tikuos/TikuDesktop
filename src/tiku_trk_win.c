@@ -174,6 +174,8 @@ tiku_trk_desk_open(tiku_trk_desk_t *d, const char *title,
     w->ctx = ctx;
     w->tag = tag;
     w->open = 1;
+    w->resizable = 1;
+    w->zoomable = 1;
     d->order[d->count++] = slot;
     d->focused = slot;
     return w;
@@ -216,6 +218,16 @@ tiku_trk_win_content(const tiku_trk_win_t *w)
     if (c.w < 0) { c.w = 0; }
     if (c.h < 0) { c.h = 0; }
     return c;
+}
+
+void
+tiku_trk_win_set_size_controls(tiku_trk_win_t *w, int resizable,
+                               int zoomable)
+{
+    if (w != NULL) {
+        w->resizable = resizable != 0;
+        w->zoomable = zoomable != 0;
+    }
 }
 
 /** @brief The tab rectangle: shorter than the window, at its left edge. */
@@ -265,7 +277,7 @@ tiku_trk_desk_hit(tiku_trk_desk_t *d, int x, int y, tiku_trk_win_t **out)
             if (x < tab.x + BUTTON + 6) {
                 return TIKU_TRK_HIT_CLOSE;
             }
-            if (x > tab.x + tab.w - BUTTON - 6) {
+            if (w->zoomable && x > tab.x + tab.w - BUTTON - 6) {
                 return TIKU_TRK_HIT_ZOOM;
             }
             return TIKU_TRK_HIT_TAB;
@@ -275,7 +287,7 @@ tiku_trk_desk_hit(tiku_trk_desk_t *d, int x, int y, tiku_trk_win_t **out)
         }
         if (out != NULL) { *out = w; }
         /* The bottom-right corner resizes; it is the only grip R5 has. */
-        if (x > w->frame.x + w->frame.w - 16 &&
+        if (w->resizable && x > w->frame.x + w->frame.w - 16 &&
             y > w->frame.y + w->frame.h - 16) {
             return TIKU_TRK_HIT_RESIZE;
         }
@@ -459,11 +471,15 @@ draw_window(tiku_trk_desk_t *d, tiku_trk_win_t *w, int active)
     tiku_desk_hline(s, tab.x + 1, tab.y + tab.h - 1, tab.w - 2, tabc);
 
     draw_button(s, tab.x + 4, tab.y + (TAB_H - BUTTON) / 2, 0, active);
-    draw_button(s, tab.x + tab.w - BUTTON - 4, tab.y + (TAB_H - BUTTON) / 2,
-                1, active);
+    if (w->zoomable) {
+        draw_button(s, tab.x + tab.w - BUTTON - 4,
+                    tab.y + (TAB_H - BUTTON) / 2, 1, active);
+    }
     {
         tiku_desk_rect_t label = { tab.x + BUTTON + 8, tab.y,
-                                   tab.w - 2 * (BUTTON + 8), TAB_H };
+                                   tab.w - BUTTON - 16 -
+                                       (w->zoomable ? BUTTON + 8 : 0),
+                                   TAB_H };
         tiku_desk_clip_set(s, label);
         (void)tiku_desk_text_centered(s, f, label, w->title,
                                       TIKU_DESK_C_TEXT);
@@ -476,7 +492,7 @@ draw_window(tiku_trk_desk_t *d, tiku_trk_win_t *w, int active)
         tiku_desk_clip_reset(s);
     }
     /* The resize grip, bottom-right, drawn last so it sits over the frame. */
-    {
+    if (w->resizable) {
         int gx = w->frame.x + w->frame.w - 14;
         int gy = w->frame.y + w->frame.h - 14;
         int i;

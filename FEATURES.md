@@ -533,7 +533,7 @@ different shapes, so the same pixel is a different place.  Each is clamped to
 the extent, so an origin past the end cannot leave a folder looking empty.
 *src/tiku_trk_poseview.c:tiku_trk_poseview_set_origin/_origin/origin_of;
 tests/test_iconview.c*  
-*Shell: desktop*  
+*Shell: desktop*
 #### PVL-010 · polish · done
 **Changing icon size keeps the visual centre of the view roughly fixed instead of jumping to the top-left.**  
 SetViewMode converts the bounds centre into unscaled (32px) space with oldScale = lastIconSize/32, back out with newScale = iconSize/32, and applies the difference as scaleOffset added to the restored icon origin. Skipped on the Desktop.  
@@ -4213,13 +4213,19 @@ OwnerAttributeText/GroupAttributeText, their NewWidgetText dispatch entries, and
 
 Architecture notes: [`spec/ARCH-queries.md`](spec/ARCH-queries.md)
 
-#### Q-001 · core · partial
+#### Q-001 · core · done
 **Alt+F (or the Deskbar's Find… item) opens a Find window; it is a non-resizable, non-zoomable window titled "Find" that closes on Escape.**  
 TTracker and BContainerWindow both handle kFindButton by `(new FindWindow())->Show()`; window flags B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_CLOSE_ON_ESCAPE | B_AUTO_UPDATE_SIZE_LIMITS, centered on screen.  
 `FindPanel.cpp` → `FindWindow::FindWindow (and Tracker.cpp case kFindButton, ContainerWindow.cpp case kFindButton)`  
 **TIKU:** TikuOS has a shell, not windows: the equivalent entry point is a `find` verb/mode. Escape-to-cancel maps to the existing Ctrl+C shell-mode cancel used by `watch`.  
-**MISSING:** Ctrl+F and the Deskbar's Find item open a window titled "Find", Escape closes it and the resize grip is explicitly refused for it, but the non-zoomable clause is missing — the tab's zoom widget acts on the panel (zooms it to 544 x find_height) — and the frame is placed at 90,300 rather than centred.  
-*src/tiku_trk_desktop.c:open_panel (816), key handler 1972, resize refusal 1714, zoom branch 1679*
+**PORT:** Ctrl+F and the Deskbar's Find item open the fixed-size Find panel
+centred on the desktop.  Its window chrome advertises neither zoom nor resize,
+so those regions cannot start either operation, and Escape closes the panel.
+The same window traits remain opt-in defaults for ordinary folder windows.
+*src/tiku_trk_desktop.c:open_panel and Find-panel key handler;
+src/tiku_trk_win.[ch]:tiku_trk_win_set_size_controls/tiku_trk_desk_hit;
+tests/test_win.c; tests/shell/findwindow.script*
+*Shell: desktop*
 
 #### Q-002 · core · done
 **A popup switches the panel between three search modes: by name, by attribute, by formula.**  
@@ -4273,20 +4279,34 @@ more.  The half of the row that is about operators is already built: each
 field offers only the operators it can answer, and a field change drops the
 row to that field's own starting operator.
 
-#### Q-008 · important · partial
+#### Q-008 · important · done
 **Typed values are parsed per attribute type before being pushed into the query.**  
 B_STRING_TYPE -> PushString(text, true) i.e. case-insensitive; B_TIME_TYPE -> PushDate(text); B_BOOL_TYPE -> "true"=1, "false"=0 (case-insensitive), otherwise atoi, then value %= 2; uint8/16/32 -> PushUInt32(StringToScalar); int8/16/32 -> PushInt32; uint64 -> PushUInt64; int64/off_t -> PushInt64; float -> sscanf %f; double -> sscanf %lf.  
 `FindPanel.cpp` → `FindPanel::BuildAttrQuery`  
 **TIKU:** StringToScalar accepts K/M/G suffixes; TikuOS should keep that for size fields. 64-bit pushes need care on 16-bit MSP430 targets.  
-**MISSING:** Only strings (case-insensitive via bracket classes) and long integers are handled: the K/M/G scalar suffixes, boolean true/false normalisation (mod 2), float/double parsing and any date type are all absent — a value either passes looks_numeric's strtol or is compared as glob text, so 'Size greater than 4K' silently matches nothing ('4K' fails looks_numeric and the mixed numeric/text compare returns 0), and Writable answers only its own yes/no vocabulary.  
-*Audited 2026-08-12: `src/tiku_trk_query.c:141-182 (tiku_trk_query_pattern case-insensitive classes)` `src/tiku_trk_query.c:263-281 (looks_numeric, strtol only)` `src/tiku_trk_query.c:285-292 (numeric_field consults descriptor vtype)`*  
-*Shell: desktop*  
-#### Q-009 · important · open
+**PORT:** Query comparison now parses the value according to the field and
+descriptor type: strings retain case-insensitive glob comparison, numeric
+fields accept floating-point syntax and K/M/G binary suffixes, and boolean
+fields recognise true/false spellings or normalise numeric input modulo two.
+Modified is a date-valued field and is parsed separately as calendar time.
+The implementation uses `long double` internally so it does not truncate a
+64-bit value on a 16-bit target before making the comparison.
+*src/tiku_trk_query.c:parse_scalar/parse_bool/parse_date/term_matches;
+tests/test_query.c (typed values and relative dates)*
+
+#### Q-009 · important · done
 **A date field holding a relative date such as "today" marks the query dynamic, so its results are re-evaluated later instead of frozen at save time.**  
 BuildAttrQuery runs parsedate_etc(text, -1, &flags) and sets dynamicDate when (flags & PARSEDATE_RELATIVE_TIME); SaveQueryAsAttributes then writes kAttrDynamicDateQuery (B_BOOL_TYPE) on the query file.  
 `FindPanel.cpp` → `FindPanel::BuildAttrQuery / FindWindow::SaveQueryAsAttributes`  
 **TIKU:** Requires a wall clock and a natural-language date parser; on TikuOS the flag is only meaningful where an RTC exists.
-**BLOCKED:** A date-valued query field. tiku_trk_qfield_t (src/tiku_trk_query.h:43-51) has no time member; grep for date/mtime over tiku_trk_query.[ch]/tiku_trk_find.[ch] finds only the default-name strftime (src/tiku_trk_find.c:307-308). With no date term there is nothing to mark dynamic.  
+**PORT:** Modified is a date-valued query field with before/after operators.
+It accepts `now`, `today`, `yesterday`, `tomorrow`, ISO calendar dates and
+relative second/minute/hour/day phrases.  Adding a relative Modified term
+marks the query dynamic, and the v4 saved-query record preserves that marker;
+older v1-v3 records continue to load with their existing defaults.
+*src/tiku_trk_find.c:kFields/op_label; src/tiku_trk_query.[ch]:
+relative_date/parse_date/tiku_trk_query_add_term and query v4 persistence;
+tests/test_query.c (Q-009 checks and saved-query round trip)*
 
 #### Q-010 · core · done
 **By-formula mode lets the user type a raw query predicate, which is used verbatim.**  
@@ -4432,12 +4452,21 @@ GetDefaultName: by name → "Name = <text>"; by formula → "Formula <text>"; by
 `FindPanel.cpp` → `FindWindow::GetDefaultName / FindPanel::GetDefaultName / FindPanel::GetDefaultAttrName / MakeValidFilename`  
 **TIKU:** Name-length limit and slash escaping depend on the target filestore; TFS name limits differ from B_FILE_NAME_LENGTH.  
 
-#### Q-025 · important · open
+#### Q-025 · important · done
 **Re-running an already-saved query replaces the same file, which closes the old results window first, and the new window reopens at the old position with the old column layout.**  
 FindSaveCommon: replaceOriginal = fFile && (!fFromTemplate || fEditTemplateOnly); it Unsets the file and Removes the entry "to quit the running query and close the corresponding window", captures BContainerWindow::GetLayoutState + FSGetPoseLocation beforehand and restores them in SaveQueryAsAttributes. Find() then polls TTracker::EntryHasWindowOpen(&fRef) with snooze(1000) up to 5000 times before posting refs.  
 `FindPanel.cpp` → `FindWindow::FindSaveCommon / FindWindow::Find / FindWindow::SaveQueryAsAttributes`  
 **TIKU:** The delete-to-close idiom relies on node monitoring of the query file. With VFS watch notifications the same trick works, but the 5 s bounded spin should become an event wait.
-**BLOCKED:** The run-writes-a-record mechanism (the Q-023 gap): panel_search (src/tiku_trk_desktop.c:896-927) runs the walk inline, writes no record and binds no window to one, so there is no 'same file' to replace, no old window for its removal to close, and no stored frame/columns to reopen with. The record loader tiku_trk_query_load is called only by tests (tests/test_query.c:269-277).  
+**PORT:** Every result window is bound to the saved record that produced it.
+Editing that window loads that exact record into the panel; running it again
+closes every old window bound to the record before overwriting it, then opens
+one replacement.  Closing first flushes the old frame and the searched-type
+column layout, which the replacement restores through the normal query-window
+layout path.  The store rewrite is synchronous, so no polling wait is needed.
+*src/tiku_trk_desktop.c:panel_search/open_results/menu_invoke;
+src/tiku_trk_poseview.c (searched-type layout persistence);
+tests/shell/query.script; tests/test_poseview.c (query layout inheritance)*
+*Shell: desktop*
 
 #### Q-026 · core · done
 **Opening a saved query for editing (Edit query, Alt+G) restores the whole panel: mode, MIME type, text or attribute rows, target volumes, the Trash option, keyboard focus and even the text selection.**  
@@ -4585,11 +4614,19 @@ FetchOneQuery sets query->SetTarget(BMessenger(poseView)) and query->SetFlags(B_
 QueryEntryListCollection's constructor either replays kAttrQueryVolume (one FetchOneQuery per matched volume) or, if no volume info is stored or none matched, falls back to searching every persistent KnowsQuery volume; iteration walks fQueryList in order via fQueryListIndex, and Rewind() rewinds all of them. CountEntries() returns 0 — the total is unknown in advance.  
 `QueryPoseView.cpp` → `QueryEntryListCollection::QueryEntryListCollection / QueryEntryListCollection::Rewind / QueryEntryListCollection::CountEntries`  
 
-#### Q-040 · important · open
+#### Q-040 · important · done
 **A query containing a relative date refreshes itself automatically — at the next midnight, or the next hour/minute if the predicate mentions those units — and results that no longer match disappear.**  
 InitDirentIterator schedules BQueryPoseView::Refresh via TTracker::MainTaskLoop()->RunLater at the next minute/hour/midnight boundary; the unit is chosen by case-insensitively searching the predicate for "second"/"minute" (minute refresh, DEBUG builds only) and "hour". Refresh clears fAddPosesThreads, drops the query list, sets fCreateOldPoseList so the current poses are snapshotted, re-adds poses, and AddPosesCompleted deletes every pose still in the old list.  
 `QueryPoseView.cpp` → `BQueryPoseView::InitDirentIterator / BQueryPoseView::Refresh / BQueryPoseView::AddPosesCompleted`
-**BLOCKED:** Date-valued query terms (the same absence as Q-009: no time field in tiku_trk_qfield_t, src/tiku_trk_query.h:43-51, and no date parser). The refresh machinery the row wants is otherwise present and stronger than the original's: every live results window is re-walked every 3 s (src/tiku_trk_desktop.c:2697-2704) through tiku_trk_query_refresh (src/tiku_trk_query.c:602-703), and rows that stop matching do disappear — but a relative-date predicate cannot be formed to exercise it.  
+**PORT:** Relative Modified predicates are evaluated against the current wall
+clock on every match.  The query reports the next minute, hour or local
+midnight boundary implied by its phrase, while the desktop's existing
+three-second live-query re-walk is deliberately stronger: it re-evaluates
+all relative predicates by that boundary and `tiku_trk_query_refresh` removes
+results that no longer match without disturbing surviving rows.
+*src/tiku_trk_query.[ch]:tiku_trk_query_matches_at/
+tiku_trk_query_next_refresh/tiku_trk_query_refresh;
+src/tiku_trk_desktop.c (live-query refresh loop); tests/test_query.c (Q-040)*
 
 #### Q-041 · important · done
 **Query result windows are always list view: the view-mode commands do nothing, icon positions are never saved, and "Open parent" is disabled.**  
@@ -4733,12 +4770,20 @@ BuildMenuBar wraps fHistoryMenu in an IconMenuItem carrying `new BMessage(kOpenD
 **TIKU:** Maps to a `find --list` / "open the query store" shell affordance.
 **BLOCKED:** The recent-queries menu (absent — Q-032's unwired lister) and a browsable query directory: saved records are attributes in an in-memory store (tiku_trk_store_memory_open, src/tiku_trk_desktop.c:1594; written via tiku_trk_state_write, src/tiku_trk_query.c:804-806), not nodes in the browsed namespace, so a clickable 'open the queries folder' entry has no folder to open.  
 
-#### Q-056 · important · open ⟨found by verification⟩
+#### Q-056 · important · differs ⟨found by verification⟩
 **The query file itself is node-monitored, which is what makes re-running a query close the old results window and what tracks renames of the query.**  
 InitDirentIterator calls `TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_NAME | B_WATCH_STAT | B_WATCH_ATTR, this)` on the query file after building the query list. FindWindow::FindSaveCommon's `entry.Remove()` relies on this notice arriving to quit the window before Find() posts the new refs.  
 `QueryPoseView.cpp` → `BQueryPoseView::InitDirentIterator`  
 **TIKU:** The delete-to-close idiom is only safe because of this watch; on TikuOS the watch subscription must exist before the record is rewritten, or the 5 s spin in Find() never terminates.
-**BLOCKED:** The query-record-per-run mechanism (the same absence as Q-025): panel_search never writes a record (src/tiku_trk_desktop.c:896-927), so there is no node to monitor for the delete-to-close or rename-tracking idioms; results-window liveness is the 3 s requery poll (src/tiku_trk_desktop.c:2697-2704), not a watch on any query object.  
+**DIVERGES:** Saved queries are durable state-store records, not namespace
+nodes, so there is no external node rename or deletion to monitor.  A result
+window instead carries the exact record name that produced it.  Re-running
+that attached record synchronously closes all windows carrying the same name
+before rewriting it, providing the close-before-reopen guarantee without the
+original's node notice and bounded spin.  File membership remains live through
+the query run's existing re-walk subscription.
+*src/tiku_trk_desktop.c:folder_t.qname/panel_search/menu_invoke;
+tests/shell/query.script*
 
 #### Q-057 · important · done ⟨found by verification⟩
 **Folder filters are stored on the query and reloaded when it is reopened; a filter whose folder has since become a file is dropped, and duplicates are refused.**  
