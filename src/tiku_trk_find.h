@@ -22,6 +22,7 @@
 
 #include "tiku_trk_menu.h"
 #include "tiku_trk_query.h"
+#include "tiku_trk_types.h"
 
 struct tiku_trk_store;
 
@@ -67,6 +68,8 @@ typedef struct {
 
 /** @brief How many types the most-used list keeps at the top (Q-016). */
 #define TIKU_TRK_FIND_MOST_USED 4
+#define TIKU_TRK_FIND_TYPE_CHOICES TIKU_TRK_TYPES_MAX
+#define TIKU_TRK_FIND_TYPE_SUPERS 8
 
 typedef struct {
     tiku_trk_qmode_t      mode;
@@ -95,6 +98,15 @@ typedef struct {
     tiku_trk_find_hit_t   popup_for;
     int                   popup_row;
     tiku_desk_rect_t      popup_frame;
+    /* Type submenus are owned by the panel: menu items intentionally keep
+     * non-owned pointers, so stack-built children would dangle on return. */
+    tiku_trk_menu_t       type_sub[TIKU_TRK_FIND_TYPE_SUPERS];
+    int                   type_sub_count;
+    tiku_trk_menu_t      *popup_sub;
+    tiku_desk_rect_t      popup_sub_frame;
+    char                  type_choice[TIKU_TRK_FIND_TYPE_CHOICES]
+                                     [TIKU_TRK_TYPE_MAX];
+    int                   type_choice_count;
     /* What the last action through the Queries menu did, for the shell's
      * status line: a menu that loads a saved search without saying which
      * one leaves the user looking at a panel that changed by itself. */
@@ -108,6 +120,7 @@ typedef struct {
      * menu is built where the click lands, and passing it through every
      * hit-testing call would put a store in the geometry's signature. */
     struct tiku_trk_store *store;
+    const tiku_trk_types_t *types;
 } tiku_trk_find_t;
 
 /**
@@ -168,6 +181,10 @@ void tiku_trk_find_clear_note(tiku_trk_find_t *f);
 
 /** @brief Tell the panel where its most-used list lives (Q-016). */
 void tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s);
+
+/** @brief Supply the installed type declarations used by both type menus. */
+void tiku_trk_find_set_types(tiku_trk_find_t *f,
+                             const tiku_trk_types_t *types);
 
 /** @brief Start a panel with one attribute row and no scope restriction. */
 void tiku_trk_find_init(tiku_trk_find_t *f);

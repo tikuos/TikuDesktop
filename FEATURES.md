@@ -4268,16 +4268,21 @@ Name (attr "name", B_STRING_TYPE): contains / is / is not / starts with / ends w
 **TIKU:** Size/Modified assume a stat-like model; TikuOS VFS nodes expose typed descriptors instead, so the built-in row set becomes name + descriptor-type + whatever scalar the node reports.  
 **UNCONFIRMED:** AddAttributes (FindPanel.cpp) also has an `if (!attributeMessage.FindBool("attr:viewable")) continue;` gate that the row omits — and that call passes no index, so it always tests entry 0's viewable flag rather than the current attribute's. The row's stated requirement set is incomplete and the real gate is index-buggy; I could not confirm the rule as written.  
 
-#### Q-007 · important · open
+#### Q-007 · important · done
 **The attribute menu is extended with the attributes declared by the currently selected MIME type and its supertype, each with type-appropriate operators.**  
 AddMimeTypeAttrs adds supertype attributes first (skipped when the type is supertype-only), then the type's own; AddAttributes reads BMimeType::GetAttrInfo and requires attr:public_name, attr:name and attr:type; strings get contains/is/is not/starts with/ends with, numerics get is/greater than/less than, B_TIME_TYPE gets before/after.  
 `FindPanel.cpp` → `FindPanel::AddMimeTypeAttrs / FindPanel::AddAttributes`  
 **TIKU:** The MIME attribute registry has no TikuOS analogue; the natural replacement is the VFS node's typed descriptor advertising which named fields are searchable.
-**SUBSYSTEM:** per-type attribute declarations -- the attribute menu is a
-compiled-in list of eight fields and there is nowhere for a type to declare
-more.  The half of the row that is about operators is already built: each
-field offers only the operators it can answer, and a field change drops the
-row to that field's own starting operator.
+**PORT:** Name, Size and Modified are the three built-in fields.  Selecting a
+type extends that menu with the searchable model facts declared as columns by
+the installed type and its supertype, with the supertype consulted separately
+so an exact record cannot hide it.  Each fact retains its own operator set and
+changing fields drops an operator the new fact cannot answer.  TikuOS exposes
+typed descriptor facts rather than an open-ended MIME attribute namespace, so
+arbitrary sidecar attributes remain columns but are not executable predicates.
+*src/tiku_trk_types.[ch]:tiku_trk_types_exact/tiku_trk_types_super;
+src/tiku_trk_find.c:record_has_field/field_in_menu/open_popup;
+tests/test_types.c; tests/test_query.c (declared query fields)*
 
 #### Q-008 · important · done
 **Typed values are parsed per attribute type before being pushed into the query.**  
@@ -4360,19 +4365,20 @@ type will narrow what the rows ask rather than replacing them.
 AddAttrRow appends a row and adds the And/Or menu to the previous row, then enables "remove button" when CountRows() > 1; RemoveAttrRow returns early below 2 rows, deletes the last row's views, moves focus to the previous row's TextEntry, and removes the now-dangling Logic field.  
 `FindPanel.cpp` → `FindPanel::AddAttrRow / FindPanel::RemoveAttrRow / FindPanel::SetupAddRemoveButtons`  
 
-#### Q-015 · important · partial
+#### Q-015 · important · done
 **The MIME type menu lists "All files and folders" first, then the user's most-used types, then a tree of supertypes with their subtypes; empty supertypes are omitted.**  
 AddMimeTypesToMenu: first item + separator, then up to 5 names from MostUsedNames("MostUsedMimeTypes","Tracker") + separator, then GetInstalledSupertypes() submenus filled by AddOneMimeTypeToMenu; supertype submenus with 0 items are removed. Two subtypes sharing a short description get " (subtype)" appended to both labels.  
 `FindPanel.cpp` → `FindPanel::AddMimeTypesToMenu / FindPanel::AddOneMimeTypeToMenu`
-**MISSING:** The menu is built and has the original's shape: "All files and
-folders" first as a fixed item that is not one of the types, a separator,
-then the most-used at the head and the rest of the table below, each named by
-what it MEANS and the current one ticked.  What is absent is the HIERARCHY --
-a supertype with its members under it -- because the panel owns one menu and
-submenus are non-owned pointers, so a tree needs per-supertype storage the
-panel does not have; the supertypes are offered as flat entries instead.
-*src/tiku_trk_find.c:tiku_trk_find_type_menu and the HIT_TYPE popup;
-tests/test_query.c*
+**PORT:** The fixed All-files entry and persistent most-used head remain.
+Below them, installed supertypes with members own panel-lifetime submenus;
+empty supertypes are omitted, subtype entries use their descriptions, and a
+nested choice executes through a stable type-to-command table.  Promoted
+types are not repeated in the hierarchy.  Structural model types such as
+Folder and Volume stay available even without editable database records.
+*src/tiku_trk_find.[ch]:type_sub/type_command and the HIT_TYPE popup;
+src/tiku_trk_types.c (installed supertype/member records);
+tests/test_query.c (type hierarchy); tests/shell/qtype.script*
+*Shell: desktop*
 
 #### Q-016 · polish · done
 **Picking a MIME type promotes it in a persistent most-used list, so frequently searched types stay near the top of the menu across reboots.**  
@@ -4640,19 +4646,19 @@ pseudo-path is not a navigable container.
 tiku_trk_poseview_save_state; src/tiku_trk_desktop.c:menu_ctx;
 tests/test_poseview.c*
 
-#### Q-042 · important · partial
+#### Q-042 · important · done
 **A results window shows Name, Location, Size and Modified by default, and remembers a per-searched-type column layout so e.g. e-mail queries come up with Subject/From/When/Status.**  
 SetupDefaultColumnsIfNeeded adds Name(145)/Location(225, kAttrPath)/Size(80)/Modified(150) only when no columns were restored. BQueryContainerWindow::SetupDefaultState copies kAttrWindowFrame/kAttrViewState/kAttrColumns from settings/Tracker/DefaultQueryTemplates/<sanitized type> where the type comes from PoseView()->SearchForType() (kAttrQueryInitialMime resolved through MimeTypeList, defaulting to B_FILE_MIMETYPE) with '/' replaced by '_'; TTracker::InstallDefaultTemplates seeds those files for octet-stream, bookmark, person and e-mail.  
 `QueryPoseView.cpp` → `BQueryPoseView::SetupDefaultColumnsIfNeeded / BQueryPoseView::SearchForType (QueryContainerWindow.cpp BQueryContainerWindow::SetupDefaultState, TrackerInitialState.cpp TTracker::InstallDefaultTemplates)`  
 **TIKU:** The Location column is what makes results usable; in the TikuOS namespace this is the node's full VFS path.  
-**MISSING:** Result views now start with the required Name, Location, Size
-and Modified columns, Location shows the containing VFS path, and frame plus
-column layouts are remembered under a sanitized searched-type key shared by
-every query window of that type.  What remains is seeding special bookmark,
-person and e-mail defaults.
-*src/tiku_trk_poseview.c:fill_from, tiku_trk_poseview_set_query_type and
-tiku_trk_poseview_save_columns; src/tiku_trk_desktop.c:open_results;
-tests/test_poseview.c*
+**PORT:** Generic results start with Name, Location, Size and Modified.
+Bookmark, person and e-mail types instead install their useful attribute
+layouts; e-mail opens with Subject, From, When and Status.  Each layout and
+frame is stored under the sanitized searched-type key, restored before the
+result set is shown, and later user changes win over the installed default.
+*src/tiku_trk_poseview.c:query_default_columns/
+tiku_trk_poseview_install_query_defaults/tiku_trk_poseview_set_query_type;
+src/tiku_trk_desktop.c:open_results; tests/test_poseview.c*
 
 #### Q-043 · polish · differs
 **In a results window, changes to a file's size or modification time refresh its row immediately, like an ordinary folder window.**  
@@ -5861,12 +5867,19 @@ fs_create_index(device, kAttrQueryLastChange, B_INT32_TYPE) and "_trk/recentQuer
 `TrackerInitialState.cpp` → `TTracker::InstallIndices`
 **WAIVER CANDIDATE:** the port's queries are live namespace walks, not index scans -- src/tiku_trk_query.c:6 ('predicates, matching, and walking the namespace') with a scope queue and per-entry matching, and neither backend has any index concept (no create_index-like op in the ops struct, src/tiku_trk_model.h:180-200) -- so there are no query indices to create and nothing that depends on one; waiver candidate  
 
-#### AW-015 · polish · partial
+#### AW-015 · polish · done
 **Default column layouts for query result windows (generic, bookmark, person, e-mail) are written once into template nodes if absent.**  
 Per-type AttributeTemplate with kAttrWindowFrame (kDefaultFrame 40,40,695,350), kAttrViewState_be and generated kAttrColumns bits; written only when DefaultStateSourceNode(query,...,false) finds nothing.  
 `TrackerInitialState.cpp` → `TTracker::InstallDefaultTemplates / mkColumnsBits`
-**MISSING:** The per-type column SETS exist and are written into the database on first use -- named in the file rather than numbered, and a name nothing stands for is left out rather than read as column zero. What is absent is a default per-type WINDOW layout: these are the columns a type offers, not the state a query window opens with.  
-*src/tiku_trk_types.c:tiku_trk_types_install; tests/test_types.c*
+**PORT:** First startup writes generic, bookmark, person and e-mail query
+templates into the durable layout store.  Each contains the original default
+40,40,695,350 frame and its type-specific columns; an existing frame or column
+record is never overwritten, so user changes survive later starts.  Attribute
+columns are persisted by name and registered with their human titles before a
+saved layout is restored.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_install_query_defaults/
+query_default_columns; src/tiku_trk_desktop.c (startup installation);
+tests/test_poseview.c*
 
 #### AW-016 · polish · open
 **A default desktop background image is installed only when the boot desktop folder has no background attribute yet.**  

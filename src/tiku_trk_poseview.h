@@ -268,6 +268,10 @@ void tiku_trk_poseview_set_layout_store(tiku_trk_poseview_t *v,
 /** @brief State key for this view (folder path or per-query-type layout). */
 const char *tiku_trk_poseview_layout_path(const tiku_trk_poseview_t *v);
 
+/** @brief Install the four first-run query frame/column templates. */
+int tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
+                                             tiku_trk_store_t *store);
+
 /** @brief Show @p path, keeping the same backend. */
 int tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path);
 

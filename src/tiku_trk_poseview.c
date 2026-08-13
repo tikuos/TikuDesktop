@@ -13,6 +13,7 @@
  */
 
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_frame.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_task.h"
 
@@ -88,6 +89,7 @@ struct tiku_trk_poseview {
     int                 state_dirty;    /* fStateNeedsSaving                */
     int                 is_query;       /* results, not a directory         */
     char                query_layout[TIKU_TRK_PATH_MAX];
+    char                query_type[TIKU_TRK_TYPE_MAX];
     tiku_trk_store_t    *layout_store;  /* synthetic query layout records   */
     int                 visible_rows;   /* what the window can show         */
     int                 view_w, view_h; /* the window, in PIXELS            */
@@ -738,6 +740,57 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
 }
 
 /** @brief Fill from a model set; a query view also says it is one. */
+static void
+query_attr_column(tiku_trk_poseview_t *v, const char *attr,
+                  const char *title, int width)
+{
+    int field = tiku_trk_poseview_attr_column(v, attr, title, width);
+
+    if (field >= 0 && v->column_count < TIKU_TRK_COLUMNS_MAX) {
+        v->columns[v->column_count++] = (tiku_trk_column_t){ title, width,
+            field, 0, TIKU_TRK_ALIGN_LEFT };
+    }
+}
+
+/** @brief Built-in layout used only when this type has no saved template. */
+static void
+query_default_columns(tiku_trk_poseview_t *v)
+{
+    int bookmark, person, mail;
+
+    bookmark = strcasecmp(v->query_type,
+                          "application/x-vnd.Be-bookmark") == 0;
+    person = strcasecmp(v->query_type, "application/x-person") == 0;
+    mail = strcasecmp(v->query_type, "text/x-email") == 0 ||
+           strcasecmp(v->query_type, "application/x-vnd.Be-mail") == 0;
+    v->columns[0] = (tiku_trk_column_t){ "Name", 145,
+        TIKU_TRK_COL_NAME, 0, TIKU_TRK_ALIGN_LEFT };
+    v->columns[1] = (tiku_trk_column_t){ "Location", 225,
+        TIKU_TRK_COL_PATH, 0, TIKU_TRK_ALIGN_LEFT };
+    v->column_count = 2;
+    if (bookmark) {
+        query_attr_column(v, "META:title", "Title", 180);
+        query_attr_column(v, "META:url", "URL", 260);
+    } else if (person) {
+        query_attr_column(v, "META:name", "Name", 160);
+        query_attr_column(v, "META:nickname", "Nickname", 110);
+        query_attr_column(v, "META:email", "E-mail", 190);
+        query_attr_column(v, "META:phone", "Phone", 120);
+    } else if (mail) {
+        query_attr_column(v, "MAIL:subject", "Subject", 220);
+        query_attr_column(v, "MAIL:from", "From", 170);
+        query_attr_column(v, "MAIL:when", "When", 135);
+        query_attr_column(v, "MAIL:status", "Status", 90);
+    } else {
+        v->columns[2] = (tiku_trk_column_t){ "Size", 80,
+            TIKU_TRK_COL_SIZE, 0, TIKU_TRK_ALIGN_RIGHT };
+        v->columns[3] = (tiku_trk_column_t){ "Modified", 150,
+            TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
+        v->column_count = 4;
+    }
+    tiku_trk_poseview_reflow_columns(v);
+}
+
 static int
 fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
           int as_query)
@@ -759,16 +812,7 @@ fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
          * Force their stable list shape before any result is inserted. */
         v->mode = TIKU_TRK_MODE_LIST;
         if (first_query) {
-            v->columns[0] = (tiku_trk_column_t){ "Name", 145,
-                TIKU_TRK_COL_NAME, 0, TIKU_TRK_ALIGN_LEFT };
-            v->columns[1] = (tiku_trk_column_t){ "Location", 225,
-                TIKU_TRK_COL_PATH, 0, TIKU_TRK_ALIGN_LEFT };
-            v->columns[2] = (tiku_trk_column_t){ "Size", 80,
-                TIKU_TRK_COL_SIZE, 0, TIKU_TRK_ALIGN_RIGHT };
-            v->columns[3] = (tiku_trk_column_t){ "Modified", 150,
-                TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
-            v->column_count = 4;
-            tiku_trk_poseview_reflow_columns(v);
+            query_default_columns(v);
             if (v->query_layout[0] != '\0') {
                 (void)tiku_trk_poseview_restore_columns(v);
             }
@@ -850,6 +894,8 @@ tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v, const char *type)
     if (v == NULL) {
         return;
     }
+    snprintf(v->query_type, sizeof v->query_type, "%s",
+             (type != NULL) ? type : "");
     snprintf(v->query_layout, sizeof v->query_layout,
              "_trk/query-layout/%s",
              (type != NULL && type[0] != '\0') ? type : "all");
@@ -4598,12 +4644,6 @@ column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
     }
 }
 
-static void
-column_def(int field, const char **title, int *width)
-{
-    column_def_v(NULL, field, title, width);
-}
-
 /** @brief A size column is a number, and numbers read right-aligned. */
 static int
 column_alignment(int field)
@@ -4992,7 +5032,7 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         const char *title;
         int def_w;
 
-        column_def((int)rec[i].field, &title, &def_w);
+        column_def_v(v, (int)rec[i].field, &title, &def_w);
         v->columns[i].title = title;
         v->columns[i].field = (int)rec[i].field;
         v->columns[i].width = scale_in(v, rec[i].width);
@@ -5018,6 +5058,59 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
     }
     resort(v);
     return n;
+}
+
+int
+tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
+                                          tiku_trk_store_t *store)
+{
+    static const char *const kType[] = {
+        "", "application/x-vnd.Be-bookmark", "application/x-person",
+        "text/x-email"
+    };
+    tiku_trk_frame_t def = { 40, 40, 695, 350 };
+    int i, installed = 0;
+
+    if (backend == NULL || store == NULL || !tiku_trk_store_writable(store)) {
+        return 0;
+    }
+    for (i = 0; i < (int)(sizeof kType / sizeof kType[0]); i++) {
+        tiku_trk_poseview_t *v = tiku_trk_poseview_new(backend,
+                                                       "/query-template");
+        tiku_trk_frame_t frame;
+        unsigned char byte;
+        int has_columns, has_frame;
+
+        if (v == NULL) {
+            continue;
+        }
+        tiku_trk_poseview_set_layout_store(v, store);
+        tiku_trk_poseview_set_query_type(v, kType[i]);
+        has_columns = tiku_trk_state_read(store,
+                            tiku_trk_poseview_layout_path(v),
+                            TIKU_TRK_ATTR_COLUMNS, &byte, sizeof byte) > 0;
+        has_frame = tiku_trk_state_read(store,
+                          tiku_trk_poseview_layout_path(v),
+                          TIKU_TRK_ATTR_FRAME, &frame, sizeof frame) ==
+                    (int)sizeof frame &&
+                    frame.w >= TIKU_TRK_FRAME_MIN_W &&
+                    frame.h >= TIKU_TRK_FRAME_MIN_H;
+        if (!has_columns) {
+            (void)tiku_trk_poseview_set_results(v, NULL, 0);
+            (void)tiku_trk_poseview_save_columns(v);
+        }
+        if (!has_frame) {
+            (void)tiku_trk_state_write(store,
+                                       tiku_trk_poseview_layout_path(v),
+                                       TIKU_TRK_ATTR_FRAME, &def,
+                                       sizeof def);
+        }
+        if (!has_columns || !has_frame) {
+            installed++;
+        }
+        tiku_trk_poseview_free(v);
+    }
+    return installed;
 }
 
 int

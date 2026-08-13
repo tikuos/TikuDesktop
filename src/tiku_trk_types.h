@@ -69,6 +69,14 @@ int tiku_trk_types_add(tiku_trk_types_t *db, const char *type,
 const tiku_trk_typerec_t *tiku_trk_types_find(const tiku_trk_types_t *db,
                                               const char *type);
 
+/** @brief The record naming @p type exactly, without supertype fallback. */
+const tiku_trk_typerec_t *tiku_trk_types_exact(const tiku_trk_types_t *db,
+                                               const char *type);
+
+/** @brief The separate supertype record applying to @p type, or NULL. */
+const tiku_trk_typerec_t *tiku_trk_types_super(const tiku_trk_types_t *db,
+                                               const char *type);
+
 /** @brief Read a database file.  @return how many, or -1. */
 int tiku_trk_types_load(tiku_trk_types_t *db, const char *path);
 

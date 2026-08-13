@@ -101,6 +101,48 @@ field_ops(tiku_trk_qfield_t f)
     return OPS_TEXT;
 }
 
+/** @brief Whether one type record declares the model fact behind a field. */
+static int
+record_has_field(const tiku_trk_typerec_t *r, tiku_trk_qfield_t field)
+{
+    int want = -1, i;
+
+    switch (field) {
+    case TIKU_TRK_QF_KIND:  want = TIKU_TRK_COL_KIND; break;
+    case TIKU_TRK_QF_VALUE: want = TIKU_TRK_COL_VALUE; break;
+    case TIKU_TRK_QF_CAP:   want = TIKU_TRK_COL_CAP; break;
+    case TIKU_TRK_QF_PATH:  want = TIKU_TRK_COL_PATH; break;
+    /* Unit describes a typed value, so a type declaring Value declares the
+     * unit paired with it as searchable too. */
+    case TIKU_TRK_QF_UNIT:  want = TIKU_TRK_COL_VALUE; break;
+    default: break;
+    }
+    for (i = 0; r != NULL && want >= 0 && i < r->ncol; i++) {
+        if (r->col[i] == want) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** @brief The original's three built-ins plus what the selected type adds. */
+static int
+field_in_menu(const tiku_trk_find_t *f, tiku_trk_qfield_t field)
+{
+    const tiku_trk_typerec_t *super, *exact;
+
+    if (field == TIKU_TRK_QF_NAME || field == TIKU_TRK_QF_SIZE ||
+        field == TIKU_TRK_QF_MODIFIED) {
+        return 1;
+    }
+    if (f == NULL || f->types == NULL || f->type[0] == '\0') {
+        return 0;
+    }
+    super = tiku_trk_types_super(f->types, f->type);
+    exact = tiku_trk_types_exact(f->types, f->type);
+    return record_has_field(super, field) || record_has_field(exact, field);
+}
+
 void
 tiku_trk_find_init(tiku_trk_find_t *f)
 {
@@ -239,6 +281,7 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
          * dropped it left a panel that could no longer find anything it
          * had itself saved. */
         struct tiku_trk_store *store = f->store;
+        const tiku_trk_types_t *types = f->types;
 
         for (k = 0; k < nkept; k++) {
             memcpy(kept[k], f->place[k], TIKU_TRK_NAME_MAX);
@@ -253,6 +296,7 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
         }
         f->place_count = nkept;
         f->store = store;
+        f->types = types;
     }
     f->mode = q->mode;
     f->row_count = 0;
@@ -495,6 +539,14 @@ tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s)
     }
 }
 
+void
+tiku_trk_find_set_types(tiku_trk_find_t *f, const tiku_trk_types_t *types)
+{
+    if (f != NULL) {
+        f->types = types;
+    }
+}
+
 int
 tiku_trk_find_type_shown(const tiku_trk_find_t *f)
 {
@@ -507,11 +559,16 @@ tiku_trk_find_type_shown(const tiku_trk_find_t *f)
 const char *
 tiku_trk_find_type_label(const tiku_trk_find_t *f)
 {
+    const tiku_trk_typerec_t *record;
     int i;
     const char *t, *label;
 
     if (f == NULL || f->type[0] == '\0') {
         return "All files and folders";
+    }
+    record = tiku_trk_types_exact(f->types, f->type);
+    if (record != NULL && record->desc[0] != '\0') {
+        return record->desc;
     }
     for (i = 0; (t = tiku_trk_model_type_at(i, &label)) != NULL; i++) {
         if (strcmp(t, f->type) == 0) {
@@ -627,6 +684,75 @@ tiku_trk_find_type_menu(struct tiku_trk_store *store, const char **out,
         }
     }
     return n;
+}
+
+/** @brief Human label for one type, preferring the installed database. */
+static const char *
+type_label(const tiku_trk_find_t *f, const char *type)
+{
+    const tiku_trk_typerec_t *r;
+    const char *known, *label;
+    int i;
+
+    r = (f != NULL) ? tiku_trk_types_exact(f->types, type) : NULL;
+    if (r != NULL && r->desc[0] != '\0') {
+        return r->desc;
+    }
+    for (i = 0; (known = tiku_trk_model_type_at(i, &label)) != NULL; i++) {
+        if (strcmp(known, type) == 0) {
+            return label;
+        }
+    }
+    return type;
+}
+
+/** @brief Command stable for this opening, including nested menu items. */
+static int
+type_command(tiku_trk_find_t *f, const char *type)
+{
+    int i;
+
+    for (i = 0; i < f->type_choice_count; i++) {
+        if (strcmp(f->type_choice[i], type) == 0) {
+            return 100 + i;
+        }
+    }
+    if (f->type_choice_count >= TIKU_TRK_FIND_TYPE_CHOICES) {
+        return -1;
+    }
+    i = f->type_choice_count++;
+    snprintf(f->type_choice[i], sizeof f->type_choice[i], "%s", type);
+    return 100 + i;
+}
+
+static int
+type_is_used(char used[][TIKU_TRK_TYPE_MAX], int n, const char *type)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (strcmp(used[i], type) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** @brief Whether an exact record belongs below a registered supertype. */
+static int
+type_has_parent(const tiku_trk_types_t *db, const char *type)
+{
+    int i;
+
+    for (i = 0; db != NULL && i < db->n; i++) {
+        size_t n = strlen(db->rec[i].type);
+
+        if (n > 0u && db->rec[i].type[n - 1u] == '/' &&
+            strlen(type) > n && strncmp(type, db->rec[i].type, n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /** @brief Rows of controls the current mode needs. */
@@ -888,6 +1014,9 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
         tiku_trk_menu_draw(&f->popup, s, f->popup_frame);
+        if (f->popup_sub != NULL) {
+            tiku_trk_menu_draw(f->popup_sub, s, f->popup_sub_frame);
+        }
     }
 }
 
@@ -1007,6 +1136,9 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
     int i;
 
     tiku_trk_menu_clear(m);
+    f->popup_sub = NULL;
+    f->type_sub_count = 0;
+    f->type_choice_count = 0;
     switch (what) {
     case TIKU_TRK_FIND_HIT_MODE:
         (void)tiku_trk_menu_add(m, "by name", 0, 0, 0u, 1);
@@ -1016,9 +1148,14 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         break;
     case TIKU_TRK_FIND_HIT_FIELD:
         for (i = 0; i < NFIELDS; i++) {
-            (void)tiku_trk_menu_add(m, kFields[i].label, i, 0, 0u, 1);
+            int at;
+
+            if (!field_in_menu(f, kFields[i].field)) {
+                continue;
+            }
+            at = tiku_trk_menu_add(m, kFields[i].label, i, 0, 0u, 1);
             if (kFields[i].field == f->row[row].field) {
-                m->item[i].marked = 1;
+                m->item[at].marked = 1;
             }
         }
         break;
@@ -1096,34 +1233,130 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         }
         break;
     case TIKU_TRK_FIND_HIT_TYPE: {
-        /* The same shape the scope menu has: a fixed first item that is
-         * not one of the things listed, a separator, then the list -- with
-         * the ones this user picks most at its head (Q-015, Q-016). */
-        const char *types[24];
-        int n = tiku_trk_find_type_menu(f->store, types,
-                                        (int)(sizeof types /
-                                              sizeof types[0]));
+        char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+        int nu = used_read(f->store, used, TIKU_TRK_FIND_MOST_USED);
 
         (void)tiku_trk_menu_add(m, "All files and folders", 0, 0, 0u, 1);
         m->item[0].marked = (f->type[0] == '\0');
         (void)tiku_trk_menu_add_separator(m);
-        for (i = 0; i < n; i++) {
-            const char *label = NULL;
-            int k;
+        for (i = 0; i < nu; i++) {
+            int cmd = type_command(f, used[i]);
+            int at = tiku_trk_menu_add(m, type_label(f, used[i]), cmd,
+                                       0, 0u, cmd >= 0);
 
-            /* Named by what it MEANS where the table knows it, and by the
-             * type itself where it does not. */
-            for (k = 0; tiku_trk_model_type_at(k, NULL) != NULL; k++) {
-                if (strcmp(tiku_trk_model_type_at(k, &label), types[i]) ==
-                        0) {
-                    break;
-                }
-                label = NULL;
+            if (at >= 0 && strcmp(f->type, used[i]) == 0) {
+                m->item[at].marked = 1;
             }
-            (void)tiku_trk_menu_add(m, (label != NULL) ? label : types[i],
-                                    100 + i, 0, 0u, 1);
-            if (strcmp(f->type, types[i]) == 0) {
-                m->item[m->count - 1].marked = 1;
+        }
+        if (nu > 0) {
+            (void)tiku_trk_menu_add_separator(m);
+        }
+        if (f->types != NULL) {
+            /* Supertypes own their subtype menus.  A supertype with no
+             * installed member is omitted rather than presenting an empty
+             * arrow, and promoted entries are not repeated in the tree. */
+            for (i = 0; i < f->types->n; i++) {
+                const tiku_trk_typerec_t *super = &f->types->rec[i];
+                size_t sn = strlen(super->type);
+                tiku_trk_menu_t *sub;
+                int k, children = 0;
+
+                if (sn == 0u || super->type[sn - 1u] != '/') {
+                    continue;
+                }
+                for (k = 0; k < f->types->n; k++) {
+                    const char *child = f->types->rec[k].type;
+
+                    if (strlen(child) > sn &&
+                        strncmp(child, super->type, sn) == 0) {
+                        children++;
+                    }
+                }
+                if (children == 0 ||
+                    f->type_sub_count >= TIKU_TRK_FIND_TYPE_SUPERS) {
+                    continue;
+                }
+                sub = &f->type_sub[f->type_sub_count++];
+                tiku_trk_menu_clear(sub);
+                if (!type_is_used(used, nu, super->type)) {
+                    char all[TIKU_TRK_MENU_LABEL_MAX];
+                    int cmd = type_command(f, super->type);
+                    int at;
+
+                    snprintf(all, sizeof all, "All %s",
+                             type_label(f, super->type));
+                    at = tiku_trk_menu_add(sub, all, cmd, 0, 0u, cmd >= 0);
+                    if (at >= 0 && strcmp(f->type, super->type) == 0) {
+                        sub->item[at].marked = 1;
+                    }
+                }
+                for (k = 0; k < f->types->n; k++) {
+                    const tiku_trk_typerec_t *child = &f->types->rec[k];
+                    int cmd, at;
+
+                    if (strlen(child->type) <= sn ||
+                        strncmp(child->type, super->type, sn) != 0 ||
+                        type_is_used(used, nu, child->type)) {
+                        continue;
+                    }
+                    cmd = type_command(f, child->type);
+                    at = tiku_trk_menu_add(sub, type_label(f, child->type),
+                                           cmd, 0, 0u, cmd >= 0);
+                    if (at >= 0 && strcmp(f->type, child->type) == 0) {
+                        sub->item[at].marked = 1;
+                    }
+                }
+                (void)tiku_trk_menu_add_submenu(m,
+                                                type_label(f, super->type),
+                                                sub, sub->count > 0);
+            }
+            for (i = 0; i < f->types->n; i++) {
+                const char *type = f->types->rec[i].type;
+                size_t n = strlen(type);
+                int cmd, at;
+
+                if ((n > 0u && type[n - 1u] == '/') ||
+                    type_has_parent(f->types, type) ||
+                    type_is_used(used, nu, type)) {
+                    continue;
+                }
+                cmd = type_command(f, type);
+                at = tiku_trk_menu_add(m, type_label(f, type), cmd, 0, 0u,
+                                       cmd >= 0);
+                if (at >= 0 && strcmp(f->type, type) == 0) {
+                    m->item[at].marked = 1;
+                }
+            }
+            /* The model also owns structural types such as Folder and
+             * Volume.  They remain selectable even when the editable type
+             * database has no column declaration for them. */
+            for (i = 0; tiku_trk_model_type_at(i, NULL) != NULL; i++) {
+                const char *type = tiku_trk_model_type_at(i, NULL);
+                int cmd, at;
+
+                if (tiku_trk_types_exact(f->types, type) != NULL ||
+                    type_is_used(used, nu, type)) {
+                    continue;
+                }
+                cmd = type_command(f, type);
+                at = tiku_trk_menu_add(m, type_label(f, type), cmd, 0, 0u,
+                                       cmd >= 0);
+                if (at >= 0 && strcmp(f->type, type) == 0) {
+                    m->item[at].marked = 1;
+                }
+            }
+        } else {
+            const char *types[24];
+            int n = tiku_trk_find_type_menu(f->store, types, 24);
+
+            for (i = nu; i < n; i++) {
+                int cmd = type_command(f, types[i]);
+                int at = tiku_trk_menu_add(m, type_label(f, types[i]), cmd,
+                                           0, 0u, cmd >= 0);
+
+                if (at >= 0 && strcmp(f->type, types[i]) == 0) {
+                    m->item[at].marked = 1;
+                }
             }
         }
         break;
@@ -1306,10 +1539,32 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
     }
     /* A showing popup eats the click, whether it lands on an item or not. */
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
-        int pick = tiku_trk_menu_item_at(&f->popup, f->popup_frame, x, y);
+        tiku_trk_menu_t *picked_menu = &f->popup;
+        int pick = -1;
+
+        if (f->popup_sub != NULL) {
+            pick = tiku_trk_menu_item_at(f->popup_sub, f->popup_sub_frame,
+                                         x, y);
+            if (pick >= 0) {
+                picked_menu = f->popup_sub;
+            }
+        }
+        if (pick < 0) {
+            picked_menu = &f->popup;
+            pick = tiku_trk_menu_item_at(&f->popup, f->popup_frame, x, y);
+        }
 
         if (pick >= 0) {
-            int cmd = f->popup.item[pick].command;
+            int cmd = picked_menu->item[pick].command;
+
+            if (picked_menu == &f->popup &&
+                f->popup.item[pick].submenu != NULL) {
+                f->popup_sub = f->popup.item[pick].submenu;
+                f->popup.open_index = pick;
+                f->popup_sub_frame = tiku_trk_menu_place_sub(
+                    &f->popup, pick, f->popup_frame, screen);
+                return TIKU_TRK_FIND_HIT_NONE;
+            }
 
             switch (f->popup_for) {
             case TIKU_TRK_FIND_HIT_MODE:
@@ -1381,13 +1636,11 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                 if (cmd == 0) {
                     tiku_trk_find_set_type(f, "", f->store);
                 } else {
-                    const char *types[24];
-                    int n = tiku_trk_find_type_menu(f->store, types,
-                                (int)(sizeof types / sizeof types[0]));
                     int at = cmd - 100;
 
-                    if (at >= 0 && at < n) {
-                        tiku_trk_find_set_type(f, types[at], f->store);
+                    if (at >= 0 && at < f->type_choice_count) {
+                        tiku_trk_find_set_type(f, f->type_choice[at],
+                                               f->store);
                     }
                 }
                 break;
@@ -1396,6 +1649,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
             }
         }
         f->popup_for = TIKU_TRK_FIND_HIT_NONE;
+        f->popup_sub = NULL;
         return TIKU_TRK_FIND_HIT_NONE;
     }
 

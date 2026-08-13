@@ -108,9 +108,26 @@ tiku_trk_types_add(tiku_trk_types_t *db, const char *type, const char *desc,
 }
 
 const tiku_trk_typerec_t *
-tiku_trk_types_find(const tiku_trk_types_t *db, const char *type)
+tiku_trk_types_exact(const tiku_trk_types_t *db, const char *type)
 {
-    const tiku_trk_typerec_t *super = NULL;
+    int i;
+
+    if (db == NULL || type == NULL || type[0] == '\0') {
+        return NULL;
+    }
+    for (i = 0; i < db->n; i++) {
+        if (strcmp(db->rec[i].type, type) == 0) {
+            return &db->rec[i];
+        }
+    }
+    return NULL;
+}
+
+const tiku_trk_typerec_t *
+tiku_trk_types_super(const tiku_trk_types_t *db, const char *type)
+{
+    const tiku_trk_typerec_t *best = NULL;
+    size_t best_len = 0u;
     int i;
 
     if (db == NULL || type == NULL || type[0] == '\0') {
@@ -119,21 +136,26 @@ tiku_trk_types_find(const tiku_trk_types_t *db, const char *type)
     for (i = 0; i < db->n; i++) {
         size_t len = strlen(db->rec[i].type);
 
-        if (strcmp(db->rec[i].type, type) == 0) {
-            return &db->rec[i];         /* nothing beats naming it */
-        }
-        /* A record for "text/" describes every text there is, and one for
-         * "tiku-" every device node: a database that had to name them all
-         * would answer for none of them.  Both punctuations mark a prefix
-         * claim because both namespaces use their own. */
-        if (len > 0u &&
+        /* A supertype is a proper prefix ending at the namespace boundary.
+         * The proper-prefix rule keeps asking about "text/" itself from
+         * returning the same record as both exact and super. */
+        if (len > best_len && strlen(type) > len &&
             (db->rec[i].type[len - 1u] == '/' ||
              db->rec[i].type[len - 1u] == '-') &&
             strncmp(db->rec[i].type, type, len) == 0) {
-            super = &db->rec[i];
+            best = &db->rec[i];
+            best_len = len;
         }
     }
-    return super;
+    return best;
+}
+
+const tiku_trk_typerec_t *
+tiku_trk_types_find(const tiku_trk_types_t *db, const char *type)
+{
+    const tiku_trk_typerec_t *exact = tiku_trk_types_exact(db, type);
+
+    return (exact != NULL) ? exact : tiku_trk_types_super(db, type);
 }
 
 int
@@ -234,15 +256,27 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
                              "text_file", "size,modified,permissions");
     (void)tiku_trk_types_add(db, "image/", "Image", "file",
                              "size,modified");
+    (void)tiku_trk_types_add(db, "image/png", "PNG image", "file",
+                             "size,modified");
     (void)tiku_trk_types_add(db, "audio/", "Audio", "file",
                              "size,modified");
+    (void)tiku_trk_types_add(db, "audio/mpeg", "MPEG audio", "file",
+                             "size,modified");
     (void)tiku_trk_types_add(db, "video/", "Video", "file",
+                             "size,modified");
+    (void)tiku_trk_types_add(db, "video/mp4", "MPEG-4 video", "file",
                              "size,modified");
     (void)tiku_trk_types_add(db, "application/pdf", "PDF document", "file",
                              "size,modified");
     /* A device node's columns are the two only it has. */
     (void)tiku_trk_types_add(db, "tiku-", "Device node", "device",
                              "value,cap,modified");
+    (void)tiku_trk_types_add(db, "application/x-vnd.Be-bookmark",
+                             "Bookmark", "bookmark", "attr:META:url");
+    (void)tiku_trk_types_add(db, "application/x-person", "Person", "file",
+                             "attr:META:name,attr:META:email");
+    (void)tiku_trk_types_add(db, "text/x-email", "E-mail", "file",
+                             "attr:MAIL:subject,attr:MAIL:from");
     /* An attribute column in the shipped database, so the mechanism has a
      * user on a first run rather than waiting for someone to write one. */
     (void)tiku_trk_types_add(db, "text/x-source", "Source file",

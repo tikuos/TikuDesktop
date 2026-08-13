@@ -60,7 +60,8 @@ $(BUILD)/test_launch: $(CORE) tests/test_launch.c | $(BUILD)
 
 $(BUILD)/test_query: src/tiku_trk_query.c src/tiku_trk_attr.c \
                      src/tiku_trk_model.c src/tiku_trk_state.c \
-                     src/tiku_trk_find.c $(DESK)/tiku_desk_gfx.c \
+                     src/tiku_trk_find.c src/tiku_trk_types.c \
+                     $(DESK)/tiku_desk_gfx.c \
                      $(DESK)/tiku_desk_font.c $(DESK)/tiku_desk_ui.c \
                      src/tiku_trk_menu.c tests/test_query.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)

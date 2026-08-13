@@ -1038,6 +1038,100 @@ main(void)
         tiku_trk_store_free(st2);
     }
 
+    printf("\ntype hierarchy and declared query fields (Q-007, Q-015)\n");
+    {
+        tiku_trk_types_t types;
+        tiku_trk_find_t f;
+        tiku_desk_rect_t fr = { 0, 0, 560, 420 };
+        int x, y, row, type_x = -1, type_y = -1, group = -1, item = -1;
+
+        tiku_trk_types_init(&types);
+        (void)tiku_trk_types_add(&types, "sensor/", "Sensor", "device",
+                                 "value,cap");
+        (void)tiku_trk_types_add(&types, "sensor/temp", "Temperature",
+                                 "device", "kind,location");
+        (void)tiku_trk_types_add(&types, "empty/", "Empty", "file",
+                                 "size");
+        tiku_trk_find_init(&f);
+        tiku_trk_find_set_types(&f, &types);
+        for (y = 0; y < fr.h && type_y < 0; y++) {
+            for (x = 0; x < fr.w; x++) {
+                if (tiku_trk_find_hit(&f, fr, x, y, &row) ==
+                        TIKU_TRK_FIND_HIT_TYPE) {
+                    type_x = x; type_y = y; break;
+                }
+            }
+        }
+        (void)tiku_trk_find_click(&f, fr, type_x + 2, type_y + 2);
+        {
+            int empty = 0;
+
+            for (x = 0; x < f.popup.count; x++) {
+                empty |= strcmp(f.popup.item[x].label, "Empty") == 0;
+            }
+            check(!empty, "Q-015: a supertype with no installed members "
+                  "is omitted instead of opening an empty submenu");
+        }
+        for (x = 0; x < f.popup.count; x++) {
+            if (strcmp(f.popup.item[x].label, "Sensor") == 0 &&
+                f.popup.item[x].submenu != NULL) {
+                group = x;
+            }
+        }
+        check(group >= 0, "Q-015: a supertype with members is a submenu, "
+              "not another flat type");
+        if (group >= 0) {
+            y = f.popup_frame.y +
+                tiku_trk_menu_item_top(&f.popup, group) + 2;
+            (void)tiku_trk_find_click(&f, fr, f.popup_frame.x + 4, y);
+            for (x = 0; f.popup_sub != NULL &&
+                        x < f.popup_sub->count; x++) {
+                if (strcmp(f.popup_sub->item[x].label, "Temperature") == 0) {
+                    item = x;
+                }
+            }
+        }
+        check(item >= 0, "Q-015: the subtype is nested under its supertype");
+        if (item >= 0) {
+            y = f.popup_sub_frame.y +
+                tiku_trk_menu_item_top(f.popup_sub, item) + 2;
+            (void)tiku_trk_find_click(&f, fr, f.popup_sub_frame.x + 4, y);
+        }
+        check(strcmp(f.type, "sensor/temp") == 0,
+              "Q-015: a nested subtype remains selectable");
+        check(strcmp(tiku_trk_find_type_label(&f), "Temperature") == 0,
+              "Q-015: a nested choice is labelled by its description");
+
+        tiku_trk_find_set_mode(&f, TIKU_TRK_QMODE_ATTRIBUTE);
+        for (y = 0; y < fr.h; y++) {
+            int found = 0;
+
+            for (x = 0; x < fr.w; x++) {
+                if (tiku_trk_find_hit(&f, fr, x, y, &row) ==
+                        TIKU_TRK_FIND_HIT_FIELD) {
+                    (void)tiku_trk_find_click(&f, fr, x + 2, y + 2);
+                    found = 1;
+                    break;
+                }
+            }
+            if (found) { break; }
+        }
+        {
+            int has_value = 0, has_cap = 0, has_kind = 0, has_path = 0;
+
+            for (x = 0; x < f.popup.count; x++) {
+                has_value |= strcmp(f.popup.item[x].label, "Value") == 0;
+                has_cap |= strcmp(f.popup.item[x].label, "Capability") == 0;
+                has_kind |= strcmp(f.popup.item[x].label, "Kind") == 0;
+                has_path |= strcmp(f.popup.item[x].label, "Path") == 0;
+            }
+            check(has_value && has_cap, "Q-007: the field menu includes "
+                  "the supertype's declared fields");
+            check(has_kind && has_path, "Q-007: and extends them with the "
+                  "selected subtype's own fields");
+        }
+    }
+
     printf("\ntemplates, and the sweep of what nobody named "
            "(Q-031, Q-032, Q-037, AW-090)\n");
     {

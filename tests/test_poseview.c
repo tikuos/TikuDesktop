@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_frame.h"
 #include "tiku_trk_task.h"
 
 static int fails;
@@ -1334,6 +1335,42 @@ main(void)
               "a different searched type keeps its own default layout");
         tiku_trk_poseview_free(same);
         tiku_trk_poseview_free(other);
+        tiku_trk_store_free(layouts);
+    }
+
+    printf("\ndefault query layouts (Q-042, AW-015)\n");
+    {
+        tiku_trk_store_t *layouts = tiku_trk_store_memory_open();
+        tiku_trk_poseview_t *mail;
+        tiku_trk_frame_t frame;
+        const tiku_trk_column_t *cols = NULL;
+        int n, i, subject = 0, from = 0, when = 0, status = 0;
+
+        check(tiku_trk_poseview_install_query_defaults(b, layouts) == 4,
+              "AW-015", "generic, bookmark, person and e-mail query "
+              "layouts are installed once");
+        check(tiku_trk_frame_load(layouts,
+                  "_trk/query-layout/text_x-email", &frame) &&
+              frame.x == 40 && frame.y == 40 && frame.w == 695 &&
+              frame.h == 350, "AW-015", "a per-type default includes the "
+              "query window frame, not only its columns");
+        mail = tiku_trk_poseview_new(b, "/mail-query");
+        tiku_trk_poseview_set_layout_store(mail, layouts);
+        tiku_trk_poseview_set_query_type(mail, "text/x-email");
+        (void)tiku_trk_poseview_set_results(mail, NULL, 0);
+        n = tiku_trk_poseview_columns(mail, &cols);
+        for (i = 0; i < n; i++) {
+            subject |= strcmp(cols[i].title, "Subject") == 0;
+            from |= strcmp(cols[i].title, "From") == 0;
+            when |= strcmp(cols[i].title, "When") == 0;
+            status |= strcmp(cols[i].title, "Status") == 0;
+        }
+        check(subject && from && when && status, "Q-042",
+              "an e-mail query opens with Subject, From, When and Status");
+        check(tiku_trk_poseview_install_query_defaults(b, layouts) == 0,
+              "AW-015", "installing defaults again preserves the layouts "
+              "already present");
+        tiku_trk_poseview_free(mail);
         tiku_trk_store_free(layouts);
     }
 

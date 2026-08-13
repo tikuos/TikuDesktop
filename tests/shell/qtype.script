@@ -9,7 +9,7 @@ expect-find-type All files and folders
 note picking Folder narrows it
 click 430 344
 wait 3
-click 330 396
+menu-pick Folder
 wait 3
 expect-find-type Folder
 note and a search then finds only things of that type, whatever the name

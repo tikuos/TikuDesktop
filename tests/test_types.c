@@ -53,6 +53,16 @@ main(void)
     check(tiku_trk_types_find(&db, "chemical/x-pdb") == NULL, "AW-013",
           "a type it has never heard of is answered NULL rather than by "
           "something almost right");
+    check(tiku_trk_types_super(&db, "text/x-source") != NULL &&
+          strcmp(tiku_trk_types_super(&db, "text/x-source")->type,
+                 "text/") == 0,
+          "Q-007", "a selected subtype can ask for its supertype's "
+          "declarations separately");
+    check(tiku_trk_types_exact(&db, "text/x-source") != NULL &&
+          strcmp(tiku_trk_types_exact(&db, "text/x-source")->desc,
+                 "Source file") == 0,
+          "Q-007", "and its own declarations without the supertype "
+          "hiding them");
 
     printf("\nthe columns a type is worth showing (CW-026, AW-015)\n");
     r = tiku_trk_types_find(&db, "tiku-gpio");

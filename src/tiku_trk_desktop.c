@@ -4604,6 +4604,7 @@ main(int argc, char **argv)
         app.store = tiku_trk_store_memory_open();
     }
     tiku_trk_find_set_store(&app.panel, app.store);
+    (void)tiku_trk_poseview_install_query_defaults(app.backend, app.store);
     {
         /* Where the bar was docked and how wide it was left.  Kept with
          * the session rather than with any folder: the bar belongs to the
@@ -4644,6 +4645,7 @@ main(int argc, char **argv)
             snprintf(tdb, sizeof tdb, "%s/.config/tracker/types",
                      (home != NULL && home[0] != '\0') ? home : "");
             (void)tiku_trk_types_install(&app.types, tdb);
+            tiku_trk_find_set_types(&app.panel, &app.types);
             /* The art a type wears is the database's to declare, and the
              * icon cache is what asks (IV-011). */
             tiku_trk_nodeicon_set_types(&app.nicons, &app.types);
@@ -5178,6 +5180,15 @@ main(int argc, char **argv)
                                               ? app.popup_sub_frame
                                               : app.popup_frame;
                     int k;
+
+                    if (m == NULL &&
+                        tiku_trk_find_popup_open(&app.panel)) {
+                        m = (app.panel.popup_sub != NULL)
+                                ? app.panel.popup_sub : &app.panel.popup;
+                        fr = (app.panel.popup_sub != NULL)
+                                ? app.panel.popup_sub_frame
+                                : app.panel.popup_frame;
+                    }
 
                     if (m == NULL) {
                         fprintf(stderr, "script: no menu is open for "
