@@ -30,6 +30,7 @@
 #include "tiku_trk_fs.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_cwmenu.h"
+#include "tiku_trk_navigator.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
@@ -41,6 +42,7 @@
 #define TAB_H 21
 #define BORDER 5
 #define TITLE_H 18
+#define NAV_H 26
 #define COUNT_H 16
 #define SCROLL_W 15
 
@@ -101,6 +103,10 @@ typedef struct {
     tiku_desk_rect_t     popup_frame;
     tiku_desk_rect_t     popup_sub_frame;
     int                  bar_open;
+    /* Browser chrome owns its history and location editor per window. */
+    tiku_trk_navigator_t nav;
+    tiku_trk_edit_t      nav_edit;
+    int                  nav_editing;
 } app_t;
 
 /** @brief Index of the first selected row, or -1. */
@@ -136,6 +142,7 @@ index_of_path(app_t *a, const char *path)
 }
 
 static void blit(app_t *a);
+static tiku_desk_rect_t menubar_rect(const app_t *a);
 
 /** @brief Geometry of the row area, derived once per draw. */
 static tiku_desk_rect_t
@@ -148,11 +155,40 @@ list_rect(const app_t *a)
     r.x = BORDER;
     /* The column title bar belongs to list mode; icon mode gets the space
      * back, and hit-testing must use the same rectangle drawing does. */
-    r.y = TAB_H + BORDER + a->menus.bar.height +
+    r.y = TAB_H + BORDER + a->menus.bar.height + NAV_H +
           (titled ? TITLE_H : 0);
     r.w = a->surf->w - 2 * BORDER - (titled ? SCROLL_W : 0);
     r.h = a->surf->h - r.y - BORDER - COUNT_H;
     return r;
+}
+
+/** @brief Browser controls directly below the menu bar. */
+static tiku_desk_rect_t
+navigator_rect(const app_t *a)
+{
+    tiku_desk_rect_t bar = menubar_rect(a);
+    tiku_desk_rect_t r = { BORDER, bar.y + bar.h,
+                           a->surf->w - 2 * BORDER, NAV_H };
+
+    return r;
+}
+
+/** @brief Split the navigator into its three buttons and location field. */
+static void
+navigator_layout(const app_t *a, tiku_desk_rect_t *back,
+                 tiku_desk_rect_t *forward, tiku_desk_rect_t *up,
+                 tiku_desk_rect_t *field)
+{
+    tiku_desk_rect_t r = navigator_rect(a);
+
+    *back = (tiku_desk_rect_t){ r.x + 2, r.y + 2, 30, r.h - 4 };
+    *forward = (tiku_desk_rect_t){ back->x + back->w + 2, r.y + 2,
+                                   30, r.h - 4 };
+    *up = (tiku_desk_rect_t){ forward->x + forward->w + 2, r.y + 2,
+                              34, r.h - 4 };
+    *field = (tiku_desk_rect_t){ up->x + up->w + 4, r.y + 2,
+                                 r.x + r.w - (up->x + up->w + 6),
+                                 r.h - 4 };
 }
 
 /** @brief The menu bar inside this window's content area. */
@@ -548,6 +584,33 @@ draw_popup(app_t *a)
     }
 }
 
+/** @brief The browser's Back, Forward, Up and editable location controls. */
+static void
+draw_navigator(app_t *a)
+{
+    tiku_desk_rect_t back, forward, up, field;
+    unsigned back_state = tiku_trk_navigator_can_back(&a->nav)
+                              ? 0u : TIKU_DESK_S_DISABLED;
+    unsigned forward_state = tiku_trk_navigator_can_forward(&a->nav)
+                                 ? 0u : TIKU_DESK_S_DISABLED;
+    unsigned up_state = strcmp(tiku_trk_navigator_current(&a->nav), "/")
+                            ? 0u : TIKU_DESK_S_DISABLED;
+
+    navigator_layout(a, &back, &forward, &up, &field);
+    tiku_desk_ui_panel(a->surf, navigator_rect(a));
+    tiku_desk_ui_button(a->surf, back, "<", back_state);
+    tiku_desk_ui_button(a->surf, forward, ">", forward_state);
+    tiku_desk_ui_button(a->surf, up, "Up", up_state);
+    if (a->nav_editing) {
+        tiku_desk_ui_textfield_sel(a->surf, field, a->nav_edit.text,
+                                   a->nav_edit.caret, a->nav_edit.sel_a,
+                                   a->nav_edit.sel_b, TIKU_DESK_S_FOCUS);
+    } else {
+        tiku_desk_ui_textfield(a->surf, field,
+                               tiku_trk_navigator_current(&a->nav), -1, 0u);
+    }
+}
+
 static void
 draw(app_t *a)
 {
@@ -569,6 +632,7 @@ draw(app_t *a)
     a->menus.bar.open = a->bar_open;
     bar = menubar_rect(a);
     tiku_trk_menubar_draw(&a->menus.bar, s, bar);
+    draw_navigator(a);
     list = list_rect(a);
     /* The view cannot see its own window.  Without this a page is one row
      * and the scroll is never clamped -- both stated in terms of what is
@@ -577,7 +641,8 @@ draw(app_t *a)
 
     /* The title strip.  Every title is placed from its column's OFFSET, so
      * a title and the cells beneath it cannot drift apart. */
-    title = (tiku_desk_rect_t){ list.x, bar.y + bar.h, list.w, TITLE_H };
+    title = (tiku_desk_rect_t){ list.x, bar.y + bar.h + NAV_H,
+                                list.w, TITLE_H };
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
         tiku_desk_fill(s, title, TIKU_DESK_C_PANEL);
         tiku_desk_clip_set(s, title);
@@ -1026,6 +1091,115 @@ open_animation(app_t *a, tiku_desk_rect_t from)
     blit(a);
 }
 
+/** @brief Change this browser window to @p path and restore its view state. */
+static int
+navigate_to(app_t *a, const char *path, int record)
+{
+    char dest[TIKU_TRK_PATH_MAX];
+    tiku_trk_model_t m;
+
+    if (path == NULL || path[0] == '\0' ||
+        (a->backend->ops->stat != NULL &&
+         (a->backend->ops->stat(a->backend, path, &m) != 0 ||
+          !tiku_trk_model_is_container(&m)))) {
+        return 0;
+    }
+    /* Opening a pose passes storage owned by the view.  Switching folders
+     * replaces that pose array, so keep the destination independent of it. */
+    snprintf(dest, sizeof dest, "%s", path);
+    if (strcmp(dest, tiku_trk_poseview_path(a->view)) == 0) {
+        return 1;
+    }
+    tiku_trk_scroll_detach(&a->sb);
+    (void)tiku_trk_poseview_save_state(a->view);
+    (void)tiku_trk_poseview_save_columns(a->view);
+    /* switch_dir returns the new row count, and only a negative value is an
+     * error.  A non-empty directory is therefore a successful switch. */
+    if (tiku_trk_poseview_switch_dir(a->view, dest) < 0) {
+        tiku_trk_scroll_attach(&a->sb);
+        return 0;
+    }
+    (void)tiku_trk_poseview_load_begin(a->view, tiku_trk_now());
+    tiku_trk_scroll_attach(&a->sb);
+    (void)tiku_trk_poseview_load_step(a->view, tiku_trk_now());
+    (void)tiku_trk_poseview_restore_state(a->view);
+    (void)tiku_trk_poseview_restore_columns(a->view);
+    settle_layout(a);
+    settle_writability(a);
+    if (record) {
+        tiku_trk_navigator_set(&a->nav, dest);
+    }
+    retitle(a);
+    a->dirty = 1;
+    return 1;
+}
+
+/** @brief Step to the preceding history entry. */
+static void
+navigate_back(app_t *a)
+{
+    char path[TIKU_TRK_PATH_MAX];
+
+    if (tiku_trk_navigator_back(&a->nav, path, sizeof path) &&
+        !navigate_to(a, path, 0)) {
+        (void)tiku_trk_navigator_forward(&a->nav, path, sizeof path);
+    }
+}
+
+/** @brief Step to the history entry most recently left by Back. */
+static void
+navigate_forward(app_t *a)
+{
+    char path[TIKU_TRK_PATH_MAX];
+
+    if (tiku_trk_navigator_forward(&a->nav, path, sizeof path) &&
+        !navigate_to(a, path, 0)) {
+        (void)tiku_trk_navigator_back(&a->nav, path, sizeof path);
+    }
+}
+
+/** @brief Navigate to the enclosing folder and record that new branch. */
+static void
+navigate_up(app_t *a)
+{
+    char path[TIKU_TRK_PATH_MAX];
+
+    if (tiku_trk_navigator_parent(tiku_trk_poseview_path(a->view), path,
+                                  sizeof path)) {
+        (void)navigate_to(a, path, 1);
+    }
+}
+
+/** @brief Give the location field the keyboard with its path selected. */
+static void
+begin_location(app_t *a)
+{
+    end_rename(a, 1);
+    a->nav_editing = 1;
+    tiku_trk_edit_start(&a->nav_edit,
+                        tiku_trk_navigator_current(&a->nav));
+    a->dirty = 1;
+}
+
+/** @brief Apply or abandon the location field without surfacing bad paths. */
+static void
+end_location(app_t *a, int apply)
+{
+    char path[TIKU_TRK_PATH_MAX];
+
+    if (!a->nav_editing) {
+        return;
+    }
+    snprintf(path, sizeof path, "%s",
+             (a->nav_edit.text[0] != '\0') ? a->nav_edit.text : "/");
+    tiku_trk_edit_stop(&a->nav_edit);
+    a->nav_editing = 0;
+    if (apply) {
+        (void)navigate_to(a, path, 1);
+    }
+    a->dirty = 1;
+}
+
 /** @brief Open the active pose: a container navigates, a value is reported. */
 static void
 open_selection(app_t *a)
@@ -1036,21 +1210,7 @@ open_selection(app_t *a)
         return;
     }
     if (tiku_trk_model_is_container(&p->model)) {
-        /* A folder switch is a bulk re-layout: the bar is detached across
-         * it so none of the shapes it passes through is taken (PVL-060). */
-        tiku_trk_scroll_detach(&a->sb);
-        (void)tiku_trk_poseview_save_state(a->view);
-        (void)tiku_trk_poseview_switch_dir(a->view, p->model.path);
-        /* Opened as a BATCHED load: a folder with thousands of entries
-         * shows its first rows at once instead of freezing the window
-         * until the last one is read. */
-        (void)tiku_trk_poseview_load_begin(a->view, tiku_trk_now());
-        tiku_trk_scroll_attach(&a->sb);
-        (void)tiku_trk_poseview_load_step(a->view, tiku_trk_now());
-        (void)tiku_trk_poseview_restore_state(a->view);
-        settle_layout(a);
-        settle_writability(a);
-        retitle(a);
+        (void)navigate_to(a, p->model.path, 1);
     }
     a->dirty = 1;
 }
@@ -1125,7 +1285,7 @@ static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
     tiku_desk_rect_t list = list_rect(a);
-    int top = TAB_H + BORDER + a->menus.bar.height;
+    int top = TAB_H + BORDER + a->menus.bar.height + NAV_H;
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
         return 0;
@@ -1145,6 +1305,44 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
     unsigned mods = 0;
     int nav = 0;
 
+    if (a->nav_editing) {
+        tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
+        tiku_trk_edit_result_t result;
+        int shift = (ev->state & ShiftMask) ? 1 : 0;
+        char ch = '\0';
+
+        switch (ks) {
+        case XK_Return:
+        case XK_KP_Enter: k = TIKU_TRK_EDIT_COMMIT;     break;
+        case XK_Escape:   k = TIKU_TRK_EDIT_CANCEL;     break;
+        case XK_BackSpace: k = TIKU_TRK_EDIT_BACKSPACE; break;
+        case XK_Delete:   k = TIKU_TRK_EDIT_DELETE;     break;
+        case XK_Left:     k = TIKU_TRK_EDIT_LEFT;       break;
+        case XK_Right:    k = TIKU_TRK_EDIT_RIGHT;      break;
+        case XK_Home:     k = TIKU_TRK_EDIT_HOME;       break;
+        case XK_End:      k = TIKU_TRK_EDIT_END;        break;
+        case XK_a:
+            if (ev->state & ControlMask) {
+                k = TIKU_TRK_EDIT_SELECT_ALL;
+            }
+            break;
+        default: break;
+        }
+        if (k == TIKU_TRK_EDIT_CHAR) {
+            ch = key_char(a, ev, ks);
+            if (ch == '\0') {
+                return;
+            }
+        }
+        result = tiku_trk_edit_key(&a->nav_edit, k, shift, ch);
+        if (result == TIKU_TRK_EDIT_COMMITTED) {
+            end_location(a, 1);
+        } else if (result == TIKU_TRK_EDIT_CANCELLED) {
+            end_location(a, 0);
+        }
+        a->dirty = 1;
+        return;
+    }
     if (a->editing) {
         /* While editing a name the view's keys are OFF: an arrow must move
          * the caret's row selection nowhere, and 'd' must type a letter,
@@ -1186,6 +1384,25 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
     if (ev->state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
     if (ev->state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
 
+    if ((ev->state & ControlMask) && ks == XK_l) {
+        begin_location(a);
+        return;
+    }
+    if (ev->state & ControlMask) {
+        if (ks == XK_Left) {
+            navigate_back(a);
+            return;
+        }
+        if (ks == XK_Right) {
+            navigate_forward(a);
+            return;
+        }
+        if (ks == XK_Up) {
+            navigate_up(a);
+            return;
+        }
+    }
+
     switch (ks) {
     case XK_Up:        nav = TIKU_TRK_KEY_UP;    break;
     case XK_Down:      nav = TIKU_TRK_KEY_DOWN;  break;
@@ -1196,16 +1413,6 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
     case XK_Prior:     nav = TIKU_TRK_KEY_PGUP;  break;
     case XK_Next:      nav = TIKU_TRK_KEY_PGDN;  break;
     default: break;
-    }
-    if (nav == TIKU_TRK_KEY_UP && (mods & TIKU_TRK_MOD_CMD)) {
-        /* PVK-040: Cmd+Up is Open parent.  The direction IS the meaning,
-         * which is why it is an arrow and not a letter. */
-        (void)tiku_trk_poseview_go_up(a->view);
-        settle_layout(a);
-        settle_writability(a);
-        retitle(a);
-        a->dirty = 1;
-        return;
     }
     if (nav != 0) {
         int before = tiku_trk_poseview_scroll(a->view);
@@ -1254,8 +1461,7 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
         if (tiku_trk_poseview_type_string(a->view)[0] != '\0') {
             tiku_trk_poseview_type_backspace(a->view);
         } else {
-            (void)tiku_trk_poseview_go_up(a->view);
-            retitle(a);
+            navigate_up(a);
         }
         a->dirty = 1;
         return;
@@ -1628,6 +1834,38 @@ popup_press(app_t *a, int x, int y)
     return 1;
 }
 
+/** @brief Route a click inside the browser navigator. */
+static int
+navigator_press(app_t *a, int x, int y)
+{
+    tiku_desk_rect_t nav = navigator_rect(a);
+    tiku_desk_rect_t back, forward, up, field;
+
+#define INSIDE(r) (x >= (r).x && x < (r).x + (r).w && \
+                   y >= (r).y && y < (r).y + (r).h)
+    if (!INSIDE(nav)) {
+        return 0;
+    }
+    navigator_layout(a, &back, &forward, &up, &field);
+    if (INSIDE(field)) {
+        begin_location(a);
+    } else {
+        end_location(a, 0);
+        if (INSIDE(back) && tiku_trk_navigator_can_back(&a->nav)) {
+            navigate_back(a);
+        } else if (INSIDE(forward) &&
+                   tiku_trk_navigator_can_forward(&a->nav)) {
+            navigate_forward(a);
+        } else if (INSIDE(up) &&
+                   strcmp(tiku_trk_navigator_current(&a->nav), "/") != 0) {
+            navigate_up(a);
+        }
+    }
+    a->dirty = 1;
+#undef INSIDE
+    return 1;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1681,6 +1919,7 @@ main(int argc, char **argv)
         fprintf(stderr, "tracker: cannot open %s\n", start);
         return 1;
     }
+    tiku_trk_navigator_init(&a.nav, tiku_trk_poseview_path(a.view));
     a.fs = tiku_trk_fs_new(a.backend);
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
     a.row_h = LIST_ROW_H;
@@ -1842,6 +2081,10 @@ main(int argc, char **argv)
                 sst.alert = NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
+                sst.location = tiku_trk_navigator_current(&a.nav);
+                sst.nav_back = tiku_trk_navigator_can_back(&a.nav);
+                sst.nav_forward = tiku_trk_navigator_can_forward(&a.nav);
+                sst.nav_up = strcmp(sst.location, "/") != 0;
                 {
                     const tiku_trk_column_t *script_cols = NULL;
 
@@ -1975,6 +2218,10 @@ main(int argc, char **argv)
                     break;
                 }
                 if (popup_press(&a, ev.xbutton.x, ev.xbutton.y)) {
+                    break;
+                }
+                if (ev.xbutton.button == 1 &&
+                    navigator_press(&a, ev.xbutton.x, ev.xbutton.y)) {
                     break;
                 }
                 if (ev.xbutton.button == 4 || ev.xbutton.button == 5) {

@@ -2830,11 +2830,12 @@ SetupNavigationMenu builds a fresh ModelMenuItem + BNavMenu targeted at be_app w
 **PORT:** A container's context menu starts a walk into it, and only a container's does -- a file has nothing to navigate into, and an empty submenu on every row is worse than none.  
 **PORT:** A container's context menu carries a walk into it, drawn beside the menu with every open level visible so the trail back out is on screen.  A level hangs off the row that opened it and flips to the left rather than running off the screen, since a level that did would put its rows where they cannot be clicked.  Clicking a shallower row drops the levels below it: the walk follows the pointer rather than accumulating every branch visited.  Only containers get one.  
 *Shell: desktop*  
-#### CW-046 · core · open
+#### CW-046 · core · done
 **In browser (single-window) mode the window shows a navigator bar with Back, Forward, Up buttons and an editable location field; Back/Forward are greyed out when there is nothing to go back or forward to, Up is greyed out at the file system root.**  
 History is per window: fBackHistory/fForwHistory, capped at kMaxHistory = 32 (oldest dropped). Back enabled when fBackHistory has more than 1 entry, Forward when fForwHistory is non-empty, Up when the current path has a parent. Any new location (kActionSet) clears the forward history.  
 `Navigator.cpp` → `BNavigator::UpdateLocation / BNavigator::AttachedToWindow`
-**SUBSYSTEM:** Navigator bar (Back/Forward/Up + location field). No history, back/forward stack, or location-field code exists in either shell (grep history/back/forward over src/tiku_trk_app.c: nothing relevant; grep navigator/location over src/: only pose_location); the single-window app's only in-place moves are poseview_go_up (BackSpace/Cmd+Up, src/tiku_trk_app.c:1000-1007, 1052-1057) with no stack behind them.  
+**PORT:** The single-window shell draws all four controls beneath its menu bar and keeps a per-window 32-location history.  A new destination clears Forward; unavailable directions are disabled both visually and at hit-test time.  The history is separate from the pose view so a folder switch cannot erase it.
+*src/tiku_trk_navigator.c; src/tiku_trk_app.c:draw_navigator/navigator_press; tests/test_navigator.c; tests/shell/navigator.script*
 
 #### CW-047 · polish · open
 **Holding Option while clicking Back/Forward/Up (or pressing the equivalent shortcut) opens the destination in a NEW window instead of navigating this one, and selects the folder you came from inside it.**  
@@ -2842,12 +2843,13 @@ SendNavigationMessage: with option the message becomes B_REFS_RECEIVED to be_app
 `Navigator.cpp` → `BNavigator::SendNavigationMessage`
 **WAIVER CANDIDATE:** The premise — a browser-mode shell that can alternatively open the destination in a NEW window — cannot exist in this port's architecture: browser mode is build/tracker, a single-window binary with exactly one pose view and no window system (src/tiku_trk_app.c never references tiku_trk_win/tiku_trk_desk — grep returns nothing), so there is no second window to spawn; and the multi-window shell has no navigator or Back/Forward/Up to Option-click (grep navigator over src/: nothing). Waiver candidate unless the two shells are ever merged.  
 
-#### CW-048 · important · open
+#### CW-048 · important · partial
 **Cmd+L focuses the location field; typing a path and pressing Enter navigates there; an empty field means "/"; an invalid path silently reverts the field to the current folder's path. Dropping a file or folder on the navigator bar navigates to it (to its parent, if a file was dropped).**  
 GoTo() posts kSwitchDirectory with action kActionLocation, which is the one action that does NOT overwrite the field text (so the caret and selection survive). The unhandled-message branch of MessageReceived handles the dropped refs.  
 `Navigator.cpp` → `BNavigator::GoTo / BNavigator::MessageReceived`  
 **TIKU:** A location field over the merged namespace must accept device paths (/dev/..., /sys/...) as first-class destinations.
-**SUBSYSTEM:** Navigator bar. There is no location field to focus — Ctrl+L is unbound in both key handlers (src/tiku_trk_app.c:handle_key has no XK_l case; src/tiku_trk_desktop.c:2446-2564 likewise) — and no drop target exists anywhere (no inter-view drag-and-drop, cluster 13).  
+**MISSING:** Ctrl+L, typed navigation, empty-to-root and silent invalid-path reversion work, using the same backend path/stat operations as every other namespace destination.  The bar is not yet a drag-and-drop target, so dropping a folder or a file on it does nothing.
+*src/tiku_trk_app.c:begin_location/end_location/handle_key; tests/shell/navigator.script*
 
 #### CW-049 · core · partial
 **Double-clicking a folder opens a new window in spatial mode but navigates the same window in browser mode; holding Option inverts this (Option-open in browser mode spawns a new window, Option-open in spatial mode closes the parent window behind it).**  
@@ -2860,15 +2862,15 @@ BPoseView::OpenSelection sends kSwitchDirectory only when SingleWindowBrowse is 
 **Navigating within one window saves the old folder's state, loads the new folder's state (columns, sort, scroll, background), retitles the window, and rebuilds the menus when the kind of folder changes (into/out of Trash, root or a volume).**  
 SwitchDirectory: SaveState(false) if dirty -> UpdateBackgroundImage -> PoseView()->SwitchDir(ref, streamNode) -> RepopulateMenus() only when the trash/root/volume-ness flipped -> RebuildAddOnMenus -> re-arm path watching -> re-apply browse shortcuts -> show/hide/refresh the draggable folder icon -> UpdateTitle. File panels stop after SwitchDir.  
 `ContainerWindow.cpp` → `BContainerWindow::SwitchDirectory`  
-**MISSING:** The single-window app saves the old folder's state, switches directory, restores the new folder's state, re-lays out and retitles; missing are column reload (restore_columns is called only once at startup), scroll restore (switch_dir zeroes it), background image, and any menu rebuild — the front end that has menus has no in-window navigation.  
-*src/tiku_trk_app.c:open_selection + src/tiku_trk_poseview.c:tiku_trk_poseview_switch_dir*
+**MISSING:** Navigation now saves and restores both view state (including sort and scroll) and columns, retitles, and rebuilds the context-sensitive menus from the new folder on the next draw.  Per-folder background images remain absent.
+*src/tiku_trk_app.c:navigate_to/draw; src/tiku_trk_poseview.c:tiku_trk_poseview_save_state/tiku_trk_poseview_restore_state; tests/shell/navigator.script*
 
 #### CW-051 · core · partial
 **"Open parent" (Cmd+Up) goes to the enclosing folder - opening a new window in spatial mode, navigating in place in browser mode; Cmd+Option+Up additionally closes the window you left. It is disabled at the root and on the Desktop, and forced enabled while Control is held.**  
 BContainerWindow::OpenParent resolves the parent virtual-directory-aware and feeds a kSwitchDirectory message back through MessageReceived, so it inherits the spatial/browser split and the Option-closes-parent rule. BPoseView::CanOpenParent denies the Desktop and root, allows one extra level when "show Disks icon" is on, and is overridden by the Control key.  
 `ContainerWindow.cpp` → `BContainerWindow::OpenParent (and PoseView.cpp BPoseView::CanOpenParent)`  
-**MISSING:** Open parent exists and is disabled at the root (can_open_parent), opens a new window from the menu in the spatial shell and navigates in place on Backspace in the single-window app; there is no Cmd+Up binding, no Cmd+Option+Up closing the window left, and no Control-forces-enabled override.  
-*src/tiku_trk_desktop.c:menu_invoke (TIKU_TRK_CMD_OPEN_PARENT) + src/tiku_trk_app.c:handle_key (XK_BackSpace → poseview_go_up)*
+**MISSING:** Cmd+Up now opens the parent in a spatial window and navigates in place in the browser; Cmd+Option+Up closes the spatial window left behind.  Root and Desktop remain disabled.  The menu does not implement the source's separate Control-held force-enable override.
+*src/tiku_trk_desktop.c (Cmd+Up branch); src/tiku_trk_app.c:handle_key; tests/shell/parent.script; tests/shell/navigator.script*
 
 #### CW-052 · important · open
 **Switching between spatial and browser mode rebinds the arrow-key shortcuts: browser mode gives Cmd+Left/Right/Up = Back/Forward/Up and Cmd+L = focus location; spatial mode gives Cmd+Up = open parent, Cmd+Option+Up = open parent and close this window, and Cmd+Option+Down = open selection.**  

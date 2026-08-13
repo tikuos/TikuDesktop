@@ -6731,8 +6731,26 @@ sel_done:
                 }
                 if (fl != NULL && ks == XK_Up &&
                     (ev.xkey.state & ControlMask)) {
-                    /* PVK-040: Cmd+Up opens the parent. */
-                    menu_invoke(&app, fl, TIKU_TRK_CMD_OPEN_PARENT);
+                    /* PVK-040/CW-051: Cmd+Up opens the parent; Option
+                     * additionally takes the spatial window we left. */
+                    if (strcmp(fl->path, "/") != 0) {
+                        char parent[TIKU_TRK_PATH_MAX];
+                        char *slash;
+                        tiku_trk_win_t *from = fl->win;
+
+                        snprintf(parent, sizeof parent, "%s", fl->path);
+                        slash = strrchr(parent, '/');
+                        if (slash == parent) {
+                            parent[1] = '\0';
+                        } else if (slash != NULL) {
+                            *slash = '\0';
+                        }
+                        if (slash != NULL &&
+                            open_folder(&app, parent) != NULL &&
+                            (ev.xkey.state & Mod1Mask)) {
+                            close_window(&app, from);
+                        }
+                    }
                     app.dirty = 1;
                     break;
                 }

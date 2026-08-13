@@ -24,7 +24,8 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW,
-    OP_WAIT, OP_SHOT,
+    OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
+    OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
@@ -247,6 +248,18 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-find-type") == 0 && n >= 2) {
             st->op = OP_EXPECT_FINDTYPE;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-location") == 0 && n >= 2) {
+            st->op = OP_EXPECT_LOCATION;
+            rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-nav-back") == 0 && n >= 2) {
+            st->op = OP_EXPECT_NAV_BACK;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-nav-forward") == 0 && n >= 2) {
+            st->op = OP_EXPECT_NAV_FORWARD;
+            st->count = atoi(w[1]);
+        } else if (strcmp(w[0], "expect-nav-up") == 0 && n >= 2) {
+            st->op = OP_EXPECT_NAV_UP;
+            st->count = atoi(w[1]);
         } else if (strcmp(w[0], "expect-type-narrowed") == 0) {
             st->op = OP_EXPECT_FOLDERS;
         } else if (strcmp(w[0], "expect-columns") == 0 && n >= 2) {
@@ -516,6 +529,28 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                 strcmp(st->find_type, cur->text) == 0, "of type:",
                 cur->text);
         return 1;
+    case OP_EXPECT_LOCATION:
+        verdict(s, st != NULL && st->location != NULL &&
+                strcmp(st->location, cur->text) == 0, "location:",
+                (st != NULL && st->location != NULL) ? st->location
+                                                     : "nothing");
+        return 1;
+    case OP_EXPECT_NAV_BACK:
+    case OP_EXPECT_NAV_FORWARD:
+    case OP_EXPECT_NAV_UP: {
+        int actual = (st == NULL) ? -1
+                   : (cur->op == OP_EXPECT_NAV_BACK) ? st->nav_back
+                   : (cur->op == OP_EXPECT_NAV_FORWARD) ? st->nav_forward
+                                                       : st->nav_up;
+        char value[16];
+
+        snprintf(value, sizeof value, "%d", actual);
+        verdict(s, actual == cur->count,
+                (cur->op == OP_EXPECT_NAV_BACK) ? "nav back:"
+                : (cur->op == OP_EXPECT_NAV_FORWARD) ? "nav forward:"
+                                                     : "nav up:", value);
+        return 1;
+    }
     case OP_EXPECT_FOLDERS:
         verdict(s, st != NULL && (st->kinds & 2) != 0 &&
                 (st->kinds & 1) == 0, "every row is of the asked type", "");

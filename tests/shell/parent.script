@@ -1,0 +1,14 @@
+# shell: desktop
+# CW-051: spatial Open parent and its Option-close variant.
+wait 6
+click-row 0
+click-row 0
+wait 8
+expect-windows 2
+
+note Cmd+Option+Up opens the parent and closes the window left behind
+key Up ctrl alt
+wait 8
+expect-title trk_script
+expect-windows 1
+quit

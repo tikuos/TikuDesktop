@@ -24,7 +24,7 @@ CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -113,6 +113,10 @@ $(BUILD)/test_nodeicon: $(CORE) tests/test_nodeicon.c | $(BUILD)
 $(BUILD)/test_navmenu: $(CORE) tests/test_navmenu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+$(BUILD)/test_navigator: src/tiku_trk_navigator.c tests/test_navigator.c \
+                         | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 $(BUILD)/test_dbdrop: $(CORE) $(UI) $(ICONS) src/tiku_trk_deskbar.c \
                       src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                       src/tiku_trk_attr.c tests/test_dbdrop.c | $(BUILD)
@@ -193,6 +197,7 @@ $(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c \
 $(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_edit.c src/tiku_trk_titleview.c \
+                  src/tiku_trk_navigator.c \
                   src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                   src/tiku_trk_cwmenu.c \
                   src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
@@ -245,6 +250,7 @@ test: all
 	@$(BUILD)/test_switcher
 	@$(BUILD)/test_dbdrop
 	@$(BUILD)/test_navmenu
+	@$(BUILD)/test_navigator
 	@$(BUILD)/test_nodeicon
 	@$(BUILD)/test_panel
 	@$(BUILD)/test_info

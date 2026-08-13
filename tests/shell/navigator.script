@@ -1,0 +1,63 @@
+# shell: tracker
+# CW-046/CW-048/CW-050: the browser shell has live navigation chrome.
+wait 8
+expect-location /tmp/trk_script
+expect-nav-back 0
+expect-nav-forward 0
+expect-nav-up 1
+
+note opening a folder records it in this window's history
+click-row 0
+click-row 0
+wait 8
+expect-location /tmp/trk_script/sub
+expect-nav-back 1
+expect-nav-forward 0
+
+note the Back and Forward buttons walk the two history stacks
+click 20 57
+wait 6
+expect-title /tmp/trk_script
+expect-nav-forward 1
+click 52 57
+wait 6
+expect-title /tmp/trk_script/sub
+
+note Up navigates to the enclosing folder and records the move
+click 84 57
+wait 6
+expect-location /tmp/trk_script
+expect-nav-forward 0
+
+note the browser keyboard shortcuts use the same history and Up paths
+click-row 0
+click-row 0
+wait 5
+key Left ctrl
+wait 5
+expect-location /tmp/trk_script
+key Right ctrl
+wait 5
+expect-location /tmp/trk_script/sub
+key Up ctrl
+wait 5
+expect-location /tmp/trk_script
+
+note an invalid location silently reverts to the current folder
+key l ctrl
+key z
+key Return
+wait 5
+expect-location /tmp/trk_script
+
+note an empty location means the filesystem root
+click-row 0
+click-row 0
+wait 5
+key l ctrl
+key BackSpace
+key Return
+wait 8
+expect-location /
+expect-nav-up 0
+quit
