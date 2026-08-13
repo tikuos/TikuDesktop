@@ -23,7 +23,6 @@
 #include "tiku_trk_query.h"
 #include "tiku_trk_thumb.h"
 
-struct desktop;
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
 
 typedef void (*tiku_trk_folder_prepare_menu_fn)(void *context,
@@ -70,7 +69,6 @@ struct tiku_trk_folder_window {
     char                       path[TIKU_TRK_PATH_MAX];
     char                       state_path[TIKU_TRK_PATH_MAX];
     tiku_desk_window_t        *win;
-    struct desktop            *app;
     tiku_trk_qrun_t           *run;
     int                        live;
     int                        gone;

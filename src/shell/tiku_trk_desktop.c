@@ -15,10 +15,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <string.h>
-#include <time.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "tiku_trk_attr.h"
@@ -43,7 +42,8 @@
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
-#include "tiku_trk_deskicons.h"
+#include "tiku_trk_deskbar_roster.h"
+#include "tiku_trk_desktop_view.h"
 #include "tiku_trk_launch.h"
 #include "tiku_trk_types.h"
 #include "tiku_trk_iconpaint.h"
@@ -148,12 +148,8 @@ typedef struct desktop {
      * window on the first. */
     int                  cascade_x, cascade_y;
     struct tiku_trk_store *store;
-    /* The Desktop itself: a pose view with no window, over the backdrop.
-     * Its source is the union of every volume's Desktop folder, so a
-     * second disk's items appear beside the boot volume's (PVN-051). */
-    folder_t             dfl;
-    tiku_trk_vdir_t      dvdir;
-    tiku_trk_vdir_watch_t dwatch;
+    /* The backdrop pose view owns its union source and watcher. */
+    tiku_trk_desktop_view_t desktop_view;
     int                  desk_row;      /* pose under the pointer, or -1 */
     /* ONE clipboard for the desktop, as the system's is one: cutting in a
      * window and pasting in another is the whole point of it. */
@@ -188,7 +184,6 @@ typedef struct desktop {
     /* The folder the running job is writing into, for the progress
      * window's "To:" line (FS-069). */
     char                 prog_dest[TIKU_TRK_PATH_MAX];
-    int                  disks_shown;   /* whether the / icon is there    */
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -634,165 +629,11 @@ prepare_folder_menu(void *context, tiku_trk_folder_window_t *folder)
     app->menus.bar.open = app->bar_fl == folder ? app->bar_open : -1;
 }
 
-/*---------------------------------------------------------------------------*/
-/* The Desktop: a pose view with no window, over the backdrop                */
-/*---------------------------------------------------------------------------*/
-
-/**
- * @brief Where a Desktop icon may sit: the screen, less the Deskbar strip.
- *
- * The Desktop cannot scroll, so the area an icon is placed in has to be the
- * area it can be reached in -- an icon under the bar is an icon behind
- * something that is always on top (PVL-018).
- */
-static tiku_trk_rect_t
-desk_area(desktop_t *app)
+/** @brief The folder interface shared by Desktop and folder interactions. */
+static folder_t *
+desktop_folder(desktop_t *app)
 {
-    tiku_desk_rect_t bf = tiku_trk_deskbar_frame(app->deskbar);
-    tiku_trk_rect_t a = { 0, 0, DESK_W, DESK_H };
-
-    if (bf.w <= 0 || bf.h <= 0) {
-        return a;
-    }
-    if (bf.w < bf.h) {
-        if (bf.x > DESK_W / 2) {
-            a.w = bf.x - TIKU_TRK_DESK_BAR_MARGIN;
-        } else {
-            a.x = bf.x + bf.w + TIKU_TRK_DESK_BAR_MARGIN;
-            a.w = DESK_W - a.x;
-        }
-    } else {
-        if (bf.y > DESK_H / 2) {
-            a.h = bf.y - TIKU_TRK_DESK_BAR_MARGIN;
-        } else {
-            a.y = bf.y + bf.h + TIKU_TRK_DESK_BAR_MARGIN;
-            a.h = DESK_H - a.y;
-        }
-    }
-    return a;
-}
-
-/** @brief Put a node on the Desktop that does not live in a Desktop folder. */
-static void
-desk_add_pose(desktop_t *app, const char *path)
-{
-    tiku_trk_model_t m;
-
-    if (path == NULL || path[0] == '\0' ||
-        app->backend->ops->stat(app->backend, path, &m) != 0) {
-        return;
-    }
-    /* Through the view's own insert rather than a code path of its own:
-     * the arrival machinery already knows how to place a pose in the next
-     * free slot, and a second way in would place it by different rules
-     * (AW-026, AW-027). */
-    (void)tiku_trk_poseview_adopt(app->dfl.view, &m);
-}
-
-/**
- * @brief Pull every Desktop icon back somewhere it can be reached (PVL-018).
- *
- * Never a grid remap and never a scroll: the Desktop cannot scroll, so an
- * icon off the screen or under the Deskbar is an icon that is simply gone
- * (AW-019).
- */
-static int
-desk_ensure_visible(desktop_t *app)
-{
-    tiku_trk_rect_t screen = { 0, 0, DESK_W, DESK_H };
-    tiku_trk_rect_t area = desk_area(app);
-    tiku_desk_rect_t bf = tiku_trk_deskbar_frame(app->deskbar);
-    tiku_trk_rect_t bar = { bf.x, bf.y, bf.w, bf.h };
-    int i, n = tiku_trk_poseview_count(app->dfl.view), moved = 0;
-
-    for (i = 0; i < n; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(app->dfl.view, i);
-        tiku_trk_rect_t r;
-        int px, py, pw, ph;
-
-        if (p == NULL || !p->placed) {
-            continue;
-        }
-        tiku_trk_poseview_pose_rect(app->dfl.view, p, &px, &py, &pw, &ph);
-        r = (tiku_trk_rect_t){ px, py, pw, ph };
-        if (tiku_trk_deskicons_valid(r, screen, bar, NULL, 0)) {
-            continue;
-        }
-        if (tiku_trk_deskicons_pull_back(&r, area)) {
-            int lx, ly;
-
-            /* Moved by the same DELTA the rectangle needed: the pose's
-             * location is not its rectangle's corner -- the label may hang
-             * wider than the art -- so setting the location to the
-             * rectangle would leave it short by the overhang. */
-            tiku_trk_poseview_pose_location(app->dfl.view, p, &lx, &ly);
-            tiku_trk_poseview_move_pose(app->dfl.view, p, lx + (r.x - px),
-                                        ly + (r.y - py), 0);
-            moved++;
-        }
-    }
-    return moved;
-}
-
-/** @brief Build the Desktop's contents: the union, then Disks, then Trash. */
-static void
-desk_icons_rebuild(desktop_t *app)
-{
-    tiku_trk_volumes_t vs;
-    tiku_trk_model_t set[64];
-    char trash[TIKU_TRK_PATH_MAX];
-    int n = 0;
-
-    if (app->dfl.view == NULL) {
-        return;
-    }
-    if (tiku_trk_volumes_scan(&vs) >= 0) {
-        const char *home = getenv("HOME");
-        char hd[TIKU_TRK_PATH_MAX];
-
-        snprintf(hd, sizeof hd, "%s/Desktop",
-                 (home != NULL && home[0] != '\0') ? home : "");
-        tiku_trk_deskicons_sources(&vs, app->backend, hd, &app->dvdir);
-    }
-    n = tiku_trk_vdir_list(&app->dvdir, app->backend, set,
-                           (int)(sizeof set / sizeof set[0]));
-    if (n < 0) {
-        n = 0;
-    }
-    (void)tiku_trk_poseview_set_models(app->dfl.view, set, n);
-    (void)tiku_trk_poseview_restore_state(app->dfl.view);
-    /* Never a list, whatever a saved state says: a Desktop in list mode is
-     * one the user cannot put an icon on (MA-069, PVL-008). */
-    tiku_trk_poseview_set_mode(app->dfl.view,
-        tiku_trk_deskicons_mode(tiku_trk_poseview_mode(app->dfl.view)));
-    (void)tiku_trk_poseview_place_unplaced(app->dfl.view,
-                                           desk_area(app).w);
-    /* Added AFTER the folder's own items are placed, so each lands in the
-     * next free slot rather than in the middle of them. */
-    if (tiku_trk_deskicons_show_disks(
-            tiku_trk_prefs_get(prefs_model(app), "ShowDisksIcon"),
-            tiku_trk_prefs_get(prefs_model(app), "MountVolumesOntoDesktop"))) {
-        desk_add_pose(app, "/");
-    }
-    if (tiku_trk_fs_trash_dir(app->fs, app->dfl.path, trash,
-                              sizeof trash) == 0) {
-        desk_add_pose(app, trash);
-    }
-    (void)tiku_trk_poseview_place_unplaced(app->dfl.view,
-                                           desk_area(app).w);
-    (void)desk_ensure_visible(app);
-}
-
-/** @brief Paint the Desktop pose controller below every window. */
-static void
-desk_icons_draw(tiku_desk_surface_t *surface, void *context)
-{
-    desktop_t *app = context;
-
-    if (app != NULL && app->dfl.view != NULL) {
-        tiku_trk_folder_window_draw_icons(&app->dfl, surface,
-            tiku_trk_folder_window_content(&app->dfl));
-    }
+    return tiku_trk_desktop_view_folder(&app->desktop_view);
 }
 
 static folder_t *open_folder(desktop_t *app, const char *path);
@@ -928,78 +769,6 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
  * What is already done stays done either way -- the engine has no
  * transaction above one item.
  */
-/**
- * @brief Seed and refresh the Deskbar's team list from the live process set.
- *
- * On this host the process registry IS /proc; on TikuOS it is the kernel's
- * own, which is why the reader is small and local rather than a subsystem.
- * A background process has no window, and the Deskbar never lists itself.
- */
-static void
-scan_teams(desktop_t *app)
-{
-    DIR *d = opendir("/proc");
-    struct dirent *e;
-
-    if (d == NULL) {
-        return;
-    }
-    while ((e = readdir(d)) != NULL) {
-        char comm[TIKU_TRK_PATH_MAX], name[64];
-        FILE *f;
-        size_t n;
-        struct stat ps;
-
-        if (e->d_name[0] < '1' || e->d_name[0] > '9') {
-            continue;               /* not a pid */
-        }
-        /* Somebody else's processes are not in this user's Deskbar. */
-        if (snprintf(comm, sizeof comm, "/proc/%s", e->d_name) < 0 ||
-            stat(comm, &ps) != 0 || ps.st_uid != getuid()) {
-            continue;
-        }
-        /* An empty cmdline is a KERNEL thread: it has no image, no window
-         * and nothing to raise.  This is the closest thing this host has
-         * to the background-app flag the rule is written against. */
-        if (snprintf(comm, sizeof comm, "/proc/%s/cmdline", e->d_name) < 0) {
-            continue;
-        }
-        f = fopen(comm, "r");
-        if (f == NULL) {
-            continue;
-        }
-        n = fread(name, 1, sizeof name, f);
-        (void)fclose(f);
-        if (n == 0u) {
-            continue;
-        }
-        if (snprintf(comm, sizeof comm, "/proc/%s/comm", e->d_name) < 0) {
-            continue;
-        }
-        f = fopen(comm, "r");
-        if (f == NULL) {
-            continue;               /* gone between readdir and open */
-        }
-        if (fgets(name, sizeof name, f) == NULL) {
-            (void)fclose(f);
-            continue;
-        }
-        (void)fclose(f);
-        n = strlen(name);
-        while (n > 0u && (name[n - 1u] == '\n' || name[n - 1u] == ' ')) {
-            name[--n] = '\0';
-        }
-        /* Kernel threads are bracketed and own nothing a user can raise;
-         * and the Deskbar does not list the application it is part of
-         * twice, which the seed already added (DB-014). */
-        if (name[0] == '\0' || strcmp(name, "desktop") == 0) {
-            continue;
-        }
-        (void)tiku_trk_deskbar_add_team(app->deskbar, name);
-    }
-    (void)closedir(d);
-}
-
 /**
  * @brief The character a key event types, or 0.
  *
@@ -1182,10 +951,10 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
             tiku_trk_poseview_move_pose(app->drop_fl->view, q, px + dx,
                                         py + dy, snap);
         }
-        if (app->drop_fl == &app->dfl) {
+        if (app->drop_fl == desktop_folder(app)) {
             /* The Desktop cannot scroll, so an icon dropped off the edge
              * is one that is simply gone (PVS-058). */
-            (void)desk_ensure_visible(app);
+            (void)tiku_trk_desktop_view_ensure_visible(&app->desktop_view);
         }
         (void)tiku_trk_poseview_save_state(app->drop_fl->view);
         app->dirty = 1;
@@ -1620,7 +1389,8 @@ panel_search(void *context, tiku_trk_find_t *panel)
     /* The checkbox stores the choice; the actual Trash path is resolved at
      * run time because it belongs to this machine and this volume, not to a
      * portable saved-query record (Q-036). */
-    (void)tiku_trk_fs_trash_dir(app->fs, app->dfl.path, q.trash_path,
+    (void)tiku_trk_fs_trash_dir(app->fs, desktop_folder(app)->path,
+                                q.trash_path,
                                 sizeof q.trash_path);
     tiku_trk_query_bind_scopes(&q, app->backend);
     run = tiku_trk_query_start(app->backend, &q);
@@ -1714,7 +1484,8 @@ run_find(desktop_t *app, folder_t *from)
         (void)tiku_trk_query_add_scope(&q, from->path);
     }
     (void)tiku_trk_fs_trash_dir(app->fs,
-                                (from != NULL) ? from->path : app->dfl.path,
+                                (from != NULL) ? from->path
+                                               : desktop_folder(app)->path,
                                 q.trash_path, sizeof q.trash_path);
     run = tiku_trk_query_start(app->backend, &q);
     if (run == NULL) {
@@ -2381,7 +2152,6 @@ open_folder(desktop_t *app, const char *path)
      * menu offers -- the list is a record of where the user has been, and
      * this is the one place that knows (DB-002, AW-056). */
     tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS, path);
-    fl->app = app;
     fl->view = tiku_trk_poseview_new(app->backend, path);
     if (fl->view == NULL) {
         return NULL;
@@ -2570,12 +2340,12 @@ script_pose_at(void *ctx, const char *name, int *x, int *y)
                 return 1;
             }
         }
-        if (fl == &app->dfl) {
+        if (fl == desktop_folder(app)) {
             return 0;
         }
         /* The other place a pose can be.  The Desktop has no window, so it
          * is never the focused one and would otherwise be unaskable. */
-        fl = &app->dfl;
+        fl = desktop_folder(app);
     }
 }
 
@@ -2589,42 +2359,10 @@ blit(desktop_t *app)
     (void)tiku_desk_host_present(app->host, app->surf);
 }
 
-/**
- * @brief Publish the open windows to the Deskbar's application entry.
- *
- * The bar shows windows nested under their application, so it needs the
- * list each time it draws; titles arrive with the application name stripped
- * because "Tracker: /sys" repeated down a column reads as noise.
- */
-static void
-publish_windows(desktop_t *app)
-{
-    tiku_trk_dbwin_t wins[TIKU_TRK_DB_WINS_MAX];
-    tiku_desk_window_t *focused = tiku_desk_workspace_focused(app->desk);
-    int i, n = tiku_desk_workspace_count(app->desk), k = 0;
-
-    for (i = 0; i < n && k < TIKU_TRK_DB_WINS_MAX; i++) {
-        tiku_desk_window_t *w = tiku_desk_workspace_at(app->desk, i);
-        if (w == NULL || !w->open) {
-            continue;
-        }
-        memset(&wins[k], 0, sizeof wins[k]);
-        tiku_trk_deskbar_strip_title("Tracker", w->title, wins[k].title,
-                                     sizeof wins[k].title);
-        wins[k].state = w->minimized ? TIKU_TRK_DBW_MINIMIZED
-                                     : TIKU_TRK_DBW_SHOWN;
-        wins[k].current = (w == focused);
-        wins[k].tag = w->tag;
-        k++;
-    }
-    tiku_trk_deskbar_set_windows(app->deskbar, app->team, wins, k,
-                                 (focused != NULL));
-}
-
 static void
 draw_all(desktop_t *app)
 {
-    publish_windows(app);
+    tiku_trk_deskbar_publish_workspace(app->deskbar, app->team, app->desk);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
         /* Under the windows: with auto-raise on, a window may cover the
          * bar until the user reaches for it.  Draw order IS the z-order
@@ -2817,7 +2555,7 @@ tracker_run(int argc, char **argv)
     app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
-    scan_teams(&app);               /* everything else that is running */
+    tiku_trk_deskbar_scan_processes(app.deskbar);
     tiku_trk_cwmenu_init(&app.menus);
     tiku_trk_status_overlay_init(&app.status_overlay, app.surf,
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
@@ -2964,31 +2702,9 @@ tracker_run(int argc, char **argv)
         .prepare_context = &app
     };
 
-    {
-        /* The Desktop itself.  Its identity is the boot volume's Desktop
-         * folder -- the state has to be filed under something, and the
-         * union it shows is a rule about contents, not a place. */
-        const char *home = getenv("HOME");
-
-        snprintf(app.dfl.path, sizeof app.dfl.path, "%s/Desktop",
-                 (home != NULL && home[0] != '\0') ? home : "");
-        app.dfl.app = &app;
-        app.dfl.win = NULL;
-        app.dfl.view = tiku_trk_poseview_new(app.backend, app.dfl.path);
-        app.desk_row = -1;
-        if (app.dfl.view != NULL) {
-            tiku_trk_folder_window_configure(&app.dfl,
-                                              &app.folder_render);
-            tiku_trk_poseview_set_viewport(app.dfl.view, DESK_W, DESK_H);
-            tiku_trk_poseview_set_mode(app.dfl.view, TIKU_TRK_MODE_ICON);
-            desk_icons_rebuild(&app);
-            app.disks_shown = tiku_trk_deskicons_show_disks(
-                tiku_trk_prefs_get(prefs_model(&app), "ShowDisksIcon"),
-                tiku_trk_prefs_get(prefs_model(&app), "MountVolumesOntoDesktop"));
-            tiku_trk_vdir_watch_init(&app.dwatch, &app.dvdir);
-            tiku_desk_workspace_set_backdrop(app.desk, desk_icons_draw, &app);
-        }
-    }
+    app.desk_row = -1;
+    (void)tiku_trk_desktop_view_init(&app.desktop_view, app.backend, app.fs,
+        prefs_model(&app), app.deskbar, &app.folder_render, DESK_W, DESK_H);
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether
@@ -3036,7 +2752,8 @@ tracker_run(int argc, char **argv)
 
             /* Root is the Disks window in this port.  Keeping a stale root
              * record must not override the user's current icon setting. */
-            if (strcmp(sess[i].path, "/") == 0 && !app.disks_shown) {
+            if (strcmp(sess[i].path, "/") == 0 &&
+                !tiku_trk_desktop_view_shows_disks(&app.desktop_view)) {
                 continue;
             }
             restored = open_folder(&app, sess[i].path);
@@ -3340,12 +3057,14 @@ tracker_run(int argc, char **argv)
                 sst.count = app.count_text;
                 sst.desk_selected = 0;
                 sst.desk_sel_name = NULL;
-                if (app.dfl.view != NULL) {
-                    int di, dn = tiku_trk_poseview_count(app.dfl.view);
+                if (desktop_folder(&app)->view != NULL) {
+                    int di, dn = tiku_trk_poseview_count(
+                        desktop_folder(&app)->view);
 
                     for (di = 0; di < dn; di++) {
                         tiku_trk_pose_t *dp =
-                            tiku_trk_poseview_at(app.dfl.view, di);
+                            tiku_trk_poseview_at(desktop_folder(&app)->view,
+                                                 di);
 
                         if (dp != NULL && dp->selected) {
                             if (sst.desk_sel_name == NULL) {
@@ -3874,7 +3593,7 @@ tracker_run(int argc, char **argv)
                     w = tiku_trk_find_window_handle(&app.find_window);
                     hit = TIKU_DESK_HIT_CONTENT;
                 }
-                if (w == NULL && app.dfl.view != NULL) {
+                if (w == NULL && desktop_folder(&app)->view != NULL) {
                     /* The backdrop is a pose area, so a click on it is a
                      * click in a view -- the same branch every window's
                      * content goes through, which is what keeps the
@@ -3987,7 +3706,7 @@ tracker_run(int argc, char **argv)
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT) {
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
-                                               : &app.dfl;
+                                               : desktop_folder(&app);
                     if (fl != NULL && fl->view != NULL) {
                         int row = tiku_trk_folder_window_row_at(fl, ev.x,
                                                                ev.y);
@@ -4257,7 +3976,8 @@ tracker_run(int argc, char **argv)
 
                     (void)tiku_desk_workspace_hit(app.desk, ev.x,
                                             ev.y, &ow);
-                    ofl = (ow != NULL) ? folder_of(&app, ow) : &app.dfl;
+                    ofl = (ow != NULL) ? folder_of(&app, ow)
+                                       : desktop_folder(&app);
                     if (ofl != NULL && ofl->view == NULL) {
                         ofl = NULL;
                     }
@@ -5224,45 +4944,8 @@ tracker_run(int argc, char **argv)
                     changed++;
                 }
             }
-            if (app.dfl.view != NULL) {
-                /* The Desktop is polled with the windows: a file dropped
-                 * on it, or put in a Desktop folder by something else,
-                 * appears without anyone reopening anything. */
-                unsigned df = tiku_trk_poseview_poll(app.dfl.view,
-                                  tiku_trk_now(), ch, nch, complete);
-                int gone = -1;
-
-                if (df != TIKU_TRK_NOTIFY_NOTHING) {
-                    (void)tiku_trk_poseview_place_unplaced(app.dfl.view,
-                                                       desk_area(&app).w);
-                    /* Anything that arrived off the edge is pulled back:
-                     * the Desktop cannot scroll to reach it (PVS-058). */
-                    (void)desk_ensure_visible(&app);
-                    changed++;
-                }
-                {
-                    /* The Disks icon follows its setting without waiting
-                     * for anything else to change: turned off it goes at
-                     * once, turned on it appears (PVN-058). */
-                    int want = tiku_trk_deskicons_show_disks(
-                        tiku_trk_prefs_get(prefs_model(&app), "ShowDisksIcon"),
-                        tiku_trk_prefs_get(prefs_model(&app),
-                                           "MountVolumesOntoDesktop"));
-
-                    if (want != app.disks_shown) {
-                        desk_icons_rebuild(&app);
-                        app.disks_shown = want;
-                        changed++;
-                    }
-                }
-                if (tiku_trk_vdir_poll(&app.dvdir, &app.dwatch, &gone) !=
-                        TIKU_TRK_VDIR_CH_NONE) {
-                    /* A contributing Desktop folder came, went or was
-                     * edited: the union is a different set now (PVN-059). */
-                    desk_icons_rebuild(&app);
-                    changed++;
-                }
-            }
+            changed += tiku_trk_desktop_view_poll(&app.desktop_view,
+                tiku_trk_now(), ch, nch, complete);
             changed += tiku_trk_panel_window_poll(&app.file_panel,
                 tiku_trk_now(), ch, nch, complete);
             {   /* What has been mounted or unmounted since the last look.
@@ -5452,13 +5135,7 @@ tracker_run(int argc, char **argv)
         }
         tiku_trk_poseview_free(app.folders[i].view);
     }
-    if (app.dfl.view != NULL) {
-        /* The Desktop has no window to close, so nothing else would ever
-         * write its arrangement back. */
-        (void)tiku_trk_poseview_save_state(app.dfl.view);
-        tiku_trk_poseview_free(app.dfl.view);
-        app.dfl.view = NULL;
-    }
+    tiku_trk_desktop_view_destroy(&app.desktop_view);
     /* The sidecar batches; without this the session's queries, frames and
      * recent lists are held in memory and dropped on the way out -- saved
      * in every sense except the one that matters. */

@@ -198,7 +198,7 @@ src/ui/windows/       feature windows: folders, Find, Info, file panels,
                       preferences, Select, switcher
 src/ui/overlays/      modal alerts and shared operation-status presentation
 src/media/            HVIF icons, image decoding, thumbnails, icon painting
-src/deskbar/          Deskbar and Desktop-icon behavior
+src/deskbar/          Deskbar, Desktop view, and application-roster behavior
 src/shell/            application descriptors and front-end composition
 ../desktop/src/       reusable runtime, windows, focus, graphics, native host
 ```
