@@ -4294,6 +4294,54 @@ prefs_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
     }
 }
 
+/** @brief The preferences window owns its controls and their input. */
+static int
+prefs_event(tiku_trk_win_t *w, const tiku_desk_event_t *event, void *ctx)
+{
+    desktop_t *app = ctx;
+    tiku_desk_rect_t pc;
+    tiku_trk_pref_hit_t hit;
+    int which = -1;
+
+    if (event->type != TIKU_DESK_EVENT_POINTER_DOWN || app->alert.open) {
+        return 0;
+    }
+    pc = tiku_trk_win_content(w);
+    hit = tiku_trk_prefs_hit(&app->prefs, app->prefs_page,
+                             event->x - pc.x, event->y - pc.y, &which);
+    if (hit == TIKU_TRK_PREF_HIT_NONE) {
+        return 0;
+    }
+    if (hit == TIKU_TRK_PREF_HIT_PAGE) {
+        app->prefs_page = (tiku_trk_page_t)which;
+    } else if (hit == TIKU_TRK_PREF_HIT_SETTING) {
+        tiku_trk_pref_t *pref = &app->prefs.pref[which];
+
+        if (pref->type == TIKU_TRK_PREF_BOOL) {
+            pref->value = !pref->value;
+        }
+    } else {
+        int page;
+
+        for (page = 0; page < TIKU_TRK_PAGES; page++) {
+            if (hit == TIKU_TRK_PREF_HIT_DEFAULTS) {
+                tiku_trk_prefs_defaults(&app->prefs,
+                                        (tiku_trk_page_t)page);
+            } else {
+                tiku_trk_prefs_revert(&app->prefs,
+                                      (tiku_trk_page_t)page);
+            }
+        }
+    }
+    /* Applied and saved at once: with no OK button there is no pending
+     * preferences transaction (TS-058). */
+    if (app->prefs_path[0] != '\0') {
+        (void)tiku_trk_prefs_save(&app->prefs, app->prefs_path);
+    }
+    app->dirty = 1;
+    return 1;
+}
+
 /** @brief Open the preferences window, or bring it forward (AW-101). */
 static void
 prefs_open(desktop_t *app)
@@ -4316,6 +4364,7 @@ prefs_open(desktop_t *app)
     tiku_trk_prefs_mark_opened(&app->prefs);
     app->prefs_win = tiku_trk_desk_open(app->desk, "Tracker preferences",
                                         fr, prefs_draw, app, NULL);
+    tiku_trk_win_set_handlers(app->prefs_win, prefs_event, NULL, NULL);
 }
 
 #define SW_SLOT   56
@@ -5495,46 +5544,14 @@ main(int argc, char **argv)
                 }
                 if (app.prefs_win != NULL && app.prefs_win->open &&
                     !app.alert.open) {
-                    tiku_desk_rect_t pc =
-                        tiku_trk_win_content(app.prefs_win);
-                    int which = -1;
-                    tiku_trk_pref_hit_t ph;
+                    tiku_desk_event_t window_event = { 0 };
 
-                    ph = tiku_trk_prefs_hit(&app.prefs, app.prefs_page,
-                                            ev.xbutton.x - pc.x,
-                                            ev.xbutton.y - pc.y, &which);
-                    if (ph != TIKU_TRK_PREF_HIT_NONE) {
-                        if (ph == TIKU_TRK_PREF_HIT_PAGE) {
-                            app.prefs_page = (tiku_trk_page_t)which;
-                        } else if (ph == TIKU_TRK_PREF_HIT_SETTING) {
-                            tiku_trk_pref_t *pr = &app.prefs.pref[which];
-
-                            if (pr->type == TIKU_TRK_PREF_BOOL) {
-                                pr->value = !pr->value;
-                            }
-                        } else if (ph == TIKU_TRK_PREF_HIT_DEFAULTS) {
-                            int k;
-
-                            for (k = 0; k < TIKU_TRK_PAGES; k++) {
-                                tiku_trk_prefs_defaults(&app.prefs,
-                                    (tiku_trk_page_t)k);
-                            }
-                        } else {
-                            int k;
-
-                            for (k = 0; k < TIKU_TRK_PAGES; k++) {
-                                tiku_trk_prefs_revert(&app.prefs,
-                                    (tiku_trk_page_t)k);
-                            }
-                        }
-                        /* Applied and saved at once: with no OK button
-                         * there is no moment at which a change is
-                         * pending (TS-058). */
-                        if (app.prefs_path[0] != '\0') {
-                            (void)tiku_trk_prefs_save(&app.prefs,
-                                                      app.prefs_path);
-                        }
-                        app.dirty = 1;
+                    window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                    window_event.time_us = tiku_trk_now();
+                    window_event.x = ev.xbutton.x;
+                    window_event.y = ev.xbutton.y;
+                    window_event.button = ev.xbutton.button;
+                    if (tiku_trk_win_send(app.prefs_win, &window_event)) {
                         break;
                     }
                 }

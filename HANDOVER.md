@@ -53,7 +53,7 @@ blocker costs the next person an hour.
 ```
 889 rows: 476 done · 173 partial · 81 differs · 159 open
 core (199): 127 done · 43 partial · 25 differs · 4 open
-verification: 1859 checks — 36 unit suites + 49 headless shell scripts
+verification: 1862 checks — 36 unit suites + 49 headless shell scripts
 ```
 
 ---

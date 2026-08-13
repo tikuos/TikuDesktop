@@ -9,7 +9,8 @@
  */
 
 #include "tiku_trk_shortcuts.h"
-#include "tiku_trk_poseview.h"       /* view modes, TIKU_TRK_MOD_*          */
+#include "tiku_trk_input.h"
+#include "tiku_trk_view_defs.h"
 
 #include <string.h>
 

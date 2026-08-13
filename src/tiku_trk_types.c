@@ -9,7 +9,6 @@
  */
 
 #include "tiku_trk_types.h"
-#include "tiku_trk_poseview.h"
 
 #include <stdio.h>
 #include <string.h>

@@ -15,14 +15,16 @@
 #ifndef TIKU_TRK_POSEVIEW_H_
 #define TIKU_TRK_POSEVIEW_H_
 
-#include "tiku_trk_gfx_dep.h"
+#include <stdint.h>
+
 #include "tiku_trk_attr.h"
+#include "tiku_trk_input.h"
 #include "tiku_trk_match.h"
 #include "tiku_trk_model.h"
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_notify.h"
+#include "tiku_trk_view_defs.h"
 
-#define TIKU_TRK_COLUMNS_MAX   6
 #define TIKU_TRK_TYPEAHEAD_MAX 64
 
 /** @brief How many filter terms Shift+Space can accumulate. */
@@ -30,15 +32,6 @@
 
 /** @brief Type-ahead lapses after this quiet period (PVK "restarts the timeout"). */
 #define TIKU_TRK_TYPEAHEAD_US  1000000
-
-/** @brief View modes (PVL-001).  Mini-icon shares icon mode's machinery. */
-#define TIKU_TRK_MODE_LIST   0
-#define TIKU_TRK_MODE_ICON   1
-#define TIKU_TRK_MODE_MINI   2
-
-/** @brief The mini icon size, and the gap auto-placement keeps between icons. */
-#define TIKU_TRK_MINI_ICON  16
-#define TIKU_TRK_PLACE_GAP   3
 
 /** @brief A saved position further out than this is nonsense (PVL: 50000). */
 #define TIKU_TRK_SANE_LOCATION 50000
@@ -84,70 +77,6 @@ typedef struct {
      * only way to tell those apart is the moment selection happened. */
     int64_t          sel_time;
 } tiku_trk_pose_t;
-
-/**
- * @brief Column geometry, in Tracker's own terms.
- *
- * A column title's rectangle is not the column: it starts
- * TIKU_TRK_COL_LEFT_MARGIN to the LEFT of the data (that gap is where the
- * sort triangle lives) and ends TIKU_TRK_COL_RIGHT_MARGIN past its right
- * edge.  Every rule about hit-testing, truncation and the resize edge is
- * stated against that rectangle, so the two margins have to exist as
- * separate numbers rather than as one padding constant.
- */
-#define TIKU_TRK_COL_LEFT_MARGIN   11
-#define TIKU_TRK_COL_RIGHT_MARGIN   5
-#define TIKU_TRK_COL_MARGIN        (TIKU_TRK_COL_LEFT_MARGIN + \
-                                    TIKU_TRK_COL_RIGHT_MARGIN)
-
-/** @brief The floor an interactive resize clamps up to (kMinColumnWidth). */
-#define TIKU_TRK_COL_MIN_WIDTH     20
-
-/** @brief Width kept clear for the resize tracking line (kRoomForLine). */
-#define TIKU_TRK_COL_ROOM_FOR_LINE  2
-
-/** @brief Alignments, in the order the saved record encodes them. */
-#define TIKU_TRK_ALIGN_LEFT    0
-#define TIKU_TRK_ALIGN_RIGHT   1
-#define TIKU_TRK_ALIGN_CENTER  2
-
-/** @brief A list column: title, geometry, alignment, and what it renders. */
-typedef struct {
-    const char *title;
-    int         width;
-    int         field;              /* TIKU_TRK_COL_*                       */
-    /* Where the column's DATA starts.  Derived, never authoritative: a
-     * saved layout's offsets set the ORDER and are then thrown away, because
-     * anything else lets a stale number survive a font change or a resize
-     * and put a column where nothing draws. */
-    int         offset;
-    int         alignment;
-} tiku_trk_column_t;
-
-#define TIKU_TRK_COL_NAME   0
-#define TIKU_TRK_COL_KIND   1
-#define TIKU_TRK_COL_VALUE  2
-#define TIKU_TRK_COL_SIZE   3
-#define TIKU_TRK_COL_CAP    4
-#define TIKU_TRK_COL_DATE   5
-/* Where the entry IS, and what may be done to it.  Both are facts every
- * model already carries; the vocabulary was five columns wide and had no
- * way to show either (CW-025). */
-#define TIKU_TRK_COL_PATH   6
-#define TIKU_TRK_COL_PERM   7
-#define TIKU_TRK_COL_KINDS  8
-
-/**
- * @brief Where the ATTRIBUTE columns start.
- *
- * A column beyond this is not one of the fixed set: it shows the value of
- * a named attribute, which is what makes a type's own columns possible at
- * all (CW-026).  The id is its slot; the NAME is what identifies it in a
- * saved layout, because a slot number means nothing to the next session.
- */
-#define TIKU_TRK_COL_ATTR_BASE 16
-#define TIKU_TRK_COL_ATTR_MAX   8
-#define TIKU_TRK_ATTR_NAME_MAX 32
 
 typedef struct tiku_trk_poseview tiku_trk_poseview_t;
 
@@ -255,7 +184,7 @@ int tiku_trk_poseview_adopt(tiku_trk_poseview_t *v,
 int tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v);
 
 /** @brief Document colour for this view, tinted when it is read-only. */
-tiku_desk_rgb_t tiku_trk_poseview_background(const tiku_trk_poseview_t *v);
+uint32_t tiku_trk_poseview_background(const tiku_trk_poseview_t *v);
 
 /** @brief Select the saved column/frame layout shared by this query type. */
 void tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v,
@@ -297,9 +226,6 @@ tiku_trk_pose_t *tiku_trk_poseview_active(tiku_trk_poseview_t *v);
 /*---------------------------------------------------------------------------*/
 /* Selection (PVS-001..010)                                                  */
 /*---------------------------------------------------------------------------*/
-
-#define TIKU_TRK_MOD_SHIFT  0x1u
-#define TIKU_TRK_MOD_CMD    0x2u   /* Control on Linux, Command on BeOS     */
 
 /**
  * @brief Whether more than one pose may be selected at a time (PVS-009).
@@ -416,15 +342,6 @@ int tiku_trk_poseview_band(const tiku_trk_poseview_t *v);
 /*---------------------------------------------------------------------------*/
 /* Keyboard (PVK-001..010)                                                   */
 /*---------------------------------------------------------------------------*/
-
-#define TIKU_TRK_KEY_UP     1
-#define TIKU_TRK_KEY_DOWN   2
-#define TIKU_TRK_KEY_LEFT   3
-#define TIKU_TRK_KEY_RIGHT  4
-#define TIKU_TRK_KEY_HOME   5
-#define TIKU_TRK_KEY_END    6
-#define TIKU_TRK_KEY_PGUP   7
-#define TIKU_TRK_KEY_PGDN   8
 
 /** @brief Arrow / Home / End / Page navigation.  @return 1 if handled. */
 int tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods);

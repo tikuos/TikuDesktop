@@ -16,6 +16,7 @@
 #ifndef TIKU_TRK_WIN_H_
 #define TIKU_TRK_WIN_H_
 
+#include "tiku_desk_event.h"
 #include "tiku_trk_gfx_dep.h"
 
 #define TIKU_TRK_WIN_MAX     16
@@ -42,6 +43,14 @@ typedef void (*tiku_trk_win_draw_fn)(tiku_trk_win_t *w,
                                      tiku_desk_surface_t *s,
                                      tiku_desk_rect_t content, void *ctx);
 
+/** Application-owned window behavior.  These callbacks are the migration
+ * seam from the central Tracker event switch to self-contained windows. */
+typedef int (*tiku_trk_win_event_fn)(tiku_trk_win_t *w,
+                                     const tiku_desk_event_t *event,
+                                     void *ctx);
+typedef int (*tiku_trk_win_close_fn)(tiku_trk_win_t *w, void *ctx);
+typedef void (*tiku_trk_win_destroy_fn)(tiku_trk_win_t *w, void *ctx);
+
 /** @brief A window: a rectangle, a tab, and someone else's content. */
 struct tiku_trk_win {
     char                 title[TIKU_TRK_WIN_TITLE_MAX];
@@ -52,6 +61,9 @@ struct tiku_trk_win {
     int                  resizable;
     int                  zoomable;
     tiku_trk_win_draw_fn draw;
+    tiku_trk_win_event_fn event;
+    tiku_trk_win_close_fn close_requested;
+    tiku_trk_win_destroy_fn destroy;
     void                *ctx;          /* the owner's data (a pose view)   */
     void                *tag;          /* owner's identity, for lookups    */
     /* Zoom is a TOGGLE, so the frame it left has to be remembered. */
@@ -81,6 +93,18 @@ tiku_trk_win_t *tiku_trk_desk_open(tiku_trk_desk_t *d, const char *title,
 tiku_trk_win_t *tiku_trk_desk_find(tiku_trk_desk_t *d, void *tag);
 
 void tiku_trk_desk_close(tiku_trk_desk_t *d, tiku_trk_win_t *w);
+
+/** Attach the application behavior owned by this window. */
+void tiku_trk_win_set_handlers(tiku_trk_win_t *w,
+                               tiku_trk_win_event_fn event,
+                               tiku_trk_win_close_fn close_requested,
+                               tiku_trk_win_destroy_fn destroy);
+
+/** Deliver one normalized event directly to a window. */
+int tiku_trk_win_send(tiku_trk_win_t *w, const tiku_desk_event_t *event);
+
+/** Ask permission, then close and destroy the window if allowed. */
+int tiku_trk_desk_request_close(tiku_trk_desk_t *d, tiku_trk_win_t *w);
 
 /** @brief Bring @p w to the front and give it focus. */
 void tiku_trk_desk_activate(tiku_trk_desk_t *d, tiku_trk_win_t *w);

@@ -9,7 +9,7 @@
  */
 
 #include "tiku_trk_cwmenu.h"
-#include "tiku_trk_poseview.h"
+#include "tiku_trk_view_defs.h"
 
 #include <stdio.h>
 #include <string.h>

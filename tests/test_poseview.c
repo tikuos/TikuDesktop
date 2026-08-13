@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
+#include "tiku_desk_gfx.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_task.h"
 

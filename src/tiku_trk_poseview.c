@@ -880,13 +880,13 @@ tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v)
     return (v != NULL) ? v->is_query : 0;
 }
 
-tiku_desk_rgb_t
+uint32_t
 tiku_trk_poseview_background(const tiku_trk_poseview_t *v)
 {
     /* A tint below 1 lightens, and white cannot get lighter; use the
      * concrete read-only shade so the cue is visible on the document white. */
-    return (v != NULL && v->is_query) ? TIKU_DESK_RGB(240, 240, 240)
-                                      : TIKU_DESK_C_DOC;
+    return (v != NULL && v->is_query) ? UINT32_C(0x00f0f0f0)
+                                      : UINT32_C(0x00ffffff);
 }
 
 void

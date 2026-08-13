@@ -15,7 +15,7 @@
 
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_iconpaint.h"
-#include "tiku_trk_poseview.h"       /* TIKU_TRK_MOD_* */
+#include "tiku_trk_input.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -10,17 +10,23 @@ CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra -Isrc -I../desktop/src
 LDFLAGS ?=
 
-BUILD := build
-DESK  := ../desktop/src
+BUILD     := build
+DESK_ROOT := ../desktop
+DESK      := $(DESK_ROOT)/src
+DESK_TRANSPORT_LIB := $(DESK_ROOT)/build/libtiku_desk_transport.a
+DESK_UI_LIB        := $(DESK_ROOT)/build/libtiku_desk_ui.a
+DESK_RUNTIME_LIB   := $(DESK_ROOT)/build/libtiku_desk_runtime.a
+DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
+                      $(DESK_TRANSPORT_LIB)
+DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 CORE  := src/tiku_trk_task.c src/tiku_trk_ident.c src/tiku_trk_state.c \
          src/tiku_trk_attr.c src/tiku_trk_query.c src/tiku_trk_notify.c \
          src/tiku_trk_match.c src/tiku_trk_clip.c src/tiku_trk_drag.c \
          src/tiku_trk_alert.c src/tiku_trk_launch.c src/tiku_trk_scroll.c src/tiku_trk_types.c src/tiku_trk_vdir.c src/tiku_trk_volume.c src/tiku_trk_prefs.c src/tiku_trk_switcher.c src/tiku_trk_navmenu.c src/tiku_trk_nodeicon.c src/tiku_trk_frame.c src/tiku_trk_panel.c src/tiku_trk_info.c src/tiku_trk_image.c src/tiku_trk_thumb.c src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
          src/tiku_trk_model.c src/tiku_trk_backend_posix.c \
-         src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c \
-         $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c $(DESK)/tiku_desk_ns.c
+         src/tiku_trk_backend_tiku.c src/tiku_trk_fs.c
 
-.PHONY: all test clean
+.PHONY: all test clean check-architecture
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
@@ -31,6 +37,11 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop
+
+$(DESK_LIBS) &: $(DESK_SOURCES)
+	$(MAKE) --no-print-directory -C $(DESK_ROOT) libs
+
+$(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop: $(DESK_LIBS)
 
 $(BUILD)/test_task: src/tiku_trk_task.c tests/test_task.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -44,25 +55,21 @@ $(BUILD)/test_poseview: $(CORE) src/tiku_trk_poseview.c tests/test_poseview.c | 
 $(BUILD)/test_fs: $(CORE) src/tiku_trk_fs.c tests/test_fs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-UI := $(DESK)/tiku_desk_gfx.c $(DESK)/tiku_desk_font.c $(DESK)/tiku_desk_ui.c
-
 # The HVIF icon set.  Needs -lm: the rasteriser is float throughout.
 ICONS := src/tiku_trk_hvif.c src/tiku_trk_icons.c src/tiku_trk_iconpaint.c
 
 $(BUILD)/test_types: $(CORE) tests/test_types.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_types.c
+	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_types.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_scroll: $(CORE) tests/test_scroll.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_scroll.c
+	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_scroll.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_launch: $(CORE) tests/test_launch.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_launch.c
+	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_launch.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_query: src/tiku_trk_query.c src/tiku_trk_attr.c \
                      src/tiku_trk_model.c src/tiku_trk_state.c \
                      src/tiku_trk_find.c src/tiku_trk_types.c \
-                     $(DESK)/tiku_desk_gfx.c \
-                     $(DESK)/tiku_desk_font.c $(DESK)/tiku_desk_ui.c \
                      src/tiku_trk_menu.c tests/test_query.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -70,11 +77,11 @@ $(BUILD)/test_notify: src/tiku_trk_notify.c src/tiku_trk_poseview.c \
                       src/tiku_trk_model.c src/tiku_trk_attr.c \
                       src/tiku_trk_match.c src/tiku_trk_clip.c \
                       src/tiku_trk_state.c src/tiku_trk_backend_posix.c \
-                      src/tiku_trk_task.c $(DESK)/tiku_desk_gfx.c \
+                      src/tiku_trk_task.c \
                       src/tiku_trk_nodeicon.c src/tiku_trk_types.c src/tiku_trk_thumb.c \
                       src/tiku_trk_image.c src/tiku_trk_inflate.c \
                       src/tiku_trk_jpeg.c \
-                      $(DESK)/tiku_desk_font.c tests/test_notify.c src/tiku_trk_volume.c \
+                      tests/test_notify.c src/tiku_trk_volume.c \
                      | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -89,7 +96,7 @@ $(BUILD)/test_title: $(CORE) src/tiku_trk_poseview.c src/tiku_trk_titleview.c \
 $(BUILD)/test_match: src/tiku_trk_match.c tests/test_match.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_deskbar_dock: $(CORE) $(UI) $(ICONS) \
+$(BUILD)/test_deskbar_dock: $(CORE) $(ICONS) \
                             src/tiku_trk_deskbar.c \
                             tests/test_deskbar_dock.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
@@ -97,7 +104,7 @@ $(BUILD)/test_deskbar_dock: $(CORE) $(UI) $(ICONS) \
 $(BUILD)/test_frame: $(CORE) tests/test_frame.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_win: src/tiku_trk_win.c $(UI) tests/test_win.c | $(BUILD)
+$(BUILD)/test_win: src/tiku_trk_win.c tests/test_win.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_iconview: $(CORE) src/tiku_trk_poseview.c \
@@ -121,7 +128,7 @@ $(BUILD)/test_navigator: src/tiku_trk_navigator.c src/tiku_trk_model.c \
                          tests/test_navigator.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_dbdrop: $(CORE) $(UI) $(ICONS) src/tiku_trk_deskbar.c \
+$(BUILD)/test_dbdrop: $(CORE) $(ICONS) src/tiku_trk_deskbar.c \
                       src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                       src/tiku_trk_attr.c tests/test_dbdrop.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
@@ -131,14 +138,12 @@ $(BUILD)/test_switcher: src/tiku_trk_switcher.c tests/test_switcher.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_deskicons: $(CORE) src/tiku_trk_deskicons.c \
-                         src/tiku_trk_poseview.c $(DESK)/tiku_desk_gfx.c \
-                         $(DESK)/tiku_desk_font.c tests/test_deskicons.c \
+                         src/tiku_trk_poseview.c tests/test_deskicons.c \
                          | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_scripting: $(CORE) src/tiku_trk_poseview.c \
-                        src/tiku_trk_script_api.c $(DESK)/tiku_desk_gfx.c \
-                        $(DESK)/tiku_desk_font.c tests/test_scripting.c \
+                        src/tiku_trk_script_api.c tests/test_scripting.c \
                         | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -161,8 +166,7 @@ $(BUILD)/test_alert: src/tiku_trk_alert.c src/tiku_trk_fs.c \
                      src/tiku_trk_clip.c src/tiku_trk_drag.c \
                      src/tiku_trk_image.c src/tiku_trk_thumb.c \
                      src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
-                     $(DESK)/tiku_desk_tx.c $(DESK)/tiku_desk_session.c \
-                     $(DESK)/tiku_desk_ns.c tests/test_alert.c | $(BUILD)
+                     tests/test_alert.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_inflate: src/tiku_trk_inflate.c tests/test_inflate.c | $(BUILD)
@@ -170,7 +174,7 @@ $(BUILD)/test_inflate: src/tiku_trk_inflate.c tests/test_inflate.c | $(BUILD)
 
 $(BUILD)/test_thumb: src/tiku_trk_thumb.c src/tiku_trk_image.c \
                      src/tiku_trk_inflate.c src/tiku_trk_jpeg.c \
-                     src/tiku_trk_state.c $(DESK)/tiku_desk_gfx.c \
+                     src/tiku_trk_state.c \
                      tests/test_thumb.c | $(BUILD)
 	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
@@ -188,17 +192,16 @@ $(BUILD)/test_edit: src/tiku_trk_edit.c src/tiku_trk_select.c \
 
 $(BUILD)/test_menu: src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                     src/tiku_trk_cwmenu.c src/tiku_trk_model.c \
-                    $(DESK)/tiku_desk_gfx.c $(DESK)/tiku_desk_font.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c \
-                    src/tiku_trk_iconpaint.c $(DESK)/tiku_desk_gfx.c \
+                    src/tiku_trk_iconpaint.c \
                     tests/test_hvif.c \
                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
-$(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
+$(BUILD)/tracker: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_edit.c src/tiku_trk_titleview.c \
                   src/tiku_trk_navigator.c \
@@ -207,7 +210,7 @@ $(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-$(BUILD)/desktop: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
+$(BUILD)/desktop: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_script.c \
                   src/tiku_trk_edit.c src/tiku_trk_select.c \
@@ -226,6 +229,7 @@ $(BUILD):
 # EVERY suite runs here.  One left out is one that goes on passing from a
 # binary nobody rebuilt.
 test: all
+	@$(MAKE) --no-print-directory check-architecture
 	@$(BUILD)/test_task
 	@$(BUILD)/test_model $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD))
 	@$(BUILD)/test_poseview
@@ -268,6 +272,9 @@ test: all
 	@# doubled or lost a row must fail here rather than be believed.
 	@python3 tools/check_contract.py FEATURES.md
 	@tests/shell/run.sh
+
+check-architecture:
+	@python3 tools/check_architecture.py
 
 clean:
 	rm -rf $(BUILD)

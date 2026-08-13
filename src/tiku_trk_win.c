@@ -57,6 +57,9 @@ tiku_trk_desk_new(tiku_desk_surface_t *surface)
 void
 tiku_trk_desk_free(tiku_trk_desk_t *d)
 {
+    while (d != NULL && d->count > 0) {
+        tiku_trk_desk_close(d, &d->wins[d->order[d->count - 1]]);
+    }
     free(d);
 }
 
@@ -185,6 +188,8 @@ void
 tiku_trk_desk_close(tiku_trk_desk_t *d, tiku_trk_win_t *w)
 {
     int slot, at, i;
+    tiku_trk_win_destroy_fn destroy;
+    void *ctx;
 
     if (d == NULL || w == NULL || !w->open) {
         return;
@@ -200,6 +205,48 @@ tiku_trk_desk_close(tiku_trk_desk_t *d, tiku_trk_win_t *w)
     }
     /* Focus falls to whatever is now in front, as it does on a real desk. */
     d->focused = (d->count > 0) ? d->order[d->count - 1] : -1;
+    /* Clear before calling out so a destroy callback that indirectly closes
+     * the window cannot run twice. */
+    destroy = w->destroy;
+    ctx = w->ctx;
+    w->destroy = NULL;
+    if (destroy != NULL) {
+        destroy(w, ctx);
+    }
+}
+
+void
+tiku_trk_win_set_handlers(tiku_trk_win_t *w, tiku_trk_win_event_fn event,
+                          tiku_trk_win_close_fn close_requested,
+                          tiku_trk_win_destroy_fn destroy)
+{
+    if (w != NULL) {
+        w->event = event;
+        w->close_requested = close_requested;
+        w->destroy = destroy;
+    }
+}
+
+int
+tiku_trk_win_send(tiku_trk_win_t *w, const tiku_desk_event_t *event)
+{
+    if (w == NULL || !w->open || event == NULL || w->event == NULL) {
+        return 0;
+    }
+    return w->event(w, event, w->ctx);
+}
+
+int
+tiku_trk_desk_request_close(tiku_trk_desk_t *d, tiku_trk_win_t *w)
+{
+    if (d == NULL || w == NULL || !w->open) {
+        return 0;
+    }
+    if (w->close_requested != NULL && !w->close_requested(w, w->ctx)) {
+        return 0;
+    }
+    tiku_trk_desk_close(d, w);
+    return 1;
 }
 
 /*---------------------------------------------------------------------------*/

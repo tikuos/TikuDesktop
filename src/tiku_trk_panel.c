@@ -10,9 +10,7 @@
  */
 
 #include "tiku_trk_panel.h"
-/* For the key and modifier vocabulary only: the panel interprets the same
- * chords a view does, and a second set of names for them would drift. */
-#include "tiku_trk_poseview.h"
+#include "tiku_trk_input.h"
 
 #include <stdio.h>
 #include <stdlib.h>
