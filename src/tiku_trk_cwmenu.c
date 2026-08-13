@@ -304,6 +304,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_CREATE_LINK);
         ADD(m, TIKU_TRK_CMD_CUT);
         ADD(m, TIKU_TRK_CMD_COPY);
+        ADD(m, TIKU_TRK_CMD_PASTE);
         SEP(m);
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }

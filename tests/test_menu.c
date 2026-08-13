@@ -133,6 +133,12 @@ main(void)
         check(tiku_trk_sc_command(TIKU_TRK_CMD_IDENTIFY, TIKU_TRK_MOD_SHIFT)
               == TIKU_TRK_CMD_IDENTIFY,
               "Force identify keeps the Identify command");
+        check(strcmp(tiku_trk_sc_label(TIKU_TRK_CMD_DELETE, 0u),
+                     "Delete") == 0 &&
+              tiku_trk_sc_command(TIKU_TRK_CMD_DELETE, 0u) ==
+                  TIKU_TRK_CMD_DELETE,
+              "an explicit Trash Delete says Delete without Shift and "
+              "keeps the destructive command");
     }
 
     printf("\nan item showing its shifted face still updates back\n");
@@ -303,6 +309,7 @@ main(void)
         tiku_trk_cwmenu_t cw;
         tiku_trk_sc_ctx_t c = base_ctx();
         tiku_trk_model_t vol, file;
+        int i;
 
         tiku_trk_cwmenu_init(&cw);
         tiku_trk_cwmenu_rebuild(&cw, &c);
@@ -389,6 +396,12 @@ main(void)
         check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_RESTORE) >= 0 &&
               tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_DUPLICATE) < 0,
               "Restore stands where Duplicate would be");
+        i = tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_DELETE);
+        check(i >= 0 && strcmp(cw.file.item[i].label, "Delete") == 0,
+              "the Trash inventory names its destructive action Delete");
+        tiku_trk_sc_update(&cw.file, &c);
+        check(strcmp(cw.file.item[i].label, "Delete") == 0,
+              "and a live menu refresh does not turn it back into Trash");
 
         memset(&vol, 0, sizeof vol);
         vol.kind = TIKU_TRK_KIND_VOLUME;

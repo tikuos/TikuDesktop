@@ -1,0 +1,14 @@
+# shell: desktop
+# CW-042: a pose menu carries Paste and routes it through the clipboard.
+click-row 1
+key c ctrl
+wait 3
+note the pose menu includes the complete clipboard block
+click-row 1 3
+wait 3
+expect-menu Paste
+note Paste from the pose menu invokes the same operation as Ctrl+V
+menu-pick Paste
+wait 20
+expect-file /tmp/trk_script/a.txt copy
+quit

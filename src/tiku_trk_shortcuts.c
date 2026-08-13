@@ -47,6 +47,11 @@ tiku_trk_sc_label(int command, unsigned mods)
 {
     int sh = shifted(mods);
 
+    /* Delete is also the shifted form of Move to Trash, but a Trash menu
+     * asks for Delete directly and must not need Shift to say what it does. */
+    if (command == TIKU_TRK_CMD_DELETE) {
+        return "Delete";
+    }
     switch (canonical(command)) {
     /* The nine that rename themselves.  Capitalisation is the original's:
      * "Move to Trash" and "Empty Trash" capitalise Trash, the rest do not
@@ -119,6 +124,9 @@ tiku_trk_sc_command(int command, unsigned mods)
 {
     int sh = shifted(mods);
 
+    if (command == TIKU_TRK_CMD_DELETE) {
+        return TIKU_TRK_CMD_DELETE;
+    }
     switch (canonical(command)) {
     case TIKU_TRK_CMD_CLEANUP:
         return sh ? TIKU_TRK_CMD_CLEANUP_ALL : TIKU_TRK_CMD_CLEANUP;
@@ -330,7 +338,12 @@ tiku_trk_sc_update(tiku_trk_menu_t *m, const tiku_trk_sc_ctx_t *c)
             tiku_trk_sc_update(it->submenu, c);
             continue;
         }
-        base = canonical(it->command);
+        /* In a Trash inventory Delete is the base action.  Elsewhere the
+         * same command value is the shifted face of Move to Trash and must
+         * turn back when Shift is released. */
+        base = (it->command == TIKU_TRK_CMD_DELETE && c != NULL &&
+                (c->is_trash || c->in_trash))
+                   ? TIKU_TRK_CMD_DELETE : canonical(it->command);
         tiku_trk_menu_relabel(m, i, tiku_trk_sc_label(base, mods),
                               tiku_trk_sc_command(base, mods),
                               tiku_trk_sc_key(base),

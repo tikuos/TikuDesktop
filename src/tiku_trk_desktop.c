@@ -324,6 +324,9 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
                                   sizeof trash) == 0) {
             tiku_trk_model_t tm;
 
+            c.is_trash = (strcmp(fl->path, trash) == 0);
+            c.in_trash = !c.is_trash &&
+                         tiku_trk_fs_in_trash(app->fs, fl->path);
             if (app->backend->ops->stat(app->backend, trash, &tm) == 0) {
                 c.trash_full = tm.facts.trash_full;
             }

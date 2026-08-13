@@ -52,6 +52,13 @@ for s in "$here"/*.script; do
         if grep -q '^# work: home' "$s"; then
             work="$HOME/.trk-shell-fixture"
         fi
+        # A Trash-window script uses an isolated HOME under /tmp.  It must
+        # never point at the account's real Trash, which the fixture reset
+        # below deliberately recreates from scratch.
+        if grep -q '^# argv: trash' "$s"; then
+            deskhome="$work/home"
+            work="$deskhome/.Trash"
+        fi
         # The fixture every script starts from.  Rows sort folders first,
         # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
         # the click coordinates in the scripts are aimed at.
