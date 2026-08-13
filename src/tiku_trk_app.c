@@ -1016,6 +1016,29 @@ row_at(app_t *a, int px, int py)
     return (idx < tiku_trk_poseview_count(a->view)) ? idx : -1;
 }
 
+/** @brief Resolve a visible list row to a point the script can click. */
+static int
+script_row_point(void *ctx, int row, int *x, int *y)
+{
+    app_t *a = (app_t *)ctx;
+    tiku_desk_rect_t list;
+    int rel;
+
+    if (a == NULL || x == NULL || y == NULL || row < 0 ||
+        tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    rel = row - tiku_trk_poseview_scroll(a->view);
+    if (rel < 0 || rel >= visible_rows(a) ||
+        row >= tiku_trk_poseview_count(a->view)) {
+        return 0;
+    }
+    list = list_rect(a);
+    *x = list.x + 20;
+    *y = list.y + 2 + rel * a->row_h + a->row_h / 2;
+    return 1;
+}
+
 /** @brief Whether a point is on the title strip, and where in its own space. */
 static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
@@ -1578,11 +1601,29 @@ main(int argc, char **argv)
                 tiku_trk_script_step_t sp;
                 tiku_trk_script_state_t sst;
 
+                memset(&sst, 0, sizeof sst);
                 sst.status = a.status;
                 sst.title = a.title;
                 sst.alert = NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
+                {
+                    int si, sn = tiku_trk_poseview_count(a.view);
+
+                    for (si = 0; si < sn; si++) {
+                        tiku_trk_pose_t *p =
+                            tiku_trk_poseview_at(a.view, si);
+
+                        if (p != NULL && p->selected) {
+                            if (sst.sel_name == NULL) {
+                                sst.sel_name = p->model.name;
+                            }
+                            sst.selected++;
+                        }
+                    }
+                }
+                sst.row_point = script_row_point;
+                sst.pose_ctx = &a;
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     a.running = 0;
                     break;

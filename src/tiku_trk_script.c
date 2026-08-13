@@ -23,7 +23,8 @@
 
 /** @brief What one line was asking for. */
 typedef enum {
-    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
+    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW,
+    OP_WAIT, OP_SHOT,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
@@ -192,6 +193,13 @@ tiku_trk_script_open(const char *path)
                 st->button = (unsigned)atoi(w[3]);
             }
             st->state = mods_of(w, n, 4);
+        } else if (strcmp(w[0], "click-row") == 0 && n >= 2) {
+            st->op = OP_CLICK_ROW;
+            st->count = atoi(w[1]);
+            if (n >= 3) {
+                st->button = (unsigned)atoi(w[2]);
+            }
+            st->state = mods_of(w, n, 3);
         } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
             st->op = OP_WAIT;
             st->count = atoi(w[1]);
@@ -391,6 +399,22 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->button = cur->button;
         out->state = cur->state;
         s->pending_release = (cur->op == OP_CLICK);
+        return 1;
+    case OP_CLICK_ROW:
+        if (st == NULL || st->row_point == NULL ||
+            !st->row_point(st->pose_ctx, cur->count, &cur->x, &cur->y)) {
+            char row[32];
+
+            snprintf(row, sizeof row, "%d", cur->count);
+            verdict(s, 0, "cannot click row:", row);
+            return 1;
+        }
+        out->what = TIKU_TRK_SC_PRESS;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->button = cur->button;
+        out->state = cur->state;
+        s->pending_release = 1;
         return 1;
     case OP_MOVE:
         out->what = TIKU_TRK_SC_MOVE;

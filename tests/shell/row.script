@@ -1,0 +1,9 @@
+# shell: tracker
+# The shell resolves a list row through its live geometry, so adding chrome
+# above the listing does not turn this into a click on another row.
+wait 8
+note click-row 1 selects the fixture's a.txt row
+click-row 1
+wait 3
+expect-selected-name a.txt
+quit

@@ -4,9 +4,10 @@
 # number that changes as you work was the one it did not show.
 wait 8
 expect-count 4 items
-click 100 97
+click-row 1
 wait 3
 expect-count 1/4 selected
+expect-selected-name a.txt
 key a ctrl
 wait 3
 expect-count 4/4 selected

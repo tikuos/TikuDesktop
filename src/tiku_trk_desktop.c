@@ -3681,6 +3681,37 @@ folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
     return (rel < tiku_trk_poseview_count(fl->view)) ? rel : -1;
 }
 
+/** @brief Resolve a visible focused-window row for a scripted click. */
+static int
+script_row_point(void *ctx, int row, int *x, int *y)
+{
+    desktop_t *app = (desktop_t *)ctx;
+    tiku_trk_win_t *fw;
+    folder_t *fl;
+    tiku_desk_rect_t c;
+    int rel, visible;
+
+    if (app == NULL || x == NULL || y == NULL || row < 0) {
+        return 0;
+    }
+    fw = tiku_trk_desk_focused(app->desk);
+    fl = (fw != NULL) ? folder_of(app, fw) : NULL;
+    if (fl == NULL || fl->view == NULL ||
+        tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    c = folder_content(app, fl);
+    rel = row - tiku_trk_poseview_scroll(fl->view);
+    visible = (c.h - COUNT_H - 4) / app->row_h;
+    if (rel < 0 || rel >= visible ||
+        row >= tiku_trk_poseview_count(fl->view)) {
+        return 0;
+    }
+    *x = c.x + 20;
+    *y = c.y + 2 + rel * app->row_h + app->row_h / 2;
+    return 1;
+}
+
 
 /** @brief What is drawn at @p x, @p y right now, 0xRRGGBB (script). */
 static unsigned
@@ -4837,6 +4868,7 @@ main(int argc, char **argv)
                 tiku_trk_script_state_t sst;
                 tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
 
+                memset(&sst, 0, sizeof sst);
                 sst.status = app.status;
                 sst.title = (fw != NULL) ? fw->title : NULL;
                 sst.scroll = 0;
@@ -4913,6 +4945,7 @@ main(int argc, char **argv)
                     }
                 }
                 sst.pose_at = script_pose_at;
+                sst.row_point = script_row_point;
                 sst.pixel_at = script_pixel_at;
                 sst.pose_ctx = &app;
                 {

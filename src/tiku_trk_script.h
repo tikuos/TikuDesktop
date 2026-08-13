@@ -73,6 +73,9 @@ typedef struct {
      * position is the only way to check an ARRANGEMENT -- how many rows a
      * window holds says nothing about where a drop put them. */
     int       (*pose_at)(void *ctx, const char *name, int *x, int *y);
+    /* Where a visible list row can be clicked in shell coordinates.  The
+     * shell owns chrome geometry, so scripts must not reconstruct it. */
+    int       (*row_point)(void *ctx, int row, int *x, int *y);
     /* One pixel of what is actually on screen, 0xRRGGBB.  Drawing is the
      * only evidence for a rule about how something LOOKS -- a band style
      * changes no state a checker could otherwise read. */
@@ -89,6 +92,7 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *
  *     key <keysym> [ctrl] [shift] [alt]   -- e.g. `key n ctrl`
  *     click <x> <y> [button]              -- press and release together
+ *     click-row <n> [button]               -- click a visible list row
  *     press <x> <y> [button]
  *     release <x> <y> [button]
  *     wait <turns>                        -- let the loop run
