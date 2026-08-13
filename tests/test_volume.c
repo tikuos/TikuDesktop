@@ -11,11 +11,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "tiku_trk_fs.h"
 #include "tiku_trk_volume.h"
 
 static int fails;
+
+/** @brief Stands in for the windows that save themselves before a volume
+ *         goes: it records that it was asked, and for which device. */
+static void
+note_before(dev_t dev, void *ctx)
+{
+    int *saved = ctx;
+
+    (void)dev;
+    if (saved != NULL) {
+        (*saved)++;
+    }
+}
+
 
 static void
 check(int cond, const char *row, const char *what)
@@ -386,6 +401,66 @@ main(void)
         }
         tiku_trk_fs_free(fs3);
         tiku_trk_backend_close(b3);
+    }
+
+    printf("\nunmounting, and what has to happen first (AW-096, Q-046)\n");
+    {
+        tiku_trk_volumes_t vs2;
+        char why[128];
+        static int saved_for;
+
+        struct stat sb_root, sb_other;
+
+        /* Real paths on real devices: a volume is found by DEVICE, so a
+         * table of invented ones would answer NULL for everything and the
+         * rules below would never be reached. */
+        memset(&vs2, 0, sizeof vs2);
+        if (stat("/", &sb_root) != 0 || stat("/dev/shm", &sb_other) != 0 ||
+            sb_root.st_dev == sb_other.st_dev) {
+            printf("  (skipped: this host has no second device to test "
+                   "against)\n");
+            goto after_unmount;
+        }
+        vs2.n = 2;
+        snprintf(vs2.v[0].mount, sizeof vs2.v[0].mount, "/");
+        snprintf(vs2.v[0].name, sizeof vs2.v[0].name, "Boot");
+        vs2.v[0].is_boot = 1;
+        vs2.v[0].dev = sb_root.st_dev;
+        snprintf(vs2.v[1].mount, sizeof vs2.v[1].mount, "/dev/shm");
+        snprintf(vs2.v[1].name, sizeof vs2.v[1].name, "stick");
+        vs2.v[1].removable = 1;
+        vs2.v[1].dev = sb_other.st_dev;
+
+        saved_for = 0;
+        check(tiku_trk_volume_unmount(&vs2, "/", note_before, &saved_for,
+                                      why, sizeof why) ==
+              TIKU_TRK_UNMOUNT_REFUSED && why[0] != '\0', "AW-096",
+              "the boot volume is refused, and said -- the system is "
+              "running from it");
+        check(saved_for == 0, "AW-096",
+              "and nothing was saved for it: a refusal must not have made "
+              "the windows write themselves out first");
+        saved_for = 0;
+        {
+            tiku_trk_unmount_t r =
+                tiku_trk_volume_unmount(&vs2, "/dev/shm", note_before,
+                                        &saved_for, why, sizeof why);
+
+            check(r != TIKU_TRK_UNMOUNT_REFUSED, "AW-096",
+                  "a removable volume is not refused by the rules -- "
+                  "whether the system lets go of it is a different "
+                  "answer");
+            check(saved_for == 1, "AW-096",
+                  "and everything open on it saves BEFORE it goes: "
+                  "afterwards there is nowhere to write, and the "
+                  "arrangement is lost the moment it leaves");
+        }
+        check(tiku_trk_volume_unmount(&vs2, "/nowhere", note_before,
+                                      &saved_for, why, sizeof why) ==
+              TIKU_TRK_UNMOUNT_REFUSED, "AW-096",
+              "a path that is no volume is not an unmount at all");
+after_unmount:
+        (void)0;
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the volume model holds");

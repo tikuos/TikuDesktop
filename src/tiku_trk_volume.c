@@ -10,6 +10,9 @@
 
 #include "tiku_trk_volume.h"
 
+#include <errno.h>
+#include <sys/mount.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -371,4 +374,39 @@ tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w, tiku_trk_volchange_t *out,
      * not be reported for ever. */
     w->was = now;
     return n;
+}
+
+tiku_trk_unmount_t
+tiku_trk_volume_unmount(const tiku_trk_volumes_t *vs, const char *path,
+                        tiku_trk_before_unmount_fn before, void *ctx,
+                        char *why, size_t max)
+{
+    const tiku_trk_volume_t *v;
+
+    if (why != NULL && max > 0u) {
+        why[0] = '\0';
+    }
+    if (!tiku_trk_volume_may_unmount(vs, path, why, max)) {
+        return TIKU_TRK_UNMOUNT_REFUSED;
+    }
+    v = tiku_trk_volume_of(vs, path);
+    if (v == NULL) {
+        return TIKU_TRK_UNMOUNT_REFUSED;
+    }
+    if (before != NULL) {
+        /* While the volume is still THERE: afterwards there is nowhere to
+         * write, and the arrangement of everything open on that disk is
+         * lost the moment it leaves (AW-096). */
+        before(v->dev, ctx);
+    }
+    if (umount(v->mount) != 0) {
+        if (why != NULL) {
+            snprintf(why, max, (errno == EBUSY)
+                         ? "Something is still using \"%.40s\"."
+                         : "\"%.40s\" could not be unmounted.", v->name);
+        }
+        return (errno == EBUSY) ? TIKU_TRK_UNMOUNT_BUSY
+                                : TIKU_TRK_UNMOUNT_FAILED;
+    }
+    return TIKU_TRK_UNMOUNT_OK;
 }

@@ -4591,12 +4591,14 @@ one of its places is not the search that was saved.
 src/tiku_trk_find.c:tiku_trk_find_from_query; tests/shell/query.script*  
 *Shell: desktop*  
 
-#### Q-046 · important · open
+#### Q-046 · important · partial
 **Unmounting a volume force-closes any query window that is searching it, so the unmount can proceed.**  
 TTracker::CloseActiveQueryWindows posts B_QUIT_REQUESTED to every BQueryContainerWindow whose ActiveOnDevice(device) is true, then waits for them to close; ActiveOnDevice asks the pose view whether any BQuery in fQueryList has TargetDevice() == device. TTracker::QueryActiveForDevice answers the same question without closing.  
 `QueryPoseView.cpp` → `BQueryPoseView::ActiveOnDevice (Tracker.cpp TTracker::CloseActiveQueryWindows, TTracker::QueryActiveForDevice)`  
 **TIKU:** Direct analogue: a device disappearing from the VFS must tear down live searches bound to it, or their watch slots leak.  
-**BLOCKED:** Waits on unmounting existing at all.  The model answers whether a volume MAY be unmounted (FS-041) and nothing performs one, so there is no unmount for a query window to be closed by.  
+**MISSING:** Unmounting exists, and it calls back before the volume goes -- which is where a query window searching the volume would be closed. Nothing closes one yet: the callback has no caller in either shell.  
+*src/tiku_trk_volume.c:tiku_trk_volume_unmount (the before-unmount callback)*
+
 #### Q-047 · important · done
 **The Select window matches poses by name with five rules — starts with, ends with, contains, matches wildcard expression, matches regular expression — plus Invert and Ignore case; wildcard and Ignore case are the defaults.**  
 SelectionWindow builds the popup in that order, marks item 3 (wildcard) and sets fIgnoreCaseCheckBox to 1; ExpressionType maps the menu index through {kStartsWith,kEndsWith,kContains,kGlobMatch,kRegexpMatch}. kSelectMatchingEntries carries ExpressionType/Expression/InvertSelection/IgnoreCase; BPoseView::SelectMatchingEntries clears the selection, enables multiple selection, and adds each pose where `name.Matches(expr, !ignoreCase, type) ^ invertSelection`. TrackerString::Matches dispatches, and kNone matches nothing.  
@@ -6477,12 +6479,13 @@ kMoveSelectionToTrash: refs whose parent window is open use PoseView()->MoveEntr
 **MISSING:** Trashing a multi-item selection does go through one batched filesystem job, but the routing rule is missing: there is no entry point for refs from outside a window, nothing routes a trash through the window that holds the item, and no next item is selected — remove_pose explicitly clears the active pose to -1 when the removed row was active.  
 *src/tiku_trk_app.c:handle_key XK_Delete -> src/tiku_trk_fs.c:tiku_trk_fs_trash; src/tiku_trk_poseview.c:remove_pose*
 
-#### AW-096 · important · open
+#### AW-096 · important · partial
 **Unmounting from the mount menu saves every window's icon positions before the volume goes away, and active query windows on a device can be closed first (waiting up to three seconds) so they do not block the unmount.**  
 kUnmountVolume calls SaveAllPoseLocations() then falls through to forwarding the message to the mount server; CloseActiveQueryWindows posts B_QUIT_REQUESTED to each query window active on the device then polls QueryActiveForDevice 30 times at 100 ms. SaveAllPoseLocations uses BDeskWindow::SaveDesktopPoseLocations for the desktop.  
 `Tracker.cpp` → `TTracker::MessageReceived (kUnmountVolume) / TTracker::CloseActiveQueryWindows / TTracker::SaveAllPoseLocations`  
 **TIKU:** Device removal is the direct analogue: pending state must be flushed to NVM and dependent views torn down before the node disappears.
-**SUBSYSTEM:** volume model — no mount/unmount machinery anywhere: grep -rn MOUNT/unmount over src finds only the device-unplug comment in src/tiku_trk_backend_tiku.c:473-475 (tk_close does flush the sidecar store before the link goes — the port's nearest analogue), and no query-window-close-before-unmount logic exists (query windows are torn down only with the app, src/tiku_trk_desktop.c folder teardown).  
+**MISSING:** The unmount exists and its ORDER is the rule: refuse first, then let everything open on the volume save itself while the volume is still there to save to, and only then ask the system -- asking first and saving afterwards is how an arrangement is lost. What is absent is the caller that walks the windows: the operation takes the sweep as a callback and the shells do not yet pass one.  
+*src/tiku_trk_volume.c:tiku_trk_volume_unmount; tests/test_volume.c*
 
 #### AW-097 · polish · partial
 **Volume free-space bars refresh once per second, only while the setting is enabled, and refresh immediately when the setting or its color changes.**  

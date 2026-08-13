@@ -71,6 +71,41 @@ int tiku_trk_volume_is_root(const tiku_trk_volumes_t *vs, const char *path);
 int tiku_trk_volume_may_unmount(const tiku_trk_volumes_t *vs,
                                 const char *path, char *why, size_t max);
 
+/** @brief Why an unmount did not happen. */
+typedef enum {
+    TIKU_TRK_UNMOUNT_OK = 0,
+    TIKU_TRK_UNMOUNT_REFUSED,    /* the rules say no (the boot volume)   */
+    TIKU_TRK_UNMOUNT_BUSY,       /* something is still using it          */
+    TIKU_TRK_UNMOUNT_FAILED      /* the system would not                 */
+} tiku_trk_unmount_t;
+
+/**
+ * @brief What the caller must do BEFORE the volume goes (AW-096).
+ *
+ * Every window showing something on it saves its icon positions while the
+ * volume is still there to save them to: afterwards there is nowhere to
+ * write, and the arrangement of everything the user had open on that disk
+ * is lost the moment it leaves.
+ *
+ * @param dev The volume's device, so a caller can find its windows.
+ */
+typedef void (*tiku_trk_before_unmount_fn)(dev_t dev, void *ctx);
+
+/**
+ * @brief Unmount the volume at @p path (AW-096, Q-046).
+ *
+ * The order is the rule: refuse first, then let the caller save and close
+ * what it has open on the volume, and only then ask the system.  Asking
+ * first and saving afterwards is how an arrangement is lost.
+ *
+ * @param before Called once, after the rules pass and before the unmount.
+ * @param why    Receives the refusal or the failure, when there is one.
+ */
+tiku_trk_unmount_t tiku_trk_volume_unmount(const tiku_trk_volumes_t *vs,
+                                           const char *path,
+                                           tiku_trk_before_unmount_fn before,
+                                           void *ctx, char *why, size_t max);
+
 /**
  * @brief Whether an operation on @p path is allowed by its volume.
  *
