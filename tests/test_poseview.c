@@ -1249,6 +1249,33 @@ main(void)
         (void)tiku_trk_poseview_toggle_column(v, f);
     }
 
+    printf("\nwhat a selection the user cannot see is (PVL-054)\n");
+    {
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
+        tiku_trk_poseview_set_visible_rows(v, 2);
+        tiku_trk_poseview_scroll_to(v, 0);
+        tiku_trk_poseview_type_clear(v);
+        /* "sigma" is the last of the six names, two rows past the window. */
+        tiku_trk_poseview_type_ahead(v, 's');
+        tiku_trk_poseview_type_ahead(v, 'i');
+        check(tiku_trk_poseview_scroll(v) > 0, "PVL-054",
+              "typing a name that is off screen scrolls to it: a selection "
+              "the user cannot see is one they cannot tell happened");
+        tiku_trk_poseview_type_clear(v);
+        tiku_trk_poseview_scroll_to(v, 0);
+        {
+            char err[64];
+
+            (void)tiku_trk_poseview_select_matching(v, "sigma*",
+                      TIKU_TRK_MATCH_GLOB, 1, 0, err, sizeof err);
+            check(tiku_trk_poseview_scroll(v) > 0, "PVL-054",
+                  "and so does selecting by pattern -- a window that "
+                  "selected a row off screen looks like one that did "
+                  "nothing");
+        }
+        tiku_trk_poseview_scroll_to(v, 0);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

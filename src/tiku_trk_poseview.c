@@ -1237,6 +1237,21 @@ tiku_trk_poseview_select_matching(tiku_trk_poseview_t *v, const char *expr,
             hits++;
         }
     }
+    if (hits > 0) {
+        int i, n = tiku_trk_poseview_count(v);
+
+        for (i = 0; i < n; i++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+
+            if (p != NULL && p->selected) {
+                /* The first thing it found, for the same reason: a window
+                 * that selected six rows off screen looks like a window
+                 * that did nothing (PVL-054). */
+                tiku_trk_poseview_scroll_into_view(v, i, v->visible_rows);
+                break;
+            }
+        }
+    }
     return hits;
 }
 
@@ -1784,6 +1799,9 @@ type_select_best(tiku_trk_poseview_t *v)
         v->pivot = best;
         v->last_added = best;
         v->active = tiku_trk_poseview_at(v, best)->index;
+        /* Typing a name that is off screen must SHOW it: a selection the
+         * user cannot see is one they cannot tell happened (PVL-054). */
+        tiku_trk_poseview_scroll_into_view(v, best, v->visible_rows);
     }
 }
 

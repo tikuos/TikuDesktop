@@ -834,12 +834,11 @@ PinPointToValidRange zeroes any coordinate that is NaN (detected by the delibera
 `PoseView.cpp` → `BPoseView::PinPointToValidRange`
 **BLOCKED:** Persisted scroll origins: the saved viewstate record is only "<mode> <size>" (src/tiku_trk_poseview.c:2514-2523), so no scroll origin is ever restored and there is nothing to sanitize. (The pose-location half of the sanity idea does exist: restored positions beyond TIKU_TRK_SANE_LOCATION are refused, src/tiku_trk_poseview.c:2480-2485.)  
 
-#### PVL-054 · core · partial
+#### PVL-054 · core · done
 **Selecting or arrow-keying to an item scrolls it into view, minimally, and in list mode only vertically.**  
 ScrollIntoView(BRect): no-op on the Desktop; horizontal adjustment only when ViewMode() != kListMode; scrolls just far enough so the rect's leading edge is visible, and jumps to the leading edge when the pose is larger than the viewport. Uses SetScrollBarsTo so the scrollbars stay in sync.  
 `PoseView.cpp` → `BPoseView::ScrollIntoView / BPoseView::AddPoseToSelection`  
-**MISSING:** Every navigating key scrolls its target into view; a selection changed by type-ahead or by the Select window does not.
-
+**PORT:** Every way the selection can change scrolls its target into view -- the navigating keys, type-ahead, and Select by pattern, which scrolls to the first thing it found. A selection the user cannot see is one they cannot tell happened.  
 #### PVL-055 · important · done
 **Home/End/PageUp/PageDown move the selection in list mode but scroll the view in the icon modes.**  
 KeyDown: list mode maps Home/End to MoveOrChangePoseSelection(0 / count-1) and PageUp/PageDown to selecting the first/last visible pose, scrolling one page first if that pose is already selected. Icon modes call ScrollView(type), which sets the vertical scrollbar to 0, max, or ±max.  
