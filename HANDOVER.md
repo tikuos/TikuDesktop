@@ -194,8 +194,9 @@ in the `case` block near the top.
 src/core/             UI-independent models, commands, queries, and state
 src/backends/         host/device namespace access, notices, file operations
 src/ui/               pose views, menus, navigation, and visual controllers
-src/ui/windows/       feature windows: Info, panels, preferences, Select,
-                      switcher
+src/ui/windows/       feature windows: Find, Info, file panels, preferences,
+                      Select, switcher
+src/ui/overlays/      modal alerts and shared operation-status presentation
 src/media/            HVIF icons, image decoding, thumbnails, icon painting
 src/deskbar/          Deskbar and Desktop-icon behavior
 src/shell/            application descriptors and front-end composition

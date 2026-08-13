@@ -9,7 +9,8 @@ CC      ?= cc
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra \
            -Isrc/core -Isrc/backends -Isrc/ui -Isrc/ui/windows \
-           -Isrc/media -Isrc/deskbar -Isrc/shell -I../desktop/src
+           -Isrc/ui/overlays -Isrc/media -Isrc/deskbar -Isrc/shell \
+           -I../desktop/src
 LDFLAGS ?=
 
 BUILD     := build
@@ -21,11 +22,13 @@ DESK_RUNTIME_LIB   := $(DESK_ROOT)/build/libtiku_desk_runtime.a
 DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
                       $(DESK_TRANSPORT_LIB)
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
-DESKTOP_CONTROLLERS := src/ui/windows/tiku_trk_info_window.c \
+DESKTOP_CONTROLLERS := src/ui/windows/tiku_trk_find_window.c \
+                       src/ui/windows/tiku_trk_info_window.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \
                        src/ui/windows/tiku_trk_select_window.c \
-                       src/ui/windows/tiku_trk_switcher_window.c
+                       src/ui/windows/tiku_trk_switcher_window.c \
+                       src/ui/overlays/tiku_trk_status_overlay.c
 CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_state.c src/core/tiku_trk_attr.c \
         src/core/tiku_trk_query.c src/core/tiku_trk_match.c \

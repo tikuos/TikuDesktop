@@ -55,6 +55,8 @@
 #include "tiku_trk_select.h"
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
+#include "tiku_trk_find_window.h"
+#include "tiku_trk_status_overlay.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_query.h"
 #include "tiku_trk_task.h"
@@ -163,9 +165,7 @@ typedef struct desktop {
     char                 find_buf[64];
     int                  find_len;
     int                  find_serial;
-    /* The panel, and the window it lives in. */
-    tiku_trk_find_t      panel;
-    tiku_desk_window_t      *panel_win;
+    tiku_trk_find_window_t find_window;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -225,13 +225,11 @@ typedef struct desktop {
     tiku_trk_info_windows_t info_windows;
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
-    tiku_trk_alert_t     alert;     /* the question, when there is one */
-    tiku_trk_progress_win_t prog;   /* the shared status window        */
+    tiku_trk_status_overlay_t status_overlay;
     tiku_trk_prefs_window_t prefs_window;
     tiku_trk_switcher_window_t switcher_window;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
-    int64_t              prog_opened;
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
@@ -271,6 +269,55 @@ static tiku_trk_select_t *
 select_model(desktop_t *app)
 {
     return tiku_trk_select_window_model(&app->select_window);
+}
+
+/** @brief Find state is retained by its reusable window controller. */
+static tiku_trk_find_t *
+find_model(desktop_t *app)
+{
+    return tiku_trk_find_window_model(&app->find_window);
+}
+
+/** @brief Modal question state is presented by the shared overlay. */
+static tiku_trk_alert_t *
+alert_model(desktop_t *app)
+{
+    return tiku_trk_status_overlay_alert(&app->status_overlay);
+}
+
+/** @brief File-job state is presented by the shared overlay. */
+static tiku_trk_progress_win_t *
+progress_model(desktop_t *app)
+{
+    return tiku_trk_status_overlay_progress(&app->status_overlay);
+}
+
+/** @brief Hand a modal filesystem answer back to the operation engine. */
+static void
+status_answer(void *context, const tiku_trk_alert_t *alert)
+{
+    desktop_t *app = context;
+
+    if (alert->tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
+        if (alert->chosen == alert->cancel) {
+            tiku_trk_fs_cancel(app->fs);
+        } else {
+            tiku_trk_fs_resolve(app->fs,
+                                tiku_trk_alert_conflict_answer(alert));
+        }
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
+        tiku_trk_fs_resolve_error(app->fs,
+                                  alert->chosen != alert->cancel);
+    }
+}
+
+/** @brief Stop asks the operation engine to cancel at its safe boundary. */
+static void
+status_stop(void *context)
+{
+    desktop_t *app = context;
+
+    tiku_trk_fs_cancel(app->fs);
 }
 
 /** @brief What the action table needs to know about the focused window. */
@@ -1338,6 +1385,10 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
         tiku_trk_panel_window_close(&app->file_panel);
         return;
     }
+    if (w == tiku_trk_find_window_handle(&app->find_window)) {
+        tiku_trk_find_window_close(&app->find_window);
+        return;
+    }
     info_slot = tiku_trk_info_windows_slot(&app->info_windows, w);
     if (info_slot >= 0) {
         tiku_trk_info_windows_close(&app->info_windows, info_slot);
@@ -1676,13 +1727,13 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
             if (tiku_trk_fs_check_move(app->fs, app->drag.path[0], dst,
                                        refused, sizeof refused) !=
                     TIKU_TRK_REFUSE_NONE) {
-                tiku_trk_alert_open(&app->alert, TIKU_TRK_ALERT_WARN,
+                tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                                     TIKU_TRK_ALERT_TAG_REFUSAL, refused,
                                     "Cancel");
                 return;
             }
         } else {
-            tiku_trk_alert_open(&app->alert, TIKU_TRK_ALERT_WARN,
+            tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
             return;
         }
@@ -1909,15 +1960,6 @@ folder_fit_h(desktop_t *app, folder_t *fl)
     return tiku_trk_poseview_count(fl->view) * app->row_h + 4 + COUNT_H;
 }
 
-/** @brief Draw the Find panel into its window. */
-static void
-panel_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s,
-           tiku_desk_rect_t content, void *ctx)
-{
-    (void)w;
-    tiku_trk_find_draw(ctx, s, content);
-}
-
 /**
  * @brief Adopt a result set into a window, live.
  *
@@ -2108,28 +2150,14 @@ apply_select_model(void *context, void *target,
 static void
 open_panel(desktop_t *app)
 {
-    tiku_desk_rect_t frame;
-
-    if (app->panel_win != NULL && app->panel_win->open) {
-        tiku_desk_workspace_activate(app->desk, app->panel_win);
-        app->dirty = 1;
-        return;
-    }
-    frame.w = 560;
-    frame.h = tiku_trk_find_height(&app->panel) + TIKU_DESK_WINDOW_TAB_H +
-              2 * TIKU_DESK_WINDOW_BORDER;
-    frame.x = (DESK_W - frame.w) / 2;
-    frame.y = (DESK_H - frame.h) / 2;
-    app->panel_win = tiku_desk_workspace_open(app->desk, "Find", frame, panel_draw,
-                                        &app->panel, &app->panel);
-    tiku_desk_window_set_size_controls(app->panel_win, 0, 0);
-    app->dirty = 1;
+    tiku_trk_find_window_open(&app->find_window);
 }
 
 /** @brief Run what the panel is asking and show the results. */
 static int
-panel_search(desktop_t *app)
+panel_search(void *context, tiku_trk_find_t *panel)
 {
+    desktop_t *app = context;
     tiku_trk_query_t q;
     tiku_trk_qrun_t *run;
     char title[TIKU_TRK_PATH_MAX];
@@ -2137,7 +2165,7 @@ panel_search(desktop_t *app)
     char record_name[TIKU_TRK_NAME_MAX];
     int replacing;
 
-    tiku_trk_find_build(&app->panel, &q);
+    tiku_trk_find_build(panel, &q);
     if (q.invalid) {
         snprintf(app->status, sizeof app->status,
                  "invalid query formula");
@@ -2159,9 +2187,9 @@ panel_search(desktop_t *app)
             break;
         }
     }
-    (void)tiku_trk_find_scope_label(&app->panel, scope, sizeof scope);
-    replacing = app->panel.loaded_kind == TIKU_TRK_QREC_QUERY &&
-                app->panel.loaded_name[0] != '\0';
+    (void)tiku_trk_find_scope_label(panel, scope, sizeof scope);
+    replacing = panel->loaded_kind == TIKU_TRK_QREC_QUERY &&
+                panel->loaded_name[0] != '\0';
     record_name[0] = '\0';
     {
         /* Every run leaves a record, marked TEMPORARY: a search is a thing
@@ -2174,7 +2202,7 @@ panel_search(desktop_t *app)
         q.temporary = 1;
         if (replacing) {
             snprintf(record_name, sizeof record_name, "%s",
-                     app->panel.loaded_name);
+                     panel->loaded_name);
             if (tiku_trk_query_load(&previous, record_name, app->store) ==
                     0) {
                 q.temporary = previous.temporary;
@@ -2195,7 +2223,7 @@ panel_search(desktop_t *app)
          * name carries. */
         q.saved_at = (int64_t)time(NULL);
         if (record_name[0] != '\0' ||
-            tiku_trk_find_default_name(&app->panel, (long)q.saved_at,
+            tiku_trk_find_default_name(panel, (long)q.saved_at,
                                        record_name,
                                        sizeof record_name) > 0) {
             (void)tiku_trk_query_save(&q, record_name, app->store);
@@ -2219,26 +2247,6 @@ panel_search(desktop_t *app)
     }
     app->dirty = 1;
     return 1;
-}
-
-/** @brief The default button: Search normally, Save in template-edit mode. */
-static void
-panel_primary(desktop_t *app)
-{
-    int done = 0;
-
-    if (tiku_trk_find_primary_is_save(&app->panel)) {
-        done = (tiku_trk_find_save_current(&app->panel,
-                                            (int64_t)time(NULL)) == 0);
-        snprintf(app->status, sizeof app->status, "%s",
-                 done ? tiku_trk_find_note(&app->panel)
-                      : "that template cannot be saved");
-    } else {
-        done = panel_search(app);
-    }
-    if (done && app->panel_win != NULL) {
-        close_window(app, app->panel_win);
-    }
 }
 
 /**
@@ -2467,7 +2475,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * what the user wants from a result set is usually one more
          * condition, not the same search a second time (Q-045). */
         int whole = (fl->qname[0] != '\0')
-                        ? tiku_trk_find_load_named(&app->panel, fl->qname)
+                        ? tiku_trk_find_load_named(find_model(app), fl->qname)
                         : -1;
 
         if (whole < 0) {
@@ -2649,7 +2657,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                                      "\"%.60s\" is a system folder.  Hold "
                                      "Shift and choose Move to confirm.",
                                      sel[j]);
-                            tiku_trk_alert_open(&app->alert,
+                            tiku_trk_alert_open(alert_model(app),
                                 TIKU_TRK_ALERT_STOP,
                                 TIKU_TRK_ALERT_TAG_REFUSAL, msg, "Cancel");
                             stop = 1;
@@ -3243,224 +3251,6 @@ publish_windows(desktop_t *app)
                                  (focused != NULL));
 }
 
-/** @brief Where the alert sits: centred, and the same size every time. */
-#define ALERT_W 420
-#define ALERT_H 150
-
-static tiku_desk_rect_t
-alert_frame(void)
-{
-    tiku_desk_rect_t r;
-
-    r.x = (DESK_W - ALERT_W) / 2;
-    r.y = (DESK_H - ALERT_H) / 3;   /* a third down reads better than half */
-    r.w = ALERT_W;
-    r.h = ALERT_H;
-    return r;
-}
-
-/**
- * @brief Draw the alert over everything.
- *
- * Above the menus as well as the windows: it is the one thing that must be
- * answered before anything else happens.
- */
-static void
-alert_draw(desktop_t *app)
-{
-    tiku_desk_rect_t f = alert_frame();
-    const tiku_desk_font_t *fo = tiku_desk_font_plain();
-    int i, ty;
-
-    if (!app->alert.open) {
-        return;
-    }
-    tiku_desk_fill(app->surf, f, TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(app->surf, f,
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-    ty = f.y + 24;
-    {   /* Wrapped by hand: the message is a sentence about a file, and a
-         * file name is exactly the thing that makes it too long. */
-        const char *p = app->alert.text;
-        char line[80];
-        size_t n = 0;
-
-        while (*p != '\0' && ty < f.y + f.h - 46) {
-            size_t k = 0;
-            const char *sp = NULL;
-
-            while (p[k] != '\0' && k < sizeof line - 1u) {
-                if (p[k] == ' ') { sp = p + k; }
-                if (tiku_desk_text_width(fo, line) > f.w - 32) { break; }
-                line[k] = p[k];
-                k++;
-                line[k] = '\0';
-            }
-            if (p[k] != '\0' && sp != NULL && sp > p) {
-                k = (size_t)(sp - p);
-                line[k] = '\0';
-            }
-            tiku_desk_text(app->surf, fo, f.x + 16, ty, line,
-                           TIKU_DESK_C_TEXT);
-            ty += fo->height + 4;
-            p += k;
-            while (*p == ' ') { p++; }
-            n++;
-            if (n > 6u) { break; }
-        }
-    }
-    for (i = 0; i < app->alert.nbutton; i++) {
-        tiku_desk_rect_t b;
-        int bx, by, bw, bh;
-
-        tiku_trk_alert_button_rect(&app->alert, i, f.w, f.h, &bx, &by, &bw,
-                                   &bh);
-        b.x = f.x + bx; b.y = f.y + by; b.w = bw; b.h = bh;
-        tiku_desk_fill(app->surf, b, TIKU_DESK_C_PANEL);
-        tiku_desk_bevel(app->surf, b,
-                         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-                         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-        tiku_desk_text(app->surf, fo, b.x + 10, b.y + 16,
-                       app->alert.button[i], TIKU_DESK_C_TEXT);
-    }
-}
-
-/** @brief Draw the shared status window, if any job is running. */
-static void
-progress_draw(desktop_t *app)
-{
-    tiku_desk_rect_t f;
-    const tiku_desk_font_t *fo = tiku_desk_font_plain();
-    int i, row = 0;
-
-    if (!app->prog.open) {
-        return;
-    }
-    f.w = 380;
-    f.h = 22 + TIKU_TRK_PROGRESS_ROWS * 34;
-    f.x = DESK_W - f.w - 24;
-    f.y = DESK_H - f.h - 24;
-    tiku_desk_fill(app->surf, f, TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(app->surf, f,
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-    for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
-        char line[160];
-        const char *leaf;
-        tiku_desk_rect_t bar;
-        int y;
-
-        if (!app->prog.row[i].used) {
-            continue;
-        }
-        y = f.y + 14 + row * 34;
-        {   /* A paused row says how to get going again; a frozen counter
-             * with no explanation reads as a hang (FS-074). */
-            const char *t = tiku_trk_progress_row_text(&app->prog, i);
-
-            leaf = strrchr(t, '/');
-            leaf = (leaf != NULL) ? leaf + 1 : t;
-        }
-        snprintf(line, sizeof line, "%s%.40s",
-                 app->prog.row[i].paused ? "" : app->prog.row[i].caption,
-                 leaf);
-        tiku_desk_text(app->surf, fo, f.x + 10, y, line, TIKU_DESK_C_TEXT);
-        {   /* Speed for eight seconds, then the estimate for four: the
-             * cycle is shared by every row, since two alternating out of
-             * step would be harder to read than one (FS-071). */
-            int64_t open_for = tiku_trk_now() - app->prog_opened;
-
-            if (tiku_trk_progress_show_speed(open_for)) {
-                int64_t sp = tiku_trk_progress_speed(&app->prog, i);
-
-                if (sp > 0) {
-                    snprintf(line, sizeof line, "%lld KB/s",
-                             (long long)(sp / 1024));
-                } else {
-                    snprintf(line, sizeof line, "%d of %d",
-                             app->prog.row[i].done, app->prog.row[i].total);
-                }
-            } else {
-                int64_t eta = tiku_trk_progress_eta(&app->prog, i);
-
-                if (eta >= 0) {
-                    snprintf(line, sizeof line, "%lld s left",
-                             (long long)eta);
-                } else {
-                    snprintf(line, sizeof line, "%d of %d",
-                             app->prog.row[i].done, app->prog.row[i].total);
-                }
-            }
-        }
-        tiku_desk_text(app->surf, fo, f.x + f.w - 70, y, line,
-                       TIKU_DESK_C_TEXT);
-        bar.x = f.x + 10;
-        bar.y = y + 6;
-        bar.w = f.w - 20;
-        bar.h = 8;
-        tiku_desk_fill(app->surf, bar, TIKU_DESK_C_DOC);
-        if (app->prog.row[i].total > 0) {
-            bar.w = (f.w - 20) * app->prog.row[i].done /
-                    app->prog.row[i].total;
-            if (bar.w > 0) {
-                tiku_desk_fill(app->surf, bar, TIKU_DESK_C_SELECT);
-            }
-        }
-        {   /* Pause and stop.  Stop is outermost: the destructive one is
-             * furthest from the pause a user is aiming for. */
-            int k;
-
-            for (k = TIKU_TRK_PROGRESS_HIT_PAUSE;
-                 k <= TIKU_TRK_PROGRESS_HIT_STOP; k++) {
-                tiku_desk_rect_t b;
-                int bx, by, bw, bh;
-
-                tiku_trk_progress_button_rect(row, k, f.w, &bx, &by, &bw,
-                                              &bh);
-                b.x = f.x + bx; b.y = f.y + by; b.w = bw; b.h = bh;
-                tiku_desk_fill(app->surf, b, TIKU_DESK_C_PANEL);
-                tiku_desk_bevel(app->surf, b,
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-                tiku_desk_text(app->surf, fo, b.x + 6, b.y + 13,
-                    (k == TIKU_TRK_PROGRESS_HIT_STOP) ? "x"
-                        : (app->prog.row[i].paused ? ">" : "|"),
-                    TIKU_DESK_C_TEXT);
-            }
-        }
-        row++;
-    }
-}
-
-/**
- * @brief Hand the alert's answer back to whoever asked.
- *
- * The alert carries its own tag, so the shell does not have to remember
- * which question it put up -- which it could not do reliably once a job can
- * ask twice.
- */
-static void
-answer_alert(desktop_t *app)
-{
-    if (!app->alert.open || app->alert.chosen < 0) {
-        return;
-    }
-    if (app->alert.tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
-        if (app->alert.chosen == app->alert.cancel) {
-            /* Cancel abandons the whole job, not just this collision. */
-            tiku_trk_fs_cancel(app->fs);
-        } else {
-            tiku_trk_fs_resolve(app->fs,
-                                tiku_trk_alert_conflict_answer(&app->alert));
-        }
-    } else if (app->alert.tag == TIKU_TRK_ALERT_TAG_ERROR) {
-        tiku_trk_fs_resolve_error(app->fs,
-                                  app->alert.chosen != app->alert.cancel);
-    }
-    tiku_trk_alert_reset(&app->alert);
-}
-
 static void
 draw_all(desktop_t *app)
 {
@@ -3585,8 +3375,7 @@ draw_all(desktop_t *app)
                  TIKU_TRK_NAV_ROW;
         }
     }
-    progress_draw(app);
-    alert_draw(app);
+    tiku_trk_status_overlay_draw(&app->status_overlay);
     app->dirty = 0;
 }
 
@@ -3660,7 +3449,10 @@ tracker_run(int argc, char **argv)
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
     scan_teams(&app);               /* everything else that is running */
     tiku_trk_cwmenu_init(&app.menus);
-    tiku_trk_find_init(&app.panel);
+    tiku_trk_status_overlay_init(&app.status_overlay, app.surf,
+        DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
+    tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
+        &app.dirty, app.status, sizeof app.status, panel_search, &app);
     tiku_trk_select_window_init(&app.select_window, app.desk,
         DESK_W, DESK_H, &app.dirty, apply_select_model, &app);
     tiku_trk_clip_init(&app.clip);
@@ -3680,7 +3472,7 @@ tracker_run(int argc, char **argv)
     if (app.store == NULL) {
         app.store = tiku_trk_store_memory_open();
     }
-    tiku_trk_find_set_store(&app.panel, app.store);
+    tiku_trk_find_window_set_store(&app.find_window, app.store);
     (void)tiku_trk_poseview_install_query_defaults(app.backend, app.store);
     {
         /* Where the bar was docked and how wide it was left.  Kept with
@@ -3722,7 +3514,7 @@ tracker_run(int argc, char **argv)
             snprintf(tdb, sizeof tdb, "%s/.config/tracker/types",
                      (home != NULL && home[0] != '\0') ? home : "");
             (void)tiku_trk_types_install(&app.types, tdb);
-            tiku_trk_find_set_types(&app.panel, &app.types);
+            tiku_trk_find_window_set_types(&app.find_window, &app.types);
             /* The art a type wears is the database's to declare, and the
              * icon cache is what asks (IV-011). */
             tiku_trk_nodeicon_set_types(&app.nicons, &app.types);
@@ -3750,7 +3542,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_volwatch_init(&app.volwatch);
     app.info_relink = -1;
     tiku_trk_info_windows_init(&app.info_windows, app.desk, app.backend,
-        app.store, app.fs, &app.alert, &app.dirty);
+        app.store, app.fs, alert_model(&app), &app.dirty);
     tiku_trk_panel_window_init(&app.file_panel, app.desk, app.backend,
         app.store, &app.nicons, app.row_h, DESK_W, DESK_H, &app.dirty,
         fpanel_commit, &app);
@@ -3762,7 +3554,8 @@ tracker_run(int argc, char **argv)
             snprintf(path, sizeof path, "%s/.config/TrackerSettings", home);
         }
         tiku_trk_prefs_window_init(&app.prefs_window, app.desk,
-            DESK_W, DESK_H, path, &app.dirty, &app.alert.open);
+            DESK_W, DESK_H, path, &app.dirty,
+            &alert_model(&app)->open);
     }
     tiku_trk_switcher_window_init(&app.switcher_window, app.desk,
         app.deskbar, DESK_W, DESK_H, &app.dirty, app.status,
@@ -3820,7 +3613,7 @@ tracker_run(int argc, char **argv)
             for (k = 0; k < nr; k++) {
                 if (tiku_trk_model_is_container(&roots[k])) {
                     (void)tiku_trk_find_add_place_identity(
-                        &app.panel, roots[k].name, roots[k].facts.dev,
+                        find_model(&app), roots[k].name, roots[k].facts.dev,
                         app.backend->devid[0] != '\0' ? app.backend->devid
                                                      : roots[k].name);
                 }
@@ -3867,7 +3660,7 @@ tracker_run(int argc, char **argv)
         }
     }
 
-    (void)tiku_trk_find_open_default(&app.panel, (int64_t)time(NULL));
+    (void)tiku_trk_find_open_default(find_model(&app), (int64_t)time(NULL));
 
     if (script_path != NULL) {
         /* Displayless.  The shell draws into the same surface either way,
@@ -3910,21 +3703,21 @@ tracker_run(int argc, char **argv)
         char err[128];
 
         open_panel(&app);
-        tiku_trk_find_set_mode(&app.panel, TIKU_TRK_QMODE_ATTRIBUTE);
-        app.panel.row[0].field = TIKU_TRK_QF_VALUE;
-        app.panel.row[0].op = TIKU_TRK_OP_IS;
-        snprintf(app.panel.row[0].value, sizeof app.panel.row[0].value, "1");
-        app.panel.everywhere = 0;
+        tiku_trk_find_set_mode(find_model(&app), TIKU_TRK_QMODE_ATTRIBUTE);
+        find_model(&app)->row[0].field = TIKU_TRK_QF_VALUE;
+        find_model(&app)->row[0].op = TIKU_TRK_OP_IS;
+        snprintf(find_model(&app)->row[0].value, sizeof find_model(&app)->row[0].value, "1");
+        find_model(&app)->everywhere = 0;
         {
             int k;
 
-            for (k = 0; k < app.panel.place_count; k++) {
-                if (strcmp(app.panel.place[k], "dev") == 0) {
-                    app.panel.place_mask = 1u << k;
+            for (k = 0; k < find_model(&app)->place_count; k++) {
+                if (strcmp(find_model(&app)->place[k], "dev") == 0) {
+                    find_model(&app)->place_mask = 1u << k;
                 }
             }
         }
-        panel_search(&app);
+        (void)panel_search(&app, find_model(&app));
         (void)app.backend->ops->write(app.backend, "/dev/led2", "1", 1, err,
                                       sizeof err);
         {
@@ -3934,29 +3727,26 @@ tracker_run(int argc, char **argv)
                 (void)refresh_results(&app, &app.folders[k]);
             }
         }
-        close_window(&app, app.panel_win);
+        tiku_trk_find_window_close(&app.find_window);
     }
     if (shot_panel) {
         /* Drive the panel the way a user would: open it, choose attribute
          * mode, fill two rows joined by or, scope it, and search. */
         open_panel(&app);
-        tiku_trk_find_set_mode(&app.panel, TIKU_TRK_QMODE_ATTRIBUTE);
-        (void)tiku_trk_find_add_row(&app.panel);
-        app.panel.row[0].field = TIKU_TRK_QF_UNIT;
-        app.panel.row[0].op = TIKU_TRK_OP_IS;
-        snprintf(app.panel.row[0].value, sizeof app.panel.row[0].value,
+        tiku_trk_find_set_mode(find_model(&app), TIKU_TRK_QMODE_ATTRIBUTE);
+        (void)tiku_trk_find_add_row(find_model(&app));
+        find_model(&app)->row[0].field = TIKU_TRK_QF_UNIT;
+        find_model(&app)->row[0].op = TIKU_TRK_OP_IS;
+        snprintf(find_model(&app)->row[0].value, sizeof find_model(&app)->row[0].value,
                  "bytes");
-        app.panel.row[0].join = TIKU_TRK_JOIN_OR;
-        app.panel.row[1].field = TIKU_TRK_QF_UNIT;
-        app.panel.row[1].op = TIKU_TRK_OP_IS;
-        snprintf(app.panel.row[1].value, sizeof app.panel.row[1].value, "s");
-        app.panel.everywhere = 0;
-        app.panel.place_mask = 1u;
-        panel_search(&app);
-        app.panel_win->frame.h = tiku_trk_find_height(&app.panel) +
-                                 TIKU_DESK_WINDOW_TAB_H +
-                                 2 * TIKU_DESK_WINDOW_BORDER;
-        tiku_desk_workspace_activate(app.desk, app.panel_win);
+        find_model(&app)->row[0].join = TIKU_TRK_JOIN_OR;
+        find_model(&app)->row[1].field = TIKU_TRK_QF_UNIT;
+        find_model(&app)->row[1].op = TIKU_TRK_OP_IS;
+        snprintf(find_model(&app)->row[1].value, sizeof find_model(&app)->row[1].value, "s");
+        find_model(&app)->everywhere = 0;
+        find_model(&app)->place_mask = 1u;
+        (void)panel_search(&app, find_model(&app));
+        open_panel(&app);
     }
     if (shot_find != NULL) {
         snprintf(app.find_buf, sizeof app.find_buf, "%.60s", shot_find);
@@ -4096,7 +3886,7 @@ tracker_run(int argc, char **argv)
                 sst.title = (fw != NULL) ? fw->title : NULL;
                 sst.scroll = 0;
                 sst.rows = 0;
-                sst.alert = app.alert.open ? app.alert.text : NULL;
+                sst.alert = alert_model(&app)->open ? alert_model(&app)->text : NULL;
                 {
                     int wi, wn = 0;
 
@@ -4112,8 +3902,8 @@ tracker_run(int argc, char **argv)
                 sst.selected = 0;
                 sst.sel_name = NULL;
                 sst.renaming = app.renaming;
-                sst.find_text = app.panel.name_text;
-                sst.find_type = tiku_trk_find_type_label(&app.panel);
+                sst.find_text = find_model(&app)->name_text;
+                sst.find_type = tiku_trk_find_type_label(find_model(&app));
                 sst.columns = 0;
                 {
                     tiku_desk_rect_t bf =
@@ -4185,7 +3975,7 @@ tracker_run(int argc, char **argv)
                             if (sp != NULL) {
                                 sst.kinds |= 2;
                                 if (!tiku_trk_model_type_is(sp->model.type,
-                                        app.panel.type)) {
+                                        find_model(&app)->type)) {
                                     sst.kinds |= 1;
                                 }
                             }
@@ -4267,12 +4057,13 @@ tracker_run(int argc, char **argv)
                     int k;
 
                     if (m == NULL &&
-                        tiku_trk_find_popup_open(&app.panel)) {
-                        m = (app.panel.popup_sub != NULL)
-                                ? app.panel.popup_sub : &app.panel.popup;
-                        fr = (app.panel.popup_sub != NULL)
-                                ? app.panel.popup_sub_frame
-                                : app.panel.popup_frame;
+                        tiku_trk_find_popup_open(find_model(&app))) {
+                        m = (find_model(&app)->popup_sub != NULL)
+                                ? find_model(&app)->popup_sub
+                                : &find_model(&app)->popup;
+                        fr = (find_model(&app)->popup_sub != NULL)
+                                ? find_model(&app)->popup_sub_frame
+                                : find_model(&app)->popup_frame;
                     }
 
                     if (m == NULL) {
@@ -4341,7 +4132,7 @@ tracker_run(int argc, char **argv)
                     tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
                     int islot = tiku_trk_info_windows_slot(&app.info_windows,
                                                            iw);
-                    if (islot >= 0 && !app.alert.open) {
+                    if (islot >= 0 && !alert_model(&app)->open) {
                         int which = -1;
                         tiku_trk_info_t *info = tiku_trk_info_windows_model(
                             &app.info_windows, islot);
@@ -4371,7 +4162,7 @@ tracker_run(int argc, char **argv)
                             if (tiku_trk_info_perm_toggle(info,
                                     app.backend, which, perr,
                                     sizeof perr) != 0) {
-                                tiku_trk_alert_open(&app.alert,
+                                tiku_trk_alert_open(alert_model(&app),
                                     TIKU_TRK_ALERT_WARN,
                                     TIKU_TRK_ALERT_TAG_ERROR, perr,
                                     "Cancel");
@@ -4444,7 +4235,7 @@ tracker_run(int argc, char **argv)
                         tiku_trk_prefs_window_handle(&app.prefs_window);
 
                     if (prefs_window != NULL && prefs_window->open &&
-                        !app.alert.open) {
+                        !alert_model(&app)->open) {
                         tiku_desk_event_t window_event = { 0 };
 
                         window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
@@ -4458,47 +4249,8 @@ tracker_run(int argc, char **argv)
                         }
                     }
                 }
-                if (!app.alert.open && app.prog.open) {
-                    tiku_desk_rect_t pf;
-                    int prow = 0;
-                    tiku_trk_progress_hit_t ph;
-
-                    pf.w = 380;
-                    pf.h = 22 + TIKU_TRK_PROGRESS_ROWS * 34;
-                    pf.x = DESK_W - pf.w - 24;
-                    pf.y = DESK_H - pf.h - 24;
-                    ph = tiku_trk_progress_hit(&app.prog, pf.w,
-                             ev.x - pf.x, ev.y - pf.y,
-                             &prow);
-                    if (ph == TIKU_TRK_PROGRESS_HIT_PAUSE) {
-                        app.prog.row[prow].paused =
-                            !app.prog.row[prow].paused;
-                        app.dirty = 1;
-                        break;
-                    }
-                    if (ph == TIKU_TRK_PROGRESS_HIT_STOP) {
-                        /* Stop cancels rather than killing: what is
-                         * already written stays, and the file in hand is
-                         * cleaned up (FS-033). */
-                        tiku_trk_fs_cancel(app.fs);
-                        app.dirty = 1;
-                        break;
-                    }
-                }
-                if (app.alert.open) {
-                    /* Modal: while a question is up nothing else takes a
-                     * click, which is what makes it a question rather than
-                     * a notice. */
-                    tiku_desk_rect_t af = alert_frame();
-                    int pick = tiku_trk_alert_button_at(&app.alert, af.w,
-                                   af.h, ev.x - af.x,
-                                   ev.y - af.y);
-
-                    if (pick >= 0) {
-                        app.alert.chosen = pick;
-                        answer_alert(&app);
-                    }
-                    app.dirty = 1;
+                if (tiku_trk_status_overlay_pointer(&app.status_overlay,
+                                                    ev.x, ev.y)) {
                     break;
                 }
                 tiku_desk_window_t *w = NULL;
@@ -4717,13 +4469,12 @@ tracker_run(int argc, char **argv)
                 }
                 hit = tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
                                         &w);
-                if (app.panel_win != NULL && app.panel_win->open &&
-                    tiku_trk_find_popup_open(&app.panel)) {
+                if (tiku_trk_find_window_popup_open(&app.find_window)) {
                     /* Its menus hang below the panel's window and over
                      * whatever is behind it, so the click goes to the
                      * panel wherever it lands -- the panel eats it either
                      * way, which is what closes a menu clicked off. */
-                    w = app.panel_win;
+                    w = tiku_trk_find_window_handle(&app.find_window);
                     hit = TIKU_DESK_HIT_CONTENT;
                 }
                 if (w == NULL && app.dfl.view != NULL) {
@@ -4798,8 +4549,9 @@ tracker_run(int argc, char **argv)
                                                     app.folders[k].win);
                             }
                         }
-                        if (app.panel_win != NULL) {
-                            close_window(&app, app.panel_win);
+                        if (tiku_trk_find_window_handle(&app.find_window) !=
+                                NULL) {
+                            tiku_trk_find_window_close(&app.find_window);
                         }
                         app.dirty = 1;
                         break;
@@ -4833,56 +4585,9 @@ tracker_run(int argc, char **argv)
                                     &app.file_panel)) {
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
-                           w == app.panel_win) {
-                    tiku_trk_find_hit_t what =
-                        tiku_trk_find_click(&app.panel,
-                                            tiku_desk_window_content(w),
-                                            ev.x, ev.y);
-
-                    if (what == TIKU_TRK_FIND_HIT_SEARCH) {
-                        panel_primary(&app);
-                    } else if (what == TIKU_TRK_FIND_HIT_SAVE) {
-                        char nm[128];
-
-                        if (tiku_trk_find_save_current(
-                                &app.panel, (int64_t)time(NULL)) != 0) {
-                            tiku_trk_query_t q;
-
-                            tiku_trk_find_default_name(&app.panel,
-                                (long)time(NULL), nm, sizeof nm);
-                            tiku_trk_find_build(&app.panel, &q);
-                            if (tiku_trk_query_save(&q, nm, app.store) == 0) {
-                                snprintf(app.status, sizeof app.status,
-                                         "saved as \"%.60s\"", nm);
-                            } else {
-                                snprintf(app.status, sizeof app.status,
-                                         "could not save the query");
-                            }
-                        } else {
-                            snprintf(app.status, sizeof app.status, "%.90s",
-                                     tiku_trk_find_note(&app.panel));
-                        }
-                    }
-                    if (tiku_trk_find_editing_template(&app.panel)) {
-                        snprintf(app.panel_win->title,
-                                 sizeof app.panel_win->title,
-                                 "Edit Query template");
-                    } else {
-                        snprintf(app.panel_win->title,
-                                 sizeof app.panel_win->title, "Find");
-                    }
-                    if (tiku_trk_find_note(&app.panel)[0] != '\0') {
-                        /* A menu that loaded a saved search without saying
-                         * which one leaves the user looking at a panel
-                         * that changed by itself. */
-                        snprintf(app.status, sizeof app.status, "%.90s",
-                                 tiku_trk_find_note(&app.panel));
-                        tiku_trk_find_clear_note(&app.panel);
-                    }
-                    /* The panel grows and shrinks with its rows. */
-                    w->frame.h = tiku_trk_find_height(&app.panel) +
-                                 TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
-                    app.dirty = 1;
+                           w == tiku_trk_find_window_handle(
+                                    &app.find_window)) {
+                    (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT) {
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : &app.dfl;
@@ -5412,22 +5117,8 @@ tracker_run(int argc, char **argv)
                                               key_char(&ev))) {
                     break;
                 }
-                if (app.panel_win != NULL && app.panel_win->open &&
-                    tiku_desk_workspace_focused(app.desk) == app.panel_win) {
-                    if (key == TIKU_DESK_KEY_RETURN) {
-                        panel_primary(&app);
-                    } else if (key == TIKU_DESK_KEY_ESCAPE) {
-                        close_window(&app, app.panel_win);
-                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
-                        tiku_trk_find_backspace(&app.panel);
-                    } else {
-                        char typed = key_char(&ev);
-
-                        if (typed != '\0') {
-                            tiku_trk_find_key(&app.panel, typed);
-                        }
-                    }
-                    app.dirty = 1;
+                if (tiku_trk_find_window_key(&app.find_window, key,
+                                             key_char(&ev))) {
                     break;
                 }
                 if (app.finding) {
@@ -5635,17 +5326,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (app.alert.open) {
-                    if (key == TIKU_DESK_KEY_ESCAPE && app.alert.cancel >= 0) {
-                        app.alert.chosen = app.alert.cancel;
-                        answer_alert(&app);
-                    } else if (key == TIKU_DESK_KEY_RETURN &&
-                               app.alert.nbutton > 0) {
-                        /* Return presses the default: the rightmost. */
-                        app.alert.chosen = app.alert.nbutton - 1;
-                        answer_alert(&app);
-                    }
-                    app.dirty = 1;
+                if (tiku_trk_status_overlay_key(&app.status_overlay, key)) {
                     break;
                 }
                 if (tiku_trk_switcher_window_shown(&app.switcher_window)) {
@@ -6276,7 +5957,7 @@ tracker_run(int argc, char **argv)
             }
         }
         if (app.fs != NULL && tiku_trk_fs_busy(app.fs) &&
-            !app.prog.row[0].paused) {
+            !progress_model(&app)->row[0].paused) {
             const tiku_trk_progress_t *pr;
 
             /* Stepped here, not inside the command: start() only builds the
@@ -6288,12 +5969,12 @@ tracker_run(int argc, char **argv)
             if (pr->conflict) {
                 /* Asked, not assumed.  The engine worked out which form
                  * the question takes; this puts it up and waits. */
-                if (!app.alert.open) {
-                    tiku_trk_alert_for_conflict(&app.alert, pr);
+                if (!alert_model(&app)->open) {
+                    tiku_trk_alert_for_conflict(alert_model(&app), pr);
                 }
             } else if (pr->error_ask) {
-                if (!app.alert.open) {
-                    tiku_trk_alert_for_error(&app.alert, pr);
+                if (!alert_model(&app)->open) {
+                    tiku_trk_alert_for_error(alert_model(&app), pr);
                 }
             } else {
                 snprintf(app.status, sizeof app.status, "%d of %d%s%s",
@@ -6305,23 +5986,25 @@ tracker_run(int argc, char **argv)
                 /* Where it is going, which is the other half of "what is
                  * happening": a file name alone does not say whether this
                  * is the copy the user meant (FS-069). */
-                tiku_trk_progress_update(&app.prog, 0, pr, 1,
+                tiku_trk_progress_update(progress_model(&app), 0, pr, 1,
                                          app.prog_dest[0] != '\0'
                                              ? app.prog_dest : NULL);
-                tiku_trk_progress_sample(&app.prog, 0, pr->bytes,
+                tiku_trk_progress_sample(progress_model(&app), 0, pr->bytes,
                                          tiku_trk_now());
             }
             app.dirty = 1;
-            if (app.prog_opened == 0) {
-                app.prog_opened = tiku_trk_now();
+            if (tiku_trk_status_overlay_progress_opened(
+                    &app.status_overlay) == 0) {
+                tiku_trk_status_overlay_progress_start(&app.status_overlay,
+                                                       tiku_trk_now());
                 /* Whoever was in front when the job began gets the focus
                  * back when it ends: an operation is not a reason to be
                  * left looking at something else (FS-073). */
                 app.prog_was_active = tiku_desk_workspace_focused(app.desk);
             }
-        } else if (app.prog.open) {
-            tiku_trk_progress_update(&app.prog, 0, NULL, 0, NULL);
-            app.prog_opened = 0;
+        } else if (progress_model(&app)->open) {
+            tiku_trk_progress_update(progress_model(&app), 0, NULL, 0, NULL);
+            tiku_trk_status_overlay_progress_finish(&app.status_overlay);
             if (app.prog_was_active != NULL &&
                 app.prog_was_active->open) {
                 tiku_desk_workspace_activate(app.desk, app.prog_was_active);

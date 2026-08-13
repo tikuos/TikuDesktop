@@ -56,9 +56,11 @@ Tracker will publish:
 
 The source tree mirrors those boundaries: `core/` contains portable models,
 `backends/` owns namespace and file-operation adapters, `ui/` owns Tracker
-views and controllers, `media/` owns icon and image handling, `deskbar/` owns
-the bar and Desktop-icon behavior, and `shell/` contains only front-end
-composition and application entry descriptors.
+views and controllers, `ui/windows/` owns feature-window lifetimes, and
+`ui/overlays/` owns modal and operation-status presentation. `media/` owns
+icon and image handling, `deskbar/` owns the bar and Desktop-icon behavior,
+and `shell/` contains only front-end composition and application entry
+descriptors.
 
 ## Extraction order
 
@@ -75,13 +77,15 @@ composition and application entry descriptors.
 7. Prove the boundary with a small non-Tracker app before designing a plugin
    ABI or process protocol.
 
-The vertical extraction has started with Get Info, the Open/Save panel,
+The vertical extraction has started with Find, Get Info, the Open/Save panel,
 preferences, Select by pattern, and the application switcher. Their headless
-state machines remain in `tiku_trk_info`, `tiku_trk_panel`, `tiku_trk_prefs`,
-`tiku_trk_select`, and `tiku_trk_switcher`; the paired `*_window` controllers
-now own rendering, input, persistence or refresh, and the lifetime of their
-composited windows. The desktop shell only opens them and reacts to semantic
-results.
+state machines remain in `tiku_trk_find`, `tiku_trk_info`, `tiku_trk_panel`,
+`tiku_trk_prefs`, `tiku_trk_select`, and `tiku_trk_switcher`; the paired
+`*_window` controllers now own rendering, input, persistence or refresh, and
+the lifetime of their composited windows. The desktop shell only opens them
+and reacts to semantic results. The status overlay likewise owns alert and
+progress rendering plus modal input, while filesystem answers remain a shell
+callback.
 
 ## Temporary exceptions
 
