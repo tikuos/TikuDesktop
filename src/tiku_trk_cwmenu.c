@@ -185,6 +185,20 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     int chosen = TIKU_TRK_CMD_LIST_VIEW;
 
     tiku_trk_menu_clear(m);
+    if (c->is_query) {
+        /* A results window is a set of answers, not a place: there is no
+         * arrangement to keep, nothing above it to open, and a view mode
+         * would be a mode for a folder that does not exist (CW-023). */
+        ADD(m, TIKU_TRK_CMD_RESIZE_TO_FIT);
+        ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
+        ADD(m, TIKU_TRK_CMD_SELECT_ALL);
+        ADD(m, TIKU_TRK_CMD_INVERT_SELECTION);
+        ADD(m, TIKU_TRK_CMD_CLOSE);
+        ADD(m, TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE);
+        SEP(m);
+        ADD(m, TIKU_TRK_CMD_PREFERENCES);
+        return;
+    }
     (void)tiku_trk_menu_add_submenu(m, "Icon view", &cw->icon_size, 1);
     ADD(m, TIKU_TRK_CMD_MINI_ICON_VIEW);
     ADD(m, TIKU_TRK_CMD_LIST_VIEW);

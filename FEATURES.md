@@ -2402,7 +2402,7 @@ DesktopPoseView::AdaptToVolumeChange (and BFilePanelPoseView::AdaptToVolumeChang
 `DesktopPoseView.cpp` → `DesktopPoseView::AdaptToVolumeChange / BPoseView::AddVolumePoses / BPoseView::ToggleDisksVolumes`  
 **TIKU:** The pattern -- synthesize a notification and post it to yourself so that a settings change takes the same code path as a real filesystem event -- is worth keeping; it collapses two update paths into one.  
 **PORT:** Whether the root shows is answered from the two settings, and either alone puts it there -- the preferences make them exclusive and this does not depend on that holding.  
-**MISSING:** Nothing adds or removes the icon when a setting changes, and there is no Disks window to close.  
+**MISSING:** The icon follows its setting without waiting for anything else to change: turned off it goes at once, turned on it appears. There is no Disks WINDOW in this port, so there is none to close.  
 #### PVN-059 · important · partial
 **A virtual directory watches each of its contributing real directories by path, plus its own definition file and the root definition file.**  
 StartWatching: BPathMonitor::StartWatching(path, B_WATCH_DIRECTORY|B_WATCH_CHILDREN|B_WATCH_NAME|B_WATCH_STAT|B_WATCH_INTERIM_STAT|B_WATCH_ATTR, this) per entry in fDirectoryPaths; TTracker::WatchNode(TargetModel()->NodeRef(), B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR); TTracker::WatchNode(&fRootDefinitionFileRef, B_WATCH_STAT) when not root. StopWatching does BPathMonitor::StopWatching + stop_watching.  
@@ -2664,12 +2664,11 @@ Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead 
 **MISSING:** Find/New folder/Open/Open with/Get info/Edit name/Duplicate/Move to Trash/Move to/Copy to/Create link/Cut/Copy/Paste/Identify are built in order with the Trash (Empty Trash first, Delete+Restore) and root (no Duplicate/Trash, no clipboard, no Identify) variants; missing are Add-ons>, Mount/Unmount, Edit query and the printers-folder variant (and the menu is never presented, no bar is drawn).  
 *src/tiku_trk_cwmenu.c:build_file*
 
-#### CW-023 · core · partial
+#### CW-023 · core · done
 **Window menu inventory: Icon view> (Cmd+1, with sizes), Mini icon view (Cmd+2), List view (Cmd+3), | Resize to fit (Cmd+Y), [Arrange by>], Select… (Shift+Cmd+A), Select all (Cmd+A), Invert selection (Cmd+S), Open parent (Cmd+Up), Close (Cmd+W), Close all in workspace (Cmd+Q), | Preferences… (Cmd+,).**  
 Preferences and Close-all-in-workspace target be_app, not the window. Query windows replace this with a shorter menu: Resize to fit, Select…, Select all, Invert selection, Close, Close all in workspace (no view modes, no Open parent).  
 `ContainerWindow.cpp` → `BContainerWindow::AddWindowMenu (and BQueryContainerWindow::AddWindowMenu)`  
-**MISSING:** Open parent carries Cmd+Up; the query-window variant of the menu does not exist.
-
+**PORT:** A results window gets the shorter menu: no view modes and nothing to open above it, because it is a set of answers rather than a place -- and it can still be sized and its answers picked out. Preferences and close-all target the application in the original; here there is one application and one target.  
 #### CW-024 · important · done
 **Icon view has a submenu of fixed icon sizes (32/40/48/64/96/128) in radio mode plus Decrease size (Cmd+-) and Increase size (Cmd++); the current size is check-marked only while actually in icon mode, and the three view-mode items are radio-marked to the current mode.**  
 UpdateWindowMenuOrWindowContextMenu marks the item whose message "size" equals PoseView()->UnscaledIconSizeInt() and unmarks everything when not in icon mode; MarkNamedMenuItem marks kIconMode/kListMode/kMiniIconMode. Invoking the "Icon view" super item itself switches to icon mode at the current size.  

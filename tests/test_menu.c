@@ -315,6 +315,29 @@ main(void)
 
         c = base_ctx();
         tiku_trk_cwmenu_rebuild(&cw, &c);
+        {
+            tiku_trk_sc_ctx_t q = base_ctx();
+
+            q.is_query = 1;
+            tiku_trk_cwmenu_rebuild(&cw, &q);
+            check(tiku_trk_menu_find(&cw.window,
+                                     TIKU_TRK_CMD_LIST_VIEW) < 0 &&
+                  tiku_trk_menu_find(&cw.window,
+                                     TIKU_TRK_CMD_OPEN_PARENT) < 0,
+                  "CW-023: a results window has no view modes and nothing "
+                  "to open above it -- it is a set of answers, not a "
+                  "place");
+            check(tiku_trk_menu_find(&cw.window,
+                                     TIKU_TRK_CMD_SELECT_ALL) >= 0 &&
+                  tiku_trk_menu_find(&cw.window,
+                                     TIKU_TRK_CMD_RESIZE_TO_FIT) >= 0,
+                  "CW-023: but it can still be sized and its answers "
+                  "picked out");
+            tiku_trk_cwmenu_rebuild(&cw, &c);
+            check(tiku_trk_menu_find(&cw.window,
+                                     TIKU_TRK_CMD_LIST_VIEW) >= 0,
+                  "CW-023: and an ordinary folder keeps the whole menu");
+        }
         check(tiku_trk_menu_find(&cw.attributes, TIKU_TRK_CMD_COL_DATE) >= 0
               && tiku_trk_menu_find(&cw.attributes,
                                     TIKU_TRK_CMD_COL_PATH) >= 0 &&

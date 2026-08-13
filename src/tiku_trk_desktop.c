@@ -216,6 +216,7 @@ typedef struct desktop {
     /* The folder the running job is writing into, for the progress
      * window's "To:" line (FS-069). */
     char                 prog_dest[TIKU_TRK_PATH_MAX];
+    int                  disks_shown;   /* whether the / icon is there    */
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -4499,6 +4500,9 @@ main(int argc, char **argv)
             tiku_trk_poseview_set_viewport(app.dfl.view, DESK_W, DESK_H);
             tiku_trk_poseview_set_mode(app.dfl.view, TIKU_TRK_MODE_ICON);
             desk_icons_rebuild(&app);
+            app.disks_shown = tiku_trk_deskicons_show_disks(
+                tiku_trk_prefs_get(&app.prefs, "ShowDisksIcon"),
+                tiku_trk_prefs_get(&app.prefs, "MountVolumesOntoDesktop"));
             tiku_trk_vdir_watch_init(&app.dwatch, &app.dvdir);
             tiku_trk_desk_set_backdrop(app.desk, desk_icons_draw, &app);
         }
@@ -6950,6 +6954,21 @@ sel_done:
                      * the Desktop cannot scroll to reach it (PVS-058). */
                     (void)desk_ensure_visible(&app);
                     changed++;
+                }
+                {
+                    /* The Disks icon follows its setting without waiting
+                     * for anything else to change: turned off it goes at
+                     * once, turned on it appears (PVN-058). */
+                    int want = tiku_trk_deskicons_show_disks(
+                        tiku_trk_prefs_get(&app.prefs, "ShowDisksIcon"),
+                        tiku_trk_prefs_get(&app.prefs,
+                                           "MountVolumesOntoDesktop"));
+
+                    if (want != app.disks_shown) {
+                        desk_icons_rebuild(&app);
+                        app.disks_shown = want;
+                        changed++;
+                    }
                 }
                 if (tiku_trk_vdir_poll(&app.dvdir, &app.dwatch, &gone) !=
                         TIKU_TRK_VDIR_CH_NONE) {
