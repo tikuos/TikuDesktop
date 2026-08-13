@@ -18,7 +18,6 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_model.h"
-#include "tiku_trk_win.h"
 
 #define TIKU_TRK_DB_TEAMS_MAX   8
 #define TIKU_TRK_DB_WINS_MAX   16

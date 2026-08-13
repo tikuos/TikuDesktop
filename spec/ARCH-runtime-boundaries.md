@@ -68,9 +68,9 @@ Tracker will publish:
 
 Both shells and the script driver consume portable events through the desktop
 host. The X11 migration allowlist in `tools/check_architecture.py` is empty;
-new native imports fail the architecture check. `tiku_trk_win` is still the
-generic window implementation under the wrong owner and is moved, not
-redesigned in place, during step 3.
+new native imports fail the architecture check. Composited windows, z-order,
+focus, tracking, chrome, and application-owned lifecycle callbacks now live in
+the desktop runtime's `tiku_desk_window` interface.
 
 Refactor commits do not change `FEATURES.md` verdicts unless they change a
 user-visible behavior. Every extraction must pass the complete unit and

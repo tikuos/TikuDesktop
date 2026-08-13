@@ -208,6 +208,8 @@ src/tiku_trk_launch.[ch]     application registry, ranked matching, exec
 src/tiku_trk_types.[ch]      the type database: description, icon, columns
 src/tiku_trk_deskbar.[ch]    the bar, its leaf menu, the tray, docking
 src/tiku_trk_deskicons.[ch]  the Desktop's own rules (valid places, sources)
+../desktop/src/tiku_desk_window.[ch]
+                             reusable windows, focus, z-order, chrome, tracking
 src/tiku_trk_scroll.[ch]     the scrollbar as an object (range, thumb,
                              tracking, detach)
 src/tiku_trk_nodeicon.[ch]   icon resolution tiers + the negative cache

@@ -33,6 +33,10 @@ def tracker_stem(path: Path) -> str:
 def main() -> int:
     errors: list[str] = []
 
+    for legacy in ("tiku_trk_win.c", "tiku_trk_win.h"):
+        if (TRACKER_SRC.joinpath(legacy).exists()):
+            errors.append(f"{legacy}: generic windows belong to desktop runtime")
+
     for path in sorted(DESKTOP_SRC.glob("*.[ch]")):
         for inc in INCLUDE.findall(path.read_text(errors="replace")):
             if inc.startswith("tiku_trk_"):

@@ -104,7 +104,7 @@ $(BUILD)/test_deskbar_dock: $(CORE) $(ICONS) \
 $(BUILD)/test_frame: $(CORE) tests/test_frame.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_win: src/tiku_trk_win.c tests/test_win.c | $(BUILD)
+$(BUILD)/test_win: tests/test_win.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_iconview: $(CORE) src/tiku_trk_poseview.c \
@@ -215,7 +215,7 @@ $(BUILD)/desktop: $(CORE) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script.c \
                   src/tiku_trk_edit.c src/tiku_trk_select.c \
                   src/tiku_trk_titleview.c \
-                  src/tiku_trk_win.c src/tiku_trk_deskbar.c \
+                  src/tiku_trk_deskbar.c \
                   src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
                   src/tiku_trk_cwmenu.c src/tiku_trk_find.c \
                   src/tiku_trk_desktop.c | $(BUILD)

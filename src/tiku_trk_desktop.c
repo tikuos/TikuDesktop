@@ -52,7 +52,7 @@
 #include "tiku_trk_state.h"
 #include "tiku_trk_query.h"
 #include "tiku_trk_task.h"
-#include "tiku_trk_win.h"
+#include "tiku_desk_window.h"
 
 #define DESK_W 1000
 #define DESK_H  680
@@ -106,7 +106,7 @@ typedef struct folder {
     tiku_trk_poseview_t *view;
     char                 path[TIKU_TRK_PATH_MAX];
     char                 state_path[TIKU_TRK_PATH_MAX];
-    tiku_trk_win_t      *win;
+    tiku_desk_window_t      *win;
     struct desktop      *app;
     /* A results window keeps its run alive: the run IS the subscription, so
      * stopping it when the first fill finishes would quietly make the window
@@ -127,11 +127,11 @@ typedef struct folder {
 typedef struct desktop {
     tiku_desk_host_t    *host;
     tiku_desk_surface_t *surf;
-    tiku_trk_desk_t     *desk;
+    tiku_desk_workspace_t     *desk;
     tiku_trk_deskbar_t  *deskbar;
     tiku_trk_backend_t  *backend;
     tiku_trk_fs_t       *fs;
-    folder_t             folders[TIKU_TRK_WIN_MAX];
+    folder_t             folders[TIKU_DESK_WINDOW_MAX];
     int                  folder_count;
     int                  row_h;
     int                  team;
@@ -162,7 +162,7 @@ typedef struct desktop {
     int                  find_serial;
     /* The panel, and the window it lives in. */
     tiku_trk_find_t      panel;
-    tiku_trk_win_t      *panel_win;
+    tiku_desk_window_t      *panel_win;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -183,7 +183,7 @@ typedef struct desktop {
      * hidden rather than destroyed, so its expression outlives the window
      * it was last used on (CW-063, AW-105). */
     tiku_trk_select_t    sel;
-    tiku_trk_win_t      *sel_win;
+    tiku_desk_window_t      *sel_win;
     folder_t            *sel_for;
     int                  sel_field;     /* which control has the keyboard */
     /* Where the last press landed, for the long press and for telling a
@@ -222,7 +222,7 @@ typedef struct desktop {
      * reopen when the window it came from is the one asking. */
     char                 last_query[TIKU_TRK_NAME_MAX];
     tiku_trk_panel_t     fpanel;
-    tiku_trk_win_t      *fpanel_win;
+    tiku_desk_window_t      *fpanel_win;
     tiku_trk_poseview_t *fpanel_view;
     folder_t            *fpanel_for;   /* whose selection it is moving   */
     int                  fpanel_cmd;   /* the menu command that opened it */
@@ -230,7 +230,7 @@ typedef struct desktop {
     /* Get Info: one window per NODE, so a second ask for the same entry
      * brings the first forward rather than opening a rival (AW-065). */
     tiku_trk_info_t      info[INFO_MAX];
-    tiku_trk_win_t      *info_win[INFO_MAX];
+    tiku_desk_window_t      *info_win[INFO_MAX];
     struct info_ctx     *info_ctx;      /* one per slot; see info_open   */
     int                  info_renaming; /* which slot's name is open     */
     tiku_trk_edit_t      info_name;
@@ -239,15 +239,15 @@ typedef struct desktop {
     tiku_trk_alert_t     alert;     /* the question, when there is one */
     tiku_trk_progress_win_t prog;   /* the shared status window        */
     tiku_trk_prefs_t     prefs;
-    tiku_trk_win_t      *prefs_win;
+    tiku_desk_window_t      *prefs_win;
     tiku_trk_page_t      prefs_page;
     char                 prefs_path[TIKU_TRK_PATH_MAX];
     tiku_trk_switcher_t  sw;
-    tiku_trk_win_t      *sw_win;
+    tiku_desk_window_t      *sw_win;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
     int64_t              prog_opened;
-    tiku_trk_win_t      *prog_was_active;  /* focus to give back */
+    tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int64_t              hover_at;  /* when the drag settled on a target  */
     int64_t              scroll_at; /* when it entered the scroll band    */
     int                  sprung;    /* that target has already opened     */
@@ -759,7 +759,7 @@ static tiku_desk_rect_t
 folder_content(desktop_t *app, folder_t *fl)
 {
     if (fl != NULL && fl->win != NULL) {
-        tiku_desk_rect_t r = tiku_trk_win_content(fl->win);
+        tiku_desk_rect_t r = tiku_desk_window_content(fl->win);
 
         r.y += app->menus.bar.height;
         r.h -= app->menus.bar.height;
@@ -782,7 +782,7 @@ folder_bar_frame(desktop_t *app, folder_t *fl)
     if (app == NULL || fl == NULL || fl->win == NULL) {
         return r;
     }
-    r = tiku_trk_win_content(fl->win);
+    r = tiku_desk_window_content(fl->win);
     r.h = app->menus.bar.height;
     return r;
 }
@@ -972,7 +972,7 @@ desk_icons_draw(tiku_desk_surface_t *s, void *ctx)
 
 
 static void
-folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
+folder_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s,
             tiku_desk_rect_t content, void *ctx)
 {
     folder_t *fl = ctx;
@@ -1197,11 +1197,11 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
         const char *typed = tiku_trk_poseview_type_string(fl->view);
         char label[256];
 
-        if (app->finding && fl->win == tiku_trk_desk_focused(app->desk)) {
+        if (app->finding && fl->win == tiku_desk_workspace_focused(app->desk)) {
             tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
             snprintf(label, sizeof label, "find: %.60s_", app->find_buf);
         } else if (app->editing &&
-                   fl->win == tiku_trk_desk_focused(app->desk)) {
+                   fl->win == tiku_desk_workspace_focused(app->desk)) {
             /* The editor takes the count view on a document ground, the way
              * type-ahead does: it is a field now, not a readout. */
             tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
@@ -1248,7 +1248,7 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void prefs_open(desktop_t *app);
-static folder_t *folder_of(desktop_t *app, tiku_trk_win_t *w);
+static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 
 /**
  * @brief Finish an edit: check the value, then write it.
@@ -1327,7 +1327,7 @@ save_frame_of(desktop_t *app, folder_t *fl)
 }
 
 static void
-close_window(desktop_t *app, tiku_trk_win_t *w)
+close_window(desktop_t *app, tiku_desk_window_t *w)
 {
     folder_t *fl;
 
@@ -1347,7 +1347,7 @@ close_window(desktop_t *app, tiku_trk_win_t *w)
             app->popup_sub = NULL;
         }
     }
-    tiku_trk_desk_close(app->desk, w);
+    tiku_desk_workspace_close(app->desk, w);
     app->dirty = 1;
 }
 
@@ -1902,7 +1902,7 @@ folder_fit_h(desktop_t *app, folder_t *fl)
 
 /** @brief Draw the Find panel into its window. */
 static void
-panel_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
+panel_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s,
            tiku_desk_rect_t content, void *ctx)
 {
     (void)w;
@@ -2114,7 +2114,7 @@ sel_layout(tiku_desk_rect_t c, tiku_desk_rect_t *expr, tiku_desk_rect_t *rule,
 }
 
 static void
-select_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+select_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
             void *ctx)
 {
     desktop_t *app = ctx;
@@ -2151,7 +2151,7 @@ select_hit(desktop_t *app, int x, int y)
     if (app->sel_win == NULL) {
         return SEL_HIT_NONE;
     }
-    c = tiku_trk_win_content(app->sel_win);
+    c = tiku_desk_window_content(app->sel_win);
     sel_layout(c, &expr, &rule, &ign, &inv, &go);
 #define IN(r) (x >= (r).x && x < (r).x + (r).w && \
                y >= (r).y && y < (r).y + (r).h)
@@ -2183,9 +2183,9 @@ open_select(desktop_t *app, folder_t *fl, int mx, int my)
         /* Reused, not remade: a second window would come up empty and the
          * expression the user is iterating on would be in the other one. */
         app->sel_win->frame = frame;
-        tiku_trk_desk_activate(app->desk, app->sel_win);
+        tiku_desk_workspace_activate(app->desk, app->sel_win);
     } else {
-        app->sel_win = tiku_trk_desk_open(app->desk, "Select", frame,
+        app->sel_win = tiku_desk_workspace_open(app->desk, "Select", frame,
                                           select_draw, app, &app->sel);
     }
     app->sel_field = SEL_HIT_EXPR;
@@ -2222,10 +2222,10 @@ apply_select(desktop_t *app)
      * lands in an active window rather than behind this one. */
     tiku_trk_select_hide(&app->sel);
     if (app->sel_win != NULL) {
-        tiku_trk_desk_close(app->desk, app->sel_win);
+        tiku_desk_workspace_close(app->desk, app->sel_win);
         app->sel_win = NULL;
     }
-    tiku_trk_desk_activate(app->desk, app->sel_for->win);
+    tiku_desk_workspace_activate(app->desk, app->sel_for->win);
 }
 
 /** @brief Open the Find panel, or bring it forward. */
@@ -2235,18 +2235,18 @@ open_panel(desktop_t *app)
     tiku_desk_rect_t frame;
 
     if (app->panel_win != NULL && app->panel_win->open) {
-        tiku_trk_desk_activate(app->desk, app->panel_win);
+        tiku_desk_workspace_activate(app->desk, app->panel_win);
         app->dirty = 1;
         return;
     }
     frame.w = 560;
-    frame.h = tiku_trk_find_height(&app->panel) + TIKU_TRK_WIN_TAB_H +
-              2 * TIKU_TRK_WIN_BORDER;
+    frame.h = tiku_trk_find_height(&app->panel) + TIKU_DESK_WINDOW_TAB_H +
+              2 * TIKU_DESK_WINDOW_BORDER;
     frame.x = (DESK_W - frame.w) / 2;
     frame.y = (DESK_H - frame.h) / 2;
-    app->panel_win = tiku_trk_desk_open(app->desk, "Find", frame, panel_draw,
+    app->panel_win = tiku_desk_workspace_open(app->desk, "Find", frame, panel_draw,
                                         &app->panel, &app->panel);
-    tiku_trk_win_set_size_controls(app->panel_win, 0, 0);
+    tiku_desk_window_set_size_controls(app->panel_win, 0, 0);
     app->dirty = 1;
 }
 
@@ -2543,7 +2543,7 @@ fpanel_selection(const desktop_t *app, tiku_trk_model_t *out, int max)
 }
 
 static void
-fpanel_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+fpanel_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
            void *ctx)
 {
     desktop_t *app = ctx;
@@ -2674,12 +2674,12 @@ fpanel_open(desktop_t *app, folder_t *fl, int command)
     tiku_trk_edit_start(&app->fpanel_name, "");
     if (app->fpanel_win != NULL && app->fpanel_win->open) {
         app->fpanel_win->frame = fr;
-        tiku_trk_desk_activate(app->desk, app->fpanel_win);
+        tiku_desk_workspace_activate(app->desk, app->fpanel_win);
     } else {
-        char title[TIKU_TRK_WIN_TITLE_MAX];
+        char title[TIKU_DESK_WINDOW_TITLE_MAX];
 
         tiku_trk_panel_title(&app->fpanel, title, sizeof title);
-        app->fpanel_win = tiku_trk_desk_open(app->desk, title, fr, fpanel_draw,
+        app->fpanel_win = tiku_desk_workspace_open(app->desk, title, fr, fpanel_draw,
                                             app, &app->panel);
     }
     fpanel_reload(app, NULL);
@@ -2694,7 +2694,7 @@ fpanel_close(desktop_t *app)
                                   app->fpanel_win->frame.y,
                                   app->fpanel_win->frame.w,
                                   app->fpanel_win->frame.h);
-        tiku_trk_desk_close(app->desk, app->fpanel_win);
+        tiku_desk_workspace_close(app->desk, app->fpanel_win);
         app->fpanel_win = NULL;
     }
     if (app->fpanel_view != NULL) {
@@ -2770,7 +2770,7 @@ fpanel_hit(desktop_t *app, int x, int y, int *row)
     if (app->fpanel_win == NULL || !app->fpanel_win->open) {
         return FPANEL_HIT_NONE;
     }
-    c = tiku_trk_win_content(app->fpanel_win);
+    c = tiku_desk_window_content(app->fpanel_win);
     fpanel_layout(app, c, &list, &name, &def, &cancel);
 #define IN(r) (x >= (r).x && x < (r).x + (r).w && \
                y >= (r).y && y < (r).y + (r).h)
@@ -2920,7 +2920,7 @@ info_perm_rect(tiku_desk_rect_t body, int i)
 }
 
 static void
-info_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+info_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
           void *ctx)
 {
     struct info_ctx *ic = ctx;
@@ -3024,7 +3024,7 @@ info_close(desktop_t *app, int i)
         return;
     }
     if (app->info_win[i] != NULL) {
-        tiku_trk_desk_close(app->desk, app->info_win[i]);
+        tiku_desk_workspace_close(app->desk, app->info_win[i]);
         app->info_win[i] = NULL;
     }
     if (app->info_renaming == i) {
@@ -3045,7 +3045,7 @@ info_open(desktop_t *app, const char *path)
         /* One window per node: asking again is asking for the one that is
          * already showing the answer. */
         if (app->info_win[i] != NULL) {
-            tiku_trk_desk_activate(app->desk, app->info_win[i]);
+            tiku_desk_workspace_activate(app->desk, app->info_win[i]);
         }
         return;
     }
@@ -3068,10 +3068,10 @@ info_open(desktop_t *app, const char *path)
     info_ctxs[i].app = app;
     info_ctxs[i].ix = i;
     {
-        char title[TIKU_TRK_WIN_TITLE_MAX];
+        char title[TIKU_DESK_WINDOW_TITLE_MAX];
 
         tiku_trk_info_title(&app->info[i], title, sizeof title);
-        app->info_win[i] = tiku_trk_desk_open(app->desk, title, fr,
+        app->info_win[i] = tiku_desk_workspace_open(app->desk, title, fr,
                                               info_draw, &info_ctxs[i],
                                               &app->info[i]);
     }
@@ -3091,7 +3091,7 @@ info_hit(desktop_t *app, int i, int x, int y, int *which)
     if (i < 0 || i >= INFO_MAX || app->info_win[i] == NULL) {
         return IHIT_NONE;
     }
-    c = tiku_trk_win_content(app->info_win[i]);
+    c = tiku_desk_window_content(app->info_win[i]);
     info_layout(c, &icon, &name, &tabs, &body);
 #define IN(r) (x >= (r).x && x < (r).x + (r).w && \
                y >= (r).y && y < (r).y + (r).h)
@@ -3356,7 +3356,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                                   folder_content(app, fl).w);
         break;
     case TIKU_TRK_CMD_RESIZE_TO_FIT:
-        (void)tiku_trk_desk_zoom(app->desk, fl->win, folder_fit_w(app, fl),
+        (void)tiku_desk_workspace_zoom(app->desk, fl->win, folder_fit_w(app, fl),
                                  folder_fit_h(app, fl));
         break;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
@@ -3671,12 +3671,12 @@ open_folder(desktop_t *app, const char *path)
     for (i = 0; i < app->folder_count; i++) {
         if (strcmp(app->folders[i].path, path) == 0 &&
             app->folders[i].win != NULL && app->folders[i].win->open) {
-            tiku_trk_desk_activate(app->desk, app->folders[i].win);
+            tiku_desk_workspace_activate(app->desk, app->folders[i].win);
             app->dirty = 1;
             return &app->folders[i];
         }
     }
-    if (app->folder_count >= TIKU_TRK_WIN_MAX) {
+    if (app->folder_count >= TIKU_DESK_WINDOW_MAX) {
         return NULL;
     }
     fl = &app->folders[app->folder_count];
@@ -3764,7 +3764,7 @@ open_folder(desktop_t *app, const char *path)
         frame.x = CASCADE_HOME_X;
         frame.y = CASCADE_HOME_Y;
     }
-    fl->win = tiku_trk_desk_open(app->desk, path, frame, folder_draw, fl,
+    fl->win = tiku_desk_workspace_open(app->desk, path, frame, folder_draw, fl,
                                  fl->path);
     if (fl->win == NULL) {
         tiku_trk_poseview_free(fl->view);
@@ -3777,7 +3777,7 @@ open_folder(desktop_t *app, const char *path)
 
 /** @brief The folder behind a window, or NULL. */
 static folder_t *
-folder_of(desktop_t *app, tiku_trk_win_t *w)
+folder_of(desktop_t *app, tiku_desk_window_t *w)
 {
     int i;
 
@@ -3877,7 +3877,7 @@ static int
 script_row_point(void *ctx, int row, int *x, int *y)
 {
     desktop_t *app = (desktop_t *)ctx;
-    tiku_trk_win_t *fw;
+    tiku_desk_window_t *fw;
     folder_t *fl;
     tiku_desk_rect_t c;
     int rel, visible;
@@ -3885,7 +3885,7 @@ script_row_point(void *ctx, int row, int *x, int *y)
     if (app == NULL || x == NULL || y == NULL || row < 0) {
         return 0;
     }
-    fw = tiku_trk_desk_focused(app->desk);
+    fw = tiku_desk_workspace_focused(app->desk);
     fl = (fw != NULL) ? folder_of(app, fw) : NULL;
     if (fl == NULL || fl->view == NULL ||
         tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
@@ -3928,14 +3928,14 @@ static int
 script_pose_at(void *ctx, const char *name, int *x, int *y)
 {
     desktop_t *app = (desktop_t *)ctx;
-    tiku_trk_win_t *fw;
+    tiku_desk_window_t *fw;
     folder_t *fl;
     int i, n;
 
     if (app == NULL || name == NULL) {
         return 0;
     }
-    fw = tiku_trk_desk_focused(app->desk);
+    fw = tiku_desk_workspace_focused(app->desk);
     fl = (fw != NULL) ? folder_of(app, fw) : NULL;
     for (;;) {
         if (fl != NULL && fl->view != NULL) {
@@ -3981,11 +3981,11 @@ static void
 publish_windows(desktop_t *app)
 {
     tiku_trk_dbwin_t wins[TIKU_TRK_DB_WINS_MAX];
-    tiku_trk_win_t *focused = tiku_trk_desk_focused(app->desk);
-    int i, n = tiku_trk_desk_count(app->desk), k = 0;
+    tiku_desk_window_t *focused = tiku_desk_workspace_focused(app->desk);
+    int i, n = tiku_desk_workspace_count(app->desk), k = 0;
 
     for (i = 0; i < n && k < TIKU_TRK_DB_WINS_MAX; i++) {
-        tiku_trk_win_t *w = tiku_trk_desk_at(app->desk, i);
+        tiku_desk_window_t *w = tiku_desk_workspace_at(app->desk, i);
         if (w == NULL || !w->open) {
             continue;
         }
@@ -4228,7 +4228,7 @@ answer_alert(desktop_t *app)
  * is pending (TS-058).
  */
 static void
-prefs_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+prefs_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
            void *ctx)
 {
     desktop_t *app = ctx;
@@ -4295,7 +4295,7 @@ prefs_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
 
 /** @brief The preferences window owns its controls and their input. */
 static int
-prefs_event(tiku_trk_win_t *w, const tiku_desk_event_t *event, void *ctx)
+prefs_event(tiku_desk_window_t *w, const tiku_desk_event_t *event, void *ctx)
 {
     desktop_t *app = ctx;
     tiku_desk_rect_t pc;
@@ -4305,7 +4305,7 @@ prefs_event(tiku_trk_win_t *w, const tiku_desk_event_t *event, void *ctx)
     if (event->type != TIKU_DESK_EVENT_POINTER_DOWN || app->alert.open) {
         return 0;
     }
-    pc = tiku_trk_win_content(w);
+    pc = tiku_desk_window_content(w);
     hit = tiku_trk_prefs_hit(&app->prefs, app->prefs_page,
                              event->x - pc.x, event->y - pc.y, &which);
     if (hit == TIKU_TRK_PREF_HIT_NONE) {
@@ -4348,7 +4348,7 @@ prefs_open(desktop_t *app)
     tiku_desk_rect_t fr;
 
     if (app->prefs_win != NULL && app->prefs_win->open) {
-        tiku_trk_desk_activate(app->desk, app->prefs_win);
+        tiku_desk_workspace_activate(app->desk, app->prefs_win);
         return;
     }
     fr.x = (DESK_W - TIKU_TRK_PREF_W) / 2;
@@ -4361,9 +4361,9 @@ prefs_open(desktop_t *app)
      * SHOWN, not when it was built: reopening it starts the comparison
      * again (TS-059). */
     tiku_trk_prefs_mark_opened(&app->prefs);
-    app->prefs_win = tiku_trk_desk_open(app->desk, "Tracker preferences",
+    app->prefs_win = tiku_desk_workspace_open(app->desk, "Tracker preferences",
                                         fr, prefs_draw, app, NULL);
-    tiku_trk_win_set_handlers(app->prefs_win, prefs_event, NULL, NULL);
+    tiku_desk_window_set_handlers(app->prefs_win, prefs_event, NULL, NULL);
 }
 
 #define SW_SLOT   56
@@ -4396,7 +4396,7 @@ switcher_frame(desktop_t *app)
  * counter thinks it is (DB-058).
  */
 static void
-switcher_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
+switcher_draw(tiku_desk_window_t *w, tiku_desk_surface_t *s, tiku_desk_rect_t c,
               void *ctx)
 {
     desktop_t *app = ctx;
@@ -4468,7 +4468,7 @@ switcher_open(desktop_t *app, int back)
     }
     tiku_trk_switcher_open(&app->sw, tiku_trk_now(), back);
     if (app->sw_win == NULL || !app->sw_win->open) {
-        app->sw_win = tiku_trk_desk_open(app->desk, "Switcher",
+        app->sw_win = tiku_desk_workspace_open(app->desk, "Switcher",
                                          switcher_frame(app),
                                          switcher_draw, app, NULL);
     }
@@ -4479,7 +4479,7 @@ static void
 switcher_close(desktop_t *app, int commit)
 {
     if (app->sw_win != NULL) {
-        tiku_trk_desk_close(app->desk, app->sw_win);
+        tiku_desk_workspace_close(app->desk, app->sw_win);
         app->sw_win = NULL;
     }
     if (commit && app->sw.sel >= 0 && app->sw.sel < app->sw.n) {
@@ -4499,9 +4499,9 @@ draw_all(desktop_t *app)
          * bar until the user reaches for it.  Draw order IS the z-order
          * here -- there is no window server to ask (DB-052). */
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
-        tiku_trk_desk_draw(app->desk);
+        tiku_desk_workspace_draw(app->desk);
     } else {
-        tiku_trk_desk_draw(app->desk);
+        tiku_desk_workspace_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
     if (tiku_trk_drag_active(&app->drag)) {
@@ -4634,7 +4634,7 @@ main(int argc, char **argv)
     int shot_panel = 0, shot_live = 0, shot_shift = 0, shot_zoom = 0;
     int shot_cascade = 0, shot_notify = 0, shot_select = 0;
     tiku_trk_click_t click = { 0 };
-    const char *openme[TIKU_TRK_WIN_MAX];
+    const char *openme[TIKU_DESK_WINDOW_MAX];
     int nopen = 0;
     /* Safe mode starts deliberately plain: it restores no session.  The
      * row's other clauses -- replicants and add-ons -- have nothing here to
@@ -4684,7 +4684,7 @@ main(int argc, char **argv)
     app.fs = tiku_trk_fs_new(app.backend);
     app.surf = tiku_desk_surface_new(DESK_W, DESK_H, TIKU_DESK_C_BACKDROP);
     app.row_h = LIST_ROW_H;
-    app.desk = tiku_trk_desk_new(app.surf);
+    app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
     scan_teams(&app);               /* everything else that is running */
@@ -4822,7 +4822,7 @@ main(int argc, char **argv)
                 tiku_trk_prefs_get(&app.prefs, "ShowDisksIcon"),
                 tiku_trk_prefs_get(&app.prefs, "MountVolumesOntoDesktop"));
             tiku_trk_vdir_watch_init(&app.dwatch, &app.dvdir);
-            tiku_trk_desk_set_backdrop(app.desk, desk_icons_draw, &app);
+            tiku_desk_workspace_set_backdrop(app.desk, desk_icons_draw, &app);
         }
     }
 
@@ -4917,7 +4917,7 @@ main(int argc, char **argv)
         /* Scripted: the Select window over the front folder, with an
          * expression already in it, so a capture shows the whole control
          * set the way it comes up. */
-        tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
         folder_t *ffl = folder_of(&app, fw);
 
         open_select(&app, ffl, 520, 300);
@@ -4980,9 +4980,9 @@ main(int argc, char **argv)
         app.panel.place_mask = 1u;
         panel_search(&app);
         app.panel_win->frame.h = tiku_trk_find_height(&app.panel) +
-                                 TIKU_TRK_WIN_TAB_H +
-                                 2 * TIKU_TRK_WIN_BORDER;
-        tiku_trk_desk_activate(app.desk, app.panel_win);
+                                 TIKU_DESK_WINDOW_TAB_H +
+                                 2 * TIKU_DESK_WINDOW_BORDER;
+        tiku_desk_workspace_activate(app.desk, app.panel_win);
     }
     if (shot_find != NULL) {
         snprintf(app.find_buf, sizeof app.find_buf, "%.60s", shot_find);
@@ -5058,7 +5058,7 @@ main(int argc, char **argv)
         int wide = 0, k;
 
         for (k = 0; k < nc; k++) { wide += cols[k].width; }
-        (void)tiku_trk_desk_zoom(app.desk, fl->win, wide + 8,
+        (void)tiku_desk_workspace_zoom(app.desk, fl->win, wide + 8,
             tiku_trk_poseview_count(fl->view) * app.row_h + COUNT_H + 6);
     }
     if (shot_shift) {
@@ -5115,7 +5115,7 @@ main(int argc, char **argv)
                  * poll -- happens where it happens on a real clock. */
                 tiku_trk_script_step_t sp;
                 tiku_trk_script_state_t sst;
-                tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+                tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
 
                 memset(&sst, 0, sizeof sst);
                 sst.status = app.status;
@@ -5126,8 +5126,8 @@ main(int argc, char **argv)
                 {
                     int wi, wn = 0;
 
-                    for (wi = 0; wi < tiku_trk_desk_count(app.desk); wi++) {
-                        tiku_trk_win_t *ww = tiku_trk_desk_at(app.desk, wi);
+                    for (wi = 0; wi < tiku_desk_workspace_count(app.desk); wi++) {
+                        tiku_desk_window_t *ww = tiku_desk_workspace_at(app.desk, wi);
 
                         if (ww != NULL && ww->open) {
                             wn++;
@@ -5361,7 +5361,7 @@ main(int argc, char **argv)
                     }
                 }
                 {   /* An info window takes its own clicks first. */
-                    tiku_trk_win_t *iw = tiku_trk_desk_focused(app.desk);
+                    tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
                     int islot = -1, k;
 
                     for (k = 0; k < INFO_MAX; k++) {
@@ -5459,7 +5459,7 @@ main(int argc, char **argv)
                                      * a picker rather than an error, which
                                      * is the whole of AW-074's flow. */
                                     folder_t *ffl = folder_of(&app,
-                                        tiku_trk_desk_focused(app.desk));
+                                        tiku_desk_workspace_focused(app.desk));
 
                                     app.info_relink = islot;
                                     fpanel_open(&app, (ffl != NULL) ? ffl
@@ -5474,7 +5474,7 @@ main(int argc, char **argv)
                 }
                 if (app.fpanel_win != NULL && app.fpanel_win->open &&
                     !app.alert.open &&
-                    tiku_trk_desk_focused(app.desk) == app.fpanel_win) {
+                    tiku_desk_workspace_focused(app.desk) == app.fpanel_win) {
                     int prow = -1;
                     fpanel_hit_t fh = fpanel_hit(&app, ev.x,
                                                  ev.y, &prow);
@@ -5531,7 +5531,7 @@ main(int argc, char **argv)
                     window_event.x = ev.x;
                     window_event.y = ev.y;
                     window_event.button = ev.button;
-                    if (tiku_trk_win_send(app.prefs_win, &window_event)) {
+                    if (tiku_desk_window_send(app.prefs_win, &window_event)) {
                         break;
                     }
                 }
@@ -5578,8 +5578,8 @@ main(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                tiku_trk_win_t *w = NULL;
-                tiku_trk_hit_t hit;
+                tiku_desk_window_t *w = NULL;
+                tiku_desk_hit_t hit;
                 tiku_trk_db_pick_t pick;
 
                 /* A menu that is showing eats the next click wherever it
@@ -5628,7 +5628,7 @@ main(int argc, char **argv)
                     }
                 }
                 if (app.popup != NULL) {
-                    tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+                    tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
                     folder_t *ffl = (app.bar_fl != NULL) ? app.bar_fl
                                                          : folder_of(&app, fw);
                     int pick = -1;
@@ -5688,7 +5688,7 @@ main(int argc, char **argv)
                     if (tiku_trk_deskbar_click(app.deskbar, ev.x,
                                                ev.y, dmods,
                                                secondary, &pick)) {
-                        tiku_trk_win_t *t;
+                        tiku_desk_window_t *t;
 
                         switch (pick.what) {
                         case TIKU_TRK_DB_FIND:
@@ -5703,26 +5703,26 @@ main(int argc, char **argv)
                             (void)open_folder(&app, pick.path);
                             break;
                         case TIKU_TRK_DB_ACTIVATE_WINDOW:
-                            t = tiku_trk_desk_find(app.desk, pick.tag);
+                            t = tiku_desk_workspace_find(app.desk, pick.tag);
                             if (t != NULL) {
                                 t->minimized = 0;
-                                tiku_trk_desk_activate(app.desk, t);
+                                tiku_desk_workspace_activate(app.desk, t);
                             }
                             break;
                         case TIKU_TRK_DB_MINIMIZE_WINDOW:
-                            t = tiku_trk_desk_find(app.desk, pick.tag);
+                            t = tiku_desk_workspace_find(app.desk, pick.tag);
                             if (t != NULL) { t->minimized = 1; }
                             break;
                         case TIKU_TRK_DB_CLOSE_WINDOW:
-                            t = tiku_trk_desk_find(app.desk, pick.tag);
+                            t = tiku_desk_workspace_find(app.desk, pick.tag);
                             close_window(&app, t);
                             break;
                         case TIKU_TRK_DB_HIDE_ALL:
                         case TIKU_TRK_DB_SHOW_ALL: {
-                            int k, m = tiku_trk_desk_count(app.desk);
+                            int k, m = tiku_desk_workspace_count(app.desk);
                             for (k = 0; k < m; k++) {
-                                tiku_trk_win_t *ww =
-                                    tiku_trk_desk_at(app.desk, k);
+                                tiku_desk_window_t *ww =
+                                    tiku_desk_workspace_at(app.desk, k);
                                 if (ww != NULL) {
                                     ww->minimized =
                                         (pick.what == TIKU_TRK_DB_HIDE_ALL);
@@ -5735,9 +5735,9 @@ main(int argc, char **argv)
                              * request to close its WINDOWS, never to quit
                              * it -- the original makes the same
                              * distinction. */
-                            while (tiku_trk_desk_count(app.desk) > 0) {
-                                tiku_trk_desk_close(app.desk,
-                                    tiku_trk_desk_at(app.desk, 0));
+                            while (tiku_desk_workspace_count(app.desk) > 0) {
+                                tiku_desk_workspace_close(app.desk,
+                                    tiku_desk_workspace_at(app.desk, 0));
                             }
                             break;
                         }
@@ -5752,7 +5752,7 @@ main(int argc, char **argv)
                     /* The wheel.  In an icon mode it moves the pixel
                      * origin; in a list it steps rows, which is what it
                      * has always done. */
-                    tiku_trk_win_t *ww = NULL;
+                    tiku_desk_window_t *ww = NULL;
                     folder_t *wfl;
                     tiku_desk_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
@@ -5770,7 +5770,7 @@ main(int argc, char **argv)
                         }
                         break;
                     }
-                    (void)tiku_trk_desk_hit(app.desk, ev.x,
+                    (void)tiku_desk_workspace_hit(app.desk, ev.x,
                                             ev.y, &ww);
                     wfl = folder_of(&app, ww);
                     if (wfl != NULL) {
@@ -5792,7 +5792,7 @@ main(int argc, char **argv)
                     }
                     break;
                 }
-                hit = tiku_trk_desk_hit(app.desk, ev.x, ev.y,
+                hit = tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
                                         &w);
                 if (app.panel_win != NULL && app.panel_win->open &&
                     tiku_trk_find_popup_open(&app.panel)) {
@@ -5801,14 +5801,14 @@ main(int argc, char **argv)
                      * panel wherever it lands -- the panel eats it either
                      * way, which is what closes a menu clicked off. */
                     w = app.panel_win;
-                    hit = TIKU_TRK_HIT_CONTENT;
+                    hit = TIKU_DESK_HIT_CONTENT;
                 }
                 if (w == NULL && app.dfl.view != NULL) {
                     /* The backdrop is a pose area, so a click on it is a
                      * click in a view -- the same branch every window's
                      * content goes through, which is what keeps the
                      * Desktop's icons behaving like a folder's (AW-018). */
-                    hit = TIKU_TRK_HIT_CONTENT;
+                    hit = TIKU_DESK_HIT_CONTENT;
                 }
                 if (w != NULL && ev.button == 1u) {
                     folder_t *bfl = folder_of(&app, w);
@@ -5829,7 +5829,7 @@ main(int argc, char **argv)
                                 ev.x, ev.y);
                         if (bi >= 0) {
                             commit_rename(&app, 1);
-                            tiku_trk_desk_activate(app.desk, w);
+                            tiku_desk_workspace_activate(app.desk, w);
                             app.bar_fl = bfl;
                             app.bar_open = bi;
                             app.menus.bar.open = bi;
@@ -5844,25 +5844,25 @@ main(int argc, char **argv)
                         }
                     }
                 }
-                if (w != NULL && hit != TIKU_TRK_HIT_CONTENT) {
+                if (w != NULL && hit != TIKU_DESK_HIT_CONTENT) {
                     /* The CHROME activates a window; the content does not.
                      * That is what lets a click reach a list in a window
                      * behind another without the raise eating it -- the
                      * click-through a spatial desktop depends on. */
-                    tiku_trk_desk_activate(app.desk, w);
+                    tiku_desk_workspace_activate(app.desk, w);
                 }
-                if (hit == TIKU_TRK_HIT_ZOOM) {
+                if (hit == TIKU_DESK_HIT_ZOOM) {
                     folder_t *fl = folder_of(&app, w);
 
                     if (fl != NULL) {
-                        (void)tiku_trk_desk_zoom(app.desk, w,
+                        (void)tiku_desk_workspace_zoom(app.desk, w,
                                                  folder_fit_w(&app, fl),
                                                  folder_fit_h(&app, fl));
                     }
                     app.dirty = 1;
                     break;
                 }
-                if (hit == TIKU_TRK_HIT_CLOSE) {
+                if (hit == TIKU_DESK_HIT_CLOSE) {
                     /* Control+close closes every window rather than this
                      * one, which is the only way to clear a spatial desktop
                      * without visiting each window. */
@@ -5871,7 +5871,7 @@ main(int argc, char **argv)
 
                         for (k = 0; k < app.folder_count; k++) {
                             if (app.folders[k].win != NULL) {
-                                tiku_trk_desk_close(app.desk,
+                                tiku_desk_workspace_close(app.desk,
                                                     app.folders[k].win);
                             }
                         }
@@ -5895,13 +5895,13 @@ main(int argc, char **argv)
                         }
                     }
                 }
-                if (hit == TIKU_TRK_HIT_CLOSE) {
+                if (hit == TIKU_DESK_HIT_CLOSE) {
                     close_window(&app, w);
-                } else if (hit == TIKU_TRK_HIT_TAB ||
-                           hit == TIKU_TRK_HIT_RESIZE) {
-                    tiku_trk_desk_begin_track(app.desk, w, hit, ev.x,
+                } else if (hit == TIKU_DESK_HIT_TAB ||
+                           hit == TIKU_DESK_HIT_RESIZE) {
+                    tiku_desk_workspace_begin_track(app.desk, w, hit, ev.x,
                                               ev.y);
-                } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&
+                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            w == app.sel_win) {
                     switch (select_hit(&app, ev.x, ev.y)) {
                     case SEL_HIT_EXPR:
@@ -5927,11 +5927,11 @@ main(int argc, char **argv)
                         break;
                     }
                     app.dirty = 1;
-                } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&
+                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            w == app.panel_win) {
                     tiku_trk_find_hit_t what =
                         tiku_trk_find_click(&app.panel,
-                                            tiku_trk_win_content(w),
+                                            tiku_desk_window_content(w),
                                             ev.x, ev.y);
 
                     if (what == TIKU_TRK_FIND_HIT_SEARCH) {
@@ -5976,9 +5976,9 @@ main(int argc, char **argv)
                     }
                     /* The panel grows and shrinks with its rows. */
                     w->frame.h = tiku_trk_find_height(&app.panel) +
-                                 TIKU_TRK_WIN_TAB_H + 2 * TIKU_TRK_WIN_BORDER;
+                                 TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
                     app.dirty = 1;
-                } else if (hit == TIKU_TRK_HIT_CONTENT) {
+                } else if (hit == TIKU_DESK_HIT_CONTENT) {
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : &app.dfl;
                     if (fl != NULL && fl->view != NULL) {
@@ -6009,7 +6009,7 @@ main(int argc, char **argv)
                             commit_rename(&app, 1);
                             (void)tiku_trk_poseview_context_click(fl->view,
                                                                   row);
-                            tiku_trk_desk_activate(app.desk, w);
+                            tiku_desk_workspace_activate(app.desk, w);
                             app.press_at = now;
                             app.press_x = ev.x;
                             app.press_y = ev.y;
@@ -6244,11 +6244,11 @@ main(int argc, char **argv)
                     /* Where the pointer is now decides the target, and it
                      * is resolved across WINDOWS: the whole point of a
                      * spatial desktop is dragging between them (FS-001). */
-                    tiku_trk_win_t *ow = NULL;
+                    tiku_desk_window_t *ow = NULL;
                     folder_t *ofl = NULL;
                     int orow = -1;
 
-                    (void)tiku_trk_desk_hit(app.desk, ev.x,
+                    (void)tiku_desk_workspace_hit(app.desk, ev.x,
                                             ev.y, &ow);
                     ofl = (ow != NULL) ? folder_of(&app, ow) : &app.dfl;
                     if (ofl != NULL && ofl->view == NULL) {
@@ -6297,11 +6297,11 @@ main(int argc, char **argv)
                         app.dirty = 1;
                     }
                     if (ofl != NULL && orow < 0 &&
-                        ow != tiku_trk_desk_focused(app.desk)) {
+                        ow != tiku_desk_workspace_focused(app.desk)) {
                         /* Hovering the empty part of a window behind
                          * brings it forward, so a drag can reach what it
                          * covers without being dropped first (PVS-055). */
-                        tiku_trk_desk_activate(app.desk, ow);
+                        tiku_desk_workspace_activate(app.desk, ow);
                         app.dirty = 1;
                     }
                 }
@@ -6355,8 +6355,8 @@ main(int argc, char **argv)
                      * DB-052). */
                     app.dirty = 1;
                 }
-                if (tiku_trk_desk_tracking(app.desk)) {
-                    if (tiku_trk_desk_track(app.desk, ev.x,
+                if (tiku_desk_workspace_tracking(app.desk)) {
+                    if (tiku_desk_workspace_track(app.desk, ev.x,
                                             ev.y)) {
                         app.dirty = 1;
                     }
@@ -6431,7 +6431,7 @@ main(int argc, char **argv)
                  * not put a second one up (PVS-017). */
                 app.press_down = 0;
                 app.press_menu = 0;
-                tiku_trk_desk_end_track(app.desk);
+                tiku_desk_workspace_end_track(app.desk);
                 break;
             }
             case TIKU_DESK_EVENT_KEY_UP:
@@ -6456,7 +6456,7 @@ main(int argc, char **argv)
 
                     if (mk == TIKU_DESK_KEY_SHIFT ||
                         mk == TIKU_DESK_KEY_CMD) {
-                        tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+                        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
                         folder_t *ffl = folder_of(&app, fw);
                         unsigned m2 = 0;
                         tiku_trk_sc_ctx_t c2;
@@ -6489,7 +6489,7 @@ main(int argc, char **argv)
                 }
                 {
                 unsigned key = ev.key;
-                tiku_trk_win_t *w = tiku_trk_desk_focused(app.desk);
+                tiku_desk_window_t *w = tiku_desk_workspace_focused(app.desk);
                 folder_t *fl = folder_of(&app, w);
                 unsigned mods = 0;
 
@@ -6499,7 +6499,7 @@ main(int argc, char **argv)
                  * shortcuts underneath must not fire, or typing "w" in a
                  * value would close the window. */
                 {   /* An info window's own keys, while it has focus. */
-                    tiku_trk_win_t *iw = tiku_trk_desk_focused(app.desk);
+                    tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
                     int islot = -1, k;
 
                     for (k = 0; k < INFO_MAX; k++) {
@@ -6542,7 +6542,7 @@ main(int argc, char **argv)
                     }
                 }
                 if (app.fpanel_win != NULL && app.fpanel_win->open &&
-                    tiku_trk_desk_focused(app.desk) == app.fpanel_win) {
+                    tiku_desk_workspace_focused(app.desk) == app.fpanel_win) {
                     tiku_trk_model_t psel[8];
                     int pn = fpanel_selection(&app, psel, 8);
                     int pkey = 0;
@@ -6610,7 +6610,7 @@ main(int argc, char **argv)
                     break;
                 }
                 if (app.panel_win != NULL && app.panel_win->open &&
-                    tiku_trk_desk_focused(app.desk) == app.panel_win) {
+                    tiku_desk_workspace_focused(app.desk) == app.panel_win) {
                     if (key == TIKU_DESK_KEY_RETURN) {
                         panel_primary(&app);
                     } else if (key == TIKU_DESK_KEY_ESCAPE) {
@@ -6655,7 +6655,7 @@ main(int argc, char **argv)
                 /* The Select window owns the keyboard while it has focus,
                  * and its expression field is an editor like any other. */
                 if (app.sel_win != NULL && app.sel_win->open &&
-                    tiku_trk_desk_focused(app.desk) == app.sel_win) {
+                    tiku_desk_workspace_focused(app.desk) == app.sel_win) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
                     int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
                     char c = '\0';
@@ -6965,7 +6965,7 @@ sel_done:
 
                     if (p != NULL &&
                         tiku_trk_model_is_container(&p->model)) {
-                        tiku_trk_win_t *from = fl->win;
+                        tiku_desk_window_t *from = fl->win;
 
                         if (open_folder(&app, p->model.path) != NULL) {
                             close_window(&app, from);
@@ -6981,7 +6981,7 @@ sel_done:
                     if (strcmp(fl->path, "/") != 0) {
                         char parent[TIKU_TRK_PATH_MAX];
                         char *slash;
-                        tiku_trk_win_t *from = fl->win;
+                        tiku_desk_window_t *from = fl->win;
 
                         snprintf(parent, sizeof parent, "%s", fl->path);
                         slash = strrchr(parent, '/');
@@ -7023,7 +7023,7 @@ sel_done:
                              * came from with it, the keyboard's version of
                              * an Option double-click (PVK-017). */
                             int chase = (ev.modifiers & TIKU_DESK_MOD_OPTION) != 0;
-                            tiku_trk_win_t *from = fl->win;
+                            tiku_desk_window_t *from = fl->win;
 
                             if (open_folder(&app, p->model.path) != NULL &&
                                 chase) {
@@ -7273,7 +7273,7 @@ sel_done:
          * path that changes focus is covered rather than each one
          * remembering to. */
         {
-            tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
+            tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
 
             for (i = 0; i < app.folder_count; i++) {
                 folder_t *fl = &app.folders[i];
@@ -7302,7 +7302,7 @@ sel_done:
             /* The reaping of searches nobody named.  On a slow tick of its
              * own and skipped for the first half hour, because it is the
              * least urgent work there is (Q-037, AW-090). */
-            const char *open[TIKU_TRK_WIN_MAX];
+            const char *open[TIKU_DESK_WINDOW_MAX];
             int nopen = 0;
 
             for (i = 0; i < app.folder_count; i++) {
@@ -7371,7 +7371,7 @@ sel_done:
                      * left for it to be the position of, and the teardown
                      * sweep must not write one either. */
                     fl->gone = 1;
-                    tiku_trk_desk_close(app.desk, fl->win);
+                    tiku_desk_workspace_close(app.desk, fl->win);
                     changed++;
                 } else if (nf != TIKU_TRK_NOTIFY_NOTHING) {
                     if ((nf & TIKU_TRK_NOTIFY_RETITLE) != 0u) {
@@ -7483,12 +7483,12 @@ sel_done:
                             fl->run = NULL;
                             fl->live = 0;
                             fl->gone = 1;
-                            tiku_trk_desk_close(app.desk, fl->win);
+                            tiku_desk_workspace_close(app.desk, fl->win);
                             changed++;
                         } else if (strncmp(fl->path, vc[k].v.mount,
                                     strlen(vc[k].v.mount)) == 0) {
                             fl->gone = 1;
-                            tiku_trk_desk_close(app.desk, fl->win);
+                            tiku_desk_workspace_close(app.desk, fl->win);
                             changed++;
                         } else if (tiku_trk_poseview_device_gone(fl->view,
                                        (uint64_t)vc[k].v.dev) > 0) {
@@ -7617,14 +7617,14 @@ sel_done:
                 /* Whoever was in front when the job began gets the focus
                  * back when it ends: an operation is not a reason to be
                  * left looking at something else (FS-073). */
-                app.prog_was_active = tiku_trk_desk_focused(app.desk);
+                app.prog_was_active = tiku_desk_workspace_focused(app.desk);
             }
         } else if (app.prog.open) {
             tiku_trk_progress_update(&app.prog, 0, NULL, 0, NULL);
             app.prog_opened = 0;
             if (app.prog_was_active != NULL &&
                 app.prog_was_active->open) {
-                tiku_trk_desk_activate(app.desk, app.prog_was_active);
+                tiku_desk_workspace_activate(app.desk, app.prog_was_active);
             }
             app.prog_was_active = NULL;
             app.dirty = 1;
@@ -7692,7 +7692,7 @@ sel_done:
     }
     (void)tiku_trk_store_flush(app.store);
     tiku_trk_deskbar_free(app.deskbar);
-    tiku_trk_desk_free(app.desk);
+    tiku_desk_workspace_free(app.desk);
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
