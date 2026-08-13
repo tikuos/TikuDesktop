@@ -48,6 +48,9 @@ typedef struct {
 } tiku_trk_cwmenu_t;
 
 /** @brief The command range a candidate application is picked with. */
+/** @brief The command range an attribute column is toggled with. */
+#define TIKU_TRK_CMD_COL_ATTR_BASE 800
+
 #define TIKU_TRK_CMD_OPEN_WITH_BASE 900
 
 void tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw);

@@ -82,6 +82,19 @@ main(void)
               "column and would be a listing showing its name twice");
     }
 
+    {
+        const tiku_trk_typerec_t *sr = tiku_trk_types_find(&db,
+                                                           "text/x-source");
+
+        check(sr != NULL && sr->nattr == 1 &&
+              strcmp(sr->attr[0], "user.trk.note") == 0, "CW-026",
+              "a type can offer an ATTRIBUTE as one of its columns, named "
+              "rather than numbered -- what a view will call it depends on "
+              "which slot it gets, and that is the session's business");
+        check(sr != NULL && sr->ncol == 3, "CW-026",
+              "and its fixed columns are unaffected by having one");
+    }
+
     printf("\nwritten and read back (AW-013)\n");
     {
         tiku_trk_types_t again;
@@ -94,6 +107,10 @@ main(void)
         tiku_trk_types_init(&again);
         check(tiku_trk_types_load(&again, path) == db.n, "AW-013",
               "every record round-trips through the file");
+        r = tiku_trk_types_find(&again, "text/x-source");
+        check(r != NULL && r->nattr == 1 &&
+              strcmp(r->attr[0], "user.trk.note") == 0, "CW-026",
+              "an attribute column round-trips through the file by name");
         r = tiku_trk_types_find(&again, "tiku-gpio");
         check(r != NULL && r->ncol == 3 &&
               r->col[1] == TIKU_TRK_COL_CAP, "AW-013",

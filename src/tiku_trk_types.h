@@ -18,6 +18,7 @@
 #define TIKU_TRK_TYPES_H_
 
 #include "tiku_trk_model.h"
+#include "tiku_trk_poseview.h"
 
 #define TIKU_TRK_TYPES_MAX       24
 #define TIKU_TRK_TYPE_COLS_MAX    6
@@ -33,6 +34,11 @@ typedef struct {
      * columns are the generic ones every listing has. */
     int  col[TIKU_TRK_TYPE_COLS_MAX];
     int  ncol;
+    /* Columns that are an ATTRIBUTE rather than a fixed fact, written in
+     * the file as "attr:<name>".  Kept apart because they cannot be a
+     * column id until a view has given them one. */
+    char attr[TIKU_TRK_TYPE_COLS_MAX][TIKU_TRK_ATTR_NAME_MAX];
+    int  nattr;
 } tiku_trk_typerec_t;
 
 typedef struct {

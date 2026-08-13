@@ -87,9 +87,17 @@ tiku_trk_types_add(tiku_trk_types_t *db, const char *type, const char *desc,
             len--;
         }
         snprintf(word, sizeof word, "%.*s", (int)len, p);
-        col = tiku_trk_types_column(word);
-        if (col >= 0 && r->ncol < TIKU_TRK_TYPE_COLS_MAX) {
-            r->col[r->ncol++] = col;
+        if (strncmp(word, "attr:", 5) == 0 && word[5] != '\0' &&
+            r->nattr < TIKU_TRK_TYPE_COLS_MAX) {
+            /* Named, not numbered: what a view will call it depends on
+             * which slot it gets, and that is this session's business. */
+            snprintf(r->attr[r->nattr], sizeof r->attr[0], "%s", word + 5);
+            r->nattr++;
+        } else {
+            col = tiku_trk_types_column(word);
+            if (col >= 0 && r->ncol < TIKU_TRK_TYPE_COLS_MAX) {
+                r->col[r->ncol++] = col;
+            }
         }
         if (comma == NULL) {
             break;
@@ -196,6 +204,11 @@ tiku_trk_types_save(const tiku_trk_types_t *db, const char *path)
                                                sizeof kName[0]))
                               ? kName[c] : "");
         }
+        for (k = 0; k < db->rec[i].nattr; k++) {
+            (void)fprintf(f, "%sattr:%s",
+                          (k > 0 || db->rec[i].ncol > 0) ? "," : "",
+                          db->rec[i].attr[k]);
+        }
         (void)fputc('\n', f);
     }
     (void)fclose(f);
@@ -230,6 +243,11 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
     /* A device node's columns are the two only it has. */
     (void)tiku_trk_types_add(db, "tiku-", "Device node", "device",
                              "value,cap,modified");
+    /* An attribute column in the shipped database, so the mechanism has a
+     * user on a first run rather than waiting for someone to write one. */
+    (void)tiku_trk_types_add(db, "text/x-source", "Source file",
+                             "text_file",
+                             "size,modified,permissions,attr:user.trk.note");
     (void)tiku_trk_types_save(db, path);
     return 1;
 }

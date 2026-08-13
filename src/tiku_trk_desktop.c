@@ -43,6 +43,7 @@
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskicons.h"
 #include "tiku_trk_launch.h"
+#include "tiku_trk_types.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_gfx_dep.h"
@@ -203,6 +204,9 @@ typedef struct desktop {
      * the desktop: the Open with menu, a double click and a drop on an
      * application all ask the same question (AW-040). */
     tiku_trk_apps_t      apps;
+    /* What the system knows about a type: its description, its icon, and
+     * the columns it is worth showing (AW-013, CW-026). */
+    tiku_trk_types_t     types;
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -502,6 +506,22 @@ open_with_pick(desktop_t *app, folder_t *fl, int at)
     (void)launch_paths(app, cand[at].app, paths, npath);
 }
 
+/** @brief The menu command that toggles column @p col, and its title. */
+static int
+column_command(int col, const char **title)
+{
+    switch (col) {
+    case TIKU_TRK_COL_KIND:  *title = "Kind";        return TIKU_TRK_CMD_COL_KIND;
+    case TIKU_TRK_COL_VALUE: *title = "Value";       return TIKU_TRK_CMD_COL_VALUE;
+    case TIKU_TRK_COL_SIZE:  *title = "Size";        return TIKU_TRK_CMD_COL_SIZE;
+    case TIKU_TRK_COL_CAP:   *title = "Capability";  return TIKU_TRK_CMD_COL_CAP;
+    case TIKU_TRK_COL_DATE:  *title = "Modified";    return TIKU_TRK_CMD_COL_DATE;
+    case TIKU_TRK_COL_PATH:  *title = "Location";    return TIKU_TRK_CMD_COL_PATH;
+    case TIKU_TRK_COL_PERM:  *title = "Permissions"; return TIKU_TRK_CMD_COL_PERM;
+    default:                 *title = "";            return 0;
+    }
+}
+
 /**
  * @brief Fill the Attributes menu's per-type submenus (CW-026).
  *
@@ -523,29 +543,46 @@ build_per_type(desktop_t *app, folder_t *fl)
     n = tiku_trk_poseview_types_present(fl->view, types, 4);
     for (i = 0; i < n; i++) {
         tiku_trk_menu_t *m = &app->menus.per_type[i];
-        const char *label = types[i];
+        const tiku_trk_typerec_t *tr = tiku_trk_types_find(&app->types,
+                                                           types[i]);
+        int k;
 
-        tiku_trk_menu_clear(m);
-        /* Every type can say when it was written and where it is; a device
-         * node adds the two columns only it has. */
-        (void)tiku_trk_menu_add(m, "Modified", TIKU_TRK_CMD_COL_DATE, 0, 0u,
-                                1);
-        (void)tiku_trk_menu_add(m, "Location", TIKU_TRK_CMD_COL_PATH, 0, 0u,
-                                1);
-        if (strncmp(types[i], "tiku-", 5) == 0) {
-            (void)tiku_trk_menu_add(m, "Value", TIKU_TRK_CMD_COL_VALUE, 0,
-                                    0u, 1);
-            (void)tiku_trk_menu_add(m, "Capability", TIKU_TRK_CMD_COL_CAP,
-                                    0, 0u, 1);
-        } else {
-            (void)tiku_trk_menu_add(m, "Size", TIKU_TRK_CMD_COL_SIZE, 0, 0u,
-                                    1);
-            (void)tiku_trk_menu_add(m, "Permissions", TIKU_TRK_CMD_COL_PERM,
-                                    0, 0u, 1);
+        if (tr == NULL) {
+            /* A type the database has never heard of offers nothing of its
+             * own: the generic columns every listing has are already in
+             * the menu above. */
+            continue;
         }
-        snprintf(app->menus.per_type_name[i],
-                 sizeof app->menus.per_type_name[i], "%s", label);
-        snprintf(m->title, sizeof m->title, "%s", label);
+        tiku_trk_menu_clear(m);
+        for (k = 0; k < tr->ncol; k++) {
+            const char *ttl = NULL;
+            int cmd = column_command(tr->col[k], &ttl);
+
+            if (cmd != 0) {
+                (void)tiku_trk_menu_add(m, ttl, cmd, 0, 0u, 1);
+            }
+        }
+        for (k = 0; k < tr->nattr; k++) {
+            /* An attribute becomes a column the moment the type that
+             * wants it is in the folder: the id is this session's, the
+             * NAME is what the database and the saved layout agree on. */
+            int f = tiku_trk_poseview_attr_column(fl->view, tr->attr[k],
+                                                  tr->attr[k], 120);
+
+            if (f >= 0) {
+                (void)tiku_trk_menu_add(m, tr->attr[k],
+                                        TIKU_TRK_CMD_COL_ATTR_BASE + f, 0,
+                                        0u, 1);
+            }
+        }
+        if (m->count == 0) {
+            continue;
+        }
+        snprintf(app->menus.per_type_name[app->menus.per_type_count],
+                 sizeof app->menus.per_type_name[0], "%s",
+                 (tr->desc[0] != '\0') ? tr->desc : types[i]);
+        snprintf(m->title, sizeof m->title, "%s",
+                 app->menus.per_type_name[app->menus.per_type_count]);
         app->menus.per_type_count++;
     }
 }
@@ -3441,6 +3478,12 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         break;
     }
     default:
+        if (command >= TIKU_TRK_CMD_COL_ATTR_BASE &&
+            command < TIKU_TRK_CMD_OPEN_WITH_BASE) {
+            (void)tiku_trk_poseview_toggle_column(fl->view,
+                      command - TIKU_TRK_CMD_COL_ATTR_BASE);
+            break;
+        }
         if (command >= TIKU_TRK_CMD_OPEN_WITH_BASE) {
             open_with_pick(app, fl, command - TIKU_TRK_CMD_OPEN_WITH_BASE);
             break;
@@ -4362,6 +4405,13 @@ main(int argc, char **argv)
         const char *home = getenv("HOME");
         char reg[TIKU_TRK_PATH_MAX];
 
+        {
+            char tdb[TIKU_TRK_PATH_MAX];
+
+            snprintf(tdb, sizeof tdb, "%s/.config/tracker/types",
+                     (home != NULL && home[0] != '\0') ? home : "");
+            (void)tiku_trk_types_install(&app.types, tdb);
+        }
         tiku_trk_launch_clear(&app.apps);
         {
             /* This Tracker is in the list, so choosing it is answerable:

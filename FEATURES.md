@@ -2687,14 +2687,14 @@ Each item carries attr_name/attr_type/attr_hash/attr_width/attr_align/attr_edita
 *src/tiku_trk_poseview.c:column_def/cell_text_at; src/tiku_trk_cwmenu.c:build_attributes; tests/test_poseview.c; tests/test_menu.c*
 *src/tiku_trk_cwmenu.c:build_attributes + src/tiku_trk_desktop.c:menu_invoke (TIKU_TRK_CMD_COL_*)*
 
-#### CW-026 · polish · partial
+#### CW-026 · important · done
 **The Attributes menu grows extra submenus for the MIME types actually present in the folder, exposing that type's user-visible attributes as columns.**  
 AddMimeTypesToMenu builds supertype menus then subtype menus from BMimeType::GetAttrInfo, skipping non-viewable attributes; empty supertype menus are removed and their subtypes promoted to the top level; a trailing separator is deleted if nothing followed it. A window inside the query-templates directory also injects its own demangled MIME type (underscore -> slash).  
 `ContainerWindow.cpp` → `BContainerWindow::AddMimeTypesToMenu(BMenu*) / AddMimeMenu`  
 **TIKU:** Replaced by per-descriptor-type column sets from the VFS type registry.
-**PORT:** The menu reports the LISTING: each type the folder actually holds grows a submenu of the columns that mean something for it -- a device node offers its value and its capability, a document its size and its permissions -- and a folder holding none of them is offered none.  
-**PORT:** A column can show a named ATTRIBUTE now, not only one of the fixed facts: registering an attribute gives it a field id the rest of the column machinery carries, the cell reads that entry's attribute, and an entry with none shows a dash rather than a blank -- the column belongs to the listing, so a blank would read as "not measured yet". The menu already grows a submenu per type the folder holds; what a type OFFERS comes from the database.  
-**MISSING:** Nothing yet turns a type's column set into registered attribute columns automatically, and neither shell draws a menu bar to reach the Attributes menu from.  
+**PORT:** The menu reports the LISTING and the database says what each type is worth showing: the submenu per type present is built from that record -- its fixed columns and its ATTRIBUTE ones -- rather than from a rule in the shell. An attribute becomes a real column the moment a type that wants it is in the folder: the id is this session's, the name is what the database and the saved layout agree on, and the cell reads that entry's attribute.  
+**MISSING:** Neither shell draws a menu BAR, so the Attributes menu is reached in the model rather than on screen -- the same gap CW-025 records.  
+
 *src/tiku_trk_poseview.c:tiku_trk_poseview_attr_column/cell_text_at; src/tiku_trk_types.c; tests/test_poseview.c*
 *src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_cwmenu.c:build_attributes; src/tiku_trk_desktop.c:build_per_type; tests/test_menu.c*
 
