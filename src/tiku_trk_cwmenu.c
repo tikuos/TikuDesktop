@@ -400,7 +400,8 @@ tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw, const tiku_trk_model_t *m,
     if (m->kind == TIKU_TRK_KIND_TRASH) {
         return &cw->trash_ctx;
     }
-    if (m->kind == TIKU_TRK_KIND_VOLUME) {
+    if (m->kind == TIKU_TRK_KIND_VOLUME ||
+        m->kind == TIKU_TRK_KIND_ROOT) {
         return &cw->volume_ctx;
     }
     return &cw->pose_ctx;

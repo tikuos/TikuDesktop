@@ -48,6 +48,7 @@ clippable(const tiku_trk_model_t *m)
      * and offering to would be a promise nothing can keep. */
     return m != NULL && m->node_id != 0 &&
            m->kind != TIKU_TRK_KIND_VOLUME &&
+           m->kind != TIKU_TRK_KIND_ROOT &&
            m->kind != TIKU_TRK_KIND_TRASH &&
            m->kind != TIKU_TRK_KIND_DESKTOP &&
            strcmp(m->path, "/") != 0;

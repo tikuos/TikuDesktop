@@ -24,6 +24,7 @@ tiku_trk_model_is_container(const tiku_trk_model_t *m)
     switch (m->kind) {
     case TIKU_TRK_KIND_DIRECTORY:
     case TIKU_TRK_KIND_VOLUME:
+    case TIKU_TRK_KIND_ROOT:
     case TIKU_TRK_KIND_VIRTUAL_DIR:
     case TIKU_TRK_KIND_TRASH:
     case TIKU_TRK_KIND_DESKTOP:
@@ -44,10 +45,25 @@ tiku_trk_model_is_mutable_container(const tiku_trk_model_t *m)
      * renamed or pasted into /sys.  This single answer is what disables
      * New Folder, Paste and drop-targeting there. */
     if (m->kind == TIKU_TRK_KIND_VIRTUAL_DIR ||
+        m->kind == TIKU_TRK_KIND_ROOT ||
         m->kind == TIKU_TRK_KIND_QUERY) {
         return 0;
     }
     return (m->facts.perm & TIKU_TRK_P_WRITE) ? 1 : 0;
+}
+
+const char *
+tiku_trk_model_display_name(const tiku_trk_model_t *m)
+{
+    if (m == NULL) {
+        return "";
+    }
+    switch (m->kind) {
+    case TIKU_TRK_KIND_ROOT:    return "Disks";
+    case TIKU_TRK_KIND_TRASH:   return "Trash";
+    case TIKU_TRK_KIND_DESKTOP: return "Desktop";
+    default:                    return m->name;
+    }
 }
 
 int
@@ -195,6 +211,7 @@ tiku_trk_model_kind_string(const tiku_trk_model_t *m)
     case TIKU_TRK_KIND_SYMLINK:
         return m->facts.link_broken ? "Broken link" : "Symbolic link";
     case TIKU_TRK_KIND_VOLUME:      return "Volume";
+    case TIKU_TRK_KIND_ROOT:        return "Disks";
     case TIKU_TRK_KIND_VIRTUAL_DIR: return "Namespace folder";
     case TIKU_TRK_KIND_DEVICE_NODE: return "Device node";
     case TIKU_TRK_KIND_QUERY:       return "Query";
@@ -242,6 +259,8 @@ tiku_trk_model_icon_name(const tiku_trk_model_t *m)
             return "share";
         }
         return (m->facts.vol_flags & TIKU_TRK_VOL_BOOT) ? "root" : "volume";
+    case TIKU_TRK_KIND_ROOT:
+        return "root";
     case TIKU_TRK_KIND_PRINTER:
         return "printer";
     case TIKU_TRK_KIND_DEVICE_NODE:

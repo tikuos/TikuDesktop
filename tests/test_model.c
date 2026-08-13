@@ -188,8 +188,10 @@ test_posix(void)
     {   /* A mount point is a VOLUME, not a folder that happens to sit
          * where one is (PVN-041, PVL-072). */
         check(b->ops->stat(b, "/", &m) == 0 &&
-              m.kind == TIKU_TRK_KIND_VOLUME,
-              "the root of a filesystem is a volume, not a directory");
+              m.kind == TIKU_TRK_KIND_ROOT,
+              "the filesystem root is the synthetic Disks root");
+        check(strcmp(tiku_trk_model_display_name(&m), "Disks") == 0,
+              "the root presents Disks without changing its real name");
         check(m.facts.total > 0u && m.facts.avail <= m.facts.total,
               "and carries its capacity, which is what the space bar "
               "is drawn from");
@@ -197,6 +199,50 @@ test_posix(void)
               m.kind == TIKU_TRK_KIND_DIRECTORY &&
               m.facts.total == 0u,
               "while an ordinary directory is neither");
+    }
+
+    {   /* Display names are one model answer, not labels duplicated by
+         * each surface.  name stays the filesystem spelling for operations. */
+        tiku_trk_model_t special;
+
+        memset(&special, 0, sizeof special);
+        snprintf(special.name, sizeof special.name, ".Trash");
+        special.kind = TIKU_TRK_KIND_TRASH;
+        check(strcmp(tiku_trk_model_display_name(&special), "Trash") == 0 &&
+              strcmp(special.name, ".Trash") == 0, "MA-006: Trash has a "
+              "human label while its real name remains usable");
+        snprintf(special.name, sizeof special.name, "Desktop");
+        special.kind = TIKU_TRK_KIND_DESKTOP;
+        check(strcmp(tiku_trk_model_display_name(&special), "Desktop") == 0,
+              "MA-006: Desktop has its special display name");
+        snprintf(special.name, sizeof special.name, "Data disk");
+        special.kind = TIKU_TRK_KIND_VOLUME;
+        check(strcmp(tiku_trk_model_display_name(&special), "Data disk") == 0,
+              "MA-006: a volume presents its cached volume name");
+    }
+
+    {   /* A path leaf alone is not the Desktop: only the user's actual
+         * Desktop gets the special kind and its non-file-manager rules. */
+        char desk[96], old_home[TIKU_TRK_PATH_MAX];
+        const char *was_home = getenv("HOME");
+        int had_home = (was_home != NULL);
+
+        if (had_home) {
+            snprintf(old_home, sizeof old_home, "%s", was_home);
+        }
+        snprintf(desk, sizeof desk, "%s/Desktop", dir);
+        (void)mkdir(desk, 0755);
+        (void)setenv("HOME", dir, 1);
+        check(b->ops->stat(b, desk, &m) == 0 &&
+              m.kind == TIKU_TRK_KIND_DESKTOP &&
+              strcmp(tiku_trk_model_display_name(&m), "Desktop") == 0,
+              "MA-005: the user's Desktop is a special model kind");
+        if (had_home) {
+            (void)setenv("HOME", old_home, 1);
+        } else {
+            (void)unsetenv("HOME");
+        }
+        (void)rmdir(desk);
     }
 
     check(b->ops->stat(b, f1, &m) == 0, "stat a file");

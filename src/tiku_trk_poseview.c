@@ -238,7 +238,7 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
     buf[0] = '\0';
     switch (field) {
     case TIKU_TRK_COL_NAME:
-        return p->model.name;
+        return tiku_trk_model_display_name(&p->model);
     case TIKU_TRK_COL_KIND:
         return tiku_trk_model_kind_string(&p->model);
     case TIKU_TRK_COL_VALUE:
@@ -258,7 +258,8 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
          * other container has none of its own, and neither does a link --
          * a link's own bytes are not what anyone reading the column is
          * asking about.  -1 is the unknown that reads as "-" (MA-024). */
-        if (p->model.kind == TIKU_TRK_KIND_VOLUME) {
+        if (p->model.kind == TIKU_TRK_KIND_VOLUME ||
+            p->model.kind == TIKU_TRK_KIND_ROOT) {
             (void)tiku_trk_attr_size_fit(
                 (p->model.facts.total > 0u)
                     ? (int64_t)p->model.facts.total : -1,
@@ -472,7 +473,8 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
         return (a->model.facts.mtime < b->model.facts.mtime) ? -1
                : (a->model.facts.mtime > b->model.facts.mtime) ? 1 : 0;
     case TIKU_TRK_COL_NAME:
-        return natural_cmp(a->model.name, b->model.name);
+        return natural_cmp(tiku_trk_model_display_name(&a->model),
+                           tiku_trk_model_display_name(&b->model));
     default:
         return 0;
     }
@@ -512,7 +514,8 @@ pose_cmp(const void *pa, const void *pb)
         r = field_cmp(a, b, g_sorting->sort2_field);
     }
     if (r == 0) {
-        r = natural_cmp(a->model.name, b->model.name);
+        r = natural_cmp(tiku_trk_model_display_name(&a->model),
+                        tiku_trk_model_display_name(&b->model));
     }
     return g_sorting->sort_reverse ? -r : r;
 }
@@ -2882,7 +2885,8 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
     art = tiku_trk_poseview_art_size(v);
     tiku_trk_poseview_pose_location(v, p, &px, &py);
     if (v->measure != NULL) {
-        tw = v->measure(p->model.name, v->measure_ctx);
+        tw = v->measure(tiku_trk_model_display_name(&p->model),
+                        v->measure_ctx);
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
         /* A row, not a saved location: in a list the pose's place is its

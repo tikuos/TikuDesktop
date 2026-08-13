@@ -522,7 +522,8 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
     {
         int budget = 30 * tiku_desk_text_width(f, "n");
 
-        (void)tiku_trk_text_fit(p->model.name, budget, TIKU_TRK_TRUNC_MIDDLE,
+        (void)tiku_trk_text_fit(tiku_trk_model_display_name(&p->model),
+                                budget, TIKU_TRK_TRUNC_MIDDLE,
                                 measure_text, (void *)f, label, sizeof label);
     }
     tw = tiku_desk_text_width(f, label);

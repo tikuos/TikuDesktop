@@ -38,6 +38,7 @@ typedef enum {
     TIKU_TRK_KIND_DIRECTORY,     /* a local dir, or a device dynamic store  */
     TIKU_TRK_KIND_SYMLINK,
     TIKU_TRK_KIND_VOLUME,        /* a mount root, or a device root          */
+    TIKU_TRK_KIND_ROOT,          /* the synthetic Disks root                */
     TIKU_TRK_KIND_VIRTUAL_DIR,   /* a device namespace directory            */
     TIKU_TRK_KIND_DEVICE_NODE,   /* a device namespace leaf: a live value   */
     TIKU_TRK_KIND_QUERY,
@@ -149,6 +150,15 @@ int tiku_trk_model_is_mutable_container(const tiku_trk_model_t *m);
 
 /** @brief Is its value writable (a file, or a writable device node). */
 int tiku_trk_model_is_writable(const tiku_trk_model_t *m);
+
+/**
+ * @brief The special display name presented to people, never a path key.
+ *
+ * Model.name remains the real entry name for filesystem operations and
+ * round-tripping.  Views use this answer so special roots need no local
+ * substitute labels.
+ */
+const char *tiku_trk_model_display_name(const tiku_trk_model_t *m);
 
 /**
  * @brief Walk the type table (Q-015).

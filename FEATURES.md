@@ -3633,13 +3633,12 @@ kDirectoryNode -> application/x-vnd.Be-directory (overridden by the node's own B
 OpenNodeCommon promotes kDirectoryNode -> kVolumeNode when BDirectory::IsRootDirectory() is true. FinishSettingUpType promotes kVolumeNode -> kRootNode when NodeRef()->node == fEntryRef.directory && device matches. A volume's displayed name is fetched with BVolume::GetName and cached in the union field.  
 `Model.cpp` → `Model::OpenNodeCommon`  
 **TIKU:** Mount points become durable mounts in the TikuOS namespace; the promotion rule should key off a mount-root flag on the VFS node instead of an inode identity trick.  
-**PORT:** Both clauses.  A directory that is a mount point is promoted to a
-volume by the mount TABLE, not by comparing the path to "/", and a volume is
-displayed by the VOLUME's name rather than by the directory entry it is
-mounted on -- the boot volume's entry is "/", which is a path and not a name.
-The "volume that is its own parent becomes Disks" clause has no counterpart:
-there is no Disks root in this port.
-*src/tiku_trk_backend_posix.c:volume_here/from_stat; tests/test_volume.c*  
+**PORT:** A directory that is a mount point is promoted by the mount table,
+and the filesystem root is then promoted once more to ROOT.  ROOT carries the
+same capacity facts but is non-mutable, shows the root icon and presents as
+"Disks"; other volumes retain their cached volume name.
+*src/tiku_trk_backend_posix.c:volume_here/from_stat;
+src/tiku_trk_model.c:tiku_trk_model_display_name; tests/test_model.c*
 *Shell: desktop, tracker*  
 
 #### MA-005 · important · partial
@@ -3647,15 +3646,29 @@ there is no Disks root in this port.
 In the kDirectoryNode branch, FSIsTrashDir(&entry) -> kTrashNode, FSIsDeskDir(&entry) -> kDesktopNode.  
 `Model.cpp` → `Model::FinishSettingUpType`  
 **TIKU:** TikuOS has no Trash today; either provide one or mark these kinds absent and drop the associated rename/delete refusals.  
-**MISSING:** No backend ever assigns KIND_TRASH or KIND_DESKTOP (the only kind assignments are backend_posix.c:49-53,132 and backend_tiku.c:77-85,263,285,394), so the kind-keyed consumers never fire — the Trash pose draws as a plain folder (model.c:191-192 unreached), clip.c:50-52 and cwmenu.c:322 are dead, and neither Trash nor Desktop refuses rename (app.c:785-791 / desktop.c:666-672 refuse only namespace kinds); trash-undeletability exists but is keyed on path, not kind (fs.c:498-505).  
-*Audited 2026-08-12: `src/tiku_trk_fs.c:498-505` `src/tiku_trk_model.c:191-192` `src/tiku_trk_model.c:221`*  
+**MISSING:** POSIX now identifies `.Trash` and the user's actual `$HOME/Desktop`
+as the special kinds, so their icon, clipboard and context-menu rules are
+reachable.  Rename refusal is still keyed only to device namespace kinds, and
+the device backend has no corresponding Trash/Desktop paths.
+*src/tiku_trk_backend_posix.c:from_stat/desktop_here;
+src/tiku_trk_model.c:tiku_trk_model_icon_name; tests/test_model.c*
 *Shell: both*  
-#### MA-006 · core · open
+#### MA-006 · core · partial
 **The name shown to the user is not always the on-disk name: the filesystem root shows "Disks", volumes show the volume name, Trash and Desktop show their translated names, and other entries show their localized name when the system prefers localized filenames.**  
 Switch on fBaseType: kRootNode -> B_TRANSLATE(B_DISKS_DIR_NAME), kVolumeNode -> fVolumeName, kTrashNode -> B_TRANSLATE(B_TRASH_DIR_NAME), kDesktopNode -> B_TRANSLATE(B_DESKTOP_DIR_NAME). Otherwise fLocalizedName if fHasLocalizedName && gLocalizedNamePreferred, else fEntryRef.name. The "Real name" column deliberately bypasses all of this.  
 `Model.cpp` → `Model::Name`  
-**TIKU:** Device namespace nodes will want display names distinct from their path leaf ("/dev/led0" -> "LED 0"); this is the hook for it.
-**BLOCKED:** A display-name seam that does not exist: every draw shows model.name verbatim (cell_text_at returns p->model.name, poseview.c:196-197; desktop.c:279-286), the model has no volume-name fact (tiku_trk_facts_t, model.h:63-74), and nothing maps root→"Disks" or Trash/Desktop to translated names — the only "Disks" in src/ is the Kind-column string table (model.c:77).  
+**TIKU:** Device namespace nodes can now use the display-name seam for a
+friendly name distinct from their path leaf ("/dev/led0" -> "LED 0").
+**PORT:** ROOT, Trash and Desktop return their human names; a volume returns
+its cached volume name; ordinary models retain their filesystem name.  Both
+list and icon surfaces measure, draw, sort and hit-test that one answer while
+file operations keep `model.name` as the real entry name.
+**MISSING:** Localized filenames and their preference/cache do not exist:
+there is no locale catalog to supply a translated ordinary-entry name.
+*src/tiku_trk_model.c:tiku_trk_model_display_name;
+src/tiku_trk_poseview.c:cell_text_at/pose_parts/field_cmp;
+src/tiku_trk_app.c:draw_pose_icon; src/tiku_trk_desktop.c:draw_pose_icon;
+tests/test_model.c; tests/shell/desktop.script*
 
 #### MA-007 · polish · open
 **A localized display name is looked up at most once per model and only when the system-wide "prefer localized filenames" flag is set.**  

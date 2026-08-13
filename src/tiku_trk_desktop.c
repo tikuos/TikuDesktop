@@ -718,7 +718,8 @@ draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
     } else {
         (void)tiku_trk_icon_paint(s, art, ix, iy, iw);
     }
-    if (p->model.kind == TIKU_TRK_KIND_VOLUME &&
+    if ((p->model.kind == TIKU_TRK_KIND_VOLUME ||
+         p->model.kind == TIKU_TRK_KIND_ROOT) &&
         tiku_trk_prefs_get(&app->prefs, "ShowVolumeSpaceBar")) {
         /* An icon-mode ornament in the original, and it was drawn only in
          * the list rows here -- so the mode the bar was designed for was
@@ -750,7 +751,8 @@ draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
             ink = (lum <= 127) ? TIKU_DESK_RGB(255, 255, 255)
                                : TIKU_DESK_RGB(0, 0, 0);
         }
-        tiku_desk_text(s, f, lx, ly + f->ascent, p->model.name,
+        tiku_desk_text(s, f, lx, ly + f->ascent,
+                       tiku_trk_model_display_name(&p->model),
                        drawn_sel ? TIKU_DESK_C_SELTEXT : ink);
     }
 }
@@ -1072,7 +1074,8 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             if (mini > MINI_ICON) {
                 mini = MINI_ICON;
             }
-            if (p->model.kind == TIKU_TRK_KIND_VOLUME &&
+            if ((p->model.kind == TIKU_TRK_KIND_VOLUME ||
+                 p->model.kind == TIKU_TRK_KIND_ROOT) &&
                 tiku_trk_prefs_get(&fl->app->prefs, "ShowVolumeSpaceBar")) {
                 /* A capacity bar along the bottom of the icon.  Drawn from
                  * the FACTS the store already read, so a listing of a

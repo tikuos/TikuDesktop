@@ -51,7 +51,7 @@ tiku_trk_info_title(const tiku_trk_info_t *in, char *out, size_t max)
         out[0] = '\0';
         return;
     }
-    snprintf(out, max, "%s info", in->model.name);
+    snprintf(out, max, "%s info", tiku_trk_model_display_name(&in->model));
 }
 
 const char *
@@ -82,7 +82,8 @@ field_list(const tiku_trk_info_t *in, tiku_trk_store_t *store,
 
     if (n < max) {
         out[n++] = tiku_trk_model_is_container(&in->model) &&
-                   in->model.kind == TIKU_TRK_KIND_VOLUME
+                   (in->model.kind == TIKU_TRK_KIND_VOLUME ||
+                    in->model.kind == TIKU_TRK_KIND_ROOT)
                        ? TIKU_TRK_INFO_F_CAPACITY : TIKU_TRK_INFO_F_SIZE;
     }
     if (n < max) { out[n++] = TIKU_TRK_INFO_F_CREATED; }
@@ -92,7 +93,8 @@ field_list(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     if (in->model.kind == TIKU_TRK_KIND_SYMLINK && n < max) {
         out[n++] = TIKU_TRK_INFO_F_LINK;
     }
-    if (in->model.kind == TIKU_TRK_KIND_VOLUME && n < max) {
+    if ((in->model.kind == TIKU_TRK_KIND_VOLUME ||
+         in->model.kind == TIKU_TRK_KIND_ROOT) && n < max) {
         out[n++] = TIKU_TRK_INFO_F_FILESYSTEM;
     }
     /* Only when the picture has actually been measured.  A row that said
@@ -322,6 +324,7 @@ tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_trk_backend_t *b, int64_t now)
      * arrive as notices; free space is nobody's node, and a file being
      * written is not reported until it is closed (AW-069). */
     if (in->model.kind != TIKU_TRK_KIND_VOLUME &&
+        in->model.kind != TIKU_TRK_KIND_ROOT &&
         in->model.kind != TIKU_TRK_KIND_FILE) {
         return 0;
     }

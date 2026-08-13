@@ -85,6 +85,18 @@ dir_has_entries(const char *path)
     return any;
 }
 
+/** @brief Whether this is the user's actual Desktop directory. */
+static int
+desktop_here(const char *path)
+{
+    const char *home = getenv("HOME");
+    char desk[TIKU_TRK_PATH_MAX];
+
+    return home != NULL && home[0] != '\0' &&
+           snprintf(desk, sizeof desk, "%s/Desktop", home) > 0 &&
+           strcmp(path, desk) == 0;
+}
+
 /**
  * @brief The type a file's NAME says it is.
  *
@@ -150,14 +162,16 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
          * where one is: what may be done to it differs at every turn --
          * it cannot be renamed, dragging it to the Trash unmounts it, and
          * it is the only kind that has a capacity. */
-        m->kind = TIKU_TRK_KIND_VOLUME;
+        m->kind = (strcmp(path, "/") == 0) ? TIKU_TRK_KIND_ROOT
+                                             : TIKU_TRK_KIND_VOLUME;
     } else if (S_ISDIR(st->st_mode)) {
         /* A directory called ".Trash" IS the Trash, recognised by name the
          * way a folder called "Desktop" is (tiku_trk_model.c).  The store
          * has no other way to know: the Trash is a convention about a
          * location, not a property of the inode. */
         m->kind = (strcmp(m->name, ".Trash") == 0) ? TIKU_TRK_KIND_TRASH
-                                                   : TIKU_TRK_KIND_DIRECTORY;
+                : desktop_here(path) ? TIKU_TRK_KIND_DESKTOP
+                                     : TIKU_TRK_KIND_DIRECTORY;
         if (m->kind == TIKU_TRK_KIND_TRASH) {
             m->facts.trash_full = dir_has_entries(path);
         }
@@ -170,7 +184,8 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
     if (access(path, W_OK) == 0) { m->facts.perm |= TIKU_TRK_P_WRITE; }
     if (access(path, X_OK) == 0) { m->facts.perm |= TIKU_TRK_P_EXEC; }
     snprintf(m->type, sizeof m->type, "%s",
-             S_ISDIR(st->st_mode) ? "application/x-vnd.Be-directory"
+             m->kind == TIKU_TRK_KIND_ROOT ? "application/x-vnd.Be-root"
+             : S_ISDIR(st->st_mode) ? "application/x-vnd.Be-directory"
                                   : type_by_name(m->name));
 }
 
