@@ -13,10 +13,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -26,6 +22,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_attr.h"
+#include "tiku_desk_host.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_nodeicon.h"
@@ -128,12 +125,8 @@ typedef struct folder {
 } folder_t;
 
 typedef struct desktop {
-    Display             *dpy;
-    Window               win;
-    GC                   gc;
-    XImage              *img;
+    tiku_desk_host_t    *host;
     tiku_desk_surface_t *surf;
-    Atom                 del;
     tiku_trk_desk_t     *desk;
     tiku_trk_deskbar_t  *deskbar;
     tiku_trk_backend_t  *backend;
@@ -280,43 +273,6 @@ typedef struct desktop {
     folder_t            *ren_fl;
     int                  ren_row;
 } desktop_t;
-
-/** @brief Convert one platform-neutral key for the temporary X11 shell. */
-static KeySym
-native_key(unsigned key)
-{
-    switch (key) {
-    case TIKU_DESK_KEY_UP:        return XK_Up;
-    case TIKU_DESK_KEY_DOWN:      return XK_Down;
-    case TIKU_DESK_KEY_LEFT:      return XK_Left;
-    case TIKU_DESK_KEY_RIGHT:     return XK_Right;
-    case TIKU_DESK_KEY_HOME:      return XK_Home;
-    case TIKU_DESK_KEY_END:       return XK_End;
-    case TIKU_DESK_KEY_PAGE_UP:   return XK_Prior;
-    case TIKU_DESK_KEY_PAGE_DOWN: return XK_Next;
-    case TIKU_DESK_KEY_BACKSPACE: return XK_BackSpace;
-    case TIKU_DESK_KEY_DELETE:    return XK_Delete;
-    case TIKU_DESK_KEY_ESCAPE:    return XK_Escape;
-    case TIKU_DESK_KEY_RETURN:    return XK_Return;
-    case TIKU_DESK_KEY_TAB:       return XK_Tab;
-    case TIKU_DESK_KEY_MENU:      return XK_Menu;
-    case TIKU_DESK_KEY_F2:        return XK_F2;
-    default:                      return (KeySym)key;
-    }
-}
-
-/** @brief Convert logical modifiers at the native event-loop boundary. */
-static unsigned
-native_modifiers(unsigned modifiers)
-{
-    unsigned state = 0u;
-
-    if ((modifiers & TIKU_DESK_MOD_SHIFT) != 0u) { state |= ShiftMask; }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) { state |= ControlMask; }
-    if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) { state |= Mod1Mask; }
-    if ((modifiers & TIKU_DESK_MOD_CAPS) != 0u) { state |= LockMask; }
-    return state;
-}
 
 /** @brief What the action table needs to know about the focused window. */
 static tiku_trk_sc_ctx_t
@@ -1489,23 +1445,33 @@ scan_teams(desktop_t *app)
  * stands for itself -- which is all a script needs in order to type.
  */
 static char
-key_char(desktop_t *app, XKeyEvent *ev, KeySym ks)
+key_char(const tiku_desk_event_t *event)
 {
-    char buf[8];
+    return (event != NULL) ? event->text[0] : (char)0;
+}
 
-    if (app->dpy != NULL) {
-        return (XLookupString(ev, buf, sizeof buf, NULL, NULL) == 1)
-                   ? buf[0] : (char)0;
-    }
-    if (ks >= 0x20 && ks < 0x7f) {
-        char c = (char)ks;
-
-        if ((ev->state & ShiftMask) != 0u && c >= 'a' && c <= 'z') {
-            c = (char)(c - 'a' + 'A');
+/** @brief Name a portable key for controllers whose API uses key labels. */
+static const char *
+key_name(const tiku_desk_event_t *event, char printable[2])
+{
+    if (event == NULL) { return ""; }
+    switch (event->key) {
+    case TIKU_DESK_KEY_UP:     return "Up";
+    case TIKU_DESK_KEY_DOWN:   return "Down";
+    case TIKU_DESK_KEY_LEFT:   return "Left";
+    case TIKU_DESK_KEY_RIGHT:  return "Right";
+    case TIKU_DESK_KEY_ESCAPE: return "Escape";
+    case TIKU_DESK_KEY_RETURN: return "Return";
+    case TIKU_DESK_KEY_TAB:    return "Tab";
+    default:
+        if (event->key == ' ') { return "space"; }
+        if (event->key >= 0x20u && event->key < 0x7fu) {
+            printable[0] = (char)event->key;
+            printable[1] = '\0';
+            return printable;
         }
-        return c;
+        return "";
     }
-    return (char)0;
 }
 
 /**
@@ -1591,7 +1557,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
                     types[ti] = app->drag.type[ti];
                 }
                 if (!tiku_trk_deskbar_team_accepts(app->deskbar, team,
-                        types, nt, (state & ControlMask) != 0u)) {
+                        types, nt, (state & TIKU_DESK_MOD_CMD) != 0u)) {
                     snprintf(app->status, sizeof app->status,
                              "%.40s cannot open %s",
                              tiku_trk_deskbar_team_name(app->deskbar, team),
@@ -1637,7 +1603,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
          * PVS-046). */
         int dx = x - app->drag.x0, dy = y - app->drag.y0;
         int k, kn = tiku_trk_poseview_count(app->drop_fl->view);
-        int snap = (state & ControlMask) != 0u;
+        int snap = (state & TIKU_DESK_MOD_CMD) != 0u;
 
         for (k = 0; k < kn; k++) {
             tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view, k);
@@ -1674,8 +1640,8 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
     } else {
         snprintf(dst, sizeof dst, "%s", app->drop_fl->path);
     }
-    if ((state & Mod1Mask) != 0u)    { mods |= TIKU_TRK_DRAG_MOD_COPY; }
-    if ((state & ControlMask) != 0u) { mods |= TIKU_TRK_DRAG_MOD_LINK; }
+    if ((state & TIKU_DESK_MOD_OPTION) != 0u)    { mods |= TIKU_TRK_DRAG_MOD_COPY; }
+    if ((state & TIKU_DESK_MOD_CMD) != 0u) { mods |= TIKU_TRK_DRAG_MOD_LINK; }
 
     {   /* A refusal is SAID, not swallowed.  A drop that quietly does
          * nothing looks like a drop that missed, and the user tries again
@@ -1743,7 +1709,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
         snprintf(app->drop_dst, sizeof app->drop_dst, "%s", dst);
         app->pending = app->drag;   /* the release is about to clear it */
         app->popup = tiku_trk_cwmenu_drop(&app->menus, dst_ro, src_ro,
-                                          (state & ShiftMask) ?
+                                          (state & TIKU_DESK_MOD_SHIFT) ?
                                               TIKU_TRK_MOD_SHIFT : 0u);
         app->popup_sub = NULL;
         app->popup_frame = tiku_trk_menu_place(app->popup, x, y,
@@ -1783,7 +1749,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
             /* Shift with the link modifier asks for a RELATIVE link: the
              * two are one gesture with a variant, not two gestures, and
              * the engine already knows how to make either (FS-002). */
-            int rel = (state & ShiftMask) != 0u;
+            int rel = (state & TIKU_DESK_MOD_SHIFT) != 0u;
 
             (void)tiku_trk_fs_link(app->fs, sel, n, dst, rel);
             snprintf(app->status, sizeof app->status, "%s %d item%s",
@@ -3997,15 +3963,11 @@ script_pose_at(void *ctx, const char *name, int *x, int *y)
 static void
 blit(desktop_t *app)
 {
-    if (app->dpy == NULL) {
+    if (app->host == NULL) {
         return;                     /* displayless: the surface IS the
                                      * output, and -shot writes it */
     }
-    memcpy(app->img->data, app->surf->px,
-           (size_t)app->surf->w * (size_t)app->surf->h * 4u);
-    XPutImage(app->dpy, app->win, app->gc, app->img, 0, 0, 0, 0,
-              (unsigned)app->surf->w, (unsigned)app->surf->h);
-    XFlush(app->dpy);
+    (void)tiku_desk_host_present(app->host, app->surf);
 }
 
 /**
@@ -4942,31 +4904,11 @@ main(int argc, char **argv)
             return 2;
         }
     } else {
-        app.dpy = XOpenDisplay(NULL);
-        if (app.dpy == NULL) {
+        app.host = tiku_desk_host_open(DESK_W, DESK_H, "TikuOS Desktop");
+        if (app.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
         }
-    }
-    if (app.dpy != NULL) {
-        int scr = DefaultScreen(app.dpy);
-        app.win = XCreateSimpleWindow(app.dpy, RootWindow(app.dpy, scr), 0, 0,
-                                      DESK_W, DESK_H, 0,
-                                      BlackPixel(app.dpy, scr),
-                                      WhitePixel(app.dpy, scr));
-        XStoreName(app.dpy, app.win, "TikuOS Desktop");
-        XSelectInput(app.dpy, app.win, ExposureMask | KeyPressMask |
-                     KeyReleaseMask |
-                     ButtonPressMask | ButtonReleaseMask |
-                     PointerMotionMask | StructureNotifyMask);
-        app.del = XInternAtom(app.dpy, "WM_DELETE_WINDOW", False);
-        XSetWMProtocols(app.dpy, app.win, &app.del, 1);
-        XMapWindow(app.dpy, app.win);
-        app.gc = XCreateGC(app.dpy, app.win, 0, NULL);
-        app.img = XCreateImage(app.dpy, DefaultVisual(app.dpy, scr),
-                               (unsigned)DefaultDepth(app.dpy, scr), ZPixmap,
-                               0, malloc((size_t)DESK_W * DESK_H * 4u),
-                               DESK_W, DESK_H, 32, 0);
     }
     if (shot != NULL) {
         shot_at = tiku_trk_now() + 2000000;
@@ -5163,8 +5105,7 @@ main(int argc, char **argv)
 
     while (app.running) {
         for (;;) {
-            XEvent ev;
-            KeySym ev_ks = NoSymbol;
+            tiku_desk_event_t ev;
             int have = 0;
 
             memset(&ev, 0, sizeof ev);
@@ -5305,27 +5246,35 @@ main(int argc, char **argv)
                 }
                 switch (sp.what) {
                 case TIKU_TRK_SC_KEY:
-                    ev.type = KeyPress;
-                    ev.xkey.state = native_modifiers(sp.modifiers);
-                    ev_ks = native_key(sp.key);
+                    ev.type = TIKU_DESK_EVENT_KEY_DOWN;
+                    ev.key = sp.key;
+                    ev.modifiers = sp.modifiers;
+                    if (sp.key >= 0x20u && sp.key < 0x7fu) {
+                        ev.text[0] = (char)sp.key;
+                        if ((sp.modifiers & TIKU_DESK_MOD_SHIFT) != 0u &&
+                            ev.text[0] >= 'a' && ev.text[0] <= 'z') {
+                            ev.text[0] = (char)(ev.text[0] - 'a' + 'A');
+                        }
+                    }
                     have = 1;
                     break;
                 case TIKU_TRK_SC_MOVE:
-                    ev.type = MotionNotify;
-                    ev.xmotion.x = sp.x;
-                    ev.xmotion.y = sp.y;
-                    ev.xmotion.state = native_modifiers(sp.modifiers);
+                    ev.type = TIKU_DESK_EVENT_POINTER_MOVE;
+                    ev.x = sp.x;
+                    ev.y = sp.y;
+                    ev.modifiers = sp.modifiers;
                     have = 1;
                     break;
                 case TIKU_TRK_SC_PRESS:
                 case TIKU_TRK_SC_RELEASE:
-                    ev.type = (sp.what == TIKU_TRK_SC_PRESS) ? ButtonPress
-                                                             : ButtonRelease;
-                    ev.xbutton.x = sp.x;
-                    ev.xbutton.y = sp.y;
-                    ev.xbutton.state = native_modifiers(sp.modifiers);
-                    ev.xbutton.button = sp.button;
-                    ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
+                    ev.type = (sp.what == TIKU_TRK_SC_PRESS)
+                                  ? TIKU_DESK_EVENT_POINTER_DOWN
+                                  : TIKU_DESK_EVENT_POINTER_UP;
+                    ev.x = sp.x;
+                    ev.y = sp.y;
+                    ev.modifiers = sp.modifiers;
+                    ev.button = sp.button;
+                    ev.time_us = tiku_trk_now();
                     have = 1;
                     break;
                 case TIKU_TRK_SC_MENU_PICK: {
@@ -5357,13 +5306,13 @@ main(int argc, char **argv)
                     for (k = 0; k < m->count; k++) {
                         if (!m->item[k].separator &&
                             strstr(m->item[k].label, sp.path) != NULL) {
-                            ev.type = ButtonPress;
-                            ev.xbutton.x = fr.x + 8;
-                            ev.xbutton.y = fr.y +
+                            ev.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                            ev.x = fr.x + 8;
+                            ev.y = fr.y +
                                 tiku_trk_menu_item_top(m, k) +
                                 tiku_trk_menu_item_height(m, k) / 2;
-                            ev.xbutton.button = 1u;
-                            ev.xbutton.time = (Time)(tiku_trk_now() / 1000);
+                            ev.button = 1u;
+                            ev.time_us = tiku_trk_now();
                             have = 1;
                             break;
                         }
@@ -5384,35 +5333,29 @@ main(int argc, char **argv)
                 default:
                     break;
                 }
-            } else if (app.dpy != NULL && XPending(app.dpy) > 0) {
-                XNextEvent(app.dpy, &ev);
-                if (ev.type == KeyPress || ev.type == KeyRelease) {
-                    /* The release matters now: letting go of Control is
-                     * what commits the switcher. */
-                    ev_ks = XLookupKeysym(&ev.xkey, 0);
-                }
+            } else if (tiku_desk_host_poll(app.host, &ev)) {
                 have = 1;
             }
             if (!have) {
                 break;
             }
             switch (ev.type) {
-            case Expose:
+            case TIKU_DESK_EVENT_EXPOSE:
                 app.dirty = 1;
                 break;
-            case ButtonPress: {
-                if (ev.xbutton.button == 1u &&
-                    (ev.xbutton.state & ControlMask)) {
+            case TIKU_DESK_EVENT_POINTER_DOWN: {
+                if (ev.button == 1u &&
+                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     /* Before anything else, because a Ctrl+click on the
                      * bar means only one thing and every handler below
                      * would read it as something else (DB-049). */
                     tiku_desk_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
 
-                    if (ev.xbutton.x >= bf.x &&
-                        ev.xbutton.x < bf.x + bf.w &&
-                        ev.xbutton.y >= bf.y &&
-                        ev.xbutton.y < bf.y + bf.h) {
+                    if (ev.x >= bf.x &&
+                        ev.x < bf.x + bf.w &&
+                        ev.y >= bf.y &&
+                        ev.y < bf.y + bf.h) {
                         app.dock_drag = 1;
                         break;
                     }
@@ -5430,8 +5373,8 @@ main(int argc, char **argv)
                     }
                     if (islot >= 0 && !app.alert.open) {
                         int which = -1;
-                        ihit_t ih = info_hit(&app, islot, ev.xbutton.x,
-                                             ev.xbutton.y, &which);
+                        ihit_t ih = info_hit(&app, islot, ev.x,
+                                             ev.y, &which);
 
                         if (ih == IHIT_TAB && which >= 0) {
                             app.info[islot].tab =
@@ -5533,8 +5476,8 @@ main(int argc, char **argv)
                     !app.alert.open &&
                     tiku_trk_desk_focused(app.desk) == app.fpanel_win) {
                     int prow = -1;
-                    fpanel_hit_t fh = fpanel_hit(&app, ev.xbutton.x,
-                                                 ev.xbutton.y, &prow);
+                    fpanel_hit_t fh = fpanel_hit(&app, ev.x,
+                                                 ev.y, &prow);
 
                     if (fh == FPANEL_HIT_CANCEL) {
                         /* Cancelling answers the question too, and the
@@ -5585,9 +5528,9 @@ main(int argc, char **argv)
 
                     window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
                     window_event.time_us = tiku_trk_now();
-                    window_event.x = ev.xbutton.x;
-                    window_event.y = ev.xbutton.y;
-                    window_event.button = ev.xbutton.button;
+                    window_event.x = ev.x;
+                    window_event.y = ev.y;
+                    window_event.button = ev.button;
                     if (tiku_trk_win_send(app.prefs_win, &window_event)) {
                         break;
                     }
@@ -5602,7 +5545,7 @@ main(int argc, char **argv)
                     pf.x = DESK_W - pf.w - 24;
                     pf.y = DESK_H - pf.h - 24;
                     ph = tiku_trk_progress_hit(&app.prog, pf.w,
-                             ev.xbutton.x - pf.x, ev.xbutton.y - pf.y,
+                             ev.x - pf.x, ev.y - pf.y,
                              &prow);
                     if (ph == TIKU_TRK_PROGRESS_HIT_PAUSE) {
                         app.prog.row[prow].paused =
@@ -5625,8 +5568,8 @@ main(int argc, char **argv)
                      * a notice. */
                     tiku_desk_rect_t af = alert_frame();
                     int pick = tiku_trk_alert_button_at(&app.alert, af.w,
-                                   af.h, ev.xbutton.x - af.x,
-                                   ev.xbutton.y - af.y);
+                                   af.h, ev.x - af.x,
+                                   ev.y - af.y);
 
                     if (pick >= 0) {
                         app.alert.chosen = pick;
@@ -5658,8 +5601,8 @@ main(int argc, char **argv)
                         tiku_trk_nav_place(&app.nav, k, px2, py2, DESK_W,
                                            DESK_H, &r.x, &r.y, &r.w, &r.h);
                         at = tiku_trk_nav_item_at(&app.nav, k, r.x, r.y,
-                                                  ev.xbutton.x,
-                                                  ev.xbutton.y);
+                                                  ev.x,
+                                                  ev.y);
                         if (at >= 0) {
                             /* Levels deeper than the one clicked go: the
                              * walk follows the pointer rather than
@@ -5693,8 +5636,8 @@ main(int argc, char **argv)
                     if (app.popup_sub != NULL) {
                         pick = tiku_trk_menu_item_at(app.popup_sub,
                                                      app.popup_sub_frame,
-                                                     ev.xbutton.x,
-                                                     ev.xbutton.y);
+                                                     ev.x,
+                                                     ev.y);
                         if (pick >= 0) {
                             menu_invoke(&app, ffl,
                                         app.popup_sub->item[pick].command);
@@ -5703,8 +5646,8 @@ main(int argc, char **argv)
                     if (pick < 0) {
                         pick = tiku_trk_menu_item_at(app.popup,
                                                      app.popup_frame,
-                                                     ev.xbutton.x,
-                                                     ev.xbutton.y);
+                                                     ev.x,
+                                                     ev.y);
                         if (pick >= 0 && app.popup->item[pick].enabled) {
                             if (app.popup->item[pick].submenu != NULL) {
                                 /* Opening a submenu is not a choice; the
@@ -5734,16 +5677,16 @@ main(int argc, char **argv)
                 /* The Deskbar and its menu take precedence: it sits above
                  * every window, as a corner strip must. */
                 if (tiku_trk_deskbar_menu_open(app.deskbar) ||
-                    tiku_trk_deskbar_hit(app.deskbar, ev.xbutton.x,
-                                         ev.xbutton.y)) {
+                    tiku_trk_deskbar_hit(app.deskbar, ev.x,
+                                         ev.y)) {
                     unsigned dmods = 0;
-                    int secondary = (ev.xbutton.button == 3);
+                    int secondary = (ev.button == 3);
 
-                    if (ev.xbutton.state & ControlMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                         dmods |= TIKU_TRK_MOD_CMD;
                     }
-                    if (tiku_trk_deskbar_click(app.deskbar, ev.xbutton.x,
-                                               ev.xbutton.y, dmods,
+                    if (tiku_trk_deskbar_click(app.deskbar, ev.x,
+                                               ev.y, dmods,
                                                secondary, &pick)) {
                         tiku_trk_win_t *t;
 
@@ -5805,7 +5748,7 @@ main(int argc, char **argv)
                         break;
                     }
                 }
-                if (ev.xbutton.button == 4u || ev.xbutton.button == 5u) {
+                if (ev.button == 4u || ev.button == 5u) {
                     /* The wheel.  In an icon mode it moves the pixel
                      * origin; in a list it steps rows, which is what it
                      * has always done. */
@@ -5814,24 +5757,24 @@ main(int argc, char **argv)
                     tiku_desk_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
 
-                    if (ev.xbutton.x >= bf.x &&
-                        ev.xbutton.x < bf.x + bf.w &&
-                        ev.xbutton.y >= bf.y &&
-                        ev.xbutton.y < bf.y + bf.h) {
+                    if (ev.x >= bf.x &&
+                        ev.x < bf.x + bf.w &&
+                        ev.y >= bf.y &&
+                        ev.y < bf.y + bf.h) {
                         /* Over the bar: the list scrolls rather than
                          * whatever window happens to be under it
                          * (DB-034). */
                         if (tiku_trk_deskbar_scroll(app.deskbar,
-                                (ev.xbutton.button == 4u) ? -1 : 1)) {
+                                (ev.button == 4u) ? -1 : 1)) {
                             app.dirty = 1;
                         }
                         break;
                     }
-                    (void)tiku_trk_desk_hit(app.desk, ev.xbutton.x,
-                                            ev.xbutton.y, &ww);
+                    (void)tiku_trk_desk_hit(app.desk, ev.x,
+                                            ev.y, &ww);
                     wfl = folder_of(&app, ww);
                     if (wfl != NULL) {
-                        int step = (ev.xbutton.button == 4u) ? -1 : 1;
+                        int step = (ev.button == 4u) ? -1 : 1;
 
                         if (tiku_trk_poseview_mode(wfl->view) !=
                                 TIKU_TRK_MODE_LIST) {
@@ -5849,7 +5792,7 @@ main(int argc, char **argv)
                     }
                     break;
                 }
-                hit = tiku_trk_desk_hit(app.desk, ev.xbutton.x, ev.xbutton.y,
+                hit = tiku_trk_desk_hit(app.desk, ev.x, ev.y,
                                         &w);
                 if (app.panel_win != NULL && app.panel_win->open &&
                     tiku_trk_find_popup_open(&app.panel)) {
@@ -5867,7 +5810,7 @@ main(int argc, char **argv)
                      * Desktop's icons behaving like a folder's (AW-018). */
                     hit = TIKU_TRK_HIT_CONTENT;
                 }
-                if (w != NULL && ev.xbutton.button == 1u) {
+                if (w != NULL && ev.button == 1u) {
                     folder_t *bfl = folder_of(&app, w);
 
                     if (bfl != NULL) {
@@ -5878,12 +5821,12 @@ main(int argc, char **argv)
                         build_per_type(&app, bfl);
                         {
                             tiku_trk_sc_ctx_t bc =
-                                menu_ctx(&app, bfl, ev.xbutton.state);
+                                menu_ctx(&app, bfl, ev.modifiers);
 
                             tiku_trk_cwmenu_rebuild(&app.menus, &bc);
                         }
                         bi = tiku_trk_menubar_title_at(&app.menus.bar, bf,
-                                ev.xbutton.x, ev.xbutton.y);
+                                ev.x, ev.y);
                         if (bi >= 0) {
                             commit_rename(&app, 1);
                             tiku_trk_desk_activate(app.desk, w);
@@ -5923,7 +5866,7 @@ main(int argc, char **argv)
                     /* Control+close closes every window rather than this
                      * one, which is the only way to clear a spatial desktop
                      * without visiting each window. */
-                    if (ev.xbutton.state & ControlMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                         int k;
 
                         for (k = 0; k < app.folder_count; k++) {
@@ -5942,7 +5885,7 @@ main(int argc, char **argv)
                      * it: the windows a descent through a deep folder left
                      * behind are exactly the ones nobody wants to close one
                      * at a time (AW-012). */
-                    if (ev.xbutton.state & Mod1Mask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) {
                         folder_t *cf = folder_of(&app, w);
 
                         if (cf != NULL) {
@@ -5956,11 +5899,11 @@ main(int argc, char **argv)
                     close_window(&app, w);
                 } else if (hit == TIKU_TRK_HIT_TAB ||
                            hit == TIKU_TRK_HIT_RESIZE) {
-                    tiku_trk_desk_begin_track(app.desk, w, hit, ev.xbutton.x,
-                                              ev.xbutton.y);
+                    tiku_trk_desk_begin_track(app.desk, w, hit, ev.x,
+                                              ev.y);
                 } else if (hit == TIKU_TRK_HIT_CONTENT && w != NULL &&
                            w == app.sel_win) {
-                    switch (select_hit(&app, ev.xbutton.x, ev.xbutton.y)) {
+                    switch (select_hit(&app, ev.x, ev.y)) {
                     case SEL_HIT_EXPR:
                         app.sel_field = SEL_HIT_EXPR;
                         break;
@@ -5989,7 +5932,7 @@ main(int argc, char **argv)
                     tiku_trk_find_hit_t what =
                         tiku_trk_find_click(&app.panel,
                                             tiku_trk_win_content(w),
-                                            ev.xbutton.x, ev.xbutton.y);
+                                            ev.x, ev.y);
 
                     if (what == TIKU_TRK_FIND_HIT_SEARCH) {
                         panel_primary(&app);
@@ -6039,22 +5982,22 @@ main(int argc, char **argv)
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : &app.dfl;
                     if (fl != NULL && fl->view != NULL) {
-                        int row = folder_row_at(&app, fl, ev.xbutton.x,
-                                                ev.xbutton.y);
+                        int row = folder_row_at(&app, fl, ev.x,
+                                                ev.y);
                         unsigned mods = 0;
                         unsigned click_flags = 0;
                         int64_t now = tiku_trk_now();
 
-                        if (ev.xbutton.state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                        if (ev.xbutton.state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
-                        if (ev.xbutton.state & ShiftMask) {
+                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                        if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
                             click_flags |= TIKU_TRK_CLICK_EXTEND;
                         }
-                        if (ev.xbutton.state & ControlMask) {
+                        if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                             click_flags |= TIKU_TRK_CLICK_EXTEND |
                                            TIKU_TRK_CLICK_CONTROL;
                         }
-                        if (ev.xbutton.button == 3) {
+                        if (ev.button == 3) {
                             int k, kn;
                             int lst = (tiku_trk_poseview_mode(fl->view) ==
                                        TIKU_TRK_MODE_LIST);
@@ -6068,14 +6011,14 @@ main(int argc, char **argv)
                                                                   row);
                             tiku_trk_desk_activate(app.desk, w);
                             app.press_at = now;
-                            app.press_x = ev.xbutton.x;
-                            app.press_y = ev.xbutton.y;
+                            app.press_x = ev.x;
+                            app.press_y = ev.y;
                             app.press_row = row;
                             app.press_fl = fl;
                             app.press_down = 1;
                             app.press_menu = 0;
-                            tiku_trk_drag_arm(&app.drag, ev.xbutton.x,
-                                              ev.xbutton.y, 3u, mods, 1,
+                            tiku_trk_drag_arm(&app.drag, ev.x,
+                                              ev.y, 3u, mods, 1,
                                               w, fl->path);
                             kn = tiku_trk_poseview_count(fl->view);
                             for (k = 0; k < kn; k++) {
@@ -6097,17 +6040,17 @@ main(int argc, char **argv)
                             app.drop_row = -1;
                             (void)tiku_trk_click_press(&click, NULL, 0, 0,
                                                        3u, 0u, now);
-                        } else if (ev.xbutton.button == 4 ||
-                                   ev.xbutton.button == 5) {
+                        } else if (ev.button == 4 ||
+                                   ev.button == 5) {
                             tiku_trk_poseview_scroll_to(fl->view,
                                 tiku_trk_poseview_scroll(fl->view) +
-                                ((ev.xbutton.button == 4) ? -3 : 3));
+                                ((ev.button == 4) ? -3 : 3));
                         } else {
                             tiku_trk_pose_t *clicked = (row >= 0)
                                 ? tiku_trk_poseview_at(fl->view, row) : NULL;
                             int twice = tiku_trk_click_press(&click, clicked,
-                                ev.xbutton.x, ev.xbutton.y,
-                                ev.xbutton.button, click_flags, now);
+                                ev.x, ev.y,
+                                ev.button, click_flags, now);
 
                             {
                                 tiku_desk_rect_t c = folder_content(&app, fl);
@@ -6115,12 +6058,12 @@ main(int argc, char **argv)
 
                                 tiku_trk_poseview_origin(fl->view, &ox, &oy);
                                 tiku_trk_poseview_click_at(fl->view, row,
-                                    ev.xbutton.x - (c.x + 2) + ox,
-                                    ev.xbutton.y - (c.y + 2) + oy, mods);
+                                    ev.x - (c.x + 2) + ox,
+                                    ev.y - (c.y + 2) + oy, mods);
                             }
                             app.press_at = now;
-                            app.press_x = ev.xbutton.x;
-                            app.press_y = ev.xbutton.y;
+                            app.press_x = ev.x;
+                            app.press_y = ev.y;
                             app.press_row = row;
                             app.press_fl = fl;
                             app.press_down = 1;
@@ -6129,12 +6072,12 @@ main(int argc, char **argv)
                              * then moves far enough (PVS-032).  The whole
                              * selection travels, not the pose under the
                              * pointer (PVS-033). */
-                            tiku_trk_drag_arm(&app.drag, ev.xbutton.x,
-                                              ev.xbutton.y,
-                                              ev.xbutton.button, mods,
+                            tiku_trk_drag_arm(&app.drag, ev.x,
+                                              ev.y,
+                                              ev.button, mods,
                                               twice ? 2 : 1,
                                               w, fl->path);
-                            if (row < 0 && ev.xbutton.button == 1u) {
+                            if (row < 0 && ev.button == 1u) {
                                 /* Empty space: a sweep, not a click.  In
                                  * EVERY mode -- a list's rows are swept by
                                  * the same rectangle, and this shell had
@@ -6143,10 +6086,10 @@ main(int argc, char **argv)
                                  * a time (PVS-024). */
                                 unsigned bm = 0u;
 
-                                if (ev.xbutton.state & ShiftMask) {
+                                if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
                                     bm |= TIKU_TRK_MOD_SHIFT;
                                 }
-                                if (ev.xbutton.state & ControlMask) {
+                                if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                                     bm |= TIKU_TRK_MOD_CMD;
                                 }
                                 if (bm == 0u) {
@@ -6162,8 +6105,8 @@ main(int argc, char **argv)
                                  * a rectangle (PVS-024). */
                                 app.band_arm = fl;
                                 app.band_fl = NULL;
-                                app.band_x0 = app.band_x1 = ev.xbutton.x;
-                                app.band_y0 = app.band_y1 = ev.xbutton.y;
+                                app.band_x0 = app.band_x1 = ev.x;
+                                app.band_y0 = app.band_y1 = ev.y;
                                 app.band_mods = bm;
                                 app.band_scroll_at = 0;
                             /* A sweep between two poses also ENDS any
@@ -6173,7 +6116,7 @@ main(int argc, char **argv)
                                  * click on the icon just left completes a
                                  * double click the user did not make. */
                                 (void)tiku_trk_click_press(&click, NULL, 0,
-                                    0, ev.xbutton.button, 0u, now);
+                                    0, ev.button, 0u, now);
                                 app.dirty = 1;
                                 break;
                             }
@@ -6207,7 +6150,7 @@ main(int argc, char **argv)
                             app.drop_fl = NULL;
                             app.drop_row = -1;
                             if (row >= 0 && folder_name_at(&app, fl, row,
-                                    ev.xbutton.x, ev.xbutton.y)) {
+                                    ev.x, ev.y)) {
                                 /* Armed, not started: the rename begins only
                                  * once the double-click window passes with
                                  * no further click (PVS-014, MA-043). */
@@ -6223,7 +6166,7 @@ main(int argc, char **argv)
                                      * is what makes this spatial rather
                                      * than a single browser. */
                                     (void)open_folder(&app, p->model.path);
-                                    if (ev.xbutton.state & Mod1Mask) {
+                                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) {
                                         /* PVK-018: Option-open closes the
                                          * window it came from, which is how
                                          * a spatial desktop is walked
@@ -6266,7 +6209,7 @@ main(int argc, char **argv)
                                     went = launch_paths(&app,
                                               handler_for(&app, &p->model),
                                               one, 1);
-                                    if ((ev.xbutton.state & Mod1Mask) &&
+                                    if ((ev.modifiers & TIKU_DESK_MOD_OPTION) &&
                                         went) {
                                         /* Option-open closes the window it
                                          * came from, once the launch has
@@ -6281,12 +6224,12 @@ main(int argc, char **argv)
                 app.dirty = 1;
                 break;
             }
-            case MotionNotify:
+            case TIKU_DESK_EVENT_POINTER_MOVE:
                 if (app.press_down &&
-                    (ev.xmotion.x - app.press_x > 4 ||
-                     app.press_x - ev.xmotion.x > 4 ||
-                     ev.xmotion.y - app.press_y > 4 ||
-                     app.press_y - ev.xmotion.y > 4)) {
+                    (ev.x - app.press_x > 4 ||
+                     app.press_x - ev.x > 4 ||
+                     ev.y - app.press_y > 4 ||
+                     app.press_y - ev.y > 4)) {
                     /* Moved out of the long-press radius: this is a drag,
                      * not a held click, so neither the menu nor the rename
                      * is owed (PVS-015, PVS-017). */
@@ -6295,8 +6238,8 @@ main(int argc, char **argv)
                     }
                     app.press_down = 0;
                 }
-                if (tiku_trk_drag_moved(&app.drag, ev.xmotion.x,
-                                        ev.xmotion.y) ||
+                if (tiku_trk_drag_moved(&app.drag, ev.x,
+                                        ev.y) ||
                     tiku_trk_drag_active(&app.drag)) {
                     /* Where the pointer is now decides the target, and it
                      * is resolved across WINDOWS: the whole point of a
@@ -6305,15 +6248,15 @@ main(int argc, char **argv)
                     folder_t *ofl = NULL;
                     int orow = -1;
 
-                    (void)tiku_trk_desk_hit(app.desk, ev.xmotion.x,
-                                            ev.xmotion.y, &ow);
+                    (void)tiku_trk_desk_hit(app.desk, ev.x,
+                                            ev.y, &ow);
                     ofl = (ow != NULL) ? folder_of(&app, ow) : &app.dfl;
                     if (ofl != NULL && ofl->view == NULL) {
                         ofl = NULL;
                     }
                     if (ofl != NULL) {
-                        int r = folder_row_at(&app, ofl, ev.xmotion.x,
-                                              ev.xmotion.y);
+                        int r = folder_row_at(&app, ofl, ev.x,
+                                              ev.y);
                         if (r >= 0) {
                             tiku_trk_pose_t *q =
                                 tiku_trk_poseview_at(ofl->view, r);
@@ -6336,7 +6279,7 @@ main(int argc, char **argv)
                         int hteam = -1;
 
                         (void)tiku_trk_deskbar_drop_at(app.deskbar,
-                                  ev.xmotion.x, ev.xmotion.y, &hteam);
+                                  ev.x, ev.y, &hteam);
                         if (hteam != tiku_trk_deskbar_drop_team(app.deskbar)) {
                             tiku_trk_deskbar_set_drop_team(app.deskbar,
                                                            hteam);
@@ -6363,10 +6306,10 @@ main(int argc, char **argv)
                     }
                 }
                 if (app.band_arm != NULL &&
-                    (ev.xmotion.x - app.band_x0 > TIKU_TRK_DRAG_SLOP ||
-                     app.band_x0 - ev.xmotion.x > TIKU_TRK_DRAG_SLOP ||
-                     ev.xmotion.y - app.band_y0 > TIKU_TRK_DRAG_SLOP ||
-                     app.band_y0 - ev.xmotion.y > TIKU_TRK_DRAG_SLOP)) {
+                    (ev.x - app.band_x0 > TIKU_TRK_DRAG_SLOP ||
+                     app.band_x0 - ev.x > TIKU_TRK_DRAG_SLOP ||
+                     ev.y - app.band_y0 > TIKU_TRK_DRAG_SLOP ||
+                     app.band_y0 - ev.y > TIKU_TRK_DRAG_SLOP)) {
                     /* Past the slop: now it is a sweep. */
                     tiku_trk_poseview_set_band(app.band_arm->view, 1);
                     app.band_fl = app.band_arm;
@@ -6375,14 +6318,14 @@ main(int argc, char **argv)
                 if (app.band_fl != NULL) {
                     unsigned bm = 0u;
 
-                    if (ev.xmotion.state & ShiftMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
                         bm |= TIKU_TRK_MOD_SHIFT;
                     }
-                    if (ev.xmotion.state & ControlMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                         bm |= TIKU_TRK_MOD_CMD;
                     }
-                    app.band_x1 = ev.xmotion.x;
-                    app.band_y1 = ev.xmotion.y;
+                    app.band_x1 = ev.x;
+                    app.band_y1 = ev.y;
                     app.band_mods = bm;
                     /* Handed VIEW coordinates: the band is drawn where the
                      * pointer is, but what it sweeps is where the icons are,
@@ -6395,7 +6338,7 @@ main(int argc, char **argv)
                      * Where it lets go decides the dock, and a release in
                      * the middle keeps the one it started from (DB-049). */
                     tiku_trk_db_dock_t want =
-                        tiku_trk_deskbar_dock_at(ev.xmotion.x, ev.xmotion.y,
+                        tiku_trk_deskbar_dock_at(ev.x, ev.y,
                             DESK_W, DESK_H,
                             tiku_trk_deskbar_dock(app.deskbar));
 
@@ -6404,8 +6347,8 @@ main(int argc, char **argv)
                         app.dirty = 1;
                     }
                 }
-                if (tiku_trk_deskbar_pointer(app.deskbar, ev.xmotion.x,
-                                             ev.xmotion.y)) {
+                if (tiku_trk_deskbar_pointer(app.deskbar, ev.x,
+                                             ev.y)) {
                     /* The one input the bar never had.  Auto-hide and
                      * auto-raise are both answers to "where is the
                      * pointer", and neither could be asked (DB-051,
@@ -6413,13 +6356,13 @@ main(int argc, char **argv)
                     app.dirty = 1;
                 }
                 if (tiku_trk_desk_tracking(app.desk)) {
-                    if (tiku_trk_desk_track(app.desk, ev.xmotion.x,
-                                            ev.xmotion.y)) {
+                    if (tiku_trk_desk_track(app.desk, ev.x,
+                                            ev.y)) {
                         app.dirty = 1;
                     }
                 }
                 break;
-            case ButtonRelease: {
+            case TIKU_DESK_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 app.dock_drag = 0;
@@ -6438,9 +6381,9 @@ main(int argc, char **argv)
                     app.dirty = 1;
                 }
                 if (dropped) {
-                    do_drop(&app, ev.xbutton.x, ev.xbutton.y,
-                            ev.xbutton.state, ev.xbutton.button);
-                } else if (ev.xbutton.button == 3u && app.press_down &&
+                    do_drop(&app, ev.x, ev.y,
+                            ev.modifiers, ev.button);
+                } else if (ev.button == 3u && app.press_down &&
                            !app.press_menu && app.press_fl != NULL) {
                     folder_t *pfl = app.press_fl;
                     tiku_trk_pose_t *p = (app.press_row >= 0)
@@ -6449,10 +6392,10 @@ main(int argc, char **argv)
                     unsigned cmods = 0u;
                     tiku_trk_sc_ctx_t c;
 
-                    if (ev.xbutton.state & ShiftMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
                         cmods |= TIKU_TRK_MENU_MOD_SHIFT;
                     }
-                    if (ev.xbutton.state & ControlMask) {
+                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                         cmods |= TIKU_TRK_MENU_MOD_CMD;
                     }
                     c = menu_ctx(&app, pfl, cmods);
@@ -6476,7 +6419,7 @@ main(int argc, char **argv)
                     }
                     app.popup_sub = NULL;
                     app.popup_frame = tiku_trk_menu_place(app.popup,
-                        ev.xbutton.x, ev.xbutton.y,
+                        ev.x, ev.y,
                         (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
                     app.dirty = 1;
                 }
@@ -6491,9 +6434,8 @@ main(int argc, char **argv)
                 tiku_trk_desk_end_track(app.desk);
                 break;
             }
-            case KeyRelease:
-                if (app.sw.shown && (ev_ks == XK_Control_L ||
-                                     ev_ks == XK_Control_R)) {
+            case TIKU_DESK_EVENT_KEY_UP:
+                if (app.sw.shown && ev.key == TIKU_DESK_KEY_CMD) {
                     /* Released inside the hair trigger the user meant the
                      * previous application; held longer they meant the
                      * list, and letting go now is the choice (DB-054). */
@@ -6503,34 +6445,34 @@ main(int argc, char **argv)
                     break;
                 }
                 /* fall through */
-            case KeyPress: {
+            case TIKU_DESK_EVENT_KEY_DOWN: {
                 /* A menu that is open rewrites itself as modifiers move:
                  * nine of its items change label AND command together while
                  * Shift is held.  The table already knows how; this is the
                  * edge that tells it to.  Handled on BOTH key edges, since
                  * releasing Shift has to put the labels back. */
                 if (app.popup != NULL) {
-                    KeySym mk = ev_ks;
+                    unsigned mk = ev.key;
 
-                    if (mk == XK_Shift_L || mk == XK_Shift_R ||
-                        mk == XK_Control_L || mk == XK_Control_R) {
+                    if (mk == TIKU_DESK_KEY_SHIFT ||
+                        mk == TIKU_DESK_KEY_CMD) {
                         tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
                         folder_t *ffl = folder_of(&app, fw);
                         unsigned m2 = 0;
                         tiku_trk_sc_ctx_t c2;
 
-                        /* KeyRelease reports the state BEFORE the release,
+                        /* TIKU_DESK_EVENT_KEY_UP reports the state BEFORE the release,
                          * so the bit has to be taken out by hand or the menu
                          * stays in its shifted face. */
-                        if (ev.xkey.state & ShiftMask) {
+                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
                             m2 |= TIKU_TRK_MOD_SHIFT;
                         }
-                        if (ev.type == KeyRelease &&
-                            (mk == XK_Shift_L || mk == XK_Shift_R)) {
+                        if (ev.type == TIKU_DESK_EVENT_KEY_UP &&
+                            mk == TIKU_DESK_KEY_SHIFT) {
                             m2 &= ~(unsigned)TIKU_TRK_MOD_SHIFT;
                         }
-                        if (ev.type == KeyPress &&
-                            (mk == XK_Shift_L || mk == XK_Shift_R)) {
+                        if (ev.type == TIKU_DESK_EVENT_KEY_DOWN &&
+                            mk == TIKU_DESK_KEY_SHIFT) {
                             m2 |= TIKU_TRK_MOD_SHIFT;
                         }
                         c2 = menu_ctx(&app, ffl, m2);
@@ -6542,17 +6484,17 @@ main(int argc, char **argv)
                     }
                     break;
                 }
-                if (ev.type == KeyRelease) {
+                if (ev.type == TIKU_DESK_EVENT_KEY_UP) {
                     break;
                 }
                 {
-                KeySym ks = ev_ks;
+                unsigned key = ev.key;
                 tiku_trk_win_t *w = tiku_trk_desk_focused(app.desk);
                 folder_t *fl = folder_of(&app, w);
                 unsigned mods = 0;
 
-                if (ev.xkey.state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                if (ev.xkey.state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
+                if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
                 /* While editing, the keyboard belongs to the field: the
                  * shortcuts underneath must not fire, or typing "w" in a
                  * value would close the window. */
@@ -6569,15 +6511,15 @@ main(int argc, char **argv)
                     }
                     if (islot >= 0) {
                         if (app.info_renaming == islot) {
-                            if (ks == XK_Return) {
+                            if (key == TIKU_DESK_KEY_RETURN) {
                                 info_rename_end(&app, 1);
-                            } else if (ks == XK_Escape) {
+                            } else if (key == TIKU_DESK_KEY_ESCAPE) {
                                 info_rename_end(&app, 0);
-                            } else if (ks == XK_BackSpace) {
+                            } else if (key == TIKU_DESK_KEY_BACKSPACE) {
                                 (void)tiku_trk_edit_key(&app.info_name,
                                     TIKU_TRK_EDIT_BACKSPACE, 0, '\0');
                             } else {
-                                char typed = key_char(&app, &ev.xkey, ks);
+                                char typed = key_char(&ev);
 
                                 if (typed != '\0') {
                                     (void)tiku_trk_edit_key(&app.info_name,
@@ -6588,12 +6530,12 @@ main(int argc, char **argv)
                             break;
                         }
                         if ((mods & TIKU_TRK_MOD_CMD) &&
-                            (ks == 'e' || ks == 'E')) {
+                            (key == 'e' || key == 'E')) {
                             info_rename_begin(&app, islot);
                             break;
                         }
                         if ((mods & TIKU_TRK_MOD_CMD) &&
-                            (ks == 'w' || ks == 'W')) {
+                            (key == 'w' || key == 'W')) {
                             info_close(&app, islot);
                             break;
                         }
@@ -6606,12 +6548,12 @@ main(int argc, char **argv)
                     int pkey = 0;
                     tiku_trk_panel_key_t what;
 
-                    if (ks == XK_Escape)          { pkey = 27; }
-                    else if (ks == XK_Return)     { pkey = '\n'; }
-                    else if (ks == XK_Tab)        { pkey = '\t'; }
-                    else if (ks == XK_Up)         { pkey = TIKU_TRK_KEY_UP; }
-                    else if (ks == XK_Down)       { pkey = TIKU_TRK_KEY_DOWN; }
-                    else if (ks >= 'a' && ks <= 'z') { pkey = (int)ks; }
+                    if (key == TIKU_DESK_KEY_ESCAPE)          { pkey = 27; }
+                    else if (key == TIKU_DESK_KEY_RETURN)     { pkey = '\n'; }
+                    else if (key == TIKU_DESK_KEY_TAB)        { pkey = '\t'; }
+                    else if (key == TIKU_DESK_KEY_UP)         { pkey = TIKU_TRK_KEY_UP; }
+                    else if (key == TIKU_DESK_KEY_DOWN)       { pkey = TIKU_TRK_KEY_DOWN; }
+                    else if (key >= 'a' && key <= 'z') { pkey = (int)key; }
                     what = tiku_trk_panel_key(&app.fpanel, pkey, mods,
                                app.fpanel.focus == TIKU_TRK_PANEL_FOCUS_LIST,
                                pn > 0);
@@ -6657,9 +6599,9 @@ main(int argc, char **argv)
                         break;
                     default:
                         if (app.fpanel.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
-                            (ks == XK_Up || ks == XK_Down)) {
+                            (key == TIKU_DESK_KEY_UP || key == TIKU_DESK_KEY_DOWN)) {
                             (void)tiku_trk_poseview_key_nav(app.fpanel_view,
-                                (ks == XK_Up) ? TIKU_TRK_KEY_UP
+                                (key == TIKU_DESK_KEY_UP) ? TIKU_TRK_KEY_UP
                                               : TIKU_TRK_KEY_DOWN, mods);
                         }
                         break;
@@ -6669,14 +6611,14 @@ main(int argc, char **argv)
                 }
                 if (app.panel_win != NULL && app.panel_win->open &&
                     tiku_trk_desk_focused(app.desk) == app.panel_win) {
-                    if (ks == XK_Return) {
+                    if (key == TIKU_DESK_KEY_RETURN) {
                         panel_primary(&app);
-                    } else if (ks == XK_Escape) {
+                    } else if (key == TIKU_DESK_KEY_ESCAPE) {
                         close_window(&app, app.panel_win);
-                    } else if (ks == XK_BackSpace) {
+                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
                         tiku_trk_find_backspace(&app.panel);
                     } else {
-                        char typed = key_char(&app, &ev.xkey, ks);
+                        char typed = key_char(&ev);
 
                         if (typed != '\0') {
                             tiku_trk_find_key(&app.panel, typed);
@@ -6686,20 +6628,20 @@ main(int argc, char **argv)
                     break;
                 }
                 if (app.finding) {
-                    if (ks == XK_Return) {
+                    if (key == TIKU_DESK_KEY_RETURN) {
                         app.finding = 0;
                         run_find(&app, fl);
-                    } else if (ks == XK_Escape) {
+                    } else if (key == TIKU_DESK_KEY_ESCAPE) {
                         app.finding = 0;
                         app.status[0] = '\0';
                         app.dirty = 1;
-                    } else if (ks == XK_BackSpace) {
+                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
                         if (app.find_len > 0) {
                             app.find_buf[--app.find_len] = '\0';
                         }
                         app.dirty = 1;
                     } else {
-                        char typed = key_char(&app, &ev.xkey, ks);
+                        char typed = key_char(&ev);
 
                         if (typed >= 0x20 && typed < 0x7F &&
                             app.find_len < (int)sizeof app.find_buf - 1) {
@@ -6715,14 +6657,13 @@ main(int argc, char **argv)
                 if (app.sel_win != NULL && app.sel_win->open &&
                     tiku_trk_desk_focused(app.desk) == app.sel_win) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
+                    int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
                     char c = '\0';
 
-                    switch (ks) {
-                    case XK_Return:
-                    case XK_KP_Enter:  apply_select(&app); app.dirty = 1;
+                    switch (key) {
+                    case TIKU_DESK_KEY_RETURN:  apply_select(&app); app.dirty = 1;
                                        goto sel_done;
-                    case XK_Escape:
+                    case TIKU_DESK_KEY_ESCAPE:
                         /* Hidden, not destroyed: what is in it is what the
                          * user will want next time (AW-081). */
                         tiku_trk_select_hide(&app.sel);
@@ -6730,13 +6671,13 @@ main(int argc, char **argv)
                         app.sel_win = NULL;
                         app.dirty = 1;
                         goto sel_done;
-                    case XK_BackSpace: k = TIKU_TRK_EDIT_BACKSPACE; break;
-                    case XK_Delete:    k = TIKU_TRK_EDIT_DELETE;    break;
-                    case XK_Left:      k = TIKU_TRK_EDIT_LEFT;      break;
-                    case XK_Right:     k = TIKU_TRK_EDIT_RIGHT;     break;
-                    case XK_Home:      k = TIKU_TRK_EDIT_HOME;      break;
-                    case XK_End:       k = TIKU_TRK_EDIT_END;       break;
-                    case XK_Tab:
+                    case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
+                    case TIKU_DESK_KEY_DELETE:    k = TIKU_TRK_EDIT_DELETE;    break;
+                    case TIKU_DESK_KEY_LEFT:      k = TIKU_TRK_EDIT_LEFT;      break;
+                    case TIKU_DESK_KEY_RIGHT:     k = TIKU_TRK_EDIT_RIGHT;     break;
+                    case TIKU_DESK_KEY_HOME:      k = TIKU_TRK_EDIT_HOME;      break;
+                    case TIKU_DESK_KEY_END:       k = TIKU_TRK_EDIT_END;       break;
+                    case TIKU_DESK_KEY_TAB:
                         tiku_trk_select_set_rule(&app.sel,
                             (app.sel.rule + 1) % TIKU_TRK_SELECT_RULES);
                         app.dirty = 1;
@@ -6744,7 +6685,7 @@ main(int argc, char **argv)
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        c = key_char(&app, &ev.xkey, ks);
+                        c = key_char(&ev);
                         if (c == '\0') {
                             goto sel_done;
                         }
@@ -6756,23 +6697,22 @@ sel_done:
                 }
                 if (app.renaming) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
+                    int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
                     char c = '\0';
 
-                    switch (ks) {
-                    case XK_Return:
-                    case XK_KP_Enter:  k = TIKU_TRK_EDIT_COMMIT;    break;
-                    case XK_Escape:    k = TIKU_TRK_EDIT_CANCEL;    break;
-                    case XK_BackSpace: k = TIKU_TRK_EDIT_BACKSPACE; break;
-                    case XK_Delete:    k = TIKU_TRK_EDIT_DELETE;    break;
-                    case XK_Left:      k = TIKU_TRK_EDIT_LEFT;      break;
-                    case XK_Right:     k = TIKU_TRK_EDIT_RIGHT;     break;
-                    case XK_Home:      k = TIKU_TRK_EDIT_HOME;      break;
-                    case XK_End:       k = TIKU_TRK_EDIT_END;       break;
+                    switch (key) {
+                    case TIKU_DESK_KEY_RETURN:  k = TIKU_TRK_EDIT_COMMIT;    break;
+                    case TIKU_DESK_KEY_ESCAPE:    k = TIKU_TRK_EDIT_CANCEL;    break;
+                    case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
+                    case TIKU_DESK_KEY_DELETE:    k = TIKU_TRK_EDIT_DELETE;    break;
+                    case TIKU_DESK_KEY_LEFT:      k = TIKU_TRK_EDIT_LEFT;      break;
+                    case TIKU_DESK_KEY_RIGHT:     k = TIKU_TRK_EDIT_RIGHT;     break;
+                    case TIKU_DESK_KEY_HOME:      k = TIKU_TRK_EDIT_HOME;      break;
+                    case TIKU_DESK_KEY_END:       k = TIKU_TRK_EDIT_END;       break;
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        c = key_char(&app, &ev.xkey, ks);
+                        c = key_char(&ev);
                         if (c == '\0') {
                             break;
                         }
@@ -6787,23 +6727,22 @@ sel_done:
                 }
                 if (app.editing) {
                     tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
+                    int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
                     char c = '\0';
 
-                    switch (ks) {
-                    case XK_Return:
-                    case XK_KP_Enter:  k = TIKU_TRK_EDIT_COMMIT;    break;
-                    case XK_Escape:    k = TIKU_TRK_EDIT_CANCEL;    break;
-                    case XK_BackSpace: k = TIKU_TRK_EDIT_BACKSPACE; break;
-                    case XK_Delete:    k = TIKU_TRK_EDIT_DELETE;    break;
-                    case XK_Left:      k = TIKU_TRK_EDIT_LEFT;      break;
-                    case XK_Right:     k = TIKU_TRK_EDIT_RIGHT;     break;
-                    case XK_Home:      k = TIKU_TRK_EDIT_HOME;      break;
-                    case XK_End:       k = TIKU_TRK_EDIT_END;       break;
+                    switch (key) {
+                    case TIKU_DESK_KEY_RETURN:  k = TIKU_TRK_EDIT_COMMIT;    break;
+                    case TIKU_DESK_KEY_ESCAPE:    k = TIKU_TRK_EDIT_CANCEL;    break;
+                    case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
+                    case TIKU_DESK_KEY_DELETE:    k = TIKU_TRK_EDIT_DELETE;    break;
+                    case TIKU_DESK_KEY_LEFT:      k = TIKU_TRK_EDIT_LEFT;      break;
+                    case TIKU_DESK_KEY_RIGHT:     k = TIKU_TRK_EDIT_RIGHT;     break;
+                    case TIKU_DESK_KEY_HOME:      k = TIKU_TRK_EDIT_HOME;      break;
+                    case TIKU_DESK_KEY_END:       k = TIKU_TRK_EDIT_END;       break;
                     default: break;
                     }
                     if (k == TIKU_TRK_EDIT_CHAR) {
-                        c = key_char(&app, &ev.xkey, ks);
+                        c = key_char(&ev);
                         if (c == '\0') {
                             break;
                         }
@@ -6822,38 +6761,34 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_q && (ev.xkey.state & ControlMask)) {
+                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     app.running = 0;
                     break;
                 }
-                if (ks == XK_f && (ev.xkey.state & ControlMask)) {
+                if (key == 'f' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     open_panel(&app);
                     break;
                 }
-                if (ks == XK_a && (ev.xkey.state & ControlMask) &&
-                    (ev.xkey.state & ShiftMask)) {
+                if (key == 'a' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    (ev.modifiers & TIKU_DESK_MOD_SHIFT)) {
                     /* PVK-047: Select by pattern, on the window it was
                      * invoked from, opened near the pointer. */
-                    Window r1, c1;
-                    int rx, ry, wx, wy;
-                    unsigned msk;
+                    int wx, wy;
 
-                    if (app.dpy == NULL ||
-                        !XQueryPointer(app.dpy, app.win, &r1, &c1, &rx, &ry,
-                                       &wx, &wy, &msk)) {
+                    if (!tiku_desk_host_pointer(app.host, &wx, &wy, NULL)) {
                         wx = DESK_W / 2;
                         wy = DESK_H / 2;
                     }
                     open_select(&app, fl, wx, wy);
                     break;
                 }
-                if (ks == XK_a && (ev.xkey.state & ControlMask) &&
+                if (key == 'a' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     tiku_trk_poseview_select_all(fl->view);
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_Delete && fl != NULL) {
+                if (key == TIKU_DESK_KEY_DELETE && fl != NULL) {
                     /* What the key MEANS depends on where the items are: a
                      * move that can be undone where there is a Trash to
                      * move them to, and a deletion inside it or when Shift
@@ -6864,7 +6799,7 @@ sel_done:
                     int n = folder_selection(&app, fl, paths, sel, 64);
 
                     if (n > 0) {
-                        int shift = (ev.xkey.state & ShiftMask) ? 1 : 0;
+                        int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
 
                         if (tiku_trk_fs_delete_question(app.fs, sel[0],
                                 shift) == TIKU_TRK_DELETE_STRAIGHT) {
@@ -6882,14 +6817,14 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_g && (ev.xkey.state & ControlMask) &&
+                if (key == 'g' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     /* Cmd+G, which the menus now advertise (CW-033). */
                     menu_invoke(&app, fl, TIKU_TRK_CMD_EDIT_QUERY);
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_i && (ev.xkey.state & ControlMask) &&
+                if (key == 'i' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     /* The chord the menus have always advertised; until
                      * now nothing was listening for it (AW-065). */
@@ -6897,49 +6832,48 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.xkey.state & ControlMask) && fl != NULL &&
-                    (ks == XK_x || ks == XK_c || ks == XK_v)) {
+                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                    (key == 'x' || key == 'c' || key == 'v')) {
                     /* The clipboard chords, which until now only the menu
                      * could reach here; Shift turns each into its "more"
                      * or "links" variant, as the menu labels do. */
-                    unsigned m = (ev.xkey.state & ShiftMask)
+                    unsigned m = (ev.modifiers & TIKU_DESK_MOD_SHIFT)
                                      ? TIKU_TRK_MOD_SHIFT : 0u;
-                    int base = (ks == XK_x) ? TIKU_TRK_CMD_CUT
-                             : (ks == XK_c) ? TIKU_TRK_CMD_COPY
+                    int base = (key == 'x') ? TIKU_TRK_CMD_CUT
+                             : (key == 'c') ? TIKU_TRK_CMD_COPY
                                             : TIKU_TRK_CMD_PASTE;
 
                     menu_invoke(&app, fl, tiku_trk_sc_command(base, m));
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.xkey.state & ControlMask) && fl != NULL &&
-                    (ks == XK_1 || ks == XK_2 || ks == XK_3)) {
+                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                    (key == '1' || key == '2' || key == '3')) {
                     /* AW-025/CW-065: the same chords the single-window app
                      * binds.  The menu offers these modes; a shortcut that
                      * works in one window and not the other is worse than
                      * no shortcut at all. */
                     menu_invoke(&app, fl,
-                        (ks == XK_1) ? TIKU_TRK_CMD_ICON_VIEW :
-                        (ks == XK_2) ? TIKU_TRK_CMD_MINI_ICON_VIEW
+                        (key == '1') ? TIKU_TRK_CMD_ICON_VIEW :
+                        (key == '2') ? TIKU_TRK_CMD_MINI_ICON_VIEW
                                      : TIKU_TRK_CMD_LIST_VIEW);
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.xkey.state & ControlMask) && fl != NULL &&
-                    (ks == XK_plus || ks == XK_equal || ks == XK_KP_Add ||
-                     ks == XK_minus || ks == XK_KP_Subtract)) {
+                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                    (key == '+' || key == '=' || key == '-')) {
                     (void)tiku_trk_poseview_step_icon_size(fl->view,
-                        (ks == XK_minus || ks == XK_KP_Subtract) ? 0 : 1);
+                        (key == '-') ? 0 : 1);
                     tiku_trk_poseview_cleanup(fl->view,
                                               folder_content(&app, fl).w);
                     app.dirty = 1;
                     break;
                 }
                 if (app.alert.open) {
-                    if (ks == XK_Escape && app.alert.cancel >= 0) {
+                    if (key == TIKU_DESK_KEY_ESCAPE && app.alert.cancel >= 0) {
                         app.alert.chosen = app.alert.cancel;
                         answer_alert(&app);
-                    } else if (ks == XK_Return &&
+                    } else if (key == TIKU_DESK_KEY_RETURN &&
                                app.alert.nbutton > 0) {
                         /* Return presses the default: the rightmost. */
                         app.alert.chosen = app.alert.nbutton - 1;
@@ -6951,10 +6885,11 @@ sel_done:
                 if (app.sw.shown) {
                     /* Modal while it is up, and every key goes to it: the
                      * switcher IS the focus for as long as it shows. */
-                    const char *nm = XKeysymToString(ks);
+                    char printable[2];
+                    const char *nm = key_name(&ev, printable);
                     tiku_trk_sw_act_t act =
-                        tiku_trk_switcher_key(&app.sw, (nm != NULL) ? nm : "",
-                                              (ev.xkey.state & ShiftMask)
+                        tiku_trk_switcher_key(&app.sw, nm,
+                                              (ev.modifiers & TIKU_DESK_MOD_SHIFT)
                                                   ? 1 : 0);
 
                     if (act == TIKU_TRK_SW_COMMIT) {
@@ -6969,35 +6904,35 @@ sel_done:
                                                                : "hiding",
                                  app.sw.app[app.sw.sel].name);
                     }
-                    if (ks == XK_Tab) {
+                    if (key == TIKU_DESK_KEY_TAB) {
                         /* Tab while it is up moves on, which is the same
                          * gesture that opened it. */
                         switcher_open(&app,
-                                      (ev.xkey.state & ShiftMask) ? 1 : 0);
+                                      (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0);
                     }
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_Tab && (ev.xkey.state & ControlMask)) {
-                    switcher_open(&app, (ev.xkey.state & ShiftMask) ? 1 : 0);
+                if (key == TIKU_DESK_KEY_TAB && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                    switcher_open(&app, (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0);
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_comma && (ev.xkey.state & ControlMask)) {
+                if (key == ',' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     /* The settings are the application's, not a window's,
                      * so this works with no folder focused. */
                     prefs_open(&app);
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_n && (ev.xkey.state & ControlMask) &&
+                if (key == 'n' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     menu_invoke(&app, fl, TIKU_TRK_CMD_NEW_FOLDER);
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_Menu && (ev.xkey.state &
-                        (ControlMask | ShiftMask | Mod1Mask)) == 0) {
+                if (key == TIKU_DESK_KEY_MENU && (ev.modifiers &
+                        (TIKU_DESK_MOD_CMD | TIKU_DESK_MOD_SHIFT | TIKU_DESK_MOD_OPTION)) == 0) {
                     /* The Menu key alone opens the leaf menu -- the one
                      * gesture that reaches the Deskbar without the
                      * pointer (DB-011). */
@@ -7009,7 +6944,7 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_s && (ev.xkey.state & ControlMask) &&
+                if (key == 's' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     /* PVK-046: invert -- the only way to say "everything
                      * except these" without clicking the rest. */
@@ -7017,14 +6952,14 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if (ks == XK_w && (ev.xkey.state & ControlMask)) {
+                if (key == 'w' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     close_window(&app, w);
                     app.dirty = 1;
                     break;
                 }
-                if (fl != NULL && ks == XK_Down &&
-                    (ev.xkey.state & ControlMask) &&
-                    (ev.xkey.state & Mod1Mask)) {
+                if (fl != NULL && key == TIKU_DESK_KEY_DOWN &&
+                    (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    (ev.modifiers & TIKU_DESK_MOD_OPTION)) {
                     tiku_trk_pose_t *p =
                         tiku_trk_poseview_active(fl->view);
 
@@ -7039,8 +6974,8 @@ sel_done:
                     app.dirty = 1;
                     break;
                 }
-                if (fl != NULL && ks == XK_Up &&
-                    (ev.xkey.state & ControlMask)) {
+                if (fl != NULL && key == TIKU_DESK_KEY_UP &&
+                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     /* PVK-040/CW-051: Cmd+Up opens the parent; Option
                      * additionally takes the spatial window we left. */
                     if (strcmp(fl->path, "/") != 0) {
@@ -7057,7 +6992,7 @@ sel_done:
                         }
                         if (slash != NULL &&
                             open_folder(&app, parent) != NULL &&
-                            (ev.xkey.state & Mod1Mask)) {
+                            (ev.modifiers & TIKU_DESK_MOD_OPTION)) {
                             close_window(&app, from);
                         }
                     }
@@ -7069,17 +7004,17 @@ sel_done:
                      * arrangement is two-dimensional; the pages matter in
                      * both and were bound in neither shell's multi-window
                      * half (PVK-007, PVK-011). */
-                    int nav = (ks == XK_Up)    ? TIKU_TRK_KEY_UP
-                            : (ks == XK_Down)  ? TIKU_TRK_KEY_DOWN
-                            : (ks == XK_Left)  ? TIKU_TRK_KEY_LEFT
-                            : (ks == XK_Right) ? TIKU_TRK_KEY_RIGHT
-                            : (ks == XK_Prior) ? TIKU_TRK_KEY_PGUP
-                            : (ks == XK_Next)  ? TIKU_TRK_KEY_PGDN
-                            : (ks == XK_Home)  ? TIKU_TRK_KEY_HOME
-                            : (ks == XK_End)   ? TIKU_TRK_KEY_END : 0;
+                    int nav = (key == TIKU_DESK_KEY_UP)    ? TIKU_TRK_KEY_UP
+                            : (key == TIKU_DESK_KEY_DOWN)  ? TIKU_TRK_KEY_DOWN
+                            : (key == TIKU_DESK_KEY_LEFT)  ? TIKU_TRK_KEY_LEFT
+                            : (key == TIKU_DESK_KEY_RIGHT) ? TIKU_TRK_KEY_RIGHT
+                            : (key == TIKU_DESK_KEY_PAGE_UP) ? TIKU_TRK_KEY_PGUP
+                            : (key == TIKU_DESK_KEY_PAGE_DOWN)  ? TIKU_TRK_KEY_PGDN
+                            : (key == TIKU_DESK_KEY_HOME)  ? TIKU_TRK_KEY_HOME
+                            : (key == TIKU_DESK_KEY_END)   ? TIKU_TRK_KEY_END : 0;
                     if (nav != 0) {
                         (void)tiku_trk_poseview_key_nav(fl->view, nav, mods);
-                    } else if (ks == XK_Return) {
+                    } else if (key == TIKU_DESK_KEY_RETURN) {
                         tiku_trk_pose_t *p =
                             tiku_trk_poseview_active(fl->view);
                         if (p != NULL &&
@@ -7087,7 +7022,7 @@ sel_done:
                             /* Option+Return opens and takes the window it
                              * came from with it, the keyboard's version of
                              * an Option double-click (PVK-017). */
-                            int chase = (ev.xkey.state & Mod1Mask) != 0;
+                            int chase = (ev.modifiers & TIKU_DESK_MOD_OPTION) != 0;
                             tiku_trk_win_t *from = fl->win;
 
                             if (open_folder(&app, p->model.path) != NULL &&
@@ -7099,7 +7034,7 @@ sel_done:
                              * is no other window for it to open. */
                             begin_edit(&app, fl);
                         }
-                    } else if (ks == XK_BackSpace) {
+                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
                         char parent[TIKU_TRK_PATH_MAX];
                         char *slash;
                         snprintf(parent, sizeof parent, "%s", fl->path);
@@ -7114,11 +7049,9 @@ sel_done:
                 }
                 break;
             }
-            case ClientMessage:
-                if ((Atom)ev.xclient.data.l[0] == app.del) {
-                    app.running = 0;
-                }
             }
+            case TIKU_DESK_EVENT_CLOSE:
+                app.running = 0;
                 break;
             default:
                 break;
@@ -7770,10 +7703,7 @@ sel_done:
     }
     tiku_trk_fs_free(app.fs);
     tiku_trk_backend_close(app.backend);
-    if (app.dpy != NULL) {
-        XDestroyImage(app.img);
-        XCloseDisplay(app.dpy);
-    }
+    tiku_desk_host_close(app.host);
     tiku_desk_surface_free(app.surf);
     return rc;
 }

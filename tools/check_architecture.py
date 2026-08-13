@@ -10,9 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TRACKER_SRC = ROOT / "src"
 DESKTOP_SRC = ROOT.parent / "desktop" / "src"
 
-X11_LEGACY = {
-    "tiku_trk_desktop.c",
-}
+X11_LEGACY = set()
 
 HEADLESS = {
     "alert", "attr", "backend_posix", "backend_tiku", "clip", "drag",

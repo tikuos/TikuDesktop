@@ -66,12 +66,11 @@ Tracker will publish:
 
 ## Temporary exceptions
 
-Only the multi-window shell still exposes X11 types. It is the sole explicit
-allowlist entry in `tools/check_architecture.py`; migrating its native window
-and pointer-query paths removes the exception. The script driver and the
-single-window shell already consume portable events through the desktop host.
-`tiku_trk_win` is likewise the current generic window implementation under
-the wrong owner and is moved, not redesigned in place, during step 3.
+Both shells and the script driver consume portable events through the desktop
+host. The X11 migration allowlist in `tools/check_architecture.py` is empty;
+new native imports fail the architecture check. `tiku_trk_win` is still the
+generic window implementation under the wrong owner and is moved, not
+redesigned in place, during step 3.
 
 Refactor commits do not change `FEATURES.md` verdicts unless they change a
 user-visible behavior. Every extraction must pass the complete unit and
