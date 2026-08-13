@@ -4582,8 +4582,7 @@ main(int argc, char **argv)
     const char *shot_edit = NULL, *shot_find = NULL;
     int shot_panel = 0, shot_live = 0, shot_shift = 0, shot_zoom = 0;
     int shot_cascade = 0, shot_notify = 0, shot_select = 0;
-    int64_t last_click = 0;
-    int last_row = -1;
+    tiku_trk_click_t click = { 0 };
     const char *openme[TIKU_TRK_WIN_MAX];
     int nopen = 0;
     /* Started deliberately plain: no session is restored.  The row's other
@@ -5973,64 +5972,73 @@ main(int argc, char **argv)
                         int row = folder_row_at(&app, fl, ev.xbutton.x,
                                                 ev.xbutton.y);
                         unsigned mods = 0;
+                        unsigned click_flags = 0;
                         int64_t now = tiku_trk_now();
 
                         if (ev.xbutton.state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
                         if (ev.xbutton.state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
+                        if (ev.xbutton.state & ShiftMask) {
+                            click_flags |= TIKU_TRK_CLICK_EXTEND;
+                        }
+                        if (ev.xbutton.state & ControlMask) {
+                            click_flags |= TIKU_TRK_CLICK_EXTEND |
+                                           TIKU_TRK_CLICK_CONTROL;
+                        }
                         if (ev.xbutton.button == 3) {
-                            /* PVS-018: the menu is about what was pointed
-                             * at, so the selection is normalized first, the
-                             * window is activated and brought up to date,
-                             * and any pending rename is dropped. */
-                            tiku_trk_pose_t *p = (row >= 0)
-                                ? tiku_trk_poseview_at(fl->view, row) : NULL;
-                            tiku_trk_sc_ctx_t c;
+                            int k, kn;
+                            int lst = (tiku_trk_poseview_mode(fl->view) ==
+                                       TIKU_TRK_MODE_LIST);
 
+                            /* Normalize on DOWN, but do not build the menu
+                             * until UP: a secondary press is still allowed
+                             * to turn into a drag (PVS-016). */
                             tiku_trk_poseview_cancel_edit_wait(fl->view);
-                            /* CW-029: a menu opened with the MOUSE commits
-                             * an edit in progress; one opened from the
-                             * keyboard leaves it alone, so a shortcut can
-                             * still act on the text being typed. */
                             commit_rename(&app, 1);
                             (void)tiku_trk_poseview_context_click(fl->view,
                                                                   row);
                             tiku_trk_desk_activate(app.desk, w);
-                            c = menu_ctx(&app, fl, mods);
-                            build_open_with(&app, fl);
-        build_per_type(&app, fl);
-                            build_per_type(&app, fl);
-                            app.popup = tiku_trk_cwmenu_context(&app.menus,
-                                            (row >= 0 && p != NULL)
-                                                ? &p->model : NULL, &c);
-                            app.bar_fl = NULL;
-                            app.bar_open = -1;
-                            app.menus.bar.open = -1;
-                            /* A container's context menu carries a walk
-                             * into it, so a descendant can be reached
-                             * without leaving the window (CW-045). */
-                            app.nav_on = 0;
-                            if (row >= 0 && p != NULL &&
-                                tiku_trk_nav_wanted(&p->model)) {
-                                tiku_trk_nav_open(&app.nav, app.backend,
-                                                  p->model.path);
-                                app.nav.hide_dotfiles =
-                                    tiku_trk_prefs_get(&app.prefs,
-                                                       "HideDotFiles");
-                                app.nav.folders_first =
-                                    tiku_trk_prefs_get(&app.prefs,
-                                                       "SortFolderNamesFirst");
-                                app.nav_on = 1;
+                            app.press_at = now;
+                            app.press_x = ev.xbutton.x;
+                            app.press_y = ev.xbutton.y;
+                            app.press_row = row;
+                            app.press_fl = fl;
+                            app.press_down = 1;
+                            app.press_menu = 0;
+                            tiku_trk_drag_arm(&app.drag, ev.xbutton.x,
+                                              ev.xbutton.y, 3u, mods, 1,
+                                              w, fl->path);
+                            kn = tiku_trk_poseview_count(fl->view);
+                            for (k = 0; k < kn; k++) {
+                                tiku_trk_pose_t *q =
+                                    tiku_trk_poseview_at(fl->view, k);
+                                int qx = 0, qy = 0, qw, qh;
+
+                                if (q != NULL && q->selected) {
+                                    if (!lst) {
+                                        tiku_trk_poseview_pose_rect(fl->view,
+                                            q, &qx, &qy, &qw, &qh);
+                                    }
+                                    (void)tiku_trk_drag_add_at(&app.drag,
+                                        q->model.path, q->model.type, qx, qy,
+                                        lst);
+                                }
                             }
-                            app.popup_sub = NULL;
-                            app.popup_frame = tiku_trk_menu_place(app.popup,
-                                ev.xbutton.x, ev.xbutton.y,
-                                (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                            app.drop_fl = NULL;
+                            app.drop_row = -1;
+                            (void)tiku_trk_click_press(&click, NULL, 0, 0,
+                                                       3u, 0u, now);
                         } else if (ev.xbutton.button == 4 ||
                                    ev.xbutton.button == 5) {
                             tiku_trk_poseview_scroll_to(fl->view,
                                 tiku_trk_poseview_scroll(fl->view) +
                                 ((ev.xbutton.button == 4) ? -3 : 3));
                         } else {
+                            tiku_trk_pose_t *clicked = (row >= 0)
+                                ? tiku_trk_poseview_at(fl->view, row) : NULL;
+                            int twice = tiku_trk_click_press(&click, clicked,
+                                ev.xbutton.x, ev.xbutton.y,
+                                ev.xbutton.button, click_flags, now);
+
                             {
                                 tiku_desk_rect_t c = folder_content(&app, fl);
                                 int ox = 0, oy = 0;
@@ -6054,10 +6062,7 @@ main(int argc, char **argv)
                             tiku_trk_drag_arm(&app.drag, ev.xbutton.x,
                                               ev.xbutton.y,
                                               ev.xbutton.button, mods,
-                                              (row >= 0 && row == last_row &&
-                                               now - last_click <
-                                                   TIKU_TRK_CLICK_SPEED_US)
-                                                  ? 2 : 1,
+                                              twice ? 2 : 1,
                                               w, fl->path);
                             if (row < 0 && ev.xbutton.button == 1u) {
                                 /* Empty space: a sweep, not a click.  In
@@ -6091,14 +6096,14 @@ main(int argc, char **argv)
                                 app.band_y0 = app.band_y1 = ev.xbutton.y;
                                 app.band_mods = bm;
                                 app.band_scroll_at = 0;
-                                /* A sweep between two icons also ENDS any
+                            /* A sweep between two poses also ENDS any
                                  * half-finished double click: without this
                                  * the click that starts the band is
                                  * invisible to the counter, and the next
                                  * click on the icon just left completes a
                                  * double click the user did not make. */
-                                last_row = -1;
-                                last_click = 0;
+                                (void)tiku_trk_click_press(&click, NULL, 0,
+                                    0, ev.xbutton.button, 0u, now);
                                 app.dirty = 1;
                                 break;
                             }
@@ -6139,8 +6144,7 @@ main(int argc, char **argv)
                                 (void)tiku_trk_poseview_name_clicked(fl->view,
                                                                      row, now);
                             }
-                            if (row >= 0 && row == last_row &&
-                                now - last_click < 400000) {
+                            if (twice) {
                                 tiku_trk_pose_t *p =
                                     tiku_trk_poseview_at(fl->view, row);
                                 if (p != NULL &&
@@ -6200,10 +6204,6 @@ main(int argc, char **argv)
                                         close_window(&app, w);
                                     }
                                 }
-                                last_row = -1;
-                            } else {
-                                last_row = row;
-                                last_click = now;
                             }
                         }
                     }
@@ -6349,7 +6349,9 @@ main(int argc, char **argv)
                     }
                 }
                 break;
-            case ButtonRelease:
+            case ButtonRelease: {
+                int dropped = tiku_trk_drag_active(&app.drag);
+
                 app.dock_drag = 0;
                 app.band_arm = NULL;
                 app.band_scroll_at = 0;
@@ -6365,9 +6367,48 @@ main(int argc, char **argv)
                     app.band_fl = NULL;
                     app.dirty = 1;
                 }
-                if (tiku_trk_drag_active(&app.drag)) {
+                if (dropped) {
                     do_drop(&app, ev.xbutton.x, ev.xbutton.y,
                             ev.xbutton.state, ev.xbutton.button);
+                } else if (ev.xbutton.button == 3u && app.press_down &&
+                           !app.press_menu && app.press_fl != NULL) {
+                    folder_t *pfl = app.press_fl;
+                    tiku_trk_pose_t *p = (app.press_row >= 0)
+                        ? tiku_trk_poseview_at(pfl->view, app.press_row)
+                        : NULL;
+                    unsigned cmods = 0u;
+                    tiku_trk_sc_ctx_t c;
+
+                    if (ev.xbutton.state & ShiftMask) {
+                        cmods |= TIKU_TRK_MENU_MOD_SHIFT;
+                    }
+                    if (ev.xbutton.state & ControlMask) {
+                        cmods |= TIKU_TRK_MENU_MOD_CMD;
+                    }
+                    c = menu_ctx(&app, pfl, cmods);
+
+                    build_open_with(&app, pfl);
+                    build_per_type(&app, pfl);
+                    app.popup = tiku_trk_cwmenu_context(&app.menus,
+                                        (p != NULL) ? &p->model : NULL, &c);
+                    app.bar_fl = NULL;
+                    app.bar_open = -1;
+                    app.menus.bar.open = -1;
+                    app.nav_on = 0;
+                    if (p != NULL && tiku_trk_nav_wanted(&p->model)) {
+                        tiku_trk_nav_open(&app.nav, app.backend,
+                                          p->model.path);
+                        app.nav.hide_dotfiles = tiku_trk_prefs_get(&app.prefs,
+                                                       "HideDotFiles");
+                        app.nav.folders_first = tiku_trk_prefs_get(&app.prefs,
+                                                   "SortFolderNamesFirst");
+                        app.nav_on = 1;
+                    }
+                    app.popup_sub = NULL;
+                    app.popup_frame = tiku_trk_menu_place(app.popup,
+                        ev.xbutton.x, ev.xbutton.y,
+                        (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                    app.dirty = 1;
                 }
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_deskbar_set_dragging(app.deskbar, 0);
@@ -6379,6 +6420,7 @@ main(int argc, char **argv)
                 app.press_menu = 0;
                 tiku_trk_desk_end_track(app.desk);
                 break;
+            }
             case KeyRelease:
                 if (app.sw.shown && (ev_ks == XK_Control_L ||
                                      ev_ks == XK_Control_R)) {

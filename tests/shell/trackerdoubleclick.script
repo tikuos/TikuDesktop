@@ -1,0 +1,24 @@
+# shell: tracker
+# The browser shell uses the same strict opening gesture.
+wait 6
+note PVS-010: Control on the second press does not open a folder
+click-row 0
+click-row 0 1 ctrl
+expect-location /tmp/trk_script
+
+note a secondary press cannot complete a pair or open its menu on DOWN
+click-row 0
+press 25 100 3
+expect-no-menu
+release 25 100 3
+wait 2
+expect-location /tmp/trk_script
+expect-menu Open
+click 700 450
+
+note two unmodified primary presses on the pose open it in place
+click-row 0
+click-row 0
+wait 6
+expect-location /tmp/trk_script/sub
+quit

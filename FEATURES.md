@@ -1259,15 +1259,19 @@ rather than leaving a choice the view will not honour.
 sites (click, key_nav, select_rect, select_all); tests/test_panel.c*  
 *Shell: desktop*  
 
-#### PVS-010 · core · partial
+#### PVS-010 · core · done
 **Double-clicking a pose opens the selection.**  
 Requires clicks==2, same pose as the previous click, |dx| and |dy| < kDoubleClickTresh (6 px), buttons == fLastClickButtons, buttons == B_PRIMARY_MOUSE_BUTTON, Control not held, and extendSelection not set. On a match the click state is reset (fLastClickPoint = INT32_MAX, fLastClickedPose = NULL) so a triple click does not re-open.  
 `PoseView.cpp` → `BPoseView::WasDoubleClick / BPoseView::MouseDown`  
-**UNCONFIRMED:** Every cited symbol in the four batches resolved to a real function/case in /home/ambuj/kintsugi/src/kits/tracker/{PoseView.cpp,Pose.cpp,TextWidget.cpp,TitleView.cpp,ContainerWindow.cpp,Shortcuts.cpp,PoseViewScripting.cpp,PendingNodeMonitorCache.cpp,Utilities.cpp,NavMenu.cpp,Tracker.cpp}, and LongAndDragTrackingFilter.cpp resolved to src/kits/shared/. No row was unverifiable for lack of the symbol; the defects found are misstated rules, listed under corrections.  
-**MISSING:** A second click on the same pose opens it -- a container in its own window, anything else in the application that claims its type -- and the click state is reset so a triple click does not re-open. Absent: the modifier guards (Control, the secondary button) that refuse to treat a click as the second of a pair.  
-*src/tiku_trk_desktop.c (the double-click branch); tests/shell/launch.script*
-*src/tiku_trk_app.c:1266 and :1346 (open_selection at :740); src/tiku_trk_desktop.c:1835*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The window is 400000 microseconds = 400 ms in both shells (now - last_click_us < 400000); the clause understates the interval by a factor of 1000. `src/tiku_trk_app.c:1495-1496 and :1575-1576; src/tiku_trk_desktop.c:2150-2151`  
+**PORT:** One gesture recognizer serves both shells and keys the pair by pose
+identity, point, button and time rather than by a row number.  It accepts only
+unmodified primary clicks, uses the strict six-pixel boundary, and clears the
+pair after a match; folders open in their spatial/browser form and files are
+handed to the application that claims their type.
+*src/tiku_trk_drag.c:tiku_trk_click_press; src/tiku_trk_app.c and
+src/tiku_trk_desktop.c (pose press branches); tests/test_drag.c;
+tests/shell/doubleclick.script; tests/shell/trackerdoubleclick.script;
+tests/shell/launch.script*
 
 #### PVS-011 · polish · differs
 **Double-clicking inside the Path column of a list-mode row opens the containing folder instead of the item.**  
@@ -1303,8 +1307,14 @@ MouseDown: fTextWidgetToCheck->CancelWait() when pose != fLastClickedPose || sec
 **Right-click (or Control+primary click) on a pose selects it if it was unselected, but leaves an existing multi-selection untouched; the context menu appears on mouse UP, not down, so right-button dragging still works.**  
 MouseDown: AddRemoveSelectionRange is skipped when (pose->IsSelected() && secondaryMouseButtonDown). MouseUp re-checks SecondaryMouseButtonDown(modifiers(), lastButtons) using the "last_buttons" field injected by the tracking filter, force-selects the pose if still unselected, then ShowContextMenu. Secondary = B_SECONDARY_MOUSE_BUTTON or primary+Control.  
 `PoseView.cpp` → `BPoseView::MouseDown / BPoseView::MouseUp / SecondaryMouseButtonDown`  
-**MISSING:** The selection rule is exactly right (context_click selects an unselected pose, leaves an existing multi-selection untouched, clears on empty space), but the menu is built on the button-3 PRESS rather than on release, and Control+primary is mapped to the Cmd modifier instead of counting as a secondary click.  
-*src/tiku_trk_poseview.c:818 (tiku_trk_poseview_context_click); src/tiku_trk_desktop.c:1788-1813*
+**MISSING:** Right-button selection and release-time menus now hold in both
+shells, and the desktop keeps the gesture armed so moving before release is a
+secondary-button drag.  Control+primary remains the one absent spelling:
+Control is the port's Command modifier and therefore extends selection rather
+than counting as secondary.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_context_click; src/tiku_trk_app.c
+and src/tiku_trk_desktop.c (ButtonPress/ButtonRelease); tests/shell/dropmenu.script;
+tests/shell/trackerdoubleclick.script*
 
 #### PVS-017 · important · done
 **Holding any mouse button still for the long-press interval opens the context menu without releasing.**  
@@ -1461,8 +1471,14 @@ forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated at drop ti
 **Dropping with the secondary button (or Control held) pops a menu offering Move here / Copy here / Create link here / Cancel; Cancel abandons the drop.**  
 SecondaryMouseButtonDown(modifiers(), buttons) where buttons came from the drag message. ShowDropContextMenu disables every item when the target volume is read-only, and additionally disables "Move here" when the SOURCE volume is read-only. kCancelButton and any unrecognized result return without acting. Shift on the Create-link menu item selects a relative link (kCreateRelativeLink).  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto / BContainerWindow::ShowDropContextMenu`  
-**MISSING:** **MISSING:** The Move here / Copy here / Create link here / Cancel menu exists with the row's exact enable rules — a read-only destination disables every verb, a read-only source disables only Move, Shift selects the relative link, Cancel is never disabled — and is unit-tested, but it is pure engine: nothing outside tests calls tiku_trk_cwmenu_drop, no shell dispatches TIKU_TRK_CMD_MOVE_HERE/COPY_HERE/LINK_HERE/CANCEL, and there is no drop (secondary-button or otherwise) to pop it from.  
-*Audited 2026-08-12: `src/tiku_trk_cwmenu.c:331-364 (tiku_trk_cwmenu_drop: item set + read-only rules)` `src/tiku_trk_shortcuts.c:106-108 (labels), :131-132 (Shift -> TIKU_TRK_CMD_REL_LINK_HERE)` `tests/test_menu.c:352-371 (all four enable rules exercised)`*  
+**MISSING:** A real secondary-button drag now opens the menu on release and
+all four answers dispatch: Move removes the source, Copy retains it, Link is
+enabled and Shift makes it relative, and Cancel touches nothing.  Control-held
+primary drop remains the absent spelling because this port uses Control as
+Command/link-drop rather than as the secondary-button modifier.
+*src/tiku_trk_cwmenu.c:tiku_trk_cwmenu_drop; src/tiku_trk_desktop.c:do_drop
+and the MOVE_HERE/COPY_HERE/LINK_HERE dispatch; tests/test_menu.c;
+tests/shell/dropmenu.script*
 #### PVS-040 · important · done
 **Dropping a selection inside its own folder in icon mode just repositions the icons by the drag delta; in list mode nothing happens.**  
 Detected by *srcWindow->PoseView()->TargetModel()->NodeRef() == *destFolder->NodeRef(). Each pose is removed from the VS list, moved by (loc - where), re-added, and the old/new extents are updated. Link and relative-link are refused outright in this case; list mode returns immediately.  

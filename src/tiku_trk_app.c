@@ -26,6 +26,7 @@
 
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_attr.h"
+#include "tiku_trk_drag.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_model.h"
 #include "tiku_trk_fs.h"
@@ -1912,6 +1913,29 @@ popup_press(app_t *a, int x, int y)
     return 1;
 }
 
+/** @brief Build the pose/background context menu at a completed click. */
+static void
+open_context_menu(app_t *a, int row, int x, int y, unsigned state)
+{
+    tiku_trk_pose_t *p = (row >= 0)
+        ? tiku_trk_poseview_at(a->view, row) : NULL;
+    unsigned mods = 0u;
+    tiku_trk_sc_ctx_t c;
+
+    if (state & ShiftMask) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
+    if (state & ControlMask) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    c = menu_ctx(a, mods);
+    tiku_trk_cwmenu_rebuild(&a->menus, &c);
+    a->popup = tiku_trk_cwmenu_context(&a->menus,
+                                       (p != NULL) ? &p->model : NULL, &c);
+    a->popup_sub = NULL;
+    a->bar_open = -1;
+    a->menus.bar.open = -1;
+    a->popup_frame = tiku_trk_menu_place(a->popup, x, y,
+        (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+    a->dirty = 1;
+}
+
 /** @brief Route a click inside the browser navigator. */
 static int
 navigator_press(app_t *a, int x, int y)
@@ -1950,8 +1974,8 @@ main(int argc, char **argv)
     app_t a;
     const char *port = NULL, *start = NULL;
     int baud = 115200, use_device = 0, i;
-    int64_t last_click_us = 0, deadline_us = 0;
-    int last_click_row = -1;
+    int64_t deadline_us = 0;
+    tiku_trk_click_t click = { 0 };
     const char *shot = NULL;
     const char *script_path = NULL;
     tiku_trk_script_t *sc = NULL;
@@ -2371,24 +2395,46 @@ main(int argc, char **argv)
                     tiku_trk_pose_t *hit =
                         tiku_trk_poseview_pose_at(a.view, lx, ly);
                     unsigned mods = 0;
+                    unsigned click_flags = 0;
                     int64_t now = tiku_trk_now();
 
                     if (ev.xbutton.state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
                     if (ev.xbutton.state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
+                    if (ev.xbutton.state & ShiftMask) {
+                        click_flags |= TIKU_TRK_CLICK_EXTEND;
+                    }
+                    if (ev.xbutton.state & ControlMask) {
+                        click_flags |= TIKU_TRK_CLICK_EXTEND |
+                                       TIKU_TRK_CLICK_CONTROL;
+                    }
 
                     if (hit != NULL) {
                         int idx = -1, k, cnt = tiku_trk_poseview_count(a.view);
+                        int twice;
                         for (k = 0; k < cnt; k++) {
                             if (tiku_trk_poseview_at(a.view, k) == hit) { idx = k; break; }
                         }
+                        if (ev.xbutton.button == 3u) {
+                            tiku_trk_poseview_cancel_edit_wait(a.view);
+                            (void)tiku_trk_poseview_context_click(a.view,
+                                                                  idx);
+                            a.press_at = now;
+                            a.press_x = ev.xbutton.x;
+                            a.press_y = ev.xbutton.y;
+                            a.press_row = idx;
+                            a.press_down = 1;
+                            (void)tiku_trk_click_press(&click, NULL, 0, 0,
+                                                       3u, 0u, now);
+                            a.dirty = 1;
+                            break;
+                        }
+                        twice = tiku_trk_click_press(&click, hit,
+                            ev.xbutton.x, ev.xbutton.y, ev.xbutton.button,
+                            click_flags, now);
                         tiku_trk_poseview_click_at(a.view, idx, lx, ly, mods);
-                        if (idx >= 0 && idx == last_click_row &&
-                            now - last_click_us < 400000) {
+                        if (twice) {
                             open_selection(&a);
-                            last_click_row = -1;
                         } else {
-                            last_click_row = idx;
-                            last_click_us = now;
                             /* A press on an icon begins a move; the drag
                              * carries the whole selection, as Tracker's does. */
                             {
@@ -2410,6 +2456,9 @@ main(int argc, char **argv)
                             a.drag_y = ly;
                         }
                     } else {
+                        (void)tiku_trk_click_press(&click, NULL, 0, 0,
+                                                   ev.xbutton.button, 0u,
+                                                   now);
                         /* Empty space starts a rubber band.  Without a
                          * modifier the selection is cleared FIRST, so the
                          * band's toggle rule starts from nothing; with one
@@ -2430,19 +2479,40 @@ main(int argc, char **argv)
                 {
                     int row = row_at(&a, ev.xbutton.x, ev.xbutton.y);
                     unsigned mods = 0;
+                    unsigned click_flags = 0;
                     int64_t now = tiku_trk_now();
                     int on_name = 0;
+                    tiku_trk_pose_t *pose = (row >= 0)
+                        ? tiku_trk_poseview_at(a.view, row) : NULL;
+                    int twice;
 
                     if (ev.xbutton.state & ShiftMask)   { mods |= TIKU_TRK_MOD_SHIFT; }
                     if (ev.xbutton.state & ControlMask) { mods |= TIKU_TRK_MOD_CMD; }
+                    if (ev.xbutton.state & ShiftMask) {
+                        click_flags |= TIKU_TRK_CLICK_EXTEND;
+                    }
+                    if (ev.xbutton.state & ControlMask) {
+                        click_flags |= TIKU_TRK_CLICK_EXTEND |
+                                       TIKU_TRK_CLICK_CONTROL;
+                    }
                     if (ev.xbutton.button == 3) {
                         /* PVS-015: a right-click disarms a pending rename;
                          * PVS-018: and normalizes the selection first. */
                         tiku_trk_poseview_cancel_edit_wait(a.view);
                         (void)tiku_trk_poseview_context_click(a.view, row);
+                        a.press_at = now;
+                        a.press_x = ev.xbutton.x;
+                        a.press_y = ev.xbutton.y;
+                        a.press_row = row;
+                        a.press_down = 1;
+                        (void)tiku_trk_click_press(&click, NULL, 0, 0, 3u,
+                                                   0u, now);
                         a.dirty = 1;
                         break;
                     }
+                    twice = tiku_trk_click_press(&click, pose,
+                        ev.xbutton.x, ev.xbutton.y, ev.xbutton.button,
+                        click_flags, now);
                     /* Whether the press landed on the NAME, which is the
                      * only widget a rename can start from. */
                     {
@@ -2468,10 +2538,9 @@ main(int argc, char **argv)
                             ev.xbutton.x - lr.x + ox,
                             ev.xbutton.y - lr.y + oy, mods);
                     }
-                    /* PVS-010: a second click on the same row within the
-                     * double-click window opens it. */
-                    if (row >= 0 && row == last_click_row &&
-                        now - last_click_us < 400000) {
+                    /* PVS-010: a strict second click on this same pose
+                     * opens it. */
+                    if (twice) {
                         tiku_desk_rect_t lr = list_rect(&a);
                         tiku_desk_rect_t from;
 
@@ -2483,10 +2552,6 @@ main(int argc, char **argv)
                         from.h = a.row_h;
                         open_animation(&a, from);
                         open_selection(&a);
-                        last_click_row = -1;
-                    } else {
-                        last_click_row = row;
-                        last_click_us = now;
                     }
                     if (on_name && row >= 0) {
                         /* Not started here: armed.  The rename begins only
@@ -2612,6 +2677,10 @@ main(int argc, char **argv)
                     (void)tiku_trk_poseview_save_columns(a.view);
                     a.dirty = 1;
                     break;
+                }
+                if (ev.xbutton.button == 3u && a.press_down) {
+                    open_context_menu(&a, a.press_row, ev.xbutton.x,
+                                      ev.xbutton.y, ev.xbutton.state);
                 }
                 a.press_down = 0;
                 if (a.drag_active) {

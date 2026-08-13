@@ -24,9 +24,9 @@ expect-file /tmp/trk_script/sub/b.txt
 expect-file /tmp/trk_script/b.txt
 
 note FS-003: a secondary-button drop offers Move/Copy/Link and obeys the pick
-press 200 136
-move 200 124
-move 200 96
+press 200 136 3
+move 200 124 3
+move 200 96 3
 release 200 96 3
 wait 3
 menu-pick Move here

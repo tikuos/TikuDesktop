@@ -451,6 +451,9 @@ main(void)
         check(tiku_trk_menu_find(d, TIKU_TRK_CMD_MOVE_HERE) >= 0 &&
               tiku_trk_menu_find(d, TIKU_TRK_CMD_CANCEL) >= 0,
               "a drop offers Move/Copy/Link and a way out");
+        i = tiku_trk_menu_find(d, TIKU_TRK_CMD_LINK_HERE);
+        check(i >= 0 && d->item[i].enabled,
+              "the link verb is usable when a drag payload exists");
 
         d = tiku_trk_cwmenu_drop(&cw, 1, 0, 0u);
         i = tiku_trk_menu_find(d, TIKU_TRK_CMD_MOVE_HERE);
@@ -466,8 +469,9 @@ main(void)
               "but copying out of it is still allowed");
 
         d = tiku_trk_cwmenu_drop(&cw, 0, 0, TIKU_TRK_MOD_SHIFT);
-        check(tiku_trk_menu_find(d, TIKU_TRK_CMD_REL_LINK_HERE) >= 0,
-              "Shift turns the link verb relative");
+        i = tiku_trk_menu_find(d, TIKU_TRK_CMD_REL_LINK_HERE);
+        check(i >= 0 && d->item[i].enabled,
+              "Shift turns the link verb into a usable relative link");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every menu rule holds");

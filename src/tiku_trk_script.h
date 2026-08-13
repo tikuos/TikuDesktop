@@ -127,6 +127,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-columns <n>
  *     expect-deskbar-at <x> <y>
  *     expect-title <substring>
+ *     expect-menu <substring>
+ *     expect-no-menu
  *     note <text>                         -- what the next check is for
  *     quit
  */

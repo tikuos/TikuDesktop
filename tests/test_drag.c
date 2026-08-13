@@ -50,6 +50,48 @@ main(void)
 {
     tiku_trk_drag_t d;
 
+    printf("recognizing an opening double-click (PVS-010)\n");
+    {
+        tiku_trk_click_t c = { 0 };
+        int pose_a = 1, pose_b = 2;
+
+        check(!tiku_trk_click_press(&c, &pose_a, 100, 100, 1u, 0u,
+                                    1000000),
+              "PVS-010", "the first primary press only arms the pair");
+        check(tiku_trk_click_press(&c, &pose_a, 105, 95, 1u, 0u,
+                                   1200000),
+              "PVS-010", "the same pose within six pixels and the click "
+              "interval opens");
+        check(!tiku_trk_click_press(&c, &pose_a, 105, 95, 1u, 0u,
+                                    1250000),
+              "PVS-010", "a third press starts a new pair rather than "
+              "opening again");
+
+        memset(&c, 0, sizeof c);
+        (void)tiku_trk_click_press(&c, &pose_a, 100, 100, 1u, 0u, 1000000);
+        check(!tiku_trk_click_press(&c, &pose_b, 100, 100, 1u, 0u, 1100000),
+              "PVS-010", "the same row position in another view is not "
+              "the same pose");
+        check(!tiku_trk_click_press(&c, &pose_b, 106, 100, 1u, 0u, 1200000),
+              "PVS-010", "six pixels is outside the strict point slop");
+        check(!tiku_trk_click_press(&c, &pose_b, 106, 100, 3u, 0u, 1250000),
+              "PVS-010", "a secondary press cannot complete the pair");
+
+        memset(&c, 0, sizeof c);
+        (void)tiku_trk_click_press(&c, &pose_a, 10, 10, 1u, 0u, 1000000);
+        check(!tiku_trk_click_press(&c, &pose_a, 10, 10, 1u,
+                                    TIKU_TRK_CLICK_CONTROL, 1100000),
+              "PVS-010", "Control+primary is secondary, not an opening "
+              "double-click");
+        (void)tiku_trk_click_press(&c, &pose_a, 10, 10, 1u, 0u, 1200000);
+        check(!tiku_trk_click_press(&c, &pose_a, 10, 10, 1u,
+                                    TIKU_TRK_CLICK_EXTEND, 1300000),
+              "PVS-010", "an extending click cannot open the selection");
+        (void)tiku_trk_click_press(&c, &pose_a, 10, 10, 1u, 0u, 2000000);
+        check(!tiku_trk_click_press(&c, &pose_a, 10, 10, 1u, 0u, 2400000),
+              "PVS-010", "the interval boundary is strict too");
+    }
+
     printf("arming a drag (PVS-032)\n");
 
     tiku_trk_drag_arm(&d, 100, 100, 1u, 0u, 1, NULL, "/src");

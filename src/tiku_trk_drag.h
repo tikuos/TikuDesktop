@@ -18,6 +18,39 @@
 
 #include "tiku_trk_model.h"
 
+#include <stdint.h>
+
+/** @brief Tracker's strict point-to-point double-click tolerance. */
+#define TIKU_TRK_DOUBLE_CLICK_SLOP 6
+
+/** @brief The double-click interval used by both Tracker shells. */
+#define TIKU_TRK_DOUBLE_CLICK_US 400000
+
+/** @brief A click that extends selection cannot also open it. */
+#define TIKU_TRK_CLICK_EXTEND  0x1u
+
+/** @brief Control+primary is secondary, never the second opening click. */
+#define TIKU_TRK_CLICK_CONTROL 0x2u
+
+/** @brief The first half of a possible double-click. */
+typedef struct {
+    const void *pose;               /* identity, not merely its row number */
+    int         x, y;
+    unsigned    button;
+    int64_t     at;
+} tiku_trk_click_t;
+
+/**
+ * @brief Record one pose press and say whether it completes a double-click.
+ *
+ * Only an unmodified primary click is eligible.  The pose, point (within
+ * six pixels), and button must match, and a completed pair is forgotten so
+ * the third press of a triple-click cannot open the pose again.
+ */
+int tiku_trk_click_press(tiku_trk_click_t *click, const void *pose,
+                         int x, int y, unsigned button, unsigned flags,
+                         int64_t now);
+
 /** @brief How many items one drag can carry. */
 #define TIKU_TRK_DRAG_MAX 64
 

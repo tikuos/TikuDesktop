@@ -1,0 +1,27 @@
+# shell: desktop
+# A double click is a strict pair, not merely two quick presses on one row.
+wait 6
+note PVS-010: two presses more than six pixels apart do not open the pose
+click 200 96
+click 210 96
+expect-windows 1
+
+note Control on the second press extends selection instead of opening it
+click 700 500
+click 200 96
+click 200 96 1 ctrl
+expect-windows 1
+
+note a secondary second press opens a menu, never the pose
+click 200 96
+click 200 96 3
+wait 2
+expect-windows 1
+click 700 500
+
+note the same unmodified primary point still opens normally
+click 200 96
+click 200 96
+wait 6
+expect-windows 2
+quit

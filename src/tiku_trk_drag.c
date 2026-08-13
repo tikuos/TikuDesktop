@@ -13,6 +13,43 @@
 #include <stdio.h>
 #include <string.h>
 
+int
+tiku_trk_click_press(tiku_trk_click_t *click, const void *pose,
+                     int x, int y, unsigned button, unsigned flags,
+                     int64_t now)
+{
+    int dx, dy, match;
+
+    if (click == NULL) {
+        return 0;
+    }
+    if (pose == NULL || button != 1u ||
+        (flags & (TIKU_TRK_CLICK_EXTEND | TIKU_TRK_CLICK_CONTROL)) != 0u) {
+        memset(click, 0, sizeof *click);
+        return 0;
+    }
+    dx = x - click->x;
+    dy = y - click->y;
+    match = click->pose == pose && click->button == button &&
+            dx > -TIKU_TRK_DOUBLE_CLICK_SLOP &&
+            dx < TIKU_TRK_DOUBLE_CLICK_SLOP &&
+            dy > -TIKU_TRK_DOUBLE_CLICK_SLOP &&
+            dy < TIKU_TRK_DOUBLE_CLICK_SLOP &&
+            now - click->at < TIKU_TRK_DOUBLE_CLICK_US;
+    if (match) {
+        /* A triple click is one pair plus a new first click, not two
+         * overlapping pairs. */
+        memset(click, 0, sizeof *click);
+        return 1;
+    }
+    click->pose = pose;
+    click->x = x;
+    click->y = y;
+    click->button = button;
+    click->at = now;
+    return 0;
+}
+
 /** @brief The parent directory of @p path, into @p out. */
 static void
 parent_of(const char *path, char *out, size_t max)

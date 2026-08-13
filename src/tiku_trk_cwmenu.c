@@ -419,6 +419,11 @@ tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw, int dst_read_only,
     }
     memset(&ctx, 0, sizeof ctx);
     ctx.mods = mods;
+    /* This menu exists only while a drag payload is pending.  The shared
+     * enablement table quite correctly requires a selection for Create
+     * link; represent the payload as that selection instead of leaving the
+     * link item grey in an otherwise actionable drop menu (PVS-039). */
+    ctx.selection = 1;
     m = &cw->drop_ctx;
     tiku_trk_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_MOVE_HERE);
