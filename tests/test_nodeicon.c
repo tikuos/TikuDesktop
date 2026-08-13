@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_nodeicon.h"
+#include "tiku_trk_types.h"
 
 static int fails;
 
@@ -241,6 +242,40 @@ main(void)
         snprintf(cmd, sizeof cmd, "rm -rf %s", dirpath);
         (void)system(cmd);
     }
+    printf("\nthe art a TYPE wears (IV-011, AW-013)\n");
+    {
+        tiku_trk_types_t db;
+        tiku_trk_model_t m;
+        char art[TIKU_TRK_NAME_MAX];
+
+        tiku_trk_types_init(&db);
+        (void)tiku_trk_types_add(&db, "text/", "Text file", "my_text_art",
+                                 NULL);
+        memset(&m, 0, sizeof m);
+        m.kind = TIKU_TRK_KIND_FILE;
+        snprintf(m.name, sizeof m.name, "notes.txt");
+        snprintf(m.path, sizeof m.path, "/tmp/notes.txt");
+        snprintf(m.type, sizeof m.type, "text/plain");
+        (void)tiku_trk_nodeicon_resolve(&c, NULL, &m, art, sizeof art);
+        check(strcmp(art, "my_text_art") != 0, "IV-011",
+              "with no database the compiled art is what a type wears");
+        tiku_trk_nodeicon_set_types(&c, &db);
+        tiku_trk_nodeicon_deleted(&c, m.path);
+        check(tiku_trk_nodeicon_resolve(&c, NULL, &m, art, sizeof art) ==
+              TIKU_TRK_ICON_FROM_TYPE &&
+              strcmp(art, "my_text_art") == 0, "IV-011",
+              "and with one, the art the database declares for the type -- "
+              "which is the icon an installation can change");
+        (void)tiku_trk_types_add(&db, "audio/", "Audio", "", NULL);
+        snprintf(m.type, sizeof m.type, "audio/mp3");
+        tiku_trk_nodeicon_deleted(&c, m.path);
+        (void)tiku_trk_nodeicon_resolve(&c, NULL, &m, art, sizeof art);
+        check(art[0] != '\0' && strcmp(art, "my_text_art") != 0, "IV-011",
+              "a record that declares no art of its own leaves the "
+              "compiled answer standing, rather than handing over an "
+              "empty name");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the icon tiers hold");
     return fails ? 1 : 0;
 }

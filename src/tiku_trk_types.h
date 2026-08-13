@@ -41,7 +41,7 @@ typedef struct {
     int  nattr;
 } tiku_trk_typerec_t;
 
-typedef struct {
+typedef struct tiku_trk_types {
     tiku_trk_typerec_t rec[TIKU_TRK_TYPES_MAX];
     int                n;
 } tiku_trk_types_t;

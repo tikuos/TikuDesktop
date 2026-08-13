@@ -4794,7 +4794,7 @@ GetIconForPreferredApp copies fileTypeSignature into a BString and calls ToLower
 **PORT:** The port never asks an application for a type's icon — that rung does not exist — so the row's rule is not implemented as stated; what it has is the same case-insensitivity reached another way, by folding both sides during the type-table compare instead of lowercasing the type first.  
 *src/tiku_trk_model.c:93-107 (fold_eq) used by type_row at 111-140; no preferred-app icon path anywhere in src/tiku_trk_model.c or src/tiku_trk_icons.c*
 
-#### IV-011 · important · open
+#### IV-011 · important · partial
 **A type that has no icon of its own is remembered as such, so the miss is paid only once.**  
 After falling back, an alias entry keyed on (mimeType, preferredApp) is inserted pointing at the entry actually used (generic, or the preferred app's icon), so the next lookup hits on the first FindItem.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetGenericIcon / IconCache::GetIconFromMetaMime`  

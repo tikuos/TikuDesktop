@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_nodeicon.h"
+#include "tiku_trk_types.h"
 #include "tiku_trk_thumb.h"
 
 #include <stdio.h>
@@ -152,6 +153,19 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
             return TIKU_TRK_ICON_FROM_NODE;
         }
     }
+    if (m->type[0] != '\0' && c->types != NULL) {
+        const tiku_trk_typerec_t *tr = tiku_trk_types_find(c->types,
+                                                           m->type);
+
+        if (tr != NULL && tr->icon[0] != '\0') {
+            /* Declared for the type rather than compiled in: this is the
+             * one an installation can change. */
+            if (out != NULL) {
+                snprintf(out, max, "%s", tr->icon);
+            }
+            return TIKU_TRK_ICON_FROM_TYPE;
+        }
+    }
     if (out != NULL) {
         snprintf(out, max, "%s", tiku_trk_model_icon_name(m));
     }
@@ -170,6 +184,15 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
         }
     }
     return TIKU_TRK_ICON_FROM_GENERIC;
+}
+
+void
+tiku_trk_nodeicon_set_types(tiku_trk_nodeicon_t *c,
+                            const struct tiku_trk_types *db)
+{
+    if (c != NULL) {
+        c->types = db;
+    }
 }
 
 void

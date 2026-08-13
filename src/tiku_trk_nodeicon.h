@@ -44,6 +44,8 @@ typedef enum {
 #define TIKU_TRK_NODEICON_MAX 64
 
 /** @brief One remembered node icon. */
+struct tiku_trk_types;
+
 typedef struct {
     char     path[TIKU_TRK_PATH_MAX];
     char     name[TIKU_TRK_NAME_MAX];   /* the art it resolved to         */
@@ -56,6 +58,8 @@ typedef struct {
     tiku_trk_nodeicon_ent_t e[TIKU_TRK_NODEICON_MAX];
     int                     n;
     int                     reads;      /* store probes actually made     */
+    const struct tiku_trk_types *types;   /* where a type's art is
+                                          * declared, or NULL       */
 } tiku_trk_nodeicon_t;
 
 void tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c);
@@ -94,6 +98,16 @@ tiku_trk_icon_from_t tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c,
                                                tiku_trk_store_t *store,
                                                const tiku_trk_model_t *m,
                                                char *out, size_t max);
+
+/**
+ * @brief Let the cache consult the type database for a type's icon.
+ *
+ * The database is where a type's art is DECLARED and can be edited; the
+ * compiled table is only what the port ships knowing.  Consulted ahead of
+ * it, so a type given an icon by the user wears it (AW-013, IV-011).
+ */
+void tiku_trk_nodeicon_set_types(tiku_trk_nodeicon_t *c,
+                                 const struct tiku_trk_types *db);
 
 /** @brief Remember @p path's icon, and refuse to forget it (IV-041). */
 void tiku_trk_nodeicon_preload(tiku_trk_nodeicon_t *c, const char *path,

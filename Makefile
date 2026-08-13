@@ -70,7 +70,7 @@ $(BUILD)/test_notify: src/tiku_trk_notify.c src/tiku_trk_poseview.c \
                       src/tiku_trk_match.c src/tiku_trk_clip.c \
                       src/tiku_trk_state.c src/tiku_trk_backend_posix.c \
                       src/tiku_trk_task.c $(DESK)/tiku_desk_gfx.c \
-                      src/tiku_trk_nodeicon.c src/tiku_trk_thumb.c \
+                      src/tiku_trk_nodeicon.c src/tiku_trk_types.c src/tiku_trk_thumb.c \
                       src/tiku_trk_image.c src/tiku_trk_inflate.c \
                       src/tiku_trk_jpeg.c \
                       $(DESK)/tiku_desk_font.c tests/test_notify.c src/tiku_trk_volume.c \

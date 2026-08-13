@@ -4438,6 +4438,9 @@ main(int argc, char **argv)
             snprintf(tdb, sizeof tdb, "%s/.config/tracker/types",
                      (home != NULL && home[0] != '\0') ? home : "");
             (void)tiku_trk_types_install(&app.types, tdb);
+            /* The art a type wears is the database's to declare, and the
+             * icon cache is what asks (IV-011). */
+            tiku_trk_nodeicon_set_types(&app.nicons, &app.types);
         }
         tiku_trk_launch_clear(&app.apps);
         {
