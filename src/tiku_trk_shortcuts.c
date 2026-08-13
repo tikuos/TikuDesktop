@@ -103,6 +103,9 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_COL_KIND:          return "Kind";
     case TIKU_TRK_CMD_COL_SIZE:          return "Size";
     case TIKU_TRK_CMD_COL_VALUE:         return "Value";
+    case TIKU_TRK_CMD_COL_DATE:          return "Modified";
+    case TIKU_TRK_CMD_COL_PATH:          return "Location";
+    case TIKU_TRK_CMD_COL_PERM:          return "Permissions";
     case TIKU_TRK_CMD_COL_CAP:           return "Capability";
     case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
     case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";

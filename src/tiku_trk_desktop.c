@@ -282,7 +282,9 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
     {
         static const int fields[] = { TIKU_TRK_COL_NAME, TIKU_TRK_COL_KIND,
                                       TIKU_TRK_COL_VALUE, TIKU_TRK_COL_SIZE,
-                                      TIKU_TRK_COL_CAP };
+                                      TIKU_TRK_COL_CAP, TIKU_TRK_COL_DATE,
+                                      TIKU_TRK_COL_PATH,
+                                      TIKU_TRK_COL_PERM };
         size_t k;
 
         for (k = 0; k < sizeof fields / sizeof *fields; k++) {
@@ -498,6 +500,54 @@ open_with_pick(desktop_t *app, folder_t *fl, int at)
         return;                 /* the list moved under the menu */
     }
     (void)launch_paths(app, cand[at].app, paths, npath);
+}
+
+/**
+ * @brief Fill the Attributes menu's per-type submenus (CW-026).
+ *
+ * A type offers the columns that MEAN something for it: what a value reads
+ * as is a device node's question, when a file was written is a document's.
+ * Built from the types the listing actually holds, so a folder is never
+ * offered a column for something it does not contain.
+ */
+static void
+build_per_type(desktop_t *app, folder_t *fl)
+{
+    const char *types[4];
+    int n, i;
+
+    app->menus.per_type_count = 0;
+    if (fl == NULL || fl->view == NULL) {
+        return;
+    }
+    n = tiku_trk_poseview_types_present(fl->view, types, 4);
+    for (i = 0; i < n; i++) {
+        tiku_trk_menu_t *m = &app->menus.per_type[i];
+        const char *label = types[i];
+
+        tiku_trk_menu_clear(m);
+        /* Every type can say when it was written and where it is; a device
+         * node adds the two columns only it has. */
+        (void)tiku_trk_menu_add(m, "Modified", TIKU_TRK_CMD_COL_DATE, 0, 0u,
+                                1);
+        (void)tiku_trk_menu_add(m, "Location", TIKU_TRK_CMD_COL_PATH, 0, 0u,
+                                1);
+        if (strncmp(types[i], "tiku-", 5) == 0) {
+            (void)tiku_trk_menu_add(m, "Value", TIKU_TRK_CMD_COL_VALUE, 0,
+                                    0u, 1);
+            (void)tiku_trk_menu_add(m, "Capability", TIKU_TRK_CMD_COL_CAP,
+                                    0, 0u, 1);
+        } else {
+            (void)tiku_trk_menu_add(m, "Size", TIKU_TRK_CMD_COL_SIZE, 0, 0u,
+                                    1);
+            (void)tiku_trk_menu_add(m, "Permissions", TIKU_TRK_CMD_COL_PERM,
+                                    0, 0u, 1);
+        }
+        snprintf(app->menus.per_type_name[i],
+                 sizeof app->menus.per_type_name[i], "%s", label);
+        snprintf(m->title, sizeof m->title, "%s", label);
+        app->menus.per_type_count++;
+    }
 }
 
 /** @brief Draw a folder window's contents: list rows, then the count. */
@@ -3073,6 +3123,15 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     case TIKU_TRK_CMD_COL_SIZE:
         (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_SIZE);
         break;
+    case TIKU_TRK_CMD_COL_DATE:
+        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_DATE);
+        break;
+    case TIKU_TRK_CMD_COL_PATH:
+        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_PATH);
+        break;
+    case TIKU_TRK_CMD_COL_PERM:
+        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_PERM);
+        break;
     case TIKU_TRK_CMD_COL_CAP:
         (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_CAP);
         break;
@@ -4618,6 +4677,7 @@ main(int argc, char **argv)
         p = tiku_trk_poseview_at(fl->view, 7);
         c = menu_ctx(&app, fl, 0u);
         build_open_with(&app, fl);
+        build_per_type(&app, fl);
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
@@ -4638,6 +4698,7 @@ main(int argc, char **argv)
         p = tiku_trk_poseview_at(fl->view, 1);
         c = menu_ctx(&app, fl, 0u);
         build_open_with(&app, fl);
+        build_per_type(&app, fl);
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
@@ -5534,6 +5595,8 @@ main(int argc, char **argv)
                             tiku_trk_desk_activate(app.desk, w);
                             c = menu_ctx(&app, fl, mods);
                             build_open_with(&app, fl);
+        build_per_type(&app, fl);
+                            build_per_type(&app, fl);
                             app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (row >= 0 && p != NULL)
                                                 ? &p->model : NULL, &c);
@@ -6655,6 +6718,7 @@ sel_done:
             (void)tiku_trk_poseview_context_click(pfl->view, app.press_row);
             c = menu_ctx(&app, pfl, 0u);
             build_open_with(&app, pfl);
+            build_per_type(&app, pfl);
             app.popup = tiku_trk_cwmenu_context(&app.menus,
                             (p != NULL) ? &p->model : NULL, &c);
             app.popup_sub = NULL;

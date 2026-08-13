@@ -130,6 +130,12 @@ typedef struct {
 #define TIKU_TRK_COL_SIZE   3
 #define TIKU_TRK_COL_CAP    4
 #define TIKU_TRK_COL_DATE   5
+/* Where the entry IS, and what may be done to it.  Both are facts every
+ * model already carries; the vocabulary was five columns wide and had no
+ * way to show either (CW-025). */
+#define TIKU_TRK_COL_PATH   6
+#define TIKU_TRK_COL_PERM   7
+#define TIKU_TRK_COL_KINDS  8
 
 typedef struct tiku_trk_poseview tiku_trk_poseview_t;
 
@@ -399,6 +405,18 @@ void tiku_trk_poseview_type_clear(tiku_trk_poseview_t *v);
 
 /** @brief The in-progress string, shown in the count view; "" when idle. */
 const char *tiku_trk_poseview_type_string(const tiku_trk_poseview_t *v);
+
+/**
+ * @brief The distinct types the listing actually holds (CW-026, PVL-095).
+ *
+ * What the type-dependent menus are built from: a folder of text files
+ * should not offer an image's columns, and the only way to know is to ask
+ * what is in it.
+ *
+ * @return how many were written to @p out.
+ */
+int tiku_trk_poseview_types_present(const tiku_trk_poseview_t *v,
+                                    const char **out, int max);
 
 /** @brief Expire type-ahead if the quiet period has passed. */
 void tiku_trk_poseview_type_tick(tiku_trk_poseview_t *v);
@@ -985,6 +1003,15 @@ void tiku_trk_poseview_set_font_size(tiku_trk_poseview_t *v, int px);
  * @return 1 when the set changed.
  */
 int tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field);
+
+/**
+ * @brief Whether removing @p field would leave the listing with nothing.
+ *
+ * The name column can never go, so a listing always has one; asked so the
+ * caller can SAY why rather than have the removal quietly refused
+ * (TS-023).
+ */
+int tiku_trk_poseview_last_column(const tiku_trk_poseview_t *v, int field);
 
 /**
  * @brief Tell the view how many rows its window can show.

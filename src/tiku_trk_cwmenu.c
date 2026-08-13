@@ -224,6 +224,9 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_COL_VALUE);
     ADD(m, TIKU_TRK_CMD_COL_SIZE);
     ADD(m, TIKU_TRK_CMD_COL_CAP);
+    ADD(m, TIKU_TRK_CMD_COL_DATE);
+    ADD(m, TIKU_TRK_CMD_COL_PATH);
+    ADD(m, TIKU_TRK_CMD_COL_PERM);
     /* Name is always a column and cannot be turned off, so it is marked and
      * disabled rather than absent. */
     tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_NAME, 1);
@@ -238,6 +241,24 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                        (c->columns & (1u << TIKU_TRK_COL_SIZE)) != 0u);
     tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_CAP,
                        (c->columns & (1u << TIKU_TRK_COL_CAP)) != 0u);
+    tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_DATE,
+                       (c->columns & (1u << TIKU_TRK_COL_DATE)) != 0u);
+    tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_PATH,
+                       (c->columns & (1u << TIKU_TRK_COL_PATH)) != 0u);
+    tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_PERM,
+                       (c->columns & (1u << TIKU_TRK_COL_PERM)) != 0u);
+    if (cw->per_type_count > 0) {
+        int k;
+
+        /* The types the folder really holds, each with what it has to
+         * show: a folder of text files does not offer an image's columns
+         * (CW-026). */
+        SEP(m);
+        for (k = 0; k < cw->per_type_count; k++) {
+            (void)tiku_trk_menu_add_submenu(m, cw->per_type_name[k],
+                                            &cw->per_type[k], 1);
+        }
+    }
 }
 
 static void

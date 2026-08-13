@@ -1141,6 +1141,41 @@ main(void)
         (void)rmdir(sub2);
     }
 
+    printf("\nthe columns a listing can show (CW-025, TS-023)\n");
+    {
+        char buf[128];
+        tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
+
+        check(tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PATH) == 1 &&
+              tiku_trk_poseview_has_column(v, TIKU_TRK_COL_PATH),
+              "CW-025",
+              "Location is a column the listing can be given: where an "
+              "entry IS was a fact every model carried and no column could "
+              "show");
+        check(p0 != NULL &&
+              strcmp(tiku_trk_poseview_cell_text(v, p0, TIKU_TRK_COL_PATH,
+                                                 buf, sizeof buf),
+                     dir) == 0, "CW-025",
+              "and it shows the folder the entry is IN, not its own path: "
+              "the row already says its name");
+        check(tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM) == 1 &&
+              strcmp(tiku_trk_poseview_cell_text(v, p0, TIKU_TRK_COL_PERM,
+                                                 buf, sizeof buf),
+                     "rw-") == 0, "CW-025",
+              "Permissions is another, and it answers what THIS user may "
+              "do rather than printing the raw mode bits");
+        check(tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PATH) == 1 &&
+              !tiku_trk_poseview_has_column(v, TIKU_TRK_COL_PATH),
+              "CW-025", "and the same item takes it away again");
+        check(tiku_trk_poseview_last_column(v, TIKU_TRK_COL_NAME) &&
+              tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_NAME) == 0,
+              "TS-023",
+              "the name column cannot be removed, and the view can SAY so "
+              "rather than refusing silently -- a listing with no columns "
+              "is a window showing nothing");
+        (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

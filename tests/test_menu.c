@@ -315,6 +315,46 @@ main(void)
 
         c = base_ctx();
         tiku_trk_cwmenu_rebuild(&cw, &c);
+        check(tiku_trk_menu_find(&cw.attributes, TIKU_TRK_CMD_COL_DATE) >= 0
+              && tiku_trk_menu_find(&cw.attributes,
+                                    TIKU_TRK_CMD_COL_PATH) >= 0 &&
+              tiku_trk_menu_find(&cw.attributes,
+                                 TIKU_TRK_CMD_COL_PERM) >= 0,
+              "CW-025: the Attributes menu offers Modified, Location and "
+              "Permissions as well -- the vocabulary was five columns wide "
+              "and could show none of them");
+        {
+            int before = cw.attributes.count;
+
+            /* The types the folder really holds each grow a submenu of the
+             * columns that mean something for them. */
+            snprintf(cw.per_type_name[0], sizeof cw.per_type_name[0],
+                     "text/plain");
+            snprintf(cw.per_type_name[1], sizeof cw.per_type_name[1],
+                     "tiku-gpio");
+            cw.per_type_count = 2;
+            tiku_trk_menu_clear(&cw.per_type[0]);
+            (void)tiku_trk_menu_add(&cw.per_type[0], "Size",
+                                    TIKU_TRK_CMD_COL_SIZE, 0, 0u, 1);
+            tiku_trk_menu_clear(&cw.per_type[1]);
+            (void)tiku_trk_menu_add(&cw.per_type[1], "Value",
+                                    TIKU_TRK_CMD_COL_VALUE, 0, 0u, 1);
+            tiku_trk_cwmenu_rebuild(&cw, &c);
+            check(cw.attributes.count == before + 3,
+                  "CW-026: a type present in the folder grows a submenu of its own "
+                  "columns, with a rule above them");
+            check(cw.attributes.item[cw.attributes.count - 2].submenu ==
+                  &cw.per_type[0] &&
+                  cw.attributes.item[cw.attributes.count - 1].submenu ==
+                  &cw.per_type[1],
+                  "CW-026: and each carries that type's columns rather than one "
+                  "shared list");
+            cw.per_type_count = 0;
+            tiku_trk_cwmenu_rebuild(&cw, &c);
+            check(cw.attributes.count == before,
+                  "CW-026: a folder holding none of them is offered none: the menu "
+                  "reports the listing rather than the vocabulary");
+        }
         check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_PASTE) >= 0,
               "an ordinary folder's File menu has the clipboard block");
         c.is_trash = 1;

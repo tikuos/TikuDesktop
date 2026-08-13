@@ -263,6 +263,33 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         (void)tiku_trk_attr_time_fit(p->model.facts.mtime, width, v->measure,
                                      v->measure_ctx, buf, max);
         return buf;
+    case TIKU_TRK_COL_PATH: {
+        /* The folder it is IN, not its own path: the row already says its
+         * name, and what a Location column answers is "where". */
+        const char *slash = strrchr(p->model.path, '/');
+
+        if (slash == NULL) {
+            return p->model.path;
+        }
+        if (slash == p->model.path) {
+            return "/";
+        }
+        snprintf(buf, max, "%.*s", (int)(slash - p->model.path),
+                 p->model.path);
+        return buf;
+    }
+    case TIKU_TRK_COL_PERM: {
+        unsigned perm = p->model.facts.perm;
+
+        /* What THIS user may do, which is what the fact carries: a listing
+         * that showed the raw mode bits would answer a question nobody
+         * asked. */
+        snprintf(buf, max, "%c%c%c",
+                 (perm & TIKU_TRK_P_READ) ? 'r' : '-',
+                 (perm & TIKU_TRK_P_WRITE) ? 'w' : '-',
+                 (perm & TIKU_TRK_P_EXEC) ? 'x' : '-');
+        return buf;
+    }
     default:
         return "";
     }
@@ -4402,6 +4429,8 @@ column_def(int field, const char **title, int *width)
     case TIKU_TRK_COL_SIZE:  *title = "Size";  *width =  90; break;
     case TIKU_TRK_COL_CAP:   *title = "Cap";   *width =  60; break;
     case TIKU_TRK_COL_DATE:  *title = "Modified"; *width = 150; break;
+    case TIKU_TRK_COL_PATH:  *title = "Location"; *width = 200; break;
+    case TIKU_TRK_COL_PERM:  *title = "Permissions"; *width = 90; break;
     default:                 *title = "Name";  *width = 240; break;
     }
 }
@@ -4415,6 +4444,37 @@ column_alignment(int field)
 }
 
 int
+tiku_trk_poseview_types_present(const tiku_trk_poseview_t *v,
+                                const char **out, int max)
+{
+    int i, n = 0;
+
+    if (v == NULL || out == NULL) {
+        return 0;
+    }
+    for (i = 0; i < v->count && n < max; i++) {
+        const char *ty = v->poses[i].model.type;
+        int k, seen = 0;
+
+        if (ty[0] == '\0' || tiku_trk_model_is_container(&v->poses[i].model)) {
+            /* A folder's type is the folder type, which says nothing about
+             * what the listing HOLDS. */
+            continue;
+        }
+        for (k = 0; k < n; k++) {
+            if (strcmp(out[k], ty) == 0) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            out[n++] = ty;
+        }
+    }
+    return n;
+}
+
+int
 tiku_trk_poseview_has_column(const tiku_trk_poseview_t *v, int field)
 {
     int i;
@@ -4425,6 +4485,15 @@ tiku_trk_poseview_has_column(const tiku_trk_poseview_t *v, int field)
         }
     }
     return 0;
+}
+
+int
+tiku_trk_poseview_last_column(const tiku_trk_poseview_t *v, int field)
+{
+    /* The name column is the one that cannot go, so it is also the one
+     * whose removal would leave nothing (TS-023). */
+    (void)v;
+    return (field == TIKU_TRK_COL_NAME) ? 1 : 0;
 }
 
 int
