@@ -283,10 +283,12 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
         if (c->text_focus) {
             return 1;
         }
-        return c->clipboard_has_refs && !c->target_ro && !c->is_trash;
+        return c->clipboard_has_refs && !c->target_ro && !c->is_trash &&
+               !c->is_query;
 
     case TIKU_TRK_CMD_NEW_FOLDER:
-        return !(c->is_root || c->is_trash || c->in_trash) && !c->target_ro;
+        return !(c->is_root || c->is_trash || c->in_trash || c->is_query) &&
+               !c->target_ro;
 
     case TIKU_TRK_CMD_CREATE_LINK:
     case TIKU_TRK_CMD_LINK_HERE:

@@ -81,6 +81,9 @@ typedef struct {
     /* Scope.  "Everywhere" and a set of places are mutually exclusive the
      * way "All disks" and individual volumes are. */
     char                  place[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+    uint64_t              place_dev[TIKU_TRK_FIND_PLACES_MAX];
+    char                  place_volume[TIKU_TRK_FIND_PLACES_MAX]
+                                      [TIKU_TRK_NAME_MAX];
     int                   place_count;
     unsigned              place_mask;
     int                   everywhere;
@@ -136,8 +139,17 @@ int tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name);
 /** @brief Save back to the explicitly attached query or template. */
 int tiku_trk_find_save_current(tiku_trk_find_t *f, int64_t now);
 
+/** @brief Load (or create) the unattached template used by a fresh panel. */
+int tiku_trk_find_open_default(tiku_trk_find_t *f, int64_t now);
+
+/** @brief Whether the separate Save action has an attached destination. */
+int tiku_trk_find_can_save_current(const tiku_trk_find_t *f);
+
 /** @brief Whether the panel is the special Edit Query template window. */
 int tiku_trk_find_editing_template(const tiku_trk_find_t *f);
+
+/** @brief Whether the default action saves the attached template only. */
+int tiku_trk_find_primary_is_save(const tiku_trk_find_t *f);
 
 /**
  * @brief Whether one of the panel's popups is showing.
@@ -192,6 +204,10 @@ int tiku_trk_find_type_menu(struct tiku_trk_store *store,
 
 /** @brief Offer @p name as a place the search can be scoped to. */
 int tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name);
+
+/** @brief Offer a place together with the volume identity it belongs to. */
+int tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
+                                     uint64_t dev, const char *volume);
 
 /**
  * @brief Change mode.

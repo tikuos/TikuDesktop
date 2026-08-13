@@ -254,6 +254,20 @@ int tiku_trk_poseview_adopt(tiku_trk_poseview_t *v,
 /** @brief Whether this view is showing query results. */
 int tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v);
 
+/** @brief Document colour for this view, tinted when it is read-only. */
+tiku_desk_rgb_t tiku_trk_poseview_background(const tiku_trk_poseview_t *v);
+
+/** @brief Select the saved column/frame layout shared by this query type. */
+void tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v,
+                                      const char *type);
+
+/** @brief Supply the sidecar store used by synthetic query-layout keys. */
+void tiku_trk_poseview_set_layout_store(tiku_trk_poseview_t *v,
+                                        tiku_trk_store_t *store);
+
+/** @brief State key for this view (folder path or per-query-type layout). */
+const char *tiku_trk_poseview_layout_path(const tiku_trk_poseview_t *v);
+
 /** @brief Show @p path, keeping the same backend. */
 int tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path);
 

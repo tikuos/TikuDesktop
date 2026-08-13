@@ -87,6 +87,8 @@ struct tiku_trk_poseview {
     int                 hint_x, hint_y; /* fHintLocation: where to place next */
     int                 state_dirty;    /* fStateNeedsSaving                */
     int                 is_query;       /* results, not a directory         */
+    char                query_layout[TIKU_TRK_PATH_MAX];
+    tiku_trk_store_t    *layout_store;  /* synthetic query layout records   */
     int                 visible_rows;   /* what the window can show         */
     int                 view_w, view_h; /* the window, in PIXELS            */
     /* The font the labels are drawn in.  Zero until the owner says, and
@@ -767,6 +769,9 @@ fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
                 TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
             v->column_count = 4;
             tiku_trk_poseview_reflow_columns(v);
+            if (v->query_layout[0] != '\0') {
+                (void)tiku_trk_poseview_restore_columns(v);
+            }
         }
     }
     for (i = 0; i < n && v->count < POSES_MAX; i++) {
@@ -826,6 +831,51 @@ int
 tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v)
 {
     return (v != NULL) ? v->is_query : 0;
+}
+
+tiku_desk_rgb_t
+tiku_trk_poseview_background(const tiku_trk_poseview_t *v)
+{
+    /* A tint below 1 lightens, and white cannot get lighter; use the
+     * concrete read-only shade so the cue is visible on the document white. */
+    return (v != NULL && v->is_query) ? TIKU_DESK_RGB(240, 240, 240)
+                                      : TIKU_DESK_C_DOC;
+}
+
+void
+tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v, const char *type)
+{
+    char *p;
+
+    if (v == NULL) {
+        return;
+    }
+    snprintf(v->query_layout, sizeof v->query_layout,
+             "_trk/query-layout/%s",
+             (type != NULL && type[0] != '\0') ? type : "all");
+    for (p = v->query_layout + strlen("_trk/query-layout/"); *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\' || *p == ' ') {
+            *p = '_';
+        }
+    }
+}
+
+void
+tiku_trk_poseview_set_layout_store(tiku_trk_poseview_t *v,
+                                   tiku_trk_store_t *store)
+{
+    if (v != NULL) {
+        v->layout_store = store;
+    }
+}
+
+const char *
+tiku_trk_poseview_layout_path(const tiku_trk_poseview_t *v)
+{
+    if (v == NULL) {
+        return "";
+    }
+    return (v->query_layout[0] != '\0') ? v->query_layout : v->path;
 }
 
 tiku_trk_poseview_t *
@@ -4778,10 +4828,13 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
     column_rec_t rec[TIKU_TRK_COLUMNS_MAX];
     int i;
 
-    if (v == NULL || v->backend->ops->state_store == NULL) {
+    if (v == NULL) {
         return 0;
     }
-    store = v->backend->ops->state_store(v->backend);
+    store = (v->query_layout[0] != '\0' && v->layout_store != NULL)
+          ? v->layout_store
+          : ((v->backend->ops->state_store != NULL)
+             ? v->backend->ops->state_store(v->backend) : NULL);
     if (store == NULL || !tiku_trk_store_writable(store)) {
         return 0;
     }
@@ -4802,7 +4855,8 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
             }
         }
     }
-    if (tiku_trk_state_write(store, v->path, TIKU_TRK_ATTR_COLUMNS, rec,
+    if (tiku_trk_state_write(store, tiku_trk_poseview_layout_path(v),
+                             TIKU_TRK_ATTR_COLUMNS, rec,
                              sizeof rec[0] * (size_t)v->column_count) != 0) {
         return 0;
     }
@@ -4826,16 +4880,20 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
     int n, kept = 0, i, j, order = -1;
     size_t got = 0;
 
-    if (v == NULL || v->backend->ops->state_store == NULL) {
+    if (v == NULL) {
         return 0;
     }
-    store = v->backend->ops->state_store(v->backend);
+    store = (v->query_layout[0] != '\0' && v->layout_store != NULL)
+          ? v->layout_store
+          : ((v->backend->ops->state_store != NULL)
+             ? v->backend->ops->state_store(v->backend) : NULL);
     if (store == NULL) {
         return 0;
     }
     {
-        int r = tiku_trk_state_read(store, v->path, TIKU_TRK_ATTR_COLUMNS,
-                                    rec, sizeof rec);
+        int r = tiku_trk_state_read(store,
+                                    tiku_trk_poseview_layout_path(v),
+                                    TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
         if (r <= 0) {
             return 0;
         }

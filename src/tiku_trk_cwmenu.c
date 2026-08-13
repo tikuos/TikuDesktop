@@ -144,7 +144,9 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         SEP(m);
     }
     ADD(m, TIKU_TRK_CMD_FIND);
-    ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+    if (!c->is_query) {
+        ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+    }
     SEP(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
     /* Between Open and Open with: a query is edited rather than opened,
@@ -169,7 +171,9 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_CREATE_LINK);
         ADD(m, TIKU_TRK_CMD_CUT);
         ADD(m, TIKU_TRK_CMD_COPY);
-        ADD(m, TIKU_TRK_CMD_PASTE);
+        if (!c->is_query) {
+            ADD(m, TIKU_TRK_CMD_PASTE);
+        }
         SEP(m);
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
@@ -195,8 +199,6 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_INVERT_SELECTION);
         ADD(m, TIKU_TRK_CMD_CLOSE);
         ADD(m, TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE);
-        SEP(m);
-        ADD(m, TIKU_TRK_CMD_PREFERENCES);
         return;
     }
     (void)tiku_trk_menu_add_submenu(m, "Icon view", &cw->icon_size, 1);
@@ -312,22 +314,30 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     /* On empty window background. */
     m = &cw->window_ctx;
     tiku_trk_menu_clear(m);
-    if (c->is_trash) {
-        ADD(m, TIKU_TRK_CMD_EMPTY_TRASH);
-        SEP(m);
+    if (c->is_query) {
+        ADD(m, TIKU_TRK_CMD_RESIZE_TO_FIT);
+        ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
+        ADD(m, TIKU_TRK_CMD_SELECT_ALL);
+        ADD(m, TIKU_TRK_CMD_CLOSE);
+    } else {
+        if (c->is_trash) {
+            ADD(m, TIKU_TRK_CMD_EMPTY_TRASH);
+            SEP(m);
+        }
+        if (!(c->is_root || c->is_trash || c->in_trash)) {
+            ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+        }
+        if (c->view_mode != TIKU_TRK_MODE_LIST) {
+            (void)tiku_trk_menu_add_submenu(m, "Arrange by", &cw->arrange,
+                                            1);
+        }
+        if (wants_clipboard(c)) {
+            ADD(m, TIKU_TRK_CMD_PASTE);
+        }
+        ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
+        ADD(m, TIKU_TRK_CMD_SELECT_ALL);
+        ADD(m, TIKU_TRK_CMD_OPEN_PARENT);
     }
-    if (!(c->is_root || c->is_trash || c->in_trash)) {
-        ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
-    }
-    if (c->view_mode != TIKU_TRK_MODE_LIST) {
-        (void)tiku_trk_menu_add_submenu(m, "Arrange by", &cw->arrange, 1);
-    }
-    if (wants_clipboard(c)) {
-        ADD(m, TIKU_TRK_CMD_PASTE);
-    }
-    ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
-    ADD(m, TIKU_TRK_CMD_SELECT_ALL);
-    ADD(m, TIKU_TRK_CMD_OPEN_PARENT);
 
     /* On a volume or the root: no clipboard, no trashing. */
     m = &cw->volume_ctx;

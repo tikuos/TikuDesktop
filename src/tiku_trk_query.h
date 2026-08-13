@@ -169,6 +169,10 @@ int tiku_trk_query_add_scope(tiku_trk_query_t *q, const char *path);
 
 void tiku_trk_query_clear_scope(tiku_trk_query_t *q);
 
+/** @brief Record the current identities of scopes that have none yet. */
+void tiku_trk_query_bind_scopes(tiku_trk_query_t *q,
+                                tiku_trk_backend_t *backend);
+
 /**
  * @brief Render the predicate the way the formula field shows it.
  *
@@ -238,6 +242,12 @@ const tiku_trk_model_t *tiku_trk_query_at(const tiku_trk_qrun_t *r, int i);
 int tiku_trk_query_visited(const tiku_trk_qrun_t *r);
 
 int tiku_trk_query_done(const tiku_trk_qrun_t *r);
+
+/** @brief Whether this live run searches the volume identified by @p dev. */
+int tiku_trk_query_targets_device(const tiku_trk_qrun_t *r, uint64_t dev);
+
+/** @brief Type whose results layout this run shares, or empty for any type. */
+const char *tiku_trk_query_search_type(const tiku_trk_qrun_t *r);
 
 /*---------------------------------------------------------------------------*/
 /* Live queries                                                              */

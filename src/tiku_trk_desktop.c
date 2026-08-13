@@ -108,6 +108,7 @@
 typedef struct folder {
     tiku_trk_poseview_t *view;
     char                 path[TIKU_TRK_PATH_MAX];
+    char                 state_path[TIKU_TRK_PATH_MAX];
     tiku_trk_win_t      *win;
     struct desktop      *app;
     /* A results window keeps its run alive: the run IS the subscription, so
@@ -996,7 +997,8 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
     list.y += bar.h;
     list.h -= bar.h;
     list.h -= COUNT_H;
-    tiku_desk_ui_sunken(s, list, TIKU_DESK_C_DOC);
+    tiku_desk_ui_sunken(s, list,
+                        tiku_trk_poseview_background(fl->view));
     /* The view is told how big its window is, in pixels: the row count it
      * used to be given cannot answer where an icon layout is scrolled to
      * or what is on screen (PVL-049). */
@@ -1321,7 +1323,7 @@ save_frame_of(desktop_t *app, folder_t *fl)
     now.y = (int32_t)fl->win->frame.y;
     now.w = (int32_t)fl->win->frame.w;
     now.h = (int32_t)fl->win->frame.h;
-    (void)tiku_trk_frame_save(app->store, fl->path, &now,
+    (void)tiku_trk_frame_save(app->store, fl->state_path, &now,
                               fl->had_frame ? &fl->opened_with : NULL);
 }
 
@@ -1908,12 +1910,26 @@ static folder_t *
 open_results(desktop_t *app, const char *title, tiku_trk_qrun_t *run)
 {
     folder_t *fl = open_folder(app, title);
+    tiku_trk_frame_t fr;
     int i, n;
     tiku_trk_model_t *set;
 
     if (fl == NULL) {
         tiku_trk_query_stop(run);
         return NULL;
+    }
+    tiku_trk_poseview_set_layout_store(fl->view, app->store);
+    tiku_trk_poseview_set_query_type(fl->view,
+                                    tiku_trk_query_search_type(run));
+    snprintf(fl->state_path, sizeof fl->state_path, "%s",
+             tiku_trk_poseview_layout_path(fl->view));
+    if (tiku_trk_frame_load(app->store, fl->state_path, &fr)) {
+        tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
+        fl->win->frame = (tiku_desk_rect_t){ fr.x, fr.y, fr.w, fr.h };
+        fl->opened_with = fr;
+        fl->had_frame = 1;
+    } else {
+        fl->had_frame = 0;
     }
     n = tiku_trk_query_count(run);
     set = calloc((size_t)(n > 0 ? n : 1), sizeof *set);
@@ -2225,7 +2241,7 @@ open_panel(desktop_t *app)
 }
 
 /** @brief Run what the panel is asking and show the results. */
-static void
+static int
 panel_search(desktop_t *app)
 {
     tiku_trk_query_t q;
@@ -2238,16 +2254,17 @@ panel_search(desktop_t *app)
         snprintf(app->status, sizeof app->status,
                  "invalid query formula");
         app->dirty = 1;
-        return;
+        return 0;
     }
     /* The checkbox stores the choice; the actual Trash path is resolved at
      * run time because it belongs to this machine and this volume, not to a
      * portable saved-query record (Q-036). */
     (void)tiku_trk_fs_trash_dir(app->fs, app->dfl.path, q.trash_path,
                                 sizeof q.trash_path);
+    tiku_trk_query_bind_scopes(&q, app->backend);
     run = tiku_trk_query_start(app->backend, &q);
     if (run == NULL) {
-        return;
+        return 0;
     }
     while (!tiku_trk_query_done(run)) {
         if (tiku_trk_query_step(run, 16) < 0) {
@@ -2283,9 +2300,32 @@ panel_search(desktop_t *app)
                      "%d result%s in %.30s -- live",
                      tiku_trk_query_count(fl->run),
                      (tiku_trk_query_count(fl->run) == 1) ? "" : "s", scope);
+        } else {
+            return 0;
         }
     }
     app->dirty = 1;
+    return 1;
+}
+
+/** @brief The default button: Search normally, Save in template-edit mode. */
+static void
+panel_primary(desktop_t *app)
+{
+    int done = 0;
+
+    if (tiku_trk_find_primary_is_save(&app->panel)) {
+        done = (tiku_trk_find_save_current(&app->panel,
+                                            (int64_t)time(NULL)) == 0);
+        snprintf(app->status, sizeof app->status, "%s",
+                 done ? tiku_trk_find_note(&app->panel)
+                      : "that template cannot be saved");
+    } else {
+        done = panel_search(app);
+    }
+    if (done && app->panel_win != NULL) {
+        close_window(app, app->panel_win);
+    }
 }
 
 /**
@@ -3604,6 +3644,7 @@ open_folder(desktop_t *app, const char *path)
     fl = &app->folders[app->folder_count];
     memset(fl, 0, sizeof *fl);
     snprintf(fl->path, sizeof fl->path, "%s", path);
+    snprintf(fl->state_path, sizeof fl->state_path, "%s", path);
     /* Opening a folder is what puts it in the recent list the Deskbar
      * menu offers -- the list is a record of where the user has been, and
      * this is the one place that knows (DB-002, AW-056). */
@@ -4666,8 +4707,10 @@ main(int argc, char **argv)
                                TIKU_TRK_FIND_PLACES_MAX);
             for (k = 0; k < nr; k++) {
                 if (tiku_trk_model_is_container(&roots[k])) {
-                    (void)tiku_trk_find_add_place(&app.panel,
-                                                  roots[k].name);
+                    (void)tiku_trk_find_add_place_identity(
+                        &app.panel, roots[k].name, roots[k].facts.dev,
+                        app.backend->devid[0] != '\0' ? app.backend->devid
+                                                     : roots[k].name);
                 }
             }
         }
@@ -4698,6 +4741,8 @@ main(int argc, char **argv)
             (void)open_folder(&app, home ? home : "/");
         }
     }
+
+    (void)tiku_trk_find_open_default(&app.panel, (int64_t)time(NULL));
 
     if (script_path != NULL) {
         /* Displayless.  The shell draws into the same surface either way,
@@ -5791,7 +5836,7 @@ main(int argc, char **argv)
                                             ev.xbutton.x, ev.xbutton.y);
 
                     if (what == TIKU_TRK_FIND_HIT_SEARCH) {
-                        panel_search(&app);
+                        panel_primary(&app);
                     } else if (what == TIKU_TRK_FIND_HIT_SAVE) {
                         char nm[128];
 
@@ -6403,7 +6448,7 @@ main(int argc, char **argv)
                 if (app.panel_win != NULL && app.panel_win->open &&
                     tiku_trk_desk_focused(app.desk) == app.panel_win) {
                     if (ks == XK_Return) {
-                        panel_search(&app);
+                        panel_primary(&app);
                     } else if (ks == XK_Escape) {
                         close_window(&app, app.panel_win);
                     } else if (ks == XK_BackSpace) {
@@ -7256,7 +7301,19 @@ sel_done:
                         if (fl->win == NULL || !fl->win->open) {
                             continue;
                         }
-                        if (strncmp(fl->path, vc[k].v.mount,
+                        if (tiku_trk_poseview_is_query(fl->view) &&
+                            tiku_trk_query_targets_device(
+                                fl->run, (uint64_t)vc[k].v.dev)) {
+                            /* The run is the query's subscription.  Stop it
+                             * with the window so no watch survives a target
+                             * volume disappearing (Q-046). */
+                            tiku_trk_query_stop(fl->run);
+                            fl->run = NULL;
+                            fl->live = 0;
+                            fl->gone = 1;
+                            tiku_trk_desk_close(app.desk, fl->win);
+                            changed++;
+                        } else if (strncmp(fl->path, vc[k].v.mount,
                                     strlen(vc[k].v.mount)) == 0) {
                             fl->gone = 1;
                             tiku_trk_desk_close(app.desk, fl->win);

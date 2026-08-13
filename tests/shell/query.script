@@ -14,6 +14,8 @@ wait 3
 click 595 452
 wait 25
 expect-find-text zqxjv
+expect-windows 2
+note Search is the primary action and closes the Find panel after it runs
 note the results window answers Cmd+G, which every menu advertises
 key g ctrl
 wait 8

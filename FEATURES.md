@@ -4398,12 +4398,18 @@ QueryEntryListCollection stores each filter as its absolute path + "/" in fPathF
 ShowVolumeMenuLabel: 0 volumes + exactly 1 folder filter → that folder's name; 1 volume + 0 folders → the volume label; >1 folders or (not-all-volumes and >1 volumes) → MultipleSelectionsTitle(volumes+folders) i.e. the plural-aware "# selected"; otherwise mark and show "All disks".  
 `FindPanel.cpp` → `FindPanel::ShowVolumeMenuLabel / FindPanel::MultipleSelectionsTitle`  
 
-#### Q-022 · core · partial
+#### Q-022 · core · done
 **The Search button is the default button, so pressing Enter anywhere in the panel runs the search; in template-editing mode the button says Save and only saves.**  
 FindPanel::FindPanel creates either a "find" button posting kFindButton or, when editTemplateOnly, a "save" button posting kSaveButton, and calls MakeDefault(true). FindWindow handles kFindButton→Find() and kSaveButton→Save(); both end with PostMessage(B_QUIT_REQUESTED), so the Find window always closes.  
 `FindPanel.cpp` → `FindPanel::FindPanel / FindWindow::MessageReceived (kFindButton, kSaveButton)`  
-**MISSING:** The Search button is drawn in the default-button state and Return anywhere in the panel runs the search regardless of which field has the caret, but the template-editing clause is absent (Save is a separate always-present button, there is no editTemplateOnly mode) and neither action closes the Find window.  
-*src/tiku_trk_find.c:tiku_trk_find_draw (533-534); src/tiku_trk_desktop.c key handler 1970-1971*
+**PORT:** Search is the default action and Return invokes it from anywhere in
+the panel.  Explicit template-edit mode changes that same primary button to
+Save-only; either successful primary action closes the panel, while a failed
+formula or save leaves it open for correction.
+*src/tiku_trk_find.c:tiku_trk_find_primary_is_save and draw;
+src/tiku_trk_desktop.c:panel_primary; tests/test_query.c;
+tests/shell/query.script*
+*Shell: desktop*
 
 #### Q-023 · core · partial
 **Running a search writes a query file into ~/queries and asks Tracker to open it; the results appear in a separate window, not in the Find panel.**  
@@ -4452,19 +4458,18 @@ search to nothing.
 tests/shell/query.script*  
 *Shell: desktop*  
 
-#### Q-027 · important · partial
+#### Q-027 · important · done
 **Target volumes are remembered by volume identity, not by device number, so a query reopened after a remount still targets the right disk — and a volume that is not mounted this time is skipped rather than dropped.**  
 SaveQueryAsAttributes embeds creationDate, capacity, deviceName, volumeName, fshName per selected volume (EmbedUniqueVolumeInfo) into kAttrQueryVolume. MatchArchivedVolume scores candidates 5/4/3/2/1 for those five fields and accepts the best with score >= 9; B_DEV_BAD_DRIVE_NUM means "not mounted, keep looking", any other error stops the scan. If a query names every mounted volume it reopens showing "All disks".  
 `FindPanel.cpp` → `FindWindow::SaveQueryAsAttributes / FindPanel::RestoreWindowState (Utilities.cpp EmbedUniqueVolumeInfo, MatchArchivedVolume)`  
 **TIKU:** Needs a stable device identity in the VFS (serial/UID) to survive re-enumeration — the direct analogue of the score-based match.
-**MISSING:** A scope now remembers WHICH volume it meant -- the device and
-the volume's name beside the path -- and the pair round-trips, with an
-identity line that arrives before any scope dropped rather than attached to
-the wrong one.  What is not built is the CHECK on the way back: nothing
-compares the remembered identity against what is mounted now, so a query
-saved against a disk that has gone still searches whatever took its
-mount point.
-*src/tiku_trk_query.h (tiku_trk_qscope_t) and the v2 record;
+**PORT:** A saved scope carries its path, owning device identity and volume
+label.  Before a run, unresolved scopes are bound from the backend and saved
+identities are revalidated; a missing volume or a mount path reused by a
+different device is skipped but retained in the requested record, never
+silently retargeted.
+*src/tiku_trk_query.c:tiku_trk_query_bind_scopes, scope_available and
+tiku_trk_query_start; src/tiku_trk_find.c:tiku_trk_find_from_query;
 tests/test_query.c*
 
 #### Q-028 · core · done
@@ -4489,11 +4494,18 @@ replaces the same permanent template rather than generating another name.
 src/tiku_trk_desktop.c:panel_search and the Find-panel click path;
 tests/test_query.c*
 
-#### Q-030 · important · open
+#### Q-030 · important · done
 **Opening Find with no query falls back to a "default" template in ~/queries, creating it on first use; with no query loaded the Save item is disabled.**  
 FindWindow::FindWindow: if TryOpening(newRef) fails it looks for ~/queries/default, else creates it with O_RDWR|O_CREAT and calls SaveQueryAttributes(fFile, true) (template type + kAttrQueryLastChange + _trk/recentQuery=1); fSaveQueryOrTemplateItem->SetEnabled(false) in that branch.  
 `FindPanel.cpp` → `FindWindow::FindWindow / FindWindow::SaveQueryAttributes`
-**BLOCKED:** The template mechanism (absent, see Q-028) and a Save-enable state: the Find panel draws Save unconditionally enabled (src/tiku_trk_find.c:534, TIKU_DESK_S_NORMAL), there is no default-template lookup or creation anywhere (open_panel, src/tiku_trk_desktop.c:874-893, only shows the in-memory panel struct).  
+**PORT:** A fresh panel loads the permanent `default` template from the query
+registry, creating it from the initial controls on first use.  It is a
+starting shape rather than an attached destination, so the separate Save
+button is visibly disabled and cannot be invoked until an explicit record is
+loaded.
+*src/tiku_trk_find.c:tiku_trk_find_open_default,
+tiku_trk_find_can_save_current and tiku_trk_find_hit;
+src/tiku_trk_desktop.c startup; tests/test_query.c*
 
 #### Q-031 · important · done
 **A Templates menu lists every query template on the system; picking one loads it into the open Find window and enables Save.**  
@@ -4597,10 +4609,13 @@ SetupDefaultColumnsIfNeeded adds Name(145)/Location(225, kAttrPath)/Size(80)/Mod
 `QueryPoseView.cpp` → `BQueryPoseView::SetupDefaultColumnsIfNeeded / BQueryPoseView::SearchForType (QueryContainerWindow.cpp BQueryContainerWindow::SetupDefaultState, TrackerInitialState.cpp TTracker::InstallDefaultTemplates)`  
 **TIKU:** The Location column is what makes results usable; in the TikuOS namespace this is the node's full VFS path.  
 **MISSING:** Result views now start with the required Name, Location, Size
-and Modified columns, and Location shows the containing VFS path.  What
-remains is the per-searched-type remembered layout and its seeded bookmark,
-person and e-mail templates.
-*src/tiku_trk_poseview.c:fill_from; tests/test_poseview.c*
+and Modified columns, Location shows the containing VFS path, and frame plus
+column layouts are remembered under a sanitized searched-type key shared by
+every query window of that type.  What remains is seeding special bookmark,
+person and e-mail defaults.
+*src/tiku_trk_poseview.c:fill_from, tiku_trk_poseview_set_query_type and
+tiku_trk_poseview_save_columns; src/tiku_trk_desktop.c:open_results;
+tests/test_poseview.c*
 
 #### Q-043 · polish · differs
 **In a results window, changes to a file's size or modification time refresh its row immediately, like an ordinary folder window.**  
@@ -4609,14 +4624,18 @@ BQueryPoseView::AttributeChanged intercepts attr names "last_modified" and "size
 **PORT:** An actual refresh path exists and is the folder window's own path: refresh_results re-walks and pushes the set through poseview_apply_results -> notify_diff (facts_differ covers size and mtime) -> the same EV_CHANGED handler, so result rows do update on size/mtime; only the cadence is adapted (3 s re-walk vs the 400 ms folder pump), a tuning constant rather than a missing mechanism.  
 *src/tiku_trk_desktop.c:554-590 (refresh_results -> apply_results) with :2310-2320 (3 s requery beat vs :2262 400 us*1e3 pump) and src/tiku_trk_notify.c:78-90 (facts_differ size/mtime)*
 
-#### Q-044 · important · open
+#### Q-044 · important · done
 **Query windows are treated as read-only containers: no New folder, no paste into them, and the results window's own menu is trimmed to Resize/Select/Select all/Invert selection/Close.**  
 BPoseView::TargetVolumeIsReadOnly() returns true whenever the target model IsQuery/IsQueryTemplate; BContainerWindow::ShouldHaveNewFolderItem() excludes queries; BQueryContainerWindow::AddWindowMenu and AddWindowContextMenus build the reduced menus. Read-only-ness of a multi-item selection in a query is computed per item's own volume rather than from the window.  
 `QueryContainerWindow.cpp` → `BQueryContainerWindow::AddWindowMenu / BQueryContainerWindow::AddWindowContextMenus (PoseView.cpp BPoseView::TargetVolumeIsReadOnly, BPoseView::SelectedVolumeIsReadOnly)`  
 **VERIFIER CORRECTION:** Two different menus, and both are misstated. BQueryContainerWindow::AddWindowMenu builds Resize to fit / Select… / Select all / Invert selection / Close / **Close all in workspace** (six items). BQueryContainerWindow::AddWindowContextMenus builds only Resize to fit / Select… / Select all / Close — it has **no Invert selection**.  
-**CHECKED:** Query windows are ordinary folder windows: tiku_trk_sc_ctx_t declares is_query but menu_ctx never sets it and tiku_trk_sc_enabled never reads it, target_ro is decided by a /sys,/dev,/proc path prefix (a results window's pseudo-path "find #N" matches none), so New folder and Paste stay enabled and no trimmed window/context menu variant exists.  
-*none found — is_query declared at src/tiku_trk_shortcuts.h:100, unused in src/tiku_trk_shortcuts.c and src/tiku_trk_desktop.c:menu_ctx (149-196)*
-**SUBSYSTEM:** Query-window specialisation (is_query gating). is_query is declared in the shortcut context (src/tiku_trk_shortcuts.h:114) but menu_ctx never sets it (src/tiku_trk_desktop.c:152-203) and shortcuts.c never reads it (grep is_query src/tiku_trk_shortcuts.c returns nothing); target_ro is a /sys,/dev,/proc path-prefix test (src/tiku_trk_desktop.c:197-199) that a results window's pseudo-path 'find #N' never matches, so New folder and Paste stay enabled; and cwmenu has volume/trash context variants but no query variant (grep quer src/tiku_trk_cwmenu.c returns nothing).  
+**PORT:** Query context now gates New folder and Paste at the shared shortcut
+layer.  Its Window menu is the corrected six-item result menu (including
+Close all in workspace); its background menu is exactly Resize, Select,
+Select all and Close, with no Invert item.
+*src/tiku_trk_shortcuts.c:tiku_trk_sc_enabled;
+src/tiku_trk_cwmenu.c:build_file and build_contexts; tests/test_menu.c*
+*Shell: desktop*
 
 #### Q-045 · important · done
 **"Edit query" (Alt+G) reopens the Find window on the query — either the query the window is showing, or the query/template files selected in a folder.**  
@@ -4630,13 +4649,18 @@ one of its places is not the search that was saved.
 src/tiku_trk_find.c:tiku_trk_find_from_query; tests/shell/query.script*  
 *Shell: desktop*  
 
-#### Q-046 · important · partial
+#### Q-046 · important · done
 **Unmounting a volume force-closes any query window that is searching it, so the unmount can proceed.**  
 TTracker::CloseActiveQueryWindows posts B_QUIT_REQUESTED to every BQueryContainerWindow whose ActiveOnDevice(device) is true, then waits for them to close; ActiveOnDevice asks the pose view whether any BQuery in fQueryList has TargetDevice() == device. TTracker::QueryActiveForDevice answers the same question without closing.  
 `QueryPoseView.cpp` → `BQueryPoseView::ActiveOnDevice (Tracker.cpp TTracker::CloseActiveQueryWindows, TTracker::QueryActiveForDevice)`  
 **TIKU:** Direct analogue: a device disappearing from the VFS must tear down live searches bound to it, or their watch slots leak.  
-**MISSING:** Unmounting exists, and it calls back before the volume goes -- which is where a query window searching the volume would be closed. Nothing closes one yet: the callback has no caller in either shell.  
-*src/tiku_trk_volume.c:tiku_trk_volume_unmount (the before-unmount callback)*
+**PORT:** Each live run retains the original target identities.  When the
+desktop roster reports one gone, every results window targeting that device
+is closed and its run stopped before the ordinary vanished-path sweep, which
+releases the query subscription rather than leaving a watch behind.
+*src/tiku_trk_query.c:tiku_trk_query_targets_device;
+src/tiku_trk_desktop.c volume watcher; tests/test_query.c*
+*Shell: desktop*
 
 #### Q-047 · important · done
 **The Select window matches poses by name with five rules — starts with, ends with, contains, matches wildcard expression, matches regular expression — plus Invert and Ignore case; wildcard and Ignore case are the defaults.**  
@@ -4671,18 +4695,30 @@ StartsWith = FindFirst/IFindFirst == 0; EndsWith computes position = Length() - 
 **PORT:** tiku_trk_match implements STARTS/ENDS/CONTAINS over plain positions with a per-call case_sensitive flag, ENDS anchored at text+tl-el behind the el>tl guard that stands in for the negative-position check, and CONTAINS treating an empty needle as a hit — the same results as FindFirst/IFindFirst/FindLast, and the tests exercise the case flag and the short-string guard.  
 *src/tiku_trk_match.c:675-706 (tiku_trk_match STARTS/ENDS/CONTAINS) with tests/test_match.c:38-52*
 
-#### Q-052 · important · open ⟨found by verification⟩
+#### Q-052 · important · done ⟨found by verification⟩
 **A brand-new query window inherits its layout from a per-search-type template, so all windows searching the same MIME type look alike.**  
 BQueryContainerWindow::SetupDefaultState builds the path "query templates/<search type with '/' replaced by '_'>" under the Tracker settings dir, and (without creating it) copies only kAttrWindowFrame, kAttrViewState(+Foreign) and kAttrColumns(+Foreign) from it — note kAttrWindowWorkspace is deliberately NOT in the allow-list, unlike the folder case.  
 `QueryContainerWindow.cpp` → `BQueryContainerWindow::SetupDefaultState`
-**BLOCKED:** A per-search-type layout template store. View state is written per window path only (tiku_trk_poseview_save_state, src/tiku_trk_poseview.c:2501-2550, keyed on v->path); the query store holds only predicate records (serialise, src/tiku_trk_query.c:728-746); and no type-keyed layout record exists anywhere (Q-042's verified MISSING already establishes there is no per-searched-type layout of any kind).  
+**PORT:** Query frames and columns use a sanitized searched-type key in the
+durable sidecar store rather than a synthetic filesystem node.  Closing one
+query writes that shared layout; every later window searching the same type
+restores it, while another type keeps an independent default.  Workspace is
+not part of the stored layout.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_set_query_type,
+tiku_trk_poseview_layout_path, save_columns and restore_columns;
+src/tiku_trk_desktop.c:open_results and save_frame_of;
+tests/test_poseview.c*
+*Shell: desktop*
 
-#### Q-053 · important · open ⟨found by verification⟩
+#### Q-053 · important · differs ⟨found by verification⟩
 **Choosing Query > "Open…" silently flips the "Include Trash" option as a side effect of opening the panel.**  
 The `case kOpenLoadQueryPanel:` block in FindWindow::MessageReceived has no `break;` — it falls through into `case kSearchInTrashOptionClicked:` which does `fSearchInTrash->SetMarked(!fSearchInTrash->IsMarked())`. Every use of Open… toggles the Trash option of the query being edited.  
 `FindPanel.cpp` → `FindWindow::MessageReceived (case kOpenLoadQueryPanel falling into kSearchInTrashOptionClicked)`  
 **TIKU:** A genuine defect in the original. The rewrite should NOT reproduce it; record the deviation explicitly so a fidelity diff does not read as a regression.
-**BLOCKED:** Both controls the defect relates: there is no Open… (no load-query UI — tiku_trk_query_load called only from tests/test_query.c:269-277) and no Include-Trash option (no trash reference anywhere in find.c/query.c). NOTE for the user: this row documents a Haiku fall-through bug its own TIKU line says must NOT be reproduced — once Q-035/Q-036 are built this row should close as PORT/differs (deviation recorded), never as an implementation; it is a waiver/differs candidate, not work.  
+**PORT:** Deliberately not reproduced.  Loading through the Queries menu
+restores the record's saved Include Trash value; opening the same query
+again leaves that value unchanged instead of toggling it.
+*src/tiku_trk_find.c:tiku_trk_find_load_named; tests/test_query.c*
 
 #### Q-054 · important · done ⟨found by verification⟩
 **Picking an attribute name without opening its operator submenu auto-selects that attribute's first operator; picking an operator marks its parent attribute name.**  
@@ -4704,26 +4740,34 @@ InitDirentIterator calls `TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_NAM
 **TIKU:** The delete-to-close idiom is only safe because of this watch; on TikuOS the watch subscription must exist before the record is rewritten, or the 5 s spin in Find() never terminates.
 **BLOCKED:** The query-record-per-run mechanism (the same absence as Q-025): panel_search never writes a record (src/tiku_trk_desktop.c:896-927), so there is no node to monitor for the delete-to-close or rename-tracking idioms; results-window liveness is the 3 s requery poll (src/tiku_trk_desktop.c:2697-2704), not a watch on any query object.  
 
-#### Q-057 · important · partial ⟨found by verification⟩
+#### Q-057 · important · done ⟨found by verification⟩
 **Folder filters are stored on the query and reloaded when it is reopened; a filter whose folder has since become a file is dropped, and duplicates are refused.**  
 SaveDirectoryFiltersToFile flattens the refs into `_trk/directories` (B_MESSAGE_TYPE) and REMOVES the attribute entirely when no filters remain. LoadDirectoryFiltersFromFile skips refs whose entry exists but is not a directory, then calls AddDirectoryFilter (which returns B_CANCELED on duplicates). QueryEntryListCollection re-reads the same attribute and additionally de-duplicates the resolved path strings.  
 `FindPanel.cpp` → `FindPanel::SaveDirectoryFiltersToFile / FindPanel::LoadDirectoryFiltersFromFile`  
 **TIKU:** Subtree scoping is the part of the Target menu that ports cleanly; the store-and-revalidate cycle (paths can rot between saves) is the behavior worth keeping.  
-**MISSING:** Scopes are stored with the query ("s <path>" lines) and restored on load through tiku_trk_query_add_scope, which normalises and refuses duplicates, but the revalidation clause is missing — nothing stats a stored scope on load, so a scope whose path has become a leaf node (or vanished) is kept rather than dropped.  
-*src/tiku_trk_query.c:serialise (741-743) / deserialise (779-781) / tiku_trk_query_add_scope (68)*
+**PORT:** Scope paths and identities remain stored in the query, normalized
+and de-duplicated.  Run construction stats each stored path and excludes a
+missing path, a leaf that replaced its folder, or a different device at the
+same mount point from the executable copy without erasing the saved record.
+*src/tiku_trk_query.c:tiku_trk_query_add_scope, scope_available and
+tiku_trk_query_start; tests/test_query.c*
 
 #### Q-058 · polish · done ⟨found by verification⟩
 **Saving a query auto-marks the volume that each folder filter lives on, so a folder-scoped query still records a target volume.**  
 Before embedding volume info, SaveQueryAsAttributes walks fDirectoryFilters and, for each filter's ref->device, marks the matching (currently unmarked) volume item in fVolMenu. Those volumes then get EmbedUniqueVolumeInfo'd into kAttrQueryVolume.  
 `FindPanel.cpp` → `FindWindow::SaveQueryAsAttributes`  
 
-#### Q-059 · polish · partial ⟨found by verification⟩
+#### Q-059 · polish · done ⟨found by verification⟩
 **Query result windows are drawn with the read-only background tint, and clipboard cut/copy marks in them are always refreshed.**  
 BQueryPoseView::AdoptSystemColors sets B_DOCUMENT_BACKGROUND_COLOR at ReadOnlyTint(); HasSystemColors checks for exactly that tint. BQueryPoseView::MessageReceived intercepts kFSClipboardChanges and always calls UpdatePosesClipboardModeFromClipboard ("poses have always to be updated for the query view") instead of the base class's conditional path.  
 `QueryPoseView.cpp` → `BQueryPoseView::AdoptSystemColors / BQueryPoseView::MessageReceived (case kFSClipboardChanges)`  
 **TIKU:** The read-only tint is the only visual cue that a results window cannot be written to; worth keeping as a rendering rule for read-only VFS subtrees.  
-**MISSING:** The read-only background tint is missing — folder_draw grounds every window's list on the same TIKU_DESK_C_DOC with no is_query tint (src/tiku_trk_desktop.c:219), so a results window is visually indistinguishable from a writable folder.  
-*Audited 2026-08-12: `src/tiku_trk_desktop.c:249-250 (cut recomputed from clip on every draw)` `src/tiku_trk_desktop.c:280-286 (faded tint applied to cut rows, query windows included)` `src/tiku_trk_poseview.c:643-649 (set_results preserves node_id)`*  
+**PORT:** Query pose views expose a concrete read-only background shade and
+the desktop draw path uses it for the result surface.  Clipboard cut/copy
+appearance continues to be recomputed on every draw for query rows as well
+as folder rows.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_background;
+src/tiku_trk_desktop.c:folder_draw; tests/test_poseview.c*
 *Shell: desktop*  
 #### Q-060 · polish · done ⟨found by verification⟩
 **Opening the Find panel places the keyboard focus itself when the saved state named no focus view: the by-name/formula field, else the LAST attribute row's text field.**  

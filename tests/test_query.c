@@ -23,7 +23,28 @@ static int fails;
 
 typedef struct {
     int trash_listed;
+    uint64_t scope_dev;
+    int scope_kind;
+    int scope_exists;
 } trash_walk_t;
+
+static int
+trash_walk_stat(tiku_trk_backend_t *b, const char *path,
+                tiku_trk_model_t *out)
+{
+    trash_walk_t *walk = b->impl;
+
+    if (strcmp(path, "/scope") != 0 || !walk->scope_exists) {
+        return -1;
+    }
+    memset(out, 0, sizeof *out);
+    out->kind = walk->scope_kind ? TIKU_TRK_KIND_FILE
+                                 : TIKU_TRK_KIND_DIRECTORY;
+    out->facts.dev = walk->scope_dev;
+    snprintf(out->name, sizeof out->name, "scope");
+    snprintf(out->path, sizeof out->path, "/scope");
+    return 0;
+}
 
 /** @brief A tiny namespace that proves excluded containers are not walked. */
 static int
@@ -50,11 +71,18 @@ trash_walk_list(tiku_trk_backend_t *b, const char *path,
         snprintf(m.name, sizeof m.name, "deleted.txt");
         snprintf(m.path, sizeof m.path, "/.Trash/deleted.txt");
         n += fn(&m, ctx) >= 0;
+    } else if (strcmp(path, "/scope") == 0) {
+        m.kind = TIKU_TRK_KIND_FILE;
+        m.facts.dev = walk->scope_dev;
+        snprintf(m.name, sizeof m.name, "inside.txt");
+        snprintf(m.path, sizeof m.path, "/scope/inside.txt");
+        n += fn(&m, ctx) >= 0;
     }
     return n;
 }
 
 static const tiku_trk_backend_ops_t TRASH_WALK_OPS = {
+    .stat = trash_walk_stat,
     .list = trash_walk_list
 };
 
@@ -260,6 +288,47 @@ main(void)
               "a second scope widens it");
         check(tiku_trk_query_add_scope(&q, "/sys") == 0,
               "adding the same scope twice is a no-op");
+    }
+
+    printf("\nsaved scopes are revalidated by identity (Q-027, Q-057)\n");
+    {
+        trash_walk_t walk = { 0, 41u, 0, 1 };
+        tiku_trk_backend_t backend = { &TRASH_WALK_OPS, "", &walk };
+        tiku_trk_query_t q;
+        tiku_trk_qrun_t *run;
+
+        tiku_trk_query_init(&q);
+        (void)tiku_trk_query_add_scope(&q, "/scope");
+        tiku_trk_query_bind_scopes(&q, &backend);
+        check(q.scope_was[0].dev == 41u &&
+              strcmp(q.scope_was[0].volume, "scope") == 0,
+              "Q-027: saving binds a scope to the volume that owns it");
+        run = tiku_trk_query_start(&backend, &q);
+        while (run != NULL && !tiku_trk_query_done(run)) {
+            (void)tiku_trk_query_step(run, 8);
+        }
+        check(run != NULL && tiku_trk_query_count(run) == 1 &&
+              tiku_trk_query_targets_device(run, 41u),
+              "the same mounted identity is searched and remains active");
+        tiku_trk_query_stop(run);
+
+        walk.scope_dev = 99u;
+        run = tiku_trk_query_start(&backend, &q);
+        check(run != NULL && tiku_trk_query_done(run) &&
+              tiku_trk_query_count(run) == 0 &&
+              tiku_trk_query_targets_device(run, 41u) &&
+              !tiku_trk_query_targets_device(run, 99u),
+              "Q-027: a reused mount path does not retarget the saved query");
+        tiku_trk_query_stop(run);
+
+        q.scope_was[0].dev = 0u;
+        walk.scope_kind = 1;
+        run = tiku_trk_query_start(&backend, &q);
+        check(run != NULL && tiku_trk_query_done(run) &&
+              tiku_trk_query_count(run) == 0,
+              "Q-057: a stored scope that became a file is dropped from "
+              "the executable run");
+        tiku_trk_query_stop(run);
     }
 
     printf("\nthe predicate the formula field would show\n");
@@ -670,8 +739,12 @@ main(void)
         f.everywhere = 0;
         f.place_mask = 0x2u;            /* the second place */
         tiku_trk_find_build(&f, &q);
+        q.scope_was[0].dev = 77u;
+        snprintf(q.scope_was[0].volume,
+                 sizeof q.scope_was[0].volume, "board-77");
         {
             tiku_trk_find_t back;
+            tiku_trk_query_t rebuilt;
 
             tiku_trk_find_init(&back);
             (void)tiku_trk_find_add_place(&back, "sys");
@@ -689,6 +762,11 @@ main(void)
                   "it joins -- the asymmetry the builder writes out");
             check(!back.everywhere && back.place_mask == 0x2u,
                   "the scope ticks the place it named, not the first one");
+            tiku_trk_find_build(&back, &rebuilt);
+            check(rebuilt.scope_was[0].dev == 77u &&
+                  strcmp(rebuilt.scope_was[0].volume, "board-77") == 0,
+                  "Q-027: editing and rebuilding preserves the scope's "
+                  "volume identity");
         }
         {   /* A scope this panel cannot offer. */
             tiku_trk_find_t back;
@@ -1017,6 +1095,9 @@ main(void)
                   tiku_trk_find_editing_template(&f),
                   "Edit Query template is an explicit menu action that "
                   "attaches the panel for replacement");
+            check(tiku_trk_find_primary_is_save(&f),
+                  "Q-022: template-editing mode turns the primary action "
+                  "into Save-only");
         }
         snprintf(f.name_text, sizeof f.name_text, "replacement");
         check(tiku_trk_find_save_current(&f, 200) == 0,
@@ -1026,6 +1107,52 @@ main(void)
               after.kind == TIKU_TRK_QREC_TEMPLATE,
               "editing in place writes over the same template record");
         tiku_trk_store_free(st4);
+    }
+
+    printf("\nthe default template (Q-030)\n");
+    {
+        tiku_trk_store_t *st5 = tiku_trk_store_memory_open();
+        tiku_trk_find_t first, reopened;
+        tiku_trk_query_t saved;
+        tiku_desk_rect_t fr = { 0, 0, 560, 400 };
+        int row = -1, x, y, save_hit = 0;
+
+        tiku_trk_find_init(&first);
+        tiku_trk_find_set_store(&first, st5);
+        snprintf(first.name_text, sizeof first.name_text, "starter");
+        check(tiku_trk_find_open_default(&first, 300) >= 0 &&
+              tiku_trk_query_load(&saved, "default", st5) == 0 &&
+              saved.kind == TIKU_TRK_QREC_TEMPLATE,
+              "Q-030: first use creates the default template");
+        check(!tiku_trk_find_can_save_current(&first),
+              "with no explicit record loaded, Save is disabled");
+
+        snprintf(saved.term[0].value, sizeof saved.term[0].value,
+                 "remembered default");
+        check(tiku_trk_query_save(&saved, "default", st5) == 0,
+              "the default fixture can be changed");
+        tiku_trk_find_init(&reopened);
+        tiku_trk_find_set_store(&reopened, st5);
+        check(tiku_trk_find_open_default(&reopened, 400) >= 0 &&
+              strcmp(reopened.name_text, "remembered default") == 0,
+              "opening Find again starts from the stored default");
+        for (y = 0; y < fr.h; y++) {
+            for (x = 0; x < fr.w; x++) {
+                save_hit |= (tiku_trk_find_hit(&reopened, fr, x, y, &row) ==
+                             TIKU_TRK_FIND_HIT_SAVE);
+            }
+        }
+        check(!save_hit,
+              "the disabled Save button cannot be invoked");
+
+        first.include_trash = 1;
+        check(tiku_trk_find_load_named(&first, "default") >= 0 &&
+              !first.include_trash &&
+              tiku_trk_find_load_named(&first, "default") >= 0 &&
+              !first.include_trash,
+              "Q-053: opening a query restores Include Trash and never "
+              "toggles it as a fall-through side effect");
+        tiku_trk_store_free(st5);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");

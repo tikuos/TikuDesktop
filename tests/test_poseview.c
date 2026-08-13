@@ -1280,7 +1280,9 @@ main(void)
     {
         tiku_trk_model_t result[2];
         const tiku_trk_column_t *cols = NULL;
-        int nc;
+        tiku_trk_poseview_t *same, *other;
+        tiku_trk_store_t *layouts = tiku_trk_store_memory_open();
+        int nc, i, path_width = 0;
 
         result[0] = tiku_trk_poseview_at(v, 0)->model;
         result[1] = tiku_trk_poseview_at(v, 1)->model;
@@ -1290,12 +1292,49 @@ main(void)
               "a query result view refuses icon mode");
         check(tiku_trk_poseview_is_query(v), "Q-041",
               "and remains identified as results rather than a folder");
+        check(tiku_trk_poseview_background(v) != TIKU_DESK_C_DOC, "Q-059",
+              "a read-only query has a visible background tint");
         nc = tiku_trk_poseview_columns(v, &cols);
         check(nc == 4 && cols[0].field == TIKU_TRK_COL_NAME &&
               cols[1].field == TIKU_TRK_COL_PATH &&
               cols[2].field == TIKU_TRK_COL_SIZE &&
               cols[3].field == TIKU_TRK_COL_DATE, "Q-041",
               "with the stable Name, Location, Size and Modified columns");
+
+        tiku_trk_poseview_set_layout_store(v, layouts);
+        tiku_trk_poseview_set_query_type(v, "text/plain");
+        (void)tiku_trk_poseview_resize_column(v, TIKU_TRK_COL_PATH, 333);
+        (void)tiku_trk_poseview_save_columns(v);
+        same = tiku_trk_poseview_new(b, "/query-two");
+        tiku_trk_poseview_set_layout_store(same, layouts);
+        tiku_trk_poseview_set_query_type(same, "text/plain");
+        (void)tiku_trk_poseview_set_results(same, result, 2);
+        nc = tiku_trk_poseview_columns(same, &cols);
+        for (i = 0; i < nc; i++) {
+            if (cols[i].field == TIKU_TRK_COL_PATH) {
+                path_width = cols[i].width;
+            }
+        }
+        check(path_width == 333, "Q-052",
+              "another query of the same searched type inherits its "
+              "column layout");
+
+        path_width = 0;
+        other = tiku_trk_poseview_new(b, "/query-three");
+        tiku_trk_poseview_set_layout_store(other, layouts);
+        tiku_trk_poseview_set_query_type(other, "image/png");
+        (void)tiku_trk_poseview_set_results(other, result, 2);
+        nc = tiku_trk_poseview_columns(other, &cols);
+        for (i = 0; i < nc; i++) {
+            if (cols[i].field == TIKU_TRK_COL_PATH) {
+                path_width = cols[i].width;
+            }
+        }
+        check(path_width == 225, "Q-052",
+              "a different searched type keeps its own default layout");
+        tiku_trk_poseview_free(same);
+        tiku_trk_poseview_free(other);
+        tiku_trk_store_free(layouts);
     }
 
     tiku_trk_poseview_free(v);

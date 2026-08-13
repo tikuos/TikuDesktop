@@ -9,7 +9,7 @@ key z
 key q
 key x
 wait 2
-note with nothing saved yet the menu offers only the second save action
+note first use has created the default template beside the second save action
 click 440 460
 wait 3
 click 450 487
@@ -31,7 +31,7 @@ wait 4
 expect-status template
 click 440 460
 wait 4
-click 500 541
+click 500 550
 wait 4
 expect-status query
 quit

@@ -126,6 +126,22 @@ tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name)
     return 1;
 }
 
+int
+tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
+                                 uint64_t dev, const char *volume)
+{
+    int at;
+
+    if (!tiku_trk_find_add_place(f, name)) {
+        return 0;
+    }
+    at = f->place_count - 1;
+    f->place_dev[at] = dev;
+    snprintf(f->place_volume[at], sizeof f->place_volume[at], "%s",
+             volume != NULL ? volume : "");
+    return 1;
+}
+
 void
 tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_trk_qmode_t mode)
 {
@@ -203,6 +219,8 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
          * query being restored, and a restore that wiped them would leave
          * a panel that can no longer name where to search. */
         char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+        uint64_t kept_dev[TIKU_TRK_FIND_PLACES_MAX];
+        char kept_volume[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
         int nkept = f->place_count, k;
         /* The STORE survives too, for the same reason: it is where this
          * panel keeps its most-used types and reads its saved searches
@@ -213,10 +231,14 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
 
         for (k = 0; k < nkept; k++) {
             memcpy(kept[k], f->place[k], TIKU_TRK_NAME_MAX);
+            kept_dev[k] = f->place_dev[k];
+            memcpy(kept_volume[k], f->place_volume[k], TIKU_TRK_NAME_MAX);
         }
         tiku_trk_find_init(f);
         for (k = 0; k < nkept; k++) {
             memcpy(f->place[k], kept[k], TIKU_TRK_NAME_MAX);
+            f->place_dev[k] = kept_dev[k];
+            memcpy(f->place_volume[k], kept_volume[k], TIKU_TRK_NAME_MAX);
         }
         f->place_count = nkept;
         f->store = store;
@@ -277,6 +299,9 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
             snprintf(path, sizeof path, "/%s/", f->place[k]);
             if (strcmp(path, q->scope[i]) == 0) {
                 f->place_mask |= (1u << k);
+                f->place_dev[k] = q->scope_was[i].dev;
+                snprintf(f->place_volume[k], sizeof f->place_volume[k],
+                         "%s", q->scope_was[i].volume);
                 found = 1;
                 break;
             }
@@ -341,7 +366,16 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
                 char path[TIKU_TRK_PATH_MAX];
 
                 snprintf(path, sizeof path, "/%s", f->place[i]);
-                (void)tiku_trk_query_add_scope(q, path);
+                if (tiku_trk_query_add_scope(q, path)) {
+                    int at = q->scope_count - 1;
+
+                    q->scope_was[at].dev = f->place_dev[i];
+                    memcpy(q->scope_was[at].path, q->scope[at],
+                           sizeof q->scope_was[at].path);
+                    snprintf(q->scope_was[at].volume,
+                             sizeof q->scope_was[at].volume, "%s",
+                             f->place_volume[i]);
+                }
             }
         }
     }
@@ -831,8 +865,12 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                                         : TIKU_DESK_S_NORMAL);
     }
 
-    draw_button(s, button_rect(f, frame, 0), "Search", TIKU_DESK_S_DEFAULT);
-    draw_button(s, button_rect(f, frame, 1), "Save", TIKU_DESK_S_NORMAL);
+    draw_button(s, button_rect(f, frame, 0),
+                tiku_trk_find_primary_is_save(f) ? "Save" : "Search",
+                TIKU_DESK_S_DEFAULT);
+    draw_button(s, button_rect(f, frame, 1), "Save",
+                tiku_trk_find_can_save_current(f)
+                    ? TIKU_DESK_S_NORMAL : TIKU_DESK_S_DISABLED);
     draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_DESK_S_NORMAL);
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
@@ -869,7 +907,8 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     if (in(button_rect(f, frame, 0), x, y)) {
         return TIKU_TRK_FIND_HIT_SEARCH;
     }
-    if (in(button_rect(f, frame, 1), x, y)) {
+    if (tiku_trk_find_can_save_current(f) &&
+        in(button_rect(f, frame, 1), x, y)) {
         return TIKU_TRK_FIND_HIT_SAVE;
     }
     if (in(button_rect(f, frame, 2), x, y)) {
@@ -1176,6 +1215,47 @@ int
 tiku_trk_find_editing_template(const tiku_trk_find_t *f)
 {
     return f != NULL && f->edit_template;
+}
+
+int
+tiku_trk_find_open_default(tiku_trk_find_t *f, int64_t now)
+{
+    tiku_trk_query_t q;
+    int whole;
+
+    if (f == NULL || f->store == NULL) {
+        return -1;
+    }
+    if (tiku_trk_query_load(&q, "default", f->store) != 0) {
+        tiku_trk_find_build(f, &q);
+        q.kind = TIKU_TRK_QREC_TEMPLATE;
+        q.temporary = 0;
+        q.saved_at = now;
+        if (tiku_trk_query_save(&q, "default", f->store) != 0) {
+            return -1;
+        }
+    }
+    whole = tiku_trk_find_from_query(f, &q);
+    /* The default is a starting shape, not an explicitly opened record.
+     * Save must stay disabled until the user chooses something to attach. */
+    f->loaded_name[0] = '\0';
+    f->loaded_kind = TIKU_TRK_QREC_QUERY;
+    f->edit_template = 0;
+    snprintf(f->note, sizeof f->note, "default template%s",
+             whole ? "" : " -- a place is no longer here");
+    return whole ? 1 : 0;
+}
+
+int
+tiku_trk_find_can_save_current(const tiku_trk_find_t *f)
+{
+    return f != NULL && f->loaded_name[0] != '\0';
+}
+
+int
+tiku_trk_find_primary_is_save(const tiku_trk_find_t *f)
+{
+    return tiku_trk_find_editing_template(f);
 }
 
 int

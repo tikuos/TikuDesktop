@@ -214,6 +214,69 @@ tiku_trk_query_clear_scope(tiku_trk_query_t *q)
     }
 }
 
+/** @brief Turn the normalised stored path back into a stat-able path. */
+static void
+scope_path(const char *stored, char *out, size_t max)
+{
+    size_t n;
+
+    snprintf(out, max, "%s", stored);
+    n = strlen(out);
+    if (n > 1u && out[n - 1u] == '/') {
+        out[n - 1u] = '\0';
+    }
+}
+
+void
+tiku_trk_query_bind_scopes(tiku_trk_query_t *q,
+                           tiku_trk_backend_t *backend)
+{
+    int i;
+
+    if (q == NULL || backend == NULL || backend->ops->stat == NULL) {
+        return;
+    }
+    for (i = 0; i < q->scope_count; i++) {
+        tiku_trk_model_t m;
+        char path[TIKU_TRK_PATH_MAX];
+
+        if (q->scope_was[i].dev != 0u) {
+            continue;           /* keep the identity the record named */
+        }
+        scope_path(q->scope[i], path, sizeof path);
+        if (backend->ops->stat(backend, path, &m) != 0 ||
+            !tiku_trk_model_is_container(&m)) {
+            continue;
+        }
+        snprintf(q->scope_was[i].path, sizeof q->scope_was[i].path,
+                 "%s", q->scope[i]);
+        q->scope_was[i].dev = m.facts.dev;
+        snprintf(q->scope_was[i].volume, sizeof q->scope_was[i].volume,
+                 "%s", backend->devid[0] != '\0' ? backend->devid
+                                                   : m.name);
+    }
+}
+
+/** @brief Whether a saved scope still names the container it was bound to. */
+static int
+scope_available(const tiku_trk_query_t *q, int at,
+                tiku_trk_backend_t *backend)
+{
+    tiku_trk_model_t m;
+    char path[TIKU_TRK_PATH_MAX];
+
+    if (backend->ops->stat == NULL) {
+        return 1;               /* this backend cannot revalidate */
+    }
+    scope_path(q->scope[at], path, sizeof path);
+    if (backend->ops->stat(backend, path, &m) != 0 ||
+        !tiku_trk_model_is_container(&m)) {
+        return 0;
+    }
+    return q->scope_was[at].dev == 0u || m.facts.dev == 0u ||
+           q->scope_was[at].dev == m.facts.dev;
+}
+
 int
 tiku_trk_query_in_scope(const tiku_trk_query_t *q, const char *path)
 {
@@ -574,6 +637,7 @@ tiku_trk_query_predicate(const tiku_trk_query_t *q, char *out, size_t max)
 struct tiku_trk_qrun {
     tiku_trk_backend_t *backend;
     tiku_trk_query_t    q;
+    tiku_trk_query_t    requested;      /* identities before validation   */
     char                queue[QUEUE_MAX][TIKU_TRK_PATH_MAX];
     int                 head, tail;
     tiku_trk_model_t   *results;
@@ -655,7 +719,7 @@ tiku_trk_qrun_t *
 tiku_trk_query_start(tiku_trk_backend_t *b, const tiku_trk_query_t *q)
 {
     tiku_trk_qrun_t *r;
-    int i;
+    int i, requested_scopes;
 
     if (b == NULL || q == NULL || q->invalid) {
         return NULL;
@@ -671,25 +735,47 @@ tiku_trk_query_start(tiku_trk_backend_t *b, const tiku_trk_query_t *q)
     }
     r->backend = b;
     r->q = *q;
+    r->requested = *q;
+    requested_scopes = r->q.scope_count;
+    if (requested_scopes > 0) {
+        int kept = 0;
+
+        for (i = 0; i < requested_scopes; i++) {
+            if (!scope_available(&r->q, i, b)) {
+                continue;
+            }
+            if (kept != i) {
+                memcpy(r->q.scope[kept], r->q.scope[i],
+                       sizeof r->q.scope[kept]);
+                r->q.scope_was[kept] = r->q.scope_was[i];
+            }
+            kept++;
+        }
+        r->q.scope_count = kept;
+    }
     if (r->q.max_results <= 0 || r->q.max_results > RESULTS_MAX) {
         r->q.max_results = RESULTS_MAX;
     }
     /* Walking starts at the scopes when there are any, so a scoped search
      * does not read the whole namespace and then throw most of it away. */
-    if (q->scope_count > 0) {
-        for (i = 0; i < q->scope_count; i++) {
+    if (r->q.scope_count > 0) {
+        for (i = 0; i < r->q.scope_count; i++) {
             char start[TIKU_TRK_PATH_MAX];
             size_t n;
 
-            snprintf(start, sizeof start, "%s", q->scope[i]);
+            snprintf(start, sizeof start, "%s", r->q.scope[i]);
             n = strlen(start);
             if (n > 1u && start[n - 1u] == '/') {
                 start[n - 1u] = '\0';
             }
             enqueue(r, start);
         }
-    } else {
+    } else if (requested_scopes == 0) {
         enqueue(r, "/");
+    } else {
+        /* Every saved target is absent or now names a leaf.  Searching the
+         * whole namespace here would silently turn a narrow query broad. */
+        r->done = 1;
     }
     return r;
 }
@@ -868,6 +954,31 @@ int
 tiku_trk_query_done(const tiku_trk_qrun_t *r)
 {
     return (r != NULL) ? r->done : 1;
+}
+
+int
+tiku_trk_query_targets_device(const tiku_trk_qrun_t *r, uint64_t dev)
+{
+    int i;
+
+    if (r == NULL || dev == 0u) {
+        return 0;
+    }
+    if (r->requested.scope_count == 0) {
+        return 1;               /* the whole namespace includes every disk */
+    }
+    for (i = 0; i < r->requested.scope_count; i++) {
+        if (r->requested.scope_was[i].dev == dev) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+const char *
+tiku_trk_query_search_type(const tiku_trk_qrun_t *r)
+{
+    return (r != NULL) ? r->requested.type : "";
 }
 
 /*---------------------------------------------------------------------------*/

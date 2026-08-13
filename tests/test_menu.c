@@ -202,6 +202,11 @@ main(void)
         c.is_trash = 1;
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_PASTE, &c),
               "Paste is refused into the Trash");
+        c = base_ctx();
+        c.clipboard_has_refs = 1;
+        c.is_query = 1;
+        check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_PASTE, &c),
+              "Q-044: Paste is refused into a query result container");
 
         c = base_ctx();
         check(tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
@@ -213,6 +218,10 @@ main(void)
         c.target_ro = 1;
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
               "New folder is refused where nothing can be written");
+        c = base_ctx();
+        c.is_query = 1;
+        check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
+              "Q-044: a result set cannot create a folder inside itself");
 
         c = base_ctx();
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_ARRANGE_BY, &c),
@@ -340,6 +349,19 @@ main(void)
                                      TIKU_TRK_CMD_RESIZE_TO_FIT) >= 0,
                   "CW-023: but it can still be sized and its answers "
                   "picked out");
+            check(cw.window.count == 6 &&
+                  tiku_trk_menu_find(&cw.window,
+                      TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE) >= 0,
+                  "Q-044: its Window menu is exactly the six result-set "
+                  "actions");
+            check(tiku_trk_cwmenu_context(&cw, NULL, &q) ==
+                  &cw.window_ctx && cw.window_ctx.count == 4 &&
+                  tiku_trk_menu_find(&cw.window_ctx,
+                      TIKU_TRK_CMD_RESIZE_TO_FIT) >= 0 &&
+                  tiku_trk_menu_find(&cw.window_ctx,
+                      TIKU_TRK_CMD_INVERT_SELECTION) < 0,
+                  "Q-044: its background menu has Resize, Select, Select "
+                  "all and Close only");
             tiku_trk_cwmenu_rebuild(&cw, &c);
             check(tiku_trk_menu_find(&cw.window,
                                      TIKU_TRK_CMD_LIST_VIEW) >= 0,
