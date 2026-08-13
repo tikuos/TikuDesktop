@@ -59,6 +59,9 @@ typedef struct {
      * at least one row was looked at.  Together they say whether a search
      * really was narrowed. */
     int         kinds;
+    /* The labels of the menu that is showing, joined by '|': a menu built
+     * from what is selected cannot be checked any other way. */
+    const char *menu;
     /* The Desktop is a surface of its own: it has no window to be focused,
      * so what it holds cannot be read through the focused-window fields. */
     int         desk_selected;

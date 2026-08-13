@@ -34,8 +34,15 @@ typedef struct {
     tiku_trk_menu_t    volume_ctx;
     tiku_trk_menu_t    trash_ctx;
     tiku_trk_menu_t    drop_ctx;
+    /* The applications that can open what is selected, as a submenu of the
+     * "Open with" item.  Built by the shell, which is what knows the
+     * registry, and attached here so both menus show the same one. */
+    tiku_trk_menu_t    open_with;
     int                attributes_shown;
 } tiku_trk_cwmenu_t;
+
+/** @brief The command range a candidate application is picked with. */
+#define TIKU_TRK_CMD_OPEN_WITH_BASE 900
 
 void tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw);
 

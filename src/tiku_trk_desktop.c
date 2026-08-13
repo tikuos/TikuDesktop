@@ -42,6 +42,7 @@
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskicons.h"
+#include "tiku_trk_launch.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_gfx_dep.h"
@@ -198,6 +199,10 @@ typedef struct desktop {
      * windows is one entry, and an icon edited on disk is dropped once
      * rather than per window (IV-038). */
     tiku_trk_nodeicon_t  nicons;
+    /* Which applications there are and what each reads.  One registry for
+     * the desktop: the Open with menu, a double click and a drop on an
+     * application all ask the same question (AW-040). */
+    tiku_trk_apps_t      apps;
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -326,6 +331,173 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
         c.is_query = tiku_trk_poseview_is_query(fl->view);
     }
     return c;
+}
+
+/**
+ * @brief Fill the Open-with submenu for what @p fl has selected (AW-040).
+ *
+ * Rebuilt per menu open rather than cached: the answer depends on the
+ * selection, and a list that outlived the selection would offer an
+ * application for something else (PVL-095, PVN-035).
+ */
+static void
+build_open_with(desktop_t *app, folder_t *fl)
+{
+    tiku_trk_menu_t *m = &app->menus.open_with;
+    const char *types[TIKU_TRK_APP_TYPES_MAX];
+    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
+    int i, n = 0, ntypes = 0, count;
+
+    tiku_trk_menu_clear(m);
+    if (fl == NULL || fl->view == NULL) {
+        return;
+    }
+    count = tiku_trk_poseview_count(fl->view);
+    for (i = 0; i < count && ntypes < TIKU_TRK_APP_TYPES_MAX; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
+        int k, seen = 0;
+
+        if (p == NULL || !p->selected || p->model.type[0] == '\0') {
+            continue;
+        }
+        if (tiku_trk_model_is_container(&p->model)) {
+            continue;           /* a folder is opened, never opened WITH */
+        }
+        for (k = 0; k < ntypes; k++) {
+            if (strcmp(types[k], p->model.type) == 0) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            types[ntypes++] = p->model.type;
+        }
+    }
+    if (ntypes == 0) {
+        return;
+    }
+    n = tiku_trk_launch_candidates(&app->apps, types, ntypes, app->store,
+                                   cand, TIKU_TRK_APP_MAX);
+    for (i = 0; i < n; i++) {
+        char label[TIKU_TRK_APP_NAME_MAX + 40];
+
+        /* Each row says why it is there, which is the sentence the
+         * original's Relation column carries (AW-042, MA-081). */
+        snprintf(label, sizeof label, "%s (%s)", cand[i].app->name,
+                 tiku_trk_launch_relation_label(cand[i].rel));
+        (void)tiku_trk_menu_add(m, label,
+                                TIKU_TRK_CMD_OPEN_WITH_BASE + i, 0, 0u, 1);
+        if (cand[i].preferred) {
+            m->item[m->count - 1].marked = 1;
+        }
+    }
+}
+
+static folder_t *open_folder(desktop_t *app, const char *path);
+
+/**
+ * @brief Hand @p paths to an application, and say what happened (AW-039).
+ *
+ * One place, because the Open-with menu, a double click on a document and
+ * a drop on an application are the same act with three ways in -- and a
+ * launch that reported differently depending on how it was asked for would
+ * be three behaviours wearing one name.
+ */
+static int
+launch_paths(desktop_t *app, const tiku_trk_app_t *a,
+             const char *const *paths, int n)
+{
+    tiku_trk_launch_err_t e;
+
+    if (a == NULL) {
+        snprintf(app->status, sizeof app->status, "%s",
+                 tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NO_APP));
+        return 0;
+    }
+    e = tiku_trk_launch_run(a, paths, n);
+    if (e == TIKU_TRK_LAUNCH_OK) {
+        snprintf(app->status, sizeof app->status, "opening %d item%s with "
+                 "%.40s", n, (n == 1) ? "" : "s", a->name);
+    } else if (e == TIKU_TRK_LAUNCH_IS_TRACKER) {
+        /* The running Tracker takes it: opening a folder is what this
+         * application does with one (AW-035). */
+        int i;
+
+        for (i = 0; i < n; i++) {
+            (void)open_folder(app, paths[i]);
+        }
+    } else {
+        snprintf(app->status, sizeof app->status, "%s",
+                 tiku_trk_launch_reason(e));
+    }
+    return (e == TIKU_TRK_LAUNCH_OK);
+}
+
+/** @brief The application a document should open in, or NULL (AW-030). */
+static const tiku_trk_app_t *
+handler_for(desktop_t *app, const tiku_trk_model_t *m)
+{
+    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
+    const char *types[1];
+    int n;
+
+    if (m == NULL || m->type[0] == '\0') {
+        return NULL;
+    }
+    types[0] = m->type;
+    n = tiku_trk_launch_candidates(&app->apps, types, 1, app->store, cand,
+                                   TIKU_TRK_APP_MAX);
+    /* The best match, which is the user's choice when they made one: the
+     * list is already in that order. */
+    return (n > 0) ? cand[0].app : NULL;
+}
+
+/** @brief Open the selection with the candidate at @p at (AW-040). */
+static void
+open_with_pick(desktop_t *app, folder_t *fl, int at)
+{
+    const char *types[TIKU_TRK_APP_TYPES_MAX];
+    const char *paths[TIKU_TRK_DRAG_MAX];
+    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
+    int i, ntypes = 0, npath = 0, n, count;
+
+    if (fl == NULL || fl->view == NULL) {
+        return;
+    }
+    count = tiku_trk_poseview_count(fl->view);
+    for (i = 0; i < count; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
+        int k, seen = 0;
+
+        if (p == NULL || !p->selected ||
+            tiku_trk_model_is_container(&p->model)) {
+            continue;
+        }
+        if (npath < TIKU_TRK_DRAG_MAX) {
+            paths[npath++] = p->model.path;
+        }
+        for (k = 0; k < ntypes; k++) {
+            if (strcmp(types[k], p->model.type) == 0) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen && p->model.type[0] != '\0' &&
+            ntypes < TIKU_TRK_APP_TYPES_MAX) {
+            types[ntypes++] = p->model.type;
+        }
+    }
+    if (npath == 0) {
+        snprintf(app->status, sizeof app->status, "%s",
+                 tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NOTHING));
+        return;
+    }
+    n = tiku_trk_launch_candidates(&app->apps, types, ntypes, app->store,
+                                   cand, TIKU_TRK_APP_MAX);
+    if (at < 0 || at >= n) {
+        return;                 /* the list moved under the menu */
+    }
+    (void)launch_paths(app, cand[at].app, paths, npath);
 }
 
 /** @brief Draw a folder window's contents: list rows, then the count. */
@@ -3210,6 +3382,10 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         break;
     }
     default:
+        if (command >= TIKU_TRK_CMD_OPEN_WITH_BASE) {
+            open_with_pick(app, fl, command - TIKU_TRK_CMD_OPEN_WITH_BASE);
+            break;
+        }
         /* Everything else is built and enabled correctly but has no
          * implementation behind it yet; it must do nothing rather than
          * something approximate. */
@@ -3266,6 +3442,8 @@ open_folder(desktop_t *app, const char *path)
      * the single-window shell was built and this shell called neither, so
      * every column a user added, moved or resized here was discarded when
      * the window closed (CW-005, MA-070). */
+    tiku_trk_poseview_set_folders_first(fl->view,
+        tiku_trk_prefs_get(&app->prefs, "SortFolderNamesFirst"));
     (void)tiku_trk_poseview_restore_columns(fl->view);
     (void)tiku_trk_poseview_restore_state(fl->view);
 
@@ -4118,6 +4296,31 @@ main(int argc, char **argv)
         tiku_trk_deskbar_set_menu_dir(app.deskbar, user,
                                       "/usr/share/tiku-tracker/deskbar");
     }
+    {
+        /* Which applications there are.  A file rather than a database:
+         * what the rows are about is the ANSWERS -- which application
+         * opens what, and how well -- not where the list is kept. */
+        const char *home = getenv("HOME");
+        char reg[TIKU_TRK_PATH_MAX];
+
+        tiku_trk_launch_clear(&app.apps);
+        {
+            /* This Tracker is in the list, so choosing it is answerable:
+             * it opens folders here rather than starting a second desktop
+             * (AW-035). */
+            int self = tiku_trk_launch_add(&app.apps, "Tracker", "",
+                                           "inode/directory");
+            if (self >= 0) {
+                app.apps.app[self].is_tracker = 1;
+            }
+        }
+        snprintf(reg, sizeof reg, "%s/.config/tracker/apps",
+                 (home != NULL && home[0] != '\0') ? home : "");
+        if (tiku_trk_launch_load(&app.apps, reg) < 0) {
+            (void)tiku_trk_launch_load(&app.apps,
+                                       "/usr/share/tiku-tracker/apps");
+        }
+    }
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -4414,6 +4617,7 @@ main(int argc, char **argv)
         tiku_trk_poseview_click(fl->view, 7, 0u);
         p = tiku_trk_poseview_at(fl->view, 7);
         c = menu_ctx(&app, fl, 0u);
+        build_open_with(&app, fl);
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
@@ -4433,6 +4637,7 @@ main(int argc, char **argv)
         tiku_trk_poseview_click(fl->view, 1, 0u);
         p = tiku_trk_poseview_at(fl->view, 1);
         c = menu_ctx(&app, fl, 0u);
+        build_open_with(&app, fl);
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
@@ -4489,6 +4694,31 @@ main(int argc, char **argv)
                 sst.win_x = (fw != NULL) ? fw->frame.x : -1;
                 sst.win_y = (fw != NULL) ? fw->frame.y : -1;
                 sst.kinds = 0;
+                {
+                    /* What the open menu says, so a script can check a menu
+                     * whose items depend on the selection. */
+                    static char labels[512];
+                    int mi;
+
+                    labels[0] = '\0';
+                    if (app.popup != NULL) {
+                        for (mi = 0; mi < app.popup->count; mi++) {
+                            size_t at = strlen(labels);
+
+                            snprintf(labels + at, sizeof labels - at, "%s|",
+                                     app.popup->item[mi].label);
+                        }
+                    }
+                    if (app.popup_sub != NULL) {
+                        for (mi = 0; mi < app.popup_sub->count; mi++) {
+                            size_t at = strlen(labels);
+
+                            snprintf(labels + at, sizeof labels - at, "%s|",
+                                     app.popup_sub->item[mi].label);
+                        }
+                    }
+                    sst.menu = labels;
+                }
                 sst.desk_selected = 0;
                 sst.desk_sel_name = NULL;
                 if (app.dfl.view != NULL) {
@@ -5303,6 +5533,7 @@ main(int argc, char **argv)
                                                                   row);
                             tiku_trk_desk_activate(app.desk, w);
                             c = menu_ctx(&app, fl, mods);
+                            build_open_with(&app, fl);
                             app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (row >= 0 && p != NULL)
                                                 ? &p->model : NULL, &c);
@@ -5462,6 +5693,27 @@ main(int argc, char **argv)
                                             *slash = '\0';
                                         }
                                         (void)open_folder(&app, parent);
+                                    }
+                                } else if (p != NULL) {
+                                    /* Not a container: it is LAUNCHED, in
+                                     * whatever opens its type -- which is
+                                     * what a double click has always meant
+                                     * and this shell could not do (AW-030,
+                                     * PVS-010). */
+                                    const char *one[1];
+
+                                    int went;
+
+                                    one[0] = p->model.path;
+                                    went = launch_paths(&app,
+                                              handler_for(&app, &p->model),
+                                              one, 1);
+                                    if ((ev.xbutton.state & Mod1Mask) &&
+                                        went) {
+                                        /* Option-open closes the window it
+                                         * came from, once the launch has
+                                         * actually happened (AW-032). */
+                                        close_window(&app, w);
                                     }
                                 }
                                 last_row = -1;
@@ -6402,6 +6654,7 @@ sel_done:
             commit_rename(&app, 1);            /* CW-029: mouse-opened */
             (void)tiku_trk_poseview_context_click(pfl->view, app.press_row);
             c = menu_ctx(&app, pfl, 0u);
+            build_open_with(&app, pfl);
             app.popup = tiku_trk_cwmenu_context(&app.menus,
                             (p != NULL) ? &p->model : NULL, &c);
             app.popup_sub = NULL;

@@ -1,0 +1,26 @@
+# shell: desktop
+# apps: fixture
+# AW-030/AW-040/AW-048: a document is opened by an APPLICATION.  Nothing in
+# this port launched anything: a double click on a file did nothing at all,
+# and "Open with" was a permanently grey menu item.
+wait 8
+note a double click opens the document in the application that claims its
+note type, which really runs and is really handed the document
+click 100 97
+wait 2
+click 100 97
+wait 12
+expect-status Stamper
+expect-file-has /tmp/trk_launched /tmp/trk_script/a.txt
+note and the pose menu offers the applications that can open what is
+note selected, each saying why it is offered
+click 100 97 3
+wait 4
+expect-menu Open with
+note picking it opens a submenu of applications rather than choosing, and
+note each row says why that application is in it
+click 150 145
+wait 4
+expect-menu Stamper
+expect-menu opens this type
+quit

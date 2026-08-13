@@ -23,7 +23,7 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_WAIT, OP_SHOT,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -35,7 +35,10 @@ typedef struct {
     unsigned button;
     int      count;                     /* WAIT turns                    */
     char     text[SC_TEXT_MAX];         /* path, substring or note       */
-    char     text2[16];                 /* a second word, where one is   */
+    /* A second string, where one is needed.  Long enough for a PATH: it
+     * was a word, and a needle too long to hold was silently truncated to
+     * nothing -- which made every check that used it pass. */
+    char     text2[512];
     int      line;
 } sc_step_t;
 
@@ -258,6 +261,13 @@ tiku_trk_script_open(const char *path)
             st->x = atoi(w[1]);
             st->y = atoi(w[2]);
             snprintf(st->text, sizeof st->text, "%s", w[3]);
+        } else if (strcmp(w[0], "expect-file-has") == 0 && n >= 3) {
+            st->op = OP_EXPECT_FILEHAS;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            rest(w, n, 2, st->text2, sizeof st->text2);
+        } else if (strcmp(w[0], "expect-menu") == 0 && n >= 2) {
+            st->op = OP_EXPECT_MENU;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-desk-selected") == 0 && n >= 2) {
             st->op = OP_EXPECT_DESKSEL;
             st->count = atoi(w[1]);
@@ -528,6 +538,29 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, strcasecmp(got, cur->text) == 0, "pixel:", got);
         return 1;
     }
+    case OP_EXPECT_FILEHAS: {
+        FILE *f = fopen(cur->text, "r");
+        char got[512] = "";
+        int ok = 0;
+
+        if (f != NULL) {
+            size_t rd = fread(got, 1u, sizeof got - 1u, f);
+
+            got[rd] = '\0';
+            (void)fclose(f);
+            ok = (cur->text2[0] != '\0' &&
+                  strstr(got, cur->text2) != NULL);
+        }
+        /* What it HOLDS, not that it exists: a file written by something
+         * that ran with no arguments exists just as readily. */
+        verdict(s, ok, "in file:", cur->text2);
+        return 1;
+    }
+    case OP_EXPECT_MENU:
+        verdict(s, st != NULL && st->menu != NULL &&
+                strstr(st->menu, cur->text) != NULL, "menu:",
+                (st != NULL && st->menu != NULL) ? st->menu : "nothing");
+        return 1;
     case OP_EXPECT_DESKSEL: {
         char n[32];
 

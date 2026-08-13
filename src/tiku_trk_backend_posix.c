@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -84,6 +85,44 @@ dir_has_entries(const char *path)
     return any;
 }
 
+/**
+ * @brief The type a file's NAME says it is.
+ *
+ * A host filesystem carries no type attribute, so the name is the only
+ * source there is; anything unrecognised stays the generic type rather
+ * than being guessed at, which is what keeps "unknown" distinguishable
+ * from "known to be data" (MA-002).
+ */
+static const char *
+type_by_name(const char *name)
+{
+    static const struct { const char *ext, *type; } kByExt[] = {
+        { ".txt",  "text/plain" },     { ".md",   "text/plain" },
+        { ".c",    "text/x-source" },  { ".h",    "text/x-source" },
+        { ".sh",   "text/x-script" },  { ".py",   "text/x-script" },
+        { ".png",  "image/png" },      { ".bmp",  "image/bmp" },
+        { ".jpg",  "image/jpeg" },     { ".jpeg", "image/jpeg" },
+        { ".gif",  "image/gif" },      { ".html", "text/html" },
+        { ".json", "text/json" },      { ".pdf",  "application/pdf" }
+    };
+    const char *dot;
+    size_t i;
+
+    if (name == NULL) {
+        return "application/octet-stream";
+    }
+    dot = strrchr(name, '.');
+    if (dot == NULL || dot == name) {
+        return "application/octet-stream";
+    }
+    for (i = 0; i < sizeof kByExt / sizeof kByExt[0]; i++) {
+        if (strcasecmp(dot, kByExt[i].ext) == 0) {
+            return kByExt[i].type;
+        }
+    }
+    return "application/octet-stream";
+}
+
 static void
 from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
           int is_link)
@@ -132,7 +171,7 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
     if (access(path, X_OK) == 0) { m->facts.perm |= TIKU_TRK_P_EXEC; }
     snprintf(m->type, sizeof m->type, "%s",
              S_ISDIR(st->st_mode) ? "application/x-vnd.Be-directory"
-                                  : "application/octet-stream");
+                                  : type_by_name(m->name));
 }
 
 static int

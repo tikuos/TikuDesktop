@@ -202,8 +202,26 @@ test_posix(void)
     check(b->ops->stat(b, f1, &m) == 0, "stat a file");
     check(m.kind == TIKU_TRK_KIND_FILE && m.facts.size == 5,
           "kind and size are right");
-    check(strcmp(tiku_trk_model_kind_string(&m), "File") == 0,
-          "Kind column text");
+    check(strcmp(tiku_trk_model_kind_string(&m), "Text file") == 0,
+          "the Kind column says what the file IS: the host carries no type "
+          "attribute, so the NAME is the only source there is, and a .txt "
+          "is a text file rather than a bare File (MA-002)");
+    {
+        tiku_trk_model_t o;
+        char other[64];
+
+        snprintf(other, sizeof other, "%s/lump", dir);
+        {
+            FILE *f = fopen(other, "w");
+
+            if (f != NULL) { (void)fputs("x", f); (void)fclose(f); }
+        }
+        check(b->ops->stat(b, other, &o) == 0 &&
+              strcmp(tiku_trk_model_kind_string(&o), "File") == 0,
+              "and a name that says nothing leaves it a bare File, so "
+              "'unknown' stays distinguishable from 'known to be data'");
+        (void)remove(other);
+    }
 
     memset(&t, 0, sizeof t);
     check(b->ops->list(b, dir, count_entry, &t) == 2, "lists both entries");

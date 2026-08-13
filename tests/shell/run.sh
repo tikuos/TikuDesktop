@@ -85,6 +85,18 @@ PYEOF
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         # A script that says "# argv: none" is started with no path at all,
         # which is the only way to exercise what the shell opens on its own.
+        # A script that says "# apps: fixture" gets an application registry
+        # of its own: one application that writes down what it was handed,
+        # which is the only way to check a launch really happened.
+        if grep -q '^# apps: fixture' "$s"; then
+            mkdir -p "$HOME/.config/tracker"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
+                > /tmp/trk_stamp.sh
+            chmod +x /tmp/trk_stamp.sh
+            rm -f /tmp/trk_launched
+            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\n' \
+                > "$HOME/.config/tracker/apps"
+        fi
         if [ -n "$deskhome" ]; then
             mkdir -p "$deskhome/Desktop/photos"
             echo hi > "$deskhome/Desktop/notes.txt"

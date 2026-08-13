@@ -503,6 +503,15 @@ void tiku_trk_poseview_set_font_metrics(tiku_trk_poseview_t *v, int height,
 int tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v);
 
 /**
+ * @brief Whether folders sort ahead of files (MA-039).
+ *
+ * On by default, as it is in the original: a folder is not just a big file.
+ * It is a setting rather than a rule, so a listing can be asked for in
+ * column order alone.
+ */
+void tiku_trk_poseview_set_folders_first(tiku_trk_poseview_t *v, int on);
+
+/**
  * @brief Tell the view the row height its owner DRAWS with (0 = derive).
  *
  * The derived height is Tracker's own formula; a shell that lays its list

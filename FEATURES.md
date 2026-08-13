@@ -1120,12 +1120,13 @@ NoticeMetaMimeChanged decodes be:which (B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED
 **TIKU:** This is the coalescing tier the VFS watch bus lacks: TIKU_EVENT_VFS explicitly does not coalesce, so a notification storm on a live device value needs exactly this accumulate-with-cap wrapper before it reaches the view.
 **WAIVER CANDIDATE:** There is no runtime type/MIME database whose change could fan out to poses: icons are compiled-in HVIF resources chosen per node from the model's kind and leaf name (src/tiku_trk_model.c:185-230; src/tiku_trk_icons.c is a generated static table), so a 'database changed, sweep every pose of that type' notice has no source. The TIKU note's analogue (value-change storms) is already bounded to one pass per poll tick (src/tiku_trk_desktop.c:1777-1780). Waiver candidate.  
 
-#### PVL-095 · polish · open ⟨found by verification⟩
+#### PVL-095 · polish · partial ⟨found by verification⟩
 **A MIME type change on any pose rebuilds the window's list of types present, which drives the Add-ons and "Open with" menus.**  
 AttributeChanged calls RefreshMimeTypeList() when the changed attribute is kAttrMIMEType; fMimeTypeListIsDirty is also set by every pose add/remove, and MimeTypeAt/CountMimeTypes rebuild lazily. AddPosesCompleted feeds the result into BContainerWindow::AddMimeTypesToMenu().  
 `PoseView.cpp` → `BPoseView::RefreshMimeTypeList / BPoseView::AddMimeType / BPoseView::MimeTypeAt`  
 **TIKU:** The analogue is a per-view set of node classes present, used to decide which shell verbs to offer.
-**SUBSYSTEM:** Open With / add-ons layer: the consumers of a types-present list do not exist — CMD_OPEN_WITH is in the menus (src/tiku_trk_cwmenu.c:130,229) but menu_invoke has no case for it (src/tiku_trk_desktop.c:1042-1370, default no-op), there is no Add-ons menu, and no per-window set of kinds/types present is maintained anywhere (grep empty).  
+**MISSING:** The consumer exists: the Open-with menu is built from the types the SELECTION has, every time it opens, so it can never offer an application for something else. A rebuild driven by a type CHANGE is not portable yet -- a type here follows the name, and nothing renames a file behind the window's back without the listing noticing.  
+*src/tiku_trk_desktop.c:build_open_with*
 
 #### PVL-096 · important · open ⟨found by verification⟩
 **"Copy layout" and "Paste layout" actually move the whole column set between windows via the system clipboard, and pasting replaces every column in the target window at once.**  
@@ -1253,7 +1254,8 @@ sites (click, key_nav, select_rect, select_all); tests/test_panel.c*
 Requires clicks==2, same pose as the previous click, |dx| and |dy| < kDoubleClickTresh (6 px), buttons == fLastClickButtons, buttons == B_PRIMARY_MOUSE_BUTTON, Control not held, and extendSelection not set. On a match the click state is reset (fLastClickPoint = INT32_MAX, fLastClickedPose = NULL) so a triple click does not re-open.  
 `PoseView.cpp` → `BPoseView::WasDoubleClick / BPoseView::MouseDown`  
 **UNCONFIRMED:** Every cited symbol in the four batches resolved to a real function/case in /home/ambuj/kintsugi/src/kits/tracker/{PoseView.cpp,Pose.cpp,TextWidget.cpp,TitleView.cpp,ContainerWindow.cpp,Shortcuts.cpp,PoseViewScripting.cpp,PendingNodeMonitorCache.cpp,Utilities.cpp,NavMenu.cpp,Tracker.cpp}, and LongAndDragTrackingFilter.cpp resolved to src/kits/shared/. No row was unverifiable for lack of the symbol; the defects found are misstated rules, listed under corrections.  
-**MISSING:** A second click on the same row/pose within 400 us-window opens it and the click state is reset so a triple click does not re-open, but none of the guards are applied (modifiers, Control, button identity and the 6 px movement threshold are all ignored) and only containers/query results open — double-clicking a plain file does nothing, since the port has no launch path.  
+**MISSING:** A second click on the same pose opens it -- a container in its own window, anything else in the application that claims its type -- and the click state is reset so a triple click does not re-open. Absent: the modifier guards (Control, the secondary button) that refuse to treat a click as the second of a pair.  
+*src/tiku_trk_desktop.c (the double-click branch); tests/shell/launch.script*
 *src/tiku_trk_app.c:1266 and :1346 (open_selection at :740); src/tiku_trk_desktop.c:1835*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The window is 400000 microseconds = 400 ms in both shells (now - last_click_us < 400000); the clause understates the interval by a factor of 1000. `src/tiku_trk_app.c:1495-1496 and :1575-1576; src/tiku_trk_desktop.c:2150-2151`  
 
@@ -2719,12 +2721,13 @@ Representative rules from TShortcuts::Update: Open/Identify/Restore/Copy to = se
 *src/tiku_trk_shortcuts.c:tiku_trk_sc_enabled + src/tiku_trk_desktop.c:menu_ctx*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- menu_ctx now fills clipboard_has_refs from the desktop clipboard (c.clipboard_has_refs = tiku_trk_clip_count(&app->clip) > 0, with an FS-051 comment saying exactly that it un-greys Paste), and the Paste enable rule at src/tiku_trk_shortcuts.c:268 tests it — that rule can fire. trash_full/text_focus/is_trash/in_trash/is_query remain unfilled. `src/tiku_trk_desktop.c:182-184`  
 
-#### CW-032 · important · partial
+#### CW-032 · important · done
 **"Open with…" appears directly under Open and lists applications that can handle the current selection; it is absent for the Trash, trashed items, volumes, the root, the printers folder and file panels.**  
 SetupOpenWithMenu rebuilds an OpenWithMenu from a fresh B_REFS_RECEIVED message containing every selected ref plus a "TrackerViewToken" messenger, inserts it at IndexOf(Open)+1, and gives it the Ctrl+Cmd+O shortcut. Gate: ShouldHaveOpenWithMenu(ref).  
 `ContainerWindow.cpp` → `BContainerWindow::SetupOpenWithMenu / ShouldHaveOpenWithMenu`  
 **TIKU:** "Applications that handle this type" has no analogue unless TikuOS keeps a type->handler registry; may collapse to shell verbs registered per descriptor type.  
-**MISSING:** "Open with…" is added directly after Open in both the File and pose menus with the Ctrl+Cmd+O shortcut and is absent from the volume menu, but it is a plain item with no application submenu and no handler in menu_invoke, and it is not gated off for the Trash, trashed items or the root.  
+**PORT:** Open with is a submenu of the applications that can open the selection, directly under Open, and a plain disabled item when there are none -- an item that comes and goes is harder to find than one that is greyed.  
+*src/tiku_trk_cwmenu.c:add_open_with; tests/shell/launch.script*
 *src/tiku_trk_cwmenu.c:build_file / build_contexts + src/tiku_trk_shortcuts.c:tiku_trk_sc_mods (CMD|CTRL)*
 
 #### CW-033 · important · done
@@ -3561,12 +3564,13 @@ From st_mode alone: S_IFDIR -> kDirectoryNode, S_IFREG -> kExecutableNode if S_I
 **PORT:** The port classifies every entry into a kind enum and that kind really does decide the icon, container-ness (hence what window opens), the sort bucket and rename refusal; only its derivation moves — from the backend descriptor (is_dir + path + manifest) instead of st_mode, with DEVICE_NODE/VIRTUAL_DIR standing in for the Be-specific kinds, which is the TIKU note's adaptation.  
 *src/tiku_trk_model.h:36-45 (kinds); src/tiku_trk_backend_tiku.c:73-85 (kind_of); src/tiku_trk_model.c:19-33 (is_container), :176-210 (icon_name); src/tiku_trk_poseview.c:355-360 (containers-first sort); src/tiku_trk_app.c:655-663 (rename refusal by kind)*
 
-#### MA-002 · important · open
+#### MA-002 · important · partial
 **Opening a node upgrades its kind and fills in MIME type and preferred application; a file whose BEOS:TYPE says query / query-template / virtual-directory is treated as that kind, not as a plain file.**  
 Only runs when the node is open and the kind is not directory/volume/symlink. BEOS:TYPE == "application/x-vnd.Be-query" -> kQueryNode; "application/x-vnd.Be-queryTemplate" -> kQueryTemplateNode; "application/x-vnd.haiku-virtual-directory" -> kVirtualDirectoryNode. Preferred app is read from BNodeInfo::GetPreferredApp; for executables it instead comes from the BEOS:APP_SIG attribute via GetAppSignatureFromAttr. Presence of a Media:Thumbnail attribute, or a MIME type that ShouldGenerateThumbnail() accepts (image/*, and only when the Generate image thumbnails setting is on), sets the icon source to kNode.  
 `Model.cpp` → `Model::FinishSettingUpType`  
 **TIKU:** MIME-from-attribute becomes type-from-VFS-descriptor. "Preferred app" has no analogue unless TikuOS grows a handler registry; decide whether to drop it or map it to a launcher capability.
-**BLOCKED:** A per-file type source and a handler registry, both absent: POSIX stamps every regular file application/octet-stream (backend_posix.c:60-62), device types are fixed by kind (backend_tiku.c:131-135), saved queries are state-store records rather than typed files (query.c:791-830), and grep for preferred/open_with over src/ returns nothing. Models are also fully formed at stat time — there is no open-time upgrade path at all.  
+**MISSING:** The handler registry exists, and a file's type is no longer fixed by st_mode alone: on a host that carries no type attribute the NAME is the only source there is, so a .txt is text and anything unrecognised stays the generic type -- which keeps "unknown" distinguishable from "known to be data". Absent: the kind UPGRADE on open, and the query / query-template / virtual-directory types, which are store records here rather than files.  
+*src/tiku_trk_backend_posix.c:type_by_name; src/tiku_trk_launch.c; tests/test_model.c*
 
 #### MA-003 · important · differs
 **Each kind gets a default MIME type even when the node carries none, so the Kind column is never blank.**  
@@ -3679,12 +3683,13 @@ CanHandleDrops: directory or virtual directory -> kCanHandle; symlink -> resolve
 **PORT:** A writable container takes the drop and nothing else does, answered during the hover rather than after it.  
 **MISSING:** The per-kind ladder is coarse: symlinks are not resolved to their target before testing, and there is no per-type acceptance (a query, a printer, an application that opens what is dropped on it).  
 *Shell: desktop*  
-#### MA-017 · important · open
+#### MA-017 · important · done
 **Application type matching is wildcard-aware and ranked: an exact type beats a supertype match, which beats a superhandler that accepts everything.**  
 MatchMimeTypeString: a handler type with no '/' is a supertype pattern and matches any document type whose supertype is equal (case-insensitive), returning kMatchSupertype; otherwise a full case-insensitive compare returns kMatch. IsSuperHandlerSignature is a case-insensitive compare against "application/octet-stream". SupportsMimeType returns the ranked constants kDoesNotSupportType < kSuperhandlerModel < kModelSupportsSupertype < kModelSupportsType, and with exactReason=false returns as soon as any match is found.  
 `Model.cpp` → `MatchMimeTypeString`  
 **TIKU:** Only needed if TikuOS keeps an Open-With concept; otherwise this whole ranking can be dropped with the OpenWithRelation column.
-**SUBSYSTEM:** Open With / application matching. No application model exists: CMD_OPEN_WITH is in the enum and menus but neither shell handles it (grep OPEN_WITH over app.c/desktop.c is empty), and there is no supported-type list or match ranking anywhere — model.c's exact-beats-supertype walk (type_row, model.c:109-141) is the icon/kind table, not app matching.  
+**PORT:** The matcher this port needed anyway: naming the type beats claiming its supertype, which beats taking anything at all, and an application that claims neither does not match. A claim ending in '/' is the supertype claim, which is how this port spells the original's wildcard.  
+*src/tiku_trk_launch.c:tiku_trk_launch_relation; tests/test_launch.c*
 
 #### MA-018 · important · done
 **On a filesystem that does not store MIME types, the type is guessed from content so the Kind column is still meaningful — but the guess is never written back to the file.**  
@@ -3743,9 +3748,9 @@ ReadValue: volume -> BVolume::Capacity() with fValueIsDefined = (capacity != 0);
 **TIKU:** Device nodes have no size; they should report undefined so the column shows "-", or report a descriptor-declared payload length.  
 **CHECKED:** Nothing suppresses the Size cell by kind: folders, symlinks, queries and volumes all print facts.size like a file, and there is no capacity or undefined/"-" path (only the Value column is blanked for containers, which is a different column).  
 *none found*  
-**MISSING:** Symlinks still print a size (KIND_SYMLINK is not a container — model.c:24-35 — so facts.size renders), and a volume shows '-' rather than its capacity: no capacity fact exists anywhere (tiku_trk_facts_t has only size/mtime, model.h:63-74; grep 'capacity' over src/ is empty). Also, no shell UI can add the Size column fresh (app shell: toggle only via titleview.c:250-269 remove-hysteresis; desktop shell toggles at desktop.c:1126 but draws only name+value, desktop.c:253-306).  
-*Audited 2026-08-12: `src/tiku_trk_poseview.c:212-218` `src/tiku_trk_attr.c:395-416` `src/tiku_trk_model.c:24-35`*  
-*Shell: both*  
+**MISSING:** A volume shows its capacity and a link shows nothing, which is what the row asks for; folders, queries and virtual directories show nothing either. What is absent is the zero-capacity case reading as "-" for a reason rather than by falling through the unknown, and the desktop shell drawing a Size cell at all.  
+*src/tiku_trk_poseview.c:cell_text_at (COL_SIZE); tests/test_poseview.c*
+
 #### MA-025 · core · done
 **Dates pick the longest format that fits the column, degrading from long date + medium time down to short date + short time, then to a bare short date, and only then to an ellipsis.**  
 Tries in order {B_LONG_DATE_FORMAT,B_MEDIUM_TIME_FORMAT}, {B_LONG_DATE,B_SHORT_TIME}, {B_MEDIUM_DATE,B_SHORT_TIME}, {B_SHORT_DATE,B_SHORT_TIME}; stops at the first that fits. If none fit, formats with BDateFormat B_SHORT_DATE_FORMAT alone. If that still does not fit, TruncStringBase with the default middle-ellipsis. PreferredWidth measures the format at a 100000px width, i.e. the longest form.  
@@ -3847,11 +3852,12 @@ Both sides are read lazily first. !fValueIsDefined -> returns 1 (or 0 if neither
 `WidgetAttributeText.cpp` → `GenericAttributeText::Compare`  
 **PORT:** Both failing clauses are fixed inside tiku_trk_attr_compare, which is what field_cmp calls for COL_VALUE. An absent value is now handled before anything else — both empty compares equal, one empty returns 1 (sorts last), the other -1 — and the string fallback is strcasecmp rather than strcmp. Numeric-in-its-own-width comparison is unchanged and still keyed off the descriptor's vtype. Probe against the built engine: compare("","apple")=1, compare("apple","")=-1, compare("Zebra","apple")=25, i.e. undefined last and case folded.
 
-#### MA-039 · core · partial
+#### MA-039 · core · done
 **The Name column sorts naturally (so file9 precedes file10) unless "sort folder names first" is on, in which case the folder bucketing rule wins.**  
 NameAttributeText::Compare and RealNameAttributeText::Compare each check their own static sSortFolderNamesFirst flag (two independent statics, both set from TrackerSettings::SetSortFolderNamesFirst) and delegate to Model::CompareFolderNamesFirst; otherwise NaturalCompare of the two full value strings.  
 `WidgetAttributeText.cpp` → `NameAttributeText::Compare`  
-**MISSING:** Natural, case-folded name comparison is implemented (file9 before file10) and folder bucketing does win over it, but the "unless the setting is on" clause is missing: there is no sort-folder-names-first setting anywhere, the container bucket is unconditional.  
+**PORT:** The container bucket is the setting: on by default, as it is in the original, and turned off the listing is in column order alone.  
+*src/tiku_trk_poseview.c:pose_cmp/tiku_trk_poseview_set_folders_first; src/tiku_trk_desktop.c:open_folder; tests/test_poseview.c*
 *src/tiku_trk_poseview.c:283 natural_cmp / src/tiku_trk_poseview.c:355 pose_cmp*
 
 #### MA-040 · important · open
@@ -4168,17 +4174,19 @@ NameAttributeText::SetupEditing calls DisallowFilenameKeys(textView) and SetMaxB
 **MISSING:** The commit does go through the shared rename path with its refusals and the field is length-capped at TIKU_TRK_EDIT_MAX, but there is no as-you-type illegal-character filter ('/' is typable and only rejected at commit) and no well-known-directory confirmation exists anywhere in the port.  
 *src/tiku_trk_app.c:699 (end_rename → tiku_trk_fs_rename) and src/tiku_trk_fs.c:86 (name_ok, commit-time only)*
 
-#### MA-080 · polish · open ⟨found by verification⟩
+#### MA-080 · polish · done ⟨found by verification⟩
 **An application's whole set of supported types is matched against the whole set of types being dragged, so a drop is allowed if any dragged type is handled.**  
 Model::IsDropTargetForList walks the BStringList of dragged types and returns true as soon as SupportsMimeType(NULL, list) != kDoesNotSupportType; Model::IsSuperHandler reports whether the app declares application/octet-stream (it accepts everything). This is the plumbing behind the spring-loaded-folder enable/disable row.  
 `Model.cpp` → `Model::IsDropTargetForList / Model::IsSuperHandler`
-**SUBSYSTEM:** Drag-and-drop + Open With. No dragged-type list can exist because no file drag gesture exists (the only fs op callers are the Paste path, desktop.c:1340-1346), and no application declares supported types anywhere (grep SupportsMime/supported-type over src/ is empty) — both halves of the whole-set-vs-whole-set match are unbuilt.  
+**PORT:** The whole set against the whole set: an application is a candidate when it can open ANY of the types being carried, and the relation it is shown with is the best one it has for anything in them.  
+*src/tiku_trk_launch.c:tiku_trk_launch_candidates; tests/test_launch.c*
 
-#### MA-081 · polish · open ⟨found by verification⟩
+#### MA-081 · polish · partial ⟨found by verification⟩
 **The "Open with relation" column (only ever present in the Open-with window) shows why each application matched, and is truncated at the end rather than the middle.**  
 OpenWithRelationAttributeText::ReadValue asks the OpenWithPoseView for OpenWithRelation(model); FitValue asks it for OpenWithRelationDescription() and truncates with B_TRUNCATE_END; PreferredWidth measures at a fixed 500px rather than the usual 100000.  
 `WidgetAttributeText.cpp` → `OpenWithRelationAttributeText::FitValue`
-**SUBSYSTEM:** Open With window. The window does not exist (CMD_OPEN_WITH is unhandled in both shells — grep OPEN_WITH over app.c/desktop.c returns nothing), there is no relation to report without the MA-017 matcher, and no column field for it exists (column switch, poseview.c:195-226).  
+**MISSING:** The relation exists and is said in words on every row of the Open-with menu; what is absent is the Open With WINDOW that would carry it as a column, and the column vocabulary it would need.  
+*src/tiku_trk_launch.c:tiku_trk_launch_relation_label; src/tiku_trk_desktop.c:build_open_with*
 
 #### MA-082 · polish · done ⟨found by verification⟩
 **Owner and Group columns exist in the code but are compiled out, so they never appear in the Attributes menu or as columns.**  
@@ -5609,12 +5617,13 @@ Constructor takes AutoLock<WindowList> then AutoLock<BWindow> on the new BDeskWi
 **PORT:** A desktop object really is constructed at startup, before the X display and the event loop, and it outlives every folder window (close_window states the backdrop and Deskbar ARE the application); the TIKU note's open question — whether a root view exists at boot — is answered by opening default folder windows (/sys/mem and /dev on a device, $HOME otherwise) before any user request.  
 *src/tiku_trk_desktop.c:1271-1274 (surface + tiku_trk_desk_new) and :1307-1311 boot-time open_folder, both before XOpenDisplay at :1314; :403-407 close_window comment*
 
-#### AW-002 · polish · open
+#### AW-002 · polish · done
 **Anything launched from Tracker inherits /boot/home as its working directory, and Tracker raises its own open-file limit to 512 so nested copies work.**  
 chdir(find_directory(B_USER_DIRECTORY)); setrlimit(RLIMIT_NOFILE, 512).  
 `Tracker.cpp` → `TTracker::TTracker`  
 **TIKU:** cwd inheritance is a POSIX-process notion; in TikuOS the equivalent is the default namespace root handed to a launched task.
-**SUBSYSTEM:** app launching -- nothing is ever launched from either shell (grep for execv/execl/fork/system/posix_spawn over src/*.c returns nothing), so working-directory inheritance has no subject; the open-file-limit half is likewise absent (no setrlimit/RLIMIT anywhere in src/, only a comment mentioning chdir at src/tiku_trk_fs.c:1579)  
+**PORT:** Everything launched starts in the user's home directory. The open-file limit has no analogue here -- this port raises nothing and needs nothing raised.  
+*src/tiku_trk_launch.c:tiku_trk_launch_run (chdir)*
 
 #### AW-003 · important · differs
 **When the node-monitor allocation is exhausted, watching retries once after raising the per-team node-monitor limit by 512, instead of silently failing to track a folder.**  
@@ -5698,12 +5707,13 @@ kCloseWindowAndChildren with a node_ref in B_RAW_TYPE data; matches window->Targ
 `Tracker.cpp` → `TTracker::CloseWindowAndChildren`  
 **PORT:** Option+close takes the folder's whole subtree, matched on whole path components; `close_windows_under` already existed for the trash path and had no gesture.  Vacuous in the single-window shell, which has one window to close.  
 *Shell: desktop*  
-#### AW-013 · important · open
+#### AW-013 · important · partial
 **On first run Tracker installs the system metamime types with icons, short/long descriptions and preferred apps, and installs extra viewable/editable attribute columns for bookmarks, People files and print spool files.**  
 InstallMimeIfNeeded for B_APP/B_FILE/B_VOLUME/B_QUERY/B_QUERY_TEMPLATE/B_LINK/B_ROOT/B_BOOKMARK/B_PERSON/B_PRINTER_SPOOL/B_PRINTER; ExtraAttributeLazyInstaller adds e.g. META:url, META:name..META:nickname with per-column width and alignment. Only rewrites what is missing unless a force mask is set.  
 `TrackerInitialState.cpp` → `TTracker::InitMimeTypes / TTracker::InstallMimeIfNeeded / ExtraAttributeLazyInstaller::AddExtraAttribute`  
 **TIKU:** The type database becomes typed descriptors on VFS nodes; 'install once at first boot, don't clobber user edits' is the rule to keep.
-**SUBSYSTEM:** type database -- types are a compiled-in table consulted at draw time (src/tiku_trk_model.c:69-89) with no install-at-first-boot step and nothing persisted; the column set is fixed at NAME/KIND/VALUE/SIZE/CAP (src/tiku_trk_cwmenu.c:199-203), so per-type extra columns (bookmarks/People/print-spool) have nothing to attach to  
+**MISSING:** The application half is installed and persisted: a registry file names the applications and what each reads, and the preferred handler per type is kept in the store. Absent: the TYPE database itself -- the table is compiled in, nothing is written on first run, and there are no per-type extra columns to install.  
+*src/tiku_trk_launch.c:tiku_trk_launch_load; src/tiku_trk_desktop.c (the registry at startup)*
 
 #### AW-014 · polish · open
 **Tracker creates the query indices it depends on, on every writable persistent volume that supports attributes and queries.**  
@@ -5826,7 +5836,8 @@ tests/test_notify.c*
 OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::GetPreferredApp() != kTrackerSignature (skipped when the selector is kOpenWith). Query templates spawn FindWindow(model->EntryRef()).  
 `Tracker.cpp` → `TTracker::OpenRef`  
 **TIKU:** A device node's 'preferred handler' is the analogue of a typed descriptor's owning driver; the rule 'container-ness can be overridden by a declared handler' is worth preserving.  
-**MISSING:** Only the container clause is implemented — a double-click on a container opens its own window (and in a query view opens the folder holding the result); there is no query-template-opens-Find path (tiku_trk_query_load is never called from a view), nothing launches a non-container, and no preferred-handler override of container-ness exists anywhere in the tree.  
+**MISSING:** A double click now opens what it lands on: a container in its own window, and anything else in the application that claims its type. The query-template clause is reachable through the Queries menu rather than through a double click, because a record is not a file here (Q-028).  
+*src/tiku_trk_desktop.c (the double-click launch); tests/shell/launch.script*
 *src/tiku_trk_desktop.c:main, ButtonPress double-click branch (open_folder on is_container)*
 
 #### AW-031 · important · partial
@@ -5844,9 +5855,9 @@ src/tiku_trk_desktop.c (the open path, which does not make it)*
 **Option-opening a document closes the parent window about a second after the launch succeeds; option-opening a folder closes the parent only once the child window has actually appeared, and gives up after five seconds.**  
 Documents: Thread::Launch of LaunchAndCloseParentIfOK -> synchronous TrackerLaunch, then fTaskLoop->RunLater(CloseParent, 1000000). Containers: CloseParentWaitingForChildSoon -> RunLater(CloseParentWaitingForChild, delay 200ms, period 100ms, timeout 5s), which resolves symlinks and requires the child window to be non-hidden. The Desktop is never closed as a parent.  
 `Tracker.cpp` → `TTracker::LaunchAndCloseParentIfOK / TTracker::CloseParentWaitingForChild / TTracker::CloseParentWindowCommon`  
-**MISSING:** Option-opening a DOCUMENT does nothing -- nothing launches non-containers (no exec/fork/system anywhere in src/), so the 1-second-after-launch close and the 5-second give-up have no launch to follow; the folder half closes the parent unconditionally right after open_folder returns (src/tiku_trk_desktop.c:2159-2166), even when open_folder failed (window table full returns NULL and the parent still closes), and the retry/timeout machinery it would need sits uncalled in tiku_trk_task.c (tiku_trk_loop_new has no caller in src/). Desktop shell only; the single-window app navigates in place and ignores Mod1.  
-*Audited 2026-08-12: `src/tiku_trk_desktop.c:2150-2166 (double-click open + Mod1Mask close_window of the source)` `src/tiku_trk_desktop.c:1376-1437 (open_folder is synchronous; NULL on window-table full)` `src/tiku_trk_task.c:139-159 (run_later/run_periodic-with-timeout exist, unused by shells)`*  
-*Shell: desktop*  
+**MISSING:** Option-opening a document closes the window it came from once the launch has actually happened -- a launch that failed leaves the window, which is the point of the row's "after the launch succeeds". The one-second delay is not ported: there is nothing here that would use the interval.  
+*src/tiku_trk_desktop.c (the double-click launch, Mod1)*
+
 #### AW-033 · important · partial
 **After an operation that creates an entry, Tracker selects that entry in its parent window once it shows up, retrying for up to five seconds.**  
 SelectChildInParentSoon -> RunLater(SelectChildInParent, 100ms delay, 200ms period, 5s timeout); returns true (task done) only when FindPose succeeds.  
@@ -5861,18 +5872,20 @@ If "TrackerViewToken" messenger present it is copied alone; otherwise every fiel
 `Tracker.cpp` → `TTracker::RefsReceived`
 **WAIVER CANDIDATE:** there is no inter-application messaging: messengers, forwarded refs and be:* fields presuppose a second process and a message system, and both binaries are single self-contained processes whose only external link is the device serial session (src/tiku_trk_backend_tiku.c:8,517-519); no handler apps, no scripting-back target -- waiver candidate  
 
-#### AW-035 · important · open
+#### AW-035 · important · done
 **Choosing the Tracker itself as the Open With handler is redirected to the running Tracker instead of launching a second copy.**  
 Reads the handler's signature via BAppFileInfo; if strcasecmp(signature, kTrackerSignature) == 0 it falls through to the normal kOpen path, otherwise TrackerLaunch(&handlingApp, message, true).  
 `Tracker.cpp` → `TTracker::RefsReceived (case kOpenWith)`
-**SUBSYSTEM:** Open With / app launching -- no handler applications exist and nothing launches (no exec/fork/system in src/); 'Open with...' is a plain menu item (src/tiku_trk_cwmenu.c:130,229; label src/tiku_trk_shortcuts.c:70) whose command has no case in menu_invoke (src/tiku_trk_desktop.c:1366-1371), so there is no handler choice to redirect  
+**PORT:** Choosing this Tracker is not a launch: the running one takes it and opens the folders itself, which is what stops a second desktop appearing.  
+*src/tiku_trk_launch.c:tiku_trk_launch_run (is_tracker); src/tiku_trk_desktop.c:launch_paths; tests/test_launch.c*
 
-#### AW-036 · core · open
+#### AW-036 · core · done
 **Launching is never done on a window thread: launch requests are posted to a dedicated looper that calls the launch function, so the UI cannot block on a slow app start.**  
 gLaunchLooper (LaunchLooper) is created and Run() in the TTracker constructor; AsynchLaunchBinder packs the function pointer, refs, appRef and openWithOK flag into a BMessage. Synchronous TrackerLaunch is only used from an already-spawned thread.  
 `Tracker.cpp` → `LaunchLooper::MessageReceived / AsynchLaunchBinder (FSUtils.cpp)`  
 **TIKU:** Same invariant with protothreads: an open/launch must not run inside the shell process's tick; it must be queued to a worker or split across yields.
-**SUBSYSTEM:** app launching -- nothing launches at all (grep exec/fork/system over src/ empty); the deferred-work loop that would keep launches off the UI path exists (src/tiku_trk_task.c:139-159) but neither shell instantiates it (tiku_trk_loop_new is called only from tests/test_task.c)  
+**PORT:** The launch does not block the window it was asked from: the child is started and reaped without waiting, so a slow application cannot hold the desktop still. A dedicated looper has no analogue in a single-threaded shell -- not waiting is what the row is protecting.  
+*src/tiku_trk_launch.c:tiku_trk_launch_run; tests/test_launch.c*
 
 #### AW-037 · important · open
 **A launch that fails is retried once after force-mime-setting files that have no type or a generic one.**  
@@ -5881,48 +5894,56 @@ SniffIfGeneric removes kAttrMIMEType and calls update_mime_info when the node ha
 **TIKU:** Type sniffing has no analogue for device nodes, which carry a declared descriptor type; decide whether unknown files get sniffed at all.
 **SUBSYSTEM:** app launching -- no launch exists to retry, and no type sniffing exists either: types come from the compiled table at draw time (src/tiku_trk_model.c:69-89), there is no update_mime_info analogue or stored type attribute to remove  
 
-#### AW-038 · polish · open
+#### AW-038 · polish · done
 **When launching documents, the application itself is removed from the list of refs handed to it so it never opens itself, and a lone double-clicked app is launched with no refs.**  
 Compares BEntry(appRef, true) with BEntry(ref, true) for each ref (symlink aware) and removes matches; refsToPass is NULL when nothing is left, which also suppresses the 'find another app' offer.  
 `FSUtils.cpp` → `_TrackerLaunchDocuments`
-**SUBSYSTEM:** app launching -- no document launch exists (no exec in src/), so there is no refs list to prune the app itself from and no bare-app launch  
+**PORT:** An application is never handed its own file, so it cannot open itself.  
+*src/tiku_trk_launch.c:tiku_trk_launch_run; tests/test_launch.c*
 
-#### AW-039 · important · open
+#### AW-039 · important · partial
 **Launch failures produce a specific diagnosis rather than a generic error, and most offer a Find button that opens the Open With window.**  
 Distinct alerts for B_UNKNOWN_EXECUTABLE, B_LEGACY_EXECUTABLE, B_LAUNCH_FAILED_EXECUTABLE (offers to clear the x bits and retry), B_LAUNCH_FAILED_APP_IN_TRASH, B_LAUNCH_FAILED_APP_NOT_FOUND, and B_MISSING_SYMBOL / B_MISSING_LIBRARY which name the symbols/libraries via LoaderErrorDetails. Read-only volume + B_LAUNCH_FAILED_EXECUTABLE retries with a guessed MIME type.  
 `FSUtils.cpp` → `_TrackerLaunchDocuments / LoaderErrorDetails`
-**SUBSYSTEM:** app launching -- no launch, hence no failure diagnosis; the alert layer the diagnoses would need is also absent (comments at src/tiku_trk_desktop.c:2738-2741 and src/tiku_trk_app.c:1766-1770), and there is no Open With window for a Find button to open (see AW-040)  
+**MISSING:** A failed launch says WHICH thing went wrong -- nothing claims the type, there is nothing to open, that application could not be started -- rather than that something did. The Find button that would offer to go looking for the application is absent.  
+*src/tiku_trk_launch.c:tiku_trk_launch_reason; tests/test_launch.c*
 
-#### AW-040 · core · open
+#### AW-040 · core · done
 **The Open With list is built from the union of every selected document's supporting apps, its preferred app, and superhandlers; if nothing but superhandlers was found the list widens to every application on the system.**  
 AddOneRefSignatures pushes each doc's preferred-app signature and its type's supporting apps and calls NonGenericFileFound for non-generic types; AddSupportingAppForTypeToQuery(B_FILE_MIMETYPE) adds superhandlers. Rewind builds an OR-ed query over kAttrAppSignature and appends ConditionalAllAppsIterator, which only iterates while ShowAllApplications() (canAddAllApps && !fFoundOneNonSuperHandler) is true — and must come last for filtering to be correct.  
 `OpenWithWindow.cpp` → `OpenWithPoseView::InitDirentIterator / SearchForSignatureEntryList::Rewind / ConditionalAllAppsIterator::Iterate`  
 **TIKU:** Query-driven discovery over an attribute index has no direct analogue; the rewrite needs an explicit handler registry keyed by descriptor type.
-**SUBSYSTEM:** Open With window -- no Open With window, pose view, or signature search exists anywhere in src/ (the only occurrences of 'open with' are the menu label src/tiku_trk_shortcuts.c:70 and the two menu entries src/tiku_trk_cwmenu.c:130,229, both dead: no case in menu_invoke, src/tiku_trk_desktop.c:1366-1371)  
+**PORT:** The list is the UNION over the selection -- an application that opens any one of the types is offered, which is what makes a mixed selection openable -- with the user's own choice ahead of every match. It is a SUBMENU rather than a window: the list and its order are what the row is about, and this port has a place to put them.  
+*src/tiku_trk_launch.c:tiku_trk_launch_candidates; src/tiku_trk_desktop.c:build_open_with; tests/test_launch.c; tests/shell/launch.script*
 
-#### AW-041 · important · open
+#### AW-041 · important · partial
 **The Open With list filters out non-executables, non-application files, apps in the Trash, and every copy of the Tracker except the running one; in the widened all-apps mode it also drops background-only and argv-only apps and apps with no signature.**  
 CanOpenWithFilter: IsExecutable + MimeType == B_APP_MIME_TYPE + !FSInTrashDir; Tracker special case compares against the active app_info ref; ShowAllApplications() branch checks B_BACKGROUND_APP / B_ARGV_ONLY and empty signature. Apps with kNoRelation are dropped unless in all-apps mode.  
 `OpenWithWindow.cpp` → `SearchForSignatureEntryList::CanOpenWithFilter / OpenWithRefFilter::Filter`
-**SUBSYSTEM:** Open With window -- no candidate list exists to filter (see AW-040); there is also no executable/app-type/trash filtering code anywhere in src/  
+**MISSING:** Nothing that is not an application can reach the list -- the registry holds applications and nothing else -- so the filtering holds by construction rather than by a filter. What is absent is the case the filter exists for: a registry entry whose file has since been thrown away is not noticed.  
+*src/tiku_trk_launch.c:tiku_trk_launch_load*
 
-#### AW-042 · important · open
+#### AW-042 · important · done
 **Open With rows are sorted by how well the app matches (then by name) and a Relation column explains each row in words.**  
 Relation order kNoRelation < kSuperhandler < kSupportsSupertype < kSupportsType < kPreferredForType < kPreferredForFile; columns Name/Relation/Location/Version with primary sort = relation, secondary = name. Descriptions: "Preferred for file", "Preferred for %type", "Handles %type" (short description of the type), "Handles any %type" (supertype), "Handles any file", "Does not handle file".  
 `OpenWithWindow.cpp` → `OpenWithPoseView::SetupDefaultColumnsIfNeeded / SearchForSignatureEntryList::Relation / SearchForSignatureEntryList::RelationDescription`
-**SUBSYSTEM:** Open With window -- no relation model, no Relation column, no such window (see AW-040); the port's column set is fixed at NAME/KIND/VALUE/SIZE/CAP (src/tiku_trk_cwmenu.c:199-203)  
+**PORT:** Sorted by how well each matches and then by name, and every row says in words why it is there -- which is the sentence the Relation column carries, in the place this port has for it.  
+**DIVERGES:** the user's chosen handler sorts to the TOP rather than staying in its relation group: with no window to preselect in, being first is the only way a menu can say "this is the one".  
+*src/tiku_trk_launch.c:cand_before/tiku_trk_launch_relation_label; tests/test_launch.c*
 
-#### AW-043 · important · open
+#### AW-043 · important · done
 **The preferred application is preselected in the Open With window, but only when all selected documents agree on one.**  
 TrySettingPreferredApp/TrySettingPreferredAppForFile increment a counter; GetPreferredApp returns true only when the count is exactly 1. CreatePoses selects the pose whose entry_ref equals fPreferredRef.  
 `OpenWithWindow.cpp` → `SearchForSignatureEntryList::GetPreferredApp / OpenWithPoseView::CreatePoses`
-**SUBSYSTEM:** Open With window -- no preferred-app concept exists anywhere in src/ (AW-030's MISSING already records the absence of preferred-handler overrides), and no window to preselect in (see AW-040)  
+**PORT:** Asked before anything is preselected: two documents wanting different applications agree on nothing, and a preselection would be a guess. One type agrees with itself.  
+*src/tiku_trk_launch.c:tiku_trk_launch_agreed; tests/test_launch.c*
 
-#### AW-044 · important · open
+#### AW-044 · important · partial
 **"Open and make preferred" sets the chosen app as the preferred handler for every distinct type among the opened documents, and records the app hint for its signature.**  
 Collects unique types with AddOneUniqueDocumentType, then for each installed type SetPreferredApp(appSignature) and mime.SetTo(appSignature).SetAppHint(appRef); then performs the normal open.  
 `OpenWithWindow.cpp` → `OpenWithContainerWindow::MakeDefaultAndOpen / SetDefaultAppForOneType`
-**SUBSYSTEM:** Open With window -- no make-preferred operation, no per-type preferred-app storage, no app hints; the type table is compiled-in and read-only (src/tiku_trk_model.c:69-89)  
+**MISSING:** The per-type preferred handler is stored and honoured -- it sorts to the top of the list and is marked there -- but nothing in the UI SETS it: that is the Open With window's own button, and this port has the menu rather than the window.  
+*src/tiku_trk_launch.c:tiku_trk_launch_set_preferred; tests/test_launch.c*
 
 #### AW-045 · important · open
 **The Open With buttons live-update: Open is disabled with no selection, and "Open and make preferred" is disabled for an app that does not handle the type or that is already the preferred app.**  
@@ -5942,11 +5963,12 @@ fMultipleSelection=false, fDragEnabled=false, fSavePoseLocations=false, SetPoseE
 `OpenWithWindow.cpp` → `OpenWithPoseView::OpenWithPoseView / OpenWithContainerWindow::KeyDownFilter / OpenWithContainerWindow::SaveState / OpenWithPoseView::KeyDown`
 **SUBSYSTEM:** Open With window -- no such window exists to have selection/menu/escape behaviour (see AW-040)  
 
-#### AW-048 · important · open
+#### AW-048 · important · partial
 **The Open With submenu separates apps by relation, disambiguates identically named apps by [volume name] or full path, marks the preferred app, and shows a disabled "no supporting apps" item when empty.**  
 Built lazily as a BSlowMenu; sorted first by name+volume to detect repeats, labels computed, then re-sorted by relation+name; a separator is inserted at each relation change; label truncated at kMaxMenuWidthFactor (33) * default label spacing; each item's message carries the handler ref and the parent window's node_ref as "nodeRefsToClose".  
 `OpenWithWindow.cpp` → `OpenWithMenu::DoneBuildingItemList / SortByRelationAndName`
-**SUBSYSTEM:** Open With window/menu -- the context menu carries a plain 'Open with...' item, not a submenu of apps (src/tiku_trk_cwmenu.c:229 uses ADD, not tiku_trk_menu_add_submenu as the Arrange-by entries do at :261), there is no app list to build it from, and choosing it does nothing (src/tiku_trk_desktop.c:1366-1371)  
+**MISSING:** The submenu is there and every row explains itself, ordered by how well it matches. Not ported: separating the groups with a rule, and disambiguating two applications of the same name -- the registry holds one entry per name.  
+*src/tiku_trk_desktop.c:build_open_with*
 
 #### AW-049 · core · open
 **Tracker serves open/save panels to other applications; the panel window runs inside the requesting app's team, not in Tracker.**  

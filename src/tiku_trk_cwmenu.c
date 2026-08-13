@@ -112,6 +112,26 @@ wants_clipboard(const tiku_trk_sc_ctx_t *c)
     return !(c->is_root || c->is_trash || c->in_trash);
 }
 
+/**
+ * @brief Open with: a SUBMENU of applications when there are any (AW-048).
+ *
+ * The plain item stays when the list is empty -- disabled, because there is
+ * nothing behind it -- rather than disappearing: an item that comes and
+ * goes is harder to find than one that is greyed.
+ */
+static void
+add_open_with(tiku_trk_cwmenu_t *cw, tiku_trk_menu_t *m,
+              const tiku_trk_sc_ctx_t *c)
+{
+    if (cw->open_with.count > 0) {
+        (void)tiku_trk_menu_add_submenu(m, "Open with", &cw->open_with,
+                                        c->selection > 0);
+    } else {
+        ADD(m, TIKU_TRK_CMD_OPEN_WITH);
+        tiku_trk_menu_enable(m, TIKU_TRK_CMD_OPEN_WITH, 0);
+    }
+}
+
 static void
 build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -130,7 +150,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     /* Between Open and Open with: a query is edited rather than opened,
      * and the item is present only when there is one (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
-    ADD(m, TIKU_TRK_CMD_OPEN_WITH);
+    add_open_with(cw, m, c);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
     /* In the Trash, Delete and Restore stand where Duplicate and Move to
@@ -232,7 +252,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     /* Between Open and Open with: a query is edited rather than opened,
      * and the item is present only when there is one (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
-    ADD(m, TIKU_TRK_CMD_OPEN_WITH);
+    add_open_with(cw, m, c);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
     if (c->is_trash || c->in_trash) {

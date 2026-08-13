@@ -1067,6 +1067,80 @@ main(void)
               "offers the user things that are not there");
     }
 
+    printf("\nwhat the Size column says, and what sorts first "
+           "(MA-024, MA-039)\n");
+    {
+        tiku_trk_poseview_t *v2;
+        char sub2[256];
+        int i, folder_at = -1, file_at = -1;
+
+        /* A folder whose NAME sorts last, so folders-first is the only
+         * thing that could put it in front. */
+        snprintf(sub2, sizeof sub2, "%s/zzz", dir);
+        (void)mkdir(sub2, 0755);
+        v2 = tiku_trk_poseview_new(b, dir);
+        if (v2 != NULL) {
+            (void)tiku_trk_poseview_reload(v2);
+            for (i = 0; i < tiku_trk_poseview_count(v2); i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, i);
+
+                if (p == NULL) { continue; }
+                if (tiku_trk_model_is_container(&p->model) &&
+                    folder_at < 0) { folder_at = i; }
+                if (!tiku_trk_model_is_container(&p->model) &&
+                    file_at < 0) { file_at = i; }
+            }
+            check(folder_at >= 0 && file_at >= 0 && folder_at < file_at,
+                  "MA-039",
+                  "folders sort ahead of files, which is the setting's "
+                  "default and what makes a listing readable");
+            tiku_trk_poseview_set_folders_first(v2, 0);
+            folder_at = file_at = -1;
+            for (i = 0; i < tiku_trk_poseview_count(v2); i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, i);
+
+                if (p == NULL) { continue; }
+                if (tiku_trk_model_is_container(&p->model) &&
+                    folder_at < 0) { folder_at = i; }
+                if (!tiku_trk_model_is_container(&p->model) &&
+                    file_at < 0) { file_at = i; }
+            }
+            check(file_at >= 0 && folder_at >= 0 && file_at < folder_at,
+                  "MA-039",
+                  "turned off, the listing is in column order alone -- a "
+                  "name that sorts first is first whatever it is");
+            {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, 0);
+                char buf[64];
+                tiku_trk_model_t vol;
+
+                /* A volume reports its capacity where a file reports its
+                 * size; a plain folder reports neither. */
+                if (p != NULL) {
+                    vol = p->model;
+                    p->model.kind = TIKU_TRK_KIND_VOLUME;
+                    p->model.facts.total = 4096u * 1024u;
+                    check(strcmp(tiku_trk_poseview_cell_text(v2, p,
+                              TIKU_TRK_COL_SIZE, buf, sizeof buf), "-") != 0,
+                          "MA-024",
+                          "a volume's Size is its CAPACITY, not a dash -- "
+                          "the fact is carried and nothing was reading it");
+                    p->model = vol;
+                    p->model.kind = TIKU_TRK_KIND_SYMLINK;
+                    p->model.facts.size = 12;
+                    check(strcmp(tiku_trk_poseview_cell_text(v2, p,
+                              TIKU_TRK_COL_SIZE, buf, sizeof buf), "-") == 0,
+                          "MA-024",
+                          "and a link shows none: its own bytes are not "
+                          "what anyone reading the column is asking about");
+                    p->model = vol;
+                }
+            }
+            tiku_trk_poseview_free(v2);
+        }
+        (void)rmdir(sub2);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

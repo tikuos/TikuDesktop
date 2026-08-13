@@ -93,6 +93,7 @@ struct tiku_trk_poseview {
      * every icon-mode height falls back to the art size until it does. */
     int                 font_h, font_a;
     int                 row_h;      /* what the owner draws, 0 = derive  */
+    int                 folders_first;  /* the setting, on by default    */
     tiku_trk_hit_fn     icon_hit;
     void               *icon_hit_ctx;
     /* The pixel origin of each icon mode, kept apart from the list's row
@@ -241,11 +242,21 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         return (p->model.facts.req_cap[0] != '\0') ? p->model.facts.req_cap
                                                    : "-";
     case TIKU_TRK_COL_SIZE:
-        /* Containers have no size of their own to report; -1 is the
-         * unknown that reads as "-". */
+        /* A volume reports its CAPACITY, which is the size it has; every
+         * other container has none of its own, and neither does a link --
+         * a link's own bytes are not what anyone reading the column is
+         * asking about.  -1 is the unknown that reads as "-" (MA-024). */
+        if (p->model.kind == TIKU_TRK_KIND_VOLUME) {
+            (void)tiku_trk_attr_size_fit(
+                (p->model.facts.total > 0u)
+                    ? (int64_t)p->model.facts.total : -1,
+                width, v->measure, v->measure_ctx, buf, max);
+            return buf;
+        }
         (void)tiku_trk_attr_size_fit(
-            tiku_trk_model_is_container(&p->model) ? -1
-                                                   : p->model.facts.size,
+            (tiku_trk_model_is_container(&p->model) ||
+             p->model.kind == TIKU_TRK_KIND_SYMLINK) ? -1
+                                                     : p->model.facts.size,
             width, v->measure, v->measure_ctx, buf, max);
         return buf;
     case TIKU_TRK_COL_DATE:
@@ -411,8 +422,10 @@ pose_cmp(const void *pa, const void *pb)
     int r;
 
     /* Containers first, then by the sort field: a folder is not just a big
-     * file, and mixing them makes a listing unreadable. */
-    {
+     * file, and mixing them makes a listing unreadable.  It is a SETTING,
+     * though -- the user can ask for one list sorted by the column alone
+     * (MA-039). */
+    if (g_sorting->folders_first) {
         int ca = tiku_trk_model_is_container(&a->model);
         int cb = tiku_trk_model_is_container(&b->model);
         if (ca != cb) {
@@ -741,6 +754,7 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     if (v == NULL) {
         return NULL;
     }
+    v->folders_first = 1;
     v->poses = calloc(POSES_MAX, sizeof *v->poses);
     v->filtered = calloc(POSES_MAX, sizeof *v->filtered);
     v->band_was = calloc(POSES_MAX, 1u);
@@ -2521,6 +2535,15 @@ tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v)
     /* Tracker's own: ceil(font height * 1.65), which is what leaves a mini
      * icon room in the row rather than touching both edges. */
     return (int)((float)v->font_h * 1.65f + 0.999f);
+}
+
+void
+tiku_trk_poseview_set_folders_first(tiku_trk_poseview_t *v, int on)
+{
+    if (v != NULL && v->folders_first != (on ? 1 : 0)) {
+        v->folders_first = on ? 1 : 0;
+        resort(v);
+    }
 }
 
 void
