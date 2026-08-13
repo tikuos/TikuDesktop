@@ -436,6 +436,8 @@ main(void)
         int ox, oy;
 
         tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_SIZE);
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_SIZE);   /* reversed */
         tiku_trk_poseview_set_viewport(v, 60, 40);
         tiku_trk_poseview_set_origin(v, 30, 20);
         tiku_trk_poseview_origin(v, &ox, &oy);
@@ -450,6 +452,15 @@ main(void)
             (void)tiku_trk_poseview_restore_state(again);
             check(tiku_trk_poseview_mode(again) == TIKU_TRK_MODE_ICON,
                   "MA-061", "the mode comes back");
+            check(tiku_trk_poseview_sort_field(again) ==
+                      tiku_trk_poseview_sort_field(v) &&
+                  tiku_trk_poseview_sort_reverse(again) ==
+                      tiku_trk_poseview_sort_reverse(v),
+                  "MA-061",
+                  "and so do the SORT keys: a folder arranged by one "
+                  "column and closed came back arranged by name, which is "
+                  "the arrangement lost in the one place a user would look "
+                  "for it");
             tiku_trk_poseview_origin(again, &rx, &ry);
             check(rx == ox && ry == oy, "MA-061",
                   "and so does where the icon view was SCROLLED to, which "

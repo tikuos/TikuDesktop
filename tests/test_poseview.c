@@ -860,6 +860,10 @@ main(void)
     tiku_trk_poseview_window_activated(v, 1);
 
     /* --- TS-003/004: primary and secondary sort -------------------------- */
+    /* From a known key: the view restores the one it was left with now
+     * (MA-061), and these rules are about the CLICK, not about what was
+     * remembered. */
+    tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_NAME);
     tiku_trk_poseview_sort_click(v, TIKU_TRK_COL_KIND, 0);
     check(tiku_trk_poseview_sort_field(v) == TIKU_TRK_COL_KIND &&
           !tiku_trk_poseview_sort_reverse(v), "TS-003",

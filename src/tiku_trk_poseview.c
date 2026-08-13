@@ -3050,8 +3050,9 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
              * constructor's size stands. */
             {
                 int sc = 0, ix = 0, iy = 0, mx = 0, my = 0;
-                int got = sscanf(rec, "%*s %d %d %d %d %d %d", &px, &sc,
-                                 &ix, &iy, &mx, &my);
+                int s1 = -1, s2 = -1, rev = 0;
+                int got = sscanf(rec, "%*s %d %d %d %d %d %d %d %d %d", &px,
+                                 &sc, &ix, &iy, &mx, &my, &s1, &s2, &rev);
 
                 if (got >= 1 && px >= 16 && px <= 128) {
                     v->icon_size = px;
@@ -3065,6 +3066,15 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
                     v->icon_y = iy;
                     v->mini_x = mx;
                     v->mini_y = my;
+                }
+                if (got >= 9 && s1 >= 0 && s1 < TIKU_TRK_COL_KINDS) {
+                    /* A record from before the keys were written has no
+                     * numbers here, and the constructor's own key stands. */
+                    v->sort_field = s1;
+                    v->sort2_field = (s2 >= 0 && s2 < TIKU_TRK_COL_KINDS)
+                                         ? s2 : -1;
+                    v->sort_reverse = rev ? 1 : 0;
+                    resort(v);
                 }
             }
         }
@@ -3138,9 +3148,13 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
          * somewhere and closed reopens where it was, and the list's row
          * and the icon view's pixels are different numbers that must not
          * be confused for one another (MA-061). */
-        snprintf(rec, sizeof rec, "%s %d %d %d %d %d %d", mode,
+        /* The sort keys go with the rest: a folder arranged by size and
+         * closed came back by name, which is the arrangement lost in the
+         * one place a user would look for it (MA-061, PVL-041). */
+        snprintf(rec, sizeof rec, "%s %d %d %d %d %d %d %d %d %d", mode,
                  v->icon_size, v->scroll, v->icon_x, v->icon_y, v->mini_x,
-                 v->mini_y);
+                 v->mini_y, v->sort_field, v->sort2_field,
+                 v->sort_reverse);
         (void)tiku_trk_state_write(store, v->path, TIKU_TRK_ATTR_VIEW_STATE,
                                    rec, strlen(rec));
     }

@@ -734,7 +734,8 @@ TScrollBar (the horizontal bar) holds the title view and mirrors its value into 
 Columns are serialised to kAttrColumns and the view state to kAttrViewState (kAttrDesktopViewState for the Desktop, kAttrDisksColumns / kAttrDisksViewState for the Disks/root window), each with a byte-swapped "foreign" fallback attribute that is read when the native one is missing and deleted whenever the native one is written. Attributes larger than 10000 bytes are rejected as munged.  
 `PoseView.cpp` → `BPoseView::SaveState / BPoseView::RestoreState / BPoseView::SaveColumnState / BPoseView::RestoreColumnState`  
 **TIKU:** Folder-level view state must live somewhere other than a BFS attribute for device-namespace directories, which may be synthetic and unwritable.  
-**MISSING:** View mode and the column layout do persist per folder (keyed on the folder path) and reload with it, but sort keys, icon size and scroll origin are never written to the store, so those three do not survive a reopen.  
+**MISSING:** View mode, column layout, icon size, both scroll origins and the sort keys all persist per folder and come back with it. Absent: the LAST icon mode -- this port keeps the mode it was left in, not the icon mode it was left in before a switch to list.  
+*src/tiku_trk_poseview.c:save_state/restore_state; tests/test_iconview.c*
 *src/tiku_trk_poseview.c:tiku_trk_poseview_save_state (2196-2200) / tiku_trk_poseview_save_columns (3230-3243)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Icon size now survives: save_state writes the viewstate record as "<mode> <size>" and restore_state parses the size back (16..128) — a folder arranged at 64 px reopens at 64 px. Sort keys and the scroll origin remain unsaved, so only two of the three claimed losses are real. `src/tiku_trk_poseview.c:2514-2523 (write "%s %d", mode, icon_size), :2445-2453 (restore parses mode and size)`  
 
@@ -4036,7 +4037,8 @@ _Sanitize rejects the column when the title exceeds 500 characters, the offset i
 _ArchiveToStream writes AttrHashString("BViewState", B_OBJECT_TYPE) then kViewStateArchiveVersion (11), then the eleven fields in that fixed order. Reads require an exact version match (ValidateStream / an explicit compare for the message flavor), so a version bump silently discards every stored folder layout.  
 `ViewState.cpp` → `BViewState::_ArchiveToStream`  
 **TIKU:** Same storage decision as columns. Since TikuOS is single-architecture the endian-swap paths and the paired _le/_be attribute names can go away — deliberately, not by accident.  
-**MISSING:** Only the view mode is written ("list"/"icon"/"mini"); last icon mode, both scroll origins, primary and secondary sort attribute and type, reverse-sort and both icon sizes are never stored, so a folder comes back sorted and scrolled by the defaults.  
+**MISSING:** The record carries the mode, the icon size, the list's row scroll, both icon origins and the sort keys -- primary, tie-break and reverse -- so a folder arranged by one column and closed comes back arranged by it. Absent: the "last icon mode" the original keeps beside the current one.  
+*src/tiku_trk_poseview.c:save_state/restore_state; tests/test_iconview.c*
 *src/tiku_trk_poseview.c:2195 (save_state writes only the mode string)*
 **PORT:** The record now carries the mode, the icon size, the list's row scroll and BOTH icon origins, so a folder left half way down an icon arrangement reopens there rather than at the top, and a mode round-trip returns to where each mode was. Still absent: the primary and secondary sort attribute and type, and reverse-sort, so a folder comes back sorted by the defaults. `src/tiku_trk_poseview.c:2517-2523, 2448-2453`  
 
