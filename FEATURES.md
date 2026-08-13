@@ -5123,14 +5123,13 @@ BPoseView::DrawPose calls Invalidate(rect) instead of pose->Draw() when TrackerS
 `src/kits/tracker/PoseView.cpp` → `BPoseView::DrawPose`
 **BLOCKED:** the volume space bar (IV-045), which does not exist — grep for free-space drawing returns nothing (only the copy fit check calls tiku_trk_fs_free_bytes, src/tiku_trk_fs.c:550) — and there is no partial DrawPose path to divert to invalidation: full-frame repaint only (src/tiku_trk_app.c:468-518)  
 
-#### IV-053 · important · open
+#### IV-053 · important · partial
 **Dragging a selection shows a translucent picture of the dragged poses that fades out at the edges when the selection is large.**  
 MakeDragBitmap builds an RGBA32 bitmap clipped to a ComposeIconSize(256)-sized box around the cursor, re-draws each selected pose into it via BPose::Draw with a foreign view and offset, at constant alpha 192 (164 when fading), black on dark backgrounds and white on light, then applies FadeRGBA32Horizontal/Vertical over a ComposeIconSize(32)-wide band on each clipped side.  
 `src/kits/tracker/PoseView.cpp` → `BPoseView::MakeDragBitmap`  
 **CHECKED:** Nothing builds a drag picture: an icon-mode drag moves the real poses live via move_pose on MotionNotify, and there is no bitmap, no constant-alpha pose re-draw into a foreign view, and no edge fade anywhere in the tree.  
 *none found*
-**SUBSYSTEM:** drag-and-drop imagery: no drag picture layer exists — an icon-mode drag moves the real poses live per MotionNotify (src/tiku_trk_app.c:1667-1687, move_pose on every selected pose), the desktop shell has no pose drag at all (movement past 4 px merely cancels the pending click/menu, src/tiku_trk_desktop.c:2201-2215), and grep for any drag bitmap, constant-alpha pose redraw or edge fade returns nothing  
-
+**MISSING:** A drag carries a picture of what it holds: the first few items' icons at the pointer, translucent so what they are over stays readable, and dimmer still when the drag holds more than three. It is drawn over the surface rather than composed in an offscreen bitmap, so the horizontal fade at the edges of a large selection is not there, and neither is the light-on-dark choice a real background would need.  
 #### IV-054 · important · open
 **Menu items that name a file show that file's icon, dimmed when the item is disabled.**  
 ModelMenuItem::DrawIcon draws at BSize(ListIconSize()-1, ListIconSize()-1) through IconCache::Draw when enabled, and through SyncDraw with DimmedIconBlitter when not - which blits B_OP_ALPHA/B_CONSTANT_ALPHA at high colour (0,0,0,128) for RGBA32 icons and B_OP_BLEND otherwise. Label is offset by iconSize + iconSize/4 and the item height grows to the icon height.  

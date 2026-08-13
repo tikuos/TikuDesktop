@@ -4237,6 +4237,37 @@ draw_all(desktop_t *app)
         tiku_trk_desk_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
+    if (tiku_trk_drag_active(&app->drag)) {
+        /* What is being carried, drawn at the pointer: a drag with no
+         * picture is a drag the user has to remember the contents of.
+         * Translucent, and faded further the more it holds, so what it is
+         * being dropped ON stays readable (IV-053). */
+        int i, shown = (app->drag.count < 4) ? app->drag.count : 4;
+        int alpha = (app->drag.count > 3) ? 120 : 168;
+
+        for (i = 0; i < shown; i++) {
+            tiku_desk_rect_t box;
+            char art[TIKU_TRK_NAME_MAX];
+            tiku_trk_model_t dm;
+
+            if (app->backend->ops->stat(app->backend, app->drag.path[i],
+                                        &dm) != 0) {
+                continue;
+            }
+            (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &dm,
+                                            art, sizeof art);
+            box.x = app->drag.x - 16 + i * 6;
+            box.y = app->drag.y - 16 + i * 6;
+            box.w = 32;
+            box.h = 32;
+            (void)tiku_trk_icon_paint(app->surf, art, box.x, box.y, 32);
+            /* Tinted over its own pixels rather than composited in an
+             * offscreen: the picture is what the pointer carries, and it
+             * has to sit over whatever is under it. */
+            tiku_trk_paint_tint(app->surf, box, TIKU_DESK_C_BACKDROP,
+                                255 - alpha);
+        }
+    }
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {

@@ -41,6 +41,8 @@ typedef enum {
 #define TIKU_TRK_ATTR_ICON "_trk/icon"
 
 /** @brief How many node icons are remembered at once. */
+#define TIKU_TRK_NODEICON_MISS_MAX 8
+
 #define TIKU_TRK_NODEICON_MAX 64
 
 /** @brief One remembered node icon. */
@@ -60,7 +62,16 @@ typedef struct {
     int                     reads;      /* store probes actually made     */
     const struct tiku_trk_types *types;   /* where a type's art is
                                           * declared, or NULL       */
+    /* Types known to have no art of their own.  A miss costs a database
+     * walk and a comparison against the bare model; remembered, it costs
+     * a string compare, which is the whole of IV-011. */
+    char                    miss[TIKU_TRK_NODEICON_MISS_MAX]
+                                [TIKU_TRK_TYPE_MAX];
+    int                     miss_n;
 } tiku_trk_nodeicon_t;
+
+/** @brief How many types the negative cache remembers. */
+int tiku_trk_nodeicon_misses(const tiku_trk_nodeicon_t *c);
 
 void tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c);
 

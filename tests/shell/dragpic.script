@@ -1,0 +1,19 @@
+# shell: desktop
+# IV-053: a drag carries a PICTURE of what it holds.  Nothing was drawn at
+# the pointer at all, so a drag begun in one window and finished in another
+# was one the user had to remember the contents of.
+wait 8
+note picked up and carried over empty backdrop
+press 100 97
+move 400 400
+move 700 300
+wait 2
+note the pointer carries the icon, translucent over what is behind it
+expect-pixel 700 300 66777c
+note put back where it came from, so what is checked is the picture and
+note not what a drop does
+move 100 97
+release 100 97
+wait 6
+expect-pixel 700 300 336698
+quit

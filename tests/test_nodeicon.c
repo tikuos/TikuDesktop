@@ -266,6 +266,9 @@ main(void)
               strcmp(art, "my_text_art") == 0, "IV-011",
               "and with one, the art the database declares for the type -- "
               "which is the icon an installation can change");
+        check(tiku_trk_nodeicon_misses(&c) == 0, "IV-011",
+              "nothing is remembered as missing until a lookup has "
+              "actually failed");
         (void)tiku_trk_types_add(&db, "audio/", "Audio", "", NULL);
         snprintf(m.type, sizeof m.type, "audio/mp3");
         tiku_trk_nodeicon_deleted(&c, m.path);
@@ -274,6 +277,21 @@ main(void)
               "a record that declares no art of its own leaves the "
               "compiled answer standing, rather than handing over an "
               "empty name");
+        check(tiku_trk_nodeicon_misses(&c) == 1, "IV-011",
+              "and a type with no art of its own is REMEMBERED as such, "
+              "so the walk that proved it is paid once rather than per "
+              "row of a folder full of them");
+        tiku_trk_nodeicon_deleted(&c, m.path);
+        (void)tiku_trk_nodeicon_resolve(&c, NULL, &m, art, sizeof art);
+        check(tiku_trk_nodeicon_misses(&c) == 1 && art[0] != '\0',
+              "IV-011",
+              "asking again answers the same thing and records nothing "
+              "new");
+        tiku_trk_nodeicon_set_types(&c, &db);
+        check(tiku_trk_nodeicon_misses(&c) == 0, "IV-011",
+              "a different database makes every remembered miss an "
+              "unasked question again -- what is missing is a question "
+              "about the database");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the icon tiers hold");

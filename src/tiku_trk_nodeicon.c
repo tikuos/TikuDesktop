@@ -153,6 +153,21 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
             return TIKU_TRK_ICON_FROM_NODE;
         }
     }
+    if (m->type[0] != '\0') {
+        int k;
+
+        for (k = 0; k < c->miss_n; k++) {
+            if (strcmp(c->miss[k], m->type) == 0) {
+                /* Known to have none: the generic answer, without the
+                 * database walk and the comparison that proved it the
+                 * first time (IV-011). */
+                if (out != NULL) {
+                    snprintf(out, max, "%s", tiku_trk_model_icon_name(m));
+                }
+                return TIKU_TRK_ICON_FROM_GENERIC;
+            }
+        }
+    }
     if (m->type[0] != '\0' && c->types != NULL) {
         const tiku_trk_typerec_t *tr = tiku_trk_types_find(c->types,
                                                            m->type);
@@ -182,8 +197,21 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
                    tiku_trk_model_icon_name(&bare)) != 0) {
             return TIKU_TRK_ICON_FROM_TYPE;
         }
+        if (c->miss_n < TIKU_TRK_NODEICON_MISS_MAX) {
+            /* Nothing anywhere has art for this type.  Remembered so the
+             * walk is paid once rather than per row of a folder full of
+             * them (IV-011). */
+            snprintf(c->miss[c->miss_n], TIKU_TRK_TYPE_MAX, "%s", m->type);
+            c->miss_n++;
+        }
     }
     return TIKU_TRK_ICON_FROM_GENERIC;
+}
+
+int
+tiku_trk_nodeicon_misses(const tiku_trk_nodeicon_t *c)
+{
+    return (c != NULL) ? c->miss_n : 0;
 }
 
 void
@@ -192,6 +220,9 @@ tiku_trk_nodeicon_set_types(tiku_trk_nodeicon_t *c,
 {
     if (c != NULL) {
         c->types = db;
+        /* What is missing is a question about the database, so a new one
+         * makes every remembered miss an unasked question again. */
+        c->miss_n = 0;
     }
 }
 
