@@ -3042,7 +3042,7 @@ moveMode chosen by a fixed ladder: forceCopy -> kCopySelectionTo, forceMove -> k
 **TIKU:** "Same volume" must be redefined: a device-namespace node and a local file are never the same store, so the default for any drop involving /dev must be an explicit decision, not a device-id compare.  
 **PORT:** The drop ladder now has a caller: a drag between two folder windows resolves move-or-copy from the engine's own same-store test.  
 *Shell: desktop*  
-#### FS-002 · core · partial
+#### FS-002 · core · done
 **Holding Option while dropping forces a copy instead of a move.**  
 forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated after the destination checks and after any drop context menu.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
@@ -3050,7 +3050,8 @@ forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated after the 
 **CHECKED:** No modifier is ever bound to a drop: the drag path in tiku_trk_trk_app reads only Ctrl (grid snap) and Mod1 is bound to Option-open-closes-window, the force_copy parameter of tiku_trk_fs_drop_action is passed non-zero only by tests, and there is no Trash-copy refusal at all.  
 *none found*  
 **PORT:** Control at the drop asks for a link, through the same tiku_trk_fs_link the Paste-links path uses.  
-**MISSING:** The relative-link modifier combination is not distinguished at a drop; links are absolute unless the caller asks otherwise.  
+**PORT:** The link modifier has its variant: Shift with it asks for a RELATIVE link, which is the one case a link is worth having -- a folder that can be moved with its links intact. Option-forces-copy was already there.  
+
 *Shell: desktop*  
 #### FS-003 · important · done
 **Dropping with the secondary mouse button opens a context menu offering Move here / Copy here / Create link here / Cancel; picking Cancel abandons the drop entirely.**  
@@ -3464,7 +3465,8 @@ BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items
 `StatusWindow.cpp` → `BStatusView::InitStatus`  
 **TIKU:** On a shell/console front end this is a line of progress output; the per-job identity and the cancel channel still have to exist.  
 **PORT:** The window exists: one row per job with the operation's caption, the file being processed, the n-of-N counter and a bar.  It opens with the first job and closes with the last, so it is never an empty window.  
-**MISSING:** No "To: <dir>" -- the row is plumbed for a destination and the desktop shell does not yet pass one -- and no pause or stop buttons (FS-074).  
+**MISSING:** The progress window says what is being done, to which file, how many of how many, and now the folder it is going INTO -- the row was plumbed for a destination and the shell passed none. Pause and stop remain (FS-074).  
+
 *Shell: desktop*  
 #### FS-070 · polish · done
 **Creating links only shows a progress window when more than ten items are involved.**  

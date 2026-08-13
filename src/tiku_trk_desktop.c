@@ -213,6 +213,9 @@ typedef struct desktop {
     /* What the count view last drew, so a script can read the one line
      * that reports the selection rather than the folder. */
     char                 count_text[TIKU_TRK_COUNT_TEXT_MAX];
+    /* The folder the running job is writing into, for the progress
+     * window's "To:" line (FS-069). */
+    char                 prog_dest[TIKU_TRK_PATH_MAX];
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -1678,6 +1681,7 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
                                         lx, ly);
         }
     }
+    snprintf(app->prog_dest, sizeof app->prog_dest, "%s", dst);
     switch (what) {
     case TIKU_TRK_DROP_COPY:
         (void)tiku_trk_fs_copy(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
@@ -1685,9 +1689,17 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
                  (n == 1) ? "" : "s");
         break;
     case TIKU_TRK_DROP_LINK:
-        (void)tiku_trk_fs_link(app->fs, sel, n, dst, 0);
-        snprintf(app->status, sizeof app->status, "linking %d item%s", n,
-                 (n == 1) ? "" : "s");
+        {
+            /* Shift with the link modifier asks for a RELATIVE link: the
+             * two are one gesture with a variant, not two gestures, and
+             * the engine already knows how to make either (FS-002). */
+            int rel = (state & ShiftMask) != 0u;
+
+            (void)tiku_trk_fs_link(app->fs, sel, n, dst, rel);
+            snprintf(app->status, sizeof app->status, "%s %d item%s",
+                     rel ? "linking (relative)" : "linking", n,
+                     (n == 1) ? "" : "s");
+        }
         break;
     default:
         (void)tiku_trk_fs_move(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
@@ -7115,7 +7127,12 @@ sel_done:
                          pr->failed ? " -- some failed" : "");
             }
             if (tiku_trk_progress_wanted(pr->op, pr->total)) {
-                tiku_trk_progress_update(&app.prog, 0, pr, 1, NULL);
+                /* Where it is going, which is the other half of "what is
+                 * happening": a file name alone does not say whether this
+                 * is the copy the user meant (FS-069). */
+                tiku_trk_progress_update(&app.prog, 0, pr, 1,
+                                         app.prog_dest[0] != '\0'
+                                             ? app.prog_dest : NULL);
                 tiku_trk_progress_sample(&app.prog, 0, pr->bytes,
                                          tiku_trk_now());
             }

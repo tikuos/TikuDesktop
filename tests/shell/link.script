@@ -1,0 +1,13 @@
+# shell: desktop
+# FS-002: the link modifier has a variant.  A drop that made a link always
+# made an absolute one, so the one case a link is worth having -- a folder
+# that can be moved with its links intact -- could not be asked for.
+wait 8
+note dropped into sub with the link modifier and Shift
+press 100 97
+move 200 120
+move 100 77
+release 100 77 1 ctrl shift
+wait 25
+expect-link /tmp/trk_script/sub/a.txt ../a.txt
+quit
