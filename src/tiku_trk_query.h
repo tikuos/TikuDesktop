@@ -77,6 +77,7 @@ typedef struct {
     tiku_trk_qop_t    op;
     char              value[TIKU_TRK_QUERY_VALUE_MAX];
     tiku_trk_qjoin_t  join;      /* how it joins the PREVIOUS term         */
+    int               pattern_ready; /* formula already supplied a glob   */
 } tiku_trk_qterm_t;
 
 /** @brief What the panel is asking. */
@@ -119,6 +120,14 @@ typedef struct {
      * than replacing them so a v1 record still loads. */
     tiku_trk_qscope_t scope_was[TIKU_TRK_QUERY_SCOPES_MAX];
     int              max_results;
+    /* Trash is excluded unless the panel explicitly includes it.  The path
+     * supplements the model kind so a query scoped directly inside Trash
+     * still knows that its children belong to the excluded subtree. */
+    int              include_trash;
+    char             trash_path[TIKU_TRK_PATH_MAX];
+    /* A formula that did not parse must not degenerate into an empty
+     * predicate, since an empty predicate matches the whole namespace. */
+    int              invalid;
     /* What the record is and how it should be treated.  A query the user
      * never named is TEMPORARY: it is a by-product of a search, and it is
      * swept up later rather than accumulating for ever (MA-053, AW-090). */
@@ -147,6 +156,9 @@ void tiku_trk_query_init(tiku_trk_query_t *q);
  */
 void tiku_trk_query_set_name(tiku_trk_query_t *q, const char *text);
 
+/** @brief Parse the predicate grammar emitted by query_predicate(). */
+int tiku_trk_query_set_formula(tiku_trk_query_t *q, const char *formula);
+
 /** @brief Append a term.  @return its index, or -1. */
 int tiku_trk_query_add_term(tiku_trk_query_t *q, tiku_trk_qfield_t field,
                             tiku_trk_qop_t op, const char *value,
@@ -168,6 +180,10 @@ int tiku_trk_query_predicate(const tiku_trk_query_t *q, char *out,
 
 /** @brief Whether a scope admits @p path, as a path-prefix test. */
 int tiku_trk_query_in_scope(const tiku_trk_query_t *q, const char *path);
+
+/** @brief Whether a node is outside Trash, or Trash was explicitly included. */
+int tiku_trk_query_allows_path(const tiku_trk_query_t *q,
+                               const tiku_trk_model_t *m);
 
 /** @brief Whether one node satisfies the predicate (scope not considered). */
 int tiku_trk_query_matches(const tiku_trk_query_t *q,

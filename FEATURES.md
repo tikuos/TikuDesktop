@@ -4288,13 +4288,20 @@ BuildAttrQuery runs parsedate_etc(text, -1, &flags) and sets dynamicDate when (f
 **TIKU:** Requires a wall clock and a natural-language date parser; on TikuOS the flag is only meaningful where an RTC exists.
 **BLOCKED:** A date-valued query field. tiku_trk_qfield_t (src/tiku_trk_query.h:43-51) has no time member; grep for date/mtime over tiku_trk_query.[ch]/tiku_trk_find.[ch] finds only the default-name strftime (src/tiku_trk_find.c:307-308). With no date term there is nothing to mark dynamic.  
 
-#### Q-010 · core · partial
+#### Q-010 · core · done
 **By-formula mode lets the user type a raw query predicate, which is used verbatim.**  
 FindWindow::GetPredicateString for kByFormulaItem copies the "TextControl" text with `predicate.SetTo(text, 1023)` — silently truncated at 1023 characters.  
 `FindPanel.cpp` → `FindWindow::GetPredicateString (case kByFormulaItem)`  
 **TIKU:** The predicate grammar is the BFS query language; TikuOS must either define its own predicate grammar over VFS paths/attributes or drop formula mode.  
-**MISSING:** Formula mode exists, is pre-filled from the controls and is editable (tiku_trk_find_key writes into f->formula), but the typed text is never used: tiku_trk_find_build's FORMULA case rebuilds the query from the attribute rows and the string is never parsed, so "used verbatim" does not happen.  
-*src/tiku_trk_find.c:tiku_trk_find_build (default/FORMULA case, 215-224)*
+**PORT:** Formula mode executes the text field through the port's own
+predicate grammar: parenthesised name/path/kind/value/size/cap/unit/writable
+and type comparisons joined by `&&` or `||`.  Quoted values are executable
+glob patterns, numeric comparisons stay numeric, and malformed text marks
+the query invalid so Search reports an invalid formula instead of falling
+back to the hidden attribute rows or matching everything.  The grammar
+round-trips through the v3 saved-query record.
+*src/tiku_trk_query.c:tiku_trk_query_set_formula; src/tiku_trk_find.c:
+tiku_trk_find_build; tests/test_query.c*
 
 #### Q-011 · important · done
 **Switching from by-name or by-attribute into by-formula pre-fills the formula field with the predicate those controls would have produced.**  
@@ -4469,11 +4476,18 @@ The distinction is the file's MIME type: B_QUERY_TEMPLATE_MIMETYPE vs B_QUERY_MI
 *src/tiku_trk_query.h (TIKU_TRK_QREC_TEMPLATE) and the v2 record;
 tests/test_query.c*
 
-#### Q-029 · core · open
+#### Q-029 · core · done
 **Running a search from a template creates a NEW query file and leaves the template untouched; editing a template in place (Edit Query template) saves back over it.**  
 FindSaveCommon: newFile = !fFile || (fFromTemplate && !fEditTemplateOnly); replaceOriginal = fFile && (!fFromTemplate || fEditTemplateOnly). The window title becomes "Edit Query template" and fEditTemplateOnly is set only when constructed with editIfTemplateOnly and the file's type is the template type.  
 `FindPanel.cpp` → `FindWindow::FindSaveCommon / FindWindow::FindWindow`
-**BLOCKED:** The same absent template notion as Q-028 (serialise has no type marker, src/tiku_trk_query.c:728-746), plus the run path never writes any file at all (panel_search, src/tiku_trk_desktop.c:896-927), so 'new file vs replace original' has no substrate.  
+**PORT:** Loading a template normally treats it as a source: Search writes a
+new temporary query record and leaves the template untouched.  The Queries
+menu's explicit "Edit loaded template" action attaches the panel to that
+record, changes the window title to "Edit Query template", and Save then
+replaces the same permanent template rather than generating another name.
+*src/tiku_trk_find.c:tiku_trk_find_load_named/_edit_template/_save_current;
+src/tiku_trk_desktop.c:panel_search and the Find-panel click path;
+tests/test_query.c*
 
 #### Q-030 · important · open
 **Opening Find with no query falls back to a "default" template in ~/queries, creating it on first use; with no query loaded the Save item is disabled.**  
@@ -4516,15 +4530,29 @@ A DraggableQueryIcon carries B_SIMPLE_DATA with be:actions=B_COPY_TARGET, two be
 **Query menu commands: Open… (Alt+O) loads an existing query into the panel, Save (Alt+S) writes it back in place and makes it permanent, Save as query… / Save as template… write a new file via a save panel.**  
 BuildMenuBar wires kOpenLoadQueryPanel, fSaveQueryOrTemplateItem (kSaveQueryOrTemplate, 'S'), and two kOpenSaveAsPanel items differing by the bool "saveastemplate"; the save panel's B_SAVE_REQUESTED is completed by FindPanel (accepting either a direct ref or directory+name). kSaveQueryOrTemplate calls SaveQueryAsAttributes(..., temporary=false), which is what un-marks a query as transient.  
 `FindPanel.cpp` → `FindWindow::BuildMenuBar / FindWindow::MessageReceived (kOpenLoadQueryPanel, kOpenSaveAsPanel, kSaveQueryOrTemplate) / FindPanel::MessageReceived (case B_SAVE_REQUESTED)`  
-**MISSING:** Only Save exists, and as a button that always writes a NEW record under an auto-generated name; Open… (load an existing query into the panel), the in-place/permanent distinction, Save as query… and Save as template… with a save panel are all absent, and the Find window has no menu bar.  
-*src/tiku_trk_desktop.c:1755-1772 (HIT_SAVE → tiku_trk_query_save with tiku_trk_find_default_name)*
+**MISSING:** The Queries menu now loads templates and recent queries into the
+panel, Save writes an attached query back in place and makes it permanent,
+and "Save as template" writes a new template.  What remains is a filesystem
+Open panel for records outside that registry and named Save-as-query /
+Save-as-template panels; the Find window still has no menu bar.
+*src/tiku_trk_find.c (Queries popup, _load_named and _save_current);
+src/tiku_trk_desktop.c (HIT_SAVE); tests/test_query.c and
+tests/shell/qtemplate.script*
 
-#### Q-036 · important · open
+#### Q-036 · important · done
 **An "Include Trash" option makes the query also return items in the Trash; it is off by default and is stored with the query.**  
 fSearchInTrash is a checkable item in the Options menu (kSearchInTrashOptionClicked toggles it); its state goes into MoreOptionsStruct::searchTrash in kAttrQueryMoreOptions and is read back by both RestoreWindowState (via FindWindow::SetOptions) and the results view. Enforcement is in QueryRefFilter::Filter: results whose ref is in a Trash node are dropped unless ShowResultsFromTrash().  
 `FindPanel.cpp` → `FindWindow::MessageReceived (case kSearchInTrashOptionClicked) / FindWindow::SetOptions / QueryPoseView.cpp QueryRefFilter::Filter`  
 **TIKU:** Only meaningful if TikuOS has a trash concept; otherwise drop, but keep the generic "exclude this subtree" filter hook it rides on.
-**BLOCKED:** An Include-Trash option and a trash filter in the walk. grep -i trash over tiku_trk_query.[ch] and tiku_trk_find.[ch] returns nothing; the panel has no options control (tiku_trk_find_hit enumerates every control, src/tiku_trk_find.c:551-635); and the walk (visit, src/tiku_trk_query.c:452-496) descends every container unconditionally, trash included — so even the off-by-default exclusion the row starts from is not honoured, despite the port having a real Trash (tiku_trk_fs_trash_dir, src/tiku_trk_fs.h:172-184).  
+**PORT:** A visible Include Trash checkbox is off by default and its choice is
+stored in v3 query records.  The walker applies a generic subtree admission
+hook before it enqueues a container, so excluding Trash also prevents its
+children from being visited; the model's Trash kind handles every discovered
+volume, while the run-time-resolved local Trash path also protects a search
+scoped directly inside it.  The resolved path is deliberately not persisted.
+*src/tiku_trk_find.c (trash_rect and HIT_TRASH); src/tiku_trk_query.c:
+tiku_trk_query_allows_path and visit; src/tiku_trk_desktop.c:panel_search;
+tests/test_query.c*
 
 #### Q-037 · important · done
 **Queries created by pressing Search are transient: if they are older than about a week and no window is showing them, Tracker deletes them from ~/queries automatically.**  
@@ -4551,21 +4579,28 @@ InitDirentIterator schedules BQueryPoseView::Refresh via TTracker::MainTaskLoop(
 `QueryPoseView.cpp` → `BQueryPoseView::InitDirentIterator / BQueryPoseView::Refresh / BQueryPoseView::AddPosesCompleted`
 **BLOCKED:** Date-valued query terms (the same absence as Q-009: no time field in tiku_trk_qfield_t, src/tiku_trk_query.h:43-51, and no date parser). The refresh machinery the row wants is otherwise present and stronger than the original's: every live results window is re-walked every 3 s (src/tiku_trk_desktop.c:2697-2704) through tiku_trk_query_refresh (src/tiku_trk_query.c:602-703), and rows that stop matching do disappear — but a relative-date predicate cannot be formed to exercise it.  
 
-#### Q-041 · important · open
+#### Q-041 · important · done
 **Query result windows are always list view: the view-mode commands do nothing, icon positions are never saved, and "Open parent" is disabled.**  
 BQueryPoseView overrides SetViewMode, SavePoseLocations and OpenParent as empty, and both RestoreState overloads force fViewState->SetViewMode(kListMode) after the base call.  
 `QueryPoseView.cpp` → `BQueryPoseView::SetViewMode / BQueryPoseView::SavePoseLocations / BQueryPoseView::OpenParent / BQueryPoseView::RestoreState`  
-**CHECKED:** Nothing treats result views as list-only: tiku_trk_poseview_set_results does not force the mode, menu_invoke applies Icon/Mini/List view to a query view like any other, save_state writes pose positions with no is_query gate, and Open parent stays enabled (can_open_parent only tests path != "/").  
-*none found — no is_query check in src/tiku_trk_poseview.c:tiku_trk_poseview_set_mode (1592) or _save_state (2182), nor in src/tiku_trk_desktop.c:menu_invoke (981-989)*
-**SUBSYSTEM:** Query-window specialisation (is_query gating). The predicate exists and is exported (tiku_trk_poseview_is_query, src/tiku_trk_poseview.c:662-665) but nothing gates on it: set_mode has no is_query check (src/tiku_trk_poseview.c:1892-1914), save_state writes view state and pose positions for any view (src/tiku_trk_poseview.c:2501-2550) and is called for result windows at exit (src/tiku_trk_desktop.c:2760-2766), menu_invoke applies List/Icon/Mini to any window (src/tiku_trk_desktop.c:1067-1074), and can_open_parent tests only path != "/" (src/tiku_trk_desktop.c:185) so Open parent stays enabled on a results window's pseudo-path.  
+**PORT:** Becoming a query result forces list mode; later icon/mini-icon
+requests are ignored, and query views do not write view or pose-location
+state.  Their menu context disables Open parent because the result set's
+pseudo-path is not a navigable container.
+*src/tiku_trk_poseview.c:fill_from, tiku_trk_poseview_set_mode and
+tiku_trk_poseview_save_state; src/tiku_trk_desktop.c:menu_ctx;
+tests/test_poseview.c*
 
 #### Q-042 · important · partial
 **A results window shows Name, Location, Size and Modified by default, and remembers a per-searched-type column layout so e.g. e-mail queries come up with Subject/From/When/Status.**  
 SetupDefaultColumnsIfNeeded adds Name(145)/Location(225, kAttrPath)/Size(80)/Modified(150) only when no columns were restored. BQueryContainerWindow::SetupDefaultState copies kAttrWindowFrame/kAttrViewState/kAttrColumns from settings/Tracker/DefaultQueryTemplates/<sanitized type> where the type comes from PoseView()->SearchForType() (kAttrQueryInitialMime resolved through MimeTypeList, defaulting to B_FILE_MIMETYPE) with '/' replaced by '_'; TTracker::InstallDefaultTemplates seeds those files for octet-stream, bookmark, person and e-mail.  
 `QueryPoseView.cpp` → `BQueryPoseView::SetupDefaultColumnsIfNeeded / BQueryPoseView::SearchForType (QueryContainerWindow.cpp BQueryContainerWindow::SetupDefaultState, TrackerInitialState.cpp TTracker::InstallDefaultTemplates)`  
 **TIKU:** The Location column is what makes results usable; in the TikuOS namespace this is the node's full VFS path.  
-**MISSING:** The Location clause is honoured — a query view's rows draw the node's full VFS path instead of its name — but the columns are the generic per-view defaults (Name/Kind/Value/Cap, no Size and no Modified) set in poseview_new, and there is no per-searched-type remembered layout of any kind.  
-*src/tiku_trk_desktop.c:folder_draw (267-269) and folder_fit_w (464-475); defaults at src/tiku_trk_poseview.c:506-514*
+**MISSING:** Result views now start with the required Name, Location, Size
+and Modified columns, and Location shows the containing VFS path.  What
+remains is the per-searched-type remembered layout and its seeded bookmark,
+person and e-mail templates.
+*src/tiku_trk_poseview.c:fill_from; tests/test_poseview.c*
 
 #### Q-043 · polish · differs
 **In a results window, changes to a file's size or modification time refresh its row immediately, like an ordinary folder window.**  

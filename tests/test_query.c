@@ -21,6 +21,43 @@
 
 static int fails;
 
+typedef struct {
+    int trash_listed;
+} trash_walk_t;
+
+/** @brief A tiny namespace that proves excluded containers are not walked. */
+static int
+trash_walk_list(tiku_trk_backend_t *b, const char *path,
+                tiku_trk_entry_fn fn, void *ctx)
+{
+    trash_walk_t *walk = b->impl;
+    tiku_trk_model_t m;
+    int n = 0;
+
+    memset(&m, 0, sizeof m);
+    if (strcmp(path, "/") == 0) {
+        m.kind = TIKU_TRK_KIND_TRASH;
+        snprintf(m.name, sizeof m.name, ".Trash");
+        snprintf(m.path, sizeof m.path, "/.Trash");
+        n += fn(&m, ctx) >= 0;
+        m.kind = TIKU_TRK_KIND_FILE;
+        snprintf(m.name, sizeof m.name, "visible.txt");
+        snprintf(m.path, sizeof m.path, "/visible.txt");
+        n += fn(&m, ctx) >= 0;
+    } else if (strcmp(path, "/.Trash") == 0) {
+        walk->trash_listed++;
+        m.kind = TIKU_TRK_KIND_FILE;
+        snprintf(m.name, sizeof m.name, "deleted.txt");
+        snprintf(m.path, sizeof m.path, "/.Trash/deleted.txt");
+        n += fn(&m, ctx) >= 0;
+    }
+    return n;
+}
+
+static const tiku_trk_backend_ops_t TRASH_WALK_OPS = {
+    .list = trash_walk_list
+};
+
 static void
 check(int cond, const char *what)
 {
@@ -250,6 +287,96 @@ main(void)
         }
     }
 
+    printf("\nformula execution (Q-010)\n");
+    {
+        tiku_trk_query_t fq;
+        tiku_trk_model_t report, notes;
+        const char *formula =
+            "(name==\"*[rR][eE][pP][oO][rR][tT]*\")&&(size>10)";
+
+        memset(&report, 0, sizeof report);
+        memset(&notes, 0, sizeof notes);
+        snprintf(report.name, sizeof report.name, "Quarterly Report");
+        report.facts.size = 20;
+        snprintf(notes.name, sizeof notes.name, "notes");
+        notes.facts.size = 20;
+        check(tiku_trk_query_set_formula(&fq, formula) == 0 &&
+              fq.mode == TIKU_TRK_QMODE_FORMULA && fq.term_count == 2,
+              "Q-010: a typed formula becomes the predicate that runs");
+        check(tiku_trk_query_matches(&fq, &report, NULL, NULL) &&
+              !tiku_trk_query_matches(&fq, &notes, NULL, NULL),
+              "the quoted pattern and numeric comparison both govern "
+              "the result rather than the old attribute rows");
+        check(tiku_trk_query_set_formula(&fq, "this is not a predicate")
+              != 0 && fq.invalid && fq.term_count == 0,
+              "an invalid formula is refused rather than silently running "
+              "a different search");
+        {
+            trash_walk_t walk = { 0 };
+            tiku_trk_backend_t backend = { &TRASH_WALK_OPS, "", &walk };
+
+            check(tiku_trk_query_start(&backend, &fq) == NULL,
+                  "and cannot start a whole-namespace run");
+        }
+    }
+
+    printf("\nTrash is excluded unless explicitly included (Q-036)\n");
+    {
+        tiku_trk_query_t q;
+        tiku_trk_model_t trash, deleted, visible;
+
+        memset(&trash, 0, sizeof trash);
+        memset(&deleted, 0, sizeof deleted);
+        memset(&visible, 0, sizeof visible);
+        trash.kind = TIKU_TRK_KIND_TRASH;
+        snprintf(trash.path, sizeof trash.path, "/home/me/.Trash");
+        deleted.kind = TIKU_TRK_KIND_FILE;
+        snprintf(deleted.path, sizeof deleted.path,
+                 "/home/me/.Trash/deleted.txt");
+        visible.kind = TIKU_TRK_KIND_FILE;
+        snprintf(visible.path, sizeof visible.path,
+                 "/home/me/deleted.txt");
+        tiku_trk_query_init(&q);
+        snprintf(q.trash_path, sizeof q.trash_path, "/home/me/.Trash");
+        check(!tiku_trk_query_allows_path(&q, &trash) &&
+              !tiku_trk_query_allows_path(&q, &deleted),
+              "Q-036: both the Trash container and its children are out by "
+              "default");
+        check(tiku_trk_query_allows_path(&q, &visible),
+              "a similarly named item outside the Trash subtree stays in");
+        q.include_trash = 1;
+        check(tiku_trk_query_allows_path(&q, &trash) &&
+              tiku_trk_query_allows_path(&q, &deleted),
+              "the Include Trash option admits the entire subtree");
+
+        {
+            trash_walk_t walk = { 0 };
+            tiku_trk_backend_t backend = { &TRASH_WALK_OPS, "", &walk };
+            tiku_trk_qrun_t *run;
+
+            tiku_trk_query_init(&q);
+            run = tiku_trk_query_start(&backend, &q);
+            while (run != NULL && !tiku_trk_query_done(run)) {
+                (void)tiku_trk_query_step(run, 8);
+            }
+            check(run != NULL && tiku_trk_query_count(run) == 1 &&
+                  walk.trash_listed == 0,
+                  "the default filter stops before enqueueing the Trash "
+                  "container");
+            tiku_trk_query_stop(run);
+
+            q.include_trash = 1;
+            run = tiku_trk_query_start(&backend, &q);
+            while (run != NULL && !tiku_trk_query_done(run)) {
+                (void)tiku_trk_query_step(run, 8);
+            }
+            check(run != NULL && tiku_trk_query_count(run) == 3 &&
+                  walk.trash_listed == 1,
+                  "including Trash walks it and returns its child");
+            tiku_trk_query_stop(run);
+        }
+    }
+
     printf("\nsaved queries survive a round trip\n");
     {
         tiku_trk_store_t *st = tiku_trk_store_memory_open();
@@ -293,6 +420,8 @@ main(void)
         a.kind = TIKU_TRK_QREC_TEMPLATE;
         a.temporary = 1;
         a.saved_at = 1700000000;
+        a.include_trash = 1;
+        snprintf(a.trash_path, sizeof a.trash_path, "/home/me/.Trash");
         snprintf(a.type, sizeof a.type, "text/plain");
         a.scope_was[0].dev = 4242u;
         snprintf(a.scope_was[0].volume, sizeof a.scope_was[0].volume,
@@ -307,6 +436,9 @@ main(void)
               "needs and neither of which existed");
         check(strcmp(b.type, "text/plain") == 0,
               "Q-004: the type it was narrowed to comes back with it");
+        check(b.include_trash == 1 && b.trash_path[0] == '\0',
+              "Q-036: the Include Trash choice survives a saved-query "
+              "round trip without pinning it to this machine's Trash path");
         check(b.scope_was[0].dev == 4242u &&
               strcmp(b.scope_was[0].volume, "Backup") == 0,
               "Q-027: and a scope remembers WHICH volume it meant, not "
@@ -398,6 +530,38 @@ main(void)
         check(strcmp(lbl, "2 places") == 0, "several are counted");
         tiku_trk_find_build(&f, &q);
         check(q.scope_count == 2, "and both reach the query");
+
+        f.include_trash = 1;
+        tiku_trk_find_build(&f, &q);
+        check(q.include_trash,
+              "Q-036: the panel carries Include Trash into the query");
+        {
+            tiku_trk_find_t back;
+
+            tiku_trk_find_init(&back);
+            check(tiku_trk_find_from_query(&back, &q) == 0 &&
+                  back.include_trash,
+                  "and restores the choice while reopening a query");
+        }
+
+        {
+            tiku_desk_rect_t fr = { 0, 0, 560, 400 };
+            int x, y, row0, found = 0;
+
+            tiku_trk_find_init(&f);
+            for (y = 0; y < fr.h && !found; y++) {
+                for (x = 0; x < fr.w; x++) {
+                    if (tiku_trk_find_hit(&f, fr, x, y, &row0) ==
+                        TIKU_TRK_FIND_HIT_TRASH) {
+                        found = 1;
+                        (void)tiku_trk_find_click(&f, fr, x, y);
+                        break;
+                    }
+                }
+            }
+            check(found && f.include_trash,
+                  "the visible Include Trash checkbox toggles the option");
+        }
 
         {
             char nm[128];
@@ -637,6 +801,8 @@ main(void)
             tiku_trk_find_init(&g);
             tiku_trk_find_set_type(&g, "text/", NULL);
             tiku_trk_find_set_mode(&g, TIKU_TRK_QMODE_FORMULA);
+            snprintf(g.formula, sizeof g.formula,
+                     "(name==\"*[fF][iI][lL][eE]*\")");
             tiku_trk_find_build(&g, &fq);
             {
                 int i, has_type = 0;
@@ -801,6 +967,65 @@ main(void)
               "AW-090: and only that one -- this morning's search, the "
               "query with a name and the template are all still there");
         tiku_trk_store_free(st3);
+    }
+
+    printf("\ntemplate run and edit identity (Q-029)\n");
+    {
+        tiku_trk_store_t *st4 = tiku_trk_store_memory_open();
+        tiku_trk_find_t f;
+        tiku_trk_query_t before, after;
+
+        tiku_trk_find_init(&f);
+        tiku_trk_find_set_store(&f, st4);
+        snprintf(f.name_text, sizeof f.name_text, "original");
+        check(tiku_trk_find_save_template(&f, "daily", 100) == 0,
+              "Q-029: the template fixture is saved");
+        snprintf(f.name_text, sizeof f.name_text, "changed");
+        check(tiku_trk_find_load_named(&f, "daily") >= 0,
+              "opening a template fills the panel");
+        snprintf(f.name_text, sizeof f.name_text, "run copy");
+        check(tiku_trk_query_load(&before, "daily", st4) == 0 &&
+              strcmp(before.term[0].value, "original") == 0,
+              "running from it has not overwritten the template");
+        {
+            tiku_desk_rect_t fr = { 0, 0, 560, 400 };
+            int x, y, row0, found = 0, edit = -1;
+
+            for (y = 0; y < fr.h && !found; y++) {
+                for (x = 0; x < fr.w; x++) {
+                    if (tiku_trk_find_hit(&f, fr, x, y, &row0) ==
+                        TIKU_TRK_FIND_HIT_QUERIES) {
+                        found = 1;
+                        (void)tiku_trk_find_click(&f, fr, x, y);
+                        break;
+                    }
+                }
+            }
+            for (x = 0; x < f.popup.count; x++) {
+                if (strcmp(f.popup.item[x].label,
+                           "Edit loaded template") == 0) {
+                    edit = x;
+                }
+            }
+            if (edit >= 0) {
+                y = f.popup_frame.y +
+                    tiku_trk_menu_item_top(&f.popup, edit) + 2;
+                (void)tiku_trk_find_click(&f, fr,
+                                          f.popup_frame.x + 4, y);
+            }
+            check(found && edit >= 0 &&
+                  tiku_trk_find_editing_template(&f),
+                  "Edit Query template is an explicit menu action that "
+                  "attaches the panel for replacement");
+        }
+        snprintf(f.name_text, sizeof f.name_text, "replacement");
+        check(tiku_trk_find_save_current(&f, 200) == 0,
+              "editing in place saves back to the attached record");
+        check(tiku_trk_query_load(&after, "daily", st4) == 0 &&
+              strcmp(after.term[0].value, "replacement") == 0 &&
+              after.kind == TIKU_TRK_QREC_TEMPLATE,
+              "editing in place writes over the same template record");
+        tiku_trk_store_free(st4);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");

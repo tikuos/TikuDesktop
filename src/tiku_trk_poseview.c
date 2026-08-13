@@ -740,16 +740,35 @@ static int
 fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
           int as_query)
 {
+    int first_query;
     int i;
 
     if (v == NULL || (m == NULL && n > 0)) {
         return -1;
     }
+    first_query = as_query && !v->is_query;
     v->count = 0;
     v->pivot = -1;
     v->active = -1;
     v->last_added = -1;
     v->is_query = as_query ? 1 : 0;
+    if (as_query) {
+        /* Results are a report, not a place whose icons can be arranged.
+         * Force their stable list shape before any result is inserted. */
+        v->mode = TIKU_TRK_MODE_LIST;
+        if (first_query) {
+            v->columns[0] = (tiku_trk_column_t){ "Name", 145,
+                TIKU_TRK_COL_NAME, 0, TIKU_TRK_ALIGN_LEFT };
+            v->columns[1] = (tiku_trk_column_t){ "Location", 225,
+                TIKU_TRK_COL_PATH, 0, TIKU_TRK_ALIGN_LEFT };
+            v->columns[2] = (tiku_trk_column_t){ "Size", 80,
+                TIKU_TRK_COL_SIZE, 0, TIKU_TRK_ALIGN_RIGHT };
+            v->columns[3] = (tiku_trk_column_t){ "Modified", 150,
+                TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
+            v->column_count = 4;
+            tiku_trk_poseview_reflow_columns(v);
+        }
+    }
     for (i = 0; i < n && v->count < POSES_MAX; i++) {
         memset(&v->poses[v->count], 0, sizeof v->poses[0]);
         v->poses[v->count].model = m[i];
@@ -2252,7 +2271,8 @@ tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode)
 {
     int old_mode;
 
-    if (v == NULL || v->mode == mode) {
+    if (v == NULL || v->mode == mode ||
+        (v->is_query && mode != TIKU_TRK_MODE_LIST)) {
         return;
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
@@ -3193,7 +3213,7 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
     tiku_trk_store_t *store;
     int i, n = 0;
 
-    if (v == NULL || !v->state_dirty ||
+    if (v == NULL || v->is_query || !v->state_dirty ||
         v->backend->ops->state_store == NULL) {
         return 0;               /* the dirty gate: no write, no wear */
     }

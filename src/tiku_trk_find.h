@@ -48,6 +48,7 @@ typedef enum {
     TIKU_TRK_FIND_HIT_ADD,
     TIKU_TRK_FIND_HIT_REMOVE,
     TIKU_TRK_FIND_HIT_SCOPE,
+    TIKU_TRK_FIND_HIT_TRASH,
     TIKU_TRK_FIND_HIT_TYPE,        /* the "of type" menu (Q-004)           */
     TIKU_TRK_FIND_HIT_SEARCH,
     TIKU_TRK_FIND_HIT_SAVE,
@@ -83,6 +84,7 @@ typedef struct {
     int                   place_count;
     unsigned              place_mask;
     int                   everywhere;
+    int                   include_trash;
     tiku_trk_find_focus_t focus;
     int                   focus_row;
     /* A popup currently showing, and what it belongs to. */
@@ -94,6 +96,11 @@ typedef struct {
      * status line: a menu that loads a saved search without saying which
      * one leaves the user looking at a panel that changed by itself. */
     char                  note[80];
+    /* The record the panel came from.  Templates normally remain sources;
+     * edit_template is set only by the explicit in-place edit action. */
+    char                  loaded_name[128];
+    tiku_trk_qrec_t       loaded_kind;
+    int                   edit_template;
     /* Where the most-used type list lives.  Held on the panel because the
      * menu is built where the click lands, and passing it through every
      * hit-testing call would put a store in the geometry's signature. */
@@ -122,6 +129,15 @@ int tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name);
  */
 int tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
                                 int64_t now);
+
+/** @brief Load a template specifically for replacement in place. */
+int tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name);
+
+/** @brief Save back to the explicitly attached query or template. */
+int tiku_trk_find_save_current(tiku_trk_find_t *f, int64_t now);
+
+/** @brief Whether the panel is the special Edit Query template window. */
+int tiku_trk_find_editing_template(const tiku_trk_find_t *f);
 
 /**
  * @brief Whether one of the panel's popups is showing.

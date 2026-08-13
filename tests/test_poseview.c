@@ -1276,6 +1276,28 @@ main(void)
         tiku_trk_poseview_scroll_to(v, 0);
     }
 
+    printf("\nquery windows stay lists (Q-041)\n");
+    {
+        tiku_trk_model_t result[2];
+        const tiku_trk_column_t *cols = NULL;
+        int nc;
+
+        result[0] = tiku_trk_poseview_at(v, 0)->model;
+        result[1] = tiku_trk_poseview_at(v, 1)->model;
+        (void)tiku_trk_poseview_set_results(v, result, 2);
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        check(tiku_trk_poseview_mode(v) == TIKU_TRK_MODE_LIST, "Q-041",
+              "a query result view refuses icon mode");
+        check(tiku_trk_poseview_is_query(v), "Q-041",
+              "and remains identified as results rather than a folder");
+        nc = tiku_trk_poseview_columns(v, &cols);
+        check(nc == 4 && cols[0].field == TIKU_TRK_COL_NAME &&
+              cols[1].field == TIKU_TRK_COL_PATH &&
+              cols[2].field == TIKU_TRK_COL_SIZE &&
+              cols[3].field == TIKU_TRK_COL_DATE, "Q-041",
+              "with the stable Name, Location, Size and Modified columns");
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);

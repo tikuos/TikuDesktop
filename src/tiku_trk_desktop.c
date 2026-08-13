@@ -313,7 +313,8 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
     /* FS-051: the clipboard really has something in it, so the item can
      * finally be enabled -- it has been permanently grey until now. */
     c.clipboard_has_refs = (tiku_trk_clip_count(&app->clip) > 0);
-    c.can_open_parent = (strcmp(fl->path, "/") != 0);
+    c.can_open_parent = !tiku_trk_poseview_is_query(fl->view) &&
+                        strcmp(fl->path, "/") != 0;
     {   /* Empty Trash is offered only when there is something to empty, and
          * the answer comes from the store rather than from a guess: without
          * it the item is disabled forever (AW-029). */
@@ -2233,6 +2234,17 @@ panel_search(desktop_t *app)
     char scope[64];
 
     tiku_trk_find_build(&app->panel, &q);
+    if (q.invalid) {
+        snprintf(app->status, sizeof app->status,
+                 "invalid query formula");
+        app->dirty = 1;
+        return;
+    }
+    /* The checkbox stores the choice; the actual Trash path is resolved at
+     * run time because it belongs to this machine and this volume, not to a
+     * portable saved-query record (Q-036). */
+    (void)tiku_trk_fs_trash_dir(app->fs, app->dfl.path, q.trash_path,
+                                sizeof q.trash_path);
     run = tiku_trk_query_start(app->backend, &q);
     if (run == NULL) {
         return;
@@ -2295,6 +2307,9 @@ run_find(desktop_t *app, folder_t *from)
     if (from != NULL) {
         (void)tiku_trk_query_add_scope(&q, from->path);
     }
+    (void)tiku_trk_fs_trash_dir(app->fs,
+                                (from != NULL) ? from->path : app->dfl.path,
+                                q.trash_path, sizeof q.trash_path);
     run = tiku_trk_query_start(app->backend, &q);
     if (run == NULL) {
         return;
@@ -5780,12 +5795,12 @@ main(int argc, char **argv)
                     } else if (what == TIKU_TRK_FIND_HIT_SAVE) {
                         char nm[128];
 
-                        tiku_trk_find_default_name(&app.panel,
-                                                   (long)time(NULL), nm,
-                                                   sizeof nm);
-                        {
+                        if (tiku_trk_find_save_current(
+                                &app.panel, (int64_t)time(NULL)) != 0) {
                             tiku_trk_query_t q;
 
+                            tiku_trk_find_default_name(&app.panel,
+                                (long)time(NULL), nm, sizeof nm);
                             tiku_trk_find_build(&app.panel, &q);
                             if (tiku_trk_query_save(&q, nm, app.store) == 0) {
                                 snprintf(app.status, sizeof app.status,
@@ -5794,7 +5809,18 @@ main(int argc, char **argv)
                                 snprintf(app.status, sizeof app.status,
                                          "could not save the query");
                             }
+                        } else {
+                            snprintf(app.status, sizeof app.status, "%.90s",
+                                     tiku_trk_find_note(&app.panel));
                         }
+                    }
+                    if (tiku_trk_find_editing_template(&app.panel)) {
+                        snprintf(app.panel_win->title,
+                                 sizeof app.panel_win->title,
+                                 "Edit Query template");
+                    } else {
+                        snprintf(app.panel_win->title,
+                                 sizeof app.panel_win->title, "Find");
                     }
                     if (tiku_trk_find_note(&app.panel)[0] != '\0') {
                         /* A menu that loaded a saved search without saying

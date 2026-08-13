@@ -262,6 +262,7 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
     if (q->mode == TIKU_TRK_QMODE_FORMULA) {
         (void)tiku_trk_query_predicate(q, f->formula, sizeof f->formula);
     }
+    f->include_trash = q->include_trash;
     f->everywhere = (q->scope_count == 0);
     f->place_mask = 0u;
     for (i = 0; i < q->scope_count; i++) {
@@ -319,16 +320,13 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
         }
         break;
     default:
-        /* A formula is not re-parsed here: the field is a display of the
-         * predicate, and running it uses the terms it was built from. */
-        for (i = 0; i < f->row_count; i++) {
-            (void)tiku_trk_query_add_term(q, f->row[i].field, f->row[i].op,
-                                          f->row[i].value,
-                                          (i == 0) ? TIKU_TRK_JOIN_AND
-                                                   : f->row[i - 1].join);
-        }
+        /* Formula mode runs what the field says, not the rows it started
+         * from.  A malformed predicate remains an empty query so the shell
+         * can refuse it rather than silently running something else. */
+        (void)tiku_trk_query_set_formula(q, f->formula);
         break;
     }
+    q->include_trash = f->include_trash;
     if (f->type[0] != '\0' && f->mode != TIKU_TRK_QMODE_FORMULA) {
         /* ANDed onto everything the rows ask, which is what "of type" means
          * -- and recorded on the query so a saved one comes back with its
@@ -659,6 +657,17 @@ scope_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
     return r;
 }
 
+/** @brief The Include Trash option shares the scope row. */
+static tiku_desk_rect_t
+trash_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
+{
+    tiku_desk_rect_t r = scope_rect(f, fr);
+
+    r.x = fr.x + fr.w - PAD - 116;
+    r.w = 116;
+    return r;
+}
+
 static tiku_desk_rect_t
 button_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr, int which)
 {
@@ -801,6 +810,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
     label_at(s, frame.x + PAD, r, "Search in");
     (void)tiku_trk_find_scope_label(f, buf, sizeof buf);
     draw_popup_button(s, r, buf);
+    tiku_desk_ui_checkbox(s, trash_rect(f, frame), "Include Trash",
+                          f->include_trash ? TIKU_DESK_S_ON : 0u);
 
     if (f->mode == TIKU_TRK_QMODE_ATTRIBUTE) {
         tiku_desk_rect_t a = scope_rect(f, frame);
@@ -867,6 +878,9 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     if (tiku_trk_find_type_shown(f) &&
         in(type_rect(f, frame), x, y)) {
         return TIKU_TRK_FIND_HIT_TYPE;
+    }
+    if (in(trash_rect(f, frame), x, y)) {
+        return TIKU_TRK_FIND_HIT_TRASH;
     }
     r = scope_rect(f, frame);
     if (in(r, x, y)) {
@@ -1002,6 +1016,14 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                 (void)tiku_trk_menu_add(m, names[i], 200 + i, 0, 0u, 1);
             }
         }
+        /* Kept at the end so attaching a loaded template does not move the
+         * template and recent-query entries the user was already using. */
+        if (f->loaded_kind == TIKU_TRK_QREC_TEMPLATE &&
+            f->loaded_name[0] != '\0' && !f->edit_template) {
+            (void)tiku_trk_menu_add_separator(m);
+            (void)tiku_trk_menu_add(m, "Edit loaded template", 1, 0, 0u,
+                                    1);
+        }
         break;
     }
     case TIKU_TRK_FIND_HIT_SCOPE:
@@ -1074,6 +1096,9 @@ tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name)
         return -1;
     }
     whole = tiku_trk_find_from_query(f, &q);
+    snprintf(f->loaded_name, sizeof f->loaded_name, "%s", name);
+    f->loaded_kind = q.kind;
+    f->edit_template = 0;
     snprintf(f->note, sizeof f->note, "%s %.30s%s",
              (q.kind == TIKU_TRK_QREC_TEMPLATE) ? "template" : "query",
              name, whole ? "" : " -- a place is no longer here");
@@ -1101,6 +1126,56 @@ tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
     }
     snprintf(f->note, sizeof f->note, "template %.50s", name);
     return 0;
+}
+
+int
+tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name)
+{
+    tiku_trk_query_t q;
+    char attached[128];
+    int whole;
+
+    if (f == NULL || f->store == NULL || name == NULL ||
+        tiku_trk_query_load(&q, name, f->store) != 0 ||
+        q.kind != TIKU_TRK_QREC_TEMPLATE) {
+        return -1;
+    }
+    /* The menu passes f->loaded_name itself.  _from_query reinitialises the
+     * panel, so keep the name before that storage is cleared. */
+    snprintf(attached, sizeof attached, "%s", name);
+    whole = tiku_trk_find_from_query(f, &q);
+    snprintf(f->loaded_name, sizeof f->loaded_name, "%s", attached);
+    f->loaded_kind = q.kind;
+    f->edit_template = 1;
+    snprintf(f->note, sizeof f->note, "editing template %.40s", attached);
+    return whole ? 1 : 0;
+}
+
+int
+tiku_trk_find_save_current(tiku_trk_find_t *f, int64_t now)
+{
+    tiku_trk_query_t q;
+
+    if (f == NULL || f->store == NULL || f->loaded_name[0] == '\0' ||
+        (f->loaded_kind == TIKU_TRK_QREC_TEMPLATE && !f->edit_template)) {
+        return -1;
+    }
+    tiku_trk_find_build(f, &q);
+    q.kind = f->loaded_kind;
+    q.temporary = 0;
+    q.saved_at = now;
+    if (tiku_trk_query_save(&q, f->loaded_name, f->store) != 0) {
+        snprintf(f->note, sizeof f->note, "that record cannot be saved");
+        return -1;
+    }
+    snprintf(f->note, sizeof f->note, "saved %.50s", f->loaded_name);
+    return 0;
+}
+
+int
+tiku_trk_find_editing_template(const tiku_trk_find_t *f)
+{
+    return f != NULL && f->edit_template;
 }
 
 int
@@ -1184,6 +1259,9 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                                                      nm, sizeof nm);
                     (void)tiku_trk_find_save_template(f, nm,
                                                       (int64_t)time(NULL));
+                } else if (cmd == 1 &&
+                           f->loaded_kind == TIKU_TRK_QREC_TEMPLATE) {
+                    (void)tiku_trk_find_edit_template(f, f->loaded_name);
                 } else if (cmd >= 200) {
                     int n = tiku_trk_query_list_kind(f->store,
                                 TIKU_TRK_QREC_QUERY, names,
@@ -1277,6 +1355,9 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
         break;
     case TIKU_TRK_FIND_HIT_REMOVE:
         (void)tiku_trk_find_remove_row(f);
+        break;
+    case TIKU_TRK_FIND_HIT_TRASH:
+        f->include_trash = !f->include_trash;
         break;
     default:
         break;

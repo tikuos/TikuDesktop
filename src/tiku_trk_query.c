@@ -45,6 +45,117 @@ tiku_trk_query_set_name(tiku_trk_query_t *q, const char *text)
                                   text, TIKU_TRK_JOIN_AND);
 }
 
+/** @brief Map the formula's field vocabulary back to the model enum. */
+static int
+formula_field(const char *s, size_t n, tiku_trk_qfield_t *out)
+{
+    static const struct {
+        const char *name;
+        tiku_trk_qfield_t field;
+    } fields[] = {
+        { "name", TIKU_TRK_QF_NAME }, { "path", TIKU_TRK_QF_PATH },
+        { "kind", TIKU_TRK_QF_KIND }, { "value", TIKU_TRK_QF_VALUE },
+        { "size", TIKU_TRK_QF_SIZE }, { "cap", TIKU_TRK_QF_CAP },
+        { "unit", TIKU_TRK_QF_UNIT },
+        { "writable", TIKU_TRK_QF_WRITABLE },
+        { "type", TIKU_TRK_QF_TYPE }
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof fields / sizeof fields[0]; i++) {
+        if (strlen(fields[i].name) == n &&
+            strncmp(fields[i].name, s, n) == 0) {
+            *out = fields[i].field;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_trk_query_set_formula(tiku_trk_query_t *q, const char *formula)
+{
+    const char *p = formula;
+    tiku_trk_query_t parsed;
+    tiku_trk_qjoin_t join = TIKU_TRK_JOIN_AND;
+
+    if (q == NULL) {
+        return -1;
+    }
+    /* Leave a positively invalid query on every failure path.  Otherwise a
+     * bad edit could leave the previously parsed formula live, or become an
+     * empty predicate that matches every node. */
+    tiku_trk_query_init(q);
+    q->mode = TIKU_TRK_QMODE_FORMULA;
+    q->invalid = 1;
+    if (formula == NULL) {
+        return -1;
+    }
+    tiku_trk_query_init(&parsed);
+    parsed.mode = TIKU_TRK_QMODE_FORMULA;
+    while (*p != '\0') {
+        const char *field, *value;
+        size_t fn, vn;
+        tiku_trk_qfield_t f;
+        tiku_trk_qop_t op;
+        int quoted = 0, at;
+
+        while (*p == ' ' || *p == '\t') { p++; }
+        if (*p++ != '(') { return -1; }
+        field = p;
+        while ((*p >= 'a' && *p <= 'z') || *p == '_') { p++; }
+        fn = (size_t)(p - field);
+        if (!formula_field(field, fn, &f)) { return -1; }
+        if (strncmp(p, "==", 2) == 0) {
+            op = TIKU_TRK_OP_IS; p += 2;
+        } else if (strncmp(p, "!=", 2) == 0) {
+            op = TIKU_TRK_OP_IS_NOT; p += 2;
+        } else if (*p == '>') {
+            op = TIKU_TRK_OP_GREATER; p++;
+        } else if (*p == '<') {
+            op = TIKU_TRK_OP_LESS; p++;
+        } else {
+            return -1;
+        }
+        if (*p == '"') {
+            quoted = 1;
+            value = ++p;
+            while (*p != '\0' && *p != '"') { p++; }
+            if (*p != '"') { return -1; }
+            vn = (size_t)(p - value);
+            p++;
+        } else {
+            value = p;
+            while (*p != '\0' && *p != ')') { p++; }
+            vn = (size_t)(p - value);
+        }
+        if (*p++ != ')' || vn >= TIKU_TRK_QUERY_VALUE_MAX) { return -1; }
+        {
+            char text[TIKU_TRK_QUERY_VALUE_MAX];
+
+            memcpy(text, value, vn);
+            text[vn] = '\0';
+            at = tiku_trk_query_add_term(&parsed, f, op, text, join);
+        }
+        if (at < 0) { return -1; }
+        parsed.term[at].pattern_ready = quoted;
+        while (*p == ' ' || *p == '\t') { p++; }
+        if (*p == '\0') { break; }
+        if (strncmp(p, "&&", 2) == 0) {
+            join = TIKU_TRK_JOIN_AND;
+        } else if (strncmp(p, "||", 2) == 0) {
+            join = TIKU_TRK_JOIN_OR;
+        } else {
+            return -1;
+        }
+        p += 2;
+    }
+    if (parsed.term_count == 0) { return -1; }
+    parsed.invalid = 0;
+    *q = parsed;
+    return 0;
+}
+
 int
 tiku_trk_query_add_term(tiku_trk_query_t *q, tiku_trk_qfield_t field,
                         tiku_trk_qop_t op, const char *value,
@@ -119,6 +230,26 @@ tiku_trk_query_in_scope(const tiku_trk_query_t *q, const char *path)
         }
     }
     return 0;
+}
+
+int
+tiku_trk_query_allows_path(const tiku_trk_query_t *q,
+                           const tiku_trk_model_t *m)
+{
+    size_t n;
+
+    if (q == NULL || m == NULL || q->include_trash) {
+        return 1;
+    }
+    if (m->kind == TIKU_TRK_KIND_TRASH) {
+        return 0;
+    }
+    if (q->trash_path[0] == '\0') {
+        return 1;
+    }
+    n = strlen(q->trash_path);
+    return !(strncmp(m->path, q->trash_path, n) == 0 &&
+             (m->path[n] == '\0' || m->path[n] == '/'));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -299,7 +430,7 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
     char buf[64], pat[TIKU_TRK_QUERY_VALUE_MAX * 4 + 8];
     const char *text = field_text(t->field, m, d, value, buf, sizeof buf);
 
-    if (t->field == TIKU_TRK_QF_TYPE &&
+    if (!t->pattern_ready && t->field == TIKU_TRK_QF_TYPE &&
         (t->op == TIKU_TRK_OP_IS || t->op == TIKU_TRK_OP_IS_NOT)) {
         /* A type is not a string to compare: "text/" IS the type of
          * "text/x-source-code", which no text operator can say.  The other
@@ -333,7 +464,11 @@ term_matches(const tiku_trk_qterm_t *t, const tiku_trk_model_t *m,
                    ? (strcmp(text, t->value) > 0)
                    : (strcmp(text, t->value) < 0);
     }
-    (void)tiku_trk_query_pattern(t->value, t->op, pat, sizeof pat);
+    if (t->pattern_ready) {
+        snprintf(pat, sizeof pat, "%s", t->value);
+    } else {
+        (void)tiku_trk_query_pattern(t->value, t->op, pat, sizeof pat);
+    }
     {
         int hit = tiku_trk_query_glob(pat, (text != NULL) ? text : "");
 
@@ -415,7 +550,12 @@ tiku_trk_query_predicate(const tiku_trk_query_t *q, char *out, size_t max)
             /* The pattern is what is really compared, so it is what the
              * formula shows: an editable predicate that lies about what it
              * will do is worse than none. */
-            (void)tiku_trk_query_pattern(t->value, t->op, pat, sizeof pat);
+            if (t->pattern_ready) {
+                snprintf(pat, sizeof pat, "%s", t->value);
+            } else {
+                (void)tiku_trk_query_pattern(t->value, t->op, pat,
+                                              sizeof pat);
+            }
             snprintf(frag, sizeof frag, "(%s%s\"%s\")", field_name(t->field),
                      op, pat);
         }
@@ -466,6 +606,11 @@ visit(const tiku_trk_model_t *m, void *ctx)
     tiku_trk_desc_t d;
     char value[128];
 
+    /* Do this before enqueueing: excluding only the Trash pose but walking
+     * its children would still put deleted items in the result set. */
+    if (!tiku_trk_query_allows_path(&r->q, m)) {
+        return 0;
+    }
     if (tiku_trk_model_is_container(m)) {
         /* Descend regardless of whether the directory itself matches: what
          * is being searched for is usually inside it. */
@@ -512,7 +657,7 @@ tiku_trk_query_start(tiku_trk_backend_t *b, const tiku_trk_query_t *q)
     tiku_trk_qrun_t *r;
     int i;
 
-    if (b == NULL || q == NULL) {
+    if (b == NULL || q == NULL || q->invalid) {
         return NULL;
     }
     r = calloc(1, sizeof *r);
@@ -741,22 +886,27 @@ serialise(const tiku_trk_query_t *q, char *out, size_t max)
     size_t o = 0;
     int i;
 
-    /* v2 adds what a record has to carry to be re-openable and sweepable:
+    /* v2 added what a record has to carry to be re-openable and sweepable;
+     * v3 adds formula patterns and the Include Trash choice:
      * what it IS, whether anyone meant to keep it, when it was written, and
      * what its scopes were.  A v1 record still reads -- the fields it does
      * not carry simply keep their defaults. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
-                          "v2\nmode %d\nkind %d %d %lld\n", (int)q->mode,
+                          "v3\nmode %d\nkind %d %d %lld\n", (int)q->mode,
                           (int)q->kind, q->temporary,
                           (long long)q->saved_at);
+    /* Persist the choice, not this machine's resolved Trash path. */
+    o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
+                          "o %d\n", q->include_trash);
     if (q->type[0] != '\0') {
         o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                               "y %s\n", q->type);
     }
     for (i = 0; i < q->term_count; i++) {
         o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
-                              "t %d %d %d %s\n", (int)q->term[i].field,
+                              "t %d %d %d %d %s\n", (int)q->term[i].field,
                               (int)q->term[i].op, (int)q->term[i].join,
+                              q->term[i].pattern_ready,
                               q->term[i].value);
     }
     for (i = 0; i < q->scope_count; i++) {
@@ -781,7 +931,8 @@ deserialise(tiku_trk_query_t *q, const char *in)
 
     tiku_trk_query_init(q);
     if (in == NULL ||
-        (strncmp(in, "v1\n", 3) != 0 && strncmp(in, "v2\n", 3) != 0)) {
+        (strncmp(in, "v1\n", 3) != 0 && strncmp(in, "v2\n", 3) != 0 &&
+         strncmp(in, "v3\n", 3) != 0)) {
         return -1;              /* an unknown version is not guessed at   */
     }
     p += 3;
@@ -798,13 +949,19 @@ deserialise(tiku_trk_query_t *q, const char *in)
         if (strncmp(line, "mode ", 5) == 0) {
             q->mode = (tiku_trk_qmode_t)atoi(line + 5);
         } else if (line[0] == 't' && line[1] == ' ') {
-            int f = 0, op = 0, j = 0, used = 0;
+            int f = 0, op = 0, j = 0, ready = 0, used = 0;
 
-            if (sscanf(line + 2, "%d %d %d %n", &f, &op, &j, &used) >= 3) {
+            if (in[1] == '3' && sscanf(line + 2, "%d %d %d %d %n", &f,
+                                       &op, &j, &ready, &used) >= 4) {
+                int at = tiku_trk_query_add_term(q, (tiku_trk_qfield_t)f,
+                           (tiku_trk_qop_t)op, line + 2 + used,
+                           (tiku_trk_qjoin_t)j);
+                if (at >= 0) { q->term[at].pattern_ready = ready; }
+            } else if (sscanf(line + 2, "%d %d %d %n", &f, &op, &j,
+                              &used) >= 3) {
                 (void)tiku_trk_query_add_term(q, (tiku_trk_qfield_t)f,
-                                              (tiku_trk_qop_t)op,
-                                              line + 2 + used,
-                                              (tiku_trk_qjoin_t)j);
+                    (tiku_trk_qop_t)op, line + 2 + used,
+                    (tiku_trk_qjoin_t)j);
             }
         } else if (strncmp(line, "kind ", 5) == 0) {
             int k = 0, t = 0;
@@ -818,6 +975,14 @@ deserialise(tiku_trk_query_t *q, const char *in)
         } else if (line[0] == 'y' && line[1] == ' ') {
             snprintf(q->type, sizeof q->type, "%.*s",
                      (int)(sizeof q->type - 1u), line + 2);
+        } else if (line[0] == 'o' && line[1] == ' ') {
+            int include = 0, used = 0;
+
+            if (sscanf(line + 2, "%d %n", &include, &used) >= 1) {
+                q->include_trash = include ? 1 : 0;
+                snprintf(q->trash_path, sizeof q->trash_path, "%.*s",
+                         (int)(sizeof q->trash_path - 1u), line + 2 + used);
+            }
         } else if (line[0] == 's' && line[1] == ' ') {
             (void)tiku_trk_query_add_scope(q, line + 2);
         } else if (line[0] == 'd' && line[1] == ' ') {
