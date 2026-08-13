@@ -509,6 +509,40 @@ main(void)
               "a pose the sweep had already let go of");
     }
 
+    printf("\nwhere the next icon lands (PVL-017)\n");
+    {
+        int hx0 = 0, hy0 = 0, hx1 = 0, hy1 = 0;
+
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        tiku_trk_poseview_set_viewport(v, 400, 300);
+        tiku_trk_poseview_hint(v, &hx0, &hy0);
+        tiku_trk_poseview_set_viewport(v, 240, 180);
+        tiku_trk_poseview_hint(v, &hx1, &hy1);
+        check(hx1 == hx0 && hy1 == hy0, "PVL-017",
+              "a resize starts the placement hint over: it is a point in "
+              "the WINDOW, and a window of another size has a different "
+              "top-left to place from");
+        {
+            int hx2 = 0, hy2 = 0;
+
+            /* Placing icons ADVANCES the hint; a reload must put it back,
+             * or the first new icon lands where the last listing left
+             * off. */
+            (void)tiku_trk_poseview_reload(v);
+            (void)tiku_trk_poseview_place_unplaced(v, 400);
+            tiku_trk_poseview_hint(v, &hx2, &hy2);
+            check(hx2 != hx0 || hy2 != hy0, "PVL-017",
+                  "placing icons moves the hint along, which is what makes "
+                  "the reset matter at all");
+            (void)tiku_trk_poseview_reload(v);
+            tiku_trk_poseview_hint(v, &hx1, &hy1);
+            check(hx1 == hx0 && hy1 == hy0, "PVL-017",
+                  "and a reload puts it back -- a fresh set of poses "
+                  "places from the top-left rather than from wherever the "
+                  "last one finished");
+        }
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     sh("rm -rf %s", work);

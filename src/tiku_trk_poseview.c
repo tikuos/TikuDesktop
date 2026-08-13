@@ -687,6 +687,10 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
 int
 tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
 {
+    /* A reload is a fresh set of poses, so the placement hint starts over
+     * with them: kept, it would place the first new icon under whatever
+     * the last listing left behind (PVL-017). */
+    tiku_trk_poseview_reset_hint(v);
     if (v == NULL || v->backend == NULL) {
         return -1;
     }
@@ -2218,6 +2222,16 @@ map_icons(tiku_trk_poseview_t *v, int old_mode, int old_size)
 }
 
 void
+tiku_trk_poseview_hint(const tiku_trk_poseview_t *v, int *x, int *y)
+{
+    if (v == NULL) {
+        return;
+    }
+    if (x != NULL) { *x = v->hint_x; }
+    if (y != NULL) { *y = v->hint_y; }
+}
+
+void
 tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v)
 {
     int gx, gy, ox, oy;
@@ -3289,6 +3303,11 @@ extent_recalc(tiku_trk_poseview_t *v)
 void
 tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
 {
+    if (v != NULL && (v->view_w != w || v->view_h != h)) {
+        /* The hint is a point in the WINDOW, so a window of a different
+         * size has a different top-left to start from (PVL-017). */
+        tiku_trk_poseview_reset_hint(v);
+    }
     if (v == NULL || w < 0 || h < 0) {
         return;
     }

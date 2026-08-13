@@ -84,6 +84,9 @@
  * the reason rows do not tighten onto the text. */
 #define LIST_ROW_H 20
 
+/** @brief How much of the count view's text a script can read. */
+#define TIKU_TRK_COUNT_TEXT_MAX 64
+
 /**
  * @brief How long a drag must rest on a folder before it springs open.
  *
@@ -207,6 +210,9 @@ typedef struct desktop {
     /* What the system knows about a type: its description, its icon, and
      * the columns it is worth showing (AW-013, CW-026). */
     tiku_trk_types_t     types;
+    /* What the count view last drew, so a script can read the one line
+     * that reports the selection rather than the folder. */
+    char                 count_text[TIKU_TRK_COUNT_TEXT_MAX];
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
@@ -1177,12 +1183,20 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
             tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
             /* TS-037: an empty folder says so rather than counting to
              * zero, which reads like a count that failed. */
+            int sel = tiku_trk_poseview_selection_count(fl->view);
+
             if (total == 0) {
                 snprintf(label, sizeof label, "empty folder");
+            } else if (sel > 0) {
+                /* What is picked out is the thing being worked on, so the
+                 * count says how much of the folder that is (TS-037). */
+                snprintf(label, sizeof label, "%d/%d selected", sel, total);
             } else {
                 snprintf(label, sizeof label, "%d item%s", total,
                          (total == 1) ? "" : "s");
             }
+            snprintf(fl->app->count_text, sizeof fl->app->count_text,
+                     "%.*s", TIKU_TRK_COUNT_TEXT_MAX - 1, label);
         }
         tiku_desk_text(s, f, count.x + 4,
                        count.y + (COUNT_H - f->height) / 2 + f->ascent,
@@ -4830,6 +4844,7 @@ main(int argc, char **argv)
                     }
                     sst.menu = labels;
                 }
+                sst.count = app.count_text;
                 sst.desk_selected = 0;
                 sst.desk_sel_name = NULL;
                 if (app.dfl.view != NULL) {

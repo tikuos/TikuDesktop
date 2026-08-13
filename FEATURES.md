@@ -579,12 +579,11 @@ SlotOccupied binary-searches fVSPoseList (poses sorted by y) via FirstIndexAtOrB
 **MISSING:** slot_occupied does skip poses outside the candidate's vertical band, but it walks the whole pose array linearly with no y-sorted binary search, so the "stays fast in crowded folders" clause is not met (the right-edge wrap is handled separately in next_slot).  
 *src/tiku_trk_poseview.c:slot_occupied (1725-1750)*
 
-#### PVL-017 · important · partial
+#### PVL-017 · important · done
 **The auto-placement hint restarts at the top-left of the currently scrolled view, not at the top-left of the document.**  
 fHintLocation = PinToGrid(LeftTop() + fOffset). Called from InitCommon, ClearPoses, Cleanup(true), SetViewMode, SwitchDir, DeletePose and after a window resize.  
 `PoseView.cpp` → `BPoseView::ResetPosePlacementHint`  
-**MISSING:** Re-seeded on a directory switch and a mode change; a bare reload and a window resize still leave the old hint.
-
+**PORT:** Re-seeded everywhere the original re-seeds it: a directory switch, a mode change, a bare reload and a window resize. It is a point in the WINDOW, so a window of another size has a different top-left to place from.  
 #### PVL-018 · important · done
 **On the Desktop, icons are never placed on top of the Deskbar, on a replicant, or off-screen.**  
 IsValidLocation(rect) requires Bounds().Contains(rect), rejects intersection with the Deskbar frame inset by (-10,-10), and rejects intersection with any child view frame inset by (-5,-5). The Deskbar frame is re-queried at most every 500 ms and cached otherwise. Off the Desktop this check always returns true.  
@@ -5420,12 +5419,11 @@ Resize, reorder, add and remove set fStateNeedsSaving; sort/mode/origin changes 
 **MISSING:** The dirty-bit discipline exists and works for view state -- resize, move, add, remove, sort_click, set_mode and set_icon_size all set state_dirty and save_state early-returns when it is clear -- but the column write is ungated: save_columns never consults state_dirty and the window calls it on every title-bar release, so a click that only re-sorted rewrites the layout record.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:2187 (save_state gate) vs :3217 (save_columns, no gate); caller /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:1472*
 
-#### TS-037 · core · partial
+#### TS-037 · core · done
 **The bottom-left status area shows the item count: "no items", "1 item"/"N items", or "K/N selected" when there is a selection.**  
 Plural forms and number grouping are locale-formatted (BStringFormat + BNumberFormat on the total). Text is truncated at the end if it does not fit.  
 `CountView.cpp` → `BCountView::Draw`  
-**MISSING:** An empty folder says so rather than counting to zero; the source's other count-view states are not all there.
-
+**PORT:** The count says how much of the folder is picked out when anything is, and says an empty folder in words rather than counting to zero. Locale plurals and number grouping have no analogue here; the port has one language.  
 #### TS-038 · important · done
 **During a long directory read a barber pole spins in the status area, but only if the read takes more than half a second.**  
 StartBarberPole only arms it (fStartSpinningAfter = now + 500000us); the first paint of the pole invalidates the whole text+pole rect, later frames only the pole. Animation is driven by Pulse(); the stripe bitmap offset decrements 5..0 and wraps each frame. Ended by AddPosesCompleted and by every early-out in the add-poses path (bad directory, rewind failure, superseded thread).  

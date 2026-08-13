@@ -318,6 +318,11 @@ draw_count(app_t *a, tiku_desk_rect_t list)
             snprintf(label, sizeof label, "%s",
                      tiku_trk_poseview_is_filtering(a->view)
                          ? "nothing matches" : "empty folder");
+        } else if (tiku_trk_poseview_selection_count(a->view) > 0) {
+            /* What is picked out is the thing being worked on, so the
+             * count says how much of the folder that is (TS-037). */
+            snprintf(label, sizeof label, "%d/%d selected",
+                     tiku_trk_poseview_selection_count(a->view), total);
         } else {
             snprintf(label, sizeof label, "%d item%s%s", total,
                      (total == 1) ? "" : "s",

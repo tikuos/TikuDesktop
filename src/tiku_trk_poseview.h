@@ -584,6 +584,9 @@ int tiku_trk_poseview_place_unplaced(tiku_trk_poseview_t *v, int view_w);
  */
 void tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v);
 
+/** @brief Where the next auto-placed icon would go (PVL-017). */
+void tiku_trk_poseview_hint(const tiku_trk_poseview_t *v, int *x, int *y);
+
 /**
  * @brief Re-place pose @p at if its sort key has moved (MA-055).
  *
