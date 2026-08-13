@@ -61,7 +61,7 @@ for s in "$here"/*.script; do
         echo hi > $work/c.txt
         # A scrolling test needs more rows than a window holds.
         case $(basename "$s") in
-            scroll.script) i=1; while [ $i -le 40 ]; do
+            scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
             dbdrop.script) rm -rf "$HOME/.config/deskbar" ;;
             # A name that exists nowhere else on the machine, so a search

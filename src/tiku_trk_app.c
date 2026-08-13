@@ -30,6 +30,7 @@
 #include "tiku_trk_fs.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_task.h"
@@ -87,6 +88,11 @@ typedef struct {
     /* The list row to select once a delete has finished; -1 when the last
      * operation was not one that removes rows (FS-050). */
     int                  select_next;
+    /* The scrollbar as an object: a range that can be held steady while
+     * the user drags it, and detached while a bulk re-layout runs
+     * (PVL-051, PVL-052, PVL-060). */
+    tiku_trk_scroll_t    sb;
+    tiku_desk_rect_t     sb_rect;
 } app_t;
 
 /** @brief Index of the first selected row, or -1. */
@@ -621,12 +627,27 @@ draw(app_t *a)
     }
     tiku_desk_clip_reset(s);
 
-    /* Scrollbar. */
+    /* Scrollbar.  Drawn FROM the bar rather than from the view: it is a
+     * thing that can be held, and while it is held the range it shows is
+     * the one it was holding (PVL-051, PVL-052). */
     {
-        float frac = (total > 0) ? (float)rows / (float)total : 1.0f;
-        float pos = (total > rows) ? (float)scroll / (float)(total - rows)
-                                   : 0.0f;
         tiku_desk_rect_t sb = { list.x + list.w, list.y, SCROLL_W, list.h };
+        int tpos = 0, tlen = 0;
+        float frac, pos;
+
+        (void)tiku_trk_scroll_set_range(&a->sb, total, rows);
+        if (!a->sb.tracking) {
+            (void)tiku_trk_scroll_to(&a->sb, scroll);
+        }
+        if (tiku_trk_scroll_thumb(&a->sb, list.h, &tpos, &tlen)) {
+            frac = (float)tlen / (float)list.h;
+            pos = (list.h > tlen)
+                      ? (float)tpos / (float)(list.h - tlen) : 0.0f;
+        } else {
+            frac = 1.0f;
+            pos = 0.0f;
+        }
+        a->sb_rect = sb;
         tiku_desk_ui_scrollbar(s, sb, pos, frac, 0);
     }
 
@@ -929,12 +950,16 @@ open_selection(app_t *a)
         return;
     }
     if (tiku_trk_model_is_container(&p->model)) {
+        /* A folder switch is a bulk re-layout: the bar is detached across
+         * it so none of the shapes it passes through is taken (PVL-060). */
+        tiku_trk_scroll_detach(&a->sb);
         (void)tiku_trk_poseview_save_state(a->view);
         (void)tiku_trk_poseview_switch_dir(a->view, p->model.path);
         /* Opened as a BATCHED load: a folder with thousands of entries
          * shows its first rows at once instead of freezing the window
          * until the last one is read. */
         (void)tiku_trk_poseview_load_begin(a->view, tiku_trk_now());
+        tiku_trk_scroll_attach(&a->sb);
         (void)tiku_trk_poseview_load_step(a->view, tiku_trk_now());
         (void)tiku_trk_poseview_restore_state(a->view);
         settle_layout(a);
@@ -1317,11 +1342,13 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
             /* Cmd+K snaps what is there; Shift re-lays it out in sort
              * order.  Straightening an arrangement and replacing it are
              * two different commands (PVL-021). */
+            tiku_trk_scroll_detach(&a->sb);
             if (ev->state & ShiftMask) {
                 tiku_trk_poseview_cleanup(a->view, lr.w - 4);
             } else {
                 (void)tiku_trk_poseview_snap_to_grid(a->view);
             }
+            tiku_trk_scroll_attach(&a->sb);
             (void)tiku_trk_poseview_save_state(a->view);
             a->dirty = 1;
             return;
@@ -1382,6 +1409,7 @@ main(int argc, char **argv)
         if (start == NULL) { start = "/"; }
     }
 
+    tiku_trk_scroll_init(&a.sb, 1);
     a.view = tiku_trk_poseview_new(a.backend, start);
     if (a.view != NULL) {
         (void)tiku_trk_poseview_restore_state(a.view);
@@ -1466,7 +1494,9 @@ main(int argc, char **argv)
         /* Scripted: icon mode, auto-place, then move two icons the way a
          * user would drag them, so the capture shows real spatial state. */
         tiku_desk_rect_t lr = list_rect(&a);
+        tiku_trk_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_ICON);
+        tiku_trk_scroll_attach(&a.sb);
         (void)tiku_trk_poseview_place_unplaced(a.view, lr.w - 4);
         {
             tiku_trk_pose_t *p0 = tiku_trk_poseview_at(a.view, 0);
@@ -1479,7 +1509,9 @@ main(int argc, char **argv)
     if (getenv("TRK_DEMO_MINI") != NULL) {
         tiku_desk_rect_t lr = list_rect(&a);
 
+        tiku_trk_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_MINI);
+        tiku_trk_scroll_attach(&a.sb);
         (void)tiku_trk_poseview_place_unplaced(a.view, lr.w - 4);
         tiku_trk_poseview_click(a.view, 2, 0);
     }
@@ -1616,6 +1648,20 @@ main(int argc, char **argv)
                             tiku_trk_poseview_scroll(a.view) +
                             ((ev.xbutton.button == 4) ? -3 : 3));
                     }
+                    a.dirty = 1;
+                    break;
+                }
+                if (ev.xbutton.x >= a.sb_rect.x &&
+                    ev.xbutton.x < a.sb_rect.x + a.sb_rect.w &&
+                    ev.xbutton.y >= a.sb_rect.y &&
+                    ev.xbutton.y < a.sb_rect.y + a.sb_rect.h) {
+                    /* The bar takes it: a press pages or takes hold of the
+                     * thumb, and while it is held the view follows the bar
+                     * rather than the other way round (PVL-051). */
+                    int at = ev.xbutton.y - a.sb_rect.y;
+
+                    tiku_trk_poseview_scroll_to(a.view,
+                        tiku_trk_scroll_press(&a.sb, a.sb_rect.h, at));
                     a.dirty = 1;
                     break;
                 }
@@ -1772,6 +1818,13 @@ main(int argc, char **argv)
                 break;
             }
             case MotionNotify: {
+                if (a.sb.tracking) {
+                    tiku_trk_poseview_scroll_to(a.view,
+                        tiku_trk_scroll_drag(&a.sb, a.sb_rect.h,
+                                             ev.xmotion.y - a.sb_rect.y));
+                    a.dirty = 1;
+                    break;
+                }
                 int cx = 0, cy = 0;
 
                 if (tiku_trk_titleview_tracking(&a.tv) !=
@@ -1856,6 +1909,9 @@ main(int argc, char **argv)
                 break;
             }
             case ButtonRelease:
+                /* Letting go applies whatever range arrived while the bar
+                 * was held (PVL-052). */
+                tiku_trk_scroll_release(&a.sb);
                 if (tiku_trk_titleview_tracking(&a.tv) !=
                         TIKU_TRK_TRACK_NONE) {
                     int cx = 0, cy = 0;

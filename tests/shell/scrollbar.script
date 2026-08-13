@@ -1,0 +1,14 @@
+# shell: tracker
+# PVL-051: the scrollbar is a CONTROL.  It was a picture: a pure function
+# of the view redrawn every frame, which could be looked at and never used.
+wait 6
+expect-scroll 0
+note a press on the track below the thumb pages the listing down
+click 745 400
+wait 4
+expect-scroll 5
+note and a press above it comes back
+click 745 60
+wait 4
+expect-scroll-at-most 1
+quit

@@ -816,14 +816,17 @@ move_pose and remove_pose; tests/test_iconview.c*
 **Scrollbar range, step and thumb proportion track the content: half a row per click, a full page per page-jump, thumb sized by visible fraction.**  
 UpdateScrollRange: min = min(extent.leftTop, origin), max = (extent.rightBottom - bounds.rightBottom) + origin clamped to be at least origin; SetSteps(fListElemHeight/2, bounds.Width()/Height()); proportion = bounds dimension / (extent | bounds) dimension. Range and proportion are only written when they actually changed. The window is locked for the Bounds/Extent read and unlocked before touching the scrollbars.  
 `PoseView.cpp` → `BPoseView::UpdateScrollRange`  
-**MISSING:** The thumb proportion (rows/total) and position track the content and the range is clamped to it, but the scrollbar is draw-only with no click or drag handling, and scrolling is whole-row (wheel = 3 rows), so "half a row per click, a page per page-jump" does not exist.  
+**MISSING:** The bar is a thing now: a range with a thumb sized by the visible fraction and floored so it can still be grabbed, a press that pages or takes hold, and a drag that keeps the grip rather than jumping the thumb's top under the pointer. A stepper click is half a line, rounded up. Absent: the stepper ARROWS themselves, and the desktop shell's folder windows draw no bar at all.  
+*src/tiku_trk_scroll.c; src/tiku_trk_app.c (the bar's press, drag and release); tests/test_scroll.c; tests/shell/scrollbar.script*  
+*Shell: tracker*
 *src/tiku_trk_app.c:draw (500-507) and ButtonPress wheel handling (1213-1226); src/tiku_trk_poseview.c:tiku_trk_poseview_set_visible_rows (2244-2251)*
 
-#### PVL-052 · important · open
+#### PVL-052 · important · done
 **Scroll range refreshes on its own when content changes, but never while a mouse button is held.**  
 Pulse compares Extent() and LeftTop() against fLastExtent/fLastLeftTop and calls UpdateScrollRange only when GetMouse reports buttons == 0. Pulse also drives UpdateCount(), auto-scroll and the pending text-widget double-click expiry.  
 `PoseView.cpp` → `BPoseView::Pulse`
-**SUBSYSTEM:** Interactive scrollbars: the port's only scrollbar is draw-only, recomputed from live scroll/rows/total at every draw (src/tiku_trk_app.c:622-628; desktop folder windows draw none), so there is no cached scroll range to refresh on a pulse and no thumb drag for a refresh to fight — the row's machinery has nothing to attach to until scrollbars become input objects.  
+**PORT:** A range handed to a held bar is remembered rather than taken -- it would make the thumb jump out from under the pointer -- and applied on release. It is not a pulse that notices: the range is offered every frame, and the bar decides whether it can take it.  
+*src/tiku_trk_scroll.c:tiku_trk_scroll_set_range/_release; tests/test_scroll.c*
 
 #### PVL-053 · polish · open
 **A corrupt or absurd saved scroll origin is silently reset to the top-left instead of scrolling into nowhere.**  
@@ -872,11 +875,12 @@ ResizeToFit insets the screen frame by 5, adds the tab height, sizes the frame t
 **MISSING:** The view is not scrolled to the content's top-left: CMD_RESIZE_TO_FIT never touches v->scroll (desktop.c:1145-1147), so when the screen clamp leaves rows hidden the view stays where it was, pulled back only by the generic past-the-end clamp rather than to row 0 as ResizeToFit's scroll-to-extent-origin does.  
 *Audited 2026-08-12: `src/tiku_trk_cwmenu.c:169 (menu item), src/tiku_trk_desktop.c:1145-1147 (invoke)` `src/tiku_trk_win.c:364-416 (desk_zoom: chrome-measured fit, screen clamp, second-click restore)` `src/tiku_trk_desktop.c:511-559 (folder_fit_w/folder_fit_h content measurement)`*  
 *Shell: desktop*  
-#### PVL-060 · important · open
+#### PVL-060 · important · done
 **Bulk re-layouts (mode switch, clean-up all, folder switch, clearing) detach the scrollbars so intermediate positions never feed back into the view.**  
 DisableScrollBars sets both scrollbar targets to NULL, EnableScrollBars restores them. The sequence used everywhere is Disable → ScrollTo(newOrigin) → UpdateScrollRange → SetScrollBarsTo(newOrigin) → Enable.  
 `PoseView.cpp` → `BPoseView::DisableScrollBars / BPoseView::EnableScrollBars / BPoseView::ResetOrigin`
-**SUBSYSTEM:** Interactive scrollbars: there is no scrollbar object to detach — the drawn bar is a pure function of view state evaluated per frame (src/tiku_trk_app.c:622-628), so intermediate re-layout positions structurally cannot feed back into the view. The row's invariant currently holds vacuously; it becomes implementable (and necessary) only if scrollbars become stateful input objects. Waiver candidate.  
+**PORT:** Detach and attach around every bulk re-layout -- mode switch, clean-up, folder switch -- and the shapes passed through in between are refused, so none of them feeds back into a view that is halfway rebuilt. Attaching takes the last one, and a position past the end of the new content is pulled back rather than left pointing past it.  
+*src/tiku_trk_scroll.c:tiku_trk_scroll_detach/_attach; src/tiku_trk_app.c; tests/test_scroll.c*
 
 #### PVL-061 · polish · done
 **A folder that finishes loading while scrolled past its last row scrolls back so you are not left staring at an empty window.**  
