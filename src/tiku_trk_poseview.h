@@ -318,6 +318,17 @@ void tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index,
                              unsigned mods);
 
 /**
+ * @brief Apply a click whose view-space point is known (PVS-005).
+ *
+ * List-mode Shift selection is an index range.  In either icon mode it is a
+ * spatial rectangle from the selection pivot to the point actually clicked,
+ * so the engine needs the point rather than a row number alone.  The simpler
+ * tiku_trk_poseview_click() remains the coordinate-free convenience entry.
+ */
+void tiku_trk_poseview_click_at(tiku_trk_poseview_t *v, int index, int x,
+                                int y, unsigned mods);
+
+/**
  * @brief Select whatever now sits at @p index, after a removal (FS-050).
  *
  * List mode only, and clamped to the end: deleting the last row leaves the

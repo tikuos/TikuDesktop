@@ -12,7 +12,13 @@ expect-scroll-at-most 0
 note entering the band does not scroll at once -- crossing an edge on the
 note way somewhere else must not start it
 move 200 316
-wait 5
+wait 25
+expect-scroll-at-most 0
+note leaving and re-entering re-arms the full delay rather than inheriting it
+move 200 200
+wait 2
+move 200 316
+wait 25
 expect-scroll-at-most 0
 note but holding there past the delay does
 wait 45

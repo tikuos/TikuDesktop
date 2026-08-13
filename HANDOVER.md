@@ -51,9 +51,9 @@ blocker costs the next person an hour.
 ### Current state (2026-08-13)
 
 ```
-889 rows: 441 done · 191 partial · 79 differs · 178 open
-core (199): 113 done · 53 partial · 25 differs · 8 open
-verification: 1672 checks — 34 unit suites + 33 headless shell scripts
+889 rows: 474 done · 173 partial · 81 differs · 161 open
+core (199): 125 done · 43 partial · 25 differs · 6 open
+verification: 1816 checks — 36 unit suites + 46 headless shell scripts
 ```
 
 ---

@@ -50,6 +50,7 @@ typedef struct {
     int         windows;    /* how many windows are open                */
     int         selected;   /* how many poses the focused view has       */
     const char *sel_name;   /* the first selected pose's name, or NULL   */
+    int         renaming;   /* an inline name editor is active           */
     const char *find_text;  /* what the Find panel is asking for         */
     const char *find_type;  /* the type it is narrowed to                */
     const char *location;   /* the browser navigator's current path      */
@@ -112,6 +113,7 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     expect-windows <n>
  *     expect-selected <n>
  *     expect-selected-name <name>
+ *     expect-renaming <0|1>
  *     expect-find-text <text>             -- the Find panel's own field
  *     expect-find-type <label>
  *     expect-location <path>

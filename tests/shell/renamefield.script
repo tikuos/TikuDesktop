@@ -1,0 +1,29 @@
+# shell: desktop
+# PVS-020: every list column hits its row, but only the Name widget arms the
+# slow-second-click editor.
+key 3 ctrl
+wait 6
+note a slow second click in Value still selects the row but does not rename it
+click 450 119
+wait 45
+click 450 119
+wait 120
+expect-renaming 0
+expect-selected-name a.txt
+expect-file /tmp/trk_script/a.txt
+note the same gesture in Name does arm the inline editor
+click-row 1
+wait 120
+expect-renaming 1
+key r
+key e
+key n
+key a
+key m
+key e
+key d
+key Return
+wait 30
+expect-file /tmp/trk_script/renamed
+expect-no-file /tmp/trk_script/a.txt
+quit

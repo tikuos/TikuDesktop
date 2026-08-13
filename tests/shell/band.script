@@ -4,6 +4,15 @@
 # modifier click at a time.
 key 1 ctrl
 wait 10
+note a press alone is not a sweep: nothing is drawn until the pointer has
+note moved past the slop, so a click that clears the selection does not
+note flash a rectangle
+press 60 200
+move 62 201
+wait 2
+expect-pixel 61 200 ffffff
+release 62 201
+wait 2
 note a press on empty space and a drag across the first row
 press 60 94
 move 200 109

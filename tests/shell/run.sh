@@ -11,6 +11,10 @@ work=/tmp/trk_script
 fails=0
 
 for s in "$here"/*.script; do
+    if [ -n "${TRK_SHELL_ONLY:-}" ] &&
+       [ "$(basename "$s")" != "$TRK_SHELL_ONLY" ]; then
+        continue
+    fi
     which=$(sed -n 's/^# shell: //p' "$s" | head -1)
     [ -z "$which" ] && which=both
     for bin in tracker desktop; do
@@ -68,7 +72,7 @@ for s in "$here"/*.script; do
         echo hi > $work/c.txt
         # A scrolling test needs more rows than a window holds.
         case $(basename "$s") in
-            scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
+            bandscroll.script|scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
             dbdrop.script) rm -rf "$HOME/.config/deskbar" ;;
             # A name that exists nowhere else on the machine, so a search

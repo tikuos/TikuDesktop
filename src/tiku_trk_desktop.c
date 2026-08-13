@@ -266,7 +266,10 @@ typedef struct desktop {
      * press arrives and where it is drawn; the view is handed view-space
      * coordinates when it is asked to sweep. */
     folder_t            *band_fl;
+    folder_t            *band_arm;      /* pressed, not yet swept        */
     int                  band_x0, band_y0, band_x1, band_y1;
+    unsigned             band_mods;     /* held while idle scrolling     */
+    int64_t              band_scroll_at;
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
     /* Renaming an ENTRY, which is a different thing from editing a node's
@@ -3809,6 +3812,60 @@ folder_row_at(desktop_t *app, folder_t *fl, int x, int y)
     return (rel < tiku_trk_poseview_count(fl->view)) ? rel : -1;
 }
 
+/** @brief Whether a pose click landed on the widget that carries its name. */
+static int
+folder_name_at(desktop_t *app, folder_t *fl, int row, int x, int y)
+{
+    tiku_desk_rect_t c = folder_content(app, fl);
+
+    if (row < 0) {
+        return 0;
+    }
+    if (tiku_trk_poseview_mode(fl->view) == TIKU_TRK_MODE_LIST) {
+        /* This compact shell paints Name and Value rather than the general
+         * column set.  Their click rectangles meet at the same two-thirds
+         * boundary used to reserve the right-aligned value field; a click in
+         * Value still selects the row but must not arm Name's editor
+         * (PVS-020). */
+        return x < c.x + (c.w * 2) / 3;
+    }
+    {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, row);
+        int ox = 0, oy = 0;
+        int ix, iy, iw, ih, lx, ly, lw, lh;
+        int vx, vy;
+
+        if (p == NULL) {
+            return 0;
+        }
+        tiku_trk_poseview_origin(fl->view, &ox, &oy);
+        vx = x - (c.x + 2) + ox;
+        vy = y - (c.y + 2) + oy;
+        tiku_trk_poseview_pose_parts(fl->view, p, &ix, &iy, &iw, &ih,
+                                     &lx, &ly, &lw, &lh);
+        return vx >= lx && vx < lx + lw && vy >= ly && vy < ly + lh;
+    }
+}
+
+/** @brief Re-evaluate a band in view coordinates, including any new scroll. */
+static void
+folder_band_select(desktop_t *app)
+{
+    tiku_desk_rect_t c;
+    int ox = 0, oy = 0;
+
+    if (app == NULL || app->band_fl == NULL) {
+        return;
+    }
+    c = folder_content(app, app->band_fl);
+    tiku_trk_poseview_origin(app->band_fl->view, &ox, &oy);
+    (void)tiku_trk_poseview_select_rect(app->band_fl->view,
+        app->band_x0 - (c.x + 2) + ox,
+        app->band_y0 - (c.y + 2) + oy,
+        app->band_x1 - (c.x + 2) + ox,
+        app->band_y1 - (c.y + 2) + oy, app->band_mods);
+}
+
 /** @brief Resolve a visible focused-window row for a scripted click. */
 static int
 script_row_point(void *ctx, int row, int *x, int *y)
@@ -5038,6 +5095,7 @@ main(int argc, char **argv)
                 }
                 sst.selected = 0;
                 sst.sel_name = NULL;
+                sst.renaming = app.renaming;
                 sst.find_text = app.panel.name_text;
                 sst.find_type = tiku_trk_find_type_label(&app.panel);
                 sst.columns = 0;
@@ -5973,7 +6031,15 @@ main(int argc, char **argv)
                                 tiku_trk_poseview_scroll(fl->view) +
                                 ((ev.xbutton.button == 4) ? -3 : 3));
                         } else {
-                            tiku_trk_poseview_click(fl->view, row, mods);
+                            {
+                                tiku_desk_rect_t c = folder_content(&app, fl);
+                                int ox = 0, oy = 0;
+
+                                tiku_trk_poseview_origin(fl->view, &ox, &oy);
+                                tiku_trk_poseview_click_at(fl->view, row,
+                                    ev.xbutton.x - (c.x + 2) + ox,
+                                    ev.xbutton.y - (c.y + 2) + oy, mods);
+                            }
                             app.press_at = now;
                             app.press_x = ev.xbutton.x;
                             app.press_y = ev.xbutton.y;
@@ -6014,10 +6080,17 @@ main(int argc, char **argv)
                                      * top of what is there (PVS-027). */
                                     tiku_trk_poseview_select_none(fl->view);
                                 }
-                                tiku_trk_poseview_set_band(fl->view, 1);
-                                app.band_fl = fl;
+                                /* ARMED, not started: a band begins only
+                                 * once the pointer has moved past the
+                                 * slop, so a click on empty space that
+                                 * clears the selection does not also flash
+                                 * a rectangle (PVS-024). */
+                                app.band_arm = fl;
+                                app.band_fl = NULL;
                                 app.band_x0 = app.band_x1 = ev.xbutton.x;
                                 app.band_y0 = app.band_y1 = ev.xbutton.y;
+                                app.band_mods = bm;
+                                app.band_scroll_at = 0;
                                 /* A sweep between two icons also ENDS any
                                  * half-finished double click: without this
                                  * the click that starts the band is
@@ -6058,7 +6131,8 @@ main(int argc, char **argv)
                             }
                             app.drop_fl = NULL;
                             app.drop_row = -1;
-                            if (row >= 0) {
+                            if (row >= 0 && folder_name_at(&app, fl, row,
+                                    ev.xbutton.x, ev.xbutton.y)) {
                                 /* Armed, not started: the rename begins only
                                  * once the double-click window passes with
                                  * no further click (PVS-014, MA-043). */
@@ -6218,10 +6292,18 @@ main(int argc, char **argv)
                         app.dirty = 1;
                     }
                 }
+                if (app.band_arm != NULL &&
+                    (ev.xmotion.x - app.band_x0 > TIKU_TRK_DRAG_SLOP ||
+                     app.band_x0 - ev.xmotion.x > TIKU_TRK_DRAG_SLOP ||
+                     ev.xmotion.y - app.band_y0 > TIKU_TRK_DRAG_SLOP ||
+                     app.band_y0 - ev.xmotion.y > TIKU_TRK_DRAG_SLOP)) {
+                    /* Past the slop: now it is a sweep. */
+                    tiku_trk_poseview_set_band(app.band_arm->view, 1);
+                    app.band_fl = app.band_arm;
+                    app.band_arm = NULL;
+                }
                 if (app.band_fl != NULL) {
-                    tiku_desk_rect_t c = folder_content(&app, app.band_fl);
                     unsigned bm = 0u;
-                    int ox = 0, oy = 0;
 
                     if (ev.xmotion.state & ShiftMask) {
                         bm |= TIKU_TRK_MOD_SHIFT;
@@ -6231,15 +6313,11 @@ main(int argc, char **argv)
                     }
                     app.band_x1 = ev.xmotion.x;
                     app.band_y1 = ev.xmotion.y;
+                    app.band_mods = bm;
                     /* Handed VIEW coordinates: the band is drawn where the
-                     * pointer is, but what it sweeps is where the icons
-                     * are, and those two differ by the scroll origin. */
-                    tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
-                    (void)tiku_trk_poseview_select_rect(app.band_fl->view,
-                        app.band_x0 - (c.x + 2) + ox,
-                        app.band_y0 - (c.y + 2) + oy,
-                        app.band_x1 - (c.x + 2) + ox,
-                        app.band_y1 - (c.y + 2) + oy, bm);
+                     * pointer is, but what it sweeps is where the icons are,
+                     * and those two differ by the scroll origin. */
+                    folder_band_select(&app);
                     app.dirty = 1;
                 }
                 if (app.dock_drag) {
@@ -6273,6 +6351,9 @@ main(int argc, char **argv)
                 break;
             case ButtonRelease:
                 app.dock_drag = 0;
+                app.band_arm = NULL;
+                app.band_scroll_at = 0;
+                app.scroll_at = 0;
                 if (app.band_fl != NULL) {
                     /* The sweep's own selection is already what the view
                      * holds -- membership is a per-pose flag, so there is
@@ -7001,15 +7082,31 @@ sel_done:
             } else if (app.band_y1 > bot - AUTOSCROLL_BAND) {
                 over = app.band_y1 - (bot - AUTOSCROLL_BAND);
             }
-            if (over != 0 &&
-                tiku_trk_poseview_mode(app.band_fl->view) !=
-                    TIKU_TRK_MODE_LIST) {
-                int ox = 0, oy = 0;
-                int step = (over > AUTOSCROLL_FAST) ? 3 : 1;
+            if (over == 0) {
+                app.band_scroll_at = 0;
+            } else if (app.band_scroll_at == 0) {
+                app.band_scroll_at = tiku_trk_now();
+            } else if (tiku_trk_now() - app.band_scroll_at >
+                           AUTOSCROLL_DELAY_US) {
+                int far = (over < 0) ? -over : over;
+                int step = (far > AUTOSCROLL_FAST) ? 3 : 1;
 
-                tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
-                tiku_trk_poseview_set_origin(app.band_fl->view, ox,
-                    oy + ((over < 0) ? -step : step) * app.row_h);
+                if (tiku_trk_poseview_mode(app.band_fl->view) ==
+                        TIKU_TRK_MODE_LIST) {
+                    tiku_trk_poseview_scroll_to(app.band_fl->view,
+                        tiku_trk_poseview_scroll(app.band_fl->view) +
+                            ((over < 0) ? -step : step));
+                } else {
+                    int ox = 0, oy = 0;
+
+                    tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
+                    tiku_trk_poseview_set_origin(app.band_fl->view, ox,
+                        oy + ((over < 0) ? -step : step) * app.row_h);
+                }
+                /* There may be no further motion event while the pointer is
+                 * held still.  Growing the view under the stationary band
+                 * must therefore update its membership here (PVS-050). */
+                folder_band_select(&app);
                 app.dirty = 1;
             }
         }
@@ -7044,7 +7141,8 @@ sel_done:
                            AUTOSCROLL_DELAY_US) {
                 /* Faster the further past the edge, in the original's two
                  * buckets rather than continuously. */
-                int step = (over > AUTOSCROLL_FAST) ? 3 : 1;
+                int far = (over < 0) ? -over : over;
+                int step = (far > AUTOSCROLL_FAST) ? 3 : 1;
 
 
                 if (tiku_trk_poseview_mode(app.drop_fl->view) !=

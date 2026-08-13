@@ -1,0 +1,18 @@
+# shell: desktop
+# PVS-050: a stationary rubber band waits at the edge, then scrolls the icon
+# view and recomputes which poses lie inside it without another move event.
+key 1 ctrl
+wait 10
+press 60 94
+move 200 200
+move 200 316
+note the band does not grow the selection before its edge delay
+wait 5
+expect-selected 10
+expect-selected-name sub
+note held still, it scrolls and gathers newly exposed icons without a move
+wait 45
+expect-selected 10
+expect-selected-name f21.txt
+release 200 316
+quit

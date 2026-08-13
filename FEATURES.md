@@ -1214,12 +1214,16 @@ The non-extend branch only acts when !pose->IsSelected(); an early return also f
 extendSelection = (modifiers() & B_COMMAND_KEY) != 0 && fMultipleSelection, computed in MouseDown; the extend branch calls AddRemovePoseFromSelection(pose, index, !pose->IsSelected()) and flushes fMimeTypesInSelectionCache.  
 `PoseView.cpp` → `BPoseView::AddRemoveSelectionRange`  
 
-#### PVS-005 · important · partial
+#### PVS-005 · important · done
 **Shift-click extends the selection from the pivot: in list mode the whole index range pivot..clicked is selected; in icon mode everything intersecting the rectangle between the click point and the pivot's location is selected.**  
 Icon-mode rect is normalized (left/right and top/bottom swapped if inverted) and forced to at least 1x1 px before intersection testing.  
 `PoseView.cpp` → `BPoseView::AddRemoveSelectionRange`  
-**MISSING:** The list-mode clause is implemented — shift-click clears, keeps the pivot and selects the whole displayed range pivot..clicked — but the icon-mode clause is missing: an icon-mode shift-click runs the same index-range code, never the normalised 1x1-minimum rectangle between the click point and the pivot's location.  
-*src/tiku_trk_poseview.c:725 (tiku_trk_poseview_click shift branch) / select_range:661; icon path src/tiku_trk_app.c:1265*
+**PORT:** The coordinate-aware click path keeps list mode as a displayed-index
+range and makes both icon modes spatial: the rectangle runs from the real
+click point to the pivot location, is normalized and never smaller than one
+pixel. Shift+Command applies the same rectangle while removing.
+*src/tiku_trk_poseview.c:tiku_trk_poseview_click_at/select_icon_range;
+tests/test_iconview.c*
 
 #### PVS-006 · important · done
 **Plain shift-click first clears the selection but preserves the pivot, so successive shift-clicks always re-anchor on the original pivot rather than growing monotonically.**  
@@ -1232,12 +1236,15 @@ bool select = !pose->IsSelected() || !extendSelection; with Command held and the
 `PoseView.cpp` → `BPoseView::AddRemoveSelectionRange`  
 **PORT:** The unconditional deselect is gone; the port now computes Haiku's exact expression. With Cmd held, extendSelection is true so select = !pose->IsSelected(), and the code is `int on = !p->selected;` followed by select_range(v, v->pivot, p->index, on) (falling back to the single pose when there is no pivot). I linked a probe against the real engine to confirm both directions: shift+cmd on an already-selected pose clears the pivot..clicked range (as test_poseview.c:142-144 checks), and shift+cmd on an UNSELECTED pose now SELECTS rows 0..3 rather than clearing them — the case the row said was wrong and which no test covers.
 
-#### PVS-008 · important · partial
+#### PVS-008 · important · done
 **The pivot invariant is maintained after every click: an empty selection has no pivot, and a non-empty selection always has one.**  
 Tail of the function: if (fSelectionList->IsEmpty()) { pivot=NULL; realPivot=NULL; } else if (fSelectionPivotPose == NULL) { pivot = realPivot = pose; }  
 `PoseView.cpp` → `BPoseView::AddRemoveSelectionRange`  
-**MISSING:** The invariant holds on the plain, Cmd and Shift branches (empty -> pivot -1 at :610/:721, non-empty -> pivot set at :718/:730/:743), but the Shift+Cmd branch returns without re-checking, so deselecting the whole range leaves a stale pivot on an empty selection, and select_none never clears real_pivot.  
-*src/tiku_trk_poseview.c:705-713 vs :605-613*
+**PORT:** Every click branch repairs the invariant. Removing the pivot clears
+its live and parked forms, an empty result clears both, and Select None also
+clears the parked pivot so deactivation cannot resurrect an old anchor.
+*src/tiku_trk_poseview.c:repair_click_pivot/tiku_trk_poseview_select_none;
+tests/test_poseview.c*
 
 #### PVS-009 · important · done
 **Multiple selection can be disabled per view (single-select file panels): Command-toggle, shift-range and additive rubber-banding all degrade to single selection.**  
@@ -1323,12 +1330,16 @@ _set_icon_hit; src/tiku_trk_desktop.c:pose_icon_hit; tests/test_iconview.c;
 tests/shell/iconview.script*  
 *Shell: desktop*  
 
-#### PVS-020 · important · partial
+#### PVS-020 · important · done
 **In list mode a click hits the row if it lands in the icon rect or in any column's click rect, and reports which text widget was hit.**  
 Icon rect is vertically centred in the row (_ListIconRect); the loop walks all columns and returns the hit widget through hitWidget for the path-column and rename cases.  
 `Pose.cpp` → `BPose::PointInPose(BPoint, const BPoseView*, BPoint, BTextWidget**)`  
-**MISSING:** The row is hit by a y-only band (no icon rect, no per-column click rects), and the hit-widget report exists only as a boolean 'was it the NAME column' in tiku_trk_app.c — the spatial shell calls name_clicked for any row press, so a click on the size column there arms a rename the original would not.  
-*src/tiku_trk_app.c:756-770 row_at and :1329-1342 on_name column scan; src/tiku_trk_desktop.c:1150-1163 folder_row_at and :1828-1834 unconditional tiku_trk_poseview_name_clicked*
+**PORT:** A list field's whole click rectangle selects its row, while the
+shell also reports whether that field is Name. The general shell derives it
+from the live columns; the spatial shell distinguishes its Name and Value
+fields, and in icon modes tests the drawn label box. Only Name arms rename.
+*src/tiku_trk_app.c (on_name); src/tiku_trk_desktop.c:folder_name_at;
+tests/shell/renamefield.script*
 
 #### PVS-021 · polish · done
 **Where icons overlap in icon mode, the topmost (last-drawn) pose receives the click; in list mode the row is computed directly from the y coordinate.**  
@@ -1348,11 +1359,15 @@ WindowActivated -> ShowSelection(active); ShowSelection moves fSelectionPivotPos
 `PoseView.cpp` → `BPoseView::WindowActivated / BPoseView::ShowSelection`  
 **PORT:** Membership is the pose's flag and PAINTING is the view's, where Tracker keeps a separate selection list and clears the flag; one flag plus a visible bit cannot drift out of step with the other.
 
-#### PVS-024 · core · partial
+#### PVS-024 · core · done
 **Dragging from empty space with the primary button starts a rubber-band selection rectangle.**  
 MouseDragged: FindPose(where) == NULL && buttons == B_PRIMARY_MOUSE_BUTTON -> _BeginSelectionRect; the band is anchored at the ORIGINAL click point carried in "be:view_where", not the current pointer. _BeginSelectionRect also switches the window pulse to 20 ms and turns auto-scroll on.  
 `PoseView.cpp` → `BPoseView::MouseDragged / BPoseView::_BeginSelectionRect`  
-**MISSING:** The band starts on the PRESS rather than after the drag threshold, and there is no pulse-rate change (this shell has no pulse to raise).  
+**PORT:** Armed on the press and begun only once the pointer has moved past
+the slop, so a click on empty space clears the selection without flashing a
+rectangle. The pulse-rate change has no analogue: this shell has no pulse to
+raise, and the sweep is evaluated on the motion that caused it.
+
 **PORT:** The desktop shell now sweeps in every mode -- a list's rows are caught by the same rectangle, which is why a pose's rect in list mode is the whole ROW rather than the union of its icon and name -- and the sweep auto-scrolls at the edges (PVS-050). The press that starts a band also ends any half-finished double click: without that the click starting the band is invisible to the counter and the next click on the icon beside it completes a double click the user did not make.  
 *src/tiku_trk_desktop.c (ButtonPress band branch, MotionNotify select_rect); src/tiku_trk_poseview.c:tiku_trk_poseview_pose_rect (list branch); tests/shell/band.script*
 
@@ -1513,13 +1528,18 @@ canCopy = true fallback when no be:actions were negotiated; kCreateRelativeLink/
 `PoseView.cpp` → `BPoseView::HandleDropCommon`
 **SUBSYSTEM:** Cross-application drag (XDND). No foreign refs can arrive (grep XDND over src/ returns nothing), so the default-copy rule and the Move/Copy/Link/Cancel dispatch have no entry point — note the menu those verbs would use exists unwired (src/tiku_trk_cwmenu.c:331-364; see PVS-039).  
 
-#### PVS-050 · important · partial
+#### PVS-050 · important · done
 **Dragging (or rubber-banding) toward a view edge auto-scrolls, after a hold-still delay, faster the further past the edge the pointer is.**  
 Two trigger geometries: while dragging, the pointer must be in a border band OUTSIDE the view (20 px above the top plus the title view height, B_H_SCROLL_BAR_HEIGHT below, 6 px left, B_V_SCROLL_BAR_WIDTH right); while rubber-banding, simply past the bounds edge, at fAutoScrollInc/1.5 beyond kSlowScrollBucket (30 px) and fAutoScrollInc/4 within it. State machine kWaitForTransition (must first NOT be in a scroll zone) -> kDelayAutoScroll (condition true, snooze 600 ms, re-check) -> kAutoScrollOn, driven from Pulse; releasing all buttons resets to off and restores a 500 ms pulse. Band scrolling re-runs _UpdateSelectionRect so the rectangle grows without pointer motion.  
 `PoseView.cpp` → `BPoseView::CheckAutoScroll / BPoseView::HandleAutoScroll`  
 **PORT:** A drag held in a 6 px band at the list's edge scrolls it after a 600 ms hold, faster past 30 px of overshoot -- the original's two buckets.  The band sits just INSIDE the list where Tracker's is just outside it: Tracker's lives in the scroll-bar gutter, these windows have none, and a pointer past the list edge is over no window at all, so a band out there could never be reached.  
-**MISSING:** Rubber-band scrolling has no auto-scroll (only a drag does), and the horizontal bands are not implemented -- these listings do not scroll sideways.  Two clauses are implemented but UNTESTED, and the mutations for them survive: leaving and re-entering the band re-arming the delay, and the speed actually following the overshoot.  A test that enters, leaves and re-enters would close both.  
-*Shell: desktop*  
+**PORT:** Rubber bands use the same delayed two-speed edge rule and re-run
+selection after every idle scroll, because a held-still pointer produces no
+new motion event. Leaving and re-entering re-arms the full delay. Horizontal
+auto-scroll has no analogue in the spatial shell: its folder views expose no
+horizontal scrolling surface.
+*src/tiku_trk_desktop.c (band_scroll_at/folder_band_select and drag scroll);
+tests/shell/bandscroll.script; tests/shell/scroll.script*
 #### PVS-051 · important · partial
 **Spring-loaded folders: hovering a drag over a folder pose without moving pops up a navigable menu of that folder's contents, and choosing an entry drops the dragged items there.**  
 B_MOUSE_IDLE -> MouseIdle requires buttons != 0 and IsDragging(); with fDropTarget set it records the target frame (FrameForPose) and calls ShowContextMenu, which in the dragging case opens fDragContextMenu (BPopUpNavMenu) asynchronously on the resolved directory ref - never for Printers, never for a non-directory, and never twice (IsShowing guard). Selecting an item posts B_REFS_RECEIVED, which BContainerWindow answers by calling HandleDropCommon with the cached DragMessage() against that folder, then DragStop.  

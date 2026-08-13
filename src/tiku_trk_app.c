@@ -2170,6 +2170,7 @@ main(int argc, char **argv)
                 sst.alert = NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
+                sst.renaming = a.editing;
                 sst.location = tiku_trk_navigator_current(&a.nav);
                 sst.nav_back = tiku_trk_navigator_can_back(&a.nav);
                 sst.nav_forward = tiku_trk_navigator_can_forward(&a.nav);
@@ -2380,7 +2381,7 @@ main(int argc, char **argv)
                         for (k = 0; k < cnt; k++) {
                             if (tiku_trk_poseview_at(a.view, k) == hit) { idx = k; break; }
                         }
-                        tiku_trk_poseview_click(a.view, idx, mods);
+                        tiku_trk_poseview_click_at(a.view, idx, lx, ly, mods);
                         if (idx >= 0 && idx == last_click_row &&
                             now - last_click_us < 400000) {
                             open_selection(&a);
@@ -2458,7 +2459,15 @@ main(int argc, char **argv)
                             cx += cs[k].width;
                         }
                     }
-                    tiku_trk_poseview_click(a.view, row, mods);
+                    {
+                        tiku_desk_rect_t lr = list_rect(&a);
+                        int ox = 0, oy = 0;
+
+                        tiku_trk_poseview_origin(a.view, &ox, &oy);
+                        tiku_trk_poseview_click_at(a.view, row,
+                            ev.xbutton.x - lr.x + ox,
+                            ev.xbutton.y - lr.y + oy, mods);
+                    }
                     /* PVS-010: a second click on the same row within the
                      * double-click window opens it. */
                     if (row >= 0 && row == last_click_row &&

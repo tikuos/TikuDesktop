@@ -145,6 +145,23 @@ main(void)
     check(!sel_at(v, 1) && !sel_at(v, 2) && sel_at(v, 3) && sel_at(v, 4),
           "PVS-007", "shift+cmd DESELECTS the range from the pivot");
 
+    tiku_trk_poseview_click(v, 0, 0);
+    tiku_trk_poseview_click(v, 4, TIKU_TRK_MOD_SHIFT);
+    tiku_trk_poseview_click(v, 4, TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD);
+    check(tiku_trk_poseview_selection_count(v) == 0, "PVS-008",
+          "deselecting the whole range leaves an empty selection");
+    tiku_trk_poseview_click(v, 2, TIKU_TRK_MOD_SHIFT);
+    check(sel_at(v, 2) && tiku_trk_poseview_selection_count(v) == 1,
+          "PVS-008",
+          "and the next shift-click starts there rather than at a stale pivot");
+
+    tiku_trk_poseview_window_activated(v, 0);
+    tiku_trk_poseview_select_none(v);
+    tiku_trk_poseview_window_activated(v, 1);
+    tiku_trk_poseview_click(v, 3, TIKU_TRK_MOD_SHIFT);
+    check(sel_at(v, 3) && tiku_trk_poseview_selection_count(v) == 1,
+          "PVS-008", "clearing while inactive also clears the parked pivot");
+
     /* a click inside a multi-selection must not collapse it (drag support) */
     tiku_trk_poseview_click(v, 0, 0);
     tiku_trk_poseview_click(v, 3, TIKU_TRK_MOD_SHIFT);
@@ -751,6 +768,7 @@ main(void)
     tiku_trk_poseview_type_clear(v);
     (void)tiku_trk_poseview_reload(v);
     (void)tiku_trk_poseview_restore_state(v);
+    tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
 
     /* --- CW-013 / PVL-061: never scrolled past the content -------------- */
     tiku_trk_poseview_set_visible_rows(v, 2);

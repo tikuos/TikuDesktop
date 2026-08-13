@@ -151,6 +151,45 @@ main(void)
               "without one the square answers, as it did before");
     }
 
+    printf("\nShift follows the icon arrangement (PVS-005)\n");
+    {
+        tiku_trk_poseview_t *sv = tiku_trk_poseview_new(b, work);
+        tiku_trk_pose_t *p0, *p1, *p2, *p4;
+        int old1x, old1y, old4x, old4y;
+        int x0, y0, x2, y2;
+
+        tiku_trk_poseview_set_measure(sv, measure, NULL);
+        tiku_trk_poseview_set_font_metrics(sv, 12, 9);
+        tiku_trk_poseview_set_mode(sv, TIKU_TRK_MODE_ICON);
+        (void)tiku_trk_poseview_place_unplaced(sv, 400);
+        p0 = tiku_trk_poseview_at(sv, 0);
+        p1 = tiku_trk_poseview_at(sv, 1);
+        p2 = tiku_trk_poseview_at(sv, 2);
+        p4 = tiku_trk_poseview_at(sv, 4);
+        tiku_trk_poseview_pose_location(sv, p1, &old1x, &old1y);
+        tiku_trk_poseview_pose_location(sv, p4, &old4x, &old4y);
+        /* Swap two existing slots, so the geometry and name order disagree
+         * without changing the view's overall extent. */
+        tiku_trk_poseview_move_pose(sv, p1, old4x, old4y, 0);
+        tiku_trk_poseview_move_pose(sv, p4, old1x, old1y, 0);
+        tiku_trk_poseview_pose_location(sv, p0, &x0, &y0);
+        tiku_trk_poseview_pose_location(sv, p2, &x2, &y2);
+        tiku_trk_poseview_select_none(sv);
+        tiku_trk_poseview_click_at(sv, 0, x0 + 2, y0 + 2, 0u);
+        tiku_trk_poseview_click_at(sv, 2, x2 + 20, y2 + 20,
+                                   TIKU_TRK_MOD_SHIFT);
+        check(p0->selected && p2->selected && p4->selected && !p1->selected,
+              "PVS-005",
+              "Shift selects the rectangle between arranged icons, not the "
+              "name-sorted index range between them");
+        tiku_trk_poseview_click_at(sv, 2, x2 + 20, y2 + 20,
+            TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD);
+        check(!p0->selected && !p2->selected && !p4->selected &&
+                  !p1->selected,
+              "PVS-005", "Shift+Command applies the same spatial rectangle");
+        tiku_trk_poseview_free(sv);
+    }
+
     printf("\nthe scrollable area (PVL-049)\n");
     tiku_trk_poseview_extent(v, &x, &y, &w, &h);
     {
@@ -495,6 +534,15 @@ main(void)
               "a sweep back over the pose it was anchored on takes it out "
               "of the selection");
         tiku_trk_poseview_set_band(v, 0);
+        {
+            tiku_trk_pose_t *p3 = tiku_trk_poseview_at(v, 3);
+
+            /* Earlier size tests deliberately leave these icons overlapping.
+             * Isolate the next click so this check is about the dropped pivot,
+             * not PVS-005 correctly catching another intersecting icon. */
+            tiku_trk_poseview_move_pose(v, p3, px + pw + 100,
+                                        py + ph + 100, 0);
+        }
         tiku_trk_poseview_click(v, 3, TIKU_TRK_MOD_SHIFT);
         for (i = 0; i < tiku_trk_poseview_count(v); i++) {
             tiku_trk_pose_t *q = tiku_trk_poseview_at(v, i);

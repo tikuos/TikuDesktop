@@ -1072,6 +1072,7 @@ tiku_trk_poseview_select_none(tiku_trk_poseview_t *v)
     if (v != NULL) {
         clear_selection(v);
         v->pivot = -1;              /* PVS-008: empty selection, no pivot */
+        v->real_pivot = -1;
         v->last_added = -1;
     }
 }
@@ -1177,6 +1178,59 @@ select_range(tiku_trk_poseview_t *v, int from_pose, int to_pose, int on)
     }
 }
 
+/** @brief Select an icon-mode rectangle from a point to a pose's location. */
+static void
+select_icon_range(tiku_trk_poseview_t *v, int from_pose, int x, int y, int on)
+{
+    tiku_trk_pose_t *anchor;
+    int ax = 0, ay = 0, i, n;
+    int lox, loy, hix, hiy;
+
+    if (from_pose < 0 || from_pose >= v->count) {
+        return;
+    }
+    anchor = &v->poses[from_pose];
+    tiku_trk_poseview_pose_location(v, anchor, &ax, &ay);
+    lox = (x < ax) ? x : ax;
+    loy = (y < ay) ? y : ay;
+    hix = (x < ax) ? ax : x;
+    hiy = (y < ay) ? ay : y;
+    /* A zero-width or zero-height BRect still catches the poses it touches.
+     * Express that explicitly because the integer intersection below uses a
+     * half-open far edge (PVS-005). */
+    if (hix - lox < 1) { hix = lox + 1; }
+    if (hiy - loy < 1) { hiy = loy + 1; }
+
+    n = tiku_trk_poseview_count(v);
+    for (i = n - 1; i >= 0; i--) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+        int px, py, pw, ph;
+
+        if (p == NULL || !p->placed) {
+            continue;
+        }
+        tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
+        if (px + pw > lox && px < hix && py + ph > loy && py < hiy) {
+            set_selected(p, on);
+        }
+    }
+}
+
+/** @brief Restore the selection/pivot invariant after every click branch. */
+static void
+repair_click_pivot(tiku_trk_poseview_t *v, const tiku_trk_pose_t *clicked)
+{
+    if (tiku_trk_poseview_selection_count(v) == 0) {
+        v->pivot = -1;
+        v->real_pivot = -1;
+        v->last_added = -1;
+    } else if (v->pivot < 0 && clicked != NULL) {
+        /* Tracker re-anchors on the pose that caused the operation, including
+         * when a Shift+Command range removed that pose but left others. */
+        v->pivot = clicked->index;
+    }
+}
+
 void
 tiku_trk_poseview_set_multiple(tiku_trk_poseview_t *v, int on)
 {
@@ -1211,6 +1265,26 @@ tiku_trk_poseview_multiple(const tiku_trk_poseview_t *v)
 
 void
 tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
+{
+    tiku_trk_pose_t *p = tiku_trk_poseview_at(v, index);
+    int x = 0, y = 0;
+
+    if (p != NULL) {
+        int w = 0, h = 0;
+
+        /* Put a coordinate-free click just inside what is actually hit.  An
+         * icon-mode pose location is the cell's top-left, which may be empty
+         * margin to the left of centred art and would select nothing. */
+        tiku_trk_poseview_pose_rect(v, p, &x, &y, &w, &h);
+        x++;
+        y++;
+    }
+    tiku_trk_poseview_click_at(v, index, x, y, mods);
+}
+
+void
+tiku_trk_poseview_click_at(tiku_trk_poseview_t *v, int index, int x, int y,
+                           unsigned mods)
 {
     tiku_trk_pose_t *p;
 
@@ -1249,10 +1323,22 @@ tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
         int on = !p->selected;
 
         if (v->pivot >= 0) {
-            select_range(v, v->pivot, p->index, on);
+            if (v->mode == TIKU_TRK_MODE_LIST) {
+                select_range(v, v->pivot, p->index, on);
+            } else {
+                select_icon_range(v, v->pivot, x, y, on);
+            }
         } else {
             set_selected(p, on);
         }
+        if (!on && v->pivot >= 0 && !v->poses[v->pivot].selected) {
+            v->pivot = -1;
+        }
+        if (!on && v->real_pivot >= 0 &&
+            !v->poses[v->real_pivot].selected) {
+            v->real_pivot = -1;
+        }
+        repair_click_pivot(v, p);
         return;
     }
     if (mods & TIKU_TRK_MOD_CMD) {
@@ -1264,6 +1350,7 @@ tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
         } else if (tiku_trk_poseview_selection_count(v) == 0) {
             v->pivot = -1;          /* PVS-008 */
         }
+        repair_click_pivot(v, p);
         return;
     }
     if (mods & TIKU_TRK_MOD_SHIFT) {
@@ -1272,13 +1359,21 @@ tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
         int pivot = (v->pivot >= 0) ? v->pivot : p->index;
         clear_selection(v);
         v->pivot = pivot;
-        select_range(v, pivot, p->index, 1);
+        if (v->mode == TIKU_TRK_MODE_LIST) {
+            select_range(v, pivot, p->index, 1);
+        } else {
+            select_icon_range(v, pivot, x, y, 1);
+        }
         v->last_added = p->index;
+        repair_click_pivot(v, p);
         return;
     }
-    /* PVS-003: a click inside an existing multi-selection leaves it intact,
-     * so the whole group can be dragged. */
-    if (p->selected && tiku_trk_poseview_selection_count(v) > 1) {
+    /* PVS-003/PVS-014: a selected pose stays selected without being stamped
+     * again.  For a group that preserves the drag payload; for a single pose
+     * it preserves the age that distinguishes a slow second click from the
+     * click that originally selected it and lets inline rename arm. */
+    if (p->selected && (tiku_trk_poseview_selection_count(v) > 1 ||
+                        v->pivot == p->index)) {
         return;
     }
     /* PVS-002: otherwise select just this one and make it the pivot. */
@@ -1286,6 +1381,7 @@ tiku_trk_poseview_click(tiku_trk_poseview_t *v, int index, unsigned mods)
     set_selected(p, 1);
     v->pivot = p->index;
     v->last_added = p->index;
+    repair_click_pivot(v, p);
 }
 
 void
