@@ -1,0 +1,25 @@
+# shell: tracker
+# CW-021/CW-022: the single-window shell presents the shared File menu.
+wait 8
+note File opens from the tracker window's menu bar
+click 20 35
+wait 3
+expect-menu Find
+note the open menu invokes the existing new-folder command
+menu-pick New folder
+wait 8
+expect-file /tmp/trk_script/New folder
+note Attributes is a live list-only menu, not a painted label
+click 130 35
+wait 3
+expect-menu Permissions
+menu-pick Kind
+wait 4
+expect-columns 3
+note Window exposes the shared view-mode inventory
+click 65 35
+wait 3
+expect-menu List view
+menu-pick Mini icon view
+wait 4
+quit

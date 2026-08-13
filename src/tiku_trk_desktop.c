@@ -150,6 +150,8 @@ typedef struct desktop {
     tiku_desk_rect_t     popup_frame;
     tiku_trk_menu_t     *popup_sub;      /* its open submenu, or NULL       */
     tiku_desk_rect_t     popup_sub_frame;
+    folder_t            *bar_fl;         /* window whose bar opened popup   */
+    int                  bar_open;       /* title in that window, or -1     */
     /* Editing a node's VALUE in place.  A namespace browser that can only
      * read is half a browser: this is where a write happens. */
     int                  editing;
@@ -753,13 +755,33 @@ draw_pose_icon(folder_t *fl, tiku_desk_surface_t *s, tiku_trk_pose_t *p,
 static tiku_desk_rect_t
 folder_content(desktop_t *app, folder_t *fl)
 {
-    (void)app;
     if (fl != NULL && fl->win != NULL) {
-        return tiku_trk_win_content(fl->win);
+        tiku_desk_rect_t r = tiku_trk_win_content(fl->win);
+
+        r.y += app->menus.bar.height;
+        r.h -= app->menus.bar.height;
+        if (r.h < 0) {
+            r.h = 0;
+        }
+        return r;
     }
     /* No chrome to inset: the Desktop has no menu bar, no scroll bars and
      * no border view, so its pose area IS the screen (AW-018). */
     return (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H };
+}
+
+/** @brief Menu strip inside a folder window's unmodified content frame. */
+static tiku_desk_rect_t
+folder_bar_frame(desktop_t *app, folder_t *fl)
+{
+    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+
+    if (app == NULL || fl == NULL || fl->win == NULL) {
+        return r;
+    }
+    r = tiku_trk_win_content(fl->win);
+    r.h = app->menus.bar.height;
+    return r;
 }
 
 /**
@@ -956,8 +978,19 @@ folder_draw(tiku_trk_win_t *w, tiku_desk_surface_t *s,
     tiku_desk_rect_t list = content;
     int row_h = app->row_h;
     int rows, scroll, total, i, icons;
+    tiku_trk_sc_ctx_t mc;
+    tiku_desk_rect_t bar;
 
     (void)w;
+    bar = content;
+    bar.h = app->menus.bar.height;
+    build_per_type(app, fl);
+    mc = menu_ctx(app, fl, 0u);
+    tiku_trk_cwmenu_rebuild(&app->menus, &mc);
+    app->menus.bar.open = (app->bar_fl == fl) ? app->bar_open : -1;
+    tiku_trk_menubar_draw(&app->menus.bar, s, bar);
+    list.y += bar.h;
+    list.h -= bar.h;
     list.h -= COUNT_H;
     tiku_desk_ui_sunken(s, list, TIKU_DESK_C_DOC);
     /* The view is told how big its window is, in pixels: the row count it
@@ -1301,6 +1334,13 @@ close_window(desktop_t *app, tiku_trk_win_t *w)
         (void)tiku_trk_poseview_save_state(fl->view);
         (void)tiku_trk_poseview_save_columns(fl->view);
         save_frame_of(app, fl);
+        if (app->bar_fl == fl) {
+            app->bar_fl = NULL;
+            app->bar_open = -1;
+            app->menus.bar.open = -1;
+            app->popup = NULL;
+            app->popup_sub = NULL;
+        }
     }
     tiku_trk_desk_close(app->desk, w);
     app->dirty = 1;
@@ -4299,6 +4339,21 @@ draw_all(desktop_t *app)
                                 255 - alpha);
         }
     }
+    /* Drawing another folder rebuilt the one shared menu model for that
+     * folder.  Put it back on the bar that actually owns the popup before
+     * painting or hit-testing it. */
+    if (app->bar_fl != NULL && app->bar_open >= 0) {
+        tiku_trk_sc_ctx_t c;
+
+        build_open_with(app, app->bar_fl);
+        build_per_type(app, app->bar_fl);
+        c = menu_ctx(app, app->bar_fl, 0u);
+        tiku_trk_cwmenu_rebuild(&app->menus, &c);
+        app->menus.bar.open = app->bar_open;
+        if (app->bar_open < app->menus.bar.count) {
+            app->popup = app->menus.bar.menu[app->bar_open];
+        }
+    }
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {
@@ -4392,6 +4447,7 @@ main(int argc, char **argv)
     int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
+    app.bar_open = -1;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0)                      { use_device = 1; }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { port = argv[++i]; use_device = 1; }
@@ -5400,7 +5456,8 @@ main(int argc, char **argv)
                 }
                 if (app.popup != NULL) {
                     tiku_trk_win_t *fw = tiku_trk_desk_focused(app.desk);
-                    folder_t *ffl = folder_of(&app, fw);
+                    folder_t *ffl = (app.bar_fl != NULL) ? app.bar_fl
+                                                         : folder_of(&app, fw);
                     int pick = -1;
 
                     if (app.popup_sub != NULL) {
@@ -5437,6 +5494,8 @@ main(int argc, char **argv)
                     }
                     app.popup = NULL;
                     app.popup_sub = NULL;
+                    app.bar_fl = NULL;
+                    app.bar_open = -1;
                     app.menus.bar.open = -1;
                     app.dirty = 1;
                     break;
@@ -5577,6 +5636,40 @@ main(int argc, char **argv)
                      * content goes through, which is what keeps the
                      * Desktop's icons behaving like a folder's (AW-018). */
                     hit = TIKU_TRK_HIT_CONTENT;
+                }
+                if (w != NULL && ev.xbutton.button == 1u) {
+                    folder_t *bfl = folder_of(&app, w);
+
+                    if (bfl != NULL) {
+                        tiku_desk_rect_t bf = folder_bar_frame(&app, bfl);
+                        int bi;
+
+                        build_open_with(&app, bfl);
+                        build_per_type(&app, bfl);
+                        {
+                            tiku_trk_sc_ctx_t bc =
+                                menu_ctx(&app, bfl, ev.xbutton.state);
+
+                            tiku_trk_cwmenu_rebuild(&app.menus, &bc);
+                        }
+                        bi = tiku_trk_menubar_title_at(&app.menus.bar, bf,
+                                ev.xbutton.x, ev.xbutton.y);
+                        if (bi >= 0) {
+                            commit_rename(&app, 1);
+                            tiku_trk_desk_activate(app.desk, w);
+                            app.bar_fl = bfl;
+                            app.bar_open = bi;
+                            app.menus.bar.open = bi;
+                            app.popup = app.menus.bar.menu[bi];
+                            app.popup_sub = NULL;
+                            app.popup_frame = tiku_trk_menubar_panel(
+                                &app.menus.bar, bf,
+                                (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                            app.nav_on = 0;
+                            app.dirty = 1;
+                            break;
+                        }
+                    }
                 }
                 if (w != NULL && hit != TIKU_TRK_HIT_CONTENT) {
                     /* The CHROME activates a window; the content does not.
@@ -5748,6 +5841,9 @@ main(int argc, char **argv)
                             app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (row >= 0 && p != NULL)
                                                 ? &p->model : NULL, &c);
+                            app.bar_fl = NULL;
+                            app.bar_open = -1;
+                            app.menus.bar.open = -1;
                             /* A container's context menu carries a walk
                              * into it, so a descendant can be reached
                              * without leaving the window (CW-045). */

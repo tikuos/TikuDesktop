@@ -15,8 +15,8 @@ note neither half of the pair, so every column change died with the window
 expect-columns 4
 note a second window, moved and CLOSED, is remembered by the close too --
 note not only by the quit
-click 260 227
-click 260 227
+click-row 0
+click-row 0
 wait 8
 expect-title /tmp/trk_script/sub
 note it opens cascaded, since its parent has no saved frame yet
@@ -29,8 +29,8 @@ expect-window-at 417 391
 key w ctrl
 wait 5
 note re-opening it brings it back where it was closed
-click 260 227
-click 260 227
+click-row 0
+click-row 0
 wait 8
 expect-title /tmp/trk_script/sub
 expect-window-at 417 391

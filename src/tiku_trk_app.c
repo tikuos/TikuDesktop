@@ -29,6 +29,7 @@
 #include "tiku_trk_model.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_iconpaint.h"
+#include "tiku_trk_cwmenu.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
@@ -93,6 +94,13 @@ typedef struct {
      * (PVL-051, PVL-052, PVL-060). */
     tiku_trk_scroll_t    sb;
     tiku_desk_rect_t     sb_rect;
+    /* The same container-window menus the desktop shell presents. */
+    tiku_trk_cwmenu_t    menus;
+    tiku_trk_menu_t     *popup;
+    tiku_trk_menu_t     *popup_sub;
+    tiku_desk_rect_t     popup_frame;
+    tiku_desk_rect_t     popup_sub_frame;
+    int                  bar_open;
 } app_t;
 
 /** @brief Index of the first selected row, or -1. */
@@ -140,10 +148,60 @@ list_rect(const app_t *a)
     r.x = BORDER;
     /* The column title bar belongs to list mode; icon mode gets the space
      * back, and hit-testing must use the same rectangle drawing does. */
-    r.y = TAB_H + BORDER + (titled ? TITLE_H : 0);
+    r.y = TAB_H + BORDER + a->menus.bar.height +
+          (titled ? TITLE_H : 0);
     r.w = a->surf->w - 2 * BORDER - (titled ? SCROLL_W : 0);
     r.h = a->surf->h - r.y - BORDER - COUNT_H;
     return r;
+}
+
+/** @brief The menu bar inside this window's content area. */
+static tiku_desk_rect_t
+menubar_rect(const app_t *a)
+{
+    tiku_desk_rect_t r = { BORDER, TAB_H + BORDER,
+                           a->surf->w - 2 * BORDER,
+                           a->menus.bar.height };
+
+    return r;
+}
+
+/** @brief Current facts used by every menu enablement rule. */
+static tiku_trk_sc_ctx_t
+menu_ctx(app_t *a, unsigned mods)
+{
+    static const int fields[] = { TIKU_TRK_COL_NAME, TIKU_TRK_COL_KIND,
+                                  TIKU_TRK_COL_VALUE, TIKU_TRK_COL_SIZE,
+                                  TIKU_TRK_COL_CAP, TIKU_TRK_COL_DATE,
+                                  TIKU_TRK_COL_PATH, TIKU_TRK_COL_PERM };
+    tiku_trk_sc_ctx_t c;
+    tiku_trk_pose_t *p;
+    size_t i;
+
+    memset(&c, 0, sizeof c);
+    c.mods = mods;
+    c.selection = tiku_trk_poseview_selection_count(a->view);
+    c.view_mode = tiku_trk_poseview_mode(a->view);
+    c.icon_size = tiku_trk_poseview_icon_size(a->view);
+    c.sort_field = tiku_trk_poseview_sort_field(a->view);
+    c.reverse_sort = tiku_trk_poseview_sort_reverse(a->view);
+    for (i = 0; i < sizeof fields / sizeof fields[0]; i++) {
+        if (tiku_trk_poseview_has_column(a->view, fields[i])) {
+            c.columns |= 1u << fields[i];
+        }
+    }
+    p = tiku_trk_poseview_active(a->view);
+    c.can_edit_name = (c.selection == 1);
+    c.can_open_parent = strcmp(tiku_trk_poseview_path(a->view), "/") != 0;
+    c.target_ro = a->read_only;
+    c.is_root = !c.can_open_parent;
+    c.is_query = tiku_trk_poseview_is_query(a->view);
+    if (p != NULL) {
+        c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+        c.selection_ro = !tiku_trk_model_is_writable(&p->model);
+    }
+    c.can_trash_or_dup = c.selection > 0 && !c.selection_ro;
+    return c;
 }
 
 static int
@@ -477,6 +535,19 @@ draw_icons(app_t *a, tiku_desk_rect_t list)
     tiku_desk_clip_reset(s);
 }
 
+/** @brief Menus sit above every other part of the window. */
+static void
+draw_popup(app_t *a)
+{
+    if (a->popup == NULL) {
+        return;
+    }
+    tiku_trk_menu_draw(a->popup, a->surf, a->popup_frame);
+    if (a->popup_sub != NULL) {
+        tiku_trk_menu_draw(a->popup_sub, a->surf, a->popup_sub_frame);
+    }
+}
+
 static void
 draw(app_t *a)
 {
@@ -484,7 +555,8 @@ draw(app_t *a)
     const tiku_desk_font_t *f = tiku_desk_font_plain();
     const tiku_trk_column_t *cols;
     tiku_desk_rect_t win = { 0, 0, s->w, s->h };
-    tiku_desk_rect_t list, title, count;
+    tiku_desk_rect_t list, title, bar, count;
+    tiku_trk_sc_ctx_t mc;
     int ncol = tiku_trk_poseview_columns(a->view, &cols);
     int rows = visible_rows(a);
     int scroll = tiku_trk_poseview_scroll(a->view);
@@ -492,6 +564,11 @@ draw(app_t *a)
     int i;
 
     (void)tiku_desk_ui_window(s, win, a->title, 1);
+    mc = menu_ctx(a, 0u);
+    tiku_trk_cwmenu_rebuild(&a->menus, &mc);
+    a->menus.bar.open = a->bar_open;
+    bar = menubar_rect(a);
+    tiku_trk_menubar_draw(&a->menus.bar, s, bar);
     list = list_rect(a);
     /* The view cannot see its own window.  Without this a page is one row
      * and the scroll is never clamped -- both stated in terms of what is
@@ -500,10 +577,11 @@ draw(app_t *a)
 
     /* The title strip.  Every title is placed from its column's OFFSET, so
      * a title and the cells beneath it cannot drift apart. */
-    title = (tiku_desk_rect_t){ list.x, TAB_H + BORDER, list.w, TITLE_H };
-    tiku_desk_fill(s, title, TIKU_DESK_C_PANEL);
-    tiku_desk_clip_set(s, title);
-    {
+    title = (tiku_desk_rect_t){ list.x, bar.y + bar.h, list.w, TITLE_H };
+    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
+        tiku_desk_fill(s, title, TIKU_DESK_C_PANEL);
+        tiku_desk_clip_set(s, title);
+        {
         int dragged, drag_dx = 0;
 
         dragged = tiku_trk_titleview_dragged(&a->tv, &drag_dx);
@@ -520,12 +598,14 @@ draw(app_t *a)
                 draw_title(a, title, &cols[i], 1, drag_dx);
             }
         }
+        }
+        tiku_desk_clip_reset(s);
     }
-    tiku_desk_clip_reset(s);
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
         draw_icons(a, list);
         draw_count(a, list);
+        draw_popup(a);
         a->dirty = 0;
         return;
     }
@@ -691,6 +771,7 @@ draw(app_t *a)
         }
     }
     draw_count(a, list);
+    draw_popup(a);
     (void)count;
     a->dirty = 0;
 }
@@ -1044,6 +1125,7 @@ static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
     tiku_desk_rect_t list = list_rect(a);
+    int top = TAB_H + BORDER + a->menus.bar.height;
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
         return 0;
@@ -1052,9 +1134,9 @@ title_hit(app_t *a, int px, int py, int *cx, int *cy)
         *cx = px - list.x + tiku_trk_poseview_hscroll(a->view);
     }
     if (cy != NULL) {
-        *cy = py - (TAB_H + BORDER);
+        *cy = py - top;
     }
-    return (py >= TAB_H + BORDER && py <= TAB_H + BORDER + TITLE_H);
+    return (py >= top && py <= top + TITLE_H);
 }
 
 static void
@@ -1395,6 +1477,157 @@ handle_key(app_t *a, XKeyEvent *ev, KeySym ks)
     }
 }
 
+/** @brief Send a menu action through the keyboard path it shares. */
+static void
+menu_key(app_t *a, KeySym ks, unsigned state)
+{
+    XKeyEvent ev;
+
+    memset(&ev, 0, sizeof ev);
+    ev.state = state;
+    handle_key(a, &ev, ks);
+}
+
+/** @brief Carry out a command from the shared container-window menus. */
+static void
+menu_invoke(app_t *a, int command)
+{
+    int field = -1;
+
+    switch (command) {
+    case TIKU_TRK_CMD_NEW_FOLDER:       menu_key(a, XK_n, ControlMask); return;
+    case TIKU_TRK_CMD_OPEN:             menu_key(a, XK_Return, 0u); return;
+    case TIKU_TRK_CMD_EDIT_NAME:        menu_key(a, XK_F2, 0u); return;
+    case TIKU_TRK_CMD_DUPLICATE:        menu_key(a, XK_d, ControlMask); return;
+    case TIKU_TRK_CMD_MOVE_TO_TRASH:    menu_key(a, XK_Delete, 0u); return;
+    case TIKU_TRK_CMD_DELETE:           menu_key(a, XK_Delete, ShiftMask); return;
+    case TIKU_TRK_CMD_SELECT_ALL:       menu_key(a, XK_a, ControlMask); return;
+    case TIKU_TRK_CMD_INVERT_SELECTION: menu_key(a, XK_s, ControlMask); return;
+    case TIKU_TRK_CMD_OPEN_PARENT:      menu_key(a, XK_Up, ControlMask); return;
+    case TIKU_TRK_CMD_ICON_VIEW:        menu_key(a, XK_1, ControlMask); return;
+    case TIKU_TRK_CMD_MINI_ICON_VIEW:   menu_key(a, XK_2, ControlMask); return;
+    case TIKU_TRK_CMD_LIST_VIEW:        menu_key(a, XK_3, ControlMask); return;
+    case TIKU_TRK_CMD_CLEANUP:          menu_key(a, XK_k, ControlMask); return;
+    case TIKU_TRK_CMD_CLEANUP_ALL:
+        menu_key(a, XK_k, ControlMask | ShiftMask); return;
+    case TIKU_TRK_CMD_CLOSE:
+    case TIKU_TRK_CMD_CLOSE_ALL:
+    case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE:
+        a->running = 0;
+        return;
+    case TIKU_TRK_CMD_ICON_SIZE_32:  field = 32; goto icon_size;
+    case TIKU_TRK_CMD_ICON_SIZE_40:  field = 40; goto icon_size;
+    case TIKU_TRK_CMD_ICON_SIZE_48:  field = 48; goto icon_size;
+    case TIKU_TRK_CMD_ICON_SIZE_64:  field = 64; goto icon_size;
+    case TIKU_TRK_CMD_ICON_SIZE_96:  field = 96; goto icon_size;
+    case TIKU_TRK_CMD_ICON_SIZE_128: field = 128; goto icon_size;
+    case TIKU_TRK_CMD_SORT_BY_NAME:  field = TIKU_TRK_COL_NAME; break;
+    case TIKU_TRK_CMD_SORT_BY_KIND:  field = TIKU_TRK_COL_KIND; break;
+    case TIKU_TRK_CMD_SORT_BY_SIZE:  field = TIKU_TRK_COL_SIZE; break;
+    case TIKU_TRK_CMD_SORT_BY_VALUE: field = TIKU_TRK_COL_VALUE; break;
+    case TIKU_TRK_CMD_SORT_BY_CAP:   field = TIKU_TRK_COL_CAP; break;
+    case TIKU_TRK_CMD_REVERSE_ORDER:
+        field = tiku_trk_poseview_sort_field(a->view);
+        break;
+    case TIKU_TRK_CMD_COL_KIND:  field = TIKU_TRK_COL_KIND; goto column;
+    case TIKU_TRK_CMD_COL_VALUE: field = TIKU_TRK_COL_VALUE; goto column;
+    case TIKU_TRK_CMD_COL_SIZE:  field = TIKU_TRK_COL_SIZE; goto column;
+    case TIKU_TRK_CMD_COL_CAP:   field = TIKU_TRK_COL_CAP; goto column;
+    case TIKU_TRK_CMD_COL_DATE:  field = TIKU_TRK_COL_DATE; goto column;
+    case TIKU_TRK_CMD_COL_PATH:  field = TIKU_TRK_COL_PATH; goto column;
+    case TIKU_TRK_CMD_COL_PERM:  field = TIKU_TRK_COL_PERM; goto column;
+    case TIKU_TRK_CMD_FIND:
+    case TIKU_TRK_CMD_GET_INFO:
+    case TIKU_TRK_CMD_PREFERENCES:
+        snprintf(a->status, sizeof a->status, "%s is not available in this shell",
+                 tiku_trk_sc_label(command, 0u));
+        break;
+    default:
+        break;
+    }
+    if (field >= 0) {
+        tiku_trk_poseview_sort_by(a->view, field);
+    }
+    settle_layout(a);
+    (void)tiku_trk_poseview_save_state(a->view);
+    a->dirty = 1;
+    return;
+
+column:
+    (void)tiku_trk_poseview_toggle_column(a->view, field);
+    (void)tiku_trk_poseview_save_columns(a->view);
+    a->dirty = 1;
+    return;
+
+icon_size:
+    tiku_trk_poseview_set_mode(a->view, TIKU_TRK_MODE_ICON);
+    tiku_trk_poseview_set_icon_size(a->view, field);
+    settle_layout(a);
+    (void)tiku_trk_poseview_save_state(a->view);
+    a->dirty = 1;
+}
+
+/** @brief Open a title from the in-window bar when the point names one. */
+static int
+menubar_press(app_t *a, int x, int y, unsigned state)
+{
+    tiku_desk_rect_t bar = menubar_rect(a);
+    tiku_trk_sc_ctx_t c;
+    unsigned mods = 0u;
+    int which;
+
+    which = tiku_trk_menubar_title_at(&a->menus.bar, bar, x, y);
+    if (which < 0) {
+        return 0;
+    }
+    if (state & ShiftMask) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
+    if (state & ControlMask) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    c = menu_ctx(a, mods);
+    tiku_trk_cwmenu_rebuild(&a->menus, &c);
+    a->bar_open = which;
+    a->menus.bar.open = which;
+    a->popup = a->menus.bar.menu[which];
+    a->popup_sub = NULL;
+    a->popup_frame = tiku_trk_menubar_panel(&a->menus.bar, bar,
+                         (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+    a->dirty = 1;
+    return 1;
+}
+
+/** @brief Route a press through an open menu or its first submenu. */
+static int
+popup_press(app_t *a, int x, int y)
+{
+    tiku_trk_menu_t *m;
+    tiku_desk_rect_t frame;
+    int item;
+
+    if (a->popup == NULL) {
+        return 0;
+    }
+    m = (a->popup_sub != NULL) ? a->popup_sub : a->popup;
+    frame = (a->popup_sub != NULL) ? a->popup_sub_frame : a->popup_frame;
+    item = tiku_trk_menu_item_at(m, frame, x, y);
+    if (item >= 0 && m->item[item].enabled) {
+        if (m->item[item].submenu != NULL) {
+            m->open_index = item;
+            a->popup_sub = m->item[item].submenu;
+            a->popup_sub_frame = tiku_trk_menu_place_sub(
+                m, item, frame,
+                (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+            a->dirty = 1;
+            return 1;
+        }
+        menu_invoke(a, m->item[item].command);
+    }
+    a->popup = NULL;
+    a->popup_sub = NULL;
+    a->bar_open = -1;
+    a->menus.bar.open = -1;
+    a->dirty = 1;
+    return 1;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1410,6 +1643,8 @@ main(int argc, char **argv)
     int64_t shot_at_us = 0;
 
     memset(&a, 0, sizeof a);
+    tiku_trk_cwmenu_init(&a.menus);
+    a.bar_open = -1;
     /* Zero is a valid row, so the "nothing to select" state has to be set
      * rather than zeroed: left at 0 it would re-select the first row after
      * every operation (FS-050). */
@@ -1608,6 +1843,27 @@ main(int argc, char **argv)
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
                 {
+                    const tiku_trk_column_t *script_cols = NULL;
+
+                    sst.columns = tiku_trk_poseview_columns(a.view,
+                                                            &script_cols);
+                }
+                {
+                    static char labels[512];
+                    tiku_trk_menu_t *open = (a.popup_sub != NULL)
+                                                  ? a.popup_sub : a.popup;
+                    int mi;
+
+                    labels[0] = '\0';
+                    for (mi = 0; open != NULL && mi < open->count; mi++) {
+                        size_t at = strlen(labels);
+
+                        snprintf(labels + at, sizeof labels - at, "%s|",
+                                 open->item[mi].label);
+                    }
+                    sst.menu = labels;
+                }
+                {
                     int si, sn = tiku_trk_poseview_count(a.view);
 
                     for (si = 0; si < sn; si++) {
@@ -1657,6 +1913,36 @@ main(int argc, char **argv)
                     draw(&a);
                     (void)tiku_desk_surface_png(a.surf, sp.path);
                     break;
+                case TIKU_TRK_SC_MENU_PICK: {
+                    tiku_trk_menu_t *m = (a.popup_sub != NULL)
+                                             ? a.popup_sub : a.popup;
+                    tiku_desk_rect_t fr = (a.popup_sub != NULL)
+                                              ? a.popup_sub_frame
+                                              : a.popup_frame;
+                    int k;
+
+                    if (m == NULL) {
+                        fprintf(stderr, "script: no menu is open for '%s'\n",
+                                sp.path);
+                        break;
+                    }
+                    for (k = 0; k < m->count; k++) {
+                        if (!m->item[k].separator &&
+                            strstr(m->item[k].label, sp.path) != NULL) {
+                            ev.type = ButtonPress;
+                            ev.xbutton.x = fr.x + 8;
+                            ev.xbutton.y = fr.y +
+                                tiku_trk_menu_item_top(m, k) +
+                                tiku_trk_menu_item_height(m, k) / 2;
+                            ev.xbutton.button = 1u;
+                            ev.xbutton.time =
+                                (Time)(tiku_trk_now() / 1000);
+                            have = 1;
+                            break;
+                        }
+                    }
+                    break;
+                }
                 case TIKU_TRK_SC_QUIT:
                     a.running = 0;
                     break;
@@ -1682,6 +1968,15 @@ main(int argc, char **argv)
                 handle_key(&a, &ev.xkey, ev_ks);
                 break;
             case ButtonPress: {
+                if (ev.xbutton.button == 1 &&
+                    menubar_press(&a, ev.xbutton.x, ev.xbutton.y,
+                                  ev.xbutton.state)) {
+                    end_rename(&a, 1);
+                    break;
+                }
+                if (popup_press(&a, ev.xbutton.x, ev.xbutton.y)) {
+                    break;
+                }
                 if (ev.xbutton.button == 4 || ev.xbutton.button == 5) {
                     if (ev.xbutton.state & ShiftMask) {
                         /* TS-020: one value moves the titles and the rows

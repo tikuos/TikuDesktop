@@ -2649,19 +2649,19 @@ ViewModeChanged: newMode == kListMode -> Remove(); oldMode == kListMode -> Show(
 `ContainerWindow.cpp` → `BContainerWindow::ViewModeChanged / UpdateBackgroundImage`
 **SUBSYSTEM:** Background images. No folder background-image code exists anywhere in src/ (grep -rni background matches only a Deskbar comment and menu comments), so the show-in-icon-view/remove-in-list-view rule has nothing to act on.  
 
-#### CW-021 · core · partial
+#### CW-021 · core · done
 **The menu bar has File and Window always, and Attributes only in list view; Attributes appears/disappears as the view mode changes.**  
 AddMenus creates File (index 0), Window (index 1), fAttrMenu (added at index 2 only when ViewMode()==kListMode) and the detached "Arrange by" item. ShowAttributesMenu/HideAttributesMenu insert/remove at index 2. RebuildAddOnMenus assumes add-on menus start at index 3 in list mode, 2 otherwise.  
 `ContainerWindow.cpp` → `BContainerWindow::AddMenus / ShowAttributesMenu / HideAttributesMenu`  
-**MISSING:** The bar composition rule is implemented exactly (File+Window always, Attributes inserted at index 2 only in list mode and removed when the mode changes) and unit-tested, but neither front end draws or opens a menu bar, so a user only ever sees the context menus.  
-*src/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild (menubar_insert/remove at index 2)*
+**PORT:** The bar composition rule is implemented exactly (File+Window always, Attributes inserted at index 2 only in list mode and removed when the mode changes), and both front ends draw and open that bar over the shared live menu model.  The shell tests open File in both front ends and exercise Window and the list-only Attributes menu in the single-window shell.
+*src/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild; src/tiku_trk_desktop.c:folder_draw; src/tiku_trk_app.c:draw; tests/shell/menubar.script; tests/shell/trackermenu.script*
 
 #### CW-022 · core · partial
 **File menu inventory: Find… (Cmd+F), New folder (Cmd+N), | Open (Cmd+O), [Edit query], [Open with…], Get info (Cmd+I), Edit name (Cmd+E), [Mount>/Unmount], Duplicate (Cmd+D), Move to Trash (Del), | [Move to/Copy to/Create link], Cut (Cmd+X), Copy (Cmd+C), Paste (Cmd+V), | Identify, Add-ons>.**  
 Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead of Duplicate/Move to Trash; the printers directory prepends "Add printer…" and ends after "Make active printer" (no cut/copy/paste, no identify, no add-ons); the root window has no Duplicate/Trash items, no clipboard block and no Identify.  
 `ContainerWindow.cpp` → `BContainerWindow::AddFileMenu`  
 **TIKU:** "Mount/Unmount" and Trash have no obvious analogue for device nodes; decide whether a device node can be "deleted" at all (probably capability-bit gated).  
-**MISSING:** Find/New folder/Open/Open with/Get info/Edit name/Duplicate/Move to Trash/Move to/Copy to/Create link/Cut/Copy/Paste/Identify are built in order with the Trash (Empty Trash first, Delete+Restore) and root (no Duplicate/Trash, no clipboard, no Identify) variants; missing are Add-ons>, Mount/Unmount, Edit query and the printers-folder variant (and the menu is never presented, no bar is drawn).  
+**MISSING:** Find/New folder/Open/Edit query/Open with/Get info/Edit name/Duplicate/Move to Trash/Move to/Copy to/Create link/Cut/Copy/Paste/Identify are built in order and presented from the live bar, with the Trash (Empty Trash first, Delete+Restore) and root (no Duplicate/Trash, no clipboard, no Identify) variants; missing are Add-ons>, Mount/Unmount and the printers-folder variant.
 *src/tiku_trk_cwmenu.c:build_file*
 
 #### CW-023 · core · done
@@ -2690,10 +2690,8 @@ AddMimeTypesToMenu builds supertype menus then subtype menus from BMimeType::Get
 `ContainerWindow.cpp` → `BContainerWindow::AddMimeTypesToMenu(BMenu*) / AddMimeMenu`  
 **TIKU:** Replaced by per-descriptor-type column sets from the VFS type registry.
 **PORT:** The menu reports the LISTING and the database says what each type is worth showing: the submenu per type present is built from that record -- its fixed columns and its ATTRIBUTE ones -- rather than from a rule in the shell. An attribute becomes a real column the moment a type that wants it is in the folder: the id is this session's, the name is what the database and the saved layout agree on, and the cell reads that entry's attribute.  
-**MISSING:** Neither shell draws a menu BAR, so the Attributes menu is reached in the model rather than on screen -- the same gap CW-025 records.  
-
 *src/tiku_trk_poseview.c:tiku_trk_poseview_attr_column/cell_text_at; src/tiku_trk_types.c; tests/test_poseview.c*
-*src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_cwmenu.c:build_attributes; src/tiku_trk_desktop.c:build_per_type; tests/test_menu.c*
+*src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_cwmenu.c:build_attributes; src/tiku_trk_desktop.c:build_per_type; src/tiku_trk_desktop.c:folder_draw; tests/test_menu.c*
 
 #### CW-027 · important · done
 **"Arrange by >" offers the same attribute list as sort keys plus Reverse order and Clean up; the current primary sort key and reverse flag are check-marked; the whole menu is disabled in list view (where clicking column titles sorts instead).**  
@@ -5326,7 +5324,7 @@ Menu items carry attr_name, attr_type, attr_hash, attr_width, attr_align, attr_e
 **Removing the last remaining column is refused with the alert "You must have at least one attribute showing."**  
 Only when runAlert is true (menu path). Internal callers such as Paste layout pass false and just get a false return, which is how paste keeps one old column alive until the new set is installed.  
 `PoseView.cpp` → `BPoseView::RemoveColumn`  
-**MISSING:** The name column cannot be removed and the view can be ASKED whether a removal would leave nothing, so a caller can say why rather than have the refusal happen silently. The alert itself is not raised: the desktop shell has the alert layer, and the menu that would trigger this is drawn by neither shell.  
+**MISSING:** The name column cannot be removed and the view can be ASKED whether a removal would leave nothing, so a caller can say why rather than have the refusal happen silently. The live Attributes menu marks Name and disables it, so the shipped menu path cannot request the removal; the specified alert itself is therefore still not raised.
 *src/tiku_trk_poseview.c:tiku_trk_poseview_last_column; tests/test_poseview.c*
 *src/tiku_trk_poseview.c:3108-3109 (Name refusal); src/tiku_trk_cwmenu.c:186-188 (Name marked and disabled); grep for "at least one" / "alert" across src returns nothing*
 
@@ -5337,13 +5335,14 @@ Add inserts after the given column (default: last), creates widgets for the curr
 **MISSING:** Add/remove reflow every column to its right by width+MARGIN, set state_dirty, leave the Attributes marks recomputed on next rebuild, and thin the filtered list in place on remove while rebuilding it on add; the missing clause is the scoped repaint -- there is no invalidation region, the whole window is redrawn on the next dirty frame.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:3104-3148 (toggle_column, filter_changed calls) and :3391 (reflow_columns); full redraw at /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:1565*
 
-#### TS-025 · important · open
+#### TS-025 · important · done
 **The Attributes menu offers per-MIME-type submenus listing that type's user-visible attributes, built from the types actually present in the folder.**  
 Only installed types with attr:public_name entries and attr:viewable true are listed; each contributes width/alignment/editable/display_as from the MIME database. Supertype menus with no direct items get their sub-menus promoted to the top level and are then deleted; a trailing separator is removed if it would be the only item.  
 `ContainerWindow.cpp` → `BContainerWindow::AddMimeMenu`  
 **TIKU:** Replace with enumeration of a node's typed descriptors; the "viewable" flag becomes a capability/visibility bit on the descriptor.  
 **VERIFIER CORRECTION:** BContainerWindow::AddMimeTypesToMenu removes ANY trailing separator unconditionally (`separator = menu->ItemAt(CountItems()-1); if (dynamic_cast<BSeparatorItem*>(separator) != NULL) remove`). The "only item" qualifier comes from the source comment, not the code.
-**BLOCKED:** Waits on any per-type attribute source to enumerate. The port's column vocabulary is a compile-time enum of six fields (src/tiku_trk_poseview.h:122-127) and the Attributes menu is a fixed five-item table (src/tiku_trk_cwmenu.c:198-217); the model carries only a type string (src/tiku_trk_model.h:99); grep for public_name/viewable or any descriptor-enumeration API across src/ returns nothing. The menu layer could carry the submenus (tiku_trk_menu_add_submenu exists and is used, cwmenu.c:165, 170) — the attribute database behind them does not exist.  
+**PORT:** The type registry is the Tiku replacement for the MIME attribute source.  The desktop shell enumerates the types actually present, asks each registry record for its visible fixed and typed-attribute columns, and attaches one submenu per non-empty type after a separator; the Attributes menu is now reachable through the folder window's live bar.  Empty records add no submenu, so no trailing separator is left behind.
+*src/tiku_trk_types.c; src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_desktop.c:build_per_type/folder_draw; src/tiku_trk_cwmenu.c:build_attributes; tests/test_menu.c; tests/test_types.c*
 
 #### TS-026 · important · open
 **"Copy layout" and "Paste layout" transfer a folder's whole column set and sort order through the clipboard.**  

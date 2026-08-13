@@ -4,9 +4,9 @@
 # ten strings, so nothing the user did could ever appear in it.
 wait 8
 note two folders opened, so both are in the recent list
-click 100 77
+click-row 0
 wait 2
-click 100 77
+click-row 0
 wait 10
 expect-windows 2
 note and both closed again, so what reopens one can only be the menu

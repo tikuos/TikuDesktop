@@ -1,0 +1,23 @@
+# shell: desktop
+# CW-021/CW-022: folder windows present their menu model through a bar.
+wait 8
+note File opens from the folder window's menu bar
+click 65 75
+wait 3
+expect-menu Find
+note the open menu invokes its existing command path
+menu-pick New folder
+wait 8
+expect-file /tmp/trk_script/New folder
+note a second window's bar keeps its own command target
+click-row 1
+click-row 1
+wait 8
+expect-windows 2
+click 85 97
+wait 3
+expect-menu Find
+menu-pick New folder
+wait 8
+expect-file /tmp/trk_script/sub/New folder
+quit

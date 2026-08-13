@@ -6,17 +6,17 @@ note Cmd+1 switches this window to icon mode
 key 1 ctrl
 wait 10
 note clicking an icon selects that one thing
-click 88 100
+click 88 119
 wait 3
 expect-selected 1
 expect-selected-name sub
 note the space BETWEEN two icons is nobody's: it clears the selection,
 note which is what makes a band sweepable between them
-click 150 100
+click 150 119
 wait 3
 expect-selected 0
 note Right moves to the icon beside it, not to the next name in the list
-click 88 100
+click 88 119
 wait 3
 key Right
 wait 3

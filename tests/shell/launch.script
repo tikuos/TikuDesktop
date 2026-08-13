@@ -6,20 +6,20 @@
 wait 8
 note a double click opens the document in the application that claims its
 note type, which really runs and is really handed the document
-click 100 97
+click-row 1
 wait 2
-click 100 97
+click-row 1
 wait 12
 expect-status Stamper
 expect-file-has /tmp/trk_launched /tmp/trk_script/a.txt
 note and the pose menu offers the applications that can open what is
 note selected, each saying why it is offered
-click 100 97 3
+click-row 1 3
 wait 4
 expect-menu Open with
 note picking it opens a submenu of applications rather than choosing, and
 note each row says why that application is in it
-click 150 145
+menu-pick Open with
 wait 4
 expect-menu Stamper
 expect-menu opens this type

@@ -193,6 +193,8 @@ $(BUILD)/test_hvif: src/tiku_trk_hvif.c src/tiku_trk_icons.c \
 $(BUILD)/tracker: $(CORE) $(UI) $(ICONS) src/tiku_trk_poseview.c \
                   src/tiku_trk_script_api.c src/tiku_trk_deskicons.c \
                   src/tiku_trk_edit.c src/tiku_trk_titleview.c \
+                  src/tiku_trk_menu.c src/tiku_trk_shortcuts.c \
+                  src/tiku_trk_cwmenu.c \
                   src/tiku_trk_script.c src/tiku_trk_app.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 

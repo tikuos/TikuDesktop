@@ -6,9 +6,9 @@
 key 1 ctrl
 wait 6
 note open sub and drag its window clear of the one it came from
-click 88 100
+click 88 119
 wait 2
-click 88 100
+click 88 119
 wait 8
 key 1 ctrl
 wait 6
@@ -18,11 +18,11 @@ move 620 420
 release 620 420
 wait 6
 note two icons, a grid step apart, dropped at 600,500
-click 207 100
+click 207 119
 wait 2
-click 327 100 1 ctrl
+click 327 119 1 ctrl
 wait 2
-press 207 100
+press 207 119
 move 300 200
 move 600 500
 release 600 500
@@ -31,6 +31,6 @@ click 580 414
 wait 5
 expect-rows 2
 note the first lands under the pointer and the second keeps its offset
-expect-icon-at a.txt 120 68
-expect-icon-at b.txt 240 68
+expect-icon-at a.txt 120 47
+expect-icon-at b.txt 240 47
 quit

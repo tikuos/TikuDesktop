@@ -4,14 +4,14 @@
 # means depends on where the item is: a move that can be undone where there
 # is a Trash, and a deletion when Shift says the user has decided.
 note Delete moves the selection to the Trash rather than destroying it
-click 200 97
+click-row 1
 wait 3
 key Delete
 wait 30
 expect-no-file /home/ambuj/.trk-shell-fixture/a.txt
 expect-file /home/ambuj/.Trash/a.txt
 note Shift+Delete is final, and says so
-click 200 97
+click-row 1
 wait 3
 key Delete shift
 wait 30

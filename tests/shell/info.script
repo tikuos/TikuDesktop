@@ -3,7 +3,7 @@
 # permissions apply as they are ticked; its name renames the entry; and it
 # closes itself when the entry goes.
 note Ctrl+I opens the window the menus have advertised all along
-click 200 97
+click-row 1
 key i ctrl
 wait 10
 expect-title a.txt info
