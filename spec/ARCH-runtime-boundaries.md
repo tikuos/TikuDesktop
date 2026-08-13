@@ -75,12 +75,13 @@ composition and application entry descriptors.
 7. Prove the boundary with a small non-Tracker app before designing a plugin
    ABI or process protocol.
 
-The vertical extraction has started with Get Info, preferences, Select by
-pattern, and the application switcher. Their headless state machines remain
-in `tiku_trk_info`, `tiku_trk_prefs`, `tiku_trk_select`, and
-`tiku_trk_switcher`; the paired `*_window` controllers now own rendering,
-input, persistence or refresh, and the lifetime of their composited windows.
-The desktop shell only opens them and reacts to semantic results.
+The vertical extraction has started with Get Info, the Open/Save panel,
+preferences, Select by pattern, and the application switcher. Their headless
+state machines remain in `tiku_trk_info`, `tiku_trk_panel`, `tiku_trk_prefs`,
+`tiku_trk_select`, and `tiku_trk_switcher`; the paired `*_window` controllers
+now own rendering, input, persistence or refresh, and the lifetime of their
+composited windows. The desktop shell only opens them and reacts to semantic
+results.
 
 ## Temporary exceptions
 
