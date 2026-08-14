@@ -38,5 +38,7 @@ int tiku_trk_addons_build_menu(const tiku_trk_addons_t *addons,
 int tiku_trk_addons_invoke(const tiku_trk_addons_t *addons, int command,
                            int command_base, tiku_trk_addon_invoke_fn fn,
                            void *context);
+int tiku_trk_addons_shortcut(const tiku_trk_addons_t *addons, char key,
+                             unsigned mods, int command_base);
 
 #endif

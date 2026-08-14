@@ -1217,6 +1217,23 @@ draw_all(desktop_t *app)
              * has to sit over whatever is under it. */
             tiku_trk_paint_tint(app->surf, box, TIKU_DESK_C_BACKDROP,
                                 255 - alpha);
+            if (app->drag.count > 3) {
+                /* Large selections get a short fade at the edge of the
+                 * pointer picture.  The surface is opaque, so the fade is
+                 * expressed as progressively stronger backdrop tinting over
+                 * the four edge bands rather than an off-screen alpha
+                 * bitmap (PVS-034). */
+                tiku_desk_rect_t edge = box;
+                edge.w = 4;
+                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                edge.x = box.x + box.w - 4;
+                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                edge = box;
+                edge.h = 4;
+                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                edge.y = box.y + box.h - 4;
+                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+            }
         }
     }
     /* Drawing another folder rebuilt the one shared menu model for that
@@ -2939,9 +2956,31 @@ tracker_run(int argc, char **argv)
                         ev.modifiers, key_char(&ev))) {
                     break;
                 }
-               if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    tiku_desk_workspace_focused(app.desk) ==
+                        tiku_trk_prefs_window_handle(&app.prefs_window)) {
+                    tiku_trk_prefs_window_close(&app.prefs_window);
+                    app.dirty = 1;
+                    break;
+                }
+                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     app.running = 0;
                     break;
+                }
+                {
+                    unsigned addon_mods = 0u;
+                    int addon_command;
+
+                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) addon_mods |= 0x1u;
+                    if (ev.modifiers & TIKU_DESK_MOD_CMD) addon_mods |= 0x2u;
+                    addon_command = tiku_trk_addons_shortcut(
+                        &app.addons, key_char(&ev), addon_mods,
+                        TIKU_TRK_ADDON_COMMAND_BASE);
+                    if (addon_command >= 0) {
+                        menu_invoke(&app, fl, addon_command);
+                        app.dirty = 1;
+                        break;
+                    }
                 }
                 if (key == 'f' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     open_panel(&app);

@@ -42,5 +42,6 @@ tiku_desk_window_t *tiku_trk_prefs_window_handle(
 
 /** @brief Open the preferences window or activate its existing instance. */
 void tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller);
+void tiku_trk_prefs_window_close(tiku_trk_prefs_window_t *controller);
 
 #endif /* TIKU_TRK_PREFS_WINDOW_H_ */

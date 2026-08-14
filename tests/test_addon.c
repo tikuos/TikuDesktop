@@ -17,5 +17,7 @@ int main(void) {
     tiku_trk_menu_set_icon(&m, m.item[0].command, "text-file");
     if (strcmp(m.item[0].icon, "text-file") != 0) return 1;
     if (!tiku_trk_addons_invoke(&a, 1001, 1000, invoke, &a) || !invoked) return 1;
+    if (tiku_trk_addons_shortcut(&a, 'x', 0x3u, 1000) != 1001) return 1;
+    if (tiku_trk_addons_shortcut(&a, 'x', 0x2u, 1000) >= 0) return 1;
     puts("[PASS] add-on inventory, MIME ordering and live shortcut rebinding"); return 0;
 }

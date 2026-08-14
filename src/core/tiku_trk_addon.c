@@ -111,3 +111,18 @@ tiku_trk_addons_invoke(const tiku_trk_addons_t *a, int command, int base,
     }
     return fn(&a->item[index], context) != 0;
 }
+
+int
+tiku_trk_addons_shortcut(const tiku_trk_addons_t *a, char key, unsigned mods,
+                         int base)
+{
+    int i;
+
+    if (a == NULL || key == 0) return -1;
+    for (i = 0; i < a->count; i++) {
+        if (a->item[i].key == key && a->item[i].mods == mods) {
+            return base + i;
+        }
+    }
+    return -1;
+}

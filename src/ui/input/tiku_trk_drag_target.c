@@ -36,6 +36,7 @@ tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
         .open_context = open_context,
         .row = -1
     };
+    tiku_trk_springmenu_reset(&controller->spring);
 }
 
 static tiku_trk_folder_window_t *
@@ -61,6 +62,7 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
     int row = -1;
     int team = -1;
     int changed = 0;
+    int inside_spring = tiku_trk_springmenu_inside(&controller->spring, x, y);
 
     (void)tiku_desk_workspace_hit(controller->workspace, x, y, &window);
     folder = window != NULL ? folder_for_window(controller, window)
@@ -79,6 +81,13 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
             }
         }
     }
+    /* Keep a sprung target alive while the pointer crosses the margin around
+     * its menu.  Without this, the next motion sample would reset the hover
+     * clock before the user can reach a submenu item (PVS-054). */
+    if (inside_spring && controller->folder != NULL && row < 0) {
+        folder = controller->folder;
+        row = controller->row;
+    }
     tiku_trk_deskbar_set_dragging(controller->deskbar, 1);
     (void)tiku_trk_deskbar_drop_at(controller->deskbar, x, y, &team);
     if (team != tiku_trk_deskbar_drop_team(controller->deskbar)) {
@@ -90,6 +99,20 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
         controller->row = row;
         controller->hover_at = now;
         controller->sprung = 0;
+        tiku_trk_springmenu_reset(&controller->spring);
+        if (folder != NULL && row >= 0) {
+            tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, row);
+            int px = 0, py = 0, pw = 1, ph = 1;
+            tiku_desk_rect_t content =
+                tiku_trk_folder_window_content(folder);
+
+            if (pose != NULL) {
+                tiku_trk_poseview_pose_rect(folder->view, pose, &px, &py,
+                                            &pw, &ph);
+                tiku_trk_springmenu_enter(&controller->spring,
+                    content.x + px, content.y + py, pw, ph, now);
+            }
+        }
         changed = 1;
     }
     if (folder != NULL && row < 0 &&
@@ -183,7 +206,8 @@ tiku_trk_drag_target_pulse(tiku_trk_drag_target_t *controller, int64_t now)
 
     if (tiku_trk_drag_active(controller->drag) &&
         controller->folder != NULL && controller->row >= 0 &&
-        !controller->sprung && now - controller->hover_at > SPRING_DELAY_US) {
+        !controller->sprung &&
+        tiku_trk_springmenu_pulse(&controller->spring, now)) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(controller->folder->view,
                                                      controller->row);
 
@@ -205,5 +229,6 @@ tiku_trk_drag_target_reset(tiku_trk_drag_target_t *controller)
     controller->hover_at = 0;
     controller->scroll_at = 0;
     controller->sprung = 0;
+    tiku_trk_springmenu_reset(&controller->spring);
     tiku_trk_deskbar_set_dragging(controller->deskbar, 0);
 }

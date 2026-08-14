@@ -204,3 +204,14 @@ tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller)
         tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);
     }
 }
+
+void
+tiku_trk_prefs_window_close(tiku_trk_prefs_window_t *controller)
+{
+    if (controller == NULL || controller->window == NULL ||
+        !controller->window->open) {
+        return;
+    }
+    tiku_desk_workspace_close(controller->workspace, controller->window);
+    controller->window = NULL;
+}

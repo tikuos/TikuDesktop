@@ -15,6 +15,7 @@
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_desktop_view.h"
 #include "tiku_trk_drag.h"
+#include "tiku_trk_springmenu.h"
 
 typedef void (*tiku_trk_drag_open_fn)(void *context, const char *path);
 
@@ -35,6 +36,7 @@ typedef struct {
     int64_t hover_at;
     int64_t scroll_at;
     int sprung;
+    tiku_trk_springmenu_t spring;
 } tiku_trk_drag_target_t;
 
 void tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
