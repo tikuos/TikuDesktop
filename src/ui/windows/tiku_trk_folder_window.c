@@ -217,9 +217,60 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
 
         (void)tiku_trk_poseview_fit_label(folder->view, pose, fit,
                                           sizeof fit);
-        tiku_desk_text(surface, font, lx, ly + font->ascent, fit,
-                       selected ? TIKU_DESK_C_SELTEXT : ink);
+        if (folder->bg_drawn && !selected) {
+            /* Over a picture the ink alone is unreadable wherever the
+             * picture is the same colour, so the label carries a halo of
+             * the opposite one (PVL-071).  A selected label has its own
+             * filled box and needs none. */
+            tiku_trk_paint_text_halo(surface, font, lx, ly + font->ascent,
+                                     fit, ink);
+        } else {
+            tiku_desk_text(surface, font, lx, ly + font->ascent, fit,
+                           selected ? TIKU_DESK_C_SELTEXT : ink);
+        }
     }
+}
+
+int
+tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
+    tiku_desk_surface_t *surface, tiku_desk_rect_t content)
+{
+    tiku_trk_folder_render_t *render = folder->render;
+    tiku_trk_store_t *store;
+    tiku_trk_bg_t bg;
+    int i, dx, dy, dw, dh;
+
+    /* The BACKEND's store, where the folder's other per-node state lives:
+     * the session store is per device and knows nothing about one folder. */
+    if (render == NULL || render->backend == NULL ||
+        render->backend->ops->state_store == NULL) {
+        return 0;
+    }
+    store = render->backend->ops->state_store(render->backend);
+    if (store == NULL) {
+        return 0;
+    }
+    if (!tiku_trk_bg_load(store, folder->path, &bg) &&
+        !tiku_trk_bg_load(store, TIKU_TRK_BG_TEMPLATE_NODE, &bg)) {
+        return 0;
+    }
+    if (strcmp(bg.path, folder->bg_shown) != 0) {
+        tiku_trk_image_free(&folder->bg_image);
+        folder->bg_shown[0] = '\0';
+        if (tiku_trk_image_load(bg.path, &folder->bg_image) !=
+            TIKU_TRK_IMG_OK) {
+            return 0;
+        }
+        snprintf(folder->bg_shown, sizeof folder->bg_shown, "%s", bg.path);
+    }
+    for (i = 0; tiku_trk_bg_place(&bg, content.w, content.h,
+                                  folder->bg_image.w, folder->bg_image.h,
+                                  i, &dx, &dy, &dw, &dh); i++) {
+        tiku_desk_rect_t dst = { content.x + dx, content.y + dy, dw, dh };
+
+        tiku_trk_paint_image(surface, &folder->bg_image, dst, content);
+    }
+    return 1;
 }
 
 void
@@ -545,6 +596,9 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     total = tiku_trk_poseview_count(folder->view);
     tiku_desk_clip_set(surface, tiku_desk_inset(list, 2));
     if (icons) {
+        folder->bg_drawn = tiku_trk_folder_window_draw_background(
+            folder, surface,
+                                           tiku_desk_inset(list, 2));
         tiku_trk_folder_window_draw_icons(folder, surface, list);
     } else {
         draw_list(folder, surface, list, rows, scroll, total);

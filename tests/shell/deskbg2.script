@@ -1,0 +1,10 @@
+# shell: desktop
+# argv: none
+# AW-016: only when there is none yet.  This desktop already carries a
+# record, put at 600,400 -- the boot install must leave it where it is.
+wait 10
+expect-pixel 620 420 10c810
+note and nothing was installed at the golden-ratio place the default would
+note have gone to
+expect-pixel 640 620 336698
+quit

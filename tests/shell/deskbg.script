@@ -1,0 +1,11 @@
+# shell: desktop
+# argv: none
+# AW-016: a default desktop picture is installed when the desktop carries no
+# background yet, at a golden-ratio x and nine tenths of the height.
+wait 10
+note 1000 x 680: the picture's corner lands at 618, 612, so a point just
+note inside it is the picture's own colour rather than the backdrop
+expect-pixel 640 620 10c810
+note and the backdrop is untouched where the picture is not
+expect-pixel 100 600 336698
+quit

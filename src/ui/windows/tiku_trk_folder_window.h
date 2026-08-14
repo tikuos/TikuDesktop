@@ -19,6 +19,7 @@
 #include "tiku_trk_frame.h"
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_background.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_query.h"
 #include "tiku_trk_thumb.h"
@@ -78,6 +79,11 @@ struct tiku_trk_folder_window {
     int                        count_last_total;
     int                        count_last_selected;
     char                       qname[TIKU_TRK_NAME_MAX];
+    /* The picture behind it, decoded once and kept with the window that
+     * shows it: re-reading the file every frame is a decode per frame. */
+    tiku_trk_image_t           bg_image;
+    char                       bg_shown[TIKU_TRK_PATH_MAX];
+    int                        bg_drawn;   /* labels need a halo over it */
     tiku_trk_folder_render_t  *render;
 };
 
@@ -87,6 +93,18 @@ void tiku_trk_folder_window_configure(tiku_trk_folder_window_t *folder,
 void tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     tiku_desk_surface_t *surface, tiku_desk_rect_t content, void *context);
 void tiku_trk_folder_window_draw_icons(tiku_trk_folder_window_t *folder,
+    tiku_desk_surface_t *surface, tiku_desk_rect_t content);
+
+/**
+ * @brief Draw the picture behind @p folder, if it carries one (CW-020).
+ *
+ * Icon modes only, which is the rule itself: a picture behind a table of
+ * text is unreadable.  The desktop draws its own the same way.
+ *
+ * @return 1 when a picture was drawn, which is what tells the labels to
+ *         carry a halo.
+ */
+int tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
     tiku_desk_surface_t *surface, tiku_desk_rect_t content);
 
 tiku_desk_rect_t tiku_trk_folder_window_content(

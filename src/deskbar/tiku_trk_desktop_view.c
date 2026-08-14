@@ -22,8 +22,14 @@ draw(tiku_desk_surface_t *surface, void *context)
     tiku_trk_desktop_view_t *controller = context;
 
     if (controller != NULL && controller->folder.view != NULL) {
+        tiku_desk_rect_t content =
+            tiku_trk_folder_window_content(&controller->folder);
+
+        controller->folder.bg_drawn =
+            tiku_trk_folder_window_draw_background(&controller->folder,
+                                                   surface, content);
         tiku_trk_folder_window_draw_icons(&controller->folder, surface,
-            tiku_trk_folder_window_content(&controller->folder));
+                                          content);
     }
 }
 
@@ -343,6 +349,13 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
                                    screen_w, screen_h);
     tiku_trk_poseview_set_mode(controller->folder.view,
                                TIKU_TRK_MODE_ICON);
+    if (backend->ops->state_store != NULL) {
+        /* Once: a desktop the user has set, or cleared, stays as it is
+         * across boots (AW-016). */
+        (void)tiku_trk_bg_install_default(backend->ops->state_store(backend),
+                                          controller->folder.path, screen_w,
+                                          screen_h);
+    }
     tiku_trk_desktop_view_rebuild(controller);
     tiku_trk_vdir_watch_init(&controller->watch, &controller->sources);
     tiku_desk_workspace_set_backdrop(render->workspace, draw, controller);

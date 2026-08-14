@@ -14,6 +14,7 @@
 #ifndef TIKU_TRK_ICONPAINT_H_
 #define TIKU_TRK_ICONPAINT_H_
 
+#include "tiku_desk_font.h"
 #include "tiku_desk_gfx.h"
 #include "tiku_trk_thumb.h"
 
@@ -89,5 +90,28 @@ void tiku_trk_paint_tint(tiku_desk_surface_t *s, tiku_desk_rect_t r,
  */
 void tiku_trk_paint_band(tiku_desk_surface_t *s, tiku_desk_rect_t r,
                          int transparent);
+
+/**
+ * @brief Draw a picture into @p dst, scaled to it, clipped to @p clip.
+ *
+ * The one blit a background is made of: the placement decides where each
+ * copy goes and this puts it there, so tiled, centred and scaled are the
+ * same drawing done to different rectangles (CW-020, AW-016).
+ */
+void tiku_trk_paint_image(tiku_desk_surface_t *s, const tiku_trk_image_t *im,
+                          tiku_desk_rect_t dst, tiku_desk_rect_t clip);
+
+/**
+ * @brief Draw @p text with a contrast halo around it (PVL-071, IV-049).
+ *
+ * Over a picture, a label in one colour is unreadable wherever the picture
+ * is the same colour.  Tracker draws the string several more times in a
+ * contrasting shade before the real one; this floor has no alpha in its
+ * text, so the halo is the same string at the eight neighbouring pixels,
+ * which is the readable part of that effect.
+ */
+void tiku_trk_paint_text_halo(tiku_desk_surface_t *s,
+                              const tiku_desk_font_t *f, int x, int y,
+                              const char *text, tiku_desk_rgb_t ink);
 
 #endif /* TIKU_TRK_ICONPAINT_H_ */

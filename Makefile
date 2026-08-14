@@ -57,7 +57,7 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_panel.c src/core/tiku_trk_info.c \
         src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
         src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
-        src/core/tiku_trk_state_pipeline.c
+        src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c
 BACKENDS := src/backends/tiku_trk_notify.c src/backends/tiku_trk_vdir.c \
             src/backends/tiku_trk_volume.c \
             src/backends/tiku_trk_backend_posix.c \
@@ -75,7 +75,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # build reports a pass it did not earn.
 TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
-            $(BUILD)/test_attr $(BUILD)/test_query \
+            $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
             $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
@@ -179,6 +179,9 @@ $(BUILD)/test_frame: $(COMMON) tests/test_frame.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_win: tests/test_win.c $(DESK_LIBS) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_background: $(COMMON) tests/test_background.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_iconview: $(COMMON) src/ui/tiku_trk_poseview.c \
@@ -340,6 +343,7 @@ test: all
 	@$(BUILD)/test_nodeicon
 	@$(BUILD)/test_panel
 	@$(BUILD)/test_info
+	@$(BUILD)/test_background
 	@$(BUILD)/test_iconview
 	@$(BUILD)/test_win
 	@$(BUILD)/test_frame

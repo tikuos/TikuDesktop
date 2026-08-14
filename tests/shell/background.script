@@ -1,0 +1,23 @@
+# shell: desktop
+# CW-020: a folder's background picture is shown in an icon mode and taken
+# away in list view, because a picture behind a table of text is unreadable.
+key 1 ctrl
+wait 8
+note the picture is tiled over the window, so a point well away from any
+note icon is the picture's own colour -- BMP keeps its bytes blue first, so
+note the fixture's 32,64,192 is c04020 on screen -- rather than the ground
+expect-pixel 300 220 c04020
+note switching to list view takes it away
+key 3 ctrl
+wait 8
+expect-pixel 300 220 ffffff
+note and leaving list view brings it back
+key 1 ctrl
+wait 8
+expect-pixel 300 220 c04020
+note PVL-071: a label over the picture is haloed, so it stays readable
+note wherever the picture happens to be the colour of the text -- white
+note around the letters, and the letters themselves still in the ink
+expect-pixel 209 146 ffffff
+expect-pixel 210 147 000000
+quit

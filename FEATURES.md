@@ -1002,12 +1002,13 @@ _UpdateSelectionRect builds a region of (new minus old) unioned with (old minus 
 **SUBSYSTEM:** Incremental-repaint layer: the rubber band is redrawn as part of the full-frame draw (src/shell/tiku_trk_app.c:449-463); with no region/invalidate API (grep empty) a difference-sliver repaint cannot be expressed.  
 **MISSING:** Selection-band difference regions are calculated, but the shell still redraws the complete frame instead of only the changed sliver.
 
-#### PVL-071 · polish · open
+#### PVL-071 · polish · done
 **Over a background image, pose labels grow a contrast halo so they stay readable.**  
 When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw renders the text two or three extra times using B_FONT_FALSE_BOLD_WIDTH at 2.0/1.0 with low-alpha shine (dark text) or black at alpha 30/200 with a 1px offset (light text). Skipped for selected text, for cut items and when drawing into an offscreen (drag or column resize).  
 `TextWidget.cpp` → `BTextWidget::Draw / BPoseView::SetWidgetTextOutline`  
 **VERIFIER CORRECTION:** The halo is NOT skipped for cut items. The guard is `if (!selected && direct && view->WidgetTextOutline())` — only selection and non-direct (offscreen) drawing suppress it. clipboardMode == kMoveSelectionTo only suppresses the B_OP_ALPHA/B_ALPHA_OVERLAY mode switch around the halo passes (TextWidget.cpp:690-745). Alpha values are right: dark text 30 then 65 at false-bold 2.0/1.0; light text black 30 at 1.0 and 200 at +(1,1).
-**SUBSYSTEM:** Background images: no background-image support exists anywhere (grep 'background' over src/ hits only comments about empty-window context menus), so the halo's trigger (Tracker's fWidgetTextOutline, set by BackgroundImage) has no source; no outline/halo text drawing exists in either shell.  
+**PORT:** A label over a picture is drawn with a halo of the opposite shade -- white under dark ink, black under light -- and a selected label, which has its own filled box, keeps the plain draw. The floor's text has no alpha, so the halo is the same string at the eight neighbouring pixels rather than the source's two low-alpha false-bold passes; what it delivers is the same, a label that stays readable wherever the picture matches its ink.  
+*src/media/tiku_trk_iconpaint.c:tiku_trk_paint_text_halo; src/ui/windows/tiku_trk_folder_window.c; tests/shell/background.script*
 
 #### PVL-072 · polish · done
 **Volume icons carry a free-space bar drawn over the icon, which turns a warning colour below 5% free.**  
@@ -2774,11 +2775,12 @@ BorderedView::PoseViewFocused switches the view colour between B_DOCUMENT_BACKGR
 **MISSING:** The scroll bars are not highlighted with the focus border, and no window can turn the highlight off.  
 **PORT:** The focus border is drawn, but the scroll bar is not highlighted with it and there is no per-window way to turn the highlight off.
 
-#### CW-020 · polish · open
+#### CW-020 · polish · done
 **A folder's background image is shown in icon/mini-icon view and removed when switching to list view, and comes back when switching away from list view.**  
 ViewModeChanged: newMode == kListMode -> Remove(); oldMode == kListMode -> Show(). Image is looked up on the folder node first, then on the DefaultFolderTemplate node; suppressed entirely in safe mode and in file panels.  
 `ContainerWindow.cpp` → `BContainerWindow::ViewModeChanged / UpdateBackgroundImage`
-**SUBSYSTEM:** Background images. No folder background-image code exists anywhere in src/ (grep -rni background matches only a Deskbar comment and menu comments), so the show-in-icon-view/remove-in-list-view rule has nothing to act on.  
+**PORT:** A folder's picture is drawn under its poses in the icon modes and not in list view, which is the rule itself -- the drawing happens in the icon branch, so leaving list view brings it back with no separate show/hide to keep in step. The record is the folder's own, and a folder without one falls back to the template node every folder shares.  
+*src/ui/windows/tiku_trk_folder_window.c:tiku_trk_folder_window_draw_background; src/core/tiku_trk_background.c; tests/shell/background.script*
 
 #### CW-021 · core · done
 **The menu bar has File and Window always, and Attributes only in list view; Attributes appears/disappears as the view mode changes.**  
@@ -5419,11 +5421,12 @@ CalcRectCommon: icon mode left = poseLoc.x + roundf((iconSize - viewWidth)/2), b
 `src/kits/tracker/TextWidget.cpp` → `BTextWidget::CalcRectCommon / BPose::CalcRect`  
 **PORT:** The mini-icon clause is now built and agrees with the hit rect. draw_pose_icon takes a `mini` branch that puts the label to the RIGHT of the art (lx = box.x + art + 4) and vertically centres it on the icon instead of the old centred-underneath placement; pose_rect's MINI branch grows the rect the same way (*w = art + 4 + tw), so drawn text and selectable rectangle now use the identical separator. The icon-mode clause is untouched and still holds: label centred at x + (size - tw)/2 under the icon, and the rect re-centres and widens both ways when tw > art.
 
-#### IV-049 · polish · open
+#### IV-049 · polish · done
 **Labels over a desktop background picture get a contrast halo so they stay readable.**  
 When WidgetTextOutline() is set (turned on by BackgroundImage) and the pose is not selected and the draw is direct, BTextWidget::Draw renders the string twice with B_FONT_FALSE_BOLD_WIDTH 2.0 then 1.0 using B_SHINE_COLOR at alpha 30/65 for dark text, or once at false-bold 1.0 in black alpha 30 plus a 1,1-offset black alpha 200 pass for light text, before drawing the real string.  
 `src/kits/tracker/TextWidget.cpp` → `BTextWidget::Draw`
-**SUBSYSTEM:** desktop background pictures: no background-image code exists (grep -ri background/wallpaper src/: only 'empty window background' comments) and the desktop root draws no poses at all — the desktop binary is windows + Deskbar over a plain ground (window management via tiku_trk_desk_*, src/shell/tiku_trk_desktop.c:1515, 1585) — so a label over a picture cannot arise  
+**PORT:** The desktop draws its own picture behind its icons through the same path a folder uses, so its labels carry the same halo -- the trigger is that a picture was drawn, which is what the source's outline flag says too.  
+*src/deskbar/tiku_trk_desktop_view.c:draw; src/media/tiku_trk_iconpaint.c:tiku_trk_paint_text_halo; tests/shell/deskbg.script*
 
 #### IV-050 · polish · differs
 **A very short label still has a comfortably clickable area.**  
@@ -6096,11 +6099,12 @@ saved layout is restored.
 query_default_columns; src/shell/tiku_trk_desktop.c (startup installation);
 tests/test_poseview.c*
 
-#### AW-016 · polish · open
+#### AW-016 · polish · done
 **A default desktop background image is installed only when the boot desktop folder has no background attribute yet.**  
 Checks GetAttrInfo(kBackgroundImageInfo); places the logo at a golden-ratio x and 0.9 height y of the main screen, mode kAtOffset, all workspaces.  
 `TrackerInitialState.cpp` → `TTracker::InstallTemporaryBackgroundImages`
-**SUBSYSTEM:** desktop backgrounds -- the backdrop is a flat compile-time fill (../desktop/src/tiku_desk_window.c:502 fills TIKU_DESK_C_BACKDROP; surface created with it at src/shell/tiku_trk_desktop.c:1583); no image loading, no background attribute, no placement math exists anywhere in src/  
+**PORT:** Installed once, and only when the desktop node carries no background yet: a desktop the user has set, or deliberately cleared, survives the next boot. The picture goes at a golden-ratio x and nine tenths of the height, as the source's logo does. This port ships no wallpaper of its own, so the default is whatever the user leaves at ~/.config/tracker/desktop-background, and nothing is installed when there is none.  
+*src/core/tiku_trk_background.c:tiku_trk_bg_install_default; src/deskbar/tiku_trk_desktop_view.c; tests/shell/deskbg.script and deskbg2.script*
 
 #### AW-017 · core · done
 **The Desktop window is not movable, closable, resizable, zoomable or minimizable, lives on all workspaces, and accepts the first click without needing activation.**  

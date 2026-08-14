@@ -81,6 +81,7 @@ for s in "$here"/*.script; do
         echo hi > $work/b.txt
         echo hi > $work/c.txt
         # A scrolling test needs more rows than a window holds.
+        mkdir -p "$deskhome/Desktop"
         case $(basename "$s") in
             bandscroll.script|scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
@@ -90,6 +91,40 @@ for s in "$here"/*.script; do
             # for it has exactly one answer and an emptied panel -- which
             # matches everything -- cannot be mistaken for a restored one.
             query.script) touch "$work/zqxjv.txt" ;;
+            # A folder carrying a background picture, written the way the
+            # store keeps one: a 64x48 bitmap of a known colour, and the
+            # record naming it, tiled over the window.
+            # A default desktop picture on disk and no record yet, so the
+            # boot install has something to install; deskbg2 gets a record
+            # of its own, which the install must leave alone.
+            deskbg.script|deskbg2.script)
+                mkdir -p "$deskhome/.config/tracker"
+                python3 - "$deskhome/.config/tracker" <<'PYDB'
+import struct,sys
+w,h=80,60
+row=b"".join(bytes([16,200,16]) for _ in range(w)) + b"\0"*((4-(w*3)%4)%4)
+rows=row*h
+d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
+  struct.pack("<IiiHHIIiiII",40,w,-h,1,24,0,len(rows),2835,2835,0,0)+rows
+open(sys.argv[1]+"/desktop-background","wb").write(d)
+PYDB
+                if [ "$(basename "$s")" = deskbg2.script ]; then
+                    setfattr -n 'user._trk/background' \
+                        -v "0 600 400 $deskhome/.config/tracker/desktop-background" \
+                        "$deskhome/Desktop"
+                fi ;;
+            background.script)
+                python3 - "$work" <<'PYBG'
+import struct,sys
+w,h=64,48
+row=b"".join(bytes([32,64,192]) for _ in range(w)) + b"\0"*((4-(w*3)%4)%4)
+rows=row*h
+d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
+  struct.pack("<IiiHHIIiiII",40,w,-h,1,24,0,len(rows),2835,2835,0,0)+rows
+open(sys.argv[1]+"/wall.bmp","wb").write(d)
+PYBG
+                setfattr -n 'user._trk/background' \
+                         -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys

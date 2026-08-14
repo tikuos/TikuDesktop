@@ -220,3 +220,64 @@ tiku_trk_paint_band(tiku_desk_surface_t *s, tiku_desk_rect_t r,
         }
     }
 }
+
+void
+tiku_trk_paint_image(tiku_desk_surface_t *s, const tiku_trk_image_t *im,
+                     tiku_desk_rect_t dst, tiku_desk_rect_t clip)
+{
+    int px, py;
+
+    if (s == NULL || im == NULL || im->px == NULL || im->w <= 0 ||
+        im->h <= 0 || dst.w <= 0 || dst.h <= 0) {
+        return;
+    }
+    for (py = 0; py < dst.h; py++) {
+        int y = dst.y + py;
+        long sy = (long)py * im->h / dst.h;
+
+        if (y < clip.y || y >= clip.y + clip.h) {
+            continue;
+        }
+        for (px = 0; px < dst.w; px++) {
+            int x = dst.x + px;
+            long sx = (long)px * im->w / dst.w;
+            uint32_t p;
+
+            if (x < clip.x || x >= clip.x + clip.w) {
+                continue;
+            }
+            p = im->px[sy * im->w + sx];
+            /* Transparent pixels leave the ground alone, so a picture with
+             * a hole in it shows what is behind rather than black. */
+            if ((p >> 24) != 0u) {
+                tiku_desk_pixel(s, x, y,
+                                TIKU_DESK_RGB((p >> 16) & 0xffu,
+                                              (p >> 8) & 0xffu, p & 0xffu));
+            }
+        }
+    }
+}
+
+void
+tiku_trk_paint_text_halo(tiku_desk_surface_t *s, const tiku_desk_font_t *f,
+                         int x, int y, const char *text, tiku_desk_rgb_t ink)
+{
+    static const int dx[] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+    static const int dy[] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+    int luminance = ((int)((ink >> 16) & 0xffu) * 299 +
+                     (int)((ink >> 8) & 0xffu) * 587 +
+                     (int)(ink & 0xffu) * 114) / 1000;
+    /* Light ink is haloed in black and dark ink in white, as the source
+     * chooses shine for dark text and black for light. */
+    tiku_desk_rgb_t halo = (luminance > 127) ? TIKU_DESK_RGB(0, 0, 0)
+                                             : TIKU_DESK_RGB(255, 255, 255);
+    int i;
+
+    if (s == NULL || f == NULL || text == NULL) {
+        return;
+    }
+    for (i = 0; i < 8; i++) {
+        tiku_desk_text(s, f, x + dx[i], y + dy[i], text, halo);
+    }
+    tiku_desk_text(s, f, x, y, text, ink);
+}
