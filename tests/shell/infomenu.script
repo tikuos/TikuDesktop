@@ -1,0 +1,22 @@
+# shell: desktop
+# AW-076: the info window's icon stands for what the window is about, so a
+# secondary click on it offers that thing's own menu -- and the items work,
+# which is why the actions can be carried out against a path rather than a
+# window's selection.
+wait 6
+click-row 1
+wait 3
+key i ctrl
+wait 10
+expect-title info
+note the icon answers with the menu the pose itself would get
+press 148 125 3
+wait 2
+release 148 125 3
+wait 5
+expect-menu Open|Edit query|Open with…|Get info|Edit name|Duplicate|Move to Trash||Move to|Copy to|Create link|Cut|Copy|Paste||Identify|Add-ons|
+note and choosing one acts on the thing the window is about
+menu-pick Duplicate
+wait 30
+expect-file /tmp/trk_script/a.txt copy
+quit

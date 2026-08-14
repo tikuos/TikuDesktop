@@ -203,6 +203,9 @@ typedef struct desktop {
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
     int                  ptr_x, ptr_y;  /* where the pointer last was      */
+    /* A context menu raised on one named thing -- the info window's icon --
+     * rather than on a window's selection (AW-076). */
+    char                 popup_path[TIKU_TRK_PATH_MAX];
     tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
     tiku_desk_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
@@ -2011,7 +2014,11 @@ tracker_run(int argc, char **argv)
                     tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
                     int islot = tiku_trk_info_windows_slot(&app.info_windows,
                                                            iw);
-                    if (islot >= 0 && !alert_model(&app)->open) {
+                    /* An open menu owns the next click wherever it lands,
+                     * including over this window: choosing from the menu it
+                     * just raised is not another click on the icon. */
+                    if (islot >= 0 && !alert_model(&app)->open &&
+                        app.popup == NULL) {
                         int which = -1;
                         tiku_trk_info_t *info = tiku_trk_info_windows_model(
                             &app.info_windows, islot);
@@ -2050,6 +2057,34 @@ tracker_run(int argc, char **argv)
                             break;
                         }
                         if (ih == TIKU_TRK_INFO_HIT_ICON) {
+                            if (ev.button == 3u) {
+                                /* The icon stands for the thing the window
+                                 * is about, so it answers a secondary click
+                                 * with that thing's own menu -- built from
+                                 * the MODEL, and carried out against its
+                                 * path because there is no selection here
+                                 * to read (AW-076). */
+                                tiku_trk_model_t m;
+                                tiku_trk_sc_ctx_t c =
+                                    menu_ctx(&app, desktop_folder(&app), 0u);
+
+                                if (app.backend->ops->stat(app.backend,
+                                        info->path, &m) != 0) {
+                                    break;
+                                }
+                                snprintf(app.popup_path,
+                                         sizeof app.popup_path, "%s",
+                                         info->path);
+                                app.popup = tiku_trk_cwmenu_context(
+                                    &app.menus, &m, &c);
+                                app.popup_sub = NULL;
+                                app.popup_frame = tiku_trk_menu_place(
+                                    app.popup, ev.x, ev.y,
+                                    (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                        app.surf->h });
+                                app.dirty = 1;
+                                break;
+                            }
                             /* Double-clicking the icon opens the item, as
                              * double-clicking its row would (AW-075). */
                             if (tiku_trk_now() - app.press_at < 500000) {
@@ -2213,8 +2248,15 @@ tracker_run(int argc, char **argv)
                                                      ev.x,
                                                      ev.y);
                         if (pick >= 0) {
-                            menu_invoke(&app, ffl,
-                                        app.popup_sub->item[pick].command);
+                            if (app.popup_path[0] != '\0') {
+                                (void)tiku_trk_folder_file_actions_invoke_path(
+                                    &app.file_actions, app.popup_path,
+                                    app.popup_sub->item[pick].command);
+                                app.dirty = 1;
+                            } else {
+                                menu_invoke(&app, ffl,
+                                    app.popup_sub->item[pick].command);
+                            }
                         }
                     }
                     if (pick < 0) {
@@ -2235,10 +2277,18 @@ tracker_run(int argc, char **argv)
                                 app.dirty = 1;
                                 break;
                             }
-                            menu_invoke(&app, ffl,
-                                        app.popup->item[pick].command);
+                            if (app.popup_path[0] != '\0') {
+                                (void)tiku_trk_folder_file_actions_invoke_path(
+                                    &app.file_actions, app.popup_path,
+                                    app.popup->item[pick].command);
+                                app.dirty = 1;
+                            } else {
+                                menu_invoke(&app, ffl,
+                                            app.popup->item[pick].command);
+                            }
                         }
                     }
+                    app.popup_path[0] = '\0';
                     app.popup = NULL;
                     app.popup_sub = NULL;
                     app.bar_fl = NULL;

@@ -78,6 +78,45 @@ close_selected(tiku_trk_folder_file_actions_t *controller,
     }
 }
 
+/**
+ * @brief What the command acts on: the window's selection, or the one path
+ *        a caller named in place of it.
+ */
+static int
+selection_of(tiku_trk_folder_file_actions_t *controller,
+             tiku_trk_folder_window_t *folder,
+             char paths[][TIKU_TRK_PATH_MAX], const char **selection,
+             int maximum)
+{
+    if (controller->only_path != NULL) {
+        if (maximum < 1) {
+            return 0;
+        }
+        snprintf(paths[0], TIKU_TRK_PATH_MAX, "%s", controller->only_path);
+        selection[0] = paths[0];
+        return 1;
+    }
+    return tiku_trk_folder_file_actions_selection(folder, paths, selection,
+                                                  maximum);
+}
+
+/** @brief Copy each item beside itself, under a fresh name (FS-007). */
+static void
+duplicate_selection(tiku_trk_folder_file_actions_t *controller,
+                    tiku_trk_folder_window_t *folder)
+{
+    char paths[64][TIKU_TRK_PATH_MAX];
+    const char *selection[64];
+    int count = selection_of(controller, folder, paths, selection, 64);
+
+    if (count == 0) {
+        return;
+    }
+    (void)tiku_trk_fs_duplicate(controller->fs, selection, count);
+    snprintf(controller->status, controller->status_size,
+             "duplicating %d item%s", count, count == 1 ? "" : "s");
+}
+
 /** @brief Destroy the selection outright, saying that it cannot be undone. */
 static void
 delete_outright(tiku_trk_folder_file_actions_t *controller,
@@ -85,8 +124,7 @@ delete_outright(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX];
     const char *selection[64];
-    int count = tiku_trk_folder_file_actions_selection(folder, paths,
-                                                        selection, 64);
+    int count = selection_of(controller, folder, paths, selection, 64);
 
     if (count == 0) {
         return;
@@ -105,8 +143,7 @@ move_to_trash(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX];
     const char *selection[64];
-    int count = tiku_trk_folder_file_actions_selection(folder, paths,
-                                                        selection, 64);
+    int count = selection_of(controller, folder, paths, selection, 64);
     int i;
 
     if (count == 0) {
@@ -159,8 +196,7 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX];
     const char *selection[64];
-    int count = tiku_trk_folder_file_actions_selection(folder, paths,
-                                                        selection, 64);
+    int count = selection_of(controller, folder, paths, selection, 64);
     int shift = command == TIKU_TRK_CMD_DELETE;
 
     if (count == 0) {
@@ -198,8 +234,7 @@ restore_selection(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX], error[200];
     const char *selection[64];
-    int count = tiku_trk_folder_file_actions_selection(folder, paths,
-                                                        selection, 64);
+    int count = selection_of(controller, folder, paths, selection, 64);
     int restored;
 
     error[0] = '\0';
@@ -421,13 +456,18 @@ tiku_trk_folder_file_actions_invoke(
     tiku_trk_folder_file_actions_t *controller,
     tiku_trk_folder_window_t *folder, int command)
 {
-    if (controller == NULL || folder == NULL || folder->view == NULL) {
+    if (controller == NULL ||
+        (controller->only_path == NULL &&
+         (folder == NULL || folder->view == NULL))) {
         return 0;
     }
     switch (command) {
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
     case TIKU_TRK_CMD_DELETE:
         delete_selection(controller, folder, command);
+        return 1;
+    case TIKU_TRK_CMD_DUPLICATE:
+        duplicate_selection(controller, folder);
         return 1;
     case TIKU_TRK_CMD_RESTORE:
         restore_selection(controller, folder);
@@ -466,4 +506,20 @@ tiku_trk_folder_file_actions_invoke(
     default:
         return 0;
     }
+}
+
+int
+tiku_trk_folder_file_actions_invoke_path(
+    tiku_trk_folder_file_actions_t *controller, const char *path,
+    int command)
+{
+    int handled;
+
+    if (controller == NULL || path == NULL || path[0] == '\0') {
+        return 0;
+    }
+    controller->only_path = path;
+    handled = tiku_trk_folder_file_actions_invoke(controller, NULL, command);
+    controller->only_path = NULL;
+    return handled;
 }

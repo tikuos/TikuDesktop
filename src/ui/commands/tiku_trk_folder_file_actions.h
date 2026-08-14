@@ -41,6 +41,10 @@ typedef struct {
     const char *deferred_paths[64];
     int    deferred_count;
     char   deferred_dest[TIKU_TRK_PATH_MAX];
+    /* One named path standing in for a window's selection, so a command
+     * can be carried out where there is no window to select in -- the
+     * info window's icon (AW-076). */
+    const char *only_path;
 } tiku_trk_folder_file_actions_t;
 
 /** @brief Bind filesystem, clipboard, dialog, and shell-close services. */
@@ -84,6 +88,19 @@ void tiku_trk_folder_file_actions_answer_delete(
  */
 int tiku_trk_folder_file_actions_pump(
     tiku_trk_folder_file_actions_t *controller);
+
+/**
+ * @brief Apply a command to ONE named path (AW-076).
+ *
+ * The same commands the menu carries out on a window's selection, for a
+ * caller that has a path and no window: the selection every action reads
+ * answers with this path while it runs.
+ *
+ * @return whether the command was handled.
+ */
+int tiku_trk_folder_file_actions_invoke_path(
+    tiku_trk_folder_file_actions_t *controller, const char *path,
+    int command);
 
 /** @brief Apply a filesystem-facing command, returning whether handled. */
 int tiku_trk_folder_file_actions_invoke(

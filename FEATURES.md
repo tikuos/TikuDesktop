@@ -6677,14 +6677,14 @@ one.
 *src/shell/tiku_trk_desktop.c (the info icon's click); src/core/tiku_trk_drag.c (armed
 from pose views only)*
 
-#### AW-076 · important · open
+#### AW-076 · important · partial
 **Right-clicking the info window icon gives a context menu with a navigation submenu for folders/volumes, Open, Edit name, Unmount (disabled for the boot volume), Identify (Option forces a re-identify), Empty Trash, Recalculate folder size, Set new link target and Permissions.**  
 Items are conditional on the model: no Edit name/Unmount for desktop/root/trash, no Identify for root/volume/trash, Empty Trash only for the trash, size item only for non-volume non-root directories, link target only for symlinks. Identify calls update_mime_info with force level 2 when Option is down, else 1.  
 `infowindow/HeaderView.cpp` → `HeaderView::BuildContextMenu / BInfoWindow::MessageReceived (kIdentifyEntry)`  
 **VERIFIER CORRECTION:** Only half true. ActivateWindowFilter (ContainerWindow.cpp:143) does skip BPoseView and DraggableContainerIcon, but DraggableContainerIcon activates the window itself: MouseDown calls Window()->Activate(true) when the click misses the icon's opaque pixels, and MouseUp activates whenever no drag was started. So a plain click on the folder icon still activates on mouse-up; only a click that becomes a drag does not.
-**SUBSYSTEM:** context menus outside a pose view -- the info window's icon is
-hit-tested for clicks but the context menus are built for pose views and
-carry pose-view commands (src/ui/tiku_trk_cwmenu.c).
+**PORT:** The icon answers a secondary click with the menu its own MODEL asks for -- the same builder a pose uses, so the conditioning on kind comes with it -- and the choice is carried out against the window's PATH: the actions read one named thing in place of a selection, which is what an info window has instead of one. Closing this found Duplicate doing nothing anywhere: it was in the menus and on Cmd+D with no handler behind it.  
+**MISSING:** The items the source adds for this menu alone -- the navigation submenu, Unmount, Recalculate folder size and Set new link target -- are not offered, so the menu is the pose inventory rather than the icon's own.  
+*src/ui/commands/tiku_trk_folder_file_actions.c:tiku_trk_folder_file_actions_invoke_path and selection_of; src/shell/tiku_trk_desktop.c (INFO_HIT_ICON, popup_path); tests/shell/infomenu.script*
 
 #### AW-077 · important · done
 **An info window closes itself when its item is deleted or its volume is unmounted, and follows renames and moves by updating the title and the Location field.**  
