@@ -160,6 +160,27 @@ tiku_trk_script_adapter_pose_at(void *context, const char *name,
 }
 
 int
+tiku_trk_script_adapter_rows_drawn(void *context, int reset)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_trk_folder_window_t *folder;
+    int n;
+
+    if (adapter == NULL) {
+        return 0;
+    }
+    folder = tiku_trk_desktop_view_folder(adapter->desktop_view);
+    if (folder == NULL || folder->render == NULL) {
+        return 0;
+    }
+    n = folder->render->rows_drawn;
+    if (reset) {
+        folder->render->rows_drawn = 0;
+    }
+    return n;
+}
+
+int
 tiku_trk_script_adapter_cell_point(void *context, int row, const char *title,
                                    int *x, int *y)
 {
@@ -381,6 +402,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->pose_screen = tiku_trk_script_adapter_pose_screen;
     state->row_point = tiku_trk_script_adapter_row_point;
     state->cell_point = tiku_trk_script_adapter_cell_point;
+    state->rows_drawn = tiku_trk_script_adapter_rows_drawn;
     state->tab_point = tiku_trk_script_adapter_tab_point;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
     state->pose_ctx = adapter;

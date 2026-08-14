@@ -1,0 +1,23 @@
+# shell: desktop
+# PVL-045/PVL-048: a listing that changes repaints the rows that changed,
+# not every row it holds.  The view has accumulated the damage since the
+# repaint helper was written; nothing consumed it, so every frame painted
+# the whole list.
+wait 8
+note four rows, and a first frame that has to paint all of them
+expect-rows 4
+draw-reset
+note the LAST row is taken away behind the shell's back
+remove /tmp/trk_script/c.txt
+wait 40
+expect-rows 3
+note what the frame painted is the vacated strip, not the three rows that
+note did not move
+expect-drawn 1
+note and a frame with no damage to go on still paints the whole listing:
+note skipping there would leave a window that never refreshes
+draw-reset
+click-row 0
+wait 8
+expect-drawn at-least 3
+quit

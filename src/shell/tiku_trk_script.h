@@ -86,6 +86,7 @@ typedef struct {
     int       (*row_point)(void *ctx, int row, int *x, int *y);
     int       (*cell_point)(void *ctx, int row, const char *title, int *x,
                             int *y);
+    int       (*rows_drawn)(void *ctx, int reset);
     /* Where the TAB of the window titled @p title is.  A test that wants a
      * window somewhere else has to grab its tab, and a tab's position is
      * chrome -- the thing a test must never encode, because it moves
@@ -111,6 +112,8 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     click-cell <row> <column title>      -- click a cell, not a pixel
  *     click-window <title>                 -- bring a window to the front by
  *                                             clicking its tab
+ *     draw-reset                           -- forget how much was painted
+ *     expect-drawn <n>                     -- rows painted since that reset
  *     expect-ink <x> <y>                   -- something is drawn here
  *     expect-icon-screen <name> <x> <y>    -- an icon's place on the SCREEN,
  *                                             which is what a drop point is

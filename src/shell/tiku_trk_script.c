@@ -27,7 +27,8 @@ typedef enum {
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK,
+    OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -378,6 +379,19 @@ tiku_trk_script_open(const char *path)
             rest(w, n - 2, 1, st->text, sizeof st->text);
             st->x = atoi(w[n - 2]);
             st->y = atoi(w[n - 1]);
+        } else if (strcmp(w[0], "draw-reset") == 0) {
+            st->op = OP_DRAW_RESET;
+        } else if (strcmp(w[0], "expect-drawn") == 0 && n >= 2) {
+            /* "at most" by default, "at least <n>" with the word: a check
+             * that only ever says "no more than" passes when nothing was
+             * painted at all. */
+            st->op = OP_EXPECT_DRAWN;
+            if (n >= 3 && strcmp(w[1], "at-least") == 0) {
+                st->x = 1;
+                st->count = atoi(w[2]);
+            } else {
+                st->count = atoi(w[1]);
+            }
         } else if (strcmp(w[0], "expect-ink") == 0 && n >= 3) {
             /* Something is drawn here, whatever shade the font renderer
              * gives its edges: a cell with text in it is the claim, not a
@@ -814,6 +828,22 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
          * the arrangement being wrong. */
         verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
                        py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
+        return 1;
+    }
+    case OP_DRAW_RESET:
+        if (st != NULL && st->rows_drawn != NULL) {
+            (void)st->rows_drawn(st->pose_ctx, 1);
+        }
+        return 1;
+    case OP_EXPECT_DRAWN: {
+        char n[32];
+        int got = (st != NULL && st->rows_drawn != NULL)
+                      ? st->rows_drawn(st->pose_ctx, 0) : -1;
+
+        snprintf(n, sizeof n, "%d", got);
+        verdict(s, got >= 0 && (cur->x ? got >= cur->count
+                                       : got <= cur->count),
+                "rows painted:", n);
         return 1;
     }
     case OP_EXPECT_INK: {

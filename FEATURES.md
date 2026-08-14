@@ -824,7 +824,8 @@ AddPoseToList binary-searches with BSearchList (which first checks whether the o
 AddPoseToList builds srcRect from Extent() clipped to the view bounds starting at the new row's top, destRect offset by fListElemHeight, CopyBits src→dest, then SynchronousUpdate only the newly exposed strip. Rows added entirely below the visible bottom skip drawing altogether. InsertPoseAfter does the same for re-sorted rows.  
 `PoseView.cpp` → `BPoseView::AddPoseToList / BPoseView::InsertPoseAfter`
 **SUBSYSTEM:** Incremental-repaint (blit/invalidation) layer: there is no invalidation-rect or CopyBits API anywhere (grep 'invalidate' over src/ returns nothing); both shells repaint the whole window when dirty (src/shell/tiku_trk_app.c:467-668 draw(); src/shell/tiku_trk_desktop.c:206-372 folder_draw), so a row insertion cannot slide anything.  
-**MISSING:** The repaint accumulator is present, but neither shell consumes its rectangles to perform incremental row insertion.
+**PORT:** A listing that changes repaints the rows the damage names and leaves the rest alone: the accumulator the view has always kept is consumed by the draw, and a frame with no damage still paints everything, which is what a first frame and a scroll need.  
+**MISSING:** The rows below an insertion are repainted rather than SLID: the drawing floor has no copy-bits primitive, so pixels cannot be moved, only drawn again.  
 
 #### PVL-046 · polish · partial
 **Rows inserted above the visible area are batched: the accumulated scroll is applied in a single blit rather than one per item.**  
@@ -846,8 +847,8 @@ AttributeChanged hashes the changed attribute (or maps a stat field via sAttrCol
 **Deleting a row closes the gap by sliding the rows below up rather than repainting them.**  
 DeletePose computes the invalid rect from the row index, calls CloseGapInList (which extends the rect to Extent().bottom + one row, CopyBits the region up by one row height, and returns the strip to invalidate), then updates the count, scroll range and placement hint. In icon mode it calls RemoveFromExtent instead.  
 `PoseView.cpp` → `BPoseView::DeletePose / BPoseView::CloseGapInList`
-**SUBSYSTEM:** Incremental-repaint layer: deletion itself works (remove_pose with the visible-rows scroll correction, src/ui/tiku_trk_poseview.c:2713-2759) but the gap 'closes' only by full-window redraw — no CloseGapInList blit is possible without an invalidation/copy API (none exists in src/ui/tiku_trk_gfx_dep.h).  
-**MISSING:** The row-gap calculation exists in the repaint helper, but no shell performs the required CopyBits-style close-gap repaint.
+**PORT:** Removing a row damages the strip it left and the rows below it; the rows above are not painted again. The counter that shows it is `tiku_trk_folder_render_t::rows_drawn`, because a repaint that touches one row and one that touches every row produce the same picture.  
+**MISSING:** The gap is closed by repainting the rows below, not by sliding them up: copy-bits does not exist here.  
 
 #### PVL-049 · core · done
 **The scrollable area is the list's column width by row count in list mode, and the bounding box of all icons (outset by the layout offset) in icon modes.**  

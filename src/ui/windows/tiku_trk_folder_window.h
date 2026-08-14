@@ -40,6 +40,11 @@ typedef struct {
     tiku_trk_store_t      *store;
     tiku_trk_thumb_q_t    *thumbs;
     int                    row_h;
+    /* How many list rows the last frame actually painted.  A repaint that
+     * touches one row and a repaint that touches every row produce the
+     * same picture, so this is the only way to tell them apart (PVL-045,
+     * PVL-048, PVL-075). */
+    int                    rows_drawn;
     int                    screen_w;
     int                    screen_h;
     char                  *status;

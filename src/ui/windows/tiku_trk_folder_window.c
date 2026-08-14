@@ -300,6 +300,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
 {
     tiku_trk_folder_render_t *render = folder->render;
     const tiku_desk_font_t *font = tiku_desk_font_plain();
+    tiku_trk_repaint_rect_t damage[TIKU_TRK_REPAINT_MAX];
+    int ndamage = tiku_trk_poseview_repaint_take(folder->view, damage,
+                                                 TIKU_TRK_REPAINT_MAX);
     int i;
 
     for (i = 0; i < rows && scroll + i < total; i++) {
@@ -314,6 +317,23 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         if (pose == NULL) {
             break;
         }
+        if (ndamage > 0) {
+            /* Only the rows the damage names.  With nothing accumulated
+             * every row is painted, which is what a first frame and a
+             * scroll both need. */
+            int d, hit = 0;
+
+            for (d = 0; d < ndamage && !hit; d++) {
+                int top = row.y - list.y - 2;
+
+                hit = damage[d].y < top + render->row_h &&
+                      damage[d].y + damage[d].h > top;
+            }
+            if (!hit) {
+                continue;
+            }
+        }
+        render->rows_drawn++;
         selected = tiku_trk_poseview_draws_selected(folder->view, pose);
         cut = tiku_trk_clip_mode_of(render->clip, pose->model.node_id) ==
               TIKU_TRK_CLIP_MOVE;
