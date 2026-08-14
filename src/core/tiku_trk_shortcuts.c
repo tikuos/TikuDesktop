@@ -96,6 +96,7 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_OPEN_PARENT:       return "Open parent";
     case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE: return "Close all in workspace";
     case TIKU_TRK_CMD_PREFERENCES:       return "Preferences" "\xe2\x80\xa6";
+    case TIKU_TRK_CMD_EDIT_TEMPLATES:    return "Edit templates" "\xe2\x80\xa6";
     case TIKU_TRK_CMD_SORT_BY_NAME:      return "Name";
     case TIKU_TRK_CMD_SORT_BY_KIND:      return "Kind";
     case TIKU_TRK_CMD_SORT_BY_SIZE:      return "Size";

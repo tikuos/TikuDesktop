@@ -12,7 +12,11 @@
 #include "tiku_trk_view_defs.h"
 
 #include <stdio.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define ADD(m, cmd)  (void)tiku_trk_sc_add((m), (cmd), c)
 #define SEP(m)       (void)tiku_trk_menu_add_separator(m)
@@ -24,8 +28,18 @@ tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw)
         return;
     }
     memset(cw, 0, sizeof *cw);
+    {
+        const char *home = getenv("HOME");
+
+        if (home != NULL && home[0] != '\0') {
+            snprintf(cw->templates_root, sizeof cw->templates_root,
+                     "%s/Templates", home);
+        }
+    }
     tiku_trk_menubar_init(&cw->bar);
     snprintf(cw->file.title, sizeof cw->file.title, "File");
+    snprintf(cw->new_menu.title, sizeof cw->new_menu.title, "New");
+    snprintf(cw->templates.title, sizeof cw->templates.title, "Templates");
     snprintf(cw->window.title, sizeof cw->window.title, "Window");
     snprintf(cw->attributes.title, sizeof cw->attributes.title, "Attributes");
     snprintf(cw->addons.title, sizeof cw->addons.title, "Add-ons");
@@ -33,6 +47,217 @@ tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw)
                             0, 0u, 0);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->file);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->window);
+}
+
+typedef struct {
+    char name[TIKU_TRK_NAME_MAX];
+    char path[TIKU_TRK_PATH_MAX];
+    int is_dir;
+} template_child_t;
+
+static int
+template_child_cmp(const void *a, const void *b)
+{
+    const template_child_t *aa = a;
+    const template_child_t *bb = b;
+    int c = strcasecmp(aa->name, bb->name);
+
+    return c != 0 ? c : strcmp(aa->name, bb->name);
+}
+
+static int
+template_node_new(tiku_trk_cwmenu_t *cw, const char *path)
+{
+    int n;
+
+    if (cw == NULL || path == NULL || cw->template_node_count >= 64) {
+        return -1;
+    }
+    n = cw->template_node_count++;
+    memset(&cw->template_node[n], 0, sizeof cw->template_node[n]);
+    snprintf(cw->template_node[n].path,
+             sizeof cw->template_node[n].path, "%s", path);
+    tiku_trk_menu_clear(&cw->template_node[n].menu);
+    return n;
+}
+
+static int
+template_command(tiku_trk_cwmenu_t *cw, const char *path, int add_submenu)
+{
+    int n;
+
+    if (cw == NULL || path == NULL || cw->template_entry_count >= 128) {
+        return -1;
+    }
+    n = cw->template_entry_count++;
+    cw->template_entry[n].command = (add_submenu
+                                     ? TIKU_TRK_CMD_ADD_TEMPLATE_SUBMENU_BASE
+                                     : TIKU_TRK_CMD_TEMPLATE_BASE) + n;
+    cw->template_entry[n].add_submenu = add_submenu;
+    snprintf(cw->template_entry[n].path,
+             sizeof cw->template_entry[n].path, "%s", path);
+    return cw->template_entry[n].command;
+}
+
+static void
+template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
+{
+    template_child_t child[128];
+    DIR *dir;
+    struct dirent *ent;
+    int n = 0, i;
+    tiku_trk_menu_t *menu;
+
+    if (cw == NULL || node < 0 || node >= cw->template_node_count ||
+        depth > TIKU_TRK_MENU_DEPTH_MAX) {
+        return;
+    }
+    menu = &cw->template_node[node].menu;
+    dir = opendir(cw->template_node[node].path);
+    if (dir == NULL) {
+        return;
+    }
+    while ((ent = readdir(dir)) != NULL && n < 128) {
+        struct stat st;
+        char path[TIKU_TRK_PATH_MAX];
+
+        if (ent->d_name[0] == '.' || ent->d_name[0] == '\0') {
+            continue;
+        }
+        if (snprintf(path, sizeof path, "%s/%s",
+                     cw->template_node[node].path, ent->d_name) < 0 ||
+            stat(path, &st) != 0 ||
+            (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode) &&
+             !S_ISLNK(st.st_mode))) {
+            continue;
+        }
+        snprintf(child[n].name, sizeof child[n].name, "%.127s", ent->d_name);
+        snprintf(child[n].path, sizeof child[n].path, "%s", path);
+        child[n].is_dir = S_ISDIR(st.st_mode);
+        n++;
+    }
+    (void)closedir(dir);
+    qsort(child, (size_t)n, sizeof child[0], template_child_cmp);
+    for (i = 0; i < n; i++) {
+        if (child[i].is_dir && depth < TIKU_TRK_MENU_DEPTH_MAX) {
+            int sub = template_node_new(cw, child[i].path);
+
+            if (sub >= 0) {
+                snprintf(cw->template_node[sub].menu.title,
+                         sizeof cw->template_node[sub].menu.title,
+                         "%.47s", child[i].name);
+                (void)tiku_trk_menu_add_submenu(menu, child[i].name,
+                                                &cw->template_node[sub].menu,
+                                                1);
+                template_fill(cw, sub, depth + 1);
+                /* A directory can itself be a useful folder template as
+                 * well as a submenu.  The explicit leaf keeps both meanings
+                 * available without requiring a filesystem-specific marker
+                 * attribute. */
+                {
+                    int use = template_command(cw, child[i].path, 0);
+
+                    if (use >= 0) {
+                        (void)tiku_trk_menu_insert(
+                            &cw->template_node[sub].menu, 0,
+                            "New " /* followed by the directory name below */,
+                            use, 0, 0u, 1);
+                        snprintf(cw->template_node[sub].menu.item[0].label,
+                                 sizeof cw->template_node[sub].menu.item[0].label,
+                                 "New %.37s", child[i].name);
+                    }
+                }
+            }
+        } else if (!child[i].is_dir) {
+            int command = template_command(cw, child[i].path, 0);
+
+            if (command >= 0) {
+                (void)tiku_trk_menu_add(menu, child[i].name, command,
+                                        0, 0u, 1);
+            }
+        }
+    }
+    /* Every visible template directory can grow another submenu.  This is
+     * deliberately a dynamic command rather than a shell-side special case,
+     * so nested levels expose the same operation.  An empty root is kept
+     * quiet: with no stored templates the File menu remains plain "New
+     * folder", matching Tracker's fallback. */
+    if (n > 0 || node != 0) {
+        int command = template_command(cw,
+                                       cw->template_node[node].path, 1);
+
+        if (command >= 0) {
+            (void)tiku_trk_menu_add_separator(menu);
+            (void)tiku_trk_menu_add(menu, "Add new submenu…", command,
+                                    0, 0u, 1);
+        }
+    }
+}
+
+static void
+build_templates(tiku_trk_cwmenu_t *cw)
+{
+    struct stat st;
+    int root;
+
+    if (cw == NULL) {
+        return;
+    }
+    cw->template_node_count = 0;
+    cw->template_entry_count = 0;
+    tiku_trk_menu_clear(&cw->templates);
+    if (cw->templates_root[0] == '\0' ||
+        stat(cw->templates_root, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        return;
+    }
+    root = template_node_new(cw, cw->templates_root);
+    if (root < 0) {
+        return;
+    }
+    cw->template_node[root].menu = cw->templates;
+    template_fill(cw, root, 0);
+    cw->templates = cw->template_node[root].menu;
+}
+
+const char *
+tiku_trk_cwmenu_template_path(const tiku_trk_cwmenu_t *cw, int command)
+{
+    int i;
+
+    if (cw == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < cw->template_entry_count; i++) {
+        if (cw->template_entry[i].command == command &&
+            !cw->template_entry[i].add_submenu) {
+            return cw->template_entry[i].path;
+        }
+    }
+    return NULL;
+}
+
+const char *
+tiku_trk_cwmenu_template_add_path(const tiku_trk_cwmenu_t *cw, int command)
+{
+    int i;
+
+    if (cw == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < cw->template_entry_count; i++) {
+        if (cw->template_entry[i].command == command &&
+            cw->template_entry[i].add_submenu) {
+            return cw->template_entry[i].path;
+        }
+    }
+    return NULL;
+}
+
+const char *
+tiku_trk_cwmenu_templates_root(const tiku_trk_cwmenu_t *cw)
+{
+    return (cw != NULL && cw->templates_root[0] != '\0')
+           ? cw->templates_root : NULL;
 }
 
 /** @brief The icon-size submenu: fixed sizes, radio-marked to the current. */
@@ -148,7 +373,13 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     ADD(m, TIKU_TRK_CMD_FIND);
     if (!c->is_query) {
-        ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+        if (cw->templates.count > 0) {
+            (void)tiku_trk_menu_add_submenu(m, "New", &cw->new_menu,
+                                            tiku_trk_sc_enabled(
+                                                TIKU_TRK_CMD_NEW_FOLDER, c));
+        } else {
+            ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+        }
     }
     SEP(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
@@ -184,6 +415,26 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
     (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+}
+
+/** @brief The New submenu combines the built-in folder and user templates. */
+static void
+build_new(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
+{
+    tiku_trk_menu_t *m = &cw->new_menu;
+    int writable = tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, c);
+
+    tiku_trk_menu_clear(m);
+    ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+    if (cw->templates.count > 0) {
+        SEP(m);
+        (void)tiku_trk_menu_add_submenu(m, "Templates", &cw->templates,
+                                        writable);
+    }
+    SEP(m);
+    (void)tiku_trk_menu_add(m, "Edit templates…",
+                            TIKU_TRK_CMD_EDIT_TEMPLATES, 0, 0u,
+                            cw->templates_root[0] != '\0');
 }
 
 static void
@@ -340,7 +591,13 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
             SEP(m);
         }
         if (!(c->is_root || c->is_trash || c->in_trash)) {
-            ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+            if (cw->templates.count > 0) {
+                (void)tiku_trk_menu_add_submenu(
+                    m, "New", &cw->new_menu,
+                    tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, c));
+            } else {
+                ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
+            }
         }
         if (c->view_mode != TIKU_TRK_MODE_LIST) {
             (void)tiku_trk_menu_add_submenu(m, "Arrange by", &cw->arrange,
@@ -392,6 +649,8 @@ tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     build_icon_size(cw, c);
     build_arrange(cw, c);
+    build_templates(cw);
+    build_new(cw, c);
     build_file(cw, c);
     build_window(cw, c);
     build_attributes(cw, c);

@@ -1899,8 +1899,70 @@ menu_key(app_t *a, unsigned key, unsigned modifiers)
 static void
 menu_invoke(app_t *a, int command)
 {
+    const char *template_path;
+    const char *template_parent;
     int field = -1;
 
+    template_path = tiku_trk_cwmenu_template_path(&a->menus, command);
+    if (template_path != NULL) {
+        char made[TIKU_TRK_PATH_MAX], error[200];
+        const char *slash;
+        int row;
+
+        if (tiku_trk_fs_new_from_template(
+                a->fs, template_path, tiku_trk_poseview_path(a->view),
+                made, sizeof made, error, sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            (void)tiku_trk_poseview_reload(a->view);
+            row = index_of_path(a, made);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                begin_rename(a);
+            }
+            snprintf(a->status, sizeof a->status, "created '%.180s'",
+                     slash != NULL ? slash + 1 : made);
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                     error[0] != '\0' ? error : "could not create from template");
+        }
+        a->dirty = 1;
+        return;
+    }
+    template_parent = tiku_trk_cwmenu_template_add_path(&a->menus, command);
+    if (template_parent != NULL) {
+        char made[TIKU_TRK_PATH_MAX], error[200];
+
+        if (tiku_trk_fs_new_folder(a->fs, template_parent, made,
+                                   sizeof made, error, sizeof error) == 0) {
+            const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
+
+            snprintf(a->status, sizeof a->status,
+                     "created template submenu '%.150s'", strrchr(made, '/')
+                     != NULL ? strrchr(made, '/') + 1 : made);
+            if (root != NULL && navigate_to(a, template_parent, 1)) {
+                int row = index_of_path(a, made);
+
+                if (row >= 0) {
+                    tiku_trk_poseview_click(a->view, row, 0u);
+                }
+            }
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                     error[0] != '\0' ? error :
+                     "could not create template submenu");
+        }
+        a->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
+        const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
+
+        if (root != NULL) {
+            (void)navigate_to(a, root, 1);
+        }
+        a->dirty = 1;
+        return;
+    }
     switch (command) {
     case TIKU_TRK_CMD_COPY_LAYOUT:
         (void)tiku_trk_poseview_copy_layout(a->view);

@@ -2330,6 +2330,78 @@ tiku_trk_fs_new_folder(tiku_trk_fs_t *fs, const char *dir, char *out,
 }
 
 int
+tiku_trk_fs_new_from_template(tiku_trk_fs_t *fs, const char *template_path,
+                              const char *dst_dir, char *out, size_t max,
+                              char *err, size_t errmax)
+{
+    struct stat st;
+    char name[TIKU_TRK_NAME_MAX];
+    char candidate[TIKU_TRK_NAME_MAX];
+    char dst[TIKU_TRK_PATH_MAX];
+    const char *base;
+    int n;
+
+    if (err != NULL && errmax > 0) {
+        err[0] = '\0';
+    }
+    if (fs == NULL || template_path == NULL || dst_dir == NULL ||
+        out == NULL || max == 0) {
+        if (err != NULL) {
+            snprintf(err, errmax, "template destination is unavailable");
+        }
+        return -1;
+    }
+    /* Templates are host filesystem objects.  A device namespace has no
+     * local tree to copy and must not fall through to the POSIX walkers. */
+    if (fs->backend == NULL || fs->backend->devid[0] != '\0' ||
+        lstat(template_path, &st) != 0 ||
+        (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode) &&
+         !S_ISLNK(st.st_mode))) {
+        if (err != NULL) {
+            snprintf(err, errmax, "could not read template");
+        }
+        return -1;
+    }
+    base = leaf_of(template_path);
+    if (base[0] == '\0' || strlen(base) >= sizeof name - 5u) {
+        if (err != NULL) {
+            snprintf(err, errmax, "template name is too long");
+        }
+        return -1;
+    }
+    snprintf(name, sizeof name, "New %s", base);
+    snprintf(candidate, sizeof candidate, "%s", name);
+    if (exists(fs, dst_dir, candidate)) {
+        for (n = 2; n < 10000; n++) {
+            snprintf(candidate, sizeof candidate, "New %s %d", base, n);
+            if (!exists(fs, dst_dir, candidate)) {
+                break;
+            }
+        }
+        if (n >= 10000) {
+            if (err != NULL) {
+                snprintf(err, errmax, "could not find a free template name");
+            }
+            return -1;
+        }
+    }
+    if (join(dst, sizeof dst, dst_dir, candidate) != 0) {
+        if (err != NULL) {
+            snprintf(err, errmax, "template destination path is too long");
+        }
+        return -1;
+    }
+    if (copy_tree(fs, template_path, dst, err, errmax) != 0) {
+        return -1;
+    }
+    copy_pose_info(fs, template_path, dst);
+    undo_reset(fs, TIKU_TRK_OP_COPY);
+    undo_push(fs, dst, NULL, 1);
+    snprintf(out, max, "%s", dst);
+    return 0;
+}
+
+int
 tiku_trk_fs_can_undo(const tiku_trk_fs_t *fs, char *what, size_t max)
 {
     const undo_op_t *o;

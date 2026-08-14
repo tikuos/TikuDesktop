@@ -23,6 +23,8 @@
 typedef struct {
     tiku_trk_menubar_t bar;
     tiku_trk_menu_t    file;
+    tiku_trk_menu_t    new_menu;     /* New folder and discovered templates */
+    tiku_trk_menu_t    templates;    /* root of the template hierarchy       */
     tiku_trk_menu_t    window;
     tiku_trk_menu_t    attributes;
     tiku_trk_menu_t    arrange;      /* submenu of Window                   */
@@ -46,6 +48,18 @@ typedef struct {
     char               per_type_name[4][TIKU_TRK_TYPE_MAX];
     int                per_type_count;
     int                attributes_shown;
+    char               templates_root[TIKU_TRK_PATH_MAX];
+    struct {
+        tiku_trk_menu_t menu;
+        char            path[TIKU_TRK_PATH_MAX];
+    } template_node[64];
+    int                template_node_count;
+    struct {
+        int  command;
+        int  add_submenu;
+        char path[TIKU_TRK_PATH_MAX];
+    } template_entry[128];
+    int                template_entry_count;
 } tiku_trk_cwmenu_t;
 
 /** @brief The command range a candidate application is picked with. */
@@ -53,8 +67,22 @@ typedef struct {
 #define TIKU_TRK_CMD_COL_ATTR_BASE 800
 
 #define TIKU_TRK_CMD_OPEN_WITH_BASE 900
+#define TIKU_TRK_CMD_TEMPLATE_BASE 1200
+#define TIKU_TRK_CMD_EDIT_TEMPLATES 1320
+#define TIKU_TRK_CMD_ADD_TEMPLATE_SUBMENU_BASE 1400
 
 void tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw);
+
+/** @brief Return the source path for a dynamic template command, if any. */
+const char *tiku_trk_cwmenu_template_path(const tiku_trk_cwmenu_t *cw,
+                                           int command);
+
+/** @brief Return the parent directory for an Add new submenu command. */
+const char *tiku_trk_cwmenu_template_add_path(const tiku_trk_cwmenu_t *cw,
+                                               int command);
+
+/** @brief The user's template directory, or NULL when none is configured. */
+const char *tiku_trk_cwmenu_templates_root(const tiku_trk_cwmenu_t *cw);
 
 /**
  * @brief Rebuild every menu against @p c.

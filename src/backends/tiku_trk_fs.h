@@ -388,6 +388,17 @@ int tiku_trk_fs_new_folder(tiku_trk_fs_t *fs, const char *dir, char *out,
                            size_t max, char *err, size_t errmax);
 
 /**
+ * @brief Create a new item by copying a stored document template.
+ *
+ * The destination name starts with "New <template name>" and is made unique
+ * without replacing an existing item.  Files, folders and symbolic links are
+ * copied with the same tree/permission/time rules as ordinary Tracker copy.
+ */
+int tiku_trk_fs_new_from_template(tiku_trk_fs_t *fs, const char *template_path,
+                                  const char *dst_dir, char *out, size_t max,
+                                  char *err, size_t errmax);
+
+/**
  * @brief Whether the last operation can be undone, and its description.
  *
  * A move and a rename are reversible; a copy is undone by removing what it

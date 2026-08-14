@@ -10,6 +10,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "tiku_trk_menu.h"
 #include "tiku_trk_shortcuts.h"
@@ -446,6 +449,60 @@ main(void)
               "right-clicking a volume gets its own menu");
         check(tiku_trk_menu_find(&cw.volume_ctx, TIKU_TRK_CMD_CUT) < 0,
               "the volume menu has no clipboard items");
+    }
+
+    printf("\ndocument templates in New\n");
+    {
+        char temp[] = "/tmp/trk_template_menu_XXXXXX";
+        char templates[512], note[512], nested[512];
+        const char *old_home = getenv("HOME");
+        char saved_home[256];
+        tiku_trk_cwmenu_t tcw;
+        tiku_trk_sc_ctx_t tc = base_ctx();
+        int i, found_add = 0;
+
+        snprintf(saved_home, sizeof saved_home, "%s",
+                 old_home != NULL ? old_home : "");
+        if (mkdtemp(temp) != NULL) {
+            snprintf(templates, sizeof templates, "%s/Templates", temp);
+            snprintf(nested, sizeof nested, "%.500s/Letters", templates);
+            (void)mkdir(templates, 0755);
+            (void)mkdir(nested, 0755);
+            snprintf(note, sizeof note, "%.500s/Note.txt", nested);
+            {
+                FILE *f = fopen(note, "w");
+                if (f != NULL) { fputs("note", f); fclose(f); }
+            }
+            (void)setenv("HOME", temp, 1);
+            tiku_trk_cwmenu_init(&tcw);
+            tiku_trk_cwmenu_rebuild(&tcw, &tc);
+            check(tiku_trk_menu_find(&tcw.file, TIKU_TRK_CMD_NEW_FOLDER) < 0,
+                  "CW-037: stored templates replace plain New folder");
+            check(tcw.new_menu.count > 0 && tcw.templates.count > 0,
+                  "CW-037: New contains a discovered Templates submenu");
+            check(tiku_trk_cwmenu_template_path(
+                      &tcw, TIKU_TRK_CMD_TEMPLATE_BASE) != NULL,
+                  "PVL-097: leaf template commands retain source paths");
+            for (i = 0; i < 128; i++) {
+                if (tiku_trk_cwmenu_template_add_path(
+                        &tcw, TIKU_TRK_CMD_ADD_TEMPLATE_SUBMENU_BASE + i) !=
+                    NULL) {
+                    found_add = 1;
+                    break;
+                }
+            }
+            check(found_add,
+                  "CW-037: each template level offers Add new submenu");
+            if (old_home != NULL) {
+                (void)setenv("HOME", saved_home, 1);
+            } else {
+                (void)unsetenv("HOME");
+            }
+            (void)unlink(note);
+            (void)rmdir(nested);
+            (void)rmdir(templates);
+            (void)rmdir(temp);
+        }
     }
 
     printf("\nthe drop menu\n");

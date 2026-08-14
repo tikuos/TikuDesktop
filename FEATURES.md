@@ -1188,11 +1188,12 @@ kCopyAttributes flattens PoseView()->SaveState(BMessage&) and puts it on be_clip
 **TIKU:** A cross-window "view layout" clipboard is a second clipboard channel distinct from the file clipboard; on TikuOS both would have to share one clipboard service with typed payloads.
 **PORT:** Paste replaces the complete target column set in one validated operation, retaining Name and re-sorting after installation (`src/ui/tiku_trk_poseview.c:tiku_trk_poseview_paste_layout`).
 
-#### PVL-097 · important · open ⟨found by verification⟩
+#### PVL-097 · important · done ⟨found by verification⟩
 **Creating a document from a "New >" template copies the template's contents and attributes, names it "New <template name>", and immediately opens the name for inline editing.**  
 BPoseView::NewFileFromTemplate: name = "New " + message "name", uniquified with FSMakeOriginalName(..., " copy"); a template that is a directory goes through FSCreateNewFolderIn+Rename instead of a data copy; the data is copied in 1 KB chunks; FSCopyAttributesAndStats(src, dest, copyTimes=false) copies attributes, permissions, owner and group but NOT the timestamps; PlaceFolder positions it; then EntryCreated + SelectPose + EditFirstWidget start the rename. Explicitly not undoable ("todo: create an UndoItem").  
 `PoseView.cpp` → `BPoseView::NewFileFromTemplate`
-**SUBSYSTEM:** New > templates: no template mechanism exists — grep 'template' over src/ matches nothing outside the query-template icon, there is no NEW_FROM_TEMPLATE command in the enum (src/tiku_trk_shortcuts.h:28-90), and no attribute-copying file creation exists in tiku_trk_fs.c (fs_new_folder is the only creation verb, :2077).  
+**PORT:** The filesystem backend now copies regular files, folders and links with Tracker's existing tree, permission, timestamp and pose-state rules, assigns a unique `New <template name>`, and both shipped shells reload, select and start inline rename on the result.
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_new_from_template; src/shell/tiku_trk_app.c:menu_invoke; src/shell/tiku_trk_desktop.c:menu_invoke; tests/test_fs.c*
 
 #### PVL-098 · polish · differs ⟨found by verification⟩
 **A newly created folder or template file lands where the user asked for it: at the click point when made from a context menu, or under the mouse pointer when made with the keyboard in icon view.**  
@@ -2886,11 +2887,13 @@ kCopySelectionTo compares model.NodeRef() with TargetModel()->NodeRef() and call
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases kCopySelectionTo / kMoveSelectionTo / kCreateLink`
 **PORT:** Move/Copy commands open the reusable folder panel, execute the selected operation, duplicate on same-folder copy and record the destination in the recent-folder list (`src/shell/tiku_trk_desktop.c:fpanel_open/fpanel_commit`; `src/core/tiku_trk_panel.c`).
 
-#### CW-037 · important · open
+#### CW-037 · important · partial
 **When the user has stored document templates, the "New folder" item is replaced by a "New >" submenu (New folder, then the templates, then Edit templates…); with no templates the plain "New folder" item stays.**  
 SetupNewTemplatesMenu scans the templates dir on first use and swaps items in place, keeping the position of the old New folder item; the submenu is disabled when the target volume is read-only. Template folders carrying the kAttrTemplateSubMenu attribute become nested submenus, and each level offers "Add new submenu…" which creates the folder, tags it and reveals it selected in Tracker.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupNewTemplatesMenu / _NewTemplateSubmenu (and TemplatesMenu.cpp TemplatesMenu::BuildMenu / IterateTemplateDirectory)`
-**SUBSYSTEM:** Document templates (New > submenu). grep template over src/ matches only icon resource names (src/tiku_trk_icons.c:499-500); New folder is a plain command everywhere (src/tiku_trk_app.c:1218-1247 Ctrl+N) with no templates directory, no submenu swap, no kAttrTemplateSubMenu analog.  
+**PORT:** Both shells discover `$HOME/Templates` when menus rebuild, replace New folder only when stored templates exist, build nested directory submenus, expose `Edit templates…`, and provide `Add new submenu…` at each visible level.
+**MISSING:** TikuOS has no Haiku attribute equivalent for distinguishing a template folder from a submenu folder; this port treats visible template directories as both nested menus and selectable folder templates.
+*src/ui/tiku_trk_cwmenu.c:build_templates/build_new; src/shell/tiku_trk_app.c:menu_invoke; src/shell/tiku_trk_desktop.c:menu_invoke*
 
 #### CW-038 · important · partial
 **MISSING:** Static add-ons are MIME-sorted into a menu, but shared-object discovery, selection invocation, and the worker-thread handoff are absent.

@@ -1216,6 +1216,37 @@ main(void)
         check(there(made), "FS-066", "redo makes it again");
     }
 
+    /* --- document templates (PVL-097) --------------------------------- */
+    {
+        char tmpl[600], child[600], made[600], nested[600], err[160];
+
+        snprintf(tmpl, sizeof tmpl, "%s/Meeting Notes.txt", A);
+        put(tmpl, "agenda\n");
+        check(tiku_trk_fs_new_from_template(fs, tmpl, B, made, sizeof made,
+                                            err, sizeof err) == 0 &&
+              holds(made, "agenda\n") &&
+              strstr(made, "/New Meeting Notes.txt") != NULL,
+              "PVL-097", "a file template copies to New <template name>");
+        check(tiku_trk_fs_can_undo(fs, NULL, 0), "PVL-097",
+              "a template creation is undoable like a normal copy");
+
+        snprintf(tmpl, sizeof tmpl, "%s/Project", A);
+        snprintf(child, sizeof child, "%s/README", tmpl);
+        (void)mkdir(tmpl, 0755);
+        put(child, "contents\n");
+        check(tiku_trk_fs_new_from_template(fs, tmpl, B, nested, sizeof nested,
+                                            err, sizeof err) == 0,
+              "PVL-097", "a folder template can be selected");
+        {
+            char copied[600];
+
+            snprintf(copied, sizeof copied, "%s/README", nested);
+            check(holds(copied, "contents\n"), "PVL-097",
+                  "folder templates copy their tree recursively");
+        }
+        (void)remove(tmpl);
+    }
+
     tiku_trk_fs_free(fs);
     tiku_trk_backend_close(b);
     (void)system("rm -rf /tmp/trk_fs_a /tmp/trk_fs_b");
