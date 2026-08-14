@@ -8,7 +8,7 @@ move 930 20
 release 930 20
 wait 25
 note the link is there and the original is untouched -- a link, not a copy
-expect-file /home/ambuj/.config/deskbar/a.txt
+expect-file /tmp/trk_home/.config/deskbar/a.txt
 expect-file /tmp/trk_script/a.txt
 note and removing the source leaves it dangling, which a copy would not
 quit

@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_thumb.h"
+#include "../core/tiku_trk_state.h"
 
 
 #include <stdio.h>
@@ -44,6 +45,7 @@ blob_path(const char *path, char *out, size_t max)
     if (snprintf(out, max, "%s/.cache/tiku-tracker", home) < 0) {
         return -1;
     }
+    (void)tiku_trk_state_mkparents(out);
     (void)mkdir(out, 0755);
     return (snprintf(out, max, "%s/.cache/tiku-tracker/%08lx.raw", home,
                      h & 0xffffffffful) > 0) ? 0 : -1;

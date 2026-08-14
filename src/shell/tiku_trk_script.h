@@ -83,6 +83,11 @@ typedef struct {
     /* Where a visible list row can be clicked in shell coordinates.  The
      * shell owns chrome geometry, so scripts must not reconstruct it. */
     int       (*row_point)(void *ctx, int row, int *x, int *y);
+    /* Where the TAB of the window titled @p title is.  A test that wants a
+     * window somewhere else has to grab its tab, and a tab's position is
+     * chrome -- the thing a test must never encode, because it moves
+     * whenever the chrome does. */
+    int       (*tab_point)(void *ctx, const char *title, int *x, int *y);
     /* One pixel of what is actually on screen, 0xRRGGBB.  Drawing is the
      * only evidence for a rule about how something LOOKS -- a band style
      * changes no state a checker could otherwise read. */

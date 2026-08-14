@@ -8,10 +8,7 @@ click-row 0
 wait 8
 key 1 ctrl
 wait 6
-press 200 78
-move 400 300
-move 620 420
-release 620 420
+drag-window /sub 620 420
 wait 6
 note two rows, dropped on the icon window's background at 600,500
 click 100 116

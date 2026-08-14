@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_prefs.h"
+#include "tiku_trk_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,6 +205,7 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
     if (p == NULL || path == NULL) {
         return -1;
     }
+    (void)tiku_trk_state_mkparents(path);
     f = fopen(path, "w");
     if (f == NULL) {
         return -1;

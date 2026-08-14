@@ -50,6 +50,33 @@ tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
 }
 
 int
+tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
+                                  int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    int i;
+
+    if (adapter == NULL || title == NULL || x == NULL || y == NULL) {
+        return 0;
+    }
+    for (i = 0; i < tiku_desk_workspace_count(adapter->workspace); i++) {
+        tiku_desk_window_t *w = tiku_desk_workspace_at(adapter->workspace,
+                                                       i);
+
+        if (w == NULL || !w->open || strstr(w->title, title) == NULL) {
+            continue;
+        }
+        /* Inside its tab: the strip is TAB_H deep from the frame's top
+         * edge, and starts four pixels in.  Thirty across is inside the
+         * narrowest tab the window layer will draw. */
+        *x = w->frame.x + 30;
+        *y = w->frame.y + TIKU_DESK_WINDOW_TAB_H / 2;
+        return 1;
+    }
+    return 0;
+}
+
+int
 tiku_trk_script_adapter_row_point(void *context, int row, int *x, int *y)
 {
     tiku_trk_script_adapter_t *adapter = context;
@@ -255,6 +282,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     }
     state->pose_at = tiku_trk_script_adapter_pose_at;
     state->row_point = tiku_trk_script_adapter_row_point;
+    state->tab_point = tiku_trk_script_adapter_tab_point;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
     state->pose_ctx = adapter;
 }

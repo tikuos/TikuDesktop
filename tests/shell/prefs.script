@@ -7,7 +7,7 @@ expect-title preferences
 note clicking a checkbox applies at once and saves -- there is no OK button
 click 435 208
 wait 5
-expect-file /home/ambuj/.config/TrackerSettings
+expect-file /tmp/trk_home/.config/TrackerSettings
 note and switching page shows that page's controls
 click 350 232
 wait 3

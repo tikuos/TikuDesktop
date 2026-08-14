@@ -133,4 +133,17 @@ int tiku_trk_state_each(tiku_trk_store_t *s, const char *node,
 /** @brief Records held (tests and the store's own reporting). */
 int tiku_trk_store_count(const tiku_trk_store_t *s);
 
+/**
+ * @brief Make the directory @p path lives in, and its parents.
+ *
+ * Everything this port writes into the user's home -- settings, the
+ * thumbnail cache, the Deskbar's own folder -- assumed those directories
+ * already existed, which is true of an account that has run other
+ * software and false of a fresh one.  A write that fails because its
+ * folder is missing looks exactly like a setting that does not persist.
+ *
+ * @return 0 when the directory exists afterwards.
+ */
+int tiku_trk_state_mkparents(const char *path);
+
 #endif /* TIKU_TRK_STATE_H_ */

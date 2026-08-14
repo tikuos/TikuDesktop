@@ -27,26 +27,29 @@ for s in "$here"/*.script; do
         # session persist now, so a script that inherited the last one's
         # would be clicking wherever that left its windows.  The session
         # PAIR is the exception -- inheriting is what it tests.
+        #
+        # EVERY script runs with HOME pointing at a fixture of its own.
+        # The Desktop is the user's Desktop folder and a drag that misses
+        # its window lands on it: run against the real home, a test drops
+        # its files into the account and then reads a Desktop covered in
+        # its own leftovers.
+        deskhome="/tmp/trk_home"
+        deskfill=""
+        if grep -q '^# home: fixture' "$s"; then
+            deskfill=yes
+        fi
         case $(basename "$s") in
             session2.script) ;;
             # EVERY device file, not just the home one: the fixture lives
             # on /tmp, which is its own device with its own state file, and
             # leaving that one behind carried a previous script's view mode
             # into the next one -- which moves every coordinate it clicks.
-            *) rm -f "$HOME"/.local/share/tracker/devices/*.state
+            *) rm -f "$deskhome"/.local/share/tracker/devices/*.state
                # And the settings, for the same reason: a script that
                # turns a setting off leaves it off for every script after
                # it, including its own next run.
-               rm -f "$HOME/.config/TrackerSettings" ;;
+               rm -f "$deskhome/.config/TrackerSettings" ;;
         esac
-        # A script that says "# home: fixture" is run with HOME pointing at
-        # a fixture of its own, which is the only way to exercise the
-        # DESKTOP: what it shows is the user's Desktop folder, and the real
-        # one is whatever this machine happens to have on it.
-        deskhome=""
-        if grep -q '^# home: fixture' "$s"; then
-            deskhome="$work/home"
-        fi
         # A script that says "# work: home" gets its fixture under $HOME
         # instead of /tmp.  It matters for anything about the Trash: a
         # Trash is per filesystem, and on this host /tmp has no writable
@@ -54,7 +57,7 @@ for s in "$here"/*.script; do
         # cannot tell the two apart.
         work=/tmp/trk_script
         if grep -q '^# work: home' "$s"; then
-            work="$HOME/.trk-shell-fixture"
+            work="$deskhome/.trk-shell-fixture"
         fi
         # A Trash-window script uses an isolated HOME under /tmp.  It must
         # never point at the account's real Trash, which the fixture reset
@@ -66,7 +69,7 @@ for s in "$here"/*.script; do
         # The fixture every script starts from.  Rows sort folders first,
         # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
         # the click coordinates in the scripts are aimed at.
-        rm -rf /tmp/trk_script "$HOME/.trk-shell-fixture" && mkdir -p $work/sub
+        rm -rf /tmp/trk_script "$deskhome" && mkdir -p $work/sub
         echo hi > $work/a.txt
         echo hi > $work/b.txt
         echo hi > $work/c.txt
@@ -74,8 +77,8 @@ for s in "$here"/*.script; do
         case $(basename "$s") in
             bandscroll.script|scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
-            dbdrop.script) rm -rf "$HOME/.config/deskbar" ;;
-            dbprefs.script) rm -rf "$HOME/.config/deskbar" ;;
+            dbdrop.script) rm -rf "$deskhome/.config/deskbar" ;;
+            dbprefs.script) rm -rf "$deskhome/.config/deskbar" ;;
             # A name that exists nowhere else on the machine, so a search
             # for it has exactly one answer and an emptied panel -- which
             # matches everything -- cannot be mistaken for a restored one.
@@ -98,7 +101,7 @@ PYEOF
         # Preferences UI and observed by the browser process.  This fixture
         # starts with that external setting off so the observer is real.
         if grep -q '^# prefs: navigator-off' "$s"; then
-            prefhome=${deskhome:-$HOME}
+            prefhome="$deskhome"
             mkdir -p "$prefhome/.config"
             printf 'ShowNavigator off\n' > \
                 "$prefhome/.config/TrackerSettings"
@@ -110,24 +113,25 @@ PYEOF
         # of its own: one application that writes down what it was handed,
         # which is the only way to check a launch really happened.
         if grep -q '^# apps: fixture' "$s"; then
-            mkdir -p "$HOME/.config/tracker"
+            mkdir -p "$deskhome/.config/tracker"
             printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
                 > /tmp/trk_stamp.sh
             chmod +x /tmp/trk_stamp.sh
             rm -f /tmp/trk_launched
             printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\n' \
-                > "$HOME/.config/tracker/apps"
+                > "$deskhome/.config/tracker/apps"
         fi
-        if [ -n "$deskhome" ]; then
+        mkdir -p "$deskhome/Desktop"
+        if [ -n "$deskfill" ]; then
             mkdir -p "$deskhome/Desktop/photos"
             echo hi > "$deskhome/Desktop/notes.txt"
             echo hi > "$deskhome/Desktop/todo.txt"
         fi
         if grep -q '^# argv: none' "$s"; then
-            DISPLAY= HOME="${deskhome:-$HOME}" "$root/build/$bin" \
+            DISPLAY= HOME="$deskhome" "$root/build/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
-            DISPLAY= HOME="${deskhome:-$HOME}" "$root/build/$bin" $work \
+            DISPLAY= HOME="$deskhome" "$root/build/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done

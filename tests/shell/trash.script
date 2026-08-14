@@ -8,14 +8,14 @@ click-row 1
 wait 3
 key Delete
 wait 30
-expect-no-file /home/ambuj/.trk-shell-fixture/a.txt
-expect-file /home/ambuj/.Trash/a.txt
+expect-no-file /tmp/trk_home/.trk-shell-fixture/a.txt
+expect-file /tmp/trk_home/.Trash/a.txt
 note Shift+Delete is final, and says so
 click-row 1
 wait 3
 key Delete shift
 wait 30
-expect-no-file /home/ambuj/.trk-shell-fixture/b.txt
+expect-no-file /tmp/trk_home/.trk-shell-fixture/b.txt
 note and it is not in the Trash either, which is the whole difference
-expect-no-file /home/ambuj/.Trash/b.txt
+expect-no-file /tmp/trk_home/.Trash/b.txt
 quit

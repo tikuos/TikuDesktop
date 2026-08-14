@@ -488,3 +488,32 @@ tiku_trk_store_count(const tiku_trk_store_t *s)
     }
     return n;
 }
+
+int
+tiku_trk_state_mkparents(const char *path)
+{
+    char dir[1024];
+    char *slash;
+    size_t i;
+
+    if (path == NULL || path[0] == '\0') {
+        return -1;
+    }
+    snprintf(dir, sizeof dir, "%s", path);
+    slash = strrchr(dir, '/');
+    if (slash == NULL || slash == dir) {
+        return 0;               /* no directory part to make */
+    }
+    *slash = '\0';
+    /* Each component in turn, because a fresh home has neither .config nor
+     * what is under it. */
+    for (i = 1u; dir[i] != '\0'; i++) {
+        if (dir[i] == '/') {
+            dir[i] = '\0';
+            (void)mkdir(dir, 0755);
+            dir[i] = '/';
+        }
+    }
+    (void)mkdir(dir, 0755);
+    return 0;
+}

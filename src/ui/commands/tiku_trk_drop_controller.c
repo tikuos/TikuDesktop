@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "tiku_trk_drop_controller.h"
+#include "tiku_trk_state.h"
 #include "tiku_trk_drop_protocol.h"
 #include "tiku_trk_model.h"
 
@@ -102,6 +103,10 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
 
         if (home != NULL && snprintf(destination, sizeof destination,
                 "%s/.config/deskbar", home) > 0) {
+            /* Its parents too: a home that has never run this has no
+             * .config either, and a link into a folder that cannot be
+             * made is a drop that quietly does nothing. */
+            (void)tiku_trk_state_mkparents(destination);
             (void)mkdir(destination, 0755);
             (void)tiku_trk_fs_link(controller->fs, paths, count,
                                    destination, 0);

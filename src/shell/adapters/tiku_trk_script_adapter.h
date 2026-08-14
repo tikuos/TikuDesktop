@@ -52,6 +52,9 @@ void tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
     tiku_trk_menu_t **popup_sub, tiku_desk_rect_t *popup_frame,
     tiku_desk_rect_t *popup_sub_frame, char *status, char *count_text,
     int row_h);
+int tiku_trk_script_adapter_tab_point(void *context, const char *title,
+                                      int *x, int *y);
+
 int tiku_trk_script_adapter_row_point(void *context, int row,
                                       int *x, int *y);
 unsigned tiku_trk_script_adapter_pixel_at(void *context, int x, int y);

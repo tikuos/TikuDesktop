@@ -22,7 +22,7 @@
 
 /** @brief What one line was asking for. */
 typedef enum {
-    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW,
+    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW, OP_DRAG_WINDOW,
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
@@ -34,6 +34,7 @@ typedef struct {
     sc_op_t  op;
     unsigned key;
     unsigned modifiers;
+    int      button_x, button_y;        /* a resolved tab point          */
     int      x, y;
     unsigned button;
     int      count;                     /* WAIT turns                    */
@@ -50,7 +51,9 @@ struct tiku_trk_script {
     int       count;
     int       cursor;
     int       waiting;                  /* turns still owed to a WAIT    */
-    int       pending_release;          /* a CLICK's second half         */
+    int       pending_release;
+    int       dragging_window;          /* a tab drag, mid-play          */
+    int       drag_to_x, drag_to_y;          /* a CLICK's second half         */
     char      note[SC_TEXT_MAX];        /* what the next check is for    */
     int       passes, fails;
 };
@@ -244,6 +247,15 @@ tiku_trk_script_open(const char *path)
                 st->button = (unsigned)atoi(w[3]);
             }
             st->modifiers = mods_of(w, n, 4);
+        } else if (strcmp(w[0], "drag-window") == 0 && n >= 4) {
+            /* By TITLE, not by pixel: where a window's tab sits is the
+             * shell's business, and a test that encoded it broke the day
+             * the window grew a menu bar. */
+            st->op = OP_DRAG_WINDOW;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            st->x = atoi(w[2]);
+            st->y = atoi(w[3]);
+            st->button = 1u;
         } else if (strcmp(w[0], "click-row") == 0 && n >= 2) {
             st->op = OP_CLICK_ROW;
             st->count = atoi(w[1]);
@@ -445,6 +457,23 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         s->waiting--;
         return 1;
     }
+    if (s->dragging_window == 1) {
+        /* Halfway: the move that carries it. */
+        s->dragging_window = 2;
+        out->what = TIKU_TRK_SC_MOVE;
+        out->x = s->drag_to_x;
+        out->y = s->drag_to_y;
+        out->button = 1u;
+        return 1;
+    }
+    if (s->dragging_window == 2) {
+        s->dragging_window = 0;
+        out->what = TIKU_TRK_SC_RELEASE;
+        out->x = s->drag_to_x;
+        out->y = s->drag_to_y;
+        out->button = 1u;
+        return 1;
+    }
     if (s->pending_release) {
         cur = &s->step[s->cursor - 1];
         s->pending_release = 0;
@@ -473,6 +502,23 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->button = cur->button;
         out->modifiers = cur->modifiers;
         s->pending_release = (cur->op == OP_CLICK);
+        return 1;
+    case OP_DRAG_WINDOW:
+        if (st == NULL || st->tab_point == NULL ||
+            !st->tab_point(st->pose_ctx, cur->text, &cur->button_x,
+                           &cur->button_y)) {
+            verdict(s, 0, "no window titled:", cur->text);
+            return 1;
+        }
+        /* Press on the tab; the move and the release follow on the next
+         * two turns, so the shell sees a real gesture. */
+        out->what = TIKU_TRK_SC_PRESS;
+        out->x = cur->button_x;
+        out->y = cur->button_y;
+        out->button = 1u;
+        s->drag_to_x = cur->x;
+        s->drag_to_y = cur->y;
+        s->dragging_window = 1;
         return 1;
     case OP_CLICK_ROW:
         if (st == NULL || st->row_point == NULL ||

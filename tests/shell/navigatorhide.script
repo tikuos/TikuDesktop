@@ -13,16 +13,16 @@ click-row 0
 wait 6
 key Left ctrl
 wait 6
-expect-location /home/ambuj/.trk-shell-fixture
+expect-location /tmp/trk_home/.trk-shell-fixture
 expect-nav-forward 1
 
 note removing the global override restores the bar and recomputes the view
-remove /tmp/trk_script/home/.config/TrackerSettings
+remove /tmp/trk_home/.config/TrackerSettings
 wait 20
 expect-navigator 1
 expect-visible-rows 20
 expect-nav-forward 1
 click 52 57
 wait 6
-expect-location /home/ambuj/.trk-shell-fixture/sub
+expect-location /tmp/trk_home/.trk-shell-fixture/sub
 quit
