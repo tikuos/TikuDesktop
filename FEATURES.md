@@ -3174,6 +3174,8 @@ tests/test_frame.c*
 **"Arrange by" also carries "Reverse order" and "Clean up" below a separator; Reverse order flips the sort direction and re-lays out the icons.**  
 BContainerWindow::NewArrangeByMenu appends a separator, Shortcuts()->ReverseOrderItem(), another separator and Shortcuts()->CleanupItem() after the copied attribute items. BPoseView::MessageReceived case kArrangeReverseOrder does SetReverseSort(!ReverseSort()) followed by Cleanup(true) — the same Cleanup(true) the kArrangeBy path runs.  
 `ContainerWindow.cpp` → `BContainerWindow::NewArrangeByMenu / BPoseView::MessageReceived (case kArrangeReverseOrder)`  
+**PORT:** The menu carries both, and the choice reaches the view the menu was raised on. Two things stood between them on the DESKTOP, and neither was the arranging: the menu model is one shared thing that every folder rebuilds while it draws, so an open popup lost the desktop's inventory to the next window painted; and the choice was handed to whichever window had focus rather than to the folder the menu belonged to. Both are now remembered with the popup, as the menu bar's already were.  
+*src/shell/tiku_trk_desktop.c:popup_fl; tests/shell/deskarrange.script*
 
 
 ---

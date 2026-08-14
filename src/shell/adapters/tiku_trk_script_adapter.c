@@ -166,36 +166,43 @@ tiku_trk_script_adapter_pose_screen(void *context, const char *name,
     tiku_trk_script_adapter_t *adapter = context;
     tiku_desk_window_t *focused;
     tiku_trk_folder_window_t *folder;
-    tiku_desk_rect_t content;
-    int ox = 0, oy = 0, i, count;
 
     if (adapter == NULL || name == NULL || x == NULL || y == NULL) {
         return 0;
     }
     focused = tiku_desk_workspace_focused(adapter->workspace);
     folder = tiku_trk_folder_lifecycle_find(adapter->folders, focused);
-    if (folder == NULL || folder->view == NULL) {
-        return 0;
-    }
-    count = tiku_trk_poseview_count(folder->view);
-    for (i = 0; i < count; i++) {
-        tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+    for (;;) {
+        int i, count = (folder != NULL && folder->view != NULL)
+                           ? tiku_trk_poseview_count(folder->view) : 0;
 
-        if (pose == NULL || strcmp(pose->model.name, name) != 0) {
-            continue;
+        for (i = 0; i < count; i++) {
+            tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+            tiku_desk_rect_t content;
+            int ox = 0, oy = 0;
+
+            if (pose == NULL || strcmp(pose->model.name, name) != 0) {
+                continue;
+            }
+            /* The icon's own place, not the union with its name: a landing
+             * is where the ICON went, and the union moves with the length
+             * of the file name.  Converted the way a press is converted on
+             * the way in, so a test can name a drop point instead of the
+             * chrome. */
+            tiku_trk_poseview_pose_location(folder->view, pose, x, y);
+            content = tiku_trk_folder_window_content(folder);
+            tiku_trk_poseview_origin(folder->view, &ox, &oy);
+            *x += content.x + 2 - ox;
+            *y += content.y + 2 - oy;
+            return 1;
         }
-        /* The icon's own place, not the union with its name: a landing is
-         * where the ICON went, and the union moves with the length of the
-         * file name.  Converted the way a press is converted on the way
-         * in, so a test can name a drop point instead of the chrome. */
-        tiku_trk_poseview_pose_location(folder->view, pose, x, y);
-        content = tiku_trk_folder_window_content(folder);
-        tiku_trk_poseview_origin(folder->view, &ox, &oy);
-        *x += content.x + 2 - ox;
-        *y += content.y + 2 - oy;
-        return 1;
+        /* The desktop has no window to focus, and its icons are poses like
+         * any other -- asking about one must not answer "nowhere". */
+        if (folder == tiku_trk_desktop_view_folder(adapter->desktop_view)) {
+            return 0;
+        }
+        folder = tiku_trk_desktop_view_folder(adapter->desktop_view);
     }
-    return 0;
 }
 
 static void

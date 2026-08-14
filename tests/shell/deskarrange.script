@@ -1,0 +1,27 @@
+# shell: desktop
+# home: fixture
+# CW-070/PVL-024: the desktop's own context menu arranges the DESKTOP.  The
+# menu model is shared and rebuilt while windows draw, and the choice was
+# handed to whichever window had focus -- so the items named things that
+# never happened.
+wait 8
+note laid out by name, folders first: photos leads the row
+expect-icon-screen photos 22 22
+expect-icon-screen todo.txt 262 22
+note the backdrop's own menu offers Arrange by, because the desktop is an
+note icon view, and Icon size, because it is the desktop
+press 700 500 3
+wait 2
+release 700 500 3
+wait 5
+expect-menu New folder|Arrange by|Icon size|Paste|Select…|Select all|Open parent|Add-ons|
+note and reversing the order lays the DESKTOP out again in the other
+note direction: what led the row now trails it
+menu-pick Arrange by
+wait 3
+menu-pick Reverse order
+wait 10
+expect-icon-screen .Trash 22 22
+expect-icon-screen photos 142 22
+expect-icon-screen notes.txt 502 22
+quit

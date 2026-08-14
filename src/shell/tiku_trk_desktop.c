@@ -206,6 +206,11 @@ typedef struct desktop {
     /* A context menu raised on one named thing -- the info window's icon --
      * rather than on a window's selection (AW-076). */
     char                 popup_path[TIKU_TRK_PATH_MAX];
+    /* And which FOLDER: the menu model is one shared thing that every
+     * drawing folder rebuilds for itself, so an open popup has to be put
+     * back for the folder it was raised on -- and the choice carried out
+     * there, not on whatever window has focus. */
+    folder_t            *popup_fl;
     tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
     tiku_desk_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
@@ -1392,6 +1397,15 @@ draw_all(desktop_t *app)
     /* Drawing another folder rebuilt the one shared menu model for that
      * folder.  Put it back on the bar that actually owns the popup before
      * painting or hit-testing it. */
+    if (app->bar_fl == NULL && app->bar_open < 0 && app->popup != NULL &&
+        app->popup_fl != NULL) {
+        tiku_trk_sc_ctx_t c;
+
+        build_open_with(app, app->popup_fl);
+        build_per_type(app, app->popup_fl);
+        c = menu_ctx(app, app->popup_fl, 0u);
+        tiku_trk_cwmenu_rebuild(&app->menus, &c);
+    }
     if (app->bar_fl != NULL && app->bar_open >= 0) {
         tiku_trk_sc_ctx_t c;
 
@@ -2239,7 +2253,8 @@ tracker_run(int argc, char **argv)
                 if (app.popup != NULL) {
                     tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
                     folder_t *ffl = (app.bar_fl != NULL) ? app.bar_fl
-                                                         : folder_of(&app, fw);
+                                  : (app.popup_fl != NULL) ? app.popup_fl
+                                                           : folder_of(&app, fw);
                     int pick = -1;
 
                     if (app.popup_sub != NULL) {
@@ -2289,6 +2304,7 @@ tracker_run(int argc, char **argv)
                         }
                     }
                     app.popup_path[0] = '\0';
+                    app.popup_fl = NULL;
                     app.popup = NULL;
                     app.popup_sub = NULL;
                     app.bar_fl = NULL;
@@ -3002,6 +3018,7 @@ tracker_run(int argc, char **argv)
                         cmods |= TIKU_TRK_MENU_MOD_CMD;
                     }
                     c = menu_ctx(&app, pfl, cmods);
+                    app.popup_fl = pfl;
 
                     build_open_with(&app, pfl);
                     build_per_type(&app, pfl);
