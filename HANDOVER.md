@@ -194,13 +194,16 @@ in the `case` block near the top.
 src/core/             UI-independent models, commands, queries, and state
 src/backends/         host/device namespace access, notices, file operations
 src/ui/               pose views, menus, navigation, and visual controllers
-src/ui/commands/      folder menu models and application launch presentation
+src/ui/commands/      folder/file commands, drops, menus, launch presentation
 src/ui/windows/       feature windows: folders, Find, Info, file panels,
                       preferences, Select, switcher
+src/ui/input/         drag targets and rubber-band gesture controllers
 src/ui/overlays/      modal alerts and shared operation-status presentation
 src/media/            HVIF icons, image decoding, thumbnails, icon painting
 src/deskbar/          Deskbar, Desktop view, and application-roster behavior
 src/shell/            application descriptors and front-end composition
+src/shell/adapters/   script-facing presentation adapters
+src/shell/session/    restore, persistence, and bounded shutdown services
 ../desktop/src/       reusable runtime, windows, focus, graphics, native host
 ```
 

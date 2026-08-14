@@ -56,11 +56,12 @@ Tracker will publish:
 
 The source tree mirrors those boundaries: `core/` contains portable models,
 `backends/` owns namespace and file-operation adapters, `ui/` owns Tracker
-views and controllers, `ui/windows/` owns feature-window lifetimes, and
-`ui/overlays/` owns modal and operation-status presentation. `media/` owns
-icon and image handling, `deskbar/` owns the bar and Desktop-icon behavior,
-and `shell/` contains only front-end composition and application entry
-descriptors.
+views and controllers, `ui/windows/` owns feature-window lifetimes,
+`ui/input/` owns retained pointer gestures, and `ui/overlays/` owns modal and
+operation-status presentation. `media/` owns icon and image handling,
+`deskbar/` owns the bar and Desktop-icon behavior, and `shell/` contains
+front-end composition and application entry descriptors. Its `adapters/`
+and `session/` children isolate script observations and persisted lifecycle.
 
 ## Extraction order
 
@@ -89,7 +90,14 @@ the Deskbar roster bridge owns host-process discovery and workspace window
 publication. The shell supplies folder render services, but no longer paints
 or hit-tests folder content. Folder menu context, per-type attributes,
 Open-with candidates, launch presentation, and direct view commands are
-likewise owned by controllers under `ui/commands`.
+likewise owned by controllers under `ui/commands`. Filesystem mutations,
+clipboard actions, drop execution, and secondary-drop decisions receive
+their dependencies through explicit service records. Folder open/raise,
+frame and query-result lifetimes, inline value edits, and entry renames are
+owned under `ui/windows`; rubber-band selection, drag target tracking,
+auto-scroll, and spring-open timing are owned under `ui/input`. Session
+restore/save and script presentation observations no longer reach through
+the desktop composition function.
 The status overlay owns alert and progress rendering plus modal input, while
 filesystem answers remain a shell callback.
 

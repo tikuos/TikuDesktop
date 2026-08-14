@@ -56,14 +56,22 @@
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
+#include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
+#include "tiku_trk_folder_file_actions.h"
+#include "tiku_trk_folder_edit.h"
 #include "tiku_trk_folder_menu.h"
+#include "tiku_trk_folder_lifecycle.h"
 #include "tiku_trk_folder_window.h"
+#include "tiku_trk_band_controller.h"
+#include "tiku_trk_drag_target.h"
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_query.h"
 #include "tiku_trk_task.h"
+#include "tiku_trk_session_controller.h"
+#include "tiku_trk_script_adapter.h"
 #include "tiku_desk_window.h"
 
 #define DESK_W 1000
@@ -74,12 +82,6 @@
  * own.  A bound rather than the whole listing: the ask opens the file. */
 #define HINTS_PER_TURN 24
 
-/* Where the cascade starts again once it has run off the screen, and how far
- * each window steps from the last. */
-#define CASCADE_HOME_X 45
-#define CASCADE_HOME_Y 40
-#define CASCADE_STEP   22
-
 /* Tracker's own list row: ceilf(plain font size * 1.65), which at the 12 px
  * face is 20 -- tall enough that a 16 px mini icon sits in it with room, and
  * the reason rows do not tighten onto the text. */
@@ -87,23 +89,6 @@
 
 /** @brief How much of the count view's text a script can read. */
 #define TIKU_TRK_COUNT_TEXT_MAX 64
-
-/**
- * @brief How long a drag must rest on a folder before it springs open.
- *
- * Long enough that crossing a folder on the way somewhere else does not
- * open it, short enough to feel like an answer rather than a delay.
- */
-#define TIKU_TRK_SPRING_US 700000
-
-/** @brief The band, outside the list, in which a drag scrolls it. */
-#define AUTOSCROLL_BAND 6
-
-/** @brief Past this much overshoot the scroll speeds up (kSlowScrollBucket). */
-#define AUTOSCROLL_FAST 30
-
-/** @brief How long the pointer must hold in the band before it starts. */
-#define AUTOSCROLL_DELAY_US 600000
 
 typedef tiku_trk_folder_window_t folder_t;
 
@@ -116,6 +101,7 @@ typedef struct desktop {
     tiku_trk_fs_t       *fs;
     folder_t             folders[TIKU_DESK_WINDOW_MAX];
     tiku_trk_folder_render_t folder_render;
+    tiku_trk_folder_lifecycle_t folder_lifecycle;
     int                  folder_count;
     int                  row_h;
     int                  team;
@@ -125,6 +111,13 @@ typedef struct desktop {
      * focused each time a menu opens -- the original rebuilds on open too. */
     tiku_trk_cwmenu_t    menus;
     tiku_trk_launch_controller_t launcher;
+    tiku_trk_drop_controller_t drop_controller;
+    tiku_trk_folder_file_actions_t file_actions;
+    tiku_trk_folder_edit_t folder_edit;
+    tiku_trk_band_controller_t band_controller;
+    tiku_trk_drag_target_t drag_target;
+    tiku_trk_session_controller_t session;
+    tiku_trk_script_adapter_t script_adapter;
     tiku_trk_folder_menu_t folder_menu;
     tiku_trk_menu_t     *popup;          /* the menu showing, or NULL       */
     tiku_desk_rect_t     popup_frame;
@@ -132,12 +125,6 @@ typedef struct desktop {
     tiku_desk_rect_t     popup_sub_frame;
     folder_t            *bar_fl;         /* window whose bar opened popup   */
     int                  bar_open;       /* title in that window, or -1     */
-    /* Editing a node's VALUE in place.  A namespace browser that can only
-     * read is half a browser: this is where a write happens. */
-    int                  editing;
-    tiku_trk_edit_t      ed;
-    char                 edit_path[TIKU_TRK_PATH_MAX];
-    tiku_trk_desc_t      edit_desc;
     char                 status[200];
     /* Find is a MODE, as the shell's own watch is: there is no second window
      * to put a panel in, and a namespace search wants the same one-line
@@ -169,8 +156,6 @@ typedef struct desktop {
     int                  press_x, press_y;
     int                  press_row;
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
-    char                 drop_dst[TIKU_TRK_PATH_MAX];
-    tiku_trk_drag_t      pending;   /* payload a drop menu is deciding */
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     /* ONE node-icon cache for the desktop: the same file shown in two
      * windows is one entry, and an icon edited on disk is dropped once
@@ -207,39 +192,27 @@ typedef struct desktop {
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
-    int64_t              hover_at;  /* when the drag settled on a target  */
-    int64_t              scroll_at; /* when it entered the scroll band    */
-    int                  sprung;    /* that target has already opened     */
-    folder_t            *drop_fl;   /* window the pointer is over         */
-    int                  drop_row;  /* pose highlighted as target, or -1  */
     int                  press_down;
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
-    /* The rubber band.  In WINDOW coordinates, because that is where the
-     * press arrives and where it is drawn; the view is handed view-space
-     * coordinates when it is asked to sweep. */
-    folder_t            *band_fl;
-    folder_t            *band_arm;      /* pressed, not yet swept        */
-    int                  band_x0, band_y0, band_x1, band_y1;
-    unsigned             band_mods;     /* held while idle scrolling     */
-    int64_t              band_scroll_at;
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
-    /* Renaming an ENTRY, which is a different thing from editing a node's
-     * value: this one changes what the entry is called. */
-    int                  renaming;
-    tiku_trk_edit_t      ren;
-    char                 ren_path[TIKU_TRK_PATH_MAX];
-    folder_t            *ren_fl;
-    int                  ren_row;
 } desktop_t;
 
 static folder_t *open_folder(desktop_t *app, const char *path);
+static void close_windows_under(desktop_t *app, const char *path);
 
 /** @brief Let the launch controller hand Tracker-owned paths to the shell. */
 static void
 launch_open_path(void *context, const char *path)
 {
     (void)open_folder(context, path);
+}
+
+/** @brief Close invalidated spatial windows on behalf of file actions. */
+static void
+file_actions_close_under(void *context, const char *path)
+{
+    close_windows_under(context, path);
 }
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
@@ -381,37 +354,7 @@ static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 static void
 commit_edit(desktop_t *app, folder_t *fl)
 {
-    char err[128], canon[64];
-
-    if (!app->editing) {
-        return;
-    }
-    app->editing = 0;
-    tiku_trk_edit_stop(&app->ed);
-    if (!tiku_trk_attr_validate(&app->edit_desc, app->ed.text, err,
-                                sizeof err)) {
-        snprintf(app->status, sizeof app->status, "%s", err);
-        app->dirty = 1;
-        return;
-    }
-    (void)tiku_trk_attr_canonical(&app->edit_desc, app->ed.text, canon,
-                                  sizeof canon);
-    if (app->backend->ops->write(app->backend, app->edit_path, canon,
-                                 strlen(canon), err, sizeof err) != 0) {
-        /* The device refused it after all; show its words, not ours. */
-        snprintf(app->status, sizeof app->status, "%s", err);
-    } else {
-        {
-            const char *slash = strrchr(app->edit_path, '/');
-
-            snprintf(app->status, sizeof app->status, "%.100s = %.64s",
-                     (slash != NULL) ? slash + 1 : app->edit_path, canon);
-        }
-        if (fl != NULL) {
-            (void)tiku_trk_poseview_refresh_values(fl->view, 0, 64);
-        }
-    }
-    app->dirty = 1;
+    tiku_trk_folder_edit_commit_value(&app->folder_edit, fl);
 }
 
 /**
@@ -431,22 +374,6 @@ commit_edit(desktop_t *app, folder_t *fl)
  * A folder that has GONE keeps no frame, for the same reason it keeps no
  * arrangement: there is nothing left for the position to be the position of.
  */
-static void
-save_frame_of(desktop_t *app, folder_t *fl)
-{
-    tiku_trk_frame_t now;
-
-    if (fl == NULL || fl->win == NULL || fl->gone) {
-        return;
-    }
-    now.x = (int32_t)fl->win->frame.x;
-    now.y = (int32_t)fl->win->frame.y;
-    now.w = (int32_t)fl->win->frame.w;
-    now.h = (int32_t)fl->win->frame.h;
-    (void)tiku_trk_frame_save(app->store, fl->state_path, &now,
-                              fl->had_frame ? &fl->opened_with : NULL);
-}
-
 static void
 close_window(desktop_t *app, tiku_desk_window_t *w)
 {
@@ -471,9 +398,6 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
     }
     fl = folder_of(app, w);
     if (fl != NULL) {
-        (void)tiku_trk_poseview_save_state(fl->view);
-        (void)tiku_trk_poseview_save_columns(fl->view);
-        save_frame_of(app, fl);
         if (app->bar_fl == fl) {
             app->bar_fl = NULL;
             app->bar_open = -1;
@@ -481,6 +405,8 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
             app->popup = NULL;
             app->popup_sub = NULL;
         }
+        tiku_trk_folder_lifecycle_close(&app->folder_lifecycle, fl);
+        return;
     }
     tiku_desk_workspace_close(app->desk, w);
     app->dirty = 1;
@@ -547,313 +473,8 @@ key_name(const tiku_desk_event_t *event, char printable[2])
 static void
 do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
 {
-    const char *sel[TIKU_TRK_DRAG_MAX];
-    char dst[TIKU_TRK_PATH_MAX];
-    unsigned mods = 0;
-    tiku_trk_drop_t what;
-    int i, n = 0, same;
-
-    (void)x;
-    (void)y;
-    {   /* The Deskbar first: it overlays the desktop, so a drop there is
-         * a drop on IT rather than on whatever window is behind. */
-        int team = -1;
-        tiku_trk_db_drop_t d = tiku_trk_deskbar_drop_at(app->deskbar, x, y,
-                                                        &team);
-
-        if (d == TIKU_TRK_DB_DROP_NONE) {
-            /* The open menu sits beside the bar, not on it, so it is
-             * asked separately (DB-009). */
-            char into[TIKU_TRK_PATH_MAX];
-
-            if (tiku_trk_deskbar_menu_drop_at(app->deskbar, x, y, into,
-                                              sizeof into) ==
-                    TIKU_TRK_DB_DROP_MENU_DIR) {
-                const char *sel3[TIKU_TRK_DRAG_MAX];
-                int k, n3 = 0;
-
-                for (k = 0; k < app->drag.count; k++) {
-                    sel3[n3++] = app->drag.path[k];
-                }
-                if (n3 > 0) {
-                    (void)tiku_trk_fs_link(app->fs, sel3, n3, into, 0);
-                    snprintf(app->status, sizeof app->status,
-                             "linking %d item%s into %.40s", n3,
-                             (n3 == 1) ? "" : "s", into);
-                }
-                return;
-            }
-        }
-        if (d != TIKU_TRK_DB_DROP_NONE) {
-            const char *sel2[TIKU_TRK_DRAG_MAX];
-            int k, n2 = 0;
-
-            for (k = 0; k < app->drag.count; k++) {
-                sel2[n2++] = app->drag.path[k];
-            }
-            if (n2 == 0) {
-                return;
-            }
-            if (d == TIKU_TRK_DB_DROP_LEAF) {
-                /* Links, not copies: the Deskbar menu is a set of
-                 * pointers at things, and copying into it would make a
-                 * second one of everything (DB-009). */
-                const char *home = getenv("HOME");
-                char into[TIKU_TRK_PATH_MAX];
-
-                if (home != NULL &&
-                    snprintf(into, sizeof into, "%s/.config/deskbar",
-                             home) > 0) {
-                    (void)mkdir(into, 0755);
-                    (void)tiku_trk_fs_link(app->fs, sel2, n2, into, 0);
-                    snprintf(app->status, sizeof app->status,
-                             "linking %d item%s into the Deskbar", n2,
-                             (n2 == 1) ? "" : "s");
-                }
-                return;
-            }
-            if (d == TIKU_TRK_DB_DROP_TEAM && team >= 0) {
-                const char *types[TIKU_TRK_DRAG_TYPES];
-                int nt = tiku_trk_drag_types(&app->drag), ti;
-
-                for (ti = 0; ti < nt; ti++) {
-                    types[ti] = app->drag.type[ti];
-                }
-                if (!tiku_trk_deskbar_team_accepts(app->deskbar, team,
-                        types, nt, (state & TIKU_DESK_MOD_CMD) != 0u)) {
-                    snprintf(app->status, sizeof app->status,
-                             "%.40s cannot open %s",
-                             tiku_trk_deskbar_team_name(app->deskbar, team),
-                             (n2 == 1) ? "that" : "those");
-                    return;
-                }
-                snprintf(app->status, sizeof app->status,
-                         "handing %d item%s to %.40s", n2,
-                         (n2 == 1) ? "" : "s",
-                         tiku_trk_deskbar_team_name(app->deskbar, team));
-                return;
-            }
-            {   /* The bar itself launches, and folders are silently
-                 * passed over (DB-066, DB-075). */
-                int launched = 0;
-
-                for (k = 0; k < n2; k++) {
-                    tiku_trk_model_t lm;
-
-                    if (app->backend->ops->stat(app->backend, sel2[k],
-                                                &lm) == 0 &&
-                        tiku_trk_deskbar_launchable(&lm)) {
-                        launched++;
-                    }
-                }
-                snprintf(app->status, sizeof app->status,
-                         "launching %d item%s", launched,
-                         (launched == 1) ? "" : "s");
-            }
-            return;
-        }
-    }
-    if (app->drop_fl == NULL) {
-        return;                     /* dropped on nothing */
-    }
-    if (app->drop_row < 0 && app->drop_fl->view != NULL &&
-        tiku_trk_poseview_mode(app->drop_fl->view) != TIKU_TRK_MODE_LIST &&
-        strcmp(app->drag.src_dir, app->drop_fl->path) == 0) {
-        /* Dropped in the view it came from: an ARRANGEMENT, not a file
-         * operation.  The whole selection moves by the drag's delta, so
-         * what was picked up is put down in the same shape, and holding
-         * Command snaps the landing points to the grid (PVL-026,
-         * PVS-046). */
-        int dx = x - app->drag.x0, dy = y - app->drag.y0;
-        int k, kn = tiku_trk_poseview_count(app->drop_fl->view);
-        int snap = (state & TIKU_DESK_MOD_CMD) != 0u;
-
-        for (k = 0; k < kn; k++) {
-            tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view, k);
-            int px, py;
-
-            if (q == NULL || !q->selected) {
-                continue;
-            }
-            /* Its LOCATION, not the rectangle it draws in: the rect is
-             * the union of the art and a label that may be wider, so
-             * moving to a rect corner would shift the icon sideways by
-             * however long its name is. */
-            tiku_trk_poseview_pose_location(app->drop_fl->view, q, &px, &py);
-            tiku_trk_poseview_move_pose(app->drop_fl->view, q, px + dx,
-                                        py + dy, snap);
-        }
-        if (app->drop_fl == desktop_folder(app)) {
-            /* The Desktop cannot scroll, so an icon dropped off the edge
-             * is one that is simply gone (PVS-058). */
-            (void)tiku_trk_desktop_view_ensure_visible(&app->desktop_view);
-        }
-        (void)tiku_trk_poseview_save_state(app->drop_fl->view);
-        app->dirty = 1;
-        return;
-    }
-    if (app->drop_row >= 0) {
-        tiku_trk_pose_t *q = tiku_trk_poseview_at(app->drop_fl->view,
-                                                  app->drop_row);
-
-        if (q == NULL) {
-            return;
-        }
-        snprintf(dst, sizeof dst, "%s", q->model.path);
-    } else {
-        snprintf(dst, sizeof dst, "%s", app->drop_fl->path);
-    }
-    if ((state & TIKU_DESK_MOD_OPTION) != 0u)    { mods |= TIKU_TRK_DRAG_MOD_COPY; }
-    if ((state & TIKU_DESK_MOD_CMD) != 0u) { mods |= TIKU_TRK_DRAG_MOD_LINK; }
-
-    {   /* A refusal is SAID, not swallowed.  A drop that quietly does
-         * nothing looks like a drop that missed, and the user tries again
-         * harder (PVS-043). */
-        tiku_trk_model_t dm;
-        const char *why = NULL;
-
-        if (app->backend->ops->stat(app->backend, dst, &dm) != 0 ||
-            !tiku_trk_model_is_mutable_container(&dm)) {
-            why = "You can't move or copy items to read-only volumes.";
-        } else if (tiku_trk_fs_in_trash(app->fs, dst)) {
-            if ((mods & TIKU_TRK_DRAG_MOD_LINK) != 0u) {
-                why = "Sorry, you can't create links in the Trash.";
-            } else if ((mods & TIKU_TRK_DRAG_MOD_COPY) != 0u) {
-                why = "Sorry, you can't copy items to the Trash.";
-            }
-        }
-        if (why == NULL) {
-            char refused[200];
-
-            /* The engine's own refusals -- a folder into itself, the Trash
-             * itself, a file over a folder -- said in its words. */
-            if (tiku_trk_fs_check_move(app->fs, app->drag.path[0], dst,
-                                       refused, sizeof refused) !=
-                    TIKU_TRK_REFUSE_NONE) {
-                tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
-                                    TIKU_TRK_ALERT_TAG_REFUSAL, refused,
-                                    "Cancel");
-                return;
-            }
-        } else {
-            tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
-                                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
-            return;
-        }
-    }
-
-    /* Same store or not is the engine's question, not a path comparison:
-     * it already knows how to tell, and it is what decides move or copy. */
-    same = (tiku_trk_fs_drop_action(app->fs, app->drag.path[0], dst, 0) ==
-            TIKU_TRK_OP_MOVE);
-    what = tiku_trk_drag_action(&app->drag, dst, mods, same);
-    if (what == TIKU_TRK_DROP_NOTHING) {
-        return;
-    }
-    for (i = 0; i < app->drag.count; i++) {
-        sel[n++] = app->drag.path[i];
-    }
-    if (n == 0) {
-        return;
-    }
-    /* The secondary button asks rather than assumes: the menu already
-     * exists and had no caller (PVS-039, FS-003). */
-    if (button == 3u) {
-        tiku_trk_model_t dm;
-        int dst_ro = 0, src_ro = 0;
-
-        if (app->backend->ops->stat(app->backend, dst, &dm) == 0) {
-            dst_ro = !tiku_trk_model_is_mutable_container(&dm);
-        }
-        if (app->backend->ops->stat(app->backend, app->drag.src_dir,
-                                    &dm) == 0) {
-            src_ro = !tiku_trk_model_is_mutable_container(&dm);
-        }
-        snprintf(app->drop_dst, sizeof app->drop_dst, "%s", dst);
-        app->pending = app->drag;   /* the release is about to clear it */
-        app->popup = tiku_trk_cwmenu_drop(&app->menus, dst_ro, src_ro,
-                                          (state & TIKU_DESK_MOD_SHIFT) ?
-                                              TIKU_TRK_MOD_SHIFT : 0u);
-        app->popup_sub = NULL;
-        app->popup_frame = tiku_trk_menu_place(app->popup, x, y,
-                               (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
-        return;
-    }
-    if (app->drop_row < 0 &&
-        tiku_trk_poseview_mode(app->drop_fl->view) != TIKU_TRK_MODE_LIST) {
-        /* Reserved BEFORE the operation runs: the entries appear from the
-         * folder watch, and a view told nothing about them auto-places
-         * them at the top-left -- so the arrangement has to be waiting
-         * (PVS-045, PVL-027). */
-        tiku_desk_rect_t c = tiku_trk_folder_window_content(app->drop_fl);
-        int ox = 0, oy = 0;
-
-        tiku_trk_poseview_origin(app->drop_fl->view, &ox, &oy);
-        for (i = 0; i < n; i++) {
-            const char *name = strrchr(sel[i], '/');
-            int lx = 0, ly = 0;
-
-            tiku_trk_drag_landing(&app->drag, i, x - (c.x + 2) + ox,
-                                  y - (c.y + 2) + oy, &lx, &ly);
-            tiku_trk_poseview_drop_land(app->drop_fl->view,
-                                        (name != NULL) ? name + 1 : sel[i],
-                                        lx, ly);
-        }
-    }
-    snprintf(app->prog_dest, sizeof app->prog_dest, "%s", dst);
-    switch (what) {
-    case TIKU_TRK_DROP_COPY:
-        (void)tiku_trk_fs_copy(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
-        snprintf(app->status, sizeof app->status, "copying %d item%s", n,
-                 (n == 1) ? "" : "s");
-        break;
-    case TIKU_TRK_DROP_LINK:
-        {
-            /* Shift with the link modifier asks for a RELATIVE link: the
-             * two are one gesture with a variant, not two gestures, and
-             * the engine already knows how to make either (FS-002). */
-            int rel = (state & TIKU_DESK_MOD_SHIFT) != 0u;
-
-            (void)tiku_trk_fs_link(app->fs, sel, n, dst, rel);
-            snprintf(app->status, sizeof app->status, "%s %d item%s",
-                     rel ? "linking (relative)" : "linking", n,
-                     (n == 1) ? "" : "s");
-        }
-        break;
-    default:
-        (void)tiku_trk_fs_move(app->fs, sel, n, dst, TIKU_TRK_CONFLICT_ASK);
-        snprintf(app->status, sizeof app->status, "moving %d item%s", n,
-                 (n == 1) ? "" : "s");
-        break;
-    }
-}
-
-static void
-drain_fs(tiku_trk_fs_t *fs)
-{
-    int guard = 0;
-
-    if (fs == NULL) {
-        return;
-    }
-    /* 50 turns of 100 ms, the original's own budget. */
-    while (tiku_trk_fs_busy(fs) && guard++ < 50) {
-        if (tiku_trk_fs_step(fs, 16) == 0) {
-            const tiku_trk_progress_t *pr = tiku_trk_fs_progress(fs);
-
-            /* A question stops the queue and there is nobody left to
-             * answer it, so answer it the way the running shell would and
-             * keep going rather than spinning out the whole budget. */
-            if (pr->conflict) {
-                tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_RENAME);
-            } else if (pr->error_ask) {
-                tiku_trk_fs_resolve_error(fs, 1);
-            } else {
-                break;
-            }
-        }
-        usleep(100000);
-    }
+    tiku_trk_drop_controller_execute(&app->drop_controller, x, y, state,
+                                     button);
 }
 
 static void
@@ -915,86 +536,16 @@ list_children(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out,
 static folder_t *
 open_results(desktop_t *app, const char *title, tiku_trk_qrun_t *run)
 {
-    folder_t *fl = open_folder(app, title);
-    tiku_trk_frame_t fr;
-    int i, n;
-    tiku_trk_model_t *set;
-
-    if (fl == NULL) {
-        tiku_trk_query_stop(run);
-        return NULL;
-    }
-    tiku_trk_poseview_set_layout_store(fl->view, app->store);
-    tiku_trk_poseview_set_query_type(fl->view,
-                                    tiku_trk_query_search_type(run));
-    snprintf(fl->state_path, sizeof fl->state_path, "%s",
-             tiku_trk_poseview_layout_path(fl->view));
-    if (tiku_trk_frame_load(app->store, fl->state_path, &fr)) {
-        tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
-        fl->win->frame = (tiku_desk_rect_t){ fr.x, fr.y, fr.w, fr.h };
-        fl->opened_with = fr;
-        fl->had_frame = 1;
-    } else {
-        fl->had_frame = 0;
-    }
-    n = tiku_trk_query_count(run);
-    set = calloc((size_t)(n > 0 ? n : 1), sizeof *set);
-    if (set != NULL) {
-        for (i = 0; i < n; i++) {
-            set[i] = *tiku_trk_query_at(run, i);
-        }
-        (void)tiku_trk_poseview_set_results(fl->view, set, n);
-        free(set);
-    }
-    if (fl->run != NULL) {
-        tiku_trk_query_stop(fl->run);
-    }
-    fl->run = run;
-    fl->live = 1;
-    return fl;
+    return tiku_trk_folder_lifecycle_open_results(&app->folder_lifecycle,
+                                                   title, run);
 }
 
 /** @brief Re-run a live window's query and apply what changed. */
 static int
 refresh_results(desktop_t *app, folder_t *fl)
 {
-    tiku_trk_qdiff_t d;
-    tiku_trk_model_t *set;
-    int i, n;
-
-    if (fl == NULL || fl->run == NULL || !fl->live) {
-        return 0;
-    }
-    if (tiku_trk_query_refresh(fl->run, &d) != 0) {
-        return 0;
-    }
-    /* Membership is not the only thing that moves: a result whose size or
-     * kind changed with the set unchanged still has to be re-applied, or a
-     * query window updates on strictly less than a folder window does. */
-    n = tiku_trk_query_count(fl->run);
-    set = calloc((size_t)(n > 0 ? n : 1), sizeof *set);
-    if (set != NULL) {
-        for (i = 0; i < n; i++) {
-            set[i] = *tiku_trk_query_at(fl->run, i);
-        }
-        /* Through the handler, so a result still present keeps its row and
-         * its selection instead of the window being rebuilt under the user. */
-        (void)tiku_trk_poseview_apply_results(fl->view, set, n,
-                                              tiku_trk_now());
-        free(set);
-    }
-    /* A row that left because its node is GONE is a different event from one
-     * that merely stopped matching, and only the first is worth saying. */
-    if (d.vanished > 0) {
-        snprintf(app->status, sizeof app->status,
-                 "%d gone, %d no longer match, %d new", d.vanished,
-                 d.removed - d.vanished, d.added);
-    } else {
-        snprintf(app->status, sizeof app->status, "%d in, %d out", d.added,
-                 d.removed);
-    }
-    app->dirty = 1;
-    return 1;
+    return tiku_trk_folder_lifecycle_refresh_results(
+        &app->folder_lifecycle, fl);
 }
 
 
@@ -1008,61 +559,14 @@ refresh_results(desktop_t *app, folder_t *fl)
 static void
 begin_rename(desktop_t *app, folder_t *fl, int row)
 {
-    tiku_trk_pose_t *p;
-
-    if (fl == NULL || app->fs == NULL) {
-        return;
-    }
-    p = tiku_trk_poseview_at(fl->view, row);
-    if (p == NULL) {
-        return;
-    }
-    if (p->model.kind == TIKU_TRK_KIND_DEVICE_NODE ||
-        p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR) {
-        snprintf(app->status, sizeof app->status,
-                 "'%.40s' is part of the device namespace and cannot be "
-                 "renamed", p->model.name);
-        app->dirty = 1;
-        return;
-    }
-    app->renaming = 1;
-    app->ren_fl = fl;
-    app->ren_row = row;
-    tiku_trk_edit_start(&app->ren, p->model.name);
-    tiku_trk_edit_deny(&app->ren, tiku_trk_fs_name_deny());
-    snprintf(app->ren_path, sizeof app->ren_path, "%s", p->model.path);
-    app->status[0] = '\0';
-    app->dirty = 1;
+    tiku_trk_folder_edit_begin_rename(&app->folder_edit, fl, row);
 }
 
 /** @brief Finish the rename, keeping or discarding what was typed. */
 static void
 commit_rename(desktop_t *app, int commit)
 {
-    char err[160];
-
-    if (!app->renaming) {
-        return;
-    }
-    app->renaming = 0;
-    tiku_trk_edit_stop(&app->ren);
-    {   /* MA-050: an unchanged name is not a rename. */
-        const char *slash = strrchr(app->ren_path, '/');
-        const char *was = (slash != NULL) ? slash + 1 : app->ren_path;
-
-        if (commit && strcmp(was, app->ren.text) == 0) {
-            commit = 0;
-        }
-    }
-    if (commit && app->ren.len > 0) {
-        if (tiku_trk_fs_rename(app->fs, app->ren_path, app->ren.text, err,
-                               sizeof err) != 0) {
-            snprintf(app->status, sizeof app->status, "%s", err);
-        } else {
-            app->status[0] = '\0';
-        }
-    }
-    app->dirty = 1;
+    tiku_trk_folder_edit_finish_rename(&app->folder_edit, commit);
 }
 
 /** @brief Apply a Select controller expression to its originating folder. */
@@ -1256,30 +760,7 @@ run_find(desktop_t *app, folder_t *from)
 static void
 begin_edit(desktop_t *app, folder_t *fl)
 {
-    tiku_trk_pose_t *p;
-
-    if (fl == NULL) {
-        return;
-    }
-    p = tiku_trk_poseview_active(fl->view);
-    if (p == NULL) {
-        return;
-    }
-    if (!tiku_trk_attr_editable(&p->model, &p->desc)) {
-        snprintf(app->status, sizeof app->status, "%.40s cannot be written",
-                 p->model.name);
-        app->dirty = 1;
-        return;
-    }
-    app->editing = 1;
-    app->edit_desc = p->desc;
-    snprintf(app->edit_path, sizeof app->edit_path, "%s", p->model.path);
-    /* MA-045: opened with the whole value selected, exactly as the rename
-     * editor is, so the first keystroke replaces the reading rather than
-     * appending to it -- a value is REPLACED far more often than extended. */
-    tiku_trk_edit_start(&app->ed, p->value_valid ? p->value : "");
-    app->status[0] = '\0';
-    app->dirty = 1;
+    tiku_trk_folder_edit_begin_value(&app->folder_edit, fl);
 }
 
 /**
@@ -1291,20 +772,8 @@ static int
 folder_selection(desktop_t *app, folder_t *fl,
                  char paths[][TIKU_TRK_PATH_MAX], const char **out, int max)
 {
-    int i, n = tiku_trk_poseview_count(fl->view), k = 0;
-
     (void)app;
-    for (i = 0; i < n && k < max; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-
-        if (p == NULL || !p->selected) {
-            continue;
-        }
-        snprintf(paths[k], TIKU_TRK_PATH_MAX, "%s", p->model.path);
-        out[k] = paths[k];
-        k++;
-    }
-    return k;
+    return tiku_trk_folder_file_actions_selection(fl, paths, out, max);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1391,6 +860,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         app->dirty = 1;
         return;
     }
+    if (tiku_trk_folder_file_actions_invoke(&app->file_actions, fl,
+                                             command)) {
+        app->dirty = 1;
+        return;
+    }
     switch (command) {
     case TIKU_TRK_CMD_OPEN: {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
@@ -1451,273 +925,6 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * answer. */
         fpanel_open(app, fl, command);
         break;
-    case TIKU_TRK_CMD_MOVE_TO_TRASH:
-    case TIKU_TRK_CMD_DELETE: {
-        char paths[64][TIKU_TRK_PATH_MAX];
-        const char *sel[64];
-        int n = folder_selection(app, fl, paths, sel, 64);
-
-        if (n > 0) {
-            /* The menu item and the key agree because both ask the same
-             * question of the same items (FS-046, FS-047). */
-            tiku_trk_delete_q_t q = tiku_trk_fs_delete_question(app->fs,
-                sel[0], command == TIKU_TRK_CMD_DELETE);
-
-            if (q == TIKU_TRK_DELETE_STRAIGHT) {
-                snprintf(app->status, sizeof app->status,
-                         "deleting %d item%s -- this cannot be undone", n,
-                         (n == 1) ? "" : "s");
-                (void)tiku_trk_fs_delete(app->fs, sel, n);
-                {
-                    int j;
-
-                    for (j = 0; j < n; j++) {
-                        close_windows_under(app, sel[j]);
-                    }
-                }
-            } else {
-                snprintf(app->status, sizeof app->status,
-                         "moving %d item%s to the Trash", n,
-                         (n == 1) ? "" : "s");
-                {   /* Some folders are not the user's to move without
-                     * being asked twice; Shift is the second answer, and
-                     * the check runs before a byte moves (FS-027). */
-                    int j, stop = 0;
-
-                    for (j = 0; j < n && !stop; j++) {
-                        tiku_trk_confirm_t c =
-                            tiku_trk_fs_confirm_move(sel[j]);
-
-                        if (c == TIKU_TRK_CONFIRM_OVERRIDE &&
-                            !(command == TIKU_TRK_CMD_DELETE)) {
-                            char msg[300];
-
-                            /* Asked properly now the layer exists: the
-                             * confirmation needs Shift, so the alert says
-                             * which key rather than refusing outright
-                             * (FS-027). */
-                            snprintf(msg, sizeof msg,
-                                     "\"%.60s\" is a system folder.  Hold "
-                                     "Shift and choose Move to confirm.",
-                                     sel[j]);
-                            tiku_trk_alert_open(alert_model(app),
-                                TIKU_TRK_ALERT_STOP,
-                                TIKU_TRK_ALERT_TAG_REFUSAL, msg, "Cancel");
-                            stop = 1;
-                        } else if (c == TIKU_TRK_CONFIRM_ASK) {
-                            snprintf(app->status, sizeof app->status,
-                                     "'%.60s' holds settings -- moving it "
-                                     "anyway", sel[j]);
-                        }
-                    }
-                    if (stop) {
-                        break;
-                    }
-                }
-                (void)tiku_trk_fs_trash(app->fs, sel, n);
-                {   /* A window onto a folder that has just gone is a
-                     * window onto nothing, and so is a window onto
-                     * anything inside it (FS-042). */
-                    int j;
-
-                    for (j = 0; j < n; j++) {
-                        close_windows_under(app, sel[j]);
-                    }
-                }
-            }
-        }
-        break;
-    }
-    case TIKU_TRK_CMD_RESTORE: {
-        char paths[64][TIKU_TRK_PATH_MAX];
-        const char *sel[64];
-        char err[200];
-        int n = folder_selection(app, fl, paths, sel, 64);
-        int back = tiku_trk_fs_restore(app->fs, sel, n, err, sizeof err);
-
-        if (back > 0) {
-            snprintf(app->status, sizeof app->status,
-                     "put %d item%s back", back, (back == 1) ? "" : "s");
-        } else if (err[0] != '\0') {
-            snprintf(app->status, sizeof app->status, "%s", err);
-        }
-        break;
-    }
-    case TIKU_TRK_CMD_EMPTY_TRASH: {
-        int n = tiku_trk_fs_empty_trash(app->fs);
-
-        snprintf(app->status, sizeof app->status,
-                 (n > 0) ? "emptying the Trash: %d item%s"
-                         : "the Trash is empty", n, (n == 1) ? "" : "s");
-        break;
-    }
-    case TIKU_TRK_CMD_CUT:
-    case TIKU_TRK_CMD_CUT_MORE:
-    case TIKU_TRK_CMD_COPY:
-    case TIKU_TRK_CMD_COPY_MORE: {
-        tiku_trk_model_t sel[64];
-        int i2, k = 0, n2 = tiku_trk_poseview_count(fl->view);
-        int cut = (command == TIKU_TRK_CMD_CUT ||
-                   command == TIKU_TRK_CMD_CUT_MORE);
-        int more = (command == TIKU_TRK_CMD_CUT_MORE ||
-                    command == TIKU_TRK_CMD_COPY_MORE);
-
-        for (i2 = 0; i2 < n2 && k < 64; i2++) {
-            tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i2);
-
-            if (p != NULL && p->selected) {
-                sel[k++] = p->model;
-            }
-        }
-        /* Nothing is copied here: the clipboard holds references and a
-         * mode, and the work happens at the Paste. */
-        (void)tiku_trk_clip_add(&app->clip, sel, k,
-                                cut ? TIKU_TRK_CLIP_MOVE
-                                    : TIKU_TRK_CLIP_COPY, !more);
-        snprintf(app->status, sizeof app->status, "%d item%s on the clipboard",
-                 tiku_trk_clip_count(&app->clip),
-                 (tiku_trk_clip_count(&app->clip) == 1) ? "" : "s");
-        break;
-    }
-    case TIKU_TRK_CMD_MOVE_HERE:
-    case TIKU_TRK_CMD_COPY_HERE:
-    case TIKU_TRK_CMD_LINK_HERE:
-    case TIKU_TRK_CMD_REL_LINK_HERE: {
-        /* The answer to the secondary-button drop.  The payload is still
-         * held because the release deliberately did not clear it when the
-         * menu went up (FS-003). */
-        const char *sel[TIKU_TRK_DRAG_MAX];
-        int i, n = 0;
-
-        for (i = 0; i < app->pending.count; i++) {
-            sel[n++] = app->pending.path[i];
-        }
-        if (n == 0 || app->drop_dst[0] == '\0') {
-            break;
-        }
-        if (command == TIKU_TRK_CMD_COPY_HERE) {
-            (void)tiku_trk_fs_copy(app->fs, sel, n, app->drop_dst,
-                                   TIKU_TRK_CONFLICT_ASK);
-            snprintf(app->status, sizeof app->status, "copying %d item%s",
-                     n, (n == 1) ? "" : "s");
-        } else if (command == TIKU_TRK_CMD_MOVE_HERE) {
-            (void)tiku_trk_fs_move(app->fs, sel, n, app->drop_dst,
-                                   TIKU_TRK_CONFLICT_ASK);
-            snprintf(app->status, sizeof app->status, "moving %d item%s",
-                     n, (n == 1) ? "" : "s");
-        } else {
-            (void)tiku_trk_fs_link(app->fs, sel, n, app->drop_dst,
-                       command == TIKU_TRK_CMD_REL_LINK_HERE);
-            snprintf(app->status, sizeof app->status, "linking %d item%s",
-                     n, (n == 1) ? "" : "s");
-        }
-        tiku_trk_drag_reset(&app->pending);
-        app->drop_dst[0] = '\0';
-        break;
-    }
-    case TIKU_TRK_CMD_PREFERENCES:
-        tiku_trk_prefs_window_open(&app->prefs_window);
-        break;
-    case TIKU_TRK_CMD_NEW_FOLDER: {
-        char made[TIKU_TRK_PATH_MAX], err[200];
-
-        if (app->fs != NULL &&
-            tiku_trk_fs_new_folder(app->fs, fl->path, made, sizeof made,
-                                   err, sizeof err) == 0) {
-            const char *slash = strrchr(made, '/');
-
-            snprintf(app->status, sizeof app->status, "created '%.60s'",
-                     (slash != NULL) ? slash + 1 : made);
-        } else {
-            snprintf(app->status, sizeof app->status, "%.150s",
-                     err[0] ? err : "could not create a new folder");
-        }
-        break;
-    }
-    case TIKU_TRK_CMD_PASTE:
-    case TIKU_TRK_CMD_PASTE_LINKS: {
-        char paths[64][TIKU_TRK_PATH_MAX];
-        char here[64][TIKU_TRK_PATH_MAX];
-        const char *sel[64], *same[64];
-        int i2, k = 0, nsame = 0, moving = 0;
-        int links = (command == TIKU_TRK_CMD_PASTE_LINKS);
-
-        /* Entries whose files have gone are dropped rather than pasted:
-         * a reference to nothing is not something to hand to a copy. */
-        (void)tiku_trk_clip_prune(&app->clip);
-        for (i2 = 0; i2 < tiku_trk_clip_count(&app->clip) && k < 64; i2++) {
-            const tiku_trk_clip_entry_t *e = tiku_trk_clip_at(&app->clip, i2);
-
-            {   /* An item pasted into the folder it already lives in is
-                 * a DUPLICATE when it was copied, and nothing at all when
-                 * it was cut: moving something to where it is has no
-                 * meaning (FS-056). */
-                const char *slash = strrchr(e->path, '/');
-                size_t dl = (slash != NULL) ? (size_t)(slash - e->path) : 0u;
-
-                if (!links && slash != NULL && strlen(fl->path) == dl &&
-                    strncmp(fl->path, e->path, dl) == 0) {
-                    if (e->mode != TIKU_TRK_CLIP_MOVE && nsame < 64) {
-                        snprintf(here[nsame], sizeof here[nsame], "%s",
-                                 e->path);
-                        same[nsame] = here[nsame];
-                        nsame++;
-                    }
-                    continue;
-                }
-            }
-            snprintf(paths[k], sizeof paths[k], "%s", e->path);
-            sel[k] = paths[k];
-            if (e->mode == TIKU_TRK_CLIP_MOVE) {
-                moving = 1;
-            }
-            k++;
-        }
-        if (nsame > 0) {
-            (void)tiku_trk_fs_duplicate(app->fs, same, nsame);
-            snprintf(app->status, sizeof app->status,
-                     "duplicating %d item%s already here", nsame,
-                     (nsame == 1) ? "" : "s");
-            if (k == 0) {
-                break;
-            }
-        }
-        if (k == 0) {
-            snprintf(app->status, sizeof app->status,
-                     "the clipboard is empty");
-            break;
-        }
-        /* Neither a copy nor a link belongs in the Trash: one would hide
-         * a second copy where nothing looks, the other would leave a link
-         * behind when the Trash is emptied (FS-014). */
-        if (tiku_trk_fs_in_trash(app->fs, fl->path) && (links || !moving)) {
-            snprintf(app->status, sizeof app->status, "%s",
-                     links ? "Sorry, you can't create links in the Trash."
-                           : "Sorry, you can't copy items to the Trash.");
-            break;
-        }
-        /* What a Paste DOES is the mode the clipboard carries: cut items
-         * move, copied items copy -- unless Shift asked for links, which
-         * overrides both (FS-057). */
-        if (links) {
-            (void)tiku_trk_fs_link(app->fs, sel, k, fl->path, 0);
-            snprintf(app->status, sizeof app->status,
-                     "linking %d item%s here", k, (k == 1) ? "" : "s");
-            break;
-        }
-        if (moving) {
-            (void)tiku_trk_fs_move(app->fs, sel, k, fl->path,
-                                   TIKU_TRK_CONFLICT_ASK);
-            /* A cut is spent by its paste; a copy stays for the next one. */
-            tiku_trk_clip_clear(&app->clip);
-        } else {
-            (void)tiku_trk_fs_copy(app->fs, sel, k, fl->path,
-                                   TIKU_TRK_CONFLICT_ASK);
-        }
-        snprintf(app->status, sizeof app->status, "%s %d item%s here",
-                 moving ? "moving" : "copying", k, (k == 1) ? "" : "s");
-        break;
-    }
     case TIKU_TRK_CMD_CLOSE:
         close_window(app, fl->win);
         break;
@@ -1755,226 +962,16 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 static folder_t *
 open_folder(desktop_t *app, const char *path)
 {
-    folder_t *fl;
-    tiku_desk_rect_t frame;
-    int i;
-
-    /* Already open?  Raise it: one window per place. */
-    for (i = 0; i < app->folder_count; i++) {
-        if (strcmp(app->folders[i].path, path) == 0 &&
-            app->folders[i].win != NULL && app->folders[i].win->open) {
-            tiku_desk_workspace_activate(app->desk, app->folders[i].win);
-            app->dirty = 1;
-            return &app->folders[i];
-        }
-    }
-    if (app->folder_count >= TIKU_DESK_WINDOW_MAX) {
-        return NULL;
-    }
-    fl = &app->folders[app->folder_count];
-    memset(fl, 0, sizeof *fl);
-    snprintf(fl->path, sizeof fl->path, "%s", path);
-    snprintf(fl->state_path, sizeof fl->state_path, "%s", path);
-    /* Opening a folder is what puts it in the recent list the Deskbar
-     * menu offers -- the list is a record of where the user has been, and
-     * this is the one place that knows (DB-002, AW-056). */
-    tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS, path);
-    fl->view = tiku_trk_poseview_new(app->backend, path);
-    if (fl->view == NULL) {
-        return NULL;
-    }
-    tiku_trk_folder_window_configure(fl, &app->folder_render);
-    /* The columns this folder was left with.  The pair has existed since
-     * the single-window shell was built and this shell called neither, so
-     * every column a user added, moved or resized here was discarded when
-     * the window closed (CW-005, MA-070). */
-    tiku_trk_poseview_set_folders_first(fl->view,
-        tiku_trk_prefs_get(prefs_model(app), "SortFolderNamesFirst"));
-    (void)tiku_trk_poseview_restore_columns(fl->view);
-    (void)tiku_trk_poseview_restore_state(fl->view);
-
-    /* Cascade, so a new window never lands exactly on the last one. */
-    if (app->cascade_x == 0 && app->cascade_y == 0) {
-        app->cascade_x = CASCADE_HOME_X;
-        app->cascade_y = CASCADE_HOME_Y;
-    }
-    frame.x = app->cascade_x;
-    frame.y = app->cascade_y;
-    frame.w = 460;
-    frame.h = 300;
-    app->cascade_x += CASCADE_STEP;
-    app->cascade_y += CASCADE_STEP;
-    {
-        /* Where this folder's window WAS, if it has ever been open; failing
-         * that what its parent's window is, offset; failing that the
-         * cascade above.  This is the spatial promise: a folder opens where
-         * you left it (CW-001, CW-005). */
-        tiku_trk_frame_t fr;
-
-        fl->had_frame = tiku_trk_frame_load(app->store, path, &fr);
-        if (!fl->had_frame) {
-            /* Inherited frames are not the folder's own, so they are not
-             * remembered as one: only what the user does to the window
-             * counts as its place. */
-            if (tiku_trk_frame_inherit(app->store, path, &fr)) {
-                tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
-                frame.x = fr.x;
-                frame.y = fr.y;
-                frame.w = fr.w;
-                frame.h = fr.h;
-            }
-        } else {
-            tiku_trk_frame_clamp(&fr, DESK_W, DESK_H);
-            frame.x = fr.x;
-            frame.y = fr.y;
-            frame.w = fr.w;
-            frame.h = fr.h;
-            fl->opened_with = fr;
-        }
-    }
-    if (app->cascade_x + frame.w > DESK_W ||
-        app->cascade_y + frame.h > DESK_H) {
-        app->cascade_x = CASCADE_HOME_X;
-        app->cascade_y = CASCADE_HOME_Y;
-    }
-    /* A frame that would land entirely off the screen is pulled back on:
-     * a window nobody can reach is the same as no window. */
-    if (frame.x >= DESK_W || frame.y >= DESK_H || frame.x + frame.w <= 0 ||
-        frame.y + frame.h <= 0) {
-        frame.x = CASCADE_HOME_X;
-        frame.y = CASCADE_HOME_Y;
-    }
-    fl->win = tiku_desk_workspace_open(app->desk, path, frame,
-        tiku_trk_folder_window_draw, fl, fl->path);
-    if (fl->win == NULL) {
-        tiku_trk_poseview_free(fl->view);
-        return NULL;
-    }
-    app->folder_count++;
-    app->dirty = 1;
-    return fl;
+    return tiku_trk_folder_lifecycle_open(&app->folder_lifecycle, path);
 }
 
 /** @brief The folder behind a window, or NULL. */
 static folder_t *
 folder_of(desktop_t *app, tiku_desk_window_t *w)
 {
-    int i;
-
-    for (i = 0; w != NULL && i < app->folder_count; i++) {
-        if (app->folders[i].win == w) {
-            return &app->folders[i];
-        }
-    }
-    return NULL;
+    return tiku_trk_folder_lifecycle_find(&app->folder_lifecycle, w);
 }
 
-/** @brief Re-evaluate a band in view coordinates, including any new scroll. */
-static void
-folder_band_select(desktop_t *app)
-{
-    tiku_desk_rect_t c;
-    int ox = 0, oy = 0;
-
-    if (app == NULL || app->band_fl == NULL) {
-        return;
-    }
-    c = tiku_trk_folder_window_content(app->band_fl);
-    tiku_trk_poseview_origin(app->band_fl->view, &ox, &oy);
-    (void)tiku_trk_poseview_select_rect(app->band_fl->view,
-        app->band_x0 - (c.x + 2) + ox,
-        app->band_y0 - (c.y + 2) + oy,
-        app->band_x1 - (c.x + 2) + ox,
-        app->band_y1 - (c.y + 2) + oy, app->band_mods);
-}
-
-/** @brief Resolve a visible focused-window row for a scripted click. */
-static int
-script_row_point(void *ctx, int row, int *x, int *y)
-{
-    desktop_t *app = (desktop_t *)ctx;
-    tiku_desk_window_t *fw;
-    folder_t *fl;
-    tiku_desk_rect_t c;
-    int rel, visible;
-
-    if (app == NULL || x == NULL || y == NULL || row < 0) {
-        return 0;
-    }
-    fw = tiku_desk_workspace_focused(app->desk);
-    fl = (fw != NULL) ? folder_of(app, fw) : NULL;
-    if (fl == NULL || fl->view == NULL ||
-        tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
-        return 0;
-    }
-    c = tiku_trk_folder_window_content(fl);
-    rel = row - tiku_trk_poseview_scroll(fl->view);
-    visible = (c.h - COUNT_H - 4) / app->row_h;
-    if (rel < 0 || rel >= visible ||
-        row >= tiku_trk_poseview_count(fl->view)) {
-        return 0;
-    }
-    *x = c.x + 20;
-    *y = c.y + 2 + rel * app->row_h + app->row_h / 2;
-    return 1;
-}
-
-
-/** @brief What is drawn at @p x, @p y right now, 0xRRGGBB (script). */
-static unsigned
-script_pixel_at(void *ctx, int x, int y)
-{
-    desktop_t *app = (desktop_t *)ctx;
-
-    if (app == NULL || app->surf == NULL || app->surf->px == NULL ||
-        x < 0 || y < 0 || x >= app->surf->w || y >= app->surf->h) {
-        return 0u;
-    }
-    return (unsigned)app->surf->px[(size_t)y * (size_t)app->surf->w +
-                                   (size_t)x] & 0xffffffu;
-}
-
-/**
- * @brief Where the pose named @p name sits in the focused view (script).
- *
- * In view pixels, which is the space a drop is expressed in -- the check
- * is about the ARRANGEMENT a drop left behind, not about the window.
- */
-static int
-script_pose_at(void *ctx, const char *name, int *x, int *y)
-{
-    desktop_t *app = (desktop_t *)ctx;
-    tiku_desk_window_t *fw;
-    folder_t *fl;
-    int i, n;
-
-    if (app == NULL || name == NULL) {
-        return 0;
-    }
-    fw = tiku_desk_workspace_focused(app->desk);
-    fl = (fw != NULL) ? folder_of(app, fw) : NULL;
-    for (;;) {
-        if (fl != NULL && fl->view != NULL) {
-            n = tiku_trk_poseview_count(fl->view);
-            for (i = 0; i < n; i++) {
-                tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-                int pw, ph;
-
-                if (p == NULL || strcmp(p->model.name, name) != 0) {
-                    continue;
-                }
-                tiku_trk_poseview_pose_rect(fl->view, p, x, y, &pw, &ph);
-                return 1;
-            }
-        }
-        if (fl == desktop_folder(app)) {
-            return 0;
-        }
-        /* The other place a pose can be.  The Desktop has no window, so it
-         * is never the focused one and would otherwise be unaskable. */
-        fl = desktop_folder(app);
-    }
-}
 
 static void
 blit(desktop_t *app)
@@ -2191,38 +1188,12 @@ tracker_run(int argc, char **argv)
     tiku_trk_select_window_init(&app.select_window, app.desk,
         DESK_W, DESK_H, &app.dirty, apply_select_model, &app);
     tiku_trk_clip_init(&app.clip);
-    /*
-     * A SIDECAR, not a volatile store.  Everything kept here -- saved
-     * queries, the panel's frame, the recent lists, favourites, the
-     * thumbnails' stamps -- was written to a store documented as being for
-     * "tests, and nodes whose state must not persist", so every one of them
-     * was forgotten at exit while appearing to be saved.  It cannot be the
-     * backend's own store either: several of these live under reserved KEYS
-     * rather than under paths, and the file-keyed store can only write
-     * where there is a file.
-     */
-    app.store = tiku_trk_store_sidecar_open(
-                    (app.backend->devid[0] != '\0') ? app.backend->devid
-                                                    : "local");
-    if (app.store == NULL) {
-        app.store = tiku_trk_store_memory_open();
-    }
+    app.store = tiku_trk_session_open_store(app.backend);
+    tiku_trk_session_controller_init(&app.session, app.store, app.deskbar,
+        &app.desktop_view, &app.folder_lifecycle);
     tiku_trk_find_window_set_store(&app.find_window, app.store);
     (void)tiku_trk_poseview_install_query_defaults(app.backend, app.store);
-    {
-        /* Where the bar was docked and how wide it was left.  Kept with
-         * the session rather than with any folder: the bar belongs to the
-         * desktop (DB-048, DB-050). */
-        int32_t rec[2];
-
-        if (tiku_trk_state_read(app.store, TIKU_TRK_KEY_SESSION,
-                                TIKU_TRK_ATTR_DOCK, rec, sizeof rec) ==
-                (int)sizeof rec) {
-            tiku_trk_deskbar_set_dock(app.deskbar,
-                                      (tiku_trk_db_dock_t)rec[0]);
-            (void)tiku_trk_deskbar_set_width(app.deskbar, (int)rec[1]);
-        }
-    }
+    tiku_trk_session_restore_deskbar(&app.session);
     {
         /* Where the menu's own folder is, and the lists it shows above it.
          * Fed rather than read by the bar: the recent lists are the same
@@ -2297,6 +1268,14 @@ tracker_run(int argc, char **argv)
             DESK_W, DESK_H, path, &app.dirty,
             &alert_model(&app)->open);
     }
+    tiku_trk_folder_file_actions_init(&app.file_actions, app.fs, &app.clip,
+        &app.drop_controller.pending, app.drop_controller.destination,
+        alert_model(&app), &app.prefs_window, app.status, sizeof app.status,
+        file_actions_close_under, &app);
+    tiku_trk_folder_edit_init(&app.folder_edit, app.backend, app.fs,
+        app.status, sizeof app.status, &app.dirty);
+    tiku_trk_band_controller_init(&app.band_controller, app.row_h,
+                                  &app.dirty);
     tiku_trk_switcher_window_init(&app.switcher_window, app.desk,
         app.deskbar, DESK_W, DESK_H, &app.dirty, app.status,
         sizeof app.status);
@@ -2316,27 +1295,47 @@ tracker_run(int argc, char **argv)
         .count_text_size = sizeof app.count_text,
         .finding = &app.finding,
         .find_text = app.find_buf,
-        .editing = &app.editing,
-        .edit_path = app.edit_path,
-        .value_edit = &app.ed,
-        .renaming = &app.renaming,
-        .rename_folder = &app.ren_fl,
-        .rename_row = &app.ren_row,
-        .rename_edit = &app.ren,
-        .band_folder = &app.band_fl,
-        .band_x0 = &app.band_x0,
-        .band_y0 = &app.band_y0,
-        .band_x1 = &app.band_x1,
-        .band_y1 = &app.band_y1,
-        .drop_folder = &app.drop_fl,
-        .drop_row = &app.drop_row,
+        .editing = &app.folder_edit.editing,
+        .edit_path = app.folder_edit.edit_path,
+        .value_edit = &app.folder_edit.value_edit,
+        .renaming = &app.folder_edit.renaming,
+        .rename_folder = &app.folder_edit.rename_folder,
+        .rename_row = &app.folder_edit.rename_row,
+        .rename_edit = &app.folder_edit.rename_edit,
+        .band_folder = &app.band_controller.folder,
+        .band_x0 = &app.band_controller.x0,
+        .band_y0 = &app.band_controller.y0,
+        .band_x1 = &app.band_controller.x1,
+        .band_y1 = &app.band_controller.y1,
+        .drop_folder = &app.drag_target.folder,
+        .drop_row = &app.drag_target.row,
         .prepare_menu = tiku_trk_folder_menu_prepare,
         .prepare_context = &app.folder_menu
     };
+    tiku_trk_folder_lifecycle_init(&app.folder_lifecycle, app.folders,
+        TIKU_DESK_WINDOW_MAX, &app.folder_count, &app.cascade_x,
+        &app.cascade_y, app.desk, app.backend, app.store,
+        prefs_model(&app), &app.folder_render, app.status,
+        sizeof app.status, &app.dirty, DESK_W, DESK_H);
 
     app.desk_row = -1;
     (void)tiku_trk_desktop_view_init(&app.desktop_view, app.backend, app.fs,
         prefs_model(&app), app.deskbar, &app.folder_render, DESK_W, DESK_H);
+    tiku_trk_drag_target_init(&app.drag_target, app.desk, app.deskbar,
+        &app.desktop_view, &app.drag, app.folders, &app.folder_count,
+        app.row_h, &app.dirty, launch_open_path, &app);
+    tiku_trk_script_adapter_init(&app.script_adapter, app.desk, app.surf,
+        &app.folder_lifecycle, &app.desktop_view, app.deskbar,
+        alert_model(&app), &app.find_window, &app.file_panel,
+        &app.folder_edit, &app.popup, &app.popup_sub, &app.popup_frame,
+        &app.popup_sub_frame, app.status, app.count_text, app.row_h);
+    tiku_trk_drop_controller_init(&app.drop_controller, app.deskbar,
+        app.backend, app.fs, &app.desktop_view, &app.menus,
+        alert_model(&app), &app.drag, &app.drag_target.folder,
+        &app.drag_target.row,
+        &app.popup, &app.popup_sub, &app.popup_frame, app.prog_dest,
+        sizeof app.prog_dest, app.status, sizeof app.status, &app.dirty,
+        DESK_W, DESK_H);
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether
@@ -2365,46 +1364,8 @@ tracker_run(int argc, char **argv)
             }
         }
     }
-    if (nopen > 0) {
-        for (i = 0; i < nopen; i++) {
-            (void)open_folder(&app, openme[i]);
-        }
-    } else {
-        /* What was open last time, if anything -- the windows come back
-         * where they were, which is the whole of the spatial promise
-         * (AW-004).  A safe start asks for nothing and gets home. */
-        tiku_trk_session_entry_t sess[TIKU_TRK_SESSION_MAX];
-        int nsess = safe_mode ? 0
-                              : tiku_trk_session_load_entries(app.store, sess,
-                                                              TIKU_TRK_SESSION_MAX);
-        int opened = 0;
-
-        for (i = 0; i < nsess; i++) {
-            folder_t *restored;
-
-            /* Root is the Disks window in this port.  Keeping a stale root
-             * record must not override the user's current icon setting. */
-            if (strcmp(sess[i].path, "/") == 0 &&
-                !tiku_trk_desktop_view_shows_disks(&app.desktop_view)) {
-                continue;
-            }
-            restored = open_folder(&app, sess[i].path);
-            if (restored != NULL) {
-                restored->win->minimized = sess[i].minimized;
-                opened++;
-            }
-        }
-        if (opened == 0) {
-            if (use_device) {
-                (void)open_folder(&app, "/sys/mem");
-                (void)open_folder(&app, "/dev");
-            } else {
-                const char *home = getenv("HOME");
-
-                (void)open_folder(&app, home ? home : "/");
-            }
-        }
-    }
+    tiku_trk_session_restore_folders(&app.session, openme, nopen,
+                                     safe_mode, use_device);
 
     (void)tiku_trk_find_open_default(find_model(&app), (int64_t)time(NULL));
 
@@ -2516,8 +1477,8 @@ tracker_run(int argc, char **argv)
             if (p2 != NULL && strcmp(p2->model.name, want) == 0) {
                 tiku_trk_poseview_click(fl->view, i2, 0u);
                 begin_edit(&app, fl);
-                if (eq != NULL && app.editing) {
-                    tiku_trk_edit_start(&app.ed, eq + 1);
+                if (eq != NULL && app.folder_edit.editing) {
+                    tiku_trk_edit_start(&app.folder_edit.value_edit, eq + 1);
                     commit_edit(&app, fl);
                 }
                 break;
@@ -2620,236 +1581,21 @@ tracker_run(int argc, char **argv)
 
             memset(&ev, 0, sizeof ev);
             if (sc != NULL) {
-                /* One instruction per turn, so the deferred work between
-                 * turns -- a stepped copy, the armed rename, the notice
-                 * poll -- happens where it happens on a real clock. */
-                tiku_trk_script_step_t sp;
-                tiku_trk_script_state_t sst;
-                tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
+                tiku_trk_script_adapter_result_t script_result =
+                    tiku_trk_script_adapter_next(&app.script_adapter, sc,
+                                                 &ev);
 
-                memset(&sst, 0, sizeof sst);
-                sst.status = app.status;
-                sst.title = (fw != NULL) ? fw->title : NULL;
-                sst.scroll = 0;
-                sst.rows = 0;
-                sst.alert = alert_model(&app)->open ? alert_model(&app)->text : NULL;
-                {
-                    int wi, wn = 0;
-
-                    for (wi = 0; wi < tiku_desk_workspace_count(app.desk); wi++) {
-                        tiku_desk_window_t *ww = tiku_desk_workspace_at(app.desk, wi);
-
-                        if (ww != NULL && ww->open) {
-                            wn++;
-                        }
-                    }
-                    sst.windows = wn;
-                }
-                sst.selected = 0;
-                sst.sel_name = NULL;
-                sst.renaming = app.renaming;
-                sst.find_text = find_model(&app)->name_text;
-                sst.find_type = tiku_trk_find_type_label(find_model(&app));
-                sst.columns = 0;
-                {
-                    tiku_desk_rect_t bf =
-                        tiku_trk_deskbar_frame(app.deskbar);
-
-                    sst.bar_x = bf.x;
-                    sst.bar_y = bf.y;
-                }
-                sst.win_x = (fw != NULL) ? fw->frame.x : -1;
-                sst.win_y = (fw != NULL) ? fw->frame.y : -1;
-                sst.kinds = 0;
-                {
-                    /* What the open menu says, so a script can check a menu
-                     * whose items depend on the selection. */
-                    static char labels[512];
-                    int mi;
-
-                    labels[0] = '\0';
-                    if (app.popup != NULL) {
-                        for (mi = 0; mi < app.popup->count; mi++) {
-                            size_t at = strlen(labels);
-
-                            snprintf(labels + at, sizeof labels - at, "%s|",
-                                     app.popup->item[mi].label);
-                        }
-                    }
-                    if (app.popup_sub != NULL) {
-                        for (mi = 0; mi < app.popup_sub->count; mi++) {
-                            size_t at = strlen(labels);
-
-                            snprintf(labels + at, sizeof labels - at, "%s|",
-                                     app.popup_sub->item[mi].label);
-                        }
-                    }
-                    sst.menu = labels;
-                }
-                sst.count = app.count_text;
-                sst.desk_selected = 0;
-                sst.desk_sel_name = NULL;
-                if (desktop_folder(&app)->view != NULL) {
-                    int di, dn = tiku_trk_poseview_count(
-                        desktop_folder(&app)->view);
-
-                    for (di = 0; di < dn; di++) {
-                        tiku_trk_pose_t *dp =
-                            tiku_trk_poseview_at(desktop_folder(&app)->view,
-                                                 di);
-
-                        if (dp != NULL && dp->selected) {
-                            if (sst.desk_sel_name == NULL) {
-                                sst.desk_sel_name = dp->model.name;
-                            }
-                            sst.desk_selected++;
-                        }
-                    }
-                }
-                sst.pose_at = script_pose_at;
-                sst.row_point = script_row_point;
-                sst.pixel_at = script_pixel_at;
-                sst.pose_ctx = &app;
-                {
-                    folder_t *sfl = (fw != NULL) ? folder_of(&app, fw) : NULL;
-
-                    if (sfl != NULL) {
-                        int si, sn = tiku_trk_poseview_count(sfl->view);
-
-                        for (si = 0; si < sn; si++) {
-                            tiku_trk_pose_t *sp =
-                                tiku_trk_poseview_at(sfl->view, si);
-
-                            if (sp != NULL) {
-                                sst.kinds |= 2;
-                                if (!tiku_trk_model_type_is(sp->model.type,
-                                        find_model(&app)->type)) {
-                                    sst.kinds |= 1;
-                                }
-                            }
-                            if (sp != NULL && sp->selected) {
-                                if (sst.sel_name == NULL) {
-                                    sst.sel_name = sp->model.name;
-                                }
-                                sst.selected++;
-                            }
-                        }
-                    }
-                    if (sfl != NULL) {
-                        {
-                            const tiku_trk_column_t *cols = NULL;
-
-                            sst.columns =
-                                tiku_trk_poseview_columns(sfl->view, &cols);
-                        }
-                        sst.scroll = tiku_trk_poseview_scroll(sfl->view);
-                        sst.rows = tiku_trk_poseview_count(sfl->view);
-                    } else if (fw != NULL && fw ==
-                               tiku_trk_panel_window_handle(
-                                   &app.file_panel)) {
-                        /* The panel has a view too, and it is the one the
-                         * script is looking at while the panel is up. */
-                        sst.scroll = tiku_trk_panel_window_scroll(
-                            &app.file_panel);
-                        sst.rows = tiku_trk_panel_window_rows(
-                            &app.file_panel);
-                    }
-                }
-                if (!tiku_trk_script_pump(sc, &sst, &sp)) {
+                if (script_result == TIKU_TRK_SCRIPT_ADAPTER_STOP) {
                     app.running = 0;
                     break;
                 }
-                switch (sp.what) {
-                case TIKU_TRK_SC_KEY:
-                    ev.type = TIKU_DESK_EVENT_KEY_DOWN;
-                    ev.key = sp.key;
-                    ev.modifiers = sp.modifiers;
-                    if (sp.key >= 0x20u && sp.key < 0x7fu) {
-                        ev.text[0] = (char)sp.key;
-                        if ((sp.modifiers & TIKU_DESK_MOD_SHIFT) != 0u &&
-                            ev.text[0] >= 'a' && ev.text[0] <= 'z') {
-                            ev.text[0] = (char)(ev.text[0] - 'a' + 'A');
-                        }
-                    }
-                    have = 1;
-                    break;
-                case TIKU_TRK_SC_MOVE:
-                    ev.type = TIKU_DESK_EVENT_POINTER_MOVE;
-                    ev.x = sp.x;
-                    ev.y = sp.y;
-                    ev.modifiers = sp.modifiers;
-                    have = 1;
-                    break;
-                case TIKU_TRK_SC_PRESS:
-                case TIKU_TRK_SC_RELEASE:
-                    ev.type = (sp.what == TIKU_TRK_SC_PRESS)
-                                  ? TIKU_DESK_EVENT_POINTER_DOWN
-                                  : TIKU_DESK_EVENT_POINTER_UP;
-                    ev.x = sp.x;
-                    ev.y = sp.y;
-                    ev.modifiers = sp.modifiers;
-                    ev.button = sp.button;
-                    ev.time_us = tiku_trk_now();
-                    have = 1;
-                    break;
-                case TIKU_TRK_SC_MENU_PICK: {
-                    /* Name the item rather than guess its pixels: a menu's
-                     * layout is the menu's business, and a script that
-                     * hardcoded coordinates would break every time an item
-                     * was added above the one it meant. */
-                    tiku_trk_menu_t *m = (app.popup_sub != NULL)
-                                             ? app.popup_sub : app.popup;
-                    tiku_desk_rect_t fr = (app.popup_sub != NULL)
-                                              ? app.popup_sub_frame
-                                              : app.popup_frame;
-                    int k;
-
-                    if (m == NULL &&
-                        tiku_trk_find_popup_open(find_model(&app))) {
-                        m = (find_model(&app)->popup_sub != NULL)
-                                ? find_model(&app)->popup_sub
-                                : &find_model(&app)->popup;
-                        fr = (find_model(&app)->popup_sub != NULL)
-                                ? find_model(&app)->popup_sub_frame
-                                : find_model(&app)->popup_frame;
-                    }
-
-                    if (m == NULL) {
-                        fprintf(stderr, "script: no menu is open for "
-                                        "'%s'\n", sp.path);
-                        break;
-                    }
-                    for (k = 0; k < m->count; k++) {
-                        if (!m->item[k].separator &&
-                            strstr(m->item[k].label, sp.path) != NULL) {
-                            ev.type = TIKU_DESK_EVENT_POINTER_DOWN;
-                            ev.x = fr.x + 8;
-                            ev.y = fr.y +
-                                tiku_trk_menu_item_top(m, k) +
-                                tiku_trk_menu_item_height(m, k) / 2;
-                            ev.button = 1u;
-                            ev.time_us = tiku_trk_now();
-                            have = 1;
-                            break;
-                        }
-                    }
-                    if (!have) {
-                        fprintf(stderr, "script: no menu item matching "
-                                        "'%s'\n", sp.path);
-                    }
-                    break;
-                }
-                case TIKU_TRK_SC_SHOT:
+                if (script_result == TIKU_TRK_SCRIPT_ADAPTER_SHOT) {
                     draw_all(&app);
-                    (void)tiku_desk_surface_png(app.surf, sp.path);
-                    break;
-                case TIKU_TRK_SC_QUIT:
-                    app.running = 0;
-                    break;
-                default:
-                    break;
+                    (void)tiku_desk_surface_png(
+                        app.surf, app.script_adapter.shot_path);
                 }
-            } else if (tiku_desk_host_poll(app.host, &ev)) {
+                have = script_result == TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+           } else if (tiku_desk_host_poll(app.host, &ev)) {
                 have = 1;
             }
             if (!have) {
@@ -3394,8 +2140,7 @@ tracker_run(int argc, char **argv)
                                         lst);
                                 }
                             }
-                            app.drop_fl = NULL;
-                            app.drop_row = -1;
+                            tiku_trk_drag_target_reset(&app.drag_target);
                             (void)tiku_trk_click_press(&click, NULL, 0, 0,
                                                        3u, 0u, now);
                         } else if (ev.button == 4 ||
@@ -3461,12 +2206,9 @@ tracker_run(int argc, char **argv)
                                  * slop, so a click on empty space that
                                  * clears the selection does not also flash
                                  * a rectangle (PVS-024). */
-                                app.band_arm = fl;
-                                app.band_fl = NULL;
-                                app.band_x0 = app.band_x1 = ev.x;
-                                app.band_y0 = app.band_y1 = ev.y;
-                                app.band_mods = bm;
-                                app.band_scroll_at = 0;
+                                tiku_trk_band_controller_arm(
+                                    &app.band_controller, fl, ev.x, ev.y,
+                                    bm);
                             /* A sweep between two poses also ENDS any
                                  * half-finished double click: without this
                                  * the click that starts the band is
@@ -3505,8 +2247,7 @@ tracker_run(int argc, char **argv)
                                         q->model.type, qx, qy, lst);
                                 }
                             }
-                            app.drop_fl = NULL;
-                            app.drop_row = -1;
+                            tiku_trk_drag_target_reset(&app.drag_target);
                             if (row >= 0 && tiku_trk_folder_window_name_at(
                                     fl, row, ev.x, ev.y)) {
                                 /* Armed, not started: the rename begins only
@@ -3596,85 +2337,13 @@ tracker_run(int argc, char **argv)
                     }
                     app.press_down = 0;
                 }
-                if (tiku_trk_drag_moved(&app.drag, ev.x,
-                                        ev.y) ||
+                if (tiku_trk_drag_moved(&app.drag, ev.x, ev.y) ||
                     tiku_trk_drag_active(&app.drag)) {
-                    /* Where the pointer is now decides the target, and it
-                     * is resolved across WINDOWS: the whole point of a
-                     * spatial desktop is dragging between them (FS-001). */
-                    tiku_desk_window_t *ow = NULL;
-                    folder_t *ofl = NULL;
-                    int orow = -1;
-
-                    (void)tiku_desk_workspace_hit(app.desk, ev.x,
-                                            ev.y, &ow);
-                    ofl = (ow != NULL) ? folder_of(&app, ow)
-                                       : desktop_folder(&app);
-                    if (ofl != NULL && ofl->view == NULL) {
-                        ofl = NULL;
-                    }
-                    if (ofl != NULL) {
-                        int r = tiku_trk_folder_window_row_at(ofl, ev.x,
-                                                              ev.y);
-                        if (r >= 0) {
-                            tiku_trk_pose_t *q =
-                                tiku_trk_poseview_at(ofl->view, r);
-
-                            /* Only a pose that will actually take the drop
-                             * lights up; one being dragged never does
-                             * (MA-016, PVS-042). */
-                            if (q == NULL ||
-                                !tiku_trk_drag_can_drop(&app.drag,
-                                                        &q->model)) {
-                                r = -1;
-                            }
-                        }
-                        orow = r;
-                    }
-                    tiku_trk_deskbar_set_dragging(app.deskbar, 1);
-                    {   /* What the bar would take, worked out during the
-                         * hover rather than at the drop, so the highlight
-                         * and the drop cannot disagree. */
-                        int hteam = -1;
-
-                        (void)tiku_trk_deskbar_drop_at(app.deskbar,
-                                  ev.x, ev.y, &hteam);
-                        if (hteam != tiku_trk_deskbar_drop_team(app.deskbar)) {
-                            tiku_trk_deskbar_set_drop_team(app.deskbar,
-                                                           hteam);
-                            app.dirty = 1;
-                        }
-                    }
-                    if (ofl != app.drop_fl || orow != app.drop_row) {
-                        app.drop_fl = ofl;
-                        app.drop_row = orow;
-                        /* Leaving takes the highlight with it: a target
-                         * still lit while the pointer is elsewhere is a
-                         * promise the release will not keep (PVS-056). */
-                        app.hover_at = tiku_trk_now();
-                        app.sprung = 0;
-                        app.dirty = 1;
-                    }
-                    if (ofl != NULL && orow < 0 &&
-                        ow != tiku_desk_workspace_focused(app.desk)) {
-                        /* Hovering the empty part of a window behind
-                         * brings it forward, so a drag can reach what it
-                         * covers without being dropped first (PVS-055). */
-                        tiku_desk_workspace_activate(app.desk, ow);
-                        app.dirty = 1;
-                    }
+                    (void)tiku_trk_drag_target_motion(&app.drag_target,
+                                                      ev.x, ev.y,
+                                                      tiku_trk_now());
                 }
-                if (app.band_arm != NULL &&
-                    (ev.x - app.band_x0 > TIKU_TRK_DRAG_SLOP ||
-                     app.band_x0 - ev.x > TIKU_TRK_DRAG_SLOP ||
-                     ev.y - app.band_y0 > TIKU_TRK_DRAG_SLOP ||
-                     app.band_y0 - ev.y > TIKU_TRK_DRAG_SLOP)) {
-                    /* Past the slop: now it is a sweep. */
-                    tiku_trk_poseview_set_band(app.band_arm->view, 1);
-                    app.band_fl = app.band_arm;
-                    app.band_arm = NULL;
-                }
-                if (app.band_fl != NULL) {
+                {
                     unsigned bm = 0u;
 
                     if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
@@ -3683,14 +2352,8 @@ tracker_run(int argc, char **argv)
                     if (ev.modifiers & TIKU_DESK_MOD_CMD) {
                         bm |= TIKU_TRK_MOD_CMD;
                     }
-                    app.band_x1 = ev.x;
-                    app.band_y1 = ev.y;
-                    app.band_mods = bm;
-                    /* Handed VIEW coordinates: the band is drawn where the
-                     * pointer is, but what it sweeps is where the icons are,
-                     * and those two differ by the scroll origin. */
-                    folder_band_select(&app);
-                    app.dirty = 1;
+                    (void)tiku_trk_band_controller_motion(
+                        &app.band_controller, ev.x, ev.y, bm);
                 }
                 if (app.dock_drag) {
                     /* Ctrl held on the bar: the pointer IS the picker.
@@ -3725,20 +2388,7 @@ tracker_run(int argc, char **argv)
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 app.dock_drag = 0;
-                app.band_arm = NULL;
-                app.band_scroll_at = 0;
-                app.scroll_at = 0;
-                if (app.band_fl != NULL) {
-                    /* The sweep's own selection is already what the view
-                     * holds -- membership is a per-pose flag, so there is
-                     * no list to rebuild on release (PVS-029) -- and the
-                     * arrangement is saved because a sweep can move the
-                     * origin under auto-scroll. */
-                    tiku_trk_poseview_set_band(app.band_fl->view, 0);
-                    (void)tiku_trk_poseview_save_state(app.band_fl->view);
-                    app.band_fl = NULL;
-                    app.dirty = 1;
-                }
+                (void)tiku_trk_band_controller_finish(&app.band_controller);
                 if (dropped) {
                     do_drop(&app, ev.x, ev.y,
                             ev.modifiers, ev.button);
@@ -3783,9 +2433,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                 }
                 tiku_trk_drag_reset(&app.drag);
-                tiku_trk_deskbar_set_dragging(app.deskbar, 0);
-                app.drop_fl = NULL;
-                app.drop_row = -1;
+                tiku_trk_drag_target_reset(&app.drag_target);
                 /* A long press already put the menu up, so its release must
                  * not put a second one up (PVS-017). */
                 app.press_down = 0;
@@ -3900,73 +2548,11 @@ tracker_run(int argc, char **argv)
                                                key_char(&ev))) {
                     break;
                 }
-                if (app.renaming) {
-                    tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
-                    char c = '\0';
-
-                    switch (key) {
-                    case TIKU_DESK_KEY_RETURN:  k = TIKU_TRK_EDIT_COMMIT;    break;
-                    case TIKU_DESK_KEY_ESCAPE:    k = TIKU_TRK_EDIT_CANCEL;    break;
-                    case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-                    case TIKU_DESK_KEY_DELETE:    k = TIKU_TRK_EDIT_DELETE;    break;
-                    case TIKU_DESK_KEY_LEFT:      k = TIKU_TRK_EDIT_LEFT;      break;
-                    case TIKU_DESK_KEY_RIGHT:     k = TIKU_TRK_EDIT_RIGHT;     break;
-                    case TIKU_DESK_KEY_HOME:      k = TIKU_TRK_EDIT_HOME;      break;
-                    case TIKU_DESK_KEY_END:       k = TIKU_TRK_EDIT_END;       break;
-                    default: break;
-                    }
-                    if (k == TIKU_TRK_EDIT_CHAR) {
-                        c = key_char(&ev);
-                        if (c == '\0') {
-                            break;
-                        }
-                    }
-                    switch (tiku_trk_edit_key(&app.ren, k, shift, c)) {
-                    case TIKU_TRK_EDIT_COMMITTED: commit_rename(&app, 1); break;
-                    case TIKU_TRK_EDIT_CANCELLED: commit_rename(&app, 0); break;
-                    default: break;
-                    }
-                    app.dirty = 1;
+                if (tiku_trk_folder_edit_key(&app.folder_edit, fl, key,
+                        ev.modifiers, key_char(&ev))) {
                     break;
                 }
-                if (app.editing) {
-                    tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-                    int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
-                    char c = '\0';
-
-                    switch (key) {
-                    case TIKU_DESK_KEY_RETURN:  k = TIKU_TRK_EDIT_COMMIT;    break;
-                    case TIKU_DESK_KEY_ESCAPE:    k = TIKU_TRK_EDIT_CANCEL;    break;
-                    case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-                    case TIKU_DESK_KEY_DELETE:    k = TIKU_TRK_EDIT_DELETE;    break;
-                    case TIKU_DESK_KEY_LEFT:      k = TIKU_TRK_EDIT_LEFT;      break;
-                    case TIKU_DESK_KEY_RIGHT:     k = TIKU_TRK_EDIT_RIGHT;     break;
-                    case TIKU_DESK_KEY_HOME:      k = TIKU_TRK_EDIT_HOME;      break;
-                    case TIKU_DESK_KEY_END:       k = TIKU_TRK_EDIT_END;       break;
-                    default: break;
-                    }
-                    if (k == TIKU_TRK_EDIT_CHAR) {
-                        c = key_char(&ev);
-                        if (c == '\0') {
-                            break;
-                        }
-                    }
-                    switch (tiku_trk_edit_key(&app.ed, k, shift, c)) {
-                    case TIKU_TRK_EDIT_COMMITTED:
-                        commit_edit(&app, fl);
-                        break;
-                    case TIKU_TRK_EDIT_CANCELLED:
-                        app.editing = 0;
-                        app.status[0] = '\0';
-                        break;
-                    default:
-                        break;
-                    }
-                    app.dirty = 1;
-                    break;
-                }
-                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+               if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     app.running = 0;
                     break;
                 }
@@ -4308,118 +2894,10 @@ tracker_run(int argc, char **argv)
              * answering while a folder of images fills in (IV-031). */
             app.dirty = 1;
         }
-        if (app.band_fl != NULL) {
-            /* A sweep scrolls at the edges too: a band that could only
-             * reach what was already on screen would be a band that stops
-             * at the window's edge (PVS-050). */
-            tiku_desk_rect_t c = tiku_trk_folder_window_content(app.band_fl);
-            int top = c.y + 2, bot = c.y + c.h - COUNT_H, over = 0;
-
-            if (app.band_y1 < top + AUTOSCROLL_BAND) {
-                over = -((top + AUTOSCROLL_BAND) - app.band_y1);
-            } else if (app.band_y1 > bot - AUTOSCROLL_BAND) {
-                over = app.band_y1 - (bot - AUTOSCROLL_BAND);
-            }
-            if (over == 0) {
-                app.band_scroll_at = 0;
-            } else if (app.band_scroll_at == 0) {
-                app.band_scroll_at = tiku_trk_now();
-            } else if (tiku_trk_now() - app.band_scroll_at >
-                           AUTOSCROLL_DELAY_US) {
-                int far = (over < 0) ? -over : over;
-                int step = (far > AUTOSCROLL_FAST) ? 3 : 1;
-
-                if (tiku_trk_poseview_mode(app.band_fl->view) ==
-                        TIKU_TRK_MODE_LIST) {
-                    tiku_trk_poseview_scroll_to(app.band_fl->view,
-                        tiku_trk_poseview_scroll(app.band_fl->view) +
-                            ((over < 0) ? -step : step));
-                } else {
-                    int ox = 0, oy = 0;
-
-                    tiku_trk_poseview_origin(app.band_fl->view, &ox, &oy);
-                    tiku_trk_poseview_set_origin(app.band_fl->view, ox,
-                        oy + ((over < 0) ? -step : step) * app.row_h);
-                }
-                /* There may be no further motion event while the pointer is
-                 * held still.  Growing the view under the stationary band
-                 * must therefore update its membership here (PVS-050). */
-                folder_band_select(&app);
-                app.dirty = 1;
-            }
-        }
-        if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL) {
-            /* Auto-scroll.  The band is OUTSIDE the list, which is what
-             * makes it reachable: a drag that has to leave the view to
-             * scroll it can still see where it is going.  Held still for
-             * the delay first, so crossing an edge on the way past does
-             * not start it (PVS-050). */
-            tiku_desk_rect_t c = tiku_trk_folder_window_content(app.drop_fl);
-            int over = 0;
-
-            int top = c.y + 2;
-            int bot = c.y + c.h - COUNT_H;
-
-
-            /* The band sits just INSIDE the list, where Tracker's is just
-             * outside it.  Tracker's lives in the scroll-bar gutter; these
-             * windows have none, and a pointer past the list edge is over
-             * no window at all, so a band out there could never be
-             * reached. */
-            if (app.drag.y < top + AUTOSCROLL_BAND) {
-                over = -((top + AUTOSCROLL_BAND) - app.drag.y);
-            } else if (app.drag.y > bot - AUTOSCROLL_BAND) {
-                over = app.drag.y - (bot - AUTOSCROLL_BAND);
-            }
-            if (over == 0) {
-                app.scroll_at = 0;  /* out of the zone: re-arm */
-            } else if (app.scroll_at == 0) {
-                app.scroll_at = tiku_trk_now();
-            } else if (tiku_trk_now() - app.scroll_at >
-                           AUTOSCROLL_DELAY_US) {
-                /* Faster the further past the edge, in the original's two
-                 * buckets rather than continuously. */
-                int far = (over < 0) ? -over : over;
-                int step = (far > AUTOSCROLL_FAST) ? 3 : 1;
-
-
-                if (tiku_trk_poseview_mode(app.drop_fl->view) !=
-                        TIKU_TRK_MODE_LIST) {
-                    /* An icon view scrolls in PIXELS, so the same two
-                     * buckets move a row's worth rather than a row
-                     * (PVL-056). */
-                    int ox = 0, oy = 0;
-
-                    tiku_trk_poseview_origin(app.drop_fl->view, &ox, &oy);
-                    tiku_trk_poseview_set_origin(app.drop_fl->view, ox,
-                        oy + ((over < 0) ? -step : step) * app.row_h);
-                } else {
-                    tiku_trk_poseview_scroll_to(app.drop_fl->view,
-                        tiku_trk_poseview_scroll(app.drop_fl->view) +
-                            ((over < 0) ? -step : step));
-                }
-                app.dirty = 1;
-            }
-        }
-        if (tiku_trk_drag_active(&app.drag) && app.drop_fl != NULL &&
-            app.drop_row >= 0 && !app.sprung &&
-            tiku_trk_now() - app.hover_at > TIKU_TRK_SPRING_US) {
-            /* Held still over a folder: open it, so a drag can be delivered
-             * somewhere the window does not show without abandoning the
-             * gesture (PVS-051).  Checked on the IDLE tick and not on
-             * motion, because a drag resting perfectly still is exactly the
-             * case and it produces no motion at all.  The original pops a
-             * navigable menu; a window is what this shell has, and it lands
-             * the drag in the same place. */
-            tiku_trk_pose_t *q = tiku_trk_poseview_at(app.drop_fl->view,
-                                                      app.drop_row);
-
-            app.sprung = 1;
-            if (q != NULL) {
-                (void)open_folder(&app, q->model.path);
-            }
-            app.dirty = 1;
-        }
+        (void)tiku_trk_band_controller_pulse(&app.band_controller,
+                                             tiku_trk_now());
+        (void)tiku_trk_drag_target_pulse(&app.drag_target,
+                                         tiku_trk_now());
 
         /* PVS-017: a button held still for the click interval opens the
          * context menu without waiting for the release. */
@@ -4456,7 +2934,7 @@ tracker_run(int argc, char **argv)
                 continue;
             }
             due = tiku_trk_poseview_edit_due(fl->view, tiku_trk_now());
-            if (due >= 0 && !app.editing) {
+            if (due >= 0 && !app.folder_edit.editing) {
                 begin_rename(&app, fl, due);
                 app.dirty = 1;
             }
@@ -4733,53 +3211,11 @@ tracker_run(int argc, char **argv)
         usleep((sc != NULL) ? 20000 : 10000);
     }
 
-    {
-        /* The set of windows that were open, in the order they were opened,
-         * which is the order they will come back in and therefore which
-         * ends up in front (AW-004). */
-        tiku_trk_session_entry_t open_now[TIKU_TRK_SESSION_MAX];
-        int nsess = 0;
-
-        for (i = 0; i < app.folder_count && nsess < TIKU_TRK_SESSION_MAX;
-             i++) {
-            folder_t *fl = &app.folders[i];
-
-            if (fl->win == NULL || !fl->win->open || fl->gone ||
-                tiku_trk_poseview_is_query(fl->view)) {
-                /* A results window is not a place: reopening it would
-                 * re-run a search the user has not asked for again. */
-                continue;
-            }
-            snprintf(open_now[nsess].path, TIKU_TRK_PATH_MAX, "%s", fl->path);
-            open_now[nsess].minimized = fl->win->minimized;
-            nsess++;
-        }
-        (void)tiku_trk_session_save_entries(app.store, open_now, nsess);
-    }
+    tiku_trk_session_controller_save(&app.session);
     for (i = 0; i < app.folder_count; i++) {
-        /* A folder that was deleted under us keeps no arrangement: writing
-         * one at exit would resurrect a position for something that is not
-         * there, and undo the deliberate skip taken when it went. */
-        if (!app.folders[i].gone) {
-            (void)tiku_trk_poseview_save_state(app.folders[i].view);
-            (void)tiku_trk_poseview_save_columns(app.folders[i].view);
-            save_frame_of(&app, &app.folders[i]);
-        }
         tiku_trk_poseview_free(app.folders[i].view);
     }
     tiku_trk_desktop_view_destroy(&app.desktop_view);
-    /* The sidecar batches; without this the session's queries, frames and
-     * recent lists are held in memory and dropped on the way out -- saved
-     * in every sense except the one that matters. */
-    {
-        int32_t rec[2];
-
-        rec[0] = (int32_t)tiku_trk_deskbar_dock(app.deskbar);
-        rec[1] = (int32_t)tiku_trk_deskbar_width(app.deskbar);
-        (void)tiku_trk_state_write(app.store, TIKU_TRK_KEY_SESSION,
-                                   TIKU_TRK_ATTR_DOCK, rec, sizeof rec);
-    }
-    (void)tiku_trk_store_flush(app.store);
     if (tiku_trk_switcher_window_shown(&app.switcher_window)) {
         tiku_trk_switcher_window_close(&app.switcher_window, 0);
     }
@@ -4790,7 +3226,7 @@ tracker_run(int argc, char **argv)
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
-    drain_fs(app.fs);
+    tiku_trk_session_drain_filesystem(app.fs);
     if (sc != NULL) {
         rc = tiku_trk_script_report(sc, "desktop");
         tiku_trk_script_free(sc);

@@ -10,7 +10,8 @@ CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra \
            -Isrc/core -Isrc/backends -Isrc/ui -Isrc/ui/commands \
            -Isrc/ui/windows \
-           -Isrc/ui/overlays -Isrc/media -Isrc/deskbar -Isrc/shell \
+           -Isrc/ui/overlays -Isrc/ui/input -Isrc/media -Isrc/deskbar \
+           -Isrc/shell -Isrc/shell/adapters -Isrc/shell/session \
            -I../desktop/src
 LDFLAGS ?=
 
@@ -25,17 +26,25 @@ DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/deskbar/tiku_trk_desktop_view.c \
+                       src/ui/commands/tiku_trk_drop_controller.c \
                        src/ui/commands/tiku_trk_folder_actions.c \
+                       src/ui/commands/tiku_trk_folder_file_actions.c \
                        src/ui/commands/tiku_trk_folder_menu.c \
                        src/ui/commands/tiku_trk_launch_controller.c \
                        src/ui/windows/tiku_trk_find_window.c \
+                       src/ui/windows/tiku_trk_folder_edit.c \
+                       src/ui/windows/tiku_trk_folder_lifecycle.c \
                        src/ui/windows/tiku_trk_folder_window.c \
                        src/ui/windows/tiku_trk_info_window.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \
                        src/ui/windows/tiku_trk_select_window.c \
                        src/ui/windows/tiku_trk_switcher_window.c \
-                       src/ui/overlays/tiku_trk_status_overlay.c
+                       src/ui/input/tiku_trk_band_controller.c \
+                       src/ui/input/tiku_trk_drag_target.c \
+                       src/ui/overlays/tiku_trk_status_overlay.c \
+                       src/shell/adapters/tiku_trk_script_adapter.c \
+                       src/shell/session/tiku_trk_session_controller.c
 CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_state.c src/core/tiku_trk_attr.c \
         src/core/tiku_trk_query.c src/core/tiku_trk_match.c \

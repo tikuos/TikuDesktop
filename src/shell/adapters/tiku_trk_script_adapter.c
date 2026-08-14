@@ -1,0 +1,352 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_script_adapter.c - script observations of desktop presentation.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "tiku_trk_script_adapter.h"
+#include "tiku_trk_task.h"
+
+#define COUNT_HEIGHT 16
+
+void
+tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
+    tiku_desk_workspace_t *workspace, tiku_desk_surface_t *surface,
+    tiku_trk_folder_lifecycle_t *folders,
+    tiku_trk_desktop_view_t *desktop_view, tiku_trk_deskbar_t *deskbar,
+    tiku_trk_alert_t *alert, tiku_trk_find_window_t *find_window,
+    tiku_trk_panel_window_t *panel_window,
+    tiku_trk_folder_edit_t *folder_edit, tiku_trk_menu_t **popup,
+    tiku_trk_menu_t **popup_sub, tiku_desk_rect_t *popup_frame,
+    tiku_desk_rect_t *popup_sub_frame, char *status, char *count_text,
+    int row_h)
+{
+    *adapter = (tiku_trk_script_adapter_t){
+        .workspace = workspace,
+        .surface = surface,
+        .folders = folders,
+        .desktop_view = desktop_view,
+        .deskbar = deskbar,
+        .alert = alert,
+        .find_window = find_window,
+        .panel_window = panel_window,
+        .folder_edit = folder_edit,
+        .popup = popup,
+        .popup_sub = popup_sub,
+        .popup_frame = popup_frame,
+        .popup_sub_frame = popup_sub_frame,
+        .status = status,
+        .count_text = count_text,
+        .row_h = row_h
+    };
+}
+
+int
+tiku_trk_script_adapter_row_point(void *context, int row, int *x, int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_desk_window_t *focused;
+    tiku_trk_folder_window_t *folder;
+    tiku_desk_rect_t content;
+    int relative;
+    int visible;
+
+    if (adapter == NULL || x == NULL || y == NULL || row < 0) {
+        return 0;
+    }
+    focused = tiku_desk_workspace_focused(adapter->workspace);
+    folder = tiku_trk_folder_lifecycle_find(adapter->folders, focused);
+    if (folder == NULL || folder->view == NULL ||
+        tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    content = tiku_trk_folder_window_content(folder);
+    relative = row - tiku_trk_poseview_scroll(folder->view);
+    visible = (content.h - COUNT_HEIGHT - 4) / adapter->row_h;
+    if (relative < 0 || relative >= visible ||
+        row >= tiku_trk_poseview_count(folder->view)) {
+        return 0;
+    }
+    *x = content.x + 20;
+    *y = content.y + 2 + relative * adapter->row_h + adapter->row_h / 2;
+    return 1;
+}
+
+unsigned
+tiku_trk_script_adapter_pixel_at(void *context, int x, int y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+
+    if (adapter == NULL || adapter->surface == NULL ||
+        adapter->surface->px == NULL || x < 0 || y < 0 ||
+        x >= adapter->surface->w || y >= adapter->surface->h) {
+        return 0u;
+    }
+    return (unsigned)adapter->surface->px[
+        (size_t)y * (size_t)adapter->surface->w + (size_t)x] & 0xffffffu;
+}
+
+int
+tiku_trk_script_adapter_pose_at(void *context, const char *name,
+                                int *x, int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_desk_window_t *focused;
+    tiku_trk_folder_window_t *folder;
+    int i;
+    int count;
+
+    if (adapter == NULL || name == NULL) {
+        return 0;
+    }
+    focused = tiku_desk_workspace_focused(adapter->workspace);
+    folder = tiku_trk_folder_lifecycle_find(adapter->folders, focused);
+    for (;;) {
+        if (folder != NULL && folder->view != NULL) {
+            count = tiku_trk_poseview_count(folder->view);
+            for (i = 0; i < count; i++) {
+                tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+                int width;
+                int height;
+
+                if (pose == NULL || strcmp(pose->model.name, name) != 0) {
+                    continue;
+                }
+                tiku_trk_poseview_pose_rect(folder->view, pose, x, y,
+                                            &width, &height);
+                return 1;
+            }
+        }
+        if (folder == tiku_trk_desktop_view_folder(adapter->desktop_view)) {
+            return 0;
+        }
+        folder = tiku_trk_desktop_view_folder(adapter->desktop_view);
+    }
+}
+
+static void
+append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_trk_menu_t *menu)
+{
+    int i;
+
+    if (menu == NULL) {
+        return;
+    }
+    for (i = 0; i < menu->count; i++) {
+        size_t used = strlen(adapter->menu_labels);
+
+        snprintf(adapter->menu_labels + used,
+                 sizeof adapter->menu_labels - used, "%s|",
+                 menu->item[i].label);
+    }
+}
+
+static void
+selected_state(tiku_trk_folder_window_t *folder,
+               tiku_trk_script_state_t *state, const char *find_type)
+{
+    int i;
+    int count;
+
+    if (folder == NULL || folder->view == NULL) {
+        return;
+    }
+    count = tiku_trk_poseview_count(folder->view);
+    for (i = 0; i < count; i++) {
+        tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+
+        if (pose != NULL) {
+            state->kinds |= 2;
+            if (!tiku_trk_model_type_is(pose->model.type, find_type)) {
+                state->kinds |= 1;
+            }
+        }
+        if (pose != NULL && pose->selected) {
+            if (state->sel_name == NULL) {
+                state->sel_name = pose->model.name;
+            }
+            state->selected++;
+        }
+    }
+}
+
+static void
+desktop_selection(tiku_trk_script_adapter_t *adapter,
+                  tiku_trk_script_state_t *state)
+{
+    tiku_trk_folder_window_t *desktop =
+        tiku_trk_desktop_view_folder(adapter->desktop_view);
+    int i;
+    int count;
+
+    if (desktop == NULL || desktop->view == NULL) {
+        return;
+    }
+    count = tiku_trk_poseview_count(desktop->view);
+    for (i = 0; i < count; i++) {
+        tiku_trk_pose_t *pose = tiku_trk_poseview_at(desktop->view, i);
+
+        if (pose != NULL && pose->selected) {
+            if (state->desk_sel_name == NULL) {
+                state->desk_sel_name = pose->model.name;
+            }
+            state->desk_selected++;
+        }
+    }
+}
+
+static void
+fill_state(tiku_trk_script_adapter_t *adapter,
+           tiku_trk_script_state_t *state)
+{
+    tiku_desk_window_t *focused =
+        tiku_desk_workspace_focused(adapter->workspace);
+    tiku_trk_folder_window_t *folder =
+        tiku_trk_folder_lifecycle_find(adapter->folders, focused);
+    tiku_trk_find_t *find =
+        tiku_trk_find_window_model(adapter->find_window);
+    tiku_desk_rect_t bar = tiku_trk_deskbar_frame(adapter->deskbar);
+    int i;
+
+    memset(state, 0, sizeof *state);
+    state->status = adapter->status;
+    state->title = focused != NULL ? focused->title : NULL;
+    state->alert = adapter->alert->open ? adapter->alert->text : NULL;
+    for (i = 0; i < tiku_desk_workspace_count(adapter->workspace); i++) {
+        tiku_desk_window_t *window =
+            tiku_desk_workspace_at(adapter->workspace, i);
+
+        if (window != NULL && window->open) {
+            state->windows++;
+        }
+    }
+    state->renaming = adapter->folder_edit->renaming;
+    state->find_text = find->name_text;
+    state->find_type = tiku_trk_find_type_label(find);
+    state->bar_x = bar.x;
+    state->bar_y = bar.y;
+    state->win_x = focused != NULL ? focused->frame.x : -1;
+    state->win_y = focused != NULL ? focused->frame.y : -1;
+    adapter->menu_labels[0] = '\0';
+    append_menu_labels(adapter, *adapter->popup);
+    append_menu_labels(adapter, *adapter->popup_sub);
+    state->menu = adapter->menu_labels;
+    state->count = adapter->count_text;
+    desktop_selection(adapter, state);
+    selected_state(folder, state, find->type);
+    if (folder != NULL) {
+        const tiku_trk_column_t *columns = NULL;
+
+        state->columns = tiku_trk_poseview_columns(folder->view, &columns);
+        state->scroll = tiku_trk_poseview_scroll(folder->view);
+        state->rows = tiku_trk_poseview_count(folder->view);
+    } else if (focused != NULL && focused ==
+               tiku_trk_panel_window_handle(adapter->panel_window)) {
+        state->scroll = tiku_trk_panel_window_scroll(adapter->panel_window);
+        state->rows = tiku_trk_panel_window_rows(adapter->panel_window);
+    }
+    state->pose_at = tiku_trk_script_adapter_pose_at;
+    state->row_point = tiku_trk_script_adapter_row_point;
+    state->pixel_at = tiku_trk_script_adapter_pixel_at;
+    state->pose_ctx = adapter;
+}
+
+static int
+menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
+          tiku_desk_event_t *event)
+{
+    tiku_trk_find_t *find =
+        tiku_trk_find_window_model(adapter->find_window);
+    tiku_trk_menu_t *menu = *adapter->popup_sub != NULL
+        ? *adapter->popup_sub : *adapter->popup;
+    tiku_desk_rect_t frame = *adapter->popup_sub != NULL
+        ? *adapter->popup_sub_frame : *adapter->popup_frame;
+    int i;
+
+    if (menu == NULL && tiku_trk_find_popup_open(find)) {
+        menu = find->popup_sub != NULL ? find->popup_sub : &find->popup;
+        frame = find->popup_sub != NULL ? find->popup_sub_frame
+                                        : find->popup_frame;
+    }
+    if (menu == NULL) {
+        fprintf(stderr, "script: no menu is open for '%s'\n", label);
+        return 0;
+    }
+    for (i = 0; i < menu->count; i++) {
+        if (!menu->item[i].separator &&
+            strstr(menu->item[i].label, label) != NULL) {
+            event->type = TIKU_DESK_EVENT_POINTER_DOWN;
+            event->x = frame.x + 8;
+            event->y = frame.y + tiku_trk_menu_item_top(menu, i) +
+                tiku_trk_menu_item_height(menu, i) / 2;
+            event->button = 1u;
+            event->time_us = tiku_trk_now();
+            return 1;
+        }
+    }
+    fprintf(stderr, "script: no menu item matching '%s'\n", label);
+    return 0;
+}
+
+tiku_trk_script_adapter_result_t
+tiku_trk_script_adapter_next(tiku_trk_script_adapter_t *adapter,
+                             tiku_trk_script_t *script,
+                             tiku_desk_event_t *event)
+{
+    tiku_trk_script_state_t state;
+    tiku_trk_script_step_t step;
+
+    fill_state(adapter, &state);
+    if (!tiku_trk_script_pump(script, &state, &step)) {
+        return TIKU_TRK_SCRIPT_ADAPTER_STOP;
+    }
+    switch (step.what) {
+    case TIKU_TRK_SC_KEY:
+        event->type = TIKU_DESK_EVENT_KEY_DOWN;
+        event->key = step.key;
+        event->modifiers = step.modifiers;
+        if (step.key >= 0x20u && step.key < 0x7fu) {
+            event->text[0] = (char)step.key;
+            if ((step.modifiers & TIKU_DESK_MOD_SHIFT) != 0u &&
+                event->text[0] >= 'a' && event->text[0] <= 'z') {
+                event->text[0] = (char)(event->text[0] - 'a' + 'A');
+            }
+        }
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+    case TIKU_TRK_SC_MOVE:
+        event->type = TIKU_DESK_EVENT_POINTER_MOVE;
+        event->x = step.x;
+        event->y = step.y;
+        event->modifiers = step.modifiers;
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+    case TIKU_TRK_SC_PRESS:
+    case TIKU_TRK_SC_RELEASE:
+        event->type = step.what == TIKU_TRK_SC_PRESS
+            ? TIKU_DESK_EVENT_POINTER_DOWN : TIKU_DESK_EVENT_POINTER_UP;
+        event->x = step.x;
+        event->y = step.y;
+        event->modifiers = step.modifiers;
+        event->button = step.button;
+        event->time_us = tiku_trk_now();
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+    case TIKU_TRK_SC_MENU_PICK:
+        return menu_pick(adapter, step.path, event)
+            ? TIKU_TRK_SCRIPT_ADAPTER_EVENT : TIKU_TRK_SCRIPT_ADAPTER_IDLE;
+    case TIKU_TRK_SC_SHOT:
+        snprintf(adapter->shot_path, sizeof adapter->shot_path, "%s",
+                 step.path);
+        return TIKU_TRK_SCRIPT_ADAPTER_SHOT;
+    case TIKU_TRK_SC_QUIT:
+        return TIKU_TRK_SCRIPT_ADAPTER_STOP;
+    default:
+        return TIKU_TRK_SCRIPT_ADAPTER_IDLE;
+    }
+}
