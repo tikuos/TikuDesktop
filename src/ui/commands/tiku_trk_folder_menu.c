@@ -49,6 +49,7 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
         return context;
     }
     context.selection = tiku_trk_poseview_selection_count(folder->view);
+    context.is_desktop = folder->win == NULL;
     context.view_mode = tiku_trk_poseview_mode(folder->view);
     context.icon_size = tiku_trk_poseview_icon_size(folder->view);
     context.sort_field = tiku_trk_poseview_sort_field(folder->view);
@@ -97,6 +98,8 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
             context.selection_ro = !tiku_trk_model_is_writable(&pose->model);
             context.can_trash_or_dup = context.selection > 0 &&
                                        !context.selection_ro;
+            context.selection_is_volume = pose->model.kind ==
+                TIKU_TRK_KIND_VOLUME || pose->model.kind == TIKU_TRK_KIND_ROOT;
         }
         context.target_ro = strncmp(folder->path, "/sys", 4) == 0 ||
                             strncmp(folder->path, "/dev", 4) == 0 ||

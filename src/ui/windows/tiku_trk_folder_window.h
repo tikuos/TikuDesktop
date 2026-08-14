@@ -34,6 +34,7 @@ typedef struct {
     tiku_trk_cwmenu_t     *menus;
     tiku_trk_prefs_t      *prefs;
     tiku_trk_clip_t       *clip;
+    tiku_trk_backend_t    *backend;
     tiku_trk_nodeicon_t   *icons;
     tiku_trk_store_t      *store;
     tiku_trk_thumb_q_t    *thumbs;
@@ -89,6 +90,10 @@ void tiku_trk_folder_window_draw_icons(tiku_trk_folder_window_t *folder,
 tiku_desk_rect_t tiku_trk_folder_window_content(
     const tiku_trk_folder_window_t *folder);
 tiku_desk_rect_t tiku_trk_folder_window_bar(
+    const tiku_trk_folder_window_t *folder);
+tiku_desk_rect_t tiku_trk_folder_window_title(
+    const tiku_trk_folder_window_t *folder);
+tiku_desk_rect_t tiku_trk_folder_window_icon(
     const tiku_trk_folder_window_t *folder);
 int tiku_trk_folder_window_fit_width(
     const tiku_trk_folder_window_t *folder);

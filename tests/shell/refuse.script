@@ -1,10 +1,10 @@
 # shell: desktop
 # PVS-043: a refused drop SAYS so rather than doing nothing.
 note dragging a folder into itself must be refused out loud
-press 200 96
-move 200 104
-move 200 109
-release 200 109
+press 200 116
+move 200 124
+move 200 129
+release 200 129
 wait 15
 expect-alert exists
 key Escape

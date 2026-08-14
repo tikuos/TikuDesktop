@@ -113,6 +113,9 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_COL_PATH:          return "Location";
     case TIKU_TRK_CMD_COL_PERM:          return "Permissions";
     case TIKU_TRK_CMD_COL_CAP:           return "Capability";
+    case TIKU_TRK_CMD_ADD_ONS:           return "Add-ons" "\xe2\x80\xa6";
+    case TIKU_TRK_CMD_MOUNT:             return "Mount";
+    case TIKU_TRK_CMD_UNMOUNT:           return "Unmount";
     case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
     case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";
     case TIKU_TRK_CMD_CANCEL:            return "Cancel";
@@ -294,6 +297,11 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_CREATE_LINK:
     case TIKU_TRK_CMD_LINK_HERE:
         return c->selection > 0;
+
+    case TIKU_TRK_CMD_ADD_ONS:
+    case TIKU_TRK_CMD_MOUNT:
+    case TIKU_TRK_CMD_UNMOUNT:
+        return 0;
 
     /* Arrange by is meaningless in list view, where the column titles sort. */
     case TIKU_TRK_CMD_ARRANGE_BY:

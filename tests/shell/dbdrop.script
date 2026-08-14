@@ -2,7 +2,7 @@
 # DB-009: dragging a file onto the Deskbar leaf makes a link there, not a
 # copy -- the bar is a set of pointers at things.
 note drag a.txt from the window onto the Deskbar logo
-press 200 116
+press 200 136
 move 300 90
 move 930 20
 release 930 20

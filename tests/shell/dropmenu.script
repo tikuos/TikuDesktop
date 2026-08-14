@@ -2,22 +2,22 @@
 # Secondary presses normalize selection immediately, but menus wait for UP.
 wait 6
 note PVS-016: the secondary press selects its pose without opening a menu
-press 200 116 3
+press 200 136 3
 wait 2
 expect-selected-name a.txt
 expect-no-menu
 note and the context menu appears only when that button is released
-release 200 116 3
+release 200 136 3
 wait 2
 expect-menu Open
 click 700 500
 
 note PVS-039: Copy here obeys a real secondary-button drag
-press 200 116 3
-move 200 108 3
-move 200 96 3
+press 200 136 3
+move 200 128 3
+move 200 116 3
 expect-no-menu
-release 200 96 3
+release 200 116 3
 wait 2
 expect-menu Copy here
 menu-pick Copy here
@@ -26,11 +26,11 @@ expect-file /tmp/trk_script/a.txt
 expect-file /tmp/trk_script/sub/a.txt
 
 note Shift changes Create link here into a relative link
-press 200 136 3
+press 200 156 3
 expect-selected-name b.txt
-move 200 124 3
-move 200 96 3 shift
-release 200 96 3 shift
+move 200 144 3
+move 200 116 3 shift
+release 200 116 3 shift
 wait 2
 expect-menu Create relative link here
 menu-pick Create relative link here
@@ -38,11 +38,11 @@ wait 20
 expect-link /tmp/trk_script/sub/b.txt ../b.txt
 
 note Cancel abandons the secondary-button drop without touching the source
-press 200 156 3
+press 200 176 3
 expect-selected-name c.txt
-move 200 144 3
-move 200 96 3
-release 200 96 3
+move 200 164 3
+move 200 116 3
+release 200 116 3
 wait 2
 expect-menu Cancel
 menu-pick Cancel
@@ -51,10 +51,10 @@ expect-file /tmp/trk_script/c.txt
 expect-no-file /tmp/trk_script/sub/c.txt
 
 note Move here performs the remaining drop and removes the source entry
-press 200 156 3
-move 200 144 3
-move 200 96 3
-release 200 96 3
+press 200 176 3
+move 200 164 3
+move 200 116 3
+release 200 116 3
 wait 2
 menu-pick Move here
 wait 20

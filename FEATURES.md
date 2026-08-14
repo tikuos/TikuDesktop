@@ -2662,11 +2662,11 @@ UpdateTitle() also pushes the location into the Navigator with kActionUpdatePath
 **MISSING:** The title is the folder's full path and is re-set live when the folder itself is renamed/moved (NOTIFY_RETITLE), but there is no ancestor-chain watching (notify matches only the folder's own path or its old path) and no name-vs-full-path preference — it is always the full path.  
 *src/tiku_trk_poseview.c:tiku_trk_poseview_notify (RETITLE branch) + src/tiku_trk_desktop.c:main pump loop*
 
-#### CW-017 · important · open
+#### CW-017 · important · partial
 **The folder's icon sits at the right end of the menu bar and can be dragged out to move the folder itself (Option-drag copies).**  
 _AddFolderIcon adds a DraggableContainerIcon sized to the menu bar height; the drag starts only after 3px of movement and only if the click hit the icon's opaque pixels (IconCache IconHitTest); message carries "be:actions" B_COPY_TARGET when Option is down, else B_MOVE_TARGET. Shown only when the window has a menu bar (ShouldHaveDraggableFolderIcon), and hidden/re-shown as SwitchDirectory changes folders.  
 `DraggableContainerIcon.cpp` → `DraggableContainerIcon::MouseDown / MouseMoved`
-**SUBSYSTEM:** Menu bar chrome + item drag-and-drop. Neither shell draws a menu bar for the icon to sit in — tiku_trk_menubar_draw (src/tiku_trk_menu.c:581) has no caller outside menu.c, and draw_all paints only popups (src/tiku_trk_desktop.c:1511-1527) — and no draggable-icon or drag-out code exists (grep draggable/folder_icon/drag_out over src/: nothing).  
+**PORT:** The desktop shell now draws the folder icon at the menu bar's right edge, hit-tests it, and feeds a folder payload into the existing move/copy/link drag controller; the single-window shell also paints the current folder icon. The remaining gap is a native drag-out/drop target in the single-window shell, whose older pose drag path only navigates through its browser controls.
 
 #### CW-018 · polish · done
 **Clicking anywhere in the window chrome (menu bar, count view, scroll bars) activates the window; clicking in the pose view or on the folder icon does not, so a click-through drag or selection is not eaten.**  
@@ -2697,7 +2697,7 @@ AddMenus creates File (index 0), Window (index 1), fAttrMenu (added at index 2 o
 Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead of Duplicate/Move to Trash; the printers directory prepends "Add printer…" and ends after "Make active printer" (no cut/copy/paste, no identify, no add-ons); the root window has no Duplicate/Trash items, no clipboard block and no Identify.  
 `ContainerWindow.cpp` → `BContainerWindow::AddFileMenu`  
 **TIKU:** "Mount/Unmount" and Trash have no obvious analogue for device nodes; decide whether a device node can be "deleted" at all (probably capability-bit gated).  
-**MISSING:** Find/New folder/Open/Edit query/Open with/Get info/Edit name/Duplicate/Move to Trash/Move to/Copy to/Create link/Cut/Copy/Paste/Identify are built in order and presented from the live bar, with the Trash (Empty Trash first, Delete+Restore) and root (no Duplicate/Trash, no clipboard, no Identify) variants; missing are Add-ons>, Mount/Unmount and the printers-folder variant.
+**PORT:** The live bar now includes the Add-ons submenu inventory and volume Mount/Unmount entries (disabled until the mount/add-on service is available), while preserving the Trash and root variants. The printers-folder specialization and service-backed mount/add-on actions remain outside the current backend contract.
 *src/tiku_trk_cwmenu.c:build_file*
 
 #### CW-023 · core · done
@@ -2842,7 +2842,7 @@ BPoseView::ShowContextMenu clears the selection and selects the hit pose when it
 **Context menu inventories: pose = Open/[Edit query]/[Open with…]/Get info/Edit name/Duplicate/Move to Trash (or Delete+Restore in Trash), | [Move to/Copy to/Create link], Cut/Copy/Paste, | Identify, Add-ons. Volume/root = Open, Get info, Edit name, | [Mount>/Unmount], Add-ons. Trash = Empty Trash, Open, Get info. Window background = [Empty Trash], [New folder/New>], [icon sizes on Desktop], [Paste], [Clean up on Desktop | Arrange by>], Select…, Select all, [Open parent], | [Mount>], [Add-ons].**  
 Clipboard items are omitted from the pose menu for printers/root/Trash/in-Trash, and from the window menu for printers/root/Trash/in-Trash; "Open parent" is omitted on the Desktop; the Desktop gets the icon-size menu inline instead of an Arrange by menu.  
 `ContainerWindow.cpp` → `BContainerWindow::AddPoseContextMenu / AddVolumeContextMenu / AddTrashContextMenu / AddWindowContextMenu`  
-**MISSING:** All four inventories are live in the stated order, including Edit query, the complete pose clipboard block, Trash/root clipboard omissions, the exact Delete+Restore substitution, and the Trash-window Empty Trash prefix.  Add-ons and Mount remain absent everywhere, and the Desktop background menu has no inline icon-size block.
+**PORT:** All four inventories are live in the stated order, including Add-ons placeholders, volume Mount/Unmount placeholders, Trash/root clipboard omissions, the Delete+Restore substitution, the Trash-window prefix, and the Desktop background's inline icon-size submenu. Service-backed mount/add-on verbs and the printers-folder specialization remain pending.
 *src/tiku_trk_cwmenu.c:build_contexts; src/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
 
 #### CW-043 · core · done
@@ -5449,12 +5449,12 @@ Requires a previous click on the same edge within get_click_speed(); middle (ter
 Reverts to the system default cursor elsewhere and on B_EXITED_VIEW.  
 `TitleView.cpp` → `BTitleView::MouseMoved`  
 
-#### TS-014 · important · open
+#### TS-014 · important · done
 **Right-clicking the column title bar opens the Attributes menu as a pop-up, including the per-MIME-type submenus.**  
 Built fresh each time via NewAttributesMenu + AddMimeTypesToMenu + MarkAttributesMenu, targeted at the pose view; the popup is not opened when the window was inactive (the click just activates).  
 `TitleView.cpp` → `BTitleView::MouseDown`  
 **TIKU:** MIME-type-derived attribute lists become descriptor enumeration over the device namespace; capability bits decide which descriptors are offerable as columns.  
-**BLOCKED:** The desktop shell -- the only one with a menu layer -- draws no column strip at all (folder_draw paints name and value rows), and the app shell has a strip but no menus.  Reclassified from WIRING 2026-08-12: consuming the flag needs a title strip in the multi-window shell, which is a build, not a call.  
+**PORT:** Both shells draw a list-mode column strip and consume the title-view secondary-button flag by rebuilding and placing the live Attributes popup, including per-type submenus. The desktop shell reserves the strip in shared folder geometry so row hit-testing and row-relative scripts stay aligned.
 #### TS-015 · polish · done
 **A click in the title bar of an inactive window only activates the window; it does not sort or resize.**  
 Also: any in-progress inline rename is committed (CommitActivePose) before title tracking starts, and the mouse is captured with B_NO_POINTER_HISTORY | B_LOCK_WINDOW_FOCUS for the duration of the drag.  

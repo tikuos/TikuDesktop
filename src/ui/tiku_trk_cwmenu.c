@@ -28,6 +28,9 @@ tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw)
     snprintf(cw->file.title, sizeof cw->file.title, "File");
     snprintf(cw->window.title, sizeof cw->window.title, "Window");
     snprintf(cw->attributes.title, sizeof cw->attributes.title, "Attributes");
+    snprintf(cw->addons.title, sizeof cw->addons.title, "Add-ons");
+    (void)tiku_trk_menu_add(&cw->addons, "No add-ons", TIKU_TRK_CMD_NONE,
+                            0, 0u, 0);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->file);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->window);
 }
@@ -155,6 +158,9 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     add_open_with(cw, m, c);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
+    if (c->selection_is_volume) {
+        ADD(m, TIKU_TRK_CMD_UNMOUNT);
+    }
     /* In the Trash, Delete and Restore stand where Duplicate and Move to
      * Trash would be: there is nowhere further to throw something away. */
     if (c->is_trash || c->in_trash) {
@@ -177,6 +183,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         SEP(m);
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
 }
 
 static void
@@ -311,6 +318,8 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
 
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+
     /* On empty window background. */
     m = &cw->window_ctx;
     tiku_trk_menu_clear(m);
@@ -331,12 +340,17 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
             (void)tiku_trk_menu_add_submenu(m, "Arrange by", &cw->arrange,
                                             1);
         }
+        if (c->is_desktop) {
+            (void)tiku_trk_menu_add_submenu(m, "Icon size", &cw->icon_size,
+                                            1);
+        }
         if (wants_clipboard(c)) {
             ADD(m, TIKU_TRK_CMD_PASTE);
         }
         ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
         ADD(m, TIKU_TRK_CMD_SELECT_ALL);
         ADD(m, TIKU_TRK_CMD_OPEN_PARENT);
+        (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
     }
 
     /* On a volume or the root: no clipboard, no trashing. */
@@ -348,6 +362,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
+    ADD(m, c->selection_is_volume ? TIKU_TRK_CMD_UNMOUNT
+                                  : TIKU_TRK_CMD_MOUNT);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
 
     /* On the Trash itself: three items, and Empty is the first. */
     m = &cw->trash_ctx;
@@ -358,6 +375,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
      * and the item is present only when there is one (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
 }
 
 void

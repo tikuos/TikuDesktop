@@ -27,6 +27,7 @@ typedef struct {
     tiku_trk_menu_t    attributes;
     tiku_trk_menu_t    arrange;      /* submenu of Window                   */
     tiku_trk_menu_t    icon_size;    /* submenu of Window                   */
+    tiku_trk_menu_t    addons;      /* add-on inventory                      */
     /* The four context menus, kept apart rather than rebuilt into one, so
      * which one appeared is answerable afterwards. */
     tiku_trk_menu_t    pose_ctx;

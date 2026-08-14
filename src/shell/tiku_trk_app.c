@@ -211,6 +211,26 @@ menubar_rect(const app_t *a)
     return r;
 }
 
+static void
+draw_folder_icon(app_t *a, tiku_desk_rect_t bar)
+{
+    tiku_trk_model_t model;
+    tiku_desk_rect_t icon;
+    int size = bar.h - 4;
+
+    if (a->backend == NULL || a->backend->ops == NULL ||
+        a->backend->ops->stat(a->backend,
+            tiku_trk_poseview_path(a->view), &model) != 0) {
+        return;
+    }
+    if (size > 24) { size = 24; }
+    if (size < 12) { size = 12; }
+    icon = (tiku_desk_rect_t){ bar.x + bar.w - size - 3, bar.y + 2,
+                               size, size };
+    (void)tiku_trk_icon_paint(a->surf, tiku_trk_model_icon_name(&model),
+                              icon.x, icon.y, icon.w);
+}
+
 /** @brief Current facts used by every menu enablement rule. */
 static tiku_trk_sc_ctx_t
 menu_ctx(app_t *a, unsigned mods)
@@ -259,6 +279,8 @@ menu_ctx(app_t *a, unsigned mods)
     }
     if (p != NULL) {
         c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+        c.selection_is_volume = p->model.kind == TIKU_TRK_KIND_VOLUME ||
+                                p->model.kind == TIKU_TRK_KIND_ROOT;
         c.selection_ro = !tiku_trk_model_is_writable(&p->model);
     }
     c.can_trash_or_dup = c.selection > 0 && !c.selection_ro;
@@ -661,6 +683,7 @@ draw(app_t *a)
     a->menus.bar.open = a->bar_open;
     bar = menubar_rect(a);
     tiku_trk_menubar_draw(&a->menus.bar, s, bar);
+    draw_folder_icon(a, bar);
     draw_navigator(a);
     list = list_rect(a);
     /* The view cannot see its own window.  Without this a page is one row
@@ -2361,9 +2384,25 @@ tracker_run(int argc, char **argv)
                          * is outside the row being renamed. */
                         end_rename(&a, 1);
                         tiku_trk_poseview_cancel_edit_wait(a.view);
-                        (void)tiku_trk_titleview_mouse_down(&a.tv, cx, cy,
-                                                            btn, a.active,
-                                                            tiku_trk_now());
+                        {
+                            unsigned tf = tiku_trk_titleview_mouse_down(
+                                &a.tv, cx, cy, btn, a.active,
+                                tiku_trk_now());
+
+                            if ((tf & TIKU_TRK_TT_MENU) != 0u) {
+                                tiku_trk_sc_ctx_t tc = menu_ctx(&a, 0u);
+
+                                tiku_trk_cwmenu_rebuild(&a.menus, &tc);
+                                a.bar_open = -1;
+                                a.menus.bar.open = -1;
+                                a.popup_sub = NULL;
+                                a.popup = &a.menus.attributes;
+                                a.popup_frame = tiku_trk_menu_place(
+                                    a.popup, ev.x, ev.y,
+                                    (tiku_desk_rect_t){ 0, 0, a.surf->w,
+                                                        a.surf->h });
+                            }
+                        }
                         a.dirty = 1;
                         break;
                     }

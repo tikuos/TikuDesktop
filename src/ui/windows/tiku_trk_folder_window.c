@@ -18,6 +18,7 @@
 #include "tiku_trk_volume.h"
 
 #define COUNT_HEIGHT 16
+#define TITLE_HEIGHT 20
 #define MINI_ICON    16
 #define VALUE_GAP   120
 
@@ -64,12 +65,46 @@ tiku_trk_folder_window_content(const tiku_trk_folder_window_t *folder)
 
         content.y += render->menus->bar.height;
         content.h -= render->menus->bar.height;
+        if (tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
+            content.y += TITLE_HEIGHT;
+            content.h -= TITLE_HEIGHT;
+        }
         if (content.h < 0) {
             content.h = 0;
         }
         return content;
     }
     return (tiku_desk_rect_t){ 0, 0, render->screen_w, render->screen_h };
+}
+
+tiku_desk_rect_t
+tiku_trk_folder_window_title(const tiku_trk_folder_window_t *folder)
+{
+    tiku_desk_rect_t title = { 0, 0, 0, 0 };
+
+    if (folder != NULL && folder->win != NULL &&
+        tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
+        title = tiku_desk_window_content(folder->win);
+        title.y += folder->render->menus->bar.height;
+        title.h = TITLE_HEIGHT;
+    }
+    return title;
+}
+
+tiku_desk_rect_t
+tiku_trk_folder_window_icon(const tiku_trk_folder_window_t *folder)
+{
+    tiku_desk_rect_t bar = tiku_trk_folder_window_bar(folder);
+    int size = bar.h - 4;
+
+    if (size > 24) {
+        size = 24;
+    }
+    if (size < 12) {
+        size = 12;
+    }
+    return (tiku_desk_rect_t){ bar.x + bar.w - size - 3, bar.y + 2,
+                               size, size };
 }
 
 tiku_desk_rect_t
@@ -303,6 +338,68 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
 }
 
 static void
+draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
+           tiku_desk_rect_t title)
+{
+    const tiku_trk_column_t *columns;
+    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    int n, i;
+
+    tiku_desk_fill(surface, title, TIKU_DESK_C_PANEL);
+    n = tiku_trk_poseview_columns(folder->view, &columns);
+    tiku_desk_clip_set(surface, title);
+    for (i = 0; i < n; i++) {
+        const tiku_trk_column_t *c = &columns[i];
+        tiku_desk_rect_t r = { title.x + c->offset - TIKU_TRK_COL_LEFT_MARGIN,
+                               title.y, c->width + TIKU_TRK_COL_MARGIN,
+                               title.h };
+        char fit[64];
+        int tw, tx;
+
+        tiku_desk_fill(surface, r, TIKU_DESK_C_PANEL);
+        tiku_desk_bevel(surface, r,
+                        tiku_desk_tint(TIKU_DESK_C_PANEL, 0.0f),
+                        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.06f));
+        (void)tiku_trk_text_fit(c->title, c->width, TIKU_TRK_TRUNC_END,
+                                measure_label, NULL, fit, sizeof fit);
+        tw = tiku_desk_text_width(font, fit);
+        if (c->alignment == TIKU_TRK_ALIGN_RIGHT) {
+            tx = title.x + c->offset + c->width - tw;
+        } else if (c->alignment == TIKU_TRK_ALIGN_CENTER) {
+            tx = r.x + (r.w - tw) / 2;
+        } else {
+            tx = title.x + c->offset + 1;
+        }
+        tiku_desk_text(surface, font, tx,
+                       title.y + (title.h - font->height) / 2 + font->ascent,
+                       fit, TIKU_DESK_C_TEXT);
+    }
+    tiku_desk_clip_reset(surface);
+    tiku_desk_hline(surface, title.x, title.y + title.h - 1, title.w,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+}
+
+static void
+draw_folder_icon(tiku_trk_folder_window_t *folder,
+                 tiku_desk_surface_t *surface)
+{
+    tiku_trk_folder_render_t *render = folder->render;
+    tiku_trk_model_t model;
+    char art[TIKU_TRK_NAME_MAX];
+    tiku_desk_rect_t icon;
+
+    if (render->backend == NULL || render->backend->ops == NULL ||
+        render->backend->ops->stat(render->backend, folder->path,
+                                   &model) != 0) {
+        return;
+    }
+    (void)tiku_trk_nodeicon_resolve(render->icons, render->store, &model,
+                                    art, sizeof art);
+    icon = tiku_trk_folder_window_icon(folder);
+    (void)tiku_trk_icon_paint(surface, art, icon.x, icon.y, icon.w);
+}
+
+static void
 draw_transients(tiku_trk_folder_window_t *folder,
                 tiku_desk_surface_t *surface, tiku_desk_rect_t list,
                 int icons, int rows, int scroll)
@@ -395,6 +492,7 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     tiku_trk_folder_render_t *render = folder->render;
     tiku_desk_rect_t list = content;
     tiku_desk_rect_t bar = content;
+    tiku_desk_rect_t title;
     int rows, scroll, total, icons;
 
     (void)window;
@@ -403,8 +501,16 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     }
     bar.h = render->menus->bar.height;
     tiku_trk_menubar_draw(&render->menus->bar, surface, bar);
+    draw_folder_icon(folder, surface);
     list.y += bar.h;
-    list.h -= bar.h + COUNT_HEIGHT;
+    list.h -= bar.h;
+    title = (tiku_desk_rect_t){ list.x, list.y, list.w, TITLE_HEIGHT };
+    if (tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
+        draw_title(folder, surface, title);
+        list.y += TITLE_HEIGHT;
+        list.h -= TITLE_HEIGHT;
+    }
+    list.h -= COUNT_HEIGHT;
     tiku_desk_ui_sunken(surface, list,
                         tiku_trk_poseview_background(folder->view));
     tiku_trk_poseview_set_viewport(folder->view, list.w - 4, list.h - 4);
@@ -466,8 +572,11 @@ tiku_trk_folder_window_fit_width(const tiku_trk_folder_window_t *folder)
 int
 tiku_trk_folder_window_fit_height(const tiku_trk_folder_window_t *folder)
 {
+    int title = tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST
+                    ? TITLE_HEIGHT : 0;
+
     return tiku_trk_poseview_count(folder->view) * folder->render->row_h +
-           4 + COUNT_HEIGHT;
+           4 + COUNT_HEIGHT + title;
 }
 
 int

@@ -88,6 +88,9 @@ enum {
     TIKU_TRK_CMD_COL_DATE,
     TIKU_TRK_CMD_COL_PATH,
     TIKU_TRK_CMD_COL_PERM,
+    TIKU_TRK_CMD_ADD_ONS,
+    TIKU_TRK_CMD_MOUNT,
+    TIKU_TRK_CMD_UNMOUNT,
     /* Drop menu */
     TIKU_TRK_CMD_MOVE_HERE,
     TIKU_TRK_CMD_COPY_HERE,
@@ -119,6 +122,8 @@ typedef struct {
     int      in_trash;
     int      is_query;
     int      is_virtual;         /* a namespace directory: fixed shape      */
+    int      is_desktop;         /* the desktop background, not a folder    */
+    int      selection_is_volume;
     int      can_edit_name;
     int      can_open_parent;
     int      can_trash_or_dup;

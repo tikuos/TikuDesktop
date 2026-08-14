@@ -4,9 +4,9 @@
 key 3 ctrl
 wait 6
 note a slow second click in Value still selects the row but does not rename it
-click 450 119
+click 450 139
 wait 45
-click 450 119
+click 450 139
 wait 120
 expect-renaming 0
 expect-selected-name a.txt

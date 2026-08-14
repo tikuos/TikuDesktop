@@ -40,9 +40,9 @@ note and a LIST is swept by the same rectangle: from the empty space
 note below the last row, up across the two rows above it
 key 3 ctrl
 wait 6
-press 300 239
-move 320 179
-move 340 131
+press 300 259
+move 320 199
+move 340 151
 wait 3
 expect-selected 2
 expect-selected-name b.txt

@@ -203,6 +203,24 @@ typedef struct desktop {
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
 
+static void
+parent_path(const char *path, char *out, size_t size)
+{
+    const char *slash = strrchr(path, '/');
+    size_t n;
+
+    if (slash == NULL || slash == path) {
+        snprintf(out, size, "/");
+        return;
+    }
+    n = (size_t)(slash - path);
+    if (n >= size) {
+        n = size - 1u;
+    }
+    memcpy(out, path, n);
+    out[n] = '\0';
+}
+
 /** @brief Let the launch controller hand Tracker-owned paths to the shell. */
 static void
 launch_open_path(void *context, const char *path)
@@ -1354,6 +1372,7 @@ tracker_run(int argc, char **argv)
         .menus = &app.menus,
         .prefs = prefs_model(&app),
         .clip = &app.clip,
+        .backend = app.backend,
         .icons = &app.nicons,
         .store = app.store,
         .thumbs = &app.thumbs,
@@ -2083,7 +2102,36 @@ tracker_run(int argc, char **argv)
 
                     if (bfl != NULL) {
                         tiku_desk_rect_t bf = tiku_trk_folder_window_bar(bfl);
+                        tiku_desk_rect_t fi =
+                            tiku_trk_folder_window_icon(bfl);
                         int bi;
+
+                        if (ev.x >= fi.x && ev.x < fi.x + fi.w &&
+                            ev.y >= fi.y && ev.y < fi.y + fi.h) {
+                            tiku_trk_model_t model;
+                            char parent[TIKU_TRK_PATH_MAX];
+
+                            if (app.backend->ops->stat(app.backend, bfl->path,
+                                                       &model) == 0) {
+                                parent_path(bfl->path, parent, sizeof parent);
+                                tiku_desk_workspace_activate(app.desk, w);
+                                app.press_at = tiku_trk_now();
+                                app.press_x = ev.x;
+                                app.press_y = ev.y;
+                                app.press_row = -1;
+                                app.press_fl = bfl;
+                                app.press_down = 1;
+                                app.press_menu = 0;
+                                tiku_trk_drag_arm(&app.drag, ev.x, ev.y,
+                                                  ev.button, 0u, 1, w,
+                                                  parent);
+                                (void)tiku_trk_drag_add_at(&app.drag,
+                                    bfl->path, model.type, fi.x, fi.y, 1);
+                                tiku_trk_drag_target_reset(&app.drag_target);
+                                app.dirty = 1;
+                                break;
+                            }
+                        }
 
                         build_open_with(&app, bfl);
                         build_per_type(&app, bfl);
@@ -2111,6 +2159,36 @@ tracker_run(int argc, char **argv)
                             app.dirty = 1;
                             break;
                         }
+                    }
+                }
+                if (w != NULL && ev.button == 3u) {
+                    folder_t *tfl = folder_of(&app, w);
+                    tiku_desk_rect_t title = (tfl != NULL)
+                        ? tiku_trk_folder_window_title(tfl)
+                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+
+                    if (tfl != NULL && ev.x >= title.x &&
+                        ev.x < title.x + title.w && ev.y >= title.y &&
+                        ev.y < title.y + title.h) {
+                        tiku_trk_sc_ctx_t tc = menu_ctx(&app, tfl,
+                                                         ev.modifiers);
+
+                        build_open_with(&app, tfl);
+                        build_per_type(&app, tfl);
+                        tiku_trk_cwmenu_rebuild(&app.menus, &tc);
+                        tiku_desk_workspace_activate(app.desk, w);
+                        app.bar_fl = NULL;
+                        app.bar_open = -1;
+                        app.menus.bar.open = -1;
+                        app.popup = &app.menus.attributes;
+                        app.popup_sub = NULL;
+                        app.popup_frame = tiku_trk_menu_place(app.popup,
+                            ev.x, ev.y,
+                            (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                app.surf->h });
+                        app.press_down = 0;
+                        app.dirty = 1;
+                        break;
                     }
                 }
                 if (w != NULL && hit != TIKU_DESK_HIT_CONTENT) {
