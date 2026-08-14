@@ -170,7 +170,9 @@ main(void)
         check(strcmp(kid.src[0], A) == 0 && strcmp(kid.src[1], B) == 0,
               "PVN-067",
               "and the order of the lines IS the priority order");
-        (void)remove(def);
+        check(tiku_trk_vdir_cleanup(&kid, NULL) == 1 &&
+              access(def, F_OK) != 0, "PVN-068",
+              "a generated definition is removed when its virtual view goes");
     }
 
     printf("\nwatching (PVN-059, PVN-064, PVN-067)\n");

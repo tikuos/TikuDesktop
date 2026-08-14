@@ -26,7 +26,8 @@ tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     int *drop_row, tiku_trk_menu_t **popup, tiku_trk_menu_t **popup_sub,
     tiku_desk_rect_t *popup_frame, char *progress_destination,
     size_t progress_destination_size, char *status, size_t status_size,
-    int *dirty, int screen_w, int screen_h)
+    int *dirty, int screen_w, int screen_h,
+    tiku_trk_drop_color_fn set_color, void *color_context)
 {
     *controller = (tiku_trk_drop_controller_t){
         .deskbar = deskbar,
@@ -46,6 +47,8 @@ tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
         .status = status,
         .status_size = status_size,
         .dirty = dirty,
+        .set_color = set_color,
+        .color_context = color_context,
         .screen_w = screen_w,
         .screen_h = screen_h
     };
@@ -299,6 +302,24 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
         *controller->drop_folder == NULL ||
         arrange_in_source(controller, x, y, modifiers) ||
         !drop_destination(controller, destination, sizeof destination)) {
+        return;
+    }
+    if (controller->drag->payload_size > 0u &&
+        (strcmp(controller->drag->payload_type, "application/x-rgb-color") == 0 ||
+         strcmp(controller->drag->payload_type, "text/x-color") == 0)) {
+        tiku_trk_color_t color;
+
+        if (tiku_trk_color_parse(controller->drag->payload,
+                (unsigned)controller->drag->payload_size, &color) == 0 &&
+            controller->set_color != NULL &&
+            *controller->drop_folder ==
+                tiku_trk_desktop_view_folder(controller->desktop_view)) {
+            controller->set_color(controller->color_context, &color);
+            snprintf(controller->status, controller->status_size,
+                     "desktop color set to #%02x%02x%02x",
+                     color.r, color.g, color.b);
+            *controller->dirty = 1;
+        }
         return;
     }
     if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) {

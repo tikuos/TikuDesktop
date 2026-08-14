@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 #include <time.h>
 
 /* Metrics read out of Deskbar's own source rather than estimated.  Rows do
@@ -1487,52 +1488,39 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         time_t now = time(NULL);
         struct tm tmv;
         char clock[64];
+        char date[32];
+        char time_text[32];
+        char time_fmt[16] = "%H:%M";
         int cw;
 
         (void)localtime_r(&now, &tmv);
-        /* Short date and time, with optional clock detail settings.  The
-         * format is built once per draw so changing a preference immediately
-         * changes both the text and the width reserved for it (DB-071). */
-        {
-            char date[24];
-            const char *dow[] = { "Sun", "Mon", "Tue", "Wed", "Thu",
-                                  "Fri", "Sat" };
+        if (db->settings.show_seconds) {
+            snprintf(time_fmt, sizeof time_fmt, "%%H:%%M:%%S");
+        }
+        if (strftime(date, sizeof date,
+                     db->settings.show_day_of_week ? "%a %e %b" : "%e %b",
+                     &tmv) == 0) {
+            snprintf(date, sizeof date, "%d", tmv.tm_mday);
+        }
+        if (strftime(time_text, sizeof time_text, time_fmt, &tmv) == 0) {
+            snprintf(time_text, sizeof time_text, "%02d:%02d",
+                     tmv.tm_hour, tmv.tm_min);
+        }
+        if (db->settings.show_timezone) {
+            char zone[16];
+            size_t used;
 
-            snprintf(date, sizeof date, "%d %s", tmv.tm_mday,
-                     (const char *[]){ "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                       "Jul", "Aug", "Sep", "Oct", "Nov",
-                                       "Dec" }[tmv.tm_mon]);
-            if (db->settings.show_day_of_week && db->settings.show_timezone &&
-                db->settings.show_seconds) {
-                snprintf(clock, sizeof clock, "%s %s %02d:%02d:%02d %s",
-                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
-                         tmv.tm_sec, tmv.tm_zone != NULL ? tmv.tm_zone : "local");
-            } else if (db->settings.show_day_of_week && db->settings.show_timezone) {
-                snprintf(clock, sizeof clock, "%s %s %02d:%02d %s",
-                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
-                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
-            } else if (db->settings.show_day_of_week && db->settings.show_seconds) {
-                snprintf(clock, sizeof clock, "%s %s %02d:%02d:%02d",
-                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
-                         tmv.tm_sec);
-            } else if (db->settings.show_day_of_week) {
-                snprintf(clock, sizeof clock, "%s %s %02d:%02d", dow[tmv.tm_wday],
-                         date, tmv.tm_hour, tmv.tm_min);
-            } else if (db->settings.show_timezone && db->settings.show_seconds) {
-                snprintf(clock, sizeof clock, "%s %02d:%02d:%02d %s", date,
-                         tmv.tm_hour, tmv.tm_min, tmv.tm_sec,
-                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
-            } else if (db->settings.show_timezone) {
-                snprintf(clock, sizeof clock, "%s %02d:%02d %s", date,
-                         tmv.tm_hour, tmv.tm_min,
-                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
-            } else if (db->settings.show_seconds) {
-                snprintf(clock, sizeof clock, "%s %02d:%02d:%02d", date,
-                         tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
-            } else {
-                snprintf(clock, sizeof clock, "%s %02d:%02d", date,
-                         tmv.tm_hour, tmv.tm_min);
+            if (strftime(zone, sizeof zone, "%Z", &tmv) == 0 ||
+                zone[0] == '\0') {
+                snprintf(zone, sizeof zone, "local");
             }
+            snprintf(clock, sizeof clock, "%s %s", date, time_text);
+            used = strlen(clock);
+            if (used + 1u < sizeof clock) {
+                snprintf(clock + used, sizeof clock - used, " %s", zone);
+            }
+        } else {
+            snprintf(clock, sizeof clock, "%s %s", date, time_text);
         }
         cw = tiku_desk_text_width(f, clock);
         tiku_desk_text(s, f, db->frame.x + (db->frame.w - cw) / 2,

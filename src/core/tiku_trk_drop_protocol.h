@@ -3,6 +3,7 @@
 #define TIKU_TRK_DROP_PROTOCOL_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define TIKU_TRK_DROP_ACTION_COPY  0x1u
 #define TIKU_TRK_DROP_ACTION_MOVE  0x2u
@@ -40,5 +41,16 @@ tiku_trk_drop_result_t tiku_trk_foreign_drop(const tiku_trk_foreign_offer_t *o,
                                              int target_directory,
                                              int target_trash, int root_disk,
                                              unsigned requested_action);
+
+/**
+ * @brief Materialise a typed text/bitmap offer as a unique clipping file.
+ *
+ * This is the TikuOS endpoint for promise drops.  It is deliberately
+ * transport-neutral: an XDND adapter or an in-process producer can hand the
+ * bytes to it, and a failed write removes the partial file.
+ */
+int tiku_trk_foreign_clip_create(const char *directory, const char *name,
+                                 const void *data, size_t size, int bitmap,
+                                 char *out, size_t out_size);
 
 #endif

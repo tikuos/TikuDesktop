@@ -19,6 +19,10 @@
 #include "tiku_trk_drag.h"
 #include "tiku_trk_folder_window.h"
 #include "tiku_trk_fs.h"
+#include "tiku_trk_color.h"
+
+typedef void (*tiku_trk_drop_color_fn)(void *context,
+                                       const tiku_trk_color_t *color);
 
 /** @brief Dependencies and retained decision state for a pointer drop. */
 typedef struct {
@@ -41,6 +45,8 @@ typedef struct {
     char *status;
     size_t status_size;
     int *dirty;
+    tiku_trk_drop_color_fn set_color;
+    void *color_context;
     int screen_w;
     int screen_h;
 } tiku_trk_drop_controller_t;
@@ -53,7 +59,8 @@ void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     int *drop_row, tiku_trk_menu_t **popup, tiku_trk_menu_t **popup_sub,
     tiku_desk_rect_t *popup_frame, char *progress_destination,
     size_t progress_destination_size, char *status, size_t status_size,
-    int *dirty, int screen_w, int screen_h);
+    int *dirty, int screen_w, int screen_h,
+    tiku_trk_drop_color_fn set_color, void *color_context);
 void tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                       int x, int y, unsigned modifiers,
                                       unsigned button);

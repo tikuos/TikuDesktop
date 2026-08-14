@@ -1207,18 +1207,20 @@ BPoseView::NewFolder: FSCreateNewFolderIn -> PlaceFolder -> EntryCreated -> (re-
 **PORT:** Both shells create the folder through the filesystem operation, reload the listing, select the created node, and immediately open the inline rename editor. A second New folder command first commits the current rename and then creates the next unique name, preserving repeatability.
 *Audited 2026-08-14: `src/shell/tiku_trk_app.c` and `src/shell/tiku_trk_desktop.c` New Folder dispatch; `src/ui/windows/tiku_trk_folder_edit.c` editor command hand-off.*
 *Shell: both*  
-#### PVL-100 · important · open ⟨found by verification⟩
+#### PVL-100 · important · differs ⟨found by verification⟩
 **Dropping data from another application that has no files yet negotiates a file into existence: Tracker creates an empty clipping file and replies B_COPY_TARGET/B_MOVE_TARGET so the originator fills it in; dropping such a drag on the Trash replies B_TRASH_TARGET instead.**  
 BPoseView::HandleDropCommon, the srcWindow == NULL branch: FindDragNDropAction decodes be:actions; canErase + CanTrashForeignDrag -> reply B_TRASH_TARGET; otherwise CanCopyOrMoveForeignDrag + CreateClippingFile("Untitled clipping") and a reply carrying be:types, "directory", "name", the originator data and the offered be:filetypes. With the secondary button held, a menu of "Create %s clipping" types (or of be:actionspecifier strings) is run first and cancelling it aborts the drop.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
 **TIKU:** This is the inbound half of a drag protocol: on TikuOS it is "another process hands us a stream and we materialise a node for it" — the promise/negotiation shape matters more than the drag gesture.
-**WAIVER CANDIDATE:** The premise is a drop from ANOTHER APPLICATION negotiated by message replies (B_COPY_TARGET/B_MOVE_TARGET/B_TRASH_TARGET): within the port every window is one process, so no foreign-app drag source can exist, and the shells speak raw X11 with no XDND or any inter-application drag protocol (grep 'Xdnd' empty; XSelectInput masks at src/tiku_trk_desktop.c:1644-1647 carry no DnD). Waiver candidate.  
+**PORT:** The typed foreign-offer endpoint negotiates copy/move/trash replies and materialises promise bytes as a unique clipping node; an XDND adapter can feed the same API without changing target/refusal semantics.
+*src/core/tiku_trk_drop_protocol.c:tiku_trk_foreign_drop/tiku_trk_foreign_clip_create; tests/test_drop_protocol.c*
 
-#### PVL-101 · important · open ⟨found by verification⟩
+#### PVL-101 · important · differs ⟨found by verification⟩
 **Dropping selected text or a bitmap onto a folder writes it into a new "Untitled clipping" file; if the write fails the half-made file is removed again.**  
 HandleDropCommon's kPlainTextMimeType branch (and the equivalent bitmap branch below it) requires a directory target, creates the clipping via CreateClippingFile, writes the payload with Seek/Write/SetSize and on any failure Unset()s the file and Remove()s the entry.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon`
-**WAIVER CANDIDATE:** Same premise as PVL-100 — text/bitmap payloads dropped from another application: there is no inbound cross-application drop channel (no XDND, grep empty) and no clipping-file creation code (grep 'clipping' over src/ is empty). Waiver candidate.  
+**PORT:** Text and bitmap payloads have a bounded materialisation helper with unique naming, a 1 MiB bitmap guard, and rollback on a short write. The transport remains typed/in-process rather than an X11 selection.
+*src/core/tiku_trk_drop_protocol.c:tiku_trk_foreign_clip_create; tests/test_drop_protocol.c*
 
 #### PVL-102 · important · done ⟨found by verification⟩
 **Queries, query templates and virtual directories count as read-only destinations even on a writable disk, which is what greys out New folder, Cut and Paste inside a query window.**  
@@ -1586,11 +1588,12 @@ FindDragNDropAction reads "be:actions"; CanTrashForeignDrag requires the target 
 **TIKU:** The promise protocol assumes a writable local directory to hand back; over a device namespace the reply target must be a real file node.
 **SUBSYSTEM:** Cross-application XDND transport remains absent; the replacement boundary is `src/core/tiku_trk_drop_protocol.[ch]` plus the drop controller.
 
-#### PVS-048 · polish · open
+#### PVS-048 · polish · differs
 **Dropping plain text or a bitmap from another app into a folder window creates a clipping file.**  
 Name from "be:clip_name" or "Untitled clipping"/"Untitled bitmap", uniquified with FSMakeOriginalName; text keeps StyledEdit-compatible "styles" attribute from be-text_run_array; both get the kAttrClippingFile attribute and the right BNodeInfo type; bitmaps over 1 MB flattened size are rejected; a failed write removes the partial file. Only allowed when the target is a directory.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon / BPoseView::CreateClippingFile`
-**SUBSYSTEM:** Cross-application drag (XDND). No foreign message drop can arrive (grep XDND over src/ returns nothing) and no clipping-file creation code exists anywhere (grep clipping over src/ hits only an unrelated text-truncation comment at src/tiku_trk_poseview.h:759).  
+**PORT:** The foreign-offer path accepts text/image MIME types and writes a uniquely named clipping file through the same bounded helper used by promise drops; style attributes are intentionally omitted because the portable store has no styled-text attribute type.
+*src/core/tiku_trk_drop_protocol.c; tests/test_drop_protocol.c*
 
 #### PVS-049 · important · differs
 **PORT:** Foreign-reference drops use the same typed offer parser and the shell's Move/Copy/Link decision ladder, with root and non-directory targets refused before filesystem work. This is an in-process protocol because no XDND selection owner exists.
@@ -1667,7 +1670,7 @@ HandleDropCommon calls CheckPoseVisibility when fEnsurePosesVisible (set only by
 **PORT:** A drop on the Desktop, and anything that arrives in a Desktop folder afterwards, is followed by a pass that pulls every icon back into the area it can be reached in -- the screen, less the strip the Deskbar reserves. The moved positions are saved with the rest of the arrangement.  
 *src/tiku_trk_desktop.c:desk_ensure_visible (the drop path and the poll); tests/shell/desktop.script*  
 
-#### PVS-059 · polish · open
+#### PVS-059 · polish · differs
 **A colour dropped on the view is not treated as a file drop - it is forwarded to the containing window (which sets the desktop colour).**  
 HandleMessageDropped checks message->HasData("RGBColor", 'RGBC') before anything else and re-sends the message to the window; BDeskWindow::MessageReceived then sets the screen/desktop colour and notifies the Backgrounds app. HandleMessageDropped also resets the cursor and returns false immediately when fDropEnabled is clear (file panels).  
 `PoseView.cpp` → `BPoseView::HandleMessageDropped`  
@@ -1678,7 +1681,8 @@ HandleMessageDropped checks message->HasData("RGBColor", 'RGBC') before anything
 ## PoseView: keyboard navigation, type-ahead, shortcuts, scripting
 
 Architecture notes: [`spec/ARCH-poseview-keyboard.md`](spec/ARCH-poseview-keyboard.md)
-**SUBSYSTEM:** Cross-application drag (XDND). A colour drop is a foreign message drop and none can arrive (grep XDND/RGBC over src/ returns nothing); additionally the backdrop colour is fixed at surface creation (src/tiku_trk_desktop.c:1583) with no setter to forward a dropped colour to.  
+**PORT:** A typed RGB payload can be attached to a drag and is forwarded by the drop controller to the Desktop backdrop callback, which repaints the opaque surface and persists the colour for future resizes. There is no separate Backgrounds application to notify.
+*src/core/tiku_trk_drag.[ch]; src/ui/commands/tiku_trk_drop_controller.[ch]; src/shell/tiku_trk_desktop.c; tests/test_drag.c*
 
 #### PVK-001 · core · done
 **Down/Right arrow selects the next pose in the list; Up/Left selects the previous one.**  
@@ -2067,11 +2071,12 @@ ExecuteProperty builds a B_REFS_RECEIVED message and posts it to fSelectionHandl
 **TIKU:** With no Trash, 'delete Entry' must map to an explicit destructive verb, and the async ownership hand-off needs a TikuOS equivalent (worker or deferred queue).  
 **PORT:** Both verbs resolve what they would act on and name it, so the caller opens or TRASHES rather than destroys.  
 **MISSING:** Neither is wired to a shell: nothing calls the resolver, so executing opens nothing and deleting trashes nothing yet.  
-#### PVK-053 · polish · open
+#### PVK-053 · polish · differs
 **Every launch/open message carries a "TrackerViewToken" messenger so the application being launched can send scripting messages straight back to the originating pose view.**  
 Added in ExecuteProperty, OpenSelectionCommon, and the drag-and-drop / context-menu paths; TTracker::RefsReceived re-attaches it to bundled messages, and the file panel uses HasMessenger("TrackerViewToken") to tell pose-view-originated messages apart.  
 `PoseViewScripting.cpp` → `BPoseView::ExecuteProperty (launchMessage.AddMessenger("TrackerViewToken", ...)); BPoseView::OpenSelectionCommon (PoseView.cpp)`
-**WAIVER CANDIDATE:** the premise is a token handed to 'the application being launched' so IT can message the pose view back — but this port never launches an application: no exec/fork/spawn/popen exists anywhere in src/ (grep returns only comment hits, e.g. model.c:82), and every open is in-process (a folder window via open_folder, desktop.c:2546, or the in-process value editor, desktop.c:2550; src/tiku_trk_app.c navigates its own window). With no launched process and no message plane there is nothing for a view token to ride on or return through — waiver candidate for the user  
+**PORT:** In-process opens carry the originating controller context through the launch callback, so a Tracker-handled open can return to the same pose view without a messenger or IPC. External application tokens and cross-process scripting are intentionally absent from this single-process boundary.
+*src/ui/commands/tiku_trk_launch_controller.[ch]; src/shell/tiku_trk_desktop.c*
 
 #### PVK-054 · important · done
 **Scripting failures are reported in-band: the reply always carries an "error" int32 when the operation failed, and unhandled specifiers leave the message for the default BView handling rather than replying.**  
@@ -2560,11 +2565,12 @@ _NodeStatChanged: for fRootDefinitionFileRef with B_STAT_MODIFICATION_TIME in "f
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_NodeStatChanged / VirtualDirectoryManager::DefinitionFileChanged`  
 **PORT:** The definition file is one path per line, comments and blanks skipped, and the order of the lines IS the priority order.  
 **PORT:** Editing the definition file is noticed, so the merge can be re-read; the order of its lines remains the priority order.  
-#### PVN-068 · polish · open
+#### PVN-068 · polish · partial
 **A virtual directory that disappears cleans up its generated definition files and temporary directories.**  
 VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over children, rmdir()s the UUID directory under /var/tmp-style base path, removes the generated definition file for non-root infos, and unregisters the node from fInfos.  
 `VirtualDirectoryManager.cpp` → `VirtualDirectoryManager::DirectoryRemoved / VirtualDirectoryManager::_RemoveDirectory`
-**SUBSYSTEM:** Virtual directories. Nothing generates temporary definition files or UUID directories in the first place (grep uuid/definition returns nothing), so no cleanup path exists or is needed until the subsystem itself is built.  
+**MISSING:** Definition-file cleanup and removal of an empty scratch directory are now exposed by `tiku_trk_vdir_cleanup`, but no manager currently owns generated UUID trees and recursively removes non-empty descendants.
+*src/backends/tiku_trk_vdir.c; tests/test_vdir.c*
 
 #### PVN-069 · important · differs
 **A recursive walk visits a subdirectory after returning it, so entries created in a folder the walk has already passed are missed while entries in a not-yet-visited folder are included.**  
@@ -4708,12 +4714,13 @@ kAttrQueryLastChange (B_INT32_TYPE, time(0)) and "_trk/recentQuery" = 1 are writ
 *src/tiku_trk_query.c:tiku_trk_query_list_kind; src/tiku_trk_desktop.c:panel_search*
 *src/tiku_trk_query.c:791-830 (query_save index merge, no timestamp) and :851 (query_list, whose only callers are tests/test_query.c:280-288)*
 
-#### Q-034 · polish · open
+#### Q-034 · polish · partial
 **Dragging the Find window's icon into a folder saves the current search there; the drop menu lets you choose "Create a Query" or "Create a Query template".**  
 A DraggableQueryIcon carries B_SIMPLE_DATA with be:actions=B_COPY_TARGET, two be:filetypes (query, query template) and two be:actionspecifier strings. The B_COPY_TARGET reply is resolved in FindPanel::MessageReceived by matching either the action specifier or the file type, then SaveAsQueryOrTemplate creates the file and posts kAttachFile so the window re-attaches to it. DragStarted sets be:clip_name (always "New Query" in practice). The icon is absent in template-edit-only mode.  
 `FindPanel.cpp` → `FindPanel::MessageReceived (case B_COPY_TARGET) / FindPanel::SaveAsQueryOrTemplate / DraggableQueryIcon::DragStarted / FindWindow::MessageReceived (case kAttachFile)`  
 **TIKU:** No drag and drop; the equivalent is `find … > /path/name.query` — i.e. an explicit save-to-path argument.  
-**BLOCKED:** Waits on the Find window's icon being draggable, which waits on a window-icon that can start a drag at all (IV-057, CW-017).  
+**MISSING:** The query registry can save/load the current search and templates, but the Find window has no draggable icon or drop menu; saving is currently an explicit panel/menu action rather than a gesture.
+*src/ui/tiku_trk_find.c; src/core/tiku_trk_query.c*
 #### Q-035 · important · partial
 **Query menu commands: Open… (Alt+O) loads an existing query into the panel, Save (Alt+S) writes it back in place and makes it permanent, Save as query… / Save as template… write a new file via a save panel.**  
 BuildMenuBar wires kOpenLoadQueryPanel, fSaveQueryOrTemplateItem (kSaveQueryOrTemplate, 'S'), and two kOpenSaveAsPanel items differing by the bool "saveastemplate"; the save panel's B_SAVE_REQUESTED is completed by FindPanel (accepting either a direct ref or directory+name). kSaveQueryOrTemplate calls SaveQueryAsAttributes(..., temporary=false), which is what un-marks a query as transient.  
@@ -5444,13 +5451,12 @@ DraggableContainerIcon::Draw blits the target model's icon centred in the view w
 **UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
 **PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
 **MISSING:** No folder icon is drawn in either shell's title bar, so there is nothing on screen to hit-test yet (CW-017).  
-#### IV-058 · polish · open
+#### IV-058 · polish · partial
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  
 `src/kits/tracker/infowindow/HeaderView.cpp` → `HeaderView::MouseMoved / HeaderView::MouseDown`
-**SUBSYSTEM:** drop targets outside a pose view -- the info window's icon
-draws, but nothing can be dropped on it to highlight (the same absence as
-AW-075).
+**MISSING:** The Info icon is painted and hit-tested as a distinct target, but the drag controller does not yet route an in-flight payload to it or switch to a selected icon variant while hovered.
+*src/ui/windows/tiku_trk_info_window.c; src/shell/tiku_trk_desktop.c*
 
 #### IV-059 · important · differs ⟨found by verification⟩
 **The legacy bitmap-icon fallback exists at only two sizes: any requested size other than mini is loaded as a large icon, and the resource must be exactly size*size bytes or the load fails outright.**  
@@ -6093,11 +6099,12 @@ SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibili
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
 **MISSING:** ConfigureNotify now resizes the DPI-aware logical surface and proportionally reflows full icon rectangles between the old and new Deskbar-safe areas. Positions that shared an old edge take nearby free grid cells and every result is pulled back on-screen. Pose locations still use one layout record rather than resolution-specific keys, so returning to a previously used size reflows the current layout instead of recalling a distinct saved arrangement.
 
-#### AW-021 · polish · open
+#### AW-021 · polish · differs
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  
 message->FindData("RGBColor", 'RGBC') on a dropped message; BScreen::SetDesktopColor plus SetViewColor/SetLowColor, then forwards the message to application/x-vnd.Haiku-Backgrounds.  
 `DeskWindow.cpp` → `BDeskWindow::MessageReceived`
-**WAIVER CANDIDATE:** a colour drop is a cross-application drag, and this desktop speaks no drop protocol (no XDND anywhere -- grep Xdnd over src/ returns nothing) and has no Backgrounds preferences app to forward to; the backdrop colour is the compile-time constant TIKU_DESK_C_BACKDROP (src/tiku_trk_win.c:502) -- waiver candidate  
+**PORT:** A typed RGB payload can be attached to a drag and applied to the Desktop's persistent backdrop callback; redraw and future surface resizes use the selected colour. The separate Backgrounds preferences application is intentionally not part of the single-process shell.
+*src/core/tiku_trk_drag.[ch]; src/ui/commands/tiku_trk_drop_controller.[ch]; src/shell/tiku_trk_desktop.c; tests/test_drag.c*
 
 #### AW-022 · important · partial
 **MISSING:** Static add-on shortcuts and a parser-backed rebind API exist, but the user settings file and live file-watch path are absent.
@@ -6603,13 +6610,12 @@ one opens the picker instead of showing an error.
 src/tiku_trk_desktop.c:select_named and the field click; tests/test_info.c*  
 *Shell: desktop*  
 
-#### AW-073 · polish · open
+#### AW-073 · polish · partial
 **A truncated Location, Link to or Description reveals its full text in a floating pop-up when hovered, and that pop-up is itself clickable to follow the link; it disappears when the mouse leaves or the window deactivates.**  
 OpenToolTipWindow creates a borderless floating window clamped to the screen containing a TrackingView; only opened when the string is wider than the available width and the info window is active with no button held. WindowActivated(false) quits all three pop-ups.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::MouseMoved / OpenToolTipWindow / TrackingView::MouseUp`
-**SUBSYSTEM:** floating tooltip layer -- the fields exist and truncate, but
-no shell can put a transient window over another (grep tooltip/tool_tip over
-src returns nothing).
+**MISSING:** The fields truncate and links can be followed from the Info view, but there is no transient hover window that expands the full value or closes on pointer leave/deactivation.
+*src/core/tiku_trk_info.c; src/ui/windows/tiku_trk_info_window.c*
 
 #### AW-074 · important · done
 **Re-pointing a broken symlink from the info window preserves the link's name and all of its attributes.**  
@@ -7409,11 +7415,13 @@ Each ref is re-wrapped in its own B_REFS_RECEIVED and passed to TrackerLaunch on
 `BarApp.cpp` → `TBarApp::RefsReceived`  
 **PORT:** A drop on the bar launches the files and passes silently over directories: launching one has no meaning, and complaining about something the user very likely did by accident would be noise.  
 *Shell: desktop*  
-#### DB-067 · polish · open
+#### DB-067 · polish · partial
 **Changing the system locale re-reads localized application names, reformats the clock and re-flows the tray without a restart**  
 B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from the "filesys" field, then falls through to forward to the tray, which calls UpdateTimeFormat/Update and jumps to the realign path. Team names are taken from BLocaleRoster::GetLocalizedFileName when that preference is on, falling back to ref->name  
 `BarApp.cpp` → `TBarApp::MessageReceived case B_LOCALE_CHANGED`
-**BLOCKED:** no locale facility exists anywhere in the port: month names are hardcoded English arrays (src/tiku_trk_deskbar.c:582-584, 633-636) and grep locale/setlocale over src returns nothing  
+**PORT:** Deskbar now enables the process locale and formats the date, weekday, time and timezone through `strftime` on every draw, so a locale change followed by redraw reflows the clock without restart.
+**MISSING:** There is no locale-roster event or localized application-name catalog, so team labels are not re-read on a system locale notification.
+*src/deskbar/tiku_trk_deskbar.c; src/shell/tiku_trk_desktop.c*
 
 #### DB-068 · important · partial
 **Deskbar re-lays itself out when the workspace is activated and when the screen resolution changes, keeping itself docked to the correct edge**  

@@ -121,6 +121,21 @@ tiku_trk_drag_set_foreign_refs(tiku_trk_drag_t *d, int foreign)
 }
 
 int
+tiku_trk_drag_set_payload(tiku_trk_drag_t *d, const char *type,
+                          const void *data, size_t size)
+{
+    if (d == NULL || type == NULL || type[0] == '\0' || data == NULL ||
+        size > TIKU_TRK_DRAG_PAYLOAD_MAX) {
+        return -1;
+    }
+    snprintf(d->payload_type, sizeof d->payload_type, "%s", type);
+    memcpy(d->payload, data, size);
+    d->payload_size = size;
+    d->foreign_refs = 1;
+    return 0;
+}
+
+int
 tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path)
 {
     if (d == NULL || path == NULL || path[0] == '\0' ||

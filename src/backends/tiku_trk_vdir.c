@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 void
 tiku_trk_vdir_init(tiku_trk_vdir_t *v)
@@ -333,6 +334,25 @@ tiku_trk_vdir_drop(tiku_trk_vdir_t *v, int which)
         memcpy(v->src[i - 1], v->src[i], sizeof v->src[0]);
     }
     v->nsrc--;
+}
+
+int
+tiku_trk_vdir_cleanup(tiku_trk_vdir_t *v, const char *scratch_dir)
+{
+    int removed = 0;
+
+    if (v == NULL) {
+        return -1;
+    }
+    if (v->def[0] != '\0' && unlink(v->def) == 0) {
+        removed = 1;
+    }
+    if (scratch_dir != NULL && scratch_dir[0] != '\0' &&
+        rmdir(scratch_dir) == 0) {
+        removed = 1;
+    }
+    v->def[0] = '\0';
+    return removed;
 }
 
 uint64_t

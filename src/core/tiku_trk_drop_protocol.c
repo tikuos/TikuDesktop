@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_trk_drop_protocol.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 
 int
@@ -56,4 +60,66 @@ tiku_trk_foreign_drop(const tiku_trk_foreign_offer_t *o, int directory,
     r.accepted = o->has_refs || o->has_text || o->has_bitmap || o->promise;
     if (!r.accepted) r.reply = TIKU_TRK_DROP_REPLY_REJECT;
     return r;
+}
+
+static int
+join_clip_path(char *out, size_t max, const char *dir, const char *name,
+               int serial)
+{
+    const char *base = name != NULL && name[0] != '\0' ? name :
+                       (serial == 0 ? "Untitled clipping" : "Untitled bitmap");
+    int n;
+
+    if (serial == 0) {
+        n = snprintf(out, max, "%s/%s", dir, base);
+    } else {
+        n = snprintf(out, max, "%s/%s %d", dir, base, serial + 1);
+    }
+
+    return n > 0 && (size_t)n < max ? 0 : -1;
+}
+
+int
+tiku_trk_foreign_clip_create(const char *directory, const char *name,
+                             const void *data, size_t size, int bitmap,
+                             char *out, size_t out_size)
+{
+    int fd = -1;
+    int serial;
+    const char *default_name = bitmap ? "Untitled bitmap" :
+                                "Untitled clipping";
+
+    if (directory == NULL || directory[0] == '\0' || data == NULL ||
+        out == NULL || out_size == 0u || (bitmap && size > 1024u * 1024u)) {
+        return -1;
+    }
+    for (serial = 0; serial < 10000; serial++) {
+        char path[1024];
+        ssize_t written;
+
+        if (join_clip_path(path, sizeof path, directory,
+                           (name != NULL && name[0] != '\0') ? name :
+                               default_name, serial) != 0) {
+            return -1;
+        }
+        fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+        if (fd >= 0) {
+            written = write(fd, data, size);
+            if (written != (ssize_t)size) {
+                (void)close(fd);
+                (void)unlink(path);
+                return -1;
+            }
+            if (close(fd) != 0) {
+                (void)unlink(path);
+                return -1;
+            }
+            snprintf(out, out_size, "%s", path);
+            return 0;
+        }
+        if (errno != EEXIST) {
+            return -1;
+        }
+    }
+    return -1;
 }

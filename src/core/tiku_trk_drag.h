@@ -18,6 +18,7 @@
 
 #include "tiku_trk_model.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 /** @brief Tracker's strict point-to-point double-click tolerance. */
@@ -89,6 +90,7 @@ typedef enum {
 #define TIKU_TRK_DRAG_FOREIGN_COLS 4
 #define TIKU_TRK_DRAG_FOREIGN_CELL_W 96
 #define TIKU_TRK_DRAG_FOREIGN_CELL_H 24
+#define TIKU_TRK_DRAG_PAYLOAD_MAX 4096
 
 /** @brief One drag in flight. */
 typedef struct {
@@ -108,6 +110,9 @@ typedef struct {
     int      ox[TIKU_TRK_DRAG_MAX], oy[TIKU_TRK_DRAG_MAX];
     int      from_list;             /* the source view was a list        */
     int      foreign_refs;          /* payload arrived from another app  */
+    char     payload_type[TIKU_TRK_TYPE_MAX];
+    unsigned char payload[TIKU_TRK_DRAG_PAYLOAD_MAX];
+    size_t   payload_size;
     /* The distinct types the drag carries, worked out ONCE.  Re-entering
      * a view with the same drag must not rebuild them: the drag has not
      * changed, and rebuilding is how a hover becomes expensive
@@ -135,6 +140,10 @@ void tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
 void tiku_trk_drag_set_source_virtual(tiku_trk_drag_t *d, int virtual_);
 /** @brief Mark a payload as foreign refs (FS-077/PVS-045). */
 void tiku_trk_drag_set_foreign_refs(tiku_trk_drag_t *d, int foreign);
+
+/** @brief Attach a small typed non-file payload to an in-process drag. */
+int tiku_trk_drag_set_payload(tiku_trk_drag_t *d, const char *type,
+                              const void *data, size_t size);
 
 /** @brief Add one item to what the drag carries (PVS-033). */
 int tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path);

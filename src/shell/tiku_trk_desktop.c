@@ -15,6 +15,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <locale.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -128,6 +130,7 @@ typedef struct desktop {
     folder_t            *bar_fl;         /* window whose bar opened popup   */
     int                  bar_open;       /* title in that window, or -1     */
     char                 status[200];
+    uint32_t             backdrop_color;
     /* Find is a MODE, as the shell's own watch is: there is no second window
      * to put a panel in, and a namespace search wants the same one-line
      * entry the rest of the system uses. */
@@ -208,6 +211,16 @@ typedef struct desktop {
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
+
+static void
+set_backdrop_color(void *context, const tiku_trk_color_t *color)
+{
+    desktop_t *app = context;
+
+    if (app != NULL && color != NULL) {
+        app->backdrop_color = TIKU_DESK_RGB(color->r, color->g, color->b);
+    }
+}
 
 static void
 parent_path(const char *path, char *out, size_t size)
@@ -1147,7 +1160,7 @@ resize_desktop(desktop_t *app, int width, int height)
         return 0;
     }
     if (tiku_desk_surface_resize(app->surf, width, height,
-                                 TIKU_DESK_C_BACKDROP) != 0) {
+                                 app->backdrop_color) != 0) {
         return -1;
     }
     app->status_overlay.screen_w = width;
@@ -1177,6 +1190,9 @@ resize_desktop(desktop_t *app, int width, int height)
 static void
 draw_all(desktop_t *app)
 {
+    tiku_desk_fill(app->surf,
+                   (tiku_desk_rect_t){ 0, 0, app->surf->w, app->surf->h },
+                   app->backdrop_color);
     tiku_trk_deskbar_publish_workspace(app->deskbar, app->team, app->desk);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
         /* Under the windows: with auto-raise on, a window may cover the
@@ -1215,7 +1231,7 @@ draw_all(desktop_t *app)
             /* Tinted over its own pixels rather than composited in an
              * offscreen: the picture is what the pointer carries, and it
              * has to sit over whatever is under it. */
-            tiku_trk_paint_tint(app->surf, box, TIKU_DESK_C_BACKDROP,
+            tiku_trk_paint_tint(app->surf, box, app->backdrop_color,
                                 255 - alpha);
             if (app->drag.count > 3) {
                 /* Large selections get a short fade at the edge of the
@@ -1225,14 +1241,14 @@ draw_all(desktop_t *app)
                  * bitmap (PVS-034). */
                 tiku_desk_rect_t edge = box;
                 edge.w = 4;
-                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge.x = box.x + box.w - 4;
-                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge = box;
                 edge.h = 4;
-                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge.y = box.y + box.h - 4;
-                tiku_trk_paint_tint(app->surf, edge, TIKU_DESK_C_BACKDROP, 96);
+                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
             }
         }
     }
@@ -1343,6 +1359,7 @@ tracker_run(int argc, char **argv)
     int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
+    (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0)                      { use_device = 1; }
@@ -1384,7 +1401,8 @@ tracker_run(int argc, char **argv)
     }
     app.fs = tiku_trk_fs_new(app.backend);
     (void)tiku_trk_fs_prepare_trash(app.fs);
-    app.surf = tiku_desk_surface_new(DESK_W, DESK_H, TIKU_DESK_C_BACKDROP);
+    app.backdrop_color = TIKU_DESK_C_BACKDROP;
+    app.surf = tiku_desk_surface_new(DESK_W, DESK_H, app.backdrop_color);
     app.row_h = LIST_ROW_H;
     app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
@@ -1559,7 +1577,7 @@ tracker_run(int argc, char **argv)
         &app.drag_target.row,
         &app.popup, &app.popup_sub, &app.popup_frame, app.prog_dest,
         sizeof app.prog_dest, app.status, sizeof app.status, &app.dirty,
-        DESK_W, DESK_H);
+        DESK_W, DESK_H, set_backdrop_color, &app);
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether

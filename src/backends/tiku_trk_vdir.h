@@ -144,6 +144,9 @@ int tiku_trk_vdir_supplied_by(const tiku_trk_vdir_t *v,
  */
 void tiku_trk_vdir_drop(tiku_trk_vdir_t *v, int which);
 
+/** @brief Remove a generated definition and its now-empty scratch directory. */
+int tiku_trk_vdir_cleanup(tiku_trk_vdir_t *v, const char *scratch_dir);
+
 /**
  * @brief A stable identity for the merged child called @p name.
  *

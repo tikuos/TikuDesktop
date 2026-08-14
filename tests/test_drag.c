@@ -50,6 +50,17 @@ main(void)
 {
     tiku_trk_drag_t d;
 
+    {
+        const unsigned char color[4] = { 12, 34, 56, 255 };
+
+        tiku_trk_drag_reset(&d);
+        check(tiku_trk_drag_set_payload(&d, "application/x-rgb-color",
+                                        color, sizeof color) == 0 &&
+              d.foreign_refs && d.payload_size == sizeof color &&
+              memcmp(d.payload, color, sizeof color) == 0,
+              "PVS-059", "a typed color payload survives the drag boundary");
+    }
+
     printf("recognizing an opening double-click (PVS-010)\n");
     {
         tiku_trk_click_t c = { 0 };
