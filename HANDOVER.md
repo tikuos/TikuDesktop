@@ -31,7 +31,7 @@ progress ledger and the audit trail. Every row has a verdict:
 |---|---|
 | `done` | the behaviour holds here, and something proves it |
 | `partial` | some clauses hold; the `MISSING:` line says exactly which do not |
-| `differs` | deliberately not the same as Haiku, with the reason |
+| `differs` | another mechanism reaches the row's outcome; the `PORT:` line names it |
 | `open` | not started, or blocked; the blocker line says on what |
 | `WAIVED` | **only the user may waive a row** — never do this yourself |
 
@@ -39,6 +39,9 @@ Under each row you will find one of:
 
 - `**MISSING:**` — what is absent, precisely, in behaviour terms
 - `**BLOCKED:**` / `**SUBSYSTEM:**` — what it waits on
+- `**WIRING:**` — the code exists and nothing calls it: the cheapest rows here
+- `**WAIVER CANDIDATE:**` — the premise cannot exist in this port; only the
+  user may strike it
 - `**PORT:**` — how this port does it, when that differs in mechanism
 - `**DIVERGES:**` — where the port deliberately does something else
 - `**TIKU:**` — notes about the device-namespace half of the product
@@ -51,10 +54,24 @@ blocker costs the next person an hour.
 ### Current state (2026-08-14)
 
 ```
-889 rows: 484 done · 175 partial · 81 differs · 149 open
-core (199): 128 done · 43 partial · 25 differs · 3 open
-verification: 1892 checks — 37 unit suites + 50 headless shell scripts
+889 rows: 548 done · 229 partial · 98 differs · 14 open
+core (199): 128 done ·  45 partial ·  26 differs ·  0 open
+verification: 1948 checks — 43 unit suites + 50 headless shell scripts
 ```
+
+Nothing `core` is open any more: what remains is 229 rows where a named
+clause does not hold and 98 where this port does it another way.  The open
+fourteen are all one of five absences (background images, a date-format
+setting, inter-application messaging, a force-terminate primitive, and two
+rows whose seeding code has no caller) — four of them are waiver candidates
+only the user may strike.
+
+**`differs` is not a synonym for handled.** It requires an alternative
+implementation that reaches the row's outcome, written out on a `PORT:` line.
+A note that concedes a clause of the rule ("the scroll bar is not highlighted
+with it") is a `partial` with a `MISSING:` line, and a row whose premise
+cannot exist here is a waiver candidate.  An audit on 2026-08-14 moved
+eighteen rows back for exactly that.
 
 ---
 
@@ -66,6 +83,7 @@ make                 # builds both shells and every test binary
 make test            # unit suites, the contract check, then the shell scripts
 python3 tools/check_contract.py    # 889 rows, no duplicates
 bash tests/shell/run.sh            # the shell scripts alone
+TRK_SHELL_ONLY=drop.script bash tests/shell/run.sh   # one of them
 ```
 
 `make test` must end with **`shell scripts hold in both front-ends`** and no
@@ -146,25 +164,43 @@ Grammar (see `src/shell/tiku_trk_script.h` for the full list):
 # home: fixture         run with HOME pointing at a fixture (Desktop tests)
 # apps: fixture         install an application registry that records launches
 # argv: none            start with no path argument
+# work: home            put the fixture under $HOME (anything about the Trash)
 key <sym> [ctrl] [shift] [alt]
 click|press|move|release <x> <y> [button] [mods]
-click-row <n>                 -- see the note below; NOT currently present
+click-row <n> [button] [mods]           -- a LIST row, by index
+press-row|move-row|release-row <n> ...  -- one half of a gesture, by row
+click-window|drag-window <title> [x y]  -- raise or move a window by title
 wait <turns>
 shot <path>
-menu-pick <label>
+menu-pick <label>             -- popups, menu bars, and the Deskbar leaf menu
 note <text>                   -- the sentence printed with the next verdict
 expect-status|-title|-alert|-menu|-count <substring>
 expect-rows|-selected|-windows|-columns|-scroll <n>
 expect-selected-name|-find-text|-find-type <text>
-expect-icon-at <name> <x> <y>        expect-pixel <x> <y> <rrggbb>
+expect-icon-at <name> <x> <y>        -- where an icon sits IN the view
+expect-icon-screen <name> <x> <y>    -- where it sits on the SCREEN
+expect-window-at <x> <y>             expect-pixel <x> <y> <rrggbb>
 expect-file|-no-file|-link|-file-has <path> [text]
 expect-desk-icon|-no-desk-icon|-desk-selected|-desk-selected-name
 quit
 ```
 
+**Aim at things by name, not by pixel.** Every row, tab and menu row can be
+addressed through the shell's own geometry, so chrome can move without
+rewriting tests — which is what the menu bar's 20 px cost the first time it
+landed.  A coordinate belongs in a script only when the coordinate IS the
+behaviour: a drop point, a band, a point over the backdrop.
+
 `run.sh` recreates the fixture per script, and wipes **every** device state
 file and `~/.config/TrackerSettings` between scripts. Per-script extras live
 in the `case` block near the top.
+
+Every script also runs with **`HOME` pointing at `/tmp/trk_home`**, not at the
+account. Run against the real home, a drag that misses its window drops files
+into the user's Desktop, and the next Desktop test then reads a folder covered
+in the last one's leftovers. `session1`/`session2` are the deliberate
+exception: part two starts from what part one left in that home, so the home
+is not wiped between them.
 
 ### Harness gotchas, all learned the hard way
 
@@ -174,10 +210,15 @@ in the `case` block near the top.
   Trash", and a test once trashed the file it was checking.
 - **The Find panel's popup is `f->popup`, not `app.popup`** — `menu-pick`
   cannot drive it. Use coordinates.
-- **Coordinates are geometry.** Rows sit at `content.y + 2 + n*row_h`; the
-  Deskbar occupies `x >= 866`; the **progress window covers the bottom-right
-  corner** (`x 596..976, y 368..`) whenever a job runs. Pick check points
-  away from both.
+- **Coordinates are geometry.** A folder window's content starts below a tab
+  and a menu bar; the Deskbar occupies `x >= 866`; the **progress window
+  covers the bottom-right corner** (`x 596..976, y 368..`) whenever a job
+  runs. Pick check points away from both, and prefer `click-row` /
+  `click-window` to arithmetic.
+- **A verdict prints what it FOUND**, not what it expected, for titles,
+  window positions, icons and selections. A failure that repeats the
+  expectation tells you nothing; if you add a check, make it report the
+  actual value the same way.
 - **A release over the backdrop is a drop** — it moves the file to the
   Desktop. End a drag where it began if you only mean to test the drag.
 - A **double click is time-based**: two `click`s at the same spot in a
@@ -210,6 +251,20 @@ src/shell/session/    restore, persistence, and bounded shutdown services
 Headers retain their `tiku_trk_*` names. The Makefile publishes the functional
 directories as include roots, so includes describe APIs without encoding where
 their current implementation lives.
+
+Four places you will look for first:
+
+- the **menu model** is `src/ui/tiku_trk_cwmenu.c` (File / Window / Attributes
+  and the four context menus, with every enable rule and mark); the **bar**
+  is drawn from `src/ui/windows/tiku_trk_folder_window.c` in the desktop shell
+  and `src/shell/tiku_trk_app.c` in the single-window one
+- the **script harness** is `src/shell/tiku_trk_script.c` (grammar and pump)
+  plus `src/shell/adapters/tiku_trk_script_adapter.c` (what the shell tells
+  it: row points, tab points, icon positions, menu labels)
+- **pose geometry, columns, sorting and filtering** are all one file,
+  `src/ui/tiku_trk_poseview.c` — it is the largest thing here by far
+- `../desktop/src/` is a separate library with its own `tiku_desk_*` prefix:
+  surface, font, windows, focus, X11 host. Cite it by that path
 
 Conventions: `tiku_trk_` prefix, K&R braces, 4 spaces, **80 columns**, no
 dynamic allocation in the hot paths, Doxygen on anything public.
@@ -244,68 +299,55 @@ Non-negotiable, from `CLAUDE.md`:
 
 ## 7. What is left
 
-### The 3 core rows still open
+### The open fourteen
 
-| row | what it needs |
+Nothing `core` is open. Every open row is one of five absences, and four are
+waiver candidates the user alone may strike:
+
+| rows | what they wait on |
 |---|---|
-| AW-017 | the Desktop as a *window* — waiver candidate, see the row |
-| AW-049 | serving panels to other applications |
-| DB-057 | bringing a whole application forward |
+| PVL-071, CW-020, IV-049, AW-016 | **background images** — the backdrop is a flat fill; no image loading, no placement, nowhere to hang one |
+| PVL-079, TS-028 | **a date-format setting** — nothing in the port has one, so "the format changed" has no source to fire from (waiver candidates) |
+| PVL-025, PVL-098 | **a caller** — the drop-point seed is written and reachable, and New folder never uses it, so a new folder is auto-placed |
+| AW-034, MA-007, MA-032, PVL-086 | premises this port cannot hold: inter-application messaging, a name catalogue, a version fact, an archived-object drop (waiver candidates) |
+| DB-020, AW-076 | a force-terminate primitive; a context menu outside a pose view |
 
-### Clusters, by what the blockers name
+### Where the 229 partial rows cluster
 
-| rows | core | cluster |
-|---|---|---|
-| 33 | 5 | **Icons & art** — halos (need background images), pre-warming (waiver candidate), the offscreen drag bitmap |
-| 25 | 7 | **Columns** — largely partial; the remainder wants the menu bar and per-window layout inheritance |
-| 24 | 5 | **Queries** — re-run-replaces-the-record, live result windows, per-type result layouts |
-| 22 | 3 | **Volumes & mount** — the Mount submenu of partitions, mount events, callers for the unmount sweep |
-| 15 | 3 | Drag & drop — spring-loading remainder, the edge fade |
-| 12 | 2 | Trash |
-| 10 | 2 | **Add-ons** — nothing exists |
-| 8 | 1 | Incremental repaint — needs a region/invalidate layer |
-| 8 | 1 | **Preferences windows** — unblocks DB-061/062/065, TS-046 |
-| 7 | 3 | Replicants / shelf — nothing exists |
-| 143 | 20 | unclassified: one-off rows with no shared blocker |
+Counted by what their `MISSING:` lines name, so a subsystem that unblocks
+many rows shows up as one:
 
-### The single biggest pocket: the menu bar
+| rows | blocker |
+|---|---|
+| 13 | **mount service** — the Mount submenu of partitions, mount/unmount events |
+| 12 | **incremental repaint** — everything here redraws whole frames; several rows are about repainting only the strip that changed |
+| 8 | **dynamic loading** — the add-on registry, menu and shortcuts are real; loading a shared object and running it on its own thread is not |
+| 8 | **inter-application messaging** — refs, messengers, a roster of other teams |
+| 6 | printers folder · 5 alerts as modal questions · 5 replicants/shelf |
+| ~170 | one-off clauses with no shared blocker — this is where the volume is |
 
-`tiku_trk_cwmenu.[ch]` builds File / Window / Attributes with every enable
-rule, every mark, the per-type submenus and Open-with; `tiku_trk_menubar_*`
-draws and hit-tests it; `tests/test_menu.c` covers the model. **Neither shell
-draws it.** That single gap holds CW-022, CW-025, CW-042, TS-023 and the
-Attributes work off the screen.
+By area the partials sit at AW 41 · CW 28 · DB 26 · MA 25 · PVL 24 · TS 19 ·
+IV 18 · PVN 14 · PVS 12 · PVK 12 · FS 5 · Q 5.
 
-I built it, saw it work (File / Window / Attributes drawn in the window, a
-title opening its menu, "New folder" from that menu creating the folder), and
-**reverted it**, because the bar takes 20 px at the top of every folder
-window and 14–18 shell scripts encode the old row positions. Do it in this
-order:
+### The menu bar is built
 
-1. **Land a `click-row <n>` harness op first, alone.** It resolves a row's
-   pixel through the shell's own geometry (`row_point` callback on the script
-   state, exactly like `pose_at`), so chrome changes stop invalidating tests.
-   Convert one script by hand, prove it, commit.
-2. **Convert genuine list-row clicks, script by script, reading each one.**
-   `band`, `drop`, `dropcol`, `info`, `panel`, `session1/2`, `link`. Do *not*
-   do this with a regex: icon-mode clicks are positions, not rows, and a
-   blanket conversion silently rewrote them and broke the icon tests.
-   Clicks on window tabs, the Deskbar, the Info window, the Find panel and
-   the preferences window must not move.
-3. **Then** add the bar: draw it into the top strip in `folder_draw`,
-   subtract its height from `list`, add the same offset in `folder_row_at`
-   and in the row-point callback, and route a press in the strip through
-   `tiku_trk_menubar_title_at` → `tiku_trk_menubar_panel` → the existing
-   `menu_invoke`. Track `bar_fl` / `bar_open` in the shell, because one menu
-   model is drawn per window.
+It is drawn in both shells, its titles open their menus, the enable rules and
+marks are live, and the four rows it used to hold off the screen (CW-022,
+CW-025, CW-042, TS-023) are now `partial` on much narrower clauses —
+printers-folder specialisation, service-backed mount and add-on verbs, Copy
+layout / Paste layout, and the last-column alert. The harness ops it forced
+into existence (`click-row`, `press-row`, `click-window`) are the reason the
+next piece of chrome will be cheaper.
 
 ### Cheapest closes on the board
 
-Partials whose `MISSING:` is a single clause: PVS-024 (band starts on the
-press, not after the threshold), PVN-048, CW-050, PVK-052, PVL-035, PVL-083,
-CW-022, CW-042, CW-043, PVN-017, PVN-044, PVS-050 (horizontal auto-scroll).
-Roughly thirty of them. They are spread across areas, so sweeping them
-re-tests broadly.
+Partials whose `MISSING:` is a single clause: DB-068, DB-033, TS-060, AW-059,
+AW-054, AW-052, AW-031, AW-007, MA-070, MA-021, MA-006, IV-028, IV-041,
+IV-004, PVN-027, FS-066 — roughly thirty in all, spread across areas, so
+sweeping them re-tests broadly. `PVL-025`/`PVL-098` are cheaper still: the
+code exists and nothing calls it, and the same is true of the
+`TypeAheadFiltering` preference, which the Windows page writes and nothing
+reads.
 
 ---
 
@@ -332,14 +374,25 @@ re-tests broadly.
 - The device backend's types are `tiku-*`; the POSIX backend derives a type
   from the file name. Both prefix forms (`text/`, `tiku-`) are supertype
   claims in the type database and the application registry.
+- **Nothing creates its own directories for you.** Settings, the thumbnail
+  cache and the Deskbar folder each make their parents through
+  `tiku_trk_state_mkparents`; a write that skips it silently does nothing on
+  a home that has never run this before.
+- **An icon view's scroll extent always contains the window's own corner.**
+  Without that the extent starts at the first icon, and dropping icons low in
+  a window scrolls the window to meet them — so what was dropped is not where
+  it was let go.
 
 ---
 
 ## 9. Where to start on day one
 
-1. `make test` — see 1672 green, and read the last ten commits.
-2. Pick a cluster from §7. Run the audit yourself first:
-   read `FEATURES.md` for every `open`/`partial` row in the area and check
-   each blocker line against the code, because some are stale.
+1. `make test` — see **1948** green and `shell scripts hold in both
+   front-ends`, then read the last ten commits.
+2. Pick a cluster from §7. Run the audit yourself first: read `FEATURES.md`
+   for every `open`/`partial` row in the area and check each blocker line
+   against the code, because some are stale — the 2026-08-14 audit found
+   notes claiming a subsystem did not exist two commits after it was built,
+   and notes claiming a mechanism that had no caller.
 3. Take the cheapest complete behaviour in it, and follow §3 exactly.
 4. Present the commit message. Wait.

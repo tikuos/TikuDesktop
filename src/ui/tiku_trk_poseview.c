@@ -3574,9 +3574,14 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
             int px = 0;
 
             rec[len] = '\0';
+            /* A mode nothing recognises takes the whole record with it
+             * (MA-063).  The numbers beside it were written by whatever
+             * wrote the name, so a size and a sort key out of a record
+             * that garbled are no more trustworthy than the name was. */
             if (strncmp(rec, "icon", 4) == 0) { v->mode = TIKU_TRK_MODE_ICON; }
             else if (strncmp(rec, "mini", 4) == 0) { v->mode = TIKU_TRK_MODE_MINI; }
-            else { v->mode = TIKU_TRK_MODE_LIST; }
+            else if (strncmp(rec, "list", 4) == 0) { v->mode = TIKU_TRK_MODE_LIST; }
+            else { return 0; }
             /* IV-014: the size comes back with the mode.  A record written
              * before sizes were saved simply has no number, and the
              * constructor's size stands. */
@@ -3586,8 +3591,13 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
                 int got = sscanf(rec, "%*s %d %d %d %d %d %d %d %d %d", &px,
                                  &sc, &ix, &iy, &mx, &my, &s1, &s2, &rev);
 
-                if (got >= 1 && px >= 16 && px <= 128) {
-                    v->icon_size = px;
+                if (got >= 1) {
+                    /* Pulled into the ladder rather than dropped for the
+                     * default: a folder left as large as it could be asked
+                     * for reopens as large as it can be, and a size below
+                     * the bottom is a size, not an instruction to forget
+                     * one (MA-063). */
+                    v->icon_size = px < 16 ? 16 : (px > 128 ? 128 : px);
                 }
                 if (got >= 6) {
                     /* Clamped when the view is next given a viewport: a

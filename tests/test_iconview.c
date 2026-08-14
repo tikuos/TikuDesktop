@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_state.h"
 
 static int fails;
 
@@ -530,6 +531,62 @@ main(void)
                   "numbers, kept apart");
             tiku_trk_poseview_free(again);
         }
+    }
+
+    printf("\nsaved state that is out of range (MA-063)\n");
+    {
+        struct tiku_trk_store *store = b->ops->state_store(b);
+        const char *bad;
+        tiku_trk_poseview_t *again;
+
+        bad = "icon 999 0 0 0 0 0 0 -1 0";
+        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+                                   bad, strlen(bad));
+        again = tiku_trk_poseview_new(b, work);
+        (void)tiku_trk_poseview_restore_state(again);
+        check(tiku_trk_poseview_icon_size(again) == 128, "MA-063",
+              "an icon size past the top of the ladder is pulled back to "
+              "the largest there is, not thrown away for the default: the "
+              "folder was left as large as it could be asked for");
+        tiku_trk_poseview_free(again);
+
+        bad = "icon 4 0 0 0 0 0 0 -1 0";
+        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+                                   bad, strlen(bad));
+        again = tiku_trk_poseview_new(b, work);
+        (void)tiku_trk_poseview_restore_state(again);
+        check(tiku_trk_poseview_icon_size(again) == 16, "MA-063",
+              "and one below the bottom comes up to the smallest");
+
+        bad = "list -7 0 0 0 0 0 0 -1 0";
+        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+                                   bad, strlen(bad));
+        tiku_trk_poseview_free(again);
+        again = tiku_trk_poseview_new(b, work);
+        (void)tiku_trk_poseview_restore_state(again);
+        check(tiku_trk_poseview_icon_size(again) == 16, "MA-063",
+              "a negative size is a size below the bottom, not a number to "
+              "obey: an icon cannot be drawn -7 across");
+        tiku_trk_poseview_free(again);
+
+        bad = "sideways 64 9 0 0 0 0 3 -1 1";
+        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+                                   bad, strlen(bad));
+        again = tiku_trk_poseview_new(b, work);
+        (void)tiku_trk_poseview_reload(again);
+        (void)tiku_trk_poseview_restore_state(again);
+        check(tiku_trk_poseview_mode(again) == TIKU_TRK_MODE_LIST &&
+              tiku_trk_poseview_icon_size(again) == 32 &&
+              tiku_trk_poseview_scroll(again) == 0 &&
+              tiku_trk_poseview_sort_field(again) == TIKU_TRK_COL_NAME,
+              "MA-063",
+              "a mode nothing recognises discards the WHOLE record rather "
+              "than the mode alone: the numbers beside it were written by "
+              "whatever wrote the name, and a size and a sort key taken "
+              "from a record that garbled are not more trustworthy than "
+              "the name was");
+        tiku_trk_poseview_free(again);
+        (void)tiku_trk_state_forget(store, work);
     }
 
     printf("\nwhat a sweep leaves behind (PVS-029)\n");
