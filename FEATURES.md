@@ -1150,12 +1150,12 @@ BPoseView::PlaceFolder writes a pose location with FSSetPoseLocation when the in
 `PoseView.cpp` → `BPoseView::PlaceFolder`  
 **PORT:** Same seeding path as PVL-025: proven by the notice handler, without a New folder command to drive it.
 
-#### PVL-099 · important · partial ⟨found by verification⟩
+#### PVL-099 · important · done ⟨found by verification⟩
 **After "New folder" the new folder is selected and its name is immediately editable inline, so typing renames it.**  
 BPoseView::NewFolder: FSCreateNewFolderIn -> PlaceFolder -> EntryCreated -> (re-add to the filtered list when filtering) -> UpdateScrollRange, CommitActivePose, SelectPose, pose->EditFirstWidget(). The inventory covers only the naming algorithm in FSCreateNewFolderIn.  
 `PoseView.cpp` → `BPoseView::NewFolder`  
-**MISSING:** The inline rename does not open after creation — the code says so itself ("Tracker opens the name for editing straight away; here the folder is at least selected", app.c:1227-1229) even though a rename editor exists (begin_rename); and in the desktop shell New folder is in the File menu and enabled by the rules (cwmenu.c:127, shortcuts.c:270-271) but menu_invoke has no TIKU_TRK_CMD_NEW_FOLDER case, so choosing it does nothing.  
-*Audited 2026-08-12: `src/tiku_trk_app.c:1215-1243 (Ctrl+N: fs_new_folder + select via poseview_click)` `src/tiku_trk_fs.c:2047-2092 (new_folder_name/new_folder + undo_reset)` `src/tiku_trk_desktop.c:1042-1370 (menu_invoke: no NEW_FOLDER case; default is a no-op)`*  
+**PORT:** Both shells create the folder through the filesystem operation, reload the listing, select the created node, and immediately open the inline rename editor. A second New folder command first commits the current rename and then creates the next unique name, preserving repeatability.
+*Audited 2026-08-14: `src/shell/tiku_trk_app.c` and `src/shell/tiku_trk_desktop.c` New Folder dispatch; `src/ui/windows/tiku_trk_folder_edit.c` editor command hand-off.*
 *Shell: both*  
 #### PVL-100 · important · open ⟨found by verification⟩
 **Dropping data from another application that has no files yet negotiates a file into existence: Tracker creates an empty clipping file and replies B_COPY_TARGET/B_MOVE_TARGET so the originator fills it in; dropping such a drag on the Trash replies B_TRASH_TARGET instead.**  
@@ -1804,13 +1804,12 @@ half, does not exist.
 *src/tiku_trk_panel.c:tiku_trk_panel_key (the Tab arm);
 src/tiku_trk_desktop.c (the panel's key branch); tests/test_panel.c*
 
-#### PVK-023 · important · partial
+#### PVK-023 · important · done
 **While a pose name is being edited, Return commits the edit, Escape cancels it, and Tab / Shift+Tab commit and move to the next / previous editable text widget of the same pose.**  
 view->CommitActivePose(key == B_RETURN) for Return/Escape; ActivePose()->EditNextWidget/EditPreviousWidget for Tab. Both return B_SKIP_MESSAGE so the keys never reach BPoseView::KeyDown. The edit BTextView also DisallowChar(B_TAB) and DisallowChar(B_ESCAPE).  
 `TextWidget.cpp` → `TextViewKeyDownFilter`  
 **TIKU:** Renaming a namespace node is a write to a typed descriptor; the commit/cancel split still applies.  
-**MISSING:** Return commits and Escape cancels the inline rename ahead of any view key handling, but the Tab / Shift+Tab clause is missing entirely — Tab reaches the editor as a control char and is ignored, and there is no next/previous editable widget for a pose.  
-*src/tiku_trk_app.c:handle_key lines 800-835; src/tiku_trk_edit.c:tiku_trk_edit_key line 97*
+**PORT:** Return and Escape retain their commit/cancel behavior. Tab and Shift+Tab commit the current inline rename and move to the next or previous editable pose, wrapping through the current listing; device namespace rows are skipped. `src/shell/tiku_trk_app.c; src/ui/windows/tiku_trk_folder_edit.c`
 
 #### PVK-024 · important · done
 **Backspace deletes the last character of the type-ahead match string and re-selects the best match for the shortened string; it also restarts the type-ahead timeout.**  
@@ -1926,13 +1925,11 @@ shell test runs its fixture under home.
 tiku_trk_fs_delete_question; tests/shell/trash.script*  
 *Shell: desktop, tracker*  
 
-#### PVK-039 · important · partial
+#### PVK-039 · important · done
 **When a text field has focus, the Delete key and the Cut/Copy/Paste/Select-all shortcuts are forwarded to that text view instead of acting on files.**  
 kMoveSelectionToTrash synthesises a B_DELETE KeyDown on the focused BTextView; BContainerWindow::MessageReceived re-posts B_CUT/B_COPY/B_PASTE/B_SELECT_ALL to CurrentFocus() when it is a BTextView, otherwise to the PoseView. B_SELECT_ALL inside the pose view selects the active pose's text widget when one is being edited.  
 `PoseView.cpp` → `BPoseView::MessageReceived (case kMoveSelectionToTrash, case B_SELECT_ALL); BContainerWindow::MessageReceived (ContainerWindow.cpp)`  
-**MISSING:** While the inline editor has focus it swallows the keys first and Delete and Ctrl+A are routed to it as text verbs, but Cut/Copy/Paste are not forwarded (the port has no clipboard at all, so Ctrl+X/C/V simply fall through and are dropped as control chars).  
-*src/tiku_trk_app.c:handle_key lines 800-835; src/tiku_trk_edit.c:tiku_trk_edit_key case TIKU_TRK_EDIT_SELECT_ALL line 147*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The port has a file clipboard (src/tiku_trk_clip.c) and Ctrl+X/C/V invoke the file cut/copy/paste verbs in the desktop shell (src/tiku_trk_desktop.c:2476-2490). What remains missing is only the forwarding of those chords to a focused text editor as text verbs. `src/tiku_trk_desktop.c:2476-2490; src/tiku_trk_clip.c`  
+**PORT:** Focused inline editors consume Cut/Copy/Paste before file dispatch, using a shared text payload and selection-aware operations. Delete and Select All continue to route through the same editor path. `src/core/tiku_trk_edit.c; src/shell/tiku_trk_app.c; src/ui/windows/tiku_trk_folder_edit.c`
 
 #### PVK-040 · important · done
 **Command+Up opens the parent folder; it is refused at the root (and on the Desktop) unless Control is also held, which forces it.**  
@@ -1940,11 +1937,11 @@ CanOpenParent(): false for Desktop view or root; `if ((modifiers() & B_CONTROL_K
 `PoseView.cpp` → `BPoseView::OpenParent / BPoseView::CanOpenParent; AddShortcut(B_UP_ARROW, B_COMMAND_KEY, kOpenParentDir) in BContainerWindow::AddShortcuts`  
 **PORT:** Bound to Cmd+Up in both shells.  The menu shows no accelerator for it: this drawing floor has one glyph per byte and no arrow among them.
 
-#### PVK-041 · important · open
+#### PVK-041 · important · done
 **Command+Down opens the selection (equivalent to Return), and in Single Window Browse mode Command+Left/Right/Up become Back/Forward/Up navigation with Command+L focusing the location bar.**  
 SetSingleWindowBrowseShortcuts removes the Cmd+Up / Cmd+Opt+Up / Cmd+Opt+Down bindings and installs kNavigatorCommandBackward/Forward/Up on the Navigator (both with and without Option), Cmd+Opt+Down -> kOpenSelection, and 'L' -> kNavigatorCommandSetFocus. It is a no-op on the Desktop.  
 `ContainerWindow.cpp` → `BContainerWindow::SetSingleWindowBrowseShortcuts; BContainerWindow::Init (AddShortcut(B_DOWN_ARROW, B_COMMAND_KEY, kOpenSelection))`
-**SUBSYSTEM:** navigator (location bar + back/forward history) — no history stack, Back/Forward command, or location bar exists in either shell (grep back/forward/history over src/tiku_trk_app.c and desktop.c returns nothing relevant; no Cmd+L binding); the Cmd+Down-opens-selection clause alone is mere wiring (open_selection exists at src/tiku_trk_app.c:738 but app.c:997 special-cases only Cmd+Up, so Cmd+Down falls into plain key_nav which ignores the CMD bit, poseview.c:1188-1304)  
+**PORT:** The single-window shell owns navigator history and a location editor: Cmd+Left/Right/Up and Cmd+L use it, while Cmd+Down and Option+Return open the active selection. The spatial desktop keeps its documented no-op navigation semantics but handles Cmd+Down as the same open-selection action as Return. `src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c`
 
 #### PVK-042 · core · partial
 **The standard Command shortcut set is registered on the window and targets the pose view: X/C/V clipboard, Shift+X/Shift+C cut-more/copy-more, F find, N new folder, O open, Ctrl+O open with, I get info, E edit name, D duplicate, K clean up (Shift+K clean up all), A select all, S invert selection, Shift+A Select..., G edit query, U unmount, +/- icon size, and Cmd+Opt+Shift+Ctrl+Q to quit Tracker.**  
@@ -2967,13 +2964,11 @@ BRecentItemsList::GetNextMenuItem resolves a symlink to its target model, picks 
 `RecentItems.cpp` → `BRecentItemsList::GetNextMenuItem / RecentItemsMenu::AddNextItem`
 **SUBSYSTEM:** Recent-items lists. Same absence as CW-058 — there are no recent-item menus to give submenu/symlink/truncation behavior to.  
 
-#### CW-060 · important · partial
+#### CW-060 · important · done
 **Cut/Copy/Paste/Select all go to the file list normally, but go to the text field when one has focus - so renaming a file or typing in a panel behaves like a text editor.**  
 MessageReceived forwards B_CUT/B_COPY/B_PASTE/B_SELECT_ALL to PoseView() unless CurrentFocus() is a BTextView, in which case it forwards to that view (the custom kCutMoreSelectionToClipboard / kCopyMoreSelectionToClipboard / kPasteLinksFromClipboard variants always go to the PoseView to avoid recursion).  
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases B_CUT/B_COPY/B_PASTE/B_SELECT_ALL`  
-**MISSING:** Select all is routed correctly — Ctrl+A becomes TIKU_TRK_EDIT_SELECT_ALL while an inline editor has focus and selects poses otherwise — but Cut/Copy/Paste have no key handlers and no menu_invoke cases at all, and menu_ctx never sets text_focus, so the text-view routing the row describes exists for only one of the four verbs.  
-*src/tiku_trk_app.c:handle_key (editing branch XK_a → EDIT_SELECT_ALL; XK_a → poseview_select_all)*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- menu_invoke handles CUT/CUT_MORE/COPY/COPY_MORE (src/tiku_trk_desktop.c:1240-1267) and PASTE/PASTE_LINKS including the same-folder-duplicates and no-copy-into-Trash rules (:1268-1351), and the desktop shell binds Ctrl+X/C/V with Shift turning each into its more/links variant (:2476-2490). The single-window app still lacks the three chords, and text_focus is still never set, but "at all" is false. `src/tiku_trk_desktop.c:1240-1351`  
+**PORT:** Select All and Delete remain editor-local when an inline field is focused. Cut/Copy/Paste now route to the shared text editor in both shells, while the desktop menu context marks `text_focus` so its enablement follows the same rule; otherwise the commands continue to target the file clipboard. `src/core/tiku_trk_edit.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c; src/ui/commands/tiku_trk_folder_menu.c`
 
 #### CW-061 · important · partial
 **Cmd+Z undoes the last file operation and Shift+Cmd+Z redoes it, unless a text field has focus, in which case the text view handles it.**  

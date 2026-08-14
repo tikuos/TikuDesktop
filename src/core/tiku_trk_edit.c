@@ -13,6 +13,29 @@
 #include <stdio.h>
 #include <string.h>
 
+/* The inline fields in the two shells are separate views of one Tracker
+ * clipboard.  Keeping the text payload here also makes it impossible for a
+ * focused editor's Cmd-X/C/V to fall through into the file clipboard. */
+static char edit_clipboard[TIKU_TRK_EDIT_MAX];
+
+static void
+copy_selection(tiku_trk_edit_t *e)
+{
+    int from, to;
+
+    if (tiku_trk_edit_selection(e, &from, &to)) {
+        size_t n = (size_t)(to - from);
+
+        if (n >= sizeof edit_clipboard) {
+            n = sizeof edit_clipboard - 1u;
+        }
+        memcpy(edit_clipboard, e->text + from, n);
+        edit_clipboard[n] = '\0';
+    } else {
+        edit_clipboard[0] = '\0';
+    }
+}
+
 void
 tiku_trk_edit_start(tiku_trk_edit_t *e, const char *text)
 {
@@ -164,6 +187,26 @@ tiku_trk_edit_key(tiku_trk_edit_t *e, tiku_trk_edit_key_t key, int shift,
         e->sel_b = e->len;
         e->caret = e->len;
         return TIKU_TRK_EDIT_HANDLED;
+
+    case TIKU_TRK_EDIT_COPY:
+        copy_selection(e);
+        return TIKU_TRK_EDIT_HANDLED;
+
+    case TIKU_TRK_EDIT_CUT:
+        copy_selection(e);
+        delete_selection(e);
+        return TIKU_TRK_EDIT_HANDLED;
+
+    case TIKU_TRK_EDIT_PASTE: {
+        size_t i;
+
+        delete_selection(e);
+        for (i = 0; edit_clipboard[i] != '\0'; i++) {
+            (void)tiku_trk_edit_key(e, TIKU_TRK_EDIT_CHAR, 0,
+                                    edit_clipboard[i]);
+        }
+        return TIKU_TRK_EDIT_HANDLED;
+    }
 
     case TIKU_TRK_EDIT_COMMIT:
         e->active = 0;

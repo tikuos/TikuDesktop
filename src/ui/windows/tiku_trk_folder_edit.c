@@ -186,6 +186,32 @@ edit_key(unsigned key)
     }
 }
 
+static int
+next_rename_row(tiku_trk_folder_window_t *folder, int row, int backwards)
+{
+    int n, step, i;
+
+    if (folder == NULL || folder->view == NULL) {
+        return -1;
+    }
+    n = tiku_trk_poseview_count(folder->view);
+    step = backwards ? -1 : 1;
+    for (i = 1; i <= n; i++) {
+        int at = (row + step * i) % n;
+        tiku_trk_pose_t *pose;
+
+        if (at < 0) {
+            at += n;
+        }
+        pose = tiku_trk_poseview_at(folder->view, at);
+        if (pose != NULL && pose->model.kind != TIKU_TRK_KIND_DEVICE_NODE &&
+            pose->model.kind != TIKU_TRK_KIND_VIRTUAL_DIR) {
+            return at;
+        }
+    }
+    return -1;
+}
+
 int
 tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     tiku_trk_folder_window_t *folder, unsigned key, unsigned modifiers,
@@ -199,6 +225,39 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     if (controller == NULL ||
         (!controller->renaming && !controller->editing)) {
         return 0;
+    }
+    if ((modifiers & TIKU_DESK_MOD_CMD) &&
+        (key == 'x' || key == 'c' || key == 'v')) {
+        tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
+                                  : (key == 'c') ? TIKU_TRK_EDIT_COPY
+                                                 : TIKU_TRK_EDIT_PASTE;
+        editor = controller->renaming ? &controller->rename_edit
+                                      : &controller->value_edit;
+        (void)tiku_trk_edit_key(editor, text_key, 0, '\0');
+        *controller->dirty = 1;
+        return 1;
+    }
+    if ((modifiers & TIKU_DESK_MOD_CMD) && key == 'n') {
+        /* A command invoked while the editor is up first commits the current
+         * name, then reaches the shell's command dispatcher. */
+        if (controller->renaming) {
+            tiku_trk_folder_edit_finish_rename(controller, 1);
+        } else {
+            tiku_trk_folder_edit_commit_value(controller, folder);
+        }
+        return 0;
+    }
+    if (controller->renaming && key == TIKU_DESK_KEY_TAB) {
+        int row = next_rename_row(folder, controller->rename_row,
+                                  (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+
+        tiku_trk_folder_edit_finish_rename(controller, 1);
+        if (row >= 0) {
+            tiku_trk_poseview_click(folder->view, row, 0u);
+            tiku_trk_folder_edit_begin_rename(controller, folder, row);
+        }
+        *controller->dirty = 1;
+        return 1;
     }
     renaming = controller->renaming;
     editor = renaming ? &controller->rename_edit : &controller->value_edit;

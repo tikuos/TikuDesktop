@@ -36,6 +36,15 @@ tiku_trk_folder_menu_init(tiku_trk_folder_menu_t *controller,
     };
 }
 
+void
+tiku_trk_folder_menu_set_editor(tiku_trk_folder_menu_t *controller,
+                                tiku_trk_folder_edit_t *editor)
+{
+    if (controller != NULL) {
+        controller->editor = editor;
+    }
+}
+
 tiku_trk_sc_ctx_t
 tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
     tiku_trk_folder_window_t *folder, unsigned modifiers)
@@ -49,6 +58,9 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
         return context;
     }
     context.selection = tiku_trk_poseview_selection_count(folder->view);
+    context.text_focus = controller->editor != NULL &&
+                         (controller->editor->editing ||
+                          controller->editor->renaming);
     context.is_desktop = folder->win == NULL;
     context.view_mode = tiku_trk_poseview_mode(folder->view);
     context.icon_size = tiku_trk_poseview_icon_size(folder->view);

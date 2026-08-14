@@ -73,6 +73,7 @@ typedef struct {
     int                  editing;
     tiku_trk_edit_t      ed;
     char                 edit_path[TIKU_TRK_PATH_MAX];
+    int                  edit_row;
     /* The window's own activation state, which decides whether a selection
      * is PAINTED; and where the last press landed, for the long press. */
     int                  active;
@@ -121,6 +122,40 @@ first_selected_index(app_t *a)
 
         if (p != NULL && p->selected) {
             return i;
+        }
+    }
+    return -1;
+}
+
+static int
+pose_index(app_t *a, const tiku_trk_pose_t *wanted)
+{
+    int i, n = tiku_trk_poseview_count(a->view);
+
+    for (i = 0; i < n; i++) {
+        if (tiku_trk_poseview_at(a->view, i) == wanted) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int
+next_edit_row(app_t *a, int row, int backwards)
+{
+    int n = tiku_trk_poseview_count(a->view);
+    int step = backwards ? -1 : 1;
+    int i;
+
+    for (i = 1; i <= n; i++) {
+        int at = (row + step * i) % n;
+        tiku_trk_pose_t *p;
+
+        if (at < 0) { at += n; }
+        p = tiku_trk_poseview_at(a->view, at);
+        if (p != NULL && p->model.kind != TIKU_TRK_KIND_DEVICE_NODE &&
+            p->model.kind != TIKU_TRK_KIND_VIRTUAL_DIR) {
+            return at;
         }
     }
     return -1;
@@ -1096,6 +1131,7 @@ begin_rename(app_t *a)
         return;
     }
     a->editing = 1;
+    a->edit_row = pose_index(a, p);
     tiku_trk_edit_start(&a->ed, p->model.name);
     /* A character the store will refuse must never reach the field. */
     tiku_trk_edit_deny(&a->ed, tiku_trk_fs_name_deny());
@@ -1427,6 +1463,31 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
         int shift = (modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
+        if ((modifiers & TIKU_DESK_MOD_CMD) &&
+            (key == 'x' || key == 'c' || key == 'v')) {
+            tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
+                                      : (key == 'c') ? TIKU_TRK_EDIT_COPY
+                                                     : TIKU_TRK_EDIT_PASTE;
+            (void)tiku_trk_edit_key(&a->ed, text_key, 0, '\0');
+            a->dirty = 1;
+            return;
+        }
+        if ((modifiers & TIKU_DESK_MOD_CMD) && key == 'n') {
+            end_rename(a, 1);
+            goto not_editing;
+        }
+        if (key == TIKU_DESK_KEY_TAB) {
+            int row = next_edit_row(a, a->edit_row,
+                                    (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+
+            end_rename(a, 1);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                begin_rename(a);
+            }
+            a->dirty = 1;
+            return;
+        }
         switch (key) {
         case TIKU_DESK_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;    break;
         case TIKU_DESK_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;    break;
@@ -1458,6 +1519,7 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
         return;
     }
 
+not_editing:
     if (modifiers & TIKU_DESK_MOD_SHIFT) { mods |= TIKU_TRK_MOD_SHIFT; }
     if (modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
 
@@ -1466,6 +1528,10 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
         return;
     }
     if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (key == TIKU_DESK_KEY_DOWN || key == TIKU_DESK_KEY_RETURN) {
+            open_selection(a);
+            return;
+        }
         if (key == TIKU_DESK_KEY_LEFT) {
             navigate_back(a);
             return;
@@ -1479,8 +1545,18 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
             return;
         }
     }
+    if ((modifiers & TIKU_DESK_MOD_OPTION) && key == TIKU_DESK_KEY_RETURN) {
+        open_selection(a);
+        return;
+    }
 
     switch (key) {
+    case 'o':
+        if (mods & TIKU_TRK_MOD_CMD) {
+            open_selection(a);
+            return;
+        }
+        break;
     case TIKU_DESK_KEY_UP:        nav = TIKU_TRK_KEY_UP;    break;
     case TIKU_DESK_KEY_DOWN:      nav = TIKU_TRK_KEY_DOWN;  break;
     case TIKU_DESK_KEY_LEFT:      nav = TIKU_TRK_KEY_LEFT;  break;
@@ -1614,6 +1690,12 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
     case TIKU_DESK_KEY_F2:
         begin_rename(a);
         return;
+    case 'e':
+        if (modifiers & TIKU_DESK_MOD_CMD) {
+            begin_rename(a);
+            return;
+        }
+        break;
     case TIKU_DESK_KEY_DELETE: {
         char paths[64][TIKU_TRK_PATH_MAX];
         const char *sel[64];
@@ -1716,6 +1798,10 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
 
                     if (i >= 0) {
                         tiku_trk_poseview_click(a->view, i, 0u);
+                        begin_rename(a);
+                        snprintf(a->status, sizeof a->status,
+                                 "created '%.180s'",
+                                 (slash != NULL) ? slash + 1 : made);
                     }
                 }
             } else {

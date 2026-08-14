@@ -13,6 +13,7 @@
 #include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_folder_window.h"
+#include "tiku_trk_folder_edit.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_types.h"
@@ -27,6 +28,7 @@ typedef struct {
     tiku_trk_launch_controller_t  *launcher;
     tiku_trk_folder_window_t     **bar_folder;
     int                           *bar_open;
+    tiku_trk_folder_edit_t        *editor;
 } tiku_trk_folder_menu_t;
 
 /** @brief Bind live folder-menu models and their supporting services. */
@@ -35,6 +37,10 @@ void tiku_trk_folder_menu_init(tiku_trk_folder_menu_t *controller,
     tiku_trk_backend_t *backend, tiku_trk_fs_t *fs,
     tiku_trk_types_t *types, tiku_trk_launch_controller_t *launcher,
     tiku_trk_folder_window_t **bar_folder, int *bar_open);
+
+/** @brief Bind the focused inline editor for live text-menu enablement. */
+void tiku_trk_folder_menu_set_editor(tiku_trk_folder_menu_t *controller,
+                                     tiku_trk_folder_edit_t *editor);
 
 /** @brief Describe which commands apply to a folder and its selection. */
 tiku_trk_sc_ctx_t tiku_trk_folder_menu_context(

@@ -86,6 +86,20 @@ main(void)
           TIKU_TRK_EDIT_IGNORED,
           "MA-043", "a closed editor takes no more keys");
 
+    printf("\ntext clipboard routing\n");
+    tiku_trk_edit_start(&e, "alpha");
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_COPY, 0, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_END, 0, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_PASTE, 0, 0);
+    check(strcmp(e.text, "alphaalpha") == 0, "PVK-039",
+          "copy and paste stay inside the focused text editor");
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_HOME, 0, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_RIGHT, 1, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_RIGHT, 1, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_CUT, 0, 0);
+    check(strcmp(e.text, "phaalpha") == 0, "PVK-039",
+          "cut removes only the selected text and records it");
+
     printf("\ncharacters a name cannot contain (MA-046)\n");
     tiku_trk_edit_start(&e, "notes");
     tiku_trk_edit_deny(&e, "/");

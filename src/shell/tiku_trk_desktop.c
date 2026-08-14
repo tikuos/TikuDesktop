@@ -875,13 +875,13 @@ fpanel_open(desktop_t *app, folder_t *folder, int command)
  * What "open the parent WITH the item selected" means: landing on the
  * folder with nothing picked would leave the user to find it again.
  */
-static void
+static int
 select_named(desktop_t *app, folder_t *fl, const char *name)
 {
     int i, n;
 
     if (fl == NULL || name == NULL || name[0] == '\0') {
-        return;
+        return -1;
     }
     n = tiku_trk_poseview_count(fl->view);
     for (i = 0; i < n; i++) {
@@ -891,9 +891,10 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
             tiku_trk_poseview_click(fl->view, i, 0u);
             tiku_trk_poseview_scroll_to(fl->view, i);
             app->dirty = 1;
-            return;
+            return i;
         }
     }
+    return -1;
 }
 
 /** @brief Carry out a menu choice on the focused folder. */
@@ -901,6 +902,36 @@ static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
 {
     if (fl == NULL) {
+        return;
+    }
+    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
+        char made[TIKU_TRK_PATH_MAX], error[200];
+        const char *slash;
+        int row;
+
+        error[0] = '\0';
+        if (app->fs != NULL && tiku_trk_fs_new_folder(
+                app->fs, fl->path, made, sizeof made, error,
+                sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            snprintf(app->status, sizeof app->status, "created '%.150s'",
+                     slash != NULL ? slash + 1 : made);
+            (void)tiku_trk_poseview_reload(fl->view);
+            row = select_named(app, fl,
+                               slash != NULL ? slash + 1 : made);
+            if (row >= 0) {
+                begin_rename(app, fl, row);
+                /* Opening the editor must not hide the operation result;
+                 * scripts and users should still see what was made. */
+                snprintf(app->status, sizeof app->status,
+                         "created '%.150s'",
+                         slash != NULL ? slash + 1 : made);
+            }
+        } else {
+            snprintf(app->status, sizeof app->status, "%.180s",
+                     error[0] != '\0' ? error : "could not create a new folder");
+        }
+        app->dirty = 1;
         return;
     }
     if (tiku_trk_folder_actions_invoke(app->desk, fl, command)) {
@@ -1362,6 +1393,7 @@ tracker_run(int argc, char **argv)
         file_actions_close_under, &app);
     tiku_trk_folder_edit_init(&app.folder_edit, app.backend, app.fs,
         app.status, sizeof app.status, &app.dirty);
+    tiku_trk_folder_menu_set_editor(&app.folder_menu, &app.folder_edit);
     tiku_trk_band_controller_init(&app.band_controller, app.row_h,
                                   &app.dirty);
     tiku_trk_switcher_window_init(&app.switcher_window, app.desk,
@@ -2804,6 +2836,42 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (key == 'o' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    fl != NULL) {
+                    tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
+
+                    if (p != NULL &&
+                        tiku_trk_model_is_container(&p->model)) {
+                        (void)open_folder(&app, p->model.path);
+                    } else if (p != NULL) {
+                        begin_edit(&app, fl);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
+                if (key == 'e' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    fl != NULL) {
+                    begin_rename(&app, fl,
+                        tiku_trk_poseview_active(fl->view) != NULL
+                            ? tiku_trk_poseview_active(fl->view)->index : -1);
+                    app.dirty = 1;
+                    break;
+                }
+                if (key == 'd' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    fl != NULL) {
+                    menu_invoke(&app, fl, TIKU_TRK_CMD_DUPLICATE);
+                    app.dirty = 1;
+                    break;
+                }
+                if (key == 'k' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    fl != NULL) {
+                    menu_invoke(&app, fl,
+                        (ev.modifiers & TIKU_DESK_MOD_SHIFT)
+                            ? TIKU_TRK_CMD_CLEANUP_ALL
+                            : TIKU_TRK_CMD_CLEANUP);
+                    app.dirty = 1;
+                    break;
+                }
                 if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
                     (key == 'x' || key == 'c' || key == 'v')) {
                     /* The clipboard chords, which until now only the menu
@@ -2950,6 +3018,20 @@ tracker_run(int argc, char **argv)
                         if (open_folder(&app, p->model.path) != NULL) {
                             close_window(&app, from);
                         }
+                    }
+                    app.dirty = 1;
+                    break;
+                }
+                if (fl != NULL && key == TIKU_DESK_KEY_DOWN &&
+                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                    tiku_trk_pose_t *p =
+                        tiku_trk_poseview_active(fl->view);
+
+                    if (p != NULL &&
+                        tiku_trk_model_is_container(&p->model)) {
+                        (void)open_folder(&app, p->model.path);
+                    } else if (p != NULL) {
+                        begin_edit(&app, fl);
                     }
                     app.dirty = 1;
                     break;
