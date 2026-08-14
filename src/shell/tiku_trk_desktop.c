@@ -1235,6 +1235,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * answer. */
         fpanel_open(app, fl, command);
         break;
+    case TIKU_TRK_CMD_SELECT_MATCHING:
+        /* The same window the keyboard opens: an item that named it and
+         * did nothing was the menu disagreeing with the shortcut. */
+        tiku_trk_select_window_open(&app->select_window, fl, 520, 300);
+        break;
     case TIKU_TRK_CMD_CLOSE:
         close_window(app, fl->win);
         break;
@@ -1659,7 +1664,8 @@ tracker_run(int argc, char **argv)
             DESK_W, DESK_H, path, &app.dirty,
             &alert_model(&app)->open);
     }
-    tiku_trk_folder_file_actions_init(&app.file_actions, app.fs, &app.clip,
+    tiku_trk_folder_file_actions_init(&app.file_actions, app.fs,
+        app.backend, &app.clip,
         &app.drop_controller.pending, app.drop_controller.destination,
         alert_model(&app), &app.prefs_window, app.status, sizeof app.status,
         file_actions_close_under, &app);

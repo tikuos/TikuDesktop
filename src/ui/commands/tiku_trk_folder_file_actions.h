@@ -25,6 +25,7 @@ typedef void (*tiku_trk_folder_close_under_fn)(void *context,
 /** @brief Services shared by folder commands that mutate filesystem state. */
 typedef struct {
     tiku_trk_fs_t                    *fs;
+    tiku_trk_backend_t               *backend;
     tiku_trk_clip_t                  *clip;
     tiku_trk_drag_t                  *pending;
     char                             *drop_destination;
@@ -50,6 +51,7 @@ typedef struct {
 /** @brief Bind filesystem, clipboard, dialog, and shell-close services. */
 void tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_trk_fs_t *fs,
+    tiku_trk_backend_t *backend,
     tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
     char *drop_destination, tiku_trk_alert_t *alert,
     tiku_trk_prefs_window_t *preferences, char *status, size_t status_size,

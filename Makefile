@@ -354,6 +354,11 @@ test: all
 	@# The contract is data every count is drawn from; a copy of it that
 	@# doubled or lost a row must fail here rather than be believed.
 	@python3 tools/check_contract.py FEATURES.md
+	@# And that every item those menus offer reaches something: a command
+	@# can be added to a menu, enabled and given a shortcut without any
+	@# shell having a case for it, which looks like a working menu until
+	@# it is picked.
+	@python3 tools/check_menu_commands.py
 	@tests/shell/run.sh
 
 check-architecture:

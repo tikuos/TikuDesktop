@@ -17,7 +17,7 @@
 void
 tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_trk_fs_t *fs,
-    tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
+    tiku_trk_backend_t *backend, tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
     char *drop_destination, tiku_trk_alert_t *alert,
     tiku_trk_prefs_window_t *preferences, char *status, size_t status_size,
     tiku_trk_folder_close_under_fn close_under, void *close_context)
@@ -27,6 +27,7 @@ tiku_trk_folder_file_actions_init(
     }
     *controller = (tiku_trk_folder_file_actions_t){
         .fs = fs,
+        .backend = backend,
         .clip = clip,
         .pending = pending,
         .drop_destination = drop_destination,
@@ -98,6 +99,93 @@ selection_of(tiku_trk_folder_file_actions_t *controller,
     }
     return tiku_trk_folder_file_actions_selection(folder, paths, selection,
                                                   maximum);
+}
+
+/**
+ * @brief Link the selection beside itself (FS-009, CW-035).
+ *
+ * Into the item's own folder, which is where a link made from the menu
+ * goes; Shift asks for a relative one.
+ */
+static void
+link_selection(tiku_trk_folder_file_actions_t *controller,
+               tiku_trk_folder_window_t *folder, int command)
+{
+    char paths[64][TIKU_TRK_PATH_MAX];
+    const char *selection[64];
+    int count = selection_of(controller, folder, paths, selection, 64);
+    char dir[TIKU_TRK_PATH_MAX];
+    const char *slash;
+
+    if (count == 0) {
+        return;
+    }
+    slash = strrchr(selection[0], '/');
+    if (slash == NULL) {
+        return;
+    }
+    {
+        size_t keep = (slash == selection[0]) ? 1u
+                    : (size_t)(slash - selection[0]);
+
+        if (keep >= sizeof dir) {
+            return;
+        }
+        memcpy(dir, selection[0], keep);
+        dir[keep] = '\0';
+    }
+    (void)tiku_trk_fs_link(controller->fs, selection, count, dir,
+                           command == TIKU_TRK_CMD_CREATE_REL_LINK);
+    snprintf(controller->status, controller->status_size,
+             "linking %d item%s", count, count == 1 ? "" : "s");
+}
+
+/**
+ * @brief Read the selection's type again (CW-042's Identify).
+ *
+ * The source re-sniffs the file to fill the MIME database; here a node's
+ * type comes from the backend and the type table, both of which can have
+ * changed since the listing was taken, so identifying is re-asking.
+ */
+static void
+identify_selection(tiku_trk_folder_file_actions_t *controller,
+                   tiku_trk_folder_window_t *folder)
+{
+    char paths[64][TIKU_TRK_PATH_MAX];
+    const char *selection[64];
+    int count = selection_of(controller, folder, paths, selection, 64);
+    int i, told = 0;
+
+    if (count == 0 || folder == NULL || folder->view == NULL ||
+        controller->backend == NULL) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        tiku_trk_model_t fresh;
+        int k, n = tiku_trk_poseview_count(folder->view);
+
+        if (controller->backend->ops->stat(controller->backend, selection[i],
+                                           &fresh) != 0) {
+            continue;
+        }
+        for (k = 0; k < n; k++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(folder->view, k);
+
+            if (p == NULL || strcmp(p->model.path, selection[i]) != 0) {
+                continue;
+            }
+            if (strcmp(fresh.type, p->model.type) != 0) {
+                told++;
+            }
+            p->model = fresh;
+            (void)tiku_trk_desc_parse(fresh.facts.meta, &p->desc);
+            break;
+        }
+    }
+    snprintf(controller->status, controller->status_size,
+             (told > 0) ? "identified %d item%s, %d changed"
+                        : "identified %d item%s", count,
+             (count == 1) ? "" : "s", told);
 }
 
 /** @brief Copy each item beside itself, under a fresh name (FS-007). */
@@ -468,6 +556,13 @@ tiku_trk_folder_file_actions_invoke(
         return 1;
     case TIKU_TRK_CMD_DUPLICATE:
         duplicate_selection(controller, folder);
+        return 1;
+    case TIKU_TRK_CMD_CREATE_LINK:
+    case TIKU_TRK_CMD_CREATE_REL_LINK:
+        link_selection(controller, folder, command);
+        return 1;
+    case TIKU_TRK_CMD_IDENTIFY:
+        identify_selection(controller, folder);
         return 1;
     case TIKU_TRK_CMD_RESTORE:
         restore_selection(controller, folder);

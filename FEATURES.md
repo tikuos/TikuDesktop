@@ -2949,6 +2949,8 @@ Clipboard items are omitted from the pose menu for printers/root/Trash/in-Trash,
 **PORT:** All four inventories are live in the stated order, including Add-ons placeholders, volume Mount/Unmount placeholders, Trash/root clipboard omissions, the Delete+Restore substitution, the Trash-window prefix, and the Desktop background's inline icon-size submenu. Service-backed mount/add-on verbs and the printers-folder specialization remain pending.
 *src/ui/tiku_trk_cwmenu.c:build_contexts; src/core/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
 **MISSING:** Service-backed mount/add-on verbs and the printers-folder context-menu specialization remain unavailable.
+**PORT:** Three items the inventories offered and enabled did nothing when picked -- Create link, Identify and Select… -- and Duplicate was a fourth. All four now act, and `tools/check_menu_commands.py` fails the build when a menu offers an enabled command no shell carries out, which is what let them sit there.  
+*tests/shell/menudead.script; tools/check_menu_commands.py*
 
 #### CW-043 · core · done
 **Dropping files with the secondary mouse button pops up a Move here / Copy here / Create link here / Cancel menu, and the chosen verb is applied; "Create link here" becomes "Create relative link here" with Shift.**  

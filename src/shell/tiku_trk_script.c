@@ -383,9 +383,11 @@ tiku_trk_script_open(const char *path)
             snprintf(st->text, sizeof st->text, "%s", w[1]);
             rest(w, n, 2, st->text2, sizeof st->text2);
         } else if (strcmp(w[0], "expect-link") == 0 && n >= 3) {
+            /* The target is the LAST word, so a link whose own name has a
+             * space in it -- "a.txt link" -- can still be named. */
             st->op = OP_EXPECT_LINK;
-            snprintf(st->text, sizeof st->text, "%s", w[1]);
-            rest(w, n, 2, st->text2, sizeof st->text2);
+            rest(w, n - 1, 1, st->text, sizeof st->text);
+            snprintf(st->text2, sizeof st->text2, "%s", w[n - 1]);
         } else if (strcmp(w[0], "expect-count") == 0 && n >= 2) {
             st->op = OP_EXPECT_COUNT;
             rest(w, n, 1, st->text, sizeof st->text);
