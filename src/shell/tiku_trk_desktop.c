@@ -203,6 +203,7 @@ typedef struct desktop {
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
     tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
+    tiku_desk_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
@@ -2566,6 +2567,8 @@ tracker_run(int argc, char **argv)
                             app.press_row = row;
                             app.press_fl = fl;
                             app.press_window = w;
+                            app.press_focus =
+                                tiku_desk_workspace_focused(app.desk);
                             app.press_down = 1;
                             app.press_menu = 0;
                             tiku_trk_drag_arm(&app.drag, ev.x,
@@ -2624,6 +2627,8 @@ tracker_run(int argc, char **argv)
                             app.press_row = row;
                             app.press_fl = fl;
                             app.press_window = w;
+                            app.press_focus =
+                                tiku_desk_workspace_focused(app.desk);
                             app.press_down = 1;
                             app.press_menu = 0;
                             /* Armed on a pose, started only if the pointer
@@ -2902,10 +2907,14 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                 }
                 if (!dropped && app.press_down && !app.press_menu &&
-                    app.press_window != NULL) {
+                    app.press_window != NULL &&
+                    tiku_desk_workspace_focused(app.desk) ==
+                        app.press_focus) {
                     /* Content clicks raise on release, while movement has
                      * already cleared press_down, leaving drag-out from a
-                     * background window click-through. */
+                     * background window click-through.  A click that opened
+                     * something is exempt: the raise would put the window
+                     * clicked in back over the window it just opened. */
                     tiku_desk_workspace_activate(app.desk,
                                                   app.press_window);
                 }
@@ -2916,6 +2925,7 @@ tracker_run(int argc, char **argv)
                 app.press_down = 0;
                 app.press_menu = 0;
                 app.press_window = NULL;
+                app.press_focus = NULL;
                 tiku_desk_workspace_end_track(app.desk);
                 break;
             }

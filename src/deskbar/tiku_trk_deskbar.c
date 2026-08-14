@@ -1130,6 +1130,63 @@ tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y)
 }
 
 int
+tiku_trk_deskbar_menu_labels(const tiku_trk_deskbar_t *db, int sub,
+                            char *out, size_t cap)
+{
+    int i, n;
+
+    if (db == NULL || out == NULL || cap == 0) { return 0; }
+    out[0] = '\0';
+    if (!db->menu_open) { return 0; }
+    n = sub ? ((db->sub_of >= 0) ? db->sub_count : 0) : db->leaf_count;
+    for (i = 0; i < n; i++) {
+        size_t used = strlen(out);
+
+        snprintf(out + used, cap - used, "%s|",
+                 sub ? db->sub[i].label : db->leaf[i].label);
+    }
+    return n;
+}
+
+int
+tiku_trk_deskbar_menu_point(const tiku_trk_deskbar_t *db, const char *label,
+                            int *x, int *y)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    tiku_desk_rect_t m;
+    int rowh, i;
+
+    if (db == NULL || label == NULL || x == NULL || y == NULL ||
+        !db->menu_open) {
+        return 0;
+    }
+    rowh = f->height + 6;
+    m = leaf_menu_rect(db, rowh, db->leaf_count);
+    /* The open submenu first: its rows sit over the leaf's, and a name
+     * that appears in both is the one the user can see. */
+    if (db->sub_of >= 0 && db->sub_count > 0) {
+        tiku_desk_rect_t sm = sub_menu_rect(db, m, rowh);
+
+        for (i = 0; i < db->sub_count; i++) {
+            if (strstr(db->sub[i].label, label) != NULL) {
+                *x = sm.x + 8;
+                *y = sm.y + 2 + i * rowh + rowh / 2;
+                return 1;
+            }
+        }
+    }
+    for (i = 0; i < db->leaf_count; i++) {
+        if (db->leaf[i].kind != TIKU_TRK_DB_ITEM_SEP &&
+            strstr(db->leaf[i].label, label) != NULL) {
+            *x = m.x + 8;
+            *y = m.y + 2 + i * rowh + rowh / 2;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
 tiku_trk_deskbar_quit_policy(int prefs_open, int shortcut_quit)
 {
     /* The bar is hosted by the desktop process, so it has no independent

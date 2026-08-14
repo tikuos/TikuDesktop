@@ -11,17 +11,19 @@ wait 6
 drag-window /sub 620 420
 wait 6
 note two rows, dropped on the icon window's background at 600,500
-click 100 116
+click-window /tmp/trk_script
+wait 3
+click-row 1
 wait 2
-click 100 136 1 ctrl
+click-row 2 1 ctrl
 wait 2
-press 100 116
+press-row 1
 move 300 200
 move 600 500
 release 600 500
 wait 20
 click 580 414
 wait 5
-expect-icon-at a.txt 120 47
-expect-icon-at b.txt 120 67
+expect-icon-screen a.txt 600 500
+expect-icon-screen b.txt 600 520
 quit

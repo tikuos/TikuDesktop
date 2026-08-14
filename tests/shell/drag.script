@@ -1,33 +1,33 @@
 # shell: desktop
 # A drag between poses: press on a file, move onto a folder, release.
-# Rows sort folders first, so row 0 is "sub", row 1 is "a.txt".
+# Rows sort folders first, so row 0 is "sub" and the files follow it.
 note PVS-032: a press alone must not move anything
-press 200 136
+press-row 1
 wait 2
 expect-file /tmp/trk_script/a.txt
 note PVS-035/PVS-037: dragging onto a folder and releasing moves it there
-move 200 129
-move 200 116
+move-row 0
+move-row 0
 wait 2
-release 200 116
+release-row 0
 wait 20
 expect-file /tmp/trk_script/sub/a.txt
 expect-no-file /tmp/trk_script/a.txt
 
 note PVS-038: Option-dragging copies instead of moving -- the original stays
-press 200 136
-move 200 129
-move 200 116
-release 200 116 1 alt
+press-row 1
+move-row 0
+move-row 0
+release-row 0 1 alt
 wait 20
 expect-file /tmp/trk_script/sub/b.txt
 expect-file /tmp/trk_script/b.txt
 
 note FS-003: a secondary-button drop offers Move/Copy/Link and obeys the pick
-press 200 156 3
-move 200 144 3
-move 200 116 3
-release 200 116 3
+press-row 2 3
+move-row 0 3
+move-row 0 3
+release-row 0 3
 wait 3
 menu-pick Move here
 wait 25
@@ -35,15 +35,17 @@ expect-file /tmp/trk_script/sub/c.txt
 note and Move is what it obeyed: a copy or a link would leave the source
 expect-no-file /tmp/trk_script/c.txt
 note PVS-051: a drag resting on a folder springs it open
-press 200 136
-move 200 129
-move 200 116
+press-row 1
+move-row 0
+move-row 0
 wait 60
 expect-title sub
-note PVS-056: moving off the target drops the highlight, and the drop is
-note then on nothing rather than on the folder it used to be over
+note PVS-056: moving off the target drops the highlight, so the release is
+note handled by whatever is really under it -- the desktop, which takes the
+note file -- and not by the folder the drag used to rest on
 move 700 500
 release 700 500
 wait 20
-expect-file /tmp/trk_script/b.txt
+expect-file /tmp/trk_home/Desktop/b.txt
+expect-no-file /tmp/trk_script/b.txt
 quit

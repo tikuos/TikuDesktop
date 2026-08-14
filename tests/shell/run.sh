@@ -69,7 +69,14 @@ for s in "$here"/*.script; do
         # The fixture every script starts from.  Rows sort folders first,
         # so row 0 is "sub", row 1 "a.txt", row 2 "b.txt" -- which is what
         # the click coordinates in the scripts are aimed at.
-        rm -rf /tmp/trk_script "$deskhome" && mkdir -p $work/sub
+        # The session PAIR is the exception again: what part one left in
+        # the home IS what part two starts from, so wiping the home here
+        # would leave part two with no session to reopen.
+        case $(basename "$s") in
+            session2.script) rm -rf /tmp/trk_script ;;
+            *) rm -rf /tmp/trk_script "$deskhome" ;;
+        esac
+        mkdir -p $work/sub
         echo hi > $work/a.txt
         echo hi > $work/b.txt
         echo hi > $work/c.txt

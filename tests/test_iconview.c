@@ -205,10 +205,29 @@ main(void)
             if (i == 0 || py + ph > hiy)    { hiy = py + ph; }
         }
         tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
-        check(w == (hix - lox) + 2 * ox, "PVL-049",
-              "the bounding box of every icon, outset by the layout's own "
-              "margin so an icon at the origin is not flush to the edge");
+        check(x == 0 && y == 0 && lox >= 0, "PVL-049",
+              "the window's own corner is in it whatever the icons do: a "
+              "box that started at the first icon would scroll the view "
+              "down to meet a drop made low in the window");
+        check(w == hix + ox, "PVL-049",
+              "and it reaches past the furthest icon by the layout's own "
+              "margin, so an icon at the far edge is not flush to it");
         check(h >= hiy - y, "PVL-049", "in both directions");
+        {
+            int px, py, nx, ny, nw, nh;
+
+            tiku_trk_poseview_pose_location(v, tiku_trk_poseview_at(v, 0),
+                                            &px, &py);
+            tiku_trk_poseview_move_pose(v, tiku_trk_poseview_at(v, 0), -200,
+                                        -100, 0);
+            tiku_trk_poseview_extent(v, &nx, &ny, &nw, &nh);
+            check(nx <= -200 && ny <= -100, "PVL-049",
+                  "content that really is outside that corner extends it "
+                  "the other way, or an icon dragged above the top could "
+                  "never be scrolled back to");
+            tiku_trk_poseview_move_pose(v, tiku_trk_poseview_at(v, 0), px,
+                                        py, 0);
+        }
     }
     tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     tiku_trk_poseview_extent(v, &x, &y, &w, &h);

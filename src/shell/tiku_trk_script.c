@@ -23,10 +23,11 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW, OP_DRAG_WINDOW,
+    OP_PRESS_ROW, OP_MOVE_ROW, OP_RELEASE_ROW, OP_CLICK_WINDOW,
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -247,6 +248,13 @@ tiku_trk_script_open(const char *path)
                 st->button = (unsigned)atoi(w[3]);
             }
             st->modifiers = mods_of(w, n, 4);
+        } else if (strcmp(w[0], "click-window") == 0 && n >= 2) {
+            /* A click on the tab, which is how a window is brought to the
+             * front by hand -- and by title, so the gesture survives the
+             * window moving. */
+            st->op = OP_CLICK_WINDOW;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            st->button = 1u;
         } else if (strcmp(w[0], "drag-window") == 0 && n >= 4) {
             /* By TITLE, not by pixel: where a window's tab sits is the
              * shell's business, and a test that encoded it broke the day
@@ -256,6 +264,18 @@ tiku_trk_script_open(const char *path)
             st->x = atoi(w[2]);
             st->y = atoi(w[3]);
             st->button = 1u;
+        } else if ((strcmp(w[0], "press-row") == 0 ||
+                    strcmp(w[0], "move-row") == 0 ||
+                    strcmp(w[0], "release-row") == 0) && n >= 2) {
+            /* The halves of a drag, aimed at a ROW rather than a pixel, so
+             * a gesture survives the chrome above the listing moving. */
+            st->op = (w[0][0] == 'p') ? OP_PRESS_ROW
+                   : (w[0][0] == 'm') ? OP_MOVE_ROW : OP_RELEASE_ROW;
+            st->count = atoi(w[1]);
+            if (n >= 3) {
+                st->button = (unsigned)atoi(w[2]);
+            }
+            st->modifiers = mods_of(w, n, 3);
         } else if (strcmp(w[0], "click-row") == 0 && n >= 2) {
             st->op = OP_CLICK_ROW;
             st->count = atoi(w[1]);
@@ -344,6 +364,11 @@ tiku_trk_script_open(const char *path)
             st->op = OP_EXPECT_WINAT;
             st->x = atoi(w[1]);
             st->y = atoi(w[2]);
+        } else if (strcmp(w[0], "expect-icon-screen") == 0 && n >= 4) {
+            st->op = OP_EXPECT_ICONSCREEN;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            st->x = atoi(w[2]);
+            st->y = atoi(w[3]);
         } else if (strcmp(w[0], "expect-icon-at") == 0 && n >= 4) {
             st->op = OP_EXPECT_ICONAT;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
@@ -503,6 +528,21 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->modifiers = cur->modifiers;
         s->pending_release = (cur->op == OP_CLICK);
         return 1;
+    case OP_CLICK_WINDOW:
+        if (st == NULL || st->tab_point == NULL ||
+            !st->tab_point(st->pose_ctx, cur->text, &cur->button_x,
+                           &cur->button_y)) {
+            verdict(s, 0, "no window titled:", cur->text);
+            return 1;
+        }
+        cur->x = cur->button_x;
+        cur->y = cur->button_y;
+        out->what = TIKU_TRK_SC_PRESS;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->button = 1u;
+        s->pending_release = 1;
+        return 1;
     case OP_DRAG_WINDOW:
         if (st == NULL || st->tab_point == NULL ||
             !st->tab_point(st->pose_ctx, cur->text, &cur->button_x,
@@ -519,6 +559,25 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         s->drag_to_x = cur->x;
         s->drag_to_y = cur->y;
         s->dragging_window = 1;
+        return 1;
+    case OP_PRESS_ROW:
+    case OP_MOVE_ROW:
+    case OP_RELEASE_ROW:
+        if (st == NULL || st->row_point == NULL ||
+            !st->row_point(st->pose_ctx, cur->count, &cur->x, &cur->y)) {
+            char row[32];
+
+            snprintf(row, sizeof row, "%d", cur->count);
+            verdict(s, 0, "cannot reach row:", row);
+            return 1;
+        }
+        out->what = (cur->op == OP_PRESS_ROW) ? TIKU_TRK_SC_PRESS
+                  : (cur->op == OP_MOVE_ROW) ? TIKU_TRK_SC_MOVE
+                                             : TIKU_TRK_SC_RELEASE;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->button = cur->button;
+        out->modifiers = cur->modifiers;
         return 1;
     case OP_CLICK_ROW:
         if (st == NULL || st->row_point == NULL ||
@@ -575,9 +634,13 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         }
         return 1;
     case OP_EXPECT_TITLE:
+        /* The verdict reads back what the WINDOW says, not what was asked
+         * for: a failure that repeats the expectation tells the reader
+         * nothing about why it failed. */
         verdict(s, st != NULL && st->title != NULL &&
                    strstr(st->title, cur->text) != NULL,
-                "title says", cur->text);
+                "title says",
+                (st != NULL && st->title != NULL) ? st->title : "nothing");
         return 1;
     case OP_EXPECT_SCROLL: {
         char n[32];
@@ -693,16 +756,23 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_WINAT: {
         char at[48];
 
-        snprintf(at, sizeof at, "%d,%d", cur->x, cur->y);
+        /* Report where the window IS: an expectation echoed back tells
+         * the reader nothing about what moved it. */
+        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->win_x : -1,
+                 (st != NULL) ? st->win_y : -1);
         verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
                 "window at:", at);
         return 1;
     }
-    case OP_EXPECT_ICONAT: {
+    case OP_EXPECT_ICONAT:
+    case OP_EXPECT_ICONSCREEN: {
         char at[64];
         int px = 0, py = 0, got = 0;
 
-        if (st != NULL && st->pose_at != NULL) {
+        if (st != NULL && cur->op == OP_EXPECT_ICONSCREEN) {
+            got = st->pose_screen != NULL &&
+                  st->pose_screen(st->pose_ctx, cur->text, &px, &py);
+        } else if (st != NULL && st->pose_at != NULL) {
             got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
         }
         if (got) {

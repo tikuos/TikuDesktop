@@ -58,6 +58,8 @@ int tiku_trk_script_adapter_tab_point(void *context, const char *title,
 int tiku_trk_script_adapter_row_point(void *context, int row,
                                       int *x, int *y);
 unsigned tiku_trk_script_adapter_pixel_at(void *context, int x, int y);
+int tiku_trk_script_adapter_pose_screen(void *context, const char *name,
+                                        int *x, int *y);
 int tiku_trk_script_adapter_pose_at(void *context, const char *name,
                                     int *x, int *y);
 

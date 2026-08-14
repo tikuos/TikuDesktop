@@ -4,8 +4,8 @@
 key 1 ctrl
 wait 10
 press 60 94
-move 200 200
-move 200 316
+move 300 200
+move 300 316
 note the band does not grow the selection before its edge delay
 wait 5
 expect-selected 10
@@ -14,5 +14,5 @@ note held still, it scrolls and gathers newly exposed icons without a move
 wait 45
 expect-selected 10
 expect-selected-name f21.txt
-release 200 316
+release 300 316
 quit

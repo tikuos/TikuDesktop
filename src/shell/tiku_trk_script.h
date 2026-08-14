@@ -80,6 +80,7 @@ typedef struct {
      * position is the only way to check an ARRANGEMENT -- how many rows a
      * window holds says nothing about where a drop put them. */
     int       (*pose_at)(void *ctx, const char *name, int *x, int *y);
+    int       (*pose_screen)(void *ctx, const char *name, int *x, int *y);
     /* Where a visible list row can be clicked in shell coordinates.  The
      * shell owns chrome geometry, so scripts must not reconstruct it. */
     int       (*row_point)(void *ctx, int row, int *x, int *y);
@@ -105,6 +106,13 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     key <keysym> [ctrl] [shift] [alt]   -- e.g. `key n ctrl`
  *     click <x> <y> [button]              -- press and release together
  *     click-row <n> [button]               -- click a visible list row
+ *     click-window <title>                 -- bring a window to the front by
+ *                                             clicking its tab
+ *     expect-icon-screen <name> <x> <y>    -- an icon's place on the SCREEN,
+ *                                             which is what a drop point is
+ *     press-row/move-row/release-row <n> [button] [mods]
+ *                                          -- one half of a gesture, aimed
+ *                                             at a row rather than a pixel
  *     press <x> <y> [button]
  *     release <x> <y> [button]
  *     wait <turns>                        -- let the loop run

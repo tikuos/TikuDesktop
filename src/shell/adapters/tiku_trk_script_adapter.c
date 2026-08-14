@@ -159,6 +159,45 @@ tiku_trk_script_adapter_pose_at(void *context, const char *name,
     }
 }
 
+int
+tiku_trk_script_adapter_pose_screen(void *context, const char *name,
+                                    int *x, int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_desk_window_t *focused;
+    tiku_trk_folder_window_t *folder;
+    tiku_desk_rect_t content;
+    int ox = 0, oy = 0, i, count;
+
+    if (adapter == NULL || name == NULL || x == NULL || y == NULL) {
+        return 0;
+    }
+    focused = tiku_desk_workspace_focused(adapter->workspace);
+    folder = tiku_trk_folder_lifecycle_find(adapter->folders, focused);
+    if (folder == NULL || folder->view == NULL) {
+        return 0;
+    }
+    count = tiku_trk_poseview_count(folder->view);
+    for (i = 0; i < count; i++) {
+        tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+
+        if (pose == NULL || strcmp(pose->model.name, name) != 0) {
+            continue;
+        }
+        /* The icon's own place, not the union with its name: a landing is
+         * where the ICON went, and the union moves with the length of the
+         * file name.  Converted the way a press is converted on the way
+         * in, so a test can name a drop point instead of the chrome. */
+        tiku_trk_poseview_pose_location(folder->view, pose, x, y);
+        content = tiku_trk_folder_window_content(folder);
+        tiku_trk_poseview_origin(folder->view, &ox, &oy);
+        *x += content.x + 2 - ox;
+        *y += content.y + 2 - oy;
+        return 1;
+    }
+    return 0;
+}
+
 static void
 append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_trk_menu_t *menu)
 {
@@ -265,6 +304,19 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     adapter->menu_labels[0] = '\0';
     append_menu_labels(adapter, *adapter->popup);
     append_menu_labels(adapter, *adapter->popup_sub);
+    if (adapter->menu_labels[0] == '\0') {
+        /* The Deskbar's leaf menu is a menu too: without this a script
+         * could only reach it by pixel, and its rows move whenever what
+         * the user has recently opened does. */
+        size_t used;
+
+        (void)tiku_trk_deskbar_menu_labels(adapter->deskbar, 0,
+            adapter->menu_labels, sizeof adapter->menu_labels);
+        used = strlen(adapter->menu_labels);
+        (void)tiku_trk_deskbar_menu_labels(adapter->deskbar, 1,
+            adapter->menu_labels + used,
+            sizeof adapter->menu_labels - used);
+    }
     state->menu = adapter->menu_labels;
     state->count = adapter->count_text;
     desktop_selection(adapter, state);
@@ -281,6 +333,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
         state->rows = tiku_trk_panel_window_rows(adapter->panel_window);
     }
     state->pose_at = tiku_trk_script_adapter_pose_at;
+    state->pose_screen = tiku_trk_script_adapter_pose_screen;
     state->row_point = tiku_trk_script_adapter_row_point;
     state->tab_point = tiku_trk_script_adapter_tab_point;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
@@ -305,6 +358,16 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
                                         : find->popup_frame;
     }
     if (menu == NULL) {
+        int x = 0, y = 0;
+
+        if (tiku_trk_deskbar_menu_point(adapter->deskbar, label, &x, &y)) {
+            event->type = TIKU_DESK_EVENT_POINTER_DOWN;
+            event->x = x;
+            event->y = y;
+            event->button = 1u;
+            event->time_us = tiku_trk_now();
+            return 1;
+        }
         fprintf(stderr, "script: no menu is open for '%s'\n", label);
         return 0;
     }

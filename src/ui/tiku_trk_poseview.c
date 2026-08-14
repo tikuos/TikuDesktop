@@ -3818,7 +3818,7 @@ void
 tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y, int *w,
                          int *h)
 {
-    int gx, gy, ox, oy;
+    int gx, gy, ox, oy, x0, y0, x1, y1;
 
     if (v == NULL) {
         return;
@@ -3840,12 +3840,22 @@ tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y, int *w,
     tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
     /* Outset by the layout offset, so an icon at the origin is not flush
      * against the window's edge -- the same margin auto-placement leaves. */
-    if (x != NULL) { *x = v->ext_valid ? v->ext_x0 - ox : 0; }
-    if (y != NULL) { *y = v->ext_valid ? v->ext_y0 - oy : 0; }
-    if (w != NULL) { *w = v->ext_valid ? (v->ext_x1 - v->ext_x0) + 2 * ox
-                                       : 0; }
-    if (h != NULL) { *h = v->ext_valid ? (v->ext_y1 - v->ext_y0) + 2 * oy
-                                       : 0; }
+    x0 = v->ext_valid ? v->ext_x0 - ox : 0;
+    y0 = v->ext_valid ? v->ext_y0 - oy : 0;
+    x1 = v->ext_valid ? v->ext_x1 + ox : 0;
+    y1 = v->ext_valid ? v->ext_y1 + oy : 0;
+    /* The window's own corner is always part of it, so icons that all sit
+     * low in the view do not drag the origin down after them: dropping at
+     * the bottom of a window would scroll the window, putting what was
+     * just dropped somewhere other than where it was let go.  The margin
+     * is only outside content that is ITSELF outside the corner -- adding
+     * it to an icon at 3 would scroll the view by three pixels. */
+    if (v->ext_valid && v->ext_x0 >= 0) { x0 = 0; }
+    if (v->ext_valid && v->ext_y0 >= 0) { y0 = 0; }
+    if (x != NULL) { *x = x0; }
+    if (y != NULL) { *y = y0; }
+    if (w != NULL) { *w = v->ext_valid ? x1 - x0 : 0; }
+    if (h != NULL) { *h = v->ext_valid ? y1 - y0 : 0; }
 }
 
 /** @brief The origin pair the current mode uses, or NULL in list mode. */
