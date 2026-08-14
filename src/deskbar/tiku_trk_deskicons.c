@@ -11,6 +11,7 @@
 #include "tiku_trk_deskicons.h"
 #include "tiku_trk_view_defs.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -89,6 +90,77 @@ tiku_trk_deskicons_pull_back(tiku_trk_rect_t *r, tiku_trk_rect_t screen)
     if (r->x < screen.x) { r->x = screen.x; }
     if (r->y < screen.y) { r->y = screen.y; }
     return (r->x != ox || r->y != oy);
+}
+
+void
+tiku_trk_deskicons_reflow(tiku_trk_rect_t *r, tiku_trk_rect_t old_area,
+                          tiku_trk_rect_t new_area)
+{
+    int old_span, new_span, offset;
+
+    if (r == NULL || old_area.w <= 0 || old_area.h <= 0 ||
+        new_area.w <= 0 || new_area.h <= 0) {
+        return;
+    }
+    old_span = old_area.w - r->w;
+    new_span = new_area.w - r->w;
+    if (old_span > 0 && new_span > 0) {
+        offset = r->x - old_area.x;
+        if (offset < 0) { offset = 0; }
+        if (offset > old_span) { offset = old_span; }
+        r->x = new_area.x + (int)((int64_t)offset * new_span / old_span);
+    } else {
+        r->x = new_area.x;
+    }
+    old_span = old_area.h - r->h;
+    new_span = new_area.h - r->h;
+    if (old_span > 0 && new_span > 0) {
+        offset = r->y - old_area.y;
+        if (offset < 0) { offset = 0; }
+        if (offset > old_span) { offset = old_span; }
+        r->y = new_area.y + (int)((int64_t)offset * new_span / old_span);
+    } else {
+        r->y = new_area.y;
+    }
+}
+
+int
+tiku_trk_deskicons_find_free(tiku_trk_rect_t *r, tiku_trk_rect_t area,
+                             const tiku_trk_rect_t *others, int nothers,
+                             int step_x, int step_y)
+{
+    tiku_trk_rect_t candidate, best = { 0, 0, 0, 0 };
+    int64_t best_distance = INT64_MAX;
+    int x, y;
+
+    if (r == NULL || area.w < r->w || area.h < r->h) {
+        return 0;
+    }
+    if (step_x <= 0) { step_x = r->w + TIKU_TRK_DESK_OTHER_MARGIN; }
+    if (step_y <= 0) { step_y = r->h + TIKU_TRK_DESK_OTHER_MARGIN; }
+    candidate = *r;
+    for (y = area.y; y + r->h <= area.y + area.h; y += step_y) {
+        for (x = area.x; x + r->w <= area.x + area.w; x += step_x) {
+            int64_t dx = x - r->x;
+            int64_t dy = y - r->y;
+            int64_t distance = dx * dx + dy * dy;
+
+            candidate.x = x;
+            candidate.y = y;
+            if (distance >= best_distance ||
+                !tiku_trk_deskicons_valid(candidate, area,
+                    (tiku_trk_rect_t){ 0, 0, 0, 0 }, others, nothers)) {
+                continue;
+            }
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    if (best_distance == INT64_MAX) {
+        return 0;
+    }
+    *r = best;
+    return 1;
 }
 
 void

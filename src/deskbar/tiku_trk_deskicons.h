@@ -55,6 +55,16 @@ int tiku_trk_deskicons_valid(tiku_trk_rect_t r, tiku_trk_rect_t screen,
  */
 int tiku_trk_deskicons_pull_back(tiku_trk_rect_t *r, tiku_trk_rect_t screen);
 
+/** @brief Preserve a rectangle's relative position across a screen resize. */
+void tiku_trk_deskicons_reflow(tiku_trk_rect_t *r,
+                               tiku_trk_rect_t old_area,
+                               tiku_trk_rect_t new_area);
+
+/** @brief Move a rectangle to the nearest unoccupied grid slot. */
+int tiku_trk_deskicons_find_free(tiku_trk_rect_t *r,
+    tiku_trk_rect_t area, const tiku_trk_rect_t *others, int nothers,
+    int step_x, int step_y);
+
 /** @brief One remembered position, for one screen size (PVL-030). */
 typedef struct {
     int sw, sh;                     /* the screen it was recorded on     */

@@ -46,6 +46,8 @@ int tiku_trk_desktop_view_shows_disks(
 
 tiku_trk_rect_t tiku_trk_desktop_view_area(
     const tiku_trk_desktop_view_t *controller);
+int tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
+    int screen_w, int screen_h);
 int tiku_trk_desktop_view_ensure_visible(
     tiku_trk_desktop_view_t *controller);
 void tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller);

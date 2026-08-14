@@ -5968,11 +5968,11 @@ SetIconMapping(false), SetEnsurePosesVisible(true), SetAutoScroll(false); pose v
 **PORT:** All three hold on icons that are actually there: the Desktop never scrolls (its viewport is the screen and nothing moves its origin), a drop keeps the position it was dropped at unless Command asks for the grid, and every drop and every arrival is followed by a pull-back into the area an icon can be reached in.  
 *src/tiku_trk_desktop.c:desk_ensure_visible; tests/shell/desktop.script*  
 
-#### AW-020 · important · open
+#### AW-020 · important · partial
 **Changing screen resolution saves the icon positions against the old frame first, then re-lays icons that would fall off the new screen.**  
 SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibility(frameChanged ? &frame : 0) so old-frame pose info can drive rearrangement.  
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
-**SUBSYSTEM:** ConfigureNotify now resizes the Desktop's DPI-aware logical surface and updates every controller's screen bounds, so a real old/new frame transition exists. What remains is saving pose locations under a resolution-specific key before that transition and restoring or pulling back poses for the new frame.
+**MISSING:** ConfigureNotify now resizes the DPI-aware logical surface and proportionally reflows full icon rectangles between the old and new Deskbar-safe areas. Positions that shared an old edge take nearby free grid cells and every result is pulled back on-screen. Pose locations still use one layout record rather than resolution-specific keys, so returning to a previously used size reflows the current layout instead of recalling a distinct saved arrangement.
 
 #### AW-021 · polish · open
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  

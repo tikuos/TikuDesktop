@@ -48,12 +48,12 @@ anywhere" when X had been built two commits earlier. Verify a blocker against
 the code before believing it, and rewrite it when it is wrong — a stale
 blocker costs the next person an hour.
 
-### Current state (2026-08-13)
+### Current state (2026-08-14)
 
 ```
-889 rows: 484 done · 174 partial · 81 differs · 150 open
+889 rows: 484 done · 175 partial · 81 differs · 149 open
 core (199): 128 done · 43 partial · 25 differs · 3 open
-verification: 1887 checks — 37 unit suites + 50 headless shell scripts
+verification: 1892 checks — 37 unit suites + 50 headless shell scripts
 ```
 
 ---

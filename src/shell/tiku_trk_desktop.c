@@ -1042,8 +1042,7 @@ resize_desktop(desktop_t *app, int width, int height)
     app->folder_render.screen_h = height;
     app->folder_lifecycle.screen_w = width;
     app->folder_lifecycle.screen_h = height;
-    app->desktop_view.screen_w = width;
-    app->desktop_view.screen_h = height;
+    (void)tiku_trk_desktop_view_resize(&app->desktop_view, width, height);
     app->drop_controller.screen_w = width;
     app->drop_controller.screen_h = height;
     return 1;

@@ -39,7 +39,7 @@ main(void)
 {
     tiku_trk_rect_t screen = R(0, 0, 1000, 700);
     tiku_trk_rect_t bar = R(880, 0, 120, 240);
-    tiku_trk_rect_t other[1];
+    tiku_trk_rect_t other[4];
 
     printf("the Desktop is never a list (PVL-008)\n");
     check(tiku_trk_deskicons_mode(TIKU_TRK_MODE_LIST) == TIKU_TRK_MODE_ICON,
@@ -118,6 +118,38 @@ main(void)
         check(r.x == 0 && r.y == 0, "PVL-030",
               "something wider than the screen ends against the near "
               "corner rather than off the far one");
+
+        r = R(480, 330, 40, 40);
+        tiku_trk_deskicons_reflow(&r, R(0, 0, 1000, 700),
+                                  R(0, 0, 2000, 1400));
+        check(r.x == 980 && r.y == 680, "AW-020",
+              "a centered icon stays centered when the Desktop grows");
+        r = R(960, 660, 40, 40);
+        tiku_trk_deskicons_reflow(&r, R(0, 0, 1000, 700),
+                                  R(0, 0, 2000, 1400));
+        check(r.x == 1960 && r.y == 1360, "AW-020",
+              "an icon at the old far corner reaches the new far corner");
+        r = R(826, 330, 40, 40);
+        tiku_trk_deskicons_reflow(&r, R(0, 0, 866, 700),
+                                  R(0, 0, 1866, 1400));
+        check(r.x == 1826 && r.y == 680, "AW-020",
+              "reflow uses the area beside Deskbar rather than hiding "
+              "icons beneath it");
+
+        other[0] = R(0, 0, 40, 40);
+        r = R(0, 0, 40, 40);
+        check(tiku_trk_deskicons_find_free(&r, R(0, 0, 140, 90),
+                                           other, 1, 50, 50) &&
+              r.x == 50 && r.y == 0, "AW-020",
+              "icons collapsed onto one old edge take the nearest free "
+              "slot after reflow");
+        other[1] = R(50, 0, 40, 40);
+        other[2] = R(0, 50, 40, 40);
+        other[3] = R(50, 50, 40, 40);
+        r = R(0, 0, 40, 40);
+        check(!tiku_trk_deskicons_find_free(&r, R(0, 0, 90, 90),
+                                            other, 4, 50, 50), "AW-020",
+              "a full grid reports that it has no collision-free slot");
     }
 
     printf("\nthe union the Desktop shows (PVN-051, PVN-058)\n");
