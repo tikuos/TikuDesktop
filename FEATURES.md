@@ -2102,7 +2102,7 @@ ExecuteProperty builds a B_REFS_RECEIVED message and posts it to fSelectionHandl
 `PoseViewScripting.cpp` → `BPoseView::ExecuteProperty; BPoseView::DeleteProperty (kPropertyEntry branch)`  
 **TIKU:** With no Trash, 'delete Entry' must map to an explicit destructive verb, and the async ownership hand-off needs a TikuOS equivalent (worker or deferred queue).  
 **PORT:** Both verbs resolve what they would act on and name it, so the caller opens or TRASHES rather than destroys.  
-**MISSING:** Neither is wired to a shell: nothing calls the resolver, so executing opens nothing and deleting trashes nothing yet.  
+**MISSING:** Neither is wired to a shell, and the missing piece is not a call site: the verbs arrive as `verb/property/specifier` text through the suite PVK-048 describes, and nothing carries that text into a running shell yet. `src/shell/tiku_trk_script_api.c` is compiled into both binaries and called by neither.  
 #### PVK-053 · polish · differs
 **Every launch/open message carries a "TrackerViewToken" messenger so the application being launched can send scripting messages straight back to the originating pose view.**  
 Added in ExecuteProperty, OpenSelectionCommon, and the drag-and-drop / context-menu paths; TTracker::RefsReceived re-attaches it to bundled messages, and the file panel uses HasMessenger("TrackerViewToken") to tell pose-view-originated messages apart.  
@@ -3587,8 +3587,8 @@ BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus 
 `FSClipboard.cpp` → `BClipboardRefsWatcher::MessageReceived`  
 **TIKU:** Maps onto VFS watch notifications, but VFS watches are per-boot and capped (TIKU_VFS_WATCH_MAX 8) while the clipboard can hold arbitrarily many nodes — the rewrite needs either a bigger watch table or a lazy revalidation-on-paste strategy.  
 **PORT:** The payload follows the file and the MODE does not: an item cut and then renamed is still cut, and the paste uses the name it has now.  
-**MISSING:** In a running shell nothing follows the file: `tiku_trk_clip_moved` has no caller, because notices are consumed inside `tiku_trk_poseview_poll` and never reach the clipboard, so a cut file that moves is pruned instead (found closing FS-055).  
-**WIRING:** The entry-following itself is written and tested; what it needs is the shell handing rename notices to the clipboard.
+**MISSING:** In a running shell nothing follows the file: `tiku_trk_clip_moved` has no caller, so a cut file that moves is pruned instead (found closing FS-055).  
+**WIRING:** The entry-following is written and tested; what it needs is a caller -- and NOT the notice path, which was tried: a change record carries `{id, op}` only, the POSIX backend implements no `path_of_id`, and after a move the destination folder usually has no open view to ask. The shell that PERFORMED the move is the one that knows both paths, so the call sites are the drop controller's finish_drop, the paste, the Move-to panel commit and the rename commit -- keyed by path rather than by node id.
 
 #### FS-061 · important · differs
 **When another application replaces the clipboard contents, all cut/copy highlighting in Tracker disappears.**  
@@ -5954,8 +5954,9 @@ DesktopFilePanelRoot (default true) and ShowSelectionWhenInactive (default true)
 **Right-clicking the column title bar opens the Attributes menu directly.**  
 BTitleView::MouseDown: if SecondaryMouseButtonDown(modifiers(), buttons) it builds a BPopUpMenu, fills it via window->NewAttributesMenu() + AddMimeTypesToMenu() + MarkAttributesMenu(), targets the pose view and Go()es at the click point, then returns without starting any column tracking.  
 `TitleView.cpp` → `BTitleView::MouseDown (secondary-button branch)`  
-**MISSING:** The secondary-button branch is implemented in the tracker -- a right-click anywhere on the strip returns TIKU_TRK_TT_MENU and starts no resize or drag -- but no caller acts on it: the single-window app discards the flag and has no menu system, and the shell that owns the Attributes menu has no title bar, so no popup ever appears.  
-*src/ui/tiku_trk_titleview.c:136-140 (tiku_trk_titleview_mouse_down); flag discarded at src/shell/tiku_trk_app.c:1242*
+**PORT:** The single-window shell opens the Attributes menu on a secondary click anywhere in the column strip, starting no resize or drag -- the same branch the source takes.  
+**MISSING:** The multi-window shell has no column-strip interaction at all: it draws the headings and never hit-tests them, so neither this menu nor the resize and reorder gestures reach it there.  
+*src/ui/tiku_trk_titleview.c:tiku_trk_titleview_mouse_down; acted on at src/shell/tiku_trk_app.c (TIKU_TRK_TT_MENU -> the Attributes popup); nothing in src/ui/windows/tiku_trk_folder_window.c hit-tests the strip*
 
 #### TS-064 · polish · differs ⟨found by verification⟩
 **The column title bar renders through a shared offscreen bitmap whenever a column is pressed, dragged or resized, so the tracked column does not flicker.**  
@@ -6796,7 +6797,7 @@ ActivityLevel() averages per-CPU active_time; load = delta/elapsed minus a task-
 snoozeTill = min(LatestRunTime() - 1000, now + fHeartBeat), snooze_until on B_SYSTEM_TIMEBASE, or snooze(1000) if already past; AddTask suspends/snoozes 1ms/resumes the thread when get_thread_info reports B_THREAD_ASLEEP.  
 `TaskLoop.cpp` → `StandAloneTaskLoop::Run / StandAloneTaskLoop::AddTask`  
 **TIKU:** This is exactly the tickless-idle discipline: compute the next deadline rather than polling. Should reuse the existing tickless machinery instead of a heartbeat.  
-**MISSING:** The next-deadline computation exists and is tested (tiku_trk_loop_next_due returns microseconds to the soonest task, -1 when nothing is scheduled, and there is no heartbeat cap), but no caller sleeps on it — both event loops usleep(10000) unconditionally every cycle — and there is no wake-on-add because there is no sleeping thread to wake.  
+**MISSING:** The deadline itself is computed and tested, and there is no task loop in either shell to consume it: `tiku_trk_loop_add` and `tiku_trk_loop_run` have no callers outside the suite, so nothing is scheduled and nothing sleeps until it is due. The wiring is a loop, not a call.  
 *src/core/tiku_trk_task.c:tiku_trk_loop_next_due; src/shell/tiku_trk_desktop.c:2343 and src/shell/tiku_trk_app.c:1581 (usleep(10000))*
 
 #### AW-087 · important · done
