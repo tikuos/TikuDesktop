@@ -30,6 +30,7 @@ typedef struct tiku_trk_deskbar_settings {
     int always_on_top;
     int auto_raise;
     int auto_hide;
+    int show_clock;
 } tiku_trk_deskbar_settings_t;
 
 typedef struct {

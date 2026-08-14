@@ -13,8 +13,9 @@
 
 #include "tiku_trk_deskbar_prefs.h"
 
-#define PREF_VERSION 1
-#define PREF_FIELDS  16
+#define PREF_VERSION 2
+#define PREF_FIELDS  17
+#define PREF_FIELDS_V1 16
 
 static int
 same(const tiku_trk_deskbar_settings_t *a,
@@ -29,7 +30,8 @@ same(const tiku_trk_deskbar_settings_t *a,
         a->hide_app_names != b->hide_app_names ||
         a->icon_size != b->icon_size ||
         a->always_on_top != b->always_on_top ||
-        a->auto_raise != b->auto_raise || a->auto_hide != b->auto_hide) {
+        a->auto_raise != b->auto_raise || a->auto_hide != b->auto_hide ||
+        a->show_clock != b->show_clock) {
         return 0;
     }
     for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
@@ -57,6 +59,7 @@ tiku_trk_deskbar_settings_default(tiku_trk_deskbar_settings_t *settings)
     }
     /* This preserves the bar's established floating behavior. */
     settings->always_on_top = 1;
+    settings->show_clock = 1;
 }
 
 void
@@ -89,6 +92,7 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     settings->auto_raise = settings->always_on_top ? 0
                                                    : !!settings->auto_raise;
     settings->auto_hide = !!settings->auto_hide;
+    settings->show_clock = !!settings->show_clock;
 }
 
 void
@@ -174,6 +178,7 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->always_on_top;
     v[at++] = s->auto_raise;
     v[at++] = s->auto_hide;
+    v[at++] = s->show_clock;
 }
 
 static void
@@ -192,6 +197,7 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
     s->always_on_top = v[at++];
     s->auto_raise = v[at++];
     s->auto_hide = v[at++];
+    s->show_clock = (v[0] >= 2) ? v[at++] : 1;
     tiku_trk_deskbar_settings_normalize(s);
 }
 
@@ -200,11 +206,23 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                             tiku_trk_store_t *store)
 {
     int32_t record[PREF_FIELDS];
+    int n;
 
-    if (prefs == NULL || store == NULL ||
-        tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
-            TIKU_TRK_ATTR_DESKBAR_PREFS, record, sizeof record) !=
-                (int)sizeof record || record[0] != PREF_VERSION) {
+    if (prefs == NULL || store == NULL) {
+        return -1;
+    }
+    n = tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
+                            TIKU_TRK_ATTR_DESKBAR_PREFS, record,
+                            sizeof record);
+    if (n != (int)sizeof record) {
+        n = tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
+                                TIKU_TRK_ATTR_DESKBAR_PREFS, record,
+                                PREF_FIELDS_V1 * sizeof *record);
+    }
+    if (n != (int)sizeof record && n != PREF_FIELDS_V1 * (int)sizeof *record) {
+        return -1;
+    }
+    if (record[0] != 1 && record[0] != PREF_VERSION) {
         return -1;
     }
     unpack(&prefs->value, record);

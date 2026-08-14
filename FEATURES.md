@@ -995,20 +995,21 @@ AdoptSystemColors uses B_DOCUMENT_BACKGROUND_COLOR with ReadOnlyTint() when Targ
 **TIKU:** Device nodes carry capability bits (e.g. not writable); the same tint should be driven from those rather than from volume read-only state.  
 **PORT:** Tinted from the FOLDER's write capability rather than the volume's, because a device namespace has writable and read-only regions side by side and a per-volume answer would be wrong for both.
 
-#### PVL-077 · important · partial ⟨found by verification⟩
+#### PVL-077 · important · done
 **With "Sort folder names first" on, folders sort ahead of files in list mode, and toggling the setting re-sorts every open window live.**  
 B_OBSERVER_NOTICE_CHANGE / kSortFolderNamesFirstChanged: writes TrackerSettings, then NameAttributeText::SetSortFolderNamesFirst() and RealNameAttributeText::SetSortFolderNamesFirst(), then SortPoses() + Invalidate() — but only when ViewMode() == kListMode. The rule lives in the name attribute comparator, not in PoseCompareAddWidget.  
 `PoseView.cpp` → `BPoseView::MessageReceived (B_OBSERVER_NOTICE_CHANGE, case kSortFolderNamesFirstChanged); NameAttributeText::SetSortFolderNamesFirst (WidgetAttributeText.cpp)`  
 **TIKU:** A device namespace has directory-like and leaf nodes; the same "containers first" collation switch has to be a property of the comparator, not of the sort key.  
-**MISSING:** Containers do sort ahead of leaves and the rule lives in the comparator where the row says it belongs, but it is unconditional — no "sort folder names first" setting exists, so there is nothing to toggle and no live re-sort of open windows.  
-*src/tiku_trk_poseview.c:pose_cmp (355-363)*
+**PORT:** The shared folders-first preference gates the comparator and changing it calls `resort()` on each open view, so list ordering updates live.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_desktop.c; src/shell/tiku_trk_app.c*
 
-#### PVL-078 · important · open ⟨found by verification⟩
+#### PVL-078 · important · done
 **"Hide dot files" hides entries whose name starts with '.'; toggling it reloads the folder from scratch.**  
 AddPosesTask reads TrackerSettings().HideDotFiles() once per load and skips `.`/`..` (or every leading-dot name); the kHideDotFilesChanged observer notice writes the setting and calls Refresh(), which does StopWatching + ClearPoses + StartWatching + AddPoses.  
 `PoseView.cpp` → `BPoseView::AddPosesTask (hideDotFiles branch); BPoseView::MessageReceived (case kHideDotFilesChanged); BPoseView::Refresh`  
 **TIKU:** The equivalent is a per-view visibility predicate over node names/flags; note the implementation is a full re-listing, not an incremental filter.
-**SUBSYSTEM:** Settings layer (TrackerSettings analogue): no settings store exists (grep 'settings' over src/ hits nothing but an fs.h comment) and CMD_PREFERENCES has no menu_invoke case so it is a no-op (src/tiku_trk_desktop.c:1366-1370 default); dot files are always listed (src/tiku_trk_backend_posix.c:111 skips only "." and ".."). The per-entry POSE_INFO_INVISIBLE flag (src/tiku_trk_poseview.c:2413-2414) is manual per-node hiding, not a name predicate, and there is no toggle to trigger the refresh.  
+**PORT:** `tiku_trk_poseview_set_hide_dotfiles()` applies a leading-dot predicate and performs a full reload. The app shell reads the persisted preference, while the desktop syncs it across every open folder view.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
 #### PVL-079 · polish · open ⟨found by verification⟩
 **Changing the system date/time format repaints every date column in every window.**  
@@ -1776,21 +1777,20 @@ Requires settings.SingleWindowBrowse(), not desktop/file panel, `(modifiers() & 
 **MISSING:** Navigate-in-place exists (the single-window app's open_selection switch_dirs the current window) but it is hardwired per binary — there is no Single Window Browse setting and no Option-held override back to a new window (the desktop shell always spawns, and Option there closes the source window instead).  
 *src/tiku_trk_app.c:open_selection lines 740-756; src/tiku_trk_desktop.c:1840-1851*
 
-#### PVK-020 · important · open
+#### PVK-020 · important · done
 **Tab jumps to the next pose whose name sorts after the current selection's name (case-insensitive), Shift+Tab to the previous one, wrapping at either end.**  
 sMatchString is seeded from fSelectionList->FirstItem()'s name (or emptied when nothing is selected); FindNextMatch scans fPoseList with sMatchString.ICompare()/strcasecmp keeping the smallest name greater than it (or largest smaller, when reverse). Wraparound re-runs the search after setting sMatchString to "" (forward) or to the single char 0x7f (reverse).  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_TAB); BPoseView::FindNextMatch`  
-**CHECKED:** Nothing performs a next-name-after / previous-name-before search: Tab is bound to toggling filter mode and no case-insensitive ordered scan over the pose list exists anywhere.  
-*none found (src/tiku_trk_app.c:handle_key case XK_Tab line 908 toggles filtering; no strcasecmp name-order scan in src/)*
-**BLOCKED:** no next-name-after / previous-name-before scan exists anywhere in src/ — strcasecmp appears only in the attribute sort comparator (src/tiku_trk_attr.c:524) and the ends-with matcher (src/tiku_trk_match.c:700); additionally Tab is already consumed as the filter on/off toggle in the single-window shell (src/tiku_trk_app.c:1063-1067) and is unbound over poses in the desktop shell, so the binding itself is also contended  
+**PORT:** `tiku_trk_poseview_tab_next()` performs a case-insensitive next/previous name walk with wraparound; both shells route Tab and Shift+Tab through it when filtering is inactive.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
-#### PVK-021 · polish · open
+#### PVK-021 · polish · done
 **Tab does nothing in list mode when the Type-ahead filtering setting is enabled (the key is swallowed so it cannot fight the filter).**  
 `if (ViewMode() == kListMode && TrackerSettings().TypeAheadFiltering()) break;`  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_TAB)`  
-**CHECKED:** Tab is not swallowed: it is bound to toggling the filter on and off, so while filtering is active Tab is the one key that tears the filter down — the opposite of the row's inertness rule, and no other code path makes Tab inert.  
-*src/tiku_trk_app.c:908-912 (case XK_Tab -> tiku_trk_poseview_set_filtering(!is_filtering)); no XK_Tab pose handling in src/tiku_trk_desktop.c (2040 is the Select dialog)*
-**SUBSYSTEM:** preferences/settings — the row's gate is the Type-ahead filtering SETTING and the port has no settings layer: TIKU_TRK_CMD_PREFERENCES is a menu label with no menu_invoke case (added at src/tiku_trk_cwmenu.c:180, absent from the desktop.c:1044-1366 command switch), and Tab is itself the filter's only on/off control (src/tiku_trk_app.c:1063-1067), so swallowing it without a settings-driven alternative would strand the mode  
+**PORT:** Tab is consumed while filtering is active, preserving the type-ahead expression; when inactive it is handled by the name-order traversal.
+**PORT:** Tab is consumed while the pose view is filtering, preserving the active type-ahead expression; otherwise it performs the name-order walk.
+*src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
 #### PVK-022 · polish · partial
 **In a file panel, and in the Open With window, Tab moves keyboard focus between controls instead of walking poses.**  
@@ -2393,11 +2393,12 @@ DesktopPoseView::InitDesktopDirentIterator builds a CachedEntryIteratorList and 
 **TIKU:** This is exactly the shape the TikuOS requirement needs: device-namespace nodes and local files as two chained iterators feeding one view, each with its own watch registration.  
 **PORT:** The Desktop's source is a virtual directory of every showing volume's Desktop folder -- the union the row describes, built on the merge that already existed.  Volumes with no Desktop folder contribute nothing, and one mounted inside another is skipped, since its folder is the same folder seen twice.  
 **MISSING:** Nothing displays it: the backdrop is still a plain fill with no pose view on it, so the union has no window.  
-#### PVN-052 · important · open
+#### PVN-052 · important · done
 **Dot files are filtered out at load time and toggling the setting re-reads the whole folder rather than just repainting.**  
 AddPosesTask skips per `(!hideDotFiles && (name=="." || name=="..")) || (hideDotFiles && name[0]=='.')`, reading TrackerSettings().HideDotFiles() once per load; the kHideDotFilesChanged observer case calls Refresh().  
 `PoseView.cpp` → `BPoseView::AddPosesTask / BPoseView::MessageReceived (case kHideDotFilesChanged)`
-**SUBSYSTEM:** Settings/preferences. There is no hide-dot-files setting, no observer, and no dot-file filter: px_list skips only '.' and '..' (src/tiku_trk_backend_posix.c:111-113), grep for a name[0]=='.' test or any settings store over src returns nothing, and TIKU_TRK_CMD_PREFERENCES has no handler in either shell (grep in tiku_trk_desktop.c/tiku_trk_app.c). Dot files are simply always shown.  
+**PORT:** The pose-view collector and staged loader skip every leading-dot name when enabled; changing the persisted setting calls the full reload path for existing views.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_desktop.c*
 
 #### PVN-053 · core · done
 **A full refresh drops every watch, empties the view, re-establishes watches and re-reads the folder -- the guaranteed way back to a non-stale listing.**  
@@ -2604,10 +2605,12 @@ tests/test_frame.c*
 sNewWindRect is shared across all windows and offset by sWindowStaggerBy (3 * DefaultLabelSpacing) each time a window opens without a saved frame; the initial rect is ~ (14, 8, 91, 46) label-spacings.  
 `ContainerWindow.cpp` → `BContainerWindow::InitialWindowRect / RestoreWindowState`  
 
-#### CW-008 · polish · open
+#### CW-008 · polish · done
 **A window whose remembered position is entirely off-screen (smaller monitor, unplugged display) is pulled back onto the screen.**  
 CheckScreenIntersect: if Frame() does not intersect the screen, MoveTo(sNewWindRect.LeftTop()); the cascade origin itself resets to (85,50) when it runs past the screen bottom or right.  
 `ContainerWindow.cpp` → `BContainerWindow::CheckScreenIntersect`  
+**PORT:** Saved frames are clamped to the current screen before a folder window is created, retaining a usable tab/edge after a monitor disappears.
+*src/core/tiku_trk_frame.c:tiku_trk_frame_clamp; src/ui/windows/tiku_trk_folder_lifecycle.c:next_frame*
 
 #### CW-009 · important · open
 **A window reopens on the workspace it was on, and with the window decorations (tab position/size) it had - but only when Tracker is restoring a session, not on a normal open.**  
@@ -5685,19 +5688,20 @@ The checkbox is the inverse of the stored TransparentSelection setting (default 
 *src/tiku_trk_prefs.c:31; src/tiku_trk_desktop.c (band block); src/tiku_trk_iconpaint.c:tiku_trk_paint_band; tests/shell/bandstyle.script*  
 *Shell: desktop*
 
-#### TS-050 · important · partial
+#### TS-050 · important · done
 **"List folders first" sorts directories ahead of files regardless of name.**  
 Default on. The value is pushed into NameAttributeText and RealNameAttributeText (static, process-wide) at load and on every change; on notice, list-mode views re-sort and repaint immediately.  
 `TrackerSettings.cpp` → `TrackerSettings::SetSortFolderNamesFirst`  
 **TIKU:** Namespace entries are not just files/folders; decide where device nodes rank in the folders-first partition.  
-**MISSING:** Containers are ordered ahead of non-containers before the sort field is consulted, which is the default-on behaviour a user sees, but it cannot be turned off: there is no setting, no process-wide value pushed into the name comparison and no change notice, and the partition is applied for every sort field rather than living inside the name attribute.  
-*/home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:355-363 (pose_cmp)*
+**PORT:** `pose_cmp` gates the container partition on the shared `folders_first` setting, and `tiku_trk_poseview_set_folders_first()` re-sorts the live view when the preference changes.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_desktop.c; src/shell/tiku_trk_app.c*
 
-#### TS-051 · important · open
+#### TS-051 · important · done
 **"Hide dotfiles" hides entries whose name starts with a dot.**  
 Default off. Read once per directory-read thread; when it is off, "." and ".." are explicitly skipped instead. Changing it triggers a full Refresh() of open pose views.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kHideDotFilesChanged)`
-**SUBSYSTEM:** Preferences subsystem. The row's off-state clause is genuinely there — the posix read loop explicitly skips "." and ".." only, so dot-entries are listed (src/tiku_trk_backend_posix.c:111) — but the feature itself has no code path: no hide-dotfiles setting anywhere, no filter on dot-prefixed names in either backend or the poseview (the only hiding mechanism is the persisted per-entry POSE_INFO_INVISIBLE flag, src/tiku_trk_poseview.c:2614-2635, unrelated to names), and no refresh-on-change. Only the default-off state exists, which is indistinguishable from the row being unimplemented.  
+**PORT:** HideDotFiles defaults off, is read by each view's load path, and a preference change performs a full reload across open views.
+*src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
 #### TS-052 · important · partial
 **"Enable type-ahead filtering" swaps the type-to-select behaviour for type-to-filter in list mode.**  
@@ -6728,10 +6732,12 @@ AddOneShortcut posts kLoadAddOn with the add-on's ref via window->AddShortcut(ke
 **TIKU:** The analogue is binding a shell verb to a key against the selected namespace node.
 **SUBSYSTEM:** Tracker add-ons — no add-on loading exists anywhere (grep -rn 'add_on|addon' src/ returns nothing except Deskbar tray internals), so there is nothing to bind user-assignable shortcuts to.  
 
-#### AW-103 · polish · open ⟨found by verification⟩
+#### AW-103 · polish · done
 **In a file panel Cmd-Up opens the parent folder and Cmd-W cancels the panel, regardless of what the pose view would do with those keys.**  
 key_down_filter is a window-level common filter: with B_COMMAND_KEY it maps B_UP_ARROW to kOpenParentDir and 'w' to kCancelButton and returns B_SKIP_MESSAGE, so the pose view never sees them; it also swallows Escape (see the corrections).  
 `FilePanelPriv.cpp` → `key_down_filter`  
+**PORT:** The panel controller handles Cmd+Up as parent navigation and Cmd+W/Escape as cancellation before pose-view key handling.
+*src/core/tiku_trk_panel.c:tiku_trk_panel_key; src/ui/windows/tiku_trk_panel_window.c:tiku_trk_panel_window_key*
 
 #### AW-104 · polish · open ⟨found by verification⟩
 **The Desktop window creates the replicant shelf and its own view-mode shortcuts, and skips the shelf entirely in safe mode.**  
@@ -7069,11 +7075,12 @@ LocationForReplicant scans each row for free space past the right edge of every 
 **PORT:** The tray layout is genuinely re-shaped for label+value namespace readings — one full-width row per replicant with the clock in its own reserved band — and the bar height is recomputed from tray_count plus CLOCK_H on every draw, so the tray and the whole Deskbar size themselves to their contents; left-to-right packing and wrapping have no meaning for full-width rows.  
 *src/tiku_trk_deskbar.c:449-450 (frame.h = ... + tray_count * TRAY_ROW + CLOCK_H + PAD) and :530-548 tray rows, :550+ clock band*
 
-#### DB-043 · important · open
+#### DB-043 · important · done
 **Right-clicking the tray — or pressing and holding on it for twice the double-click time — opens the clock menu, or a lone 'Show clock' item when the clock is hidden**  
 MouseDown polls the mouse every 50ms and bails if it moves more than 4px in either axis; B_SECONDARY_MOUSE_BUTTON opens immediately. With the clock visible it delegates to TTimeView::ShowTimeOptions at the same screen point  
 `StatusView.cpp` → `TReplicantTray::MouseDown`
-**SUBSYSTEM:** clock options/context menu: tray clicks are inert except the clock band, which unconditionally opens the calendar ignoring `secondary` (src/tiku_trk_deskbar.c:765-768); no press-and-hold exists — the deskbar receives single click events with no duration or polling (src/tiku_trk_deskbar.h:144-146)  
+**PORT:** Secondary clicks on the clock/tray open a Hide/Show clock menu; the menu remains raised until its choice or an outside click, and the setting is saved through the Deskbar preference model.
+*src/deskbar/tiku_trk_deskbar.c; src/deskbar/tiku_trk_deskbar_prefs.c; src/shell/tiku_trk_desktop.c*
 
 #### DB-044 · core · partial
 **The clock shows short date+time and can additionally show seconds, day of week and time zone; its tooltip is the full long-form date, and it repaints once a second**  
@@ -7083,12 +7090,12 @@ BDateTimeFormat with fields HOUR|MINUTE plus SECOND/WEEKDAY/TIMEZONE; window pul
 **MISSING:** The clock renders short date + time ("7 Aug  16:26"), but there are no seconds / day-of-week / time-zone options, no long-form-date tooltip, and no 1 Hz repaint — it is redrawn only when something else dirties the surface, so with no tray replicants the displayed minute can go stale.  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_draw lines 549-566; src/tiku_trk_desktop.c:main dirty-driven draw loop*
 
-#### DB-045 · important · partial
+#### DB-045 · important · done
 **Left-clicking the clock pops up a calendar window; clicking it again just re-activates the existing one, and the calendar closes as soon as it loses focus or Esc is pressed**  
 ShowCalendar sends B_SET_PROPERTY Active=true to the existing window if its messenger is still valid; the window flips above the clock when it would fall off the bottom of the screen and further flips left/up in Show() by screen quadrant; B_CLOSE_ON_ESCAPE plus Cmd+W; in focus-follows-mouse mode the very first deactivation is swallowed (fSuppressFirstClose)  
 `TimeView.cpp` → `TTimeView::ShowCalendar`  
-**MISSING:** Clicking the clock band opens the calendar and the next click anywhere dismisses it, but a second click does not re-activate an existing window (it closes it), and there is no Esc or focus-loss close — tiku_trk_deskbar_calendar_open has no caller and no XK_Escape path touches the deskbar.  
-*src/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 658-661 and 744-746*
+**PORT:** The first click opens the calendar, a second click on the clock leaves the existing popup active, outside clicks dismiss it, and Escape closes it through the desktop key path.
+*src/deskbar/tiku_trk_deskbar.c; src/shell/tiku_trk_desktop.c*
 
 #### DB-046 · polish · open
 **The calendar has -/+ steppers for month and year and clicking a day moves the selection, with the month name column sized so it never reflows**  
@@ -7096,11 +7103,12 @@ kMonthDown/Up and kYearDown/Up apply BDate::AddMonths/AddYears; invalid dates ar
 `CalendarMenuWindow.cpp` → `CalendarMenuWindow::MessageReceived`
 **BLOCKED:** the calendar consumes any next click to dismiss (src/tiku_trk_deskbar.c:681-684) and has no interior hit-testing for steppers or day cells to attach to — the grid is draw-only with days hardcoded to 31 (src/tiku_trk_deskbar.c:613-661)  
 
-#### DB-047 · important · open
+#### DB-047 · important · done
 **Hiding the clock persists the choice and tells the Time preferences application, so the two stay in sync in both directions**  
 ShowHideTime flips fTime's hidden state, re-flows the tray, writes Settings()->showClock, and sends kShowHideTime with "showClock" to application/x-vnd.Haiku-Time; conversely kGetClockSettings is answered with showClock/showSeconds/showDayOfWeek/showTimeZone. Clock options live in their own clock_settings file, saved from SaveTimeSettings on quit  
 `StatusView.cpp` → `TReplicantTray::ShowHideTime`
-**SUBSYSTEM:** clock options/settings: the clock is drawn unconditionally in every draw pass (src/tiku_trk_deskbar.c:573-590), no hide flag exists in struct tiku_trk_deskbar (src/tiku_trk_deskbar.c:44-55), the deskbar touches no settings store, and no Time-preferences peer exists in this port to sync with  
+**PORT:** Clock visibility is a versioned Deskbar preference. Hide/Show updates the live bar geometry and saves through the session state store, so the next Deskbar controller restores the choice.
+*src/deskbar/tiku_trk_deskbar.c; src/deskbar/tiku_trk_deskbar_prefs.c; src/shell/tiku_trk_desktop.c*
 
 #### DB-048 · core · partial
 **Dragging the tray's dragger handle re-docks Deskbar into one of ten screen zones: four vertical mini corners, four horizontal mini corners, and left/right vertical expanded or top/bottom horizontal expanded**  

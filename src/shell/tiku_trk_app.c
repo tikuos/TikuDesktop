@@ -977,7 +977,8 @@ static void
 sync_navigator_preference(app_t *a, int force)
 {
     struct stat st;
-    int present, visible = 1;
+    int present, visible = 1, hide_dotfiles = 0;
+    int folders_first = 1;
     int64_t now = tiku_trk_now();
     time_t mtime = 0;
     off_t size = 0;
@@ -1001,6 +1002,8 @@ sync_navigator_preference(app_t *a, int force)
         tiku_trk_prefs_init(&prefs);
         (void)tiku_trk_prefs_load(&prefs, a->prefs_path);
         visible = tiku_trk_prefs_get(&prefs, "ShowNavigator") != 0;
+        hide_dotfiles = tiku_trk_prefs_get(&prefs, "HideDotFiles") != 0;
+        folders_first = tiku_trk_prefs_get(&prefs, "SortFolderNamesFirst") != 0;
         tiku_trk_prefs_free(&prefs);
     }
     a->prefs_present = present;
@@ -1012,6 +1015,8 @@ sync_navigator_preference(app_t *a, int force)
         settle_layout(a);
         a->dirty = 1;
     }
+    tiku_trk_poseview_set_hide_dotfiles(a->view, hide_dotfiles);
+    tiku_trk_poseview_set_folders_first(a->view, folders_first);
 }
 
 /**
@@ -1622,8 +1627,10 @@ not_editing:
         a->dirty = 1;
         return;
     case TIKU_DESK_KEY_TAB:
-        tiku_trk_poseview_set_filtering(a->view,
-            !tiku_trk_poseview_is_filtering(a->view));
+        if (!tiku_trk_poseview_is_filtering(a->view)) {
+            (void)tiku_trk_poseview_tab_next(a->view,
+                (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+        }
         a->dirty = 1;
         return;
     case 'q':

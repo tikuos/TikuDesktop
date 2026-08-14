@@ -177,6 +177,8 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_window_configure(folder, controller->render);
     tiku_trk_poseview_set_folders_first(folder->view,
         tiku_trk_prefs_get(controller->prefs, "SortFolderNamesFirst"));
+    tiku_trk_poseview_set_hide_dotfiles(folder->view,
+        tiku_trk_prefs_get(controller->prefs, "HideDotFiles"));
     (void)tiku_trk_poseview_restore_columns(folder->view);
     (void)tiku_trk_poseview_restore_state(folder->view);
     frame = next_frame(controller, path, folder);

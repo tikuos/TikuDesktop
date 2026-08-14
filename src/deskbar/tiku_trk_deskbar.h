@@ -241,6 +241,8 @@ typedef enum {
     TIKU_TRK_DB_SHOW_ALL,
     TIKU_TRK_DB_CLOSE_ALL,
     TIKU_TRK_DB_QUIT,
+    TIKU_TRK_DB_CLOCK_HIDE,
+    TIKU_TRK_DB_CLOCK_SHOW,
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -406,5 +408,8 @@ void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
 
 /** @brief Whether the clock's calendar is showing. */
 int tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db);
+int tiku_trk_deskbar_clock_visible(const tiku_trk_deskbar_t *db);
+void tiku_trk_deskbar_set_clock_visible(tiku_trk_deskbar_t *db, int visible);
+void tiku_trk_deskbar_close_calendar(tiku_trk_deskbar_t *db);
 
 #endif /* TIKU_TRK_DESKBAR_H_ */

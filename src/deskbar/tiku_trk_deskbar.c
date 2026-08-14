@@ -60,6 +60,7 @@ struct tiku_trk_deskbar {
     int                  overflow;    /* the list ran past the tray     */
     int                  menu_open;
     int                  calendar_open;
+    int                  clock_menu_open;
     int                  win_menu_team;    /* -1 = none showing        */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
@@ -481,7 +482,7 @@ tiku_trk_deskbar_shown(const tiku_trk_deskbar_t *db)
     /* An open menu keeps the bar out whatever the pointer is doing: a bar
      * that slid away under its own menu would take the menu with it. */
     return (!db->autohide || db->pointer_on || db->menu_open ||
-            db->calendar_open);
+            db->calendar_open || db->clock_menu_open);
 }
 
 int
@@ -491,7 +492,7 @@ tiku_trk_deskbar_raised(const tiku_trk_deskbar_t *db)
         return 1;
     }
     return (db->settings.always_on_top || db->pointer_on || db->menu_open ||
-            db->calendar_open);
+            db->calendar_open || db->clock_menu_open);
 }
 
 static int
@@ -774,7 +775,8 @@ tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y)
 int
 tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db)
 {
-    return (db != NULL) ? db->menu_open : 0;
+    return (db != NULL) ? (db->menu_open || db->calendar_open ||
+                           db->clock_menu_open) : 0;
 }
 
 void
@@ -796,6 +798,8 @@ tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db)
 {
     if (db != NULL) {
         db->menu_open = 0;
+        db->calendar_open = 0;
+        db->clock_menu_open = 0;
         db->win_menu_team = -1;
     }
 }
@@ -804,6 +808,31 @@ int
 tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db)
 {
     return (db != NULL) ? db->calendar_open : 0;
+}
+
+int
+tiku_trk_deskbar_clock_visible(const tiku_trk_deskbar_t *db)
+{
+    return db != NULL && db->settings.show_clock;
+}
+
+void
+tiku_trk_deskbar_set_clock_visible(tiku_trk_deskbar_t *db, int visible)
+{
+    if (db == NULL) { return; }
+    db->settings.show_clock = !!visible;
+    if (!db->settings.show_clock) {
+        db->calendar_open = 0;
+    }
+}
+
+void
+tiku_trk_deskbar_close_calendar(tiku_trk_deskbar_t *db)
+{
+    if (db != NULL) {
+        db->calendar_open = 0;
+        db->clock_menu_open = 0;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1040,7 +1069,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
          * the clock have taken theirs.  A list longer than that is what
          * makes the bar scrollable (DB-034). */
         int room = s->h - (LEAF_H + PAD) - (db->tray_count * TRAY_ROW) -
-                   CLOCK_H - 2 * PAD;
+                   (db->settings.show_clock ? CLOCK_H : 0) - 2 * PAD;
 
         db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
                         room > 0);
@@ -1058,7 +1087,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                        db->dock == TIKU_TRK_DB_LEFT_MINI)
                           ? 0 : s->w - db->frame.w;
         db->frame.h = LEAF_H + PAD + rows + PAD +
-                      db->tray_count * TRAY_ROW + CLOCK_H + PAD;
+                      db->tray_count * TRAY_ROW +
+                      (db->settings.show_clock ? CLOCK_H : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one
          * row needs.  The list is not drawn in this mode -- a horizontal
@@ -1204,7 +1234,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                        TIKU_DESK_C_TEXT);
         y += TRAY_ROW;
     }
-    {
+    if (db->settings.show_clock) {
         time_t now = time(NULL);
         struct tm tmv;
         char clock[32];
@@ -1279,6 +1309,13 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                4 * rowh + 4 };
         tiku_desk_ui_menu(s, m, items, 4, -1);
     }
+    if (db->clock_menu_open) {
+        const char *items[] = { db->settings.show_clock ? "Hide clock"
+                                                        : "Show clock" };
+        tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
+                               CLOCK_H - 32, 126, 28 };
+        tiku_desk_ui_menu(s, m, items, 1, -1);
+    }
     if (db->calendar_open) {
         /* The clock's calendar: a month grid with steppers, popped beside
          * the bar and dismissed by the next click anywhere. */
@@ -1348,7 +1385,24 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 
     /* An open popup owns the next click wherever it lands. */
     if (db->calendar_open) {
+        /* A second click on the clock reactivates the existing popup. */
+        if (db->settings.show_clock &&
+            x >= db->frame.x && x < db->frame.x + db->frame.w &&
+            y >= db->frame.y + db->frame.h - CLOCK_H - PAD) {
+            return 1;
+        }
         db->calendar_open = 0;
+        return 1;
+    }
+    if (db->clock_menu_open) {
+        tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
+                               CLOCK_H - 32, 126, 28 };
+        int inside = x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h;
+        db->clock_menu_open = 0;
+        if (inside) {
+            pick->what = db->settings.show_clock ? TIKU_TRK_DB_CLOCK_HIDE
+                                                  : TIKU_TRK_DB_CLOCK_SHOW;
+        }
         return 1;
     }
     if (db->win_menu_team >= 0) {
@@ -1470,9 +1524,17 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             ry += WIN_H + SEAM;
         }
     }
-    /* The clock pops the calendar; the rest of the tray is inert for now. */
-    if (y >= db->frame.h - CLOCK_H - PAD) {
-        db->calendar_open = 1;
+    /* Secondary click on the tray opens clock options. */
+    if (db->settings.show_clock && y >= db->frame.y + db->frame.h -
+        CLOCK_H - PAD) {
+        if (secondary) {
+            db->clock_menu_open = 1;
+        } else {
+            db->calendar_open = 1;
+        }
+    } else if (secondary && y >= db->frame.y + db->frame.h -
+               CLOCK_H - PAD - TRAY_ROW) {
+        db->clock_menu_open = 1;
     }
     return 1;
 }

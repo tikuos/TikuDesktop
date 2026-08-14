@@ -190,6 +190,8 @@ typedef struct desktop {
     tiku_trk_status_overlay_t status_overlay;
     tiku_trk_prefs_window_t prefs_window;
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;
+    int                  applied_hide_dotfiles;
+    int                  applied_folders_first;
     tiku_trk_switcher_window_t switcher_window;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
@@ -198,6 +200,7 @@ typedef struct desktop {
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
+    int                  deskbar_press; /* primary hold over the clock     */
 } desktop_t;
 
 static folder_t *open_folder(desktop_t *app, const char *path);
@@ -262,6 +265,33 @@ static tiku_trk_prefs_t *
 prefs_model(desktop_t *app)
 {
     return tiku_trk_prefs_window_model(&app->prefs_window);
+}
+
+/** @brief Apply folder-list settings to every already-open spatial view. */
+static void
+sync_folder_preferences(desktop_t *app)
+{
+    tiku_trk_prefs_t *prefs = prefs_model(app);
+    int hide = tiku_trk_prefs_get(prefs, "HideDotFiles") != 0;
+    int folders_first = tiku_trk_prefs_get(prefs, "SortFolderNamesFirst") != 0;
+    int i;
+
+    if (hide == app->applied_hide_dotfiles &&
+        folders_first == app->applied_folders_first) {
+        return;
+    }
+    app->applied_hide_dotfiles = hide;
+    app->applied_folders_first = folders_first;
+    for (i = 0; i < app->folder_count; i++) {
+        folder_t *folder = &app->folders[i];
+
+        if (folder->view == NULL) {
+            continue;
+        }
+        tiku_trk_poseview_set_hide_dotfiles(folder->view, hide);
+        tiku_trk_poseview_set_folders_first(folder->view, folders_first);
+    }
+    app->dirty = 1;
 }
 
 /** @brief Select state is retained by its reusable window controller. */
@@ -1695,9 +1725,12 @@ tracker_run(int argc, char **argv)
                                                   app.surf->h });
     }
     app.running = 1;
+    app.applied_hide_dotfiles = -1;
+    app.applied_folders_first = -1;
     app.dirty = 1;
 
     while (app.running) {
+        sync_folder_preferences(&app);
         for (;;) {
             tiku_desk_event_t ev;
             int have = 0;
@@ -2004,6 +2037,12 @@ tracker_run(int argc, char **argv)
                     if (tiku_trk_deskbar_click(app.deskbar, ev.x,
                                                ev.y, dmods,
                                                secondary, &pick)) {
+                        if (ev.button == 1u && !secondary) {
+                            app.deskbar_press = 1;
+                            app.press_at = tiku_trk_now();
+                            app.press_x = ev.x;
+                            app.press_y = ev.y;
+                        }
                         tiku_desk_window_t *t;
 
                         switch (pick.what) {
@@ -2061,6 +2100,17 @@ tracker_run(int argc, char **argv)
                             }
                             break;
                         }
+                        case TIKU_TRK_DB_CLOCK_HIDE:
+                        case TIKU_TRK_DB_CLOCK_SHOW:
+                            app.deskbar_prefs_window.model.value.show_clock =
+                                (pick.what == TIKU_TRK_DB_CLOCK_SHOW);
+                            tiku_trk_deskbar_settings_normalize(
+                                &app.deskbar_prefs_window.model.value);
+                            tiku_trk_deskbar_apply_settings(app.deskbar,
+                                &app.deskbar_prefs_window.model.value);
+                            (void)tiku_trk_deskbar_prefs_save(
+                                &app.deskbar_prefs_window.model, app.store);
+                            break;
                         default:
                             break;
                         }
@@ -2535,6 +2585,11 @@ tracker_run(int argc, char **argv)
                 break;
             }
             case TIKU_DESK_EVENT_POINTER_MOVE:
+                if (app.deskbar_press &&
+                    (ev.x - app.press_x > 4 || app.press_x - ev.x > 4 ||
+                     ev.y - app.press_y > 4 || app.press_y - ev.y > 4)) {
+                    app.deskbar_press = 0;
+                }
                 if (app.press_down &&
                     (ev.x - app.press_x > 4 ||
                      app.press_x - ev.x > 4 ||
@@ -2599,6 +2654,7 @@ tracker_run(int argc, char **argv)
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 app.dock_drag = 0;
+                app.deskbar_press = 0;
                 (void)tiku_trk_band_controller_finish(&app.band_controller);
                 if (dropped) {
                     do_drop(&app, ev.x, ev.y,
@@ -2715,6 +2771,14 @@ tracker_run(int argc, char **argv)
 
                 if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
                 if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                if (key == TIKU_DESK_KEY_ESCAPE &&
+                    tiku_trk_deskbar_calendar_open(app.deskbar)) {
+                    /* Escape is a focus-loss equivalent for the small clock
+                     * popups; it must not close a folder or edit behind it. */
+                    tiku_trk_deskbar_close_calendar(app.deskbar);
+                    app.dirty = 1;
+                    break;
+                }
                 /* Get Info owns its rename editor and window shortcuts. */
                 if (tiku_trk_info_windows_key(&app.info_windows, key,
                                               ev.modifiers,
@@ -3000,6 +3064,16 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (key == TIKU_DESK_KEY_TAB && fl != NULL) {
+                    /* Tab is a name-order walk over poses.  While filtering
+                     * is active it is deliberately swallowed. */
+                    if (!tiku_trk_poseview_is_filtering(fl->view)) {
+                        (void)tiku_trk_poseview_tab_next(fl->view,
+                            (ev.modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if (key == 'w' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     close_window(&app, w);
                     app.dirty = 1;
@@ -3176,6 +3250,19 @@ tracker_run(int argc, char **argv)
 
         /* PVS-017: a button held still for the click interval opens the
          * context menu without waiting for the release. */
+        if (app.deskbar_press &&
+            tiku_trk_now() - app.press_at > 2 * TIKU_TRK_CLICK_SPEED_US) {
+            tiku_trk_db_pick_t dbpick;
+
+            /* A still primary press is the Deskbar's long-press equivalent
+             * of a secondary click.  It replaces the calendar with clock
+             * options without waiting for release. */
+            tiku_trk_deskbar_close_calendar(app.deskbar);
+            (void)tiku_trk_deskbar_click(app.deskbar, app.press_x,
+                                         app.press_y, 0u, 1, &dbpick);
+            app.deskbar_press = 0;
+            app.dirty = 1;
+        }
         if (app.press_down && !app.press_menu && app.popup == NULL &&
             app.press_fl != NULL &&
             tiku_trk_now() - app.press_at > TIKU_TRK_CLICK_SPEED_US) {

@@ -98,6 +98,7 @@ struct tiku_trk_poseview {
     int                 font_h, font_a;
     int                 row_h;      /* what the owner draws, 0 = derive  */
     int                 folders_first;  /* the setting, on by default    */
+    int                 hide_dotfiles;
     /* Columns that show a named ATTRIBUTE rather than a fixed fact.  The
      * slot is the field id; the name is what a saved layout carries. */
     struct {
@@ -348,6 +349,9 @@ collect(const tiku_trk_model_t *m, void *ctx)
 {
     tiku_trk_poseview_t *v = ctx;
 
+    if (v->hide_dotfiles && m != NULL && m->name[0] == '.') {
+        return 0;
+    }
     if (v->count >= POSES_MAX) {
         return 1;
     }
@@ -551,6 +555,9 @@ stage_one(const tiku_trk_model_t *m, void *ctx)
 
     if (v->stage_count >= POSES_MAX) {
         return 1;                       /* full: stop the walk            */
+    }
+    if (v->hide_dotfiles && m != NULL && m->name[0] == '.') {
+        return 0;
     }
     v->stage[v->stage_count++] = *m;
     return 0;
@@ -2850,6 +2857,68 @@ tiku_trk_poseview_set_folders_first(tiku_trk_poseview_t *v, int on)
         v->folders_first = on ? 1 : 0;
         resort(v);
     }
+}
+
+void
+tiku_trk_poseview_set_hide_dotfiles(tiku_trk_poseview_t *v, int on)
+{
+    int value;
+
+    if (v == NULL) {
+        return;
+    }
+    value = on ? 1 : 0;
+    if (v->hide_dotfiles == value) {
+        return;
+    }
+    v->hide_dotfiles = value;
+    (void)tiku_trk_poseview_reload(v);
+}
+
+int
+tiku_trk_poseview_tab_next(tiku_trk_poseview_t *v, int backwards)
+{
+    tiku_trk_pose_t *active;
+    const char *needle = "";
+    int best = -1, i, n;
+    const char *best_name = NULL;
+
+    if (v == NULL || v->filtering || v->count <= 0) {
+        return 0;
+    }
+    active = tiku_trk_poseview_active(v);
+    if (active != NULL) {
+        needle = active->model.name;
+    }
+    n = v->count;
+    for (i = 0; i < n; i++) {
+        const char *name = v->poses[i].model.name;
+        int cmp = strcasecmp(name, needle);
+
+        if ((!backwards && cmp > 0) || (backwards && cmp < 0)) {
+            if (best < 0 || (!backwards && strcasecmp(name, best_name) < 0) ||
+                (backwards && strcasecmp(name, best_name) > 0)) {
+                best = i;
+                best_name = name;
+            }
+        }
+    }
+    if (best < 0) {
+        for (i = 0; i < n; i++) {
+            const char *name = v->poses[i].model.name;
+
+            if (best < 0 || (!backwards && strcasecmp(name, best_name) < 0) ||
+                (backwards && strcasecmp(name, best_name) > 0)) {
+                best = i;
+                best_name = name;
+            }
+        }
+    }
+    if (best < 0) {
+        return 0;
+    }
+    tiku_trk_poseview_click(v, best, 0u);
+    return 1;
 }
 
 void

@@ -486,6 +486,10 @@ int tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v);
  * column order alone.
  */
 void tiku_trk_poseview_set_folders_first(tiku_trk_poseview_t *v, int on);
+/** @brief Hide dot-prefixed entries and reload the listing when changed. */
+void tiku_trk_poseview_set_hide_dotfiles(tiku_trk_poseview_t *v, int on);
+/** @brief Select the next/previous name in sort order, wrapping at edges. */
+int tiku_trk_poseview_tab_next(tiku_trk_poseview_t *v, int backwards);
 
 /**
  * @brief Tell the view the row height its owner DRAWS with (0 = derive).
