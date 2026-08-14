@@ -671,23 +671,23 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_SCROLL: {
         char n[32];
 
-        snprintf(n, sizeof n, "%d", cur->count);
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->scroll : -1);
         if (cur->x != 0) {
             /* The "at most" form.  A >= test against 0 is always true and
              * asserts nothing, which is how three mutations survived the
              * first version of this check. */
             verdict(s, st != NULL && st->scroll <= cur->count,
-                    "scrolled at most", n);
+                    "scrolled at most, and is at", n);
         } else {
             verdict(s, st != NULL && st->scroll >= cur->count,
-                    "scrolled at least", n);
+                    "scrolled at least, and is at", n);
         }
         return 1;
     }
     case OP_EXPECT_ROWS: {
         char n[32];
 
-        snprintf(n, sizeof n, "%s%d", cur->x ? ">= " : "", cur->count);
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->rows : -1);
         verdict(s, st != NULL && (cur->x ? st->rows >= cur->count
                                          : st->rows == cur->count),
                 "rows:", n);
@@ -696,7 +696,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_WINDOWS: {
         char n[32];
 
-        snprintf(n, sizeof n, "%d", cur->count);
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->windows : -1);
         verdict(s, st != NULL && st->windows == cur->count, "windows:", n);
         return 1;
     }
@@ -718,6 +718,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_RENAMING: {
         char n[16];
 
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->renaming : -1);
         snprintf(n, sizeof n, "%d", (st != NULL) ? st->renaming : -1);
         verdict(s, st != NULL && st->renaming == cur->count, "renaming:", n);
         return 1;
@@ -768,13 +769,15 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         char n[32];
 
         snprintf(n, sizeof n, "%d", cur->count);
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->columns : -1);
         verdict(s, st != NULL && st->columns == cur->count, "columns:", n);
         return 1;
     }
     case OP_EXPECT_BARAT: {
         char at[48];
 
-        snprintf(at, sizeof at, "%d,%d", cur->x, cur->y);
+        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->bar_x : -1,
+                 (st != NULL) ? st->bar_y : -1);
         verdict(s, st != NULL && st->bar_x == cur->x && st->bar_y == cur->y,
                 "deskbar at:", at);
         return 1;
@@ -882,6 +885,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_DESKSEL: {
         char n[32];
 
+        snprintf(n, sizeof n, "%d", (st != NULL) ? st->desk_selected : -1);
         snprintf(n, sizeof n, "%d", (st != NULL) ? st->desk_selected : -1);
         verdict(s, st != NULL && st->desk_selected == cur->count,
                 "desktop selected:", n);

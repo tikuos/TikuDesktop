@@ -78,7 +78,19 @@ locale, workspace, or richer-window subsystem is genuinely absent.
    real -- shell work is doubled -- which is why the scripted shell
    harness is a prerequisite rather than a nicety: proving every shell row
    twice by hand is not affordable.
-6. **The source is the spec.** Where this file and the source disagree,
+6. **The command layer is NOT shared between the shells** (measured
+   2026-08-15).  `build/tracker` holds no reference to the file-action
+   controllers at all: it has its own inline delete, no file clipboard
+   (no Cut/Copy/Paste), and no alert layer, so the delete question, the
+   mixed-clipboard paste, Duplicate, Create link and Identify exist in
+   `build/desktop` only.  `tools/sweep_shells.sh` runs every desktop
+   script against the other shell: 49 of 49 fail at least one check, and
+   while many are red for reasons rule 5 accepts (several windows, the
+   Deskbar, the backdrop), the file-operation ones are red because the
+   layer is not shared.  A row about a file command that says `done`
+   should be read as done in the multi-window shell.
+
+7. **The source is the spec.** Where this file and the source disagree,
    the source wins and the row gets fixed.
 
 ## Audited state (2026-08-11)
@@ -1345,7 +1357,7 @@ Widget's AttrHash must equal AttrHashString(kAttrPath, B_STRING_TYPE); the widge
 `PoseView.cpp` → `BPoseView::WasClickInPath`  
 **TIKU:** Path column over a device namespace needs a node path -> descriptor resolver; decide whether opening a /dev path means "open the parent directory node".  
 **PORT:** A query result is identified by its path in the name column rather than by a separate Path column, so a double-click on a non-container result opens the folder that holds it -- the row's intent, without the column hash test.  
-**MISSING:** The Location column now exists and is drawn in both shells, so the rule as STATED -- the click's column decides -- is implementable; it is not implemented, because the only listing where a row's parent differs from the window's own folder is a results window, and the scripted harness cannot yet drive one to prove it either way.
+**MISSING:** The Location column now exists and is drawn in both shells, so the rule as STATED -- the click's column decides -- is implementable; it is not implemented, because the only listing where a row's parent differs from the window's own folder is a results window, and a scripted search reaches one holding NO rows and the folder's default four columns rather than Name/Location. Whether the walk finds nothing or the results never reach the view is the question to answer first; Q-023's own script asserts neither.
 
 #### PVS-012 · important · partial
 **Holding Option while opening closes the parent window; with single-window-browse enabled, opening a folder navigates the current window instead of spawning a new one.**  

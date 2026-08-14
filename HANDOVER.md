@@ -51,20 +51,20 @@ anywhere" when X had been built two commits earlier. Verify a blocker against
 the code before believing it, and rewrite it when it is wrong — a stale
 blocker costs the next person an hour.
 
-### Current state (2026-08-14)
+### Current state (2026-08-15)
 
 ```
-889 rows: 548 done · 229 partial · 98 differs · 14 open
-core (199): 128 done ·  45 partial ·  26 differs ·  0 open
-verification: 1948 checks — 43 unit suites + 50 headless shell scripts
+889 rows: 556 done · 235 partial ·  91 differs ·  7 open
+core (199): 129 done ·  47 partial ·  23 differs ·  0 open
+verification: 2019 checks — 44 unit suites + 58 headless shell scripts
 ```
 
-Nothing `core` is open any more: what remains is 229 rows where a named
-clause does not hold and 98 where this port does it another way.  The open
-fourteen are all one of five absences (background images, a date-format
-setting, inter-application messaging, a force-terminate primitive, and two
-rows whose seeding code has no caller) — four of them are waiver candidates
-only the user may strike.
+Nothing `core` is open: what remains is 235 rows where a named clause does
+not hold and 91 where this port does it another way.  The open seven are all
+premises this port cannot hold — no date-format setting, no inter-application
+messaging, no locale catalogue, no version resource, no message-archive drop,
+no force-terminate primitive — and six of them are waiver candidates only the
+user may strike.
 
 **`differs` is not a synonym for handled.** It requires an alternative
 implementation that reaches the row's outcome, written out on a `PORT:` line.
@@ -311,6 +311,18 @@ waiver candidates the user alone may strike:
 | PVL-025, PVL-098 | **a caller** — the drop-point seed is written and reachable, and New folder never uses it, so a new folder is auto-placed |
 | AW-034, MA-007, MA-032, PVL-086 | premises this port cannot hold: inter-application messaging, a name catalogue, a version fact, an archived-object drop (waiver candidates) |
 | DB-020, AW-076 | a force-terminate primitive; a context menu outside a pose view |
+
+### The single-window shell shares the engine, not the commands
+
+`build/tracker` has **no reference to the file-action controllers**: its own
+inline delete, no file clipboard, no alert layer.  So the delete question,
+the mixed-clipboard paste, Duplicate, Create link and Identify are
+`build/desktop` behaviours, and a file-command row reading `done` means done
+there.  `tools/sweep_shells.sh` measures it -- every desktop script run
+against the other shell, 49 of 49 failing at least one check as of
+2026-08-15.  Wiring `tiku_trk_folder_file_actions_*` into the app shell is
+the piece of work that closes the whole class; the harness ops to prove it
+(`click-row`, `click-cell`, `press-row`) already work in both.
 
 ### Where the 229 partial rows cluster
 
