@@ -86,6 +86,9 @@ typedef enum {
 
 /** @brief How far apart stacked icons land. */
 #define TIKU_TRK_DRAG_STACK 20
+#define TIKU_TRK_DRAG_FOREIGN_COLS 4
+#define TIKU_TRK_DRAG_FOREIGN_CELL_W 96
+#define TIKU_TRK_DRAG_FOREIGN_CELL_H 24
 
 /** @brief One drag in flight. */
 typedef struct {
@@ -104,6 +107,7 @@ typedef struct {
      * down in the same arrangement rather than in a heap (PVS-045). */
     int      ox[TIKU_TRK_DRAG_MAX], oy[TIKU_TRK_DRAG_MAX];
     int      from_list;             /* the source view was a list        */
+    int      foreign_refs;          /* payload arrived from another app  */
     /* The distinct types the drag carries, worked out ONCE.  Re-entering
      * a view with the same drag must not rebuild them: the drag has not
      * changed, and rebuilding is how a hover becomes expensive
@@ -129,6 +133,8 @@ void tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
 
 /** @brief Mark a drag that originated in a virtual directory. */
 void tiku_trk_drag_set_source_virtual(tiku_trk_drag_t *d, int virtual_);
+/** @brief Mark a payload as foreign refs (FS-077/PVS-045). */
+void tiku_trk_drag_set_foreign_refs(tiku_trk_drag_t *d, int foreign);
 
 /** @brief Add one item to what the drag carries (PVS-033). */
 int tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path);

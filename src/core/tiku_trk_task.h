@@ -49,6 +49,8 @@ tiku_trk_loop_t *tiku_trk_loop_new(void);
 
 /** @brief Run every task whose time has come.  @return tasks run. */
 int tiku_trk_loop_run(tiku_trk_loop_t *loop);
+/** @brief Pulse a loop from an existing window tick (AW-088). */
+int tiku_trk_loop_pulse(tiku_trk_loop_t *loop);
 
 /**
  * @brief Microseconds until the next task is due.
@@ -59,6 +61,10 @@ int tiku_trk_loop_run(tiku_trk_loop_t *loop);
 int64_t tiku_trk_loop_next_due(const tiku_trk_loop_t *loop);
 
 int tiku_trk_loop_count(const tiku_trk_loop_t *loop);
+
+/** Request a deterministic worker stop before a loop is destroyed. */
+void tiku_trk_loop_stop(tiku_trk_loop_t *loop);
+int tiku_trk_loop_stopping(const tiku_trk_loop_t *loop);
 
 void tiku_trk_loop_free(tiku_trk_loop_t *loop);
 

@@ -273,6 +273,9 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                        (c->columns & (1u << TIKU_TRK_COL_PERM)) != 0u);
     tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_ORIGINAL,
                        (c->columns & (1u << TIKU_TRK_COL_ORIGINAL)) != 0u);
+    SEP(m);
+    ADD(m, TIKU_TRK_CMD_COPY_LAYOUT);
+    ADD(m, TIKU_TRK_CMD_PASTE_LAYOUT);
     if (cw->per_type_count > 0) {
         int k;
 

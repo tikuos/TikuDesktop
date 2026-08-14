@@ -53,6 +53,7 @@ struct tiku_trk_loop {
     tiku_trk_task_t *head;
     int64_t          last_activity;
     int              running;
+    int              stop_requested;
 };
 
 int64_t
@@ -92,6 +93,7 @@ tiku_trk_loop_free(tiku_trk_loop_t *loop)
     if (loop == NULL) {
         return;
     }
+    tiku_trk_loop_stop(loop);
     t = loop->head;
     while (t != NULL) {
         tiku_trk_task_t *next = t->next;
@@ -99,6 +101,24 @@ tiku_trk_loop_free(tiku_trk_loop_t *loop)
         t = next;
     }
     free(loop);
+}
+
+void
+tiku_trk_loop_stop(tiku_trk_loop_t *loop)
+{
+    if (loop != NULL) {
+        /* The shipped shells pump this loop on their own event thread, so
+         * there is no worker to join.  Still publish the same two-phase
+         * contract: request stop first, then teardown only after no callback
+         * is running.  A callback can inspect the flag and finish cleanly. */
+        loop->stop_requested = 1;
+    }
+}
+
+int
+tiku_trk_loop_stopping(const tiku_trk_loop_t *loop)
+{
+    return loop != NULL && loop->stop_requested;
 }
 
 /** @brief Link a task into the loop, soonest-due first. */
@@ -305,6 +325,9 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
     if (loop == NULL) {
         return 0;
     }
+    if (loop->stop_requested) {
+        return 0;
+    }
     now = tiku_trk_now();
     loop->running = 1;
 
@@ -347,4 +370,12 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
         }
     }
     return ran;
+}
+
+int
+tiku_trk_loop_pulse(tiku_trk_loop_t *loop)
+{
+    /* File panels and the desktop do not own worker threads in this port;
+     * they call the due-task pump from their normal event heartbeat. */
+    return tiku_trk_loop_run(loop);
 }

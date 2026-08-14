@@ -50,6 +50,8 @@ enum {
     TIKU_TRK_CMD_COPY_MORE,          /* Shift                               */
     TIKU_TRK_CMD_PASTE,
     TIKU_TRK_CMD_PASTE_LINKS,        /* Shift                               */
+    TIKU_TRK_CMD_COPY_LAYOUT,
+    TIKU_TRK_CMD_PASTE_LAYOUT,
     TIKU_TRK_CMD_IDENTIFY,
     TIKU_TRK_CMD_ICON_VIEW,
     TIKU_TRK_CMD_MINI_ICON_VIEW,
@@ -130,6 +132,7 @@ typedef struct {
     int      can_trash_or_dup;
     int      trash_full;
     int      clipboard_has_refs;
+    int      clipboard_has_layout;
     int      text_focus;         /* a text field has focus                  */
     int      view_mode;          /* TIKU_TRK_MODE_*                         */
     int      icon_size;

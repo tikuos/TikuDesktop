@@ -43,11 +43,13 @@ icon_hit(const tiku_trk_model_t *model, int size, int x, int y,
 
 void
 tiku_trk_folder_window_configure(tiku_trk_folder_window_t *folder,
-                                 tiku_trk_folder_render_t *render)
+                                  tiku_trk_folder_render_t *render)
 {
     const tiku_desk_font_t *font = tiku_desk_font_plain();
 
     folder->render = render;
+    folder->count_last_total = -1;
+    folder->count_last_selected = -1;
     tiku_trk_poseview_set_icons(folder->view, render->icons);
     tiku_trk_poseview_set_measure(folder->view, measure_label, render);
     tiku_trk_poseview_set_font_metrics(folder->view, font->height,
@@ -476,16 +478,24 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         int selected = tiku_trk_poseview_selection_count(folder->view);
 
         tiku_desk_fill(surface, count, TIKU_DESK_C_PANEL);
-        if (total == 0) {
-            snprintf(label, sizeof label, "empty folder");
-        } else if (selected > 0) {
-            snprintf(label, sizeof label, "%d/%d selected", selected,
-                     total);
+        if (total == folder->count_last_total &&
+            selected == folder->count_last_selected &&
+            render->count_text[0] != '\0') {
+            snprintf(label, sizeof label, "%s", render->count_text);
         } else {
-            snprintf(label, sizeof label, "%d item%s", total,
-                     total == 1 ? "" : "s");
+            if (total == 0) {
+                snprintf(label, sizeof label, "empty folder");
+            } else if (selected > 0) {
+                snprintf(label, sizeof label, "%d/%d selected", selected,
+                         total);
+            } else {
+                snprintf(label, sizeof label, "%d item%s", total,
+                         total == 1 ? "" : "s");
+            }
+            folder->count_last_total = total;
+            folder->count_last_selected = selected;
+            snprintf(render->count_text, render->count_text_size, "%s", label);
         }
-        snprintf(render->count_text, render->count_text_size, "%s", label);
     }
     tiku_desk_text(surface, font, count.x + 4,
         count.y + (COUNT_HEIGHT - font->height) / 2 + font->ascent,
@@ -611,6 +621,21 @@ tiku_trk_folder_window_row_at(const tiku_trk_folder_window_t *folder,
     relative = (y - content.y - 2) / folder->render->row_h;
     relative += tiku_trk_poseview_scroll(folder->view);
     return relative < tiku_trk_poseview_count(folder->view) ? relative : -1;
+}
+
+int
+tiku_trk_folder_window_count_at(const tiku_trk_folder_window_t *folder,
+                                int x, int y)
+{
+    tiku_desk_rect_t content;
+
+    if (folder == NULL) {
+        return 0;
+    }
+    content = tiku_trk_folder_window_content(folder);
+    return x >= content.x && x <= content.x + content.w &&
+           y >= content.y + content.h - COUNT_HEIGHT &&
+           y <= content.y + content.h;
 }
 
 int

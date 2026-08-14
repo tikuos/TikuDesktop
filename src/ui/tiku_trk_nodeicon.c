@@ -265,6 +265,7 @@ tiku_trk_nodeicon_changed(tiku_trk_nodeicon_t *c, const char *path)
      * what was remembered is now wrong, and being wanted often is no
      * reason to keep showing the wrong picture (IV-038). */
     memset(e, 0, sizeof *e);
+    c->generation++;
     return 1;
 }
 
@@ -284,6 +285,7 @@ tiku_trk_nodeicon_deleted(tiku_trk_nodeicon_t *c, const char *path)
         return 0;
     }
     memset(e, 0, sizeof *e);
+    c->generation++;
     return 1;
 }
 
@@ -302,7 +304,14 @@ tiku_trk_nodeicon_removing(tiku_trk_nodeicon_t *c, const char *path)
     /* Permanent or not.  The flag says "do not evict this to make room",
      * not "keep it after the file it describes has gone". */
     memset(e, 0, sizeof *e);
+    c->generation++;
     return 1;
+}
+
+uint64_t
+tiku_trk_nodeicon_generation(const tiku_trk_nodeicon_t *c)
+{
+    return c != NULL ? c->generation : 0;
 }
 
 void

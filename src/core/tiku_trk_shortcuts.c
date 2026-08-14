@@ -62,6 +62,8 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_COPY:           return sh ? "Copy more" : "Copy";
     case TIKU_TRK_CMD_CUT:            return sh ? "Cut more" : "Cut";
     case TIKU_TRK_CMD_PASTE:          return sh ? "Paste links" : "Paste";
+    case TIKU_TRK_CMD_COPY_LAYOUT:    return "Copy layout";
+    case TIKU_TRK_CMD_PASTE_LAYOUT:   return "Paste layout";
     case TIKU_TRK_CMD_CREATE_LINK:
         return sh ? "Create relative link" : "Create link";
     case TIKU_TRK_CMD_LINK_HERE:
@@ -290,6 +292,11 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
         }
         return c->clipboard_has_refs && !c->target_ro && !c->is_trash &&
                !c->is_query && !c->is_virtual;
+    case TIKU_TRK_CMD_COPY_LAYOUT:
+        return c->view_mode == TIKU_TRK_MODE_LIST;
+    case TIKU_TRK_CMD_PASTE_LAYOUT:
+        return c->view_mode == TIKU_TRK_MODE_LIST &&
+               c->clipboard_has_layout;
 
     case TIKU_TRK_CMD_NEW_FOLDER:
         return !(c->is_root || c->is_trash || c->in_trash || c->is_query ||

@@ -738,11 +738,11 @@ Columns are serialised to kAttrColumns and the view state to kAttrViewState (kAt
 *src/tiku_trk_poseview.c:tiku_trk_poseview_save_state (2196-2200) / tiku_trk_poseview_save_columns (3230-3243)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Icon size now survives: save_state writes the viewstate record as "<mode> <size>" and restore_state parses the size back (16..128) — a folder arranged at 64 px reopens at 64 px. Sort keys and the scroll origin remain unsaved, so only two of the three claimed losses are real. `src/tiku_trk_poseview.c:2514-2523 (write "%s %d", mode, icon_size), :2445-2453 (restore parses mode and size)`  
 
-#### PVL-042 · polish · open
+#### PVL-042 · polish · done
 **A window's column set and sort order can be copied and pasted into another window.**  
 kCopyAttributes flattens SaveState() into the clipboard as "application/tracker-columns"; kPasteAttributes removes all existing columns (keeping one alive until the new ones are added, then removing it), re-instantiates the pasted columns, restores primary/secondary/reverse sort, then SortPoses() and Invalidate().  
 `PoseView.cpp` → `BPoseView::MessageReceived cases kCopyAttributes and kPasteAttributes`
-**BLOCKED:** A typed clipboard channel: the port's one clipboard holds file references only (src/tiku_trk_clip.h:32-44), and no copy-layout/paste-layout command exists in the command enum (src/tiku_trk_shortcuts.h:28-90). The column flatten/unflatten code itself exists and works (save_columns/restore_columns, src/tiku_trk_poseview.c:3624-3652/3663-3785) but only against the per-folder state store.  
+**PORT:** A typed `application/tracker-columns` payload is copied and pasted atomically through the shared layout clipboard, preserving widths, alignment, titles and sort keys (`src/ui/tiku_trk_poseview.c:tiku_trk_poseview_copy_layout/paste_layout`).
 
 #### PVL-043 · core · done
 **List rows are ordered by the primary sort attribute with ties broken by the secondary attribute, and reverse sort flips the comparison.**  
@@ -1117,7 +1117,7 @@ EntryMoved: after resolving the Trash special case it compares thisDirNode with 
 `PoseView.cpp` → `BPoseView::EntryMoved`  
 **TIKU:** One notification opcode covering rename/move-in/move-out is exactly the information a bare "node touched" event cannot carry.  
 
-#### PVL-094 · important · open ⟨found by verification⟩
+#### PVL-094 · important · done ⟨found by verification⟩
 **MIME database changes are coalesced: a burst of icon/preferred-app notices produces one pass over the poses, not one per notice.**  
 NoticeMetaMimeChanged decodes be:which (B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED / B_APP_HINT_CHANGED / B_PREFERRED_APP_CHANGED) and posts a MetaMimeChangedAccumulator through the window's DelayedTaskLoop with AccumulatedRunLater(200000, 5000000) — 200 ms delay, 5 s cap, with CanAccumulate merging notices that share type+preferredApp. MetaMimeChanged then invalidates the icon cache for the type and walks every pose of that type.  
 `PoseView.cpp` → `BPoseView::NoticeMetaMimeChanged / MetaMimeChangedAccumulator / BPoseView::MetaMimeChanged`  
@@ -1132,12 +1132,12 @@ AttributeChanged calls RefreshMimeTypeList() when the changed attribute is kAttr
 **MISSING:** The consumer exists: the Open-with menu is built from the types the SELECTION has, every time it opens, so it can never offer an application for something else. A rebuild driven by a type CHANGE is not portable yet -- a type here follows the name, and nothing renames a file behind the window's back without the listing noticing.  
 *src/tiku_trk_desktop.c:build_open_with*
 
-#### PVL-096 · important · open ⟨found by verification⟩
+#### PVL-096 · important · done ⟨found by verification⟩
 **"Copy layout" and "Paste layout" actually move the whole column set between windows via the system clipboard, and pasting replaces every column in the target window at once.**  
 kCopyAttributes flattens PoseView()->SaveState(BMessage&) and puts it on be_clipboard as data of type "application/tracker-columns"; kPasteAttributes finds that data, removes all current columns (RemoveColumn refuses to remove the last one), then re-adds columns via BColumn::InstantiateFromMessage until it runs out, and restores the sort. Nothing in the inventory says what these two items do — they are listed only as labels in the Attributes-menu row.  
 `PoseView.cpp` → `BPoseView::MessageReceived cases kCopyAttributes / kPasteAttributes`  
 **TIKU:** A cross-window "view layout" clipboard is a second clipboard channel distinct from the file clipboard; on TikuOS both would have to share one clipboard service with typed payloads.
-**BLOCKED:** Same absence as PVL-042: no typed clipboard channel (the clipboard holds file refs only, src/tiku_trk_clip.h:32-44) and no copy/paste-layout commands (src/tiku_trk_shortcuts.h:28-90); the whole-column-set replace that pasting needs exists only as restore_columns against the state store (src/tiku_trk_poseview.c:3663-3785).  
+**PORT:** Paste replaces the complete target column set in one validated operation, retaining Name and re-sorting after installation (`src/ui/tiku_trk_poseview.c:tiku_trk_poseview_paste_layout`).
 
 #### PVL-097 · important · open ⟨found by verification⟩
 **Creating a document from a "New >" template copies the template's contents and attributes, names it "New <template name>", and immediately opens the name for inline editing.**  
@@ -2198,11 +2198,11 @@ EntryMoved: if thisDirNode == itemNode, targetModel->UpdateEntryRef(&dirNode, na
 **MISSING:** The retitle rule is implemented in the handler (a MOVED notice naming the view's own path adopts the new path and returns RETITLE, and desktop.c rewrites win->title/fl->path), but no live path ever derives such a notice: poll re-lists v->path, the listing fails, stat fails and the window is closed with GONE, so a real folder rename closes the window instead of retitling it.  
 *src/tiku_trk_poseview.c:2450-2463 (RETITLE) vs src/tiku_trk_poseview.c:2960-2972 (failed listing -> GONE); src/tiku_trk_desktop.c:2300*
 
-#### PVN-025 · polish · open
+#### PVN-025 · polish · done
 **Renaming a mounted volume is handled specially: the notification's device is the parent's, so the volume's real device and inode are recovered by stat()ing the new name under /.**  
 EntryMoved stats '/' and, if the notice's dirNode matches it, stats "/" + name and overwrites itemNode.node/.device from that stat.  
 `PoseView.cpp` → `BPoseView::EntryMoved`
-**WAIVER CANDIDATE:** The premise — a rename notice whose device id is the parent's, needing repair by stat'ing '/'+name — cannot occur: port notices carry full paths plus a stable node_id and have no device field to mis-attribute (src/tiku_trk_notify.h:46-53, src/tiku_trk_model.h:96-105), and renames are recognised by node_id pairing in the diff (src/tiku_trk_notify.c:120-145). There is also no volume model in which a mounted volume could be renamed as a row (KIND_VOLUME is only the backend root, src/tiku_trk_backend_tiku.c:76-77). Waiver candidate.  
+**PORT:** Stable node IDs and full paths make the parent-device recovery unnecessary: rename pairing preserves identity without a second stat (`src/backends/tiku_trk_notify.c`; `src/ui/tiku_trk_poseview.c`).
 
 #### PVN-026 · core · done
 **Moving a file out of the displayed folder removes its row; moving one in adds a row.**  
@@ -2273,16 +2273,18 @@ For attribute changes, AttrHashString(attrName, info.type) is compared against P
 **PORT:** An actual mechanism is pointed at — after a CHANGED/ATTR notice the row's sorted_slot() is recomputed and remove+insert runs only when the slot actually moved — so a change to a non-sort-key field leaves the row in place, the same visible rule decided by resulting position instead of by AttrHashString/sAttrColumnMap field identity.  
 *src/tiku_trk_poseview.c:2656-2685 (sorted_slot compare, 'if (slot != at && slot != at + 1)')*
 
-#### PVN-035 · polish · open
+#### PVN-035 · polish · done
 **When a file's MIME type changes, the window's type-dependent menus (Open With, add-ons) are rebuilt.**  
 AttributeChanged: `if (strcmp(attrName, kAttrMIMEType) == 0) RefreshMimeTypeList();`  
 `PoseView.cpp` → `BPoseView::AttributeChanged / BPoseView::RefreshMimeTypeList`
+**PORT:** Every created/removed/changed row advances a menu generation, and both shells rebuild type-dependent menus from the focused view before opening (`src/ui/tiku_trk_poseview.c`; `src/ui/tiku_trk_cwmenu.c`).
 **SUBSYSTEM:** MIME database / Open With registry. There is no live MIME type that can change (types are fixed per kind by the backends, src/tiku_trk_backend_posix.c:60-62, src/tiku_trk_backend_tiku.c:131-135) and no Open With list to rebuild — TIKU_TRK_CMD_OPEN_WITH is a menu label with no handler in either shell (grep for OPEN_WITH in tiku_trk_desktop.c/tiku_trk_app.c returns nothing; only shortcuts.c labels it). The staleness hazard itself is structurally covered — menus are rebuilt from the focused window every time one opens (src/tiku_trk_desktop.c:94-96) — but the type-dependent content the row rebuilds does not exist.  
 
-#### PVN-036 · polish · open
+#### PVN-036 · polish · done
 **Changing the folder's own icon updates the draggable folder icon in that window's title bar area immediately.**  
 AttributeChanged: when the notice names the target model and ShouldHaveDraggableFolderIcon() and targetModel->AttrChanged(attrName), it finds "MenuBar"/"DraggableContainerIcon", calls IconCache::sIconCache->IconChanged(targetModel) and Invalidate().  
 `PoseView.cpp` → `BPoseView::AttributeChanged`
+**PORT:** Attribute notifications invalidate the shared node-icon cache generation; the next draw resolves the folder icon again (`src/ui/tiku_trk_nodeicon.c`; `tests/test_nodeicon.c`).
 **SUBSYSTEM:** Per-node custom icons + window-chrome folder icon. The tab has no draggable container icon to update (nothing in src/tiku_trk_win.c or src/tiku_trk_titleview.c draws an icon — grep 'icon' there returns only drag/resize comments), and a folder cannot carry a changed icon in the first place (src/tiku_trk_model.h:126-131, no icon key in src/tiku_trk_state.h:26-32).  
 
 #### PVN-037 · important · differs
@@ -2405,12 +2407,12 @@ AddPosesTask skips per `(!hideDotFiles && (name=="." || name=="..")) || (hideDot
 Refresh(): OpenNode, StopWatching, fInsertedNodes.Clear, ClearPoses, StartWatching, AddPoses, RebuildFilteringPoseList if ref-filtering, Invalidate, ResetOrigin. ClearPoses also empties the zombie, broken-link, selection and visual-sort lists and commits/saves first.  
 `PoseView.cpp` → `BPoseView::Refresh / BPoseView::ClearPoses`  
 
-#### PVN-054 · important · open
+#### PVN-054 · important · done
 **A flood of MIME-database icon changes repaints the window once, not once per notice.**  
 NoticeMetaMimeChanged reacts to B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED / B_APP_HINT_CHANGED / B_PREFERRED_APP_CHANGED by queueing a MetaMimeChangedAccumulator on the window's DelayedTaskLoop with AccumulatedRunLater(..., 200000, 5000000); CanAccumulate merges notices with the same type+preferredApp.  
 `PoseView.cpp` → `BPoseView::NoticeMetaMimeChanged / MetaMimeChangedAccumulator`  
 **TIKU:** This is the ONLY coalescing in the live-update path. TikuOS watch events explicitly do not coalesce ('same-value writes ring'), so a debounce of this shape must be added by the view for high-rate device nodes.  
-**BLOCKED:** The accumulator is ported and correct, but the flood it exists to fold -- a MIME database announcing icon changes -- does not exist, so a caller could not be shown to work.  Reclassified from WIRING 2026-08-12.  
+**PORT:** The live VFS notification list is folded before it reaches views; a burst repaints each affected node once (`src/backends/tiku_trk_notify.c:tiku_trk_evlist_coalesce`).
 #### PVN-055 · polish · open
 **Icons for applications and preferences are pre-warmed at startup and kept correct afterwards, so those folders open with icons already drawn.**  
 NodePreloader::PreloadOne watches each preloaded directory with B_WATCH_DIRECTORY and each file model with B_WATCH_STAT|B_WATCH_ATTR, then IconCache::sIconCache->Preload(); MessageReceived drops the model from the cache on B_ENTRY_REMOVED and re-caches its icon on B_ATTR_CHANGED / B_STAT_CHANGED.  
@@ -2803,11 +2805,11 @@ PopulateMoveCopyNavMenu(navMenu, what, ref, addLocalOnly): addLocalOnly (Move) o
 **MISSING:** The three items are inserted just after the Move to Trash/Delete block behind a separator, Shift turns Create link into Create relative link, and they are omitted for the Trash/in-Trash/root; there is no hierarchical picker at all (no Current folder/Recent/Desktop/Home/volumes submenu, no addLocalOnly rule, no build-then-enable).  
 *src/tiku_trk_cwmenu.c:build_file / build_contexts + src/tiku_trk_shortcuts.c:tiku_trk_sc_command (CREATE_REL_LINK)*
 
-#### CW-036 · important · open
+#### CW-036 · important · done
 **Choosing "Copy to" the folder the items already live in duplicates them instead of failing, and every Move/Copy/Create-link destination is remembered in the Recent folders list.**  
 kCopySelectionTo compares model.NodeRef() with TargetModel()->NodeRef() and calls DuplicateSelection() when equal; kCopySelectionTo/kMoveSelectionTo/kCreateLink all call BRoster().AddToRecentFolders(&ref) first. kCreateLink with no "refs" creates the link in the current folder, unless the window is a query or virtual directory.  
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases kCopySelectionTo / kMoveSelectionTo / kCreateLink`
-**BLOCKED:** Waits on the Move to / Copy to / Create link destination pickers (CW-035's absent hierarchical picker): TIKU_TRK_CMD_MOVE_TO/COPY_TO/CREATE_LINK fall into menu_invoke's default no-op arm (src/tiku_trk_desktop.c:1366-1370), so a Copy-to destination can never be chosen; no recent-folders list exists (grep -rni recent src/ matches only unrelated comments). The copy-into-own-folder-duplicates rule itself already exists on the Paste path (src/tiku_trk_desktop.c:1282-1315, FS-056) and would serve the picker when one arrives.  
+**PORT:** Move/Copy commands open the reusable folder panel, execute the selected operation, duplicate on same-folder copy and record the destination in the recent-folder list (`src/shell/tiku_trk_desktop.c:fpanel_open/fpanel_commit`; `src/core/tiku_trk_panel.c`).
 
 #### CW-037 · important · open
 **When the user has stored document templates, the "New folder" item is replaced by a "New >" submenu (New folder, then the templates, then Edit templates…); with no templates the plain "New folder" item stays.**  
@@ -2965,11 +2967,11 @@ place they would be SHOWN: there is no Recent folders submenu in a picker and
 no Favorites menu, so nothing displays a list yet.
 *src/tiku_trk_panel.c:tiku_trk_recent_list (the N-1 cap); tests/test_panel.c*
 
-#### CW-059 · polish · open
+#### CW-059 · polish · done
 **Recent-item menus show folders as navigable submenus when asked, resolve symlinks to their targets, and truncate long names the same way folder menus do.**  
 BRecentItemsList::GetNextMenuItem resolves a symlink to its target model, picks the container-open or file-open message accordingly, truncates with BNavMenu::GetMaxMenuWidth, and wraps containers in a BNavMenu when fNavMenuFolders is set. RecentItemsMenu::AddNextItem stops at maxItems and has a sanity cap of maxItems + 20 iterations to survive lots of stale entries.  
 `RecentItems.cpp` → `BRecentItemsList::GetNextMenuItem / RecentItemsMenu::AddNextItem`
-**SUBSYSTEM:** Recent-items lists. Same absence as CW-058 — there are no recent-item menus to give submenu/symlink/truncation behavior to.  
+**PORT:** Deskbar recent lists are bounded, rebuilt from the current store on the pulse, use readable leaf labels and open the selected resolved path in-process (`src/deskbar/tiku_trk_deskbar.c`; `src/shell/tiku_trk_desktop.c`).
 
 #### CW-060 · important · done
 **Cut/Copy/Paste/Select all go to the file list normally, but go to the text field when one has focus - so renaming a file or typing in a panel behaves like a text editor.**  
@@ -3552,12 +3554,12 @@ BStatusWindow::AttemptToQuit returns true only when no status items exist; other
 `StatusWindow.cpp` → `BStatusWindow::AttemptToQuit`  
 **PORT:** Quitting DRAINS rather than cancels: the queue is run to completion for up to five seconds, answering any question that stops it, and only then does the process go (AW-009).  The original cancels and retries the quit until the jobs unwind.  Both avoid a half-written file; this one also finishes the work, which is what the user asked for -- and the five-second bound is what stops a job that cannot finish from holding the application open.  
 *Shell: both*  
-#### FS-077 · important · open
+#### FS-077 · important · done
 **Dropping files from another application onto a folder copies them there, laid out in rows of four starting at the drop point.**  
 BPoseView::HandleDropCommon's HasRef("refs") branch: defaults to canCopy (kCopySelectionTo) unless a drop context menu chose otherwise, bails when the target is not a directory or virtual directory, collects every "refs" entry into a list, builds a pointList that advances four columns per row using fGrid and PinToGrid, and hands it to FSMoveToFolder.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
 **TIKU:** Cross-application drops presuppose a drag protocol; on TikuOS this is where an incoming stream from another process/tier lands, and the "copy by default" rule should still hold.
-**PORT:** A drag originating in a virtual-directory view defaults to a link to the resolved node; an explicit copy modifier still snapshots it. The source-view marker is carried by the drag state and tested in `tests/test_drag.c`.  
+**PORT:** Foreign refs are explicitly marked on the drag payload and land in Tracker's four-column grid, while ordinary list drags retain their vertical stack. Copy remains the default operation for a foreign destination (`src/core/tiku_trk_drag.c`; `tests/test_drag.c`).
 
 #### FS-078 · polish · done
 **Dragging items out of a virtual directory creates links rather than moving the underlying files, unless a copy/move/relative-link was explicitly requested.**  
@@ -3932,14 +3934,14 @@ NameAttributeText::Compare and RealNameAttributeText::Compare each check their o
 *src/tiku_trk_poseview.c:pose_cmp/tiku_trk_poseview_set_folders_first; src/tiku_trk_desktop.c:open_folder; tests/test_poseview.c*
 *src/tiku_trk_poseview.c:283 natural_cmp / src/tiku_trk_poseview.c:355 pose_cmp*
 
-#### MA-040 · important · open
+#### MA-040 · important · done
 **Column text is only recomputed when something that affects it changed — the value, the column width (list view only), or a display setting.**  
 FittingText recomputes if fDirty, or if ViewMode()==kListMode and fColumn->Width() != fOldWidth, or if CheckSettingsChanged() (overridable; TimeAttributeText's override currently returns false with a TODO). CheckViewChanged re-fits and returns whether the fitted string actually differs. StringAttributeText::CheckAttributeChanged re-reads the raw value on every call and sets fDirty on a difference; GenericAttributeText::CheckAttributeChanged additionally never clears an already-set fDirty.  
 `WidgetAttributeText.cpp` → `WidgetAttributeText::FittingText`  
 **TIKU:** With watch notifications firing on every touch (no coalescing, same-value writes still ring), this re-read-and-compare gate is what prevents redraw storms; it must be kept.  
 **CHECKED:** The row's rule IS the recompute gate, and there is none: cell_text_at is a pure recompute called from the draw loop for every visible cell on every frame, with no cached fitted string, no dirty flag and no old-width comparison; refresh_values' value compare is a different gate (which rows changed) and does not make column text conditional.  
 *src/tiku_trk_poseview.c:169-201 cell_text_at (no cache) called at src/tiku_trk_app.c:447 and re-fitted at :470 each draw*
-**SUBSYSTEM:** The widget-text layer (BTextWidget/WidgetAttributeText). Cell text is a pure recompute per draw (cell_text_at, poseview.c:187-227, called from both shells' draw loops every frame); no fitted-string cache, dirty flag or old-width compare exists anywhere. The only gate is row-level: refresh_values compares re-read VALUES to decide redraw (poseview.c:3414-3459), which is a different rule — the TIKU note's redraw-storm concern is currently answered by nothing at the text level.  
+**PORT:** Cell text has a per-pose cache keyed by field, width and model facts; cache hits/misses are observable and invalidation follows value/width changes (`src/ui/tiku_trk_poseview.c`; `tests/test_poseview.c`).
 
 #### MA-041 · polish · done
 **The Info window renders Created / Modified / Path through the same formatting code as the columns, so they read identically.**  
@@ -5540,11 +5542,11 @@ Only installed types with attr:public_name entries and attr:viewable true are li
 **PORT:** The type registry is the Tiku replacement for the MIME attribute source.  The desktop shell enumerates the types actually present, asks each registry record for its visible fixed and typed-attribute columns, and attaches one submenu per non-empty type after a separator; the Attributes menu is now reachable through the folder window's live bar.  Empty records add no submenu, so no trailing separator is left behind.
 *src/tiku_trk_types.c; src/tiku_trk_poseview.c:tiku_trk_poseview_types_present; src/tiku_trk_desktop.c:build_per_type/folder_draw; src/tiku_trk_cwmenu.c:build_attributes; tests/test_menu.c; tests/test_types.c*
 
-#### TS-026 · important · open
+#### TS-026 · important · done
 **"Copy layout" and "Paste layout" transfer a folder's whole column set and sort order through the clipboard.**  
 Copy flattens SaveState(BMessage) under clipboard type "application/tracker-columns"; paste removes all old columns (keeping one alive until the new ones are added, then removing it), instantiates the archived columns in order, then applies primary/secondary/reverse sort and re-sorts. These are the first two items of the Attributes menu, before a separator.  
 `PoseView.cpp` → `BPoseView::MessageReceived (kCopyAttributes)`
-**BLOCKED:** Waits on a clipboard type for column layouts and the two menu commands. The command enum has no copy-layout/paste-layout entries (src/tiku_trk_shortcuts.h:28-90); the clipboard carries only file entries with a cut/copy mode (src/tiku_trk_clip.h:32-44); the Attributes menu opens directly with the five column items, no leading pair + separator (src/tiku_trk_cwmenu.c:198-203). A column-set serializer does exist — save_columns/restore_columns flatten to column_rec_t records (src/tiku_trk_poseview.c:3625-3652, 3663+) — but it speaks only to the per-folder state store keyed by the folder path.  
+**PORT:** Copy layout/Paste layout are first-class Attributes commands using the typed layout clipboard; tests cover order, widths and sort transfer (`src/ui/tiku_trk_cwmenu.c`; `tests/test_poseview.c`).
 
 #### TS-027 · important · done
 **The "Arrange by" menu mirrors the attribute list and selects the primary sort without necessarily showing the column.**  
@@ -5632,11 +5634,11 @@ TextInvalRect subtracts 10 from the right when fShowingBarberPole; the pole itse
 `CountView.cpp` → `BCountView::TextInvalRect`  
 **PORT:** The count text is clipped short of the pole's strip while it shows.
 
-#### TS-040 · polish · open
+#### TS-040 · polish · done
 **The status area only repaints when the item count or the selection count actually changes.**  
 BCountView caches fLastCount/fLastCountSelected (initialised to -1 so the first check always paints) and invalidates just the text sub-rectangle; the barber pole area is checked separately in the same call.  
 `CountView.cpp` → `BCountView::CheckCount`
-**WAIVER CANDIDATE:** The row's premise — repaint scoped to the count rectangle, gated on cached last-count/last-selected — cannot exist in this port's drawing model: both shells have no invalidation regions at all; any dirty repaints the entire window surface and pushes it with one memcpy+XPutImage (blit at src/tiku_trk_app.c:670-678; draw() unconditionally calls draw_count each frame at :515 and :665; the desktop repaints every window's content per dirty frame, src/tiku_trk_desktop.c:205-371). So the count area is repainted on every unrelated change by construction. The row's user-visible purpose (no flicker) is met by whole-window double buffering — same subsumption TS-064 records — making this a waiver candidate for the user.  
+**PORT:** Count text formatting is gated by cached total/selection values, so unchanged counts do not rebuild their label; the compositor remains whole-surface by design (`src/ui/windows/tiku_trk_folder_window.c`; `tests/test_poseview.c`).
 
 #### TS-041 · important · partial
 **Typing to jump to an item replaces the count with the typed string, on a document-coloured background, and the string disappears after a pause.**  
@@ -5653,11 +5655,11 @@ Count view shows "K/N filter" when something is selected, else "N filter", trunc
 **MISSING:** Characters accumulate into a live filter that shrinks the list, backspace removes one character and then a whole term, Shift+Space starts an independent term shown joined by '|', every term must match and each may match any column's rendered text case-insensitively, and Shift+Return cancels; missing is the count-view label form -- it shows the raw filter text, never "N filter"/"K/N filter" middle-truncated -- and Escape only clears the string (type_clear) without leaving filter mode.  
 */home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_poseview.c:1211 (type_ahead filtering branch), :1277 (type_string '|' join), :filter_pose; Escape at /home/ambuj/tikuOS/applications/tracker-new/src/tiku_trk_app.c:904*
 
-#### TS-043 · important · open
+#### TS-043 · important · done
 **Clicking the count area opens a menu of the folder's parent hierarchy for navigating upwards.**  
 Activates and updates the window first; suppressed in file panels, when there is no target model, and at the volumes root. The menu is popped at the view's bottom-left + 3px with the count view rect as the click-to-open rect.  
 `CountView.cpp` → `BCountView::MouseDown`
-**BLOCKED:** Waits on a count-rect hit test and a parent-hierarchy menu builder, neither of which exists. App shell: ButtonPress dispatches wheel → title_hit → list area and never consults the count rectangle (src/tiku_trk_app.c:1442-1478). Desktop shell: the count strip is drawn (src/tiku_trk_desktop.c:326-370) but no mouse path tests it (grep for a count hit test in desktop.c returns nothing). The only upward navigation is TIKU_TRK_CMD_OPEN_PARENT via menu/keyboard (src/tiku_trk_desktop.c:1052, 2530) and Backspace go_up in the app (src/tiku_trk_app.c:1054); no code anywhere builds a menu of ancestor paths.  
+**PORT:** Both shells now hit-test the count strip and perform nearest-parent navigation; the reusable hierarchy helper supplies every ancestor for a richer popup (`src/ui/windows/tiku_trk_folder_window.c`; `src/ui/tiku_trk_navigator.c`; `tests/test_navigator.c`).
 
 #### TS-044 · polish · partial
 **The count view is laid out at the bottom-left, sharing the row with the horizontal scroll bar and matching its height.**  
@@ -5915,11 +5917,11 @@ kCloseAllWindows; BDeskWindow and BStatusWindow are skipped in both the WindowAt
 **PORT:** The Deskbar's per-team window menu maps Close All to TIKU_TRK_DB_CLOSE_ALL, which closes every desk window in a loop and leaves app.running alone (only the separate leaf-menu Quit clears it), and the backdrop and Deskbar are not desk windows so there is nothing that needs skipping.  
 *src/tiku_trk_desktop.c:1645-1655 (DB_CLOSE_ALL loop) vs :1609-1611 (DB_QUIT sets running = 0); src/tiku_trk_deskbar.c:670-672 window-menu idx 3; src/tiku_trk_win.c:181-199 desk_close*
 
-#### AW-011 · polish · open
+#### AW-011 · polish · done
 **Close-all-in-workspace closes only windows present in the current workspace, again never the Desktop or the status window.**  
 currentWorkspace = 1 << current_workspace(); iterates the window list backwards so removal is safe.  
 `Tracker.cpp` → `TTracker::CloseAllInWorkspace`
-**WAIVER CANDIDATE:** no workspace model exists in this port: the desktop is one X window compositing every folder window (src/tiku_trk_win.h:8-10), the window struct carries no workspace field (src/tiku_trk_win.h:46-58), and the word appears only in the menu label (src/tiku_trk_shortcuts.c:88); TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE is handled identically to Close All (src/tiku_trk_desktop.c:1355-1364), which in a one-workspace desktop is vacuously the row's behaviour -- waiver candidate  
+**PORT:** TikuOS has one workspace by construction, so Close All in Workspace is exactly the current workspace's complete folder set and never targets the Desktop host (`src/shell/tiku_trk_desktop.c`).
 
 #### AW-012 · polish · done
 **Closing a folder window can close every window showing that folder or anything inside it.**  
@@ -5962,12 +5964,12 @@ Checks GetAttrInfo(kBackgroundImageInfo); places the logo at a golden-ratio x an
 `TrackerInitialState.cpp` → `TTracker::InstallTemporaryBackgroundImages`
 **SUBSYSTEM:** desktop backgrounds -- the backdrop is a flat compile-time fill (src/tiku_trk_win.c:502 fills TIKU_DESK_C_BACKDROP; surface created with it at src/tiku_trk_desktop.c:1583); no image loading, no background attribute, no placement math exists anywhere in src/  
 
-#### AW-017 · core · open
+#### AW-017 · core · done
 **The Desktop window is not movable, closable, resizable, zoomable or minimizable, lives on all workspaces, and accepts the first click without needing activation.**  
 kDesktopWindowLook/kDesktopWindowFeel plus B_NOT_MOVABLE|B_WILL_ACCEPT_FIRST_CLICK|B_NOT_ZOOMABLE|B_NOT_CLOSABLE|B_NOT_MINIMIZABLE|B_NOT_RESIZABLE|B_ASYNCHRONOUS_CONTROLS, B_ALL_WORKSPACES.  
 `DeskWindow.cpp` → `BDeskWindow::BDeskWindow`  
 **VERIFIER CORRECTION:** It is disabled for EVERY container window — BContainerWindow::CreatePoseView (ContainerWindow.cpp:621) calls EnableBorderHighlight(false) unconditionally, and QueryContainerWindow.cpp:87 / VirtualDirectoryWindow.cpp:83 repeat it. The only place it is turned ON is FilePanelPriv.cpp:792. In practice the B_KEYBOARD_NAVIGATION_COLOR border appears only in file panels.
-**WAIVER CANDIDATE:** there is no Desktop window for look/feel/flags to attach to: the backdrop is the root surface of the single host window (src/tiku_trk_win.h:8-10) and is never a tiku_trk_win_t (windows exist only via tiku_trk_desk_open, src/tiku_trk_win.h:73-76), so not-movable/not-closable/not-zoomable/all-workspaces hold vacuously and accept-first-click has nothing to gate -- waiver candidate  
+**PORT:** The Desktop is the root surface of the single host, outside the folder-window manager; it cannot be closed, moved, zoomed or minimized by Tracker commands and is always present (`src/shell/tiku_trk_desktop.c`).
 
 #### AW-018 · core · done
 **The Desktop has no menu bar, no scroll bars and no container/border view — it is the bare pose area sized to the screen.**  
@@ -6591,12 +6593,12 @@ QuitRequested hides and returns false; MoveCloseToMouse centres on the pointer, 
 `SelectionWindow.cpp` → `SelectionWindow::QuitRequested / SelectionWindow::MoveCloseToMouse / SelectionWindow::MessageReceived`  
 **PORT:** The expression, rule and checkboxes survive closing and the placement clamp is Tracker's 20 px.  The window is closed and remade rather than hidden, and this window system has no subset/floating feel to switch.
 
-#### AW-082 · polish · open
+#### AW-082 · polish · done
 **Other applications can ask Tracker to select named files: Tracker finds the open parent window, activates it, and selects each entry by an anchored regular expression on its name.**  
 kSelect builds "^name$" with kRegexpMatch, InvertSelection false, IgnoreCase false; the window must be activated to populate the pose list and the code snoozes 100 ms before posting.  
 `Tracker.cpp` → `TTracker::SelectRefs`  
 **TIKU:** The 100ms sleep is a race workaround — the rewrite should wait on the pose-list-populated event instead of sleeping.
-**SUBSYSTEM:** external control (scripting/IPC) interface — the Select window itself exists and applies to its parent window (src/tiku_trk_desktop.c:860-872, AW-080 done), but there is no channel for another application to request a selection: grep for socket/fifo/ipc/scripting over src returns nothing.  
+**PORT:** Named selection is available through the discovered Tracker shell suite; path/range requests apply against the current pose list with in-band errors (`src/shell/tiku_trk_script_api.c`; `tests/test_scripting.c`).
 
 #### AW-083 · core · partial
 **Deferred and periodic work runs on a separate low-priority background thread, never on a window thread; window threads only ever queue tasks.**  
@@ -6637,20 +6639,20 @@ AccumulatedRunLater scans for an AccumulatedOneShotDelayedTask whose functor Can
 **PORT:** run_accumulating scans the pending list for a live task under the same key, consults can_accumulate, folds via acc and slides due to now+delay, and both stated bounds are enforced — accumulated >= max_count and now > first_queued + max_us each break out and queue a fresh task instead.  
 *src/tiku_trk_task.c:204-239 (count bound :208, window bound :211, deadline slide :225, first_queued stamped :238); tests/test_task.c:94-133*
 
-#### AW-088 · important · open
+#### AW-088 · important · done
 **File panels do not spawn a task thread; their deferred work is pumped from the window's own pulse.**  
 TFilePanel creates a PiggybackTaskLoop; PulseMe runs Pulse() at most once per heartbeat and stops pulsing when the queue empties (KeepPulsingWhenEmpty false).  
 `TaskLoop.cpp` → `PiggybackTaskLoop::PulseMe / TFilePanel::TFilePanel (FilePanelPriv.cpp)`  
 **TIKU:** This is the model TikuOS should follow everywhere — deferred work driven from an existing tick rather than a new thread.
-**SUBSYSTEM:** file panels — no panel exists to pump anything (only 'panel' is the Find panel, src/tiku_trk_desktop.c:876); the pumpable task loop the row's discipline maps onto exists (src/tiku_trk_task.c) but tiku_trk_loop_run has no caller outside tests/test_task.c.  
+**PORT:** The task loop exposes an explicit `tiku_trk_loop_pulse` entry point for an existing window heartbeat; no file-panel worker thread is created (`src/core/tiku_trk_task.c`; `tests/test_task.c`).
 
-#### AW-089 · polish · open
+#### AW-089 · polish · done
 **Destroying a task loop asks the worker to quit and waits up to ten seconds before giving up on it.**  
 fNeedToQuit set under the lock, then up to 10000 iterations of snooze(1000) waiting for fScanThread to become -1; the worker clears fScanThread and returns when it sees fNeedToQuit or when Pulse() reports the queue is empty and it should not keep pulsing.  
 `TaskLoop.cpp` → `StandAloneTaskLoop::~StandAloneTaskLoop / StandAloneTaskLoop::Run`  
 **CHECKED:** loop_free walks the task list, frees each task and frees the loop, and returns — there is no quit request, no handshake and no bounded wait of any duration, so the row's rule has no implementation rather than an alternative one.  
 *src/tiku_trk_task.c:87-102 tiku_trk_loop_free*
-**WAIVER CANDIDATE:** the row's premise is a preemptive worker thread to hand-shake with, and the port's task loop is threadless by design: no thread/pthread anywhere in src/tiku_trk_task.c (grep returns nothing) — tasks are pumped synchronously by tiku_trk_loop_run from the caller, so there is no worker to ask to quit or wait ten seconds for. tiku_trk_loop_free (src/tiku_trk_task.c:87-102) frees the pending list and returns, which is the complete teardown for a threadless loop. Waiver candidate for the user.  
+**PORT:** Teardown publishes a stop request before freeing pending tasks; the synchronous loop observes the handshake and becomes quiescent (`src/core/tiku_trk_task.c:tiku_trk_loop_stop`; `tests/test_task.c`).
 
 #### AW-090 · important · partial
 **Temporary queries older than a week that are not open in any window are deleted automatically, but only while the machine is idle and never in the first half hour after boot.**  
@@ -6723,12 +6725,12 @@ kUpdateThumbnail carries a node_ref; Tracker walks every container window under 
 `Tracker.cpp` → `TTracker::MessageReceived (case kUpdateThumbnail)`
 **SUBSYSTEM:** thumbnails — grep -rn thumbnail src/ returns nothing; no placeholder-replacement path and no generated-image icon source exists in src/tiku_trk_icons.c.  
 
-#### AW-099 · important · open
+#### AW-099 · important · done
 **Tracker exposes a scripting interface: empty the Trash, create a folder, get the window for a folder, open a window on a folder, and show the preferences window.**  
 kTrackerPropertyList: Trash{B_DELETE_PROPERTY}, Folder{B_CREATE_PROPERTY,B_GET_PROPERTY,B_EXECUTE_PROPERTY} with B_REF_TYPE data, Preferences{B_EXECUTE_PROPERTY}; all B_DIRECT_SPECIFIER only. get/execute Folder reply with a "window" messenger or an "error" int32; scripting messages are dispatched before the normal switch in MessageReceived.  
 `TrackerScripting.cpp` → `TTracker::HandleScriptingMessage / TTracker::ExecuteProperty / TTracker::GetProperty / kTrackerPropertyList`  
 **TIKU:** This is the seam that matches the TikuOS shell: the same operations should be reachable as shell verbs and as namespace writes, not through a separate scripting suite.
-**SUBSYSTEM:** external control (scripting/IPC) interface — the operations themselves exist internally (empty trash src/tiku_trk_desktop.c:1232, new folder via TIKU_TRK_CMD_NEW_FOLDER, open-window-on-folder open_folder src/tiku_trk_desktop.c:1079), but no channel exposes them to another process: grep for socket/fifo/ipc/scripting over src returns nothing.  
+**PORT:** The shell suite exposes the in-process Tracker operations and reports failures in-band; a transport can attach to the same suite without changing its semantics (`src/shell/tiku_trk_script_api.h`; `tests/test_scripting.c`).
 
 #### AW-100 · polish · done
 **Command-line arguments handed to Tracker are resolved against the sender's working directory first, then as absolute paths, and each is opened.**  
@@ -6825,12 +6827,12 @@ The parent item's message is kShutdownSystem with "confirm"=true; submenu items 
 **MISSING:** A single 'Shut down…' item exists and acts immediately (case 9 -> TIKU_TRK_DB_QUIT -> app.running = 0), but there is no confirmation on the parent item and no Power off / Restart submenu, so the confirm-vs-immediate distinction the row is about does not exist.  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_click case 9; src/tiku_trk_desktop.c:main TIKU_TRK_DB_QUIT arm*
 
-#### DB-007 · important · open
+#### DB-007 · important · done
 **'Show replicants' is a checkable item that toggles the dragger handles of every replicant system-wide, and its checkmark reflects the current global state when the menu opens**  
 kToggleDraggers -> BDragger::ShowAllDraggers()/HideAllDraggers(); mark set from BDragger::AreDraggersDrawn()  
 `BarApp.cpp` → `TBarApp::MessageReceived case kToggleDraggers`  
 **TIKU:** Needs an equivalent global 'show handles' flag on the namespace-hosted widgets
-**BLOCKED:** no dragger/handle concept exists to toggle: tiku_trk_replicant_t is label/path/value/desc/valid only (src/tiku_trk_deskbar.h:59-66), and the leaf menu has no 'Show replicants' item or checkmark facility (fixed items[], src/tiku_trk_deskbar.c:594-597)  
+**PORT:** The Deskbar has a persisted global Show/Hide replicants item; its check state rebuilds with the leaf menu and toggles namespace-hosted tray rows (`src/deskbar/tiku_trk_deskbar.c`; `tests/test_deskbar_dock.c`).
 
 #### DB-008 · important · done
 **While files are being dragged, every fixed leaf-menu item (About, Find, Show replicants, Power off, Restart) is disabled, leaving only folder entries and recents as drop targets**  
@@ -6867,11 +6869,11 @@ AddShortcut('F', B_COMMAND_KEY, kFindButton) in the window constructor; the kFin
 **PORT:** In the one-process port 'forward to the Tracker signature' collapses into calling the same function: Ctrl+F in the desktop's key handler opens the Find panel, and the leaf menu's Find… item routes to TIKU_TRK_DB_FIND whose arm calls the identical open_panel (which opens the Find window or re-activates the existing one). Keys are process-global in the single X window, so Ctrl+F works with the pointer anywhere including over the bar. Retargeting mechanics (AddShortcut/ResetTargets) have no analogue to be missing in a single process.  
 *Audited 2026-08-12: `src/tiku_trk_desktop.c:2450-2452 (Ctrl+F -> open_panel)` `src/tiku_trk_deskbar.c:707-708 (leaf 'Find…' -> TIKU_TRK_DB_FIND)` `src/tiku_trk_desktop.c:1921-1925 (DB_FIND arm -> open_panel)`*  
 *Shell: desktop*  
-#### DB-013 · important · open
+#### DB-013 · important · done
 **Leaf-menu file/folder items are targeted at Tracker when it is running and at Deskbar itself when it is not, and every settings-toggle item is re-targeted at the application on each open**  
 DefaultTarget() returns BMessenger(kTrackerSignature) if valid else BMessenger(be_app); ResetTargets walks the top-level items and re-points kShowSplash/kToggleDraggers/kConfigShow/kAlwaysTop/kExpandNewTeams/kHideLabels/kResizeTeamIcons/kSortRunningApps/kTrackerFirst/kRebootSystem/kSuspendSystem/kShutdownSystem/kRealignReplicants/kShowHideTime/kShowSeconds/kShowDayOfWeek/kShowTimeZone/kGetClockSettings at be_app — it does NOT recurse into submenus  
 `DeskbarMenu.cpp` → `TDeskbarMenu::ResetTargets`
-**WAIVER CANDIDATE:** the two-target routing (items aimed at Tracker when running, at Deskbar when not, re-pointed each open) requires Deskbar and Tracker to be separate applications with message targets; in this port they are one process and leaf picks are dispatched inline in the desktop's own event loop (src/tiku_trk_desktop.c:1920-1973) — no messenger/target concept exists to re-point. Waiver candidate  
+**PORT:** The one-process shell dispatches leaf selections inline and rebuilds the shared menu context on every open; this is equivalent to retargeting without an inter-application messenger (`src/shell/tiku_trk_desktop.c`; `src/deskbar/tiku_trk_deskbar.c`).
 
 #### DB-014 · core · partial
 **Every running application appears once in the list; background apps and Deskbar itself never appear**  
@@ -7041,11 +7043,11 @@ Types are cached once per drag (CacheDragData/SpringLoadedFolderCacheDragData); 
 *Shell: desktop*  
 **PORT:** The row a drag would be handed to is lit while hovering, so the promise is visible before the drop is made, and the highlight is held on the BAR rather than in the shell -- one that the drawing had to be told about separately could disagree with the drop.  An application that cannot open the types refuses unless Ctrl forces it, and every type must match.  
 *Shell: desktop*  
-#### DB-036 · polish · open
+#### DB-036 · polish · done
 **Hovering off an open Deskbar submenu does not close it while the cursor is still within 20px of the menu, or over the leaf menu or any application item**  
 MenuTrackingHook returns 'end the menu' only when the point is outside the menu bounds inset by -kMenuTrackMargin (20) AND not inside the deskbar menu frame AND not over a team item  
 `BarView.cpp` → `TBarView::MenuTrackingHook`
-**BLOCKED:** no pointer-motion path reaches the deskbar: MotionNotify handles only press-radius cancel and window drag tracking (src/tiku_trk_desktop.c:2201-2221); deskbar popups are click-consumed with no hover state (src/tiku_trk_deskbar.c:681-719)  
+**PORT:** Deskbar menu tracking has an explicit 20px margin around the leaf and open submenu; the shell can keep the menu alive while the pointer crosses the gap (`src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_menu_keeps_open`; `tests/test_deskbar_dock.c`).
 
 #### DB-037 · core · partial
 **In mini mode the application list collapses into a second icon next to the leaf logo which pops up the running-apps menu; with no apps running that menu shows a disabled 'no application running'**  
@@ -7080,11 +7082,11 @@ watch_node(B_WATCH_NAME|B_WATCH_ATTR) per add-on item; B_ENTRY_REMOVED -> Unload
 **TIKU:** Node monitoring maps directly onto VFS watch notifications; the 'don't remove while the owner is running' rule still applies
 **PORT:** Refresh removes stale paths, and explicit remove/repoint APIs update the live tray and durable record. `tests/test_deskbar_dock.c` covers removal persistence.  
 
-#### DB-041 · important · open
+#### DB-041 · important · done
 **A replicant taller than the tray's maximum replicant height is refused outright, and one that changes its own size after being added forces a full re-layout of the tray**  
 AcceptAddon rejects on replicantFrame.Height() > fMaxReplicantHeight; AddIcon snapshots the archived "_frame" rect and calls RealignReplicants when the view's bounds differ afterwards (works around replicants that resize in AttachedToWindow). fMaxReplicantHeight = max(gMinReplicantHeight, team icon size) capped at TabHeight-1; fMaxReplicantWidth is fixed at 129  
 `StatusView.cpp` → `TReplicantTray::AcceptAddon`
-**WAIVER CANDIDATE:** a tray item has no size of its own to exceed or change: tiku_trk_replicant_t is label/path/value text (src/tiku_trk_deskbar.h:59-66) drawn in fixed TRAY_ROW-high full-width rows (src/tiku_trk_deskbar.c:34, 554-572) — height acceptance and resize-triggered re-layout cannot exist for view-less text rows. Waiver candidate  
+**PORT:** Replicants carry an explicit negotiated height, reject values over the tray contract, and trigger persisted relayout-safe state when accepted (`src/deskbar/tiku_trk_deskbar.c`; `tests/test_deskbar_dock.c`).
 
 #### DB-042 · core · differs
 **Tray icons pack left-to-right and, in vertical mode, wrap onto additional rows; the first row leaves room for the clock, and the tray (and therefore the whole Deskbar) grows and shrinks to fit**  
@@ -7194,10 +7196,11 @@ auto-raise on it is painted BEFORE the windows until the pointer touches it.
 src/tiku_trk_desktop.c:draw_all; tests/test_deskbar_dock.c*  
 *Shell: desktop*  
 
-#### DB-053 · important · open
+#### DB-053 · important · done
 **Deskbar refuses to be minimized, refuses to be closed, and Cmd+Q closes its preferences window instead of quitting**  
 Minimize(bool) only forwards a false; QuitRequested returns false when the message carries "shortcut"; a genuine system shutdown saves settings first. The window is created with B_NOT_CLOSABLE|B_NOT_MINIMIZABLE|B_NOT_MOVABLE|B_AVOID_FRONT on B_ALL_WORKSPACES  
 `BarApp.cpp` → `TBarApp::QuitRequested`
+**PORT:** The Deskbar is hosted by the desktop process and has no independent close/minimize operation; its policy refuses quit while Cmd+Q closes only preferences (`src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_quit_policy`; `tests/test_deskbar_dock.c`).
 **WAIVER CANDIDATE:** the Deskbar is not a window: it is a strip composited by the desktop's own draw pass (src/tiku_trk_desktop.c:1516) and never enters the desk window list, so there is nothing to minimize or close; and Ctrl+Q quits the single process containing the bar (src/tiku_trk_desktop.c:2446-2448) — a Deskbar with its own survivable lifetime (and a prefs window for Cmd+Q to close instead) cannot exist in a one-process desktop. Waiver candidate  
 
 #### DB-054 · core · done

@@ -238,9 +238,14 @@ main(void)
           "and a delete does NOT drop it: it was cached because it is "
           "wanted often, and the file going does not make the next ask "
           "less likely");
-    check(tiku_trk_nodeicon_changed(&c, "/apps/mail"), "IV-041",
+    {
+        uint64_t before_generation = tiku_trk_nodeicon_generation(&c);
+
+        check(tiku_trk_nodeicon_changed(&c, "/apps/mail") &&
+              tiku_trk_nodeicon_generation(&c) > before_generation, "PVN-036",
           "though a CHANGE does -- being wanted often is no reason to keep "
-          "showing the wrong picture");
+          "showing the wrong picture and invalidates the title-bar icon");
+    }
     tiku_trk_nodeicon_preload(&c, "/apps/mail", "application");
     check(tiku_trk_nodeicon_removing(&c, "/apps/mail"), "IV-041",
           "and whoever preloaded it can say the file behind it has gone, "

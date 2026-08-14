@@ -752,6 +752,12 @@ main(void)
     tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
     tiku_trk_poseview_scroll_to(v, 0);
 
+    tiku_trk_poseview_schedule_broken_repair(v, 1000000);
+    check(!tiku_trk_poseview_broken_repair_due(v, 1499999) &&
+          tiku_trk_poseview_broken_repair_due(v, 1500000) &&
+          !tiku_trk_poseview_broken_repair_due(v, 1500001), "PVN-042",
+          "a mount-triggered broken-link repair waits exactly half a second");
+
     /* --- MA-055: a re-placed row must not leave the filter pointing at
      *     whatever slid into its slot ------------------------------------ */
     tiku_trk_poseview_type_clear(v);
@@ -1214,6 +1220,49 @@ main(void)
               "rather than refusing silently -- a listing with no columns "
               "is a window showing nothing");
         (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM);
+    }
+
+    printf("\ncopy and paste a typed column layout (PVL-042, PVL-096, TS-026)\n");
+    {
+        tiku_trk_poseview_t *target = tiku_trk_poseview_new(b, dir);
+        const tiku_trk_column_t *cols = NULL;
+        int n;
+
+        check(target != NULL, "PVL-042", "a second folder view can receive a layout");
+        if (target != NULL) {
+            (void)tiku_trk_poseview_reload(target);
+            (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PATH);
+            tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_PATH);
+            check(tiku_trk_poseview_copy_layout(v) >= 2 &&
+                  tiku_trk_poseview_has_layout_clipboard(), "PVL-042",
+                  "copy publishes one typed application/tracker-columns value");
+            check(tiku_trk_poseview_paste_layout(target) >= 2,
+                  "PVL-096", "paste replaces the target column set atomically");
+            n = tiku_trk_poseview_columns(target, &cols);
+            check(n >= 2 && tiku_trk_poseview_has_column(target,
+                      TIKU_TRK_COL_PATH) &&
+                  tiku_trk_poseview_sort_field(target) == TIKU_TRK_COL_PATH,
+                  "TS-026", "order, widths and sort key travel with the layout");
+            tiku_trk_poseview_free(target);
+        }
+    }
+
+    printf("\ncell text cache (MA-040)\n");
+    {
+        tiku_trk_pose_t *cached = tiku_trk_poseview_at(v, 0);
+        char first[128], second[128];
+        uint64_t hits = 0, misses = 0;
+
+        if (cached != NULL) {
+            (void)tiku_trk_poseview_cell_text(v, cached, TIKU_TRK_COL_NAME,
+                                               first, sizeof first);
+            (void)tiku_trk_poseview_cell_text(v, cached, TIKU_TRK_COL_NAME,
+                                               second, sizeof second);
+            tiku_trk_poseview_cell_cache_stats(v, &hits, &misses);
+        }
+        check(cached != NULL && strcmp(first, second) == 0 && hits >= 1 &&
+              misses >= 1, "MA-040",
+              "a cell is formatted once and reused until its value or width changes");
     }
 
     printf("\noriginal paths in Trash (MA-030)\n");

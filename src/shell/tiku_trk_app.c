@@ -1391,6 +1391,16 @@ row_at(app_t *a, int px, int py)
     return (idx < tiku_trk_poseview_count(a->view)) ? idx : -1;
 }
 
+/** @brief Hit-test the count strip, kept separate from list rows (TS-043). */
+static int
+count_at(app_t *a, int px, int py)
+{
+    tiku_desk_rect_t list = list_rect(a);
+
+    return a != NULL && px >= list.x && px <= list.x + list.w &&
+           py >= list.y + list.h && py <= list.y + list.h + COUNT_H;
+}
+
 /** @brief Resolve a visible list row to a point the script can click. */
 static int
 script_row_point(void *ctx, int row, int *x, int *y)
@@ -1892,6 +1902,17 @@ menu_invoke(app_t *a, int command)
     int field = -1;
 
     switch (command) {
+    case TIKU_TRK_CMD_COPY_LAYOUT:
+        (void)tiku_trk_poseview_copy_layout(a->view);
+        a->dirty = 1;
+        return;
+    case TIKU_TRK_CMD_PASTE_LAYOUT:
+        if (tiku_trk_poseview_paste_layout(a->view) > 0) {
+            (void)tiku_trk_poseview_save_columns(a->view);
+            snprintf(a->status, sizeof a->status, "pasted layout");
+        }
+        a->dirty = 1;
+        return;
     case TIKU_TRK_CMD_NEW_FOLDER:
         menu_key(a, 'n', TIKU_DESK_MOD_CMD); return;
     case TIKU_TRK_CMD_OPEN:
@@ -2608,6 +2629,14 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 {
+                    if (ev.button == 1u && count_at(&a, ev.x, ev.y)) {
+                        /* This shell has one content surface, so choosing
+                         * the first hierarchy entry is represented by the
+                         * immediate-parent navigation action. */
+                        navigate_up(&a);
+                        a.dirty = 1;
+                        break;
+                    }
                     int row = row_at(&a, ev.x, ev.y);
                     unsigned mods = 0;
                     unsigned click_flags = 0;

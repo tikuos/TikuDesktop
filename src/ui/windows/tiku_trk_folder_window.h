@@ -75,6 +75,8 @@ struct tiku_trk_folder_window {
     int                        gone;
     tiku_trk_frame_t           opened_with;
     int                        had_frame;
+    int                        count_last_total;
+    int                        count_last_selected;
     char                       qname[TIKU_TRK_NAME_MAX];
     tiku_trk_folder_render_t  *render;
 };
@@ -101,6 +103,9 @@ int tiku_trk_folder_window_fit_height(
     const tiku_trk_folder_window_t *folder);
 int tiku_trk_folder_window_row_at(const tiku_trk_folder_window_t *folder,
                                   int x, int y);
+/** @brief Whether a point is in the bottom count/navigation strip (TS-043). */
+int tiku_trk_folder_window_count_at(
+    const tiku_trk_folder_window_t *folder, int x, int y);
 int tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
                                    int row, int x, int y);
 

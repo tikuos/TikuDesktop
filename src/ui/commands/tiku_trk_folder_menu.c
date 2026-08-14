@@ -82,6 +82,7 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
     }
     context.can_edit_name = context.selection == 1;
     context.clipboard_has_refs = tiku_trk_clip_count(controller->clip) > 0;
+    context.clipboard_has_layout = tiku_trk_poseview_has_layout_clipboard();
     context.can_open_parent = !tiku_trk_poseview_is_query(folder->view) &&
                               strcmp(folder->path, "/") != 0;
     {

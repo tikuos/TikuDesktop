@@ -209,6 +209,17 @@ main(void)
               "and they stack in a COLUMN rather than a heap: a list has "
               "no arrangement to preserve");
 
+        tiku_trk_drag_arm(&g, 10, 10, 1u, 0u, 1, NULL, "/foreign");
+        (void)tiku_trk_drag_add_at(&g, "/foreign/a", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/foreign/b", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/foreign/c", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/foreign/d", "text", 0, 0, 1);
+        (void)tiku_trk_drag_add_at(&g, "/foreign/e", "text", 0, 0, 1);
+        tiku_trk_drag_set_foreign_refs(&g, 1);
+        tiku_trk_drag_landing(&g, 4, 500, 300, &x, &y);
+        check(x == 500 && y == 324, "FS-077",
+              "foreign refs land in rows of four rather than a vertical stack");
+
         printf("\ntypes are worked out once (PVS-053)\n");
         tiku_trk_drag_arm(&g, 10, 10, 1u, 0u, 1, NULL, "/src");
         (void)tiku_trk_drag_add_at(&g, "/src/a", "text", 0, 0, 1);

@@ -181,6 +181,12 @@ main(void)
         tiku_trk_loop_free(l5);
     }
 
+    tiku_trk_loop_stop(loop);
+    check(tiku_trk_loop_stopping(loop) && tiku_trk_loop_run(loop) == 0,
+          "a stop request quiesces the event loop before teardown");
+    check(tiku_trk_loop_pulse(loop) == 0,
+          "deferred panel work is pumped by an existing pulse, not a worker thread");
+
     tiku_trk_loop_free(loop);
     printf("%s\n", fails ? "FAILURES" : "all task-loop checks passed");
     return fails ? 1 : 0;

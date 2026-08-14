@@ -56,6 +56,7 @@ struct tiku_trk_deskbar {
     tiku_trk_deskbar_settings_t settings;
     int                  autohide;
     int                  autoraise;
+    int                  show_replicants;
     int                  pointer_on;  /* the pointer is over the bar    */
     int                  scroll;      /* first application row shown    */
     int                  overflow;    /* the list ran past the tray     */
@@ -238,6 +239,9 @@ build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_ABOUT, "About this system", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_FIND, "Find\xe2\x80\xa6", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PREFS, "Deskbar preferences\xe2\x80\xa6",
+             NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
+             db->show_replicants ? "Hide replicants" : "Show replicants",
              NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
@@ -739,6 +743,7 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
     snprintf(r->label, sizeof r->label, "%s", label);
     snprintf(r->path, sizeof r->path, "%s", path);
     r->valid = 0;
+    r->height = TIKU_TRK_DB_MAX_REPLICANT_H;
     /* Ask the node what its reading MEANS, once, so the tray can show
      * "16h 26m" rather than 59182. */
     if (db->backend != NULL && db->backend->ops->stat != NULL) {
@@ -750,6 +755,59 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
     }
     save_replicants(db);
     return 0;
+}
+
+int
+tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
+                                      const char *path, int height)
+{
+    int i;
+
+    if (db == NULL || path == NULL || height <= 0 ||
+        height > TIKU_TRK_DB_MAX_REPLICANT_H) {
+        return 0;
+    }
+    for (i = 0; i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].path, path) == 0) {
+            if (db->tray[i].height == height) {
+                return 1;
+            }
+            db->tray[i].height = height;
+            /* The fixed row is the tray's layout unit; changing the
+             * accepted size still invalidates the whole tray immediately. */
+            save_replicants(db);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_trk_deskbar_replicant_height(const tiku_trk_deskbar_t *db,
+                                  const char *path)
+{
+    int i;
+
+    for (i = 0; db != NULL && path != NULL && i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].path, path) == 0) {
+            return db->tray[i].height;
+        }
+    }
+    return 0;
+}
+
+void
+tiku_trk_deskbar_set_show_replicants(tiku_trk_deskbar_t *db, int show)
+{
+    if (db != NULL) {
+        db->show_replicants = !!show;
+    }
+}
+
+int
+tiku_trk_deskbar_show_replicants(const tiku_trk_deskbar_t *db)
+{
+    return db != NULL ? db->show_replicants : 0;
 }
 
 void
@@ -1034,6 +1092,49 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
         m.x = 0;
     }
     return m;
+}
+
+static tiku_desk_rect_t sub_menu_rect(const tiku_trk_deskbar_t *db,
+                                      tiku_desk_rect_t m, int rowh);
+
+int
+tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y)
+{
+    const tiku_desk_font_t *font;
+    tiku_desk_rect_t m;
+    int rowh;
+
+    if (db == NULL || !db->menu_open) {
+        return 0;
+    }
+    font = tiku_desk_font_plain();
+    rowh = font->height + 6;
+    m = leaf_menu_rect(db, rowh, db->leaf_count);
+    /* Tracker's 20px tracking margin is intentionally outside the visible
+     * menu: it lets the pointer cross the gap into a submenu without
+     * dismissing the menu first. */
+    if (x >= m.x - 20 && x < m.x + m.w + 20 &&
+        y >= m.y - 20 && y < m.y + m.h + 20) {
+        return 1;
+    }
+    if (db->sub_of >= 0 && db->sub_count > 0) {
+        tiku_desk_rect_t sm = sub_menu_rect(db, m, rowh);
+
+        if (x >= sm.x - 20 && x < sm.x + sm.w + 20 &&
+            y >= sm.y - 20 && y < sm.y + sm.h + 20) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_trk_deskbar_quit_policy(int prefs_open, int shortcut_quit)
+{
+    /* The bar is hosted by the desktop process, so it has no independent
+     * close/minimize operation.  A quit shortcut is consumed by preferences
+     * when that window is open; otherwise it is refused by the bar itself. */
+    return (shortcut_quit && prefs_open) ? 1 : 0;
 }
 
 /** @brief Where a submenu hangs: beside its row, on the menu's open side. */
@@ -1708,6 +1809,10 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_PREFS:
                 pick->what = TIKU_TRK_DB_PREFERENCES;
                 break;
+            case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
+                db->show_replicants = !db->show_replicants;
+                build_leaf(db);
+                return 1;
             case TIKU_TRK_DB_ITEM_QUIT:
                 pick->what = TIKU_TRK_DB_QUIT;
                 break;

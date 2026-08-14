@@ -935,6 +935,19 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (fl == NULL) {
         return;
     }
+    if (command == TIKU_TRK_CMD_COPY_LAYOUT) {
+        (void)tiku_trk_poseview_copy_layout(fl->view);
+        app->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_PASTE_LAYOUT) {
+        if (tiku_trk_poseview_paste_layout(fl->view) > 0) {
+            (void)tiku_trk_poseview_save_columns(fl->view);
+            snprintf(app->status, sizeof app->status, "pasted layout");
+        }
+        app->dirty = 1;
+        return;
+    }
     if (command == TIKU_TRK_CMD_NEW_FOLDER) {
         char made[TIKU_TRK_PATH_MAX], error[200];
         const char *slash;
@@ -2371,6 +2384,16 @@ tracker_run(int argc, char **argv)
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : desktop_folder(&app);
                     if (fl != NULL && fl->view != NULL) {
+                        if (ev.button == 1u &&
+                            tiku_trk_folder_window_count_at(fl, ev.x, ev.y)) {
+                            /* The desktop shell exposes the same parent
+                             * hierarchy through the existing Open Parent
+                             * action; a count-strip click starts at its
+                             * nearest ancestor. */
+                            menu_invoke(&app, fl, TIKU_TRK_CMD_OPEN_PARENT);
+                            app.dirty = 1;
+                            break;
+                        }
                         int row = tiku_trk_folder_window_row_at(fl, ev.x,
                                                                ev.y);
                         unsigned mods = 0;

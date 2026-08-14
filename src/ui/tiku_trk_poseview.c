@@ -33,6 +33,8 @@ struct tiku_trk_poseview {
     int                *filtered;       /* fFilteredPoseList: indices       */
     int                 filtered_count;
     int                 filtering;
+    uint64_t            menu_generation;
+    int64_t             broken_repair_due;
 
     int                 pivot;          /* fSelectionPivotPose (-1 = none)  */
     int                 last_added;     /* for shift+arrow walk-back        */
@@ -129,6 +131,8 @@ struct tiku_trk_poseview {
     int                 column_count;
     int                 hscroll;        /* titles and rows share it        */
     int                 font_px;        /* what widths are scaled against  */
+    uint64_t            cell_cache_hits;
+    uint64_t            cell_cache_misses;
 
     /* The batched load.  The read is synchronous; what is staged here is
      * PUBLISHED a batch at a time, so the window is never blank and never
@@ -156,6 +160,15 @@ struct tiku_trk_poseview {
      * caller expects. */
     int single_only;
 };
+
+/* Process-wide typed layout channel.  Unlike the file clipboard this is a
+ * value clipboard: it has no node lifetime to watch and is replaced as one
+ * immutable snapshot, so every open view sees the same paste immediately. */
+static tiku_trk_layout_clip_t g_layout_clip;
+static int g_layout_clip_valid;
+
+static void column_def_v(const tiku_trk_poseview_t *v, int field,
+                         const char **title, int *width);
 
 /*---------------------------------------------------------------------------*/
 /* list access -- everything iterates through CurrentPoseList()              */
@@ -404,7 +417,87 @@ const char *
 tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
                             int field, char *buf, size_t max)
 {
-    return cell_text_at(v, p, field, column_width_of(v, field), buf, max);
+    tiku_trk_pose_t *mutable_pose = (tiku_trk_pose_t *)p;
+    uint64_t key = UINT64_C(1469598103934665603);
+    int width, i;
+
+    if (v == NULL || p == NULL || buf == NULL || max == 0u) {
+        return "";
+    }
+    /* The fingerprint contains every value that can affect a formatted
+     * cell.  Width is kept separately because fitting is intentionally a
+     * cache key too: resizing a column never reuses text fitted for its old
+     * width. */
+#define MIX_CELL(value) do { \
+        uint64_t _x = (uint64_t)(value); \
+        key ^= _x; key *= UINT64_C(1099511628211); \
+    } while (0)
+    MIX_CELL(field);
+    MIX_CELL(p->model.node_id);
+    MIX_CELL(p->model.kind);
+    MIX_CELL(p->model.facts.size);
+    MIX_CELL(p->model.facts.mtime);
+    MIX_CELL(p->model.facts.perm);
+    MIX_CELL(p->model.facts.total);
+    MIX_CELL(p->model.facts.avail);
+    MIX_CELL(p->value_valid);
+    for (i = 0; i < (int)sizeof p->value && p->value[i] != '\0'; i++) {
+        MIX_CELL((unsigned char)p->value[i]);
+    }
+    for (i = 0; i < (int)sizeof p->model.path && p->model.path[i] != '\0'; i++) {
+        MIX_CELL((unsigned char)p->model.path[i]);
+    }
+    for (i = 0; i < (int)sizeof p->model.name && p->model.name[i] != '\0'; i++) {
+        MIX_CELL((unsigned char)p->model.name[i]);
+    }
+    for (i = 0; i < (int)sizeof p->model.type && p->model.type[i] != '\0'; i++) {
+        MIX_CELL((unsigned char)p->model.type[i]);
+    }
+#undef MIX_CELL
+    width = column_width_of(v, field);
+    for (i = 0; i < TIKU_TRK_COLUMNS_MAX; i++) {
+        if (mutable_pose->cell_cache[i].valid &&
+            mutable_pose->cell_cache[i].field == field &&
+            mutable_pose->cell_cache[i].width == width &&
+            mutable_pose->cell_cache[i].key == key) {
+            v->cell_cache_hits++;
+            snprintf(buf, max, "%s", mutable_pose->cell_cache[i].text);
+            return buf;
+        }
+    }
+    v->cell_cache_misses++;
+    i = 0;
+    while (i < TIKU_TRK_COLUMNS_MAX && mutable_pose->cell_cache[i].valid) {
+        i++;
+    }
+    if (i == TIKU_TRK_COLUMNS_MAX) {
+        i = field % TIKU_TRK_COLUMNS_MAX;
+        if (i < 0) { i = 0; }
+    }
+    {
+        const char *text = cell_text_at(v, p, field, width,
+                                        mutable_pose->cell_cache[i].text,
+                                        sizeof mutable_pose->cell_cache[i].text);
+
+        if (text != mutable_pose->cell_cache[i].text) {
+            snprintf(mutable_pose->cell_cache[i].text,
+                     sizeof mutable_pose->cell_cache[i].text, "%s", text);
+        }
+    }
+    mutable_pose->cell_cache[i].field = field;
+    mutable_pose->cell_cache[i].width = width;
+    mutable_pose->cell_cache[i].key = key;
+    mutable_pose->cell_cache[i].valid = 1;
+    snprintf(buf, max, "%s", mutable_pose->cell_cache[i].text);
+    return buf;
+}
+
+void
+tiku_trk_poseview_cell_cache_stats(const tiku_trk_poseview_t *v,
+                                   uint64_t *hits, uint64_t *misses)
+{
+    if (hits != NULL) { *hits = v != NULL ? v->cell_cache_hits : 0; }
+    if (misses != NULL) { *misses = v != NULL ? v->cell_cache_misses : 0; }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4117,6 +4210,31 @@ tiku_trk_poseview_set_icons(tiku_trk_poseview_t *v, tiku_trk_nodeicon_t *c)
     }
 }
 
+uint64_t
+tiku_trk_poseview_menu_generation(const tiku_trk_poseview_t *v)
+{
+    return v != NULL ? v->menu_generation : 0;
+}
+
+void
+tiku_trk_poseview_schedule_broken_repair(tiku_trk_poseview_t *v, int64_t now)
+{
+    if (v != NULL) {
+        v->broken_repair_due = now + 500000;
+    }
+}
+
+int
+tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v, int64_t now)
+{
+    if (v == NULL || v->broken_repair_due <= 0 ||
+        now < v->broken_repair_due) {
+        return 0;
+    }
+    v->broken_repair_due = 0;
+    return 1;
+}
+
 unsigned
 tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 {
@@ -4189,6 +4307,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 
     switch (e->op) {
     case TIKU_TRK_EV_CREATED:
+        v->menu_generation++;
         /* A file made in some other folder is not this folder's business,
          * and a duplicate notice must not produce a second row. */
         if (!v->is_query && strcmp(e->dir, v->path) != 0) {
@@ -4286,6 +4405,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         break;
 
     case TIKU_TRK_EV_REMOVED:
+        v->menu_generation++;
         at = pose_index(v, e->path);
         if (at < 0) {
             /* It may only ever have been a zombie; that still goes. */
@@ -4310,6 +4430,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         break;
 
     case TIKU_TRK_EV_MOVED:
+        v->menu_generation++;
         at = (e->from[0] != '\0') ? pose_index(v, e->from) : -1;
         if (at < 0) {
             at = pose_index(v, e->path);
@@ -4383,6 +4504,10 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 
     case TIKU_TRK_EV_CHANGED:
     case TIKU_TRK_EV_ATTR:
+        /* The shells rebuild Open With/Add-ons from the focused view on
+         * every menu open; this serial makes a MIME/type notice observable
+         * even when the row remains in place. */
+        v->menu_generation++;
         at = pose_index(v, e->path);
         if (at < 0) {
             /* The row is not here yet.  Park it rather than lose it: a file
@@ -4949,6 +5074,106 @@ tiku_trk_poseview_has_column(const tiku_trk_poseview_t *v, int field)
         }
     }
     return 0;
+}
+
+int
+tiku_trk_poseview_copy_layout(const tiku_trk_poseview_t *v)
+{
+    int i;
+
+    if (v == NULL || v->column_count <= 0) {
+        return 0;
+    }
+    memset(&g_layout_clip, 0, sizeof g_layout_clip);
+    for (i = 0; i < v->column_count && i < TIKU_TRK_COLUMNS_MAX; i++) {
+        const tiku_trk_column_t *src = &v->columns[i];
+
+        g_layout_clip.column[i].field = src->field;
+        g_layout_clip.column[i].width = src->width;
+        g_layout_clip.column[i].alignment = src->alignment;
+        snprintf(g_layout_clip.column[i].title,
+                 sizeof g_layout_clip.column[i].title, "%s",
+                 src->title != NULL ? src->title : "");
+        g_layout_clip.count++;
+    }
+    g_layout_clip.sort_field = v->sort_field;
+    g_layout_clip.sort_secondary = v->sort2_field;
+    g_layout_clip.reverse = v->sort_reverse;
+    g_layout_clip.serial++;
+    g_layout_clip_valid = 1;
+    return g_layout_clip.count;
+}
+
+int
+tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v)
+{
+    tiku_trk_column_t next[TIKU_TRK_COLUMNS_MAX];
+    int i, n = 0, name = 0;
+
+    if (v == NULL || !g_layout_clip_valid || g_layout_clip.count <= 0) {
+        return 0;
+    }
+    memset(next, 0, sizeof next);
+    for (i = 0; i < g_layout_clip.count && n < TIKU_TRK_COLUMNS_MAX; i++) {
+        const tiku_trk_layout_column_t *src = &g_layout_clip.column[i];
+
+        /* Name is mandatory; other built-ins are always known.  A custom
+         * field is only accepted when this target registered it already. */
+        if (src->field >= TIKU_TRK_COL_ATTR_BASE &&
+            !tiku_trk_poseview_attr_of(v, src->field)) {
+            continue;
+        }
+        if (src->field == TIKU_TRK_COL_NAME) {
+            name = 1;
+        }
+        next[n].field = src->field;
+        next[n].width = src->width < TIKU_TRK_COL_MIN_WIDTH
+                            ? TIKU_TRK_COL_MIN_WIDTH : src->width;
+        next[n].alignment = src->alignment;
+        {
+            const char *title = NULL;
+            int ignored_width = next[n].width;
+
+            column_def_v(v, src->field, &title, &ignored_width);
+            /* Built-in titles are static and custom titles are owned by the
+             * target view, so this pointer remains valid for the view. */
+            next[n].title = title;
+        }
+        n++;
+    }
+    if (!name) {
+        return 0;
+    }
+    memcpy(v->columns, next, (size_t)n * sizeof next[0]);
+    v->column_count = n;
+    tiku_trk_poseview_reflow_columns(v);
+    v->sort_field = tiku_trk_poseview_has_column(v, g_layout_clip.sort_field)
+                        ? g_layout_clip.sort_field : TIKU_TRK_COL_NAME;
+    v->sort2_field = tiku_trk_poseview_has_column(v,
+                                                   g_layout_clip.sort_secondary)
+                         ? g_layout_clip.sort_secondary : -1;
+    if (v->sort2_field == v->sort_field) {
+        v->sort2_field = -1;
+    }
+    v->sort_reverse = g_layout_clip.reverse != 0;
+    resort(v);
+    if (v->filtering) {
+        rebuild_filter(v);
+    }
+    v->state_dirty = 1;
+    return n;
+}
+
+int
+tiku_trk_poseview_has_layout_clipboard(void)
+{
+    return g_layout_clip_valid;
+}
+
+const tiku_trk_layout_clip_t *
+tiku_trk_poseview_layout_clipboard(void)
+{
+    return g_layout_clip_valid ? &g_layout_clip : NULL;
 }
 
 int

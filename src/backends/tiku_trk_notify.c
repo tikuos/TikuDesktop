@@ -169,6 +169,65 @@ tiku_trk_notify_diff(const tiku_trk_model_t *was, int nwas,
     return out->count - before;
 }
 
+int
+tiku_trk_evlist_coalesce(const tiku_trk_evlist_t *in,
+                         tiku_trk_evlist_t *out)
+{
+    int i, j;
+
+    if (in == NULL || out == NULL || in == out) {
+        return 0;
+    }
+    tiku_trk_evlist_clear(out);
+    for (i = 0; i < in->count; i++) {
+        const tiku_trk_event_t *src = &in->ev[i];
+        tiku_trk_event_t *dst = NULL;
+
+        for (j = 0; j < out->count; j++) {
+            if (strcmp(out->ev[j].path, src->path) == 0) {
+                dst = &out->ev[j];
+                break;
+            }
+        }
+        if (dst == NULL) {
+            if (out->count >= TIKU_TRK_EVENTS_MAX) {
+                out->overflowed = 1;
+                continue;
+            }
+            out->ev[out->count++] = *src;
+            continue;
+        }
+        /* Preserve the first lifecycle edge.  A row created during a burst
+         * must still be inserted, while later changes only refresh its
+         * payload.  A move retains the original source path for the same
+         * reason. */
+        if (dst->op == TIKU_TRK_EV_CREATED) {
+            dst->model = src->model;
+            dst->at = src->at;
+            continue;
+        }
+        if (dst->op == TIKU_TRK_EV_MOVED && src->op != TIKU_TRK_EV_REMOVED) {
+            dst->model = src->model;
+            dst->at = src->at;
+            continue;
+        }
+        if (src->op == TIKU_TRK_EV_REMOVED ||
+            src->op == TIKU_TRK_EV_MOVED ||
+            src->op == TIKU_TRK_EV_CHANGED ||
+            src->op == TIKU_TRK_EV_ATTR) {
+            dst->op = src->op;
+            dst->model = src->model;
+            dst->at = src->at;
+            if (src->from[0] != '\0' && dst->from[0] == '\0') {
+                snprintf(dst->from, sizeof dst->from, "%s", src->from);
+            }
+            snprintf(dst->dir, sizeof dst->dir, "%s", src->dir);
+        }
+    }
+    out->overflowed = in->overflowed || out->overflowed;
+    return out->count;
+}
+
 /*---------------------------------------------------------------------------*/
 /* Parking                                                                   */
 /*---------------------------------------------------------------------------*/

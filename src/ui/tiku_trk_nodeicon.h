@@ -60,6 +60,7 @@ typedef struct {
     tiku_trk_nodeicon_ent_t e[TIKU_TRK_NODEICON_MAX];
     int                     n;
     int                     reads;      /* store probes actually made     */
+    uint64_t                generation; /* changed art invalidates draws  */
     const struct tiku_trk_types *types;   /* where a type's art is
                                           * declared, or NULL       */
     /* Types known to have no art of their own.  A miss costs a database
@@ -130,6 +131,8 @@ void tiku_trk_nodeicon_preload(tiku_trk_nodeicon_t *c, const char *path,
  * @return 1 when something was dropped.
  */
 int tiku_trk_nodeicon_changed(tiku_trk_nodeicon_t *c, const char *path);
+/** @brief Generation incremented whenever cached art is invalidated. */
+uint64_t tiku_trk_nodeicon_generation(const tiku_trk_nodeicon_t *c);
 
 /**
  * @brief Forget @p path's icon because the entry went (IV-041).

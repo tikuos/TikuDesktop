@@ -82,6 +82,17 @@ int tiku_trk_notify_diff(const tiku_trk_model_t *was, int nwas,
                          const tiku_trk_model_t *now, int nnow,
                          int64_t at, tiku_trk_evlist_t *out);
 
+/**
+ * @brief Collapse a burst of notices to one final notice per node.
+ *
+ * The newest model wins; a CREATED followed by CHANGED remains CREATED and
+ * a MOVED keeps the first old path.  This is the in-process equivalent of
+ * Tracker's MIME-notice accumulator and is also safe for VFS attribute
+ * storms (PVL-094, PVN-054).
+ */
+int tiku_trk_evlist_coalesce(const tiku_trk_evlist_t *in,
+                             tiku_trk_evlist_t *out);
+
 /*---------------------------------------------------------------------------*/
 /* Parking                                                                   */
 /*---------------------------------------------------------------------------*/

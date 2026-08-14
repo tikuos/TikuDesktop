@@ -155,6 +155,25 @@ main(void)
         check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-097",
               "as is a capacity, which changes when a volume is replaced "
               "under a mount point that kept its name");
+
+        {
+            tiku_trk_evlist_t burst, folded;
+            tiku_trk_model_t latest = was[0];
+
+            tiku_trk_evlist_clear(&burst);
+            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_CHANGED,
+                                      &was[0], NULL, 1);
+            latest.facts.size = 101;
+            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_ATTR,
+                                      &latest, NULL, 2);
+            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_CHANGED,
+                                      &was[1], NULL, 3);
+            (void)tiku_trk_evlist_coalesce(&burst, &folded);
+            check(folded.count == 2 && folded.ev[0].model.facts.size == 101,
+                  "PVL-094", "a notice burst visits each node once with its final facts");
+            check(folded.ev[0].at == 2 && folded.ev[1].at == 3,
+                  "PVN-054", "the accumulator keeps the newest arrival time");
+        }
     }
 
     printf("\nparking a notice that arrives before its row\n");
@@ -230,6 +249,18 @@ main(void)
         (void)tiku_trk_poseview_reload(v);
         before = tiku_trk_poseview_count(v);
         check(before == 3, "-", "three rows to start");
+        {
+            uint64_t menu_before = tiku_trk_poseview_menu_generation(v);
+
+            memset(&e, 0, sizeof e);
+            e.op = TIKU_TRK_EV_ATTR;
+            snprintf(e.path, sizeof e.path, "%s/alpha.txt", dir);
+            e.model = tiku_trk_poseview_at(v, 0)->model;
+            e.model.facts.size++;
+            (void)tiku_trk_poseview_notify(v, &e);
+            check(tiku_trk_poseview_menu_generation(v) > menu_before,
+                  "PVN-035", "a type/attribute notice invalidates dependent menus");
+        }
 
         /* A creation in some OTHER folder is not this folder's business. */
         memset(&e, 0, sizeof e);

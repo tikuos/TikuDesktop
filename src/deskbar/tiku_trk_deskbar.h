@@ -24,6 +24,7 @@
 #define TIKU_TRK_DB_WINS_MAX   16
 #define TIKU_TRK_DB_TRAY_MAX    8
 #define TIKU_TRK_DB_LABEL_MAX  48
+#define TIKU_TRK_DB_MAX_REPLICANT_H 12
 
 /** @brief Where the bar is docked.  Expanded modes reserve an edge strip. */
 typedef enum {
@@ -75,6 +76,7 @@ typedef struct {
     tiku_trk_desc_t desc;           /* resolved once, at subscribe time   */
     int             desc_known;
     int             valid;
+    int             height;
 } tiku_trk_replicant_t;
 
 /** @brief How many rows the leaf menu holds, and its submenu. */
@@ -87,6 +89,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_ABOUT,
     TIKU_TRK_DB_ITEM_FIND,
     TIKU_TRK_DB_ITEM_PREFS,
+    TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
     TIKU_TRK_DB_ITEM_QUIT,
     TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
     TIKU_TRK_DB_ITEM_DIR,       /* expand it: its contents are a submenu */
@@ -198,6 +201,10 @@ void tiku_trk_deskbar_set_autoraise(tiku_trk_deskbar_t *db, int on);
  * @return 1 when something about the bar changed and it should be redrawn.
  */
 int tiku_trk_deskbar_pointer(tiku_trk_deskbar_t *db, int x, int y);
+/** Whether a pointer location is still within the open menu's tracking margin. */
+int tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y);
+/** @brief Deskbar's close policy in the single-process port (DB-053). */
+int tiku_trk_deskbar_quit_policy(int prefs_open, int shortcut_quit);
 
 /** @brief Whether the bar is currently showing more than its sliver. */
 int tiku_trk_deskbar_shown(const tiku_trk_deskbar_t *db);
@@ -298,6 +305,12 @@ void tiku_trk_deskbar_set_windows(tiku_trk_deskbar_t *db, int team,
 /** @brief Add a tray replicant watching @p path. */
 int tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
                                    const char *path);
+int tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
+                                          const char *path, int height);
+int tiku_trk_deskbar_replicant_height(const tiku_trk_deskbar_t *db,
+                                      const char *path);
+void tiku_trk_deskbar_set_show_replicants(tiku_trk_deskbar_t *db, int show);
+int tiku_trk_deskbar_show_replicants(const tiku_trk_deskbar_t *db);
 
 /** @brief Re-read the tray's nodes.  @return values that changed. */
 int tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db);

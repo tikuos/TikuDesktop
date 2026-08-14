@@ -86,6 +86,14 @@ main(void)
           "Up ignores trailing separators");
     check(!tiku_trk_navigator_parent("/", path, sizeof path),
           "the root has no Up destination");
+    {
+        char chain[8][TIKU_TRK_PATH_MAX];
+        int nchain = tiku_trk_navigator_hierarchy("/a/b/c", chain, 8);
+
+        check(nchain == 3 && strcmp(chain[0], "/a/b") == 0 &&
+              strcmp(chain[1], "/a") == 0 && strcmp(chain[2], "/") == 0,
+              "the count-area parent menu gets every ancestor, nearest first");
+    }
 
     printf("\ndrop destinations\n");
     memset(&dropped, 0, sizeof dropped);

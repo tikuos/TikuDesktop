@@ -133,6 +133,27 @@ main(void)
           "and above the maximum the bar would be taking the screen from "
           "the windows it exists to list");
 
+    printf("\nreplicant handles and size negotiation (DB-007, DB-041)\n");
+    tiku_trk_deskbar_set_show_replicants(db, 1);
+    check(tiku_trk_deskbar_show_replicants(db), "DB-007",
+          "the global show-replicants state is retained");
+    check(tiku_trk_deskbar_set_replicant_height(db, "/sys/mem/free", 13) == 0,
+          "DB-041", "a replicant taller than the tray contract is refused");
+    check(tiku_trk_deskbar_set_replicant_height(db, "/sys/mem/free", 10) == 1 &&
+          tiku_trk_deskbar_replicant_height(db, "/sys/mem/free") == 10,
+          "DB-041", "an accepted size change is stored and relayout-safe");
+    tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    tiku_trk_deskbar_draw(db, s);
+    f = tiku_trk_deskbar_frame(db);
+    tiku_trk_deskbar_open_menu(db);
+    check(tiku_trk_deskbar_menu_keeps_open(db, f.x - 10, f.y + 10), "DB-036",
+          "the open menu keeps tracking through its 20px pointer margin");
+    check(tiku_trk_deskbar_quit_policy(1, 1) == 1 &&
+          tiku_trk_deskbar_quit_policy(0, 1) == 0 &&
+          tiku_trk_deskbar_quit_policy(0, 0) == 0,
+          "DB-053", "the bar refuses quit while Cmd+Q closes only preferences");
+    tiku_trk_deskbar_close_menu(db);
+
     printf("\ncalendar steppers and selection (DB-046)\n");
     tiku_trk_deskbar_set_width(db, TIKU_TRK_DB_MIN_W);
     tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);

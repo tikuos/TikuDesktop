@@ -125,6 +125,25 @@ tiku_trk_navigator_parent(const char *path, char *out, size_t max)
 }
 
 int
+tiku_trk_navigator_hierarchy(const char *path,
+                             char out[][TIKU_TRK_PATH_MAX], int max)
+{
+    char current[TIKU_TRK_PATH_MAX];
+    int n = 0;
+
+    if (path == NULL || out == NULL || max <= 0) {
+        return 0;
+    }
+    snprintf(current, sizeof current, "%s", path[0] != '\0' ? path : "/");
+    while (n < max && tiku_trk_navigator_parent(current,
+                                                 out[n], TIKU_TRK_PATH_MAX)) {
+        snprintf(current, sizeof current, "%s", out[n]);
+        n++;
+    }
+    return n;
+}
+
+int
 tiku_trk_navigator_drop_path(const tiku_trk_model_t *model, char *out,
                              size_t max)
 {

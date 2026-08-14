@@ -25,6 +25,26 @@
 #include "tiku_trk_notify.h"
 #include "tiku_trk_view_defs.h"
 
+/* The layout clipboard is deliberately a second, typed channel.  File
+ * references and a column layout must never overwrite one another: copying a
+ * layout is a view operation, not a file operation. */
+#define TIKU_TRK_LAYOUT_CLIPBOARD_TYPE "application/tracker-columns"
+typedef struct {
+    int  field;
+    int  width;
+    int  alignment;
+    char title[24];
+} tiku_trk_layout_column_t;
+
+typedef struct {
+    tiku_trk_layout_column_t column[TIKU_TRK_COLUMNS_MAX];
+    int  count;
+    int  sort_field;
+    int  sort_secondary;
+    int  reverse;
+    int  serial;
+} tiku_trk_layout_clip_t;
+
 #define TIKU_TRK_TYPEAHEAD_MAX 64
 
 /** @brief How many filter terms Shift+Space can accumulate. */
@@ -76,6 +96,13 @@ typedef struct {
      * rename refuses to arm on the click that selected the pose, and the
      * only way to tell those apart is the moment selection happened. */
     int64_t          sel_time;
+    struct {
+        int      field;
+        int      width;
+        uint64_t key;
+        int      valid;
+        char     text[160];
+    } cell_cache[TIKU_TRK_COLUMNS_MAX];
 } tiku_trk_pose_t;
 
 typedef struct tiku_trk_poseview tiku_trk_poseview_t;
@@ -429,8 +456,10 @@ int tiku_trk_poseview_filter_pose(tiku_trk_poseview_t *v,
  * see" the same set.
  */
 const char *tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v,
-                                        const tiku_trk_pose_t *p, int field,
-                                        char *buf, size_t max);
+                            const tiku_trk_pose_t *p, int field,
+                            char *buf, size_t max);
+void tiku_trk_poseview_cell_cache_stats(const tiku_trk_poseview_t *v,
+                                        uint64_t *hits, uint64_t *misses);
 
 /*---------------------------------------------------------------------------*/
 /* Icon mode, layout and spatial memory (PVL-012..020)                       */
@@ -773,6 +802,13 @@ int tiku_trk_poseview_device_gone(tiku_trk_poseview_t *v, uint64_t dev);
  */
 void tiku_trk_poseview_set_icons(tiku_trk_poseview_t *v,
                                  tiku_trk_nodeicon_t *c);
+/** @brief Generation changed whenever type-dependent menus must rebuild. */
+uint64_t tiku_trk_poseview_menu_generation(const tiku_trk_poseview_t *v);
+/** @brief Defer a post-mount broken-link repair by half a second (PVN-042). */
+void tiku_trk_poseview_schedule_broken_repair(tiku_trk_poseview_t *v,
+                                              int64_t now);
+int tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v,
+                                        int64_t now);
 
 /**
  * @brief Apply one change notice.
@@ -947,6 +983,12 @@ int tiku_trk_poseview_columns_width(const tiku_trk_poseview_t *v);
  */
 int tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v);
 int tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v);
+
+/** Copy/paste the complete column and sort layout through the typed channel. */
+int tiku_trk_poseview_copy_layout(const tiku_trk_poseview_t *v);
+int tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v);
+int tiku_trk_poseview_has_layout_clipboard(void);
+const tiku_trk_layout_clip_t *tiku_trk_poseview_layout_clipboard(void);
 
 /**
  * @brief The point size the owner draws at (TS-031).

@@ -112,6 +112,14 @@ tiku_trk_drag_set_source_virtual(tiku_trk_drag_t *d, int virtual_)
     }
 }
 
+void
+tiku_trk_drag_set_foreign_refs(tiku_trk_drag_t *d, int foreign)
+{
+    if (d != NULL) {
+        d->foreign_refs = foreign ? 1 : 0;
+    }
+}
+
 int
 tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path)
 {
@@ -273,6 +281,14 @@ tiku_trk_drag_landing(const tiku_trk_drag_t *d, int i, int dx, int dy,
         return;
     }
     if (d->from_list) {
+        if (d->foreign_refs) {
+            int col = i % TIKU_TRK_DRAG_FOREIGN_COLS;
+            int row = i / TIKU_TRK_DRAG_FOREIGN_COLS;
+
+            if (x != NULL) { *x = dx + col * TIKU_TRK_DRAG_FOREIGN_CELL_W; }
+            if (y != NULL) { *y = dy + row * TIKU_TRK_DRAG_FOREIGN_CELL_H; }
+            return;
+        }
         /* A list has no positions to preserve, so a column at the drop
          * point is the only arrangement that is not a heap. */
         if (x != NULL) { *x = dx; }

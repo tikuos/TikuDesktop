@@ -44,6 +44,10 @@ int tiku_trk_navigator_forward(tiku_trk_navigator_t *n, char *out,
 /** @brief Resolve one enclosing folder; the root returns false. */
 int tiku_trk_navigator_parent(const char *path, char *out, size_t max);
 
+/** @brief Fill @p out with the current path's parent chain, nearest first. */
+int tiku_trk_navigator_hierarchy(const char *path,
+                                 char out[][TIKU_TRK_PATH_MAX], int max);
+
 /** @brief Resolve a dropped container, or a dropped leaf's parent. */
 int tiku_trk_navigator_drop_path(const tiku_trk_model_t *model, char *out,
                                  size_t max);
