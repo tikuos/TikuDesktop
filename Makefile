@@ -56,7 +56,8 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_switcher.c src/core/tiku_trk_frame.c \
         src/core/tiku_trk_panel.c src/core/tiku_trk_info.c \
         src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
-        src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c
+        src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
+        src/core/tiku_trk_state_pipeline.c
 BACKENDS := src/backends/tiku_trk_notify.c src/backends/tiku_trk_vdir.c \
             src/backends/tiku_trk_volume.c \
             src/backends/tiku_trk_backend_posix.c \
@@ -78,7 +79,8 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
             $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
-            $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon
+            $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
+            $(BUILD)/test_state_pipeline
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop
 
@@ -105,6 +107,11 @@ $(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
 $(BUILD)/test_addon: src/core/tiku_trk_addon.c src/ui/tiku_trk_menu.c \
                      tests/test_addon.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
+
+$(BUILD)/test_state_pipeline: src/core/tiku_trk_state.c \
+                              src/core/tiku_trk_state_pipeline.c \
+                              tests/test_state_pipeline.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_model: $(COMMON) tests/test_model.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)

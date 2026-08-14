@@ -99,3 +99,15 @@ tiku_trk_addons_build_menu(const tiku_trk_addons_t *a, const char *const *types,
     }
     return menu->count;
 }
+
+int
+tiku_trk_addons_invoke(const tiku_trk_addons_t *a, int command, int base,
+                       tiku_trk_addon_invoke_fn fn, void *context)
+{
+    int index = command - base;
+
+    if (a == NULL || fn == NULL || index < 0 || index >= a->count) {
+        return 0;
+    }
+    return fn(&a->item[index], context) != 0;
+}

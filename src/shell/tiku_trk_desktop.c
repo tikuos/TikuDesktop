@@ -377,11 +377,11 @@ build_open_with(desktop_t *app, folder_t *fl)
                                                 TIKU_TRK_APP_TYPES_MAX);
         (void)tiku_trk_addons_build_menu(&app->addons, types, n,
                                          &app->menus.addons,
-                                         TIKU_TRK_CMD_ADD_ONS + 100);
+                                         TIKU_TRK_ADDON_COMMAND_BASE);
     } else {
         (void)tiku_trk_addons_build_menu(&app->addons, NULL, 0,
                                          &app->menus.addons,
-                                         TIKU_TRK_CMD_ADD_ONS + 100);
+                                         TIKU_TRK_ADDON_COMMAND_BASE);
     }
 }
 
@@ -942,11 +942,30 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
     return -1;
 }
 
+static int
+invoke_addon(const tiku_trk_addon_t *addon, void *context)
+{
+    desktop_t *app = context;
+
+    if (addon == NULL || app == NULL) {
+        return 0;
+    }
+    snprintf(app->status, sizeof app->status, "add-on requested: %.80s",
+             addon->name);
+    return 1;
+}
+
 /** @brief Carry out a menu choice on the focused folder. */
 static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
 {
     if (fl == NULL) {
+        return;
+    }
+    if (tiku_trk_addons_invoke(&app->addons, command,
+                               TIKU_TRK_ADDON_COMMAND_BASE,
+                               invoke_addon, app)) {
+        app->dirty = 1;
         return;
     }
     if (command == TIKU_TRK_CMD_COPY_LAYOUT) {

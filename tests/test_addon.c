@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "tiku_trk_addon.h"
+static int invoked;
+static int invoke(const tiku_trk_addon_t *a, void *ctx)
+{ invoked = (a->key == 'x' && ctx != NULL); return invoked; }
 int main(void) {
     tiku_trk_addons_t a; tiku_trk_menu_t m; const char *types[] = {"text/plain"};
     tiku_trk_addons_init(&a);
@@ -13,5 +16,6 @@ int main(void) {
     if (m.item[0].shortcut != 'x') return 1;
     tiku_trk_menu_set_icon(&m, m.item[0].command, "text-file");
     if (strcmp(m.item[0].icon, "text-file") != 0) return 1;
+    if (!tiku_trk_addons_invoke(&a, 1001, 1000, invoke, &a) || !invoked) return 1;
     puts("[PASS] add-on inventory, MIME ordering and live shortcut rebinding"); return 0;
 }

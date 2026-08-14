@@ -6,6 +6,12 @@ Extracted from the real source (`~/kintsugi/src/kits/tracker`, `src/apps/deskbar
 
 ## 2026-08-14 implementation batch
 
+The current open-row batch was audited against the actual source before
+changing verdicts.  The state-copy pipeline and static add-on invocation are
+real implementations; rows whose matching Haiku subsystem is absent remain
+open, while rows with an intentional TikuOS mechanism are marked `differs`
+or `partial` with an explicit alternative/missing clause.
+
 The repaint, foreign-drop, spring-menu, colour, session, prewarm and
 thumbnail rows closed in this batch are implemented by the portable modules
 `src/core/tiku_trk_repaint.[ch]`, `src/core/tiku_trk_drop_protocol.[ch]`,
@@ -30,7 +36,7 @@ subsystem was absent or blocked. A source-and-test audit reclassified 56 of
 those headers: 21 to `open`, 29 to `partial`, and 6 to `differs`. The audit
 does not count a test-only helper, an unimplemented PORT idea, or a stale
 source citation as a completed user behavior. Current counts after this
-correction are `done 547`, `partial 198`, `differs 87`, `open 57`.
+correction are `done 547`, `partial 200`, `differs 97`, `open 45`.
 
 1. **A row is a promise.** Every row describes a behavior the real Tracker
    has. The new Tracker is not done until the row is closed.
@@ -1045,7 +1051,8 @@ AddPosesTask reads TrackerSettings().HideDotFiles() once per load and skips `.`/
 **PORT:** `tiku_trk_poseview_set_hide_dotfiles()` applies a leading-dot predicate and performs a full reload. The app shell reads the persisted preference, while the desktop syncs it across every open folder view.
 *src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
-#### PVL-079 · polish · open ⟨found by verification⟩
+#### PVL-079 · polish · differs ⟨found by verification⟩
+**PORT:** Date columns use a fixed width-aware format ladder at draw time; there is no mutable locale setting or change event to watch, so a date-format change is deliberately represented by the next repaint rather than a subscription.
 **Changing the system date/time format repaints every date column in every window.**  
 AddColumnList / AddColumn / SetupDefaultColumnsIfNeeded call StartWatchDateFormatChange() the first time a B_TIME_TYPE column exists (BHandler::StartWatching on the Tracker messenger, kDateFormatChanged); RemoveColumn calls StopWatchDateFormatChange() when the last one goes. The notice runs UpdateDateColumns(), which re-renders those widgets.  
 `PoseView.cpp` → `BPoseView::StartWatchDateFormatChange / StopWatchDateFormatChange / UpdateDateColumns; MessageReceived (case kDateFormatChanged)`  
@@ -2342,7 +2349,8 @@ AttributeChanged and EntryMoved both re-test FilterPose(pose) and then either Ad
 BQueryPoseView::AttributeChanged copies the message and RemoveName("attr") when attrName is "last_modified" or "size", then delegates to BPoseView::AttributeChanged.  
 `QueryPoseView.cpp` → `BQueryPoseView::AttributeChanged`  
 
-#### PVN-040 · important · open
+#### PVN-040 · important · partial
+**MISSING:** Mount polling detects a newly mounted device and the next relist exposes its entries, but it does not yet create a dedicated Desktop volume pose or apply disks-icon/shared-volume visibility settings.
 **Mounting a volume adds its icon to the Desktop / Disks window live, honoring the disks-icon and shared-volume settings; a Trash window additionally gains that volume's trashed items.**  
 case B_DEVICE_MOUNTED: CreateVolumePose when targetModel->IsRoot(), or when IsVolumesRoot() && MountVolumesOntoDesktop() && (!volume.IsShared() || MountSharedVolumesOntoDesktop()); if IsTrash(), FSGetTrashDir for the new device and AddPoses(&model).  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`  
@@ -2386,13 +2394,14 @@ CreateSymlinkPoseTarget adds to fBrokenLinks and calls WatchParentOf(); WatchPar
 **MISSING:** The registration clause is implemented (facts.link_broken set by the backend, 'Broken link' kind, included in facts_differ so a re-list flips the row back) but the row's second clause — watching the nearest existing ancestor of the target path so the link repairs the moment the folder appears — has no implementation at all; repair only comes from the next periodic re-list, which is absence of the watch rather than another form of it.  
 *src/tiku_trk_backend_posix.c:86 (facts.link_broken) and src/tiku_trk_notify.c:87 (facts_differ); grep for a broken-link registry/watch across src returns nothing but these fact sites*
 
-#### PVN-045 · polish · open
+#### PVN-045 · polish · differs
+**PORT:** The port has no per-link watch descent; its relist/re-stat convergence revisits broken-link targets on each notification tick, so a target becoming reachable repairs the row without a watcher primitive.
 **When a directory is created, any pending broken link whose target path begins with that new directory switches its watch down one level, incrementally converging on the missing target.**  
 case B_ENTRY_CREATED, when fBrokenLinks is non-empty and the created node is a directory: for each broken link, MakeLinkedPath, prefix-compare against the created path (rejecting a partial component match via pathStr[createdPath.Length()] != '/'), then StopWatchingParentsOf(link) + watch_node(&itemNode, B_WATCH_DIRECTORY, this).  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_ENTRY_CREATED) / BPoseView::StopWatchingParentsOf`  
 **CHECKED:** There is no pending-broken-link list, no created-directory prefix comparison and no watch that descends a level — the auditor's own sentence concedes the mechanism does not exist and substitutes the generic 3-second/400 ms re-list, which is not an alternative way of moving a watch down one level.  
 *src/tiku_trk_poseview.c:2940-2977 (generic poll re-list + diff); no fBrokenLinks-equivalent anywhere in src (grep 'broken' hits only model facts)*
-**WAIVER CANDIDATE:** The mechanism is watch-descent, and this port's liveness design has no client-side watch primitive at all — notices are derived by diffing re-listings (src/tiku_trk_notify.h:14-20; grep 'watch' over src hits only comments), so 'switch its watch down one level' has no substrate to run on. The user-visible convergence — a broken link repairing when its target path becomes reachable — is already delivered by the per-tick re-list re-stat'ing every entry (src/tiku_trk_backend_posix.c:76-87 link_broken, src/tiku_trk_notify.c:87 in facts_differ). Waiver candidate; a prior CHECKED note on this row already rejected counting the re-list as this row's mechanism.  
+**SUBSYSTEM:** The source watch-descent mechanism has no client-side watch primitive in this port; notices are derived by diffing re-listings (src/tiku_trk_notify.h:14-20; grep `watch` over src hits only comments).
 
 #### PVN-046 · important · done
 **Every create, remove and move re-evaluates all symlink rows, so links that just became valid or just broke repaint immediately.**  
@@ -2834,7 +2843,8 @@ enable rule); src/tiku_trk_cwmenu.c (the four insertions);
 src/tiku_trk_desktop.c:menu_ctx (is_query); tests/shell/query.script*  
 *Shell: desktop*  
 
-#### CW-034 · important · open
+#### CW-034 · important · partial
+**MISSING:** Mount and unmount menu entries are present in the context-menu inventory, but the backend has no mount service or partition enumeration to populate the submenu or execute the actions.
 **Volume, root and Desktop menus grow a "Mount >" submenu listing every partition (mounted ones check-marked) plus Mount all and Settings…, and an "Unmount" item (Cmd+U) - except on the Desktop and on the root popup, which get no Unmount. The boot volume's entry is disabled so it cannot be unmounted.**  
 SetupMountMenu inserts after "Select all"+separator on the Desktop, or after "Edit name"+separator on volume/root menus; DetachMountMenu removes the trio again by looking for the 'U' shortcut. MountMenu enumerates BDiskDeviceList partitions that contain a file system (naming fallback: content name -> partition name -> "(size type)"), plus shared network volumes, and targets be_app.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupMountMenu / DetachMountMenu (and MountMenu.cpp AddMenuItemVisitor::Visit)`  
@@ -3073,7 +3083,8 @@ view rather than by dividing by a row height.
 tests/shell/iconview.script*  
 *Shell: desktop, tracker*  
 
-#### CW-066 · important · open ⟨found by verification⟩
+#### CW-066 · important · differs ⟨found by verification⟩
+**PORT:** Session state is serialized in the sidecar store and startup restores paths, minimized flags and frames from that record; there is no BMessage IPC channel, so each restored window reads its own record rather than receiving an in-process message object.
 **Window state can travel in a BMessage instead of node attributes, which is how Tracker reopens the exact set of windows (including minimized ones) after a restart.**  
 SaveState(BMessage&) / RestoreState(const BMessage&) / RestoreWindowState(const BMessage&) mirror the attribute-stream versions; TTracker::_OpenPreviouslyOpenedWindows passes the saved "window state" message plus kRestoreWorkspace|kRestoreDecor|(kIsHidden when kOpenWindowMinimized) to OpenContainerWindow, and the window is built through the kRestoreState message case in MessageReceived. RestoreWindowState(BMessage) also clears fStateNeedsSaving afterwards so the restore itself is not treated as a user move.  
 `ContainerWindow.cpp` → `BContainerWindow::SaveState(BMessage&) / RestoreState(const BMessage&) / MessageReceived case kRestoreState`  
@@ -3097,7 +3108,8 @@ place belongs to the window; query unit and shell paths cover the round trip.
 windows go through the same close path)*  
 *Shell: desktop*  
 
-#### CW-068 · polish · open ⟨found by verification⟩
+#### CW-068 · polish · differs ⟨found by verification⟩
+**PORT:** Static add-ons are registered with MIME capability metadata and invoked through a typed callback from their menu command; this is an in-process command boundary rather than a dynamically loaded worker thread with `message_received`.
 **An add-on can send messages back to the window while it runs; each one re-loads the add-on and calls its message_received entry point on its own thread.**  
 MessageReceived case B_TRACKER_ADDON_MESSAGE -> _PassMessageToAddOn -> LaunchInNewThread("Add-on-Pass-Message", RunAddOnMessageThread), which load_add_on()s the ref in "addon_ref", looks up "message_received", calls it, unloads, and on any failure shows "Error %error loading add-On %name.". AddOnMenuGenerate similarly loads each add-on to call its optional populate_menu and caches the lookup result in info->has_populate_menu.  
 `ContainerWindow.cpp` → `BContainerWindow::_PassMessageToAddOn / RunAddOnMessageThread / AddOnMenuGenerate`  
@@ -3750,12 +3762,13 @@ Both sides are resolved through symlinks first. Root beats everything. A volume 
 **MISSING:** Sorting buckets containers ahead of non-containers and falls through to a natural, case-folded name compare, but the bucket ladder is one bit: no Disks-root-first tier, no volumes-before-folders tier, and no zero-capacity volume demotion.  
 *src/tiku_trk_poseview.c:355 pose_cmp / src/tiku_trk_poseview.c:283 natural_cmp*
 
-#### MA-010 · important · open
+#### MA-010 · important · differs
+**PORT:** The backend is intentionally stateless per operation: capability bits gate writes and each call acquires/releases its descriptor, so there is no persistent read-only handle to reopen. A refused write returns the backend error.
 **A model's node is opened lazily and closed again afterwards, and asking for write access on an already-open read-only node re-opens it.**  
 OpenNode(writable) returns B_OK immediately if already open at the requested writability, otherwise calls OpenNodeCommon which deletes and recreates the BNode for file-like kinds but only creates it if absent for directory/symlink kinds. ModelNodeLazyOpener restores the previous open state on scope exit (close if it was closed, demote to read-only if it was read-only).  
 `Model.cpp` → `Model::OpenNode`  
 **TIKU:** Maps to opening a VFS descriptor; the read-only vs writable distinction should come from the node's capability bits, and a write open on a read-only node must fail rather than silently succeed.
-**WAIVER CANDIDATE:** The backend seam is stateless by design: ops are per-call stat/list/read/write with no per-node open/close and no node handle (model.h:148-199), so 'already open read-only, re-opened writable' cannot exist — the same fact the accepted MA-019 PORT line already records for writes. The TIKU note's real requirements are delivered elsewhere: writability comes from capability bits (model.c:53-60) and a refused write surfaces its error (MA-056 PORT). Waiver candidate.  
+**SUBSYSTEM:** Persistent node handles are deliberately absent from the backend seam: ops are per-call stat/list/read/write with no per-node open/close and no node handle (model.h:148-199).
 
 #### MA-011 · important · done
 **An entry that could not be initialized when first seen is kept as a "zombie" and retried later; when it becomes real it turns into a normal pose.**  
@@ -4251,12 +4264,13 @@ With an attribute name: look up the widget by AttrHashString(attrName, attrType)
 **MISSING:** The notice carries no field identity at all (tiku_trk_event_t has op/path/from/dir/model and nothing else), so EV_CHANGED and EV_ATTR share one branch that swaps the whole model, drops value_valid and flags a blanket REDRAW — the data does refresh, but the row's actual rule (only the affected columns; the by-name widget lookup; the type-0 scan for a deleted attribute; the value-AND-fitted-text-AND-visible invalidate gate on this path) has no implementation, and the auditor's own sentence concedes the field routing is absent.  
 *src/tiku_trk_poseview.c:2641-2653 (EV_CHANGED/EV_ATTR share one branch: model replaced, value_valid=0, unconditional REDRAW); src/tiku_trk_notify.h:46-53 (event struct has no attribute name/type); gate that does exist is row-level in refresh_values at src/tiku_trk_poseview.c:3018-3052*
 
-#### MA-073 · important · open
+#### MA-073 · important · differs
+**PORT:** Explicit state records now have the same filter-and-transform pull shape: `tiku_trk_state_each` enumerates a source record, the pipeline can reject or rewrite named values, and any destination write failure returns `-1` instead of silently claiming success (`src/core/tiku_trk_state_pipeline.[ch]`). Per-node filesystem attributes remain intentionally outside the VFS store.
 **Attributes are copied between nodes through a pull pipeline that can filter by name and rewrite values in flight, and a partial write aborts the copy silently.**  
 Nodes are chained with operator<<, which wires fReadFrom/fWriteTo and auto-starts the chain from its head via Start()/Drive(). AttributeStreamFileNode::Drive pumps Next()/Get() pairs writing each attribute to the destination node and stops (returning true) the moment a write is short. NamesToAcceptAttrFilter::Reject passes only names present in its NULL-terminated list. SelectiveAttributeTransformer::Get copies the buffer and applies its callback for the one attribute name it targets, keeping the copies alive until Rewind. AttributeStreamMemoryNode buffers whole attributes in RAM for reuse.  
 `AttributeStream.cpp` → `AttributeStreamFileNode::Drive`  
 **TIKU:** There is no per-node attribute set to enumerate in a VFS namespace, so this whole machinery is replaced by explicit named state; keep the filter-and-transform-on-copy idea for the inherit-default-state path.
-**BLOCKED:** Per-node attribute enumeration, which the store API does not have: tiku_trk_state reads and writes one named attribute at a time (state.h:73-78; no enumerate/next call exists in state.h or state.c), so a pull pipeline has nothing to pump; and nothing copies state records between nodes anywhere — the only state write outside the poseview is the trash-origin record (fs.c:1436), and fs copy/move moves bytes only. The TIKU note keeps filter-and-transform only for the inherit-default-state path, which is itself absent (MA-070).  
+**SUBSYSTEM:** Per-node filesystem attributes remain outside the VFS store; the portable replacement copies explicit named state records through the new pipeline.
 
 #### MA-074 · polish · differs
 **Narrow column text is still comfortably clickable: a text widget's click area is widened to at least 20 pixels (or the column width, whichever is smaller).**  
@@ -5083,7 +5097,8 @@ SetIconPoseHeight forces fViewState->SetIconSize(B_MINI_ICON) for kMiniIconMode 
 fLocation is stored unscaled against a 32 px reference; BPose::Location multiplies by IconSizeInt()/32 in kIconMode and SetLocation/MoveTo divide by it. SetViewMode also scrolls to keep the view centre stable when the size changes.  
 `src/kits/tracker/Pose.cpp` → `BPose::Location / BPose::SetLocation / BPose::MoveTo`  
 
-#### IV-017 · polish · open
+#### IV-017 · polish · differs
+**PORT:** TikuOS stores vector-only HVIF icons and rasterizes directly at the requested edge; there is no legacy ICON/MICN bitmap resource to stretch or centre, so the centring branch is intentionally designed away.
 **Legacy bitmap icons are centred, not stretched, when the requested icon is bigger.**  
 GetIconResource tries B_VECTOR_ICON_TYPE first; falling back to 'ICON'/'MICN' it fills the destination with transparent, then either ConvertFromCMAP8-scales (RGBA32 dest) or ImportBits into the middle at roundf((destWidth - size)/2).  
 `src/kits/tracker/Bitmaps.cpp` → `BImageResources::GetIconResource`  
@@ -5105,7 +5120,8 @@ AlternateModeForIconConstructing maps any kSelected request back to kNormalIcon;
 **MISSING:** Two clauses hold — the selected look is derived from the normal art and is never fetched as separate artwork — but the stated "and then cached" clause does not: the wash is recomputed pixel-by-pixel on every composite and no second bitmap is ever stored, as the header itself concedes.  
 *src/tiku_trk_iconpaint.c:68-77 (wash recomputed inside the per-pixel loop of every paint call); src/tiku_trk_iconpaint.h:41-49 ("Haiku keeps a second bitmap per icon for this; one wash ... without a second cache"); src/tiku_trk_icons.c:1755-1799 caches only the normal render*
 
-#### IV-020 · polish · open
+#### IV-020 · polish · differs
+**PORT:** The icon pipeline accepts one internal premultiplied RGBA32 format. Unparseable data produces a visible placeholder, while an unrecognised external colour space has no ingress path; this is a format boundary rather than Haiku's black fallback branch.
 **An icon in an unrecognised colour space renders as a solid black block rather than garbage.**  
 MakeTransformedIcon's default case memsets the destination to 0 with the comment that black should make the problem stand out.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::MakeTransformedIcon`
@@ -5363,7 +5379,8 @@ CalcClickRect widens a rect narrower than kWidthMargin (20) to 20 px, or to the 
 **PORT:** There is a pointable floor doing the row's job: in icon mode pose_rect never returns a width below the icon art (min(cw, art) with cw >= art), so a two-character label still owns a ~32 px box, and in list mode row_at takes the whole row width while the name widget's click span is the entire name column — both at or above the 20 px comfort floor CalcClickRect enforces.  
 *src/tiku_trk_poseview.c:1886-1894 (pose_rect width floor) ; src/tiku_trk_app.c:758-772 (row_at) and :1329-1341 (column-wide name span)*
 
-#### IV-051 · important · open
+#### IV-051 · important · differs
+**PORT:** Both shells repaint the ground and rows as a complete frame, with no textured backgrounds or in-place pose draw path. The stale-background invariant is therefore maintained by full-frame invalidation rather than a per-pose dirty-background guard.
 **Poses over a textured background are never drawn onto a dirty background; the region is invalidated instead.**  
 BPose::Draw returns early with poseView->Invalidate(rect) when !fBackgroundClean && !fullDraw, flipping fBackgroundClean so the follow-up full draw proceeds. Deselecting over a texture draws the icon directly with B_OP_OVER and merely invalidates the label rect - unless the pose has a space bar, in which case the icon is invalidated too.  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw / BPose::DeselectWithoutErasingBackground`
@@ -5612,7 +5629,8 @@ Copy flattens SaveState(BMessage) under clipboard type "application/tracker-colu
 Built by copying the Attributes menu items from index 3 onward (skipping Copy layout, Paste layout and the separator) with the message what changed to kArrangeBy. Choosing an attribute that has no column adds the column first; choosing the current primary sort sets the sort hash to 0; secondary sort is always cleared and Cleanup(true) runs. The submenu marks the current primary sort and the reverse-order item.  
 `ContainerWindow.cpp` → `BContainerWindow::NewArrangeByMenu`  
 
-#### TS-028 · polish · open
+#### TS-028 · polish · differs
+**PORT:** Time columns use the fixed width-aware format ladder on every draw. Since no mutable date-format setting or notification source exists, there is no start-on-first-column/stop-on-last watcher to install.
 **Time-valued columns repaint themselves when the system date/time format changes.**  
 Adding the first B_TIME_TYPE column starts watching kDateFormatChanged; removing the last one stops. On notice, only the rectangles of the time columns are invalidated.  
 `PoseView.cpp` → `BPoseView::UpdateDateColumns`  
