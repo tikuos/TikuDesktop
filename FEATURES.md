@@ -668,12 +668,13 @@ kArrangeBy: if the attribute has no column yet, add one via HandleAttrMenuItemSe
 **MISSING:** The first half holds — each Sort by <attr> menu case sets the key (including the device Value field) and re-lays out via cleanup() — but re-choosing the same attribute runs sort_by()'s `sort_reverse = !sort_reverse`, i.e. it reverses the listing, which is neither the row's 'arrangement off' nor the corrected real behaviour (same order, secondary cleared); the secondary key is also left alone.  
 *src/shell/tiku_trk_desktop.c:999-1018 (SORT_BY_* -> sort_by + cleanup); src/ui/tiku_trk_poseview.c:1370-1387 (sort_by toggles reverse on the same field)*
 
-#### PVL-025 · polish · open
+#### PVL-025 · polish · partial
 **A new folder created from the context menu appears where you clicked; created by keyboard shortcut in an icon mode it appears under the mouse if the mouse is over the window.**  
 PlaceFolder reads "be:invoke_origin" and converts from screen; otherwise (non-list mode) it uses GetMouse and only sets a position if the screen point is inside Window()->Frame(). The position is written with FSSetPoseLocation before the pose appears.  
 `PoseView.cpp` → `BPoseView::PlaceFolder`  
 **TIKU:** Requires a way to pre-seed a position for a node before it shows up in the view.  
-**WIRING:** tiku_trk_poseview_set_drop_point has no caller: New folder creates the entry and the view auto-places it, so a folder never appears where it was asked for.  
+**PORT:** The place is worked out before the entry exists -- from the corner of the menu that makes it, which is the click that opened it, or from the pointer when there is no menu -- and named to the view, so it survives the reload the creating command does. A point outside the window, or a list-mode view, seeds nothing.  
+**MISSING:** Only the desktop shell asks: the single-window shell creates from its own menu path and does not seed.  
 **PORT:** The position is seeded on the VIEW (tiku_trk_poseview_set_drop_point) and consumed by the next entry to appear, not carried in the invoking message; nothing in this shell creates a folder yet, so the seed has no caller but the mechanism is proven.
 
 #### PVL-026 · important · done
@@ -1200,11 +1201,12 @@ BPoseView::NewFileFromTemplate: name = "New " + message "name", uniquified with 
 **PORT:** The filesystem backend now copies regular files, folders and links with Tracker's existing tree, permission, timestamp and pose-state rules, assigns a unique `New <template name>`, and both shipped shells reload, select and start inline rename on the result.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_new_from_template; src/shell/tiku_trk_app.c:menu_invoke; src/shell/tiku_trk_desktop.c:menu_invoke; tests/test_fs.c*
 
-#### PVL-098 · polish · open
+#### PVL-098 · polish · partial
 **A newly created folder or template file lands where the user asked for it: at the click point when made from a context menu, or under the mouse pointer when made with the keyboard in icon view.**  
 BPoseView::PlaceFolder writes a pose location with FSSetPoseLocation when the invoking message carries "be:invoke_origin" (converted from screen coords), or, in non-list view, when the current mouse position is inside the window frame. In list view a keyboard-created folder gets no stored position at all.  
 `PoseView.cpp` → `BPoseView::PlaceFolder`  
-**WIRING:** The seeding path has no caller: New folder and the template commands create the entry and the view auto-places it, so nothing lands where it was asked for.  
+**PORT:** New folder and the template commands both name a landing for what they made before reloading, so it appears where it was asked for rather than in the next free slot. The landing table is the one drops already use, so a position asked for before an entry exists is honoured however the entry arrives.  
+**MISSING:** Only the desktop shell asks: the single-window shell creates from its own menu path and does not seed.  
 **PORT:** Same seeding path as PVL-025: proven by the notice handler, without a New folder command to drive it.
 
 #### PVL-099 · important · done ⟨found by verification⟩

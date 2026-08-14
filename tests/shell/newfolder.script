@@ -1,0 +1,17 @@
+# shell: desktop
+# PVL-025/PVL-098: a folder made from the context menu appears where the
+# menu was opened, not wherever auto-placement puts the next icon.
+key 1 ctrl
+wait 8
+note the context menu is opened over an empty part of the window
+press 400 250 3
+wait 2
+release 400 250 3
+wait 5
+menu-pick New folder
+wait 20
+expect-file /tmp/trk_script/New folder
+note and the icon for it sits where the menu was opened, rather than in the
+note next free slot of the grid
+expect-icon-screen New folder 400 250
+quit

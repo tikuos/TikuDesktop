@@ -202,6 +202,7 @@ typedef struct desktop {
     int                  nav_on;
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
+    int                  ptr_x, ptr_y;  /* where the pointer last was      */
     tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
     tiku_desk_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
@@ -979,17 +980,73 @@ invoke_addon(const tiku_trk_addon_t *addon, void *context)
     return 1;
 }
 
+/**
+ * @brief Point a new entry at where it was asked for (PVL-025, PVL-098).
+ *
+ * The menu's own corner is where it was opened, which is the click that
+ * asked for the folder; a keyboard shortcut has no menu, so the pointer
+ * answers instead, and only while it is over the window.
+ */
+static int
+seed_new_entry(desktop_t *app, folder_t *fl, int *vx, int *vy)
+{
+    tiku_desk_rect_t c;
+    int ox = 0, oy = 0, x, y;
+
+    if (fl == NULL || fl->view == NULL ||
+        tiku_trk_poseview_mode(fl->view) == TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    if (app->popup != NULL) {
+        x = app->popup_frame.x;
+        y = app->popup_frame.y;
+    } else {
+        x = app->ptr_x;
+        y = app->ptr_y;
+    }
+    c = tiku_trk_folder_window_content(fl);
+    if (x < c.x || x >= c.x + c.w || y < c.y || y >= c.y + c.h) {
+        return 0;
+    }
+    tiku_trk_poseview_origin(fl->view, &ox, &oy);
+    *vx = x - (c.x + 2) + ox;
+    *vy = y - (c.y + 2) + oy;
+    return 1;
+}
+
+/** @brief Give the entry just made the place it was asked for. */
+static void
+land_new_entry(desktop_t *app, folder_t *fl, const char *made, int seeded,
+               int vx, int vy)
+{
+    const char *slash = (made != NULL) ? strrchr(made, '/') : NULL;
+
+    if (!seeded || fl == NULL || fl->view == NULL) {
+        return;
+    }
+    (void)app;
+    tiku_trk_poseview_drop_land(fl->view,
+                                (slash != NULL) ? slash + 1 : made, vx, vy);
+}
+
 /** @brief Carry out a menu choice on the focused folder. */
 static void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
 {
     const char *template_path;
     const char *template_parent;
+    int seeded = 0, seed_x = 0, seed_y = 0;
 
     if (fl == NULL) {
         return;
     }
     template_path = tiku_trk_cwmenu_template_path(&app->menus, command);
+    /* Where the user asked for it, worked out BEFORE the entry exists: the
+     * menu that makes it is still up, and its corner is the click that
+     * opened it (PVL-025, PVL-098). */
+    if (template_path != NULL || command == TIKU_TRK_CMD_NEW_FOLDER) {
+        seeded = seed_new_entry(app, fl, &seed_x, &seed_y);
+    }
     if (template_path != NULL) {
         char made[TIKU_TRK_PATH_MAX], error[200];
         const char *slash;
@@ -999,6 +1056,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                                           made, sizeof made, error,
                                           sizeof error) == 0) {
             slash = strrchr(made, '/');
+            land_new_entry(app, fl, made, seeded, seed_x, seed_y);
             (void)tiku_trk_poseview_reload(fl->view);
             row = select_named(app, fl,
                                slash != NULL ? slash + 1 : made);
@@ -1081,6 +1139,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             slash = strrchr(made, '/');
             snprintf(app->status, sizeof app->status, "created '%.150s'",
                      slash != NULL ? slash + 1 : made);
+            land_new_entry(app, fl, made, seeded, seed_x, seed_y);
             (void)tiku_trk_poseview_reload(fl->view);
             row = select_named(app, fl,
                                slash != NULL ? slash + 1 : made);
@@ -2801,6 +2860,8 @@ tracker_run(int argc, char **argv)
                 break;
             }
             case TIKU_DESK_EVENT_POINTER_MOVE:
+                app.ptr_x = ev.x;
+                app.ptr_y = ev.y;
                 if (app.deskbar_press &&
                     (ev.x - app.press_x > 4 || app.press_x - ev.x > 4 ||
                      ev.y - app.press_y > 4 || app.press_y - ev.y > 4)) {

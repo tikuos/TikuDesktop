@@ -2859,6 +2859,9 @@ next_slot(tiku_trk_poseview_t *v, int view_w)
     }
 }
 
+static int take_landing(tiku_trk_poseview_t *v, const char *path, int *x,
+                        int *y);
+
 /** @brief Place one pose at the first free slot from the hint. */
 static void
 place_pose(tiku_trk_poseview_t *v, tiku_trk_pose_t *p, int view_w)
@@ -2905,10 +2908,28 @@ tiku_trk_poseview_place_unplaced(tiku_trk_poseview_t *v, int view_w)
         v->hint_y = oy;
     }
     for (i = 0; i < v->count; i++) {
-        if (!v->poses[i].placed) {
-            place_pose(v, &v->poses[i], view_w);
-            n++;
+        int lx, ly;
+
+        if (v->poses[i].placed) {
+            continue;
         }
+        /* A position asked for before the entry existed -- the point a drop
+         * landed on, or the click that made a folder -- is honoured here
+         * as well as on the notice, so a listing rebuilt from disk does not
+         * put it back in the next free slot (PVL-025, PVL-098). */
+        if (v->mode != TIKU_TRK_MODE_LIST &&
+            take_landing(v, v->poses[i].model.path, &lx, &ly)) {
+            float scale = mode_scale(v->mode, v->icon_size);
+
+            v->poses[i].loc_x = (int)((float)lx / scale);
+            v->poses[i].loc_y = (int)((float)ly / scale);
+            v->poses[i].placed = 1;
+            v->poses[i].auto_placed = 0;
+            n++;
+            continue;
+        }
+        place_pose(v, &v->poses[i], view_w);
+        n++;
     }
     return n;
 }

@@ -364,16 +364,15 @@ tiku_trk_script_open(const char *path)
             st->op = OP_EXPECT_WINAT;
             st->x = atoi(w[1]);
             st->y = atoi(w[2]);
-        } else if (strcmp(w[0], "expect-icon-screen") == 0 && n >= 4) {
-            st->op = OP_EXPECT_ICONSCREEN;
-            snprintf(st->text, sizeof st->text, "%s", w[1]);
-            st->x = atoi(w[2]);
-            st->y = atoi(w[3]);
-        } else if (strcmp(w[0], "expect-icon-at") == 0 && n >= 4) {
-            st->op = OP_EXPECT_ICONAT;
-            snprintf(st->text, sizeof st->text, "%s", w[1]);
-            st->x = atoi(w[2]);
-            st->y = atoi(w[3]);
+        } else if ((strcmp(w[0], "expect-icon-screen") == 0 ||
+                    strcmp(w[0], "expect-icon-at") == 0) && n >= 4) {
+            /* The coordinates are the LAST two words, so a name with a
+             * space in it -- "New folder" -- can still be named. */
+            st->op = (w[0][12] == 's') ? OP_EXPECT_ICONSCREEN
+                                       : OP_EXPECT_ICONAT;
+            rest(w, n - 2, 1, st->text, sizeof st->text);
+            st->x = atoi(w[n - 2]);
+            st->y = atoi(w[n - 1]);
         } else if (strcmp(w[0], "expect-pixel") == 0 && n >= 4) {
             st->op = OP_EXPECT_PIXEL;
             st->x = atoi(w[1]);
