@@ -265,8 +265,17 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         if (*render->drop_folder == folder && *render->drop_row == i) {
             selected = 1;
         }
-        tiku_desk_fill(surface, row, selected ? TIKU_DESK_C_SELECT
-                                              : TIKU_DESK_C_DOC);
+        tiku_desk_fill(surface, row, TIKU_DESK_C_DOC);
+        if (selected) {
+            /* IV-024: only the Name cell is selected in list mode. */
+            tiku_desk_rect_t name = { row.x, row.y,
+                                      row.w - VALUE_GAP, row.h };
+
+            if (name.w < 0) {
+                name.w = 0;
+            }
+            tiku_desk_fill(surface, name, TIKU_DESK_C_SELECT);
+        }
         {
             int mini = render->row_h - 2;
             int text_x = row.x + 4;
@@ -330,8 +339,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             width = tiku_desk_text_width(font, value);
             if (width < row.w - VALUE_GAP) {
                 tiku_desk_text(surface, font, row.x + row.w - width - 6,
-                    text_y, value, selected ? TIKU_DESK_C_SELTEXT
-                                             : TIKU_DESK_C_TEXT);
+                    text_y, value, TIKU_DESK_C_TEXT);
             }
         }
     }

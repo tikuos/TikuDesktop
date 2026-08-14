@@ -50,7 +50,8 @@ typedef struct {
 #define TIKU_TRK_COL_DATE  5
 #define TIKU_TRK_COL_PATH  6
 #define TIKU_TRK_COL_PERM  7
-#define TIKU_TRK_COL_KINDS 8
+#define TIKU_TRK_COL_ORIGINAL 8
+#define TIKU_TRK_COL_KINDS 9
 
 #define TIKU_TRK_COL_ATTR_BASE 16
 #define TIKU_TRK_COL_ATTR_MAX   8

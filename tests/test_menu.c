@@ -207,6 +207,10 @@ main(void)
         c.is_query = 1;
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_PASTE, &c),
               "Q-044: Paste is refused into a query result container");
+        c.is_query = 0;
+        c.is_virtual = 1;
+        check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_PASTE, &c),
+              "PVL-102: Paste is refused into a virtual directory");
 
         c = base_ctx();
         check(tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
@@ -222,6 +226,10 @@ main(void)
         c.is_query = 1;
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
               "Q-044: a result set cannot create a folder inside itself");
+        c.is_query = 0;
+        c.is_virtual = 1;
+        check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_NEW_FOLDER, &c),
+              "PVL-102: a virtual directory cannot create a folder");
 
         c = base_ctx();
         check(!tiku_trk_sc_enabled(TIKU_TRK_CMD_ARRANGE_BY, &c),

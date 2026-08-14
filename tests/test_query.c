@@ -373,10 +373,14 @@ main(void)
         q.scope_was[0].dev = 0u;
         walk.scope_kind = 1;
         run = tiku_trk_query_start(&backend, &q);
+        while (run != NULL && !tiku_trk_query_done(run)) {
+            (void)tiku_trk_query_step(run, 8);
+        }
         check(run != NULL && tiku_trk_query_done(run) &&
-              tiku_trk_query_count(run) == 0,
-              "Q-057: a stored scope that became a file is dropped from "
-              "the executable run");
+              tiku_trk_query_count(run) == 1 &&
+              strcmp(tiku_trk_query_at(run, 0)->path, "/scope") == 0,
+              "PVN-070: a file scope is returned as one result rather than "
+              "being sent to the directory lister");
         tiku_trk_query_stop(run);
     }
 

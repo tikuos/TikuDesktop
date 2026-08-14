@@ -59,11 +59,16 @@ main(void)
 
     prefs.value.icon_size = 32;
     prefs.value.auto_hide = 1;
+    prefs.value.show_seconds = 1;
+    prefs.value.show_day_of_week = 1;
+    prefs.value.show_timezone = 1;
     check(tiku_trk_deskbar_prefs_save(&prefs, store) == 0, "DB-061",
           "the settings model writes to the durable state seam");
     tiku_trk_deskbar_prefs_init(&prefs);
     check(tiku_trk_deskbar_prefs_load(&prefs, store) == 0 &&
-          prefs.value.icon_size == 32 && prefs.value.auto_hide, "DB-061",
+          prefs.value.icon_size == 32 && prefs.value.auto_hide &&
+          prefs.value.show_seconds && prefs.value.show_day_of_week &&
+          prefs.value.show_timezone, "DB-071",
           "the next controller restores the settings and snapshots them");
 
     check(tiku_trk_deskbar_prefs_expanders_enabled(&prefs,

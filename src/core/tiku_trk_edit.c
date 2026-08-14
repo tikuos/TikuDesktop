@@ -50,6 +50,15 @@ tiku_trk_edit_start(tiku_trk_edit_t *e, const char *text)
     e->sel_a = 0;
     e->sel_b = e->len;
     e->active = 1;
+    e->editable = 1;
+}
+
+void
+tiku_trk_edit_set_editable(tiku_trk_edit_t *e, int editable)
+{
+    if (e != NULL) {
+        e->editable = editable ? 1 : 0;
+    }
 }
 
 void
@@ -126,6 +135,9 @@ tiku_trk_edit_key(tiku_trk_edit_t *e, tiku_trk_edit_key_t key, int shift,
     }
     switch (key) {
     case TIKU_TRK_EDIT_CHAR:
+        if (!e->editable) {
+            return TIKU_TRK_EDIT_IGNORED;
+        }
         if (ch < 0x20 || ch == 0x7f) {
             return TIKU_TRK_EDIT_IGNORED;
         }
@@ -161,6 +173,9 @@ tiku_trk_edit_key(tiku_trk_edit_t *e, tiku_trk_edit_key_t key, int shift,
         return TIKU_TRK_EDIT_HANDLED;
 
     case TIKU_TRK_EDIT_BACKSPACE:
+        if (!e->editable) {
+            return TIKU_TRK_EDIT_HANDLED;
+        }
         if (tiku_trk_edit_selection(e, NULL, NULL)) {
             delete_selection(e);
         } else if (e->caret > 0) {
@@ -173,6 +188,9 @@ tiku_trk_edit_key(tiku_trk_edit_t *e, tiku_trk_edit_key_t key, int shift,
         return TIKU_TRK_EDIT_HANDLED;
 
     case TIKU_TRK_EDIT_DELETE:
+        if (!e->editable) {
+            return TIKU_TRK_EDIT_HANDLED;
+        }
         if (tiku_trk_edit_selection(e, NULL, NULL)) {
             delete_selection(e);
         } else if (e->caret < e->len) {
@@ -193,12 +211,19 @@ tiku_trk_edit_key(tiku_trk_edit_t *e, tiku_trk_edit_key_t key, int shift,
         return TIKU_TRK_EDIT_HANDLED;
 
     case TIKU_TRK_EDIT_CUT:
+        if (!e->editable) {
+            return TIKU_TRK_EDIT_HANDLED;
+        }
         copy_selection(e);
         delete_selection(e);
         return TIKU_TRK_EDIT_HANDLED;
 
     case TIKU_TRK_EDIT_PASTE: {
         size_t i;
+
+        if (!e->editable) {
+            return TIKU_TRK_EDIT_HANDLED;
+        }
 
         delete_selection(e);
         for (i = 0; edit_clipboard[i] != '\0'; i++) {

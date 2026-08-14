@@ -202,6 +202,9 @@ int tiku_trk_fs_delete(tiku_trk_fs_t *fs, const char *const *paths, int n);
 int tiku_trk_fs_trash_dirs(tiku_trk_fs_t *fs, char out[][TIKU_TRK_PATH_MAX],
                            int max);
 
+/** @brief Create and mark every writable mounted volume's Trash at startup. */
+int tiku_trk_fs_prepare_trash(tiku_trk_fs_t *fs);
+
 /**
  * @brief The same over a volume table the caller supplies.
  *

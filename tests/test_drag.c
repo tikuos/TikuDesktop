@@ -166,6 +166,13 @@ main(void)
           TIKU_TRK_DROP_COPY,
           "PVS-038", "though Option-dropping there duplicates");
 
+    tiku_trk_drag_set_source_virtual(&d, 1);
+    check(tiku_trk_drag_action(&d, "/dst", 0u, 1) == TIKU_TRK_DROP_LINK,
+          "FS-078", "a virtual-directory drag links by default");
+    check(tiku_trk_drag_action(&d, "/dst", TIKU_TRK_DRAG_MOD_COPY, 1) ==
+          TIKU_TRK_DROP_COPY, "FS-078",
+          "an explicit copy still snapshots the resolved entries");
+
 
     printf("\nwhere dropped icons land (PVL-027, PVS-045)\n");
     {

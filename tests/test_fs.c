@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_fs.h"
+#include "tiku_trk_state.h"
 
 static int fails;
 
@@ -140,10 +141,22 @@ main(void)
 
     /* --- copy, and what it leaves behind -------------------------------- */
     list[0] = pa;
-    check(tiku_trk_fs_copy(fs, list, 1, B, TIKU_TRK_CONFLICT_ASK) == 0,
-          "FS", "a copy starts");
-    run_to_end(fs);
     snprintf(pb, sizeof pb, "%s/note.txt", B);
+    {
+        tiku_trk_store_t *store = b->ops->state_store(b);
+        int32_t pose[3] = { 123, 456, 0 };
+        unsigned char got[sizeof pose];
+
+        (void)tiku_trk_state_write(store, pa, TIKU_TRK_ATTR_POSE_INFO,
+                                    pose, sizeof pose);
+        check(tiku_trk_fs_copy(fs, list, 1, B, TIKU_TRK_CONFLICT_ASK) == 0,
+              "FS-037", "a cross-folder copy starts");
+        run_to_end(fs);
+        check(tiku_trk_state_read(store, pb, TIKU_TRK_ATTR_POSE_INFO, got,
+                                  sizeof got) == (int)sizeof pose &&
+              memcmp(got, pose, sizeof pose) == 0, "FS-037",
+              "the copied item inherits its saved icon position");
+    }
     check(there(pb) && there(pa), "FS", "the copy exists and the original stays");
     check(tiku_trk_fs_progress(fs)->done == 1, "FS", "progress counted it");
 

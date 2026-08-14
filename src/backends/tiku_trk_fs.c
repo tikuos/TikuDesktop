@@ -874,6 +874,38 @@ carry_over(const char *src, const char *dst, int link)
     (void)utimensat(AT_FDCWD, dst, times, 0);
 }
 
+/**
+ * @brief Carry an icon pose record along with a cross-folder copy.
+ *
+ * Pose information is per item in the state store, so copying the bytes is
+ * the backend equivalent of Tracker's kAttrPoseInfo inheritance.  A later
+ * explicit drop point still wins when the destination view receives the
+ * create notice; this only supplies the useful default when no point was
+ * specified (FS-037).
+ */
+static void
+copy_pose_info(tiku_trk_fs_t *fs, const char *src, const char *dst)
+{
+    tiku_trk_store_t *store;
+    unsigned char raw[64];
+    int n;
+
+    if (fs == NULL || fs->backend == NULL || src == NULL || dst == NULL ||
+        fs->backend->ops->state_store == NULL) {
+        return;
+    }
+    store = fs->backend->ops->state_store(fs->backend);
+    if (store == NULL || !tiku_trk_store_writable(store)) {
+        return;
+    }
+    n = tiku_trk_state_read(store, src, TIKU_TRK_ATTR_POSE_INFO, raw,
+                            sizeof raw);
+    if (n > 0) {
+        (void)tiku_trk_state_write(store, dst, TIKU_TRK_ATTR_POSE_INFO, raw,
+                                   (size_t)n);
+    }
+}
+
 static int
 copy_bytes(tiku_trk_fs_t *fs, const char *src, const char *dst, char *err,
            size_t errmax)
@@ -1470,6 +1502,20 @@ tiku_trk_fs_trash_dirs(tiku_trk_fs_t *fs, char out[][TIKU_TRK_PATH_MAX],
 }
 
 int
+tiku_trk_fs_prepare_trash(tiku_trk_fs_t *fs)
+{
+    char dirs[TIKU_TRK_VOLUME_MAX][TIKU_TRK_PATH_MAX];
+
+    if (fs == NULL) {
+        return 0;
+    }
+    /* The directory pass is deliberately explicit at application startup;
+     * constructing an operation engine must remain side-effect free for
+     * callers such as tests and file panels. */
+    return tiku_trk_fs_trash_dirs(fs, dirs, TIKU_TRK_VOLUME_MAX);
+}
+
+int
 tiku_trk_fs_trash_dirs_of(tiku_trk_fs_t *fs, const struct tiku_trk_volumes *v,
                           char out[][TIKU_TRK_PATH_MAX], int max)
 {
@@ -2050,6 +2096,14 @@ step_one(tiku_trk_fs_t *fs)
                      "Error copying file \"%.60s\": %.150s.", leaf_of(src),
                      err[0] ? err : "copy failed");
             return fail_ask(fs, msg, 1);
+        }
+        {
+            char srcdir[TIKU_TRK_PATH_MAX];
+
+            parent_of(src, srcdir, sizeof srcdir);
+            if (strcmp(srcdir, dstdir) != 0) {
+                copy_pose_info(fs, src, dstpath);
+            }
         }
         undo_push(fs, dstpath, src, 1);
         fs->prog.done++;

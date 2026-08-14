@@ -351,10 +351,12 @@ main(void)
               "PVL-hit", "and empty space finds nothing");
     }
     {   /* spatial memory survives a reload */
-        int px, py, qx, qy;
+        int px, py, qx, qy, ox, oy, rx, ry;
         tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
 
         tiku_trk_poseview_move_pose(v, p0, 200, 160, 1);
+        tiku_trk_poseview_set_origin(v, 37, 91);
+        tiku_trk_poseview_origin(v, &ox, &oy);
         tiku_trk_poseview_pose_location(v, p0, &px, &py);
         check(tiku_trk_poseview_save_state(v) >= 1, "PVL-021",
               "user-placed positions are written to the store");
@@ -371,6 +373,20 @@ main(void)
             }
             check(found, "PVL-021",
                   "the icon comes back exactly where it was left");
+        }
+        tiku_trk_poseview_origin(v, &rx, &ry);
+        check(rx == ox && ry == oy, "PVL-053",
+              "a saved scroll origin comes back with the folder");
+        {
+            tiku_trk_store_t *store = b->ops->state_store(b);
+            const char bad[] = "icon 32 999999 999999 999999 999999 0 0 -1 0";
+
+            (void)tiku_trk_state_write(store, dir, TIKU_TRK_ATTR_VIEW_STATE,
+                                       bad, sizeof bad - 1u);
+            (void)tiku_trk_poseview_restore_state(v);
+            tiku_trk_poseview_origin(v, &rx, &ry);
+            check(rx == 0 && ry == 0, "PVL-053",
+                  "absurd saved origins are reset to the top-left");
         }
     }
 
@@ -1198,6 +1214,55 @@ main(void)
               "rather than refusing silently -- a listing with no columns "
               "is a window showing nothing");
         (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM);
+    }
+
+    printf("\noriginal paths in Trash (MA-030)\n");
+    {
+        tiku_trk_store_t *st = (b->ops->state_store != NULL)
+                                   ? b->ops->state_store(b) : NULL;
+        tiku_trk_model_t trashed;
+        tiku_trk_pose_t *tp = NULL;
+        char trash[TIKU_TRK_PATH_MAX];
+        char path[TIKU_TRK_PATH_MAX];
+        char buf[128];
+
+        snprintf(trash, sizeof trash, "%s/.Trash", dir);
+        (void)mkdir(trash, 0755);
+        snprintf(path, sizeof path, "%.*s/gone.txt",
+                 (int)(sizeof path - 10u), trash);
+        {
+            FILE *f = fopen(path, "w");
+            if (f != NULL) { fputs("gone", f); fclose(f); }
+        }
+        memset(&trashed, 0, sizeof trashed);
+        snprintf(trashed.path, sizeof trashed.path, "%s", path);
+        snprintf(trashed.name, sizeof trashed.name, "gone.txt");
+        trashed.kind = TIKU_TRK_KIND_FILE;
+        trashed.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+        (void)tiku_trk_poseview_adopt(v, &trashed);
+        if (st != NULL) {
+            (void)tiku_trk_state_write(st, trash, TIKU_TRK_ATTR_ORIGINAL,
+                                       "/tmp/original/gone.txt", 22);
+        }
+        {
+            int i;
+            for (i = 0; i < tiku_trk_poseview_count(v); i++) {
+                tiku_trk_pose_t *candidate = tiku_trk_poseview_at(v, i);
+                if (candidate != NULL &&
+                    strcmp(candidate->model.path, path) == 0) {
+                    tp = candidate;
+                    break;
+                }
+            }
+        }
+        check(tp != NULL &&
+              strcmp(tiku_trk_poseview_cell_text(v, tp,
+                         TIKU_TRK_COL_ORIGINAL, buf, sizeof buf),
+                     "/tmp/original/gone.txt") == 0,
+              "MA-030",
+              "a Trash child finds an origin recorded on its ancestor");
+        (void)unlink(path);
+        (void)rmdir(trash);
     }
 
     printf("\ncolumns that show an ATTRIBUTE (CW-026)\n");

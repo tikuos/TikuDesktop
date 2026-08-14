@@ -197,6 +197,7 @@ typedef struct desktop {
     int                  nav_on;
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
+    tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
@@ -1319,6 +1320,7 @@ tracker_run(int argc, char **argv)
         return 1;
     }
     app.fs = tiku_trk_fs_new(app.backend);
+    (void)tiku_trk_fs_prepare_trash(app.fs);
     app.surf = tiku_desk_surface_new(DESK_W, DESK_H, TIKU_DESK_C_BACKDROP);
     app.row_h = LIST_ROW_H;
     app.desk = tiku_desk_workspace_new(app.surf);
@@ -1334,6 +1336,8 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, apply_select_model, &app);
     tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_session_open_store(app.backend);
+    tiku_trk_deskbar_set_store(app.deskbar, app.store);
+    (void)tiku_trk_deskbar_load_replicants(app.deskbar);
     tiku_trk_session_controller_init(&app.session, app.store, app.deskbar,
         &app.desktop_view, &app.folder_lifecycle);
     tiku_trk_find_window_set_store(&app.find_window, app.store);
@@ -2111,6 +2115,26 @@ tracker_run(int argc, char **argv)
                             (void)tiku_trk_deskbar_prefs_save(
                                 &app.deskbar_prefs_window.model, app.store);
                             break;
+                        case TIKU_TRK_DB_CLOCK_SECONDS:
+                        case TIKU_TRK_DB_CLOCK_DAY:
+                        case TIKU_TRK_DB_CLOCK_ZONE:
+                            if (pick.what == TIKU_TRK_DB_CLOCK_SECONDS) {
+                                app.deskbar_prefs_window.model.value.show_seconds =
+                                    !app.deskbar_prefs_window.model.value.show_seconds;
+                            } else if (pick.what == TIKU_TRK_DB_CLOCK_DAY) {
+                                app.deskbar_prefs_window.model.value.show_day_of_week =
+                                    !app.deskbar_prefs_window.model.value.show_day_of_week;
+                            } else {
+                                app.deskbar_prefs_window.model.value.show_timezone =
+                                    !app.deskbar_prefs_window.model.value.show_timezone;
+                            }
+                            tiku_trk_deskbar_settings_normalize(
+                                &app.deskbar_prefs_window.model.value);
+                            tiku_trk_deskbar_apply_settings(app.deskbar,
+                                &app.deskbar_prefs_window.model.value);
+                            (void)tiku_trk_deskbar_prefs_save(
+                                &app.deskbar_prefs_window.model, app.store);
+                            break;
                         default:
                             break;
                         }
@@ -2380,11 +2404,19 @@ tracker_run(int argc, char **argv)
                             app.press_y = ev.y;
                             app.press_row = row;
                             app.press_fl = fl;
+                            app.press_window = w;
                             app.press_down = 1;
                             app.press_menu = 0;
                             tiku_trk_drag_arm(&app.drag, ev.x,
                                               ev.y, 3u, mods, 1,
                                               w, fl->path);
+                            {
+                                tiku_trk_model_t source;
+                                tiku_trk_drag_set_source_virtual(&app.drag,
+                                    app.backend->ops->stat(app.backend,
+                                        fl->path, &source) == 0 &&
+                                    source.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+                            }
                             kn = tiku_trk_poseview_count(fl->view);
                             for (k = 0; k < kn; k++) {
                                 tiku_trk_pose_t *q =
@@ -2430,6 +2462,7 @@ tracker_run(int argc, char **argv)
                             app.press_y = ev.y;
                             app.press_row = row;
                             app.press_fl = fl;
+                            app.press_window = w;
                             app.press_down = 1;
                             app.press_menu = 0;
                             /* Armed on a pose, started only if the pointer
@@ -2441,6 +2474,13 @@ tracker_run(int argc, char **argv)
                                               ev.button, mods,
                                               twice ? 2 : 1,
                                               w, fl->path);
+                            {
+                                tiku_trk_model_t source;
+                                tiku_trk_drag_set_source_virtual(&app.drag,
+                                    app.backend->ops->stat(app.backend,
+                                        fl->path, &source) == 0 &&
+                                    source.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+                            }
                             if (row < 0 && ev.button == 1u) {
                                 /* Empty space: a sweep, not a click.  In
                                  * EVERY mode -- a list's rows are swept by
@@ -2700,12 +2740,21 @@ tracker_run(int argc, char **argv)
                                             app.surf->h });
                     app.dirty = 1;
                 }
+                if (!dropped && app.press_down && !app.press_menu &&
+                    app.press_window != NULL) {
+                    /* Content clicks raise on release, while movement has
+                     * already cleared press_down, leaving drag-out from a
+                     * background window click-through. */
+                    tiku_desk_workspace_activate(app.desk,
+                                                  app.press_window);
+                }
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_drag_target_reset(&app.drag_target);
                 /* A long press already put the menu up, so its release must
                  * not put a second one up (PVS-017). */
                 app.press_down = 0;
                 app.press_menu = 0;
+                app.press_window = NULL;
                 tiku_desk_workspace_end_track(app.desk);
                 break;
             }

@@ -43,6 +43,7 @@
 
 struct tiku_trk_deskbar {
     tiku_trk_backend_t  *backend;
+    tiku_trk_store_t     *store;
     tiku_trk_db_dock_t   dock;
     tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
     int                  order[TIKU_TRK_DB_TEAMS_MAX];
@@ -61,6 +62,9 @@ struct tiku_trk_deskbar {
     int                  menu_open;
     int                  calendar_open;
     int                  clock_menu_open;
+    int                  calendar_year;
+    int                  calendar_month;
+    int                  calendar_day;
     int                  win_menu_team;    /* -1 = none showing        */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
@@ -79,6 +83,31 @@ struct tiku_trk_deskbar {
     tiku_desk_rect_t     frame;
 };
 
+static void
+save_replicants(tiku_trk_deskbar_t *db)
+{
+    char data[TIKU_TRK_DB_TRAY_MAX * (TIKU_TRK_PATH_MAX + 20)];
+    size_t at = 0;
+    int i;
+
+    if (db == NULL || db->store == NULL ||
+        !tiku_trk_store_writable(db->store)) {
+        return;
+    }
+    data[0] = '\0';
+    for (i = 0; i < db->tray_count; i++) {
+        int n = snprintf(data + at, sizeof data - at, "%s\t%s\n",
+                         db->tray[i].label, db->tray[i].path);
+        if (n < 0 || (size_t)n >= sizeof data - at) {
+            break;
+        }
+        at += (size_t)n;
+    }
+    (void)tiku_trk_state_write(db->store, TIKU_TRK_KEY_SESSION,
+                               TIKU_TRK_ATTR_REPLICANTS, data, at);
+    (void)tiku_trk_store_flush(db->store);
+}
+
 /** @brief The last component of @p path, which is what a menu row shows. */
 static const char *
 leaf_name(const char *path)
@@ -86,6 +115,36 @@ leaf_name(const char *path)
     const char *slash = strrchr(path, '/');
 
     return (slash != NULL && slash[1] != '\0') ? slash + 1 : path;
+}
+
+static int
+calendar_days(int year, int month)
+{
+    static const int days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31,
+                                 30, 31 };
+    int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+
+    if (month == 2) {
+        return days[1] + leap;
+    }
+    return (month >= 1 && month <= 12) ? days[month - 1] : 31;
+}
+
+static void
+calendar_shift(tiku_trk_deskbar_t *db, int months, int years)
+{
+    int month;
+
+    if (db == NULL) {
+        return;
+    }
+    month = db->calendar_month + months + years * 12;
+    while (month < 1) { month += 12; db->calendar_year--; }
+    while (month > 12) { month -= 12; db->calendar_year++; }
+    db->calendar_month = month;
+    if (db->calendar_day > calendar_days(db->calendar_year, month)) {
+        db->calendar_day = calendar_days(db->calendar_year, month);
+    }
 }
 
 static void
@@ -671,6 +730,11 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
     if (db == NULL || db->tray_count >= TIKU_TRK_DB_TRAY_MAX) {
         return -1;
     }
+    for (int i = 0; i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].path, path) == 0) {
+            return i;
+        }
+    }
     r = &db->tray[db->tray_count++];
     snprintf(r->label, sizeof r->label, "%s", label);
     snprintf(r->path, sizeof r->path, "%s", path);
@@ -682,6 +746,88 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
 
         if (db->backend->ops->stat(db->backend, path, &m) == 0) {
             r->desc_known = tiku_trk_desc_parse(m.facts.meta, &r->desc);
+        }
+    }
+    save_replicants(db);
+    return 0;
+}
+
+void
+tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db, tiku_trk_store_t *store)
+{
+    if (db != NULL) {
+        db->store = store;
+    }
+}
+
+int
+tiku_trk_deskbar_load_replicants(tiku_trk_deskbar_t *db)
+{
+    char data[TIKU_TRK_DB_TRAY_MAX * (TIKU_TRK_PATH_MAX + 20)];
+    int n, loaded = 0;
+    char *line;
+
+    if (db == NULL || db->store == NULL) {
+        return 0;
+    }
+    n = tiku_trk_state_read(db->store, TIKU_TRK_KEY_SESSION,
+                            TIKU_TRK_ATTR_REPLICANTS, data, sizeof data - 1u);
+    if (n <= 0) {
+        return 0;
+    }
+    data[n] = '\0';
+    line = data;
+    while (line != NULL && *line != '\0') {
+        char *next = strchr(line, '\n');
+        char *tab;
+
+        if (next != NULL) { *next++ = '\0'; }
+        tab = strchr(line, '\t');
+        if (tab != NULL) {
+            *tab++ = '\0';
+            if (tab[0] != '\0' && db->backend->ops->stat(db->backend, tab,
+                                                          &(tiku_trk_model_t){0}) == 0 &&
+                tiku_trk_deskbar_add_replicant(db, line, tab) >= 0) {
+                loaded++;
+            }
+        }
+        line = next;
+    }
+    save_replicants(db); /* prune stale entries and normalise the record */
+    return loaded;
+}
+
+int
+tiku_trk_deskbar_remove_replicant(tiku_trk_deskbar_t *db, const char *path)
+{
+    int i;
+
+    if (db == NULL || path == NULL) { return 0; }
+    for (i = 0; i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].path, path) == 0) {
+            memmove(&db->tray[i], &db->tray[i + 1],
+                    (size_t)(db->tray_count - i - 1) * sizeof db->tray[0]);
+            db->tray_count--;
+            save_replicants(db);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_trk_deskbar_repoint_replicant(tiku_trk_deskbar_t *db,
+                                   const char *old_path,
+                                   const char *new_path)
+{
+    int i;
+
+    if (db == NULL || old_path == NULL || new_path == NULL) { return 0; }
+    for (i = 0; i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].path, old_path) == 0) {
+            snprintf(db->tray[i].path, sizeof db->tray[i].path, "%s", new_path);
+            save_replicants(db);
+            return 1;
         }
     }
     return 0;
@@ -703,6 +849,8 @@ tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db)
         char *nl;
 
         if (n < 0) {
+            changed += tiku_trk_deskbar_remove_replicant(db, r->path);
+            i--;
             continue;
         }
         buf[n] = '\0';
@@ -1237,16 +1385,54 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     if (db->settings.show_clock) {
         time_t now = time(NULL);
         struct tm tmv;
-        char clock[32];
+        char clock[64];
         int cw;
 
         (void)localtime_r(&now, &tmv);
-        /* Short date and time, as the original shows by default. */
-        snprintf(clock, sizeof clock, "%d %s  %02d:%02d", tmv.tm_mday,
-                 (const char *[]){ "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                   "Jul", "Aug", "Sep", "Oct", "Nov",
-                                   "Dec" }[tmv.tm_mon],
-                 tmv.tm_hour, tmv.tm_min);
+        /* Short date and time, with optional clock detail settings.  The
+         * format is built once per draw so changing a preference immediately
+         * changes both the text and the width reserved for it (DB-071). */
+        {
+            char date[24];
+            const char *dow[] = { "Sun", "Mon", "Tue", "Wed", "Thu",
+                                  "Fri", "Sat" };
+
+            snprintf(date, sizeof date, "%d %s", tmv.tm_mday,
+                     (const char *[]){ "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov",
+                                       "Dec" }[tmv.tm_mon]);
+            if (db->settings.show_day_of_week && db->settings.show_timezone &&
+                db->settings.show_seconds) {
+                snprintf(clock, sizeof clock, "%s %s %02d:%02d:%02d %s",
+                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
+                         tmv.tm_sec, tmv.tm_zone != NULL ? tmv.tm_zone : "local");
+            } else if (db->settings.show_day_of_week && db->settings.show_timezone) {
+                snprintf(clock, sizeof clock, "%s %s %02d:%02d %s",
+                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
+                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
+            } else if (db->settings.show_day_of_week && db->settings.show_seconds) {
+                snprintf(clock, sizeof clock, "%s %s %02d:%02d:%02d",
+                         dow[tmv.tm_wday], date, tmv.tm_hour, tmv.tm_min,
+                         tmv.tm_sec);
+            } else if (db->settings.show_day_of_week) {
+                snprintf(clock, sizeof clock, "%s %s %02d:%02d", dow[tmv.tm_wday],
+                         date, tmv.tm_hour, tmv.tm_min);
+            } else if (db->settings.show_timezone && db->settings.show_seconds) {
+                snprintf(clock, sizeof clock, "%s %02d:%02d:%02d %s", date,
+                         tmv.tm_hour, tmv.tm_min, tmv.tm_sec,
+                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
+            } else if (db->settings.show_timezone) {
+                snprintf(clock, sizeof clock, "%s %02d:%02d %s", date,
+                         tmv.tm_hour, tmv.tm_min,
+                         tmv.tm_zone != NULL ? tmv.tm_zone : "local");
+            } else if (db->settings.show_seconds) {
+                snprintf(clock, sizeof clock, "%s %02d:%02d:%02d", date,
+                         tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+            } else {
+                snprintf(clock, sizeof clock, "%s %02d:%02d", date,
+                         tmv.tm_hour, tmv.tm_min);
+            }
+        }
         cw = tiku_desk_text_width(f, clock);
         tiku_desk_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
                        y + (CLOCK_H - f->height) / 2 + f->ascent, clock,
@@ -1310,22 +1496,30 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         tiku_desk_ui_menu(s, m, items, 4, -1);
     }
     if (db->clock_menu_open) {
-        const char *items[] = { db->settings.show_clock ? "Hide clock"
-                                                        : "Show clock" };
+        const char *items[] = {
+            db->settings.show_clock ? "Hide clock" : "Show clock",
+            db->settings.show_seconds ? "Hide seconds" : "Show seconds",
+            db->settings.show_day_of_week ? "Hide day of week" : "Show day of week",
+            db->settings.show_timezone ? "Hide time zone" : "Show time zone"
+        };
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               CLOCK_H - 32, 126, 28 };
-        tiku_desk_ui_menu(s, m, items, 1, -1);
+                               CLOCK_H - 32, 170, 4 * 28 };
+        tiku_desk_ui_menu(s, m, items, 4, -1);
     }
     if (db->calendar_open) {
         /* The clock's calendar: a month grid with steppers, popped beside
          * the bar and dismissed by the next click anywhere. */
-        time_t now = time(NULL);
         struct tm tmv;
         tiku_desk_rect_t c = { db->frame.x - 190, db->frame.h - 150, 186,
                                148 };
         int col, rowi, first, days;
 
-        (void)localtime_r(&now, &tmv);
+        memset(&tmv, 0, sizeof tmv);
+        tmv.tm_year = db->calendar_year - 1900;
+        tmv.tm_mon = db->calendar_month - 1;
+        tmv.tm_mday = 1;
+        tmv.tm_isdst = -1;
+        (void)mktime(&tmv);
         tiku_desk_fill(s, c, TIKU_DESK_C_PANEL);
         tiku_desk_frame(s, c, dark);
         tiku_desk_bevel(s, tiku_desk_inset(c, 1),
@@ -1344,23 +1538,23 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                 (tiku_desk_rect_t){ c.x, c.y + 2, c.w, 18 }, head,
                 TIKU_DESK_C_TEXT);
         }
-        first = (tmv.tm_wday - (tmv.tm_mday - 1) % 7 + 7) % 7;
-        days = 31;
+        first = tmv.tm_wday;
+        days = calendar_days(db->calendar_year, db->calendar_month);
         for (rowi = 0; rowi < 6; rowi++) {
             for (col = 0; col < 7; col++) {
                 int day = rowi * 7 + col - first + 1;
-                char num[4];
+                char num[12];
                 tiku_desk_rect_t cell = { c.x + 6 + col * 25,
                                           c.y + 22 + rowi * 20, 24, 18 };
                 if (day < 1 || day > days) {
                     continue;
                 }
-                if (day == tmv.tm_mday) {
+                if (day == db->calendar_day) {
                     tiku_desk_fill(s, cell, TIKU_DESK_C_SELECT);
                 }
                 snprintf(num, sizeof num, "%d", day);
                 (void)tiku_desk_text_centered(s, f, cell, num,
-                    (day == tmv.tm_mday) ? TIKU_DESK_C_SELTEXT
+                    (day == db->calendar_day) ? TIKU_DESK_C_SELTEXT
                                          : TIKU_DESK_C_TEXT);
             }
         }
@@ -1391,17 +1585,71 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             y >= db->frame.y + db->frame.h - CLOCK_H - PAD) {
             return 1;
         }
+        {
+            tiku_desk_rect_t c = { db->frame.x - 190,
+                                   db->frame.y + db->frame.h - 150, 186, 148 };
+            int col, rowi, first, day;
+            struct tm tmv;
+            time_t shown = 0;
+
+            memset(&tmv, 0, sizeof tmv);
+            tmv.tm_year = db->calendar_year - 1900;
+            tmv.tm_mon = db->calendar_month - 1;
+            tmv.tm_mday = 1;
+            tmv.tm_isdst = -1;
+            shown = mktime(&tmv);
+            (void)localtime_r(&shown, &tmv);
+            first = tmv.tm_wday;
+            if (x >= c.x + 4 && x < c.x + 48 && y >= c.y + 2 &&
+                y < c.y + 20) {
+                calendar_shift(db, -1, 0);
+                return 1;
+            }
+            if (x >= c.x + 48 && x < c.x + 92 && y >= c.y + 2 &&
+                y < c.y + 20) {
+                calendar_shift(db, 1, 0);
+                return 1;
+            }
+            if (x >= c.x + 94 && x < c.x + 138 && y >= c.y + 2 &&
+                y < c.y + 20) {
+                calendar_shift(db, 0, -1);
+                return 1;
+            }
+            if (x >= c.x + 138 && x < c.x + 182 && y >= c.y + 2 &&
+                y < c.y + 20) {
+                calendar_shift(db, 0, 1);
+                return 1;
+            }
+            if (x >= c.x + 6 && x < c.x + 181 && y >= c.y + 22 &&
+                y < c.y + 142) {
+                col = (x - c.x - 6) / 25;
+                rowi = (y - c.y - 22) / 20;
+                day = rowi * 7 + col - first + 1;
+                if (day >= 1 && day <= calendar_days(db->calendar_year,
+                                                     db->calendar_month)) {
+                    db->calendar_day = day;
+                    return 1;
+                }
+            }
+        }
         db->calendar_open = 0;
         return 1;
     }
     if (db->clock_menu_open) {
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               CLOCK_H - 32, 126, 28 };
+                               CLOCK_H - 32, 170, 4 * 28 };
         int inside = x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h;
+        int item = inside ? (y - m.y) / 28 : -1;
         db->clock_menu_open = 0;
-        if (inside) {
+        if (inside && item == 0) {
             pick->what = db->settings.show_clock ? TIKU_TRK_DB_CLOCK_HIDE
                                                   : TIKU_TRK_DB_CLOCK_SHOW;
+        } else if (inside && item == 1) {
+            pick->what = TIKU_TRK_DB_CLOCK_SECONDS;
+        } else if (inside && item == 2) {
+            pick->what = TIKU_TRK_DB_CLOCK_DAY;
+        } else if (inside && item == 3) {
+            pick->what = TIKU_TRK_DB_CLOCK_ZONE;
         }
         return 1;
     }
@@ -1530,6 +1778,13 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (secondary) {
             db->clock_menu_open = 1;
         } else {
+            time_t now = time(NULL);
+            struct tm tmv;
+
+            (void)localtime_r(&now, &tmv);
+            db->calendar_year = 1900 + tmv.tm_year;
+            db->calendar_month = 1 + tmv.tm_mon;
+            db->calendar_day = tmv.tm_mday;
             db->calendar_open = 1;
         }
     } else if (secondary && y >= db->frame.y + db->frame.h -
@@ -1537,6 +1792,15 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         db->clock_menu_open = 1;
     }
     return 1;
+}
+
+void
+tiku_trk_deskbar_calendar_date(const tiku_trk_deskbar_t *db, int *year,
+                               int *month, int *day)
+{
+    if (year != NULL) { *year = db != NULL ? db->calendar_year : 0; }
+    if (month != NULL) { *month = db != NULL ? db->calendar_month : 0; }
+    if (day != NULL) { *day = db != NULL ? db->calendar_day : 0; }
 }
 
 /*---------------------------------------------------------------------------*/

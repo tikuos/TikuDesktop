@@ -120,6 +120,13 @@ tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v)
 
     if (f != NULL) {
         f->value = v;
+        if (strcmp(name, "SingleWindowBrowse") == 0 && v == 0) {
+            tiku_trk_pref_t *nav = tiku_trk_prefs_find(p, "ShowNavigator");
+
+            if (nav != NULL) {
+                nav->value = 0;
+            }
+        }
     }
 }
 

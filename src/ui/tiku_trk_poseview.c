@@ -221,6 +221,71 @@ column_width_of(const tiku_trk_poseview_t *v, int field)
     return 140;
 }
 
+/** @brief Whether @p path is inside a real filesystem Trash directory. */
+static int
+path_in_trash(const char *path)
+{
+    const char *p;
+
+    if (path == NULL) {
+        return 0;
+    }
+    p = path;
+    while ((p = strstr(p, "/.Trash")) != NULL) {
+        char c = p[7];
+
+        if (c == '\0' || c == '/') {
+            return c == '/';
+        }
+        p += 7;
+    }
+    return 0;
+}
+
+/** @brief Read a Trash origin, walking ancestors for folder-level records. */
+static int
+original_path_text(tiku_trk_poseview_t *v, const char *path, char *out,
+                   size_t max)
+{
+    tiku_trk_store_t *store;
+    char probe[TIKU_TRK_PATH_MAX];
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (v == NULL || path == NULL || !path_in_trash(path) ||
+        v->backend == NULL || v->backend->ops->state_store == NULL) {
+        return 0;
+    }
+    store = v->backend->ops->state_store(v->backend);
+    if (store == NULL) {
+        return 0;
+    }
+    snprintf(probe, sizeof probe, "%s", path);
+    for (;;) {
+        int n = tiku_trk_state_read(store, probe, TIKU_TRK_ATTR_ORIGINAL,
+                                    out, max - 1u);
+
+        if (n > 0) {
+            out[n] = '\0';
+            return 1;
+        }
+        if (strstr(probe, "/.Trash/") == NULL) {
+            break;
+        }
+        {
+            char *slash = strrchr(probe, '/');
+
+            if (slash == NULL || slash == probe) {
+                break;
+            }
+            *slash = '\0';
+        }
+    }
+    return 0;
+}
+
 /**
  * @brief The text a column shows, formatted for a given width.
  *
@@ -292,6 +357,8 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
                  p->model.path);
         return buf;
     }
+    case TIKU_TRK_COL_ORIGINAL:
+        return original_path_text(v, p->model.path, buf, max) ? buf : "-";
     default:
         if (field >= TIKU_TRK_COL_ATTR_BASE) {
             int at = field - TIKU_TRK_COL_ATTR_BASE;
@@ -417,6 +484,20 @@ apply_visibility(tiku_trk_poseview_t *v)
         v->poses[i].index = i;
     }
     v->count = w;
+}
+
+/** @brief Reject a saved scroll origin that could place the view nowhere. */
+static int
+sane_scroll_origin(int value, int allow_negative)
+{
+    if (value < -TIKU_TRK_SANE_LOCATION ||
+        value > TIKU_TRK_SANE_LOCATION) {
+        return 0;
+    }
+    if (!allow_negative && value < 0) {
+        return 0;
+    }
+    return value;
 }
 
 /** @brief Natural order: digits inside names compare by value, not by digit. */
@@ -3410,11 +3491,15 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
                     /* Clamped when the view is next given a viewport: a
                      * record written on a bigger screen would otherwise
                      * open the folder looking empty (PVL-053). */
-                    v->scroll = (sc > 0) ? sc : 0;
-                    v->icon_x = ix;
-                    v->icon_y = iy;
-                    v->mini_x = mx;
-                    v->mini_y = my;
+                    /* A damaged state file must not strand a folder beyond
+                     * its content.  List scroll is a non-negative row
+                     * offset; spatial origins may be negative while a
+                     * large icon is being centred, but are still bounded. */
+                    v->scroll = sane_scroll_origin(sc, 0);
+                    v->icon_x = sane_scroll_origin(ix, 1);
+                    v->icon_y = sane_scroll_origin(iy, 1);
+                    v->mini_x = sane_scroll_origin(mx, 1);
+                    v->mini_y = sane_scroll_origin(my, 1);
                 }
                 if (got >= 9 && s1 >= 0 && s1 < TIKU_TRK_COL_KINDS) {
                     /* A record from before the keys were written has no
@@ -4809,6 +4894,7 @@ column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
     case TIKU_TRK_COL_DATE:  *title = "Modified"; *width = 150; break;
     case TIKU_TRK_COL_PATH:  *title = "Location"; *width = 200; break;
     case TIKU_TRK_COL_PERM:  *title = "Permissions"; *width = 90; break;
+    case TIKU_TRK_COL_ORIGINAL: *title = "Original path"; *width = 220; break;
     default:                 *title = "Name";  *width = 240; break;
     }
 }
@@ -5169,7 +5255,7 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
             rec[i].alignment < TIKU_TRK_ALIGN_LEFT ||
             rec[i].alignment > TIKU_TRK_ALIGN_CENTER ||
             rec[i].field < 0 ||
-            (rec[i].field > TIKU_TRK_COL_PERM &&
+            (rec[i].field > TIKU_TRK_COL_ORIGINAL &&
              (rec[i].field < TIKU_TRK_COL_ATTR_BASE ||
               rec[i].field >= TIKU_TRK_COL_ATTR_BASE +
                               TIKU_TRK_COL_ATTR_MAX))) {

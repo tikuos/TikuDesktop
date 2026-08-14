@@ -59,6 +59,7 @@ typedef struct {
     int  caret;
     int  sel_a, sel_b;              /* equal means nothing is selected     */
     int  active;
+    int  editable;                  /* selectable-only fields keep focus   */
     /* Characters this field will not accept at all.  A name's illegal set
      * belongs to the STORE -- a namespace path and a file name forbid
      * different things -- so it is supplied rather than hardcoded. */
@@ -80,6 +81,9 @@ void tiku_trk_edit_start(tiku_trk_edit_t *e, const char *text);
  * Set after starting.  NULL accepts anything printable.
  */
 void tiku_trk_edit_deny(tiku_trk_edit_t *e, const char *deny);
+
+/** @brief Keep the field selectable while refusing text mutations. */
+void tiku_trk_edit_set_editable(tiku_trk_edit_t *e, int editable);
 
 /** @brief Feed one key.  @p ch is used only for TIKU_TRK_EDIT_CHAR. */
 tiku_trk_edit_result_t tiku_trk_edit_key(tiku_trk_edit_t *e,

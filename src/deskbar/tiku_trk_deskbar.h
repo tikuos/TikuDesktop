@@ -18,6 +18,7 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_model.h"
+#include "tiku_trk_state.h"
 
 #define TIKU_TRK_DB_TEAMS_MAX   8
 #define TIKU_TRK_DB_WINS_MAX   16
@@ -243,6 +244,9 @@ typedef enum {
     TIKU_TRK_DB_QUIT,
     TIKU_TRK_DB_CLOCK_HIDE,
     TIKU_TRK_DB_CLOCK_SHOW,
+    TIKU_TRK_DB_CLOCK_SECONDS,
+    TIKU_TRK_DB_CLOCK_DAY,
+    TIKU_TRK_DB_CLOCK_ZONE,
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -252,6 +256,19 @@ typedef struct {
 } tiku_trk_db_pick_t;
 
 tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_trk_backend_t *backend);
+
+/** @brief Attach the durable store used for tray subscriptions. */
+void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,
+                                tiku_trk_store_t *store);
+/** @brief Load saved tray paths, pruning entries that no longer resolve. */
+int tiku_trk_deskbar_load_replicants(tiku_trk_deskbar_t *db);
+/** @brief Remove a tray subscription whose source disappeared. */
+int tiku_trk_deskbar_remove_replicant(tiku_trk_deskbar_t *db,
+                                      const char *path);
+/** @brief Update a tray source after the backing node was moved. */
+int tiku_trk_deskbar_repoint_replicant(tiku_trk_deskbar_t *db,
+                                       const char *old_path,
+                                       const char *new_path);
 
 void tiku_trk_deskbar_free(tiku_trk_deskbar_t *db);
 
@@ -408,6 +425,9 @@ void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
 
 /** @brief Whether the clock's calendar is showing. */
 int tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db);
+/** @brief Calendar's currently displayed month (1..12) and year/day. */
+void tiku_trk_deskbar_calendar_date(const tiku_trk_deskbar_t *db,
+                                    int *year, int *month, int *day);
 int tiku_trk_deskbar_clock_visible(const tiku_trk_deskbar_t *db);
 void tiku_trk_deskbar_set_clock_visible(tiku_trk_deskbar_t *db, int visible);
 void tiku_trk_deskbar_close_calendar(tiku_trk_deskbar_t *db);

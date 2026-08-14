@@ -103,6 +103,10 @@ tiku_trk_folder_actions_invoke(tiku_desk_workspace_t *workspace,
         (void)tiku_trk_poseview_toggle_column(folder->view,
                                                TIKU_TRK_COL_PERM);
         return 1;
+    case TIKU_TRK_CMD_COL_ORIGINAL:
+        (void)tiku_trk_poseview_toggle_column(folder->view,
+                                               TIKU_TRK_COL_ORIGINAL);
+        return 1;
     case TIKU_TRK_CMD_COL_CAP:
         (void)tiku_trk_poseview_toggle_column(folder->view,
                                                TIKU_TRK_COL_CAP);

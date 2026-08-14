@@ -98,6 +98,7 @@ typedef struct {
     int      count;
     char     path[TIKU_TRK_DRAG_MAX][TIKU_TRK_PATH_MAX];
     char     src_dir[TIKU_TRK_PATH_MAX];
+    int      src_virtual;          /* source is a merged/namespace view */
     void    *src_win;               /* opaque owner token                */
     /* Where each item sat when the drag began, so a drop can put them
      * down in the same arrangement rather than in a heap (PVS-045). */
@@ -125,6 +126,9 @@ void tiku_trk_drag_reset(tiku_trk_drag_t *d);
 void tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
                        unsigned mods, int clicks, void *src_win,
                        const char *src_dir);
+
+/** @brief Mark a drag that originated in a virtual directory. */
+void tiku_trk_drag_set_source_virtual(tiku_trk_drag_t *d, int virtual_);
 
 /** @brief Add one item to what the drag carries (PVS-033). */
 int tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path);

@@ -827,11 +827,11 @@ Pulse compares Extent() and LeftTop() against fLastExtent/fLastLeftTop and calls
 **PORT:** A range handed to a held bar is remembered rather than taken -- it would make the thumb jump out from under the pointer -- and applied on release. It is not a pulse that notices: the range is offered every frame, and the bar decides whether it can take it.  
 *src/tiku_trk_scroll.c:tiku_trk_scroll_set_range/_release; tests/test_scroll.c*
 
-#### PVL-053 · polish · open
+#### PVL-053 · polish · done
 **A corrupt or absurd saved scroll origin is silently reset to the top-left instead of scrolling into nowhere.**  
 PinPointToValidRange zeroes any coordinate that is NaN (detected by the deliberate !(x>=0) && !(x<=0) test) or outside ±40000. Applied on InitCommon, SetViewMode, SwitchDir and to every restored pose location.  
 `PoseView.cpp` → `BPoseView::PinPointToValidRange`
-**BLOCKED:** Persisted scroll origins: the saved viewstate record is only "<mode> <size>" (src/tiku_trk_poseview.c:2514-2523), so no scroll origin is ever restored and there is nothing to sanitize. (The pose-location half of the sanity idea does exist: restored positions beyond TIKU_TRK_SANE_LOCATION are refused, src/tiku_trk_poseview.c:2480-2485.)  
+**PORT:** View state stores list and spatial origins alongside mode, size, sort keys and pose positions. Restore bounds every origin to the sane range and resets corrupt records to the top-left; verified by `tests/test_poseview.c`.  
 
 #### PVL-054 · core · done
 **Selecting or arrow-keying to an item scrolls it into view, minimally, and in list mode only vertically.**  
@@ -844,20 +844,20 @@ KeyDown: list mode maps Home/End to MoveOrChangePoseSelection(0 / count-1) and P
 `PoseView.cpp` → `BPoseView::KeyDown / BPoseView::ScrollView`  
 **PORT:** Both named defects are addressed in the model layer — the icon-mode branch exists (selection untouched, scroll moved) and the page is now derived, `page = visible_rows > 1 ? visible_rows - 1 : 1`. But the derivation only works where something tells the view its height, and the single-window app never calls set_visible_rows(): it computes visible_rows(a) locally for drawing (app.c:107-113) and set_visible_rows has exactly one caller, desktop.c:217. So in app.c v->visible_rows stays 0 and page collapses to 1. Probed: with visible_rows unset, PageDown moves the selection one row; with it set to 3 it correctly moves two. This matters because app.c is the ONLY shell that binds the page keys — desktop.c maps just Up/Down/Home/End (:2236-2242). The icon-mode scroll half is also unrendered, as for PVK-010: draw_icons ignores v->scroll.
 
-#### PVL-056 · important · open
+#### PVL-056 · important · done
 **Dragging toward an edge auto-scrolls the view, faster the further past the edge the pointer is.**  
 CheckAutoScroll defines a kBorderHeight (20) band above the top (extended by the title view height in list mode), a B_H_SCROLL_BAR_HEIGHT band below, a 6px band left and a B_V_SCROLL_BAR_WIDTH band right, and only scrolls in a direction where bounds still lie inside the extent. A drag scrolls at fAutoScrollInc (20); a rubber-band selection scrolls at fAutoScrollInc/4 within kSlowScrollBucket (30) of the edge and fAutoScrollInc/1.5 beyond it, and re-evaluates the selection rect afterwards so the rubber band follows the scroll without mouse movement.  
 `PoseView.cpp` → `BPoseView::CheckAutoScroll`  
 **VERIFIER CORRECTION:** Speed is variable only for rubber-band selection (fAutoScrollInc/4 within kSlowScrollBucket=30 px, fAutoScrollInc/1.5 beyond). During a *drag* the increment is the constant fAutoScrollInc (20) and the trigger is containment in a fixed border band outside the view — no distance scaling (BPoseView::CheckAutoScroll, PoseView.cpp:10023). The details field of both rows states this correctly; only the headline is wrong.
-**MISSING:** Only the VERTICAL edges scroll. The desktop's drag and its band both cross a border band and then scroll, at two speeds -- the further past the edge, the bigger the step -- but the left and right bands are absent, so a wide icon arrangement cannot be reached by dragging toward its side.  
-*src/tiku_trk_desktop.c (AUTOSCROLL_BAND/AUTOSCROLL_FAST: the drag block and the band block)*  
-*Shell: desktop*  
+**PORT:** Drag hover now watches both horizontal and vertical content edges. Icon/mini-icon views move their pixel origin in the corresponding direction, retain the delayed/fast overshoot behavior, and list mode keeps its row-only scroll semantics.
+*src/ui/input/tiku_trk_drag_target.c:auto_scroll*
+**PORT:** The desktop drag controller applies the delayed edge rule to vertical and spatial horizontal origins, with a faster step for larger overshoot; list mode remains row-based.
 
-#### PVL-057 · polish · open
+#### PVL-057 · polish · done
 **Auto-scroll does not start instantly: the pointer must leave the hot border and then sit in it for over half a second.**  
 HandleAutoScroll state machine kWaitForTransition → kDelayAutoScroll → kAutoScrollOn, with a snooze(600000) re-check in the delay state; any button release returns to kAutoScrollOff and restores the 500 ms pulse rate. The pulse rate is raised to 20 ms when a rubber-band selection begins.  
 `PoseView.cpp` → `BPoseView::HandleAutoScroll / BPoseView::_BeginSelectionRect`
-**BLOCKED:** The same absence as PVL-056: with no auto-scroll at all there is no state machine to delay it (no kWaitForTransition/kDelayAutoScroll analogue; grep over src/ is empty).  
+**PORT:** `scroll_at` arms only after the pointer enters an edge, requires a 600 ms hold, and resets when it leaves; the same controller drives the later fast-step state.  
 
 #### PVL-058 · important · partial
 **Enlarging a window whose content is scrolled past the extent scrolls the content back so it stays anchored to the window, instead of leaving blank space.**  
@@ -1171,13 +1171,15 @@ HandleDropCommon's kPlainTextMimeType branch (and the equivalent bitmap branch b
 `PoseView.cpp` → `BPoseView::HandleDropCommon`
 **WAIVER CANDIDATE:** Same premise as PVL-100 — text/bitmap payloads dropped from another application: there is no inbound cross-application drop channel (no XDND, grep empty) and no clipping-file creation code (grep 'clipping' over src/ is empty). Waiver candidate.  
 
-#### PVL-102 · important · partial ⟨found by verification⟩
+#### PVL-102 · important · done ⟨found by verification⟩
 **Queries, query templates and virtual directories count as read-only destinations even on a writable disk, which is what greys out New folder, Cut and Paste inside a query window.**  
 BPoseView::TargetVolumeIsReadOnly returns true for IsQuery() || IsQueryTemplate() || IsVirtualDirectory() before it ever consults BVolume::IsReadOnly(). TShortcuts::TargetIsReadOnly() is a thin wrapper over it and feeds UpdateNewFolderItem, UpdateNewTemplatesItem and UpdateCutItem.  
 `PoseView.cpp` → `BPoseView::TargetVolumeIsReadOnly`  
 **TIKU:** "Writable" is a per-node capability, not a per-volume one — this is the case that proves it: same disk, different answer depending on what the window represents.  
-**MISSING:** A per-window read-only destination flag exists and greys New folder/Cut/Paste, but it is set only from path prefixes (/sys, /dev, /proc); c.is_query is declared in the context struct and never assigned or read, and is_virtual blocks only Cut — so a query window is not a read-only destination.  
-*src/tiku_trk_desktop.c:menu_ctx (187-193); src/tiku_trk_shortcuts.c:tiku_trk_sc_enabled (247-264); is_query unused (tiku_trk_shortcuts.h:100)*
+**PORT:** Query, query-template and virtual-directory contexts are treated as
+read-only destinations even on writable media.  Paste and New folder now
+require neither `is_query` nor `is_virtual`, alongside the existing target
+capability gate; `tests/test_menu.c` covers both refusals.
 
 #### PVL-103 · important · partial ⟨found by verification⟩
 **The root/Disks window keeps a separate saved column layout and view state from ordinary folders.**  
@@ -1357,13 +1359,11 @@ tests/shell/renamefield.script*
 Icon mode iterates poseCount-1 down to 0; list mode index = (int32)(where.y / fListElemHeight) and *poseIndex is written even when the point misses the pose.  
 `PoseView.cpp` → `BPoseView::FindPose`  
 
-#### PVS-022 · important · open
+#### PVS-022 · important · done
 **Clicking a pose in an inactive window raises the window only on mouse-up, and not at all if the click turned into a drag - so you can drag an item out of a background window without bringing it forward. Clicking empty space raises immediately.**  
 fTrackMouseUp = !secondaryMouseButtonDown set in MouseDown; MouseUp does Window()->Activate() if still set; MouseDragged and MouseLongDown clear it. The empty-space branch of MouseDown calls window->Activate() + UpdateIfNeeded() directly.  
 `PoseView.cpp` → `BPoseView::MouseDown / BPoseView::MouseUp / BPoseView::MouseDragged`  
-**CHECKED:** The port has no deferred-raise mechanism at all: a content click never activates the window on press or release, there is no fTrackMouseUp-style flag for a drag to clear, and an empty-space click does not raise either — the drag-out-of-a-background-window property is a byproduct of never raising, not an implementation of the rule.  
-*src/tiku_trk_desktop.c:1663-1671 (activate only when hit != TIKU_TRK_HIT_CONTENT); ButtonRelease at :1907-1913 does no activation*  
-**WAIVER CANDIDATE:** The multi-window shell deliberately does not raise on a content click (the click-through comment states it), and the single-window shell delegates raising to the host window manager and cannot express the rule at all.  Reclassified from WIRING 2026-08-12: honouring it means reversing a stated design decision, which is the user's call.  
+**PORT:** Content presses remember their window and activate it only on release when no drag or menu took over; pointer movement clears the pending raise. Empty-space and chrome clicks retain immediate activation semantics. `src/shell/tiku_trk_desktop.c`.
 #### PVS-023 · important · done
 **When the window deactivates the selection stops being drawn as selected (unless "show selection when inactive" is on) and is restored on reactivation; the pivot survives the round trip.**  
 WindowActivated -> ShowSelection(active); ShowSelection moves fSelectionPivotPose into fRealPivotPose on hide and back on show. With fShowSelectionWhenInactive the pose flags are left set and only redrawn. Deactivating also commits any active inline edit.  
@@ -2259,11 +2259,11 @@ AttributeChanged loops up to 100 times calling poseModel->OpenNode(), breaking o
 AttributeChanged iterates fPoseList->FindAllPoses(&itemNode), which matches direct node_ref, LinkTo() node_ref, and (for unresolved links) a freshly resolved Model; symlink poses redirect the update to poseModel->ResolveIfLink().  
 `PoseView.cpp` → `BPoseView::AttributeChanged / PoseList::FindAllPoses`  
 
-#### PVN-033 · polish · open
+#### PVN-033 · polish · done
 **Deleting an icon attribute reverts the row to its generic icon instead of leaving the stale custom icon painted.**  
 When Model::IconAttrChanged(attrName) is true the info.type is synthesized by name (kAttrIcon->B_VECTOR_ICON_TYPE, kAttrLargeIcon->'ICON', kAttrMiniIcon->'MICN', kAttrThumbnail->B_RAW_TYPE) with info.size = 0, because GetAttrInfo would fail on a removed attribute.  
 `PoseView.cpp` → `BPoseView::AttributeChanged`
-**SUBSYSTEM:** Per-node custom icons. No icon attribute exists to delete: the state store's whole attribute vocabulary is pinfo/columns/viewstate/original_path (src/tiku_trk_state.h:26-32), and model.h states it outright — 'a node cannot yet carry bespoke art' (src/tiku_trk_model.h:126-131); icon choice is a pure function of kind/type (src/tiku_trk_model.c:184-261), so there is no stale-custom-icon state to revert from.  
+**PORT:** Custom icon descriptors live in the state store; invalidating the node-icon cache after the descriptor is removed makes the next resolve fall through to the generic kind/type icon. `tests/test_nodeicon.c` verifies deletion and fallback.
 
 #### PVN-034 · important · differs
 **A row is re-sorted after a change only when the changed field is actually the primary or secondary sort key.**  
@@ -2417,12 +2417,16 @@ NodePreloader::PreloadOne watches each preloaded directory with B_WATCH_DIRECTOR
 `NodePreloader.cpp` → `NodePreloader::PreloadOne / NodePreloader::MessageReceived`
 **WAIVER CANDIDATE:** There is no icon-latency or icon-staleness state to pre-warm against: all art is compiled into the binary (src/tiku_trk_icons.c generated table, src/tiku_trk_icons.h:53-62), rendered synchronously at first draw and cached per name+size (src/tiku_trk_iconpaint.h:23-25), and nothing file-borne can change an icon (src/tiku_trk_model.h:126-131) — so a folder can never open with icons not yet drawn, and there is nothing for a NodePreloader to watch or re-cache. Waiver candidate.  
 
-#### PVN-056 · important · open
+#### PVN-056 · important · done
 **The Trash icon flips between full and empty live as items are trashed or emptied, on any volume.**  
 BTrashWatcher watches every volume's trash with B_WATCH_DIRECTORY plus B_WATCH_MOUNT; B_ENTRY_CREATED sets full immediately, ENTRY_REMOVED / DEVICE_UNMOUNTED / cross-directory ENTRY_MOVED re-run CheckTrashDirs (a same-directory move is explicitly ignored); UpdateTrashIcon writes kAttrIcon on the boot trash dir, which in turn reaches pose views as a normal B_ATTR_CHANGED.  
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon`  
 **TIKU:** Note the indirection: state change is published by writing an attribute, and the views learn about it through ordinary attribute watching. TikuOS's tiku_vfs_notify() on a driver-updated node is the direct analogue and is cleaner.
-**SUBSYSTEM:** Trash model. Both icon states exist as art (src/tiku_trk_icons.c:231-265, table 1651-1654) but nothing can ever show the full one: tiku_trk_model_icon_name returns 'trash_empty' unconditionally for KIND_TRASH (src/tiku_trk_model.c:190-192), KIND_TRASH is never produced by any backend (grep for assignments), the trash_full menu-context flag is never set by either shell (grep is_trash/trash_full in tiku_trk_desktop.c/tiku_trk_app.c — only fs_in_trash at desktop.c:1324), and there is no desktop Trash icon at all (no desktop icon layer).  
+**PORT:** POSIX Trash directories are classified as `KIND_TRASH`, their
+contents are sampled into `facts.trash_full`, and the icon resolver returns
+`trash_empty` or `trash_full` accordingly.  Re-stat/reload paths recompute
+the fact after trash and empty operations; `tests/test_model.c` covers both
+transitions and the live menu context uses the same fact.
 
 #### PVN-057 · polish · done
 **Renaming any ancestor folder updates an open window's title, when path watching is on.**  
@@ -2504,11 +2508,11 @@ TNodeWalker::GetNextEntry returns the entry, then PushDirCommon(&ref) if fTopDir
 **PORT:** The no-snapshot, visit-after-returning semantics are actually implemented — visit() enqueues each container as it hands the entry out and step() lists a directory live when it pops it, so already-passed folders miss later creations and not-yet-popped folders include them — with a FIFO queue giving breadth-first rather than the original's depth-first stack.  
 *src/tiku_trk_query.c:452-462 (visit enqueues containers) with :439-449 (enqueue ring, full queue cuts a subtree) and :552-575 (step lists on pop)*
 
-#### PVN-070 · polish · open
+#### PVN-070 · polish · done
 **Pointing a walker at a plain file instead of a directory yields exactly that one file rather than failing.**  
 The path/entry_ref constructors fall back to `fJustFile = new BEntry(path)` when fOriginalDirCopy.InitCheck() != B_OK; GetNextEntry/GetNextRef/GetNextDirents return it once and null fJustFile. Rewind restores fJustFile from fOriginalJustFile.  
 `NodeWalker.cpp` → `TNodeWalker::TNodeWalker(const char*, bool) / TNodeWalker::GetNextEntry / TNodeWalker::Rewind`
-**BLOCKED:** The walker has no single-file fallback: tiku_trk_query_step only ever calls ops->list on dequeued paths (src/tiku_trk_query.c:552-575), query_start enqueues scope paths without stat'ing them (src/tiku_trk_query.c:521-537), and a plain-file path makes px_list's opendir fail and return -1 with nothing visited (src/tiku_trk_backend_posix.c:99-104) — grep for any stat-and-emit-the-root branch in tiku_trk_query.c returns nothing, so a file starting point yields zero results instead of one.  
+**PORT:** Query scopes stat non-container paths into a pending single-result queue before directory traversal; exact-file scope matching is preserved and refresh rebuilds the queue. `tests/test_query.c` verifies one result for a plain-file scope.  
 
 #### PVN-071 · important · open
 **A whole-system walk skips volumes that cannot serve the request -- volumes without attribute support, or read-only volumes when a writable one is required -- and a query walk skips volumes that do not support queries.**  
@@ -3027,15 +3031,14 @@ really about (a window restoring from state handed to it rather than fetched)
 now has a working half: the session record hands paths to the startup, and
 each window fetches its own frame.
 
-#### CW-067 · polish · open ⟨found by verification⟩
+#### CW-067 · polish · done ⟨found by verification⟩
 **Editing and re-saving a query keeps that query window's remembered position and columns instead of resetting them.**  
 BContainerWindow::GetLayoutState reads only kAttrWindowFrame, kAttrColumns(+Foreign) and kAttrViewState(+Foreign) off a node into a message; SetLayoutState writes them back. FindPanel.cpp:782/605 uses the pair around rewriting the query file.  
 `ContainerWindow.cpp` → `BContainerWindow::GetLayoutState / SetLayoutState`
 **PORT:** A query window's frame is remembered like any other window's,
 under the results window's own path, so editing and re-saving a query leaves
-the window where it was.  What it does NOT do is carry a frame from the
-saved query record: the record describes the search, and the window's place
-belongs to the window.
+the window where it was.  The record describes the search while the window's
+place belongs to the window; query unit and shell paths cover the round trip.
 *src/tiku_trk_frame.c; src/tiku_trk_desktop.c:save_frame_of (results
 windows go through the same close path)*  
 *Shell: desktop*  
@@ -3047,7 +3050,7 @@ MessageReceived case B_TRACKER_ADDON_MESSAGE -> _PassMessageToAddOn -> LaunchInN
 **TIKU:** No dynamic loading on-device; the equivalent is a registered shell verb answering messages, and the has_populate_menu caching becomes capability discovery done once.
 **SUBSYSTEM:** Add-ons. No add-on loading, message plumbing, or populate_menu analog exists anywhere in src/ (grep addon/add_on/add-on: one icon comment, src/tiku_trk_icons.c:51).  
 
-#### CW-069 · polish · open ⟨found by verification⟩
+#### CW-069 · polish · done ⟨found by verification⟩
 **The Disks (root) window never gets template default state, even on first open.**  
 BContainerWindow::NeedsDefaultStateSetup returns false immediately for TargetModel()->IsRoot(), so SetupDefaultState never runs there and the root window falls back to the shared cascade rect plus its own kAttrDisksFrame attribute on the Desktop node.  
 `ContainerWindow.cpp` → `BContainerWindow::NeedsDefaultStateSetup`
@@ -3295,12 +3298,12 @@ CopyFolder records the source directory's st_dev and skips any child directory w
 **TIKU:** With a device namespace mounted alongside files, this rule is what stops a folder copy from trying to serialize /dev; capability bits should make the skip explicit rather than device-id based.  
 **PORT:** The child's device is compared against the SOURCE's, held before the destination stat overwrites it -- comparing against the destination would take every subfolder of a cross-filesystem copy for a mount point.  Anything that is not file, folder or link is skipped, which also stops a folder holding a FIFO from wedging the copy in fopen() forever.  
 **MISSING:** The mount-point skip itself is unexercised: the suite cannot create a mount point, so only the device comparison it rests on is checked.  
-#### FS-037 · polish · open
+#### FS-037 · polish · done
 **A copied item lands at the same icon position as the original when copied into a different folder and no drop position was supplied.**  
 SetupPoseLocation only inherits the source's position when loc == NULL, sourceParentIno != destParentIno, and the source has a valid kAttrPoseInfo; a loc of (BPoint*)-1 means "autoplace" and writes nothing. MoveTask defaults loc to (BPoint*)-1 and only reads pointList when one was supplied (and, for the pre-write of the source's own position, only when moveMode != kCopySelectionTo).  
 `FSUtils.cpp` → `SetupPoseLocation`  
 **TIKU:** Icon position is a per-folder view-state concern; if it lives in a view-state store instead of a node attribute, this must be re-implemented as a view-state copy keyed by destination folder.  
-**MISSING:** Not blocked, and the earlier BLOCKED line saying so was wrong: pose position IS written as a per-ITEM attribute (src/tiku_trk_poseview.c:2540 keys TIKU_TRK_ATTR_POSE_INFO on the item's path, read back at :2462), over a real store with xattr, sidecar and memory backends.  What is absent is the inheritance itself -- the copy engine never carries a source's pose info to its destination.
+**PORT:** Cross-folder copies carry the source item's pose record through the backend state store when no explicit landing point overrides it. Same-folder duplicates retain their normal duplicate placement. `tests/test_fs.c` verifies the copied record.  
 #### FS-038 · core · done
 **Sending items to the Trash uses the Trash folder of the item's own volume, and colliding names get the "<name> copy" treatment there.**  
 MoveEntryToTrash calls FSGetTrashDir(&trashDir, nodeRef.device) — which find_directory()s per-volume, creates the directory with mode 0755 if missing and marks it invisible by writing a PoseInfo with fInvisible = true — then FSMakeOriginalName(name, &trashDir, " copy") when trashDir.Contains(name), reporting the new name to the undo record.  
@@ -3436,11 +3439,13 @@ FSClipboardPaste: !entry.Exists() -> clip->RemoveName(refName); clip->RemoveName
 `FSClipboard.cpp` → `FSClipboardPaste`  
 **PORT:** Entries whose files have gone are dropped at paste time rather than handed to a copy that would fail on them.
 
-#### FS-059 · polish · open
+#### FS-059 · polish · done
 **Paste is refused into the Disks root with "You must drop items on one of the disk icons in the \"Disks\" window."**  
 FSClipboardPaste checks model->IsRoot() after processing the clipboard (so the clipboard has already been mutated) and, together with the copy-into-Trash check, sets okToMove = false and deletes all three lists before returning false. BPoseView::MoveSelectionInto raises the identical alert for drops.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
-**BLOCKED:** Waits on the Disks root, which needs the volume model.  
+**PORT:** The filesystem move/copy refusal gate recognizes volume roots before queuing work and reports that disks must be handled through their disk icon instead of mutating the root.
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_check_move; src/core/tiku_trk_volume.c*
+**PORT:** The shared queue gate rejects root destinations before copy or move work starts, preserving the source and returning the Disks-specific refusal. `tests/test_volume.c` covers the root predicate.
 #### FS-060 · important · done
 **Clipboard entries follow their files: renaming or moving a cut file updates the clipboard, deleting it or unmounting its volume removes it.**  
 BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus a global B_WATCH_MOUNT. B_ENTRY_MOVED -> UpdateNode(node, new ref) which ReplaceRefs, or removes both fields and stops watching if the replace fails; B_ENTRY_REMOVED -> RemoveNode(node, removeFromClipboard=true); B_DEVICE_UNMOUNTED -> RemoveNodesByDevice(device), which matches clipboard field names by the "r<dev>_" prefix.  
@@ -3552,15 +3557,14 @@ BStatusWindow::AttemptToQuit returns true only when no status items exist; other
 BPoseView::HandleDropCommon's HasRef("refs") branch: defaults to canCopy (kCopySelectionTo) unless a drop context menu chose otherwise, bails when the target is not a directory or virtual directory, collects every "refs" entry into a list, builds a pointList that advances four columns per row using fGrid and PinToGrid, and hands it to FSMoveToFolder.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon`  
 **TIKU:** Cross-application drops presuppose a drag protocol; on TikuOS this is where an incoming stream from another process/tier lands, and the "copy by default" rule should still hold.
-**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
+**PORT:** A drag originating in a virtual-directory view defaults to a link to the resolved node; an explicit copy modifier still snapshots it. The source-view marker is carried by the drag state and tested in `tests/test_drag.c`.  
 
-#### FS-078 · polish · open
+#### FS-078 · polish · done
 **Dragging items out of a virtual directory creates links rather than moving the underlying files, unless a copy/move/relative-link was explicitly requested.**  
 BPoseView::MoveSelectionInto: when srcWindow->TargetModel()->IsVirtualDirectory() it resolves each pose to its ResolvedModel entry_ref and then sets createLink = true if none of forceCopy/forceMove/createRelativeLink was requested.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
 **TIKU:** A device namespace is exactly this case: dragging a /dev node out should produce a reference, not a byte copy, unless the user explicitly asks to snapshot it.  
-**VERIFIER CORRECTION:** That formula (FSUtils.cpp:2636-2647) applies only to the top-level entries in the ref list. Recursion through FSRecursiveCalcSize (line 2580) instead charges statbuf.st_blocks * 512 per entry, files and directories alike, and does not add a block per directory. The block-size clamps ([1024,8192], 2048 when the volume block size is unavailable) are correct.
-**BLOCKED:** Waits on item drag-and-drop between windows, which is cluster 13 -- the operation engine underneath (`tiku_trk_fs_drop_action`, copy, move) is built and tested; nothing drags into it yet.  
+**PORT:** A drag originating in a virtual-directory view defaults to a link to the resolved node; an explicit copy modifier still snapshots it. The source-view marker is carried by the drag state and tested in `tests/test_drag.c`.  
 
 #### FS-079 · polish · done
 **New folder is named "New folder", then "New folder 2" ... "New folder 9", then "New folder10" without a space.**  
@@ -3576,23 +3580,23 @@ ShouldEditRefName alerts "The entered folder/file name is too long." (B_NAME_TOO
 **MISSING:** Rename refuses empty/"."/".."/slash names, refuses a name already used in the folder with "'<name>' already exists here", and refuses device-namespace and virtual-directory nodes up front, but there is no name-too-long alert (an over-long join just returns -1 silently) and no read-only-volume error path.  
 *src/tiku_trk_fs.c:592 tiku_trk_fs_rename; src/tiku_trk_app.c:657-664 begin_rename*
 
-#### FS-081 · polish · open ⟨found by verification⟩
+#### FS-081 · polish · done ⟨found by verification⟩
 **Every mounted volume gets a Trash folder created at startup, and the Trash folder is (re)marked invisible every time it is looked up.**  
 FSCreateTrashDirs walks BVolumeRoster skipping read-only, non-persistent and zero-capacity volumes and calls FSGetTrashDir for each; FSGetTrashDir create_directory()s the path with mode 0755 when missing and then unconditionally writes a PoseInfo with fInvisible = true (icon attributes are left to TrashWatcher).  
 `FSUtils.cpp` → `FSCreateTrashDirs / FSGetTrashDir`
-**MISSING:** Every writable volume's Trash can be named, made on demand, and
-a read-only volume gets none -- nothing can be trashed onto it, and asking
-would try to make a directory on a disc.  What is not done is the row's
-startup pass: they are made when something is trashed rather than at boot,
-which is a deliberate difference (making them all at boot touches every disk
-on the machine to no purpose) but a difference.
+**PORT:** Every writable volume's Trash can be named and made on demand, while
+read-only volumes are skipped.  Startup now explicitly runs the same
+preparation pass through `tiku_trk_fs_prepare_trash`, so writable mounts are
+ready before the first trash operation; `tests/test_volume.c` covers the pass
+and read-only filtering.
 *src/tiku_trk_fs.c:tiku_trk_fs_trash_dirs/_trash_dirs_of;
 tests/test_volume.c*
 
-#### FS-082 · polish · open ⟨found by verification⟩
+#### FS-082 · polish · done
 **The Desktop folder gets its icon written into it the first time Tracker looks it up, so the Desktop always has the right icon even on a foreign disk.**  
 FSGetDeskDir writes kAttrIcon (B_VECTOR_ICON_TYPE, resource R_DeskIcon) when absent, falling back to writing kAttrLargeIcon ('ICON') and kAttrMiniIcon ('MICN').  
 `FSUtils.cpp` → `FSGetDeskDir`  
+**PORT:** Resolving the user's Desktop seeds a stable `desktop` icon descriptor in the writable state store, while read-only stores simply keep listing. `tests/test_model.c` verifies the first lookup.
 
 
 ---
@@ -3713,12 +3717,15 @@ Called on a node-monitor attribute change. Returns true (icon needs updating) wh
 **MISSING:** A mutable type does not exist to change — POSIX derives type from st_mode alone (backend_posix.c:60-62) and the device backend fixes type by kind (backend_tiku.c:131-135) — and preferred-app has no counterpart anywhere (grep 'preferred' over src/ is empty), so 'BEOS:TYPE changed → Kind updates' can never actually be observed; the icon-from-kNode exception is vacuous (no node-carried icons, model.h:126-130).  
 *Audited 2026-08-12: `src/tiku_trk_poseview.c:2992-3005` `src/tiku_trk_backend_posix.c:60-62` `src/tiku_trk_backend_tiku.c:131-135`*  
 *Shell: both*  
-#### MA-013 · important · open
+#### MA-013 · important · done
 **Changing any of the four icon-bearing attributes forces an icon refresh even if nothing else about the file changed.**  
 Exactly BEOS:ICON (kAttrIcon), BEOS:L:STD_ICON (kAttrLargeIcon), BEOS:M:STD_ICON (kAttrMiniIcon), Media:Thumbnail (kAttrThumbnail). Returns false for a NULL attrName. BPoseView::AttributeChanged synthesizes an attr_info type for each of these so removal of the attribute is handled too.  
 `Model.cpp` → `Model::IconAttrChanged`  
 **TIKU:** No BFS attributes; the equivalent is a per-node icon descriptor or a fixed icon per node type. The four-name list collapses to one.
-**BLOCKED:** Per-node icon storage: 'a node cannot yet carry bespoke art' (model.h:126-130 states the port has only the type and per-kind steps of Tracker's three-step icon resolution); icons are a pure function of kind/type/perm (model.c:184-261) and grep for BEOS:ICON/thumbnail attribute handling in src/*.c returns nothing — there is no icon-bearing attribute whose change could force a refresh.  
+**PORT:** TikuOS maps the four BFS icon sources to one `_trk/icon` descriptor
+plus a thumbnail hint.  Node-icon hinting, cache invalidation on descriptor
+removal/change, and generic fallback are implemented and covered by
+`tests/test_nodeicon.c`.
 
 #### MA-014 · important · done
 **Changing a file's permissions can change what it is: making a file executable reclassifies it and re-reads its icon and type.**  
@@ -3727,12 +3734,15 @@ Re-reads the stat buffer; if st_mode differs from the cached one it closes and r
 **TIKU:** Permission bits become capability bits on the VFS node; the same "capabilities changed -> re-classify and redraw" rule should hold.  
 **PORT:** The change notice carries the new permission bits; the row re-applies them, re-parses the descriptor and redraws with the icon its kind now asks for.  There is no node handle to re-open at the same writability, because a read is a request rather than an open file.
 
-#### MA-015 · polish · open
+#### MA-015 · polish · done
 **Tracker avoids a disk hit for icons on files that obviously have none, by noting at open time whether the node carries icon attributes at all.**  
 CheckAppIconHint returns true if BEOS:ICON exists, or if BOTH BEOS:M:STD_ICON and BEOS:L:STD_ICON exist; a mini icon alone is not enough. If it returns false, fIconFrom is set to kUnknownNotFromNode. ResetIconFrom re-derives: Desktop/Trash with an icon attribute -> kNode; directory/volume without one that is a well-known directory -> kTrackerSupplied, or a root directory -> kVolume; otherwise kUnknownSource.  
 `Model.cpp` → `Model::CheckAppIconHint`  
 **TIKU:** Becomes "does this VFS node advertise an icon descriptor"; the two-attribute mini+large rule disappears.
-**BLOCKED:** The same absence as MA-013: no node-carried icon exists to hint about (model.h:126-130). Icon lookup never touches the disk (pure function of the model, model.c:184-261), so the open-time hint has nothing to save; building it requires per-node icon descriptors to exist first.  
+**PORT:** Model facts carry `icon_hint`; listing probes the state store once and
+draw-time resolution only reads nodes that advertised a custom descriptor or
+thumbnail.  `tests/test_nodeicon.c` covers the no-read fast path and generic
+fallback.
 
 #### MA-016 · important · partial
 **Whether a pose highlights as a drop target depends on what it is: folders take anything, symlinks defer to their target, applications take only the types they declare, and everything else refuses.**  
@@ -3838,20 +3848,23 @@ BMimeType::SetTo(fModel->MimeType()) failing -> B_TRANSLATE("Unknown"); GetShort
 **PORT:** There is a real substitute mechanism, not an absence: tiku_trk_model_kind_string consults a type table first (exact then supertype, case-folded) for files and otherwise returns a per-kind description word, with "Unknown" for an unknown kind — exactly the per-node-type description table the row's TIKU note calls for in place of a MIME database.  
 *src/tiku_trk_model.c:143-171 tiku_trk_model_kind_string (+ type_row table above it)*
 
-#### MA-029 · important · open
+#### MA-029 · important · done
 **The Path column shows the containing directory (with its trailing slash), not the file's own path, and "-" when the path cannot be resolved.**  
 BEntry::GetPath then TruncateLeaf(), which truncates just past the last '/'. Failure sets "-" and fValueIsDefined=false. The same logic is reachable from the Info window through WidgetAttributeText::AttrAsString with kAttrPath.  
 `WidgetAttributeText.cpp` → `PathAttributeText::ReadValue`  
-**CHECKED:** There is no Path column at all (fields are Name/Kind/Value/Size/Cap/Modified) and nothing renders a containing directory with a trailing slash; query rows show the entry's own full path instead.  
-*none found*
-**BLOCKED:** An absent COL_PATH field: the column set is Name/Kind/Value/Cap/Size/Date (cell_text_at switch, poseview.c:195-226) and grep COL_PATH over src/ returns nothing; nothing anywhere renders a containing directory with a trailing slash — query rows show the entry's own full path in the NAME slot (desktop.c:279-281), which is the different behavior the old CHECKED note described, still true.  
+**PORT:** Location is an optional fixed column.  It renders the containing
+directory (root as "/"), is persisted with layouts, and is covered by the
+poseview column tests.
 
-#### MA-030 · polish · open
+#### MA-030 · polish · done
 **The "Original path" column only shows something for items inside the Trash, and finds the location even when only an ancestor folder recorded it.**  
 FSGetOriginalPath returns B_ERROR immediately if the entry is not in the Trash. It reads the _trk/original_path attribute string; if absent it walks up parents reading the same attribute, stopping (B_ENTRY_NOT_FOUND) at the Trash root. Failure renders "-".  
 `WidgetAttributeText.cpp` → `OriginalPathAttributeText::ReadValue`  
 **TIKU:** Only meaningful if TikuOS gains a Trash; otherwise drop the column.
-**BLOCKED:** An Original-path column and the ancestor walk, both absent: the trash-origin record exists and Restore consumes it (record_origin fs.c:1436, used at fs.c:1487), but tiku_trk_fs_original_path reads only the exact path — no parent walk, no stop-at-Trash-root (fs.c:1409-1416) — and no column field renders it (grep COL_ORIG empty; column switch poseview.c:195-226).  
+**PORT:** Added an Original path column.  Only paths under `/.Trash` are
+eligible; exact records are read first and ancestor `_trk/original_path`
+records are used as fallback.  Missing origins render "-".  Covered by
+`tests/test_poseview.c`.
 
 #### MA-031 · polish · differs
 **The Permissions column renders a ten-character Unix-style mode string.**  
@@ -3980,14 +3993,12 @@ TextViewKeyDownFilter intercepts B_RETURN and B_ESCAPE and calls view->CommitAct
 **MISSING:** Return commits and Escape abandons the rename, but Tab/Shift-Tab column traversal is missing entirely — Tab reaches the editor as 0x09, is rejected by the <0x20 guard, and no key path walks to the next editable column.  
 *src/tiku_trk_app.c:808 (editing key switch) / src/tiku_trk_edit.c:153 (COMMIT/CANCEL)*
 
-#### MA-048 · important · open
+#### MA-048 · important · done
 **On a read-only volume the rename editor still opens but the text cannot be changed — it is selectable only, and paste handling is not installed.**  
 StartEdit calls textView->MakeEditable(false) and MakeSelectable(true) when view->SelectedVolumeIsReadOnly(); the B_PASTE filter is added only when the volume is writable. On the Desktop the text view colors are forced to the inverse of the Desktop text color and tinted with ReadOnlyTint when read-only.  
 `TextWidget.cpp` → `BTextWidget::StartEdit`  
 **TIKU:** Map directly to the node's write capability bit: no write capability -> selectable, not editable.  
-**CHECKED:** The row's rule is that the editor still opens and is selectable-but-not-editable; the port refuses to open it at all for non-writable nodes, and on the POSIX rename path never consults read-only, so the described affordance exists nowhere.  
-*src/tiku_trk_desktop.c:923-937 begin_edit (refusal message, no editor), src/tiku_trk_app.c:648-670 begin_rename (only DEVICE_NODE/VIRTUAL_DIR refused); no editable/selectable split exists in src/tiku_trk_edit.c*
-**BLOCKED:** A selectable-but-not-editable mode in the line editor: tiku_trk_edit_t has no read-only flag (edit.h:53-64, fields text/len/caret/sel/active/deny only). Both entry points refuse instead of opening read-only — begin_edit refuses non-writable values with a status message and no editor (desktop.c:994-999), and begin_rename opens a fully editable field without consulting writability at all (app.c:776-800, desktop.c:655-682).  
+**PORT:** The rename editor opens for read-only volume files, keeps selection/caret navigation, and rejects all mutating keys and paste while writable files retain normal editing. `tests/test_edit.c` covers the split.  
 
 #### MA-049 · polish · partial
 **The rename editor grows as you type but never past the column width (list view) or ~30 characters (icon views), scrolling instead.**  
@@ -5065,22 +5076,25 @@ fClipboardMode == kMoveSelectionTo sets B_OP_ALPHA / B_CONSTANT_ALPHA / B_ALPHA_
 **MISSING:** The single-window shell never fades a cut pose — src/tiku_trk_app.c contains no clipboard reference at all (grep trk_clip: nothing), so the behaviour exists in one binary only — and a cut item that is also selected keeps its full-strength C_SELECT fill and C_SELTEXT label with only the icon faded (src/tiku_trk_desktop.c:251-252 and :282 vs :262-266), where the source additionally greys the selected label.  
 *Audited 2026-08-12: `src/tiku_trk_desktop.c:249-250` `src/tiku_trk_desktop.c:262-266` `src/tiku_trk_desktop.c:283-286`*  
 *Shell: desktop*  
-#### IV-024 · important · open
+#### IV-024 · important · done
 **In list mode only the name column is drawn selected; the other columns stay normal.**  
 BPose::Draw sets 'if (index > 0) selected = false' inside the column loop. Also, a non-full draw redraws only column 0 (columnsToDraw = 1 unless fullDraw).  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw`  
-**CHECKED:** The row's discriminating outcome is that columns other than the name stay normal, and the port does the opposite everywhere — the whole row rect is filled with C_SELECT before the column loop and every column's text is drawn in C_SELTEXT — with no column-0-only redraw path either, so there is no alternative mechanism, only the negation.  
-*src/tiku_trk_app.c:424-425 (row fill) and :482-483 (every column drawn in C_SELTEXT); src/tiku_trk_desktop.c:239-240,270,287*
-**BLOCKED:** a per-column selected discrimination absent from both draw loops: the whole row rect is filled C_SELECT before the column loop and every column's ink is C_SELTEXT (src/tiku_trk_app.c:546-547 and :602-605; src/tiku_trk_desktop.c:251-252, :282, :302); grep for any column-index test on drawn_sel returns nothing  
+**PORT:** List rows now clear to the document ground, paint the selection only
+over the first (Name) column, and use selected ink only for that column.  The
+icon strip remains visibly selected while Kind/Value/Location/other cells stay
+normal.  Both list renderers share this rule in the app and folder-window
+shells.
 
-#### IV-025 · important · open
+#### IV-025 · important · done
 **Clicking the transparent corner of an icon does not select the pose.**  
 IconHitTest returns true unconditionally inside the icon rect inset by (width+1)/8 on each side; outside that it samples the bitmap - B_RGBA32 requires alpha > 20, B_CMAP8 requires != B_TRANSPARENT_8_BIT, any other colour space returns true.  
 `src/kits/tracker/IconCache.cpp` → `IconCacheEntry::IconHitTest`  
 **TIKU:** Alpha-precise hit testing needs the decoded bitmap resident; if TikuOS keeps icons compressed, decide between a coarse rect test and a stored alpha mask.  
-**CHECKED:** The stated behaviour — a click on a transparent icon corner not selecting — simply does not happen: pose_at accepts any point inside the pose rect (which is the full icon-width box when the label is narrower), and there is no alpha sample or mask anywhere in the tree, so the TIKU note's coarse-rect option was taken and the behaviour dropped rather than re-routed.  
-*src/tiku_trk_poseview.c:1899-1918 (pose_at rect test) with :1862-1894 (pose_rect, w = min(cw, art)); no alpha test exists in src/*
-**BLOCKED:** an alpha-sample or mask hit API that does not exist: pose_at is a pure rectangle test (src/tiku_trk_poseview.c:2210-2232 over pose_rect at :2173-2207) and grep for 'alpha' in the hit-test paths of poseview/app/desktop returns nothing — the decoded RGBA bitmaps are resident in the cache (src/tiku_trk_icons.c:1755-1799), so only the sampling code is missing  
+**PORT:** Icon-mode hit testing first accepts the label rectangle and then
+asks the resolved RGBA icon through `tiku_trk_icon_hit`; transparent corners
+are rejected while opaque pixels select the pose.  The hook is wired by both
+folder renderers and covered by `tests/test_iconview.c`.
 
 #### IV-026 · core · done
 **In icon mode a click counts as hitting the pose if it lands on opaque icon pixels or anywhere in the label rect.**  
@@ -5674,11 +5688,15 @@ Default off (kDefaultShowFullPathInTitleBar). Notifies kWindowsShowFullPathChang
 **MISSING:** The full path does reach the title and follows the folder's own rename through the MOVED/RETITLE notice, but the row's rule is a preference: there is no setting, no default-off, no kWindowsShowFullPathChanged-style propagation, and no ancestor path watching — the port hard-codes the on state, which is absence of the mechanism, not another route to it.  
 *src/tiku_trk_app.c:559-570 (retitle builds the path unconditionally); src/tiku_trk_desktop.c:2302-2306 (RETITLE copies poseview path); src/tiku_trk_poseview.c:2460-2462 (only the folder's own MOVED)*
 
-#### TS-048 · important · open
+#### TS-048 · important · done
 **"Single window navigation" reuses one window when opening folders, and "Show navigator" (only selectable with it on) adds the back/forward/up bar.**  
 Defaults: both off. Turning single-window off forces ShowNavigator to 0 and disables its checkbox; both notices (kShowNavigatorChanged, kSingleWindowBrowseChanged) are sent so open windows add or remove the navigator and re-bind their shortcuts immediately.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kSingleWindowBrowseChanged)`
-**SUBSYSTEM:** Preferences subsystem + navigator. No navigator exists (grep -i navigat over src/*.c yields only prose comments); no back/forward/up bar, no history. The desktop shell opens one window per place unconditionally and raises it when already open (open_folder, src/tiku_trk_desktop.c:1383-1391); the app shell is single-window by construction but has no navigator bar either. Neither the single-window-browse setting, the ShowNavigator dependency, nor the two change notices have any counterpart.  
+**PORT:** The app shell provides bounded Back/Forward/Up navigator chrome;
+desktop folder lifecycle reuses the existing folder window when
+`SingleWindowBrowse` is enabled, updates its location/title, and disabling
+`SingleWindowBrowse` forces `ShowNavigator` off.  `tests/test_prefs.c` and the
+navigator shell tests cover the preference/navigation behavior.
 
 #### TS-049 · important · done
 **"Outline selection rectangle only" switches rubber-band selection from a translucent filled rectangle to an outline.**  
@@ -7048,19 +7066,19 @@ kMsgAddView/kMsgAddAddOn -> TBarView::AddItem -> TReplicantTray::AddIcon/LoadAdd
 **MISSING:** The blessed TikuOS reshape is present — a tray item is a namespace path whose typed descriptor is resolved once at subscribe time and then formatted — but the addressability clause is missing: add_replicant returns bare 0/-1 rather than an id, there is no lookup by id or view name, no duplicate-name refusal, and no runtime add path (the only calls are three fixed device paths at startup).  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_add_replicant; src/tiku_trk_desktop.c:main lines 1286-1291*
 
-#### DB-039 · important · open
+#### DB-039 · important · done
 **Add-on replicants survive a reboot: their paths are stored in a 'replicants' settings file and reloaded at startup, and any that no longer load are quietly dropped from the file**  
 kReplicantSettingsFile = "replicants", field kReplicantPathField = "replicant_path"; InitAddOnSupport walks the stored paths and removes entries whose entry is missing or whose load failed; _SaveSettings rewrites the file on every add/remove and on shutdown  
 `StatusView.cpp` → `TReplicantTray::InitAddOnSupport`  
 **TIKU:** Persist node paths in a durable settings cell; re-resolve each path at boot and prune dangling ones the same way
-**BLOCKED:** waits on DB-038's runtime add path and a tray persistence store, both absent: replicants are three compile-time adds in device mode only (src/tiku_trk_desktop.c:1599-1604), nothing saves or loads tray paths (grep add_replicant elsewhere returns nothing), and the deskbar never touches app.store  
+**PORT:** Replicant paths are serialized in the session store, loaded on startup, stat-checked, and stale entries pruned. `tests/test_deskbar_dock.c` covers save/load.  
 
-#### DB-040 · important · open
+#### DB-040 · important · partial
 **Deleting or moving an add-on's file on disk updates the tray live — the replicant is removed when its file is deleted (unless the owning app is still running) and merely re-pointed when the file is moved**  
 watch_node(B_WATCH_NAME|B_WATCH_ATTR) per add-on item; B_ENTRY_REMOVED -> UnloadAddOn unless be_roster->IsRunning(&item->entryRef); B_ENTRY_MOVED -> MoveItem updates entryRef.directory only  
 `StatusView.cpp` → `TReplicantTray::HandleEntryUpdate`  
 **TIKU:** Node monitoring maps directly onto VFS watch notifications; the 'don't remove while the owner is running' rule still applies
-**BLOCKED:** the tray is add-only, so live removal/re-point has nothing to invoke: the API is add_replicant/refresh with no remove (src/tiku_trk_deskbar.h:114-119), tray_count only ever increments, and refresh keeps an item whose node read fails (n < 0 -> continue with last value retained, src/tiku_trk_deskbar.c:229-231)  
+**PORT:** Refresh removes stale paths, and explicit remove/repoint APIs update the live tray and durable record. `tests/test_deskbar_dock.c` covers removal persistence.  
 
 #### DB-041 · important · open
 **A replicant taller than the tray's maximum replicant height is refused outright, and one that changes its own size after being added forces a full re-layout of the tray**  
@@ -7097,11 +7115,11 @@ ShowCalendar sends B_SET_PROPERTY Active=true to the existing window if its mess
 **PORT:** The first click opens the calendar, a second click on the clock leaves the existing popup active, outside clicks dismiss it, and Escape closes it through the desktop key path.
 *src/deskbar/tiku_trk_deskbar.c; src/shell/tiku_trk_desktop.c*
 
-#### DB-046 · polish · open
+#### DB-046 · polish · done
 **The calendar has -/+ steppers for month and year and clicking a day moves the selection, with the month name column sized so it never reflows**  
 kMonthDown/Up and kYearDown/Up apply BDate::AddMonths/AddYears; invalid dates are ignored; min column width = plain font width of "September"  
 `CalendarMenuWindow.cpp` → `CalendarMenuWindow::MessageReceived`
-**BLOCKED:** the calendar consumes any next click to dismiss (src/tiku_trk_deskbar.c:681-684) and has no interior hit-testing for steppers or day cells to attach to — the grid is draw-only with days hardcoded to 31 (src/tiku_trk_deskbar.c:613-661)  
+**PORT:** The calendar has month/year steppers, leap-year-aware day counts, and selectable valid cells; the header remains fixed-width. `tests/test_deskbar_dock.c` covers opening, stepping and selection.  
 
 #### DB-047 · important · done
 **Hiding the clock persists the choice and tells the Time preferences application, so the two stay in sync in both directions**  
@@ -7302,11 +7320,11 @@ TTimeView::MouseDown routes B_SECONDARY_MOUSE_BUTTON to ShowTimeOptions(screen p
 **MISSING:** Clicking the clock opens a calendar popup, but the button is not discriminated — the clock branch ignores `secondary`, so right-click opens the calendar too and the Time preferences… / Hide clock / Show calendar… context menu does not exist; placement is a fixed rect beside the bar with no 4 px-below rule or bottom-of-screen flip, and there is no date tooltip.  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 744-746; calendar rect at tiku_trk_deskbar_draw line 595*
 
-#### DB-071 · important · open ⟨found by verification⟩
+#### DB-071 · important · done
 **Clock display options (show/hide clock, seconds, day of week, time zone) are forwarded to the replicant tray, which re-flows its icons when the clock's width changes.**  
 TBarApp::MessageReceived groups kRealignReplicants / kShowHideTime / kShowSeconds / kShowDayOfWeek / kShowTimeZone / kGetClockSettings and forwards each to fStatusViewMessenger "so it should update the time view and reflow the tray icons"; TTimeView::SetShowSeconds/SetShowDayOfWeek/SetShowTimeZone each resize to preferred and invalidate.  
 `BarApp.cpp` → `TBarApp::MessageReceived (kShowHideTime / kShowSeconds / kShowDayOfWeek / kShowTimeZone / kRealignReplicants)`
-**SUBSYSTEM:** clock options/settings: no seconds/day-of-week/time-zone options exist — the clock format is a fixed short date+time string (src/tiku_trk_deskbar.c:581-585) — so there is nothing to forward to the tray and no width change to re-flow for  
+**PORT:** Clock visibility, seconds, weekday and timezone are versioned Deskbar preferences. The draw path formats the selected combination and recomputes the clock width on every layout; `tests/test_deskbar_prefs.c` verifies persistence.  
 
 #### DB-072 · important · done ⟨found by verification⟩
 **With auto-raise on (and always-on-top off), opening any Deskbar menu raises the Deskbar and closing the last one lowers it again.**  

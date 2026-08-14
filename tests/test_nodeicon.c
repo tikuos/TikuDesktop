@@ -188,6 +188,15 @@ main(void)
     check(c.reads == 2, "IV-038",
           "so the next draw reads it again -- an icon edited on disk shows "
           "at once rather than after a restart");
+    (void)tiku_trk_state_forget(store, file.path);
+    tiku_trk_nodeicon_unhint(&file);
+    (void)tiku_trk_nodeicon_changed(&c, file.path);
+    check(tiku_trk_nodeicon_resolve(&c, store, &file, got, sizeof got) ==
+              TIKU_TRK_ICON_FROM_GENERIC,
+          "PVN-033", "deleting a custom icon falls back to the generic icon");
+    (void)tiku_trk_state_write(store, file.path, TIKU_TRK_ATTR_ICON,
+                               "special", 8);
+    tiku_trk_nodeicon_unhint(&file);
     {   /* The hint has to come back too. */
         tiku_trk_model_t fresh = entry("/tmp/x/plain.txt",
                                        TIKU_TRK_KIND_FILE);
@@ -207,6 +216,8 @@ main(void)
               "alone would leave the model still believing it has none, "
               "and the new one would never be looked for");
     }
+
+    (void)tiku_trk_nodeicon_hint(store, &q, &file);
 
     printf("\nwhen the entry goes (IV-041)\n");
     check(tiku_trk_nodeicon_deleted(&c, file.path) == 0, "IV-041",

@@ -42,6 +42,10 @@ main(void)
 
     printf("\nthe file (TS-045, TS-062)\n");
     tiku_trk_prefs_set(&p, "HideDotFiles", 1);
+    tiku_trk_prefs_set(&p, "ShowNavigator", 1);
+    tiku_trk_prefs_set(&p, "SingleWindowBrowse", 0);
+    check(tiku_trk_prefs_get(&p, "ShowNavigator") == 0, "TS-048",
+          "turning single-window browsing off also hides its navigator");
     tiku_trk_prefs_set(&p, "UsedSpaceColor", (int32_t)0x11223344);
     check(tiku_trk_prefs_save(&p, path) == 0, "TS-045", "it saves");
     {

@@ -325,8 +325,7 @@ scope_available(const tiku_trk_query_t *q, int at,
         return 1;               /* this backend cannot revalidate */
     }
     scope_path(q->scope[at], path, sizeof path);
-    if (backend->ops->stat(backend, path, &m) != 0 ||
-        !tiku_trk_model_is_container(&m)) {
+    if (backend->ops->stat(backend, path, &m) != 0) {
         return 0;
     }
     return q->scope_was[at].dev == 0u || m.facts.dev == 0u ||
@@ -343,8 +342,18 @@ tiku_trk_query_in_scope(const tiku_trk_query_t *q, const char *path)
     }
     for (i = 0; i < q->scope_count; i++) {
         size_t n = strlen(q->scope[i]);
+        size_t prefix_n = n;
 
-        if (strncmp(q->scope[i], path, n) == 0) {
+        /* Scopes are stored with a trailing separator so child prefixes are
+         * unambiguous.  A file scope has no child and must still admit the
+         * exact node itself (PVN-070). */
+        if (prefix_n > 1u && q->scope[i][prefix_n - 1u] == '/') {
+            prefix_n--;
+        }
+
+        if ((strncmp(q->scope[i], path, n) == 0) ||
+            (strncmp(q->scope[i], path, prefix_n) == 0 &&
+             path[prefix_n] == '\0')) {
             return 1;
         }
     }
@@ -893,6 +902,8 @@ struct tiku_trk_qrun {
     tiku_trk_query_t    requested;      /* identities before validation   */
     char                queue[QUEUE_MAX][TIKU_TRK_PATH_MAX];
     int                 head, tail;
+    tiku_trk_model_t    single[TIKU_TRK_QUERY_SCOPES_MAX];
+    int                 single_count, single_at;
     tiku_trk_model_t   *results;
     int                 count;
     int                 visited;
@@ -1015,13 +1026,25 @@ tiku_trk_query_start(tiku_trk_backend_t *b, const tiku_trk_query_t *q)
         for (i = 0; i < r->q.scope_count; i++) {
             char start[TIKU_TRK_PATH_MAX];
             size_t n;
+            tiku_trk_model_t m;
 
             snprintf(start, sizeof start, "%s", r->q.scope[i]);
             n = strlen(start);
             if (n > 1u && start[n - 1u] == '/') {
                 start[n - 1u] = '\0';
             }
-            enqueue(r, start);
+            /* A query scope may name a file, not only a directory.  Keep
+             * that one node as a pending visit instead of feeding it to
+             * list(), whose opendir failure otherwise makes the result
+             * silently empty (PVN-070). */
+            if (b->ops->stat != NULL && b->ops->stat(b, start, &m) == 0 &&
+                !tiku_trk_model_is_container(&m)) {
+                if (r->single_count < TIKU_TRK_QUERY_SCOPES_MAX) {
+                    r->single[r->single_count++] = m;
+                }
+            } else {
+                enqueue(r, start);
+            }
         }
     } else if (requested_scopes == 0) {
         enqueue(r, "/");
@@ -1052,6 +1075,12 @@ tiku_trk_query_step(tiku_trk_qrun_t *r, int budget)
         return -1;
     }
     before = r->count;
+    while (budget-- > 0 && r->single_at < r->single_count) {
+        (void)visit(&r->single[r->single_at++], r);
+        if (r->count >= r->q.max_results) {
+            break;
+        }
+    }
     while (budget-- > 0 && r->head != r->tail) {
         char dir[TIKU_TRK_PATH_MAX];
 
@@ -1063,7 +1092,8 @@ tiku_trk_query_step(tiku_trk_qrun_t *r, int budget)
             break;
         }
     }
-    if (r->head == r->tail || r->count >= r->q.max_results) {
+    if ((r->head == r->tail && r->single_at >= r->single_count) ||
+        r->count >= r->q.max_results) {
         r->done = 1;
     }
     return r->count - before;
@@ -1124,18 +1154,28 @@ tiku_trk_query_refresh(tiku_trk_qrun_t *r, tiku_trk_qdiff_t *out)
     r->count = 0;
     r->visited = 0;
     r->head = r->tail = 0;
+    r->single_count = r->single_at = 0;
     r->done = 0;
     if (r->q.scope_count > 0) {
         for (i = 0; i < r->q.scope_count; i++) {
             char start[TIKU_TRK_PATH_MAX];
             size_t n;
+            tiku_trk_model_t m;
 
             snprintf(start, sizeof start, "%s", r->q.scope[i]);
             n = strlen(start);
             if (n > 1u && start[n - 1u] == '/') {
                 start[n - 1u] = '\0';
             }
-            enqueue(r, start);
+            if (r->backend->ops->stat != NULL &&
+                r->backend->ops->stat(r->backend, start, &m) == 0 &&
+                !tiku_trk_model_is_container(&m)) {
+                if (r->single_count < TIKU_TRK_QUERY_SCOPES_MAX) {
+                    r->single[r->single_count++] = m;
+                }
+            } else {
+                enqueue(r, start);
+            }
         }
     } else {
         enqueue(r, "/");

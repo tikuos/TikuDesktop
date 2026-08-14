@@ -104,6 +104,14 @@ tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
     }
 }
 
+void
+tiku_trk_drag_set_source_virtual(tiku_trk_drag_t *d, int virtual_)
+{
+    if (d != NULL) {
+        d->src_virtual = virtual_ ? 1 : 0;
+    }
+}
+
 int
 tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path)
 {
@@ -201,6 +209,12 @@ tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
      * copy: both are read at the DROP, not at the press, because the user
      * decides what the gesture means while it is in the air. */
     if ((mods & TIKU_TRK_DRAG_MOD_LINK) != 0u) {
+        return TIKU_TRK_DROP_LINK;
+    }
+    /* A merged namespace has no single mutable parent to move from.  Its
+     * default drag operation is therefore a link to the resolved node;
+     * Option/copy remains an explicit snapshot request (FS-078). */
+    if (d->src_virtual && (mods & TIKU_TRK_DRAG_MOD_COPY) == 0u) {
         return TIKU_TRK_DROP_LINK;
     }
     /* Back where it started is not an operation.  Checked against the

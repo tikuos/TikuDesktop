@@ -117,6 +117,17 @@ main(void)
     check(strcmp(e.text, "x/") == 0, "MA-046",
           "a field with no deny set still takes everything printable");
 
+    printf("\nread-only rename affordance (MA-048)\n");
+    tiku_trk_edit_start(&e, "read-only name");
+    tiku_trk_edit_set_editable(&e, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_HOME, 0, 0);
+    (void)tiku_trk_edit_key(&e, TIKU_TRK_EDIT_RIGHT, 1, 0);
+    check(tiku_trk_edit_selection(&e, &from, &to) && from == 0 && to == 1,
+          "MA-048", "a read-only editor remains selectable");
+    check(tiku_trk_edit_key(&e, TIKU_TRK_EDIT_CHAR, 0, 'X') ==
+              TIKU_TRK_EDIT_IGNORED && strcmp(e.text, "read-only name") == 0,
+          "MA-048", "read-only text cannot be changed or pasted");
+
     printf("\nthe Select window\n");
     tiku_trk_select_init(&w);
     check(w.rule == 3 &&

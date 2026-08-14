@@ -153,6 +153,34 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     if (controller == NULL || path == NULL) {
         return NULL;
     }
+    /* Browser mode keeps one spatial window and changes its location.  Do
+     * this before the normal per-folder lookup so a second folder cannot
+     * quietly create another window while the preference is enabled. */
+    if (controller->prefs != NULL &&
+        tiku_trk_prefs_get(controller->prefs, "SingleWindowBrowse")) {
+        for (i = 0; i < *controller->count; i++) {
+            folder = &controller->folders[i];
+            if (folder->win == NULL || !folder->win->open || folder->live ||
+                folder->view == NULL) {
+                continue;
+            }
+            (void)tiku_trk_poseview_save_state(folder->view);
+            (void)tiku_trk_poseview_save_columns(folder->view);
+            if (tiku_trk_poseview_switch_dir(folder->view, path) < 0) {
+                continue;
+            }
+            snprintf(folder->path, sizeof folder->path, "%s", path);
+            snprintf(folder->state_path, sizeof folder->state_path, "%s",
+                     path);
+            snprintf(folder->win->title, sizeof folder->win->title, "%s",
+                     path);
+            tiku_trk_recent_add(controller->store, TIKU_TRK_RECENT_FOLDERS,
+                                path);
+            tiku_desk_workspace_activate(controller->workspace, folder->win);
+            *controller->dirty = 1;
+            return folder;
+        }
+    }
     for (i = 0; i < *controller->count; i++) {
         folder = &controller->folders[i];
         if (strcmp(folder->path, path) == 0 && folder->win != NULL &&

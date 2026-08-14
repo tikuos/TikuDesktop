@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskbar_prefs.h"
@@ -30,6 +31,33 @@ main(void)
     tiku_desk_surface_t *s = tiku_desk_surface_new(1000, 680,
                                                    TIKU_DESK_C_BACKDROP);
     tiku_desk_rect_t f;
+
+    printf("replicant persistence and removal (DB-039, DB-040)\n");
+    {
+        const char *path = "/tmp/trk_deskbar_replicant";
+        FILE *out = fopen(path, "w");
+        tiku_trk_backend_t *backend = tiku_trk_backend_posix_open();
+        tiku_trk_store_t *store = tiku_trk_store_memory_open();
+        tiku_trk_deskbar_t *first = tiku_trk_deskbar_new(backend);
+        tiku_trk_deskbar_t *second = tiku_trk_deskbar_new(backend);
+
+        if (out != NULL) { fputs("42\n", out); fclose(out); }
+        tiku_trk_deskbar_set_store(first, store);
+        check(tiku_trk_deskbar_add_replicant(first, "answer", path) == 0,
+              "DB-039", "adding a replicant records it in the store");
+        tiku_trk_deskbar_set_store(second, store);
+        check(tiku_trk_deskbar_load_replicants(second) == 1,
+              "DB-039", "a new Deskbar restores the saved replicant");
+        check(tiku_trk_deskbar_remove_replicant(second, path) == 1,
+              "DB-040", "removing a replicant updates the live tray");
+        check(tiku_trk_deskbar_load_replicants(first) == 0, "DB-040",
+              "the removal is persisted so it stays gone after reload");
+        tiku_trk_deskbar_free(first);
+        tiku_trk_deskbar_free(second);
+        tiku_trk_store_free(store);
+        tiku_trk_backend_close(backend);
+        (void)unlink(path);
+    }
 
     printf("which edge, and how far into the corner (DB-048)\n");
     check(tiku_trk_deskbar_dock_at(4, 300, 1000, 680,
@@ -104,6 +132,36 @@ main(void)
           "DB-050",
           "and above the maximum the bar would be taking the screen from "
           "the windows it exists to list");
+
+    printf("\ncalendar steppers and selection (DB-046)\n");
+    tiku_trk_deskbar_set_width(db, TIKU_TRK_DB_MIN_W);
+    tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    tiku_trk_deskbar_draw(db, s);
+    f = tiku_trk_deskbar_frame(db);
+    check(tiku_trk_deskbar_click(db, f.x + 4, f.y + f.h - 4, 0, 0,
+                                 &(tiku_trk_db_pick_t){0}) == 1 &&
+          tiku_trk_deskbar_calendar_open(db), "DB-046",
+          "clicking the clock opens a calendar popup");
+    {
+        int month, old_month, day;
+        tiku_trk_db_pick_t pick;
+
+        tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
+        old_month = month;
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, f.x - 135, f.y + f.h - 140,
+                                     0, 0, &pick);
+        tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
+        check(month == (old_month == 12 ? 1 : old_month + 1), "DB-046",
+              "the month stepper advances the displayed month");
+        (void)tiku_trk_deskbar_click(db, f.x - 180 + 6 + 2 * 25 + 5,
+                                     f.y + f.h - 150 + 22 + 2 * 20 + 5,
+                                     0, 0, &pick);
+        tiku_trk_deskbar_calendar_date(db, NULL, NULL, &day);
+        check(day >= 1 && day <= 31, "DB-046",
+              "clicking a valid calendar cell changes the selected day");
+        tiku_trk_deskbar_close_calendar(db);
+    }
 
     printf("\nscrolling the list (DB-034)\n");
     check(!tiku_trk_deskbar_scrollable(db), "DB-034",

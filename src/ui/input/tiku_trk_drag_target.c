@@ -109,7 +109,10 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
     tiku_desk_rect_t content;
     int top;
     int bottom;
+    int left;
+    int right;
     int overshoot = 0;
+    int horizontal = 0;
     int distance;
     int step;
 
@@ -120,12 +123,22 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
     content = tiku_trk_folder_window_content(controller->folder);
     top = content.y + 2;
     bottom = content.y + content.h - COUNT_HEIGHT;
+    left = content.x + 2;
+    right = content.x + content.w - 2;
     if (controller->drag->y < top + AUTOSCROLL_BAND) {
         overshoot = -((top + AUTOSCROLL_BAND) - controller->drag->y);
     } else if (controller->drag->y > bottom - AUTOSCROLL_BAND) {
         overshoot = controller->drag->y - (bottom - AUTOSCROLL_BAND);
     }
-    if (overshoot == 0) {
+    if (tiku_trk_poseview_mode(controller->folder->view) !=
+            TIKU_TRK_MODE_LIST) {
+        if (controller->drag->x < left + AUTOSCROLL_BAND) {
+            horizontal = -((left + AUTOSCROLL_BAND) - controller->drag->x);
+        } else if (controller->drag->x > right - AUTOSCROLL_BAND) {
+            horizontal = controller->drag->x - (right - AUTOSCROLL_BAND);
+        }
+    }
+    if (overshoot == 0 && horizontal == 0) {
         controller->scroll_at = 0;
         return 0;
     }
@@ -136,7 +149,8 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
     if (now - controller->scroll_at <= AUTOSCROLL_DELAY_US) {
         return 0;
     }
-    distance = overshoot < 0 ? -overshoot : overshoot;
+    distance = overshoot != 0 ? (overshoot < 0 ? -overshoot : overshoot)
+                              : (horizontal < 0 ? -horizontal : horizontal);
     step = distance > AUTOSCROLL_FAST ? 3 : 1;
     if (tiku_trk_poseview_mode(controller->folder->view) !=
             TIKU_TRK_MODE_LIST) {
@@ -145,8 +159,14 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
 
         tiku_trk_poseview_origin(controller->folder->view, &origin_x,
                                  &origin_y);
+        if (horizontal != 0) {
+            origin_x += (horizontal < 0 ? -step : step) * controller->row_h;
+        }
+        if (overshoot != 0) {
+            origin_y += (overshoot < 0 ? -step : step) * controller->row_h;
+        }
         tiku_trk_poseview_set_origin(controller->folder->view, origin_x,
-            origin_y + (overshoot < 0 ? -step : step) * controller->row_h);
+                                     origin_y);
     } else {
         tiku_trk_poseview_scroll_to(controller->folder->view,
             tiku_trk_poseview_scroll(controller->folder->view) +

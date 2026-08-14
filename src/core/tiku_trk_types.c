@@ -32,7 +32,8 @@ tiku_trk_types_column(const char *name)
         { "cap",         TIKU_TRK_COL_CAP },
         { "modified",    TIKU_TRK_COL_DATE },
         { "location",    TIKU_TRK_COL_PATH },
-        { "permissions", TIKU_TRK_COL_PERM }
+        { "permissions", TIKU_TRK_COL_PERM },
+        { "original_path", TIKU_TRK_COL_ORIGINAL }
     };
     size_t i;
 
@@ -201,7 +202,7 @@ tiku_trk_types_save(const tiku_trk_types_t *db, const char *path)
 {
     static const char *const kName[] = {
         "name", "kind", "value", "size", "cap", "modified", "location",
-        "permissions"
+        "permissions", "original_path"
     };
     FILE *f;
     int i, k;

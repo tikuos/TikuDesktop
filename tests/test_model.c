@@ -16,6 +16,7 @@
 
 #include "tiku_trk_ident.h"
 #include "tiku_trk_model.h"
+#include "tiku_trk_nodeicon.h"
 #include "tiku_trk_state.h"
 
 static int fails;
@@ -237,6 +238,16 @@ test_posix(void)
               m.kind == TIKU_TRK_KIND_DESKTOP &&
               strcmp(tiku_trk_model_display_name(&m), "Desktop") == 0,
               "MA-005: the user's Desktop is a special model kind");
+        {
+            char icon[16];
+            tiku_trk_store_t *store = b->ops->state_store(b);
+            int icon_len = store != NULL ? tiku_trk_state_read(
+                store, desk, TIKU_TRK_ATTR_ICON, icon, sizeof icon) : -1;
+
+            check(store != NULL && icon_len == 8 &&
+                  memcmp(icon, "desktop", 7) == 0,
+                  "FS-082: resolving Desktop seeds its stable icon descriptor");
+        }
         if (had_home) {
             (void)setenv("HOME", old_home, 1);
         } else {

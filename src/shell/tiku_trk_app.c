@@ -273,7 +273,8 @@ menu_ctx(app_t *a, unsigned mods)
     static const int fields[] = { TIKU_TRK_COL_NAME, TIKU_TRK_COL_KIND,
                                   TIKU_TRK_COL_VALUE, TIKU_TRK_COL_SIZE,
                                   TIKU_TRK_COL_CAP, TIKU_TRK_COL_DATE,
-                                  TIKU_TRK_COL_PATH, TIKU_TRK_COL_PERM };
+                                  TIKU_TRK_COL_PATH, TIKU_TRK_COL_PERM,
+                                  TIKU_TRK_COL_ORIGINAL };
     tiku_trk_sc_ctx_t c;
     tiku_trk_pose_t *p;
     size_t i;
@@ -789,8 +790,24 @@ draw(app_t *a)
          * PAINTED depends on the window -- except during a band, which
          * paints its sweep whatever the window is doing. */
         drawn_sel = tiku_trk_poseview_draws_selected(a->view, p);
-        tiku_desk_fill(s, row, drawn_sel ? TIKU_DESK_C_SELECT
-                                         : TIKU_DESK_C_DOC);
+        tiku_desk_fill(s, row, TIKU_DESK_C_DOC);
+        if (drawn_sel && ncol > 0) {
+            /* IV-024: selection belongs to the Name cell.  Keep the icon
+             * selected, but leave Kind/Value/Location cells on document
+             * ground instead of turning the whole row into one banner. */
+            tiku_desk_rect_t name = { col_x(a, &cols[0]), row.y,
+                                      cols[0].width, row.h };
+            tiku_desk_rect_t inner = tiku_desk_inset(list, 2);
+            int x0 = (name.x > inner.x) ? name.x : inner.x;
+            int x1 = (name.x + name.w < inner.x + inner.w)
+                         ? name.x + name.w : inner.x + inner.w;
+
+            name.x = x0;
+            name.w = (x1 > x0) ? x1 - x0 : 0;
+            if (name.w > 0) {
+                tiku_desk_fill(s, name, TIKU_DESK_C_SELECT);
+            }
+        }
         {   /* The icon owns the strip LEFT of the first column, which is
              * what StartOffset reserves and why a column's x is absolute
              * rather than a running total. */
@@ -847,8 +864,9 @@ draw(app_t *a)
             }
             tiku_desk_text(s, f, text_x,
                            row.y + (a->row_h - f->height) / 2 + f->ascent,
-                           fitted, drawn_sel ? TIKU_DESK_C_SELTEXT
-                                             : TIKU_DESK_C_TEXT);
+                           fitted, (drawn_sel && j == 0)
+                                      ? TIKU_DESK_C_SELTEXT
+                                      : TIKU_DESK_C_TEXT);
             if (cols[j].field == TIKU_TRK_COL_NAME &&
                 p->model.kind == TIKU_TRK_KIND_SYMLINK) {
                 /* MA-076/IV-043: under the TEXT only, and only in the first
@@ -857,8 +875,8 @@ draw(app_t *a)
                 tiku_desk_hline(s, text_x,
                                 row.y + (a->row_h - f->height) / 2 +
                                 f->ascent + 2, tw,
-                                drawn_sel ? TIKU_DESK_C_SELTEXT
-                                          : TIKU_DESK_C_TEXT);
+                                (drawn_sel && j == 0) ? TIKU_DESK_C_SELTEXT
+                                                      : TIKU_DESK_C_TEXT);
             }
             tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
         }
@@ -1928,6 +1946,7 @@ menu_invoke(app_t *a, int command)
     case TIKU_TRK_CMD_COL_DATE:  field = TIKU_TRK_COL_DATE; goto column;
     case TIKU_TRK_CMD_COL_PATH:  field = TIKU_TRK_COL_PATH; goto column;
     case TIKU_TRK_CMD_COL_PERM:  field = TIKU_TRK_COL_PERM; goto column;
+    case TIKU_TRK_CMD_COL_ORIGINAL: field = TIKU_TRK_COL_ORIGINAL; goto column;
     case TIKU_TRK_CMD_FIND:
     case TIKU_TRK_CMD_GET_INFO:
     case TIKU_TRK_CMD_PREFERENCES:
@@ -2131,6 +2150,7 @@ tracker_run(int argc, char **argv)
     }
     tiku_trk_navigator_init(&a.nav, tiku_trk_poseview_path(a.view));
     a.fs = tiku_trk_fs_new(a.backend);
+    (void)tiku_trk_fs_prepare_trash(a.fs);
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
     a.row_h = LIST_ROW_H;
     {

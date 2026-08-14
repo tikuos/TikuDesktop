@@ -30,6 +30,8 @@ typedef struct {
     tiku_trk_store_t *store;
 } posix_impl_t;
 
+static tiku_trk_store_t *px_store(tiku_trk_backend_t *b);
+
 /** @brief Fill a Model from a stat buffer. */
 /** @brief Whether @p path holds anything at all, "." and ".." aside. */
 /**
@@ -193,6 +195,7 @@ static int
 px_stat(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
 {
     struct stat st, lst;
+    posix_impl_t *impl = (b != NULL) ? b->impl : NULL;
 
     if (path == NULL || out == NULL) {
         return -1;
@@ -214,6 +217,28 @@ px_stat(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
         }
     } else {
         from_stat(out, path, &lst, 0);
+    }
+    /* The Desktop directory is a special Tracker surface.  Seed its icon
+     * descriptor the first time it is resolved so a foreign filesystem gets
+     * the same stable art as the home Desktop (FS-082).  The write is best
+     * effort: read-only volumes still list normally. */
+    if (out->kind == TIKU_TRK_KIND_DESKTOP && impl != NULL) {
+        tiku_trk_store_t *store = px_store(b);
+        char existing[16];
+
+        if (store == NULL || !tiku_trk_store_writable(store)) {
+            out->backend = b;
+            return 0;
+        }
+        if (tiku_trk_state_read(store, path, "_trk/icon", existing,
+                                sizeof existing) >= 0) {
+            out->backend = b;
+            return 0;
+        }
+        static const char desk_icon[] = "desktop";
+
+        (void)tiku_trk_state_write(store, path, "_trk/icon",
+                                   desk_icon, sizeof desk_icon);
     }
     out->backend = b;
     return 0;

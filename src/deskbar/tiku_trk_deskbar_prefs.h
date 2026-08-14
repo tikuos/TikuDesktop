@@ -31,6 +31,9 @@ typedef struct tiku_trk_deskbar_settings {
     int auto_raise;
     int auto_hide;
     int show_clock;
+    int show_seconds;
+    int show_day_of_week;
+    int show_timezone;
 } tiku_trk_deskbar_settings_t;
 
 typedef struct {

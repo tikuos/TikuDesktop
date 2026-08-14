@@ -355,6 +355,9 @@ main(void)
         int n = tiku_trk_fs_trash_dirs(fs3, dirs, TIKU_TRK_VOLUME_MAX);
         int i, k, dupes = 0;
 
+        check(tiku_trk_fs_prepare_trash(fs3) >= 0, "FS-081",
+              "startup preparation is an explicit pass over writable mounts");
+
         check(n > 0, "FS-081",
               "every writable volume has a Trash of its own -- which is "
               "what keeps trashing a rename rather than a copy");

@@ -13,8 +13,9 @@
 
 #include "tiku_trk_deskbar_prefs.h"
 
-#define PREF_VERSION 2
-#define PREF_FIELDS  17
+#define PREF_VERSION 3
+#define PREF_FIELDS  20
+#define PREF_FIELDS_V2 17
 #define PREF_FIELDS_V1 16
 
 static int
@@ -31,7 +32,10 @@ same(const tiku_trk_deskbar_settings_t *a,
         a->icon_size != b->icon_size ||
         a->always_on_top != b->always_on_top ||
         a->auto_raise != b->auto_raise || a->auto_hide != b->auto_hide ||
-        a->show_clock != b->show_clock) {
+        a->show_clock != b->show_clock ||
+        a->show_seconds != b->show_seconds ||
+        a->show_day_of_week != b->show_day_of_week ||
+        a->show_timezone != b->show_timezone) {
         return 0;
     }
     for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
@@ -93,6 +97,9 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
                                                    : !!settings->auto_raise;
     settings->auto_hide = !!settings->auto_hide;
     settings->show_clock = !!settings->show_clock;
+    settings->show_seconds = !!settings->show_seconds;
+    settings->show_day_of_week = !!settings->show_day_of_week;
+    settings->show_timezone = !!settings->show_timezone;
 }
 
 void
@@ -179,6 +186,9 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->auto_raise;
     v[at++] = s->auto_hide;
     v[at++] = s->show_clock;
+    v[at++] = s->show_seconds;
+    v[at++] = s->show_day_of_week;
+    v[at++] = s->show_timezone;
 }
 
 static void
@@ -198,6 +208,9 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
     s->auto_raise = v[at++];
     s->auto_hide = v[at++];
     s->show_clock = (v[0] >= 2) ? v[at++] : 1;
+    s->show_seconds = (v[0] >= 3) ? v[at++] : 0;
+    s->show_day_of_week = (v[0] >= 3) ? v[at++] : 0;
+    s->show_timezone = (v[0] >= 3) ? v[at++] : 0;
     tiku_trk_deskbar_settings_normalize(s);
 }
 
@@ -219,10 +232,12 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                                 TIKU_TRK_ATTR_DESKBAR_PREFS, record,
                                 PREF_FIELDS_V1 * sizeof *record);
     }
-    if (n != (int)sizeof record && n != PREF_FIELDS_V1 * (int)sizeof *record) {
+    if (n != (int)sizeof record &&
+        n != PREF_FIELDS_V2 * (int)sizeof *record &&
+        n != PREF_FIELDS_V1 * (int)sizeof *record) {
         return -1;
     }
-    if (record[0] != 1 && record[0] != PREF_VERSION) {
+    if (record[0] < 1 || record[0] > PREF_VERSION) {
         return -1;
     }
     unpack(&prefs->value, record);

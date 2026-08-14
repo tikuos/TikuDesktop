@@ -250,6 +250,7 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_COL_DATE);
     ADD(m, TIKU_TRK_CMD_COL_PATH);
     ADD(m, TIKU_TRK_CMD_COL_PERM);
+    ADD(m, TIKU_TRK_CMD_COL_ORIGINAL);
     /* Name is always a column and cannot be turned off, so it is marked and
      * disabled rather than absent. */
     tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_NAME, 1);
@@ -270,6 +271,8 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                        (c->columns & (1u << TIKU_TRK_COL_PATH)) != 0u);
     tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_PERM,
                        (c->columns & (1u << TIKU_TRK_COL_PERM)) != 0u);
+    tiku_trk_menu_mark(m, TIKU_TRK_CMD_COL_ORIGINAL,
+                       (c->columns & (1u << TIKU_TRK_COL_ORIGINAL)) != 0u);
     if (cw->per_type_count > 0) {
         int k;
 

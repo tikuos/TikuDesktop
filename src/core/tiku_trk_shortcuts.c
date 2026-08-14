@@ -112,6 +112,7 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_COL_DATE:          return "Modified";
     case TIKU_TRK_CMD_COL_PATH:          return "Location";
     case TIKU_TRK_CMD_COL_PERM:          return "Permissions";
+    case TIKU_TRK_CMD_COL_ORIGINAL:      return "Original path";
     case TIKU_TRK_CMD_COL_CAP:           return "Capability";
     case TIKU_TRK_CMD_ADD_ONS:           return "Add-ons" "\xe2\x80\xa6";
     case TIKU_TRK_CMD_MOUNT:             return "Mount";
@@ -288,11 +289,11 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
             return 1;
         }
         return c->clipboard_has_refs && !c->target_ro && !c->is_trash &&
-               !c->is_query;
+               !c->is_query && !c->is_virtual;
 
     case TIKU_TRK_CMD_NEW_FOLDER:
-        return !(c->is_root || c->is_trash || c->in_trash || c->is_query) &&
-               !c->target_ro;
+        return !(c->is_root || c->is_trash || c->in_trash || c->is_query ||
+                 c->is_virtual) && !c->target_ro;
 
     case TIKU_TRK_CMD_CREATE_LINK:
     case TIKU_TRK_CMD_LINK_HERE:

@@ -70,7 +70,7 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
         static const int fields[] = {
             TIKU_TRK_COL_NAME, TIKU_TRK_COL_KIND, TIKU_TRK_COL_VALUE,
             TIKU_TRK_COL_SIZE, TIKU_TRK_COL_CAP, TIKU_TRK_COL_DATE,
-            TIKU_TRK_COL_PATH, TIKU_TRK_COL_PERM
+            TIKU_TRK_COL_PATH, TIKU_TRK_COL_PERM, TIKU_TRK_COL_ORIGINAL
         };
         size_t i;
 
@@ -158,6 +158,9 @@ column_command(int column, const char **title)
     case TIKU_TRK_COL_PERM:
         *title = "Permissions";
         return TIKU_TRK_CMD_COL_PERM;
+    case TIKU_TRK_COL_ORIGINAL:
+        *title = "Original path";
+        return TIKU_TRK_CMD_COL_ORIGINAL;
     default:
         *title = "";
         return 0;

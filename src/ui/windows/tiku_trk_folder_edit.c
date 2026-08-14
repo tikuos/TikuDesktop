@@ -134,6 +134,11 @@ tiku_trk_folder_edit_begin_rename(tiku_trk_folder_edit_t *controller,
     controller->rename_row = row;
     tiku_trk_edit_start(&controller->rename_edit, pose->model.name);
     tiku_trk_edit_deny(&controller->rename_edit, tiku_trk_fs_name_deny());
+    /* A read-only volume still offers the name as selectable text.  This
+     * keeps the usual rename affordance useful for copying a name without
+     * exposing a write path that the volume cannot satisfy (MA-048). */
+    tiku_trk_edit_set_editable(&controller->rename_edit,
+        (pose->model.facts.vol_flags & TIKU_TRK_VOL_READ_ONLY) == 0u);
     snprintf(controller->rename_path, sizeof controller->rename_path, "%s",
              pose->model.path);
     controller->status[0] = '\0';
