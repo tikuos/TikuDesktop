@@ -3466,11 +3466,13 @@ CopyOneTrashedRefAsEntry splits the selection into entriesToTrash and entriesToD
 CheckVolumeReadOnly raises a B_STOP_ALERT and returns false; it gates both MoveSelectionOrEntryToTrash and DeleteSelection, and is tested on the first selected item's device only.  
 `PoseView.cpp` → `CheckVolumeReadOnly`  
 **PORT:** A move or delete of an item on a read-only volume is refused with the volume NAMED, because a user with several mounted needs to know which one refused.  
-#### FS-046 · core · differs
+#### FS-046 · core · partial
 **Delete asks a three-way question — Cancel / Move to Trash / Delete — with Escape, 'm' and 'd' as shortcuts, and warns the operation cannot be reverted.**  
 _DeleteTask shows kDeleteConfirmationStr when confirm is set; case 0 deletes the list and returns B_CANCELED, case 1 (and default) diverts to FSMoveToTrash(list, NULL, false) — running it synchronously on the delete thread — and only case 2 falls through to the real delete.  
 `FSUtils.cpp` → `_DeleteTask`  
-**PORT:** The three-way question is decided by the engine and carried by the status line rather than a modal alert -- this shell has no alert -- and Shift means the user has already decided.
+**PORT:** The question is one rule reached from both the menu item and the Delete key, which had its own copy of the decision until now. Cancel is the first button so Escape lands on it, Return takes the last, and a button answers to the letter it starts with -- which is what makes 'm' and 'd' the shortcuts the source names.  
+**MISSING:** The single-window shell has no alert layer at all, so there the engine's answer is still carried by the status line; the question is asked in `build/desktop` only.  
+*src/ui/commands/tiku_trk_folder_file_actions.c:delete_selection and _answer_delete; src/ui/overlays/tiku_trk_status_overlay.c (letter shortcuts); src/shell/tiku_trk_desktop.c:status_answer; tests/shell/trash.script*
 
 #### FS-047 · important · done
 **Deleting from inside the Trash window skips the confirmation entirely, and Shift+Delete anywhere deletes instead of trashing.**  
@@ -3522,11 +3524,13 @@ BPose::Draw switches to B_OP_ALPHA with B_CONSTANT_ALPHA and alpha 128 when fCli
 `Pose.cpp` → `BPose::Draw`  
 **TIKU:** The broadcast becomes a VFS watch notification; every window showing the node must re-render, which is exactly the watch semantics ("touched, re-read").  
 **PORT:** Icon and label both fade, in every window at once, because the clipboard is one object the windows share.  Only a CUT fades -- a copied item has nothing about to happen to it.  Verified on screen; the fade is not something a unit check can see.  
-#### FS-055 · core · differs
+#### FS-055 · core · partial
 **Paste moves the items when they were Cut and copies them when they were Copied, and a second Paste always copies — Cut is consumed by the first paste.**  
 FSClipboardPaste sorts each clipboard ref into moveList (linksMode or moveMode == kMoveSelectionTo), copyList (kCopySelectionTo) or duplicateList, then for any entry whose moveMode was kMoveSelectionTo sets newMoveMode = kCopySelectionTo and rewrites the clipboard field with clip->ReplaceInt32(modeName, kCopySelectionTo), emitting a kDelete tcnode so the dimming clears.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
-**PORT:** Paste moves cut items and copies copied ones, and a cut is spent by its paste while a copy stays.  A mixed clipboard is treated as a move rather than split into two operations, there being one queue.
+**PORT:** A mixed clipboard is two operations: the cut entries move and the copied ones copy. The engine takes one job at a time, so the copy waits for it to go idle rather than being refused and dropped. A paste spends its cuts by rewriting them to COPY, so the copied entries survive it -- clearing the clipboard would take them with it.  
+**MISSING:** A second paste cannot copy what the first one MOVED, because the clipboard entry still names the old path and is pruned when that file is gone: the entry follows a move only once FS-060's `tiku_trk_clip_moved` has a caller.  
+*src/ui/commands/tiku_trk_folder_file_actions.c:paste and _pump; src/core/tiku_trk_clip.c:tiku_trk_clip_spend_cuts; tests/test_clip.c and tests/shell/paste.script*
 
 #### FS-056 · important · done
 **Pasting copied items into the folder they already live in duplicates them ("<name> copy"); pasting cut items into their own folder does nothing.**  
@@ -3551,12 +3555,14 @@ FSClipboardPaste checks model->IsRoot() after processing the clipboard (so the c
 **PORT:** The filesystem move/copy refusal gate recognizes volume roots before queuing work and reports that disks must be handled through their disk icon instead of mutating the root.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_check_move; src/backends/tiku_trk_volume.c*
 **PORT:** The shared queue gate rejects root destinations before copy or move work starts, preserving the source and returning the Disks-specific refusal. `tests/test_volume.c` covers the root predicate.
-#### FS-060 · important · done
+#### FS-060 · important · partial
 **Clipboard entries follow their files: renaming or moving a cut file updates the clipboard, deleting it or unmounting its volume removes it.**  
 BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus a global B_WATCH_MOUNT. B_ENTRY_MOVED -> UpdateNode(node, new ref) which ReplaceRefs, or removes both fields and stops watching if the replace fails; B_ENTRY_REMOVED -> RemoveNode(node, removeFromClipboard=true); B_DEVICE_UNMOUNTED -> RemoveNodesByDevice(device), which matches clipboard field names by the "r<dev>_" prefix.  
 `FSClipboard.cpp` → `BClipboardRefsWatcher::MessageReceived`  
 **TIKU:** Maps onto VFS watch notifications, but VFS watches are per-boot and capped (TIKU_VFS_WATCH_MAX 8) while the clipboard can hold arbitrarily many nodes — the rewrite needs either a bigger watch table or a lazy revalidation-on-paste strategy.  
-**PORT:** The payload follows the file and the MODE does not: an item cut and then renamed is still cut, and the paste uses the name it has now.
+**PORT:** The payload follows the file and the MODE does not: an item cut and then renamed is still cut, and the paste uses the name it has now.  
+**MISSING:** In a running shell nothing follows the file: `tiku_trk_clip_moved` has no caller, because notices are consumed inside `tiku_trk_poseview_poll` and never reach the clipboard, so a cut file that moves is pruned instead (found closing FS-055).  
+**WIRING:** The entry-following itself is written and tested; what it needs is the shell handing rename notices to the clipboard.
 
 #### FS-061 · important · differs
 **When another application replaces the clipboard contents, all cut/copy highlighting in Tracker disappears.**  
@@ -5113,8 +5119,8 @@ After falling back, an alias entry keyed on (mimeType, preferredApp) is inserted
 HaveIconBitmap requires fLargeIcon->Bounds().Size() == requested size; a mismatch is treated as a miss and SetIcon deletes and replaces. The mini slot is matched by 'size == sMiniIconSize' only, never by bounds.  
 `src/kits/tracker/IconCache.cpp` → `IconCacheEntry::HaveIconBitmap / IconCacheEntry::SetIcon`  
 **TIKU:** On a microcontroller a 128x128 RGBA icon is 64 KB; the rewrite needs an explicit size policy and cache budget rather than 'one of each, whatever was asked last'.  
-**PORT:** A size-keyed cache with mismatch-is-a-miss really is implemented, just with four slots per icon and FIFO eviction instead of one non-mini slot, so a first switch to a new size re-renders but switching back does not; there is a slot count and no byte budget.  
-*src/media/tiku_trk_icons.c:1745-1753 (TIKU_TRK_ICONS_SLOTS 4, per-icon slot row), 1769-1773 (hit requires row[i].size == size), 1785-1798 (FIFO shift-and-evict)*
+**PORT:** A size-keyed cache with mismatch-is-a-miss, with four slots per icon rather than one non-mini slot -- so a first switch to a new size re-renders and switching back does not. The size policy the row's TIKU note asks for is a byte budget over the whole cache (TIKU_TRK_ICONS_BUDGET, 512 KiB): a slot count bounds nothing when one 1024 px render is four megabytes, so the oldest render anywhere goes when a new one would cross it. A single render larger than the budget is the one thing that may exceed it, because the pointer is borrowed until the next flush.  
+*src/media/tiku_trk_icons.c:evict_oldest and tiku_trk_icons_bitmap; tests/test_hvif.c (IV-012)*
 
 #### IV-013 · important · partial
 **Icon sizes scale with the UI font, and are always square.**  

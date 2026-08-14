@@ -59,6 +59,21 @@ const tiku_trk_icon_t *tiku_trk_icons_find(const char *name);
  */
 const uint32_t *tiku_trk_icons_bitmap(const char *name, int size);
 
+/**
+ * @brief How many bytes of rendered icon the cache may hold (IV-012).
+ *
+ * A slot count alone does not bound anything: one 1024 px icon is four
+ * megabytes, and a table of icons with four slots each would hold hundreds.
+ * The oldest render goes when a new one would cross this.
+ */
+#define TIKU_TRK_ICONS_BUDGET (512u * 1024u)
+
+/** @brief How many bytes of rendered icon are held right now. */
+size_t tiku_trk_icons_cached_bytes(void);
+
+/** @brief Whether that exact render is still held, which says what went. */
+int tiku_trk_icons_cached(const char *name, int size);
+
 /** @brief Drop every cached bitmap. */
 void tiku_trk_icons_flush(void);
 

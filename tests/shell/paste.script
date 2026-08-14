@@ -1,15 +1,39 @@
 # shell: desktop
-# Copy-then-Paste in the multi-window shell: the operation the shell
-# silently dropped until the fs step was wired (cf468f8).
-key Down
-key Down
-note FS-051: Ctrl+C puts the selection on the clipboard
-key c ctrl
+# FS-055: a clipboard holding both a cut and a copy is two operations, not
+# one.  Treated as a single move, the COPIED file left where it was -- which
+# is the one thing a copy promises not to do.
+wait 6
+note a.txt is cut, then b.txt is added as a copy
+click-row 1
 wait 2
-expect-status clipboard
-note FS-056: pasting a COPIED item into its own folder duplicates it
+key x ctrl
+wait 3
+click-row 2
+wait 2
+key c ctrl shift
+wait 3
+note pasted into sub: the cut one moves, the copied one stays where it is
+click-row 0
+click-row 0
+wait 10
+expect-title sub
 key v ctrl
-wait 20
-expect-file /tmp/trk_script/a.txt copy
-expect-file /tmp/trk_script/a.txt
+wait 40
+expect-file /tmp/trk_script/sub/a.txt
+expect-no-file /tmp/trk_script/a.txt
+expect-file /tmp/trk_script/sub/b.txt
+expect-file /tmp/trk_script/b.txt
+note the copy is still on the clipboard afterwards, so pasting somewhere
+note else copies it again rather than finding an empty clipboard
+key Up ctrl alt
+wait 10
+expect-title trk_script
+click-row 0
+click-row 0
+wait 10
+expect-title sub
+key v ctrl
+wait 40
+expect-file /tmp/trk_script/b.txt
+expect-file /tmp/trk_script/sub/b.txt
 quit

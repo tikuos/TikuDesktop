@@ -201,6 +201,49 @@ main(void)
         tiku_trk_icons_flush();
     }
 
+    /* A cache with a slot count and no byte budget is not bounded: one
+     * 1024 px icon is four megabytes, and the slots hold four of them per
+     * icon in a table of thirty-four (IV-012). */
+    {
+        static const char *const names[] = { "folder", "file", "trash_full",
+                                             "query", "volume" };
+        size_t i;
+
+        tiku_trk_icons_flush();
+        check(tiku_trk_icons_cached_bytes() == 0,
+              "a flushed cache holds nothing");
+        for (i = 0; i < sizeof names / sizeof names[0]; i++) {
+            (void)tiku_trk_icons_bitmap(names[i], 256);
+        }
+        check(tiku_trk_icons_cached_bytes() <= TIKU_TRK_ICONS_BUDGET,
+              "five icons at 256 px is a megabyte and a quarter, and the "
+              "cache gives up its oldest renders rather than growing to "
+              "hold them all");
+        check(tiku_trk_icons_cached_bytes() > 0,
+              "it does not empty itself either: the newest renders are the "
+              "ones a window is drawing");
+        check(!tiku_trk_icons_cached(names[0], 256) &&
+              tiku_trk_icons_cached(names[4], 256),
+              "and what it gave up is the OLDEST render, not the one just "
+              "asked for: dropping the newest would throw away the art the "
+              "window is drawing this frame");
+        check(tiku_trk_icons_bitmap("folder", 32) != NULL,
+              "an eviction does not break the next render");
+        {
+            /* The pointer is borrowed until the next flush, so one render
+             * larger than the whole budget still has to live somewhere. */
+            const uint32_t *huge = tiku_trk_icons_bitmap("folder", 1024);
+
+            check(huge != NULL, "an icon larger than the budget renders");
+            check(tiku_trk_icons_cached_bytes() <=
+                  TIKU_TRK_ICONS_BUDGET + 1024u * 1024u * 4u,
+                  "and it is the only thing over the budget: everything "
+                  "else was given up to make room for it");
+        }
+        tiku_trk_icons_flush();
+        check(tiku_trk_icons_cached_bytes() == 0, "and a flush empties it");
+    }
+
     /* Nonzero winding, on hand-built geometry.  An inner subpath wound the
      * other way is the only way HVIF cuts a hole, and the ink measurements
      * above cannot see it: filling the cutout solid moves coverage by less

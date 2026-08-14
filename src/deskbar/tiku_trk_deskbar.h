@@ -201,6 +201,19 @@ void tiku_trk_deskbar_set_autoraise(tiku_trk_deskbar_t *db, int on);
  * @return 1 when something about the bar changed and it should be redrawn.
  */
 int tiku_trk_deskbar_pointer(tiku_trk_deskbar_t *db, int x, int y);
+/**
+ * @brief The screen point of the open leaf menu's row named @p label.
+ *
+ * The submenu is searched first, because its rows are drawn over the
+ * leaf's.  Zero when no menu is open or nothing is named that.
+ */
+int tiku_trk_deskbar_menu_point(const tiku_trk_deskbar_t *db,
+                                const char *label, int *x, int *y);
+
+/** @brief The open leaf menu's row labels, or its submenu's, "a|b|" style. */
+int tiku_trk_deskbar_menu_labels(const tiku_trk_deskbar_t *db, int sub,
+                                 char *out, size_t cap);
+
 /** Whether a pointer location is still within the open menu's tracking margin. */
 int tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y);
 /** @brief Deskbar's close policy in the single-process port (DB-053). */

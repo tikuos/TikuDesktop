@@ -76,6 +76,17 @@ int tiku_trk_clip_removed(tiku_trk_clip_t *c, uint64_t id);
 /** @brief Drop every entry whose file has gone.  @return How many went. */
 int tiku_trk_clip_prune(tiku_trk_clip_t *c);
 
+/**
+ * @brief Spend the cuts a paste has just carried out (FS-055).
+ *
+ * A cut entry becomes a copy rather than leaving the clipboard: the file is
+ * no longer where the entry said it was, and a second paste copies what it
+ * moved.  Emptying instead would take the copied entries with it.
+ *
+ * @return How many entries changed.
+ */
+int tiku_trk_clip_spend_cuts(tiku_trk_clip_t *c);
+
 /** @brief Empty it (FS-062). */
 void tiku_trk_clip_clear(tiku_trk_clip_t *c);
 

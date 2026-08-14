@@ -341,6 +341,24 @@ tiku_trk_status_overlay_key(tiku_trk_status_overlay_t *controller,
     } else if (key == TIKU_DESK_KEY_RETURN &&
                controller->alert.nbutton > 0) {
         answer(controller, controller->alert.nbutton - 1);
+    } else if (key >= 'a' && key <= 'z') {
+        /* A button answers to the letter it starts with, which is what
+         * makes the delete question's 'm' and 'd' the shortcuts the
+         * source names (FS-046).  The first match wins; Escape already
+         * owns Cancel, so a second C would not be reached anyway. */
+        int i;
+
+        for (i = 0; i < controller->alert.nbutton; i++) {
+            unsigned first = (unsigned char)controller->alert.button[i][0];
+
+            if (first >= 'A' && first <= 'Z') {
+                first = first - 'A' + 'a';
+            }
+            if (first == key) {
+                answer(controller, i);
+                break;
+            }
+        }
     }
     mark_dirty(controller);
     return 1;

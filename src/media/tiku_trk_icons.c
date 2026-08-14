@@ -1747,10 +1747,75 @@ tiku_trk_icons_find(const char *name)
 typedef struct {
     int       size;
     uint32_t *bmp;
+    unsigned  stamp;                /* render order, for the oldest-first  */
 } tiku_trk_icon_slot_t;
 
 static tiku_trk_icon_slot_t
 tiku_trk_icon_cache[TIKU_TRK_ICON_COUNT][TIKU_TRK_ICONS_SLOTS];
+static size_t   tiku_trk_icon_bytes;
+static unsigned tiku_trk_icon_clock;
+
+static size_t
+slot_bytes(const tiku_trk_icon_slot_t *slot)
+{
+    return (size_t)slot->size * (size_t)slot->size * sizeof *slot->bmp;
+}
+
+/** @brief Free the oldest render anywhere in the cache.  @return its bytes. */
+static size_t
+evict_oldest(void)
+{
+    tiku_trk_icon_slot_t *oldest = NULL;
+    int i, k;
+
+    for (i = 0; i < TIKU_TRK_ICON_COUNT; i++) {
+        for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
+            tiku_trk_icon_slot_t *slot = &tiku_trk_icon_cache[i][k];
+
+            if (slot->bmp != NULL &&
+                (oldest == NULL || slot->stamp < oldest->stamp)) {
+                oldest = slot;
+            }
+        }
+    }
+    if (oldest == NULL) {
+        return 0;
+    }
+    {
+        size_t freed = slot_bytes(oldest);
+
+        free(oldest->bmp);
+        oldest->bmp = NULL;
+        oldest->size = 0;
+        tiku_trk_icon_bytes -= freed;
+        return freed;
+    }
+}
+
+size_t
+tiku_trk_icons_cached_bytes(void)
+{
+    return tiku_trk_icon_bytes;
+}
+
+int
+tiku_trk_icons_cached(const char *name, int size)
+{
+    const tiku_trk_icon_t *ic = tiku_trk_icons_find(name);
+    int idx, k;
+
+    if (ic == NULL) {
+        return 0;
+    }
+    idx = (int)(ic - tiku_trk_icon_table);
+    for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
+        if (tiku_trk_icon_cache[idx][k].bmp != NULL &&
+            tiku_trk_icon_cache[idx][k].size == size) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 const uint32_t *
 tiku_trk_icons_bitmap(const char *name, int size)
@@ -1789,13 +1854,29 @@ tiku_trk_icons_bitmap(const char *name, int size)
     }
     if (i == TIKU_TRK_ICONS_SLOTS) {
         i = 0;
+        tiku_trk_icon_bytes -= slot_bytes(&row[0]);
         free(row[0].bmp);
         memmove(&row[0], &row[1],
                 (TIKU_TRK_ICONS_SLOTS - 1) * sizeof row[0]);
         i = TIKU_TRK_ICONS_SLOTS - 1;
+        row[i].bmp = NULL;
+    }
+    /* The budget is over the whole cache, not this icon's row: a window
+     * asking for one size of thirty icons spends as much as one icon at
+     * four sizes, and only one of those is bounded by a slot count. */
+    {
+        size_t want = (size_t)size * (size_t)size * sizeof *bmp;
+
+        while (tiku_trk_icon_bytes + want > TIKU_TRK_ICONS_BUDGET) {
+            if (evict_oldest() == 0) {
+                break;          /* nothing left to give up */
+            }
+        }
     }
     row[i].size = size;
     row[i].bmp = bmp;
+    row[i].stamp = ++tiku_trk_icon_clock;
+    tiku_trk_icon_bytes += (size_t)size * (size_t)size * sizeof *bmp;
     return bmp;
 }
 
@@ -1811,4 +1892,5 @@ tiku_trk_icons_flush(void)
             tiku_trk_icon_cache[i][k].size = 0;
         }
     }
+    tiku_trk_icon_bytes = 0;
 }

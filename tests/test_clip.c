@@ -150,6 +150,31 @@ main(void)
         check(tiku_trk_clip_count(&c) == 0, "FS-062", "and clearing empties it");
     }
 
+    /* A paste spends the cuts and leaves the copies (FS-055). */
+    {
+        int s0;
+
+        (void)tiku_trk_clip_add(&c, set, 2, TIKU_TRK_CLIP_COPY, 1);
+        (void)tiku_trk_clip_add(&c, &set[2], 1, TIKU_TRK_CLIP_MOVE, 0);
+        s0 = c.serial;
+        check(tiku_trk_clip_spend_cuts(&c) == 1, "FS-055",
+              "pasting spends the CUT entries -- the one item that was to "
+              "leave where it is");
+        check(tiku_trk_clip_mode_of(&c, 103u) == TIKU_TRK_CLIP_COPY,
+              "FS-055",
+              "and what it becomes is a copy, so a second paste copies "
+              "rather than moving a file that is no longer there");
+        check(tiku_trk_clip_mode_of(&c, 101u) == TIKU_TRK_CLIP_COPY &&
+              tiku_trk_clip_count(&c) == 3, "FS-055",
+              "the copies are untouched and nothing is dropped: emptying "
+              "the clipboard would lose them with the cut");
+        check(c.serial != s0, "FS-055",
+              "and the change is announced, so anything drawing cut items "
+              "stops dimming them");
+        check(tiku_trk_clip_spend_cuts(&c) == 0, "FS-055",
+              "a second paste has no cuts left to spend");
+    }
+
     /* The serial moves whenever the contents do, so a view can tell (FS-061). */
     {
         int s0;

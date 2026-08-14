@@ -78,6 +78,81 @@ close_selected(tiku_trk_folder_file_actions_t *controller,
     }
 }
 
+/** @brief Destroy the selection outright, saying that it cannot be undone. */
+static void
+delete_outright(tiku_trk_folder_file_actions_t *controller,
+                tiku_trk_folder_window_t *folder)
+{
+    char paths[64][TIKU_TRK_PATH_MAX];
+    const char *selection[64];
+    int count = tiku_trk_folder_file_actions_selection(folder, paths,
+                                                        selection, 64);
+
+    if (count == 0) {
+        return;
+    }
+    snprintf(controller->status, controller->status_size,
+             "deleting %d item%s -- this cannot be undone", count,
+             count == 1 ? "" : "s");
+    (void)tiku_trk_fs_delete(controller->fs, selection, count);
+    close_selected(controller, selection, count);
+}
+
+/** @brief Move the selection to the Trash, refusing what must not go. */
+static void
+move_to_trash(tiku_trk_folder_file_actions_t *controller,
+              tiku_trk_folder_window_t *folder, int forced)
+{
+    char paths[64][TIKU_TRK_PATH_MAX];
+    const char *selection[64];
+    int count = tiku_trk_folder_file_actions_selection(folder, paths,
+                                                        selection, 64);
+    int i;
+
+    if (count == 0) {
+        return;
+    }
+    snprintf(controller->status, controller->status_size,
+             "moving %d item%s to the Trash", count,
+             count == 1 ? "" : "s");
+    for (i = 0; i < count; i++) {
+        tiku_trk_confirm_t confirmation =
+            tiku_trk_fs_confirm_move(selection[i]);
+
+        if (confirmation == TIKU_TRK_CONFIRM_OVERRIDE && !forced) {
+            char message[300];
+
+            snprintf(message, sizeof message,
+                "\"%.60s\" is a system folder.  Hold Shift and choose "
+                "Move to confirm.", selection[i]);
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+                TIKU_TRK_ALERT_TAG_REFUSAL, message, "Cancel");
+            return;
+        }
+        if (confirmation == TIKU_TRK_CONFIRM_ASK) {
+            snprintf(controller->status, controller->status_size,
+                "'%.60s' holds settings -- moving it anyway", selection[i]);
+        }
+    }
+    (void)tiku_trk_fs_trash(controller->fs, selection, count);
+    close_selected(controller, selection, count);
+}
+
+void
+tiku_trk_folder_file_actions_answer_delete(
+    tiku_trk_folder_file_actions_t *controller,
+    tiku_trk_folder_window_t *folder, tiku_trk_delete_answer_t answer)
+{
+    if (controller == NULL || folder == NULL) {
+        return;
+    }
+    if (answer == TIKU_TRK_DELETE_ANSWER_TRASH) {
+        move_to_trash(controller, folder, 0);
+    } else if (answer == TIKU_TRK_DELETE_ANSWER_DELETE) {
+        delete_outright(controller, folder);
+    }
+}
+
 static void
 delete_selection(tiku_trk_folder_file_actions_t *controller,
                  tiku_trk_folder_window_t *folder, int command)
@@ -86,51 +161,35 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
     const char *selection[64];
     int count = tiku_trk_folder_file_actions_selection(folder, paths,
                                                         selection, 64);
-    tiku_trk_delete_q_t question;
+    int shift = command == TIKU_TRK_CMD_DELETE;
 
     if (count == 0) {
         return;
     }
-    question = tiku_trk_fs_delete_question(controller->fs, selection[0],
-                                            command == TIKU_TRK_CMD_DELETE);
-    if (question == TIKU_TRK_DELETE_STRAIGHT) {
-        snprintf(controller->status, controller->status_size,
-                 "deleting %d item%s -- this cannot be undone", count,
-                 count == 1 ? "" : "s");
-        (void)tiku_trk_fs_delete(controller->fs, selection, count);
-        close_selected(controller, selection, count);
+    if (tiku_trk_fs_delete_question(controller->fs, selection[0], shift) ==
+        TIKU_TRK_DELETE_STRAIGHT) {
+        if (shift) {
+            delete_outright(controller, folder);
+        } else {
+            /* No Trash to offer, or already in one: there is no question
+             * to ask, and the one way out is the one that happens. */
+            delete_outright(controller, folder);
+        }
         return;
     }
-    snprintf(controller->status, controller->status_size,
-             "moving %d item%s to the Trash", count,
-             count == 1 ? "" : "s");
+    /* Three ways out, and the destructive one says so before it is taken
+     * (FS-046).  Cancel is first so Escape lands on it. */
     {
-        int i;
+        char message[300];
 
-        for (i = 0; i < count; i++) {
-            tiku_trk_confirm_t confirmation =
-                tiku_trk_fs_confirm_move(selection[i]);
-
-            if (confirmation == TIKU_TRK_CONFIRM_OVERRIDE &&
-                command != TIKU_TRK_CMD_DELETE) {
-                char message[300];
-
-                snprintf(message, sizeof message,
-                    "\"%.60s\" is a system folder.  Hold Shift and choose "
-                    "Move to confirm.", selection[i]);
-                tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
-                    TIKU_TRK_ALERT_TAG_REFUSAL, message, "Cancel");
-                return;
-            }
-            if (confirmation == TIKU_TRK_CONFIRM_ASK) {
-                snprintf(controller->status, controller->status_size,
-                    "'%.60s' holds settings -- moving it anyway",
-                    selection[i]);
-            }
-        }
+        snprintf(message, sizeof message,
+                 "Are you sure you want to delete %d item%s?  This "
+                 "operation cannot be reverted.", count,
+                 count == 1 ? "" : "s");
+        tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+                            TIKU_TRK_ALERT_TAG_DELETE, message,
+                            "Cancel|Move to Trash|Delete");
     }
-    (void)tiku_trk_fs_trash(controller->fs, selection, count);
-    close_selected(controller, selection, count);
 }
 
 static void
@@ -240,7 +299,12 @@ paste(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX], here[64][TIKU_TRK_PATH_MAX];
     const char *selection[64], *same[64];
-    int i, count = 0, same_count = 0, moving = 0;
+    /* Two lists over one store: a clipboard holding both a cut and a copy
+     * is two operations, and running it as one move takes the COPIED file
+     * away from where it was (FS-055). */
+    const char *moves[64], *copies[64];
+    int move_count = 0, copy_count = 0;
+    int i, count = 0, same_count = 0;
     int links = command == TIKU_TRK_CMD_PASTE_LINKS;
 
     (void)tiku_trk_clip_prune(controller->clip);
@@ -265,7 +329,9 @@ paste(tiku_trk_folder_file_actions_t *controller,
         snprintf(paths[count], sizeof paths[count], "%s", entry->path);
         selection[count] = paths[count];
         if (entry->mode == TIKU_TRK_CLIP_MOVE) {
-            moving = 1;
+            moves[move_count++] = paths[count];
+        } else {
+            copies[copy_count++] = paths[count];
         }
         count++;
     }
@@ -284,7 +350,7 @@ paste(tiku_trk_folder_file_actions_t *controller,
         return;
     }
     if (tiku_trk_fs_in_trash(controller->fs, folder->path) &&
-        (links || !moving)) {
+        (links || copy_count > 0)) {
         snprintf(controller->status, controller->status_size, "%s",
                  links ? "Sorry, you can't create links in the Trash."
                        : "Sorry, you can't copy items to the Trash.");
@@ -298,17 +364,56 @@ paste(tiku_trk_folder_file_actions_t *controller,
                  count == 1 ? "" : "s");
         return;
     }
-    if (moving) {
-        (void)tiku_trk_fs_move(controller->fs, selection, count,
-                               folder->path, TIKU_TRK_CONFLICT_ASK);
-        tiku_trk_clip_clear(controller->clip);
-    } else {
-        (void)tiku_trk_fs_copy(controller->fs, selection, count,
+    if (move_count > 0) {
+        (void)tiku_trk_fs_move(controller->fs, moves, move_count,
                                folder->path, TIKU_TRK_CONFLICT_ASK);
     }
-    snprintf(controller->status, controller->status_size,
-             "%s %d item%s here", moving ? "moving" : "copying", count,
-             count == 1 ? "" : "s");
+    if (copy_count > 0 && move_count == 0) {
+        (void)tiku_trk_fs_copy(controller->fs, copies, copy_count,
+                               folder->path, TIKU_TRK_CONFLICT_ASK);
+    } else if (copy_count > 0) {
+        /* The engine takes one job at a time, and a start() while it is
+         * busy is refused -- which would drop the copy half of a mixed
+         * paste on the floor.  It waits for the pump instead. */
+        int k;
+
+        for (k = 0; k < copy_count; k++) {
+            snprintf(controller->deferred[k], TIKU_TRK_PATH_MAX, "%s",
+                     copies[k]);
+            controller->deferred_paths[k] = controller->deferred[k];
+        }
+        controller->deferred_count = copy_count;
+        snprintf(controller->deferred_dest, sizeof controller->deferred_dest,
+                 "%s", folder->path);
+    }
+    /* The cut is spent by its paste, and becomes a copy: the file is not
+     * where the entry said it was any more, and emptying the clipboard
+     * instead would take the copied entries with it (FS-055). */
+    (void)tiku_trk_clip_spend_cuts(controller->clip);
+    if (move_count > 0 && copy_count > 0) {
+        snprintf(controller->status, controller->status_size,
+                 "moving %d item%s and copying %d here", move_count,
+                 move_count == 1 ? "" : "s", copy_count);
+    } else {
+        snprintf(controller->status, controller->status_size,
+                 "%s %d item%s here", move_count > 0 ? "moving" : "copying",
+                 count, count == 1 ? "" : "s");
+    }
+}
+
+int
+tiku_trk_folder_file_actions_pump(tiku_trk_folder_file_actions_t *controller)
+{
+    if (controller == NULL || controller->deferred_count <= 0 ||
+        tiku_trk_fs_busy(controller->fs)) {
+        return 0;
+    }
+    (void)tiku_trk_fs_copy(controller->fs, controller->deferred_paths,
+                           controller->deferred_count,
+                           controller->deferred_dest,
+                           TIKU_TRK_CONFLICT_ASK);
+    controller->deferred_count = 0;
+    return 1;
 }
 
 int

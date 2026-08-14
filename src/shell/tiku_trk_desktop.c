@@ -212,6 +212,8 @@ typedef struct desktop {
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
+static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
+static folder_t *desktop_folder(desktop_t *app);
 
 static void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
@@ -355,6 +357,16 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
         tiku_trk_fs_resolve_error(app->fs,
                                   alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
+        /* Cancel, Move to Trash, Delete, in the order the buttons are
+         * offered (FS-046). */
+        folder_t *fl = folder_of(app, tiku_desk_workspace_focused(app->desk));
+
+        if (fl == NULL) {
+            fl = desktop_folder(app);
+        }
+        tiku_trk_folder_file_actions_answer_delete(&app->file_actions, fl,
+            (tiku_trk_delete_answer_t)alert->chosen);
     }
 }
 
@@ -442,8 +454,6 @@ desktop_folder(desktop_t *app)
 {
     return tiku_trk_desktop_view_folder(&app->desktop_view);
 }
-
-static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 
 /**
  * @brief Finish an edit: check the value, then write it.
@@ -3102,28 +3112,14 @@ tracker_run(int argc, char **argv)
                     /* What the key MEANS depends on where the items are: a
                      * move that can be undone where there is a Trash to
                      * move them to, and a deletion inside it or when Shift
-                     * says the user has already decided (PVK-038).  This
-                     * shell had no Delete key at all. */
-                    char paths[64][TIKU_TRK_PATH_MAX];
-                    const char *sel[64];
-                    int n = folder_selection(&app, fl, paths, sel, 64);
-
-                    if (n > 0) {
-                        int shift = (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
-
-                        if (tiku_trk_fs_delete_question(app.fs, sel[0],
-                                shift) == TIKU_TRK_DELETE_STRAIGHT) {
-                            (void)tiku_trk_fs_delete(app.fs, sel, n);
-                            snprintf(app.status, sizeof app.status,
-                                     "deleting %d item%s", n,
-                                     (n == 1) ? "" : "s");
-                        } else {
-                            (void)tiku_trk_fs_trash(app.fs, sel, n);
-                            snprintf(app.status, sizeof app.status,
-                                     "moving %d item%s to the Trash", n,
-                                     (n == 1) ? "" : "s");
-                        }
-                    }
+                     * says the user has already decided (PVK-038).  The
+                     * key asks the same controller the menu item does, so
+                     * the question a delete puts up is one rule and not
+                     * one per way of reaching it (FS-046). */
+                    menu_invoke(&app, fl,
+                        (ev.modifiers & TIKU_DESK_MOD_SHIFT)
+                            ? TIKU_TRK_CMD_DELETE
+                            : TIKU_TRK_CMD_MOVE_TO_TRASH);
                     app.dirty = 1;
                     break;
                 }
@@ -3760,6 +3756,9 @@ tracker_run(int argc, char **argv)
              * done.  Membership changes reach the windows through the
              * notice poll above, which is why nothing is reloaded here. */
             (void)tiku_trk_fs_step(app.fs, 4);
+            /* A mixed paste left its second half waiting for the engine to
+             * go idle; this is where it gets to start (FS-055). */
+            (void)tiku_trk_folder_file_actions_pump(&app.file_actions);
             pr = tiku_trk_fs_progress(app.fs);
             if (pr->conflict) {
                 /* Asked, not assumed.  The engine worked out which form

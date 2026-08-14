@@ -1,16 +1,28 @@
 # shell: desktop
 # work: home
-# PVK-038: the Delete key, which this shell did not have at all.  What it
-# means depends on where the item is: a move that can be undone where there
+# PVK-038/FS-046: the Delete key, which this shell did not have at all.  What
+# it means depends on where the item is: a move that can be undone where there
 # is a Trash, and a deletion when Shift says the user has decided.
-note Delete moves the selection to the Trash rather than destroying it
+note FS-046: Delete asks first, and says what cannot be taken back
 click-row 1
 wait 3
 key Delete
+wait 5
+expect-alert cannot be reverted
+note Escape is the Cancel button: the file is still where it was
+key Escape
+wait 20
+expect-file /tmp/trk_home/.trk-shell-fixture/a.txt
+note and 'm' is Move to Trash, which is what the question offers instead
+key Delete
+wait 5
+expect-alert cannot be reverted
+key m
 wait 30
 expect-no-file /tmp/trk_home/.trk-shell-fixture/a.txt
 expect-file /tmp/trk_home/.Trash/a.txt
-note Shift+Delete is final, and says so
+note Shift+Delete is final, and says so -- no question, because Shift IS the
+note answer to it
 click-row 1
 wait 3
 key Delete shift
@@ -18,4 +30,14 @@ wait 30
 expect-no-file /tmp/trk_home/.trk-shell-fixture/b.txt
 note and it is not in the Trash either, which is the whole difference
 expect-no-file /tmp/trk_home/.Trash/b.txt
+note 'd' takes the third way out: gone, without passing through the Trash
+click-row 1
+wait 3
+key Delete
+wait 5
+expect-alert cannot be reverted
+key d
+wait 30
+expect-no-file /tmp/trk_home/.trk-shell-fixture/c.txt
+expect-no-file /tmp/trk_home/.Trash/c.txt
 quit

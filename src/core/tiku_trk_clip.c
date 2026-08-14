@@ -171,6 +171,26 @@ tiku_trk_clip_prune(tiku_trk_clip_t *c)
     return dropped;
 }
 
+int
+tiku_trk_clip_spend_cuts(tiku_trk_clip_t *c)
+{
+    int i, spent = 0;
+
+    if (c == NULL) {
+        return 0;
+    }
+    for (i = 0; i < c->count; i++) {
+        if (c->item[i].mode == TIKU_TRK_CLIP_MOVE) {
+            c->item[i].mode = TIKU_TRK_CLIP_COPY;
+            spent++;
+        }
+    }
+    if (spent > 0) {
+        c->serial++;
+    }
+    return spent;
+}
+
 void
 tiku_trk_clip_clear(tiku_trk_clip_t *c)
 {
