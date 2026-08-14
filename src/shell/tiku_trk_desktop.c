@@ -1012,6 +1012,43 @@ blit(desktop_t *app)
     (void)tiku_desk_host_present(app->host, app->surf);
 }
 
+/** @brief Adopt a native host frame throughout the desktop controllers. */
+static int
+resize_desktop(desktop_t *app, int width, int height)
+{
+    if (app == NULL || width <= 0 || height <= 0 ||
+        (width == app->surf->w && height == app->surf->h)) {
+        return 0;
+    }
+    if (tiku_desk_surface_resize(app->surf, width, height,
+                                 TIKU_DESK_C_BACKDROP) != 0) {
+        return -1;
+    }
+    app->status_overlay.screen_w = width;
+    app->status_overlay.screen_h = height;
+    app->find_window.screen_w = width;
+    app->find_window.screen_h = height;
+    app->select_window.screen_w = width;
+    app->select_window.screen_h = height;
+    app->prefs_window.screen_w = width;
+    app->prefs_window.screen_h = height;
+    app->deskbar_prefs_window.screen_w = width;
+    app->deskbar_prefs_window.screen_h = height;
+    app->switcher_window.screen_w = width;
+    app->switcher_window.screen_h = height;
+    app->file_panel.screen_w = width;
+    app->file_panel.screen_h = height;
+    app->folder_render.screen_w = width;
+    app->folder_render.screen_h = height;
+    app->folder_lifecycle.screen_w = width;
+    app->folder_lifecycle.screen_h = height;
+    app->desktop_view.screen_w = width;
+    app->desktop_view.screen_h = height;
+    app->drop_controller.screen_w = width;
+    app->drop_controller.screen_h = height;
+    return 1;
+}
+
 static void
 draw_all(desktop_t *app)
 {
@@ -1094,7 +1131,8 @@ draw_all(desktop_t *app)
             tiku_desk_rect_t r;
             int i;
 
-            tiku_trk_nav_place(&app->nav, k, px, py, DESK_W, DESK_H,
+            tiku_trk_nav_place(&app->nav, k, px, py, app->surf->w,
+                               app->surf->h,
                                &r.x, &r.y, &r.w, &r.h);
             tiku_desk_fill(app->surf, r, TIKU_DESK_C_PANEL);
             tiku_desk_bevel(app->surf, r,
@@ -1581,7 +1619,8 @@ tracker_run(int argc, char **argv)
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
         app.popup_frame = tiku_trk_menu_place(app.popup, 250, 150,
-                              (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                              (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                  app.surf->h });
         c = menu_ctx(&app, fl, TIKU_TRK_MOD_SHIFT);
         tiku_trk_sc_update(app.popup, &c);
     }
@@ -1602,7 +1641,8 @@ tracker_run(int argc, char **argv)
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
         app.popup_frame = tiku_trk_menu_place(app.popup, 250, 160,
-                              (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                              (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                  app.surf->h });
     }
     app.running = 1;
     app.dirty = 1;
@@ -1636,6 +1676,9 @@ tracker_run(int argc, char **argv)
             }
             switch (ev.type) {
             case TIKU_DESK_EVENT_RESIZE:
+                (void)resize_desktop(&app, ev.width, ev.height);
+                app.dirty = 1;
+                break;
             case TIKU_DESK_EVENT_EXPOSE:
                 app.dirty = 1;
                 break;
@@ -1820,8 +1863,9 @@ tracker_run(int argc, char **argv)
                         tiku_desk_rect_t r;
                         int at;
 
-                        tiku_trk_nav_place(&app.nav, k, px2, py2, DESK_W,
-                                           DESK_H, &r.x, &r.y, &r.w, &r.h);
+                        tiku_trk_nav_place(&app.nav, k, px2, py2,
+                                           app.surf->w, app.surf->h,
+                                           &r.x, &r.y, &r.w, &r.h);
                         at = tiku_trk_nav_item_at(&app.nav, k, r.x, r.y,
                                                   ev.x,
                                                   ev.y);
@@ -1878,8 +1922,8 @@ tracker_run(int argc, char **argv)
                                 app.popup_sub_frame =
                                     tiku_trk_menu_place_sub(app.popup, pick,
                                         app.popup_frame,
-                                        (tiku_desk_rect_t){ 0, 0, DESK_W,
-                                                            DESK_H });
+                                        (tiku_desk_rect_t){ 0, 0,
+                                            app.surf->w, app.surf->h });
                                 app.dirty = 1;
                                 break;
                             }
@@ -2062,7 +2106,8 @@ tracker_run(int argc, char **argv)
                             app.popup_sub = NULL;
                             app.popup_frame = tiku_trk_menubar_panel(
                                 &app.menus.bar, bf,
-                                (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                                (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                    app.surf->h });
                             app.nav_on = 0;
                             app.dirty = 1;
                             break;
@@ -2416,9 +2461,9 @@ tracker_run(int argc, char **argv)
                     /* Ctrl held on the bar: the pointer IS the picker.
                      * Where it lets go decides the dock, and a release in
                      * the middle keeps the one it started from (DB-049). */
-                    tiku_trk_db_dock_t want =
+                        tiku_trk_db_dock_t want =
                         tiku_trk_deskbar_dock_at(ev.x, ev.y,
-                            DESK_W, DESK_H,
+                            app.surf->w, app.surf->h,
                             tiku_trk_deskbar_dock(app.deskbar));
 
                     if (want != tiku_trk_deskbar_dock(app.deskbar)) {
@@ -2486,7 +2531,8 @@ tracker_run(int argc, char **argv)
                     app.popup_sub = NULL;
                     app.popup_frame = tiku_trk_menu_place(app.popup,
                         ev.x, ev.y,
-                        (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                        (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                            app.surf->h });
                     app.dirty = 1;
                 }
                 tiku_trk_drag_reset(&app.drag);
@@ -2624,8 +2670,8 @@ tracker_run(int argc, char **argv)
                     int wx, wy;
 
                     if (!tiku_desk_host_pointer(app.host, &wx, &wy, NULL)) {
-                        wx = DESK_W / 2;
-                        wy = DESK_H / 2;
+                        wx = app.surf->w / 2;
+                        wy = app.surf->h / 2;
                     }
                     tiku_trk_select_window_open(&app.select_window, fl,
                                                 wx, wy);
@@ -2989,7 +3035,8 @@ tracker_run(int argc, char **argv)
                             (p != NULL) ? &p->model : NULL, &c);
             app.popup_sub = NULL;
             app.popup_frame = tiku_trk_menu_place(app.popup, app.press_x,
-                app.press_y, (tiku_desk_rect_t){ 0, 0, DESK_W, DESK_H });
+                app.press_y, (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                 app.surf->h });
             app.press_menu = 1;
             app.press_down = 0;
             app.dirty = 1;

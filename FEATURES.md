@@ -5972,7 +5972,7 @@ SetIconMapping(false), SetEnsurePosesVisible(true), SetAutoScroll(false); pose v
 **Changing screen resolution saves the icon positions against the old frame first, then re-lays icons that would fall off the new screen.**  
 SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibility(frameChanged ? &frame : 0) so old-frame pose info can drive rearrangement.  
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
-**SUBSYSTEM:** The native host now handles ConfigureNotify by scaling the complete fixed logical surface and mapping input back into it, so maximize and resize fill the native window. The Desktop surface itself remains 1000x680, however, so there is still no old/new logical frame transition on which to save resolution-specific positions and pull newly unreachable icons back.
+**SUBSYSTEM:** ConfigureNotify now resizes the Desktop's DPI-aware logical surface and updates every controller's screen bounds, so a real old/new frame transition exists. What remains is saving pose locations under a resolution-specific key before that transition and restoring or pulling back poses for the new frame.
 
 #### AW-021 · polish · open
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  
@@ -7278,10 +7278,10 @@ B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from t
 **Deskbar re-lays itself out when the workspace is activated and when the screen resolution changes, keeping itself docked to the correct edge**  
 WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where it only re-sizes/re-positions/invalidates, to avoid rebuilding the app list); ScreenChanged re-applies size limits, recalculates the dock regions and re-runs UpdatePlacement  
 `BarWindow.cpp` → `TBarWindow::WorkspaceActivated`
-**PORT:** Native resize scales the complete logical desktop and inversely maps
-input, so the dock, width and hidden sliver stay on the correct visual edge.
-**MISSING:** The logical surface remains fixed rather than re-laying out at a
-new resolution, and this port has no workspace-activation event.
+**PORT:** A native resize replaces the DPI-aware logical surface, updates every
+retained screen bound and lets Deskbar derive its frame from the new surface,
+so the dock, width and hidden sliver re-lay on the correct physical edge.
+**MISSING:** This port has no workspace-activation event.
 *applications/desktop/src/tiku_desk_x11.c; src/deskbar/tiku_trk_deskbar.c*
 
 #### DB-069 · important · open ⟨found by verification⟩

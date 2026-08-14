@@ -2291,6 +2291,14 @@ tracker_run(int argc, char **argv)
 
             switch (ev.type) {
             case TIKU_DESK_EVENT_RESIZE:
+                if (ev.width > 0 && ev.height > 0 &&
+                    (ev.width != a.surf->w || ev.height != a.surf->h)) {
+                    (void)tiku_desk_surface_resize(a.surf, ev.width,
+                                                   ev.height,
+                                                   TIKU_DESK_C_PANEL);
+                }
+                a.dirty = 1;
+                break;
             case TIKU_DESK_EVENT_EXPOSE:
                 a.dirty = 1;
                 break;
