@@ -35,6 +35,7 @@ struct tiku_trk_poseview {
     int                 filtering;
     uint64_t            menu_generation;
     int64_t             broken_repair_due;
+    tiku_trk_repaint_t  repaint;
 
     int                 pivot;          /* fSelectionPivotPose (-1 = none)  */
     int                 last_added;     /* for shift+arrow walk-back        */
@@ -1147,6 +1148,7 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     v->edit_pose = -1;
     v->allow_editing = 1;
     v->font_px = TIKU_TRK_FONT_REF;
+    tiku_trk_repaint_init(&v->repaint);
 
     v->columns[0] = (tiku_trk_column_t){ "Name",  240, TIKU_TRK_COL_NAME,
                                          0, TIKU_TRK_ALIGN_LEFT };
@@ -1769,6 +1771,13 @@ int
 tiku_trk_poseview_band(const tiku_trk_poseview_t *v)
 {
     return (v != NULL) ? v->band : 0;
+}
+
+int
+tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
+                               tiku_trk_repaint_rect_t *out, int max)
+{
+    return v != NULL ? tiku_trk_repaint_take(&v->repaint, out, max) : 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4085,6 +4094,10 @@ insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
         resort(v);
     }
     at = sorted_slot(v, p);
+    tiku_trk_repaint_insert(&v->repaint,
+                            (tiku_trk_repaint_rect_t){0, 0, v->view_w, v->view_h},
+                            v->row_h > 0 ? v->row_h : 1,
+                            at < v->scroll);
     for (i = v->count; i > at; i--) {
         v->poses[i] = v->poses[i - 1];
     }
@@ -4119,6 +4132,10 @@ remove_pose(tiku_trk_poseview_t *v, int at)
     if (at < 0 || at >= v->count) {
         return;
     }
+    tiku_trk_repaint_remove(&v->repaint,
+                            (tiku_trk_repaint_rect_t){0, 0, v->view_w, v->view_h},
+                            v->row_h > 0 ? v->row_h : 1,
+                            at * (v->row_h > 0 ? v->row_h : 1));
     for (i = at; i < v->count - 1; i++) {
         v->poses[i] = v->poses[i + 1];
     }

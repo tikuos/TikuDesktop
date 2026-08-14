@@ -24,6 +24,7 @@
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_notify.h"
 #include "tiku_trk_view_defs.h"
+#include "tiku_trk_repaint.h"
 
 /* The layout clipboard is deliberately a second, typed channel.  File
  * references and a column layout must never overwrite one another: copying a
@@ -364,6 +365,8 @@ void tiku_trk_poseview_show_selection_when_inactive(tiku_trk_poseview_t *v,
  * would give no feedback at all.
  */
 void tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on);
+int tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
+                                   tiku_trk_repaint_rect_t *out, int max);
 int tiku_trk_poseview_band(const tiku_trk_poseview_t *v);
 
 /*---------------------------------------------------------------------------*/

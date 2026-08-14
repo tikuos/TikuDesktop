@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "tiku_trk_drop_controller.h"
+#include "tiku_trk_drop_protocol.h"
 #include "tiku_trk_model.h"
 
 void
@@ -211,6 +212,23 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
     tiku_trk_model_t model;
     const char *reason = NULL;
     char refused[200];
+
+    if (controller->drag->foreign_refs) {
+        tiku_trk_foreign_offer_t offer;
+        tiku_trk_drop_result_t result;
+        const char *types = controller->drag->ntype > 0
+                                ? controller->drag->type[0] : "text/uri-list";
+        (void)tiku_trk_foreign_offer_parse(&offer, "copy move link", types, 0);
+        result = tiku_trk_foreign_drop(&offer, destination[0] != '\0', 0,
+                                       strcmp(destination, "/") == 0, 0);
+        if (!result.accepted) {
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+                                TIKU_TRK_ALERT_TAG_REFUSAL,
+                                "This drop target cannot accept those items.",
+                                "Cancel");
+            return 0;
+        }
+    }
 
     if (controller->backend->ops->stat(controller->backend, destination,
                                        &model) != 0 ||

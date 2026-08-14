@@ -55,14 +55,15 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_types.c src/core/tiku_trk_prefs.c \
         src/core/tiku_trk_switcher.c src/core/tiku_trk_frame.c \
         src/core/tiku_trk_panel.c src/core/tiku_trk_info.c \
-        src/core/tiku_trk_model.c
+        src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
+        src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c
 BACKENDS := src/backends/tiku_trk_notify.c src/backends/tiku_trk_vdir.c \
             src/backends/tiku_trk_volume.c \
             src/backends/tiku_trk_backend_posix.c \
             src/backends/tiku_trk_backend_tiku.c \
             src/backends/tiku_trk_fs.c
 UI_SUPPORT := src/ui/tiku_trk_scroll.c src/ui/tiku_trk_navmenu.c \
-              src/ui/tiku_trk_nodeicon.c
+              src/ui/tiku_trk_nodeicon.c src/ui/tiku_trk_springmenu.c
 MEDIA_SUPPORT := src/media/tiku_trk_image.c src/media/tiku_trk_thumb.c \
                  src/media/tiku_trk_inflate.c src/media/tiku_trk_jpeg.c
 COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
@@ -75,7 +76,9 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
-            $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip
+            $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
+            $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
+            $(BUILD)/test_springmenu $(BUILD)/test_color
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop
 
@@ -85,6 +88,18 @@ $(DESK_LIBS) &: $(DESK_SOURCES)
 $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop: $(DESK_LIBS)
 
 $(BUILD)/test_task: src/core/tiku_trk_task.c tests/test_task.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_repaint: src/core/tiku_trk_repaint.c tests/test_repaint.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_drop_protocol: src/core/tiku_trk_drop_protocol.c tests/test_drop_protocol.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_springmenu: src/ui/tiku_trk_springmenu.c tests/test_springmenu.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_model: $(COMMON) tests/test_model.c | $(BUILD)
@@ -119,6 +134,7 @@ $(BUILD)/test_notify: src/backends/tiku_trk_notify.c src/ui/tiku_trk_poseview.c 
                       src/core/tiku_trk_match.c src/core/tiku_trk_clip.c \
                       src/core/tiku_trk_state.c src/backends/tiku_trk_backend_posix.c \
                       src/core/tiku_trk_task.c \
+                      src/core/tiku_trk_repaint.c \
                       src/ui/tiku_trk_nodeicon.c src/core/tiku_trk_types.c src/media/tiku_trk_thumb.c \
                       src/media/tiku_trk_image.c src/media/tiku_trk_inflate.c \
                       src/media/tiku_trk_jpeg.c \
