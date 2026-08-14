@@ -17,10 +17,18 @@
 #include "tiku_trk_drag.h"
 #include "tiku_trk_folder_window.h"
 #include "tiku_trk_fs.h"
-#include "tiku_trk_prefs_window.h"
 
 typedef void (*tiku_trk_folder_close_under_fn)(void *context,
                                                 const char *path);
+
+/**
+ * @brief Show the preferences, however the shell showing them does it.
+ *
+ * A callback rather than a window: what Preferences MEANS is the shell's
+ * business, and the command layer is shared by a shell that has no window
+ * stack at all.
+ */
+typedef void (*tiku_trk_folder_prefs_fn)(void *context);
 
 /** @brief Services shared by folder commands that mutate filesystem state. */
 typedef struct {
@@ -30,7 +38,8 @@ typedef struct {
     tiku_trk_drag_t                  *pending;
     char                             *drop_destination;
     tiku_trk_alert_t                 *alert;
-    tiku_trk_prefs_window_t          *preferences;
+    tiku_trk_folder_prefs_fn          open_prefs;
+    void                             *prefs_context;
     char                             *status;
     size_t                            status_size;
     tiku_trk_folder_close_under_fn    close_under;
@@ -54,7 +63,8 @@ void tiku_trk_folder_file_actions_init(
     tiku_trk_backend_t *backend,
     tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
     char *drop_destination, tiku_trk_alert_t *alert,
-    tiku_trk_prefs_window_t *preferences, char *status, size_t status_size,
+    tiku_trk_folder_prefs_fn open_prefs, void *prefs_context,
+    char *status, size_t status_size,
     tiku_trk_folder_close_under_fn close_under, void *close_context);
 
 /** @brief Collect selected paths into stable caller-owned storage. */

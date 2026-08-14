@@ -78,17 +78,19 @@ locale, workspace, or richer-window subsystem is genuinely absent.
    real -- shell work is doubled -- which is why the scripted shell
    harness is a prerequisite rather than a nicety: proving every shell row
    twice by hand is not affordable.
-6. **The command layer is NOT shared between the shells** (measured
-   2026-08-15).  `build/tracker` holds no reference to the file-action
-   controllers at all: it has its own inline delete, no file clipboard
-   (no Cut/Copy/Paste), and no alert layer, so the delete question, the
-   mixed-clipboard paste, Duplicate, Create link and Identify exist in
-   `build/desktop` only.  `tools/sweep_shells.sh` runs every desktop
-   script against the other shell: 49 of 49 fail at least one check, and
-   while many are red for reasons rule 5 accepts (several windows, the
-   Deskbar, the backdrop), the file-operation ones are red because the
-   layer is not shared.  A row about a file command that says `done`
-   should be read as done in the multi-window shell.
+6. **The command layer is now shared; the DROP layer is not** (2026-08-15).
+   Both shells go through `tiku_trk_folder_file_actions_*`, so Delete,
+   Duplicate, Create link, Identify, Cut/Copy/Paste and the mixed-clipboard
+   paste are one implementation -- `build/tracker` had its own inline
+   delete and no file clipboard at all.  What it still lacks is an alert
+   layer (so FS-046's three-way question is `build/desktop`'s, and the
+   engine's answer stands here instead), a Select window, and any
+   drop-onto-a-folder handling: its drag ends by saving positions, so every
+   drop row is the multi-window shell's.  `tools/sweep_shells.sh` measures
+   the gap by running every desktop script against the other shell; most
+   of what remains red is coordinates written for one shell's chrome, which
+   the row-relative script ops (`click-row`, `press-row`, `click-cell`)
+   remove when a script is converted.
 
 7. **The source is the spec.** Where this file and the source disagree,
    the source wins and the row gets fixed.
@@ -3261,6 +3263,7 @@ MoveTask re-points destDir/deststat/volume to BEntry(srcRef).GetParent(&destDir)
 MoveItem's link branch always calls FSMakeOriginalName(name, destDir, " link") — which no-ops unless destDir already contains the name — and reports the chosen name to the undo record via undo.UpdateEntry.  
 `FSUtils.cpp` → `MoveItem`  
 **PORT:** The link is created now, and the name rule stands: the plain name when the destination has it free, "<name> link" and upward when it does not.  
+**PORT:** Both shells: Create link goes through the shared command layer (`tests/shell/menudead.script` runs in both).  
 #### FS-010 · important · done
 **A relative link is computed against the destination folder, but silently degrades to an absolute link when source and destination are on different devices.**  
 kCreateRelativeLink only takes the relative path if statbuf.st_dev == destNode.device; otherwise moveMode is reassigned to kCreateLink. The relative path is built by chdir()ing to the destination, walking source and destination path strings while they match, prepending "../" per remaining destination component, then appending the leaf. The working directory is restored with chdir(oldwd).  
@@ -3554,7 +3557,7 @@ FSClipboardPaste sorts each clipboard ref into moveList (linksMode or moveMode =
 **PORT:** A mixed clipboard is two operations: the cut entries move and the copied ones copy. The engine takes one job at a time, so the copy waits for it to go idle rather than being refused and dropped. A paste spends its cuts by rewriting them to COPY, so the copied entries survive it -- clearing the clipboard would take them with it.  
 **MISSING:** A second paste cannot copy what the first one MOVED, because the clipboard entry still names the old path and is pruned when that file is gone: the entry follows a move only once FS-060's `tiku_trk_clip_moved` has a caller.  
 *src/ui/commands/tiku_trk_folder_file_actions.c:paste and _pump; src/core/tiku_trk_clip.c:tiku_trk_clip_spend_cuts; tests/test_clip.c and tests/shell/paste.script*
-
+**PORT:** Both shells: the app shell reaches the same controller, so a mixed clipboard behaves the same there (`tests/shell/paste.script` runs in both).  
 #### FS-056 · important · done
 **Pasting copied items into the folder they already live in duplicates them ("<name> copy"); pasting cut items into their own folder does nothing.**  
 sameDirectory is destNodeRef->device == ref.device && destNodeRef->node == ref.directory; in that case the item goes to duplicateList only when moveMode != kMoveSelectionTo, and duplicateList is dispatched as FSMoveToFolder(..., kDuplicateSelection). Note that in links mode moveMode is never read (the FindInt32 is skipped), so it stays 0 and a Paste-links into the item's own folder falls into the duplicate path rather than creating a link.  

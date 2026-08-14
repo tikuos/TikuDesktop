@@ -4,10 +4,10 @@
 # that can be moved with its links intact -- could not be asked for.
 wait 8
 note dropped into sub with the link modifier and Shift
-press 100 136
-move 200 159
-move 100 116
-release 100 116 1 ctrl shift
+press-row 1
+move-row 0
+move-row 0
+release-row 0 1 ctrl shift
 wait 25
 expect-link /tmp/trk_script/sub/a.txt ../a.txt
 quit

@@ -1,4 +1,4 @@
-# shell: desktop
+# shell: both
 # FS-055: a clipboard holding both a cut and a copy is two operations, not
 # one.  Treated as a single move, the COPIED file left where it was -- which
 # is the one thing a copy promises not to do.

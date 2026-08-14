@@ -1,0 +1,13 @@
+# shell: desktop
+# CW-042: Select… names a window, and named it without opening one.  The
+# single-window shell has no Select window to open, so this half is the
+# multi-window shell's.
+wait 6
+press 300 300 3
+wait 2
+release 300 300 3
+wait 5
+menu-pick Select…
+wait 8
+expect-title Select
+quit

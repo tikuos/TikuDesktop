@@ -1,6 +1,7 @@
-# shell: desktop
-# CW-042/FS-009/CW-035: three items the menus offered and enabled, and that
-# nothing carried out -- picked, they did nothing at all.
+# shell: both
+# CW-042/FS-009: two items the menus offered and enabled, and that nothing
+# carried out -- picked, they did nothing at all.  Both shells now, because
+# both reach the same command layer.
 wait 6
 note Create link makes a link beside the item, named after it
 click-row 1
@@ -26,12 +27,4 @@ wait 5
 menu-pick Identify
 wait 8
 expect-status identified 2 items
-note Select… opens the window its keyboard shortcut opens
-press 300 300 3
-wait 2
-release 300 300 3
-wait 5
-menu-pick Select…
-wait 8
-expect-title Select
 quit

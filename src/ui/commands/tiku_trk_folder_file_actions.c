@@ -19,7 +19,8 @@ tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_trk_fs_t *fs,
     tiku_trk_backend_t *backend, tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
     char *drop_destination, tiku_trk_alert_t *alert,
-    tiku_trk_prefs_window_t *preferences, char *status, size_t status_size,
+    tiku_trk_folder_prefs_fn open_prefs, void *prefs_context,
+    char *status, size_t status_size,
     tiku_trk_folder_close_under_fn close_under, void *close_context)
 {
     if (controller == NULL) {
@@ -32,7 +33,8 @@ tiku_trk_folder_file_actions_init(
         .pending = pending,
         .drop_destination = drop_destination,
         .alert = alert,
-        .preferences = preferences,
+        .open_prefs = open_prefs,
+        .prefs_context = prefs_context,
         .status = status,
         .status_size = status_size,
         .close_under = close_under,
@@ -299,6 +301,13 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
              * to ask, and the one way out is the one that happens. */
             delete_outright(controller, folder);
         }
+        return;
+    }
+    if (controller->alert == NULL) {
+        /* Nowhere to ask: a shell with no alert layer keeps what it did
+         * before the question existed, rather than silently doing nothing
+         * (FS-046 holds in the multi-window shell only). */
+        move_to_trash(controller, folder, 0);
         return;
     }
     /* Three ways out, and the destructive one says so before it is taken
@@ -589,7 +598,10 @@ tiku_trk_folder_file_actions_invoke(
         finish_drop(controller, command);
         return 1;
     case TIKU_TRK_CMD_PREFERENCES:
-        tiku_trk_prefs_window_open(controller->preferences);
+        if (controller->open_prefs == NULL) {
+            return 0;           /* this shell shows them another way */
+        }
+        controller->open_prefs(controller->prefs_context);
         return 1;
     case TIKU_TRK_CMD_NEW_FOLDER:
         new_folder(controller, folder);

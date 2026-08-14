@@ -28,7 +28,9 @@
 #include "tiku_trk_model.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_iconpaint.h"
+#include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
+#include "tiku_trk_folder_file_actions.h"
 #include "tiku_trk_navigator.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_prefs.h"
@@ -109,7 +111,15 @@ typedef struct {
     time_t               prefs_mtime;
     off_t                prefs_size;
     int64_t              prefs_checked;
+    /* The same command layer the multi-window shell uses.  The folder is a
+     * wrapper over this window's own view, so one implementation of what
+     * Delete or Paste means serves both shells (FEATURES rule 6). */
+    tiku_trk_folder_window_t         folder;
+    tiku_trk_clip_t                  clip;
+    tiku_trk_folder_file_actions_t   file_actions;
 } app_t;
+
+static void menu_invoke(app_t *a, int command);
 
 /** @brief Index of the first selected row, or -1. */
 static int
@@ -1553,6 +1563,17 @@ not_editing:
         begin_location(a);
         return;
     }
+    if ((modifiers & TIKU_DESK_MOD_CMD) &&
+        (key == 'x' || key == 'c' || key == 'v')) {
+        /* The clipboard verbs, through the shared command layer: this
+         * shell had none at all, so Cut, Copy and Paste were three keys
+         * that did nothing outside a text field. */
+        int base = (key == 'x') ? TIKU_TRK_CMD_CUT
+                 : (key == 'c') ? TIKU_TRK_CMD_COPY : TIKU_TRK_CMD_PASTE;
+
+        menu_invoke(a, tiku_trk_sc_command(base, mods));
+        return;
+    }
     if (modifiers & TIKU_DESK_MOD_CMD) {
         if (key == TIKU_DESK_KEY_DOWN || key == TIKU_DESK_KEY_RETURN) {
             open_selection(a);
@@ -1896,6 +1917,19 @@ menu_invoke(app_t *a, int command)
     const char *template_parent;
     int field = -1;
 
+    /* Through the shared controller first: what Delete, Duplicate, Create
+     * link, Identify and the clipboard verbs mean is one implementation,
+     * not one per shell. */
+    a->folder.view = a->view;
+    snprintf(a->folder.path, sizeof a->folder.path, "%s",
+             tiku_trk_poseview_path(a->view));
+    if (tiku_trk_folder_file_actions_invoke(&a->file_actions, &a->folder,
+                                            command)) {
+        (void)tiku_trk_poseview_reload(a->view);
+        a->dirty = 1;
+        return;
+    }
+
     template_path = tiku_trk_cwmenu_template_path(&a->menus, command);
     if (template_path != NULL) {
         char made[TIKU_TRK_PATH_MAX], error[200];
@@ -2227,6 +2261,13 @@ tracker_run(int argc, char **argv)
     tiku_trk_navigator_init(&a.nav, tiku_trk_poseview_path(a.view));
     a.fs = tiku_trk_fs_new(a.backend);
     (void)tiku_trk_fs_prepare_trash(a.fs);
+    tiku_trk_clip_init(&a.clip);
+    /* No alert layer and no preferences window in this shell: the
+     * controller is told so rather than handed something that cannot
+     * show (FEATURES rule 6). */
+    tiku_trk_folder_file_actions_init(&a.file_actions, a.fs, a.backend,
+                                      &a.clip, NULL, NULL, NULL, NULL, NULL,
+                                      a.status, sizeof a.status, NULL, NULL);
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
     a.row_h = LIST_ROW_H;
     {
@@ -2953,6 +2994,9 @@ tracker_run(int argc, char **argv)
             /* Stepped, not blocking: the window keeps drawing while a copy
              * runs, which is the whole reason the engine has a cursor. */
             (void)tiku_trk_fs_step(a.fs, 4);
+            /* A mixed paste left its second half waiting for the engine to
+             * go idle; this is where it gets to start (FS-055). */
+            (void)tiku_trk_folder_file_actions_pump(&a.file_actions);
             pr = tiku_trk_fs_progress(a.fs);
             if (pr->conflict) {
                 /* A collision waits for an answer; with no dialog yet, the

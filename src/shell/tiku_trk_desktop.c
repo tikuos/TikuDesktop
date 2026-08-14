@@ -350,6 +350,15 @@ progress_model(desktop_t *app)
     return tiku_trk_status_overlay_progress(&app->status_overlay);
 }
 
+/** @brief Preferences, as this shell shows them: a window of its own. */
+static void
+open_preferences(void *context)
+{
+    desktop_t *app = context;
+
+    tiku_trk_prefs_window_open(&app->prefs_window);
+}
+
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
 status_answer(void *context, const tiku_trk_alert_t *alert)
@@ -1667,8 +1676,8 @@ tracker_run(int argc, char **argv)
     tiku_trk_folder_file_actions_init(&app.file_actions, app.fs,
         app.backend, &app.clip,
         &app.drop_controller.pending, app.drop_controller.destination,
-        alert_model(&app), &app.prefs_window, app.status, sizeof app.status,
-        file_actions_close_under, &app);
+        alert_model(&app), open_preferences, &app, app.status,
+        sizeof app.status, file_actions_close_under, &app);
     tiku_trk_folder_edit_init(&app.folder_edit, app.backend, app.fs,
         app.status, sizeof app.status, &app.dirty);
     tiku_trk_folder_menu_set_editor(&app.folder_menu, &app.folder_edit);
