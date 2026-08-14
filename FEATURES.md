@@ -718,6 +718,8 @@ StartOffset() = fListOffset + ListIconSize() + kMiniIconSeparator(3) + 1, with f
 **VERIFIER CORRECTION:** It is NOT identical. AddColumnList (PoseView.cpp:511) and MoveColumnTo (PoseView.cpp:9728) use `offset + width - kRoomForLine/2 + kTitleColumnExtraMargin`; AddColumn (PoseView.cpp:2841) and ResizeColumn (PoseView.cpp:9690) use `offset + width + kTitleColumnExtraMargin` with no kRoomForLine/2 term. A reimplementation that picks one formula will be off by 1 px depending on the path taken. kTitleColumnExtraMargin = 16 (11+5), kRoomForLine = 2 — those numbers are right.  
 **PORT:** start_offset() reserves the row-icon strip (MINI_ICON 16 + PLACE_GAP 3 + 1) and reflow_columns() lays every subsequent column at the previous right edge plus the fixed COL_MARGIN (11+5=16); it is the single function called from construction, restore, add, remove, resize and reorder, and the drawing code positions cells from those absolute offsets.  
 *src/ui/tiku_trk_poseview.c:3381-3403 (start_offset/reflow_columns), callers at :515,:3119,:3143,:3362,:3438,:3474,:3528; src/ui/tiku_trk_poseview.h:39-40,89-92 (constants); src/shell/tiku_trk_app.c:426-445 (icon strip left of first column)*
+**PORT:** Both shells draw a list row as its COLUMNS, at the offsets reflow_columns worked out and through the engine's own cell formatter -- the folder-window shell drew a name and one right-aligned value, so every column the title strip offered was a heading over an empty strip.  
+*src/ui/windows/tiku_trk_folder_window.c:draw_list; tests/shell/listcols.script*
 
 #### PVL-033 · important · done
 **Restored column layout is re-derived from scratch: saved offsets only determine order, never final positions.**  
@@ -1342,7 +1344,8 @@ tests/shell/launch.script*
 Widget's AttrHash must equal AttrHashString(kAttrPath, B_STRING_TYPE); the widget text is resolved to an entry_ref and sent as B_REFS_RECEIVED to the Tracker signature. If it resolves, OpenSelection is skipped.  
 `PoseView.cpp` → `BPoseView::WasClickInPath`  
 **TIKU:** Path column over a device namespace needs a node path -> descriptor resolver; decide whether opening a /dev path means "open the parent directory node".  
-**PORT:** A query result is identified by its path in the name column rather than by a separate Path column, so a double-click on a non-container result opens the folder that holds it -- the row's intent, without the column hash test.
+**PORT:** A query result is identified by its path in the name column rather than by a separate Path column, so a double-click on a non-container result opens the folder that holds it -- the row's intent, without the column hash test.  
+**MISSING:** The Location column now exists and is drawn in both shells, so the rule as STATED -- the click's column decides -- is implementable; it is not implemented, because the only listing where a row's parent differs from the window's own folder is a results window, and the scripted harness cannot yet drive one to prove it either way.
 
 #### PVS-012 · important · partial
 **Holding Option while opening closes the parent window; with single-window-browse enabled, opening a folder navigates the current window instead of spawning a new one.**  
@@ -5211,11 +5214,7 @@ fClipboardMode == kMoveSelectionTo sets B_OP_ALPHA / B_CONSTANT_ALPHA / B_ALPHA_
 **In list mode only the name column is drawn selected; the other columns stay normal.**  
 BPose::Draw sets 'if (index > 0) selected = false' inside the column loop. Also, a non-full draw redraws only column 0 (columnsToDraw = 1 unless fullDraw).  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw`  
-**PORT:** List rows now clear to the document ground, paint the selection only
-over the first (Name) column, and use selected ink only for that column.  The
-icon strip remains visibly selected while Kind/Value/Location/other cells stay
-normal.  Both list renderers share this rule in the app and folder-window
-shells.
+**PORT:** List rows clear to the document ground, paint the selection over the icon strip and the first (Name) column only, and use selected ink there alone; the other cells stay normal. Both list renderers now share the rule -- the folder-window shell filled the row's whole width less a fixed gap, which is only the Name column when the Name column happens to be nearly the whole row.
 
 #### IV-025 · important · done
 **Clicking the transparent corner of an icon does not select the pose.**  

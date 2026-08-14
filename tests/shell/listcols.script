@@ -1,0 +1,17 @@
+# shell: desktop
+# PVL-032/IV-024: a list row IS its columns.  This shell drew a name and one
+# right-aligned value, so every column the title strip offered was a heading
+# over an empty strip -- and the selection ran the width of the row.
+wait 6
+expect-columns 4
+note the Kind column's cells carry text.  The strip starts at x 329 (the
+note heading is drawn there) and the first row's text sits at y 116.
+expect-ink 338 116
+expect-ink 350 120
+note and selecting a row lights the icon and the NAME column only: past the
+note name, the row keeps the document ground
+click-row 0
+wait 4
+expect-pixel 300 118 336698
+expect-pixel 400 118 ffffff
+quit

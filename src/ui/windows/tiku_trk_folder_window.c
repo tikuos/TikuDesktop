@@ -309,7 +309,6 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             list.y + 2 + i * render->row_h, list.w - 4, render->row_h };
         int text_y = row.y + (render->row_h - font->height) / 2 +
                      font->ascent;
-        char value[64];
         int selected, cut;
 
         if (pose == NULL) {
@@ -322,26 +321,35 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             selected = 1;
         }
         tiku_desk_fill(surface, row, TIKU_DESK_C_DOC);
-        if (selected) {
-            /* IV-024: only the Name cell is selected in list mode. */
-            tiku_desk_rect_t name = { row.x, row.y,
-                                      row.w - VALUE_GAP, row.h };
-
-            if (name.w < 0) {
-                name.w = 0;
-            }
-            tiku_desk_fill(surface, name, TIKU_DESK_C_SELECT);
-        }
         {
+            const tiku_trk_column_t *cols = NULL;
+            int ncol = tiku_trk_poseview_columns(folder->view, &cols);
+            int hscroll = tiku_trk_poseview_hscroll(folder->view);
             int mini = render->row_h - 2;
-            int text_x = row.x + 4;
-            int thumbnail = 0;
+            int name_end = row.x + row.w;
+            int thumbnail = 0, j;
             char art[TIKU_TRK_NAME_MAX];
             tiku_trk_icon_from_t source = tiku_trk_nodeicon_resolve(
                 render->icons, render->store, &pose->model, art, sizeof art);
 
             if (mini > MINI_ICON) {
                 mini = MINI_ICON;
+            }
+            /* IV-024: the selection covers the icon and the NAME column,
+             * and stops there -- the other columns stay normal, which is
+             * what tells a reader they are other columns. */
+            if (ncol > 0) {
+                name_end = list.x + 2 + cols[0].offset + cols[0].width -
+                           hscroll;
+            }
+            if (selected) {
+                tiku_desk_rect_t name = { row.x, row.y,
+                                          name_end - row.x, row.h };
+
+                if (name.w < 0) {
+                    name.w = 0;
+                }
+                tiku_desk_fill(surface, name, TIKU_DESK_C_SELECT);
             }
             if ((pose->model.kind == TIKU_TRK_KIND_VOLUME ||
                  pose->model.kind == TIKU_TRK_KIND_ROOT) &&
@@ -365,9 +373,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                         pose->model.path, pose->model.facts.size, mini);
                 }
             }
-            if (thumbnail) {
-                text_x = row.x + 2 + mini + 4;
-            } else if (((pose->model.facts.link_broken || cut)
+            if (!thumbnail) {
+                (void)((pose->model.facts.link_broken || cut)
                     ? tiku_trk_icon_paint_dim(surface, art, row.x + 2,
                         row.y + (render->row_h - mini) / 2, mini, 0.55f,
                         TIKU_DESK_C_DOC)
@@ -375,27 +382,57 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                     ? tiku_trk_icon_paint_selected(surface, art, row.x + 2,
                         row.y + (render->row_h - mini) / 2, mini)
                     : tiku_trk_icon_paint(surface, art, row.x + 2,
-                        row.y + (render->row_h - mini) / 2, mini))) {
-                text_x = row.x + 2 + mini + 4;
+                        row.y + (render->row_h - mini) / 2, mini));
             }
-            tiku_desk_text(surface, font, text_x, text_y,
-                tiku_trk_poseview_is_query(folder->view)
-                    ? pose->model.path : pose->model.name,
-                selected ? TIKU_DESK_C_SELTEXT
-                         : (cut ? tiku_desk_tint(TIKU_DESK_C_TEXT,
-                                                TIKU_DESK_LIGHTEN_2)
-                                : TIKU_DESK_C_TEXT));
-        }
-        if (!tiku_trk_model_is_container(&pose->model)) {
-            int width;
+            /* A row IS its columns.  Through the ENGINE's formatter, not a
+             * second copy: two implementations of "what does this cell
+             * say" is how a column comes to be fitted to text the row does
+             * not draw (PVL-032, TS-005). */
+            for (j = 0; j < ncol; j++) {
+                char tmp[160], fitted[96];
+                const char *txt = tiku_trk_poseview_cell_text(folder->view,
+                    pose, cols[j].field, tmp, sizeof tmp);
+                int cell_x = list.x + 2 + cols[j].offset - hscroll;
+                tiku_desk_rect_t cell = { cell_x, row.y, cols[j].width,
+                                          row.h };
+                int tw;
 
-            (void)tiku_trk_attr_format(&pose->desc,
-                pose->value_valid ? pose->value : "", value, sizeof value);
-            width = tiku_desk_text_width(font, value);
-            if (width < row.w - VALUE_GAP) {
-                tiku_desk_text(surface, font, row.x + row.w - width - 6,
-                    text_y, value, TIKU_DESK_C_TEXT);
+                {   /* Intersected with the list, not substituted for it:
+                     * a cell scrolled left of the view would otherwise
+                     * paint over the border and the window frame. */
+                    tiku_desk_rect_t inner = tiku_desk_inset(list, 2);
+                    int x0 = (cell.x > inner.x) ? cell.x : inner.x;
+                    int x1 = (cell.x + cell.w < inner.x + inner.w)
+                             ? cell.x + cell.w : inner.x + inner.w;
+
+                    cell.x = x0;
+                    cell.w = (x1 > x0) ? x1 - x0 : 0;
+                    tiku_desk_clip_set(surface, cell);
+                }
+                (void)tiku_trk_text_fit(txt, cols[j].width,
+                    (cols[j].field == TIKU_TRK_COL_NAME)
+                        ? TIKU_TRK_TRUNC_MIDDLE : TIKU_TRK_TRUNC_END,
+                    measure_label, NULL, fitted, sizeof fitted);
+                tw = tiku_desk_text_width(font, fitted);
+                if (cols[j].alignment == TIKU_TRK_ALIGN_RIGHT) {
+                    cell_x += cols[j].width - tw;
+                }
+                tiku_desk_text(surface, font, cell_x, text_y, fitted,
+                    (selected && j == 0)
+                        ? TIKU_DESK_C_SELTEXT
+                        : (cut ? tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                                TIKU_DESK_LIGHTEN_2)
+                               : TIKU_DESK_C_TEXT));
+                if (cols[j].field == TIKU_TRK_COL_NAME &&
+                    pose->model.kind == TIKU_TRK_KIND_SYMLINK) {
+                    /* MA-076/IV-043: under the TEXT only, and only in the
+                     * first column -- a rule that underlined the whole
+                     * cell would read as a divider. */
+                    tiku_desk_hline(surface, cell_x, text_y + 2, tw,
+                                    TIKU_DESK_C_TEXT);
+                }
             }
+            tiku_desk_clip_set(surface, tiku_desk_inset(list, 2));
         }
     }
 }

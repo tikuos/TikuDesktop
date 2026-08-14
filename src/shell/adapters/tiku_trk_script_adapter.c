@@ -160,6 +160,44 @@ tiku_trk_script_adapter_pose_at(void *context, const char *name,
 }
 
 int
+tiku_trk_script_adapter_cell_point(void *context, int row, const char *title,
+                                   int *x, int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_desk_window_t *focused;
+    tiku_trk_folder_window_t *folder;
+    const tiku_trk_column_t *cols = NULL;
+    tiku_desk_rect_t content;
+    int n, i, hs;
+
+    if (adapter == NULL || title == NULL || x == NULL || y == NULL) {
+        return 0;
+    }
+    /* The row answers where it sits; the column answers where it starts.
+     * A test that worked either out by arithmetic would be encoding the
+     * chrome all over again. */
+    if (!tiku_trk_script_adapter_row_point(context, row, x, y)) {
+        return 0;
+    }
+    focused = tiku_desk_workspace_focused(adapter->workspace);
+    folder = tiku_trk_folder_lifecycle_find(adapter->folders, focused);
+    if (folder == NULL || folder->view == NULL) {
+        return 0;
+    }
+    content = tiku_trk_folder_window_content(folder);
+    hs = tiku_trk_poseview_hscroll(folder->view);
+    n = tiku_trk_poseview_columns(folder->view, &cols);
+    for (i = 0; i < n; i++) {
+        if (cols[i].title == NULL || strstr(cols[i].title, title) == NULL) {
+            continue;
+        }
+        *x = content.x + 2 + cols[i].offset - hs + cols[i].width / 2;
+        return 1;
+    }
+    return 0;
+}
+
+int
 tiku_trk_script_adapter_pose_screen(void *context, const char *name,
                                     int *x, int *y)
 {
@@ -342,6 +380,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->pose_at = tiku_trk_script_adapter_pose_at;
     state->pose_screen = tiku_trk_script_adapter_pose_screen;
     state->row_point = tiku_trk_script_adapter_row_point;
+    state->cell_point = tiku_trk_script_adapter_cell_point;
     state->tab_point = tiku_trk_script_adapter_tab_point;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
     state->pose_ctx = adapter;

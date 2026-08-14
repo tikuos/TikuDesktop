@@ -84,6 +84,8 @@ typedef struct {
     /* Where a visible list row can be clicked in shell coordinates.  The
      * shell owns chrome geometry, so scripts must not reconstruct it. */
     int       (*row_point)(void *ctx, int row, int *x, int *y);
+    int       (*cell_point)(void *ctx, int row, const char *title, int *x,
+                            int *y);
     /* Where the TAB of the window titled @p title is.  A test that wants a
      * window somewhere else has to grab its tab, and a tab's position is
      * chrome -- the thing a test must never encode, because it moves
@@ -106,8 +108,10 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     key <keysym> [ctrl] [shift] [alt]   -- e.g. `key n ctrl`
  *     click <x> <y> [button]              -- press and release together
  *     click-row <n> [button]               -- click a visible list row
+ *     click-cell <row> <column title>      -- click a cell, not a pixel
  *     click-window <title>                 -- bring a window to the front by
  *                                             clicking its tab
+ *     expect-ink <x> <y>                   -- something is drawn here
  *     expect-icon-screen <name> <x> <y>    -- an icon's place on the SCREEN,
  *                                             which is what a drop point is
  *     press-row/move-row/release-row <n> [button] [mods]

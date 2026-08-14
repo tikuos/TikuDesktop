@@ -23,11 +23,11 @@
 /** @brief What one line was asking for. */
 typedef enum {
     OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW, OP_DRAG_WINDOW,
-    OP_PRESS_ROW, OP_MOVE_ROW, OP_RELEASE_ROW, OP_CLICK_WINDOW,
+    OP_PRESS_ROW, OP_MOVE_ROW, OP_RELEASE_ROW, OP_CLICK_WINDOW, OP_CLICK_CELL,
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_QUIT
 } sc_op_t;
 
@@ -276,6 +276,11 @@ tiku_trk_script_open(const char *path)
                 st->button = (unsigned)atoi(w[2]);
             }
             st->modifiers = mods_of(w, n, 3);
+        } else if (strcmp(w[0], "click-cell") == 0 && n >= 3) {
+            st->op = OP_CLICK_CELL;
+            st->count = atoi(w[1]);
+            rest(w, n, 2, st->text, sizeof st->text);
+            st->button = 1u;
         } else if (strcmp(w[0], "click-row") == 0 && n >= 2) {
             st->op = OP_CLICK_ROW;
             st->count = atoi(w[1]);
@@ -373,6 +378,13 @@ tiku_trk_script_open(const char *path)
             rest(w, n - 2, 1, st->text, sizeof st->text);
             st->x = atoi(w[n - 2]);
             st->y = atoi(w[n - 1]);
+        } else if (strcmp(w[0], "expect-ink") == 0 && n >= 3) {
+            /* Something is drawn here, whatever shade the font renderer
+             * gives its edges: a cell with text in it is the claim, not a
+             * particular grey. */
+            st->op = OP_EXPECT_INK;
+            st->x = atoi(w[1]);
+            st->y = atoi(w[2]);
         } else if (strcmp(w[0], "expect-pixel") == 0 && n >= 4) {
             st->op = OP_EXPECT_PIXEL;
             st->x = atoi(w[1]);
@@ -580,6 +592,19 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->button = cur->button;
         out->modifiers = cur->modifiers;
         return 1;
+    case OP_CLICK_CELL:
+        if (st == NULL || st->cell_point == NULL ||
+            !st->cell_point(st->pose_ctx, cur->count, cur->text, &cur->x,
+                            &cur->y)) {
+            verdict(s, 0, "cannot click cell:", cur->text);
+            return 1;
+        }
+        out->what = TIKU_TRK_SC_PRESS;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->button = cur->button;
+        s->pending_release = 1;
+        return 1;
     case OP_CLICK_ROW:
         if (st == NULL || st->row_point == NULL ||
             !st->row_point(st->pose_ctx, cur->count, &cur->x, &cur->y)) {
@@ -786,6 +811,17 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
          * the arrangement being wrong. */
         verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
                        py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
+        return 1;
+    }
+    case OP_EXPECT_INK: {
+        char got[16];
+        unsigned rgb = 0u;
+
+        if (st != NULL && st->pixel_at != NULL) {
+            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
+        }
+        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
+        verdict(s, (rgb & 0xffffffu) != 0xffffffu, "ink at:", got);
         return 1;
     }
     case OP_EXPECT_PIXEL: {
