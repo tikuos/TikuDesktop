@@ -75,6 +75,7 @@ for s in "$here"/*.script; do
             bandscroll.script|scroll.script|scrollbar.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
             dbdrop.script) rm -rf "$HOME/.config/deskbar" ;;
+            dbprefs.script) rm -rf "$HOME/.config/deskbar" ;;
             # A name that exists nowhere else on the machine, so a search
             # for it has exactly one answer and an emptied panel -- which
             # matches everything -- cannot be mistaken for a restored one.

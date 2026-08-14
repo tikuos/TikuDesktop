@@ -25,6 +25,7 @@ DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
                       $(DESK_TRANSPORT_LIB)
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
+                       src/deskbar/tiku_trk_deskbar_prefs.c \
                        src/deskbar/tiku_trk_desktop_view.c \
                        src/ui/commands/tiku_trk_drop_controller.c \
                        src/ui/commands/tiku_trk_folder_actions.c \
@@ -38,6 +39,7 @@ DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/ui/windows/tiku_trk_info_window.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \
+                       src/ui/windows/tiku_trk_deskbar_prefs_window.c \
                        src/ui/windows/tiku_trk_select_window.c \
                        src/ui/windows/tiku_trk_switcher_window.c \
                        src/ui/input/tiku_trk_band_controller.c \
@@ -69,7 +71,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -137,8 +139,14 @@ $(BUILD)/test_match: src/core/tiku_trk_match.c tests/test_match.c | $(BUILD)
 
 $(BUILD)/test_deskbar_dock: $(COMMON) $(ICONS) \
                             src/deskbar/tiku_trk_deskbar.c \
+                            src/deskbar/tiku_trk_deskbar_prefs.c \
                             tests/test_deskbar_dock.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+$(BUILD)/test_deskbar_prefs: src/core/tiku_trk_state.c \
+                              src/deskbar/tiku_trk_deskbar_prefs.c \
+                              tests/test_deskbar_prefs.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_frame: $(COMMON) tests/test_frame.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -168,6 +176,7 @@ $(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c src/core/tiku_trk_model.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_dbdrop: $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c \
+                      src/deskbar/tiku_trk_deskbar_prefs.c \
                       src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
                       src/core/tiku_trk_attr.c tests/test_dbdrop.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
@@ -307,6 +316,7 @@ test: all
 	@$(BUILD)/test_win
 	@$(BUILD)/test_frame
 	@$(BUILD)/test_deskbar_dock
+	@$(BUILD)/test_deskbar_prefs
 	@# The shells are the other half of the product and have no unit
 	@# tests of their own; these drive the real binaries with no display.
 	@# The contract is data every count is drawn from; a copy of it that

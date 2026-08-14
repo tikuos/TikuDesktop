@@ -1,0 +1,28 @@
+# shell: desktop
+# DB-061..DB-065: the leaf opens the Deskbar preferences controller, which
+# hides on close, reopens, and edits the user's own menu folder.
+wait 8
+expect-windows 1
+click 980 20
+wait 2
+click 780 90
+wait 4
+note the formerly dead leaf item opens the dedicated preferences window
+expect-windows 2
+expect-title Deskbar preferences
+key w ctrl
+wait 3
+note closing hides the controller without quitting the desktop
+expect-windows 1
+click 980 20
+wait 2
+click 780 90
+wait 4
+expect-windows 2
+expect-title Deskbar preferences
+click 630 560
+wait 6
+note Edit in Tracker opens the user's editable Deskbar folder
+expect-windows 3
+expect-title deskbar
+quit

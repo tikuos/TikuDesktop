@@ -5972,7 +5972,7 @@ SetIconMapping(false), SetEnsurePosesVisible(true), SetAutoScroll(false); pose v
 **Changing screen resolution saves the icon positions against the old frame first, then re-lays icons that would fall off the new screen.**  
 SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibility(frameChanged ? &frame : 0) so old-frame pose info can drive rearrangement.  
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
-**SUBSYSTEM:** Screen resolution changes. Desktop icons exist now and are pulled back into the reachable area whenever they are dropped or arrive (PVS-058), and one position per screen SIZE is already implemented and tested (PVL-030) -- what is missing is the event: the surface is fixed 1000x680 (DESK_W/DESK_H, src/tiku_trk_desktop.c:43-44) and the event loop has no ConfigureNotify case (switch at src/tiku_trk_desktop.c:1849-2575 handles Expose/Button/Motion/Key/ClientMessage only)  
+**SUBSYSTEM:** The native host now handles ConfigureNotify by scaling the complete fixed logical surface and mapping input back into it, so maximize and resize fill the native window. The Desktop surface itself remains 1000x680, however, so there is still no old/new logical frame transition on which to save resolution-specific positions and pull newly unreachable icons back.
 
 #### AW-021 · polish · open
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  
@@ -6869,18 +6869,21 @@ Matched case-insensitively by signature into BarTeamInfo::teams; second and late
 **MISSING:** A repeat launch folds into the existing entry (name scan returns the existing index instead of adding a row), but matching is case-sensitive rather than case-insensitive and there is no instance count and no removal path at all — no remove_team, no team_count decrement anywhere — so the 'disappears when its last instance quits' clause is missing.  
 *src/tiku_trk_deskbar.c:tiku_trk_deskbar_add_team (dedupe loop line 99); no remove_team in src*
 
-#### DB-016 · important · open
+#### DB-016 · important · partial
 **With 'Tracker always first' on, Tracker is pinned to the head of the list; with 'Sort applications by name' on, the rest are inserted in locale-collated name order**  
 Insertion sort against existing item labels using BCollator from BLocale::Default(); the sort skips index 0 when Tracker is pinned there; a full re-sort (fTeamList.SortItems(TTeamMenu::CompareByName)) happens on rebuild  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::AddTeam`  
 **TIKU:** Pinning the file manager first is a policy that should be a named setting, not a hardcoded signature
-**BLOCKED:** waits on the running-app feed (DB-014): only 'Tracker' is ever added (src/tiku_trk_desktop.c:1587); add_team appends in arrival order with no sort or pin (src/tiku_trk_deskbar.c:104-111); natural_less orders window titles only (src/tiku_trk_deskbar.c:139-156, 177-186)  
+**PORT:** The live setting re-sorts the display order without changing the stable team indices used by window and drop routing; Tracker pins first and the remainder sort by name.
+**MISSING:** Ordering uses bytewise names rather than locale collation because the port has no locale service.
+*tests/test_deskbar_dock.c*
 
-#### DB-017 · important · open
+#### DB-017 · important · done
 **Application icons are drawn at a user-chosen size from 16 to 96 pixels in steps of 8, and changing the size re-lays out the whole bar**  
 kResizeTeamIcons carries "be:value" (slider notches); iconSize = value*8 clamped to [16,96]; unchanged values are a no-op; in horizontal mode the leaf menu and tray are also re-placed. Icons are cached per size in BarTeamInfo::iconCache[11]  
 `BarApp.cpp` → `TBarApp::MessageReceived case kResizeTeamIcons`
-**SUBSYSTEM:** Deskbar preferences window: icon size is the compile-time constant ICON_SZ 16 (src/tiku_trk_deskbar.c:42) used directly in the draw path (src/tiku_trk_deskbar.c:497-510); no size setting exists, and 'Deskbar preferences…' is a dead leaf label — click index 3 falls to default: break (src/tiku_trk_deskbar.c:706-717)  
+**PORT:** The slider steps from 16 through 96 pixels by eight, and the team-row height is derived from the selected size so the whole bar re-lays out immediately. Icons are rendered from cached HVIF source data at the requested size rather than keeping eleven raster caches.
+*tests/test_deskbar_dock.c; src/ui/windows/tiku_trk_deskbar_prefs_window.c*
 
 #### DB-018 · polish · done
 **An application with no icon of its own falls back to the generic application icon, and if even that is unavailable the slot is drawn fully transparent rather than garbage**  
@@ -7222,37 +7225,42 @@ CenterWindow aligns in the screen frame then lifts by screenFrame.Height()/16; a
 **PORT:** Centred across and lifted a sixteenth of the screen, because a panel centred exactly sits under where the eye already is; a row reads "App: Window", or just the application when the window is untitled, since repeating the name twice says nothing.  
 **PORT:** Centred across and lifted a sixteenth, sized from the slots it must hold, and the title reads "App: Window" or just the application when the window is untitled.  
 *Shell: desktop*  
-#### DB-061 · core · open
+#### DB-061 · core · done
 **Deskbar preferences offer: recent documents/folders/applications with per-type counts, sort apps by name, Tracker always first, show application expander, expand new applications, hide application names, icon size slider, dock location picker, always on top, auto-raise, auto-hide**  
 Recent counts range 0..50; a count of 0 forces that type disabled even if its checkbox is on (enabled && count > 0 in the app's handler). Expander and expand-new are disabled unless the bar is vertical AND expanded; auto-raise is disabled while always-on-top is on; each dependent state is re-evaluated on kStateChanged and kUpdatePreferences  
 `PreferencesWindow.cpp` → `PreferencesWindow::_EnableDisableDependentItems`  
 **TIKU:** Settings should live in durable cells; the count-0-means-disabled coupling is a real rule, not a bug
-**SUBSYSTEM:** Deskbar preferences window: 'Deskbar preferences…' is a dead leaf label — click index 3 falls to default: break (src/tiku_trk_deskbar.c:706-717) — and none of the listed settings exists anywhere (struct tiku_trk_deskbar has no settings fields, src/tiku_trk_deskbar.c:44-55)  
+**PORT:** The leaf opens a dedicated composited controller backed by a durable fifteen-field model. Every control applies live; count and icon ranges clamp, count zero disables its recent type, expanded-only controls and auto-raise expose the same dependencies, and the bar consumes sorting, pinning, expander, expansion, labels, icon, recent, z-order and hide settings directly.
+*tests/test_deskbar_prefs.c; tests/test_deskbar_dock.c; Shell: desktop (dbprefs.script)*
 
-#### DB-062 · important · open
+#### DB-062 · important · done
 **The Defaults and Revert buttons are enabled only when they would actually change something, Revert restoring the values the window opened with**  
 _IsDefaultable/_IsRevertable compare fifteen fields (sort, trackerFirst, superExpando, expandNewTeams, hideLabels, iconSize, the three recent-enabled flags, the three recent counts, alwaysOnTop, autoRaise, autoHide) — note dock location, width and clock options are deliberately NOT part of either comparison. _UpdatePreferences applies only the differing fields and Invoke()s each control so the app sees a normal toggle  
 `PreferencesWindow.cpp` → `PreferencesWindow::_IsRevertable`
-**BLOCKED:** waits on DB-061: with no preferences window and no settings fields (src/tiku_trk_deskbar.c:44-55) there is nothing for Defaults/Revert to compare or restore  
+**PORT:** Defaults and Revert compare exactly the fifteen preference fields, excluding dock and width; the opened snapshot is refreshed each time the hidden controller is shown, and both buttons disable when their action would be a no-op.
+*tests/test_deskbar_prefs.c*
 
-#### DB-063 · important · open
+#### DB-063 · important · done
 **The dock location picker is a little monitor you click or drag inside: the thirds of its screen area map to left/right corners, the middle band to expanded left/right, and the center to top/bottom; arrow and numpad keys pick corners too**  
 _ScreenCorner splits at 1/3 and 2/3 horizontally and vertically; the middle vertical band returns LEFT_TOP|kExpandBit / RIGHT_TOP|kExpandBit (expanded from the bottom is not supported); Invoke adds "location" and "expand"; keys 8/2/7/9/3/1 and Up/Down/Home/PageUp/PageDown/End map to the six locations  
 `ScreenCornerSelector.cpp` → `ScreenCornerSelector::_ScreenCorner`
-**BLOCKED:** waits on DB-061 (its host window) and DB-048's dock plumbing: set_dock exists but is uncalled, and only 3 of the 10 dock states exist (src/tiku_trk_deskbar.h:29-33)  
+**PORT:** The little monitor maps its horizontal and vertical thirds to the six locations this port supports: left/right mini corners, left/right expanded middle bands, and centered top/bottom. 8/2/7/9/3/1 and Up/Down/Home/PageUp/PageDown/End select the same locations through the focused preferences controller.
+*tests/test_deskbar_prefs.c*
 
-#### DB-064 · polish · open
+#### DB-064 · polish · done
 **The preferences window remembers its screen position across sessions and refuses to reopen off-screen; it hides rather than quits when closed and comes to the current workspace when shown again**  
 'prefs_window_settings' file holds "window_position"; restored only if BScreen(this).Frame().Contains(where), else CenterOnScreen. QuitRequested saves and posts kConfigQuit rather than returning true; Show() calls SetWorkspaces(B_CURRENT_WORKSPACE) when it was hidden  
 `PreferencesWindow.cpp` → `PreferencesWindow::QuitRequested`
-**BLOCKED:** waits on DB-061: no preferences window exists whose position could be remembered or which could hide instead of quitting  
+**PORT:** Closing removes only the composited window slot while retaining its controller and settings model. Its position is written to the session state, accepted on reopen only when the complete frame is on screen, and otherwise centered; reopening also activates the window in the current in-process workspace.
+*Shell: desktop (dbprefs.script); src/ui/windows/tiku_trk_deskbar_prefs_window.c*
 
-#### DB-065 · polish · open
+#### DB-065 · polish · done
 **The 'Edit in Tracker…' button in preferences opens the user's Deskbar folder so its menu contents can be edited directly**  
 OpenWithTracker(B_USER_DESKBAR_DIRECTORY)  
 `PreferencesWindow.cpp` → `PreferencesWindow::MessageReceived case kEditInTracker`  
 **TIKU:** Becomes 'open this VFS directory in the file browser'
-**BLOCKED:** waits on DB-061 (the button's host window) and DB-003 (the Deskbar folder it would open); neither exists in src  
+**PORT:** Edit in Tracker hands the configured user Deskbar directory—not the system fallback currently supplying the menu—to the desktop's ordinary folder-opening controller.
+*Shell: desktop (dbprefs.script)*
 
 #### DB-066 · polish · done
 **Dropping files onto the Deskbar icon (or passing refs to it) launches them, but directories are silently ignored**  
@@ -7270,11 +7278,11 @@ B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from t
 **Deskbar re-lays itself out when the workspace is activated and when the screen resolution changes, keeping itself docked to the correct edge**  
 WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where it only re-sizes/re-positions/invalidates, to avoid rebuilding the app list); ScreenChanged re-applies size limits, recalculates the dock regions and re-runs UpdatePlacement  
 `BarWindow.cpp` → `TBarWindow::WorkspaceActivated`
-**MISSING:** The bar re-lays itself out from the surface on every draw, so a
-screen that changed size is answered inherently -- and now that includes the
-dock, the width and the hidden sliver.  There is no workspace in this port
-for the other half of the row to be activated.
-*src/tiku_trk_deskbar.c (the geometry recompute in _draw)*
+**PORT:** Native resize scales the complete logical desktop and inversely maps
+input, so the dock, width and hidden sliver stay on the correct visual edge.
+**MISSING:** The logical surface remains fixed rather than re-laying out at a
+new resolution, and this port has no workspace-activation event.
+*applications/desktop/src/tiku_desk_x11.c; src/deskbar/tiku_trk_deskbar.c*
 
 #### DB-069 · important · open ⟨found by verification⟩
 **The preloaded app/preferences icons stay live: the preloader node-monitors the directories and each preloaded file, re-icons on change and force-removes permanent entries when a file disappears.**  
@@ -7297,17 +7305,19 @@ TBarApp::MessageReceived groups kRealignReplicants / kShowHideTime / kShowSecond
 `BarApp.cpp` → `TBarApp::MessageReceived (kShowHideTime / kShowSeconds / kShowDayOfWeek / kShowTimeZone / kRealignReplicants)`
 **SUBSYSTEM:** clock options/settings: no seconds/day-of-week/time-zone options exist — the clock format is a fixed short date+time string (src/tiku_trk_deskbar.c:581-585) — so there is nothing to forward to the tray and no width change to re-flow for  
 
-#### DB-072 · important · open ⟨found by verification⟩
+#### DB-072 · important · done ⟨found by verification⟩
 **With auto-raise on (and always-on-top off), opening any Deskbar menu raises the Deskbar and closing the last one lowers it again.**  
 TBarWindow::MenusBeginning increments fMenusShown and calls fBarView->RaiseDeskbar(true) when `!alwaysOnTop && autoRaise`; MenusEnded decrements and calls RaiseDeskbar(false) only when `fMenusShown <= 0`, so a submenu opening does not re-lower the bar.  
 `BarWindow.cpp` → `TBarWindow::MenusBeginning / TBarWindow::MenusEnded`
-**BLOCKED:** waits on DB-052's raise/lower substrate: the bar is unconditionally topmost by draw order (src/tiku_trk_desktop.c:1516) and no auto-raise or always-on-top state exists (struct tiku_trk_deskbar, src/tiku_trk_deskbar.c:44-55)  
+**PORT:** With always-on-top off, auto-raise makes the bar's draw order depend on pointer and popup state; the leaf, application and calendar popup states all keep it raised until the last popup closes.
+*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_raised; tests/test_deskbar_dock.c*
 
-#### DB-073 · important · open ⟨found by verification⟩
+#### DB-073 · important · done ⟨found by verification⟩
 **Always-on-top, auto-raise and auto-hide are mutually constrained: turning always-on-top on forces auto-raise off, and always-on-top changes the bar window's feel live.**  
 kAlwaysTop toggles fSettings.alwaysOnTop and immediately calls fBarWindow->SetFeel(alwaysOnTop ? B_FLOATING_ALL_WINDOW_FEEL : B_NORMAL_WINDOW_FEEL). kAutoRaise computes `fSettings.autoRaise = fSettings.alwaysOnTop ? false : !fSettings.autoRaise`. All three also poke the preferences window with kUpdatePreferences so its checkboxes track changes made from BDeskbar.  
 `BarApp.cpp` → `TBarApp::MessageReceived (kAlwaysTop / kAutoRaise / kAutoHide)`
-**SUBSYSTEM:** Deskbar preferences/settings: none of the three settings exists (no settings fields in struct tiku_trk_deskbar, src/tiku_trk_deskbar.c:44-55; topmost-ness is hardwired draw order, src/tiku_trk_desktop.c:1516), so their mutual constraints have nothing to constrain  
+**PORT:** Normalization forces auto-raise off whenever always-on-top is selected, the controller disables that dependent control, and applying all three updates the bar's live draw order and hidden geometry immediately.
+*tests/test_deskbar_prefs.c; tests/test_deskbar_dock.c*
 
 #### DB-074 · important · done ⟨found by verification⟩
 **A recents type with a count of zero counts as disabled, and its submenu disappears from the leaf menu entirely.**  

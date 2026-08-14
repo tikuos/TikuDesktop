@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_deskbar.h"
+#include "tiku_trk_deskbar_prefs.h"
 
 static int fails;
 
@@ -178,6 +179,40 @@ main(void)
     (void)tiku_trk_deskbar_pointer(db, f.x + 2, f.y + 2);
     check(tiku_trk_deskbar_raised(db), "DB-052",
           "until the user reaches for it");
+
+    printf("\nlive preferences (DB-016, DB-017, DB-073)\n");
+    {
+        tiku_trk_deskbar_t *ordered = tiku_trk_deskbar_new(NULL);
+        tiku_trk_deskbar_settings_t settings;
+        int small_h, large_h;
+
+        (void)tiku_trk_deskbar_add_team(ordered, "Zulu");
+        (void)tiku_trk_deskbar_add_team(ordered, "Tracker");
+        (void)tiku_trk_deskbar_add_team(ordered, "Alpha");
+        tiku_trk_deskbar_settings_default(&settings);
+        settings.sort_apps = 1;
+        tiku_trk_deskbar_apply_settings(ordered, &settings);
+        check(strcmp(tiku_trk_deskbar_team_name(ordered, 0), "Tracker") == 0 &&
+              strcmp(tiku_trk_deskbar_team_name(ordered, 1), "Alpha") == 0 &&
+              strcmp(tiku_trk_deskbar_team_name(ordered, 2), "Zulu") == 0,
+              "DB-016", "Tracker pins first and the remaining applications "
+              "sort by name when those preferences are selected");
+        tiku_trk_deskbar_draw(ordered, s);
+        small_h = tiku_trk_deskbar_frame(ordered).h;
+        settings.icon_size = 96;
+        tiku_trk_deskbar_apply_settings(ordered, &settings);
+        tiku_trk_deskbar_draw(ordered, s);
+        large_h = tiku_trk_deskbar_frame(ordered).h;
+        check(large_h > small_h, "DB-017",
+              "changing the application icon size re-lays out the bar");
+        settings.always_on_top = 1;
+        settings.auto_raise = 1;
+        tiku_trk_deskbar_apply_settings(ordered, &settings);
+        (void)tiku_trk_deskbar_pointer(ordered, 100, 300);
+        check(tiku_trk_deskbar_raised(ordered), "DB-073",
+              "always-on-top wins over auto-raise and changes live z-order");
+        tiku_trk_deskbar_free(ordered);
+    }
 
     tiku_trk_deskbar_free(db);
     tiku_desk_surface_free(s);

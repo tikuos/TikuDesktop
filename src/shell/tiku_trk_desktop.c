@@ -35,6 +35,7 @@
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_prefs_window.h"
+#include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_volume.h"
 #include "tiku_trk_switcher.h"
 #include "tiku_trk_switcher_window.h"
@@ -188,6 +189,7 @@ typedef struct desktop {
     int                  info_relink;
     tiku_trk_status_overlay_t status_overlay;
     tiku_trk_prefs_window_t prefs_window;
+    tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;
     tiku_trk_switcher_window_t switcher_window;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
@@ -206,6 +208,28 @@ static void
 launch_open_path(void *context, const char *path)
 {
     (void)open_folder(context, path);
+}
+
+/** @brief Ensure the editable local menu exists before showing it. */
+static void
+deskbar_edit_path(void *context, const char *path)
+{
+    desktop_t *app = context;
+
+    if (app->backend != NULL && app->backend->ops != NULL &&
+        strcmp(app->backend->ops->name, "posix") == 0) {
+        char parent[TIKU_TRK_PATH_MAX];
+        char *slash;
+
+        snprintf(parent, sizeof parent, "%s", path);
+        slash = strrchr(parent, '/');
+        if (slash != NULL && slash != parent) {
+            *slash = '\0';
+            (void)mkdir(parent, 0700);
+        }
+        (void)mkdir(path, 0700);
+    }
+    (void)open_folder(app, path);
 }
 
 /** @brief Close invalidated spatial windows on behalf of file actions. */
@@ -389,6 +413,11 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
     }
     if (w == tiku_trk_find_window_handle(&app->find_window)) {
         tiku_trk_find_window_close(&app->find_window);
+        return;
+    }
+    if (w == tiku_trk_deskbar_prefs_window_handle(
+                 &app->deskbar_prefs_window)) {
+        tiku_trk_deskbar_prefs_window_close(&app->deskbar_prefs_window);
         return;
     }
     info_slot = tiku_trk_info_windows_slot(&app->info_windows, w);
@@ -1207,6 +1236,10 @@ tracker_run(int argc, char **argv)
         tiku_trk_deskbar_set_menu_dir(app.deskbar, user,
                                       "/usr/share/tiku-tracker/deskbar");
     }
+    tiku_trk_deskbar_prefs_window_init(&app.deskbar_prefs_window, app.desk,
+        app.deskbar, app.store, DESK_W, DESK_H,
+        tiku_trk_deskbar_user_menu_dir(app.deskbar), &app.dirty,
+        deskbar_edit_path, &app);
     {
         /* Which applications there are.  A file rather than a database:
          * what the rows are about is the ANSWERS -- which application
@@ -1602,6 +1635,7 @@ tracker_run(int argc, char **argv)
                 break;
             }
             switch (ev.type) {
+            case TIKU_DESK_EVENT_RESIZE:
             case TIKU_DESK_EVENT_EXPOSE:
                 app.dirty = 1;
                 break;
@@ -1720,6 +1754,25 @@ tracker_run(int argc, char **argv)
                                 }
                             }
                             app.dirty = 1;
+                            break;
+                        }
+                    }
+                }
+                {
+                    tiku_desk_window_t *dbprefs =
+                        tiku_trk_deskbar_prefs_window_handle(
+                            &app.deskbar_prefs_window);
+
+                    if (dbprefs != NULL && dbprefs->open &&
+                        !alert_model(&app)->open) {
+                        tiku_desk_event_t window_event = { 0 };
+
+                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.time_us = tiku_trk_now();
+                        window_event.x = ev.x;
+                        window_event.y = ev.y;
+                        window_event.button = ev.button;
+                        if (tiku_desk_window_send(dbprefs, &window_event)) {
                             break;
                         }
                     }
@@ -1864,6 +1917,10 @@ tracker_run(int argc, char **argv)
                             /* The leaf's Find item is the panel: the same
                              * entry point as Ctrl+F, reachable by mouse. */
                             open_panel(&app);
+                            break;
+                        case TIKU_TRK_DB_PREFERENCES:
+                            tiku_trk_deskbar_prefs_window_open(
+                                &app.deskbar_prefs_window);
                             break;
                         case TIKU_TRK_DB_QUIT:
                             app.running = 0;
@@ -2664,6 +2721,19 @@ tracker_run(int argc, char **argv)
                 if (tiku_trk_status_overlay_key(&app.status_overlay, key)) {
                     break;
                 }
+                {
+                    char printable[2];
+
+                    if (tiku_desk_workspace_focused(app.desk) ==
+                            tiku_trk_deskbar_prefs_window_handle(
+                                &app.deskbar_prefs_window) &&
+                        tiku_trk_deskbar_prefs_window_key(
+                            &app.deskbar_prefs_window,
+                            key_name(&ev, printable))) {
+                        app.dirty = 1;
+                        break;
+                    }
+                }
                 if (tiku_trk_switcher_window_shown(&app.switcher_window)) {
                     /* Modal while it is up, and every key goes to it: the
                      * switcher IS the focus for as long as it shows. */
@@ -3220,6 +3290,7 @@ tracker_run(int argc, char **argv)
         tiku_trk_switcher_window_close(&app.switcher_window, 0);
     }
     tiku_trk_panel_window_destroy(&app.file_panel);
+    tiku_trk_deskbar_prefs_window_destroy(&app.deskbar_prefs_window);
     tiku_trk_prefs_window_destroy(&app.prefs_window);
     tiku_trk_deskbar_free(app.deskbar);
     tiku_desk_workspace_free(app.desk);

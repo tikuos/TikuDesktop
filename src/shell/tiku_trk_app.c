@@ -2290,6 +2290,7 @@ tracker_run(int argc, char **argv)
             }
 
             switch (ev.type) {
+            case TIKU_DESK_EVENT_RESIZE:
             case TIKU_DESK_EVENT_EXPOSE:
                 a.dirty = 1;
                 break;

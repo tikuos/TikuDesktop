@@ -51,9 +51,9 @@ blocker costs the next person an hour.
 ### Current state (2026-08-13)
 
 ```
-889 rows: 476 done · 173 partial · 81 differs · 159 open
-core (199): 127 done · 43 partial · 25 differs · 4 open
-verification: 1862 checks — 36 unit suites + 49 headless shell scripts
+889 rows: 484 done · 174 partial · 81 differs · 150 open
+core (199): 128 done · 43 partial · 25 differs · 3 open
+verification: 1887 checks — 37 unit suites + 50 headless shell scripts
 ```
 
 ---
@@ -244,18 +244,13 @@ Non-negotiable, from `CLAUDE.md`:
 
 ## 7. What is left
 
-### The 8 core rows still open
+### The 3 core rows still open
 
 | row | what it needs |
 |---|---|
-| CW-046 | a navigator bar (back/forward/up + location field) |
-| MA-006 | display names: "Disks", volume names, the Trash, localised names |
-| Q-029 | re-running a template must write back over the same record |
-| AW-006 | session restore with workspace, minimised state, decor |
 | AW-017 | the Desktop as a *window* — waiver candidate, see the row |
 | AW-049 | serving panels to other applications |
 | DB-057 | bringing a whole application forward |
-| DB-061 | the Deskbar preferences window |
 
 ### Clusters, by what the blockers name
 

@@ -41,6 +41,8 @@
 /* Where the Deskbar is docked and how wide it is.  Under the session slot
  * because the bar belongs to the desktop, not to any folder. */
 #define TIKU_TRK_ATTR_DOCK        "_trk/dock"
+#define TIKU_TRK_ATTR_DESKBAR_PREFS "_trk/deskbar_prefs"
+#define TIKU_TRK_ATTR_DESKBAR_PREFS_FRAME "_trk/deskbar_prefs_frame"
 
 /* Reserved node keys reproducing Tracker's three-slot split: state for
  * things that cannot hold it goes to a well-known slot rather than to the

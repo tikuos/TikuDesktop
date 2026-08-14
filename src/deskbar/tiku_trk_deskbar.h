@@ -78,7 +78,7 @@ typedef struct {
 
 /** @brief How many rows the leaf menu holds, and its submenu. */
 #define TIKU_TRK_DB_LEAF_MAX 24
-#define TIKU_TRK_DB_SUB_MAX  16
+#define TIKU_TRK_DB_SUB_MAX  50
 
 /** @brief What one leaf-menu row IS, which decides what a click does. */
 typedef enum {
@@ -102,7 +102,7 @@ typedef enum {
 } tiku_trk_db_recent_t;
 
 /** @brief How many entries one recent list shows. */
-#define TIKU_TRK_DB_RECENT_MAX 10
+#define TIKU_TRK_DB_RECENT_MAX 50
 
 typedef struct {
     char                    label[TIKU_TRK_DB_LABEL_MAX];
@@ -112,6 +112,7 @@ typedef struct {
 } tiku_trk_db_item_t;
 
 typedef struct tiku_trk_deskbar tiku_trk_deskbar_t;
+typedef struct tiku_trk_deskbar_settings tiku_trk_deskbar_settings_t;
 
 /**
  * @brief Where the folder whose contents the leaf menu shows lives (DB-003).
@@ -124,6 +125,8 @@ void tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
 
 /** @brief The folder the menu is actually reading, or "" (DB-065). */
 const char *tiku_trk_deskbar_menu_dir(const tiku_trk_deskbar_t *db);
+/** @brief The user's editable folder, even while the fallback is shown. */
+const char *tiku_trk_deskbar_user_menu_dir(const tiku_trk_deskbar_t *db);
 
 /**
  * @brief Hand the bar one of the recent lists (DB-002, DB-074).
@@ -233,6 +236,7 @@ typedef enum {
     TIKU_TRK_DB_OPEN_PATH,
     TIKU_TRK_DB_SHOW_ABOUT,
     TIKU_TRK_DB_FIND,
+    TIKU_TRK_DB_PREFERENCES,
     TIKU_TRK_DB_HIDE_ALL,
     TIKU_TRK_DB_SHOW_ALL,
     TIKU_TRK_DB_CLOSE_ALL,
@@ -252,6 +256,10 @@ void tiku_trk_deskbar_free(tiku_trk_deskbar_t *db);
 void tiku_trk_deskbar_set_dock(tiku_trk_deskbar_t *db,
                                tiku_trk_db_dock_t dock);
 tiku_trk_db_dock_t tiku_trk_deskbar_dock(const tiku_trk_deskbar_t *db);
+
+/** @brief Apply all live preference effects to the bar (DB-061, DB-073). */
+void tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
+    const tiku_trk_deskbar_settings_t *settings);
 
 /**
  * @brief Register an application in the list.

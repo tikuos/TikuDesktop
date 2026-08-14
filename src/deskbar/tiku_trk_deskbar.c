@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_deskbar.h"
+#include "tiku_trk_deskbar_prefs.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_input.h"
 
@@ -39,18 +40,19 @@
 #define EXPANDER_PEN   2
 #define TRAY_PAD       3     /* fTrayPadding                               */
 #define CLOCK_MARGIN  12     /* fClockMargin = fTrayPadding * 4            */
-#define ICON_SZ       16     /* gMinReplicantWidth / kMinimumIconSize      */
 
 struct tiku_trk_deskbar {
     tiku_trk_backend_t  *backend;
     tiku_trk_db_dock_t   dock;
     tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
+    int                  order[TIKU_TRK_DB_TEAMS_MAX];
     int                  dragging;
     int                  drop_team;
     int                  team_count;
     tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
     int                  tray_count;
     int                  width;     /* the short axis, user-set        */
+    tiku_trk_deskbar_settings_t settings;
     int                  autohide;
     int                  autoraise;
     int                  pointer_on;  /* the pointer is over the bar    */
@@ -185,7 +187,9 @@ build_leaf(tiku_trk_deskbar_t *db)
         int any = 0;
 
         for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
-            if (db->recent_count[i] > 0) {
+            if (db->recent_count[i] > 0 &&
+                db->settings.recent_enabled[i] &&
+                db->settings.recent_count[i] > 0) {
                 if (!any) {
                     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
                     any = 1;
@@ -243,6 +247,12 @@ tiku_trk_deskbar_menu_dir(const tiku_trk_deskbar_t *db)
     return (db != NULL) ? menu_dir_of(db) : "";
 }
 
+const char *
+tiku_trk_deskbar_user_menu_dir(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->menu_dir : "";
+}
+
 void
 tiku_trk_deskbar_set_recent(tiku_trk_deskbar_t *db,
                             tiku_trk_db_recent_t which,
@@ -287,6 +297,7 @@ tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
         db->backend = backend;
         db->dock = TIKU_TRK_DB_RIGHT_EXPANDED;
         db->win_menu_team = -1;
+        tiku_trk_deskbar_settings_default(&db->settings);
     }
     return db;
 }
@@ -377,7 +388,8 @@ void
 tiku_trk_deskbar_set_autohide(tiku_trk_deskbar_t *db, int on)
 {
     if (db != NULL) {
-        db->autohide = on;
+        db->autohide = !!on;
+        db->settings.auto_hide = !!on;
     }
 }
 
@@ -385,7 +397,10 @@ void
 tiku_trk_deskbar_set_autoraise(tiku_trk_deskbar_t *db, int on)
 {
     if (db != NULL) {
-        db->autoraise = on;
+        db->autoraise = !!on;
+        db->settings.always_on_top = on ? 0 :
+                                      db->settings.always_on_top;
+        db->settings.auto_raise = !!on;
     }
 }
 
@@ -475,8 +490,50 @@ tiku_trk_deskbar_raised(const tiku_trk_deskbar_t *db)
     if (db == NULL) {
         return 1;
     }
-    return (!db->autoraise || db->pointer_on || db->menu_open ||
+    return (db->settings.always_on_top || db->pointer_on || db->menu_open ||
             db->calendar_open);
+}
+
+static int
+team_before(const tiku_trk_deskbar_t *db, int a, int b)
+{
+    if (db->settings.tracker_first) {
+        int at = strcmp(db->teams[a].name, "Tracker") == 0;
+        int bt = strcmp(db->teams[b].name, "Tracker") == 0;
+
+        if (at != bt) { return at; }
+    }
+    if (db->settings.sort_apps) {
+        return strcmp(db->teams[a].name, db->teams[b].name) < 0;
+    }
+    return a < b;
+}
+
+static void
+sort_teams(tiku_trk_deskbar_t *db)
+{
+    int i, j;
+
+    for (i = 1; i < db->team_count; i++) {
+        int key = db->order[i];
+
+        for (j = i - 1; j >= 0 && team_before(db, key, db->order[j]); j--) {
+            db->order[j + 1] = db->order[j];
+        }
+        db->order[j + 1] = key;
+    }
+}
+
+void
+tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
+                                const tiku_trk_deskbar_settings_t *settings)
+{
+    if (db == NULL || settings == NULL) { return; }
+    db->settings = *settings;
+    tiku_trk_deskbar_settings_normalize(&db->settings);
+    db->autohide = db->settings.auto_hide;
+    db->autoraise = db->settings.auto_raise;
+    sort_teams(db);
 }
 
 tiku_trk_db_dock_t
@@ -497,7 +554,7 @@ tiku_trk_deskbar_team_name(const tiku_trk_deskbar_t *db, int i)
     if (db == NULL || i < 0 || i >= db->team_count) {
         return NULL;
     }
-    return db->teams[i].name;
+    return db->teams[db->order[i]].name;
 }
 
 int
@@ -518,12 +575,14 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
         return -1;
     }
     i = db->team_count++;
+    db->order[i] = i;
     memset(&db->teams[i], 0, sizeof db->teams[i]);
     snprintf(db->teams[i].name, sizeof db->teams[i].name, "%s", name);
     /* Tracker opens everything: it is the thing that would be asked to
      * open anything nothing else claims. */
     db->teams[i].takes_anything = (strcmp(name, "Tracker") == 0);
-    db->teams[i].expanded = 1;
+    db->teams[i].expanded = db->settings.expand_new_apps;
+    sort_teams(db);
     return i;
 }
 
@@ -667,9 +726,11 @@ static int
 list_rows(const tiku_trk_deskbar_t *db)
 {
     int i, h = 0;
+    int team_h = (db->settings.icon_size + 4 > TEAM_H)
+                     ? db->settings.icon_size + 4 : TEAM_H;
 
     for (i = 0; i < db->team_count; i++) {
-        h += TEAM_H + SEAM;
+        h += team_h + SEAM;
         if (db->teams[i].expanded) {
             h += db->teams[i].win_count * (WIN_H + SEAM);
         }
@@ -832,6 +893,7 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         int i;
 
         for (i = 0; i < db->recent_count[it->which] &&
+                    i < db->settings.recent_count[it->which] &&
                     i < TIKU_TRK_DB_SUB_MAX; i++) {
             tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
 
@@ -965,10 +1027,13 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     tiku_desk_rgb_t dark = tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f);
     tiku_desk_rect_t leaf;
     int i, j, y, rows;
+    int team_h;
 
     if (db == NULL || s == NULL) {
         return;
     }
+    team_h = (db->settings.icon_size + 4 > TEAM_H)
+                 ? db->settings.icon_size + 4 : TEAM_H;
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : list_rows(db);
     {
         /* How much room the list actually has, once the leaf, the tray and
@@ -1045,17 +1110,20 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         tiku_trk_deskbar_vertical(db->dock)) {
         y = list_y(db);
         for (i = 0; i < db->team_count; i++) {
-            tiku_trk_team_t *t = &db->teams[i];
+            int team = db->order[i];
+            tiku_trk_team_t *t = &db->teams[team];
             tiku_desk_rect_t row = { db->frame.x + 2, y, db->frame.w - 4,
-                                     TEAM_H };
-            tiku_desk_rect_t icon = { row.x + 4, y + (TEAM_H - ICON_SZ) / 2,
-                                      ICON_SZ, ICON_SZ };
+                                     team_h };
+            int icon_size = db->settings.icon_size;
+            tiku_desk_rect_t icon = { row.x + 4,
+                                      y + (team_h - icon_size) / 2,
+                                      icon_size, icon_size };
             char label[TIKU_TRK_DB_LABEL_MAX];
 
             /* A hovering drag lights the row it would be handed to, so
              * the promise the drop makes is visible before it is made
              * (DB-035). */
-            if (db->drop_team == i) {
+            if (db->drop_team == team) {
                 tiku_desk_fill(s, row, TIKU_DESK_C_SELECT);
             } else {
                 draw_row_bg(s, row, t->active);
@@ -1068,16 +1136,21 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
              * looks like an application whose icon IS a blue square. */
             (void)tiku_trk_icon_paint(s, strcmp(t->name, "Tracker") == 0
                                          ? "folder" : "application",
-                                      icon.x, icon.y, ICON_SZ);
+                                      icon.x, icon.y, icon_size);
 
-            fit_label(f, t->name, row.w - ICON_SZ - EXPANDER_W - 14, label,
-                      sizeof label);
-            tiku_desk_text(s, f, icon.x + ICON_SZ + 5,
-                           y + (TEAM_H - f->height) / 2 + f->ascent, label,
-                           TIKU_DESK_C_TEXT);
-            draw_expander(s, row.x + row.w - EXPANDER_W - 2,
-                          y + (TEAM_H - 9) / 2, t->expanded);
-            y += TEAM_H + SEAM;
+            if (!db->settings.hide_app_names) {
+                fit_label(f, t->name,
+                          row.w - icon_size - EXPANDER_W - 14, label,
+                          sizeof label);
+                tiku_desk_text(s, f, icon.x + icon_size + 5,
+                               y + (team_h - f->height) / 2 + f->ascent,
+                               label, TIKU_DESK_C_TEXT);
+            }
+            if (db->settings.show_expander) {
+                draw_expander(s, row.x + row.w - EXPANDER_W - 2,
+                              y + (team_h - 9) / 2, t->expanded);
+            }
+            y += team_h + SEAM;
 
             if (!t->expanded) {
                 continue;
@@ -1330,6 +1403,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_FIND:
                 pick->what = TIKU_TRK_DB_FIND;
                 break;
+            case TIKU_TRK_DB_ITEM_PREFS:
+                pick->what = TIKU_TRK_DB_PREFERENCES;
+                break;
             case TIKU_TRK_DB_ITEM_QUIT:
                 pick->what = TIKU_TRK_DB_QUIT;
                 break;
@@ -1358,20 +1434,24 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
      * menu, a window entry raises (or minimises with Ctrl). */
     ry = list_y(db);
     for (i = 0; i < db->team_count; i++) {
-        tiku_trk_team_t *t = &db->teams[i];
+        int team = db->order[i];
+        tiku_trk_team_t *t = &db->teams[team];
+        int team_h = (db->settings.icon_size + 4 > TEAM_H)
+                         ? db->settings.icon_size + 4 : TEAM_H;
 
         /* The seam belongs to neither row; a click on it is a miss, which
          * is why hit-testing uses the row height and stepping uses the
          * pitch. */
-        if (y >= ry && y < ry + TEAM_H) {
-            if (x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
+        if (y >= ry && y < ry + team_h) {
+            if (db->settings.show_expander &&
+                x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
                 t->expanded = !t->expanded;
             } else if (secondary) {
-                db->win_menu_team = i;
+                db->win_menu_team = team;
             }
             return 1;
         }
-        ry += TEAM_H + SEAM;
+        ry += team_h + SEAM;
         if (!t->expanded) {
             continue;
         }
@@ -1421,15 +1501,19 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
     }
     ry -= LEAF_H + PAD;
     for (i = 0; i < db->team_count; i++) {
-        if (ry >= 0 && ry < TEAM_H) {
-            if (which != NULL) { *which = i; }
+        int team = db->order[i];
+        int team_h = (db->settings.icon_size + 4 > TEAM_H)
+                         ? db->settings.icon_size + 4 : TEAM_H;
+
+        if (ry >= 0 && ry < team_h) {
+            if (which != NULL) { *which = team; }
             return TIKU_TRK_DB_DROP_TEAM;
         }
-        ry -= TEAM_H + SEAM;
-        if (db->teams[i].expanded) {
+        ry -= team_h + SEAM;
+        if (db->teams[team].expanded) {
             /* A window row is not a drop target of its own: the drop
              * belongs to the application that owns it. */
-            ry -= db->teams[i].win_count * (WIN_H + SEAM);
+            ry -= db->teams[team].win_count * (WIN_H + SEAM);
         }
     }
     return TIKU_TRK_DB_DROP_BAR;
