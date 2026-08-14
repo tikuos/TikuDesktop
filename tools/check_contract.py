@@ -22,7 +22,9 @@ EXPECT = 889                    # the extracted row count; only the user
 
 def main(path):
     text = open(path, encoding="utf-8").read()
-    rows = re.findall(r"^#### ([A-Z]+-\d+) · (\w+) · (\w+)", text, re.M)
+    header = re.compile(r"^#### ([A-Z]+-\d+) · (\w+) · (\w+)(?:.*)$", re.M)
+    heads = list(header.finditer(text))
+    rows = [(m.group(1), m.group(2), m.group(3)) for m in heads]
     bad = 0
 
     if len(rows) != EXPECT:
@@ -40,6 +42,22 @@ def main(path):
     for v in verdicts:
         if v not in ("done", "partial", "open", "differs", "WAIVED"):
             print("contract: unknown verdict %r" % v)
+            bad += 1
+    unresolved = ("**BLOCKED:**", "**SUBSYSTEM:**", "**WAIVER CANDIDATE:**",
+                  "**UNCONFIRMED:**", "**TODO:**")
+    for i, m in enumerate(heads):
+        status = m.group(3)
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        body = text[m.end():end]
+        rid = m.group(1)
+        if status == "partial" and "**MISSING:**" not in body:
+            print("contract: partial row %s has no **MISSING:** reason" % rid)
+            bad += 1
+        if status == "differs" and "**PORT:**" not in body:
+            print("contract: differs row %s has no **PORT:** alternative" % rid)
+            bad += 1
+        if status == "done" and any(mark in body for mark in unresolved):
+            print("contract: done row %s still has unresolved evidence" % rid)
             bad += 1
     if bad:
         return 1
