@@ -8,7 +8,8 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra \
-           -Isrc/core -Isrc/backends -Isrc/ui -Isrc/ui/windows \
+           -Isrc/core -Isrc/backends -Isrc/ui -Isrc/ui/commands \
+           -Isrc/ui/windows \
            -Isrc/ui/overlays -Isrc/media -Isrc/deskbar -Isrc/shell \
            -I../desktop/src
 LDFLAGS ?=
@@ -24,6 +25,9 @@ DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
 DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/deskbar/tiku_trk_desktop_view.c \
+                       src/ui/commands/tiku_trk_folder_actions.c \
+                       src/ui/commands/tiku_trk_folder_menu.c \
+                       src/ui/commands/tiku_trk_launch_controller.c \
                        src/ui/windows/tiku_trk_find_window.c \
                        src/ui/windows/tiku_trk_folder_window.c \
                        src/ui/windows/tiku_trk_info_window.c \

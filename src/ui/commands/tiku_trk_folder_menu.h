@@ -1,0 +1,55 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_folder_menu.h - folder menu model controller.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef TIKU_TRK_FOLDER_MENU_H_
+#define TIKU_TRK_FOLDER_MENU_H_
+
+#include "tiku_trk_clip.h"
+#include "tiku_trk_cwmenu.h"
+#include "tiku_trk_folder_window.h"
+#include "tiku_trk_fs.h"
+#include "tiku_trk_launch_controller.h"
+#include "tiku_trk_types.h"
+
+/** @brief Services used to rebuild folder menus from live model state. */
+typedef struct {
+    tiku_trk_cwmenu_t             *menus;
+    tiku_trk_clip_t               *clip;
+    tiku_trk_backend_t            *backend;
+    tiku_trk_fs_t                 *fs;
+    tiku_trk_types_t              *types;
+    tiku_trk_launch_controller_t  *launcher;
+    tiku_trk_folder_window_t     **bar_folder;
+    int                           *bar_open;
+} tiku_trk_folder_menu_t;
+
+/** @brief Bind live folder-menu models and their supporting services. */
+void tiku_trk_folder_menu_init(tiku_trk_folder_menu_t *controller,
+    tiku_trk_cwmenu_t *menus, tiku_trk_clip_t *clip,
+    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs,
+    tiku_trk_types_t *types, tiku_trk_launch_controller_t *launcher,
+    tiku_trk_folder_window_t **bar_folder, int *bar_open);
+
+/** @brief Describe which commands apply to a folder and its selection. */
+tiku_trk_sc_ctx_t tiku_trk_folder_menu_context(
+    tiku_trk_folder_menu_t *controller,
+    tiku_trk_folder_window_t *folder, unsigned modifiers);
+/** @brief Rebuild the shared Open-with submenu for one folder. */
+void tiku_trk_folder_menu_build_open_with(
+    tiku_trk_folder_menu_t *controller,
+    tiku_trk_folder_window_t *folder);
+/** @brief Rebuild per-type attribute submenus for one folder. */
+void tiku_trk_folder_menu_build_per_type(
+    tiku_trk_folder_menu_t *controller,
+    tiku_trk_folder_window_t *folder);
+/** @brief Prepare the menu model immediately before a folder is painted. */
+void tiku_trk_folder_menu_prepare(void *context,
+                                  tiku_trk_folder_window_t *folder);
+
+#endif /* TIKU_TRK_FOLDER_MENU_H_ */

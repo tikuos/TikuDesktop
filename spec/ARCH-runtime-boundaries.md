@@ -86,9 +86,11 @@ controllers now own rendering, input, persistence or refresh, and the
 lifetime of their composited windows. The Desktop controller additionally
 owns its union source, placement, watch, poll, and backdrop lifetime, while
 the Deskbar roster bridge owns host-process discovery and workspace window
-publication. The shell supplies folder render services and prepares semantic
-menu models, but no longer paints or hit-tests folder content. The status
-overlay likewise owns alert and progress rendering plus modal input, while
+publication. The shell supplies folder render services, but no longer paints
+or hit-tests folder content. Folder menu context, per-type attributes,
+Open-with candidates, launch presentation, and direct view commands are
+likewise owned by controllers under `ui/commands`.
+The status overlay owns alert and progress rendering plus modal input, while
 filesystem answers remain a shell callback.
 
 ## Temporary exceptions

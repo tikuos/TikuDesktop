@@ -56,7 +56,10 @@
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
+#include "tiku_trk_folder_actions.h"
+#include "tiku_trk_folder_menu.h"
 #include "tiku_trk_folder_window.h"
+#include "tiku_trk_launch_controller.h"
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_query.h"
@@ -121,6 +124,8 @@ typedef struct desktop {
     /* Menus.  One set serves every folder window, rebuilt from whichever is
      * focused each time a menu opens -- the original rebuilds on open too. */
     tiku_trk_cwmenu_t    menus;
+    tiku_trk_launch_controller_t launcher;
+    tiku_trk_folder_menu_t folder_menu;
     tiku_trk_menu_t     *popup;          /* the menu showing, or NULL       */
     tiku_desk_rect_t     popup_frame;
     tiku_trk_menu_t     *popup_sub;      /* its open submenu, or NULL       */
@@ -228,6 +233,15 @@ typedef struct desktop {
     int                  ren_row;
 } desktop_t;
 
+static folder_t *open_folder(desktop_t *app, const char *path);
+
+/** @brief Let the launch controller hand Tracker-owned paths to the shell. */
+static void
+launch_open_path(void *context, const char *path)
+{
+    (void)open_folder(context, path);
+}
+
 /** @brief Preferences remain shared data; their window owns the lifetime. */
 static tiku_trk_prefs_t *
 prefs_model(desktop_t *app)
@@ -295,78 +309,7 @@ status_stop(void *context)
 static tiku_trk_sc_ctx_t
 menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
 {
-    tiku_trk_sc_ctx_t c;
-
-    memset(&c, 0, sizeof c);
-    c.mods = mods;
-    c.view_mode = TIKU_TRK_MODE_LIST;
-    if (fl == NULL) {
-        return c;
-    }
-    (void)app;
-    c.selection = tiku_trk_poseview_selection_count(fl->view);
-    c.view_mode = tiku_trk_poseview_mode(fl->view);
-    c.icon_size = tiku_trk_poseview_icon_size(fl->view);
-    c.sort_field = tiku_trk_poseview_sort_field(fl->view);
-    c.reverse_sort = tiku_trk_poseview_sort_reverse(fl->view);
-    {
-        static const int fields[] = { TIKU_TRK_COL_NAME, TIKU_TRK_COL_KIND,
-                                      TIKU_TRK_COL_VALUE, TIKU_TRK_COL_SIZE,
-                                      TIKU_TRK_COL_CAP, TIKU_TRK_COL_DATE,
-                                      TIKU_TRK_COL_PATH,
-                                      TIKU_TRK_COL_PERM };
-        size_t k;
-
-        for (k = 0; k < sizeof fields / sizeof *fields; k++) {
-            if (tiku_trk_poseview_has_column(fl->view, fields[k])) {
-                c.columns |= 1u << fields[k];
-            }
-        }
-    }
-    c.can_edit_name = (c.selection == 1);
-    /* FS-051: the clipboard really has something in it, so the item can
-     * finally be enabled -- it has been permanently grey until now. */
-    c.clipboard_has_refs = (tiku_trk_clip_count(&app->clip) > 0);
-    c.can_open_parent = !tiku_trk_poseview_is_query(fl->view) &&
-                        strcmp(fl->path, "/") != 0;
-    {   /* Empty Trash is offered only when there is something to empty, and
-         * the answer comes from the store rather than from a guess: without
-         * it the item is disabled forever (AW-029). */
-        char trash[TIKU_TRK_PATH_MAX];
-
-        if (app->fs != NULL &&
-            tiku_trk_fs_trash_dir(app->fs, fl->path, trash,
-                                  sizeof trash) == 0) {
-            tiku_trk_model_t tm;
-
-            c.is_trash = (strcmp(fl->path, trash) == 0);
-            c.in_trash = !c.is_trash &&
-                         tiku_trk_fs_in_trash(app->fs, fl->path);
-            if (app->backend->ops->stat(app->backend, trash, &tm) == 0) {
-                c.trash_full = tm.facts.trash_full;
-            }
-        }
-    }
-    {
-        tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
-
-        /* A namespace directory has a fixed shape, and that one answer is
-         * what disables New folder, Paste, Cut and Duplicate together
-         * rather than each deciding for itself. */
-        if (p != NULL) {
-            c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
-            c.selection_ro = !tiku_trk_model_is_writable(&p->model);
-            c.can_trash_or_dup = c.selection > 0 && !c.selection_ro;
-        }
-        c.target_ro = (strncmp(fl->path, "/sys", 4) == 0 ||
-                       strncmp(fl->path, "/dev", 4) == 0 ||
-                       strncmp(fl->path, "/proc", 5) == 0);
-        c.is_root = (strcmp(fl->path, "/") == 0);
-        /* A results window IS a query, which is what makes Edit query
-         * reachable from the window it produced (CW-033). */
-        c.is_query = tiku_trk_poseview_is_query(fl->view);
-    }
-    return c;
+    return tiku_trk_folder_menu_context(&app->folder_menu, fl, mods);
 }
 
 /**
@@ -379,57 +322,8 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
 static void
 build_open_with(desktop_t *app, folder_t *fl)
 {
-    tiku_trk_menu_t *m = &app->menus.open_with;
-    const char *types[TIKU_TRK_APP_TYPES_MAX];
-    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
-    int i, n = 0, ntypes = 0, count;
-
-    tiku_trk_menu_clear(m);
-    if (fl == NULL || fl->view == NULL) {
-        return;
-    }
-    count = tiku_trk_poseview_count(fl->view);
-    for (i = 0; i < count && ntypes < TIKU_TRK_APP_TYPES_MAX; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-        int k, seen = 0;
-
-        if (p == NULL || !p->selected || p->model.type[0] == '\0') {
-            continue;
-        }
-        if (tiku_trk_model_is_container(&p->model)) {
-            continue;           /* a folder is opened, never opened WITH */
-        }
-        for (k = 0; k < ntypes; k++) {
-            if (strcmp(types[k], p->model.type) == 0) {
-                seen = 1;
-                break;
-            }
-        }
-        if (!seen) {
-            types[ntypes++] = p->model.type;
-        }
-    }
-    if (ntypes == 0) {
-        return;
-    }
-    n = tiku_trk_launch_candidates(&app->apps, types, ntypes, app->store,
-                                   cand, TIKU_TRK_APP_MAX);
-    for (i = 0; i < n; i++) {
-        char label[TIKU_TRK_APP_NAME_MAX + 40];
-
-        /* Each row says why it is there, which is the sentence the
-         * original's Relation column carries (AW-042, MA-081). */
-        snprintf(label, sizeof label, "%s (%s)", cand[i].app->name,
-                 tiku_trk_launch_relation_label(cand[i].rel));
-        (void)tiku_trk_menu_add(m, label,
-                                TIKU_TRK_CMD_OPEN_WITH_BASE + i, 0, 0u, 1);
-        if (cand[i].preferred) {
-            m->item[m->count - 1].marked = 1;
-        }
-    }
+    tiku_trk_folder_menu_build_open_with(&app->folder_menu, fl);
 }
-
-static folder_t *open_folder(desktop_t *app, const char *path);
 
 /**
  * @brief Hand @p paths to an application, and say what happened (AW-039).
@@ -440,193 +334,32 @@ static folder_t *open_folder(desktop_t *app, const char *path);
  * be three behaviours wearing one name.
  */
 static int
-launch_paths(desktop_t *app, const tiku_trk_app_t *a,
-             const char *const *paths, int n)
+launch_paths(desktop_t *app, const tiku_trk_app_t *application,
+             const char *const *paths, int count)
 {
-    tiku_trk_launch_err_t e;
-
-    if (a == NULL) {
-        snprintf(app->status, sizeof app->status, "%s",
-                 tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NO_APP));
-        return 0;
-    }
-    e = tiku_trk_launch_run(a, paths, n);
-    if (e == TIKU_TRK_LAUNCH_OK) {
-        snprintf(app->status, sizeof app->status, "opening %d item%s with "
-                 "%.40s", n, (n == 1) ? "" : "s", a->name);
-    } else if (e == TIKU_TRK_LAUNCH_IS_TRACKER) {
-        /* The running Tracker takes it: opening a folder is what this
-         * application does with one (AW-035). */
-        int i;
-
-        for (i = 0; i < n; i++) {
-            (void)open_folder(app, paths[i]);
-        }
-    } else {
-        snprintf(app->status, sizeof app->status, "%s",
-                 tiku_trk_launch_reason(e));
-    }
-    return (e == TIKU_TRK_LAUNCH_OK);
+    return tiku_trk_launch_controller_run(&app->launcher, application, paths,
+                                          count);
 }
 
 /** @brief The application a document should open in, or NULL (AW-030). */
 static const tiku_trk_app_t *
-handler_for(desktop_t *app, const tiku_trk_model_t *m)
+handler_for(desktop_t *app, const tiku_trk_model_t *model)
 {
-    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
-    const char *types[1];
-    int n;
-
-    if (m == NULL || m->type[0] == '\0') {
-        return NULL;
-    }
-    types[0] = m->type;
-    n = tiku_trk_launch_candidates(&app->apps, types, 1, app->store, cand,
-                                   TIKU_TRK_APP_MAX);
-    /* The best match, which is the user's choice when they made one: the
-     * list is already in that order. */
-    return (n > 0) ? cand[0].app : NULL;
+    return tiku_trk_launch_controller_handler(&app->launcher, model);
 }
 
 /** @brief Open the selection with the candidate at @p at (AW-040). */
 static void
 open_with_pick(desktop_t *app, folder_t *fl, int at)
 {
-    const char *types[TIKU_TRK_APP_TYPES_MAX];
-    const char *paths[TIKU_TRK_DRAG_MAX];
-    tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
-    int i, ntypes = 0, npath = 0, n, count;
-
-    if (fl == NULL || fl->view == NULL) {
-        return;
-    }
-    count = tiku_trk_poseview_count(fl->view);
-    for (i = 0; i < count; i++) {
-        tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, i);
-        int k, seen = 0;
-
-        if (p == NULL || !p->selected ||
-            tiku_trk_model_is_container(&p->model)) {
-            continue;
-        }
-        if (npath < TIKU_TRK_DRAG_MAX) {
-            paths[npath++] = p->model.path;
-        }
-        for (k = 0; k < ntypes; k++) {
-            if (strcmp(types[k], p->model.type) == 0) {
-                seen = 1;
-                break;
-            }
-        }
-        if (!seen && p->model.type[0] != '\0' &&
-            ntypes < TIKU_TRK_APP_TYPES_MAX) {
-            types[ntypes++] = p->model.type;
-        }
-    }
-    if (npath == 0) {
-        snprintf(app->status, sizeof app->status, "%s",
-                 tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NOTHING));
-        return;
-    }
-    n = tiku_trk_launch_candidates(&app->apps, types, ntypes, app->store,
-                                   cand, TIKU_TRK_APP_MAX);
-    if (at < 0 || at >= n) {
-        return;                 /* the list moved under the menu */
-    }
-    (void)launch_paths(app, cand[at].app, paths, npath);
+    tiku_trk_launch_controller_pick(&app->launcher, fl, at);
 }
 
-/** @brief The menu command that toggles column @p col, and its title. */
-static int
-column_command(int col, const char **title)
-{
-    switch (col) {
-    case TIKU_TRK_COL_KIND:  *title = "Kind";        return TIKU_TRK_CMD_COL_KIND;
-    case TIKU_TRK_COL_VALUE: *title = "Value";       return TIKU_TRK_CMD_COL_VALUE;
-    case TIKU_TRK_COL_SIZE:  *title = "Size";        return TIKU_TRK_CMD_COL_SIZE;
-    case TIKU_TRK_COL_CAP:   *title = "Capability";  return TIKU_TRK_CMD_COL_CAP;
-    case TIKU_TRK_COL_DATE:  *title = "Modified";    return TIKU_TRK_CMD_COL_DATE;
-    case TIKU_TRK_COL_PATH:  *title = "Location";    return TIKU_TRK_CMD_COL_PATH;
-    case TIKU_TRK_COL_PERM:  *title = "Permissions"; return TIKU_TRK_CMD_COL_PERM;
-    default:                 *title = "";            return 0;
-    }
-}
-
-/**
- * @brief Fill the Attributes menu's per-type submenus (CW-026).
- *
- * A type offers the columns that MEAN something for it: what a value reads
- * as is a device node's question, when a file was written is a document's.
- * Built from the types the listing actually holds, so a folder is never
- * offered a column for something it does not contain.
- */
+/** @brief Fill the Attributes menu's per-type submenus. */
 static void
 build_per_type(desktop_t *app, folder_t *fl)
 {
-    const char *types[4];
-    int n, i;
-
-    app->menus.per_type_count = 0;
-    if (fl == NULL || fl->view == NULL) {
-        return;
-    }
-    n = tiku_trk_poseview_types_present(fl->view, types, 4);
-    for (i = 0; i < n; i++) {
-        tiku_trk_menu_t *m = &app->menus.per_type[i];
-        const tiku_trk_typerec_t *tr = tiku_trk_types_find(&app->types,
-                                                           types[i]);
-        int k;
-
-        if (tr == NULL) {
-            /* A type the database has never heard of offers nothing of its
-             * own: the generic columns every listing has are already in
-             * the menu above. */
-            continue;
-        }
-        tiku_trk_menu_clear(m);
-        for (k = 0; k < tr->ncol; k++) {
-            const char *ttl = NULL;
-            int cmd = column_command(tr->col[k], &ttl);
-
-            if (cmd != 0) {
-                (void)tiku_trk_menu_add(m, ttl, cmd, 0, 0u, 1);
-            }
-        }
-        for (k = 0; k < tr->nattr; k++) {
-            /* An attribute becomes a column the moment the type that
-             * wants it is in the folder: the id is this session's, the
-             * NAME is what the database and the saved layout agree on. */
-            int f = tiku_trk_poseview_attr_column(fl->view, tr->attr[k],
-                                                  tr->attr[k], 120);
-
-            if (f >= 0) {
-                (void)tiku_trk_menu_add(m, tr->attr[k],
-                                        TIKU_TRK_CMD_COL_ATTR_BASE + f, 0,
-                                        0u, 1);
-            }
-        }
-        if (m->count == 0) {
-            continue;
-        }
-        snprintf(app->menus.per_type_name[app->menus.per_type_count],
-                 sizeof app->menus.per_type_name[0], "%s",
-                 (tr->desc[0] != '\0') ? tr->desc : types[i]);
-        snprintf(m->title, sizeof m->title, "%s",
-                 app->menus.per_type_name[app->menus.per_type_count]);
-        app->menus.per_type_count++;
-    }
-}
-
-/** @brief Rebuild the shared menu model for the folder being painted. */
-static void
-prepare_folder_menu(void *context, tiku_trk_folder_window_t *folder)
-{
-    desktop_t *app = context;
-    tiku_trk_sc_ctx_t menu = menu_ctx(app, folder, 0u);
-
-    build_per_type(app, folder);
-    tiku_trk_cwmenu_rebuild(&app->menus, &menu);
-    app->menus.bar.open = app->bar_fl == folder ? app->bar_open : -1;
+    tiku_trk_folder_menu_build_per_type(&app->folder_menu, fl);
 }
 
 /** @brief The folder interface shared by Desktop and folder interactions. */
@@ -636,7 +369,6 @@ desktop_folder(desktop_t *app)
     return tiku_trk_desktop_view_folder(&app->desktop_view);
 }
 
-static folder_t *open_folder(desktop_t *app, const char *path);
 static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 
 /**
@@ -1655,6 +1387,10 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (fl == NULL) {
         return;
     }
+    if (tiku_trk_folder_actions_invoke(app->desk, fl, command)) {
+        app->dirty = 1;
+        return;
+    }
     switch (command) {
     case TIKU_TRK_CMD_OPEN: {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
@@ -1714,115 +1450,6 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * picker and it is the command that decides what happens with the
          * answer. */
         fpanel_open(app, fl, command);
-        break;
-    case TIKU_TRK_CMD_SELECT_ALL:
-        tiku_trk_poseview_select_all(fl->view);
-        break;
-    case TIKU_TRK_CMD_LIST_VIEW:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_LIST);
-        break;
-    case TIKU_TRK_CMD_ICON_VIEW:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        break;
-    case TIKU_TRK_CMD_MINI_ICON_VIEW:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_MINI);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_32:
-        /* Choosing a size also switches INTO icon mode: the sizes are the
-         * icon view's own submenu, and picking one in list mode otherwise
-         * changes a number nothing on screen reads (CW-024). */
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 32);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_48:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 48);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_40:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 40);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_64:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 64);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_96:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 96);
-        break;
-    case TIKU_TRK_CMD_ICON_SIZE_128:
-        tiku_trk_poseview_set_mode(fl->view, TIKU_TRK_MODE_ICON);
-        tiku_trk_poseview_set_icon_size(fl->view, 128);
-        break;
-    case TIKU_TRK_CMD_SORT_BY_NAME:
-        tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_NAME);
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_SORT_BY_KIND:
-        tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_KIND);
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_SORT_BY_SIZE:
-        tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_SIZE);
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_SORT_BY_VALUE:
-        tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_VALUE);
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_SORT_BY_CAP:
-        tiku_trk_poseview_sort_by(fl->view, TIKU_TRK_COL_CAP);
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_COL_KIND:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_KIND);
-        break;
-    case TIKU_TRK_CMD_COL_VALUE:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_VALUE);
-        break;
-    case TIKU_TRK_CMD_COL_SIZE:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_SIZE);
-        break;
-    case TIKU_TRK_CMD_COL_DATE:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_DATE);
-        break;
-    case TIKU_TRK_CMD_COL_PATH:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_PATH);
-        break;
-    case TIKU_TRK_CMD_COL_PERM:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_PERM);
-        break;
-    case TIKU_TRK_CMD_COL_CAP:
-        (void)tiku_trk_poseview_toggle_column(fl->view, TIKU_TRK_COL_CAP);
-        break;
-    case TIKU_TRK_CMD_REVERSE_ORDER:
-        /* Sorting by the field already in force is the reverse toggle, and
-         * the icons are re-laid out after it -- the same Cleanup the
-         * Arrange-by path runs, so both routes end in one arrangement. */
-        tiku_trk_poseview_sort_by(fl->view,
-                                  tiku_trk_poseview_sort_field(fl->view));
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_CLEANUP:
-        /* SNAP, not re-lay-out: Clean up straightens the arrangement the
-         * user made, and replacing it with sort order would throw away
-         * exactly what they were tidying (PVL-021). */
-        (void)tiku_trk_poseview_snap_to_grid(fl->view);
-        break;
-    case TIKU_TRK_CMD_CLEANUP_ALL:
-        /* Shift is the stronger one, and it IS the re-lay-out. */
-        tiku_trk_poseview_cleanup(fl->view,
-                                  tiku_trk_folder_window_content(fl).w);
-        break;
-    case TIKU_TRK_CMD_RESIZE_TO_FIT:
-        (void)tiku_desk_workspace_zoom(app->desk, fl->win, tiku_trk_folder_window_fit_width(fl),
-                                 tiku_trk_folder_window_fit_height(fl));
         break;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
     case TIKU_TRK_CMD_DELETE: {
@@ -2645,6 +2272,11 @@ tracker_run(int argc, char **argv)
                                        "/usr/share/tiku-tracker/apps");
         }
     }
+    tiku_trk_launch_controller_init(&app.launcher, &app.apps, app.store,
+        app.status, sizeof app.status, launch_open_path, &app);
+    tiku_trk_folder_menu_init(&app.folder_menu, &app.menus, &app.clip,
+        app.backend, app.fs, &app.types, &app.launcher, &app.bar_fl,
+        &app.bar_open);
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -2698,8 +2330,8 @@ tracker_run(int argc, char **argv)
         .band_y1 = &app.band_y1,
         .drop_folder = &app.drop_fl,
         .drop_row = &app.drop_row,
-        .prepare_menu = prepare_folder_menu,
-        .prepare_context = &app
+        .prepare_menu = tiku_trk_folder_menu_prepare,
+        .prepare_context = &app.folder_menu
     };
 
     app.desk_row = -1;
