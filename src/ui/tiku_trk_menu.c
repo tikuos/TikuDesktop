@@ -197,6 +197,16 @@ tiku_trk_menu_enable(tiku_trk_menu_t *m, int command, int enabled)
 }
 
 void
+tiku_trk_menu_set_icon(tiku_trk_menu_t *m, int command, const char *icon)
+{
+    int i = tiku_trk_menu_find(m, command);
+    if (i >= 0) {
+        snprintf(m->item[i].icon, sizeof m->item[i].icon, "%s",
+                 icon != NULL ? icon : "");
+    }
+}
+
+void
 tiku_trk_menu_relabel(tiku_trk_menu_t *m, int at, const char *label,
                       int command, char sc, unsigned mods)
 {
@@ -255,6 +265,7 @@ tiku_trk_menu_measure(tiku_trk_menu_t *m)
             continue;
         }
         iw = tiku_desk_text_width(f, m->item[i].label) + PAD_LEFT + PAD_RIGHT;
+        if (m->item[i].icon[0] != '\0') iw += 18;
         /* A shortcut costs an em only when it is shown WITH modifiers; the
          * modifier badges themselves are added once for the whole menu. */
         if (m->item[i].shortcut != 0 && m->item[i].mods != 0u) {
@@ -448,7 +459,13 @@ tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
         if (it->marked) {
             draw_mark(s, r, tiku_desk_tint(ink, MARK_TINT));
         }
-        tiku_desk_text(s, f, r.x + PAD_LEFT, base_y, it->label, ink);
+        if (it->icon[0] != '\0') {
+            tiku_desk_fill(s, (tiku_desk_rect_t){r.x + PAD_LEFT,
+                r.y + 2, 14, 14}, it->enabled ? TIKU_DESK_C_SELECT :
+                tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f));
+        }
+        tiku_desk_text(s, f, r.x + PAD_LEFT + (it->icon[0] != '\0' ? 18 : 0),
+                       base_y, it->label, ink);
 
         if (it->submenu != NULL) {
             draw_arrow(s, r, tiku_desk_tint(ink, MARK_TINT));

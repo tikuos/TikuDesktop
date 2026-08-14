@@ -62,6 +62,7 @@
 #include "tiku_trk_folder_file_actions.h"
 #include "tiku_trk_folder_edit.h"
 #include "tiku_trk_folder_menu.h"
+#include "tiku_trk_addon.h"
 #include "tiku_trk_folder_lifecycle.h"
 #include "tiku_trk_folder_window.h"
 #include "tiku_trk_band_controller.h"
@@ -166,6 +167,7 @@ typedef struct desktop {
      * the desktop: the Open with menu, a double click and a drop on an
      * application all ask the same question (AW-040). */
     tiku_trk_apps_t      apps;
+    tiku_trk_addons_t    addons;
     /* What the system knows about a type: its description, its icon, and
      * the columns it is worth showing (AW-013, CW-026). */
     tiku_trk_types_t     types;
@@ -369,6 +371,18 @@ static void
 build_open_with(desktop_t *app, folder_t *fl)
 {
     tiku_trk_folder_menu_build_open_with(&app->folder_menu, fl);
+    if (fl != NULL && fl->view != NULL) {
+        const char *types[TIKU_TRK_APP_TYPES_MAX];
+        int n = tiku_trk_poseview_types_present(fl->view, types,
+                                                TIKU_TRK_APP_TYPES_MAX);
+        (void)tiku_trk_addons_build_menu(&app->addons, types, n,
+                                         &app->menus.addons,
+                                         TIKU_TRK_CMD_ADD_ONS + 100);
+    } else {
+        (void)tiku_trk_addons_build_menu(&app->addons, NULL, 0,
+                                         &app->menus.addons,
+                                         TIKU_TRK_CMD_ADD_ONS + 100);
+    }
 }
 
 /**
@@ -1414,6 +1428,12 @@ tracker_run(int argc, char **argv)
     tiku_trk_folder_menu_init(&app.folder_menu, &app.menus, &app.clip,
         app.backend, app.fs, &app.types, &app.launcher, &app.bar_fl,
         &app.bar_open);
+    tiku_trk_addons_init(&app.addons);
+    (void)tiku_trk_addons_register(&app.addons, "Open in Tracker", "",
+                                   "inode/directory", 'o');
+    (void)tiku_trk_addons_register(&app.addons, "Open with Editor", "",
+                                   "text/plain", 'e');
+    (void)tiku_trk_addons_register(&app.addons, "Inspect", "", "*", 'i');
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);

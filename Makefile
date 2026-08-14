@@ -78,7 +78,7 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
             $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
-            $(BUILD)/test_springmenu $(BUILD)/test_color
+            $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop
 
@@ -101,6 +101,10 @@ $(BUILD)/test_springmenu: src/ui/tiku_trk_springmenu.c tests/test_springmenu.c |
 
 $(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_addon: src/core/tiku_trk_addon.c src/ui/tiku_trk_menu.c \
+                     tests/test_addon.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_model: $(COMMON) tests/test_model.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -265,7 +269,7 @@ $(BUILD)/test_hvif: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
-$(BUILD)/tracker: $(COMMON) $(ICONS) src/ui/tiku_trk_poseview.c \
+$(BUILD)/tracker: $(COMMON) src/core/tiku_trk_addon.c $(ICONS) src/ui/tiku_trk_poseview.c \
                   src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
                   src/core/tiku_trk_edit.c src/ui/tiku_trk_titleview.c \
                   src/ui/tiku_trk_navigator.c \
@@ -275,7 +279,7 @@ $(BUILD)/tracker: $(COMMON) $(ICONS) src/ui/tiku_trk_poseview.c \
                   src/shell/tiku_trk_launcher.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-$(BUILD)/desktop: $(COMMON) $(ICONS) src/ui/tiku_trk_poseview.c \
+$(BUILD)/desktop: $(COMMON) src/core/tiku_trk_addon.c $(ICONS) src/ui/tiku_trk_poseview.c \
                   src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
                   src/shell/tiku_trk_script.c \
                   src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \

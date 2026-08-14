@@ -40,6 +40,7 @@ typedef struct tiku_trk_mitem {
     int                   enabled;
     int                   marked;       /* draws the check                  */
     int                   separator;
+    char                  icon[32];        /* optional file/MIME art key */
     struct tiku_trk_menu *submenu;      /* not owned                        */
 } tiku_trk_mitem_t;
 
@@ -92,6 +93,7 @@ void tiku_trk_menu_mark_radio(tiku_trk_menu_t *m, const int *commands, int n,
                               int chosen);
 
 void tiku_trk_menu_enable(tiku_trk_menu_t *m, int command, int enabled);
+void tiku_trk_menu_set_icon(tiku_trk_menu_t *m, int command, const char *icon);
 
 /** @brief Replace an item's label and command together, as a live menu does. */
 void tiku_trk_menu_relabel(tiku_trk_menu_t *m, int at, const char *label,
