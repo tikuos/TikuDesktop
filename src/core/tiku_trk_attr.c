@@ -128,36 +128,24 @@ fmt_bytes(long v, char *out, size_t max)
 
 /** @brief An interval, dropping the smallest part first as room runs out. */
 static void
-fmt_seconds(long v, int width, char *out, size_t max)
+fmt_seconds(long v, char *out, size_t max)
 {
     /* Split the MAGNITUDE and carry the sign separately: dividing a negative
      * total truncates each part toward zero, so -3600 comes out as every
-     * field zero and reads as "0s" -- an hour ago shown as now. */
+     * field zero and reads as "0:00" -- an hour ago shown as now. */
     const char *sign = (v < 0) ? "-" : "";
     long a = (v < 0) ? -v : v;
-    long d = a / 86400, h = (a % 86400) / 3600;
-    long m = (a % 3600) / 60, s = a % 60;
-    char body[48];
+    long h = a / 3600, m = (a % 3600) / 60, s = a % 60;
 
-    out[0] = '\0';
-    if (d > 0) {
-        if (width >= 110) {
-            snprintf(body, sizeof body, "%ldd %ldh %ldm", d, h, m);
-        } else {
-            snprintf(body, sizeof body, "%ldd %ldh", d, h);
-        }
-    } else if (h > 0) {
-        if (width >= 110) {
-            snprintf(body, sizeof body, "%ldh %ldm %lds", h, m, s);
-        } else {
-            snprintf(body, sizeof body, "%ldh %ldm", h, m);
-        }
-    } else if (m > 0) {
-        snprintf(body, sizeof body, "%ldm %lds", m, s);
+    /* Hours accumulate rather than rolling into days: a duration is one
+     * span, and a reader comparing two of them compares the leading
+     * number.  Under the hour the hours field goes rather than sit at
+     * zero (MA-035). */
+    if (h > 0) {
+        snprintf(out, max, "%s%ld:%02ld:%02ld", sign, h, m, s);
     } else {
-        snprintf(body, sizeof body, "%lds", s);
+        snprintf(out, max, "%s%ld:%02ld", sign, m, s);
     }
-    snprintf(out, max, "%s%s", sign, body);
 }
 
 static void
@@ -197,7 +185,7 @@ fmt_count(long v, char *out, size_t max)
 }
 
 int
-tiku_trk_attr_format(const tiku_trk_desc_t *d, const char *raw, int width,
+tiku_trk_attr_format(const tiku_trk_desc_t *d, const char *raw,
                      char *out, size_t max)
 {
     long v;
@@ -227,7 +215,7 @@ tiku_trk_attr_format(const tiku_trk_desc_t *d, const char *raw, int width,
         fmt_hz(v, out, max);
         break;
     case TIKU_TRK_UNIT_SECONDS:
-        fmt_seconds(v, width, out, max);
+        fmt_seconds(v, out, max);
         break;
     case TIKU_TRK_UNIT_COUNT:
         fmt_count(v, out, max);

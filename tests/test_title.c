@@ -657,6 +657,35 @@ main(void)
               "and back to itself at 12pt again");
     }
 
+    printf("\na sort key whose column left (MA-067)\n");
+    {
+        /* Cap sits first, so "the first column" and "the Name column" are
+         * different answers and the fallback can be told apart. */
+        order_as(v);
+        (void)tiku_trk_poseview_move_column(v, TIKU_TRK_COL_CAP,
+                                            TIKU_TRK_COL_NAME);
+        check(index_of(v, TIKU_TRK_COL_CAP) == 0, "MA-067",
+              "Cap leads the strip");
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_VALUE);
+        tiku_trk_poseview_set_secondary(v, TIKU_TRK_COL_KIND);
+        (void)tiku_trk_poseview_save_columns(v);
+        (void)tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_VALUE);
+        (void)tiku_trk_poseview_save_columns(v);
+        (void)tiku_trk_poseview_restore_columns(v);
+        check(tiku_trk_poseview_sort_field(v) == TIKU_TRK_COL_CAP,
+              "MA-067",
+              "a primary sort whose column did not come back falls to the "
+              "column that leads the strip, which is the one the reader is "
+              "looking at, not whichever column happens to be called Name");
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_CAP);
+        tiku_trk_poseview_set_secondary(v, TIKU_TRK_COL_CAP);
+        check(tiku_trk_poseview_sort_secondary(v) < 0, "MA-067",
+              "and a tie-break equal to the key it breaks is no tie-break "
+              "at all");
+        order_as(v);
+        (void)tiku_trk_poseview_save_columns(v);
+    }
+
     printf("\nwidest is measured unbounded (TS-012)\n");
     {
         /* A Modified column's text is width-dependent -- it degrades

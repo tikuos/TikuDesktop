@@ -565,17 +565,10 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
 
     /* A name wider than its cell loses its MIDDLE, not its tail: icons sit on
      * a grid, and a column of names sharing a prefix is unreadable when every
-     * one of them is cut at the same point.  The budget is about thirty
-     * CHARACTERS, not a multiple of the icon -- a name is as long as it is,
-     * and tying the allowance to the art means a mini icon shows a quarter
-     * of every name (MA-027). */
-    {
-        int budget = 30 * tiku_desk_text_width(f, "n");
-
-        (void)tiku_trk_text_fit(tiku_trk_model_display_name(&p->model),
-                                budget, TIKU_TRK_TRUNC_MIDDLE,
-                                measure_text, (void *)f, label, sizeof label);
-    }
+     * one of them is cut at the same point.  The view owns the budget, so
+     * the box that selects a label and the text drawn in it are measured
+     * from the same string in both shells (IV-047). */
+    (void)tiku_trk_poseview_fit_label(a->view, p, label, sizeof label);
     tw = tiku_desk_text_width(f, label);
     if (mini) {
         /* PVL-064/IV-048: in mini-icon mode the label sits to the RIGHT of

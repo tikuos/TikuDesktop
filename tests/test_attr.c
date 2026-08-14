@@ -35,13 +35,13 @@ check(int cond, const char *what)
 }
 
 static void
-fmt_is(const char *meta, const char *raw, int width, const char *want)
+fmt_is(const char *meta, const char *raw, const char *want)
 {
     tiku_trk_desc_t d;
     char got[64], msg[160];
 
     (void)tiku_trk_desc_parse(meta, &d);
-    (void)tiku_trk_attr_format(&d, raw, width, got, sizeof got);
+    (void)tiku_trk_attr_format(&d, raw, got, sizeof got);
     snprintf(msg, sizeof msg, "%-24s %-10s -> \"%s\"", meta, raw, want);
     check(strcmp(got, want) == 0, msg);
     if (strcmp(got, want) != 0) {
@@ -87,23 +87,24 @@ main(void)
     }
 
     printf("\nformatting: the descriptor is what makes a reading readable\n");
-    fmt_is("u32,bytes,static,free", "1024", 120, "1.0 KiB");
-    fmt_is("u32,bytes,static,free", "512", 120, "512 bytes");
-    fmt_is("u32,bytes,static,free", "1", 120, "1 byte");
-    fmt_is("u32,bytes,cached,free", "32768", 120, "32.0 KiB");
-    fmt_is("u32,bytes,cached,free", "1572864", 120, "1.5 MiB");
-    fmt_is("bool,bool,cached,free", "0", 120, "off");
-    fmt_is("bool,bool,cached,free", "1", 120, "on");
-    fmt_is("u32,Hz,static,free", "200000000", 120, "200 MHz");
-    fmt_is("u32,Hz,static,free", "32768", 120, "32.768 kHz");
-    fmt_is("u32,count,cached,free", "1234567", 120, "1 234 567");
-    fmt_is("u32,count,cached,free", "30", 120, "30");
-    /* Uptime, the value that made this worth doing: 57471 raw says nothing. */
-    fmt_is("u32,s,cached,free", "57471", 120, "15h 57m 51s");
-    fmt_is("u32,s,cached,free", "57471", 80, "15h 57m");
-    fmt_is("u32,s,cached,free", "90061", 120, "1d 1h 1m");
-    fmt_is("u32,s,cached,free", "45", 120, "45s");
-    fmt_is("-", "hello", 120, "hello");
+    fmt_is("u32,bytes,static,free", "1024", "1.0 KiB");
+    fmt_is("u32,bytes,static,free", "512", "512 bytes");
+    fmt_is("u32,bytes,static,free", "1", "1 byte");
+    fmt_is("u32,bytes,cached,free", "32768", "32.0 KiB");
+    fmt_is("u32,bytes,cached,free", "1572864", "1.5 MiB");
+    fmt_is("bool,bool,cached,free", "0", "off");
+    fmt_is("bool,bool,cached,free", "1", "on");
+    fmt_is("u32,Hz,static,free", "200000000", "200 MHz");
+    fmt_is("u32,Hz,static,free", "32768", "32.768 kHz");
+    fmt_is("u32,count,cached,free", "1234567", "1 234 567");
+    fmt_is("u32,count,cached,free", "30", "30");
+    /* Uptime, the value that made this worth doing: 57471 raw says nothing.
+     * A duration reads H:MM:SS, and M:SS under the hour (MA-035). */
+    fmt_is("u32,s,cached,free", "57471", "15:57:51");
+    fmt_is("u32,s,cached,free", "90061", "25:01:01");
+    fmt_is("u32,s,cached,free", "45", "0:45");
+    fmt_is("u32,s,cached,free", "605", "10:05");
+    fmt_is("-", "hello", "hello");
 
     printf("\nan unread value is not an empty value\n");
     {
@@ -111,9 +112,9 @@ main(void)
         char got[32];
 
         (void)tiku_trk_desc_parse("u32,bytes,static,free", &d);
-        (void)tiku_trk_attr_format(&d, "", 120, got, sizeof got);
+        (void)tiku_trk_attr_format(&d, "", got, sizeof got);
         check(strcmp(got, "-") == 0, "an unread node shows \"-\"");
-        (void)tiku_trk_attr_format(&d, "0", 120, got, sizeof got);
+        (void)tiku_trk_attr_format(&d, "0", got, sizeof got);
         check(strcmp(got, "0 bytes") == 0, "a node that really reads 0 does not");
     }
 
@@ -201,10 +202,10 @@ main(void)
     printf("\na negative interval keeps its sign and its magnitude\n");
     /* Dividing a negative total truncates every field toward zero, so an
      * hour ago comes out as "0s" -- now -- unless the sign is carried. */
-    fmt_is("i32,s,cached,free", "-3600", 120, "-1h 0m 0s");
-    fmt_is("i32,s,cached,free", "-90", 120, "-1m 30s");
-    fmt_is("i32,s,cached,free", "-1", 120, "-1s");
-    fmt_is("i32,s,cached,free", "0", 120, "0s");
+    fmt_is("i32,s,cached,free", "-3600", "-1:00:00");
+    fmt_is("i32,s,cached,free", "-90", "-1:30");
+    fmt_is("i32,s,cached,free", "-1", "-0:01");
+    fmt_is("i32,s,cached,free", "0", "0:00");
 
     printf("\na size may be typed with its prefix\n");
     {

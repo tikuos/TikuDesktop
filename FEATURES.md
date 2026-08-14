@@ -2731,12 +2731,12 @@ FrameResized compares Extent() against Bounds() and the previous bounds and scro
 **MISSING:** The scroll-back is not limited to the growth amount per axis, and the pose placement hint is not reset with it.  
 **PORT:** The scroll is clamped to the content whenever the window's height is reported, which covers the case the row is about; it is not limited to the growth amount per axis, and the pose placement hint is not reset.
 
-#### CW-014 · polish · differs
+#### CW-014 · polish · done
 **Holding Option while minimizing minimizes the whole Tracker team, not just this window.**  
 Minimize(true) with B_OPTION_KEY calls do_minimize_team(BRect(0,0,0,0), be_app->Team(), true).  
 `ContainerWindow.cpp` → `BContainerWindow::Minimize`  
-**PORT:** Minimising the whole team is genuinely reachable, just by a different gesture: a right-click on a Deskbar team row opens a drawn Hide all / Show all / Close all menu whose Hide all sets minimized on every window, while Ctrl-clicking a single window row minimises just that one — an actual alternative to the Option-modified minimize, not its absence.  
-*src/deskbar/tiku_trk_deskbar.c:670 (HIDE_ALL pick), :734 (MOD_CMD -> MINIMIZE_WINDOW), :581-588 (menu drawn); src/shell/tiku_trk_desktop.c:1624-1643*
+**PORT:** Option rides on the gesture that minimises one window, as the source's does: a window has no minimise widget of its own here, so the gesture is the modified click on its Deskbar row — Ctrl takes that window down, Ctrl+Option takes the whole application. The Hide all menu item reaches the same action from the team row.  
+*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click (window rows); src/shell/tiku_trk_desktop.c (DB_HIDE_ALL); tests/test_deskbar_dock.c (CW-014)*
 
 #### CW-015 · core · partial
 **Closing the last Tracker window quits Tracker; Control+close (or a Deskbar quit) closes every window instead of just this one.**  
@@ -4001,13 +4001,13 @@ B_SIZE_T_TYPE and positive B_SSIZE_T_TYPE render as file sizes; negative B_SSIZE
 **PORT:** tiku_trk_attr_format is an actual per-type dispatch adapted to the device descriptor namespace — bool on/off, bytes with binary prefixes, seconds as an interval, Hz scaled, counts space-grouped, unit-named fallback, "-" for an unread value — so the row's "format by type rather than print the raw number" behaviour exists by another route.  
 *src/core/tiku_trk_attr.c:199-243 tiku_trk_attr_format (fmt_bytes/fmt_hz/fmt_seconds/fmt_count above)*
 
-#### MA-035 · polish · differs
+#### MA-035 · polish · done
 **A column declared "display as: duration" renders its numeric value as H:MM:SS (or M:SS under an hour), with a leading minus for negatives.**  
 B_TIME_TYPE / int8 / int16 / int32 are multiplied by 1000000 to microseconds; B_INT64_TYPE is taken as microseconds directly. Microseconds are then discarded. Undefined values render "-".  
 `WidgetAttributeText.cpp` → `DurationAttributeText::FitValue`  
 **VERIFIER CORRECTION:** BContainerWindow::ResizeToFit (ContainerWindow.cpp:1326-1336) calls ResizeTo() and MoveTo() FIRST, then DisableScrollBars(), then ScrollBy(), UpdateScrollRange(), EnableScrollBars(). The scroll bars are quiesced around the scroll, not around the resize.  
-**PORT:** A duration renderer really is there and really is selected for duration-typed columns — unit == SECONDS routes to fmt_seconds, which splits the magnitude, carries the sign separately (so -3600 is not "0s") and sheds the smallest part as the column narrows; only the notation ("15h 57m 51s" vs H:MM:SS) is adapted.  
-*src/core/tiku_trk_attr.c:130-159 fmt_seconds, dispatched at src/core/tiku_trk_attr.c:229*
+**PORT:** A node whose descriptor says its unit is seconds IS the column declared "display as: duration" here, there being no display-as hint to carry: unit == SECONDS routes to fmt_seconds, which renders H:MM:SS, M:SS under the hour, and carries the sign separately so -3600 reads "-1:00:00" rather than "0:00". Hours accumulate rather than rolling into days, as the source's do.  
+*src/core/tiku_trk_attr.c:fmt_seconds, dispatched from tiku_trk_attr_format; tests/test_attr.c*
 
 #### MA-036 · polish · partial
 **A column declared "display as: checkbox" renders a mark for non-zero and a dash for zero, with the two characters overridable in the column spec.**  
@@ -4255,12 +4255,12 @@ Both RestoreColumnState and RestoreState only proceed when 0 < size < 10000, exp
 **PORT:** A missing or failed read returns before touching the defaults, and a column blob is discarded wholesale on a non-multiple size, an over-large count, a wrong key/version, a bad width/alignment/field or a missing Name column, with defaults left standing.  
 *src/ui/tiku_trk_poseview.c:3269-3345 restore_columns guards; tests/test_title.c:696-733 (six forged-record cases assert width_of unchanged)*
 
-#### MA-067 · important · differs
+#### MA-067 · important · done
 **If the folder was sorted by a column that no longer exists, sorting silently falls back to the first column; a secondary sort equal to the primary is dropped.**  
 After columns are restored: if !ColumnFor(PrimarySort()) then SetPrimarySort(FirstColumn()->AttrHash()) and SetPrimarySortType(FirstColumn()->AttrType()); then if PrimarySort() == SecondarySort() then SetSecondarySort(0). Present in both the stream and message restore paths.  
 `PoseView.cpp` → `BPoseView::RestoreColumnState`  
-**PORT:** Both clauses fire after a restore — an orphaned primary sort silently falls back and a secondary equal to the primary is dropped — with the fallback aimed at the Name column the validation guarantees rather than at whichever column sorted first.  
-*src/ui/tiku_trk_poseview.c:3362-3376 (sort_field fallback to COL_NAME, sort2_field cleared when orphaned or equal)*
+**PORT:** Both clauses fire after a restore, and the fallback is the column that leads the strip as the source's is. One rule serves both ways a column can go — restored without it, or removed from the Attributes menu — so the two cannot drift apart.  
+*src/ui/tiku_trk_poseview.c:sort_fallback, used by restore_columns and toggle_column; tests/test_title.c (MA-067)*
 
 #### MA-068 · important · done
 **Restored columns keep their saved widths and order but always get fresh left-to-right offsets, so a layout can never come back with overlapping or gapped columns.**  
@@ -5398,12 +5398,12 @@ BTrashWatcher watches every writable persistent volume's trash dir and, on trans
 `src/kits/tracker/TrashWatcher.cpp` → `BTrashWatcher::UpdateTrashIcon`  
 **TIKU:** State-dependent icons via a write-back to the node's own icon attribute is a hack; with typed VFS descriptors the state should be a descriptor field the icon resolver reads.  
 **PORT:** `tiku_trk_model_icon_name` returns trash_full or trash_empty from the fact; the art was already in the set and had no caller.  
-#### IV-047 · core · differs
+#### IV-047 · core · done
 **Pose labels are a single line, ellipsised in the middle when too long.**  
 NameAttributeText::FitValue truncates with B_TRUNCATE_MIDDLE; the width budget is the column width in list mode and StringWidth("M") * 30 in icon and mini-icon modes. TruncStringBase only truncates when the string actually exceeds the width, using BFont::GetTruncatedStrings. There is no wrapping anywhere - the label rect is exactly one ActualFontHeight tall.  
 `src/kits/tracker/WidgetAttributeText.cpp` → `NameAttributeText::FitValue / TruncStringBase`  
-**PORT:** The single-line, truncate-only-when-over-width, middle-ellipsis behaviour is there and list mode uses the column width as the row states, but the icon/mini budget is a cell-relative size + size/2 (48 px at a 32 px cell) instead of StringWidth("M")*30, which visibly moves the threshold at which a label ellipsises, so this is another route rather than the stated rule implemented.  
-*src/core/tiku_trk_attr.c:391-408 (untouched when it measures within width) and :423-438 (middle); src/shell/tiku_trk_app.c:279-284 (budget = size + size/2) vs :470-475 (list = column width)*
+**PORT:** Single line, truncated only when it exceeds the budget, elided in the middle with one U+2026: list mode uses the column width and the icon modes use TIKU_TRK_LABEL_CHARS (30) times the width of an "M", as the row states. The view owns the budget, so the box a label is drawn in and the string drawn in it are measured from the same text in both shells.  
+*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_fit_label and pose_parts; src/ui/windows/tiku_trk_folder_window.c and src/shell/tiku_trk_app.c draw what it returns; tests/test_iconview.c (IV-047)*
 
 #### IV-048 · important · done
 **In icon mode the label is centred under the icon and may be wider than it; in mini-icon mode it sits to the right of the icon.**  

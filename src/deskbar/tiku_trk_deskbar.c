@@ -1533,7 +1533,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
          * a raw second count or byte count against. */
         (void)tiku_trk_attr_format(r->desc_known ? &r->desc : NULL,
                                    r->valid ? r->value : "",
-                                   BAR_W - 40, val, sizeof val);
+                                   val, sizeof val);
         vw = tiku_desk_text_width(f, val);
 
         tiku_desk_text(s, f, db->frame.x + 6, ty, r->label, TIKU_DESK_C_TEXT);
@@ -1912,6 +1912,11 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 pick->tag = t->wins[j].tag;
                 if (secondary) {
                     pick->what = TIKU_TRK_DB_CLOSE_WINDOW;
+                } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
+                           (mods & TIKU_DESK_MOD_OPTION) != 0u) {
+                    /* Option means the whole application, on the gesture
+                     * that takes one window down (CW-014). */
+                    pick->what = TIKU_TRK_DB_HIDE_ALL;
                 } else if (mods & TIKU_TRK_MOD_CMD) {
                     pick->what = TIKU_TRK_DB_MINIMIZE_WINDOW;
                 } else {

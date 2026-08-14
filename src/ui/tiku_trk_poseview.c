@@ -325,10 +325,8 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         if (tiku_trk_model_is_container(&p->model)) {
             return "";
         }
-        /* Through the column's OWN width, so a widened column really does
-         * show more rather than the same text it showed when narrow. */
         (void)tiku_trk_attr_format(&p->desc, p->value_valid ? p->value : "",
-                                   width, buf, max);
+                                   buf, max);
         return buf;
     case TIKU_TRK_COL_CAP:
         return (p->model.facts.req_cap[0] != '\0') ? p->model.facts.req_cap
@@ -3122,6 +3120,26 @@ tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v, tiku_trk_hit_fn fn,
     }
 }
 
+int
+tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
+                            char *out, size_t max)
+{
+    const char *name;
+
+    if (v == NULL || p == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    name = tiku_trk_model_display_name(&p->model);
+    if (v->measure == NULL) {
+        snprintf(out, max, "%s", name);
+        return (int)strlen(out);
+    }
+    return tiku_trk_text_fit(name, TIKU_TRK_LABEL_CHARS * v->measure("M",
+                                 v->measure_ctx),
+                             TIKU_TRK_TRUNC_MIDDLE, v->measure,
+                             v->measure_ctx, out, max);
+}
+
 void
 tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
                              const tiku_trk_pose_t *p, int *ix, int *iy,
@@ -3137,8 +3155,18 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
     art = tiku_trk_poseview_art_size(v);
     tiku_trk_poseview_pose_location(v, p, &px, &py);
     if (v->measure != NULL) {
-        tw = v->measure(tiku_trk_model_display_name(&p->model),
-                        v->measure_ctx);
+        /* Measured from the label as it will be DRAWN, elided and all: the
+         * width taken from the whole name is a box that runs off across
+         * the icons beside it (IV-047). */
+        char fit[TIKU_TRK_NAME_MAX * 2];
+
+        if (v->mode != TIKU_TRK_MODE_LIST &&
+            tiku_trk_poseview_fit_label(v, p, fit, sizeof fit) > 0) {
+            tw = v->measure(fit, v->measure_ctx);
+        } else {
+            tw = v->measure(tiku_trk_model_display_name(&p->model),
+                            v->measure_ctx);
+        }
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
         /* A row, not a saved location: in a list the pose's place is its
@@ -5061,6 +5089,18 @@ column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
     }
 }
 
+/**
+ * @brief The sort key a view falls back to when its own column goes.
+ *
+ * The column that LEADS the strip, which is the one the reader is looking
+ * at -- not whichever column happens to be called Name (MA-067).
+ */
+static int
+sort_fallback(const tiku_trk_poseview_t *v)
+{
+    return (v->column_count > 0) ? v->columns[0].field : TIKU_TRK_COL_NAME;
+}
+
 /** @brief A size column is a number, and numbers read right-aligned. */
 static int
 column_alignment(int field)
@@ -5277,10 +5317,10 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
         }
         v->column_count--;
         tiku_trk_poseview_reflow_columns(v);
-        /* Sorting on a column nobody can see is sorting by nothing the user
-         * can check, so the view falls back to the name. */
+        /* Sorting on a column nobody can see is sorting by nothing the
+         * user can check. */
         if (v->sort_field == field) {
-            v->sort_field = TIKU_TRK_COL_NAME;
+            v->sort_field = sort_fallback(v);
             v->sort_reverse = 0;
             resort(v);
         }
@@ -5560,9 +5600,12 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
     }
     v->column_count = n;
     tiku_trk_poseview_reflow_columns(v);
-    /* A sort key whose column did not come back sorts by nothing visible. */
+    /* A sort key whose column did not come back sorts by nothing visible.
+     * It falls to the column that LEADS the strip, which is the one the
+     * reader is looking at, rather than to whichever column happens to be
+     * called Name (MA-067). */
     if (column_index(v, v->sort_field) < 0) {
-        v->sort_field = TIKU_TRK_COL_NAME;
+        v->sort_field = sort_fallback(v);
         v->sort_reverse = 0;
     }
     if (v->sort2_field >= 0 && column_index(v, v->sort2_field) < 0) {

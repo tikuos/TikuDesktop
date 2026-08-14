@@ -80,14 +80,15 @@ typedef struct {
 int tiku_trk_desc_parse(const char *meta, tiku_trk_desc_t *out);
 
 /**
- * @brief Format @p raw for display in a column @p width pixels wide.
+ * @brief Format @p raw for display, by what the descriptor says it means.
  *
- * Wider columns get more: an interval shows "15h 57m 12s" where it fits and
- * "15h 57m" where it does not, as Tracker's time column degrades.
+ * The text a cell too narrow to hold it is fitted by the caller's own
+ * measurer, the same as any other cell: what a value means does not depend
+ * on how much room the column has.
  *
  * @return Length written.
  */
-int tiku_trk_attr_format(const tiku_trk_desc_t *d, const char *raw, int width,
+int tiku_trk_attr_format(const tiku_trk_desc_t *d, const char *raw,
                          char *out, size_t max);
 
 /**

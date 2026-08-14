@@ -667,6 +667,57 @@ main(void)
         }
     }
 
+    printf("\na name too long for its cell (IV-047)\n");
+    {
+        char big[120];
+        tiku_trk_pose_t *p;
+        int ix, iy, iw, ih, lx, ly, lw, lh, budget;
+
+        memset(big, 'w', sizeof big - 1);
+        big[sizeof big - 1] = '\0';
+        memcpy(big, "start", 5);
+        memcpy(big + sizeof big - 4, "end", 3);
+        sh("touch %s/%s", work, big);
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
+        (void)tiku_trk_poseview_reload(v);
+        p = NULL;
+        {
+            int i, n = tiku_trk_poseview_count(v);
+
+            for (i = 0; i < n; i++) {
+                if (strcmp(tiku_trk_poseview_at(v, i)->model.name, big) == 0) {
+                    p = tiku_trk_poseview_at(v, i);
+                }
+            }
+        }
+        budget = 30 * measure("M", NULL);
+        check(p != NULL, "IV-047", "the long name is listed at all");
+        if (p != NULL) {
+            char fit[256];
+
+            tiku_trk_poseview_pose_parts(v, p, &ix, &iy, &iw, &ih,
+                                         &lx, &ly, &lw, &lh);
+            check(lw <= budget, "IV-047",
+                  "the label a pose OWNS is bounded by thirty characters' "
+                  "worth of room: measured from the whole name, the "
+                  "selection box and the hit area run off across the icons "
+                  "beside it");
+            (void)tiku_trk_poseview_fit_label(v, p, fit, sizeof fit);
+            check(strncmp(fit, "start", 5) == 0 &&
+                  strstr(fit, "end") != NULL &&
+                  strstr(fit, "\xe2\x80\xa6") != NULL,
+                  "IV-047",
+                  "and it is the MIDDLE that goes: a column of names "
+                  "sharing a prefix is unreadable when every one of them "
+                  "is cut at the same point");
+            check(measure(fit, NULL) <= budget, "IV-047",
+                  "what is drawn fits the same budget the box was given, "
+                  "so the text cannot overrun its own highlight");
+        }
+        sh("rm -f %s/%s", work, big);
+        (void)tiku_trk_poseview_reload(v);
+    }
+
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     sh("rm -rf %s", work);

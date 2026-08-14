@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_deskbar.h"
+#include "tiku_trk_input.h"
 #include "tiku_trk_deskbar_prefs.h"
 
 static int fails;
@@ -182,6 +183,46 @@ main(void)
         check(day >= 1 && day <= 31, "DB-046",
               "clicking a valid calendar cell changes the selected day");
         tiku_trk_deskbar_close_calendar(db);
+    }
+
+    printf("\nminimising one window, and the whole application (CW-014)\n");
+    {
+        tiku_trk_dbwin_t wins[2];
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t bar;
+        int y, row_y = -1;
+
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+        memset(wins, 0, sizeof wins);
+        snprintf(wins[0].title, sizeof wins[0].title, "%s", "first");
+        wins[0].tag = (void *)1;
+        snprintf(wins[1].title, sizeof wins[1].title, "%s", "second");
+        wins[1].tag = (void *)2;
+        tiku_trk_deskbar_set_windows(db, 0, wins, 2, 1);
+        tiku_trk_deskbar_draw(db, s);
+        bar = tiku_trk_deskbar_frame(db);
+        /* Found by asking the bar rather than by arithmetic over its
+         * constants: where a row sits is the bar's business. */
+        for (y = bar.y; y < bar.y + bar.h && row_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, y, TIKU_TRK_MOD_CMD,
+                                         0, &pick);
+            if (pick.what == TIKU_TRK_DB_MINIMIZE_WINDOW &&
+                pick.tag == (void *)1) {
+                row_y = y;
+            }
+        }
+        check(row_y >= 0, "CW-014",
+              "a modified click on a window row minimises that window");
+
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, row_y,
+                                     TIKU_TRK_MOD_CMD | TIKU_DESK_MOD_OPTION,
+                                     0, &pick);
+        check(pick.what == TIKU_TRK_DB_HIDE_ALL, "CW-014",
+              "and Option on that same gesture takes the whole application "
+              "down, rather than only the window under the pointer");
+        tiku_trk_deskbar_set_windows(db, 0, NULL, 0, 0);
     }
 
     printf("\nscrolling the list (DB-034)\n");

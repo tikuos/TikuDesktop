@@ -213,8 +213,11 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
             ink = luminance <= 127 ? TIKU_DESK_RGB(255, 255, 255)
                                    : TIKU_DESK_RGB(0, 0, 0);
         }
-        tiku_desk_text(surface, font, lx, ly + font->ascent,
-                       tiku_trk_model_display_name(&pose->model),
+        char fit[TIKU_TRK_NAME_MAX * 2];
+
+        (void)tiku_trk_poseview_fit_label(folder->view, pose, fit,
+                                          sizeof fit);
+        tiku_desk_text(surface, font, lx, ly + font->ascent, fit,
                        selected ? TIKU_DESK_C_SELTEXT : ink);
     }
 }
@@ -336,8 +339,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             int width;
 
             (void)tiku_trk_attr_format(&pose->desc,
-                pose->value_valid ? pose->value : "", row.w / 3,
-                value, sizeof value);
+                pose->value_valid ? pose->value : "", value, sizeof value);
             width = tiku_desk_text_width(font, value);
             if (width < row.w - VALUE_GAP) {
                 tiku_desk_text(surface, font, row.x + row.w - width - 6,
@@ -573,8 +575,7 @@ tiku_trk_folder_window_fit_width(const tiku_trk_folder_window_t *folder)
             int needed;
 
             (void)tiku_trk_attr_format(&pose->desc,
-                pose->value_valid ? pose->value : "", 190,
-                value, sizeof value);
+                pose->value_valid ? pose->value : "", value, sizeof value);
             needed = tiku_desk_text_width(font, value) + VALUE_GAP + 8;
             if (needed > width) {
                 width = needed;

@@ -634,6 +634,20 @@ void tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
                                   int *lx, int *ly, int *lw, int *lh);
 
 /**
+ * @brief The label a pose shows in an icon mode, elided to fit (IV-047).
+ *
+ * Thirty M's wide, whatever the icon size: a name is as long as it is, and
+ * tying the allowance to the art shows a quarter of every name at 16 px.
+ * The elision is in the middle, and both shells draw what this returns so
+ * the text cannot overrun the box that selects it.
+ *
+ * @return Length written.
+ */
+int tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v,
+                                const tiku_trk_pose_t *p, char *out,
+                                size_t max);
+
+/**
  * @brief Whether a point lands on an icon's opaque PIXELS (PVS-019).
  *
  * Supplied rather than derived, for the same reason the label measure is:

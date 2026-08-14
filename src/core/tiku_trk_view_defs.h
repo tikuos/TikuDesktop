@@ -28,6 +28,8 @@
 #define TIKU_TRK_COL_MARGIN        (TIKU_TRK_COL_LEFT_MARGIN + \
                                     TIKU_TRK_COL_RIGHT_MARGIN)
 #define TIKU_TRK_COL_MIN_WIDTH     20
+/** @brief How many M's wide a pose label may be in an icon mode (IV-047). */
+#define TIKU_TRK_LABEL_CHARS       30
 #define TIKU_TRK_COL_ROOM_FOR_LINE  2
 
 #define TIKU_TRK_ALIGN_LEFT   0
