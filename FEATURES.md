@@ -1055,8 +1055,9 @@ BPose::UpdateIcon tells the icon cache the icon changed and invalidates _ListIco
 `Pose.cpp` → `BPose::UpdateIcon / BPose::_ListIconRect / BPose::_IconRect`  
 **TIKU:** Device-node icons are chosen from the typed descriptor/capability bits rather than a MIME type, and change on watch notifications.
 **SUBSYSTEM:** Incremental-repaint layer: an icon change does appear (the icon name is derived from the live model at every draw — src/shell/tiku_trk_app.c:558-563, src/shell/tiku_trk_desktop.c:262-277), but the row's claim is repaint scope, and with no invalidation rects (grep empty) the redraw is always the whole window, never just the icon rect.  
-**MISSING:** Icon changes are detected and redrawn, but the repaint is not restricted to the affected icon rectangle.
-
+**PORT:** A change notice damages the row it names, and the draw paints only the damaged rows; the seam is the same one a removal uses.  
+**MISSING:** The saving is undone in the same beat: a change is followed by a frame with no damage that paints the whole listing again, so the total is four rows where an unconsuming shell paints six. The claim was written as a check first and the check was VACUOUS -- removing the damage left the count unchanged -- so what is proven here is the removal case (PVL-048) and not this one. What to find: which second dirty follows a change, and why it carries no damage.  
+*src/ui/tiku_trk_poseview.c (EV_CHANGED -> tiku_trk_repaint_add); tests/shell/repaint.script*
 #### PVL-076 · polish · done
 **A read-only volume's view background is tinted so the window looks visibly non-editable.**  
 AdoptSystemColors uses B_DOCUMENT_BACKGROUND_COLOR with ReadOnlyTint() when TargetVolumeIsReadOnly(); the offscreen used by column redraw applies the same tint so resizing a column does not reveal an untinted strip.  

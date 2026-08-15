@@ -112,6 +112,7 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  *     click-cell <row> <column title>      -- click a cell, not a pixel
  *     click-window <title>                 -- bring a window to the front by
  *                                             clicking its tab
+ *     write <path> <text>                  -- change a file behind the shell
  *     draw-reset                           -- forget how much was painted
  *     expect-drawn <n>                     -- rows painted since that reset
  *     expect-ink <x> <y>                   -- something is drawn here

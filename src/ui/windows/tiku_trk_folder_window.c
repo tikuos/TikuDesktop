@@ -294,6 +294,28 @@ tiku_trk_folder_window_draw_icons(tiku_trk_folder_window_t *folder,
     }
 }
 
+/** @brief Ask for this row's picture if it wants one and has none yet. */
+static void
+queue_thumbnail(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
+{
+    tiku_trk_folder_render_t *render = folder->render;
+    char art[TIKU_TRK_NAME_MAX];
+    int mini = render->row_h - 2;
+
+    if (mini > MINI_ICON) {
+        mini = MINI_ICON;
+    }
+    if (tiku_trk_nodeicon_resolve(render->icons, render->store, &pose->model,
+                                  art, sizeof art) != TIKU_TRK_ICON_FROM_THUMB) {
+        return;
+    }
+    if (!tiku_trk_thumb_fresh(render->store, pose->model.path,
+                              pose->model.facts.mtime)) {
+        (void)tiku_trk_thumb_queue(render->thumbs, pose->model.path,
+                                   pose->model.facts.size, mini);
+    }
+}
+
 static void
 draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
           tiku_desk_rect_t list, int rows, int scroll, int total)
@@ -330,6 +352,10 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                       damage[d].y + damage[d].h > top;
             }
             if (!hit) {
+                /* Skipping the PAINT must not skip the asking: a row's
+                 * thumbnail is queued while it is drawn, and a row that
+                 * stops being drawn would stop ever being asked for. */
+                queue_thumbnail(folder, pose);
                 continue;
             }
         }
