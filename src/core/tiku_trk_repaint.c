@@ -60,15 +60,51 @@ tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
                                                   visible.y + visible.h - row_y});
 }
 
+/** @brief The strip between two edges, or nothing when they are the same. */
+static void
+add_strip(tiku_trk_repaint_t *r, int x, int y0, int w, int y1)
+{
+    if (y1 > y0) {
+        tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){ x, y0, w,
+                                                           y1 - y0 });
+    }
+}
+
 void
 tiku_trk_repaint_band(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t old_rect,
                       tiku_trk_repaint_rect_t new_rect)
 {
-    if (r == NULL) return;
-    /* The union is the conservative difference region.  It is still a
-     * sliver rather than a whole-window invalidation and works with the
-     * surface clip used by both shells. */
-    tiku_trk_repaint_add(r, union_rect(old_rect, new_rect));
+    tiku_trk_repaint_rect_t all;
+    int old_b, new_b;
+
+    if (r == NULL) {
+        return;
+    }
+    /* What CHANGED: the strips one rectangle has and the other does not.
+     * The union would be the whole band, which is the thing this exists to
+     * avoid -- a band grown by a row would repaint every row it covers. */
+    all = union_rect(old_rect, new_rect);
+    old_b = old_rect.y + old_rect.h;
+    new_b = new_rect.y + new_rect.h;
+    if (old_rect.y < new_rect.y) {
+        add_strip(r, all.x, old_rect.y, all.w, new_rect.y);
+    } else {
+        add_strip(r, all.x, new_rect.y, all.w, old_rect.y);
+    }
+    if (old_b < new_b) {
+        add_strip(r, all.x, old_b, all.w, new_b);
+    } else {
+        add_strip(r, all.x, new_b, all.w, old_b);
+    }
+    if (old_rect.x != new_rect.x ||
+        old_rect.w != new_rect.w) {
+        /* Sideways growth changes the whole overlapping height, and a
+         * band that only widened has no top or bottom strip to report. */
+        int y0 = (old_rect.y > new_rect.y) ? old_rect.y : new_rect.y;
+        int y1 = (old_b < new_b) ? old_b : new_b;
+
+        add_strip(r, all.x, y0, all.w, y1);
+    }
 }
 
 int

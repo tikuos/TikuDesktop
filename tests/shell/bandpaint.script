@@ -1,0 +1,20 @@
+# shell: desktop
+# PVL-070: a band that grows over one more row repaints that row, not the
+# listing.  The difference region has been computed since the repaint helper
+# was written; nothing consumed it.
+wait 8
+note the sweep starts BELOW the rows, in empty window, and grows upward
+press 200 280
+move 200 137
+wait 6
+note it covers the last two rows now
+draw-reset
+note grown by exactly one row's height: the row it grew OVER is painted
+note again, and the two it already covered are not -- a band that damaged
+note its whole rectangle would paint every row it covers
+move 200 117
+wait 6
+expect-drawn 2
+expect-drawn at-least 1
+release 200 172
+quit

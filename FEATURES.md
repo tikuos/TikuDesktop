@@ -832,9 +832,8 @@ AddPoseToList builds srcRect from Extent() clipped to the view bounds starting a
 listViewScrollBy accumulates fListElemHeight per skipped insertion; FinishPendingScroll performs one CopyBits of the whole visible region and a SynchronousUpdate of the remainder. Flushed at the end of every CreatePoses chunk.  
 `PoseView.cpp` → `BPoseView::FinishPendingScroll / BPoseView::AddPoseToList`  
 **TIKU:** Watch-notification storms on live device values would drive this path; TikuOS should batch as this does or the list will thrash.
-**SUBSYSTEM:** Incremental-repaint layer, plus the anchor semantics are absent even at the model level: insert_sorted adjusts active/pivot/last_added/edit_pose but never v->scroll (src/ui/tiku_trk_poseview.c:2686-2704), so rows inserted above the viewport shift the visible content instead of being absorbed by an accumulated scroll.  
-**MISSING:** Insertions above the viewport record a scroll delta, but the desktop and tracker drawing paths do not apply that delta to the live view.
-
+**PORT:** A batch of rows arriving above the viewport moves the offset once, at the end of the batch, so a folder that gains files while someone reads the middle of it keeps showing the same rows rather than walking down the screen per file. The delta the view has always accumulated is applied where the notices finish.  
+**MISSING:** It is applied by moving the offset, not by blitting the pixels: there is no copy-bits primitive, so the rows that stay are drawn again where they were.  
 #### PVL-047 · important · partial
 **When a value in the sort column changes, only that row moves — the gap closes at its old position and opens at its new one.**  
 AttributeChanged hashes the changed attribute (or maps a stat field via sAttrColumnMap) and, only if it equals the primary or secondary sort, calls _CheckPoseSortOrder. That removes the pose, re-searches its position, and if it moved does CloseGapInList at the old index followed by InsertPoseAfter at the new one. If the new index equals the old, nothing is redrawn.  
@@ -1016,9 +1015,8 @@ Transparent: DrawAfterChildren strokes B_NAVIGATION_BASE_COLOR at alpha 128 and 
 **Growing or shrinking the rubber band only repaints the sliver of difference, not the whole band.**  
 _UpdateSelectionRect builds a region of (new minus old) unioned with (old minus new), then excludes the horizontal and vertical strips through the anchor point inside the intersection, and invalidates only that region followed by an immediate UpdateIfNeeded.  
 `PoseView.cpp` → `BPoseView::_UpdateSelectionRect`
-**SUBSYSTEM:** Incremental-repaint layer: the rubber band is redrawn as part of the full-frame draw (src/shell/tiku_trk_app.c:449-463); with no region/invalidate API (grep empty) a difference-sliver repaint cannot be expressed.  
-**MISSING:** Selection-band difference regions are calculated, but the shell still redraws the complete frame instead of only the changed sliver.
-
+**PORT:** A band reports the strips it grew over or shrank off, not its whole rectangle -- the helper unioned the two, which is the thing a difference exists to avoid. The rows the band already covered keep what they had.  
+**MISSING:** The strips are row-shaped rather than pixel-shaped: a band that moves within one row still repaints that row, there being no smaller unit in this draw.  
 #### PVL-071 · polish · done
 **Over a background image, pose labels grow a contrast halo so they stay readable.**  
 When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw renders the text two or three extra times using B_FONT_FALSE_BOLD_WIDTH at 2.0/1.0 with low-alpha shine (dark text) or black at alpha 30/200 with a 1px offset (light text). Skipped for selected text, for cut items and when drawing into an offscreen (drag or column resize).  
@@ -1046,8 +1044,8 @@ DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects 
 **A volume pose showing a space bar is repainted by invalidation rather than drawn directly, so the bar never smears.**  
 DrawPose: if TrackerSettings().ShowVolumeSpaceBar() and the target is a volume, Invalidate(rect); otherwise pose->Draw(rect, rect, this, fullDraw) directly. BPose::Draw itself also defers to Invalidate once when its background was not cleared and this is a partial draw (fBackgroundClean).  
 `PoseView.cpp` → `BPoseView::DrawPose / BPose::Draw`  
-**BLOCKED:** Waits on partial repaint.  The shells redraw whole windows from a dirty flag, so there is no invalidate-versus-draw distinction for the bar to need; it cannot smear because nothing draws incrementally.  
-**MISSING:** The volume-space-bar path has no incremental invalidation consumer, so its redraw remains whole-window.
+**PORT:** Rows are painted incrementally now, so the hazard the row is about is real here at last -- and it is answered the way the source answers it: a repainted row clears its own ground before anything is drawn on it, so the bar cannot leave the last reading behind.  
+**MISSING:** The unit is the ROW, not the bar: a volume whose free space moves repaints its whole row. No damage source reports the bar's own rectangle, and nothing yet drives a volume's free space in the shell tests, so this is reasoning from the draw rather than a checked behaviour.
 
 #### PVL-075 · polish · partial
 **Changing an item's icon repaints only that icon, not the row or the label.**  

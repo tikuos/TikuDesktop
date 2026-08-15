@@ -66,6 +66,8 @@ struct tiku_trk_poseview {
     int                 show_sel_inactive;
     int                 real_pivot;     /* the pivot, parked while hidden   */
     int                 band;           /* a rubber band is being swept     */
+    tiku_trk_repaint_rect_t band_rect;  /* where it was when last swept     */
+    int                 band_seen;      /* whether band_rect means anything */
     unsigned char      *band_was;       /* selection when the band began    */
 
     /* The armed inline rename: which pose, and when its click landed. */
@@ -1745,6 +1747,9 @@ tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on)
     if (v == NULL) {
         return;
     }
+    if (!on) {
+        v->band_seen = 0;       /* the next sweep is a new one */
+    }
     if (on && v->band_was != NULL) {
         int i;
 
@@ -3358,6 +3363,27 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         return 0;
     }
     n = tiku_trk_poseview_count(v);
+    /* The sliver between where the band WAS and where it is now, rather
+     * than the whole view: a band that grows by a pixel repaints a pixel's
+     * worth of rows (PVL-070). */
+    {
+        /* Full width, whatever the band's own shape: what gets painted
+         * again is a ROW, and a band swept straight down is a rectangle
+         * with no width at all. */
+        tiku_trk_repaint_rect_t now = { 0, loy,
+                                        (v->view_w > 0) ? v->view_w : 1,
+                                        (hiy > loy) ? hiy - loy : 1 };
+
+        (void)lox; (void)hix;
+
+        if (v->band_seen) {
+            tiku_trk_repaint_band(&v->repaint, v->band_rect, now);
+        } else {
+            tiku_trk_repaint_add(&v->repaint, now);
+        }
+        v->band_rect = now;
+        v->band_seen = 1;
+    }
     if (v->single_only) {
         /* A band cannot gather in a single-selection view: the additive
          * modifiers mean nothing, and the sweep stops at the first pose it
@@ -4963,6 +4989,20 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
     }
     free(was);
     free(is);
+    /* Rows that arrived ABOVE the viewport move the listing under the
+     * reader.  The batch's worth of them is applied once here, so a folder
+     * that gains ten files while someone reads the middle of it does not
+     * walk down the screen ten times (PVL-046). */
+    if (v->repaint.scroll_delta != 0 && v->mode == TIKU_TRK_MODE_LIST) {
+        int rh = (v->row_h > 0) ? v->row_h : 1;
+        int rows = v->repaint.scroll_delta / rh;
+
+        v->repaint.scroll_delta -= rows * rh;
+        if (rows != 0) {
+            tiku_trk_poseview_scroll_to(v, v->scroll + rows);
+            flags |= TIKU_TRK_NOTIFY_REDRAW;
+        }
+    }
     return flags;
 }
 

@@ -1,0 +1,35 @@
+# shell: desktop
+# PVL-046: rows arriving ABOVE what is on screen must not push the listing
+# down under the reader.  The view records how far it was pushed; nothing
+# applied it, so a folder that gains files while you read the middle of it
+# scrolls away from you.
+wait 8
+note walked down the listing, so there are rows above the viewport and
+note room below it -- at the very bottom the clamp would hide an overshoot
+key Home
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+key Down
+wait 8
+expect-scroll 5
+expect-scroll-at-most 5
+note two files arrive that sort above everything on screen
+write /tmp/trk_script/aaa1.txt x
+write /tmp/trk_script/aaa2.txt x
+wait 60
+note the reader is still looking at the same rows: two arrived above, so
+note the offset moved by two and the window did not
+expect-scroll 7
+expect-scroll-at-most 7
+quit
