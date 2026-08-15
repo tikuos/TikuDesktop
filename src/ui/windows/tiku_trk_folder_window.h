@@ -24,6 +24,14 @@
 #include "tiku_trk_query.h"
 #include "tiku_trk_thumb.h"
 
+/**
+ * @brief Row slots a window keeps pixels for.
+ *
+ * A window taller than this paints its every row every frame, which is
+ * correct and merely slower.
+ */
+#define TIKU_TRK_ROWS_KEPT 160
+
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
 
 typedef void (*tiku_trk_folder_prepare_menu_fn)(void *context,
@@ -45,6 +53,10 @@ typedef struct {
      * same picture, so this is the only way to tell them apart (PVL-045,
      * PVL-048, PVL-075). */
     int                    rows_drawn;
+    /* What this frame is repainting, taken once so the ground and the
+     * rows agree about it. */
+    tiku_trk_repaint_rect_t damage[TIKU_TRK_REPAINT_MAX];
+    int                    ndamage;
     int                    screen_w;
     int                    screen_h;
     char                  *status;
@@ -89,8 +101,24 @@ struct tiku_trk_folder_window {
     tiku_trk_image_t           bg_image;
     char                       bg_shown[TIKU_TRK_PATH_MAX];
     int                        bg_drawn;   /* labels need a halo over it */
+    /* The rows' own pixels, kept between frames.  The shell redraws the
+     * screen from the backdrop up every frame, so a row this frame did not
+     * paint would come back as the window's face rather than as what the
+     * row holds: the rows are painted here, kept, and handed to the frame
+     * whole (PVL-045).  NULL until the first list frame asks for it. */
+    tiku_desk_surface_t        kept;
+    int                        kept_ready;
+    /* What each row slot in those pixels was last painted from.  A row is
+     * painted again when what it would draw differs from what is there,
+     * which no state change can slip past -- damage says a place needs
+     * paint, this says a row LOOKS different.  Slots past the end hold 0,
+     * which nothing hashes to. */
+    uint32_t                   row_sig[TIKU_TRK_ROWS_KEPT];
     tiku_trk_folder_render_t  *render;
 };
+
+/** @brief Let go of the pixels a closed window was keeping. */
+void tiku_trk_folder_window_forget(tiku_trk_folder_window_t *folder);
 
 void tiku_trk_folder_window_configure(tiku_trk_folder_window_t *folder,
                                       tiku_trk_folder_render_t *render);

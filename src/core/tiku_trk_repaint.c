@@ -40,24 +40,45 @@ tiku_trk_repaint_add(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t rect)
 
 void
 tiku_trk_repaint_insert(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
-                        int row_h, int above_view)
+                        int row_h, int row_y)
 {
-    if (r == NULL || row_h <= 0) return;
-    if (above_view) r->scroll_delta += row_h;
-    else tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){visible.x, visible.y,
-                                                   visible.w, visible.h});
+    if (r == NULL || row_h <= 0) {
+        return;
+    }
+    if (row_y < visible.y) {
+        r->scroll_delta += row_h;      /* above the view: it scrolls      */
+        return;
+    }
+    if (row_y >= visible.y + visible.h) {
+        return;                        /* below it: nothing on screen     */
+    }
+    /* The rows under it change place and nothing else, so they are moved
+     * rather than drawn again, and the row that appeared is the only one
+     * painted. */
+    tiku_trk_repaint_slide(r, row_y, row_h, visible);
+    tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){ visible.x, row_y,
+                                                       visible.w, row_h });
 }
 
 void
 tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
                         int row_h, int row_y)
 {
-    if (r == NULL || row_h <= 0) return;
-    if (row_y < visible.y) r->scroll_delta -= row_h;
-    else if (row_y < visible.y + visible.h)
-        tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){visible.x, row_y,
-                                                  visible.w,
-                                                  visible.y + visible.h - row_y});
+    if (r == NULL || row_h <= 0) {
+        return;
+    }
+    if (row_y < visible.y) {
+        r->scroll_delta -= row_h;
+        return;
+    }
+    if (row_y >= visible.y + visible.h) {
+        return;
+    }
+    tiku_trk_repaint_slide(r, row_y + row_h, -row_h, visible);
+    /* Moving the rows up leaves the bottom row's worth of pixels holding
+     * what used to be there. */
+    tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){
+        visible.x, visible.y + visible.h - row_h, visible.w, row_h });
 }
 
 /** @brief The strip between two edges, or nothing when they are the same. */
@@ -105,6 +126,53 @@ tiku_trk_repaint_band(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t old_rect,
 
         add_strip(r, all.x, y0, all.w, y1);
     }
+}
+
+void
+tiku_trk_repaint_slide(tiku_trk_repaint_t *r, int y, int delta,
+                       tiku_trk_repaint_rect_t visible)
+{
+    int i;
+
+    if (r == NULL || delta == 0) {
+        return;
+    }
+    if (r->slide_delta != 0) {
+        /* One blit to a frame.  A second slide would have to be applied on
+         * top of the first one's result, and the rectangles already
+         * recorded would name places that moved twice; the batch gives up
+         * and paints the view. */
+        r->slide_delta = 0;
+        r->slide_y = 0;
+        tiku_trk_repaint_add(r, visible);
+        return;
+    }
+    /* A rectangle recorded before the slide names pixels the blit is about
+     * to move, and the place that needs painting moves with them. */
+    for (i = 0; i < r->count; i++) {
+        if (r->rect[i].y >= y) {
+            r->rect[i].y += delta;
+        }
+    }
+    r->slide_y = y;
+    r->slide_delta = delta;
+}
+
+int
+tiku_trk_repaint_take_slide(tiku_trk_repaint_t *r, int *y)
+{
+    int delta;
+
+    if (r == NULL || r->slide_delta == 0) {
+        return 0;
+    }
+    delta = r->slide_delta;
+    if (y != NULL) {
+        *y = r->slide_y;
+    }
+    r->slide_delta = 0;
+    r->slide_y = 0;
+    return delta;
 }
 
 int

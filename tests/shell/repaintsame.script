@@ -1,0 +1,46 @@
+# shell: desktop
+# PVL-045: what the frames painted has to BE the window, not most of it.
+# A window keeps its own pixels now, so a frame that skips a row leaves
+# whatever was there -- and a check that looks at the pixels it thought to
+# name would not notice the rest going stale.  This runs the things that
+# change a listing and then holds the whole window against the picture a
+# full redraw draws.
+wait 8
+note a selection, then another one: the row that lost it must lose it on
+note screen too, and nobody damages a row for being deselected
+click-row 1
+wait 8
+click-row 2
+wait 8
+expect-same-as-redraw
+note a file arrives, a file goes, and a file changes under the window
+write /tmp/trk_script/0a.txt x
+wait 40
+remove /tmp/trk_script/b.txt
+wait 40
+write /tmp/trk_script/a.txt hello there
+wait 40
+expect-same-as-redraw
+note a band swept over the rows and let go, which leaves nothing behind
+press 100 250
+move 300 200
+release 300 200
+wait 20
+expect-same-as-redraw
+note and a drag that ends in a refusal: the alert is on the screen, and
+note the picture the pointer was carrying is not
+press-row 0
+move-row 3
+release-row 3
+wait 20
+expect-alert exists
+expect-same-as-redraw
+note and a rename box opened over a row, then abandoned
+click-row 1
+wait 8
+key e ctrl
+wait 20
+key Escape
+wait 20
+expect-same-as-redraw
+quit

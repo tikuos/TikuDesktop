@@ -405,6 +405,8 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->rows_drawn = tiku_trk_script_adapter_rows_drawn;
     state->tab_point = tiku_trk_script_adapter_tab_point;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
+    state->redraw_diff = adapter->redraw_diff;
+    state->redraw_ctx = adapter->redraw_ctx;
     state->pose_ctx = adapter;
 }
 

@@ -374,6 +374,12 @@ void tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on);
  */
 void tiku_trk_poseview_damage_row(tiku_trk_poseview_t *v, int index);
 
+/**
+ * @brief Take the pending slide: the rows from *@p y down moved by the
+ *        returned pixel count, and want blitting rather than drawing.
+ */
+int tiku_trk_poseview_repaint_take_slide(tiku_trk_poseview_t *v, int *y);
+
 int tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
                                    tiku_trk_repaint_rect_t *out, int max);
 int tiku_trk_poseview_band(const tiku_trk_poseview_t *v);

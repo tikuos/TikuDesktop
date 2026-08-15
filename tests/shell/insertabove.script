@@ -32,4 +32,6 @@ note the reader is still looking at the same rows: two arrived above, so
 note the offset moved by two and the window did not
 expect-scroll 7
 expect-scroll-at-most 7
+note and the window as a whole is what a full redraw would draw
+expect-same-as-redraw
 quit

@@ -819,21 +819,40 @@ AddPoseToList binary-searches with BSearchList (which first checks whether the o
 *src/ui/tiku_trk_poseview.c:216-268 (collect appends), :389-405 (reload -> resort), :2327-2380 (sorted_slot/insert_sorted), callers at :2526,:2613,:2669 (notices only)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The batched loader now re-sorts after EVERY published chunk — load_step ends with resort(v), and reload() drains load_step — so the listing is in sorted order at each visible batch throughout the load, not only at the end. What remains absent on the loading path is only the per-item binary insertion (insert_sorted is still reached only from the notify paths). `src/ui/tiku_trk_poseview.c:561-570 (load_step chunk + resort at :570), :594-599 (reload drains load_step)`  
 
-#### PVL-045 · important · partial
+#### PVL-045 · important · done
 **Inserting a row into the visible part of the list slides the rows below down by one row height instead of repainting the whole list.**  
 AddPoseToList builds srcRect from Extent() clipped to the view bounds starting at the new row's top, destRect offset by fListElemHeight, CopyBits src→dest, then SynchronousUpdate only the newly exposed strip. Rows added entirely below the visible bottom skip drawing altogether. InsertPoseAfter does the same for re-sorted rows.  
 `PoseView.cpp` → `BPoseView::AddPoseToList / BPoseView::InsertPoseAfter`
-**SUBSYSTEM:** Incremental-repaint (blit/invalidation) layer: there is no invalidation-rect or CopyBits API anywhere (grep 'invalidate' over src/ returns nothing); both shells repaint the whole window when dirty (src/shell/tiku_trk_app.c:467-668 draw(); src/shell/tiku_trk_desktop.c:206-372 folder_draw), so a row insertion cannot slide anything.  
-**PORT:** A listing that changes repaints the rows the damage names and leaves the rest alone: the accumulator the view has always kept is consumed by the draw, and a frame with no damage still paints everything, which is what a first frame and a scroll need.  
-**MISSING:** The rows below an insertion are repainted rather than SLID: the drawing floor has no copy-bits primitive, so pixels cannot be moved, only drawn again.  
+**PORT:** A row arriving inside the view slides the rows under it with one
+`tiku_desk_copy_bits` and paints the row that appeared -- one row for a
+listing of any length.  The window keeps its own pixels for this: the shell
+draws every frame from the backdrop up, so a row a frame does not paint has
+nowhere to survive.  Two things decide whether a row is painted: the damage
+says a PLACE needs it, and a per-row signature says the row LOOKS different
+-- the second is what no state change can slip past, and a selection nobody
+thought to damage was exactly that.
+**PORT:** `expect-same-as-redraw` holds the window against itself drawn from
+nothing, which is the only check that covers what a test did not think to
+look at.  It found two things the whole-window repaint had been hiding: a
+value read back to the same string left the row showing a dash, and a drop
+that raised an alert drew no frame at all.
+**MISSING:** The browser shell paints its own rows and repaints all of them;
+this is the desktop shell's window.  
+*Shell: desktop*  
 
-#### PVL-046 · polish · partial
+#### PVL-046 · polish · differs
 **Rows inserted above the visible area are batched: the accumulated scroll is applied in a single blit rather than one per item.**  
 listViewScrollBy accumulates fListElemHeight per skipped insertion; FinishPendingScroll performs one CopyBits of the whole visible region and a SynchronousUpdate of the remainder. Flushed at the end of every CreatePoses chunk.  
 `PoseView.cpp` → `BPoseView::FinishPendingScroll / BPoseView::AddPoseToList`  
 **TIKU:** Watch-notification storms on live device values would drive this path; TikuOS should batch as this does or the list will thrash.
 **PORT:** A batch of rows arriving above the viewport moves the offset once, at the end of the batch, so a folder that gains files while someone reads the middle of it keeps showing the same rows rather than walking down the screen per file. The delta the view has always accumulated is applied where the notices finish.  
-**MISSING:** It is applied by moving the offset, not by blitting the pixels: there is no copy-bits primitive, so the rows that stay are drawn again where they were.  
+**DIVERGES:** The source blits because its scroll MOVES the visible content:
+rows arrive above, the view scrolls by the same amount, and the pixels are
+carried back to where they were.  Here the offset moves and no pixel does --
+the same rows stay in the same places, which is the behaviour the row is
+about, reached without the copy.  The blit exists (`tiku_desk_copy_bits`,
+PVL-045) and is used where pixels really do change place; this path has
+none.  
 #### PVL-047 · important · partial
 **When a value in the sort column changes, only that row moves — the gap closes at its old position and opens at its new one.**  
 AttributeChanged hashes the changed attribute (or maps a stat field via sAttrColumnMap) and, only if it equals the primary or secondary sort, calls _CheckPoseSortOrder. That removes the pose, re-searches its position, and if it moved does CloseGapInList at the old index followed by InsertPoseAfter at the new one. If the new index equals the old, nothing is redrawn.  
@@ -842,12 +861,19 @@ AttributeChanged hashes the changed attribute (or maps a stat field via sAttrCol
 **MISSING:** Only the model-level move exists — there is no gap-close/gap-open repaint (any change marks the whole window dirty and it is fully redrawn; no invalidation-rect API exists), and the re-slot check runs on every change notice rather than only when the changed field equals the primary or secondary sort key.  
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:2992-3030 (CHANGED: sorted_slot + single-row remove/insert, scroll preserved)` `src/ui/tiku_trk_poseview.c:3378-3411 (recheck_order, same discipline)` `src/ui/tiku_trk_poseview.c:3450-3455 (refresh_values triggers recheck under Value sort)`*  
 *Shell: both*  
-#### PVL-048 · important · partial
+#### PVL-048 · important · done
 **Deleting a row closes the gap by sliding the rows below up rather than repainting them.**  
 DeletePose computes the invalid rect from the row index, calls CloseGapInList (which extends the rect to Extent().bottom + one row, CopyBits the region up by one row height, and returns the strip to invalidate), then updates the count, scroll range and placement hint. In icon mode it calls RemoveFromExtent instead.  
 `PoseView.cpp` → `BPoseView::DeletePose / BPoseView::CloseGapInList`
-**PORT:** Removing a row damages the strip it left and the rows below it; the rows above are not painted again. The counter that shows it is `tiku_trk_folder_render_t::rows_drawn`, because a repaint that touches one row and one that touches every row produce the same picture.  
-**MISSING:** The gap is closed by repainting the rows below, not by sliding them up: copy-bits does not exist here.  
+**PORT:** Removing a row closes the gap by sliding the rows under it up with
+one `tiku_desk_copy_bits`, and paints the strip the slide left at the bottom
+-- for a row taken out of a full window that is no row painted at all.  The
+counter that shows it is `tiku_trk_folder_render_t::rows_drawn`, because a
+repaint that touches one row and one that touches every row produce the same
+picture.
+**MISSING:** The browser shell paints its own rows and repaints all of them;
+this is the desktop shell's window.  
+*Shell: desktop*  
 
 #### PVL-049 · core · done
 **The scrollable area is the list's column width by row count in list mode, and the bounding box of all icons (outset by the layout offset) in icon modes.**  
@@ -951,15 +977,21 @@ AddPosesCompleted (list mode): if bounds.top > (count-1) * fListElemHeight, scro
 **Drawing walks only the poses that can intersect the update rect and stops early.**  
 DrawViewCommon list mode: startIndex = (updateRect.top - fListElemHeight) / fListElemHeight clamped to 0, walking down and breaking once location.y >= updateRect.bottom. Icon modes iterate CurrentPoseList() (= fVSPoseList, sorted by y) and break once a pose's location.y passes updateRect.bottom — which is why the vertical-sort list must stay ordered.  
 `PoseView.cpp` → `BPoseView::DrawViewCommon`  
-**MISSING:** The early-out half now holds: the view answers which poses are
-inside the viewport and the icon renderer draws only those, where it used to
-walk every pose in the folder on every frame.  The UPDATE-RECT half does not
-and cannot yet -- the drawing floor has no damage, invalidate or copy-bits
-primitive, so every frame is a whole-window repaint and there is no update
-rect for a walk to be clipped against.
+**PORT:** Both halves hold in a list.  The walk starts at the first visible
+row and stops at the last, and inside that it paints only the rows the
+damage names -- the update rect the early-out was waiting for is the damage
+the view accumulates, taken by the draw and compared against each row's
+place.  A frame with nothing accumulated paints the listing, which is what a
+first frame and a scroll both need.
+**MISSING:** The icon modes have the viewport early-out and no damage: they
+draw straight into the frame rather than into pixels of their own, so every
+icon frame is a whole-view repaint.  A scroll is the other one -- it records
+no damage, so it goes the whole-listing way rather than sliding the rows
+that stay.
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_visible_range;
-src/shell/tiku_trk_desktop.c:folder_draw_icons; ../desktop/../desktop/src/tiku_desk_gfx.h
-(fill/frame/line/clip only)*
+src/ui/windows/tiku_trk_folder_window.c:draw_list (damage + row signatures);
+tests/shell/repaint.script; tests/shell/repaintsame.script*
+*Shell: desktop*
 
 #### PVL-063 · important · done
 **In icon modes, hit testing scans the list backwards so the icon painted last (on top) is the one you click.**  
@@ -1044,7 +1076,12 @@ DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects 
 **A volume pose showing a space bar is repainted by invalidation rather than drawn directly, so the bar never smears.**  
 DrawPose: if TrackerSettings().ShowVolumeSpaceBar() and the target is a volume, Invalidate(rect); otherwise pose->Draw(rect, rect, this, fullDraw) directly. BPose::Draw itself also defers to Invalidate once when its background was not cleared and this is a partial draw (fBackgroundClean).  
 `PoseView.cpp` → `BPoseView::DrawPose / BPose::Draw`  
-**PORT:** Rows are painted incrementally now, so the hazard the row is about is real here at last -- and it is answered the way the source answers it: a repainted row clears its own ground before anything is drawn on it, so the bar cannot leave the last reading behind.  
+**PORT:** Rows are painted incrementally now, so the hazard the row is about
+is real here at last -- and it is answered the way the source answers it: a
+repainted row clears its own ground before anything is drawn on it, so the
+bar cannot leave the last reading behind.  A row that slides carries its own
+cleared ground with it, the free space being part of what the row's
+signature is taken over.  
 **MISSING:** The unit is the ROW, not the bar: a volume whose free space moves repaints its whole row. No damage source reports the bar's own rectangle, and nothing yet drives a volume's free space in the shell tests, so this is reasoning from the draw rather than a checked behaviour.
 
 #### PVL-075 · polish · partial

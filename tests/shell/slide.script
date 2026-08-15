@@ -1,0 +1,37 @@
+# shell: desktop
+# PVL-046/PVL-062: rows a change only MOVED are moved, not drawn again.  A
+# file arriving in the middle of a listing used to repaint every row under
+# it; the rows below an insertion differ from the frame before only in
+# where they sit, which is a blit.
+wait 8
+expect-rows 4
+note the selected row is the instrument: its band is ink no redraw can
+note invent, so where the band ends up says whether the pixels moved
+click-row 1
+wait 8
+expect-pixel 200 140 336698
+draw-reset
+note a file arrives that sorts above the selected row
+write /tmp/trk_script/0a.txt x
+wait 40
+expect-rows 5
+note the row that appeared is painted, and painted twice more as it
+note learns its picture and its size -- three paints for a five-row
+note listing, where the frame used to paint every row
+expect-drawn 3
+note and the rows under it DID move -- the band is a row further down
+expect-pixel 200 160 336698
+note while the row that appeared is painted where the band used to be
+expect-pixel 200 140 ffffff
+note the same going the other way: a row goes and the rest closes up over
+note it, again without painting the rows that only moved
+draw-reset
+remove /tmp/trk_script/0a.txt
+wait 40
+expect-rows 4
+expect-drawn 0
+expect-pixel 200 140 336698
+note and the whole frame, not the pixels a test thought to look at: what
+note these frames painted is what a full redraw would have drawn
+expect-same-as-redraw
+quit

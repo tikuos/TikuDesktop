@@ -1501,6 +1501,47 @@ draw_all(desktop_t *app)
     app->dirty = 0;
 }
 
+/**
+ * @brief Pixels a window built up frame by frame has wrong (PVL-045).
+ *
+ * A window that paints what changed can only be held against the picture
+ * it is meant to be equal to: keep what is on the screen, throw the
+ * windows' kept pixels away so the next draw builds them from nothing, and
+ * count where the two disagree.  Nothing is drawn before the copy is
+ * taken -- a frame drawn to settle the window would be the very repaint
+ * the check exists to do without.  The from-scratch draw stands: it is the
+ * picture the shell should be showing anyway.
+ */
+static long
+script_redraw_diff(void *ctx)
+{
+    desktop_t *app = ctx;
+    tiku_desk_rgb_t *was;
+    size_t n, i;
+    long differ = 0;
+
+    if (app == NULL || app->surf == NULL || app->surf->px == NULL) {
+        return -1;
+    }
+    n = (size_t)app->surf->w * (size_t)app->surf->h;
+    was = malloc(n * sizeof *was);
+    if (was == NULL) {
+        return -1;
+    }
+    memcpy(was, app->surf->px, n * sizeof *was);
+    for (i = 0u; i < (size_t)app->folder_count; i++) {
+        tiku_trk_folder_window_forget(&app->folders[i]);
+    }
+    draw_all(app);
+    for (i = 0u; i < n; i++) {
+        if (was[i] != app->surf->px[i]) {
+            differ++;
+        }
+    }
+    free(was);
+    return differ;
+}
+
 static int
 tracker_run(int argc, char **argv)
 {
@@ -1737,6 +1778,9 @@ tracker_run(int argc, char **argv)
         alert_model(&app), &app.find_window, &app.file_panel,
         &app.folder_edit, &app.popup, &app.popup_sub, &app.popup_frame,
         &app.popup_sub_frame, app.status, app.count_text, app.row_h);
+    /* After the init, which writes the whole adapter. */
+    app.script_adapter.redraw_diff = script_redraw_diff;
+    app.script_adapter.redraw_ctx = &app;
     tiku_trk_drop_controller_init(&app.drop_controller, app.deskbar,
         app.backend, app.fs, &app.desktop_view, &app.menus,
         alert_model(&app), &app.drag, &app.drag_target.folder,
@@ -3073,6 +3117,12 @@ tracker_run(int argc, char **argv)
                 }
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_drag_target_reset(&app.drag_target);
+                /* A release ends whatever the press began -- a drag with a
+                 * picture under the pointer, a band, a drop that raised an
+                 * alert.  All of it is on the screen until a frame says
+                 * otherwise, and a shell with no pointer moving over it
+                 * gets no other reason to draw one. */
+                app.dirty = 1;
                 /* A long press already put the menu up, so its release must
                  * not put a second one up (PVS-017). */
                 app.press_down = 0;

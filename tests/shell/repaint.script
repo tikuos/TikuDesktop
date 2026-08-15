@@ -14,15 +14,20 @@ expect-rows 3
 note what the frame painted is the vacated strip, not the three rows that
 note did not move
 expect-drawn 1
+note and the rows that were NOT painted are still on the screen: the list
+note area is filled before the rows are drawn, so skipping a row must skip
+note its ground too
+expect-ink 60 118
 note PVL-075: one row's file changes, so one row is painted.  Anything that
 note learns about a single row -- the change notice, the value read, the
 note icon probe -- says which row, rather than asking for a whole frame.
-note Two frames carry it: the notice learns the size, and the icon probe
-note learns the picture a tick later.  Each paints that row and no other.
+note Three frames carry it: the notice learns the size, the icon probe
+note learns the picture a tick later, and the reading comes back after the
+note notice invalidated it.  Each paints that row and no other.
 draw-reset
 write /tmp/trk_script/a.txt hello there
 wait 40
-expect-drawn 2
+expect-drawn 3
 expect-drawn at-least 1
 note and a frame with no damage to go on still paints the whole listing:
 note skipping there would leave a window that never refreshes
@@ -30,4 +35,6 @@ draw-reset
 click-row 0
 wait 8
 expect-drawn at-least 3
+note and the window as a whole is what a full redraw would draw
+expect-same-as-redraw
 quit

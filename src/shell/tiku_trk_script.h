@@ -96,6 +96,12 @@ typedef struct {
      * only evidence for a rule about how something LOOKS -- a band style
      * changes no state a checker could otherwise read. */
     unsigned  (*pixel_at)(void *ctx, int x, int y);
+    /* How many pixels a full redraw would put differently from what the
+     * frames actually painted.  A window that paints what changed can only
+     * be checked against the picture it is meant to be equal to: this
+     * draws that picture and counts the difference. */
+    long      (*redraw_diff)(void *ctx);
+    void       *redraw_ctx;
     void       *pose_ctx;
 } tiku_trk_script_state_t;
 

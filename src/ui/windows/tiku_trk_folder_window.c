@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "tiku_trk_attr.h"
@@ -316,15 +317,88 @@ queue_thumbnail(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
     }
 }
 
+/** @brief Fold @p n bytes into a running hash (FNV-1a). */
+static uint32_t
+sig_bytes(uint32_t h, const void *p, size_t n)
+{
+    const unsigned char *b = p;
+    size_t i;
+
+    for (i = 0u; i < n; i++) {
+        h = (h ^ b[i]) * UINT32_C(16777619);
+    }
+    return h;
+}
+
+static uint32_t
+sig_text(uint32_t h, const char *t)
+{
+    return sig_bytes(h, t, strlen(t) + 1u);
+}
+
+/**
+ * @brief What row @p slot would draw, in one number.
+ *
+ * Everything the row's appearance turns on, and nothing else: two frames
+ * that hash the same put the same pixels there, so the second need not
+ * draw.  A field the drawing reads and this does not is a row that stops
+ * refreshing -- when the drawing gains one, it gains one here.
+ */
+static uint32_t
+row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
+              int slot, int selected, int cut)
+{
+    tiku_trk_folder_render_t *render = folder->render;
+    const tiku_trk_column_t *cols = NULL;
+    uint32_t h = UINT32_C(2166136261);
+    char art[TIKU_TRK_NAME_MAX];
+    int ncol = tiku_trk_poseview_columns(folder->view, &cols);
+    int hscroll = tiku_trk_poseview_hscroll(folder->view);
+    int j;
+
+    h = sig_bytes(h, &pose->model.node_id, sizeof pose->model.node_id);
+    h = sig_bytes(h, &selected, sizeof selected);
+    h = sig_bytes(h, &cut, sizeof cut);
+    h = sig_bytes(h, &pose->model.kind, sizeof pose->model.kind);
+    h = sig_bytes(h, &pose->model.facts.link_broken,
+                  sizeof pose->model.facts.link_broken);
+    h = sig_bytes(h, &pose->model.facts.avail, sizeof pose->model.facts.avail);
+    h = sig_bytes(h, &hscroll, sizeof hscroll);
+    h = sig_bytes(h, &render->row_h, sizeof render->row_h);
+    /* The editor draws over the row it is on, so that row differs from the
+     * same row without it. */
+    if (*render->renaming && *render->rename_folder == folder &&
+        *render->rename_row == pose->index) {
+        h = sig_bytes(h, "edit", 5u);
+    }
+    (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
+                                    &pose->model, art, sizeof art);
+    h = sig_text(h, art);
+    if (tiku_trk_thumb_fresh(render->store, pose->model.path,
+                             pose->model.facts.mtime)) {
+        h = sig_bytes(h, "thumb", 6u);
+    }
+    for (j = 0; j < ncol; j++) {
+        char tmp[160];
+        const char *txt = tiku_trk_poseview_cell_text(folder->view, pose,
+                              cols[j].field, tmp, sizeof tmp);
+
+        h = sig_text(h, txt != NULL ? txt : "");
+        h = sig_bytes(h, &cols[j].offset, sizeof cols[j].offset);
+        h = sig_bytes(h, &cols[j].width, sizeof cols[j].width);
+    }
+    (void)slot;
+    return h;
+}
+
 static void
 draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
           tiku_desk_rect_t list, int rows, int scroll, int total)
 {
     tiku_trk_folder_render_t *render = folder->render;
     const tiku_desk_font_t *font = tiku_desk_font_plain();
-    tiku_trk_repaint_rect_t damage[TIKU_TRK_REPAINT_MAX];
-    int ndamage = tiku_trk_poseview_repaint_take(folder->view, damage,
-                                                 TIKU_TRK_REPAINT_MAX);
+    const tiku_trk_repaint_rect_t *damage = folder->render->damage;
+    int ndamage = folder->render->ndamage;
     int i;
 
     for (i = 0; i < rows && scroll + i < total; i++) {
@@ -339,10 +413,17 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         if (pose == NULL) {
             break;
         }
-        if (ndamage > 0) {
-            /* Only the rows the damage names.  With nothing accumulated
-             * every row is painted, which is what a first frame and a
-             * scroll both need. */
+        selected = tiku_trk_poseview_draws_selected(folder->view, pose);
+        cut = tiku_trk_clip_mode_of(render->clip, pose->model.node_id) ==
+              TIKU_TRK_CLIP_MOVE;
+        if (*render->drop_folder == folder && *render->drop_row == i) {
+            selected = 1;
+        }
+        if (ndamage > 0 && i < TIKU_TRK_ROWS_KEPT) {
+            /* Two reasons to paint a row: the place needs it, or the row
+             * looks different from what is there.  Damage alone would
+             * leave a selection nobody thought to damage unpainted. */
+            uint32_t sig = row_signature(folder, pose, i, selected, cut);
             int d, hit = 0;
 
             for (d = 0; d < ndamage && !hit; d++) {
@@ -351,21 +432,19 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                 hit = damage[d].y < top + render->row_h &&
                       damage[d].y + damage[d].h > top;
             }
-            if (!hit) {
+            if (!hit && folder->row_sig[i] == sig) {
                 /* Skipping the PAINT must not skip the asking: a row's
                  * thumbnail is queued while it is drawn, and a row that
                  * stops being drawn would stop ever being asked for. */
                 queue_thumbnail(folder, pose);
                 continue;
             }
+            folder->row_sig[i] = sig;
+        } else if (i < TIKU_TRK_ROWS_KEPT) {
+            folder->row_sig[i] = row_signature(folder, pose, i, selected,
+                                               cut);
         }
         render->rows_drawn++;
-        selected = tiku_trk_poseview_draws_selected(folder->view, pose);
-        cut = tiku_trk_clip_mode_of(render->clip, pose->model.node_id) ==
-              TIKU_TRK_CLIP_MOVE;
-        if (*render->drop_folder == folder && *render->drop_row == i) {
-            selected = 1;
-        }
         tiku_desk_fill(surface, row, TIKU_DESK_C_DOC);
         {
             const tiku_trk_column_t *cols = NULL;
@@ -545,10 +624,51 @@ draw_folder_icon(tiku_trk_folder_window_t *folder,
     (void)tiku_trk_icon_paint(surface, art, icon.x, icon.y, icon.w);
 }
 
+/**
+ * @brief The window's own pixels, sized to the rows it shows.
+ *
+ * A new or resized surface holds nothing, so the frame that makes one
+ * paints all of it.
+ */
+static int
+keep_pixels(tiku_trk_folder_window_t *folder, int w, int h)
+{
+    if (w <= 0 || h <= 0) {
+        return 0;
+    }
+    if (folder->kept.px == NULL || folder->kept.w != w ||
+        folder->kept.h != h) {
+        tiku_desk_rgb_t *px = realloc(folder->kept.px,
+                                      (size_t)w * (size_t)h * sizeof *px);
+
+        if (px == NULL) {
+            return 0;
+        }
+        folder->kept.px = px;
+        folder->kept.w = w;
+        folder->kept.h = h;
+        folder->kept_ready = 0;
+    }
+    folder->kept.clip = (tiku_desk_rect_t){ 0, 0, w, h };
+    return 1;
+}
+
+void
+tiku_trk_folder_window_forget(tiku_trk_folder_window_t *folder)
+{
+    if (folder != NULL) {
+        free(folder->kept.px);
+        folder->kept.px = NULL;
+        folder->kept.w = 0;
+        folder->kept.h = 0;
+        folder->kept_ready = 0;
+    }
+}
+
 static void
 draw_transients(tiku_trk_folder_window_t *folder,
                 tiku_desk_surface_t *surface, tiku_desk_rect_t list,
-                int icons, int rows, int scroll)
+                int off_x, int off_y, int icons, int rows, int scroll)
 {
     tiku_trk_folder_render_t *render = folder->render;
 
@@ -557,6 +677,12 @@ draw_transients(tiku_trk_folder_window_t *folder,
         int x0 = *render->band_x0, y0 = *render->band_y0;
         int x1 = *render->band_x1, y1 = *render->band_y1;
 
+        /* The band is where the pointer has been, which is the screen's
+         * coordinates and not the surface being painted. */
+        x0 -= off_x;
+        x1 -= off_x;
+        y0 -= off_y;
+        y1 -= off_y;
         band = (tiku_desk_rect_t){ x0 < x1 ? x0 : x1,
                                    y0 < y1 ? y0 : y1,
                                    x0 > x1 ? x0 - x1 : x1 - x0,
@@ -647,7 +773,10 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     tiku_desk_rect_t list = content;
     tiku_desk_rect_t bar = content;
     tiku_desk_rect_t title;
+    tiku_desk_surface_t *paint;
+    tiku_desk_rect_t area;
     int rows, scroll, total, icons;
+    int slide, slide_y = 0;
 
     (void)window;
     if (render->prepare_menu != NULL) {
@@ -665,11 +794,86 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
         list.h -= TITLE_HEIGHT;
     }
     list.h -= COUNT_HEIGHT;
-    tiku_desk_ui_sunken(surface, list,
-                        tiku_trk_poseview_background(folder->view));
+    icons = tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST;
+    /* Where the rows go.  In list mode that is the window's own kept
+     * pixels, drawn at its own origin and handed to the frame at the end;
+     * the icon modes draw into the frame directly, having no damage to
+     * spare. */
+    paint = surface;
+    area = list;
+    if (!icons && keep_pixels(folder, list.w, list.h)) {
+        paint = &folder->kept;
+        area = (tiku_desk_rect_t){ 0, 0, list.w, list.h };
+    }
+    /* The ground and the rows are one decision.  Filling the whole list
+     * and then painting only the damaged rows leaves the others as bare
+     * ground: what a frame does not repaint, it must not erase.  Nothing
+     * has to be told which rows a fill took with it, because every fill
+     * here is a damage rectangle and every row a damage rectangle touches
+     * is painted below in the same frame. */
+    slide = tiku_trk_poseview_repaint_take_slide(folder->view, &slide_y);
+    render->ndamage = (paint != surface && folder->kept_ready)
+                          ? tiku_trk_poseview_repaint_take(folder->view,
+                                render->damage, TIKU_TRK_REPAINT_MAX)
+                          : 0;
+    if (render->ndamage > 0) {
+        tiku_desk_rect_t inner = tiku_desk_inset(area, 2);
+        int d;
+
+        if (slide != 0) {
+            /* The rows the insertion or removal only MOVED: they are
+             * carried to their new place rather than drawn again, which is
+             * what leaves a single row to paint. */
+            int rh = render->row_h > 0 ? render->row_h : 1;
+            int by = slide / rh;
+            int from = slide_y / rh;
+            int k;
+
+            /* Inside the rows and no further: the border below them is
+             * not a row and must not be slid over. */
+            tiku_desk_clip_set(paint, inner);
+            tiku_desk_copy_bits(paint,
+                                (tiku_desk_rect_t){ inner.x,
+                                                    inner.y + slide_y,
+                                                    inner.w,
+                                                    inner.h - slide_y },
+                                0, slide);
+            tiku_desk_clip_reset(paint);
+            /* What each slot holds moved with the pixels. */
+            if (by > 0) {
+                for (k = TIKU_TRK_ROWS_KEPT - 1; k >= from; k--) {
+                    folder->row_sig[k] = (k - by >= from)
+                        ? folder->row_sig[k - by] : 0u;
+                }
+            } else {
+                for (k = from + by; k < TIKU_TRK_ROWS_KEPT; k++) {
+                    folder->row_sig[k] = (k - by < TIKU_TRK_ROWS_KEPT)
+                        ? folder->row_sig[k - by] : 0u;
+                }
+            }
+        }
+        for (d = 0; d < render->ndamage; d++) {
+            tiku_desk_rect_t strip = { inner.x, inner.y + render->damage[d].y,
+                                       inner.w, render->damage[d].h };
+
+            if (strip.y < inner.y) {
+                strip.h -= inner.y - strip.y;
+                strip.y = inner.y;
+            }
+            if (strip.y + strip.h > inner.y + inner.h) {
+                strip.h = inner.y + inner.h - strip.y;
+            }
+            if (strip.h > 0) {
+                tiku_desk_fill(paint, strip,
+                               tiku_trk_poseview_background(folder->view));
+            }
+        }
+    } else {
+        tiku_desk_ui_sunken(paint, area,
+                            tiku_trk_poseview_background(folder->view));
+    }
     tiku_trk_poseview_set_viewport(folder->view, list.w - 4, list.h - 4);
     tiku_trk_poseview_set_row_height(folder->view, render->row_h);
-    icons = tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST;
     if (icons) {
         (void)tiku_trk_poseview_place_unplaced(folder->view, list.w - 4);
     }
@@ -677,17 +881,23 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     tiku_trk_poseview_set_visible_rows(folder->view, rows);
     scroll = tiku_trk_poseview_scroll(folder->view);
     total = tiku_trk_poseview_count(folder->view);
-    tiku_desk_clip_set(surface, tiku_desk_inset(list, 2));
+    tiku_desk_clip_set(paint, tiku_desk_inset(area, 2));
     if (icons) {
         folder->bg_drawn = tiku_trk_folder_window_draw_background(
-            folder, surface,
-                                           tiku_desk_inset(list, 2));
-        tiku_trk_folder_window_draw_icons(folder, surface, list);
+            folder, paint, tiku_desk_inset(area, 2));
+        tiku_trk_folder_window_draw_icons(folder, paint, area);
     } else {
-        draw_list(folder, surface, list, rows, scroll, total);
+        draw_list(folder, paint, area, rows, scroll, total);
     }
-    draw_transients(folder, surface, list, icons, rows, scroll);
-    tiku_desk_clip_reset(surface);
+    draw_transients(folder, paint, area, list.x - area.x, list.y - area.y,
+                    icons, rows, scroll);
+    tiku_desk_clip_reset(paint);
+    if (paint != surface) {
+        /* The frame gets the window's pixels whole, painted this time or
+         * five frames ago. */
+        tiku_desk_blit(surface, list.x, list.y, &folder->kept);
+        folder->kept_ready = 1;
+    }
     draw_count(folder, surface, content, total);
 }
 

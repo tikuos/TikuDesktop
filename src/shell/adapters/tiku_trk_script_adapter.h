@@ -40,6 +40,10 @@ typedef struct {
     char menu_labels[512];
     char shot_path[TIKU_TRK_PATH_MAX];
     int row_h;
+    /* The shell's own full redraw, for the check that what the frames
+     * painted is what a full redraw would have drawn. */
+    long               (*redraw_diff)(void *ctx);
+    void                *redraw_ctx;
 } tiku_trk_script_adapter_t;
 
 void tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,

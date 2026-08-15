@@ -97,6 +97,10 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
     (void)tiku_trk_poseview_save_columns(folder->view);
     tiku_trk_folder_lifecycle_save_frame(controller, folder);
     tiku_desk_workspace_close(controller->workspace, folder->win);
+    /* The pixels belonged to the window that was showing.  A slot reused
+     * for another folder starts from a blank frame, not from what the last
+     * one left in it. */
+    tiku_trk_folder_window_forget(folder);
     *controller->dirty = 1;
 }
 
@@ -194,6 +198,7 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
         return NULL;
     }
     folder = &controller->folders[*controller->count];
+    tiku_trk_folder_window_forget(folder);
     memset(folder, 0, sizeof *folder);
     snprintf(folder->path, sizeof folder->path, "%s", path);
     snprintf(folder->state_path, sizeof folder->state_path, "%s", path);

@@ -14,4 +14,6 @@ click-row 0
 wait 4
 expect-pixel 300 118 336698
 expect-pixel 400 118 ffffff
+note and the window as a whole is what a full redraw would draw
+expect-same-as-redraw
 quit

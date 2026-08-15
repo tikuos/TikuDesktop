@@ -17,4 +17,14 @@ wait 6
 expect-drawn 2
 expect-drawn at-least 1
 release 200 172
+note and the window as a whole is what a full redraw would draw
+expect-same-as-redraw
+note a sweep over the empty ground below the rows leaves nothing of itself
+note behind either
+wait 8
+press 100 280
+move 300 240
+release 300 240
+wait 20
+expect-same-as-redraw
 quit

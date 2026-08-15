@@ -1748,6 +1748,16 @@ tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on)
         return;
     }
     if (!on) {
+        if (v->band_seen) {
+            /* The sweep is over and the band is not drawn again, so where
+             * it was lying is what needs painting.  The frame that ends a
+             * sweep usually has nothing else to go on and paints the whole
+             * listing regardless; this is for the one that does -- a value
+             * arriving mid-sweep leaves that frame partial, and the band
+             * would stay on the ground it was over.  No test can force
+             * that race, which is why it is written down here. */
+            tiku_trk_repaint_add(&v->repaint, v->band_rect);
+        }
         v->band_seen = 0;       /* the next sweep is a new one */
     }
     if (on && v->band_was != NULL) {
@@ -1795,6 +1805,12 @@ tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
                                tiku_trk_repaint_rect_t *out, int max)
 {
     return v != NULL ? tiku_trk_repaint_take(&v->repaint, out, max) : 0;
+}
+
+int
+tiku_trk_poseview_repaint_take_slide(tiku_trk_poseview_t *v, int *y)
+{
+    return v != NULL ? tiku_trk_repaint_take_slide(&v->repaint, y) : 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4206,7 +4222,7 @@ insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     tiku_trk_repaint_insert(&v->repaint,
                             (tiku_trk_repaint_rect_t){0, 0, v->view_w, v->view_h},
                             v->row_h > 0 ? v->row_h : 1,
-                            at < v->scroll);
+                            (at - v->scroll) * (v->row_h > 0 ? v->row_h : 1));
     for (i = v->count; i > at; i--) {
         v->poses[i] = v->poses[i - 1];
     }
@@ -4244,7 +4260,7 @@ remove_pose(tiku_trk_poseview_t *v, int at)
     tiku_trk_repaint_remove(&v->repaint,
                             (tiku_trk_repaint_rect_t){0, 0, v->view_w, v->view_h},
                             v->row_h > 0 ? v->row_h : 1,
-                            at * (v->row_h > 0 ? v->row_h : 1));
+                            (at - v->scroll) * (v->row_h > 0 ? v->row_h : 1));
     for (i = at; i < v->count - 1; i++) {
         v->poses[i] = v->poses[i + 1];
     }
@@ -5127,7 +5143,15 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
             }
             continue;
         }
-        p->value_valid = 1;
+        if (!p->value_valid) {
+            /* The reading is the same one as before, but the row has been
+             * showing a dash since the notice invalidated it: coming back
+             * is a change to what the row says, and a row nobody reports
+             * keeps the dash until something else repaints it. */
+            p->value_valid = 1;
+            changed++;
+            tiku_trk_poseview_damage_row(v, i);
+        }
     }
     return changed;
 }
