@@ -1,0 +1,54 @@
+# shell: both
+# FS-060/FS-055: the clipboard entry follows the file it names, so a second
+# paste copies what the first one moved.  Nothing followed a move before:
+# the entry still named the old path, the file was no longer there, and the
+# second paste pruned the entry instead of pasting it.
+wait 6
+note a.txt is cut and pasted into sub, which MOVES it
+click-row 1
+wait 2
+key x ctrl
+wait 3
+click-row 0
+click-row 0
+wait 10
+expect-title sub
+key v ctrl
+wait 40
+expect-file /tmp/trk_script/sub/a.txt
+expect-no-file /tmp/trk_script/a.txt
+note the entry went with it.  Back in the folder it came from, a second
+note paste copies the file from where it is NOW -- an entry left naming the
+note old path would be pruned here and nothing would arrive
+key Up ctrl alt
+wait 10
+expect-title trk_script
+key v ctrl
+wait 40
+expect-file /tmp/trk_script/a.txt
+expect-file /tmp/trk_script/sub/a.txt
+note and a RENAME is the same event: the entry still names the file in sub,
+note so renaming that file has to take the entry with it
+click-row 0
+click-row 0
+wait 10
+expect-title sub
+click-row 0
+wait 45
+click-row 0
+wait 120
+expect-renaming 1
+key k
+key e
+key p
+key t
+key Return
+wait 40
+expect-file /tmp/trk_script/sub/kept
+key Up ctrl alt
+wait 10
+expect-title trk_script
+key v ctrl
+wait 40
+expect-file /tmp/trk_script/kept
+quit

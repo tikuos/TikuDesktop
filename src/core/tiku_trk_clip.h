@@ -70,6 +70,19 @@ tiku_trk_clip_mode_t tiku_trk_clip_mode_of(const tiku_trk_clip_t *c,
  */
 int tiku_trk_clip_moved(tiku_trk_clip_t *c, uint64_t id, const char *to);
 
+/**
+ * @brief Follow an entry by the path it used to have (FS-060).
+ *
+ * What a shell can call: the operation engine reports the two paths and
+ * nothing else, the identity having changed under it where the move
+ * crossed a device.  An entry INSIDE a folder that moved follows with it.
+ *
+ * @param now_id The identity at @p to, or 0 to keep the one on record.
+ * @return How many entries were updated.
+ */
+int tiku_trk_clip_moved_path(tiku_trk_clip_t *c, const char *from,
+                             const char *to, uint64_t now_id);
+
 /** @brief Drop the entry for @p id, if any (FS-058).  @return 1 if dropped. */
 int tiku_trk_clip_removed(tiku_trk_clip_t *c, uint64_t id);
 

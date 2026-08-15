@@ -87,6 +87,20 @@ typedef int (*tiku_trk_cancel_fn)(void *ctx);
 
 typedef struct tiku_trk_fs tiku_trk_fs_t;
 
+/**
+ * @brief Told whenever an item lands under a new path (FS-060).
+ *
+ * Every move, rename, trashing, restore and undo of one goes through here,
+ * which is where both paths are known at once: the shell that started the
+ * job knows what it asked for, not what a collision renamed on the way.
+ */
+typedef void (*tiku_trk_fs_moved_fn)(void *ctx, const char *from,
+                                     const char *to);
+
+/** @brief Listen for items landing somewhere else.  One listener. */
+void tiku_trk_fs_set_moved(tiku_trk_fs_t *fs, tiku_trk_fs_moved_fn fn,
+                           void *ctx);
+
 /** @brief Create the operation engine for one backend. */
 tiku_trk_fs_t *tiku_trk_fs_new(tiku_trk_backend_t *backend);
 

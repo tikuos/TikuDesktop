@@ -77,9 +77,30 @@ struct tiku_trk_fs {
 
     tiku_trk_cancel_fn  cancel_fn;
     void               *cancel_ctx;
+    tiku_trk_fs_moved_fn moved_fn;
+    void               *moved_ctx;
     int                 cancelling;   /* the flag cancel() itself sets  */
     int                 link_relative;
 };
+
+/** @brief An item is no longer at @p from; it is at @p to. */
+static void
+landed(tiku_trk_fs_t *fs, const char *from, const char *to)
+{
+    if (fs != NULL && fs->moved_fn != NULL && from != NULL && to != NULL &&
+        from[0] != '\0' && to[0] != '\0') {
+        fs->moved_fn(fs->moved_ctx, from, to);
+    }
+}
+
+void
+tiku_trk_fs_set_moved(tiku_trk_fs_t *fs, tiku_trk_fs_moved_fn fn, void *ctx)
+{
+    if (fs != NULL) {
+        fs->moved_fn = fn;
+        fs->moved_ctx = ctx;
+    }
+}
 
 /** @brief Whether the job should stop where it stands. */
 static int
@@ -1717,6 +1738,7 @@ tiku_trk_fs_restore(tiku_trk_fs_t *fs, const char *const *paths, int n,
             }
             continue;
         }
+        landed(fs, paths[i], origin);
         done++;
     }
     return done;
@@ -1901,6 +1923,7 @@ step_one(tiku_trk_fs_t *fs)
             /* Undoing a trash move puts the item back where it was, which
              * is the same shape as undoing any other move. */
             undo_push(fs, dstpath, src, 0);
+            landed(fs, src, dstpath);
             fs->prog.done++;
         }
         fs->qcursor++;
@@ -2076,6 +2099,7 @@ step_one(tiku_trk_fs_t *fs)
             return fail_ask(fs, msg, 1);
         }
         undo_push(fs, dstpath, src, 0);
+        landed(fs, src, dstpath);
         fs->prog.done++;
     } else {
         /* The same for a copy: a folder already there is merged into, so
@@ -2264,6 +2288,7 @@ tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path, const char *new_name,
     }
     undo_reset(fs, TIKU_TRK_OP_RENAME);
     undo_push(fs, dst, path, 0);
+    landed(fs, path, dst);
     return 0;
 }
 
@@ -2464,7 +2489,6 @@ tiku_trk_fs_op_name(tiku_trk_op_t op)
 static int
 undo_one(tiku_trk_fs_t *fs, const undo_rec_t *r, char *err, size_t errmax)
 {
-    (void)fs;
     if (r->created) {
         /* Whatever the operation made goes, tree and all: a copied FOLDER
          * has children the copy created too, and remove() would leave the
@@ -2472,6 +2496,7 @@ undo_one(tiku_trk_fs_t *fs, const undo_rec_t *r, char *err, size_t errmax)
         return (remove_tree(r->from) == 0);
     }
     if (rename(r->from, r->to) == 0) {
+        landed(fs, r->from, r->to);
         return 1;
     }
     if (err != NULL) {
@@ -2502,6 +2527,7 @@ redo_one(tiku_trk_fs_t *fs, tiku_trk_op_t op, const undo_rec_t *r, char *err,
         return (copy_tree(fs, r->to, r->from, err, errmax) == 0);
     }
     if (rename(r->to, r->from) == 0) {
+        landed(fs, r->to, r->from);
         return 1;
     }
     if (err != NULL) {

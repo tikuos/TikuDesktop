@@ -14,6 +14,32 @@
 #include "tiku_trk_folder_file_actions.h"
 #include "tiku_trk_shortcuts.h"
 
+/**
+ * @brief The clipboard follows a file the engine has just moved (FS-060).
+ *
+ * Installed here because this is where the clipboard, the engine and the
+ * backend meet; both shells reach it through one call.  The identity is
+ * read again at the new path -- a move across a device leaves a different
+ * node holding the same file.
+ */
+static void
+clip_follow(void *context, const char *from, const char *to)
+{
+    tiku_trk_folder_file_actions_t *controller = context;
+    tiku_trk_model_t model;
+    uint64_t now = 0u;
+
+    if (controller == NULL || controller->clip == NULL) {
+        return;
+    }
+    if (controller->backend != NULL &&
+        controller->backend->ops->stat(controller->backend, to,
+                                       &model) == 0) {
+        now = model.node_id;
+    }
+    (void)tiku_trk_clip_moved_path(controller->clip, from, to, now);
+}
+
 void
 tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_trk_fs_t *fs,
@@ -40,6 +66,7 @@ tiku_trk_folder_file_actions_init(
         .close_under = close_under,
         .close_context = close_context
     };
+    tiku_trk_fs_set_moved(fs, clip_follow, controller);
 }
 
 int

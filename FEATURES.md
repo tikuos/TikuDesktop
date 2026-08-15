@@ -3588,12 +3588,14 @@ BPose::Draw switches to B_OP_ALPHA with B_CONSTANT_ALPHA and alpha 128 when fCli
 `Pose.cpp` → `BPose::Draw`  
 **TIKU:** The broadcast becomes a VFS watch notification; every window showing the node must re-render, which is exactly the watch semantics ("touched, re-read").  
 **PORT:** Icon and label both fade, in every window at once, because the clipboard is one object the windows share.  Only a CUT fades -- a copied item has nothing about to happen to it.  Verified on screen; the fade is not something a unit check can see.  
-#### FS-055 · core · partial
+#### FS-055 · core · done
 **Paste moves the items when they were Cut and copies them when they were Copied, and a second Paste always copies — Cut is consumed by the first paste.**  
 FSClipboardPaste sorts each clipboard ref into moveList (linksMode or moveMode == kMoveSelectionTo), copyList (kCopySelectionTo) or duplicateList, then for any entry whose moveMode was kMoveSelectionTo sets newMoveMode = kCopySelectionTo and rewrites the clipboard field with clip->ReplaceInt32(modeName, kCopySelectionTo), emitting a kDelete tcnode so the dimming clears.  
 `FSClipboard.cpp` → `FSClipboardPaste`  
 **PORT:** A mixed clipboard is two operations: the cut entries move and the copied ones copy. The engine takes one job at a time, so the copy waits for it to go idle rather than being refused and dropped. A paste spends its cuts by rewriting them to COPY, so the copied entries survive it -- clearing the clipboard would take them with it.  
-**MISSING:** A second paste cannot copy what the first one MOVED, because the clipboard entry still names the old path and is pruned when that file is gone: the entry follows a move only once FS-060's `tiku_trk_clip_moved` has a caller.  
+**PORT:** A second paste copies what the first one moved: the entry follows
+the file the paste moved (FS-060), so the copy is taken from where the file
+is now rather than from a path nothing answers to.  
 *src/ui/commands/tiku_trk_folder_file_actions.c:paste and _pump; src/core/tiku_trk_clip.c:tiku_trk_clip_spend_cuts; tests/test_clip.c and tests/shell/paste.script*
 **PORT:** Both shells: the app shell reaches the same controller, so a mixed clipboard behaves the same there (`tests/shell/paste.script` runs in both).  
 #### FS-056 · important · done
@@ -3619,14 +3621,37 @@ FSClipboardPaste checks model->IsRoot() after processing the clipboard (so the c
 **PORT:** The filesystem move/copy refusal gate recognizes volume roots before queuing work and reports that disks must be handled through their disk icon instead of mutating the root.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_check_move; src/backends/tiku_trk_volume.c*
 **PORT:** The shared queue gate rejects root destinations before copy or move work starts, preserving the source and returning the Disks-specific refusal. `tests/test_volume.c` covers the root predicate.
-#### FS-060 · important · partial
+#### FS-060 · important · done
 **Clipboard entries follow their files: renaming or moving a cut file updates the clipboard, deleting it or unmounting its volume removes it.**  
 BClipboardRefsWatcher node-monitors every clipboard node with B_WATCH_NAME plus a global B_WATCH_MOUNT. B_ENTRY_MOVED -> UpdateNode(node, new ref) which ReplaceRefs, or removes both fields and stops watching if the replace fails; B_ENTRY_REMOVED -> RemoveNode(node, removeFromClipboard=true); B_DEVICE_UNMOUNTED -> RemoveNodesByDevice(device), which matches clipboard field names by the "r<dev>_" prefix.  
 `FSClipboard.cpp` → `BClipboardRefsWatcher::MessageReceived`  
 **TIKU:** Maps onto VFS watch notifications, but VFS watches are per-boot and capped (TIKU_VFS_WATCH_MAX 8) while the clipboard can hold arbitrarily many nodes — the rewrite needs either a bigger watch table or a lazy revalidation-on-paste strategy.  
 **PORT:** The payload follows the file and the MODE does not: an item cut and then renamed is still cut, and the paste uses the name it has now.  
-**MISSING:** In a running shell nothing follows the file: `tiku_trk_clip_moved` has no caller, so a cut file that moves is pruned instead (found closing FS-055).  
-**WIRING:** The entry-following is written and tested; what it needs is a caller -- and NOT the notice path, which was tried: a change record carries `{id, op}` only, the POSIX backend implements no `path_of_id`, and after a move the destination folder usually has no open view to ask. The shell that PERFORMED the move is the one that knows both paths, so the call sites are the drop controller's finish_drop, the paste, the Move-to panel commit and the rename commit -- keyed by path rather than by node id.
+**PORT:** The engine says where an item landed.  Every move, rename and
+trashing ends in a rename(2) with both paths in hand, and each tells one
+listener; the listener is installed where the clipboard, the engine and the
+backend meet, so both shells get it from a single call rather than from four
+command sites that would each have to remember.  The entry is found by the
+path it had, takes the identity the destination has NOW -- a move across a
+device is a copy and a delete, so what arrives is a different node holding
+the same file -- and an entry inside a folder that moved follows with it.
+**PORT:** NOT the notice path, which was tried: a change record carries
+`{id, op}` only, the POSIX backend implements no `path_of_id`, and after a
+move the destination folder usually has no open view to ask.
+**DIVERGES:** Removal stays lazy where the source is eager: an entry whose
+file was deleted, or whose volume went, leaves the clipboard at the next
+paste (FS-058) rather than the moment it goes.  Nothing on screen turns on
+the difference -- a deleted file has no row left to dim, and an unmounted
+volume's windows have gone with it.
+**PORT:** Three of the six places that report a landing are untested: the
+Trash restore, the undo and the redo.  Each is one line beside a successful
+rename, and each was written with the other three rather than reasoned about
+separately.
+*src/backends/tiku_trk_fs.c:landed and tiku_trk_fs_set_moved;
+src/core/tiku_trk_clip.c:tiku_trk_clip_moved_path;
+src/ui/commands/tiku_trk_folder_file_actions.c:clip_follow;
+tests/shell/clipfollow.script; tests/shell/clipfollowtrash.script*
+*Shell: both*
 
 #### FS-061 · important · differs
 **When another application replaces the clipboard contents, all cut/copy highlighting in Tracker disappears.**  

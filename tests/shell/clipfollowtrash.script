@@ -1,0 +1,24 @@
+# shell: desktop
+# work: home
+# FS-060: the Trash is a move like any other, so an item cut and then
+# trashed is still on the clipboard -- under the name it has in there.
+wait 6
+note a.txt is cut, and then trashed before anything is pasted
+click-row 1
+wait 3
+key x ctrl
+wait 3
+key Delete
+wait 5
+expect-alert cannot be reverted
+key m
+wait 30
+expect-no-file /tmp/trk_home/.trk-shell-fixture/a.txt
+expect-file /tmp/trk_home/.Trash/a.txt
+note the entry went into the Trash with it, so pasting where it came from
+note brings it back rather than finding nothing to paste
+key v ctrl
+wait 40
+expect-file /tmp/trk_home/.trk-shell-fixture/a.txt
+expect-no-file /tmp/trk_home/.Trash/a.txt
+quit

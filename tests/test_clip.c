@@ -120,6 +120,47 @@ main(void)
               "a move of something not on the clipboard changes nothing");
     }
 
+    /* And what a SHELL can call, which is told two paths and no identity
+     * (FS-060). */
+    {
+        char there[256], back[256], inside[300], landed[256];
+        tiku_trk_model_t tree[1];
+
+        snprintf(there, sizeof there, "%s/away.txt", dir);
+        snprintf(back, sizeof back, "%s/renamed.txt", dir);
+        (void)tiku_trk_clip_add(&c, set, 2, TIKU_TRK_CLIP_MOVE, 1);
+        check(tiku_trk_clip_moved_path(&c, set[0].path, there, 0u) == 1,
+              "FS-060",
+              "an entry is followed by the path it used to have, the "
+              "engine reporting nothing else");
+        check(strcmp(tiku_trk_clip_at(&c, 0)->path, there) == 0, "FS-060",
+              "the entry points at where the file is now");
+        check(tiku_trk_clip_moved_path(&c, there, back, 909u) == 1 &&
+              tiku_trk_clip_mode_of(&c, 909u) == TIKU_TRK_CLIP_MOVE,
+              "FS-060",
+              "and takes the identity it is given: a move across a device "
+              "is a copy and a delete, so what arrives is a new node");
+        check(tiku_trk_clip_moved_path(&c, "/nowhere/at/all", back, 0u) == 0,
+              "FS-060",
+              "a move of something not on the clipboard changes nothing");
+
+        snprintf(inside, sizeof inside, "%s/box/held.txt", dir);
+        snprintf(landed, sizeof landed, "%s/moved-box", dir);
+        tree[0] = node(inside, 777u, TIKU_TRK_KIND_FILE);
+        (void)tiku_trk_clip_add(&c, tree, 1, TIKU_TRK_CLIP_MOVE, 1);
+        {
+            char folder[256], want[300];
+
+            snprintf(folder, sizeof folder, "%s/box", dir);
+            snprintf(want, sizeof want, "%s/held.txt", landed);
+            check(tiku_trk_clip_moved_path(&c, folder, landed, 0u) == 1 &&
+                  strcmp(tiku_trk_clip_at(&c, 0)->path, want) == 0,
+                  "FS-060",
+                  "a folder that moved takes the cut items inside it "
+                  "along: the entry is under the folder's new name");
+        }
+    }
+
     /* A dead entry is dropped rather than pasted (FS-058). */
     {
         int before = tiku_trk_clip_count(&c);

@@ -125,6 +125,44 @@ tiku_trk_clip_moved(tiku_trk_clip_t *c, uint64_t id, const char *to)
 }
 
 int
+tiku_trk_clip_moved_path(tiku_trk_clip_t *c, const char *from, const char *to,
+                         uint64_t now_id)
+{
+    size_t n;
+    int i, hit = 0;
+
+    if (c == NULL || from == NULL || to == NULL || from[0] == '\0' ||
+        to[0] == '\0') {
+        return 0;
+    }
+    n = strlen(from);
+    for (i = 0; i < c->count; i++) {
+        char rest[TIKU_TRK_PATH_MAX];
+
+        if (strcmp(c->item[i].path, from) == 0) {
+            if (!tiku_trk_clip_moved(c, c->item[i].id, to)) {
+                continue;
+            }
+            if (now_id != 0u) {
+                /* Across a device a move is a copy and a delete, so what
+                 * arrives is a different node with the same contents; the
+                 * entry follows the file, not the inode. */
+                c->item[i].id = now_id;
+            }
+            hit++;
+        } else if (strncmp(c->item[i].path, from, n) == 0 &&
+                   c->item[i].path[n] == '/') {
+            /* A folder that moved took its contents with it. */
+            snprintf(rest, sizeof rest, "%s%s", to, c->item[i].path + n);
+            if (tiku_trk_clip_moved(c, c->item[i].id, rest)) {
+                hit++;
+            }
+        }
+    }
+    return hit;
+}
+
+int
 tiku_trk_clip_removed(tiku_trk_clip_t *c, uint64_t id)
 {
     int at, i;
