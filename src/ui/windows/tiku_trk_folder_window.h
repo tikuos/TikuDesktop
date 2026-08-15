@@ -95,6 +95,10 @@ struct tiku_trk_folder_window {
     int                        had_frame;
     int                        count_last_total;
     int                        count_last_selected;
+    /* What this window's count line says.  Per window, because the cache
+     * above is: a shared one hands a window the other window's count the
+     * first frame its own numbers stop changing. */
+    char                       count_text[256];
     char                       qname[TIKU_TRK_NAME_MAX];
     /* The picture behind it, decoded once and kept with the window that
      * shows it: re-reading the file every frame is a decode per frame. */

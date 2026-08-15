@@ -11,4 +11,5 @@ note and each is where it was left, not where the cascade would put it
 expect-window-at 417 391
 note with the same columns the folder was left showing
 expect-columns 4
+expect-same-as-redraw
 quit

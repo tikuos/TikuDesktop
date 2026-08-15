@@ -742,8 +742,8 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         tiku_desk_fill(surface, count, TIKU_DESK_C_PANEL);
         if (total == folder->count_last_total &&
             selected == folder->count_last_selected &&
-            render->count_text[0] != '\0') {
-            snprintf(label, sizeof label, "%s", render->count_text);
+            folder->count_text[0] != '\0') {
+            snprintf(label, sizeof label, "%s", folder->count_text);
         } else {
             if (total == 0) {
                 snprintf(label, sizeof label, "empty folder");
@@ -756,8 +756,13 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             }
             folder->count_last_total = total;
             folder->count_last_selected = selected;
-            snprintf(render->count_text, render->count_text_size, "%s", label);
+            snprintf(folder->count_text, sizeof folder->count_text, "%s",
+                     label);
         }
+        /* The shell reads one count line, and the one it means is the
+         * front window's: draw order is z-order, so the last window to
+         * write here is the one on top. */
+        snprintf(render->count_text, render->count_text_size, "%s", label);
     }
     tiku_desk_text(surface, font, count.x + 4,
         count.y + (COUNT_HEIGHT - font->height) / 2 + font->ascent,
