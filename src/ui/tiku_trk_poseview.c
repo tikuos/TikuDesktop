@@ -1771,6 +1771,20 @@ tiku_trk_poseview_band(const tiku_trk_poseview_t *v)
     return (v != NULL) ? v->band : 0;
 }
 
+void
+tiku_trk_poseview_damage_row(tiku_trk_poseview_t *v, int index)
+{
+    int rh;
+
+    if (v == NULL || index < 0 || index >= v->count) {
+        return;
+    }
+    rh = (v->row_h > 0) ? v->row_h : 1;
+    tiku_trk_repaint_add(&v->repaint,
+        (tiku_trk_repaint_rect_t){ 0, (index - v->scroll) * rh,
+                                   (v->view_w > 0) ? v->view_w : 1, rh });
+}
+
 int
 tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
                                tiku_trk_repaint_rect_t *out, int max)
@@ -4608,14 +4622,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         flags |= TIKU_TRK_NOTIFY_REDRAW;
         /* One row changed, so one row is what needs painting again: the
          * icon, the size and the date all live inside it (PVL-075). */
-        {
-            int rh = (v->row_h > 0) ? v->row_h : 1;
-
-            tiku_trk_repaint_add(&v->repaint,
-                (tiku_trk_repaint_rect_t){ 0, (at - v->scroll) * rh,
-                                           (v->view_w > 0) ? v->view_w : 1,
-                                           rh });
-        }
+        tiku_trk_poseview_damage_row(v, at);
         {
             /* The changed fact may be the one the listing is ORDERED by, and
              * a row that keeps its slot while its key moves leaves the
@@ -5067,14 +5074,7 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
             /* The row whose reading moved, and no other: a value refresh
              * that redrew the listing would undo the saving the notice
              * path just made (PVL-075). */
-            {
-                int rh = (v->row_h > 0) ? v->row_h : 1;
-
-                tiku_trk_repaint_add(&v->repaint,
-                    (tiku_trk_repaint_rect_t){ 0, (i - v->scroll) * rh,
-                                               (v->view_w > 0) ? v->view_w : 1,
-                                               rh });
-            }
+            tiku_trk_poseview_damage_row(v, i);
             if (v->sort_field == TIKU_TRK_COL_VALUE ||
                 v->sort2_field == TIKU_TRK_COL_VALUE) {
                 /* MA-055: the key this listing is ordered by has moved, so

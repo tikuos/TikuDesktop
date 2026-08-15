@@ -365,6 +365,15 @@ void tiku_trk_poseview_show_selection_when_inactive(tiku_trk_poseview_t *v,
  * would give no feedback at all.
  */
 void tiku_trk_poseview_set_band(tiku_trk_poseview_t *v, int on);
+/**
+ * @brief Mark row @p index as needing painting again.
+ *
+ * The damage a view accumulates is what the draw consumes, so anything
+ * that learns something about ONE row says so here rather than asking for
+ * a whole frame (PVL-075).
+ */
+void tiku_trk_poseview_damage_row(tiku_trk_poseview_t *v, int index);
+
 int tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
                                    tiku_trk_repaint_rect_t *out, int max);
 int tiku_trk_poseview_band(const tiku_trk_poseview_t *v);

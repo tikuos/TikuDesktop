@@ -3612,6 +3612,11 @@ tracker_run(int argc, char **argv)
                     (void)tiku_trk_nodeicon_hint(app.store, &app.thumbs,
                                                  &p->model);
                     budget--;
+                    /* One pose learned what picture it has, so one row is
+                     * what needs painting: a bare dirty here repainted the
+                     * whole listing and undid the damage the notice had
+                     * just recorded (PVL-075). */
+                    tiku_trk_poseview_damage_row(fl->view, k);
                     app.dirty = 1;
                 }
             }

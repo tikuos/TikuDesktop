@@ -14,6 +14,16 @@ expect-rows 3
 note what the frame painted is the vacated strip, not the three rows that
 note did not move
 expect-drawn 1
+note PVL-075: one row's file changes, so one row is painted.  Anything that
+note learns about a single row -- the change notice, the value read, the
+note icon probe -- says which row, rather than asking for a whole frame.
+note Two frames carry it: the notice learns the size, and the icon probe
+note learns the picture a tick later.  Each paints that row and no other.
+draw-reset
+write /tmp/trk_script/a.txt hello there
+wait 40
+expect-drawn 2
+expect-drawn at-least 1
 note and a frame with no damage to go on still paints the whole listing:
 note skipping there would leave a window that never refreshes
 draw-reset
