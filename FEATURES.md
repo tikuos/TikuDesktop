@@ -3525,7 +3525,7 @@ SetupPoseLocation only inherits the source's position when loc == NULL, sourcePa
 MoveEntryToTrash calls FSGetTrashDir(&trashDir, nodeRef.device) — which find_directory()s per-volume, creates the directory with mode 0755 if missing and marks it invisible by writing a PoseInfo with fInvisible = true — then FSMakeOriginalName(name, &trashDir, " copy") when trashDir.Contains(name), reporting the new name to the undo record.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
 **TIKU:** A device namespace has no Trash; nodes there must be non-trashable (capability bit) rather than falling back to delete.  
-**PORT:** One Trash per FILESYSTEM, resolved from the item's own path so trashing stays a rename: a Trash elsewhere turns every trash into a cross-device copy, which on this host simply fails.  It sits at the volume root when that is writable and in the home directory otherwise, which is the writable place on the same filesystem.
+**PORT:** One Trash per FILESYSTEM, resolved from the item's own path so trashing stays a rename: a Trash elsewhere turns every trash into a cross-device copy, which on this host simply fails.  It sits in the home directory whenever home shares the item's filesystem, and at the volume root otherwise -- a root can be writable by everyone (a sticky /tmp), and a Trash made there belongs to whoever trashed first, so home is the per-user writable place on the same filesystem.
 
 #### FS-039 · core · done
 **Trashing an item records its full original path so Restore can put it back, and Restore removes that record on success.**  

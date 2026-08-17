@@ -51,10 +51,11 @@ for s in "$here"/*.script; do
                rm -f "$deskhome/.config/TrackerSettings" ;;
         esac
         # A script that says "# work: home" gets its fixture under $HOME
-        # instead of /tmp.  It matters for anything about the Trash: a
-        # Trash is per filesystem, and on this host /tmp has no writable
-        # one -- so a trash there is a deletion, and a test run there
-        # cannot tell the two apart.
+        # instead of /tmp.  It matters for anything about the Trash: the
+        # Trash resolves into $HOME whenever home shares the item's
+        # filesystem, so a script asserting a path under $HOME/.Trash must
+        # keep its files under $HOME -- a host where /tmp is its own
+        # volume would otherwise resolve them somewhere else.
         work=/tmp/trk_script
         if grep -q '^# work: home' "$s"; then
             work="$deskhome/.trk-shell-fixture"

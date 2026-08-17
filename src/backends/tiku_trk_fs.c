@@ -1577,7 +1577,8 @@ tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
                       size_t max)
 {
     char root[TIKU_TRK_PATH_MAX];
-    struct stat st;
+    const char *home = getenv("HOME");
+    struct stat rs, hs;
 
     if (fs == NULL || out == NULL || !tiku_trk_fs_has_trash(fs)) {
         return -1;
@@ -1585,26 +1586,21 @@ tiku_trk_fs_trash_dir(tiku_trk_fs_t *fs, const char *path, char *out,
     /* Resolved from the ITEM's own filesystem, as Tracker resolves it from
      * the item's own device: a Trash somewhere else turns every trash into
      * a cross-boundary copy, which is exactly what this rule prevents. */
-    volume_root((path != NULL) ? path : getenv("HOME"), root, sizeof root);
-    if (trash_under(root, out, max) == 0) {
+    volume_root((path != NULL) ? path : home, root, sizeof root);
+    /* The home directory first, whenever it shares that filesystem.  A
+     * volume root can be writable by EVERYONE -- a sticky /tmp is one --
+     * and a Trash made there belongs to whoever trashed first; every
+     * other user's trashing then fails on a neighbour's directory.  The
+     * home directory is the per-user writable place on the same
+     * filesystem, which keeps the move a rename AND keeps the Trash
+     * ours. */
+    if (home != NULL && home[0] != '\0' && stat(home, &hs) == 0 &&
+        stat(root, &rs) == 0 && hs.st_dev == rs.st_dev &&
+        trash_under(home, out, max) == 0) {
         return 0;
     }
-    {
-        /* The volume's root is not always writable -- on this host it is
-         * usually "/" and owned by no one the browser runs as.  The home
-         * directory is the writable place ON THE SAME filesystem, which is
-         * the property that matters: the move stays a rename. */
-        const char *home = getenv("HOME");
-        struct stat rs, hs;
-
-        if (home != NULL && home[0] != '\0' && stat(home, &hs) == 0 &&
-            stat(root, &rs) == 0 && hs.st_dev == rs.st_dev &&
-            trash_under(home, out, max) == 0) {
-            return 0;
-        }
-    }
-    (void)st;
-    return -1;
+    /* A volume the home does not live on keeps its Trash at its root. */
+    return (trash_under(root, out, max) == 0) ? 0 : -1;
 }
 
 int
