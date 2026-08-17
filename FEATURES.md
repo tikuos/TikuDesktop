@@ -2,6 +2,54 @@
 
 Extracted from the real source (`~/kintsugi/src/kits/tracker`, `src/apps/deskbar`) on 2026-08-11 by 12 readers, then adversarially verified by 3 agents that opened the cited files.
 
+## Phase-1 rulings (2026-08-18)
+
+The open rows and three recurring class premises were ruled on 2026-08-18.
+The user delegated the ruling in writing ("use your best judgement based on
+tracker being designed for TikuOS devices, not desktop") -- the waivers
+below are made under that authority, and this paragraph is the record of
+it.  The lens: the product is a Tracker for TikuOS devices; host-desktop
+machinery Haiku handed Tracker for free (a locale layer, message archives,
+a second process to talk to, printers) is not commissioned by fidelity
+alone.
+
+Waived outright (verdict now WAIVED, reason on each row):
+
+- **PVL-079, TS-028** -- no mutable date/time format exists anywhere in
+  the port; the fixed width-aware ladder is the design, not a gap.
+- **MA-007** -- no locale catalogue; per its TIKU note the localized-name
+  rename-refusal clause is struck from MA-051 with it (MA-051's other
+  missing clauses are unaffected).
+- **MA-032** -- no version fact in either backend; the firmware-version
+  repoint its TIKU note sketches is a new row for the user to add, not
+  this one.
+- **PVL-086** -- no message-archive layer; replicants install by API
+  (tiku_trk_deskbar_add_replicant), which is the port's mechanism.
+- **AW-034** -- no inter-application messaging; both binaries are single
+  processes whose one external link is the device session.
+
+Kept open: **DB-020**.  Its blocker was half stale -- DB-014's process
+roster exists now -- and the missing half is ordinary work: kill(2) behind
+the same modifier chord on this host, the capability-guarded
+force-terminate of its TIKU note on device.  In scope.
+
+Class rulings, applied when a sweep reaches the named rows.  The struck
+clause no longer counts against the verdict; every OTHER clause in the row
+still does, and the sweep still reads each row against the code:
+
+1. **Inter-application messaging is out of scope.**  Clauses presupposing
+   messengers, forwarded refs, scripting-back or a second process are
+   struck.  Applies to at least: PVS-033, PVK-053, PVN-008, CW-038,
+   AW-061, DB-021.
+2. **The printers folder and print verbs are out of scope**: TikuOS has no
+   printing subsystem and none is planned.  Applies to at least: PVS-051,
+   PVK-044, CW-022, CW-031, CW-035, CW-042, CW-044, MA-016, IV-009,
+   AW-013.
+3. **Archived-object (flattened-message) transport is out of scope**;
+   replicant behaviour itself stays in contract through the API install
+   path.  Applies to at least: AW-007, AW-024, AW-104, DB-001, DB-038,
+   DB-040, DB-042, DB-044.
+
 ## The rules of this file
 
 ## 2026-08-14 implementation batch
@@ -1117,13 +1165,13 @@ AddPosesTask reads TrackerSettings().HideDotFiles() once per load and skips `.`/
 **PORT:** `tiku_trk_poseview_set_hide_dotfiles()` applies a leading-dot predicate and performs a full reload. The app shell reads the persisted preference, while the desktop syncs it across every open folder view.
 *src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
-#### PVL-079 · polish · open
+#### PVL-079 · polish · WAIVED
 **Changing the system date/time format repaints every date column in every window.**  
 AddColumnList / AddColumn / SetupDefaultColumnsIfNeeded call StartWatchDateFormatChange() the first time a B_TIME_TYPE column exists (BHandler::StartWatching on the Tracker messenger, kDateFormatChanged); RemoveColumn calls StopWatchDateFormatChange() when the last one goes. The notice runs UpdateDateColumns(), which re-renders those widgets.  
 `PoseView.cpp` → `BPoseView::StartWatchDateFormatChange / StopWatchDateFormatChange / UpdateDateColumns; MessageReceived (case kDateFormatChanged)`  
 **TIKU:** Any locale/unit-formatted descriptor column needs the same "formatting changed, re-render without re-reading" path.
 **SUBSYSTEM:** Settings/locale layer: no date-format setting or change notice exists anywhere (no format-changed event in tiku_trk_notify.h; grep empty); the Date column's rendering varies only with column width (tiku_trk_attr_time_fit, src/ui/tiku_trk_poseview.c:220-222), so the premise 'the system format changed' has no source to fire from.  
-**WAIVER CANDIDATE:** No date/time format setting and no format-changed notice exist anywhere in the port, so the row's premise has nothing to fire from; the width ladder is not an alternative to it.  
+**WAIVED (2026-08-18):** No date/time format setting and no format-changed notice exist anywhere in the port, so the row's premise has nothing to fire from; the width ladder is not an alternative to it.  
 **PORT:** Date columns use a fixed width-aware format ladder at draw time; there is no mutable locale setting or change event to watch, so a date-format change is deliberately represented by the next repaint rather than a subscription.
 
 #### PVL-080 · important · differs ⟨found by verification⟩
@@ -1171,11 +1219,11 @@ ExcludeTrashFromSelection() runs at the top of both DoDelete() and DoMoveToTrash
 **MISSING:** The pose selection is never pruned, so the Trash stays selected and the status line keeps counting it; the refusal happens one layer down as the queue is built.  
 **PORT:** The port really does make the Trash untrashable, by an actual alternative implementation one layer down — every destructive/queued op drops paths containing "/.Trash" as the queue is built — though the pose selection itself is never pruned so the Trash stays selected and the status line still counts it.  
 
-#### PVL-086 · polish · open ⟨found by verification⟩
+#### PVL-086 · polish · WAIVED ⟨found by verification⟩
 **An archived object (a replicant) dropped on the view is routed through the same drop handling as a file drop.**  
 TPoseViewFilter::Filter intercepts B_ARCHIVED_OBJECT and calls fPoseView->HandleMessageDropped(message), skipping the message if handled; this is how replicants get dropped onto the Desktop.  
 `PoseView.cpp` → `TPoseViewFilter::Filter`
-**WAIVER CANDIDATE:** The premise is a flattened-BMessage archive (B_ARCHIVED_OBJECT) arriving by drag: the port has no message-archive layer at all — nothing can represent 'an archived object' — and no inbound drop channel either (no XDND; grep 'Xdnd' over the tree is empty). The port's replicants do exist but are installed by API call (tiku_trk_deskbar_add_replicant, src/shell/tiku_trk_desktop.c:1600-1607), not by dropping an archive. Waiver candidate.  
+**WAIVED (2026-08-18):** The premise is a flattened-BMessage archive (B_ARCHIVED_OBJECT) arriving by drag: the port has no message-archive layer at all — nothing can represent 'an archived object' — and no inbound drop channel either (no XDND; grep 'Xdnd' over the tree is empty). The port's replicants do exist but are installed by API call (tiku_trk_deskbar_add_replicant, src/shell/tiku_trk_desktop.c:1600-1607), not by dropping an archive. Waived: no message-archive layer will be built; the API install path is the port's replicant mechanism.  
 
 #### PVL-087 · important · partial ⟨found by verification⟩
 **Every selection change notifies the window, which re-enables/disables menu items and updates the "N items selected" count.**  
@@ -3872,12 +3920,12 @@ src/ui/tiku_trk_poseview.c:cell_text_at/pose_parts/field_cmp;
 src/shell/tiku_trk_app.c:draw_pose_icon; src/shell/tiku_trk_desktop.c:draw_pose_icon;
 tests/test_model.c; tests/shell/desktop.script*
 
-#### MA-007 · polish · open
+#### MA-007 · polish · WAIVED
 **A localized display name is looked up at most once per model and only when the system-wide "prefer localized filenames" flag is set.**  
 fLocalizedNameIsCached latches on first call; BLocaleRoster::GetLocalizedFileName decides fHasLocalizedName. Called from OpenNodeCommon only when gLocalizedNamePreferred. The flag itself is set at Tracker startup and updated on B_LOCALE_CHANGED (Tracker.cpp).  
 `Model.cpp` → `Model::CacheLocalizedName`  
 **TIKU:** Likely dropped; no locale roster on-device. If dropped, the corresponding rename refusal for localized names must also go.
-**WAIVER CANDIDATE:** Localized filenames require a system catalog mapping on-disk names to translated ones; neither backend has one and the port has no locale machinery anywhere (grep locale/localized over src/ hits only comments). The row's own TIKU note says 'likely dropped'. Waiver candidate — and per the TIKU note, the paired rename-refusal-for-localized-names clause in MA-051 must be waived with it.  
+**WAIVED (2026-08-18):** Localized filenames require a system catalog mapping on-disk names to translated ones; neither backend has one and the port has no locale machinery anywhere (grep locale/localized over src/ hits only comments). The row's own TIKU note says 'likely dropped'. Waived — and per the TIKU note, the paired rename-refusal-for-localized-names clause is struck from MA-051 with it; MA-051's other missing clauses are unaffected.  
 
 #### MA-008 · core · partial
 **A symlink pose behaves as its target for icons, sorting, drops and size, but keeps its own name and its own underline decoration.**  
@@ -4075,12 +4123,12 @@ First character: 'd' directory, 'l' symlink, 'b' block device, 'c' character dev
 **PORT:** The permissions slot is occupied by a working alternative rather than left empty: a "Cap" column carrying each node's manifest capability token (with "-" when absent and "?" when the manifest was cut), plumbed through the backend, sortable via field_cmp and toggleable from the Attributes menu — the capability-in-this-slot adaptation the row's TIKU note asks for, though not an rwx string.  
 *src/ui/tiku_trk_poseview.c:190 cell_text_at COL_CAP; src/backends/tiku_trk_backend_tiku.c:126 req_cap; src/ui/tiku_trk_poseview.c:337 field_cmp COL_CAP*
 
-#### MA-032 · polish · open
+#### MA-032 · polish · WAIVED
 **The app and system version columns read the binary's version resource and show "-" when there is none.**  
 Opens the model, dynamic_casts its node to BFile, builds a BAppFileInfo and reads B_APP_VERSION_KIND or B_SYSTEM_VERSION_KIND, showing version.short_info. Model::GetVersionString formats major.middle.minor and GetLongVersionString returns long_info for the Info window.  
 `WidgetAttributeText.cpp` → `VersionAttributeText::ReadValue`  
 **TIKU:** No app version resources; either drop or repoint at a firmware/module version exposed through the namespace.
-**WAIVER CANDIDATE:** Neither backend has a version fact (tiku_trk_facts_t carries perm/cap/meta/size/mtime only, model.h:63-74) and Linux binaries carry no B_APP_VERSION resource for any reader to read — the row's premise (a version resource in the file) cannot exist here. The TIKU note's repoint (firmware/module version via the namespace) would be a new feature for the user to choose. Waiver candidate.  
+**WAIVED (2026-08-18):** Neither backend has a version fact (tiku_trk_facts_t carries perm/cap/meta/size/mtime only, model.h:63-74) and Linux binaries carry no B_APP_VERSION resource for any reader to read — the row's premise (a version resource in the file) cannot exist here. The TIKU note's repoint (firmware/module version via the namespace) would be a new feature for the user to choose. Waived; the firmware repoint, if ever wanted, is a new row the user adds.  
 
 #### MA-033 · core · differs
 **An arbitrary attribute column reads at most 1023 bytes of string data, and reads numeric attributes only when they are eight bytes or smaller; anything else renders as "-".**  
@@ -5768,13 +5816,13 @@ Copy flattens SaveState(BMessage) under clipboard type "application/tracker-colu
 Built by copying the Attributes menu items from index 3 onward (skipping Copy layout, Paste layout and the separator) with the message what changed to kArrangeBy. Choosing an attribute that has no column adds the column first; choosing the current primary sort sets the sort hash to 0; secondary sort is always cleared and Cleanup(true) runs. The submenu marks the current primary sort and the reverse-order item.  
 `ContainerWindow.cpp` → `BContainerWindow::NewArrangeByMenu`  
 
-#### TS-028 · polish · open
+#### TS-028 · polish · WAIVED
 **Time-valued columns repaint themselves when the system date/time format changes.**  
 Adding the first B_TIME_TYPE column starts watching kDateFormatChanged; removing the last one stops. On notice, only the rectangles of the time columns are invalidated.  
 `PoseView.cpp` → `BPoseView::UpdateDateColumns`  
 **TIKU:** Becomes a VFS watch subscription on a format/locale node; same start-on-first-user, stop-on-last-user reference discipline.
 **BLOCKED:** Waits on a date-format setting or notice source, which the port does not have: time rendering is a fixed compile-time strftime ladder (forms[] at src/core/tiku_trk_attr.c:544-549, fallback "%m/%d/%y" at :588) consulted per draw; no locale/format setting exists anywhere in src/ (grep for a date-format setting returns nothing), so there is no event to watch and no start-on-first-column/stop-on-last discipline to attach it to. TS-034 (differs) already records that date-format watching is vacuous here.  
-**WAIVER CANDIDATE:** Same premise as PVL-079: there is no mutable date format to change, so the start-on-first-column/stop-on-last watcher has nothing to watch.  
+**WAIVED (2026-08-18):** Same premise as PVL-079: there is no mutable date format to change, so the start-on-first-column/stop-on-last watcher has nothing to watch.  
 **PORT:** Time columns use the fixed width-aware format ladder on every draw. Since no mutable date-format setting or notification source exists, there is no start-on-first-column/stop-on-last watcher to install.
 
 #### TS-029 · core · partial
@@ -6324,11 +6372,11 @@ SelectChildInParentSoon -> RunLater(SelectChildInParent, 100ms delay, 200ms peri
 **MISSING:** There is still no retry-until-it-shows-up with a 5 s timeout (the task loop that would host it is instantiated by no shell), and only the new-folder operation selects what it made -- duplicate and paste select nothing.  The desktop shell's half is no longer missing: Ctrl+N creates and names a folder there too, proven by tests/shell/smoke.script in both binaries.
 *Audited 2026-08-12: `src/shell/tiku_trk_app.c:1215-1243 (fs_new_folder -> after_op -> index_of_path -> poseview_click)` `src/shell/tiku_trk_desktop.c:1366-1371 (menu_invoke default: NEW_FOLDER does nothing in the desktop shell)` `src/core/tiku_trk_task.c:139-159 (unused retry machinery)`*  
 *Shell: both*  
-#### AW-034 · important · open
+#### AW-034 · important · WAIVED
 **Refs forwarded to a handler keep the originating pose view's messenger and any be:* fields (e.g. be:line / be:column from /bin/open), so line-jumping and scripting-back still work.**  
 If "TrackerViewToken" messenger present it is copied alone; otherwise every field whose name starts with "be:" is copied into the bundled message. "nodeRefsToClose" / "nodeRefToSelect" are read per-index as B_RAW_TYPE data.  
 `Tracker.cpp` → `TTracker::RefsReceived`
-**WAIVER CANDIDATE:** there is no inter-application messaging: messengers, forwarded refs and be:* fields presuppose a second process and a message system, and both binaries are single self-contained processes whose only external link is the device serial session (src/backends/tiku_trk_backend_tiku.c:8,517-519); no handler apps, no scripting-back target -- waiver candidate  
+**WAIVED (2026-08-18):** there is no inter-application messaging: messengers, forwarded refs and be:* fields presuppose a second process and a message system, and both binaries are single self-contained processes whose only external link is the device serial session (src/backends/tiku_trk_backend_tiku.c:8,517-519); no handler apps, no scripting-back target -- waived; no message system will be built  
 
 #### AW-035 · important · done
 **Choosing the Tracker itself as the Open With handler is redirected to the running Tracker instead of launching a second copy.**  
@@ -7162,7 +7210,7 @@ Requires clicks>1, the same item as the previous click, and delta <= get_click_s
 kill_team() per team, then B_SOME_APP_QUIT to be_app and B_SOME_APP_QUIT (single team) or kRemoveTeam (multiple) with "itemIndex" to the owning menu so it removes the item without waiting for the roster  
 `TeamMenuItem.cpp` → `TTeamMenuItem::HandleMouseDown`  
 **TIKU:** Needs a force-terminate capability bit; guard it behind a capability rather than a modifier combo alone
-**BLOCKED:** waits on a force-terminate primitive and the multi-app roster (DB-014), neither of which exists: the team-row click path handles only the expander strip and the secondary button (src/deskbar/tiku_trk_deskbar.c:738-744), and grep 'kill' over src returns one unrelated comment (src/shell/tiku_trk_desktop.c:422)  
+**BLOCKED:** Half of this blocker went stale: the multi-app roster exists (DB-014 seeds the team list from the live process set -- /proc on this host). What is still absent is only the force-terminate path itself: the team-row click handles the expander strip and the secondary button (src/deskbar/tiku_trk_deskbar.c:738-744) and nothing in src calls kill(). Ruled in scope (Phase-1 rulings, 2026-08-18): kill(2) on the team's pids behind the same modifier chord here; the capability-guarded force-terminate of the TIKU note on device.
 
 #### DB-021 · important · partial
 **Middle-clicking an application launches a new instance of it; Ctrl+click brings all its windows to front; Ctrl+Shift+click minimizes them all; Shift+middle-click on a window entry closes that window**  
