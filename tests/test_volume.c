@@ -39,6 +39,27 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
+/**
+ * @brief Run under a home of this test's own.
+ *
+ * The Trash-union cases resolve trash directories from $HOME, and
+ * resolving one CREATES it -- on a host where ~/.Trash is the account's
+ * real Trash, that is a directory this test has no business making.
+ */
+static void
+own_home(void)
+{
+    char fixture[512];
+    const char *real = getenv("HOME");
+
+    if (real == NULL || real[0] == '\0') {
+        return;
+    }
+    snprintf(fixture, sizeof fixture, "%s/.tiku_trk_vol_home", real);
+    (void)mkdir(fixture, 0755);
+    (void)setenv("HOME", fixture, 1);
+}
+
 int
 main(void)
 {
@@ -47,6 +68,7 @@ main(void)
     char why[200];
     int n, i, boots = 0;
 
+    own_home();
     printf("reading the mount table\n");
     n = tiku_trk_volumes_scan(&vs);
     check(n > 0, "MA-021", "at least one volume is mounted");

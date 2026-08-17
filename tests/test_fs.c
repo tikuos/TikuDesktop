@@ -93,15 +93,41 @@ run_to_end(tiku_trk_fs_t *fs)
     }
 }
 
+/**
+ * @brief Run under a home of this test's own.
+ *
+ * Everything below resolves the Trash from $HOME, and on a host where
+ * ~/.Trash IS the account's real Trash, the setup's empty-trash pass
+ * would empty it for real.  A subdirectory of the real home keeps the
+ * property the cross-device cases need -- a filesystem different from
+ * /tmp -- while keeping every Trash this binary touches its own.
+ */
+static void
+own_home(void)
+{
+    char fixture[512];
+    const char *real = getenv("HOME");
+
+    if (real == NULL || real[0] == '\0') {
+        return;                 /* the Trash cases already skip */
+    }
+    snprintf(fixture, sizeof fixture, "%s/.tiku_trk_fs_home", real);
+    (void)mkdir(fixture, 0755);
+    (void)setenv("HOME", fixture, 1);
+}
+
 int
 main(void)
 {
     const char *A = "/tmp/trk_fs_a", *B = "/tmp/trk_fs_b";
     char pa[256], pb[256], name[128], err[256];
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
-    tiku_trk_fs_t *fs = tiku_trk_fs_new(b);
+    tiku_trk_backend_t *b;
+    tiku_trk_fs_t *fs;
     const char *list[2];
 
+    own_home();
+    b = tiku_trk_backend_posix_open();
+    fs = tiku_trk_fs_new(b);
     (void)mkdir(A, 0755);
     (void)mkdir(B, 0755);
     snprintf(pa, sizeof pa, "%s/note.txt", A);
