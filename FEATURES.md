@@ -5506,12 +5506,12 @@ shown constantly, so the permanent tier has no producer and is exercised only
 by its test.
 *src/ui/tiku_trk_nodeicon.c:_deleted/_removing/_preload;
 src/ui/tiku_trk_poseview.c:tiku_trk_poseview_notify; tests/test_nodeicon.c*
-#### IV-042 · core · partial
+#### IV-042 · core · done
 **A symlink shows its target's icon; a broken symlink shows a broken-link icon.**  
 BPose::ResolvedModel returns LinkTo() when the link resolves and the symlink Model itself when it does not; the unresolved Model's MIME type is B_LINK_MIMETYPE ("application/x-vnd.Be-symlink"), which Tracker installs with R_BrokenLinkIcon. Attributes and label always come from the symlink, only the icon from the target.  
 `src/kits/tracker/Pose.h` → `BPose::ResolvedModel`  
-**MISSING:** Broken-ness is signalled (the backend sets facts.link_broken, the Kind column says "Broken link", and desktop.c paints the row's art dimmed), but the "a symlink shows its target's icon" clause is entirely missing — every SYMLINK model returns the "symlink" art regardless of what it resolves to.  
-*src/core/tiku_trk_model.c:tiku_trk_model_icon_name (case TIKU_TRK_KIND_SYMLINK)*
+**PORT:** Both clauses hold: a resolving symlink wears its TARGET's art -- the backend stats through the link, so the model's type is the target's, and the icon resolves through the same table walk -- while attributes and label stay the link's.  A broken link wears the link art, which is Haiku's own broken-link blob byte-for-byte, with the Kind column and the dimmed row carrying the distinction.  
+*src/core/tiku_trk_model.c:tiku_trk_model_icon_name; src/backends/tiku_trk_backend_posix.c:px_stat; tests/test_model.c (IV-042)*
 
 #### IV-043 · important · done
 **A symlink's name is underlined in the name column.**  

@@ -245,6 +245,18 @@ tiku_trk_model_icon_name(const tiku_trk_model_t *m)
     case TIKU_TRK_KIND_DESKTOP:
         return "desktop";
     case TIKU_TRK_KIND_SYMLINK:
+        if (!m->facts.link_broken) {
+            /* The TARGET's art: attributes and label stay the link's, only
+             * the icon comes from what it points at (IV-042).  The model
+             * already carries the target's nature in its type -- the
+             * backend stats through a resolving link. */
+            int r = type_row(m->type);
+
+            if (r >= 0 && kTypes[r].icon[0] != '\0') {
+                return kTypes[r].icon;
+            }
+            return "file";
+        }
         /* Haiku's broken-link blob is byte-identical to its symlink one, so
          * there is no art to distinguish them and inventing some would be a
          * different icon set.  The Kind column carries the distinction, and

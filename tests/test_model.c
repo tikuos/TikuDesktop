@@ -171,6 +171,25 @@ test_posix(void)
               strcmp(tiku_trk_model_icon_name(&m), "trash_empty") == 0,
               "an empty Trash reports empty and draws the empty icon");
 
+    {   /* IV-042: a symlink wears its TARGET's icon; only a broken one
+         * wears the link art. */
+        tiku_trk_model_t lm;
+
+        memset(&lm, 0, sizeof lm);
+        lm.kind = TIKU_TRK_KIND_SYMLINK;
+        snprintf(lm.type, sizeof lm.type, "text/plain");
+        check(strcmp(tiku_trk_model_icon_name(&lm), "text_file") == 0,
+              "IV-042: a link to a text file wears the text-file art");
+        snprintf(lm.type, sizeof lm.type,
+                 "application/x-vnd.Be-directory");
+        check(strcmp(tiku_trk_model_icon_name(&lm), "folder") == 0,
+              "IV-042: a link to a folder wears the folder art");
+        lm.facts.link_broken = 1;
+        check(strcmp(tiku_trk_model_icon_name(&lm), "symlink") == 0,
+              "IV-042: only a broken link wears the link art");
+    }
+
+
         snprintf(junk, sizeof junk, "%s/thrown.txt", tr);
         {
             FILE *f = fopen(junk, "w");
