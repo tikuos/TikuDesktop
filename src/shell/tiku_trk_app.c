@@ -3461,9 +3461,9 @@ tracker_run(int argc, char **argv)
          * poll, the armed rename and the barber pole are all timed, and a
          * loop that spun without time passing would test none of them. */
         if (a.loop != NULL) {
-            if (tiku_trk_loop_pulse(a.loop) > 0) {
-                a.dirty = 1;
-            }
+            /* A task that changed something on screen dirties the surface
+             * itself; running is not, by itself, a repaint. */
+            (void)tiku_trk_loop_pulse(a.loop);
         }
         {
             /* Sleep until the next task is due, or one heartbeat,

@@ -7115,7 +7115,8 @@ ClearMenuBuildingState sets fMenuBuilt=false; MenusEnded additionally calls sDes
 The parent item's message is kShutdownSystem with "confirm"=true; submenu items carry bare kShutdownSystem/kRebootSystem; both route to BRoster::Private::ShutDown(reboot, confirm, false)  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **TIKU:** Maps to a TikuOS power/reset request; the confirm flag distinction should survive  
-**MISSING:** A single 'Shut down…' item exists and acts immediately (case 9 -> TIKU_TRK_DB_QUIT -> app.running = 0), but there is no confirmation on the parent item and no Power off / Restart submenu, so the confirm-vs-immediate distinction the row is about does not exist.  
+**MISSING:** The Power off / Restart submenu with its confirm-vs-immediate split remains absent.  The parent item keeps its ellipsis's promise now: Shut down… asks, Cancel the default, and Escape means no.  
+*src/shell/tiku_trk_desktop.c (TAG_SHUTDOWN); tests/shell/shutdownask.script*  
 *src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click case 9; src/shell/tiku_trk_desktop.c:main TIKU_TRK_DB_QUIT arm*
 
 #### DB-007 · important · done
@@ -7178,7 +7179,7 @@ Refused when (flags & B_BACKGROUND_APP) != 0 or signature matches kDeskbarSignat
 **Launching a second instance of an already-running application adds it to the existing entry rather than creating a new one; the entry disappears only when its last instance quits**  
 Matched case-insensitively by signature into BarTeamInfo::teams; second and later launches broadcast kAddTeam, and quits broadcast kRemoveTeam until the last one, which broadcasts B_SOME_APP_QUIT and deletes the BarTeamInfo  
 `BarApp.cpp` → `TBarApp::RemoveTeam`  
-**MISSING:** A repeat launch folds into the existing entry (name scan returns the existing index instead of adding a row), but matching is case-sensitive rather than case-insensitive and there is no instance count and no removal path at all — no remove_team, no team_count decrement anywhere — so the 'disappears when its last instance quits' clause is missing.  
+**MISSING:** There is no instance count and no removal path -- no remove_team, no team_count decrement -- so the 'disappears when its last instance quits' clause is missing.  Matching folds case now, as the source folds signatures.  
 *src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_add_team (dedupe loop line 99); no remove_team in src*
 
 #### DB-016 · important · partial
@@ -7399,8 +7400,8 @@ MouseDown polls the mouse every 50ms and bails if it moves more than 4px in eith
 BDateTimeFormat with fields HOUR|MINUTE plus SECOND/WEEKDAY/TIMEZONE; window pulse rate is set to 1000000us; the view only redraws when the formatted string actually changed, and re-measures/re-centers itself when it does. A leading zero is stripped from the tooltip date  
 `TimeView.cpp` → `TTimeView::Pulse`  
 **TIKU:** Needs a wall-clock source and locale formatting; on a microwatt target a 1 Hz repaint is a power decision worth revisiting  
-**MISSING:** The clock renders short date + time ("7 Aug  16:26"), but there are no seconds / day-of-week / time-zone options, no long-form-date tooltip, and no 1 Hz repaint — it is redrawn only when something else dirties the surface, so with no tray replicants the displayed minute can go stale.  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_draw lines 549-566; src/shell/tiku_trk_desktop.c:main dirty-driven draw loop*
+**MISSING:** The long-form-date tooltip remains absent.  The options claims went stale -- seconds, day of week and time zone are live settings the clock's own menu toggles -- and the minute can no longer go stale: the task loop pulses the clock once a second.  
+*src/deskbar/tiku_trk_deskbar.c (settings-driven strftime, the clock menu); src/shell/tiku_trk_desktop.c:tick_clock*  
 
 #### DB-045 · important · done
 **Left-clicking the clock pops up a calendar window; clicking it again just re-activates the existing one, and the calendar closes as soon as it loses focus or Esc is pressed**  
@@ -7488,14 +7489,15 @@ auto-raise on it is painted BEFORE the windows until the pointer touches it.
 src/shell/tiku_trk_desktop.c:draw_all; tests/test_deskbar_dock.c*  
 *Shell: desktop*  
 
-#### DB-053 · important · partial
+#### DB-053 · important · done
 **Deskbar refuses to be minimized, refuses to be closed, and Cmd+Q closes its preferences window instead of quitting**  
 Minimize(bool) only forwards a false; QuitRequested returns false when the message carries "shortcut"; a genuine system shutdown saves settings first. The window is created with B_NOT_CLOSABLE|B_NOT_MINIMIZABLE|B_NOT_MOVABLE|B_AVOID_FRONT on B_ALL_WORKSPACES  
 `BarApp.cpp` → `TBarApp::QuitRequested`
 **PORT:** The Deskbar is hosted by the desktop process and has no independent close/minimize operation; its policy refuses quit while Cmd+Q closes only preferences (`src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_quit_policy`; `tests/test_deskbar_dock.c`).
-**WAIVER CANDIDATE:** the Deskbar is not a window: it is a strip composited by the desktop's own draw pass (src/shell/tiku_trk_desktop.c:1516) and never enters the desk window list, so there is nothing to minimize or close; and Ctrl+Q quits the single process containing the bar (src/shell/tiku_trk_desktop.c:2446-2448) — a Deskbar with its own survivable lifetime (and a prefs window for Cmd+Q to close instead) cannot exist in a one-process desktop. Waiver candidate  
+**CHECKED:** An older note here proposed waiving on the ground that no prefs window existed for Cmd+Q to close instead; both preferences windows exist now and Cmd+Q closes the focused one, so the waiver premise dissolved and the row closed on its merits.  
 **PORT:** The strip cannot be independently minimized or closed; its remaining process-level quit behavior is tracked separately as an incomplete clause.
-**MISSING:** The hosted Deskbar cannot be minimized or closed, but process-level Cmd+Q still exits instead of closing only Deskbar preferences.
+**PORT:** All three clauses hold: the hosted Deskbar has no close or minimize to refuse -- the refusal is construction -- its quit policy refuses the shortcut, and Cmd+Q with either preferences window focused closes THAT window and leaves the desktop standing.  
+*src/shell/tiku_trk_desktop.c (the two Cmd+Q guards); src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_quit_policy; tests/test_deskbar_dock.c*
 
 #### DB-054 · core · done
 **Ctrl+Tab from any window opens the application switcher; holding Ctrl keeps it on screen, Shift reverses direction, and releasing Ctrl within ~180ms instead performs an instant switch to the previous application without ever showing the panel**  
@@ -7618,7 +7620,8 @@ NodePreloader::PreloadOne calls TTracker::WatchNode(dir, B_WATCH_DIRECTORY) and 
 TTimeView::MouseDown routes B_SECONDARY_MOUSE_BUTTON to ShowTimeOptions(screen point) and B_PRIMARY_MOUSE_BUTTON to ShowCalendar(point). ShowCalendar re-activates an existing CalendarMenuWindow if one is open, else places it 4 px below the view, flipping above the view when it would fall past the screen bottom. The clock's tooltip is the current date string, refreshed in Update().  
 `TimeView.cpp` → `TTimeView::MouseDown / TTimeView::ShowCalendar / TTimeView::ShowTimeOptions`  
 **TIKU:** Requires an RTC; the calendar popup is droppable, but "status area item with its own context menu" is the reusable shape.  
-**MISSING:** Clicking the clock opens a calendar popup, but the button is not discriminated — the clock branch ignores `secondary`, so right-click opens the calendar too and the Time preferences… / Hide clock / Show calendar… context menu does not exist; placement is a fixed rect beside the bar with no 4 px-below rule or bottom-of-screen flip, and there is no date tooltip.  
+**MISSING:** Placement is a fixed rect beside the bar -- no 4 px-below rule, no bottom-of-screen flip -- and there is no date tooltip.  The discrimination claims went stale: the secondary button opens the clock's own menu (Hide clock / seconds / day of week / time zone) while the primary opens the calendar.  
+*src/deskbar/tiku_trk_deskbar.c (the clock_menu_open branch)*  
 *src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 744-746; calendar rect at tiku_trk_deskbar_draw line 595*
 
 #### DB-071 · important · done

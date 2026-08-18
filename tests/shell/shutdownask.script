@@ -1,0 +1,14 @@
+# shell: desktop
+# DB-006: Shut down… keeps its ellipsis: it asks, and Escape means no.
+wait 8
+press 900 20 1
+wait 2
+release 900 20 1
+wait 5
+menu-pick Shut down
+wait 5
+expect-alert Shut down
+key Escape
+wait 3
+expect-file /tmp/trk_script/a.txt
+quit

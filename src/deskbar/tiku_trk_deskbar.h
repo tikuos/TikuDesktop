@@ -287,6 +287,17 @@ tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_trk_backend_t *backend);
  */
 void tiku_trk_deskbar_set_clock(tiku_trk_deskbar_t *db, time_t at);
 
+/**
+ * @brief The fields the clock's rendering varies with, as one string.
+ *
+ * The pulse compares this instead of dirtying blindly, so a repaint is
+ * owed only when the displayed time actually turned over (DB-044).
+ *
+ * @return Nonzero while the clock is shown.
+ */
+int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
+                                 size_t max);
+
 /** @brief Attach the durable store used for tray subscriptions. */
 void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,
                                 tiku_trk_store_t *store);

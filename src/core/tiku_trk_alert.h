@@ -52,6 +52,7 @@ typedef struct {
 #define TIKU_TRK_ALERT_TAG_DELETE   4
 #define TIKU_TRK_ALERT_TAG_BROKEN_OPEN 5
 #define TIKU_TRK_ALERT_TAG_OPEN_ANYWAY 6
+#define TIKU_TRK_ALERT_TAG_SHUTDOWN 7
 
 void tiku_trk_alert_reset(tiku_trk_alert_t *a);
 

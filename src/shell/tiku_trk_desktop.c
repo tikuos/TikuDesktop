@@ -161,6 +161,7 @@ typedef struct desktop {
      * cooperative protothread the TIKU note asks for in place of the
      * source's worker thread (AW-083). */
     tiku_trk_loop_t     *loop;
+    char                 clock_stamp[64]; /* what the clock last showed  */
     /* Where the last press landed, for the long press and for telling a
      * slow second click from a drag. */
     int64_t              press_at;
@@ -438,6 +439,10 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
         tiku_trk_fs_resolve_error(app->fs,
                                   alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_SHUTDOWN) {
+        if (alert->chosen != alert->cancel) {
+            app->running = 0;
+        }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_OPEN_ANYWAY) {
         if (alert->chosen != alert->cancel) {
             tiku_trk_open_with_window_confirmed(&app->open_with_window);
@@ -468,6 +473,28 @@ status_stop(void *context)
     desktop_t *app = context;
 
     tiku_trk_fs_cancel(app->fs);
+}
+
+/** @brief The clock's own pulse: a minute must not go stale (DB-044). */
+static int
+tick_clock(void *ctx)
+{
+    desktop_t *app = ctx;
+    char stamp[64];
+
+    if (tiku_trk_deskbar_clock_stamp(app->deskbar, stamp,
+                                     sizeof stamp) &&
+        strcmp(stamp, app->clock_stamp) != 0) {
+        /* Only when the displayed time turned over: a blind dirty every
+         * second would repaint rows the economy checks rightly budget.
+         * The FIRST observation is a baseline, not a change -- settings
+         * and the fixture freeze both arrive after the loop starts. */
+        if (app->clock_stamp[0] != '\0') {
+            app->dirty = 1;
+        }
+        snprintf(app->clock_stamp, sizeof app->clock_stamp, "%s", stamp);
+    }
+    return 0;                       /* periodic: never done */
 }
 
 /**
@@ -1998,6 +2025,10 @@ tracker_run(int argc, char **argv)
     tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
     app.loop = tiku_trk_loop_new();
+    /* Once a second, so the displayed minute can never go stale while
+     * nothing else dirties the surface (DB-044). */
+    (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
+                                0);
     tiku_trk_open_with_window_init(&app.open_with_window, app.desk,
         DESK_W, DESK_H, &app.dirty, open_with_window_launch, &app,
         alert_model(&app), app.store);
@@ -2816,7 +2847,13 @@ tracker_run(int argc, char **argv)
                                 &app.deskbar_prefs_window);
                             break;
                         case TIKU_TRK_DB_QUIT:
-                            app.running = 0;
+                            /* The ellipsis is a promise: Shut down… asks
+                             * before anything is taken down (DB-006). */
+                            tiku_trk_alert_open(alert_model(&app),
+                                TIKU_TRK_ALERT_WARN,
+                                TIKU_TRK_ALERT_TAG_SHUTDOWN,
+                                "Shut down the desktop?",
+                                "Cancel|Shut down");
                             break;
                         case TIKU_TRK_DB_OPEN_PATH:
                             (void)open_folder(&app, pick.path);
@@ -3683,6 +3720,18 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    tiku_desk_workspace_focused(app.desk) ==
+                        tiku_trk_deskbar_prefs_window_handle(
+                            &app.deskbar_prefs_window)) {
+                    /* Deskbar preferences close; the desktop stays: quit
+                     * belongs to the desktop, not to a settings window
+                     * (DB-053). */
+                    tiku_trk_deskbar_prefs_window_close(
+                        &app.deskbar_prefs_window);
+                    app.dirty = 1;
+                    break;
+                }
                 if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     app.running = 0;
                     break;
@@ -4515,9 +4564,9 @@ tracker_run(int argc, char **argv)
          * poll, the armed rename and the barber pole are all timed, and a
          * loop that spun without time passing would test none of them. */
         if (app.loop != NULL) {
-            if (tiku_trk_loop_pulse(app.loop) > 0) {
-                app.dirty = 1;
-            }
+            /* A task that changed something on screen dirties the surface
+             * itself; running is not, by itself, a repaint. */
+            (void)tiku_trk_loop_pulse(app.loop);
         }
         {
             /* Sleep until the next task is due, or one heartbeat,

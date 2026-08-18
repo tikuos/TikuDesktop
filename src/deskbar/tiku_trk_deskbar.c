@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <locale.h>
 #include <time.h>
 
@@ -631,9 +632,10 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
     if (db == NULL || name == NULL) {
         return -1;
     }
-    /* One entry per application however many instances it has (DB-015). */
+    /* One entry per application however many instances it has, matched
+     * without regard to case as the source matches signatures (DB-015). */
     for (i = 0; i < db->team_count; i++) {
-        if (strcmp(db->teams[i].name, name) == 0) {
+        if (strcasecmp(db->teams[i].name, name) == 0) {
             return i;
         }
     }
@@ -2149,4 +2151,27 @@ tiku_trk_deskbar_set_clock(tiku_trk_deskbar_t *db, time_t at)
     if (db != NULL) {
         db->fixed_now = at;
     }
+}
+
+int
+tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
+                             size_t max)
+{
+    time_t now;
+    struct tm tmv;
+
+    if (db == NULL || out == NULL || max == 0u || !db->settings.show_clock) {
+        if (out != NULL && max > 0u) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
+    (void)localtime_r(&now, &tmv);
+    /* Exactly the fields the rendering varies with: a repaint is owed
+     * only when one of them turns over (DB-044). */
+    (void)strftime(out, max, db->settings.show_seconds
+                                 ? "%a %e %b %H:%M:%S %Z"
+                                 : "%a %e %b %H:%M %Z", &tmv);
+    return 1;
 }
