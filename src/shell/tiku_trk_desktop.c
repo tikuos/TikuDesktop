@@ -3317,6 +3317,41 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (key == TIKU_DESK_KEY_ESCAPE && fl != NULL &&
+                    !alert_model(&app)->open) {
+                    /* The alert's own Escape lives in the overlay, later
+                     * in this chain; this one is the clipboard's
+                     * (PVK-034). */
+                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                        /* Shift+Escape removes the selection from the
+                         * clipboard, or every pose in the folder when
+                         * nothing is selected. */
+                        int ci, cn = tiku_trk_poseview_count(fl->view);
+                        int any =
+                            tiku_trk_poseview_selection_count(fl->view) > 0;
+
+                        for (ci = 0; ci < cn; ci++) {
+                            tiku_trk_pose_t *p =
+                                tiku_trk_poseview_at(fl->view, ci);
+
+                            if (p != NULL && (!any || p->selected)) {
+                                (void)tiku_trk_clip_remove(&app.clip,
+                                                           &p->model, 1);
+                            }
+                        }
+                        app.dirty = 1;
+                        break;
+                    }
+                    if (tiku_trk_clip_count(&app.clip) > 0) {
+                        /* Escape aborts a pending cut before anything
+                         * else it means. */
+                        tiku_trk_clip_clear(&app.clip);
+                        app.dirty = 1;
+                        break;
+                    }
+                    /* Nothing pending: fall through for whoever else
+                     * answers to Escape. */
+                }
                 if (key == TIKU_DESK_KEY_DELETE && fl != NULL) {
                     /* What the key MEANS depends on where the items are: a
                      * move that can be undone where there is a Trash to

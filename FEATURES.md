@@ -2057,12 +2057,13 @@ RebuildFilteringPoseList/RemoveFilteredPose call EnsurePoseUnselected(); Current
 **PORT:** Both filter paths clear ->selected on any pose that leaves the listing, and count()/at() return the filtered index list while filtering, with key_nav, select_all and the count-view label all going through those two accessors rather than the raw array.  
 *src/ui/tiku_trk_poseview.c:1099-1113 and :1160-1168 (deselect on leaving), :100-116 (count/at), :616-630 (select_all), :947-1007 (key_nav); src/shell/tiku_trk_app.c:216,231-233 (count view)*
 
-#### PVK-034 · important · partial
+#### PVK-034 · important · done
 **Escape cancels type-ahead filtering (and aborts a pending clipboard cut); Shift+Escape removes the selection from the clipboard, or every pose in the folder when nothing is selected.**  
 Two ShortcutFilters installed in AttachedToWindow map B_ESCAPE/0 -> B_CANCEL and B_ESCAPE/B_SHIFT_KEY -> kCancelSelectionToClipboard. case B_CANCEL: FSClipboardClear() if refs exist, then StopTypeAheadFiltering(). In a file panel Escape first commits an active name edit, then cancels filtering, then closes the panel.  
 `PoseView.cpp` → `BPoseView::AttachedToWindow; BPoseView::MessageReceived (case B_CANCEL, case kCancelSelectionToClipboard); key_down_filter (FilePanelPriv.cpp)`  
 **VERIFIER CORRECTION:** key_down_filter calls `view->CommitActivePose(false)` (FilePanelPriv.cpp:151) — saveChanges is false, so the pending rename is DISCARDED, not committed. Order and fall-through (edit → filtering → kCancelButton) are otherwise right.  
-**MISSING:** Escape does not abort a pending clipboard cut, and no Shift+Escape binding removes the selection (or everything) from the clipboard; the clipboard itself exists (see the correction below).  Escape leaving the filter MODE engaged is the correct reading now that the mode is the preference (TS-052).  
+**PORT:** All three clauses hold in both shells: Escape aborts a pending clipboard cut before it clears the type-ahead, Shift+Escape removes the selection from the clipboard -- or every pose in the folder when nothing is selected -- and Escape leaving the filter MODE engaged is the source's own reading now that the mode is the preference (TS-052).  
+*src/shell/tiku_trk_app.c (KEY_ESCAPE); src/shell/tiku_trk_desktop.c (KEY_ESCAPE, guarded under an open alert); tests/shell/clipescape.script*
 *src/shell/tiku_trk_app.c:handle_key lines 904-907 -> tiku_trk_poseview_type_clear (poseview.c:1262-1275)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- A file clipboard exists (src/core/tiku_trk_clip.c/.h, cut vs copy modes, node-id tracked) and is wired in the desktop shell: Ctrl+X/C/V keys (desktop.c:2476-2490), menu commands CUT/COPY/PASTE (desktop.c:1240-1351), paste enablement reads it (desktop.c:184) and cut items draw faded (desktop.c:249). Still true: Escape does not abort a pending cut and no Shift+Escape binding exists. `src/core/tiku_trk_clip.c; src/shell/tiku_trk_desktop.c:2476-2490, :1240-1351`  
 

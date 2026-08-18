@@ -1781,7 +1781,28 @@ not_editing:
         a->dirty = 1;
         return;
     case TIKU_DESK_KEY_ESCAPE:
-        tiku_trk_poseview_type_clear(a->view);
+        if (mods & TIKU_TRK_MOD_SHIFT) {
+            /* Shift+Escape removes the selection from the clipboard, or
+             * every pose in the folder when nothing is selected
+             * (PVK-034). */
+            int i, n = tiku_trk_poseview_count(a->view);
+            int any = tiku_trk_poseview_selection_count(a->view) > 0;
+
+            for (i = 0; i < n; i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+
+                if (p != NULL && (!any || p->selected)) {
+                    (void)tiku_trk_clip_remove(&a->clip, &p->model, 1);
+                }
+            }
+        } else {
+            if (tiku_trk_clip_count(&a->clip) > 0) {
+                /* A pending cut is aborted before the type-ahead goes,
+                 * in the source's own order (PVK-034). */
+                tiku_trk_clip_clear(&a->clip);
+            }
+            tiku_trk_poseview_type_clear(a->view);
+        }
         a->dirty = 1;
         return;
     case TIKU_DESK_KEY_TAB:

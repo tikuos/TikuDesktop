@@ -1,0 +1,43 @@
+# shell: both
+# PVK-034: Escape aborts a pending clipboard cut; Shift+Escape takes the
+# selection off the clipboard and leaves the rest of it standing.
+wait 6
+note a cut that is Escaped away must not move on the next paste
+click-row 1
+wait 2
+key x ctrl
+wait 3
+key Escape
+wait 3
+click-row 0
+click-row 0
+wait 10
+expect-title sub
+key v ctrl
+wait 20
+expect-no-file /tmp/trk_script/sub/a.txt
+expect-file /tmp/trk_script/a.txt
+note Shift+Escape takes just the selection off; the other cut still pastes
+key Up ctrl
+wait 10
+click-row 1
+wait 2
+key x ctrl
+wait 3
+click-row 2
+wait 2
+key x ctrl shift
+wait 3
+click-row 1
+wait 2
+key Escape shift
+wait 3
+click-row 0
+click-row 0
+wait 10
+key v ctrl
+wait 30
+expect-no-file /tmp/trk_script/sub/a.txt
+expect-file /tmp/trk_script/sub/b.txt
+expect-file /tmp/trk_script/a.txt
+quit
