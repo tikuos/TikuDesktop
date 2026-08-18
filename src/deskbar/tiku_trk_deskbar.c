@@ -97,6 +97,7 @@ struct tiku_trk_deskbar {
     /* Mini mode's second icon: the running-apps popup (DB-037). */
     int                  apps_menu_open;
     int                  apps_hot;
+    int                  screen_h;         /* the surface's, at last draw */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
@@ -480,6 +481,22 @@ team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,
         pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
         pick->team = team;
     }
+}
+
+/**
+ * @brief Where the calendar opens: 4 px below the clock, or flipped
+ *        above it when that would fall past the screen bottom (DB-070).
+ */
+static tiku_desk_rect_t
+calendar_rect(const tiku_trk_deskbar_t *db)
+{
+    tiku_desk_rect_t c = { db->frame.x - 190, 0, 186, 148 };
+
+    c.y = db->frame.y + db->frame.h + 4;
+    if (db->screen_h > 0 && c.y + c.h > db->screen_h) {
+        c.y = db->frame.y + db->frame.h - CLOCK_H - PAD - 4 - c.h;
+    }
+    return c;
 }
 
 /** @brief No row is hot until the pointer says so (DB-004). */
@@ -2030,6 +2047,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     }
     team_h = (db->settings.icon_size + 4 > TEAM_H)
                  ? db->settings.icon_size + 4 : TEAM_H;
+    db->screen_h = s->h;
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : list_rows(db);
     {
         /* How much room the list actually has, once the leaf, the tray and
@@ -2488,8 +2506,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         /* The clock's calendar: a month grid with steppers, popped beside
          * the bar and dismissed by the next click anywhere. */
         struct tm tmv;
-        tiku_desk_rect_t c = { db->frame.x - 190, db->frame.h - 150, 186,
-                               148 };
+        tiku_desk_rect_t c = calendar_rect(db);
         int col, rowi, first, days;
 
         memset(&tmv, 0, sizeof tmv);
@@ -2565,8 +2582,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             return 1;
         }
         {
-            tiku_desk_rect_t c = { db->frame.x - 190,
-                                   db->frame.y + db->frame.h - 150, 186, 148 };
+            tiku_desk_rect_t c = calendar_rect(db);
             int col, rowi, first, day;
             struct tm tmv;
             time_t shown = 0;

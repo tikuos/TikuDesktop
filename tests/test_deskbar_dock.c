@@ -186,13 +186,13 @@ main(void)
         tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
         old_month = month;
         memset(&pick, 0, sizeof pick);
-        (void)tiku_trk_deskbar_click(db, f.x - 135, f.y + f.h - 140,
+        (void)tiku_trk_deskbar_click(db, f.x - 135, f.y + f.h + 4 + 10,
                                      0, 1, 1, &pick);
         tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
         check(month == (old_month == 12 ? 1 : old_month + 1), "DB-046",
               "the month stepper advances the displayed month");
         (void)tiku_trk_deskbar_click(db, f.x - 180 + 6 + 2 * 25 + 5,
-                                     f.y + f.h - 150 + 22 + 2 * 20 + 5,
+                                     f.y + f.h + 4 + 22 + 2 * 20 + 5,
                                      0, 1, 1, &pick);
         tiku_trk_deskbar_calendar_date(db, NULL, NULL, &day);
         check(day >= 1 && day <= 31, "DB-046",
@@ -885,6 +885,38 @@ main(void)
         (void)unlink("/tmp/trk_r_moved2");
         tiku_trk_deskbar_free(tdb);
         tiku_trk_backend_close(pb);
+    }
+
+
+    printf("\nthe calendar flips above when below runs out (DB-070)\n");
+    {
+        tiku_desk_surface_t *low = tiku_desk_surface_new(400, 260,
+                                              TIKU_DESK_C_BACKDROP);
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t lf;
+        int old_month, month;
+
+        tiku_trk_deskbar_draw(db, low);
+        lf = tiku_trk_deskbar_frame(db);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, lf.x + 4, lf.y + lf.h - 4, 0u, 1,
+                                     1, &pick);
+        check(tiku_trk_deskbar_calendar_open(db), "DB-070",
+              "the clock still opens the calendar on a short screen");
+        tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
+        old_month = month;
+        memset(&pick, 0, sizeof pick);
+        /* The stepper is now ABOVE the clock: below it would run past
+         * the 260 px screen. */
+        (void)tiku_trk_deskbar_click(db, lf.x - 135,
+                                     lf.y + lf.h - 22 - 4 - 4 - 148 + 10,
+                                     0u, 1, 1, &pick);
+        tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
+        check(month == (old_month == 12 ? 1 : old_month + 1), "DB-070",
+              "and its steppers answer at the flipped place");
+        tiku_trk_deskbar_close_calendar(db);
+        tiku_desk_surface_free(low);
+        tiku_trk_deskbar_draw(db, s);
     }
 
     tiku_trk_deskbar_free(db);

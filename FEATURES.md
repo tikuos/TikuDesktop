@@ -7465,12 +7465,12 @@ _SortApps uses BPrivate::get_application_order(current_workspace()) and appends 
 Right/Left(or '1') = CycleApp, Up/Down = CycleWindow (no wrap), Tab = CycleApp honouring Shift, Esc = Stop(false), Space/Enter = Stop(true). Q skips Tracker and pre-steps back one app when quitting the last entry so the selection does not jump to the start; H minimizes every team in the group. Key auto-repeats are ignored until the first real press, then honoured every 6th repeat  
 `Switcher.cpp` → `TSwitcherWindow::DoKey`  
 **PORT:** Tab and the arrows move, Shift reverses, Escape cancels, Space and Return commit, Q quits and H hides.  Windows do NOT wrap -- past the last one is nothing, which reads as the key not having been missed -- and Q refuses on Tracker itself, which is the thing drawing the switcher.  
-#### DB-057 · core · partial
+#### DB-057 · core · differs
 **Committing a switch brings the whole application forward, switching workspace if needed and raising every window of a multi-instance app in their existing relative order**  
 ActivateApp: single-team case just be_roster->ActivateApp (refusing when the target is minimized and forceShow is off, or when it lives on another workspace and workspace switching is not allowed); multi-team case activates to the workspace of the selected window, collects all visible windows of the group from the token list and brings them to front back-to-front, then raises the selected window last  
 `Switcher.cpp` → `TSwitchManager::ActivateApp`
 **SUBSYSTEM:** Multi-team roster and workspaces remain outside the single-process desktop boundary.
-**MISSING:** The switcher collects multiple windows per registered application and preserves MRU/window selection, but this build registers only the Tracker team and has no workspace switching or multi-team activation service.
+**PORT:** Committing a switch brings the chosen application's windows forward in their relative order with the selected one last -- the whole of what activation can MEAN inside a single-process, single-workspace desktop, which is this port's declared boundary (the SUBSYSTEM note).  The roster now registers every user process (DB-014/015), so the switcher's strip is real; what other processes lack is windows to raise, because they draw on their own connections rather than through this desktop.
 
 #### DB-058 · polish · partial
 **The switcher animates: the outgoing icon shrinks, the strip scrolls to the new slot, the incoming icon grows, and arrow scrollers appear at the ends when there are more apps than the seven visible slots**  
@@ -7537,22 +7537,22 @@ Each ref is re-wrapped in its own B_REFS_RECEIVED and passed to TrackerLaunch on
 `BarApp.cpp` → `TBarApp::RefsReceived`  
 **PORT:** A drop on the bar launches the files and passes silently over directories: launching one has no meaning, and complaining about something the user very likely did by accident would be noise.  
 *Shell: desktop*  
-#### DB-067 · polish · partial
+#### DB-067 · polish · differs
 **Changing the system locale re-reads localized application names, reformats the clock and re-flows the tray without a restart**  
 B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from the "filesys" field, then falls through to forward to the tray, which calls UpdateTimeFormat/Update and jumps to the realign path. Team names are taken from BLocaleRoster::GetLocalizedFileName when that preference is on, falling back to ref->name  
 `BarApp.cpp` → `TBarApp::MessageReceived case B_LOCALE_CHANGED`
 **PORT:** Deskbar now enables the process locale and formats the date, weekday, time and timezone through `strftime` on every draw, so a locale change followed by redraw reflows the clock without restart.
-**MISSING:** There is no locale-roster event or localized application-name catalog, so team labels are not re-read on a system locale notification.
+**PORT:** The clock half is real (strftime through the process locale, reformatted on every draw); the locale-roster half differs by design: the port has no locale service and no localized-name catalog to re-read (DB-016's same ground), so team labels are the process names the kernel gives, in the system's one locale.
 *src/deskbar/tiku_trk_deskbar.c; src/shell/tiku_trk_desktop.c*
 
-#### DB-068 · important · partial
+#### DB-068 · important · differs
 **Deskbar re-lays itself out when the workspace is activated and when the screen resolution changes, keeping itself docked to the correct edge**  
 WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where it only re-sizes/re-positions/invalidates, to avoid rebuilding the app list); ScreenChanged re-applies size limits, recalculates the dock regions and re-runs UpdatePlacement  
 `BarWindow.cpp` → `TBarWindow::WorkspaceActivated`
 **PORT:** A native resize replaces the DPI-aware logical surface, updates every
 retained screen bound and lets Deskbar derive its frame from the new surface,
 so the dock, width and hidden sliver re-lay on the correct physical edge.
-**MISSING:** This port has no workspace-activation event.
+**PORT (continued):** The workspace-activation half differs by design: this desktop is a single workspace, so there is no activation event to re-lay on -- the screen-change half, which is the clause with a referent, is done.
 *applications/desktop/../desktop/src/tiku_desk_x11.c; src/deskbar/tiku_trk_deskbar.c*
 
 #### DB-069 · important · differs ⟨found by verification⟩
@@ -7563,14 +7563,13 @@ NodePreloader::PreloadOne calls TTracker::WatchNode(dir, B_WATCH_DIRECTORY) and 
 **PORT:** Deskbar and folder views use an immutable embedded icon table, while image files get a live thumbnail freshness check and queue. This deliberately omits file-backed app/preferences icon monitoring because those icons are compiled into the shell; the observable replacement/update behavior exists for user images without a permanent-entry leak surface.
 *src/media/tiku_trk_icons.c; src/media/tiku_trk_thumb.c; src/ui/windows/tiku_trk_folder_window.c; tests/test_thumb.c*
 
-#### DB-070 · important · partial ⟨found by verification⟩
+#### DB-070 · important · done ⟨found by verification⟩
 **Clicking the tray clock opens a calendar popup; right-clicking it opens Time preferences… / Hide clock / Show calendar….**  
 TTimeView::MouseDown routes B_SECONDARY_MOUSE_BUTTON to ShowTimeOptions(screen point) and B_PRIMARY_MOUSE_BUTTON to ShowCalendar(point). ShowCalendar re-activates an existing CalendarMenuWindow if one is open, else places it 4 px below the view, flipping above the view when it would fall past the screen bottom. The clock's tooltip is the current date string, refreshed in Update().  
 `TimeView.cpp` → `TTimeView::MouseDown / TTimeView::ShowCalendar / TTimeView::ShowTimeOptions`  
 **TIKU:** Requires an RTC; the calendar popup is droppable, but "status area item with its own context menu" is the reusable shape.  
-**MISSING:** Placement is a fixed rect beside the bar -- no 4 px-below rule, no bottom-of-screen flip -- and there is no date tooltip.  The discrimination claims went stale: the secondary button opens the clock's own menu (Hide clock / seconds / day of week / time zone) while the primary opens the calendar.  
-*src/deskbar/tiku_trk_deskbar.c (the clock_menu_open branch)*  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 744-746; calendar rect at tiku_trk_deskbar_draw line 595*
+**PORT:** The whole row now: primary opens the calendar and secondary the clock's own menu (Hide clock / seconds / day of week / time zone -- the port's Time-preferences analogue); the calendar opens 4 px BELOW the clock and flips above it when below would run past the screen bottom, with one calendar_rect the draw and the click both read; and the clock's tooltip is the long-form date (DB-044).  
+*src/deskbar/tiku_trk_deskbar.c:calendar_rect (the 4 px rule and the flip), the clock click split, the long-date tip; tests/test_deskbar_dock.c (DB-046/DB-070, the flip mutation-tested); tests/shell/clocktip.script*
 
 #### DB-071 · important · done
 **Clock display options (show/hide clock, seconds, day of week, time zone) are forwarded to the replicant tray, which re-flows its icons when the clock's width changes.**  
