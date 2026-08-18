@@ -622,6 +622,64 @@ main(void)
               "and leaving takes the tooltip away");
     }
 
+
+    printf("\nthe horizontal strip breathes (DB-033)\n");
+    {
+        const tiku_desk_font_t *font = tiku_desk_font_plain();
+        int min_w = 24 + tiku_desk_text_width(font, "abcdefgh");
+        int max_w = min_w + min_w / 4;
+        tiku_desk_surface_t *narrow = tiku_desk_surface_new(400, 150,
+                                              TIKU_DESK_C_BACKDROP);
+        tiku_trk_db_pick_t pick;
+        int i, changed = 0;
+        char name[16];
+
+        while (tiku_trk_deskbar_team_count(db) > 1) {
+            tiku_trk_deskbar_remove_team(db, 1);
+        }
+        (void)tiku_trk_deskbar_add_team_pid(db, "pair", 401, "/bin/true",
+                                            &changed);
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_TOP);
+        tiku_trk_deskbar_draw(db, s);
+        check(tiku_trk_deskbar_hbutton_width(db) == max_w, "DB-033",
+              "two applications get the widest button the rule allows -- "
+              "1.25x the minimum, not the whole bar");
+        for (i = 0; i < 6; i++) {
+            snprintf(name, sizeof name, "happ%d", i);
+            (void)tiku_trk_deskbar_add_team_pid(db, name, 500 + i,
+                                                "/bin/true", &changed);
+        }
+        tiku_trk_deskbar_draw(db, narrow);
+        check(tiku_trk_deskbar_hbutton_width(db) == min_w &&
+              tiku_trk_deskbar_scrollable(db), "DB-033",
+              "eight on a narrow screen shrink to the minimum and even "
+              "that will not fit: the ends grow arrows");
+        {
+            tiku_desk_surface_t *mid = tiku_desk_surface_new(800, 150,
+                                              TIKU_DESK_C_BACKDROP);
+
+            tiku_trk_deskbar_draw(db, mid);
+            check(tiku_trk_deskbar_hbutton_width(db) > min_w &&
+                  tiku_trk_deskbar_hbutton_width(db) < max_w &&
+                  !tiku_trk_deskbar_scrollable(db), "DB-033",
+                  "with room again they grow back between the two bounds");
+            tiku_desk_surface_free(mid);
+        }
+        tiku_trk_deskbar_draw(db, s);
+        {
+            tiku_desk_rect_t hf = tiku_trk_deskbar_frame(db);
+
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, 130 + 10, hf.y + 10,
+                                         TIKU_TRK_MOD_CMD, 1, 1, &pick);
+            check(pick.what == TIKU_TRK_DB_SHOW_ALL, "DB-033",
+                  "and a button answers the same chords the vertical "
+                  "rows do");
+        }
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+        tiku_desk_surface_free(narrow);
+    }
+
     tiku_trk_deskbar_free(db);
     tiku_desk_surface_free(s);
     printf("\n%s\n", fails ? "FAILURES" : "the bar sits where it is put");

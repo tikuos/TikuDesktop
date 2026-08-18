@@ -7278,17 +7278,12 @@ Truncation budget is menu MaxContentWidth minus padding, minus kSwitchWidth when
 **PORT:** Both halves now: truncation with an ellipsis against the real width budget (expander subtracted), and the tooltip -- the pointer resting on a row whose label was cut, or on any application row while names are hidden, says the whole name in a bubble beside the bar, set and cleared on hover transitions through the bar's own motion path (the one the menu hover already rides).  
 *src/deskbar/tiku_trk_deskbar.c:fit_label (the budget), tiku_trk_deskbar_motion (the tip transitions), the bubble in _draw; tests/test_deskbar_dock.c (DB-032, mutation-tested)*
 
-#### DB-033 · important · partial
+#### DB-033 · important · done
 **In horizontal mode the application buttons shrink as more apps launch and grow back as they quit, between a font/icon-derived minimum and 1.25x that; once even the minimum will not fit, scroll arrows appear at the ends of the list**  
 CheckItemSizes recomputes on every add/remove (delta +1/-1) using MinHorizontalItemWidth/MaxHorizontalItemWidth against MaxHorizontalWidth (screen width minus drag region and leaf menu); CheckForSizeOverrunHorizontal drives TInlineScrollView::AttachScrollers/DetachScrollers through TBarView::CheckForScrolling  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::CheckItemSizes`
-**MISSING:** A horizontal dock exists -- along the top or the bottom,
-spanning the screen, one row deep -- and it is a different shape rather than
-the vertical bar turned: it explicitly draws no application list.  The row's
-own subject, application buttons that shrink as more launch, is therefore
-still absent, and now absent deliberately rather than for want of a dock.
-*src/deskbar/tiku_trk_deskbar.c (the horizontal arm of _draw);
-tests/test_deskbar_dock.c*
+**PORT:** The horizontal strip is real now: to the right of the leaf button the bar holds one application button per team, each between a font-derived minimum and 1.25x it -- shrinking as more launch, growing back as they quit -- and once even the minimum will not fit, arrows appear at the ends and step the list.  The buttons answer the same chord map as the vertical rows (one shared team_action), and the window menu re-anchors below or above the bar so a secondary click means the same thing on any edge.  
+*src/deskbar/tiku_trk_deskbar.c (the strip in _draw, the horizontal arm of _click, win_menu_rect, team_action); tests/test_deskbar_dock.c (DB-033: both bounds, the overflow arrows, the shared chords -- mutation-tested)*
 
 #### DB-034 · important · done
 **In vertical mode scroll arrows appear as soon as the app list runs past the bottom of the screen, and the mouse wheel over the list scrolls it — a modifier key (Option/Cmd/Ctrl) or Shift on the arrows scrolls three times as fast**  

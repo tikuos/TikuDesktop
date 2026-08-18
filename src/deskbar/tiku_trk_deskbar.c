@@ -30,6 +30,7 @@
  * unpainted, so the pitch is the row plus SEAM. */
 #define BAR_W        134     /* gMinimumWindowWidth at the 12 px face      */
 #define LEAF_H        26
+#define HLEAF_W 120     /* the leaf button, horizontal (DB-033) */
 #define TEAM_H        20     /* kMinTeamItemHeight; pitch 21               */
 #define WIN_H         19     /* pitch 20                                   */
 #define SEAM           1     /* kGutter: the unpainted row between items   */
@@ -87,6 +88,11 @@ struct tiku_trk_deskbar {
      * (DB-032). */
     char                 tip[TIKU_TRK_DB_LABEL_MAX];
     int                  tip_y;            /* the row's top, or -1     */
+    /* The horizontal strip's layout, computed at draw time so the click
+     * and the drawing read the same numbers (DB-033). */
+    int                  hbutton_w;
+    int                  hleft;            /* first button's left edge */
+    int                  hoverflow;
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
@@ -418,6 +424,59 @@ win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
 static void fit_label(const tiku_desk_font_t *f, const char *src,
                       int budget, char *out, size_t max);
 static int list_y(const tiku_trk_deskbar_t *db);
+
+/** @brief Where the window menu sits: beside the bar, whichever way. */
+static tiku_desk_rect_t
+win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh)
+{
+    tiku_desk_rect_t m;
+
+    m.w = 128;
+    m.h = rows * rowh + 4;
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        m.x = db->frame.x - 130;
+        m.y = list_y(db) + TEAM_H;
+    } else {
+        m.x = db->frame.x + HLEAF_W + 8;
+        m.y = (db->dock == TIKU_TRK_DB_TOP)
+                  ? db->frame.y + db->frame.h + 2
+                  : db->frame.y - m.h - 2;
+    }
+    return m;
+}
+
+/** @brief What a plain-or-chorded click on an application row asks for. */
+static void
+team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,
+            int clicks, tiku_trk_db_pick_t *pick)
+{
+    if (button == 3) {
+        db->win_menu_team = team;
+        db->win_hot = -1;
+        return;
+    }
+    if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
+        (mods & TIKU_DESK_MOD_OPTION) != 0u &&
+        (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
+        pick->what = TIKU_TRK_DB_KILL_TEAM;
+        pick->team = team;
+    } else if (button == 2) {
+        if ((mods & TIKU_TRK_MOD_SHIFT) == 0u) {
+            pick->what = TIKU_TRK_DB_LAUNCH_TEAM;
+            pick->team = team;
+        }
+    } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
+               (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
+        pick->what = TIKU_TRK_DB_HIDE_ALL;
+        pick->team = team;
+    } else if ((mods & TIKU_TRK_MOD_CMD) != 0u) {
+        pick->what = TIKU_TRK_DB_SHOW_ALL;
+        pick->team = team;
+    } else if (clicks > 1) {
+        pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
+        pick->team = team;
+    }
+}
 
 /** @brief No row is hot until the pointer says so (DB-004). */
 static void
@@ -863,6 +922,12 @@ tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live, int n)
         }
     }
     return changed;
+}
+
+int
+tiku_trk_deskbar_hbutton_width(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->hbutton_w : 0;
 }
 
 int
@@ -1449,8 +1514,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         const char *items[4];
         int enabled[4];
         int n = win_menu_items(db, db->win_menu_team, items, enabled);
-        tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               n * rowh + 4 };
+        tiku_desk_rect_t m = win_menu_rect(db, n, rowh);
 
         if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
             y < m.y + 2 + n * rowh) {
@@ -1836,9 +1900,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                       (db->settings.show_clock ? CLOCK_H : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one
-         * row needs.  The list is not drawn in this mode -- a horizontal
-         * application strip is a different control, not this one rotated
-         * (DB-033). */
+         * row needs.  The application STRIP lives here -- buttons that
+         * shrink as more launch and grow back as they quit (DB-033). */
         db->frame.x = 0;
         db->frame.w = s->w;
         db->frame.h = LEAF_H + PAD;
@@ -1873,7 +1936,10 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
 
     /* The leaf: the one control that is not a list item, so it is the one
      * thing wearing the tab colour. */
-    leaf = (tiku_desk_rect_t){ db->frame.x + 2, 2, db->frame.w - 4, LEAF_H };
+    leaf = (tiku_desk_rect_t){ db->frame.x + 2, db->frame.y + 2,
+                               tiku_trk_deskbar_vertical(db->dock)
+                                   ? db->frame.w - 4 : HLEAF_W,
+                               LEAF_H };
     tiku_desk_fill(s, leaf, TIKU_DESK_C_TAB);
     tiku_desk_frame(s, leaf, dark);
     tiku_desk_bevel(s, tiku_desk_inset(leaf, 1),
@@ -1881,6 +1947,65 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                     tiku_desk_tint(TIKU_DESK_C_TAB, TIKU_DESK_DARKEN_2));
     (void)tiku_desk_text_centered(s, fb, leaf, "TikuOS", TIKU_DESK_C_TEXT);
 
+    if (!tiku_trk_deskbar_mini(db->dock) &&
+        !tiku_trk_deskbar_vertical(db->dock)) {
+        /* The horizontal strip: as many buttons as fit, each between a
+         * font-derived minimum and 1.25x it, shrinking as applications
+         * launch and growing back as they quit; past the minimum, the
+         * ends grow arrows (DB-033). */
+        int n = db->team_count;
+        int min_w = 24 + tiku_desk_text_width(f, "abcdefgh");
+        int max_w = min_w + min_w / 4;
+        int left = db->frame.x + 2 + HLEAF_W + 4;
+        int right = db->frame.x + db->frame.w - 4;
+        int avail = right - left;
+        int bw = (n > 0) ? avail / n : max_w;
+        int bx, i2, k;
+
+        if (bw > max_w) { bw = max_w; }
+        db->hoverflow = (n > 0 && bw < min_w);
+        if (db->hoverflow) {
+            bw = min_w;
+            left += 12;
+            right -= 12;
+        } else {
+            db->scroll = 0;
+        }
+        db->overflow = db->hoverflow;
+        db->hbutton_w = bw;
+        db->hleft = left;
+        bx = left;
+        for (i2 = (db->hoverflow ? db->scroll : 0); i2 < n; i2++) {
+            tiku_trk_team_t *t = &db->teams[db->order[i2]];
+            tiku_desk_rect_t b = { bx, db->frame.y + 2, bw - 2, LEAF_H };
+            char label[TIKU_TRK_DB_LABEL_MAX];
+
+            if (bx + bw > right) {
+                break;
+            }
+            draw_row_bg(s, b, t->active);
+            (void)tiku_trk_icon_paint(s,
+                strcmp(t->name, "Tracker") == 0 ? "folder" : "application",
+                b.x + 3, b.y + (LEAF_H - 16) / 2, 16);
+            fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
+            tiku_desk_text(s, f, b.x + 16 + 6,
+                           b.y + (LEAF_H - f->height) / 2 + f->ascent,
+                           label, TIKU_DESK_C_TEXT);
+            bx += bw;
+        }
+        if (db->hoverflow) {
+            int ay = db->frame.y + db->frame.h / 2;
+
+            for (k = 0; k < 4; k++) {
+                if (db->scroll > 0) {
+                    tiku_desk_vline(s, left - 10 + k, ay - k, 2 * k + 1,
+                                    TIKU_DESK_C_TEXT);
+                }
+                tiku_desk_vline(s, right + 3 + k, ay - (3 - k),
+                                2 * (3 - k) + 1, TIKU_DESK_C_TEXT);
+            }
+        }
+    }
     if (!tiku_trk_deskbar_mini(db->dock) &&
         tiku_trk_deskbar_vertical(db->dock)) {
         y = list_y(db);
@@ -2092,8 +2217,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         int enabled[4];
         int n = win_menu_items(db, db->win_menu_team, items, enabled);
         int rowh = f->height + 6;
-        tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               n * rowh + 4 };
+        tiku_desk_rect_t m = win_menu_rect(db, n, rowh);
         int k;
 
         tiku_desk_ui_menu(s, m, items, n, db->win_hot);
@@ -2309,8 +2433,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         const char *items[4];
         int enabled[4];
         int n = win_menu_items(db, db->win_menu_team, items, enabled);
-        tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               n * rowh + 4 };
+        tiku_desk_rect_t m = win_menu_rect(db, n, rowh);
         int idx = (y - m.y - 2) / rowh;
         int team = db->win_menu_team;
 
@@ -2397,7 +2520,42 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     if (!tiku_trk_deskbar_hit(db, x, y)) {
         return 0;
     }
-    if (y < LEAF_H + 2) {
+    if (!tiku_trk_deskbar_vertical(db->dock)) {
+        /* The horizontal strip: the leaf keeps its own width, and the
+         * rest of the bar is application buttons (DB-033). */
+        if (x < db->frame.x + 2 + HLEAF_W) {
+            build_leaf(db);
+            db->menu_open = 1;
+            reset_menu_hots(db);
+            return 1;
+        }
+        if (!tiku_trk_deskbar_mini(db->dock) && db->hbutton_w > 0) {
+            int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
+                                  TIKU_DESK_MOD_OPTION)) != 0u) ? 3 : 1;
+            int idx;
+
+            if (db->hoverflow && x < db->hleft) {
+                (void)tiku_trk_deskbar_scroll(db, -astep);
+                return 1;
+            }
+            idx = (db->hoverflow ? db->scroll : 0) +
+                  (x - db->hleft) / db->hbutton_w;
+            if (idx >= 0 && idx < db->team_count &&
+                x >= db->hleft &&
+                x < db->hleft + (idx + 1 -
+                    (db->hoverflow ? db->scroll : 0)) * db->hbutton_w) {
+                team_action(db, db->order[idx], mods, button, clicks,
+                            pick);
+                return 1;
+            }
+            if (db->hoverflow) {
+                (void)tiku_trk_deskbar_scroll(db, astep);
+                return 1;
+            }
+        }
+        return 1;
+    }
+    if (y < db->frame.y + LEAF_H + 2) {
         build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
         reset_menu_hots(db);
@@ -2444,35 +2602,11 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                  * the state commits on release over the same strip
                  * (DB-022). */
                 db->expander_press = team;
-            } else if (secondary) {
-                db->win_menu_team = team;
-                db->win_hot = -1;
-            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
-                       (mods & TIKU_DESK_MOD_OPTION) != 0u &&
-                       (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
-                /* The Vulcan Death Grip: every process behind the row,
-                 * killed outright, no quit request (DB-020). */
-                pick->what = TIKU_TRK_DB_KILL_TEAM;
-                pick->team = team;
-            } else if (button == 2) {
-                /* Middle launches another instance -- with Shift NOT
-                 * held, as the source requires (DB-021). */
-                if ((mods & TIKU_TRK_MOD_SHIFT) == 0u) {
-                    pick->what = TIKU_TRK_DB_LAUNCH_TEAM;
-                    pick->team = team;
-                }
-            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
-                       (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
-                pick->what = TIKU_TRK_DB_HIDE_ALL;     /* minimize all */
-                pick->team = team;
-            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u) {
-                pick->what = TIKU_TRK_DB_SHOW_ALL;     /* all to front */
-                pick->team = team;
-            } else if (clicks > 1) {
-                /* The double-click activates the application; a single
-                 * click keeps meaning the menu gesture (DB-019). */
-                pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
-                pick->team = team;
+            } else {
+                /* The chord map, shared with the horizontal strip: the
+                 * grip kills, middle launches, CMD fronts, CMD+Shift
+                 * minimizes, a double activates (DB-019/020/021). */
+                team_action(db, team, mods, button, clicks, pick);
             }
             return 1;
         }
