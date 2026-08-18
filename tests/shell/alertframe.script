@@ -13,6 +13,11 @@ wait 5
 note the alert's own dark border, with the light bevel just inside it
 expect-pixel 290 250 828282
 expect-pixel 291 250 ffffff
+note the warning wears its icon: the yellow disc and its exclamation,
+note on the grey stripe BAlert lays them on
+expect-pixel 310 212 ffcb00
+expect-pixel 318 212 000000
+expect-pixel 300 280 d4d4d4
 note and the default button's ring around Shut down
 expect-pixel 602 301 828282
 key Escape

@@ -52,6 +52,68 @@ progress_frame(const tiku_trk_status_overlay_t *controller)
     };
 }
 
+/** @brief A filled disc, span by span: the primitives have no circle. */
+static void
+draw_disc(tiku_desk_surface_t *surface, int cx, int cy, int r,
+          tiku_desk_rgb_t color)
+{
+    int dy;
+
+    for (dy = -r; dy <= r; dy++) {
+        int half = 0;
+
+        while ((half + 1) * (half + 1) + dy * dy <= r * r) {
+            half++;
+        }
+        tiku_desk_hline(surface, cx - half, cy + dy, 2 * half + 1, color);
+    }
+}
+
+/**
+ * @brief The alert's own icon: what KIND of thing is being said.
+ *
+ * Info speaks in blue, a warning in the tab's yellow, a stop in red --
+ * a ringed disc with its mark, drawn from primitives so every target
+ * carries it.
+ */
+static void
+draw_alert_icon(tiku_desk_surface_t *surface, int cx, int cy,
+                tiku_trk_alert_kind_t kind)
+{
+    tiku_desk_rgb_t body = (kind == TIKU_TRK_ALERT_STOP)
+                               ? TIKU_DESK_RGB(203, 48, 48)
+                         : (kind == TIKU_TRK_ALERT_WARN)
+                               ? TIKU_DESK_C_TAB
+                               : TIKU_DESK_C_SELECT;
+    tiku_desk_rgb_t ink = (kind == TIKU_TRK_ALERT_WARN)
+                              ? TIKU_DESK_C_TEXT : TIKU_DESK_C_DOC;
+    int k;
+
+    draw_disc(surface, cx, cy, 16, tiku_desk_tint(body, 1.45f));
+    draw_disc(surface, cx, cy, 14, body);
+    if (kind == TIKU_TRK_ALERT_STOP) {
+        /* The cross: this far and no further. */
+        for (k = -6; k <= 6; k++) {
+            tiku_desk_fill(surface, (tiku_desk_rect_t){ cx + k - 1,
+                           cy + k - 1, 3, 3 }, ink);
+            tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - k - 1,
+                           cy + k - 1, 3, 3 }, ink);
+        }
+    } else if (kind == TIKU_TRK_ALERT_WARN) {
+        /* The exclamation: a bar and its dot. */
+        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 9, 4, 11 },
+                       ink);
+        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy + 5, 4, 4 },
+                       ink);
+    } else {
+        /* The i: a dot and its bar. */
+        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 9, 4, 4 },
+                       ink);
+        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 2, 4, 11 },
+                       ink);
+    }
+}
+
 static void
 draw_alert(tiku_trk_status_overlay_t *controller)
 {
@@ -74,6 +136,18 @@ draw_alert(tiku_trk_status_overlay_t *controller)
     tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 2),
         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_1),
         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_1));
+    {
+        /* The icon on its grey stripe, as BAlert lays it: the KIND of
+         * thing being said, visible before a word is read. */
+        tiku_desk_rect_t stripe = { frame.x + 3, frame.y + 3, 52,
+                                    frame.h - 6 };
+
+        tiku_desk_fill(controller->surface, stripe,
+                       tiku_desk_tint(TIKU_DESK_C_PANEL,
+                                      TIKU_DESK_DARKEN_1));
+        draw_alert_icon(controller->surface, stripe.x + 26, frame.y + 36,
+                        controller->alert.kind);
+    }
     text_y = frame.y + 24;
     {
         const char *text = controller->alert.text;
@@ -91,7 +165,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                 }
                 line[length] = text[length];
                 line[length + 1u] = '\0';
-                if (tiku_desk_text_width(font, line) > frame.w - 32) {
+                if (tiku_desk_text_width(font, line) > frame.w - 88) {
                     break;
                 }
                 length++;
@@ -100,7 +174,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                 length = (size_t)(space - text);
                 line[length] = '\0';
             }
-            tiku_desk_text(controller->surface, font, frame.x + 16, text_y,
+            tiku_desk_text(controller->surface, font, frame.x + 66, text_y,
                            line, TIKU_DESK_C_TEXT);
             text_y += font->height + 4;
             text += length;
