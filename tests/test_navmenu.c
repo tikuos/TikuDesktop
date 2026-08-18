@@ -205,6 +205,26 @@ main(void)
           "and re-opening it RE-READS the folder: a menu is not a "
           "snapshot, and one showing last time's contents would be lying");
 
+    {   /* CW-057: a menu on the root lists volumes, as the window does. */
+        tiku_trk_nav_t rn;
+        int k, vols = 0, dirs = 0;
+
+        tiku_trk_nav_open(&rn, b, "/");
+        tiku_trk_nav_fill_all(&rn, 0);
+        for (k = 0; k < rn.level[0].n; k++) {
+            if (strcmp(rn.level[0].item[k].path, "/usr") == 0 ||
+                strcmp(rn.level[0].item[k].path, "/etc") == 0) {
+                dirs++;
+            }
+            if (strcmp(rn.level[0].item[k].path, "/") == 0) {
+                vols++;
+            }
+        }
+        check(vols == 1 && dirs == 0, "CW-057",
+              "a menu on the root lists volumes -- the boot volume once, "
+              "and never /usr or /etc as rows");
+    }
+
     (void)system("rm -rf /tmp/trk_nav /tmp/trk_nav_big");
     tiku_trk_backend_close(b);
     printf("\n%s\n", fails ? "FAILURES" : "the navigation menu holds");

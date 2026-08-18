@@ -3172,7 +3172,8 @@ AddNextItem applies HideDotFiles, model.IsTrash(), the query-results-in-trash ru
 `NavMenu.cpp` → `BNavMenu::AddNextItem / BNavMenu::StartBuildingItemList / BNavMenu::BuildVolumeMenu`  
 **TIKU:** "Volumes" and "the union of all trashes" have direct analogues only if TikuOS has multiple mounts; device nodes may need an explicit visible/hidden bit like pose info's fInvisible.  
 **PORT:** The menu hides what the window hides -- dot files when the setting is on, and the Trash always, for being the Trash rather than for its name.  One that showed a dot file the window does not would be a second, disagreeing view of one folder.  
-**MISSING:** Pose-info invisibility and the query-results-in-Trash rule are not applied, and a menu on the root lists directories rather than volumes.  
+**MISSING:** Pose-info invisibility and the query-results-in-Trash rule are not applied.  The root clause holds now: a menu on the root lists volumes -- the boot volume once, never /usr or /etc as rows.  
+*src/ui/tiku_trk_navmenu.c:tiku_trk_nav_fill (the volume level); tests/test_navmenu.c (CW-057)*  
 #### CW-058 · important · partial
 **"Recent folders" inside the Move to/Copy to pickers, and the file panel's Favorites menu, list recently used items with the counts the user configured; an empty list shows a disabled "<No recent items>" placeholder.**  
 RecentsMenu reads its cap from TrackerSettings().RecentCounts(apps, docs, folders) selected by fWhich (0=documents, 1=apps, 2=folders) and pulls from BRoster::GetRecent*; DoneBuildingItemList adds the disabled placeholder when nothing was added. FavoritesMenu builds three titled sections in order - Favorites (links in the user's Go directory), Recent documents (suppressed in save panels), Recent folders (skipping refs already listed under Favorites) - and re-filters everything through the panel's BRefFilter.  

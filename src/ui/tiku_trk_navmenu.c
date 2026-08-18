@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_navmenu.h"
+#include "tiku_trk_volume.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -142,6 +143,33 @@ tiku_trk_nav_fill(tiku_trk_nav_t *nav, int level)
     }
     lv = &nav->level[level];
     if (lv->done) {
+        return 0;
+    }
+    if (strcmp(lv->path, "/") == 0 && nav->backend->devid[0] == '\0') {
+        /* A menu on the root lists VOLUMES, as the root window does: the
+         * root is the Disks surface, not a folder of system directories
+         * (CW-057). */
+        tiku_trk_volumes_t vs;
+        int k;
+
+        if (tiku_trk_volumes_scan(&vs) > 0) {
+            for (k = 0; k < vs.n && lv->n < TIKU_TRK_NAV_MAX; k++) {
+                tiku_trk_nav_item_t *it;
+
+                if (!tiku_trk_volume_shows_icon(&vs, &vs.v[k])) {
+                    continue;
+                }
+                it = &lv->item[lv->n];
+                memset(it, 0, sizeof *it);
+                snprintf(it->name, sizeof it->name, "%s", vs.v[k].name);
+                snprintf(it->path, sizeof it->path, "%s", vs.v[k].mount);
+                it->is_container = 1;
+                it->enabled = 1;
+                lv->n++;
+            }
+        }
+        lv->done = 1;
+        sort_level(nav, lv);
         return 0;
     }
     before = lv->n;
