@@ -901,13 +901,13 @@ the same rows stay in the same places, which is the behaviour the row is
 about, reached without the copy.  The blit exists (`tiku_desk_copy_bits`,
 PVL-045) and is used where pixels really do change place; this path has
 none.  
-#### PVL-047 · important · partial
+#### PVL-047 · important · done
 **When a value in the sort column changes, only that row moves — the gap closes at its old position and opens at its new one.**  
 AttributeChanged hashes the changed attribute (or maps a stat field via sAttrColumnMap) and, only if it equals the primary or secondary sort, calls _CheckPoseSortOrder. That removes the pose, re-searches its position, and if it moved does CloseGapInList at the old index followed by InsertPoseAfter at the new one. If the new index equals the old, nothing is redrawn.  
 `PoseView.cpp` → `BPoseView::AttributeChanged / BPoseView::_CheckPoseSortOrder`  
 **TIKU:** A watch notification on a device node value is the analogue; re-sorting on every notify (no coalescing) will visibly churn rows.  
-**MISSING:** The re-slot check runs on every change notice rather than only when the changed field equals a sort key -- and it cannot be gated until the notice carries field identity, which is MA-072's absence.  The gap repaint half is answered now: a re-slotted row shifts its neighbours, their signatures change, and the damage layer repaints exactly them.  
-*src/ui/windows/tiku_trk_folder_window.c:row_signature (the gap half)*  
+**PORT:** The re-slot check is gated on the notice's field identity, which MA-072 now supplies: a change whose fields do not touch the primary or tie-break sort key leaves the row in its slot whatever else the model says, one that names the key re-slots exactly that row, and a notice that cannot say stays conservative and re-checks.  The gap repaint half was already answered: a re-slotted row shifts its neighbours, their signatures change, and the damage layer repaints exactly them.  
+*src/ui/tiku_trk_poseview.c (the sort-key gate in the CHANGED/ATTR branch); src/ui/windows/tiku_trk_folder_window.c:row_signature (the gap half); tests/test_poseview.c (PVL-047: both directions of the gate -- mutation-tested)*  
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:2992-3030 (CHANGED: sorted_slot + single-row remove/insert, scroll preserved)` `src/ui/tiku_trk_poseview.c:3378-3411 (recheck_order, same discipline)` `src/ui/tiku_trk_poseview.c:3450-3455 (refresh_values triggers recheck under Value sort)`*  
 *Shell: both*  
 #### PVL-048 · important · done
@@ -4443,13 +4443,13 @@ BPoseView::StateNeedsSaving() = fStateNeedsSaving (set by column resize/move/add
 **PORT:** save_state returns immediately on a clear state_dirty flag that only the thirteen real mutation sites set, and returns 0 rather than an error when the store reports itself not writable, leaving the in-memory layout untouched.  
 *src/ui/tiku_trk_poseview.c:2181-2192 (dirty gate then tiku_trk_store_writable gate), state_dirty=1 at :1458,:1517,:3439,:3475 etc.; src/core/tiku_trk_state.c:317-320*
 
-#### MA-072 · important · partial
+#### MA-072 · important · done
 **When a file changes on disk, only the affected columns refresh: stat-derived columns on a stat change, and the matching attribute column on an attribute change — including when the attribute was deleted.**  
 With an attribute name: look up the widget by AttrHashString(attrName, attrType); if found, CheckAndUpdate it. If not found and attrType is 0 (the attribute was removed, so its type is unknown), scan every widget for a column whose AttrName() matches the string and update that one. With no attribute name: call Model::StatChanged, then CheckAndUpdate every widget whose column has StatField() set. BTextWidget::CheckAndUpdate only invalidates when the value changed AND the fitted text changed AND the widget is visible, unioning the old rect in icon modes.  
 `Pose.cpp` → `BPose::UpdateWidgetAndModel`  
 **TIKU:** A TIKU_EVENT_VFS notification names the node, not the field, so the rewrite lands on the "no attribute name" branch — meaning every watched node change re-reads all of that pose's columns. The value-changed/text-changed gate is what keeps that affordable.  
-**MISSING:** The notice carries no field identity at all (tiku_trk_event_t has op/path/from/dir/model and nothing else), so EV_CHANGED and EV_ATTR share one branch that swaps the whole model, drops value_valid and flags a blanket REDRAW — the data does refresh, but the row's actual rule (only the affected columns; the by-name widget lookup; the type-0 scan for a deleted attribute; the value-AND-fitted-text-AND-visible invalidate gate on this path) has no implementation, and the auditor's own sentence concedes the field routing is absent.  
-*src/ui/tiku_trk_poseview.c:2641-2653 (EV_CHANGED/EV_ATTR share one branch: model replaced, value_valid=0, unconditional REDRAW); src/backends/tiku_trk_notify.h:46-53 (event struct has no attribute name/type); gate that does exist is row-level in refresh_values at src/ui/tiku_trk_poseview.c:3018-3052*
+**PORT:** The notice now carries FIELD identity as a fact mask (`tiku_trk_event_t.fields`, TIKU_TRK_EVF_*): the listing diff knows exactly which facts moved and stamps them on the CHANGED notice, and the pose view routes by them -- each shown column whose fields intersect the mask is compared old-text against new-text, and a repaint is owed only when the value AND the fitted text really changed in a column that is really shown, which is the CheckAndUpdate gate whole.  A mask naming only icon-bearing facts (kind, type, broken link, trash fill, free space) repaints without the compare, the way an icon must; a notice that cannot say (mask 0 -- the raw VFS channel, exactly as this row's TIKU note anticipates) re-reads everything, which is what every notice meant before.  A named attribute lands in the meta the VALUE bit stands for, deleted or not, so the by-name widget lookup and the type-0 scan are subsumed by the mask rather than reproduced.  
+*src/backends/tiku_trk_notify.[ch] (facts_fields, the stamped notice); src/ui/tiku_trk_poseview.c (column_fields, the gated CHANGED/ATTR branch); tests/test_poseview.c (MA-072: quiet-but-not-stale, shown-column repaint, mask-0 fallback -- mutation-tested)*
 
 #### MA-073 · important · differs
 **Attributes are copied between nodes through a pull pipeline that can filter by name and rewrite values in flight, and a partial write aborts the copy silently.**  

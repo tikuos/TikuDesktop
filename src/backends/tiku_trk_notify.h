@@ -43,6 +43,16 @@ typedef enum {
  * parking is what stops a change arriving a moment before its row from being
  * lost.
  */
+/* Which FACTS a CHANGED/ATTR notice concerns (MA-072).  Zero means the
+ * notice cannot say, and everything the row shows must be re-read --
+ * which is also what every notice meant before the mask existed. */
+#define TIKU_TRK_EVF_SIZE  0x01u
+#define TIKU_TRK_EVF_DATE  0x02u
+#define TIKU_TRK_EVF_KIND  0x04u   /* kind, type, icon-bearing facts   */
+#define TIKU_TRK_EVF_VALUE 0x08u   /* value/meta: Value and attr columns */
+#define TIKU_TRK_EVF_CAP   0x10u
+#define TIKU_TRK_EVF_PERM  0x20u
+
 typedef struct {
     tiku_trk_evop_t  op;
     char             path[TIKU_TRK_PATH_MAX];
@@ -50,6 +60,7 @@ typedef struct {
     char             dir[TIKU_TRK_PATH_MAX];   /* the parent it concerns */
     tiku_trk_model_t model;                    /* valid unless REMOVED   */
     int64_t          at;                       /* arrival, microseconds  */
+    unsigned         fields;                   /* TIKU_TRK_EVF_*, or 0   */
 } tiku_trk_event_t;
 
 #define TIKU_TRK_EVENTS_MAX 128
@@ -67,6 +78,11 @@ void tiku_trk_evlist_clear(tiku_trk_evlist_t *l);
 int tiku_trk_evlist_add(tiku_trk_evlist_t *l, tiku_trk_evop_t op,
                         const tiku_trk_model_t *m, const char *from,
                         int64_t at);
+
+/** @brief Append a notice that can NAME its fields (MA-072). */
+int tiku_trk_evlist_add_fields(tiku_trk_evlist_t *l, tiku_trk_evop_t op,
+                               const tiku_trk_model_t *m, const char *from,
+                               int64_t at, unsigned fields);
 
 /**
  * @brief Derive the notices between two listings of one directory.

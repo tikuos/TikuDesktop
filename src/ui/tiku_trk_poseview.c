@@ -4464,6 +4464,24 @@ tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v, int64_t now)
     return 1;
 }
 
+/** @brief Which notice fields a column reads from (MA-072's routing). */
+static unsigned
+column_fields(int field)
+{
+    switch (field) {
+    case TIKU_TRK_COL_SIZE:  return TIKU_TRK_EVF_SIZE;
+    case TIKU_TRK_COL_DATE:  return TIKU_TRK_EVF_DATE;
+    case TIKU_TRK_COL_KIND:  return TIKU_TRK_EVF_KIND;
+    case TIKU_TRK_COL_VALUE: return TIKU_TRK_EVF_VALUE;
+    case TIKU_TRK_COL_CAP:   return TIKU_TRK_EVF_CAP;
+    case TIKU_TRK_COL_PERM:  return TIKU_TRK_EVF_PERM;
+    default:
+        /* The name changes only through MOVED; a named attribute column
+         * reads the meta the VALUE bit stands for. */
+        return (field >= TIKU_TRK_COL_ATTR_BASE) ? TIKU_TRK_EVF_VALUE : 0u;
+    }
+}
+
 unsigned
 tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 {
@@ -4745,13 +4763,61 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
             (void)tiku_trk_park_add(&v->park, e);
             break;
         }
-        v->poses[at].model = e->model;
-        (void)tiku_trk_desc_parse(e->model.facts.meta, &v->poses[at].desc);
-        v->poses[at].value_valid = 0;
-        flags |= TIKU_TRK_NOTIFY_REDRAW;
-        /* One row changed, so one row is what needs painting again: the
-         * icon, the size and the date all live inside it (PVL-075). */
-        tiku_trk_poseview_damage_row(v, at);
+        {
+            /* Only the affected columns refresh (MA-072): a notice that
+             * NAMES its fields is compared column by column -- the value
+             * AND the fitted text must both have moved before a repaint
+             * is owed -- while one that cannot say re-reads everything,
+             * which is what every notice meant before the mask. */
+            unsigned f = e->fields;
+            int repaint = (f == 0u) || (f & TIKU_TRK_EVF_KIND) != 0u;
+            tiku_trk_pose_t before = v->poses[at];
+
+            v->poses[at].model = e->model;
+            (void)tiku_trk_desc_parse(e->model.facts.meta,
+                                      &v->poses[at].desc);
+            if (f == 0u || (f & TIKU_TRK_EVF_VALUE) != 0u) {
+                v->poses[at].value_valid = 0;
+            }
+            if (!repaint) {
+                int c;
+
+                for (c = 0; c < v->column_count; c++) {
+                    int field = v->columns[c].field;
+                    int width = v->columns[c].width;
+                    char oldbuf[96], newbuf[96];
+                    const char *was_text, *now_text;
+
+                    if ((column_fields(field) & f) == 0u) {
+                        continue;
+                    }
+                    was_text = cell_text_at(v, &before, field, width,
+                                            oldbuf, sizeof oldbuf);
+                    now_text = cell_text_at(v, &v->poses[at], field, width,
+                                            newbuf, sizeof newbuf);
+                    if (strcmp(was_text, now_text) != 0) {
+                        repaint = 1;
+                        break;
+                    }
+                }
+            }
+            if (repaint) {
+                flags |= TIKU_TRK_NOTIFY_REDRAW;
+                /* One row changed, so one row is what needs painting
+                 * again: the icon, the size and the date all live inside
+                 * it (PVL-075). */
+                tiku_trk_poseview_damage_row(v, at);
+            }
+            /* The re-slot check is owed only when the changed FIELD is a
+             * sort key (PVL-047): re-checking on every notice churned the
+             * listing, and a notice that cannot say stays conservative. */
+            if (f != 0u &&
+                (column_fields(v->sort_field) & f) == 0u &&
+                (v->sort2_field < 0 ||
+                 (column_fields(v->sort2_field) & f) == 0u)) {
+                break;
+            }
+        }
         {
             /* The changed fact may be the one the listing is ORDERED by, and
              * a row that keeps its slot while its key moves leaves the

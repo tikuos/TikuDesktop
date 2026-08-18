@@ -672,6 +672,68 @@ main(void)
               "name -- the paths differ, so only its identity says so");
     }
 
+    /* --- MA-072/PVL-047: a notice that names its field ------------------ */
+    {
+        tiku_trk_event_t e;
+        tiku_trk_model_t m;
+        unsigned flags;
+        char held[TIKU_TRK_NAME_MAX];
+
+        (void)tiku_trk_poseview_reload(v);
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_SIZE);
+        m = tiku_trk_poseview_at(v, 1)->model;
+        snprintf(held, sizeof held, "%s", m.name);
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_CHANGED;
+        e.model = m;
+        e.model.facts.size += 1000000;      /* would re-slot under Size */
+        e.model.facts.mtime += 1;
+        e.fields = TIKU_TRK_EVF_DATE;       /* but the notice says DATE  */
+        snprintf(e.path, sizeof e.path, "%s", m.path);
+        snprintf(e.dir, sizeof e.dir, "%s", dir);
+        (void)tiku_trk_poseview_notify(v, &e);
+        check(strcmp(tiku_trk_poseview_at(v, 1)->model.name, held) == 0,
+              "PVL-047", "a change whose FIELD is not the sort key leaves "
+              "the row in its slot, whatever else the model says");
+        e.fields = TIKU_TRK_EVF_SIZE;       /* now the notice says SIZE  */
+        e.model.facts.mtime += 1;
+        (void)tiku_trk_poseview_notify(v, &e);
+        check(strcmp(tiku_trk_poseview_at(v, 1)->model.name, held) != 0,
+              "PVL-047", "and the same change naming the sort key re-slots "
+              "exactly that row");
+        tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_NAME);
+        (void)tiku_trk_poseview_reload(v);
+        m = tiku_trk_poseview_at(v, 2)->model;
+        memset(&e, 0, sizeof e);
+        e.op = TIKU_TRK_EV_CHANGED;
+        e.model = m;
+        e.model.facts.size += 1;            /* a fact no named column moved */
+        e.fields = TIKU_TRK_EVF_DATE;       /* date claimed, date text same */
+        snprintf(e.path, sizeof e.path, "%s", m.path);
+        snprintf(e.dir, sizeof e.dir, "%s", dir);
+        flags = tiku_trk_poseview_notify(v, &e);
+        check((flags & TIKU_TRK_NOTIFY_REDRAW) == 0u, "MA-072",
+              "a named change whose column reads the same paints nothing");
+        check(tiku_trk_poseview_at(v, 2)->model.facts.size ==
+                  m.facts.size + 1, "MA-072",
+              "yet the model underneath still moved: quiet is not stale");
+        /* The Date column is not SHOWN, so even a real date change owes
+         * no paint -- visibility is part of the gate.  A capability
+         * change lands in a column that is: that one paints. */
+        e.fields = TIKU_TRK_EVF_CAP;
+        snprintf(e.model.facts.req_cap, sizeof e.model.facts.req_cap,
+                 "cap.changed");
+        flags = tiku_trk_poseview_notify(v, &e);
+        check((flags & TIKU_TRK_NOTIFY_REDRAW) != 0u, "MA-072",
+              "and one whose shown column really changed paints its row");
+        e.fields = 0u;                      /* a notice that cannot say */
+        e.model.facts.mtime += 1;
+        flags = tiku_trk_poseview_notify(v, &e);
+        check((flags & TIKU_TRK_NOTIFY_REDRAW) != 0u, "MA-072",
+              "one that cannot name its field re-reads everything, as "
+              "before");
+    }
+
     /* --- PVN-047: batching is by TIME as well as by count --------------- */
     {
         int64_t t = 5000000;

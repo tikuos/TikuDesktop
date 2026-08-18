@@ -73,28 +73,55 @@ tiku_trk_evlist_add(tiku_trk_evlist_t *l, tiku_trk_evop_t op,
     return 1;
 }
 
+int
+tiku_trk_evlist_add_fields(tiku_trk_evlist_t *l, tiku_trk_evop_t op,
+                           const tiku_trk_model_t *m, const char *from,
+                           int64_t at, unsigned fields)
+{
+    if (!tiku_trk_evlist_add(l, op, m, from, at)) {
+        return 0;
+    }
+    l->ev[l->count - 1].fields = fields;
+    return 1;
+}
+
+/** @brief WHICH displayed facts moved, as TIKU_TRK_EVF_* bits (MA-072). */
+static unsigned
+facts_fields(const tiku_trk_model_t *a, const tiku_trk_model_t *b)
+{
+    unsigned f = 0u;
+
+    if (a->facts.size != b->facts.size) { f |= TIKU_TRK_EVF_SIZE; }
+    if (a->facts.mtime != b->facts.mtime) { f |= TIKU_TRK_EVF_DATE; }
+    if (a->facts.perm != b->facts.perm) { f |= TIKU_TRK_EVF_PERM; }
+    /* A link losing its target changes nothing else about the entry,
+     * so without this term the diff cannot see it happen and the row
+     * goes on claiming the link is live.  A Trash filling or emptying is
+     * the same shape (AW-029).  All of these bear on the ICON. */
+    if (a->kind != b->kind ||
+        a->facts.link_broken != b->facts.link_broken ||
+        a->facts.trash_full != b->facts.trash_full ||
+        strcmp(a->type, b->type) != 0) {
+        f |= TIKU_TRK_EVF_KIND;
+    }
+    /* A volume's free space moves without anything else moving, which is
+     * the whole of what a space bar shows (AW-097) -- a visual fact like
+     * the icon, and the total is also the Size a volume's row reports. */
+    if (a->facts.total != b->facts.total ||
+        a->facts.avail != b->facts.avail) {
+        f |= TIKU_TRK_EVF_KIND | TIKU_TRK_EVF_SIZE;
+    }
+    if (strcmp(a->facts.meta, b->facts.meta) != 0) {
+        f |= TIKU_TRK_EVF_VALUE;
+    }
+    return f;
+}
+
 /** @brief Whether the facts a row displays have moved. */
 static int
 facts_differ(const tiku_trk_model_t *a, const tiku_trk_model_t *b)
 {
-    return a->facts.size != b->facts.size ||
-           a->facts.mtime != b->facts.mtime ||
-           a->facts.perm != b->facts.perm ||
-           a->kind != b->kind ||
-           /* A link losing its target changes nothing else about the entry,
-            * so without this term the diff cannot see it happen and the row
-            * goes on claiming the link is live. */
-           a->facts.link_broken != b->facts.link_broken ||
-           /* A Trash filling or emptying changes nothing else about the
-            * folder, so without this term the icon goes on showing the
-            * state it had when the window opened (AW-029). */
-           a->facts.trash_full != b->facts.trash_full ||
-           /* And a volume's free space moves without anything else moving,
-            * which is the whole of what a space bar shows (AW-097). */
-           a->facts.total != b->facts.total ||
-           a->facts.avail != b->facts.avail ||
-           strcmp(a->facts.meta, b->facts.meta) != 0 ||
-           strcmp(a->type, b->type) != 0;
+    return facts_fields(a, b) != 0u;
 }
 
 /** @brief Index of @p path in a listing, or -1. */
@@ -162,8 +189,9 @@ tiku_trk_notify_diff(const tiku_trk_model_t *was, int nwas,
             (void)tiku_trk_evlist_add(out, TIKU_TRK_EV_CREATED, &now[j],
                                       NULL, at);
         } else if (facts_differ(&was[k], &now[j])) {
-            (void)tiku_trk_evlist_add(out, TIKU_TRK_EV_CHANGED, &now[j],
-                                      NULL, at);
+            (void)tiku_trk_evlist_add_fields(out, TIKU_TRK_EV_CHANGED,
+                                             &now[j], NULL, at,
+                                             facts_fields(&was[k], &now[j]));
         }
     }
     return out->count - before;
