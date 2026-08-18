@@ -61,17 +61,33 @@ main(void)
     printf("window size controls (Q-001)\n");
     win = tiku_desk_workspace_open(desk, "Find", frame, NULL, NULL, NULL);
     check(win != NULL, "a window opens");
-    check(tiku_desk_workspace_hit(desk, 294, 250, &hit_win) ==
-          TIKU_DESK_HIT_ZOOM && hit_win == win,
-          "ordinary windows expose their zoom button");
-    check(tiku_desk_workspace_hit(desk, 770, 425, &hit_win) ==
-          TIKU_DESK_HIT_RESIZE,
-          "ordinary windows expose their resize corner");
+    {
+        /* Found by asking rather than by arithmetic: the tab is as wide
+         * as its title, which is the tab's business. */
+        int x, zoom_x = -1;
 
-    tiku_desk_window_set_size_controls(win, 0, 0);
-    check(tiku_desk_workspace_hit(desk, 294, 250, &hit_win) ==
-          TIKU_DESK_HIT_TAB,
-          "Q-001: a non-zoomable window has no active zoom button");
+        for (x = 224; x < 500 && zoom_x < 0; x++) {
+            if (tiku_desk_workspace_hit(desk, x, 250, &hit_win) ==
+                TIKU_DESK_HIT_ZOOM) {
+                zoom_x = x;
+            }
+        }
+        check(zoom_x > 0 && hit_win == win,
+              "ordinary windows expose their zoom button");
+        check(tiku_desk_workspace_hit(desk, 770, 425, &hit_win) ==
+              TIKU_DESK_HIT_RESIZE,
+              "ordinary windows expose their resize corner");
+
+        tiku_desk_window_set_size_controls(win, 0, 0);
+        for (x = 224; x < 500; x++) {
+            if (tiku_desk_workspace_hit(desk, x, 250, &hit_win) ==
+                TIKU_DESK_HIT_ZOOM) {
+                break;
+            }
+        }
+        check(x == 500,
+              "Q-001: a non-zoomable window has no active zoom button");
+    }
     check(tiku_desk_workspace_hit(desk, 770, 425, &hit_win) !=
           TIKU_DESK_HIT_RESIZE,
           "Q-001: a non-resizable window has no active resize corner");
