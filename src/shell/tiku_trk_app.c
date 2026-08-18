@@ -1572,8 +1572,7 @@ script_pixel_at(void *ctx, int x, int y)
         x >= a->surf->w || y >= a->surf->h) {
         return 0u;
     }
-    return (unsigned)a->surf->px[(size_t)y * (size_t)a->surf->w +
-                                 (size_t)x] & 0xffffffu;
+    return (unsigned)tiku_desk_peek(a->surf, x, y) & 0xffffffu;
 }
 
 /** @brief Resolve a named icon to the screen point it is drawn at. */
@@ -2666,6 +2665,10 @@ tracker_run(int argc, char **argv)
         if (a.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
+        }
+        if (tiku_desk_host_scale(a.host) > 1) {
+            (void)tiku_desk_surface_rescale(a.surf,
+                tiku_desk_host_scale(a.host), TIKU_DESK_C_PANEL);
         }
     }
     /* The window measures its own labels, which is what lets a pose's rect

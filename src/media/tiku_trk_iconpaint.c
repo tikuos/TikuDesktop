@@ -50,14 +50,12 @@ paint_bmp(tiku_desk_surface_t *s, const uint32_t *bmp, int x, int y,
         for (col = 0; col < size; col++) {
             int px = x + col;
             uint32_t src = bmp[(size_t)row * (size_t)size + (size_t)col];
-            tiku_desk_rgb_t *dst;
 
             if (px < s->clip.x || px >= s->clip.x + s->clip.w ||
                 px < 0 || px >= s->w || ((src >> 24) & 0xFFu) == 0u) {
                 continue;
             }
-            dst = &s->px[(size_t)py * (size_t)s->w + (size_t)px];
-            *dst = over(src, *dst);
+            tiku_desk_pixel(s, px, py, over(src, tiku_desk_peek(s, px, py)));
         }
     }
     return 1;
@@ -92,22 +90,22 @@ paint(tiku_desk_surface_t *s, const char *name, int x, int y, int size,
         for (col = 0; col < size; col++) {
             int px = x + col;
             uint32_t src = bmp[(size_t)row * (size_t)size + (size_t)col];
-            tiku_desk_rgb_t *dst;
+            tiku_desk_rgb_t d;
 
             if (px < s->clip.x || px >= s->clip.x + s->clip.w ||
                 px < 0 || px >= s->w || ((src >> 24) & 0xFFu) == 0u) {
                 continue;
             }
-            dst = &s->px[(size_t)py * (size_t)s->w + (size_t)px];
-            *dst = over(src, *dst);
+            d = over(src, tiku_desk_peek(s, px, py));
             if (m != 0u) {
-                unsigned r = ((*dst >> 16) & 0xFFu) * (255u - m) +
+                unsigned r = ((d >> 16) & 0xFFu) * (255u - m) +
                              ((wash >> 16) & 0xFFu) * m;
-                unsigned g = ((*dst >> 8) & 0xFFu) * (255u - m) +
+                unsigned g = ((d >> 8) & 0xFFu) * (255u - m) +
                              ((wash >> 8) & 0xFFu) * m;
-                unsigned b = (*dst & 0xFFu) * (255u - m) + (wash & 0xFFu) * m;
-                *dst = TIKU_DESK_RGB(r / 255u, g / 255u, b / 255u);
+                unsigned b = (d & 0xFFu) * (255u - m) + (wash & 0xFFu) * m;
+                d = TIKU_DESK_RGB(r / 255u, g / 255u, b / 255u);
             }
+            tiku_desk_pixel(s, px, py, d);
         }
     }
     return 1;
@@ -212,21 +210,21 @@ tiku_trk_paint_tint(tiku_desk_surface_t *s, tiku_desk_rect_t r,
             continue;
         }
         for (x = r.x; x < r.x + r.w; x++) {
-            tiku_desk_rgb_t *px;
+            tiku_desk_rgb_t px;
             int pr, pg, pb;
 
             if (x < s->clip.x || x >= s->clip.x + s->clip.w ||
                 x < 0 || x >= s->w) {
                 continue;
             }
-            px = &s->px[(size_t)y * (size_t)s->w + (size_t)x];
-            pr = (int)((*px >> 16) & 0xffu);
-            pg = (int)((*px >> 8) & 0xffu);
-            pb = (int)(*px & 0xffu);
+            px = tiku_desk_peek(s, x, y);
+            pr = (int)((px >> 16) & 0xffu);
+            pg = (int)((px >> 8) & 0xffu);
+            pb = (int)(px & 0xffu);
             pr = (pr * (255 - a) + cr * a) / 255;
             pg = (pg * (255 - a) + cg * a) / 255;
             pb = (pb * (255 - a) + cb * a) / 255;
-            *px = TIKU_DESK_RGB(pr, pg, pb);
+            tiku_desk_pixel(s, x, y, TIKU_DESK_RGB(pr, pg, pb));
         }
     }
 }

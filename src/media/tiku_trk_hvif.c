@@ -1426,19 +1426,19 @@ tiku_trk_hvif_blit(tiku_desk_surface_t *s, int dx, int dy, const uint32_t *bmp,
         for (x = x0; x < x1; x++) {
             uint32_t src = bmp[(size_t)(y - dy) * (size_t)w + (x - dx)];
             uint32_t ia = 255u - ((src >> 24) & 0xFFu);
-            tiku_desk_rgb_t d = s->px[(size_t)y * (size_t)s->w + x];
+            tiku_desk_rgb_t d = tiku_desk_peek(s, x, y);
 
             if (ia == 255u) {
                 continue;
             }
             /* The source is premultiplied, so there is no multiply on its
              * side; the surface has no alpha, so it counts as opaque. */
-            s->px[(size_t)y * (size_t)s->w + x] =
+            tiku_desk_pixel(s, x, y,
                 (((src >> 16) & 0xFFu) + hvif_mul255((d >> 16) & 0xFFu, ia))
                     << 16 |
                 (((src >> 8) & 0xFFu) + hvif_mul255((d >> 8) & 0xFFu, ia))
                     << 8 |
-                ((src & 0xFFu) + hvif_mul255(d & 0xFFu, ia));
+                ((src & 0xFFu) + hvif_mul255(d & 0xFFu, ia)));
         }
     }
 }

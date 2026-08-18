@@ -117,8 +117,7 @@ tiku_trk_script_adapter_pixel_at(void *context, int x, int y)
         x >= adapter->surface->w || y >= adapter->surface->h) {
         return 0u;
     }
-    return (unsigned)adapter->surface->px[
-        (size_t)y * (size_t)adapter->surface->w + (size_t)x] & 0xffffffu;
+    return (unsigned)tiku_desk_peek(adapter->surface, x, y) & 0xffffffu;
 }
 
 int

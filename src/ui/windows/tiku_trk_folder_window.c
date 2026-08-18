@@ -631,15 +631,19 @@ draw_folder_icon(tiku_trk_folder_window_t *folder,
  * paints all of it.
  */
 static int
-keep_pixels(tiku_trk_folder_window_t *folder, int w, int h)
+keep_pixels(tiku_trk_folder_window_t *folder, int w, int h, int scale)
 {
     if (w <= 0 || h <= 0) {
         return 0;
     }
+    if (scale < 1) {
+        scale = 1;
+    }
     if (folder->kept.px == NULL || folder->kept.w != w ||
-        folder->kept.h != h) {
+        folder->kept.h != h || folder->kept.scale != scale) {
         tiku_desk_rgb_t *px = realloc(folder->kept.px,
-                                      (size_t)w * (size_t)h * sizeof *px);
+                                      (size_t)w * (size_t)scale *
+                                      (size_t)h * (size_t)scale * sizeof *px);
 
         if (px == NULL) {
             return 0;
@@ -647,6 +651,7 @@ keep_pixels(tiku_trk_folder_window_t *folder, int w, int h)
         folder->kept.px = px;
         folder->kept.w = w;
         folder->kept.h = h;
+        folder->kept.scale = scale;
         folder->kept_ready = 0;
     }
     folder->kept.clip = (tiku_desk_rect_t){ 0, 0, w, h };
@@ -806,7 +811,7 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
      * spare. */
     paint = surface;
     area = list;
-    if (!icons && keep_pixels(folder, list.w, list.h)) {
+    if (!icons && keep_pixels(folder, list.w, list.h, surface->scale)) {
         paint = &folder->kept;
         area = (tiku_desk_rect_t){ 0, 0, list.w, list.h };
     }

@@ -1936,6 +1936,9 @@ script_redraw_diff(void *ctx)
         return -1;
     }
     n = (size_t)app->surf->w * (size_t)app->surf->h;
+    if (app->surf->scale > 1) {
+        n *= (size_t)app->surf->scale * (size_t)app->surf->scale;
+    }
     was = malloc(n * sizeof *was);
     if (was == NULL) {
         return -1;
@@ -2281,6 +2284,10 @@ tracker_run(int argc, char **argv)
         if (app.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
+        }
+        if (tiku_desk_host_scale(app.host) > 1) {
+            (void)tiku_desk_surface_rescale(app.surf,
+                tiku_desk_host_scale(app.host), app.backdrop_color);
         }
     }
     if (shot != NULL) {
