@@ -639,3 +639,23 @@ tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_desk_surface_t *s,
         tx += w;
     }
 }
+
+int
+tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_desk_rect_t frame, int x,
+                    int y)
+{
+    int at;
+
+    if (m == NULL) {
+        return 0;
+    }
+    at = tiku_trk_menu_item_at(m, frame, x, y);
+    if (at >= 0 && (m->item[at].separator || !m->item[at].enabled)) {
+        at = -1;                /* nothing to choose there: no highlight */
+    }
+    if (at == m->hot) {
+        return 0;
+    }
+    m->hot = at;
+    return 1;
+}

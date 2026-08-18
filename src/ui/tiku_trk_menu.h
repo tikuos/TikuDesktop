@@ -129,6 +129,18 @@ int tiku_trk_menu_item_top(const tiku_trk_menu_t *m, int i);
 int tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
                           int x, int y);
 
+/**
+ * @brief Let the hot row follow the pointer over an open menu.
+ *
+ * The draw has always highlighted m->hot; this is the hand that moves it.
+ * Outside the frame the hot row clears, so a menu never keeps a stale
+ * highlight for a pointer that left.
+ *
+ * @return Nonzero when the hot row CHANGED, so the caller knows to paint.
+ */
+int tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_desk_rect_t frame,
+                        int x, int y);
+
 /** @brief Where the menu should sit so it stays on @p screen. */
 tiku_desk_rect_t tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y,
                                      tiku_desk_rect_t screen);

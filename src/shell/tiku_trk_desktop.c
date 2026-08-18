@@ -1840,8 +1840,15 @@ draw_all(desktop_t *app)
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {
+        /* Re-aimed here because the menus are rebuilt per draw, which
+         * clears the hot row a moment after the motion set it. */
+        (void)tiku_trk_menu_track(app->popup, app->popup_frame,
+                                  app->ptr_x, app->ptr_y);
         tiku_trk_menu_draw(app->popup, app->surf, app->popup_frame);
         if (app->popup_sub != NULL) {
+            (void)tiku_trk_menu_track(app->popup_sub,
+                                      app->popup_sub_frame, app->ptr_x,
+                                      app->ptr_y);
             tiku_trk_menu_draw(app->popup_sub, app->surf,
                                app->popup_sub_frame);
         }
@@ -3437,6 +3444,24 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
+                if (app.popup != NULL) {
+                    /* The hot row follows the pointer, in the level it is
+                     * over: without this a menu gives no sign of which
+                     * item a pick would take. */
+                    int menu_moved = 0;
+
+                    menu_moved |= tiku_trk_menu_track(app.popup,
+                                                      app.popup_frame,
+                                                      ev.x, ev.y);
+                    if (app.popup_sub != NULL) {
+                        menu_moved |= tiku_trk_menu_track(app.popup_sub,
+                                                          app.popup_sub_frame,
+                                                          ev.x, ev.y);
+                    }
+                    if (menu_moved) {
+                        app.dirty = 1;
+                    }
+                }
                 if (app.deskbar_press &&
                     (ev.x - app.press_x > 4 || app.press_x - ev.x > 4 ||
                      ev.y - app.press_y > 4 || app.press_y - ev.y > 4)) {

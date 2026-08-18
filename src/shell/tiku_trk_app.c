@@ -126,6 +126,7 @@ typedef struct {
     /* Deferred and periodic work, pulsed from the loop's own tick: the
      * cooperative protothread the TIKU note asks for (AW-083). */
     tiku_trk_loop_t                 *loop;
+    int                  ptr_x, ptr_y;   /* the pointer, as last seen    */
     /* The modal question, hosted the way the desktop shell hosts it: the
      * same overlay, over this window's one surface, so the delete question
      * and a collision are the same question in both shells (FS-046). */
@@ -748,8 +749,15 @@ draw_popup(app_t *a)
     if (a->popup == NULL) {
         return;
     }
+    /* Re-aimed here because the menus are rebuilt per draw, which clears
+     * the hot row a moment after the motion set it: the last pointer the
+     * window saw is where the highlight belongs. */
+    (void)tiku_trk_menu_track(a->popup, a->popup_frame, a->ptr_x,
+                              a->ptr_y);
     tiku_trk_menu_draw(a->popup, a->surf, a->popup_frame);
     if (a->popup_sub != NULL) {
+        (void)tiku_trk_menu_track(a->popup_sub, a->popup_sub_frame,
+                                  a->ptr_x, a->ptr_y);
         tiku_trk_menu_draw(a->popup_sub, a->surf, a->popup_sub_frame);
     }
 }
@@ -3224,6 +3232,26 @@ tracker_run(int argc, char **argv)
                 break;
             }
             case TIKU_DESK_EVENT_POINTER_MOVE: {
+                a.ptr_x = ev.x;
+                a.ptr_y = ev.y;
+                if (a.popup != NULL) {
+                    /* The hot row follows the pointer, in the level it is
+                     * over: without this a menu gives no sign of which
+                     * item a pick would take. */
+                    int moved = 0;
+
+                    moved |= tiku_trk_menu_track(a.popup, a.popup_frame,
+                                                 ev.x, ev.y);
+                    if (a.popup_sub != NULL) {
+                        moved |= tiku_trk_menu_track(a.popup_sub,
+                                                     a.popup_sub_frame,
+                                                     ev.x, ev.y);
+                    }
+                    if (moved) {
+                        a.dirty = 1;
+                    }
+                    break;
+                }
                 if (a.sb.tracking) {
                     tiku_trk_poseview_scroll_to(a.view,
                         tiku_trk_scroll_drag(&a.sb, a.sb_rect.h,
