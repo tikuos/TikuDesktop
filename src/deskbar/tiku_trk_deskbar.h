@@ -103,7 +103,9 @@ typedef enum {
     TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
     TIKU_TRK_DB_ITEM_DIR,       /* expand it: its contents are a submenu */
     TIKU_TRK_DB_ITEM_RECENT,    /* one of the three recent lists         */
-    TIKU_TRK_DB_ITEM_DISABLED   /* said, not chosen                      */
+    TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
+    TIKU_TRK_DB_ITEM_POWER_OFF, /* inside Shut down: immediate (DB-006)  */
+    TIKU_TRK_DB_ITEM_RESTART
 } tiku_trk_db_item_kind_t;
 
 /** @brief Which recent list a RECENT row shows. */
@@ -301,6 +303,8 @@ typedef enum {
     TIKU_TRK_DB_LAUNCH_TEAM,      /* middle-click: a new instance   */
     TIKU_TRK_DB_KILL_TEAM,        /* the Vulcan Death Grip (DB-020) */
     TIKU_TRK_DB_QUIT_TEAM,        /* the polite request (DB-028)    */
+    TIKU_TRK_DB_POWER_OFF,        /* no confirmation: chosen inside */
+    TIKU_TRK_DB_RESTART,          /* the submenu acts (DB-006)      */
 } tiku_trk_db_action_t;
 
 typedef struct {

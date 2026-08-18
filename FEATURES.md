@@ -7088,14 +7088,13 @@ ClearMenuBuildingState sets fMenuBuilt=false; MenusEnded additionally calls sDes
 **PORT:** Rebuilt on every open, from both entry points -- the click on the leaf and the keyboard's own -- so a file put in the Deskbar folder appears without restarting anything.  
 *src/deskbar/tiku_trk_deskbar.c (build_leaf from the click path and from tiku_trk_deskbar_open_menu); tests/test_dbdrop.c*
 
-#### DB-006 · important · partial
+#### DB-006 · important · done
 **Choosing the 'Shutdown…' parent item asks for confirmation; choosing 'Power off' or 'Restart system' inside its submenu acts immediately**  
 The parent item's message is kShutdownSystem with "confirm"=true; submenu items carry bare kShutdownSystem/kRebootSystem; both route to BRoster::Private::ShutDown(reboot, confirm, false)  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **TIKU:** Maps to a TikuOS power/reset request; the confirm flag distinction should survive  
-**MISSING:** The Power off / Restart submenu with its confirm-vs-immediate split remains absent.  The parent item keeps its ellipsis's promise now: Shut down… asks, Cancel the default, and Escape means no.  
-*src/shell/tiku_trk_desktop.c (TAG_SHUTDOWN); tests/shell/shutdownask.script*  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click case 9; src/shell/tiku_trk_desktop.c:main TIKU_TRK_DB_QUIT arm*
+**PORT:** The whole split now: the parent's ellipsis asks (Cancel the default, Escape means no -- shutdownask.script), while the arrow beside it expands Power off / Restart system, and either of those ACTS the moment it is chosen, no question -- Power off ends the session outright and Restart system re-execs the same desktop image, this host's power/reset request.  The submenu opens from the row's arrow zone because this port's leaf submenus open by click, not hover.  
+*src/deskbar/tiku_trk_deskbar.c (the QUIT submenu in open_sub, the arrow zone, the sub dispatch); src/shell/tiku_trk_desktop.c (POWER_OFF/RESTART arms); tests/test_deskbar_dock.c (DB-006, mutation-tested); tests/shell/shutdownask.script*
 
 #### DB-007 · important · done
 **'Show replicants' is a checkable item that toggles the dragger handles of every replicant system-wide, and its checkmark reflects the current global state when the menu opens**  

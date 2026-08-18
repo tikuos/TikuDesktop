@@ -1408,6 +1408,9 @@ find_save_as(void *context)
                                     "query");
 }
 
+/* The argv the desktop was started with, for Restart system (DB-006). */
+static char **restart_argv;
+
 /**
  * @brief Carry out what a Deskbar click asked for.
  *
@@ -1525,6 +1528,17 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         break;
     }
+    case TIKU_TRK_DB_POWER_OFF:
+        /* Chosen inside the submenu: immediate, no question -- the
+         * parent's ellipsis is where the asking lives (DB-006). */
+        app->running = 0;
+        break;
+    case TIKU_TRK_DB_RESTART:
+        /* A real restart of the desktop: the same image, started
+         * over. */
+        execv("/proc/self/exe", restart_argv);
+        app->running = 0;       /* exec refused: end instead */
+        break;
     case TIKU_TRK_DB_QUIT_TEAM: {
         /* Politely: SIGTERM, the process's chance to
          * put its affairs in order (DB-028). */
@@ -2403,6 +2417,8 @@ tracker_run(int argc, char **argv)
 {
     desktop_t app;
     const char *port = NULL, *shot = NULL, *script_path = NULL;
+
+    restart_argv = argv;
     tiku_trk_script_t *sc = NULL;
     int rc = 0;
     int baud = 115200, use_device = 0, i;

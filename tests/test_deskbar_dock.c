@@ -715,6 +715,58 @@ main(void)
         (void)unlink(pb);
     }
 
+
+    printf("\nthe shutdown split: the parent asks, the pair acts (DB-006)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        int sx = 0, sy = 0;
+
+        tiku_trk_deskbar_draw(db, s);   /* the frame follows the dock */
+        tiku_trk_deskbar_open_menu(db);
+        check(tiku_trk_deskbar_menu_point(db, "Shut down", &sx, &sy) == 1,
+              "DB-006", "the leaf still carries Shut down\xe2\x80\xa6");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, sx, sy, 0u, 1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_QUIT, "DB-006",
+              "choosing the parent asks: the pick the shell confirms");
+        tiku_trk_deskbar_open_menu(db);
+        (void)tiku_trk_deskbar_menu_point(db, "Shut down", &sx, &sy);
+        {
+            tiku_desk_rect_t bar2 = tiku_trk_deskbar_frame(db);
+
+            /* The arrow zone expands instead of choosing. */
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar2.x - 2 - 20 + 12, sy, 0u,
+                                         1, 1, &pick);
+        }
+        check(pick.what == TIKU_TRK_DB_NONE, "DB-006",
+              "the arrow zone expands rather than choosing");
+
+        memset(&pick, 0, sizeof pick);
+        if (tiku_trk_deskbar_menu_point(db, "Power off", &sx, &sy) == 1) {
+            (void)tiku_trk_deskbar_click(db, sx, sy, 0u, 1, 1, &pick);
+        }
+        check(pick.what == TIKU_TRK_DB_POWER_OFF, "DB-006",
+              "Power off inside the submenu acts with no question");
+        tiku_trk_deskbar_open_menu(db);
+        (void)tiku_trk_deskbar_menu_point(db, "Shut down", &sx, &sy);
+        {
+            tiku_desk_rect_t bar2 = tiku_trk_deskbar_frame(db);
+
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar2.x - 2 - 20 + 12, sy, 0u,
+                                         1, 1, &pick);
+        }
+        memset(&pick, 0, sizeof pick);
+        if (tiku_trk_deskbar_menu_point(db, "Restart system", &sx,
+                                        &sy) == 1) {
+            (void)tiku_trk_deskbar_click(db, sx, sy, 0u, 1, 1, &pick);
+        }
+        check(pick.what == TIKU_TRK_DB_RESTART, "DB-006",
+              "and Restart system likewise");
+        tiku_trk_deskbar_close_menu(db);
+    }
+
     tiku_trk_deskbar_free(db);
     tiku_desk_surface_free(s);
     printf("\n%s\n", fails ? "FAILURES" : "the bar sits where it is put");

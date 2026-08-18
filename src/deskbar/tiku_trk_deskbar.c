@@ -1799,6 +1799,22 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         return;
     }
     it = &db->leaf[at];
+    if (it->kind == TIKU_TRK_DB_ITEM_QUIT) {
+        /* The confirm-vs-immediate split (DB-006): the parent asks, the
+         * submenu's two rows act the moment they are chosen. */
+        tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
+
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_POWER_OFF;
+        snprintf(si->label, sizeof si->label, "%s", "Power off");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_RESTART;
+        snprintf(si->label, sizeof si->label, "%s", "Restart system");
+        db->sub_of = at;
+        db->sub_hot = -1;
+        return;
+    }
     if (it->kind == TIKU_TRK_DB_ITEM_RECENT) {
         int i;
 
@@ -2256,7 +2272,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                db->leaf[i].label,
                                tiku_desk_tint(TIKU_DESK_C_PANEL, 1.55f));
             } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT) {
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT ||
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
                 /* What expands says so, the way every hierarchical menu
                  * marks the rows that go somewhere (DB-002). */
                 tiku_desk_text(s, f, m.x + m.w - 12,
@@ -2538,9 +2555,15 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 
             if (x >= sm.x && x < sm.x + sm.w && y >= sm.y &&
                 y < sm.y + sm.h && si >= 0 && si < db->sub_count) {
-                pick->what = TIKU_TRK_DB_OPEN_PATH;
-                snprintf(pick->path, sizeof pick->path, "%s",
-                         db->sub[si].path);
+                if (db->sub[si].kind == TIKU_TRK_DB_ITEM_POWER_OFF) {
+                    pick->what = TIKU_TRK_DB_POWER_OFF;
+                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_RESTART) {
+                    pick->what = TIKU_TRK_DB_RESTART;
+                } else {
+                    pick->what = TIKU_TRK_DB_OPEN_PATH;
+                    snprintf(pick->path, sizeof pick->path, "%s",
+                             db->sub[si].path);
+                }
                 db->menu_open = 0;
                 db->sub_of = -1;
                 return 1;
@@ -2576,6 +2599,12 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 build_leaf(db);
                 return 1;
             case TIKU_TRK_DB_ITEM_QUIT:
+                if (x >= m.x + m.w - 20) {
+                    /* The arrow: the immediate pair beside the row,
+                     * expanding rather than choosing (DB-006). */
+                    open_sub(db, idx);
+                    return 1;
+                }
                 pick->what = TIKU_TRK_DB_QUIT;
                 break;
             case TIKU_TRK_DB_ITEM_PATH:
