@@ -31,6 +31,7 @@
  * correct and merely slower.
  */
 #define TIKU_TRK_ROWS_KEPT 160
+#define TIKU_TRK_ICONS_KEPT 192
 
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
 
@@ -118,6 +119,15 @@ struct tiku_trk_folder_window {
      * paint, this says a row LOOKS different.  Slots past the end hold 0,
      * which nothing hashes to. */
     uint32_t                   row_sig[TIKU_TRK_ROWS_KEPT];
+    /* The icon modes' own memory: what each visible pose was painted
+     * from and where, so an icon frame repaints exactly the poses that
+     * changed and the places they left (PVL-062). */
+    uint32_t                   icon_sig[TIKU_TRK_ICONS_KEPT];
+    tiku_desk_rect_t           icon_rect[TIKU_TRK_ICONS_KEPT];
+    int                        icon_kept_n;
+    uint32_t                   icon_view_sig;
+    int                        icon_origin_x, icon_origin_y;
+    int                        kept_icons;     /* what the kept pixels are */
     tiku_trk_folder_render_t  *render;
 };
 

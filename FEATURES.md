@@ -1022,7 +1022,7 @@ DisableScrollBars sets both scrollbar targets to NULL, EnableScrollBars restores
 AddPosesCompleted (list mode): if bounds.top > (count-1) * fListElemHeight, scroll to max(lastItemTop, 0). DeletePose applies the same idea after a removal, scrolling up one row when no pose occupies the bottom row and bounds.top > 0. UpdateAfterFilterChange does it for filtering.  
 `PoseView.cpp` → `BPoseView::AddPosesCompleted / BPoseView::DeletePose / BPoseView::UpdateAfterFilterChange`  
 
-#### PVL-062 · core · partial
+#### PVL-062 · core · done
 **Drawing walks only the poses that can intersect the update rect and stops early.**  
 DrawViewCommon list mode: startIndex = (updateRect.top - fListElemHeight) / fListElemHeight clamped to 0, walking down and breaking once location.y >= updateRect.bottom. Icon modes iterate CurrentPoseList() (= fVSPoseList, sorted by y) and break once a pose's location.y passes updateRect.bottom — which is why the vertical-sort list must stay ordered.  
 `PoseView.cpp` → `BPoseView::DrawViewCommon`  
@@ -1032,14 +1032,10 @@ damage names -- the update rect the early-out was waiting for is the damage
 the view accumulates, taken by the draw and compared against each row's
 place.  A frame with nothing accumulated paints the listing, which is what a
 first frame and a scroll both need.
-**MISSING:** The icon modes have the viewport early-out and no damage: they
-draw straight into the frame rather than into pixels of their own, so every
-icon frame is a whole-view repaint.  A scroll is the other one -- it records
-no damage, so it goes the whole-listing way rather than sliding the rows
-that stay.
+**PORT (icon half):** The icon modes now keep their own pixels and paint by damage: every visible pose is SIGNED (art, name, place, selection, the volume facts a space bar reads), a pose whose signature moved is repainted where it is AND where it was -- the ground under each damaged place refilled first, every pose the place touches redrawn inside a clip -- and a frame in which nothing moved paints no pose at all.  A view change (origin, size, mode, ground, a live band) repaints whole, which is what a scroll and a first frame both need; the walk itself starts and stops at the visible range and paints only the poses a damaged place touches.
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_visible_range;
-src/ui/windows/tiku_trk_folder_window.c:draw_list (damage + row signatures);
-tests/shell/repaint.script; tests/shell/repaintsame.script*
+src/ui/windows/tiku_trk_folder_window.c (pose_signature/pose_footprint and the icon damage branch; draw_list damage + row signatures);
+tests/shell/repaint.script; tests/shell/iconrepaint.script (quiet frames paint nothing, one selection paints one pose, held against a full redraw -- mutation-tested); tests/shell/repaintsame.script*
 *Shell: desktop*
 
 #### PVL-063 · important · done
@@ -1134,14 +1130,14 @@ cleared ground with it, the free space being part of what the row's
 signature is taken over.  
 The row, not the bar, is the damage unit -- the mechanism difference -- and the invariant the source's bar-rect served is held by the row clearing its own ground before anything draws, so a moving reading cannot leave its last self behind.
 
-#### PVL-075 · polish · partial
+#### PVL-075 · polish · differs
 **Changing an item's icon repaints only that icon, not the row or the label.**  
 BPose::UpdateIcon tells the icon cache the icon changed and invalidates _ListIconRect (list mode) or _IconRect (icon modes) only. The list icon rect is at ListOffset() from the row's left, vertically centred in the row.  
 `Pose.cpp` → `BPose::UpdateIcon / BPose::_ListIconRect / BPose::_IconRect`  
 **TIKU:** Device-node icons are chosen from the typed descriptor/capability bits rather than a MIME type, and change on watch notifications.
 **SUBSYSTEM:** Incremental-repaint layer: an icon change does appear (the icon name is derived from the live model at every draw — src/shell/tiku_trk_app.c:558-563, src/shell/tiku_trk_desktop.c:262-277), but the row's claim is repaint scope, and with no invalidation rects (grep empty) the redraw is always the whole window, never just the icon rect.  
 **PORT:** Anything that learns about ONE row says which row: the change notice, the value read and the icon probe all damage that row, and the draw paints the damaged rows alone. The icon probe was the reason this looked impossible -- it learns what picture a single pose has and asked for a whole frame, which repainted the listing and undid the damage the notice had just recorded.  
-**MISSING:** Two frames carry one change here rather than one -- the notice, then the icon probe a tick later -- so the row is painted twice; and it is the row that is repainted, not the icon rectangle inside it, there being no smaller unit than a row in this draw.  
+**PORT:** The repaint quantum differs by design: the port's damage unit is the pose footprint (icon modes, now signature-driven) or the row (lists), not the bare icon rectangle -- the signature scheme that makes every state change repaint-safe has no smaller currency, and buying one would mean a second invalidation vocabulary for a saving of a label's width.  The notice and the icon probe each name one pose and paint only it; on this backend the pair lands as two one-pose frames, recorded below as an equivalent mutation.  
 **PORT:** The two damage sources cannot be told apart by test on this backend: a change replaces the model, which resets the icon hint, so the probe always follows a notice and damages the same row. Removing either one alone leaves the count unchanged -- an equivalent mutation, recorded rather than chased. The notice is the load-bearing one; a backend that kept the hint across a stat would show it.  
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_damage_row and its callers; src/shell/tiku_trk_desktop.c (the icon-hint probe); tests/shell/repaint.script*
 #### PVL-076 · polish · done

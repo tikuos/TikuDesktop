@@ -170,6 +170,13 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
                int origin_x, int origin_y)
 {
     tiku_trk_folder_render_t *render = folder->render;
+
+    /* The economy counter the scripts read.  The backdrop's own poses
+     * are not counted: it is always on screen, and the scripts measure
+     * the WINDOW they drove. */
+    if (folder->win != NULL) {
+        render->rows_drawn++;
+    }
     const tiku_desk_font_t *font = tiku_desk_font_plain();
     int ix, iy, iw, ih, lx, ly, lw, lh;
     int selected = tiku_trk_poseview_draws_selected(folder->view, pose);
@@ -281,6 +288,71 @@ tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
         tiku_trk_paint_image(surface, &folder->bg_image, dst, content);
     }
     return 1;
+}
+
+static uint32_t sig_bytes(uint32_t h, const void *p, size_t n);
+static uint32_t sig_text(uint32_t h, const char *t);
+
+/** @brief The whole footprint of one pose, in the paint's coordinates. */
+static tiku_desk_rect_t
+pose_footprint(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
+               int origin_x, int origin_y)
+{
+    int ix, iy, iw, ih, lx, ly, lw, lh;
+    tiku_desk_rect_t r;
+    int x1, y1;
+
+    tiku_trk_poseview_pose_parts(folder->view, pose, &ix, &iy, &iw, &ih,
+                                 &lx, &ly, &lw, &lh);
+    ix -= origin_x;
+    iy -= origin_y;
+    lx -= origin_x;
+    ly -= origin_y;
+    r.x = (ix < lx - 3) ? ix : lx - 3;
+    r.y = (iy < ly) ? iy : ly;
+    x1 = (ix + iw > lx + lw + 3) ? ix + iw : lx + lw + 3;
+    y1 = (iy + ih > ly + lh + 2) ? iy + ih : ly + lh + 2;
+    /* A pixel of margin each way: the halo and the selection band both
+     * reach past the ink. */
+    r.x -= 2;
+    r.y -= 2;
+    r.w = x1 - r.x + 2;
+    r.h = y1 - r.y + 2;
+    return r;
+}
+
+/** @brief What one pose would paint, folded to a word (PVL-062). */
+static uint32_t
+pose_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
+{
+    tiku_trk_folder_render_t *render = folder->render;
+    char art[TIKU_TRK_NAME_MAX];
+    uint32_t h = UINT32_C(2166136261);
+
+    (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
+                                    &pose->model, art, sizeof art);
+    h = sig_text(h, art);
+    h = sig_text(h, pose->model.name);
+    h = sig_bytes(h, &pose->loc_x, sizeof pose->loc_x);
+    h = sig_bytes(h, &pose->loc_y, sizeof pose->loc_y);
+    h = sig_bytes(h, &pose->selected, sizeof pose->selected);
+    h = sig_bytes(h, &pose->model.facts.link_broken,
+                  sizeof pose->model.facts.link_broken);
+    h = sig_bytes(h, &pose->model.facts.trash_full,
+                  sizeof pose->model.facts.trash_full);
+    h = sig_bytes(h, &pose->model.facts.avail,
+                  sizeof pose->model.facts.avail);
+    h = sig_bytes(h, &pose->model.facts.total,
+                  sizeof pose->model.facts.total);
+    return h;
+}
+
+/** @brief Whether two rectangles share any pixel. */
+static int
+rects_touch(tiku_desk_rect_t a, tiku_desk_rect_t b)
+{
+    return a.x < b.x + b.w && b.x < a.x + a.w &&
+           a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
 void
@@ -820,7 +892,12 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
      * spare. */
     paint = surface;
     area = list;
-    if (!icons && keep_pixels(folder, list.w, list.h, surface->scale)) {
+    if (folder->kept_icons != icons) {
+        /* The kept pixels belong to the other mode: worthless here. */
+        folder->kept_ready = 0;
+        folder->kept_icons = icons;
+    }
+    if (keep_pixels(folder, list.w, list.h, surface->scale)) {
         paint = &folder->kept;
         area = (tiku_desk_rect_t){ 0, 0, list.w, list.h };
     }
@@ -831,11 +908,15 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
      * here is a damage rectangle and every row a damage rectangle touches
      * is painted below in the same frame. */
     slide = tiku_trk_poseview_repaint_take_slide(folder->view, &slide_y);
-    render->ndamage = (paint != surface && folder->kept_ready)
+    render->ndamage = (!icons && paint != surface && folder->kept_ready)
                           ? tiku_trk_poseview_repaint_take(folder->view,
                                 render->damage, TIKU_TRK_REPAINT_MAX)
                           : 0;
-    if (render->ndamage > 0) {
+    if (icons) {
+        /* The icon modes' ground is painted inside their own damage
+         * logic below: filling it here would erase poses no frame
+         * repaints (PVL-062). */
+    } else if (render->ndamage > 0) {
         tiku_desk_rect_t inner = tiku_desk_inset(area, 2);
         int d;
 
@@ -902,9 +983,132 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     total = tiku_trk_poseview_count(folder->view);
     tiku_desk_clip_set(paint, tiku_desk_inset(area, 2));
     if (icons) {
-        folder->bg_drawn = tiku_trk_folder_window_draw_background(
-            folder, paint, tiku_desk_inset(area, 2));
-        tiku_trk_folder_window_draw_icons(folder, paint, area);
+        /* The icon frame paints what changed and nothing else: every
+         * visible pose is signed, the poses whose signature moved are
+         * repainted where they are AND where they were, and a frame in
+         * which nothing moved paints nothing at all (PVL-062).  A view
+         * change -- origin, size, mode, ground -- repaints whole. */
+        tiku_desk_rect_t inner = tiku_desk_inset(area, 2);
+        uint32_t vsig = UINT32_C(2166136261);
+        tiku_desk_rect_t dmg[24];
+        uint32_t cur_sig[TIKU_TRK_ICONS_KEPT];
+        tiku_desk_rect_t cur_rect[TIKU_TRK_ICONS_KEPT];
+        int cur_at[TIKU_TRK_ICONS_KEPT];
+        int cur_n = 0, ndmg = 0, full, first = -1, last = -1, k, j;
+        int origin_x = 0, origin_y = 0, isz, band_up;
+
+        tiku_trk_poseview_origin(folder->view, &origin_x, &origin_y);
+        isz = tiku_trk_poseview_icon_size(folder->view);
+        vsig = sig_bytes(vsig, &isz, sizeof isz);
+        vsig = sig_bytes(vsig, &area.w, sizeof area.w);
+        vsig = sig_bytes(vsig, &area.h, sizeof area.h);
+        {
+            int m = tiku_trk_poseview_mode(folder->view);
+            tiku_desk_rgb_t bg = tiku_trk_poseview_background(folder->view);
+
+            vsig = sig_bytes(vsig, &m, sizeof m);
+            vsig = sig_bytes(vsig, &bg, sizeof bg);
+        }
+        band_up = (*render->band_folder == folder);
+        full = !folder->kept_ready || vsig != folder->icon_view_sig ||
+               origin_x != folder->icon_origin_x ||
+               origin_y != folder->icon_origin_y || band_up;
+        if (tiku_trk_poseview_visible_range(folder->view, &first, &last)) {
+            int ox = origin_x - (area.x + 2);
+            int oy = origin_y - (area.y + 2);
+
+            for (k = first; k <= last; k++) {
+                tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view,
+                                                             k);
+
+                if (pose == NULL || !pose->placed) {
+                    continue;
+                }
+                if (cur_n >= TIKU_TRK_ICONS_KEPT) {
+                    full = 1;
+                    break;
+                }
+                cur_sig[cur_n] = pose_signature(folder, pose);
+                cur_rect[cur_n] = pose_footprint(folder, pose, ox, oy);
+                cur_at[cur_n] = k;
+                cur_n++;
+            }
+        }
+        if (!full) {
+            int most = (cur_n > folder->icon_kept_n)
+                           ? cur_n : folder->icon_kept_n;
+
+            for (k = 0; k < most; k++) {
+                int changed = (k >= cur_n || k >= folder->icon_kept_n ||
+                               cur_sig[k] != folder->icon_sig[k]);
+
+                if (!changed) {
+                    continue;
+                }
+                if (k < folder->icon_kept_n && ndmg < 24) {
+                    dmg[ndmg++] = folder->icon_rect[k];
+                }
+                if (k < cur_n && ndmg < 24) {
+                    dmg[ndmg++] = cur_rect[k];
+                }
+                if (ndmg >= 24) {
+                    full = 1;
+                    break;
+                }
+            }
+        }
+        if (full) {
+            /* The frame's border lies OUTSIDE the pose clip. */
+            tiku_desk_clip_reset(paint);
+            tiku_desk_ui_sunken(paint, area,
+                                tiku_trk_poseview_background(folder->view));
+            tiku_desk_clip_set(paint, inner);
+            folder->bg_drawn = tiku_trk_folder_window_draw_background(
+                folder, paint, inner);
+            tiku_trk_folder_window_draw_icons(folder, paint, area);
+        } else if (ndmg > 0) {
+            for (k = 0; k < ndmg; k++) {
+                tiku_desk_rect_t r = dmg[k];
+
+                if (r.x < inner.x) { r.w -= inner.x - r.x; r.x = inner.x; }
+                if (r.y < inner.y) { r.h -= inner.y - r.y; r.y = inner.y; }
+                if (r.x + r.w > inner.x + inner.w) {
+                    r.w = inner.x + inner.w - r.x;
+                }
+                if (r.y + r.h > inner.y + inner.h) {
+                    r.h = inner.y + inner.h - r.y;
+                }
+                if (r.w <= 0 || r.h <= 0) {
+                    continue;
+                }
+                tiku_desk_clip_set(paint, r);
+                tiku_desk_fill(paint, r,
+                    tiku_trk_poseview_background(folder->view));
+                (void)tiku_trk_folder_window_draw_background(folder, paint,
+                                                             inner);
+                for (j = 0; j < cur_n; j++) {
+                    if (rects_touch(cur_rect[j], r)) {
+                        tiku_trk_pose_t *pose = tiku_trk_poseview_at(
+                            folder->view, cur_at[j]);
+
+                        if (pose != NULL) {
+                            draw_pose_icon(folder, paint, pose,
+                                origin_x - (area.x + 2),
+                                origin_y - (area.y + 2));
+                        }
+                    }
+                }
+                tiku_desk_clip_reset(paint);
+            }
+        }
+        tiku_desk_clip_set(paint, inner);
+        memcpy(folder->icon_sig, cur_sig, sizeof cur_sig[0] * (size_t)cur_n);
+        memcpy(folder->icon_rect, cur_rect,
+               sizeof cur_rect[0] * (size_t)cur_n);
+        folder->icon_kept_n = cur_n;
+        folder->icon_view_sig = vsig;
+        folder->icon_origin_x = origin_x;
+        folder->icon_origin_y = origin_y;
     } else {
         draw_list(folder, paint, area, rows, scroll, total);
     }

@@ -1,0 +1,26 @@
+# shell: desktop
+# home: fixture
+# PVL-062/PVL-075: an icon frame paints what changed and nothing else --
+# selecting one icon repaints that icon, not the window of them.
+wait 8
+key 1 ctrl
+wait 10
+note the mode switch behind us, a quiet stretch paints no pose at all
+draw-reset
+wait 20
+expect-drawn 0
+note selecting one icon paints one pose -- where it is, nothing else
+draw-reset
+click 88 119
+wait 6
+expect-drawn 2
+expect-drawn at-least 1
+note clearing the selection paints it once more, still alone
+draw-reset
+click 150 119
+wait 6
+expect-drawn 2
+expect-drawn at-least 1
+note and the frame as a whole matches what a full redraw would say
+expect-same-as-redraw
+quit
