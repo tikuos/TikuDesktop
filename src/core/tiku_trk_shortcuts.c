@@ -309,8 +309,12 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
 
     case TIKU_TRK_CMD_ADD_ONS:
     case TIKU_TRK_CMD_MOUNT:
-    case TIKU_TRK_CMD_UNMOUNT:
         return 0;
+
+    /* Live now, through the volume model; the boot volume's entry is
+     * disabled so it cannot be unmounted (CW-034). */
+    case TIKU_TRK_CMD_UNMOUNT:
+        return c->selection_is_volume && !c->selection_is_boot;
 
     /* Arrange by is meaningless in list view, where the column titles sort. */
     case TIKU_TRK_CMD_ARRANGE_BY:

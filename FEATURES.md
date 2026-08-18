@@ -2137,12 +2137,13 @@ BWindow::AddShortcut implies B_COMMAND_KEY unless B_NO_COMMAND_KEY is passed. Th
 Each pair is a *Label()/*Command() method reading modifiers() at call time; TShortcuts::Update() rewrites item->SetLabel(), item->Message()->what and item->SetShortcut(..., B_COMMAND_KEY | (modifiers() & B_SHIFT_KEY)) for every item it recognises by command code. Identify rewrites the message's "force" bool instead of its what.  
 `Shortcuts.cpp` → `TShortcuts::Update; TShortcuts::CopyLabel/CopyCommand, CutCommand, PasteCommand, CloseCommand, CleanupCommand, CreateLinkCommand, MoveToTrashCommand, IdentifyItem`  
 
-#### PVK-044 · important · partial
+#### PVK-044 · important · done
 **Menu items enable/disable from live state: Copy needs a selection or a focused text view, Cut/Move to/Delete additionally need a writable volume and are off in root/Trash/virtual dirs, Paste needs clipboard refs and a writable non-Trash target, Unmount needs an unmountable (non-boot) volume selected, Open parent needs CanOpenParent(), Empty Trash needs a full Trash, Arrange by is only enabled outside list mode, Make active printer needs exactly one selection.**  
 TShortcuts::Update* methods each call item->SetEnabled(...) plus item->SetTarget(PoseView() or fContainerWindow or be_app). Predicates: HasSelection(), SelectionIsReadOnly() (SelectedVolumeIsReadOnly), TargetIsReadOnly(), IsRoot/IsTrash/InTrash/IsQuery/IsVirtualDirectory, IsCurrentFocusOnTextView().  
 `Shortcuts.cpp` → `TShortcuts::UpdateCutItem / UpdatePasteItem / UpdateCopyItem / UpdateMoveToItem / UpdateUnmountItem / UpdateOpenParentItem / UpdateEmptyTrashItem / UpdateArrangeByItem / UpdateMakeActivePrinterItem`  
 **TIKU:** Read-only volume checks become capability-bit checks on the namespace node; "read-only" is per-node there, not per-volume.  
-**MISSING:** Unmount and Make active printer have no command in the action table at all (no TIKU_TRK_CMD_UNMOUNT or printer entry in the enum, tiku_trk_shortcuts.h:27-91), and menu_ctx never fills is_trash/in_trash/trash_full/text_focus/is_query (memset 0 at desktop.c:157, no later assignment), so Empty Trash is permanently disabled even over a full Trash and the text-focus and Trash-location clauses of Cut/Copy/Paste never engage.  
+**PORT:** Every predicate the row names is live now: TIKU_TRK_CMD_UNMOUNT exists and enables on an unmountable non-boot volume selection, the context carries is_trash/in_trash/trash_full/text_focus/is_query (tiku_trk_folder_menu_context), and Empty Trash enables from trash_full.  The MISSING line this replaces predated all of it.  Make active printer is struck by the Phase-1 ruling (2026-08-18).  
+*src/core/tiku_trk_shortcuts.c:tiku_trk_sc_enabled; src/ui/commands/tiku_trk_folder_menu.c:tiku_trk_folder_menu_context*  
 *Audited 2026-08-12: `src/core/tiku_trk_shortcuts.c:206-286 (tiku_trk_sc_enabled)` `src/core/tiku_trk_shortcuts.c:288-332 (sc_add/sc_update route every menu item through it)` `src/shell/tiku_trk_desktop.c:152-203 (menu_ctx builds live state: selection :164, clipboard_has_refs :184, can_open_parent :185, selection_ro :194, target_ro :197-199, is_root :200)`*  
 *Shell: desktop*  
 #### PVK-045 · core · done
@@ -2902,7 +2903,7 @@ Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead 
 **TIKU:** "Mount/Unmount" and Trash have no obvious analogue for device nodes; decide whether a device node can be "deleted" at all (probably capability-bit gated).  
 **PORT:** The live bar now includes the Add-ons submenu inventory and volume Mount/Unmount entries (disabled until the mount/add-on service is available), while preserving the Trash and root variants. The printers-folder specialization and service-backed mount/add-on actions remain outside the current backend contract.
 *src/ui/tiku_trk_cwmenu.c:build_file*
-**MISSING:** Service-backed mount/add-on actions remain unavailable.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18).
+**MISSING:** The Mount submenu's partition enumeration and the add-on service verbs remain unavailable; Unmount itself is live through the volume model.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18).
 
 #### CW-023 · core · done
 **Window menu inventory: Icon view> (Cmd+1, with sizes), Mini icon view (Cmd+2), List view (Cmd+3), | Resize to fit (Cmd+Y), [Arrange by>], Select… (Shift+Cmd+A), Select all (Cmd+A), Invert selection (Cmd+S), Open parent (Cmd+Up), Close (Cmd+W), Close all in workspace (Cmd+Q), | Preferences… (Cmd+,).**  
@@ -2995,7 +2996,8 @@ SetupMountMenu inserts after "Select all"+separator on the Desktop, or after "Ed
 `ContainerWindow.cpp` → `BContainerWindow::SetupMountMenu / DetachMountMenu (and MountMenu.cpp AddMenuItemVisitor::Visit)`  
 **TIKU:** Maps to mounting tiers/devices in the VFS; "boot volume cannot be unmounted" becomes "the root namespace cannot be detached".
 **SUBSYSTEM:** Volume model / mount operations. The backend ops table (src/core/tiku_trk_model.h:152-198) has stat/list/read/write/pump/changes/path_of_id/state_store only — no mount, unmount, or partition enumeration — and no MOUNT/UNMOUNT command exists in src/core/tiku_trk_shortcuts.h. Same absence FS-012/FS-013 record: the port knows filesystems only through st_dev.  
-**MISSING:** Mount and unmount menu entries are present in the context-menu inventory, but the backend has no mount service or partition enumeration to populate the submenu or execute the actions.
+**MISSING:** The Mount submenu's partition enumeration (every partition listed, mounted ones check-marked, Mount all, Settings…) remains absent: the port has no partition source.  Unmount is live -- the menu item and Cmd+U go through the volume model, the boot volume's entry is disabled by the enable rule, and refusals and failures are said out loud.  
+*src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (TIKU_TRK_CMD_UNMOUNT); tests/shell/unmount.script*
 
 #### CW-035 · core · partial
 **"Move to >", "Copy to >" and "Create link >" are hierarchical folder pickers offering Current folder, Recent folders, Desktop, Home, then volumes; Move to only offers the item's own volume (no cross-device move), Copy to and Create link offer every writable persistent volume.**  
@@ -3054,7 +3056,7 @@ Clipboard items are omitted from the pose menu for printers/root/Trash/in-Trash,
 `ContainerWindow.cpp` → `BContainerWindow::AddPoseContextMenu / AddVolumeContextMenu / AddTrashContextMenu / AddWindowContextMenu`  
 **PORT:** All four inventories are live in the stated order, including Add-ons placeholders, volume Mount/Unmount placeholders, Trash/root clipboard omissions, the Delete+Restore substitution, the Trash-window prefix, and the Desktop background's inline icon-size submenu. Service-backed mount/add-on verbs and the printers-folder specialization remain pending.
 *src/ui/tiku_trk_cwmenu.c:build_contexts; src/core/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
-**MISSING:** Service-backed mount/add-on verbs remain unavailable.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned.
+**MISSING:** The Mount submenu's partition enumeration and the add-on service verbs remain unavailable; Unmount itself is live through the volume model.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned.
 **PORT:** Three items the inventories offered and enabled did nothing when picked -- Create link, Identify and Select… -- and Duplicate was a fourth. All four now act, and `tools/check_menu_commands.py` fails the build when a menu offers an enabled command no shell carries out, which is what let them sit there.  
 *tests/shell/menudead.script; tools/check_menu_commands.py*
 
@@ -6983,13 +6985,13 @@ kMoveSelectionToTrash: refs whose parent window is open use PoseView()->MoveEntr
 **MISSING:** Trashing a multi-item selection does go through one batched filesystem job, but the routing rule is missing: there is no entry point for refs from outside a window, nothing routes a trash through the window that holds the item, and no next item is selected — remove_pose explicitly clears the active pose to -1 when the removed row was active.  
 *src/shell/tiku_trk_app.c:handle_key XK_Delete -> src/backends/tiku_trk_fs.c:tiku_trk_fs_trash; src/ui/tiku_trk_poseview.c:remove_pose*
 
-#### AW-096 · important · partial
+#### AW-096 · important · done
 **Unmounting from the mount menu saves every window's icon positions before the volume goes away, and active query windows on a device can be closed first (waiting up to three seconds) so they do not block the unmount.**  
 kUnmountVolume calls SaveAllPoseLocations() then falls through to forwarding the message to the mount server; CloseActiveQueryWindows posts B_QUIT_REQUESTED to each query window active on the device then polls QueryActiveForDevice 30 times at 100 ms. SaveAllPoseLocations uses BDeskWindow::SaveDesktopPoseLocations for the desktop.  
 `Tracker.cpp` → `TTracker::MessageReceived (kUnmountVolume) / TTracker::CloseActiveQueryWindows / TTracker::SaveAllPoseLocations`  
 **TIKU:** Device removal is the direct analogue: pending state must be flushed to NVM and dependent views torn down before the node disappears.
-**MISSING:** The unmount exists and its ORDER is the rule: refuse first, then let everything open on the volume save itself while the volume is still there to save to, and only then ask the system -- asking first and saving afterwards is how an arrangement is lost. What is absent is the caller that walks the windows: the operation takes the sweep as a callback and the shells do not yet pass one.  
-*src/backends/tiku_trk_volume.c:tiku_trk_volume_unmount; tests/test_volume.c*
+**PORT:** The order is the rule and both shells now walk it: refuse first, then the before-callback saves every window's arrangement on the leaving volume -- the desktop closes an active query holding the device open so it cannot block the unmount, then saves each window and the Desktop itself -- and only then is the system asked.  A refusal or failure is said out loud.  
+*src/backends/tiku_trk_volume.c:tiku_trk_volume_unmount; src/shell/tiku_trk_desktop.c:save_before_unmount; src/shell/tiku_trk_app.c:save_before_unmount; tests/test_volume.c; tests/shell/unmount.script (# shell: both)*
 
 #### AW-097 · polish · partial
 **Volume free-space bars refresh once per second, only while the setting is enabled, and refresh immediately when the setting or its color changes.**  

@@ -128,6 +128,7 @@ typedef struct {
     int      is_virtual;         /* a namespace directory: fixed shape      */
     int      is_desktop;         /* the desktop background, not a folder    */
     int      selection_is_volume;
+    int      selection_is_boot;      /* the boot volume cannot be unmounted */
     int      can_edit_name;
     int      can_open_parent;
     int      can_trash_or_dup;

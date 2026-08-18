@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_folder_menu.h"
+#include "tiku_trk_volume.h"
 #include "tiku_trk_shortcuts.h"
 
 void
@@ -113,6 +114,18 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
                                        !context.selection_ro;
             context.selection_is_volume = pose->model.kind ==
                 TIKU_TRK_KIND_VOLUME || pose->model.kind == TIKU_TRK_KIND_ROOT;
+            if (context.selection_is_volume) {
+                /* Scanned only when a volume is the selection: menus are
+                 * rebuilt per draw, and the mount table is a file. */
+                tiku_trk_volumes_t vols;
+                const tiku_trk_volume_t *vol;
+
+                if (tiku_trk_volumes_scan(&vols) > 0 &&
+                    (vol = tiku_trk_volume_of(&vols,
+                                              pose->model.path)) != NULL) {
+                    context.selection_is_boot = vol->is_boot;
+                }
+            }
         }
         context.target_ro = strncmp(folder->path, "/sys", 4) == 0 ||
                             strncmp(folder->path, "/dev", 4) == 0 ||

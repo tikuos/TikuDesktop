@@ -1,0 +1,16 @@
+# shell: both
+# AW-096/CW-034: Unmount is a real command reached from the keyboard, and
+# an unmount that cannot happen says so instead of doing nothing.
+wait 8
+key Up ctrl
+wait 8
+expect-title /tmp
+note Cmd+U on the volume being shown; without the right to unmount it,
+note the refusal is said out loud rather than nothing happening
+key u ctrl
+wait 15
+expect-alert could not be unmounted
+key Escape
+wait 3
+expect-file /tmp/trk_script/a.txt
+quit

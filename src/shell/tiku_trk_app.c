@@ -37,6 +37,7 @@
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
+#include "tiku_trk_volume.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_task.h"
 
@@ -378,6 +379,17 @@ menu_ctx(app_t *a, unsigned mods)
         c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
         c.selection_is_volume = p->model.kind == TIKU_TRK_KIND_VOLUME ||
                                 p->model.kind == TIKU_TRK_KIND_ROOT;
+        if (c.selection_is_volume) {
+            /* Scanned only when a volume is the selection: menus are
+             * rebuilt per draw, and the mount table is a file. */
+            tiku_trk_volumes_t vols;
+            const tiku_trk_volume_t *vol;
+
+            if (tiku_trk_volumes_scan(&vols) > 0 &&
+                (vol = tiku_trk_volume_of(&vols, p->model.path)) != NULL) {
+                c.selection_is_boot = vol->is_boot;
+            }
+        }
         c.selection_ro = !tiku_trk_model_is_writable(&p->model);
     }
     c.can_trash_or_dup = c.selection > 0 && !c.selection_ro;
@@ -1815,6 +1827,13 @@ not_editing:
     case 'q':
         if (modifiers & TIKU_DESK_MOD_CMD) { a->running = 0; return; }
         break;
+    case 'u':
+        if (modifiers & TIKU_DESK_MOD_CMD) {
+            /* Cmd+U, which the volume menus advertise (CW-034). */
+            menu_invoke(a, TIKU_TRK_CMD_UNMOUNT);
+            return;
+        }
+        break;
     case 'a':
         if (modifiers & TIKU_DESK_MOD_CMD) {
             tiku_trk_poseview_select_all(a->view);
@@ -2034,6 +2053,18 @@ menu_key(app_t *a, unsigned key, unsigned modifiers)
     handle_key(a, &event);
 }
 
+/** @brief Save what is open on the leaving volume while it is still there
+ *         to save to (AW-096). */
+static void
+save_before_unmount(dev_t dev, void *context)
+{
+    app_t *a = context;
+
+    if (tiku_trk_poseview_on_device(a->view, (uint64_t)dev)) {
+        (void)tiku_trk_poseview_save_state(a->view);
+    }
+}
+
 /**
  * @brief Point a new entry at where it was asked for (PVL-025, PVL-098).
  *
@@ -2073,6 +2104,38 @@ menu_invoke(app_t *a, int command)
     const char *template_parent;
     int field = -1;
 
+    if (command == TIKU_TRK_CMD_UNMOUNT) {
+        /* The selection names the volume; with none, the volume ROOT being
+         * shown is the one the gesture means (CW-034).  Everything open on
+         * it saves itself first, while there is still somewhere to save
+         * to, and a refusal or failure is said out loud (AW-096). */
+        char paths[1][TIKU_TRK_PATH_MAX];
+        const char *sel[1];
+        const char *path = (selection_paths(a, paths, sel, 1) > 0)
+                               ? sel[0] : tiku_trk_poseview_path(a->view);
+        tiku_trk_volumes_t vols;
+        char why[200];
+
+        why[0] = '\0';
+        if (tiku_trk_volumes_scan(&vols) > 0 &&
+            tiku_trk_volume_is_root(&vols, path)) {
+            const tiku_trk_volume_t *vol = tiku_trk_volume_of(&vols, path);
+
+            if (tiku_trk_volume_unmount(&vols, path, save_before_unmount,
+                                        a, why, sizeof why) ==
+                    TIKU_TRK_UNMOUNT_OK) {
+                snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
+                         (vol != NULL) ? vol->name : path);
+            } else if (why[0] != '\0') {
+                tiku_trk_alert_open(
+                    tiku_trk_status_overlay_alert(&a->status_overlay),
+                    TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                    "Cancel");
+            }
+        }
+        a->dirty = 1;
+        return;
+    }
     if (command == TIKU_TRK_CMD_NEW_FOLDER) {
         /* Made HERE rather than in the shared controller: only the shell
          * knows where the asking click landed, and the folder must appear

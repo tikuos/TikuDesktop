@@ -223,6 +223,7 @@ static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
 static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 static folder_t *desktop_folder(desktop_t *app);
+static void close_window(desktop_t *app, tiku_desk_window_t *w);
 
 static void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
@@ -411,6 +412,44 @@ status_stop(void *context)
     desktop_t *app = context;
 
     tiku_trk_fs_cancel(app->fs);
+}
+
+/**
+ * @brief Save what is open on the leaving volume, first (AW-096).
+ *
+ * While the volume is still there to save to: positions flushed for every
+ * window on it, and an active query holding the device open is closed so
+ * it cannot block the unmount.
+ */
+static void
+save_before_unmount(dev_t dev, void *context)
+{
+    desktop_t *app = context;
+    int i;
+
+    for (i = 0; i < app->folder_count; i++) {
+        folder_t *fl = &app->folders[i];
+
+        if (fl->win == NULL || !fl->win->open || fl->view == NULL) {
+            continue;
+        }
+        if (tiku_trk_poseview_is_query(fl->view) &&
+            tiku_trk_query_targets_device(fl->run, (uint64_t)dev)) {
+            close_window(app, fl->win);
+            continue;
+        }
+        if (tiku_trk_poseview_on_device(fl->view, (uint64_t)dev)) {
+            (void)tiku_trk_poseview_save_state(fl->view);
+        }
+    }
+    {
+        folder_t *desk = desktop_folder(app);
+
+        if (desk != NULL && desk->view != NULL &&
+            tiku_trk_poseview_on_device(desk->view, (uint64_t)dev)) {
+            (void)tiku_trk_poseview_save_state(desk->view);
+        }
+    }
 }
 
 /** @brief What the action table needs to know about the focused window. */
@@ -1156,6 +1195,40 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         if (tiku_trk_poseview_paste_layout(fl->view) > 0) {
             (void)tiku_trk_poseview_save_columns(fl->view);
             snprintf(app->status, sizeof app->status, "pasted layout");
+        }
+        app->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_UNMOUNT) {
+        /* The selection names the volume; with none, the volume ROOT the
+         * window is showing is the one the gesture means (CW-034).
+         * Everything open on it saves itself first (AW-096), and a
+         * refusal or failure is said out loud. */
+        char upaths[1][TIKU_TRK_PATH_MAX];
+        const char *usel[1];
+        const char *upath =
+            (tiku_trk_folder_file_actions_selection(fl, upaths, usel, 1) > 0)
+                ? usel[0] : fl->path;
+        tiku_trk_volumes_t uvols;
+        char uwhy[200];
+
+        uwhy[0] = '\0';
+        if (tiku_trk_volumes_scan(&uvols) > 0 &&
+            tiku_trk_volume_is_root(&uvols, upath)) {
+            const tiku_trk_volume_t *uvol =
+                tiku_trk_volume_of(&uvols, upath);
+
+            if (tiku_trk_volume_unmount(&uvols, upath, save_before_unmount,
+                                        app, uwhy, sizeof uwhy) ==
+                    TIKU_TRK_UNMOUNT_OK) {
+                snprintf(app->status, sizeof app->status,
+                         "unmounted \"%.60s\"",
+                         (uvol != NULL) ? uvol->name : upath);
+            } else if (uwhy[0] != '\0') {
+                tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+                                    TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
+                                    "Cancel");
+            }
         }
         app->dirty = 1;
         return;
@@ -3314,6 +3387,13 @@ tracker_run(int argc, char **argv)
                 if (key == 'a' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
                     fl != NULL) {
                     tiku_trk_poseview_select_all(fl->view);
+                    app.dirty = 1;
+                    break;
+                }
+                if (key == 'u' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                    fl != NULL) {
+                    /* Cmd+U, which the volume menus advertise (CW-034). */
+                    menu_invoke(&app, fl, TIKU_TRK_CMD_UNMOUNT);
                     app.dirty = 1;
                     break;
                 }
