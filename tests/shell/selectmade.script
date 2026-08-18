@@ -1,0 +1,10 @@
+# shell: desktop
+# AW-033: what an operation made is selected where it lives, once it
+# shows up -- retried on the task loop rather than raced.
+wait 8
+click-row 1
+wait 2
+key d ctrl
+wait 60
+expect-selected-name a.txt copy
+quit

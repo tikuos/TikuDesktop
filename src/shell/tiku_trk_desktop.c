@@ -157,6 +157,10 @@ typedef struct desktop {
      * it was last used on (CW-063, AW-105). */
     tiku_trk_select_window_t select_window;
     tiku_trk_open_with_window_t open_with_window;
+    /* Deferred and periodic work, pulsed from this loop's own tick: the
+     * cooperative protothread the TIKU note asks for in place of the
+     * source's worker thread (AW-083). */
+    tiku_trk_loop_t     *loop;
     /* Where the last press landed, for the long press and for telling a
      * slow second click from a drag. */
     int64_t              press_at;
@@ -236,6 +240,7 @@ static void close_windows_under(desktop_t *app, const char *path);
 static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 static folder_t *desktop_folder(desktop_t *app);
 static void close_window(desktop_t *app, tiku_desk_window_t *w);
+static int select_named(desktop_t *app, folder_t *fl, const char *name);
 
 static void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
@@ -463,6 +468,73 @@ status_stop(void *context)
     desktop_t *app = context;
 
     tiku_trk_fs_cancel(app->fs);
+}
+
+/**
+ * @brief Re-resolve what a mount may have fixed, half a second on (PVN-042).
+ *
+ * Deliberately deferred so a link to the arriving volume resolves as a
+ * volume rather than a plain directory.
+ */
+static int
+refresh_after_mount(void *ctx)
+{
+    desktop_t *app = ctx;
+    int i;
+
+    for (i = 0; i < app->folder_count; i++) {
+        if (app->folders[i].win != NULL && app->folders[i].win->open &&
+            app->folders[i].view != NULL) {
+            (void)tiku_trk_poseview_reload(app->folders[i].view);
+        }
+    }
+    tiku_trk_desktop_view_rebuild(&app->desktop_view);
+    app->dirty = 1;
+    return 1;
+}
+
+/** @brief One created entry waiting to be selected where it lives. */
+typedef struct {
+    desktop_t *app;
+    char       path[TIKU_TRK_PATH_MAX];
+} select_created_t;
+
+/**
+ * @brief Select what an operation made, once it shows up (AW-033).
+ *
+ * Retried on its period until the pose exists or the loop's timeout gives
+ * up: the entry may still be arriving through the listing.
+ */
+static int
+select_created(void *ctx)
+{
+    select_created_t *sc = ctx;
+    char parent[TIKU_TRK_PATH_MAX];
+    char *slash;
+    int i;
+
+    snprintf(parent, sizeof parent, "%s", sc->path);
+    slash = strrchr(parent, '/');
+    if (slash == NULL) {
+        return 1;
+    }
+    if (slash == parent) { parent[1] = '\0'; } else { *slash = '\0'; }
+    for (i = 0; i < sc->app->folder_count; i++) {
+        folder_t *fl = &sc->app->folders[i];
+
+        if (fl->win == NULL || !fl->win->open || fl->view == NULL ||
+            strcmp(fl->path, parent) != 0) {
+            continue;
+        }
+        slash = strrchr(sc->path, '/');
+        if (select_named(sc->app, fl,
+                         slash != NULL ? slash + 1 : sc->path) >= 0) {
+            sc->app->dirty = 1;
+            return 1;           /* found and selected: done */
+        }
+        return 0;               /* the window is there; the entry not yet */
+    }
+    return 1;                   /* no window shows the parent: nothing owed */
 }
 
 /**
@@ -1925,6 +1997,7 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
     tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
+    app.loop = tiku_trk_loop_new();
     tiku_trk_open_with_window_init(&app.open_with_window, app.desk,
         DESK_W, DESK_H, &app.dirty, open_with_window_launch, &app,
         alert_model(&app), app.store);
@@ -3473,6 +3546,13 @@ tracker_run(int argc, char **argv)
                 break;
             }
             case TIKU_DESK_EVENT_KEY_UP:
+                if (ev.type == TIKU_DESK_EVENT_KEY_DOWN ||
+                    ev.type == TIKU_DESK_EVENT_POINTER_DOWN ||
+                    ev.type == TIKU_DESK_EVENT_POINTER_MOVE) {
+                    /* The user did something: idle-only work starts its
+                     * wait again (AW-085). */
+                    tiku_trk_loop_note_activity(app.loop);
+                }
                 if (tiku_trk_switcher_window_shown(&app.switcher_window) &&
                     ev.key == TIKU_DESK_KEY_CMD) {
                     /* Released inside the hair trigger the user meant the
@@ -4267,6 +4347,11 @@ tracker_run(int argc, char **argv)
                          * The Desktop union gains the volume's Desktop
                          * folder as a source, live (PVN-040, PVN-051). */
                         tiku_trk_desktop_view_rebuild(&app.desktop_view);
+                        /* And half a second on, broken links get another
+                         * look: by then a link to the new volume resolves
+                         * as a volume (PVN-042). */
+                        (void)tiku_trk_run_later(app.loop,
+                            refresh_after_mount, &app, NULL, 500000);
                         changed++;
                         continue;
                     }
@@ -4353,6 +4438,26 @@ tracker_run(int argc, char **argv)
              * done.  Membership changes reach the windows through the
              * notice poll above, which is why nothing is reloaded here. */
             (void)tiku_trk_fs_step(app.fs, 4);
+            if (!tiku_trk_fs_busy(app.fs)) {
+                /* The operation just finished: what it MADE gets selected
+                 * where it lives, once it shows up (AW-033). */
+                char made[8][TIKU_TRK_PATH_MAX];
+                int nmade = tiku_trk_fs_last_created(app.fs, made, 8);
+                int mi;
+
+                for (mi = 0; mi < nmade; mi++) {
+                    select_created_t *scx = malloc(sizeof *scx);
+
+                    if (scx == NULL) {
+                        break;
+                    }
+                    scx->app = &app;
+                    snprintf(scx->path, sizeof scx->path, "%s", made[mi]);
+                    (void)tiku_trk_run_periodic(app.loop, select_created,
+                                                scx, free, 200000,
+                                                5000000);
+                }
+            }
             /* A mixed paste left its second half waiting for the engine to
              * go idle; this is where it gets to start (FS-055). */
             (void)tiku_trk_folder_file_actions_pump(&app.file_actions);
@@ -4409,7 +4514,23 @@ tracker_run(int argc, char **argv)
         /* A script still lets the clock run, just faster: the notice
          * poll, the armed rename and the barber pole are all timed, and a
          * loop that spun without time passing would test none of them. */
-        usleep((sc != NULL) ? 20000 : 10000);
+        if (app.loop != NULL) {
+            if (tiku_trk_loop_pulse(app.loop) > 0) {
+                app.dirty = 1;
+            }
+        }
+        {
+            /* Sleep until the next task is due, or one heartbeat,
+             * whichever is sooner (AW-086). */
+            int64_t nap = (sc != NULL) ? 20000 : 10000;
+            int64_t due = (app.loop != NULL)
+                              ? tiku_trk_loop_next_due(app.loop) : -1;
+
+            if (due >= 0 && due < nap) {
+                nap = (due < 1000) ? 1000 : due;
+            }
+            usleep((useconds_t)nap);
+        }
     }
 
     tiku_trk_session_controller_save(&app.session);

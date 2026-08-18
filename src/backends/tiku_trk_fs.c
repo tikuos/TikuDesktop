@@ -2472,6 +2472,28 @@ tiku_trk_fs_can_undo(const tiku_trk_fs_t *fs, char *what, size_t max)
 }
 
 int
+tiku_trk_fs_last_created(const tiku_trk_fs_t *fs,
+                         char out[][TIKU_TRK_PATH_MAX], int max)
+{
+    const undo_op_t *o;
+    int i, n = 0;
+
+    if (fs == NULL || out == NULL || max <= 0 || fs->ucount <= 0) {
+        return 0;
+    }
+    o = &fs->ustack[fs->ucount - 1];
+    for (i = 0; i < o->n && n < max; i++) {
+        /* An entry the operation brought into being: created outright, or
+         * the destination half of a copy (its 'to' names the origin). */
+        if (o->rec[i].created || o->rec[i].to[0] != '\0') {
+            snprintf(out[n], TIKU_TRK_PATH_MAX, "%s", o->rec[i].from);
+            n++;
+        }
+    }
+    return n;
+}
+
+int
 tiku_trk_fs_can_redo(const tiku_trk_fs_t *fs, char *what, size_t max)
 {
     const undo_op_t *o;

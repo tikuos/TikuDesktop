@@ -123,6 +123,9 @@ typedef struct {
     tiku_trk_folder_window_t         folder;
     tiku_trk_clip_t                  clip;
     tiku_trk_folder_file_actions_t   file_actions;
+    /* Deferred and periodic work, pulsed from the loop's own tick: the
+     * cooperative protothread the TIKU note asks for (AW-083). */
+    tiku_trk_loop_t                 *loop;
     /* The modal question, hosted the way the desktop shell hosts it: the
      * same overlay, over this window's one surface, so the delete question
      * and a collision are the same question in both shells (FS-046). */
@@ -2605,6 +2608,7 @@ tracker_run(int argc, char **argv)
     }
 
     tiku_trk_menu_set_icon_painter(paint_menu_icon);
+    a.loop = tiku_trk_loop_new();
     tiku_trk_scroll_init(&a.sb, 1);
     a.view = tiku_trk_poseview_new(a.backend, start);
     if (a.view != NULL) {
@@ -2928,9 +2932,11 @@ tracker_run(int argc, char **argv)
                 a.dirty = 1;
                 break;
             case TIKU_DESK_EVENT_KEY_DOWN:
+                tiku_trk_loop_note_activity(a.loop);
                 handle_key(&a, &ev);
                 break;
             case TIKU_DESK_EVENT_POINTER_DOWN: {
+                tiku_trk_loop_note_activity(a.loop);
                 if (tiku_trk_status_overlay_pointer(&a.status_overlay,
                                                     ev.x, ev.y)) {
                     /* A modal alert eats the click wherever it lands. */
@@ -3454,7 +3460,23 @@ tracker_run(int argc, char **argv)
         /* A script still lets the clock run, just faster: the notice
          * poll, the armed rename and the barber pole are all timed, and a
          * loop that spun without time passing would test none of them. */
-        usleep((sc != NULL) ? 20000 : 10000);
+        if (a.loop != NULL) {
+            if (tiku_trk_loop_pulse(a.loop) > 0) {
+                a.dirty = 1;
+            }
+        }
+        {
+            /* Sleep until the next task is due, or one heartbeat,
+             * whichever is sooner (AW-086). */
+            int64_t nap = (sc != NULL) ? 20000 : 10000;
+            int64_t due = (a.loop != NULL)
+                              ? tiku_trk_loop_next_due(a.loop) : -1;
+
+            if (due >= 0 && due < nap) {
+                nap = (due < 1000) ? 1000 : due;
+            }
+            usleep((useconds_t)nap);
+        }
     }
 
     tiku_desk_host_close(a.host);

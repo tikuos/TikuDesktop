@@ -431,6 +431,18 @@ int tiku_trk_fs_undo(tiku_trk_fs_t *fs, char *err, size_t errmax);
  */
 int tiku_trk_fs_can_redo(const tiku_trk_fs_t *fs, char *what, size_t max);
 
+/**
+ * @brief The paths the LAST finished operation brought into being.
+ *
+ * What a duplicate or a paste made, read from the same records undo keeps
+ * -- so a shell can select what an operation created once it shows up
+ * (AW-033), without a second list to keep true.
+ *
+ * @return Count written.
+ */
+int tiku_trk_fs_last_created(const tiku_trk_fs_t *fs,
+                             char out[][TIKU_TRK_PATH_MAX], int max);
+
 /** @brief Replay the operation the last undo reversed. */
 int tiku_trk_fs_redo(tiku_trk_fs_t *fs, char *err, size_t errmax);
 

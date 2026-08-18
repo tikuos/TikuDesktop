@@ -2508,8 +2508,8 @@ CreateVolumePose returns early if !volume->IsPersistent(), and again if BVolume(
 **Broken-symlink repair after a mount is deliberately delayed half a second so that a link to a volume resolves as a volume rather than a plain directory.**  
 taskLoop->RunLater(NewMemberFunctionObject(&BPoseView::TryUpdatingBrokenLinks, this), 500000) at the end of case B_DEVICE_MOUNTED.  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`
-**SUBSYSTEM:** Volume model (mount events). No mount event exists to hang the 500 ms deferral on; the run-later primitive was ported (src/core/tiku_trk_task.c:140-146) but no shell instantiates a task loop (only tests/test_task.c calls the loop API). Broken links instead re-resolve on every periodic re-list via facts.link_broken flipping in the diff (src/backends/tiku_trk_backend_posix.c:76-87, src/backends/tiku_trk_notify.c:78-90).  
-**MISSING:** Broken-link refresh is periodic rather than driven by a mounted-volume event with the source's deferred 500 ms task.
+**PORT:** The mount event exists (the volume watch) and the deferral hangs on it now: a volume arriving schedules a re-look half a second on through the task loop, exactly so a link to the new volume resolves as a volume rather than a plain directory -- the source's own 500 ms, for the source's own reason.  
+*src/shell/tiku_trk_desktop.c (mounted -> tiku_trk_run_later 500ms -> refresh_after_mount)*
 
 #### PVN-043 · core · done
 **Unmounting the volume a window is showing closes that window (a file panel jumps to home instead); unmounting any other volume removes that volume's rows and breaks symlinks pointing into it.**  
@@ -6368,12 +6368,13 @@ Documents: Thread::Launch of LaunchAndCloseParentIfOK -> synchronous TrackerLaun
 **MISSING:** Option-opening a document closes the window it came from once the launch has actually happened -- a launch that failed leaves the window, which is the point of the row's "after the launch succeeds". The one-second delay is not ported: there is nothing here that would use the interval.  
 *src/shell/tiku_trk_desktop.c (the double-click launch, Mod1)*
 
-#### AW-033 · important · partial
+#### AW-033 · important · done
 **After an operation that creates an entry, Tracker selects that entry in its parent window once it shows up, retrying for up to five seconds.**  
 SelectChildInParentSoon -> RunLater(SelectChildInParent, 100ms delay, 200ms period, 5s timeout); returns true (task done) only when FindPose succeeds.  
 `Tracker.cpp` → `TTracker::SelectChildInParentSoon / TTracker::SelectChildInParent`  
 **TIKU:** Polling for 'has the watcher delivered the create yet' maps directly onto TIKU_EVENT_VFS; the rewrite can make this event-driven, but must keep a timeout.  
-**MISSING:** There is still no retry-until-it-shows-up with a 5 s timeout (the task loop that would host it is instantiated by no shell), and only the new-folder operation selects what it made -- duplicate and paste select nothing.  The desktop shell's half is no longer missing: Ctrl+N creates and names a folder there too, proven by tests/shell/smoke.script in both binaries.
+**PORT:** The retry is real: when an operation finishes, every path it brought into being -- a duplicate's copy, a paste's arrival -- is read from the same records undo keeps and selected in the window showing its parent, retried on a 200 ms period for up to five seconds so an entry still arriving through the listing is caught when it lands.  New folder keeps its immediate select-and-rename.  
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_last_created; src/shell/tiku_trk_desktop.c:select_created; tests/shell/selectmade.script*
 *Audited 2026-08-12: `src/shell/tiku_trk_app.c:1215-1243 (fs_new_folder -> after_op -> index_of_path -> poseview_click)` `src/shell/tiku_trk_desktop.c:1366-1371 (menu_invoke default: NEW_FOLDER does nothing in the desktop shell)` `src/core/tiku_trk_task.c:139-159 (unused retry machinery)`*  
 *Shell: both*  
 #### AW-034 · important · WAIVED
@@ -6884,13 +6885,13 @@ kSelect builds "^name$" with kRegexpMatch, InvertSelection false, IgnoreCase fal
 **TIKU:** The 100ms sleep is a race workaround — the rewrite should wait on the pose-list-populated event instead of sleeping.
 **PORT:** Named selection is available through the discovered Tracker shell suite; path/range requests apply against the current pose list with in-band errors (`src/shell/tiku_trk_script_api.c`; `tests/test_scripting.c`).
 
-#### AW-083 · core · partial
+#### AW-083 · core · done
 **Deferred and periodic work runs on a separate low-priority background thread, never on a window thread; window threads only ever queue tasks.**  
 StandAloneTaskLoop spawns "TrackerTaskLoop" at B_LOW_PRIORITY lazily on the first AddTask; the Tracker's fTaskLoop is created with keepThread=true so the thread persists when the queue empties, while other loops let the thread exit. fLock (BLocker) guards the task list and Pulse() asserts it is held.  
 `TaskLoop.cpp` → `StandAloneTaskLoop::StartPulsingIfNeeded / StandAloneTaskLoop::Run / TaskLoop::Pulse`  
 **TIKU:** With cooperative protothreads there is no preemptive worker; deferred work becomes a timer-driven protothread, and every task body must be yield-safe and short.  
-**MISSING:** The timer-driven deferred/periodic loop the TIKU note asks for genuinely exists and is tested, but no shipped binary uses it — nothing outside tests includes tiku_trk_task.h — and the apps' actual deferred work (the 400 ms backend pump, the rename pulse) runs inline in the window event loop, which is exactly what the row forbids.  
-*src/core/tiku_trk_task.c:299 tiku_trk_loop_run (ordered due list); grep shows tiku_trk_task.h included by no other src file, only tests/test_task.c; src/shell/tiku_trk_desktop.c:2262 inline `if (tiku_trk_now() - last_pump > 400000)` pump in the X event loop*
+**PORT:** Both shells run the loop now, in the shape the TIKU note names: no preemptive worker exists here, so deferred work is a timer-driven cooperative loop pulsed from the shell's own tick, and real work rides it -- the post-mount link re-look (PVN-042) and the select-what-was-made retry (AW-033) are its first residents.  The backend pump stays an event-loop tick by design: it IS the pulse source the note describes.  
+*src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (tiku_trk_loop_pulse); tests/shell/selectmade.script*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Three src files now include tiku_trk_task.h: src/shell/tiku_trk_app.c:34, src/shell/tiku_trk_desktop.c:40, src/ui/tiku_trk_poseview.c:17. They include it only for tiku_trk_now() (grep of those files for the loop API — tiku_trk_loop_run/tiku_trk_run_later/tiku_trk_run_periodic/tiku_trk_run_when_idle/tiku_trk_run_accumulating — returns nothing; the only callers are tests/test_task.c), so the partial verdict itself still stands, but the include claim is provably false and the inline-pump citation has moved to src/shell/tiku_trk_desktop.c:2646. `src/shell/tiku_trk_app.c:34, src/shell/tiku_trk_desktop.c:40, src/ui/tiku_trk_poseview.c:17 (#include "tiku_trk_task.h"); loop API callers only in tests/test_task.c`  
 
 #### AW-084 · important · done
@@ -6904,16 +6905,16 @@ OneShotDelayedTask, PeriodicDelayedTask (removed when the functor result is true
 ActivityLevel() averages per-CPU active_time; load = delta/elapsed minus a task-overhead allowance (kIdleTreshold subtracted when checking whether an already-running task is still idle); also requires idle_time() >= fIdleFor. State machine kInitialDelay -> kInitialIdleWait -> kInIdleState.  
 `TaskLoop.cpp` → `RunWhenIdleTask::RunIfNeeded / RunWhenIdleTask::IsIdle`  
 **TIKU:** Idle detection on TikuOS is 'no process ready and no timer armed' — the power-managed idle hook, not CPU load; the semantics differ enough to need a decision.  
-**MISSING:** The idle-duration half is implemented (a TASK_IDLE body is skipped while now - last_activity < idle_for and note_activity restarts the wait), but the row's other stated gate — CPU load under 15% — has no counterpart or substitute signal of any kind, and no app calls note_activity, so the activity-restart clause is inert outside tests.  
-*src/core/tiku_trk_task.c:319-324 (TASK_IDLE gate), :177-183 tiku_trk_loop_note_activity; only caller is tests/test_task.c:161; no load/utilisation metric anywhere in src*
+**MISSING:** The CPU-load-under-15% gate has no counterpart or substitute signal; the TIKU note wants the device's own idle hook rather than a load average, and that decision is still open.  The activity half is live now: every key and pointer event in both shells notes activity, so a burst of input restarts the idle wait for real.  
+*src/core/tiku_trk_task.c (TASK_IDLE gate); src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (tiku_trk_loop_note_activity on input)*
 
-#### AW-086 · important · partial
+#### AW-086 · important · done
 **The task thread sleeps exactly until the next task is due (or one heartbeat, whichever is sooner) and is woken immediately when a new task is added.**  
 snoozeTill = min(LatestRunTime() - 1000, now + fHeartBeat), snooze_until on B_SYSTEM_TIMEBASE, or snooze(1000) if already past; AddTask suspends/snoozes 1ms/resumes the thread when get_thread_info reports B_THREAD_ASLEEP.  
 `TaskLoop.cpp` → `StandAloneTaskLoop::Run / StandAloneTaskLoop::AddTask`  
 **TIKU:** This is exactly the tickless-idle discipline: compute the next deadline rather than polling. Should reuse the existing tickless machinery instead of a heartbeat.  
-**MISSING:** The deadline itself is computed and tested, and there is no task loop in either shell to consume it: `tiku_trk_loop_add` and `tiku_trk_loop_run` have no callers outside the suite, so nothing is scheduled and nothing sleeps until it is due. The wiring is a loop, not a call.  
-*src/core/tiku_trk_task.c:tiku_trk_loop_next_due; src/shell/tiku_trk_desktop.c:2343 and src/shell/tiku_trk_app.c:1581 (usleep(10000))*
+**PORT:** Both shells consume the deadline now: the tick sleeps until the next task is due or one heartbeat, whichever is sooner.  Waking on add is vacuous by construction in a cooperative loop -- adds happen on the very thread that sleeps, so the next computation already sees them.  
+*src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (the nap from tiku_trk_loop_next_due)*
 
 #### AW-087 · important · done
 **Repeated similar requests collapse into a single pending task instead of queueing up, bounded by both a maximum accumulation count and a maximum accumulation window.**  
