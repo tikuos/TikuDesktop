@@ -34,6 +34,18 @@ main(void)
           "thumbnails are on by default");
     check(tiku_trk_prefs_get(&p, "HideDotFiles") == 0, "TS-051",
           "dotfiles are shown by default");
+
+    check(tiku_trk_prefs_get(&p, "SelectedLabelColor") ==
+          (int32_t)0xc01a3350, "TS-045",
+          "the Desktop's selected-label colour defaults to a deep navy");
+    check(tiku_trk_prefs_colour_next((int32_t)0xc01a3350) ==
+          (int32_t)0xc0000000, "TS-045",
+          "clicking the swatch walks to the next colour, alpha intact");
+    check(tiku_trk_prefs_colour_next((int32_t)0xc0cb0000) ==
+          (int32_t)0xc01a3350, "TS-045",
+          "and the walk wraps back around to the first");
+    check((tiku_trk_prefs_colour_next(0x123456) & 0xffffff) == 0x1a3350,
+          "TS-045", "a colour off the wheel lands on its first stop");
     check(tiku_trk_prefs_get(&p, "RecentApplications") == 10 &&
           tiku_trk_prefs_get(&p, "RecentFolders") == 10, "TS-056",
           "ten remembered of each kind");

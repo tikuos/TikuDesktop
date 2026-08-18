@@ -1,0 +1,23 @@
+# shell: desktop
+# home: fixture
+# A chosen Desktop label carries its own darker band -- the backdrop IS
+# the selection blue, so the old fill vanished into it -- and the colour
+# is a preference, reachable from the Deskbar's Tracker preferences.
+wait 12
+expect-pixel 546 68 336698
+click 531 33
+wait 3
+expect-desk-selected-name .Trash
+note the label band is the preference's deep navy, not the backdrop blue
+expect-pixel 546 68 1a3350
+click 980 20
+wait 2
+click 780 110
+wait 5
+note the swatch walks the colour wheel: after navy comes black
+click 432 268
+wait 3
+key w ctrl
+wait 3
+expect-pixel 546 68 000000
+quit

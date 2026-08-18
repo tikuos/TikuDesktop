@@ -76,6 +76,9 @@ int tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path);
 /** @brief Take the current values as the revert baseline (TS-059). */
 void tiku_trk_prefs_mark_opened(tiku_trk_prefs_t *p);
 
+/** @brief The next colour a clicked swatch walks to (alpha preserved). */
+int32_t tiku_trk_prefs_colour_next(int32_t value);
+
 /** @brief Whether @p page has anything differing from its defaults. */
 int tiku_trk_prefs_defaultable(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 

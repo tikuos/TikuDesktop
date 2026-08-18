@@ -90,6 +90,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_ABOUT,
     TIKU_TRK_DB_ITEM_FIND,
     TIKU_TRK_DB_ITEM_PREFS,
+    TIKU_TRK_DB_ITEM_TRACKER_PREFS,
     TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
     TIKU_TRK_DB_ITEM_QUIT,
     TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
@@ -127,6 +128,19 @@ typedef struct tiku_trk_deskbar_settings tiku_trk_deskbar_settings_t;
  */
 void tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
                                    const char *fallback);
+
+/**
+ * @brief Real art for menu rows, injected by the shell (DB-002).
+ *
+ * The Deskbar knows what each row IS; the shell knows what that looks
+ * like.  @return nonzero when something was painted.
+ */
+typedef int (*tiku_trk_db_icon_fn)(void *context, tiku_desk_surface_t *s,
+                                   const tiku_trk_db_item_t *item,
+                                   int x, int y, int size);
+void tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
+                                            tiku_trk_db_icon_fn fn,
+                                            void *context);
 
 /** @brief The folder the menu is actually reading, or "" (DB-065). */
 const char *tiku_trk_deskbar_menu_dir(const tiku_trk_deskbar_t *db);
@@ -259,6 +273,7 @@ typedef enum {
     TIKU_TRK_DB_SHOW_ABOUT,
     TIKU_TRK_DB_FIND,
     TIKU_TRK_DB_PREFERENCES,
+    TIKU_TRK_DB_TRACKER_PREFERENCES,
     TIKU_TRK_DB_HIDE_ALL,
     TIKU_TRK_DB_SHOW_ALL,
     TIKU_TRK_DB_CLOSE_ALL,

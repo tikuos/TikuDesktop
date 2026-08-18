@@ -20,7 +20,7 @@ click 780 90
 wait 4
 expect-windows 2
 expect-title Deskbar preferences
-click 630 560
+click 630 576
 wait 6
 note Edit in Tracker opens the user's editable Deskbar folder
 expect-windows 3

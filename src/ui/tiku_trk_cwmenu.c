@@ -680,6 +680,8 @@ build_mount_menu(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         (void)tiku_trk_menu_add(&cw->mount_menu, label,
                                 TIKU_TRK_CMD_MOUNT_PART_BASE + i, 0, 0u,
                                 !part[i].mounted);
+        tiku_trk_menu_set_icon(&cw->mount_menu,
+                               TIKU_TRK_CMD_MOUNT_PART_BASE + i, "volume");
         tiku_trk_menu_mark(&cw->mount_menu,
                            TIKU_TRK_CMD_MOUNT_PART_BASE + i,
                            part[i].mounted);

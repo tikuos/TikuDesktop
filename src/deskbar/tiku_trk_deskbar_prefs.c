@@ -13,8 +13,9 @@
 
 #include "tiku_trk_deskbar_prefs.h"
 
-#define PREF_VERSION 3
-#define PREF_FIELDS  20
+#define PREF_VERSION 4
+#define PREF_FIELDS  21
+#define PREF_FIELDS_V3 20
 #define PREF_FIELDS_V2 17
 #define PREF_FIELDS_V1 16
 
@@ -35,7 +36,8 @@ same(const tiku_trk_deskbar_settings_t *a,
         a->show_clock != b->show_clock ||
         a->show_seconds != b->show_seconds ||
         a->show_day_of_week != b->show_day_of_week ||
-        a->show_timezone != b->show_timezone) {
+        a->show_timezone != b->show_timezone ||
+        a->font_size != b->font_size) {
         return 0;
     }
     for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
@@ -64,6 +66,7 @@ tiku_trk_deskbar_settings_default(tiku_trk_deskbar_settings_t *settings)
     /* This preserves the bar's established floating behavior. */
     settings->always_on_top = 1;
     settings->show_clock = 1;
+    settings->font_size = 12;
 }
 
 void
@@ -100,6 +103,9 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     settings->show_seconds = !!settings->show_seconds;
     settings->show_day_of_week = !!settings->show_day_of_week;
     settings->show_timezone = !!settings->show_timezone;
+    if (settings->font_size < 10) { settings->font_size = 10; }
+    if (settings->font_size > 16) { settings->font_size = 16; }
+    settings->font_size &= ~1;      /* the baked faces are even-sized */
 }
 
 void
@@ -189,6 +195,7 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->show_seconds;
     v[at++] = s->show_day_of_week;
     v[at++] = s->show_timezone;
+    v[at++] = s->font_size;
 }
 
 static void
@@ -211,6 +218,7 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
     s->show_seconds = (v[0] >= 3) ? v[at++] : 0;
     s->show_day_of_week = (v[0] >= 3) ? v[at++] : 0;
     s->show_timezone = (v[0] >= 3) ? v[at++] : 0;
+    s->font_size = (v[0] >= 4) ? v[at++] : 12;
     tiku_trk_deskbar_settings_normalize(s);
 }
 
@@ -233,6 +241,7 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                                 PREF_FIELDS_V1 * sizeof *record);
     }
     if (n != (int)sizeof record &&
+        n != PREF_FIELDS_V3 * (int)sizeof *record &&
         n != PREF_FIELDS_V2 * (int)sizeof *record &&
         n != PREF_FIELDS_V1 * (int)sizeof *record) {
         return -1;

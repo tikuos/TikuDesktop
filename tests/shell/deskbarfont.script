@@ -1,0 +1,19 @@
+# shell: desktop
+# home: fixture
+# The Deskbar preferences carry the text size: two clicks and the whole
+# interface reads bigger, proven by the leaf menu growing taller.
+wait 12
+click 980 20
+wait 2
+click 780 90
+wait 5
+note at 12 px the leaf menu ends above this point
+click 668 270
+wait 3
+key w ctrl
+wait 3
+click 980 20
+wait 3
+note at 14 px the same rows reach past it
+expect-pixel 750 370 d8d8d8
+quit

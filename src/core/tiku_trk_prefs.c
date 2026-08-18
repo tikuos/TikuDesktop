@@ -25,6 +25,9 @@ static const tiku_trk_pref_t table[] = {
     { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
     { "MountSharedVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
     { "IntegrateNonBootBeOSDesktops", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
+    /* Last on its page so the rows above it keep their places. */
+    { "SelectedLabelColor",      C, TIKU_TRK_PAGE_DESKTOP,
+      (int32_t)0xc01a3350, 0, 0 },
     { "ShowFullPathInTitleBar",  B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
     { "SingleWindowBrowse",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
     { "ShowNavigator",           B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
@@ -240,6 +243,28 @@ tiku_trk_prefs_mark_opened(tiku_trk_prefs_t *p)
     for (i = 0; i < p->n; i++) {
         p->pref[i].opened = p->pref[i].value;
     }
+}
+
+int32_t
+tiku_trk_prefs_colour_next(int32_t value)
+{
+    /* A short walk of readable inks: click the swatch, get the next one.
+     * Matching ignores the alpha byte, which the walk preserves. */
+    static const int32_t wheel[] = {
+        0x1a3350,   /* deep navy (the default label highlight) */
+        0x000000, 0x404040, 0x5a1010, 0x104a10, 0x46106a,
+        0x105a5a, 0x336698, 0xb05a00, 0x00cb00, 0xcbc0c0, 0xcb0000
+    };
+    int i, n = (int)(sizeof wheel / sizeof wheel[0]);
+    int32_t rgb = value & 0xffffff;
+    int32_t alpha = value & (int32_t)0xff000000;
+
+    for (i = 0; i < n; i++) {
+        if (wheel[i] == rgb) {
+            return alpha | wheel[(i + 1) % n];
+        }
+    }
+    return alpha | wheel[0];
 }
 
 int

@@ -412,6 +412,36 @@ offer_broken_link(desktop_t *app, const char *path)
 }
 
 
+/** @brief Real art for the Deskbar's own menu rows (DB-002). */
+static int
+deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
+                  const tiku_trk_db_item_t *item, int x, int y, int size)
+{
+    const char *art = NULL;
+    struct stat st;
+
+    (void)context;
+    switch (item->kind) {
+    case TIKU_TRK_DB_ITEM_DIR:
+        art = "folder";
+        break;
+    case TIKU_TRK_DB_ITEM_FIND:
+        art = "query";
+        break;
+    case TIKU_TRK_DB_ITEM_RECENT:
+        art = (item->which == 1) ? "folder"
+            : (item->which == 2) ? "application" : "file";
+        break;
+    case TIKU_TRK_DB_ITEM_PATH:
+        art = (stat(item->path, &st) == 0 && S_ISDIR(st.st_mode))
+                  ? "folder" : "file";
+        break;
+    default:
+        return 0;               /* a command row carries no art */
+    }
+    return tiku_trk_icon_paint(s, art, x, y, size);
+}
+
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
 static int
 paint_menu_icon(tiku_desk_surface_t *s, const char *icon, int x, int y,
@@ -2112,6 +2142,8 @@ tracker_run(int argc, char **argv)
         app.backend, app.fs, &app.types, &app.launcher, &app.bar_fl,
         &app.bar_open);
     tiku_trk_menu_set_icon_painter(paint_menu_icon);
+    tiku_trk_deskbar_set_menu_icon_painter(app.deskbar, deskbar_menu_icon,
+                                           &app);
     tiku_trk_addons_init(&app.addons);
     (void)tiku_trk_addons_register(&app.addons, "Open in Tracker", "",
                                    "inode/directory", 'o');
@@ -2859,6 +2891,9 @@ tracker_run(int argc, char **argv)
                         case TIKU_TRK_DB_PREFERENCES:
                             tiku_trk_deskbar_prefs_window_open(
                                 &app.deskbar_prefs_window);
+                            break;
+                        case TIKU_TRK_DB_TRACKER_PREFERENCES:
+                            tiku_trk_prefs_window_open(&app.prefs_window);
                             break;
                         case TIKU_TRK_DB_QUIT:
                             /* The ellipsis is a promise: Shut down… asks

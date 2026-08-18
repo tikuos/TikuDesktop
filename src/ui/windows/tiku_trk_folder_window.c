@@ -200,7 +200,16 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     label = (tiku_desk_rect_t){ lx - 2, ly, lw + 4,
                                  lh > 0 ? lh : font->height };
     if (selected) {
-        tiku_desk_fill(surface, label, TIKU_DESK_C_SELECT);
+        tiku_desk_rgb_t band = TIKU_DESK_C_SELECT;
+
+        if (folder->win == NULL) {
+            /* The Desktop's backdrop is the selection blue itself, so its
+             * chosen labels carry their own, darker colour -- adjustable
+             * in the preferences. */
+            band = (tiku_desk_rgb_t)tiku_trk_prefs_get(render->prefs,
+                       "SelectedLabelColor") & 0xffffffu;
+        }
+        tiku_desk_fill(surface, label, band);
     }
     {
         tiku_desk_rgb_t ink = TIKU_DESK_C_TEXT;

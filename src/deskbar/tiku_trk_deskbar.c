@@ -73,6 +73,8 @@ struct tiku_trk_deskbar {
      * one; this is the hand that moves it. */
     int                  leaf_hot;
     int                  sub_hot;
+    tiku_trk_db_icon_fn  menu_icon;     /* injected by the shell, or NULL */
+    void                *menu_icon_ctx;
     int                  win_hot;
     int                  clock_hot;
     int                  calendar_day;
@@ -250,6 +252,8 @@ build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_FIND, "Find\xe2\x80\xa6", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PREFS, "Deskbar preferences\xe2\x80\xa6",
              NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_TRACKER_PREFS,
+             "Tracker preferences\xe2\x80\xa6", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
              db->show_replicants ? "Hide replicants" : "Show replicants",
              NULL, 0);
@@ -362,6 +366,16 @@ tiku_trk_deskbar_leaf_item(const tiku_trk_deskbar_t *db, int i)
     return &db->leaf[i];
 }
 
+/** @brief No row is hot until the pointer says so (DB-004). */
+static void
+reset_menu_hots(tiku_trk_deskbar_t *db)
+{
+    db->leaf_hot = -1;
+    db->sub_hot = -1;
+    db->win_hot = -1;
+    db->clock_hot = -1;
+}
+
 tiku_trk_deskbar_t *
 tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
 {
@@ -371,6 +385,7 @@ tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
         db->backend = backend;
         db->dock = TIKU_TRK_DB_RIGHT_EXPANDED;
         db->win_menu_team = -1;
+        reset_menu_hots(db);
         tiku_trk_deskbar_settings_default(&db->settings);
     }
     return db;
@@ -607,6 +622,9 @@ tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
     tiku_trk_deskbar_settings_normalize(&db->settings);
     db->autohide = db->settings.auto_hide;
     db->autoraise = db->settings.auto_raise;
+    /* The whole interface reads its metrics from these faces, so the
+     * size preference lands everywhere on the next paint. */
+    (void)tiku_desk_font_set_size(db->settings.font_size);
     sort_teams(db);
 }
 
@@ -1006,6 +1024,7 @@ tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db)
          * business (DB-011). */
         build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
+        reset_menu_hots(db);
         db->win_menu_team = -1;
     }
 }
@@ -1092,7 +1111,7 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 {
     tiku_desk_rect_t m;
 
-    m.w = 156;
+    m.w = 176;
     m.h = rows * rowh + 4;
     m.y = LEAF_H + 2;
     m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
@@ -1107,6 +1126,32 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 
 static tiku_desk_rect_t sub_menu_rect(const tiku_trk_deskbar_t *db,
                                       tiku_desk_rect_t m, int rowh);
+
+void
+tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
+                                       tiku_trk_db_icon_fn fn, void *context)
+{
+    if (db != NULL) {
+        db->menu_icon = fn;
+        db->menu_icon_ctx = context;
+    }
+}
+
+/** @brief Hand one row's item to the shell's painter. */
+struct menu_icon_relay {
+    tiku_trk_deskbar_t       *db;
+    const tiku_trk_db_item_t *items;
+};
+
+static void
+relay_menu_icon(tiku_desk_surface_t *s, int index, int x, int y, int size,
+                void *context)
+{
+    struct menu_icon_relay *relay = context;
+
+    (void)relay->db->menu_icon(relay->db->menu_icon_ctx, s,
+                               &relay->items[index], x, y, size);
+}
 
 int
 tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
@@ -1270,7 +1315,7 @@ sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_desk_rect_t m, int rowh)
 {
     tiku_desk_rect_t r;
 
-    r.w = 190;
+    r.w = 210;
     r.h = db->sub_count * rowh + 4;
     r.y = m.y + 2 + db->sub_of * rowh;
     r.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
@@ -1333,6 +1378,7 @@ open_sub(tiku_trk_deskbar_t *db, int at)
     }
     if (db->sub_count > 0) {
         db->sub_of = at;
+        db->sub_hot = -1;
     }
 }
 
@@ -1665,7 +1711,14 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             items[i] = (db->leaf[i].kind == TIKU_TRK_DB_ITEM_SEP)
                            ? "-" : db->leaf[i].label;
         }
-        tiku_desk_ui_menu(s, m, items, db->leaf_count, db->leaf_hot);
+        if (db->menu_icon != NULL) {
+            struct menu_icon_relay relay = { db, db->leaf };
+
+            tiku_desk_ui_menu_icons(s, m, items, db->leaf_count,
+                                    db->leaf_hot, relay_menu_icon, &relay);
+        } else {
+            tiku_desk_ui_menu(s, m, items, db->leaf_count, db->leaf_hot);
+        }
         for (i = 0; i < db->leaf_count; i++) {
             /* A row that cannot be chosen is drawn as such, and the menu
              * layer has one ink: dimmed here, over what it already drew
@@ -1696,7 +1749,15 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             for (i = 0; i < db->sub_count; i++) {
                 sitems[i] = db->sub[i].label;
             }
-            tiku_desk_ui_menu(s, sm, sitems, db->sub_count, db->sub_hot);
+            if (db->menu_icon != NULL) {
+                struct menu_icon_relay relay = { db, db->sub };
+
+                tiku_desk_ui_menu_icons(s, sm, sitems, db->sub_count,
+                                        db->sub_hot, relay_menu_icon,
+                                        &relay);
+            } else {
+                tiku_desk_ui_menu(s, sm, sitems, db->sub_count, db->sub_hot);
+            }
         }
     }
     /* The window menu for one application: Hide all / Show all / Close all,
@@ -1923,6 +1984,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_PREFS:
                 pick->what = TIKU_TRK_DB_PREFERENCES;
                 break;
+            case TIKU_TRK_DB_ITEM_TRACKER_PREFS:
+                pick->what = TIKU_TRK_DB_TRACKER_PREFERENCES;
+                break;
             case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
                 db->show_replicants = !db->show_replicants;
                 build_leaf(db);
@@ -1948,6 +2012,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     if (y < LEAF_H + 2) {
         build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
+        reset_menu_hots(db);
         return 1;
     }
 
@@ -1969,6 +2034,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 t->expanded = !t->expanded;
             } else if (secondary) {
                 db->win_menu_team = team;
+                db->win_hot = -1;
             }
             return 1;
         }
@@ -2001,6 +2067,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         CLOCK_H - PAD) {
         if (secondary) {
             db->clock_menu_open = 1;
+        reset_menu_hots(db);
         } else {
             time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
             struct tm tmv;
@@ -2014,6 +2081,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     } else if (secondary && y >= db->frame.y + db->frame.h -
                CLOCK_H - PAD - TRAY_ROW) {
         db->clock_menu_open = 1;
+        reset_menu_hots(db);
     }
     return 1;
 }

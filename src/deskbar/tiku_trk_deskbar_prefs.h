@@ -34,6 +34,7 @@ typedef struct tiku_trk_deskbar_settings {
     int show_seconds;
     int show_day_of_week;
     int show_timezone;
+    int font_size;      /* UI text size in px; the toolkit snaps it */
 } tiku_trk_deskbar_settings_t;
 
 typedef struct {

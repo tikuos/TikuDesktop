@@ -17,14 +17,14 @@
 
 enum {
     ROW_SORT = 0, ROW_TRACKER, ROW_EXPANDER, ROW_EXPAND_NEW,
-    ROW_HIDE_NAMES, ROW_ICON, ROW_DOCS, ROW_FOLDERS, ROW_APPS,
+    ROW_HIDE_NAMES, ROW_ICON, ROW_FONT, ROW_DOCS, ROW_FOLDERS, ROW_APPS,
     ROW_ALWAYS_TOP, ROW_AUTO_RAISE, ROW_AUTO_HIDE, ROW_COUNT
 };
 
 static const char *const labels[ROW_COUNT] = {
     "Sort applications by name", "Tracker always first",
     "Show application expander", "Expand new applications",
-    "Hide application names", "Icon size", "Recent documents",
+    "Hide application names", "Icon size", "Font size", "Recent documents",
     "Recent folders", "Recent applications", "Always on top",
     "Auto-raise", "Auto-hide"
 };
@@ -123,6 +123,8 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                     : tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
         if (row == ROW_ICON) {
             snprintf(number, sizeof number, "-   %d px   +", s->icon_size);
+        } else if (row == ROW_FONT) {
+            snprintf(number, sizeof number, "-   %d px   +", s->font_size);
         } else if (row >= ROW_DOCS && row <= ROW_APPS) {
             int which = row - ROW_DOCS;
             tiku_desk_rect_t box = { content.x + 18, y, 13, 13 };
@@ -144,7 +146,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         }
     }
     {
-        tiku_desk_rect_t monitor = { content.x + 292, content.y + 360,
+        tiku_desk_rect_t monitor = { content.x + 292, content.y + 392,
                                      116, 82 };
         tiku_trk_db_dock_t dock = tiku_trk_deskbar_dock(controller->deskbar);
         char current[32];
@@ -154,16 +156,16 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         snprintf(current, sizeof current, "Dock: %d", (int)dock);
         tiku_desk_text(surface, font, monitor.x + 29, monitor.y + 45,
                        current, TIKU_DESK_C_TEXT);
-        tiku_desk_text(surface, font, content.x + 18, content.y + 400,
+        tiku_desk_text(surface, font, content.x + 18, content.y + 432,
                        "Dock location", TIKU_DESK_C_TEXT);
     }
-    button(surface, (tiku_desk_rect_t){ content.x + 18, content.y + 456,
+    button(surface, (tiku_desk_rect_t){ content.x + 18, content.y + 488,
            112, 26 }, "Defaults",
            tiku_trk_deskbar_prefs_defaultable(&controller->model));
-    button(surface, (tiku_desk_rect_t){ content.x + 140, content.y + 456,
+    button(surface, (tiku_desk_rect_t){ content.x + 140, content.y + 488,
            100, 26 }, "Revert",
            tiku_trk_deskbar_prefs_revertable(&controller->model));
-    button(surface, (tiku_desk_rect_t){ content.x + 278, content.y + 456,
+    button(surface, (tiku_desk_rect_t){ content.x + 278, content.y + 488,
            142, 26 }, "Edit in Tracker...", 1);
 }
 
@@ -180,13 +182,15 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
         !inside(content, event->x, event->y)) {
         return 0;
     }
-    if (row >= 0 && row < ROW_COUNT && y >= 12 && y < 360) {
+    if (row >= 0 && row < ROW_COUNT && y >= 12 && y < 389) {
         tiku_trk_deskbar_settings_t *s = &controller->model.value;
         int *value = row_value(s, row);
 
         if (!row_enabled(controller, row)) { return 1; }
         if (row == ROW_ICON) {
             s->icon_size += (x >= 360) ? 8 : -8;
+        } else if (row == ROW_FONT) {
+            s->font_size += (x >= 360) ? 2 : -2;
         } else if (row >= ROW_DOCS && row <= ROW_APPS) {
             int which = row - ROW_DOCS;
 
@@ -201,28 +205,28 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 292, 360, 116, 82 }, x, y)) {
+    if (inside((tiku_desk_rect_t){ 292, 392, 116, 82 }, x, y)) {
         tiku_trk_db_dock_t dock = tiku_trk_deskbar_prefs_dock_at(
-            x - 292, y - 360, 116, 82,
+            x - 292, y - 392, 116, 82,
             tiku_trk_deskbar_dock(controller->deskbar));
 
         tiku_trk_deskbar_set_dock(controller->deskbar, dock);
         if (controller->dirty != NULL) { *controller->dirty = 1; }
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 18, 456, 112, 26 }, x, y) &&
+    if (inside((tiku_desk_rect_t){ 18, 488, 112, 26 }, x, y) &&
         tiku_trk_deskbar_prefs_defaultable(&controller->model)) {
         tiku_trk_deskbar_prefs_defaults(&controller->model);
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 140, 456, 100, 26 }, x, y) &&
+    if (inside((tiku_desk_rect_t){ 140, 488, 100, 26 }, x, y) &&
         tiku_trk_deskbar_prefs_revertable(&controller->model)) {
         tiku_trk_deskbar_prefs_revert(&controller->model);
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 278, 456, 142, 26 }, x, y)) {
+    if (inside((tiku_desk_rect_t){ 278, 488, 142, 26 }, x, y)) {
         if (controller->open_path != NULL && controller->menu_dir[0] != '\0') {
             controller->open_path(controller->open_context,
                                   controller->menu_dir);

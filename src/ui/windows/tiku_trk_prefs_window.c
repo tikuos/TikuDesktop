@@ -71,6 +71,12 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                 tiku_desk_text(surface, font, box.x + 2, box.y + 11, "x",
                                TIKU_DESK_C_TEXT);
             }
+        } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
+            /* The swatch IS the control: it shows the colour and a click
+             * walks to the next one. */
+            tiku_desk_fill(surface, box,
+                           (tiku_desk_rgb_t)pref->value & 0xffffffu);
+            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
         }
         tiku_desk_text(surface, font, content.x + x + 18,
                        content.y + y + 14, pref->name, TIKU_DESK_C_TEXT);
@@ -125,6 +131,8 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
 
         if (pref->type == TIKU_TRK_PREF_BOOL) {
             pref->value = !pref->value;
+        } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
+            pref->value = tiku_trk_prefs_colour_next(pref->value);
         }
     } else {
         int page;

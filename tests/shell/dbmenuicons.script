@@ -1,0 +1,9 @@
+# shell: desktop
+# home: fixture
+# DB-002: the leaf menu's rows carry real art -- a folder beside /sys,
+# painted by the shell through the injected painter.
+wait 12
+click 980 20
+wait 3
+expect-pixel 701 168 fac468
+quit

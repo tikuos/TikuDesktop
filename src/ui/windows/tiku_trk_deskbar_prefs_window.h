@@ -14,7 +14,7 @@
 #include "tiku_trk_deskbar_prefs.h"
 
 #define TIKU_TRK_DB_PREFS_W 470
-#define TIKU_TRK_DB_PREFS_H 548
+#define TIKU_TRK_DB_PREFS_H 580
 
 typedef void (*tiku_trk_deskbar_prefs_open_fn)(void *context,
                                                 const char *path);

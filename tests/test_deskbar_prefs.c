@@ -34,6 +34,32 @@ main(void)
           "Defaults starts disabled when every compared value is default");
     check(!tiku_trk_deskbar_prefs_revertable(&prefs), "DB-062",
           "Revert starts disabled at the snapshot taken on open");
+
+    check(prefs.value.font_size == 12, "DB-062",
+          "the text size preference defaults to the 12 px face");
+    prefs.value.font_size = 13;
+    tiku_trk_deskbar_settings_normalize(&prefs.value);
+    check(prefs.value.font_size == 12, "DB-062",
+          "an odd size snaps down: only even faces are baked");
+    prefs.value.font_size = 99;
+    tiku_trk_deskbar_settings_normalize(&prefs.value);
+    check(prefs.value.font_size == 16, "DB-062",
+          "the size preference tops out at the largest baked face");
+    prefs.value.font_size = 3;
+    tiku_trk_deskbar_settings_normalize(&prefs.value);
+    check(prefs.value.font_size == 10, "DB-062",
+          "and bottoms out at the smallest");
+    {
+        tiku_trk_deskbar_prefs_t saved;
+
+        prefs.value.font_size = 14;
+        (void)tiku_trk_deskbar_prefs_save(&prefs, store);
+        tiku_trk_deskbar_prefs_init(&saved);
+        (void)tiku_trk_deskbar_prefs_load(&saved, store);
+        check(saved.value.font_size == 14, "DB-062",
+              "the chosen text size survives a save and reload");
+        tiku_trk_deskbar_prefs_init(&prefs);
+    }
     prefs.value.icon_size = 99;
     prefs.value.recent_count[TIKU_TRK_DB_RECENT_DOCS] = -4;
     prefs.value.always_on_top = 1;
