@@ -44,7 +44,7 @@ main(void)
 
         if (out != NULL) { fputs("42\n", out); fclose(out); }
         tiku_trk_deskbar_set_store(first, store);
-        check(tiku_trk_deskbar_add_replicant(first, "answer", path) == 0,
+        check(tiku_trk_deskbar_add_replicant(first, "answer", path) > 0,
               "DB-039", "adding a replicant records it in the store");
         tiku_trk_deskbar_set_store(second, store);
         check(tiku_trk_deskbar_load_replicants(second) == 1,
@@ -678,6 +678,41 @@ main(void)
         }
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
         tiku_desk_surface_free(narrow);
+    }
+
+
+    printf("\nthe tray answers by id and by name (DB-038)\n");
+    {
+        const char *pa = "/tmp/trk_repl_a";
+        const char *pb = "/tmp/trk_repl_b";
+        FILE *out;
+        int ida, idb;
+
+        out = fopen(pa, "w");
+        if (out != NULL) { fputs("1\n", out); fclose(out); }
+        out = fopen(pb, "w");
+        if (out != NULL) { fputs("2\n", out); fclose(out); }
+        ida = tiku_trk_deskbar_add_replicant(db, "alpha", pa);
+        check(ida > 0, "DB-038",
+              "an added tray item is answered with its numeric id");
+        check(tiku_trk_deskbar_add_replicant(db, "alpha", pa) == ida,
+              "DB-038", "the same node again is the same id, not a twin");
+        check(tiku_trk_deskbar_add_replicant(db, "alpha", pb) == -1,
+              "DB-038", "a DIFFERENT node wearing a taken name is refused");
+        idb = tiku_trk_deskbar_add_replicant(db, "beta", pb);
+        check(idb > 0 && idb != ida, "DB-038",
+              "distinct items carry distinct ids");
+        check(tiku_trk_deskbar_replicant_by_id(db, ida) >= 0 &&
+              tiku_trk_deskbar_replicant_by_name(db, "beta") >= 0,
+              "DB-038", "and both are addressable afterwards, by id and "
+              "by view name");
+        check(tiku_trk_deskbar_drop_replicant(db, ida) == 1 &&
+              tiku_trk_deskbar_replicant_by_id(db, ida) == -1 &&
+              tiku_trk_deskbar_replicant_by_name(db, "beta") >= 0,
+              "DB-038", "removal by id takes exactly that item");
+        (void)tiku_trk_deskbar_drop_replicant(db, idb);
+        (void)unlink(pa);
+        (void)unlink(pb);
     }
 
     tiku_trk_deskbar_free(db);

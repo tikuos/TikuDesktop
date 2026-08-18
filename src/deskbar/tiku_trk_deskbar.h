@@ -77,6 +77,7 @@ typedef struct {
 
 /** @brief A tray item: a namespace node rendered as label + value. */
 typedef struct {
+    int             id;             /* addressable afterwards (DB-038)    */
     char            label[16];
     char            path[TIKU_TRK_PATH_MAX];
     char            value[24];      /* raw, as the node reports it        */
@@ -417,8 +418,26 @@ void tiku_trk_deskbar_set_windows(tiku_trk_deskbar_t *db, int team,
                                   int active);
 
 /** @brief Add a tray replicant watching @p path. */
+/**
+ * @brief Subscribe the tray to @p path under @p label (DB-038).
+ *
+ * @return the item's numeric id (positive), the existing id when the
+ *         same path is already subscribed, or -1 -- including for a
+ *         DIFFERENT path wearing an already-taken label, which is the
+ *         duplicate-name refusal.
+ */
 int tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
                                    const char *path);
+
+/** @brief Tray index of the item with @p id, or -1. */
+int tiku_trk_deskbar_replicant_by_id(const tiku_trk_deskbar_t *db, int id);
+
+/** @brief Tray index of the item labelled @p name, or -1. */
+int tiku_trk_deskbar_replicant_by_name(const tiku_trk_deskbar_t *db,
+                                       const char *name);
+
+/** @brief Unsubscribe the item with @p id.  @return nonzero if removed. */
+int tiku_trk_deskbar_drop_replicant(tiku_trk_deskbar_t *db, int id);
 int tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
                                           const char *path, int height);
 int tiku_trk_deskbar_replicant_height(const tiku_trk_deskbar_t *db,
@@ -473,7 +492,8 @@ typedef enum {
     TIKU_TRK_DB_DROP_TEAM,      /* an application: hand the files to it     */
     TIKU_TRK_DB_DROP_MENU_DIR,  /* a folder in the menu: links go there     */
     TIKU_TRK_DB_DROP_MENU_FILE, /* a file in the menu: launch it with them  */
-    TIKU_TRK_DB_DROP_BAR        /* the strip itself: launch the files       */
+    TIKU_TRK_DB_DROP_BAR,       /* the strip itself: launch the files       */
+    TIKU_TRK_DB_DROP_TRAY       /* the tray: subscribe the node (DB-038)    */
 } tiku_trk_db_drop_t;
 
 /**

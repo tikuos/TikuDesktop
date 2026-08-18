@@ -7318,13 +7318,13 @@ mini bar shows the leaf and the tray and nothing between them.
 *src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_mini and the mini arms of _draw;
 tests/test_deskbar_dock.c*
 
-#### DB-038 · core · partial
+#### DB-038 · core · done
 **Replicants can be added to the tray by any application, by archived view or by add-on file, and are addressable afterwards by numeric id or by view name**  
 kMsgAddView/kMsgAddAddOn -> TBarView::AddItem -> TReplicantTray::AddIcon/LoadAddOn; add-ons must export instantiate_deskbar_entry(image_id, entry_ref*, w, h) or instantiate_deskbar_item(w, h); duplicate view names are refused; the id is returned in the reply, or an "error" field on failure  
 `StatusView.cpp` → `TReplicantTray::LoadAddOn`  
 **TIKU:** This is the biggest namespace-shaped change: a tray item becomes a VFS node with a typed descriptor and capability bits instead of a loaded shared object; 'add by ref' becomes 'add by node path'  
-**MISSING:** The blessed TikuOS reshape is present — a tray item is a namespace path whose typed descriptor is resolved once at subscribe time and then formatted — but the addressability clause is missing: add_replicant returns bare 0/-1 rather than an id, there is no lookup by id or view name, no duplicate-name refusal, and no runtime add path (the only calls are three fixed device paths at startup).  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_add_replicant; src/shell/tiku_trk_desktop.c:main lines 1286-1291*
+**PORT:** The blessed TikuOS reshape, now with the addressability clause whole: a tray item is a namespace path whose typed descriptor resolves once at subscribe time; add_replicant answers with a POSITIVE NUMERIC ID (the same id for the same node, -1 for a different node wearing a taken label -- the duplicate-view-name refusal); items are looked up by id or by name and removed by id afterwards; and the runtime add path exists -- dropping a single node on the tray subscribes it, the 'add by node path' the TIKU note names, with the id said in the status line the way the original replies it.  
+*src/deskbar/tiku_trk_deskbar.c (ids, by_id/by_name, drop_replicant, TRAY drop target); src/ui/commands/tiku_trk_drop_controller.c (the drop subscription); tests/test_deskbar_dock.c (DB-038, mutation-tested)*
 
 #### DB-039 · important · done
 **Add-on replicants survive a reboot: their paths are stored in a 'replicants' settings file and reloaded at startup, and any that no longer load are quietly dropped from the file**  

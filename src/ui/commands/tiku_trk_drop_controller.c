@@ -91,6 +91,23 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
         }
         return 1;
     }
+    if (drop == TIKU_TRK_DB_DROP_TRAY) {
+        /* The tray: exactly one dropped node becomes a subscription,
+         * addressable afterwards by the id this returns (DB-038). */
+        count = drop_paths(controller, paths);
+        if (count == 1) {
+            const char *base = strrchr(paths[0], '/');
+            int id = tiku_trk_deskbar_add_replicant(controller->deskbar,
+                base != NULL ? base + 1 : paths[0], paths[0]);
+
+            snprintf(controller->status, controller->status_size,
+                     id > 0 ? "subscribed to the tray (id %d)"
+                            : "the tray refused it (name taken or full)",
+                     id);
+            *controller->dirty = 1;
+        }
+        return 1;
+    }
     if (drop == TIKU_TRK_DB_DROP_NONE) {
         return 0;
     }

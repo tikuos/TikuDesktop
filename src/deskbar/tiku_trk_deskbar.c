@@ -55,6 +55,7 @@ struct tiku_trk_deskbar {
     int                  team_count;
     tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
     int                  tray_count;
+    int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
     tiku_trk_deskbar_settings_t settings;
     int                  autohide;
@@ -1035,15 +1036,23 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
 {
     tiku_trk_replicant_t *r;
 
-    if (db == NULL || db->tray_count >= TIKU_TRK_DB_TRAY_MAX) {
+    if (db == NULL || label == NULL || path == NULL ||
+        db->tray_count >= TIKU_TRK_DB_TRAY_MAX) {
         return -1;
     }
     for (int i = 0; i < db->tray_count; i++) {
         if (strcmp(db->tray[i].path, path) == 0) {
-            return i;
+            return db->tray[i].id;         /* already subscribed */
+        }
+        if (strncmp(db->tray[i].label, label,
+                    sizeof db->tray[i].label - 1u) == 0) {
+            /* A DIFFERENT node wearing a taken name is refused, as the
+             * original refuses duplicate view names (DB-038). */
+            return -1;
         }
     }
     r = &db->tray[db->tray_count++];
+    r->id = ++db->next_replicant;
     snprintf(r->label, sizeof r->label, "%s", label);
     snprintf(r->path, sizeof r->path, "%s", path);
     r->valid = 0;
@@ -1058,7 +1067,57 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
         }
     }
     save_replicants(db);
-    return 0;
+    return r->id;
+}
+
+int
+tiku_trk_deskbar_replicant_by_id(const tiku_trk_deskbar_t *db, int id)
+{
+    int i;
+
+    if (db == NULL) {
+        return -1;
+    }
+    for (i = 0; i < db->tray_count; i++) {
+        if (db->tray[i].id == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int
+tiku_trk_deskbar_replicant_by_name(const tiku_trk_deskbar_t *db,
+                                   const char *name)
+{
+    int i;
+
+    if (db == NULL || name == NULL) {
+        return -1;
+    }
+    for (i = 0; i < db->tray_count; i++) {
+        if (strcmp(db->tray[i].label, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int
+tiku_trk_deskbar_drop_replicant(tiku_trk_deskbar_t *db, int id)
+{
+    int at = tiku_trk_deskbar_replicant_by_id(db, id);
+    int i;
+
+    if (at < 0) {
+        return 0;
+    }
+    for (i = at; i < db->tray_count - 1; i++) {
+        db->tray[i] = db->tray[i + 1];
+    }
+    db->tray_count--;
+    save_replicants(db);
+    return 1;
 }
 
 int
@@ -2723,6 +2782,13 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
              * belongs to the application that owns it. */
             ry -= db->teams[team].win_count * (WIN_H + SEAM);
         }
+    }
+    if (tiku_trk_deskbar_vertical(db->dock) &&
+        y >= f.y + f.h - (db->tray_count * TRAY_ROW) -
+            (db->settings.show_clock ? CLOCK_H : 0) - PAD) {
+        /* The tray and its clock: a dropped node is a subscription
+         * request (DB-038). */
+        return TIKU_TRK_DB_DROP_TRAY;
     }
     return TIKU_TRK_DB_DROP_BAR;
 }
