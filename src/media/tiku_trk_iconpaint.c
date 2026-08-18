@@ -30,6 +30,39 @@ over(uint32_t src, tiku_desk_rgb_t dst)
     return TIKU_DESK_RGB(r, g, b);
 }
 
+/** @brief Composite an already-derived bitmap: the cached-look path. */
+static int
+paint_bmp(tiku_desk_surface_t *s, const uint32_t *bmp, int x, int y,
+          int size)
+{
+    int row, col;
+
+    if (s == NULL || bmp == NULL || size <= 0) {
+        return 0;
+    }
+    for (row = 0; row < size; row++) {
+        int py = y + row;
+
+        if (py < s->clip.y || py >= s->clip.y + s->clip.h ||
+            py < 0 || py >= s->h) {
+            continue;
+        }
+        for (col = 0; col < size; col++) {
+            int px = x + col;
+            uint32_t src = bmp[(size_t)row * (size_t)size + (size_t)col];
+            tiku_desk_rgb_t *dst;
+
+            if (px < s->clip.x || px >= s->clip.x + s->clip.w ||
+                px < 0 || px >= s->w || ((src >> 24) & 0xFFu) == 0u) {
+                continue;
+            }
+            dst = &s->px[(size_t)py * (size_t)s->w + (size_t)px];
+            *dst = over(src, *dst);
+        }
+    }
+    return 1;
+}
+
 static int
 paint(tiku_desk_surface_t *s, const char *name, int x, int y, int size,
       float mix, tiku_desk_rgb_t wash)
@@ -100,7 +133,17 @@ tiku_trk_icon_paint_selected(tiku_desk_surface_t *s, const char *name, int x,
 {
     /* Light enough that the art is still recognisable -- the icon says WHAT
      * the row is, and a selection that obliterated it would cost more than
-     * it conveys. */
+     * it conveys.  Derived once and CACHED beside the plain render, so a
+     * selected composite costs what a plain one does (IV-019); the wash
+     * falls back to the per-pixel path only when the cache cannot hold. */
+    {
+        const uint32_t *w = tiku_trk_icons_bitmap_washed(name, size,
+            (uint32_t)TIKU_DESK_C_SELECT, 89u);
+
+        if (w != NULL) {
+            return paint_bmp(s, w, x, y, size);
+        }
+    }
     return paint(s, name, x, y, size, 0.35f, TIKU_DESK_C_SELECT);
 }
 

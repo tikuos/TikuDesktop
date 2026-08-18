@@ -60,6 +60,19 @@ const tiku_trk_icon_t *tiku_trk_icons_find(const char *name);
 const uint32_t *tiku_trk_icons_bitmap(const char *name, int size);
 
 /**
+ * @brief The selected look, cached beside the plain render (IV-019).
+ *
+ * Derived once from the plain art -- rgb blended toward @p wash by
+ * @p mix/255 with alpha kept -- and stored, so a composite of a selected
+ * icon costs what a plain one does.
+ */
+const uint32_t *tiku_trk_icons_bitmap_washed(const char *name, int size,
+                                             uint32_t wash, unsigned mix);
+
+/** @brief How many selected looks have been DERIVED, ever: the once-ness. */
+unsigned tiku_trk_icons_washed_builds(void);
+
+/**
  * @brief How many bytes of rendered icon the cache may hold (IV-012).
  *
  * A slot count alone does not bound anything: one 1024 px icon is four

@@ -373,6 +373,43 @@ main(void)
         }
     }
 
+
+    {   /* IV-019: the selected look is derived once and CACHED. */
+        size_t before, after_one, after_two;
+        const uint32_t *w1, *w2, *plain;
+
+        plain = tiku_trk_icons_bitmap("folder", 32);
+        check(plain != NULL, "IV-019: the plain render exists");
+        before = tiku_trk_icons_cached_bytes();
+        w1 = tiku_trk_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
+        after_one = tiku_trk_icons_cached_bytes();
+        w2 = tiku_trk_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
+        after_two = tiku_trk_icons_cached_bytes();
+        check(w1 != NULL && w1 == w2, "IV-019: the second ask is the same "
+              "bitmap, not a second derivation");
+        check(tiku_trk_icons_washed_builds() == 1u,
+              "IV-019: derived ONCE -- the second ask cost nothing");
+        check(after_one > before && after_two == after_one,
+              "IV-019: it is stored once and accounted once");
+        {   /* An opaque pixel is the wash formula exactly. */
+            size_t k, n = 32u * 32u;
+            int held = 1;
+
+            for (k = 0; k < n; k++) {
+                uint32_t src = plain[k];
+
+                if (((src >> 24) & 0xffu) == 0xffu) {
+                    unsigned r = (((src >> 16) & 0xffu) * (255u - 89u) +
+                                  0x33u * 89u) / 255u;
+
+                    if (((w1[k] >> 16) & 0xffu) != r) { held = 0; }
+                }
+            }
+            check(held, "IV-019: an opaque pixel is the wash formula, so "
+                  "the cached look equals the recomputed one");
+        }
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every icon parses and renders");
     return fails ? 1 : 0;
 }

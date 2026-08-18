@@ -5309,12 +5309,12 @@ MakeTransformedIcon on B_RGB32/B_RGBA32 multiplies R,G,B by 168>>8 and copies al
 **PORT:** The port does derive a distinct selected look from the same normal art per pixel, by a real transform — a 35% wash toward the selection colour applied after the alpha composite and skipped entirely on zero-alpha pixels — rather than Haiku's 168>>8 brightness multiply with alpha copied through; there is no CMAP8 highlight table.  
 *src/media/tiku_trk_iconpaint.c:33-79 (paint(): over() composite then the m-weighted wash, with `((src >> 24) & 0xFFu) == 0u` pixels skipped) and 96-107 (paint_selected passes 0.35f / TIKU_DESK_C_SELECT)*
 
-#### IV-019 · core · partial
+#### IV-019 · core · done
 **The selected icon is derived from the normal icon on demand and then cached, never fetched separately.**  
 AlternateModeForIconConstructing maps any kSelected request back to kNormalIcon; every Get*Icon path ends with 'if (mode != kNormalIcon && HaveIconBitmap(NORMAL_ICON_ONLY,size)) ConstructBitmap(); SetIcon(Adopt(), mode, size)'.  
 `src/kits/tracker/IconCache.cpp` → `IconCacheEntry::ConstructBitmap / IconCacheEntry::AlternateModeForIconConstructing`  
-**MISSING:** Two clauses hold — the selected look is derived from the normal art and is never fetched as separate artwork — but the stated "and then cached" clause does not: the wash is recomputed pixel-by-pixel on every composite and no second bitmap is ever stored, as the header itself concedes.  
-*src/media/tiku_trk_iconpaint.c:68-77 (wash recomputed inside the per-pixel loop of every paint call); src/media/tiku_trk_iconpaint.h:41-49 ("Haiku keeps a second bitmap per icon for this; one wash ... without a second cache"); src/media/tiku_trk_icons.c:1755-1799 caches only the normal render*
+**PORT:** All three clauses hold now: the selected look is derived from the plain render -- rgb blended toward the selection colour, alpha kept -- derived ONCE, and stored beside it in the same slot cache with the same budget and eviction, so a selected composite costs what a plain one does.  For an opaque pixel the cached value is the old per-pixel wash exactly; only translucent edges change, where the wash now tints the ART rather than the ground beneath it.  
+*src/media/tiku_trk_icons.c:tiku_trk_icons_bitmap_washed; src/media/tiku_trk_iconpaint.c:tiku_trk_icon_paint_selected; tests/test_hvif.c (IV-019, including the once-ness counter)*
 
 #### IV-020 · polish · differs
 **An icon in an unrecognised colour space renders as a solid black block rather than garbage.**  

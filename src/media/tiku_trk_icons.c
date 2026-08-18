@@ -1747,6 +1747,11 @@ tiku_trk_icons_find(const char *name)
 typedef struct {
     int       size;
     uint32_t *bmp;
+    /* The selected look, cached beside the art it was derived from: Haiku
+     * keeps a second bitmap per icon for exactly this, and recomputing the
+     * wash per composite was the one clause IV-019 still owed. */
+    uint32_t *washed;
+    uint32_t  wash_key;             /* wash colour + mix that built it     */
     unsigned  stamp;                /* render order, for the oldest-first  */
 } tiku_trk_icon_slot_t;
 
@@ -1758,7 +1763,9 @@ static unsigned tiku_trk_icon_clock;
 static size_t
 slot_bytes(const tiku_trk_icon_slot_t *slot)
 {
-    return (size_t)slot->size * (size_t)slot->size * sizeof *slot->bmp;
+    size_t one = (size_t)slot->size * (size_t)slot->size * sizeof *slot->bmp;
+
+    return (slot->washed != NULL) ? one * 2u : one;
 }
 
 /** @brief Free the oldest render anywhere in the cache.  @return its bytes. */
@@ -1785,7 +1792,9 @@ evict_oldest(void)
         size_t freed = slot_bytes(oldest);
 
         free(oldest->bmp);
+        free(oldest->washed);
         oldest->bmp = NULL;
+        oldest->washed = NULL;
         oldest->size = 0;
         tiku_trk_icon_bytes -= freed;
         return freed;
@@ -1856,6 +1865,7 @@ tiku_trk_icons_bitmap(const char *name, int size)
         i = 0;
         tiku_trk_icon_bytes -= slot_bytes(&row[0]);
         free(row[0].bmp);
+        free(row[0].washed);
         memmove(&row[0], &row[1],
                 (TIKU_TRK_ICONS_SLOTS - 1) * sizeof row[0]);
         i = TIKU_TRK_ICONS_SLOTS - 1;
@@ -1875,6 +1885,8 @@ tiku_trk_icons_bitmap(const char *name, int size)
     }
     row[i].size = size;
     row[i].bmp = bmp;
+    row[i].washed = NULL;
+    row[i].wash_key = 0u;
     row[i].stamp = ++tiku_trk_icon_clock;
     tiku_trk_icon_bytes += (size_t)size * (size_t)size * sizeof *bmp;
     return bmp;
@@ -1893,4 +1905,71 @@ tiku_trk_icons_flush(void)
         }
     }
     tiku_trk_icon_bytes = 0;
+}
+
+static unsigned washed_builds;
+
+unsigned
+tiku_trk_icons_washed_builds(void)
+{
+    return washed_builds;
+}
+
+const uint32_t *
+tiku_trk_icons_bitmap_washed(const char *name, int size, uint32_t wash,
+                             unsigned mix)
+{
+    const tiku_trk_icon_t *ic = tiku_trk_icons_find(name);
+    tiku_trk_icon_slot_t *row;
+    uint32_t key = (wash & 0xffffffu) | ((uint32_t)(mix & 0xffu) << 24);
+    int idx, i;
+
+    if (ic == NULL || tiku_trk_icons_bitmap(name, size) == NULL) {
+        return NULL;            /* the plain render is the source */
+    }
+    idx = (int)(ic - tiku_trk_icon_table);
+    row = tiku_trk_icon_cache[idx];
+    for (i = 0; i < TIKU_TRK_ICONS_SLOTS; i++) {
+        if (row[i].bmp == NULL || row[i].size != size) {
+            continue;
+        }
+        if (row[i].washed != NULL && row[i].wash_key == key) {
+            return row[i].washed;
+        }
+        {
+            /* Derived from the plain art, alpha kept, so the ordinary
+             * composite serves both looks (IV-019). */
+            size_t n = (size_t)size * (size_t)size;
+            uint32_t *w = row[i].washed;
+            size_t k;
+
+            if (w == NULL) {
+                w = malloc(n * sizeof *w);
+                if (w == NULL) {
+                    return NULL;
+                }
+                tiku_trk_icon_bytes += n * sizeof *w;
+            }
+            for (k = 0; k < n; k++) {
+                uint32_t src = row[i].bmp[k];
+                unsigned a = (src >> 24) & 0xffu;
+                unsigned r = ((src >> 16) & 0xffu) * (255u - mix) +
+                             ((wash >> 16) & 0xffu) * mix * a / 255u;
+                unsigned g = ((src >> 8) & 0xffu) * (255u - mix) +
+                             ((wash >> 8) & 0xffu) * mix * a / 255u;
+                unsigned b2 = (src & 0xffu) * (255u - mix) +
+                              (wash & 0xffu) * mix * a / 255u;
+
+                w[k] = ((uint32_t)a << 24) |
+                       ((uint32_t)(r / 255u) << 16) |
+                       ((uint32_t)(g / 255u) << 8) |
+                       (uint32_t)(b2 / 255u);
+            }
+            row[i].washed = w;
+            row[i].wash_key = key;
+            washed_builds++;
+            return w;
+        }
+    }
+    return NULL;
 }
