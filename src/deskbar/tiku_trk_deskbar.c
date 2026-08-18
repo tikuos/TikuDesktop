@@ -68,6 +68,13 @@ struct tiku_trk_deskbar {
     int                  calendar_year;
     int                  calendar_month;
     time_t               fixed_now;     /* frozen clock for fixtures, or 0 */
+    /* The hot row of each little menu, following the pointer; -1 when the
+     * pointer is elsewhere.  The draw has always been able to highlight
+     * one; this is the hand that moves it. */
+    int                  leaf_hot;
+    int                  sub_hot;
+    int                  win_hot;
+    int                  clock_hot;
     int                  calendar_day;
     int                  win_menu_team;    /* -1 = none showing        */
     /* The leaf menu, built from the namespace every time it opens rather
@@ -1102,6 +1109,65 @@ static tiku_desk_rect_t sub_menu_rect(const tiku_trk_deskbar_t *db,
                                       tiku_desk_rect_t m, int rowh);
 
 int
+tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
+{
+    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    int rowh, changed = 0;
+    int leaf = -1, sub = -1, win = -1, clock = -1;
+
+    if (db == NULL) {
+        return 0;
+    }
+    rowh = font->height + 6;
+    if (db->menu_open) {
+        tiku_desk_rect_t m = leaf_menu_rect(db, rowh, db->leaf_count);
+
+        if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
+            y < m.y + 2 + db->leaf_count * rowh) {
+            leaf = (y - m.y - 2) / rowh;
+            if (db->leaf[leaf].kind == TIKU_TRK_DB_ITEM_SEP ||
+                db->leaf[leaf].kind == TIKU_TRK_DB_ITEM_DISABLED) {
+                leaf = -1;      /* nothing to choose there */
+            }
+        }
+        if (db->sub_of >= 0 && db->sub_count > 0) {
+            tiku_desk_rect_t sm = sub_menu_rect(db, m, rowh);
+
+            if (x >= sm.x && x < sm.x + sm.w && y >= sm.y + 2 &&
+                y < sm.y + 2 + db->sub_count * rowh) {
+                sub = (y - sm.y - 2) / rowh;
+            }
+        }
+    }
+    if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
+        tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
+                               4 * rowh + 4 };
+
+        if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
+            y < m.y + 2 + 4 * rowh) {
+            win = (y - m.y - 2) / rowh;
+            if (win == 2) {
+                win = -1;       /* the separator row */
+            }
+        }
+    }
+    if (db->clock_menu_open) {
+        tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y +
+                               db->frame.h - CLOCK_H - 32, 170, 4 * 28 };
+
+        if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
+            y < m.y + 2 + 4 * 28) {
+            clock = (y - m.y - 2) / 28;
+        }
+    }
+    if (leaf != db->leaf_hot)   { db->leaf_hot = leaf;   changed = 1; }
+    if (sub != db->sub_hot)     { db->sub_hot = sub;     changed = 1; }
+    if (win != db->win_hot)     { db->win_hot = win;     changed = 1; }
+    if (clock != db->clock_hot) { db->clock_hot = clock; changed = 1; }
+    return changed;
+}
+
+int
 tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y)
 {
     const tiku_desk_font_t *font;
@@ -1599,7 +1665,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             items[i] = (db->leaf[i].kind == TIKU_TRK_DB_ITEM_SEP)
                            ? "-" : db->leaf[i].label;
         }
-        tiku_desk_ui_menu(s, m, items, db->leaf_count, -1);
+        tiku_desk_ui_menu(s, m, items, db->leaf_count, db->leaf_hot);
         for (i = 0; i < db->leaf_count; i++) {
             /* A row that cannot be chosen is drawn as such, and the menu
              * layer has one ink: dimmed here, over what it already drew
@@ -1630,7 +1696,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             for (i = 0; i < db->sub_count; i++) {
                 sitems[i] = db->sub[i].label;
             }
-            tiku_desk_ui_menu(s, sm, sitems, db->sub_count, -1);
+            tiku_desk_ui_menu(s, sm, sitems, db->sub_count, db->sub_hot);
         }
     }
     /* The window menu for one application: Hide all / Show all / Close all,
@@ -1642,7 +1708,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         int rowh = f->height + 6;
         tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
                                4 * rowh + 4 };
-        tiku_desk_ui_menu(s, m, items, 4, -1);
+        tiku_desk_ui_menu(s, m, items, 4, db->win_hot);
     }
     if (db->clock_menu_open) {
         const char *items[] = {
@@ -1653,7 +1719,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         };
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
                                CLOCK_H - 32, 170, 4 * 28 };
-        tiku_desk_ui_menu(s, m, items, 4, -1);
+        tiku_desk_ui_menu(s, m, items, 4, db->clock_hot);
     }
     if (db->calendar_open) {
         /* The clock's calendar: a month grid with steppers, popped beside

@@ -3444,6 +3444,9 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
+                if (tiku_trk_deskbar_motion(app.deskbar, ev.x, ev.y)) {
+                    app.dirty = 1;
+                }
                 if (app.popup != NULL) {
                     /* The hot row follows the pointer, in the level it is
                      * over: without this a menu gives no sign of which

@@ -1,0 +1,17 @@
+# shell: desktop
+# The Deskbar's own menus highlight the row under the pointer too, and the
+# highlight leaves with the pointer.
+wait 8
+press 900 20 1
+wait 2
+release 900 20 1
+wait 5
+expect-pixel 800 60 d8d8d8
+move 800 60
+wait 3
+expect-pixel 800 60 336698
+note and a pointer that leaves takes the highlight with it
+move 400 460
+wait 3
+expect-pixel 800 60 d8d8d8
+quit

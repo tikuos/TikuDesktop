@@ -298,6 +298,13 @@ void tiku_trk_deskbar_set_clock(tiku_trk_deskbar_t *db, time_t at);
 int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
                                  size_t max);
 
+/**
+ * @brief Let each open little menu's hot row follow the pointer.
+ *
+ * @return Nonzero when a highlight moved, so the caller knows to paint.
+ */
+int tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y);
+
 /** @brief Attach the durable store used for tray subscriptions. */
 void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,
                                 tiku_trk_store_t *store);
