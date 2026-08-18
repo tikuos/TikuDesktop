@@ -6449,12 +6449,12 @@ TrySettingPreferredApp/TrySettingPreferredAppForFile increment a counter; GetPre
 **PORT:** Asked before anything is preselected: two documents wanting different applications agree on nothing, and a preselection would be a guess. One type agrees with itself.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_agreed; tests/test_launch.c*
 
-#### AW-044 · important · partial
+#### AW-044 · important · done
 **"Open and make preferred" sets the chosen app as the preferred handler for every distinct type among the opened documents, and records the app hint for its signature.**  
 Collects unique types with AddOneUniqueDocumentType, then for each installed type SetPreferredApp(appSignature) and mime.SetTo(appSignature).SetAppHint(appRef); then performs the normal open.  
 `OpenWithWindow.cpp` → `OpenWithContainerWindow::MakeDefaultAndOpen / SetDefaultAppForOneType`
-**MISSING:** The per-type preferred handler is stored and honoured -- it sorts to the top of the list and is marked there -- but nothing in the UI SETS it: that is the Open With window's own button, and this port has the menu rather than the window.  
-*src/core/tiku_trk_launch.c:tiku_trk_launch_set_preferred; tests/test_launch.c*
+**PORT:** Stored, honoured, and now SET from the UI: the Open With window's "Open and make preferred" button writes the handler for every type in the selection and opens with it, and the preferred entry sorts first and wears its mark in both the menu and the window.  
+*src/core/tiku_trk_launch.c:tiku_trk_launch_set_preferred; src/ui/windows/tiku_trk_open_with_window.c:do_open; tests/test_launch.c; tests/shell/openwithwin.script*
 
 #### AW-045 · important · done
 **The Open With buttons live-update: Open is disabled with no selection, and "Open and make preferred" is disabled for an app that does not handle the type or that is already the preferred app.**  
