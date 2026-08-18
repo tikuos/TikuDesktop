@@ -188,7 +188,7 @@ PYEOF
                 > /tmp/trk_stamp.sh
             chmod +x /tmp/trk_stamp.sh
             rm -f /tmp/trk_launched
-            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\n' \
+            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\nOddball\t/tmp/trk_stamp.sh\timage/png\n' \
                 > "$deskhome/.config/tracker/apps"
         fi
         mkdir -p "$deskhome/Desktop"

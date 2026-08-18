@@ -1,0 +1,61 @@
+# shell: desktop
+# apps: fixture
+# AW-047/AW-045: the Open With window is single-selection and list only,
+# its buttons live from the selection, Return opens, and Escape cancels.
+wait 8
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Open with
+wait 3
+menu-pick Open with…
+wait 8
+expect-windows 2
+note the best claim leads the list; Down takes it and Return opens
+key Down
+wait 2
+key Return
+wait 25
+expect-file /tmp/trk_launched
+expect-windows 1
+note asked again, Escape is the whole answer
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Open with
+wait 3
+menu-pick Open with…
+wait 8
+expect-windows 2
+key Escape
+wait 5
+expect-windows 1
+note an application that does not claim the type asks first (AW-046)
+remove /tmp/trk_launched
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Open with
+wait 3
+menu-pick Open with…
+wait 8
+key Down
+wait 2
+key Down
+wait 2
+key Return
+wait 5
+expect-alert does not claim
+key o
+wait 25
+expect-file /tmp/trk_launched
+quit

@@ -122,6 +122,7 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_UNMOUNT:           return "Unmount";
     case TIKU_TRK_CMD_MOUNT_ALL:         return "Mount all";
     case TIKU_TRK_CMD_MOUNT_SETTINGS:    return "Settings…";
+    case TIKU_TRK_CMD_OPEN_WITH_WINDOW:  return "Open with…";
     case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
     case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";
     case TIKU_TRK_CMD_CANCEL:            return "Cancel";
@@ -320,6 +321,8 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_MOUNT_ALL:
     case TIKU_TRK_CMD_MOUNT_SETTINGS:
         return 1;
+    case TIKU_TRK_CMD_OPEN_WITH_WINDOW:
+        return c->selection > 0;
 
     /* Arrange by is meaningless in list view, where the column titles sort. */
     case TIKU_TRK_CMD_ARRANGE_BY:

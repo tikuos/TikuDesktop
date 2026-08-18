@@ -4510,12 +4510,12 @@ Model::IsDropTargetForList walks the BStringList of dragged types and returns tr
 **PORT:** The whole set against the whole set: an application is a candidate when it can open ANY of the types being carried, and the relation it is shown with is the best one it has for anything in them.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_candidates; tests/test_launch.c*
 
-#### MA-081 · polish · partial ⟨found by verification⟩
+#### MA-081 · polish · done ⟨found by verification⟩
 **The "Open with relation" column (only ever present in the Open-with window) shows why each application matched, and is truncated at the end rather than the middle.**  
 OpenWithRelationAttributeText::ReadValue asks the OpenWithPoseView for OpenWithRelation(model); FitValue asks it for OpenWithRelationDescription() and truncates with B_TRUNCATE_END; PreferredWidth measures at a fixed 500px rather than the usual 100000.  
 `WidgetAttributeText.cpp` → `OpenWithRelationAttributeText::FitValue`
-**MISSING:** The relation exists and is said in words on every row of the Open-with menu; what is absent is the Open With WINDOW that would carry it as a column, and the column vocabulary it would need.  
-*src/core/tiku_trk_launch.c:tiku_trk_launch_relation_label; src/shell/tiku_trk_desktop.c:build_open_with*
+**PORT:** The window carries it now: every row says why its application matched, in the relation's own words, truncated at the END -- the tail of "opens this kind of file" being the part a reader can spare.  
+*src/ui/windows/tiku_trk_open_with_window.c (the relation column); tests/shell/openwithwin.script*
 
 #### MA-082 · polish · done ⟨found by verification⟩
 **Owner and Group columns exist in the code but are compiled out, so they never appear in the Attributes menu or as columns.**  
@@ -6456,26 +6456,26 @@ Collects unique types with AddOneUniqueDocumentType, then for each installed typ
 **MISSING:** The per-type preferred handler is stored and honoured -- it sorts to the top of the list and is marked there -- but nothing in the UI SETS it: that is the Open With window's own button, and this port has the menu rather than the window.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_set_preferred; tests/test_launch.c*
 
-#### AW-045 · important · partial
+#### AW-045 · important · done
 **The Open With buttons live-update: Open is disabled with no selection, and "Open and make preferred" is disabled for an app that does not handle the type or that is already the preferred app.**  
 Evaluated in Pulse(); SetCanOpen / SetCanSetAppAsDefault; kNoRelation -> can open but cannot make preferred; when a common preferred app exists the button enables only if the selected ref differs from it.  
 `OpenWithWindow.cpp` → `OpenWithPoseView::Pulse / OpenWithContainerWindow::SetCanOpen / SetCanSetAppAsDefault`
-**SUBSYSTEM:** Open With window -- no such window, hence no buttons to live-update (see AW-040)  
-**MISSING:** The Open With candidate menu updates, but there is no Open With window with live Open/preferred buttons.
+**PORT:** The window exists and its buttons live from the selection on every draw -- the port's Pulse: Open needs a selection; "Open and make preferred" is disabled for an application with no relation to the type and for the one that is already preferred.  
+*src/ui/windows/tiku_trk_open_with_window.c:enables; tests/shell/openwithwin.script*
 
-#### AW-046 · important · partial
+#### AW-046 · important · done
 **Choosing an app that does not claim the document's type warns and requires confirmation before opening; the warning is skipped when all documents are of generic type.**  
 OpenWithRelation(model) == kNoRelation && !fIterator->GenericFilesOnly() -> alert with Cancel (Escape) / Open, default Cancel. A missing application file gives a "Could not find application" alert instead.  
 `OpenWithWindow.cpp` → `OpenWithPoseView::OpenSelection`
-**SUBSYSTEM:** Open With window -- no such window and no alert layer for the confirmation (src/shell/tiku_trk_desktop.c:2738-2741)  
-**MISSING:** Open With candidates can be selected, but incompatible handlers do not trigger the source confirmation alert flow.
+**PORT:** Choosing an application that does not claim the document's type warns with Cancel (Escape, the default) and Open; the warning is skipped when every document is untyped, there being nothing to disagree with.  The window yields its keys to the alert while the question stands.  
+*src/ui/windows/tiku_trk_open_with_window.c:do_open; src/shell/tiku_trk_desktop.c (TAG_OPEN_ANYWAY); tests/shell/openwithwin.script*
 
-#### AW-047 · important · partial
+#### AW-047 · important · done
 **The Open With window is single-selection, list-mode only, non-editable, non-draggable, has no menu bar and no context menu, and Escape cancels it.**  
 fMultipleSelection=false, fDragEnabled=false, fSavePoseLocations=false, SetPoseEditing(false); RestoreState forces kListMode; ShowContextMenu is a no-op; ShouldAddMenus false; KeyDownFilter turns bare Escape into kCancelButton. Its state is saved to a shared "OpenWithSettings" template node, not per-folder. Tab moves focus instead of moving between poses.  
 `OpenWithWindow.cpp` → `OpenWithPoseView::OpenWithPoseView / OpenWithContainerWindow::KeyDownFilter / OpenWithContainerWindow::SaveState / OpenWithPoseView::KeyDown`
-**SUBSYSTEM:** Open With window -- no such window exists to have selection/menu/escape behaviour (see AW-040)  
-**MISSING:** The shell has an Open With submenu, but no single-selection, list-only, Escape-cancellable Open With window.
+**PORT:** The window is single-selection and list only, carries no menu bar and no context menu, cannot edit or drag, and Escape cancels it whole -- reached from the Open With submenu's own trailing item, for the case the shortlist cannot answer.  
+*src/ui/windows/tiku_trk_open_with_window.c; tests/shell/openwithwin.script*
 
 #### AW-048 · important · partial
 **The Open With submenu separates apps by relation, disambiguates identically named apps by [volume name] or full path, marks the preferred app, and shows a disabled "no supporting apps" item when empty.**  

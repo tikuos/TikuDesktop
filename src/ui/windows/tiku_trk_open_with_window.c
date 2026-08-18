@@ -1,0 +1,385 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_open_with_window.c - the Open With window (AW-045, AW-047).
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <stdio.h>
+#include <string.h>
+
+#include "tiku_trk_gfx_dep.h"
+#include "tiku_trk_open_with_window.h"
+
+#define OW_WIDTH   420
+#define OW_HEIGHT  260
+#define OW_ROW_H   18
+#define OW_LIST_TOP 26
+#define OW_ROWS    ((OW_HEIGHT - OW_LIST_TOP - 40) / OW_ROW_H)
+
+static void
+mark_dirty(tiku_trk_open_with_window_t *c)
+{
+    if (c->dirty != NULL) {
+        *c->dirty = 1;
+    }
+}
+
+/** @brief Order for the list: the better the claim, the higher the row. */
+static int
+better(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
+{
+    if (a->preferred != b->preferred) {
+        return a->preferred > b->preferred;
+    }
+    if (a->rel != b->rel) {
+        return a->rel > b->rel;
+    }
+    return strcmp(a->app->name, b->app->name) < 0;
+}
+
+static void
+buttons(tiku_trk_open_with_window_t *c, tiku_desk_rect_t content,
+        tiku_desk_rect_t *open_b, tiku_desk_rect_t *prefer_b)
+{
+    *open_b = (tiku_desk_rect_t){ content.x + content.w - 70,
+                                  content.y + content.h - 30, 60, 22 };
+    *prefer_b = (tiku_desk_rect_t){ content.x + content.w - 260,
+                                    content.y + content.h - 30, 182, 22 };
+}
+
+/** @brief The live enable rules the source keeps in Pulse (AW-045). */
+static void
+enables(const tiku_trk_open_with_window_t *c, int *can_open,
+        int *can_prefer)
+{
+    *can_open = (c->sel >= 0 && c->sel < c->count);
+    /* No relation cannot become preferred, and the preferred app already
+     * is: neither button press would change anything true. */
+    *can_prefer = *can_open && c->cand[c->sel].rel != TIKU_TRK_REL_NONE &&
+                  !c->cand[c->sel].preferred;
+}
+
+static void
+draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
+     tiku_desk_rect_t content, void *context)
+{
+    tiku_trk_open_with_window_t *c = context;
+    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    tiku_desk_rect_t open_b, prefer_b;
+    int can_open, can_prefer, i;
+
+    (void)window;
+    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_desk_text(surface, font, content.x + 10, content.y + 16,
+                   "Open with:", TIKU_DESK_C_TEXT);
+    for (i = 0; i < OW_ROWS; i++) {
+        int at = c->scroll + i;
+        tiku_desk_rect_t row = { content.x + 8,
+                                 content.y + OW_LIST_TOP + i * OW_ROW_H,
+                                 content.w - 16, OW_ROW_H };
+        int selected;
+
+        if (at >= c->count) {
+            break;
+        }
+        selected = (at == c->sel);
+        tiku_desk_fill(surface, row, selected ? TIKU_DESK_C_SELECT
+                                              : TIKU_DESK_C_DOC);
+        {
+            char name[80];
+
+            snprintf(name, sizeof name, "%s%s", c->cand[at].app->name,
+                     c->cand[at].preferred ? "  (preferred)" : "");
+            tiku_desk_text(surface, font, row.x + 6, row.y + 13, name,
+                           selected ? TIKU_DESK_C_SELTEXT
+                                    : TIKU_DESK_C_TEXT);
+        }
+        {
+            /* The relation, said in words and truncated at the END: the
+             * tail of "opens this kind of file" is the part a reader can
+             * spare (MA-081). */
+            char rel[48];
+
+            snprintf(rel, sizeof rel, "%.30s",
+                     tiku_trk_launch_relation_label(c->cand[at].rel));
+            tiku_desk_text(surface, font, row.x + row.w - 176, row.y + 13,
+                           rel, selected ? TIKU_DESK_C_SELTEXT
+                                         : tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                                          0.45f));
+        }
+    }
+    buttons(c, content, &open_b, &prefer_b);
+    enables(c, &can_open, &can_prefer);
+    tiku_desk_ui_button(surface, prefer_b, "Open and make preferred",
+                        can_prefer ? 0u : TIKU_DESK_S_DISABLED);
+    tiku_desk_ui_button(surface, open_b, "Open",
+                        can_open ? 0u : TIKU_DESK_S_DISABLED);
+}
+
+static void
+close_window(tiku_trk_open_with_window_t *c)
+{
+    if (c->window != NULL) {
+        tiku_desk_workspace_close(c->workspace, c->window);
+        c->window = NULL;
+    }
+    mark_dirty(c);
+}
+
+/** @brief Open with the selected application, asking first if it must. */
+static void
+do_open(tiku_trk_open_with_window_t *c, int make_preferred)
+{
+    const tiku_trk_cand_t *pick;
+    int can_open, can_prefer;
+
+    enables(c, &can_open, &can_prefer);
+    if (!can_open || (make_preferred && !can_prefer)) {
+        return;
+    }
+    pick = &c->cand[c->sel];
+    if (make_preferred && c->store != NULL) {
+        int t;
+
+        for (t = 0; t < c->type_count; t++) {
+            (void)tiku_trk_launch_set_preferred(c->store, c->types[t],
+                                                pick->app->name);
+        }
+    }
+    if (pick->rel == TIKU_TRK_REL_NONE && !c->generic_only &&
+        c->alert != NULL) {
+        /* The application does not claim the document's type: ask first,
+         * Cancel the default -- unless every document is untyped, when
+         * there is nothing to disagree with (AW-046). */
+        char text[220];
+
+        snprintf(text, sizeof text,
+                 "\"%.48s\" does not claim this document's type.  Open "
+                 "anyway?", pick->app->name);
+        tiku_trk_alert_open(c->alert, TIKU_TRK_ALERT_WARN,
+                            TIKU_TRK_ALERT_TAG_OPEN_ANYWAY, text,
+                            "Cancel|Open");
+        return;                     /* the answer re-enters via confirmed */
+    }
+    if (c->open != NULL) {
+        c->open(c->open_context, pick->app, c->path_ptr, c->path_count);
+    }
+    close_window(c);
+}
+
+void
+tiku_trk_open_with_window_confirmed(tiku_trk_open_with_window_t *c)
+{
+    if (c->sel >= 0 && c->sel < c->count && c->open != NULL) {
+        c->open(c->open_context, c->cand[c->sel].app, c->path_ptr,
+                c->path_count);
+    }
+    close_window(c);
+}
+
+static int
+event(tiku_desk_window_t *window, const tiku_desk_event_t *ev,
+      void *context)
+{
+    tiku_trk_open_with_window_t *c = context;
+    tiku_desk_rect_t content, open_b, prefer_b;
+
+    (void)window;
+    if (ev->type != TIKU_DESK_EVENT_POINTER_DOWN || c->window == NULL) {
+        return 0;
+    }
+    content = tiku_desk_window_content(c->window);
+    buttons(c, content, &open_b, &prefer_b);
+#define INSIDE(r) (ev->x >= (r).x && ev->x < (r).x + (r).w && \
+                   ev->y >= (r).y && ev->y < (r).y + (r).h)
+    if (INSIDE(open_b)) {
+        do_open(c, 0);
+        return 1;
+    }
+    if (INSIDE(prefer_b)) {
+        do_open(c, 1);
+        return 1;
+    }
+#undef INSIDE
+    if (ev->y >= content.y + OW_LIST_TOP) {
+        int at = c->scroll +
+                 (ev->y - content.y - OW_LIST_TOP) / OW_ROW_H;
+
+        if (at >= 0 && at < c->count) {
+            /* SINGLE selection: the window answers one question. */
+            c->sel = at;
+            mark_dirty(c);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void
+tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *c,
+    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    int *dirty, tiku_trk_ow_open_fn open, void *open_context,
+    tiku_trk_alert_t *alert, struct tiku_trk_store *store)
+{
+    memset(c, 0, sizeof *c);
+    c->workspace = workspace;
+    c->screen_w = screen_w;
+    c->screen_h = screen_h;
+    c->dirty = dirty;
+    c->open = open;
+    c->open_context = open_context;
+    c->alert = alert;
+    c->store = store;
+    c->sel = -1;
+}
+
+void
+tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
+    const tiku_trk_apps_t *apps, const char *const *types, int ntypes,
+    const char *const *paths, int npaths)
+{
+    int i, j;
+
+    if (apps == NULL) {
+        return;
+    }
+    c->count = 0;
+    c->sel = -1;
+    c->scroll = 0;
+    c->type_count = 0;
+    c->generic_only = 1;
+    for (i = 0; i < ntypes && c->type_count < TIKU_TRK_APP_TYPES_MAX; i++) {
+        if (types[i] == NULL) {
+            continue;
+        }
+        snprintf(c->types[c->type_count], sizeof c->types[0], "%s",
+                 types[i]);
+        if (strcmp(types[i], "application/octet-stream") != 0 &&
+            strcmp(types[i], "*") != 0) {
+            c->generic_only = 0;
+        }
+        c->type_count++;
+    }
+    c->path_count = 0;
+    for (i = 0; i < npaths && c->path_count < TIKU_TRK_OW_PATHS; i++) {
+        if (paths[i] == NULL) {
+            continue;
+        }
+        snprintf(c->paths[c->path_count], sizeof c->paths[0], "%s",
+                 paths[i]);
+        c->path_ptr[c->path_count] = c->paths[c->path_count];
+        c->path_count++;
+    }
+    /* EVERY application, each with its BEST relation to the selection
+     * said: the window exists for the case the menu's shortlist cannot
+     * answer (AW-046). */
+    for (i = 0; i < apps->count && c->count < TIKU_TRK_APP_MAX; i++) {
+        tiku_trk_cand_t *k = &c->cand[c->count++];
+
+        k->app = &apps->app[i];
+        k->rel = TIKU_TRK_REL_NONE;
+        k->preferred = 0;
+        for (j = 0; j < c->type_count; j++) {
+            tiku_trk_relation_t r =
+                tiku_trk_launch_relation(&apps->app[i], c->types[j]);
+
+            if (r > k->rel) {
+                k->rel = r;
+            }
+        }
+        for (j = 0; j < c->type_count; j++) {
+            char pref[TIKU_TRK_APP_NAME_MAX];
+            const char *p = tiku_trk_launch_preferred(c->store,
+                                c->types[j], pref, sizeof pref);
+
+            if (p != NULL && strcmp(p, apps->app[i].name) == 0) {
+                k->preferred = 1;
+            }
+        }
+    }
+    /* Better claims first; a stable order the eye can rely on. */
+    for (i = 0; i < c->count; i++) {
+        for (j = i + 1; j < c->count; j++) {
+            if (better(&c->cand[j], &c->cand[i])) {
+                tiku_trk_cand_t t = c->cand[i];
+
+                c->cand[i] = c->cand[j];
+                c->cand[j] = t;
+            }
+        }
+    }
+    {
+        tiku_desk_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
+                                   (c->screen_h - OW_HEIGHT) / 3,
+                                   OW_WIDTH, OW_HEIGHT };
+
+        if (c->window != NULL && c->window->open) {
+            tiku_desk_workspace_activate(c->workspace, c->window);
+        } else {
+            c->window = tiku_desk_workspace_open(c->workspace, "Open with",
+                frame, draw, c, NULL);
+            if (c->window != NULL) {
+                tiku_desk_window_set_handlers(c->window, event, NULL, NULL);
+            }
+        }
+    }
+    mark_dirty(c);
+}
+
+tiku_desk_window_t *
+tiku_trk_open_with_window_handle(tiku_trk_open_with_window_t *c)
+{
+    return c->window;
+}
+
+int
+tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
+                              unsigned modifiers)
+{
+    (void)modifiers;
+    if (c->window == NULL || !c->window->open ||
+        tiku_desk_workspace_focused(c->workspace) != c->window) {
+        return 0;
+    }
+    if (c->alert != NULL && c->alert->open) {
+        /* The confirm is up: its letters belong to the alert, later in
+         * the shell's chain (AW-046). */
+        return 0;
+    }
+    switch (key) {
+    case TIKU_DESK_KEY_ESCAPE:
+        /* Escape cancels the window, which is the whole of its keyboard
+         * contract beyond the list walk (AW-047). */
+        close_window(c);
+        return 1;
+    case TIKU_DESK_KEY_UP:
+        if (c->sel > 0) {
+            c->sel--;
+        } else if (c->sel < 0 && c->count > 0) {
+            c->sel = 0;
+        }
+        if (c->sel < c->scroll) {
+            c->scroll = c->sel;
+        }
+        mark_dirty(c);
+        return 1;
+    case TIKU_DESK_KEY_DOWN:
+        if (c->sel < c->count - 1) {
+            c->sel++;
+        }
+        if (c->sel >= c->scroll + OW_ROWS) {
+            c->scroll = c->sel - OW_ROWS + 1;
+        }
+        mark_dirty(c);
+        return 1;
+    case TIKU_DESK_KEY_RETURN:
+        do_open(c, 0);
+        return 1;
+    default:
+        return 1;               /* a modal-ish window keeps its keys */
+    }
+}

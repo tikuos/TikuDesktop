@@ -156,6 +156,13 @@ tiku_trk_launch_controller_build_menu(
             menu->item[menu->count - 1].marked = 1;
         }
     }
+    if (menu->count > 0) {
+        (void)tiku_trk_menu_add_separator(menu);
+    }
+    /* The window, for the case the shortlist cannot answer: every
+     * application, relations said, one selection (AW-047). */
+    (void)tiku_trk_menu_add(menu, "Open with…",
+                            TIKU_TRK_CMD_OPEN_WITH_WINDOW, 0, 0u, 1);
 }
 
 void

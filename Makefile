@@ -37,6 +37,7 @@ DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/ui/windows/tiku_trk_folder_lifecycle.c \
                        src/ui/windows/tiku_trk_folder_window.c \
                        src/ui/windows/tiku_trk_info_window.c \
+                       src/ui/windows/tiku_trk_open_with_window.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \
                        src/ui/windows/tiku_trk_deskbar_prefs_window.c \

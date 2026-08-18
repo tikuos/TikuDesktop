@@ -31,6 +31,7 @@
 #include "tiku_trk_frame.h"
 #include "tiku_trk_info.h"
 #include "tiku_trk_info_window.h"
+#include "tiku_trk_open_with_window.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_panel_window.h"
 #include "tiku_trk_thumb.h"
@@ -155,6 +156,7 @@ typedef struct desktop {
      * hidden rather than destroyed, so its expression outlives the window
      * it was last used on (CW-063, AW-105). */
     tiku_trk_select_window_t select_window;
+    tiku_trk_open_with_window_t open_with_window;
     /* Where the last press landed, for the long press and for telling a
      * slow second click from a drag. */
     int64_t              press_at;
@@ -431,6 +433,10 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
         tiku_trk_fs_resolve_error(app->fs,
                                   alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_OPEN_ANYWAY) {
+        if (alert->chosen != alert->cancel) {
+            tiku_trk_open_with_window_confirmed(&app->open_with_window);
+        }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_BROKEN_OPEN) {
         if (alert->chosen != alert->cancel &&
             app->broken_open_path[0] != '\0') {
@@ -593,6 +599,16 @@ static const tiku_trk_app_t *
 handler_for(desktop_t *app, const tiku_trk_model_t *model)
 {
     return tiku_trk_launch_controller_handler(&app->launcher, model);
+}
+
+/** @brief The Open With window's launch: the same one act (AW-039). */
+static void
+open_with_window_launch(void *context, const tiku_trk_app_t *application,
+                        const char *const *paths, int count)
+{
+    desktop_t *app = context;
+
+    (void)launch_paths(app, application, paths, count);
 }
 
 /** @brief Open the selection with the candidate at @p at (AW-040). */
@@ -1367,6 +1383,37 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         app->dirty = 1;
         return;
     }
+    if (command == TIKU_TRK_CMD_OPEN_WITH_WINDOW) {
+        char wpaths[TIKU_TRK_OW_PATHS][TIKU_TRK_PATH_MAX];
+        const char *wsel[TIKU_TRK_OW_PATHS];
+        const char *wtypes[TIKU_TRK_APP_TYPES_MAX];
+        int wn, wt = 0, wi, wk, wcount;
+
+        wn = tiku_trk_folder_file_actions_selection(fl, wpaths, wsel,
+                                                    TIKU_TRK_OW_PATHS);
+        if (wn > 0) {
+            wcount = tiku_trk_poseview_count(fl->view);
+            for (wi = 0; wi < wcount && wt < TIKU_TRK_APP_TYPES_MAX; wi++) {
+                tiku_trk_pose_t *wp = tiku_trk_poseview_at(fl->view, wi);
+
+                if (wp == NULL || !wp->selected) {
+                    continue;
+                }
+                for (wk = 0; wk < wt; wk++) {
+                    if (strcmp(wtypes[wk], wp->model.type) == 0) {
+                        break;
+                    }
+                }
+                if (wk == wt) {
+                    wtypes[wt++] = wp->model.type;
+                }
+            }
+            tiku_trk_open_with_window_open(&app->open_with_window,
+                &app->apps, wtypes, wt, wsel, wn);
+        }
+        app->dirty = 1;
+        return;
+    }
     if (command == TIKU_TRK_CMD_UNMOUNT) {
         /* The selection names the volume; with none, the volume ROOT the
          * window is showing is the one the gesture means (CW-034).
@@ -1878,6 +1925,9 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
     tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
+    tiku_trk_open_with_window_init(&app.open_with_window, app.desk,
+        DESK_W, DESK_H, &app.dirty, open_with_window_launch, &app,
+        alert_model(&app), app.store);
     tiku_trk_select_window_init(&app.select_window, app.desk,
         DESK_W, DESK_H, &app.dirty, apply_select_model, &app);
     tiku_trk_clip_init(&app.clip);
@@ -3535,6 +3585,11 @@ tracker_run(int argc, char **argv)
                 if (tiku_trk_select_window_key(&app.select_window, key,
                                                ev.modifiers,
                                                key_char(&ev))) {
+                    break;
+                }
+                if (tiku_trk_open_with_window_key(&app.open_with_window,
+                                                  key, ev.modifiers)) {
+                    app.dirty = 1;
                     break;
                 }
                 if (tiku_trk_folder_edit_key(&app.folder_edit, fl, key,
