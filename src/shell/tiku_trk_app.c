@@ -109,6 +109,10 @@ typedef struct {
     int                  show_nav;
     char                 prefs_path[TIKU_TRK_PATH_MAX];
     int                  prefs_present;
+    /* TS-052: the preference that swaps type-to-select for type-to-filter,
+     * applied live when the settings file changes and re-applied when the
+     * view returns to list mode. */
+    int                  filter_pref;
     time_t               prefs_mtime;
     off_t                prefs_size;
     int64_t              prefs_checked;
@@ -1048,7 +1052,7 @@ sync_navigator_preference(app_t *a, int force)
 {
     struct stat st;
     int present, visible = 1, hide_dotfiles = 0;
-    int folders_first = 1;
+    int folders_first = 1, filter = 0;
     int64_t now = tiku_trk_now();
     time_t mtime = 0;
     off_t size = 0;
@@ -1074,6 +1078,7 @@ sync_navigator_preference(app_t *a, int force)
         visible = tiku_trk_prefs_get(&prefs, "ShowNavigator") != 0;
         hide_dotfiles = tiku_trk_prefs_get(&prefs, "HideDotFiles") != 0;
         folders_first = tiku_trk_prefs_get(&prefs, "SortFolderNamesFirst") != 0;
+        filter = tiku_trk_prefs_get(&prefs, "TypeAheadFiltering") != 0;
         tiku_trk_prefs_free(&prefs);
     }
     a->prefs_present = present;
@@ -1087,6 +1092,16 @@ sync_navigator_preference(app_t *a, int force)
     }
     tiku_trk_poseview_set_hide_dotfiles(a->view, hide_dotfiles);
     tiku_trk_poseview_set_folders_first(a->view, folders_first);
+    a->filter_pref = filter;
+    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST &&
+        filter != tiku_trk_poseview_is_filtering(a->view)) {
+        /* Live in both directions: on engages filtering for the next
+         * keystroke, off drops the terms and restores the listing
+         * (TS-052).  Guarded on the current state so an unrelated
+         * settings change cannot wipe a filter mid-use. */
+        tiku_trk_poseview_set_filtering(a->view, filter);
+        a->dirty = 1;
+    }
 }
 
 /**
@@ -1736,6 +1751,11 @@ not_editing:
                                              (mods & TIKU_TRK_MOD_SHIFT))) {
             open_selection(a);
             tiku_trk_poseview_set_filtering(a->view, 0);
+            if (a->filter_pref) {
+                /* The terms are spent; the MODE follows the preference,
+                 * so the next keystroke filters again (TS-052). */
+                tiku_trk_poseview_set_filtering(a->view, 1);
+            }
         } else {
             open_selection(a);
         }
@@ -1826,6 +1846,11 @@ not_editing:
                 (key == '2') ? TIKU_TRK_MODE_MINI : TIKU_TRK_MODE_LIST);
             if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
                 (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
+            } else if (a->filter_pref &&
+                       !tiku_trk_poseview_is_filtering(a->view)) {
+                /* Leaving list mode tore filtering down; coming back the
+                 * preference still says filter (TS-052). */
+                tiku_trk_poseview_set_filtering(a->view, 1);
             }
             (void)tiku_trk_poseview_save_state(a->view);
             a->dirty = 1;

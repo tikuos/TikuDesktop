@@ -143,6 +143,11 @@ PYEOF
         # A shared navigator preference is written by the multi-window
         # Preferences UI and observed by the browser process.  This fixture
         # starts with that external setting off so the observer is real.
+        if grep -q '^# prefs: filter-on' "$s"; then
+            mkdir -p "$deskhome/.config"
+            printf 'TypeAheadFiltering on\n' > \
+                "$deskhome/.config/TrackerSettings"
+        fi
         if grep -q '^# prefs: navigator-off' "$s"; then
             prefhome="$deskhome"
             mkdir -p "$prefhome/.config"

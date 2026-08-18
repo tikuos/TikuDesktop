@@ -1,0 +1,31 @@
+# shell: tracker
+# work: home
+# TS-052: the preference swaps type-to-select for type-to-filter, live.
+# prefs: filter-on
+wait 8
+expect-rows 4
+note with TypeAheadFiltering on, typing narrows the list to what matches
+key a
+key .
+key t
+wait 3
+expect-rows 1
+note Escape clears the terms but the preference keeps the mode engaged
+key Escape
+wait 3
+expect-rows 4
+key b
+key .
+key t
+wait 3
+expect-rows 1
+note switching the preference off is observed live: the listing returns
+write /tmp/trk_home/.config/TrackerSettings TypeAheadFiltering off
+wait 12
+expect-rows 4
+note and typing is type-to-select again, not a filter
+key a
+wait 3
+expect-rows 4
+expect-selected-name a.txt
+quit

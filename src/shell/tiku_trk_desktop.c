@@ -302,8 +302,24 @@ sync_folder_preferences(desktop_t *app)
     tiku_trk_prefs_t *prefs = prefs_model(app);
     int hide = tiku_trk_prefs_get(prefs, "HideDotFiles") != 0;
     int folders_first = tiku_trk_prefs_get(prefs, "SortFolderNamesFirst") != 0;
+    int filter = tiku_trk_prefs_get(prefs, "TypeAheadFiltering") != 0;
     int i;
 
+    /* Every turn, not only on change: a window opened or switched to list
+     * mode since the last pass must pick the preference up too, and the
+     * per-view guard keeps the steady state free (TS-052). */
+    for (i = 0; i < app->folder_count; i++) {
+        folder_t *folder = &app->folders[i];
+
+        if (folder->view == NULL ||
+            tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST) {
+            continue;
+        }
+        if (filter != tiku_trk_poseview_is_filtering(folder->view)) {
+            tiku_trk_poseview_set_filtering(folder->view, filter);
+            app->dirty = 1;
+        }
+    }
     if (hide == app->applied_hide_dotfiles &&
         folders_first == app->applied_folders_first) {
         return;

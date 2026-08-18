@@ -2062,17 +2062,17 @@ RebuildFilteringPoseList/RemoveFilteredPose call EnsurePoseUnselected(); Current
 Two ShortcutFilters installed in AttachedToWindow map B_ESCAPE/0 -> B_CANCEL and B_ESCAPE/B_SHIFT_KEY -> kCancelSelectionToClipboard. case B_CANCEL: FSClipboardClear() if refs exist, then StopTypeAheadFiltering(). In a file panel Escape first commits an active name edit, then cancels filtering, then closes the panel.  
 `PoseView.cpp` → `BPoseView::AttachedToWindow; BPoseView::MessageReceived (case B_CANCEL, case kCancelSelectionToClipboard); key_down_filter (FilePanelPriv.cpp)`  
 **VERIFIER CORRECTION:** key_down_filter calls `view->CommitActivePose(false)` (FilePanelPriv.cpp:151) — saveChanges is false, so the pending rename is DISCARDED, not committed. Order and fall-through (edit → filtering → kCancelButton) are otherwise right.  
-**MISSING:** Escape clears the filter terms and restores the listing, but it leaves filtering mode itself engaged, and neither the clipboard clauses exist at all — there is no cut/copy/paste state in the port and no Shift+Escape binding.  
+**MISSING:** Escape does not abort a pending clipboard cut, and no Shift+Escape binding removes the selection (or everything) from the clipboard; the clipboard itself exists (see the correction below).  Escape leaving the filter MODE engaged is the correct reading now that the mode is the preference (TS-052).  
 *src/shell/tiku_trk_app.c:handle_key lines 904-907 -> tiku_trk_poseview_type_clear (poseview.c:1262-1275)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- A file clipboard exists (src/core/tiku_trk_clip.c/.h, cut vs copy modes, node-id tracked) and is wired in the desktop shell: Ctrl+X/C/V keys (desktop.c:2476-2490), menu commands CUT/COPY/PASTE (desktop.c:1240-1351), paste enablement reads it (desktop.c:184) and cut items draw faded (desktop.c:249). Still true: Escape does not abort a pending cut and no Shift+Escape binding exists. `src/core/tiku_trk_clip.c; src/shell/tiku_trk_desktop.c:2476-2490, :1240-1351`  
 
-#### PVK-035 · polish · partial
+#### PVK-035 · polish · done
 **Filtering is torn down automatically when the user leaves list mode, and live when the Type-ahead filtering setting is switched off in preferences.**  
 SetViewMode calls ClearTypeAheadFiltering() when leaving kListMode; the kTypeAheadFilteringChanged observer notice calls StopTypeAheadFiltering() when the setting goes false. ClearTypeAheadFiltering deletes all but the first filter term, truncates it, resets fLastFilterString{Count,Length} to 1/0 and cancels the count-view display.  
 `PoseView.cpp` → `BPoseView::SetViewMode; BPoseView::MessageReceived (B_OBSERVER_NOTICE_CHANGE, case kTypeAheadFilteringChanged); BPoseView::ClearTypeAheadFiltering`  
 *src/ui/tiku_trk_poseview.c:1599-1604 (set_mode teardown), :1317-1334 (set_filtering off path); src/shell/tiku_trk_app.c:908-912 (Tab is the only on/off switch; no CMD_PREFERENCES case exists in tiku_trk_desktop.c)*
-**MISSING:** Nothing observes the TypeAheadFiltering preference the Windows page writes, so switching it off tears down nothing; the Tab toggle is a separate control.  
-**PORT:** The leave-list-mode clause is exact (set_mode calls type_clear + set_filtering(0)), but the port has no preferences at all — TIKU_TRK_CMD_PREFERENCES has no handler — so the 'setting switched off' clause is served instead by the Tab toggle, whose off path does perform the live teardown (terms collapsed to one empty term, listing rebuilt, scroll reset); that is a real alternative control, not the stated one, so differs rather than done.  
+**PORT:** Both clauses hold: set_mode tears filtering down on leaving list mode, and the TypeAheadFiltering preference is observed live in both shells -- switched off, the terms drop and the listing is rebuilt on every open view (TS-052's wiring is the notice).  
+*src/ui/tiku_trk_poseview.c (set_mode teardown, set_filtering off path); src/shell/tiku_trk_app.c:sync_navigator_preference; src/shell/tiku_trk_desktop.c:sync_folder_preferences; tests/shell/typefilter.script*
 
 #### PVK-036 · important · done
 **F2 begins editing the name of the selected pose.**  
@@ -2572,13 +2572,14 @@ CachedDirectoryEntryList is a CachedEntryIterator(0, 40, true) -- 40-entry cache
 **PORT:** Batching is really implemented on the device backend — tk_list makes one tiku_desk_ns_ls_kinds round trip into a 128-name buffer and then hands entries to the callback one at a time — with only the inode ordering dropped, which the row's TIKU note explicitly directs.  
 *src/backends/tiku_trk_backend_tiku.c:296-360 (tk_list: char names[128][64] + kinds, single ns_ls_kinds call, per-entry fn())*
 
-#### PVN-051 · important · partial
+#### PVN-051 · important · done
 **The Desktop shows the union of several directories by chaining iterators, so entries from every integrated volume's Desktop folder appear in one view.**  
 DesktopPoseView::InitDesktopDirentIterator builds a CachedEntryIteratorList and AddItem()s a CachedDirectoryEntryList per source, watching each source node with the full directory mask; EntryIteratorList::GetNextDirents advances fCurrentIndex to the next sub-iterator on exhaustion.  
 `DesktopPoseView.cpp` → `DesktopPoseView::InitDesktopDirentIterator / EntryIteratorList::GetNextDirents`  
 **TIKU:** This is exactly the shape the TikuOS requirement needs: device-namespace nodes and local files as two chained iterators feeding one view, each with its own watch registration.  
 **PORT:** The Desktop's source is a virtual directory of every showing volume's Desktop folder -- the union the row describes, built on the merge that already existed.  Volumes with no Desktop folder contribute nothing, and one mounted inside another is skipped, since its folder is the same folder seen twice.  
-**MISSING:** Nothing displays it: the backdrop is still a plain fill with no pose view on it, so the union has no window.  
+**PORT:** The backdrop displays it: the desktop pose view lists the union source and polls its watcher, so entries from every showing volume's Desktop folder appear as desktop icons.  The MISSING line this replaces predated the desktop view; it claimed a plain fill two commits after the pose view landed.  
+*src/deskbar/tiku_trk_desktop_view.c:tiku_trk_desktop_view_rebuild; src/deskbar/tiku_trk_deskicons.c:tiku_trk_deskicons_sources; tests/shell/desktop.script*
 #### PVN-052 · important · done
 **Dot files are filtered out at load time and toggling the setting re-reads the whole folder rather than just repainting.**  
 AddPosesTask skips per `(!hideDotFiles && (name=="." || name=="..")) || (hideDotFiles && name[0]=='.')`, reading TrackerSettings().HideDotFiles() once per load; the kHideDotFilesChanged observer case calls Refresh().  
@@ -2900,7 +2901,7 @@ Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead 
 **TIKU:** "Mount/Unmount" and Trash have no obvious analogue for device nodes; decide whether a device node can be "deleted" at all (probably capability-bit gated).  
 **PORT:** The live bar now includes the Add-ons submenu inventory and volume Mount/Unmount entries (disabled until the mount/add-on service is available), while preserving the Trash and root variants. The printers-folder specialization and service-backed mount/add-on actions remain outside the current backend contract.
 *src/ui/tiku_trk_cwmenu.c:build_file*
-**MISSING:** Printers-folder specialization and service-backed mount/add-on actions remain unavailable.
+**MISSING:** Service-backed mount/add-on actions remain unavailable.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18).
 
 #### CW-023 · core · done
 **Window menu inventory: Icon view> (Cmd+1, with sizes), Mini icon view (Cmd+2), List view (Cmd+3), | Resize to fit (Cmd+Y), [Arrange by>], Select… (Shift+Cmd+A), Select all (Cmd+A), Invert selection (Cmd+S), Open parent (Cmd+Up), Close (Cmd+W), Close all in workspace (Cmd+Q), | Preferences… (Cmd+,).**  
@@ -5229,11 +5230,11 @@ GetWellKnownIcon matches the node_ref against WellKnowEntryList and maps directo
 The entry is stored in the shared cache under a synthetic type string "tracker/active_" + wellKnownEntry->name, so e.g. both apps directories share one cached bitmap.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetWellKnownIcon`  
 
-#### IV-009 · polish · partial
+#### IV-009 · polish · done
 **The filesystem root and the printers folder get Tracker-supplied icons.**  
 GetRootIcon uses B_ROOT_MIMETYPE, GetPrinterIcon uses B_PRINTER_MIMETYPE, both setting source = kTrackerSupplied; they are checked before the generic path in Preload.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetRootIcon / IconCache::GetPrinterIcon`  
-**MISSING:** The root clause holds; a printer kind and its art now exist but no backend classifies a node as one yet.
+**PORT:** The root clause holds.  The printer clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned, so no backend will classify a node as a printer.
 
 #### IV-010 · polish · partial
 **Asking an application for a type's icon lowercases the type first.**  
@@ -5918,7 +5919,7 @@ The count view background switches to B_DOCUMENT_BACKGROUND_COLOR and the text t
 Count view shows "K/N filter" when something is selected, else "N filter", truncated in the middle. Backspace removes one character (RemoveFilterCharacter); Shift+Space starts a second, independent filter term shown as "|" (all terms must match, each against any column's text, case-insensitive substring); Escape or Shift+Return cancels filtering and CancelFilter clears the string. Filtering is list-mode only, and Tab type-select is disabled while the preference is on.  
 `CountView.cpp` → `BCountView::AddFilterCharacter`  
 **TIKU:** Filter matches the rendered text of every column, so it depends on descriptor formatting; decide whether device nodes with expensive reads participate in filtering.  
-**MISSING:** Characters accumulate into a live filter that shrinks the list, backspace removes one character and then a whole term, Shift+Space starts an independent term shown joined by '|', every term must match and each may match any column's rendered text case-insensitively, and Shift+Return cancels; missing is the count-view label form -- it shows the raw filter text, never "N filter"/"K/N filter" middle-truncated -- and Escape only clears the string (type_clear) without leaving filter mode.  
+**MISSING:** Characters accumulate into a live filter that shrinks the list, backspace removes one character and then a whole term, Shift+Space starts an independent term shown joined by '|', every term must match and each may match any column's rendered text case-insensitively, and Shift+Return cancels; missing is only the count-view label form -- it shows the raw filter text, never "N filter"/"K/N filter" middle-truncated.  Escape clearing the terms while the preference keeps the mode is the source's own behaviour now that the mode is the preference (TS-052).  
 *src/ui/tiku_trk_poseview.c:1211 (type_ahead filtering branch), :1277 (type_string '|' join), :filter_pose; Escape at src/shell/tiku_trk_app.c:904*
 
 #### TS-043 · important · done
@@ -5989,12 +5990,12 @@ Default off. Read once per directory-read thread; when it is off, "." and ".." a
 **PORT:** HideDotFiles defaults off, is read by each view's load path, and a preference change performs a full reload across open views.
 *src/ui/tiku_trk_poseview.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
-#### TS-052 · important · partial
+#### TS-052 · important · done
 **"Enable type-ahead filtering" swaps the type-to-select behaviour for type-to-filter in list mode.**  
 Default off. While on, Tab-based type-select is disabled in list mode. If the preference is switched off while a filter is active, filtering is stopped immediately on every open view via the kTypeAheadFilteringChanged notice.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kTypeAheadFilteringChanged)`  
-**MISSING:** Type-to-filter genuinely swaps for type-to-select (tiku_trk_poseview_type_ahead branches on v->filtering), it is off by default, and turning it off drops the terms and rebuilds the listing — but it is a per-view runtime mode toggled by Tab in one window, so the stated clauses "Tab-based type-select is disabled" and "filtering is stopped on every open view via the notice" have no counterpart at all.  
-*src/ui/tiku_trk_poseview.c:1205-1228 (filter-vs-select branch) and :1318-1333 (set_filtering drops terms); src/shell/tiku_trk_app.c:908-912 (Tab is the per-view toggle, no cross-view propagation)*
+**PORT:** The preference is read now, in both shells: the browser polls the settings file and applies it live, the desktop applies it from its own preferences model to every open list view each turn, and a view returning to list mode picks it back up.  Off by default; switching it off drops the terms and restores the listing on every view at once.  Tab is a name-order walk that filtering swallows, never a mode switch.  
+*src/shell/tiku_trk_app.c:sync_navigator_preference; src/shell/tiku_trk_desktop.c:sync_folder_preferences; src/ui/tiku_trk_poseview.c (filter-vs-select branch); tests/shell/typefilter.script*
 
 #### TS-053 · polish · partial
 **"Generate image thumbnails" controls whether image files show a thumbnail instead of a type icon.**  
@@ -6044,13 +6045,13 @@ Defaults enabled if any page's IsDefaultable() is true (i.e. any of its settings
 **PORT:** Defaults measures against the compiled values and Revert against what the settings were when the window opened -- different questions, and a setting can answer yes to one and no to the other.  Both are page-wise and the buttons ask whether ANY page says yes.  
 **PORT:** Both buttons are drawn always and greyed when they would do nothing -- a button that vanishes teaches the user it was never there.  Defaults measures against the compiled values, Revert against the moment the window was shown, and pressing either applies it to every page.  
 *Shell: desktop*  
-#### TS-060 · polish · partial
+#### TS-060 · polish · done
 **A page whose settings have been changed since the window opened is shown in bold in the page list.**  
 SettingsItem::DrawItem picks be_bold_font when the page's IsRevertable() is true, plain otherwise; the list is invalidated on every settings change so the bolding is live.  
 `TrackerSettingsWindow.cpp` → `SettingsItem::DrawItem`  
 **PORT:** Whether a page has anything changed is answered per page, which is what a bold page name would be drawn from.  
 **PORT:** A page with something changed since the window opened is marked in its list entry, so the user can see WHICH page they touched.  
-**MISSING:** Marked rather than bold: the port has one font face.  
+**PORT:** Bold from one face: the changed page's name is drawn again one pixel over -- the false-bold the label halo already uses -- in place of the mark it carried.  
 *Shell: desktop*  
 #### TS-061 · polish · differs
 **Reverting the Windows page fails to restore "Hide dotfiles" and corrupts "List folders first" instead.**  
@@ -7027,7 +7028,8 @@ Requires a "cwd" string in the current message; BEntry(&workingDirectory, argv[i
 ShowSettingsWindow creates it once; if hidden -> Show, else Activate. kRunAutomounterSettings shows it and then selects TrackerSettingsWindow::kAutomountSettings.  
 `Tracker.cpp` → `TTracker::ShowSettingsWindow / TTracker::MessageReceived (kRunAutomounterSettings)`  
 **PORT:** Opening it again brings the existing window forward rather than making a second, and the Revert baseline is re-taken each time it is shown.  
-**MISSING:** Closing destroys the window rather than hiding it, so the page last looked at is not remembered.  
+**MISSING:** A request cannot jump straight to a specific page: nothing in the port asks for one (the automounter that would does not exist), and no open-at-page entry point is offered.  The page last looked at IS remembered -- the controller and its page survive the close; only the desk window is per-open.  
+*src/ui/windows/tiku_trk_prefs_window.c:tiku_trk_prefs_window_open (page untouched on reopen)*  
 *Shell: desktop*  
 #### AW-102 · polish · partial ⟨found by verification⟩
 **Tracker add-ons get user-assignable Command shortcuts that run the add-on against the current selection.**  

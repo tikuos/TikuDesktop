@@ -36,14 +36,21 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         rect.h = height;
         tiku_desk_fill(surface, rect, selected ? TIKU_DESK_C_SELECT
                                                : TIKU_DESK_C_PANEL);
-        tiku_desk_text(surface, font, rect.x + 6, rect.y + 15,
-                       tiku_trk_prefs_page_name((tiku_trk_page_t)i),
-                       selected ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
-        if (tiku_trk_prefs_revertable(&controller->model,
-                                      (tiku_trk_page_t)i)) {
-            tiku_desk_text(surface, font, rect.x + width - 10, rect.y + 15,
-                           "*", selected ? TIKU_DESK_C_SELTEXT
-                                         : TIKU_DESK_C_TEXT);
+        {
+            const char *name =
+                tiku_trk_prefs_page_name((tiku_trk_page_t)i);
+            unsigned ink = selected ? TIKU_DESK_C_SELTEXT
+                                    : TIKU_DESK_C_TEXT;
+
+            tiku_desk_text(surface, font, rect.x + 6, rect.y + 15, name,
+                           ink);
+            if (tiku_trk_prefs_revertable(&controller->model,
+                                          (tiku_trk_page_t)i)) {
+                /* Bold from one face: the same string one pixel over,
+                 * the trick the label halo already uses (TS-060). */
+                tiku_desk_text(surface, font, rect.x + 7, rect.y + 15,
+                               name, ink);
+            }
         }
     }
     count = tiku_trk_prefs_page_controls(&controller->model,
