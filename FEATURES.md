@@ -2161,7 +2161,8 @@ InvertSelection() walks CurrentPoseList() toggling pose->Select() and adding/rem
 **Command+Shift+A opens the Select... dialog: a text expression matched as starts-with / ends-with / contains / glob / regexp, with an Ignore case checkbox (on by default) and an Invert selection option; it replaces the selection with all matching poses and re-activates the window.**  
 SelectMatchingEntries reads "ExpressionType", "Expression", "InvertSelection", "IgnoreCase" from the message, forces SetMultipleSelection(true), clears the selection, and XORs each TrackerString::Matches() result with invertSelection. A bad regular expression pops a stop alert (closeable with Escape) and selects nothing. Window()->Activate() at the end is required for the Desktop case. Tracker also drives this path internally to reveal a ref in its parent window using an anchored "^name$" regexp.  
 `PoseView.cpp` → `BPoseView::SelectMatchingEntries; SelectionWindow::MessageReceived / ExpressionType (SelectionWindow.cpp); TTracker::SelectRefs (Tracker.cpp)`  
-**MISSING:** A bad expression is reported in the status line rather than by a stop alert, and nothing drives the path internally to reveal a ref.  
+**MISSING:** Nothing drives the path internally to reveal a ref in its parent window.  The bad-expression half is closed: it is a stop alert now, closeable with Escape, and selects nothing.  
+*src/shell/tiku_trk_desktop.c:apply_select_model (the alert)*  
 **PORT:** The five modes, Ignore case on by default, Invert, and the re-activation of the target window are all there, and a bad expression selects nothing.  It is reported in the status line rather than a stop alert, and nothing yet drives this path internally to reveal a ref.
 
 #### PVK-048 · core · differs
@@ -3827,12 +3828,13 @@ FSCreateNewFolderIn increments fnum before formatting and switches format string
 `FSUtils.cpp` → `FSCreateNewFolderIn`  
 **PORT:** The missing space past nine is kept: a folder created by one implementation and found by the other has to be the same folder.  
 
-#### FS-080 · important · partial
+#### FS-080 · important · done
 **Renaming refuses names longer than the file-name limit, names already used in the folder, and rename of the Desktop, root, Trash, virtual directories or localized-name items; renaming a read-only volume's item fails with a read-only error.**  
 ShouldEditRefName alerts "The entered folder/file name is too long." (B_NAME_TOO_LONG), returns B_OK unchanged when the name is identical, defers to ConfirmChangeIfWellKnownDirectory(kRename) (B_CANCELED), and alerts "An item named '<name>' already exists." (B_NAME_IN_USE). EditModelName returns B_NOT_ALLOWED for localized-name/Desktop/root/Trash/virtual-directory models, checks BVolume::IsReadOnly for both the volume-rename and normal cases, and clears the query-temporary flag when renaming a query.  
 `FSUtils.cpp` → `ShouldEditRefName`  
 **TIKU:** Namespace nodes need a renamable capability bit; the "already exists" test is a directory-scoped uniqueness rule that must hold across the merged file + device view.  
-**MISSING:** Rename refuses empty/"."/".."/slash names, refuses a name already used in the folder with "'<name>' already exists here", and refuses device-namespace and virtual-directory nodes up front, but there is no name-too-long alert (an over-long join just returns -1 silently) and no read-only-volume error path.  
+**PORT:** Every refusal speaks now: empty/"."/".."/slash names, a taken name ("already exists here"), device-namespace and virtual-directory nodes up front, an over-long name ("The entered name is too long." -- it failed the join silently before), and a read-only volume in the volume model's own words (tiku_trk_volume_may_write, which the old MISSING line predated).  
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_rename; tests/test_fs.c (FS-080)*  
 *src/backends/tiku_trk_fs.c:592 tiku_trk_fs_rename; src/shell/tiku_trk_app.c:657-664 begin_rename*
 
 #### FS-081 · polish · done ⟨found by verification⟩
@@ -5789,11 +5791,11 @@ Menu items carry attr_name, attr_type, attr_hash, attr_width, attr_align, attr_e
 **PORT:** Each Attributes item calls tiku_trk_poseview_toggle_column, which removes the matching column when present and otherwise appends one built from column_def (title/width/alignment) and reflows, and every rebuild recomputes the marks from tiku_trk_poseview_has_column rather than from remembered menu state; the fixed field table in place of message-carried attr descriptors is the namespace adaptation, not a missing clause.  
 *src/shell/tiku_trk_desktop.c:1019-1030 (items → toggle_column) and :166-177 (columns mask from has_column); src/ui/tiku_trk_poseview.c:3110-3148 (remove/append); src/ui/tiku_trk_cwmenu.c:186-199 (marks)*
 
-#### TS-023 · important · partial
+#### TS-023 · important · differs
 **Removing the last remaining column is refused with the alert "You must have at least one attribute showing."**  
 Only when runAlert is true (menu path). Internal callers such as Paste layout pass false and just get a false return, which is how paste keeps one old column alive until the new set is installed.  
 `PoseView.cpp` → `BPoseView::RemoveColumn`  
-**MISSING:** The name column cannot be removed and the view can be ASKED whether a removal would leave nothing, so a caller can say why rather than have the refusal happen silently. The live Attributes menu marks Name and disables it, so the shipped menu path cannot request the removal; the specified alert itself is therefore still not raised.
+**PORT:** The refusal is made unrequestable instead of alerted: the Name column cannot be removed -- the Attributes menu marks it and disables it -- so the state the alert warns about ("no attribute showing") can never be asked for from the menu, and internal callers get the ask-first API (tiku_trk_poseview_last_column) the source gives them with runAlert false.  The alert's words never need saying because the question can no longer be put.
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_last_column; tests/test_poseview.c*
 *src/ui/tiku_trk_poseview.c:3108-3109 (Name refusal); src/ui/tiku_trk_cwmenu.c:186-188 (Name marked and disabled); grep for "at least one" / "alert" across src returns nothing*
 
@@ -6354,16 +6356,12 @@ OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::
 *src/shell/tiku_trk_desktop.c (the double-click launch); tests/shell/launch.script*
 *src/shell/tiku_trk_desktop.c:main, ButtonPress double-click branch (open_folder on is_container)*
 
-#### AW-031 · important · partial
+#### AW-031 · important · done
 **Opening an entry whose link target cannot be resolved offers a Get Info panel instead of a bare error.**  
 BEntry(ref, true).InitCheck() failure -> warning alert with buttons Get info / Cancel (Escape closes); choosing Get info sends kGetInfo with the ref to the Tracker.  
 `Tracker.cpp` → `TTracker::OpenRef`
-**MISSING:** Get Info now exists and a broken link's own window offers the
-picker rather than an error (AW-072), so the row's substance is reachable --
-but OPENING a broken link still reports the failure without offering the
-window: the open path has no branch for it.
-*src/core/tiku_trk_info.c:tiku_trk_info_link_target (the offer);
-src/shell/tiku_trk_desktop.c (the open path, which does not make it)*
+**PORT:** The open path has the branch now: a double click or Open on a link that leads nowhere puts up a warning with Cancel and Get info -- Escape closes it, and choosing Get info opens the window that can say what is wrong and re-point the link (AW-072's picker).  
+*src/shell/tiku_trk_desktop.c:offer_broken_link; tests/shell/brokenlink.script*
 
 #### AW-032 · important · partial
 **Option-opening a document closes the parent window about a second after the launch succeeds; option-opening a folder closes the parent only once the child window has actually appeared, and gives up after five seconds.**  

@@ -1,0 +1,14 @@
+# shell: desktop
+# AW-031: opening a link that leads nowhere offers Get Info, not a bare
+# error.
+wait 8
+click-row 4
+wait 2
+click-row 4
+wait 5
+expect-alert cannot be found
+note 'g' is the Get info button, and the window it opens says the rest
+key g
+wait 8
+expect-windows 2
+quit

@@ -198,6 +198,8 @@ typedef struct desktop {
     char                 last_query[TIKU_TRK_NAME_MAX];
     tiku_trk_panel_window_t file_panel;
     tiku_trk_info_windows_t info_windows;
+    /* The broken link an open offered Get Info for (AW-031). */
+    char                 broken_open_path[TIKU_TRK_PATH_MAX];
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
     tiku_trk_status_overlay_t status_overlay;
@@ -384,6 +386,23 @@ open_preferences(void *context)
     tiku_trk_prefs_window_open(&app->prefs_window);
 }
 
+/**
+ * @brief Offer Get Info for a link that leads nowhere (AW-031).
+ *
+ * Instead of a bare error: the window that can SAY what is wrong -- and
+ * re-point it -- is one button away.
+ */
+static void
+offer_broken_link(desktop_t *app, const char *path)
+{
+    snprintf(app->broken_open_path, sizeof app->broken_open_path, "%s",
+             path);
+    tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+                        TIKU_TRK_ALERT_TAG_BROKEN_OPEN,
+                        "There is no file to open: the link's target "
+                        "cannot be found.", "Cancel|Get info");
+}
+
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
 status_answer(void *context, const tiku_trk_alert_t *alert)
@@ -400,6 +419,12 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
         tiku_trk_fs_resolve_error(app->fs,
                                   alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_BROKEN_OPEN) {
+        if (alert->chosen != alert->cancel &&
+            app->broken_open_path[0] != '\0') {
+            (void)tiku_trk_info_windows_open(&app->info_windows,
+                                             app->broken_open_path);
+        }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
         /* Cancel, Move to Trash, Delete, in the order the buttons are
          * offered (FS-046). */
@@ -828,7 +853,10 @@ apply_select_model(void *context, void *target,
         selection->expr.text, tiku_trk_select_rule(selection->rule),
         selection->ignore_case, selection->invert, error, sizeof error);
     if (count < 0) {
-        snprintf(app->status, sizeof app->status, "%s", error);
+        /* A bad expression is a stop alert, closeable with Escape, and it
+         * selects nothing (PVK-047). */
+        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+                            TIKU_TRK_ALERT_TAG_REFUSAL, error, "Cancel");
         return NULL;
     }
     snprintf(app->status, sizeof app->status, "selected %d item%s", count,
@@ -1405,7 +1433,9 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     case TIKU_TRK_CMD_OPEN: {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
 
-        if (p != NULL && tiku_trk_model_is_container(&p->model)) {
+        if (p != NULL && p->model.facts.link_broken) {
+            offer_broken_link(app, p->model.path);
+        } else if (p != NULL && tiku_trk_model_is_container(&p->model)) {
             (void)open_folder(app, p->model.path);
         }
         break;
@@ -3184,6 +3214,9 @@ tracker_run(int argc, char **argv)
                                         }
                                         (void)open_folder(&app, parent);
                                     }
+                                } else if (p != NULL &&
+                                           p->model.facts.link_broken) {
+                                    offer_broken_link(&app, p->model.path);
                                 } else if (p != NULL) {
                                     /* Not a container: it is LAUNCHED, in
                                      * whatever opens its type -- which is

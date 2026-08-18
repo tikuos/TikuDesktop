@@ -1211,6 +1211,19 @@ main(void)
         }
     }
 
+    {   /* --- rename refuses an over-long name, in words (FS-080) -------- */
+        char longname[300], err2[128];
+        int li;
+
+        for (li = 0; li < 280; li++) { longname[li] = 'x'; }
+        longname[280] = '\0';
+        err2[0] = '\0';
+        check(tiku_trk_fs_rename(fs, pa, longname, err2, sizeof err2) != 0 &&
+              strstr(err2, "too long") != NULL, "FS-080",
+              "a name past the filesystem's limit is refused with words, "
+              "not a silent failure");
+    }
+
     /* --- New folder, and its naming (FS-066, FS-079) -------------------- */
     {
         char made[600], name[64];

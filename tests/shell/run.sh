@@ -136,6 +136,7 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            brokenlink.script) ln -s /nowhere-at-all "$work/dangling" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys
 w,h=64,48

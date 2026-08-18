@@ -2266,6 +2266,14 @@ tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path, const char *new_name,
             }
         }
     }
+    if (strlen(new_name) > 255u) {
+        /* NAME_MAX on every host this builds on; said in the source's own
+         * words rather than failing the join silently (FS-080). */
+        if (err != NULL) {
+            snprintf(err, errmax, "The entered name is too long.");
+        }
+        return -1;
+    }
     parent_of(path, dir, sizeof dir);
     if (exists(fs, dir, new_name)) {
         if (err != NULL) {
