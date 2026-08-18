@@ -1,0 +1,15 @@
+# shell: desktop
+# apps: fixture
+# IV-054/IV-056: a menu item that names a runnable file wears its icon.
+wait 8
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Open with
+wait 5
+expect-menu Stamper
+expect-pixel 229 183 fbd737
+quit

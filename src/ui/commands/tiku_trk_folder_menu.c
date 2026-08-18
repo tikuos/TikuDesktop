@@ -205,6 +205,11 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
         if (record == NULL) {
             continue;
         }
+        /* The submenu's own item wears the type's icon; types_find already
+         * walked exact-then-supertype, which IS the fallback (IV-056). */
+        snprintf(controller->menus->per_type_icon[controller->menus->per_type_count],
+                 sizeof controller->menus->per_type_icon[0], "%s",
+                 record->icon);
         tiku_trk_menu_clear(menu);
         for (k = 0; k < record->ncol; k++) {
             const char *title = NULL;

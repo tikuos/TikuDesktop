@@ -537,8 +537,15 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
          * (CW-026). */
         SEP(m);
         for (k = 0; k < cw->per_type_count; k++) {
-            (void)tiku_trk_menu_add_submenu(m, cw->per_type_name[k],
-                                            &cw->per_type[k], 1);
+            int at = tiku_trk_menu_add_submenu(m, cw->per_type_name[k],
+                                               &cw->per_type[k], 1);
+
+            if (at >= 0) {
+                /* The type's own art, resolved with the supertype
+                 * fallback where it was built (IV-056). */
+                snprintf(m->item[at].icon, sizeof m->item[at].icon, "%s",
+                         cw->per_type_icon[k]);
+            }
         }
     }
 }

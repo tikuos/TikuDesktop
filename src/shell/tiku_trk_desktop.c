@@ -403,6 +403,18 @@ offer_broken_link(desktop_t *app, const char *path)
                         "cannot be found.", "Cancel|Get info");
 }
 
+
+/** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
+static int
+paint_menu_icon(tiku_desk_surface_t *s, const char *icon, int x, int y,
+                int size, int dimmed)
+{
+    return dimmed
+        ? tiku_trk_icon_paint_dim(s, icon, x, y, size, 0.55f,
+                                  TIKU_DESK_C_PANEL)
+        : tiku_trk_icon_paint(s, icon, x, y, size);
+}
+
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
 status_answer(void *context, const tiku_trk_alert_t *alert)
@@ -1935,6 +1947,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_folder_menu_init(&app.folder_menu, &app.menus, &app.clip,
         app.backend, app.fs, &app.types, &app.launcher, &app.bar_fl,
         &app.bar_open);
+    tiku_trk_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_addons_init(&app.addons);
     (void)tiku_trk_addons_register(&app.addons, "Open in Tracker", "",
                                    "inode/directory", 'o');

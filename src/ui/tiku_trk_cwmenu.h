@@ -55,6 +55,7 @@ typedef struct {
      * columns that type has to show (CW-026).  Filled by the shell, which
      * is what can see the listing. */
     tiku_trk_menu_t    per_type[4];
+    char               per_type_icon[4][32]; /* the type's art (IV-056)   */
     char               per_type_name[4][TIKU_TRK_TYPE_MAX];
     int                per_type_count;
     int                attributes_shown;

@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include "tiku_trk_menu.h"
 
 #include <stdio.h>
@@ -194,6 +196,14 @@ tiku_trk_menu_enable(tiku_trk_menu_t *m, int command, int enabled)
     if (i >= 0) {
         m->item[i].enabled = enabled ? 1 : 0;
     }
+}
+
+static tiku_trk_menu_icon_fn icon_painter;
+
+void
+tiku_trk_menu_set_icon_painter(tiku_trk_menu_icon_fn fn)
+{
+    icon_painter = fn;
 }
 
 void
@@ -460,9 +470,16 @@ tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
             draw_mark(s, r, tiku_desk_tint(ink, MARK_TINT));
         }
         if (it->icon[0] != '\0') {
-            tiku_desk_fill(s, (tiku_desk_rect_t){r.x + PAD_LEFT,
-                r.y + 2, 14, 14}, it->enabled ? TIKU_DESK_C_SELECT :
-                tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f));
+            /* The named art itself, dimmed when the item is disabled;
+             * without a painter installed the slot stays the plain
+             * stand-in (IV-054). */
+            if (icon_painter == NULL ||
+                !icon_painter(s, it->icon, r.x + PAD_LEFT, r.y + 2, 14,
+                              !it->enabled)) {
+                tiku_desk_fill(s, (tiku_desk_rect_t){r.x + PAD_LEFT,
+                    r.y + 2, 14, 14}, it->enabled ? TIKU_DESK_C_SELECT :
+                    tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f));
+            }
         }
         tiku_desk_text(s, f, r.x + PAD_LEFT + (it->icon[0] != '\0' ? 18 : 0),
                        base_y, it->label, ink);

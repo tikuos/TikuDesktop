@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "tiku_trk_drag.h"
@@ -147,6 +148,10 @@ tiku_trk_launch_controller_build_menu(
                  tiku_trk_launch_relation_label(candidates[i].rel));
         (void)tiku_trk_menu_add(menu, label,
             TIKU_TRK_CMD_OPEN_WITH_BASE + i, 0, 0u, 1);
+        /* Each candidate wears the application art: the item names a
+         * runnable file, and the icon says so (IV-054). */
+        tiku_trk_menu_set_icon(menu, TIKU_TRK_CMD_OPEN_WITH_BASE + i,
+                               "application");
         if (candidates[i].preferred) {
             menu->item[menu->count - 1].marked = 1;
         }

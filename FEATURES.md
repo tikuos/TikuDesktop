@@ -5595,12 +5595,12 @@ MakeDragBitmap builds an RGBA32 bitmap clipped to a ComposeIconSize(256)-sized b
 **CHECKED:** Nothing builds a drag picture: an icon-mode drag moves the real poses live via move_pose on MotionNotify, and there is no bitmap, no constant-alpha pose re-draw into a foreign view, and no edge fade anywhere in the tree.  
 *none found*
 **MISSING:** A drag carries a picture of what it holds: the first few items' icons at the pointer, translucent so what they are over stays readable, and dimmer still when the drag holds more than three. It is drawn over the surface rather than composed in an offscreen bitmap, so the horizontal fade at the edges of a large selection is not there, and neither is the light-on-dark choice a real background would need.  
-#### IV-054 · important · partial
+#### IV-054 · important · done
 **Menu items that name a file show that file's icon, dimmed when the item is disabled.**  
 ModelMenuItem::DrawIcon draws at BSize(ListIconSize()-1, ListIconSize()-1) through IconCache::Draw when enabled, and through SyncDraw with DimmedIconBlitter when not - which blits B_OP_ALPHA/B_CONSTANT_ALPHA at high colour (0,0,0,128) for RGBA32 icons and B_OP_BLEND otherwise. Label is offset by iconSize + iconSize/4 and the item height grows to the icon height.  
 `src/kits/tracker/IconMenuItem.cpp` → `ModelMenuItem::DrawIcon / DimmedIconBlitter / ModelMenuItem::GetContentSize`
-**BLOCKED:** menu-item icon support: tiku_trk_mitem_t carries label/command/shortcut/enabled/marked/separator/submenu and no icon field (src/ui/tiku_trk_menu.h:36-46), so no menu item can draw a file's icon, dimmed or otherwise  
-**MISSING:** Menu items now reserve and paint an icon slot, but no file/MIME icon is resolved and inserted for each menu item.
+**PORT:** The slot draws real art now: a painter hook keeps the menu layer linkable without the rasteriser, both shells install one, and an Open With candidate wears the application art -- the kind icon the port's immutable icon table gives every runnable file, its stated adaptation of Haiku's file-backed icons.  A disabled item's icon is drawn dimmed through the same hook.  
+*src/ui/tiku_trk_menu.c (icon_painter); src/ui/commands/tiku_trk_launch_controller.c (set_icon); tests/shell/menuicons.script*
 
 #### IV-055 · polish · partial
 **Marking an icon menu item inside a menu field copies its icon up to the field's visible item.**  
@@ -5609,12 +5609,12 @@ IconMenuItem::SetMarked walks up Supermenu() to the topmost menu, checks its par
 **BLOCKED:** the same absent menu-item icon field (src/ui/tiku_trk_menu.h:36-46) plus a menu-field widget, which does not exist — grep -ri menufield/menu_field src/ returns nothing (the only popups are the Find and Select rule popups, src/ui/tiku_trk_find.h:74-78, src/core/tiku_trk_select.h)  
 **MISSING:** Menu items carry icons, but there is no menu-field control that copies the marked item's icon into a field.
 
-#### IV-056 · polish · partial
+#### IV-056 · polish · done
 **An icon menu item built from a MIME type falls back to the supertype's icon.**  
 The (label, message, iconType, which) and (submenu, message, iconType, which) constructors try BMimeType::GetIcon, then GetSupertype()->GetIcon, and drop the bitmap entirely if both fail so the item draws without an icon.  
 `src/kits/tracker/IconMenuItem.cpp` → `IconMenuItem::IconMenuItem`
-**BLOCKED:** the absent menu-item icon field (src/ui/tiku_trk_menu.h:36-46); no constructor builds a menu item from a MIME type anywhere, so the supertype-icon fallback has no place to live — the only supertype walk in the port is the model's type_row (src/core/tiku_trk_model.c:110-141), which menus never consult  
-**MISSING:** The menu icon slot exists, but MIME-to-supertype fallback resolution is not implemented.
+**PORT:** The per-type Attributes submenus are the items built from a type here, and each wears its type's art resolved through tiku_trk_types_find -- whose walk is exact-then-supertype, which IS the fallback; a type the table cannot place draws without an icon, as the source drops the bitmap.  
+*src/ui/commands/tiku_trk_folder_menu.c:tiku_trk_folder_menu_build_per_type; src/ui/tiku_trk_cwmenu.c (per_type attach)*
 
 #### IV-057 · polish · partial
 **The window's folder icon is itself an icon-cache draw and is drag-startable only from opaque pixels.**  
@@ -5622,7 +5622,8 @@ DraggableContainerIcon::Draw blits the target model's icon centred in the view w
 `src/kits/tracker/DraggableContainerIcon.cpp` → `DraggableContainerIcon::Draw / DraggableContainerIcon::MouseDown`  
 **UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
 **PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
-**MISSING:** No folder icon is drawn in either shell's title bar, so there is nothing on screen to hit-test yet (CW-017).  
+**MISSING:** The desktop shell's window tabs carry no folder icon, and neither shell hit-tests one as a drag source -- that is CW-017's transport.  The browser DOES draw the folder's icon in its bar (the old 'neither shell' claim predated it); what it lacks is the drag half.  
+*src/shell/tiku_trk_app.c:draw_folder_icon (the drawn half)*  
 #### IV-058 · polish · partial
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  

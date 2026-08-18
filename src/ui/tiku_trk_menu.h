@@ -95,6 +95,18 @@ void tiku_trk_menu_mark_radio(tiku_trk_menu_t *m, const int *commands, int n,
 void tiku_trk_menu_enable(tiku_trk_menu_t *m, int command, int enabled);
 void tiku_trk_menu_set_icon(tiku_trk_menu_t *m, int command, const char *icon);
 
+/**
+ * @brief How a menu paints a named icon; @p dimmed for a disabled item.
+ *
+ * A hook rather than a dependency: the menu layer stays linkable without
+ * the rasteriser, and a build without one keeps the plain slot (IV-054).
+ *
+ * @return Nonzero when the art was painted.
+ */
+typedef int (*tiku_trk_menu_icon_fn)(tiku_desk_surface_t *s,
+    const char *icon, int x, int y, int size, int dimmed);
+void tiku_trk_menu_set_icon_painter(tiku_trk_menu_icon_fn fn);
+
 /** @brief Replace an item's label and command together, as a live menu does. */
 void tiku_trk_menu_relabel(tiku_trk_menu_t *m, int at, const char *label,
                            int command, char sc, unsigned mods);

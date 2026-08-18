@@ -131,6 +131,18 @@ typedef struct {
 
 static void menu_invoke(app_t *a, int command);
 
+
+/** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
+static int
+paint_menu_icon(tiku_desk_surface_t *s, const char *icon, int x, int y,
+                int size, int dimmed)
+{
+    return dimmed
+        ? tiku_trk_icon_paint_dim(s, icon, x, y, size, 0.55f,
+                                  TIKU_DESK_C_PANEL)
+        : tiku_trk_icon_paint(s, icon, x, y, size);
+}
+
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
 app_alert_answer(void *context, const tiku_trk_alert_t *alert)
@@ -2592,6 +2604,7 @@ tracker_run(int argc, char **argv)
         if (start == NULL) { start = "/"; }
     }
 
+    tiku_trk_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_scroll_init(&a.sb, 1);
     a.view = tiku_trk_poseview_new(a.backend, start);
     if (a.view != NULL) {
