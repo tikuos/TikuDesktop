@@ -437,6 +437,125 @@ main(void)
               "the row");
     }
 
+
+    printf("\nthe expander commits on release (DB-022/DB-023)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t bar;
+        int y, team_y = -1, team_at = -1, was;
+
+        tiku_trk_deskbar_draw(db, s);
+        bar = tiku_trk_deskbar_frame(db);
+        for (y = bar.y; y < bar.y + bar.h && team_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, y,
+                                         TIKU_TRK_MOD_CMD, 1, 1, &pick);
+            if (pick.what == TIKU_TRK_DB_SHOW_ALL) {
+                team_y = y;
+                team_at = pick.team;
+            }
+        }
+        was = tiku_trk_deskbar_team_expanded(db, team_at);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + bar.w - 8, team_y, 0u, 1,
+                                     1, &pick);
+        check(tiku_trk_deskbar_team_expanded(db, team_at) == was, "DB-022",
+              "the press alone flips nothing: the arrow turns, the state "
+              "waits");
+        check(tiku_trk_deskbar_release(db, bar.x + bar.w - 8, team_y) &&
+              tiku_trk_deskbar_team_expanded(db, team_at) == !was,
+              "DB-022", "the release over the same strip commits it");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + bar.w - 8, team_y, 0u, 1,
+                                     1, &pick);
+        check(!tiku_trk_deskbar_release(db, bar.x + 20, team_y) &&
+              tiku_trk_deskbar_team_expanded(db, team_at) == !was,
+              "DB-022", "carried off the strip, the press dies unspoken");
+        {
+            tiku_trk_deskbar_settings_t off;
+
+            tiku_trk_deskbar_settings_default(&off);
+            off.show_expander = 0;
+            tiku_trk_deskbar_apply_settings(db, &off);
+            check(!tiku_trk_deskbar_team_expanded(db, team_at), "DB-023",
+                  "taking the expander away collapses what it had opened");
+            tiku_trk_deskbar_settings_default(&off);
+            tiku_trk_deskbar_apply_settings(db, &off);
+        }
+    }
+
+    printf("\nthe window menu says what it will not do (DB-028)\n");
+    {
+        tiku_trk_dbwin_t wins[2];
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t bar;
+        const tiku_desk_font_t *font = tiku_desk_font_plain();
+        int rowh = font->height + 6;
+        int y, team_y = -1, team_at = -1, menu_y;
+
+        tiku_trk_deskbar_draw(db, s);
+        bar = tiku_trk_deskbar_frame(db);
+        for (y = bar.y; y < bar.y + bar.h && team_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, y,
+                                         TIKU_TRK_MOD_CMD, 1, 1, &pick);
+            if (pick.what == TIKU_TRK_DB_SHOW_ALL) {
+                team_y = y;
+                team_at = pick.team;
+            }
+        }
+        memset(wins, 0, sizeof wins);
+        snprintf(wins[0].title, sizeof wins[0].title, "%s", "one");
+        wins[0].state = TIKU_TRK_DBW_MINIMIZED;
+        snprintf(wins[1].title, sizeof wins[1].title, "%s", "two");
+        wins[1].state = TIKU_TRK_DBW_MINIMIZED;
+        tiku_trk_deskbar_set_windows(db, team_at, wins, 2, 0);
+        /* The menu's rows are found by asking it: the bottom row answers
+         * Close all, and the rest sit a row-height apart above it. */
+        menu_y = -1;
+        for (y = bar.y; y < bar.y + bar.h && menu_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 3, 1,
+                                         &pick);
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x - 100, y, 0u, 1, 1,
+                                         &pick);
+            if (pick.what == TIKU_TRK_DB_CLOSE_ALL) {
+                menu_y = y - 3 * rowh;
+            }
+        }
+        check(menu_y >= 0, "DB-028", "the menu's rows were found");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 3, 1,
+                                     &pick);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x - 100, menu_y, 0u, 1, 1,
+                                     &pick);
+        check(pick.what == TIKU_TRK_DB_NONE, "DB-028",
+              "with every window minimized, Hide all refuses the click");
+        wins[0].state = TIKU_TRK_DBW_SHOWN;
+        wins[1].state = TIKU_TRK_DBW_SHOWN;
+        tiku_trk_deskbar_set_windows(db, team_at, wins, 2, 0);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 3, 1,
+                                     &pick);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x - 100, menu_y + 1 * rowh,
+                                     0u, 1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_NONE, "DB-028",
+              "with none minimized, Show all refuses it");
+        tiku_trk_deskbar_set_windows(db, team_at, wins, 0, 0);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 3, 1,
+                                     &pick);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x - 100, menu_y + 1 * rowh,
+                                     0u, 1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_QUIT_TEAM, "DB-028",
+              "an application with no windows offers the polite quit "
+              "instead");
+    }
+
     tiku_trk_deskbar_free(db);
     tiku_desk_surface_free(s);
     printf("\n%s\n", fails ? "FAILURES" : "the bar sits where it is put");

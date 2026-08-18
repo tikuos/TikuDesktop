@@ -3177,6 +3177,18 @@ tracker_run(int argc, char **argv)
                             }
                             break;
                         }
+                        case TIKU_TRK_DB_QUIT_TEAM: {
+                            /* Politely: SIGTERM, the process's chance to
+                             * put its affairs in order (DB-028). */
+                            long tp[16];
+                            int k, m = tiku_trk_deskbar_team_pids(
+                                app.deskbar, pick.team, tp, 16);
+
+                            for (k = 0; k < m; k++) {
+                                (void)kill((pid_t)tp[k], SIGTERM);
+                            }
+                            break;
+                        }
                         case TIKU_TRK_DB_KILL_TEAM: {
                             /* The Vulcan Death Grip: no quit request,
                              * and the row goes without waiting for the
@@ -3859,6 +3871,9 @@ tracker_run(int argc, char **argv)
 
                 app.dock_drag = 0;
                 app.deskbar_press = 0;
+                if (tiku_trk_deskbar_release(app.deskbar, ev.x, ev.y)) {
+                    app.dirty = 1;
+                }
                 (void)tiku_trk_band_controller_finish(&app.band_controller);
                 if (dropped && drop_on_panel(&app, ev.x, ev.y)) {
                     /* Consumed by the panel, action or not (AW-059). */

@@ -292,6 +292,7 @@ typedef enum {
     TIKU_TRK_DB_ACTIVATE_TEAM,    /* double-click: the application  */
     TIKU_TRK_DB_LAUNCH_TEAM,      /* middle-click: a new instance   */
     TIKU_TRK_DB_KILL_TEAM,        /* the Vulcan Death Grip (DB-020) */
+    TIKU_TRK_DB_QUIT_TEAM,        /* the polite request (DB-028)    */
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -329,6 +330,16 @@ int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
  * @return Nonzero when a highlight moved, so the caller knows to paint.
  */
 int tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y);
+
+/**
+ * @brief A release: an armed expander press commits here (DB-022).
+ *
+ * @return nonzero when a row expanded or collapsed.
+ */
+int tiku_trk_deskbar_release(tiku_trk_deskbar_t *db, int x, int y);
+
+/** @brief Whether entry @p team shows its windows inline. */
+int tiku_trk_deskbar_team_expanded(const tiku_trk_deskbar_t *db, int team);
 
 /** @brief Attach the durable store used for tray subscriptions. */
 void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,

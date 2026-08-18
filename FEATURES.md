@@ -7205,19 +7205,19 @@ Middle-click requires Shift NOT held; Ctrl paths post kBringTeamToFront/kMinimiz
 **PORT:** All four clauses, on the port's modifier vocabulary (Ctrl reads as CMD here, as everywhere in these shells): middle-click on a team row launches a new instance of its recorded image -- and not with Shift held, as the source requires; CMD+click brings the windows to the front; CMD+Shift+click minimizes them all; and Shift+middle on a window entry closes that window, the same request the secondary click already made.  The button now travels into deskbar_click whole instead of collapsing to a secondary flag.  
 *src/deskbar/tiku_trk_deskbar.c (the team-row chord map, the window-row Shift+middle); src/shell/tiku_trk_desktop.c (LAUNCH_TEAM fork/exec; full modifiers passed); tests/test_deskbar_dock.c (DB-021, all chords)*
 
-#### DB-022 · important · partial
+#### DB-022 · important · done
 **In vertical expanded mode with 'Show application expander' on, each app grows a triangle on its right edge; clicking it expands the app's windows inline underneath it, and the triangle animates down on press before committing on release**  
 Expander hit area is the rightmost kSwitchWidth (12px) of the item frame; mouse-down sets B_RIGHT_DOWN_ARROW and grabs pointer events, mouse-up calls ToggleExpandState(true) and settles on B_DOWN_ARROW / B_RIGHT_ARROW. Expanding MOVES the window items out of the submenu into the bar (all but the trailing hide/show/close/separator four)  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MouseUp`  
-**MISSING:** The triangle is drawn in the rightmost EXPANDER_W of each team row, the same strip hit-tests as the expander, and toggling it nests that app's windows inline underneath — but the state flips on the single click event, so the press-time down-arrow / commit-on-release animation is missing (and there is no 'Show application expander' setting to turn it off).  
-*src/deskbar/tiku_trk_deskbar.c:draw_expander + tiku_trk_deskbar_click line 717*
+**PORT:** All of it now: the 'Show application expander' setting exists in the Deskbar preferences and gates the strip; the press ARMS rather than flips -- the arrow turns down at once while the state waits -- and the release over the same strip commits, while one carried elsewhere dies unspoken, which is the original's press/commit shape without the pointer grab a single-window shell does not need.  
+*src/deskbar/tiku_trk_deskbar.c:expander_press + tiku_trk_deskbar_release; src/ui/windows/tiku_trk_deskbar_prefs_window.c (the setting); tests/test_deskbar_dock.c (DB-022, mutation-tested)*
 
-#### DB-023 · polish · partial
+#### DB-023 · polish · done
 **With 'Expand new applications' on, applications launched from then on come up already expanded**  
 On first build, expandNewTeams expands each item; on later launches the newly added item is toggled. Turning 'Show application expander' off collapses any item that was expanded, on the next rebuild  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::BuildItems`  
-**MISSING:** A newly registered application does come up expanded (add_team sets expanded = 1 unconditionally), but there is no 'Expand new applications' setting to turn that off and no collapse-of-expanded-items when the expander is disabled, since no expander setting exists.  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_add_team line 110*
+**PORT:** The 'Expand new applications' setting exists and add_team reads it (a new entry comes up expanded only while it is on), and turning 'Show application expander' off collapses every row it had opened -- applied in apply_settings, so it lands the moment the preference does rather than on some later rebuild.  
+*src/deskbar/tiku_trk_deskbar.c:add_team (settings.expand_new_apps), apply_settings (the collapse); tests/test_deskbar_dock.c (DB-023)*
 
 #### DB-024 · core · differs
 **Expanded window lists refresh themselves about 7 times a second: windows that open, close, get minimized, or move to another workspace update in place without any user action**  
@@ -7245,12 +7245,12 @@ feel must be B_NORMAL_WINDOW_FEEL or kWindowScreenFeel, and show_hide_level <= 0
 **PORT:** The row's contract — only ordinary, non-hidden windows appear — holds under every state the port can reach: the port has exactly one window class with no feel/panel/floater field (win.h struct: title/frame/z/open/minimized/draw/ctx/tag), so every listed window is ordinary by construction; the only hidden state is !open, which publish_windows skips, and minimized windows are correctly listed with the MINIMIZED state icon. The feel-based exclusion clause is vacuously satisfied — there is no panel/floater class to write a filter against, so no implementable behaviour is missing.  
 *Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:1493-1506 (publish_windows skips w==NULL || !w->open, includes minimized with TIKU_TRK_DBW_MINIMIZED)` `../desktop/src/tiku_desk_window.h:46-58 (single window class, no feel/hidden-level field)`*  
 *Shell: desktop*  
-#### DB-028 · important · partial
+#### DB-028 · important · done
 **An application's window menu ends with Hide all / Show all / Close all; 'Hide all' is disabled when every window is already minimized and 'Show all' when none is**  
 miniCount compared against itemCount; if the app has no windows at all the menu instead shows a disabled 'No windows' plus a 'Quit application' item — which is suppressed for Tracker. The three controls are omitted entirely while dragging  
 `WindowMenu.cpp` → `TWindowMenu::AttachedToWindow`  
-**MISSING:** The menu is exactly Hide all / Show all / sep / Close all and all three invoke correctly, but no item is ever disabled — the panel is drawn with tiku_desk_ui_menu(..., hot = -1), which has no disabled-item concept — so the 'Hide all greyed when all minimized / Show all when none is' clause and the empty-app 'No windows' + 'Quit application' variant are absent.  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_draw line 582-588 and tiku_trk_deskbar_click lines 662-674; ../desktop/../desktop/src/tiku_desk_ui.h:111*
+**PORT:** The menu now says what it will not do: Hide all is drawn dimmed and refuses the click when every window is already minimized, Show all when none is, and neither takes the hover highlight while refused; an application with no windows gets the 'No windows' + 'Quit application' variant instead -- the quit a polite SIGTERM -- with the quit suppressed for the file manager itself, exactly as the source suppresses it.  Disabled rows are the deskbar's own dimmed overdraw on the shared menu widget, the same ink its leaf menu already used (DB-004).  
+*src/deskbar/tiku_trk_deskbar.c:win_menu_items (states), the draw overdraw, the gated click, the motion refusal; src/shell/tiku_trk_desktop.c (QUIT_TEAM); tests/test_deskbar_dock.c (DB-028, mutation-tested)*
 
 #### DB-029 · polish · done
 **Closing all windows of Tracker sends Tracker a private 'close all Tracker windows' command instead of quitting it**  

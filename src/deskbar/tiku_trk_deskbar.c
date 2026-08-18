@@ -79,6 +79,9 @@ struct tiku_trk_deskbar {
     int                  clock_hot;
     int                  calendar_day;
     int                  win_menu_team;    /* -1 = none showing        */
+    /* The expander a press is riding: the arrow turns down at once but
+     * the state commits only on RELEASE over the same strip (DB-022). */
+    int                  expander_press;   /* team index, or -1        */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
@@ -366,6 +369,47 @@ tiku_trk_deskbar_leaf_item(const tiku_trk_deskbar_t *db, int i)
     return &db->leaf[i];
 }
 
+/**
+ * @brief The window menu's rows for @p team, with their enabled states.
+ *
+ * Hide all is refused when every window is already minimized and Show all
+ * when none is; an application with no windows gets 'No windows' plus a
+ * 'Quit application' -- suppressed for the file manager itself (DB-028).
+ * @return how many rows.
+ */
+static int
+win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
+               int *enabled)
+{
+    const tiku_trk_team_t *t = &db->teams[team];
+    int j, mini = 0;
+
+    if (t->win_count == 0) {
+        items[0] = "No windows";
+        enabled[0] = 0;
+        if (t->takes_anything) {
+            return 1;
+        }
+        items[1] = "Quit application";
+        enabled[1] = 1;
+        return 2;
+    }
+    for (j = 0; j < t->win_count; j++) {
+        if (t->wins[j].state == TIKU_TRK_DBW_MINIMIZED) {
+            mini++;
+        }
+    }
+    items[0] = "Hide all";
+    enabled[0] = (mini < t->win_count);
+    items[1] = "Show all";
+    enabled[1] = (mini > 0);
+    items[2] = "-";
+    enabled[2] = 0;
+    items[3] = "Close all";
+    enabled[3] = 1;
+    return 4;
+}
+
 /** @brief No row is hot until the pointer says so (DB-004). */
 static void
 reset_menu_hots(tiku_trk_deskbar_t *db)
@@ -386,6 +430,7 @@ tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
         db->dock = TIKU_TRK_DB_RIGHT_EXPANDED;
         db->win_menu_team = -1;
         reset_menu_hots(db);
+        db->expander_press = -1;
         tiku_trk_deskbar_settings_default(&db->settings);
     }
     return db;
@@ -622,6 +667,16 @@ tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
     tiku_trk_deskbar_settings_normalize(&db->settings);
     db->autohide = db->settings.auto_hide;
     db->autoraise = db->settings.auto_raise;
+    if (!db->settings.show_expander) {
+        /* No expander, nothing expanded: rows left open by the control
+         * that has just been taken away would be rows nothing can close
+         * (DB-023). */
+        int i;
+
+        for (i = 0; i < db->team_count; i++) {
+            db->teams[i].expanded = 0;
+        }
+    }
     /* The whole interface reads its metrics from these faces, so the
      * size preference lands everywhere on the next paint. */
     (void)tiku_desk_font_set_size(db->settings.font_size);
@@ -1282,6 +1337,57 @@ relay_menu_icon(tiku_desk_surface_t *s, int index, int x, int y, int size,
 }
 
 int
+tiku_trk_deskbar_release(tiku_trk_deskbar_t *db, int x, int y)
+{
+    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    int team = (db != NULL) ? db->expander_press : -1;
+    int i, ry, changed = 0;
+
+    if (db == NULL || team < 0) {
+        return 0;
+    }
+    db->expander_press = -1;
+    /* Still over the same team's strip: the press commits (DB-022). */
+    if (db->settings.show_expander &&
+        x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
+        ry = list_y(db);
+        for (i = 0; i < db->team_count; i++) {
+            int at = db->order[i];
+            tiku_trk_team_t *t = &db->teams[at];
+            int team_h = (db->settings.icon_size + 4 > TEAM_H)
+                             ? db->settings.icon_size + 4 : TEAM_H;
+
+            if (y >= ry && y < ry + team_h) {
+                if (at == team) {
+                    t->expanded = !t->expanded;
+                    changed = 1;
+                }
+                break;
+            }
+            ry += team_h + SEAM;
+            if (t->expanded) {
+                int j;
+
+                for (j = 0; j < t->win_count; j++) {
+                    ry += WIN_H + SEAM;
+                }
+            }
+        }
+    }
+    (void)font;
+    return changed;
+}
+
+int
+tiku_trk_deskbar_team_expanded(const tiku_trk_deskbar_t *db, int team)
+{
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return 0;
+    }
+    return db->teams[team].expanded;
+}
+
+int
 tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 {
     const tiku_desk_font_t *font = tiku_desk_font_plain();
@@ -1313,14 +1419,17 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         }
     }
     if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
+        const char *items[4];
+        int enabled[4];
+        int n = win_menu_items(db, db->win_menu_team, items, enabled);
         tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               4 * rowh + 4 };
+                               n * rowh + 4 };
 
         if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
-            y < m.y + 2 + 4 * rowh) {
+            y < m.y + 2 + n * rowh) {
             win = (y - m.y - 2) / rowh;
-            if (win == 2) {
-                win = -1;       /* the separator row */
+            if (win >= n || !enabled[win]) {
+                win = -1;       /* a separator or a refused row */
             }
         }
     }
@@ -1728,7 +1837,9 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             }
             if (db->settings.show_expander) {
                 draw_expander(s, row.x + row.w - EXPANDER_W - 2,
-                              y + (team_h - 9) / 2, t->expanded);
+                              y + (team_h - 9) / 2,
+                              t->expanded ||
+                              db->expander_press == db->order[i]);
             }
             y += team_h + SEAM;
 
@@ -1891,13 +2002,29 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     /* The window menu for one application: Hide all / Show all / Close all,
      * which the original appends to every application's window list. */
     if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
-        static const char *const items[] = {
-            "Hide all", "Show all", "-", "Close all"
-        };
+        const char *items[4];
+        int enabled[4];
+        int n = win_menu_items(db, db->win_menu_team, items, enabled);
         int rowh = f->height + 6;
         tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               4 * rowh + 4 };
-        tiku_desk_ui_menu(s, m, items, 4, db->win_hot);
+                               n * rowh + 4 };
+        int k;
+
+        tiku_desk_ui_menu(s, m, items, n, db->win_hot);
+        for (k = 0; k < n; k++) {
+            /* A row that cannot be chosen is drawn as such, with the one
+             * dimmed ink the menu layer has (DB-004, DB-028). */
+            if (!enabled[k] && items[k][0] != '-') {
+                tiku_desk_rect_t r = { m.x + 2, m.y + 2 + k * rowh,
+                                       m.w - 4, rowh };
+
+                tiku_desk_fill(s, r, TIKU_DESK_C_PANEL);
+                tiku_desk_text(s, f, r.x + 8,
+                               r.y + (rowh - f->height) / 2 + f->ascent,
+                               items[k],
+                               tiku_desk_tint(TIKU_DESK_C_PANEL, 1.55f));
+            }
+        }
     }
     if (db->clock_menu_open) {
         const char *items[] = {
@@ -2060,13 +2187,26 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
     if (db->win_menu_team >= 0) {
         int rowh = f->height + 6;
+        const char *items[4];
+        int enabled[4];
+        int n = win_menu_items(db, db->win_menu_team, items, enabled);
         tiku_desk_rect_t m = { db->frame.x - 130, list_y(db) + TEAM_H, 128,
-                               4 * rowh + 4 };
+                               n * rowh + 4 };
         int idx = (y - m.y - 2) / rowh;
+        int team = db->win_menu_team;
 
         db->win_menu_team = -1;
-        if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h) {
-            if (idx == 0) { pick->what = TIKU_TRK_DB_HIDE_ALL; }
+        if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h &&
+            idx >= 0 && idx < n && enabled[idx]) {
+            if (db->teams[team].win_count == 0) {
+                /* The empty-application variant: its one live row asks
+                 * the application to QUIT, politely (DB-028). */
+                if (idx == 1) {
+                    pick->what = TIKU_TRK_DB_QUIT_TEAM;
+                    pick->team = team;
+                }
+            }
+            else if (idx == 0) { pick->what = TIKU_TRK_DB_HIDE_ALL; }
             else if (idx == 1) { pick->what = TIKU_TRK_DB_SHOW_ALL; }
             else if (idx == 3) { pick->what = TIKU_TRK_DB_CLOSE_ALL; }
         }
@@ -2160,7 +2300,10 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (y >= ry && y < ry + team_h) {
             if (db->settings.show_expander &&
                 x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
-                t->expanded = !t->expanded;
+                /* Armed, not flipped: the arrow turns down at once and
+                 * the state commits on release over the same strip
+                 * (DB-022). */
+                db->expander_press = team;
             } else if (secondary) {
                 db->win_menu_team = team;
                 db->win_hot = -1;
