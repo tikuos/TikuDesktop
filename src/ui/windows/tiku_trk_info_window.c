@@ -86,8 +86,15 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     (void)window;
     tiku_desk_ui_panel(surface, content);
     layout(content, &icon, &name, &tabs, &body);
-    (void)tiku_trk_icon_paint(surface,
-        tiku_trk_model_icon_name(&info->model), icon.x, icon.y, INFO_ICON);
+    if (controller->drop_hot == window_context->slot) {
+        (void)tiku_trk_icon_paint_selected(surface,
+            tiku_trk_model_icon_name(&info->model), icon.x, icon.y,
+            INFO_ICON);
+    } else {
+        (void)tiku_trk_icon_paint(surface,
+            tiku_trk_model_icon_name(&info->model), icon.x, icon.y,
+            INFO_ICON);
+    }
     if (controller->renaming == window_context->slot) {
         tiku_desk_ui_textfield_sel(surface, name, controller->name.text,
             controller->name.caret, controller->name.sel_a,
@@ -224,6 +231,7 @@ tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
     int i;
 
     memset(controller, 0, sizeof *controller);
+    controller->drop_hot = -1;
     controller->workspace = workspace;
     controller->backend = backend;
     controller->store = store;

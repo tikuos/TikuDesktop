@@ -49,6 +49,10 @@ struct tiku_trk_info_windows {
     tiku_trk_alert_t              *alert;
     tiku_trk_edit_t                name;
     int                            renaming;
+    /* The slot whose icon an in-flight drag is over, or -1: the icon
+     * answers a hover the way a pose does, by its selected variant
+     * (IV-058). */
+    int                            drop_hot;
     int                           *dirty;
 };
 

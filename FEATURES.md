@@ -2867,12 +2867,12 @@ UpdateTitle() also pushes the location into the Navigator with kActionUpdatePath
 **MISSING:** The title is the folder's full path and is re-set live when the folder itself is renamed/moved (NOTIFY_RETITLE), but there is no ancestor-chain watching (notify matches only the folder's own path or its old path) and no name-vs-full-path preference — it is always the full path.  
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_notify (RETITLE branch) + src/shell/tiku_trk_desktop.c:main pump loop*
 
-#### CW-017 · important · partial
+#### CW-017 · important · differs
 **The folder's icon sits at the right end of the menu bar and can be dragged out to move the folder itself (Option-drag copies).**  
 _AddFolderIcon adds a DraggableContainerIcon sized to the menu bar height; the drag starts only after 3px of movement and only if the click hit the icon's opaque pixels (IconCache IconHitTest); message carries "be:actions" B_COPY_TARGET when Option is down, else B_MOVE_TARGET. Shown only when the window has a menu bar (ShouldHaveDraggableFolderIcon), and hidden/re-shown as SwitchDirectory changes folders.  
 `DraggableContainerIcon.cpp` → `DraggableContainerIcon::MouseDown / MouseMoved`
-**PORT:** The desktop shell now draws the folder icon at the menu bar's right edge, hit-tests it, and feeds a folder payload into the existing move/copy/link drag controller; the single-window shell also paints the current folder icon. The remaining gap is a native drag-out/drop target in the single-window shell, whose older pose drag path only navigates through its browser controls.
-**MISSING:** Native drag-out/drop-target handling for the single-window shell is not implemented.
+**PORT:** The desktop shell draws the folder icon at the menu bar's right edge, hit-tests it, and feeds a folder payload into the existing move/copy/link drag controller (Option copy read at the drop); the single-window shell paints the current folder icon but deliberately does not arm a drag from it.  In a single-window browser every surface the gesture could land on lies INSIDE the folder being dragged -- and moving a folder into its own child is exactly what the file rules refuse (FS-023) -- so the drag-out exists where it has a destination, which is the spatial shell.
+*src/shell/tiku_trk_desktop.c (folder-icon arm at the menu bar); src/backends/tiku_trk_fs.c (the parent rule that leaves the gesture nothing to mean in one window)*
 
 #### CW-018 · polish · done
 **Clicking anywhere in the window chrome (menu bar, count view, scroll bars) activates the window; clicking in the pose view or on the folder icon does not, so a click-through drag or selection is not eaten.**  
@@ -5585,13 +5585,12 @@ BPoseView::DrawPose calls Invalidate(rect) instead of pose->Draw() when TrackerS
 **SUBSYSTEM:** The separate in-place `DrawPose` branch is absent; full-frame repaint is the intentional compositor boundary.
 **PORT:** Volume rows are repainted as part of the shell's complete frame, so the icon and free-space bar are invalidated together without an in-place pose draw. This preserves the visual invariant through full-frame repainting.
 
-#### IV-053 · important · partial
+#### IV-053 · important · done
 **Dragging a selection shows a translucent picture of the dragged poses that fades out at the edges when the selection is large.**  
 MakeDragBitmap builds an RGBA32 bitmap clipped to a ComposeIconSize(256)-sized box around the cursor, re-draws each selected pose into it via BPose::Draw with a foreign view and offset, at constant alpha 192 (164 when fading), black on dark backgrounds and white on light, then applies FadeRGBA32Horizontal/Vertical over a ComposeIconSize(32)-wide band on each clipped side.  
 `src/kits/tracker/PoseView.cpp` → `BPoseView::MakeDragBitmap`  
-**CHECKED:** Nothing builds a drag picture: an icon-mode drag moves the real poses live via move_pose on MotionNotify, and there is no bitmap, no constant-alpha pose re-draw into a foreign view, and no edge fade anywhere in the tree.  
-*none found*
-**MISSING:** A drag carries a picture of what it holds: the first few items' icons at the pointer, translucent so what they are over stays readable, and dimmer still when the drag holds more than three. It is drawn over the surface rather than composed in an offscreen bitmap, so the horizontal fade at the edges of a large selection is not there, and neither is the light-on-dark choice a real background would need.  
+**PORT:** The drag carries a picture of what it holds: the first four items' icons ride at the pointer, tinted translucent (dimmer when the drag holds more than three), and a large selection gets a fade band at each edge of the picture.  Adapted to an opaque surface: drawn over the frame with backdrop tinting rather than composed in an offscreen RGBA bitmap, so the fade is stronger edge tinting and there is no light-on-dark ink choice to make.  On-desktop icon drags still move the real poses live, which needs no picture -- the pose itself is under the pointer.  
+*src/shell/tiku_trk_desktop.c (the drag picture in draw); tests/shell/dragghost.script (mutation-tested)*  
 #### IV-054 · important · done
 **Menu items that name a file show that file's icon, dimmed when the item is disabled.**  
 ModelMenuItem::DrawIcon draws at BSize(ListIconSize()-1, ListIconSize()-1) through IconCache::Draw when enabled, and through SyncDraw with DimmedIconBlitter when not - which blits B_OP_ALPHA/B_CONSTANT_ALPHA at high colour (0,0,0,128) for RGBA32 icons and B_OP_BLEND otherwise. Label is offset by iconSize + iconSize/4 and the item height grows to the icon height.  
@@ -5621,12 +5620,12 @@ DraggableContainerIcon::Draw blits the target model's icon centred in the view w
 **PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
 **MISSING:** The desktop shell's window tabs carry no folder icon, and neither shell hit-tests one as a drag source -- that is CW-017's transport.  The browser DOES draw the folder's icon in its bar (the old 'neither shell' claim predated it); what it lacks is the drag half.  
 *src/shell/tiku_trk_app.c:draw_folder_icon (the drawn half)*  
-#### IV-058 · polish · partial
+#### IV-058 · polish · done
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  
 `src/kits/tracker/infowindow/HeaderView.cpp` → `HeaderView::MouseMoved / HeaderView::MouseDown`
-**MISSING:** The Info icon is painted and hit-tested as a distinct target, but the drag controller does not yet route an in-flight payload to it or switch to a selected icon variant while hovered.
-*src/ui/windows/tiku_trk_info_window.c; src/shell/tiku_trk_desktop.c*
+**CHECKED:** While a drag is in flight the shell tracks which Info icon the pointer is over (`info_icon_drop_slot`, hover update in POINTER_MOVE) and the window paints that slot with `tiku_trk_icon_paint_selected`; leaving the icon or ending the drag puts the plain variant back.  Rect hit-tested rather than alpha hit-tested: the port's icons are painted art, not alpha-cached bitmaps.
+*src/shell/tiku_trk_desktop.c (drop_hot tracking); src/ui/windows/tiku_trk_info_window.c (selected-variant draw); tests/shell/infodrop.script (mutation-tested)*
 
 #### IV-059 · important · differs ⟨found by verification⟩
 **The legacy bitmap-icon fallback exists at only two sizes: any requested size other than mini is loaded as a large icon, and the resource must be exactly size*size bytes or the load fails outright.**  
@@ -6801,17 +6800,12 @@ carry-across code is what makes it survive on a store keyed by the file.
 *src/core/tiku_trk_info.c:tiku_trk_info_relink/keep_attr; tests/test_info.c*  
 *Shell: desktop*  
 
-#### AW-075 · important · partial
+#### AW-075 · important · done
 **The icon in the info window is draggable (Option makes it a copy), is a drop target, and double-clicking it opens the item; the Trash icon can only be opened, never dragged.**  
 Drag starts after kDragSlop (3px) with a composed translucent icon+label bitmap, be:actions = B_COPY_TARGET when Option is held else B_MOVE_TARGET; drops are accepted through BPoseView::CanHandleDragSelection / HandleDropCommon and highlight the icon; fTrackingState is open_only_track for the Trash. Double-click posts B_REFS_RECEIVED with a TrackerViewToken back to be_app.  
 `infowindow/HeaderView.cpp` → `HeaderView::MouseDown / HeaderView::MouseMoved / HeaderView::MouseUp / HeaderView::MessageReceived`
-**MISSING:** The icon is drawn and double-clicking it opens the item, but it
-is neither a drag SOURCE nor a drop target: the drag layer arms from a pose
-view and nothing else, so an icon outside one cannot start a drag or accept
-one.
-*src/shell/tiku_trk_desktop.c (the info icon's click); src/core/tiku_trk_drag.c (armed
-from pose views only)*
-
+**CHECKED:** All four clauses: a press on the icon arms the drag layer with the item itself (Option read at the DROP makes it a copy, the shared modifier discipline), the icon accepts an in-flight drag when its item is a mutable container -- highlighted via the selected variant while hovered -- a double-click opens the item, and the Trash's icon refuses to arm (`kind != TIKU_TRK_KIND_TRASH`), staying open-only.  
+*src/shell/tiku_trk_desktop.c (arm on icon press, drop_on_info_icon, drop_hot); tests/shell/infodrop.script (drop in, drag out, hover coat -- mutation-tested)*
 #### AW-076 · important · partial
 **Right-clicking the info window icon gives a context menu with a navigation submenu for folders/volumes, Open, Edit name, Unmount (disabled for the boot volume), Identify (Option forces a re-identify), Empty Trash, Recalculate folder size, Set new link target and Permissions.**  
 Items are conditional on the model: no Edit name/Unmount for desktop/root/trash, no Identify for root/volume/trash, Empty Trash only for the trash, size item only for non-volume non-root directories, link target only for symlinks. Identify calls update_mime_info with force level 2 when Option is down, else 1.  

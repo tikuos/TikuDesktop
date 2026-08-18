@@ -886,6 +886,88 @@ key_name(const tiku_desk_event_t *event, char printable[2])
 }
 
 /**
+ * @brief The Info window icon under the pointer that would take a drop.
+ *
+ * The icon stands for the window's own item, so it is a drop target
+ * exactly when that item is a container the store can write (AW-075).
+ * @return the slot, or -1.
+ */
+static int
+info_icon_drop_slot(desktop_t *app, int x, int y)
+{
+    tiku_desk_window_t *w = NULL;
+    tiku_trk_info_t *info;
+    tiku_trk_model_t m;
+    int slot;
+
+    (void)tiku_desk_workspace_hit(app->desk, x, y, &w);
+    slot = tiku_trk_info_windows_slot(&app->info_windows, w);
+    if (slot < 0 ||
+        tiku_trk_info_windows_hit(&app->info_windows, slot, x, y, NULL) !=
+            TIKU_TRK_INFO_HIT_ICON) {
+        return -1;
+    }
+    info = tiku_trk_info_windows_model(&app->info_windows, slot);
+    if (app->backend->ops->stat(app->backend, info->path, &m) != 0 ||
+        !tiku_trk_model_is_mutable_container(&m)) {
+        return -1;
+    }
+    return slot;
+}
+
+/** @brief Drop the drag on an Info window's icon.  @return handled. */
+static int
+drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers)
+{
+    const char *paths[TIKU_TRK_DRAG_MAX];
+    tiku_trk_info_t *info;
+    unsigned drag_modifiers = 0u;
+    tiku_trk_drop_t action;
+    int slot = info_icon_drop_slot(app, x, y);
+    int same_store, i, count = 0;
+
+    if (slot < 0 || app->drag.count == 0) {
+        return 0;
+    }
+    info = tiku_trk_info_windows_model(&app->info_windows, slot);
+    if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) {
+        drag_modifiers |= TIKU_TRK_DRAG_MOD_COPY;
+    }
+    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+        drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
+    }
+    same_store = tiku_trk_fs_drop_action(app->fs, app->drag.path[0],
+                                         info->path, 0) == TIKU_TRK_OP_MOVE;
+    action = tiku_trk_drag_action(&app->drag, info->path, drag_modifiers,
+                                  same_store);
+    if (action == TIKU_TRK_DROP_NOTHING) {
+        return 1;               /* over the icon, but nothing to do */
+    }
+    for (i = 0; i < app->drag.count; i++) {
+        paths[count++] = app->drag.path[i];
+    }
+    snprintf(app->prog_dest, sizeof app->prog_dest, "%s", info->path);
+    switch (action) {
+    case TIKU_TRK_DROP_COPY:
+        (void)tiku_trk_fs_copy(app->fs, paths, count, info->path,
+                               TIKU_TRK_CONFLICT_ASK);
+        break;
+    case TIKU_TRK_DROP_LINK:
+        (void)tiku_trk_fs_link(app->fs, paths, count, info->path,
+                               (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+        break;
+    default:
+        (void)tiku_trk_fs_move(app->fs, paths, count, info->path,
+                               TIKU_TRK_CONFLICT_ASK);
+        break;
+    }
+    snprintf(app->status, sizeof app->status,
+             "dropped %d item%s on %s", count, count == 1 ? "" : "s",
+             info->model.name);
+    return 1;
+}
+
+/**
  * @brief Resolve and perform the drop the pointer is over.
  *
  * The destination is the highlighted pose when there is one and the hovered
@@ -2649,8 +2731,31 @@ tracker_run(int argc, char **argv)
                              * double-clicking its row would (AW-075). */
                             if (tiku_trk_now() - app.press_at < 500000) {
                                 (void)open_folder(&app, info->path);
+                                app.press_at = tiku_trk_now();
+                                break;
                             }
                             app.press_at = tiku_trk_now();
+                            /* And a press that moves carries the item
+                             * itself -- except the Trash, which can only
+                             * ever be opened (AW-075). */
+                            if (ev.button == 1u &&
+                                info->model.kind != TIKU_TRK_KIND_TRASH) {
+                                char iparent[TIKU_TRK_PATH_MAX];
+                                tiku_trk_model_t im;
+
+                                if (app.backend->ops->stat(app.backend,
+                                        info->path, &im) == 0) {
+                                    parent_path(info->path, iparent,
+                                                sizeof iparent);
+                                    tiku_trk_drag_arm(&app.drag, ev.x, ev.y,
+                                                      ev.button, 0u, 1, iw,
+                                                      iparent);
+                                    (void)tiku_trk_drag_add_at(&app.drag,
+                                        info->path, im.type, ev.x, ev.y, 1);
+                                    tiku_trk_drag_target_reset(
+                                        &app.drag_target);
+                                }
+                            }
                             break;
                         }
                         if (ih == TIKU_TRK_INFO_HIT_FIELD && which >= 0) {
@@ -3532,6 +3637,18 @@ tracker_run(int argc, char **argv)
                                                       tiku_trk_now());
                 }
                 {
+                    /* An Info window's icon answers a hovering drag with
+                     * its selected variant (IV-058). */
+                    int hot = tiku_trk_drag_active(&app.drag)
+                                  ? info_icon_drop_slot(&app, ev.x, ev.y)
+                                  : -1;
+
+                    if (hot != app.info_windows.drop_hot) {
+                        app.info_windows.drop_hot = hot;
+                        app.dirty = 1;
+                    }
+                }
+                {
                     unsigned bm = 0u;
 
                     if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
@@ -3578,7 +3695,11 @@ tracker_run(int argc, char **argv)
                 app.dock_drag = 0;
                 app.deskbar_press = 0;
                 (void)tiku_trk_band_controller_finish(&app.band_controller);
-                if (dropped) {
+                if (dropped && drop_on_info_icon(&app, ev.x, ev.y,
+                                                 ev.modifiers)) {
+                    /* Taken by an Info window's icon: the folder drop
+                     * machinery must not run a second time. */
+                } else if (dropped) {
                     do_drop(&app, ev.x, ev.y,
                             ev.modifiers, ev.button);
                 } else if (ev.button == 3u && app.press_down &&
@@ -3637,6 +3758,7 @@ tracker_run(int argc, char **argv)
                 }
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_drag_target_reset(&app.drag_target);
+                app.info_windows.drop_hot = -1;
                 /* A release ends whatever the press began -- a drag with a
                  * picture under the pointer, a band, a drop that raised an
                  * alert.  All of it is on the screen until a frame says

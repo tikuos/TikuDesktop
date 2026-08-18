@@ -1,0 +1,16 @@
+# shell: desktop
+# home: fixture
+# IV-053: the pointer carries a translucent picture of what the drag
+# holds, drawn over whatever it crosses so the drop target stays readable.
+wait 12
+note the bare backdrop first, where the picture will be
+expect-pixel 609 447 336698
+press-row 1 1
+wait 2
+move 300 450
+wait 2
+move 600 450
+wait 3
+note the carried file's icon rides at the pointer, tinted translucent
+expect-pixel 609 447 b9c8b1
+quit

@@ -1,0 +1,38 @@
+# shell: desktop
+# home: fixture
+# AW-075/IV-058: the Info window's icon is a real drop target that answers
+# a hovering drag in its selected coat, and a drag source carrying the item
+# itself.
+wait 12
+press-row 0 3
+wait 2
+release-row 0 3
+wait 3
+menu-pick Get info
+wait 6
+note before the drag, the icon wears its plain coat
+expect-pixel 158 120 000000
+press 85 138
+wait 2
+move 300 450
+wait 2
+move 141 119
+wait 3
+note hovered by a drag it can take, the icon answers in its selected coat
+expect-pixel 158 120 112335
+release 141 119
+wait 8
+note the drop landed: a.txt now lives in sub
+expect-file /tmp/trk_script/sub/a.txt
+wait 30
+note and the icon is a drag SOURCE too: carrying sub out to the desktop
+press 156 134
+wait 2
+move 400 250
+wait 2
+move 600 300
+wait 2
+release 600 300
+wait 10
+expect-file /tmp/trk_home/Desktop/sub/a.txt
+quit
