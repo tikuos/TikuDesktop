@@ -18,6 +18,21 @@
 
 static int fails;
 
+/* Where the fake backend says a lost node went (DB-040). */
+static char fake_moved_to[512];
+
+static int
+fake_path_of_id(tiku_trk_backend_t *b, uint64_t nid, char *out, size_t max)
+{
+    (void)b;
+    (void)nid;
+    if (fake_moved_to[0] == '\0') {
+        return -1;
+    }
+    snprintf(out, max, "%s", fake_moved_to);
+    return 0;
+}
+
 static void
 check(int cond, const char *row, const char *what)
 {
@@ -816,6 +831,60 @@ main(void)
             tiku_desk_surface_free(bs);
         }
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    }
+
+
+    printf("\nthe tray notices moved and deleted files (DB-040)\n");
+    {
+        /* A backend that CAN answer by node identity: posix stat plus a
+         * path_of_id the test controls -- the VFS-watch shape. */
+        static char moved_to[TIKU_TRK_PATH_MAX];
+        tiku_trk_backend_t *pb = tiku_trk_backend_posix_open();
+        tiku_trk_backend_t fake = *pb;
+        tiku_trk_backend_ops_t ops = *pb->ops;
+        tiku_trk_deskbar_t *tdb;
+        FILE *out;
+        int id1, id2;
+
+        ops.path_of_id = NULL;      /* the removal branch on this host */
+        fake.ops = &ops;
+        tdb = tiku_trk_deskbar_new(&fake);
+        out = fopen("/tmp/trk_r_stay", "w");
+        if (out != NULL) { fputs("1\n", out); fclose(out); }
+        out = fopen("/tmp/trk_r_move", "w");
+        if (out != NULL) { fputs("2\n", out); fclose(out); }
+        id1 = tiku_trk_deskbar_add_replicant(tdb, "stay", "/tmp/trk_r_stay");
+        id2 = tiku_trk_deskbar_add_replicant(tdb, "move", "/tmp/trk_r_move");
+        check(id1 > 0 && id2 > 0 &&
+              tiku_trk_deskbar_sync_replicants(tdb) == 0, "DB-040",
+              "nothing moved: the sweep changes nothing");
+        (void)rename("/tmp/trk_r_move", "/tmp/trk_r_moved");
+        check(tiku_trk_deskbar_sync_replicants(tdb) == 1 &&
+              tiku_trk_deskbar_replicant_by_id(tdb, id2) == -1 &&
+              tiku_trk_deskbar_replicant_by_id(tdb, id1) >= 0, "DB-040",
+              "with no identity source a vanished path is removed, and "
+              "only that one");
+        /* Phase two: an identity source exists, so a moved file is
+         * RE-POINTED rather than dropped. */
+        out = fopen("/tmp/trk_r_move2", "w");
+        if (out != NULL) { fputs("3\n", out); fclose(out); }
+        id2 = tiku_trk_deskbar_add_replicant(tdb, "move2",
+                                             "/tmp/trk_r_move2");
+        ops.path_of_id = fake_path_of_id;
+        (void)rename("/tmp/trk_r_move2", "/tmp/trk_r_moved2");
+        snprintf(fake_moved_to, sizeof fake_moved_to, "%s",
+                 "/tmp/trk_r_moved2");
+        check(tiku_trk_deskbar_sync_replicants(tdb) == 1 &&
+              tiku_trk_deskbar_replicant_by_id(tdb, id2) >= 0 &&
+              tiku_trk_deskbar_sync_replicants(tdb) == 0, "DB-040",
+              "with one, a moved file is merely re-pointed and keeps its "
+              "place -- and the next sweep finds nothing to do");
+        fake_moved_to[0] = '\0';
+        (void)unlink("/tmp/trk_r_stay");
+        (void)unlink("/tmp/trk_r_moved");
+        (void)unlink("/tmp/trk_r_moved2");
+        tiku_trk_deskbar_free(tdb);
+        tiku_trk_backend_close(pb);
     }
 
     tiku_trk_deskbar_free(db);

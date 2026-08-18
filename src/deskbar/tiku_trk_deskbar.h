@@ -78,6 +78,7 @@ typedef struct {
 /** @brief A tray item: a namespace node rendered as label + value. */
 typedef struct {
     int             id;             /* addressable afterwards (DB-038)    */
+    uint64_t        node_id;        /* the node's identity, for moves     */
     char            label[16];
     char            path[TIKU_TRK_PATH_MAX];
     char            value[24];      /* raw, as the node reports it        */
@@ -445,6 +446,15 @@ int tiku_trk_deskbar_replicant_by_name(const tiku_trk_deskbar_t *db,
 
 /** @brief Unsubscribe the item with @p id.  @return nonzero if removed. */
 int tiku_trk_deskbar_drop_replicant(tiku_trk_deskbar_t *db, int id);
+
+/**
+ * @brief Notice moved or deleted tray files (DB-040).
+ *
+ * A path that no longer resolves is asked about by NODE identity: still
+ * somewhere, the item is re-pointed and keeps its place; gone, it is
+ * removed.  @return nonzero when anything changed.
+ */
+int tiku_trk_deskbar_sync_replicants(tiku_trk_deskbar_t *db);
 int tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
                                           const char *path, int height);
 int tiku_trk_deskbar_replicant_height(const tiku_trk_deskbar_t *db,

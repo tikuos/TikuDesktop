@@ -1074,10 +1074,45 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
 
         if (db->backend->ops->stat(db->backend, path, &m) == 0) {
             r->desc_known = tiku_trk_desc_parse(m.facts.meta, &r->desc);
+            r->node_id = m.node_id;
         }
     }
     save_replicants(db);
     return r->id;
+}
+
+int
+tiku_trk_deskbar_sync_replicants(tiku_trk_deskbar_t *db)
+{
+    int i, changed = 0;
+
+    if (db == NULL || db->backend == NULL || db->backend->ops->stat == NULL) {
+        return 0;
+    }
+    for (i = db->tray_count - 1; i >= 0; i--) {
+        tiku_trk_replicant_t *r = &db->tray[i];
+        tiku_trk_model_t m;
+        char moved[TIKU_TRK_PATH_MAX];
+
+        if (db->backend->ops->stat(db->backend, r->path, &m) == 0) {
+            continue;                   /* still where it was */
+        }
+        if (r->node_id != 0 && db->backend->ops->path_of_id != NULL &&
+            db->backend->ops->path_of_id(db->backend, r->node_id, moved,
+                                         sizeof moved) == 0) {
+            /* Moved, not gone: re-pointed, keeping its place and its
+             * label (DB-040). */
+            snprintf(r->path, sizeof r->path, "%s", moved);
+            changed = 1;
+            continue;
+        }
+        (void)tiku_trk_deskbar_drop_replicant(db, r->id);
+        changed = 1;
+    }
+    if (changed) {
+        save_replicants(db);
+    }
+    return changed;
 }
 
 int

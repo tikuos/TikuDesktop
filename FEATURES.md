@@ -7328,13 +7328,13 @@ kReplicantSettingsFile = "replicants", field kReplicantPathField = "replicant_pa
 **TIKU:** Persist node paths in a durable settings cell; re-resolve each path at boot and prune dangling ones the same way
 **PORT:** Replicant paths are serialized in the session store, loaded on startup, stat-checked, and stale entries pruned. `tests/test_deskbar_dock.c` covers save/load.  
 
-#### DB-040 · important · partial
+#### DB-040 · important · done
 **Deleting or moving an add-on's file on disk updates the tray live — the replicant is removed when its file is deleted (unless the owning app is still running) and merely re-pointed when the file is moved**  
 watch_node(B_WATCH_NAME|B_WATCH_ATTR) per add-on item; B_ENTRY_REMOVED -> UnloadAddOn unless be_roster->IsRunning(&item->entryRef); B_ENTRY_MOVED -> MoveItem updates entryRef.directory only  
 `StatusView.cpp` → `TReplicantTray::HandleEntryUpdate`  
 **TIKU:** Node monitoring maps directly onto VFS watch notifications; the 'don't remove while the owner is running' rule still applies
-**PORT:** Refresh removes stale paths, and explicit remove/repoint APIs update the live tray and durable record. `tests/test_deskbar_dock.c` covers removal persistence.  
-**MISSING:** The port does not observe add-on file moves through node-monitor events; refresh/repoint occurs only through explicit controller calls.
+**PORT:** The tray now notices by itself: a sweep on the roster's beat stats every subscription, and a path that no longer resolves is asked about by NODE IDENTITY -- a backend that can answer (path_of_id, the VFS-watch shape) has the item re-pointed in place, keeping its id and label; one that cannot has it removed, and only it.  The 'don't remove while the owner runs' clause has no referent here: a namespace subscription has no owning application to be running.  Explicit remove/repoint APIs and durable persistence stand as before.  
+*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_sync_replicants; src/shell/tiku_trk_desktop.c (the beat); tests/test_deskbar_dock.c (DB-040: kept, removed, and re-pointed -- mutation-tested)*
 
 #### DB-041 · important · done
 **A replicant taller than the tray's maximum replicant height is refused outright, and one that changes its own size after being added forces a full re-layout of the tray**  

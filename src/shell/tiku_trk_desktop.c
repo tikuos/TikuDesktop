@@ -1635,6 +1635,11 @@ rescan_teams(void *context)
     if (tiku_trk_deskbar_scan_processes(app->deskbar)) {
         app->dirty = 1;
     }
+    /* The tray rides the same beat: a subscription whose file moved is
+     * re-pointed, one whose file went is removed (DB-040). */
+    if (tiku_trk_deskbar_sync_replicants(app->deskbar)) {
+        app->dirty = 1;
+    }
     return 0;                   /* keep the beat */
 }
 
