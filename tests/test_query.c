@@ -1294,8 +1294,9 @@ main(void)
                              TIKU_TRK_FIND_HIT_SAVE);
             }
         }
-        check(!save_hit,
-              "the disabled Save button cannot be invoked");
+        check(save_hit,
+              "Save stays reachable with nothing attached: it asks WHERE "
+              "instead of saving into nowhere (AW-052)");
 
         first.include_trash = 1;
         check(tiku_trk_find_load_named(&first, "default") >= 0 &&

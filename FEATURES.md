@@ -6516,17 +6516,12 @@ and there are no messages to reply to.
 cancel); src/core/tiku_trk_panel.h*  
 *Shell: desktop*  
 
-#### AW-052 · core · partial
+#### AW-052 · core · done
 **Saving refuses illegal or conflicting destinations: the system root, "." and "..", an unopenable folder, and a name already used by a folder; an existing file prompts Replace / Cancel with Cancel first.**  
 Each refusal shows a centered alert and re-selects the text; the replace prompt returning 0 (Cancel) aborts, otherwise the app is left to overwrite. Success adds "directory" and "name" and, if fHideWhenDone, quits the window.  
 `FilePanelPriv.cpp` → `TFilePanel::HandleSaveButton / TFilePanel::ShowCenteredAlert`
-**MISSING:** Every refusal is implemented and tested -- the system root,
-"." and "..", a folder that will not be written in, a name a folder already
-has, and an existing file as a REPLACE question rather than a refusal -- but
-nothing raises a save panel in either shell yet, so none of them is reachable
-by a user.  The natural first caller is saving a query from the Find panel.
-*src/core/tiku_trk_panel.c:tiku_trk_panel_save_check/_save_text;
-tests/test_panel.c*
+**CHECKED:** Every refusal is implemented AND reachable: the Find panel's Save with nothing attached raises the save panel (the natural first caller the row named), whose commit runs `tiku_trk_panel_save_check` before anything is written -- a refusal is said with the name left selected, and an existing file is the REPLACE question with Cancel first, keys yielded to it while it stands.  Replace really replaces; Cancel really leaves the file alone.
+*src/core/tiku_trk_panel.c:tiku_trk_panel_save_check/_save_text; src/ui/windows/tiku_trk_panel_window.c (open_save, the checked commit, confirmed); src/ui/windows/tiku_trk_find_window.c + src/shell/tiku_trk_desktop.c:find_save_as (the raise); tests/test_panel.c; tests/shell/savequery.script (ask-first, Cancel-first, Replace -- mutation-tested)*
 
 #### AW-053 · important · done
 **The default button's label and enabled state track the selection against the requested node flavors, and a single selected folder always enables it (relabelled "Open" in a save panel).**  
@@ -6543,15 +6538,12 @@ src/shell/tiku_trk_desktop.c:fpanel_draw/fpanel_default; tests/test_panel.c;
 tests/shell/panel.script*  
 *Shell: desktop*  
 
-#### AW-054 · polish · partial
+#### AW-054 · polish · done
 **In a save panel, selecting a single non-directory file copies its name into the save text field without stealing focus.**  
 Only when the pose view has focus and exactly one pose is selected; a selected directory instead enables the button and relabels it Open.  
 `FilePanelPriv.cpp` → `TFilePanel::AdjustButton`
-**MISSING:** The rule is implemented and tested -- a lone non-directory
-copies its name into the save field and the focus is deliberately not taken,
-a folder does not -- but no shell raises a save panel for it to happen in
-(the same absence as AW-052).
-*src/core/tiku_trk_panel.c:tiku_trk_panel_pick_name; tests/test_panel.c*
+**CHECKED:** The rule is implemented, tested and now reachable in the raised save panel (AW-052's caller): a click or an arrow-key step in the list runs `tiku_trk_panel_pick_name`, a lone non-directory's name lands in the field, the focus stays with the list, and a folder relabels the button instead.
+*src/core/tiku_trk_panel.c:tiku_trk_panel_pick_name; src/ui/windows/tiku_trk_panel_window.c (the list-click and key-nav hooks); tests/test_panel.c*
 
 #### AW-055 · core · done
 **Double-clicking a folder (or a link to one) in a panel always navigates into it rather than choosing it; if several are selected the first is entered.**  
@@ -6601,17 +6593,12 @@ window -- the override is on the same table as the chord it overrides.
 arms); tests/test_panel.c*  
 *Shell: desktop*  
 
-#### AW-059 · important · partial
+#### AW-059 · important · done
 **Dropping one entry on a panel navigates to it; dropping a file navigates to its parent and selects the file, and in a save panel also fills in the file's name.**  
 MessageDropFilter accepts exactly one ref, resolves symlinks to directories, and for non-directories schedules SelectChildInParent (delay 0 if already in that directory, else 100ms; period 200ms, timeout 5s) before switching. Drops of other counts are swallowed.  
 `FilePanelPriv.cpp` → `TFilePanel::MessageDropFilter`
-**MISSING:** The rule is implemented and tested -- a dropped folder is
-navigated into, a dropped file lands on its parent with the file pointed at
-and, in a save panel, its name in the field -- but the shells' drag layer
-only knows folder windows and the Deskbar as drop targets, so nothing can be
-dropped on a panel yet.
-*src/core/tiku_trk_panel.c:tiku_trk_panel_drop; tests/test_panel.c;
-src/shell/tiku_trk_desktop.c:do_drop (targets folder windows and the bar only)*
+**CHECKED:** The drag layer now knows the panel: a drop anywhere on it is the panel's -- exactly one carried item navigates it (a folder entered, a file selected in its parent and, in a save panel, named in the field), and any other count is swallowed, exactly as MessageDropFilter swallows it.
+*src/core/tiku_trk_panel.c:tiku_trk_panel_drop; src/shell/tiku_trk_desktop.c:drop_on_panel; src/ui/windows/tiku_trk_panel_window.c:tiku_trk_panel_window_drop; tests/test_panel.c; tests/shell/savequery.script (a dropped file names the save -- mutation-tested)*
 
 #### AW-060 · important · done
 **If the folder a panel is showing gets moved it follows it; if that folder is deleted the panel falls back to the boot volume root.**  

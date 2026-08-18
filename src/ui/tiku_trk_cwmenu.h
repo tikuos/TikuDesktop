@@ -22,6 +22,8 @@
 
 /* One command per partition in the Mount submenu (CW-034). */
 #define TIKU_TRK_CMD_MOUNT_PART_BASE 1600
+/* The save panel's own errand: write the Find panel's query as a file. */
+#define TIKU_TRK_CMD_SAVE_QUERY      1700
 #define TIKU_TRK_MOUNT_PART_MAX 32
 
 typedef struct {

@@ -140,6 +140,8 @@ typedef struct desktop {
     int                  find_len;
     int                  find_serial;
     tiku_trk_find_window_t find_window;
+    /* The query the save panel is asking a destination for. */
+    tiku_trk_query_t     pending_query;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -472,6 +474,10 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_SHUTDOWN) {
         if (alert->chosen != alert->cancel) {
             app->running = 0;
+        }
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_SAVE_REPLACE) {
+        if (alert->chosen != alert->cancel) {
+            tiku_trk_panel_window_confirmed(&app->file_panel);
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_OPEN_ANYWAY) {
         if (alert->chosen != alert->cancel) {
@@ -883,6 +889,29 @@ key_name(const tiku_desk_event_t *event, char printable[2])
         }
         return "";
     }
+}
+
+/**
+ * @brief A drop landing anywhere on the file panel (AW-059).
+ *
+ * Exactly one carried item navigates the panel; any other count is
+ * swallowed, exactly as the original's MessageDropFilter swallows it.
+ * @return nonzero when the drop was the panel's, handled or swallowed.
+ */
+static int
+drop_on_panel(desktop_t *app, int x, int y)
+{
+    tiku_desk_window_t *w = NULL;
+
+    (void)tiku_desk_workspace_hit(app->desk, x, y, &w);
+    if (w == NULL || w != tiku_trk_panel_window_handle(&app->file_panel)) {
+        return 0;
+    }
+    if (app->drag.count == 1) {
+        tiku_trk_panel_window_drop(&app->file_panel, app->drag.path[0]);
+    }
+    app->dirty = 1;
+    return 1;
 }
 
 /**
@@ -1298,6 +1327,31 @@ fpanel_commit(void *context, void *target, int command,
     const char *selection[16];
     int count;
 
+    if (command == TIKU_TRK_CMD_SAVE_QUERY && destination != NULL) {
+        /* The panel already checked the destination (AW-052); what is
+         * left is the writing: the query's saved text as a real file,
+         * and the same record under the file's name so the Queries menu
+         * knows it too. */
+        char text[TIKU_TRK_QUERY_PRED_MAX * 2];
+        char err[160];
+        const char *base = strrchr(destination, '/');
+        int n = tiku_trk_query_serialise(&app->pending_query, text,
+                                         sizeof text);
+
+        if (n < 0 || app->backend->ops->write == NULL ||
+            app->backend->ops->write(app->backend, destination, text,
+                                     (size_t)n, err, sizeof err) != 0) {
+            snprintf(app->status, sizeof app->status,
+                     "could not save the query");
+            return;
+        }
+        (void)tiku_trk_query_save(&app->pending_query,
+                                  base != NULL ? base + 1 : destination,
+                                  app->store);
+        (void)tiku_trk_store_flush(app->store);
+        snprintf(app->status, sizeof app->status, "query saved");
+        return;
+    }
     if (folder == NULL || destination == NULL) {
         return;
     }
@@ -1317,6 +1371,21 @@ fpanel_commit(void *context, void *target, int command,
         tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
                             destination);
     }
+}
+
+/** @brief Find's Save with nowhere attached: ask WHERE with the panel. */
+static void
+find_save_as(void *context)
+{
+    desktop_t *app = context;
+    const char *home = getenv("HOME");
+
+    tiku_trk_find_build(&app->find_window.model, &app->pending_query);
+    tiku_trk_panel_window_open_save(&app->file_panel, app,
+                                    TIKU_TRK_CMD_SAVE_QUERY,
+                                    (home != NULL && home[0] != '\0')
+                                        ? home : "/",
+                                    "query");
 }
 
 /** @brief Ask the reusable panel where an operation should put its items. */
@@ -2252,6 +2321,9 @@ tracker_run(int argc, char **argv)
     tiku_trk_panel_window_init(&app.file_panel, app.desk, app.backend,
         app.store, &app.nicons, app.row_h, DESK_W, DESK_H, &app.dirty,
         fpanel_commit, &app);
+    tiku_trk_panel_window_set_alert(&app.file_panel, alert_model(&app));
+    app.find_window.save_as = find_save_as;
+    app.find_window.save_as_context = &app;
     {
         const char *home = getenv("HOME");
         char path[TIKU_TRK_PATH_MAX] = "";
@@ -3695,7 +3767,9 @@ tracker_run(int argc, char **argv)
                 app.dock_drag = 0;
                 app.deskbar_press = 0;
                 (void)tiku_trk_band_controller_finish(&app.band_controller);
-                if (dropped && drop_on_info_icon(&app, ev.x, ev.y,
+                if (dropped && drop_on_panel(&app, ev.x, ev.y)) {
+                    /* Consumed by the panel, action or not (AW-059). */
+                } else if (dropped && drop_on_info_icon(&app, ev.x, ev.y,
                                                  ev.modifiers)) {
                     /* Taken by an Info window's icon: the folder drop
                      * machinery must not run a second time. */

@@ -1421,6 +1421,15 @@ deserialise(tiku_trk_query_t *q, const char *in)
 }
 
 int
+tiku_trk_query_serialise(const tiku_trk_query_t *q, char *buf, size_t max)
+{
+    if (q == NULL || buf == NULL) {
+        return -1;
+    }
+    return serialise(q, buf, max);
+}
+
+int
 tiku_trk_query_save(const tiku_trk_query_t *q, const char *name,
                     struct tiku_trk_store *store)
 {

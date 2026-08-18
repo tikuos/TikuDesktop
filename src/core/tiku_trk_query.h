@@ -325,6 +325,10 @@ struct tiku_trk_store;
  *
  * @return 0, or -1 when the store refused.
  */
+/** @brief The query as its saved text form.  Length, or -1. */
+int tiku_trk_query_serialise(const tiku_trk_query_t *q, char *buf,
+                             size_t max);
+
 int tiku_trk_query_save(const tiku_trk_query_t *q, const char *name,
                         struct tiku_trk_store *store);
 

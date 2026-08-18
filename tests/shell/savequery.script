@@ -1,0 +1,42 @@
+# shell: desktop
+# home: fixture
+# AW-052/AW-054/AW-059: the save panel is REACHED -- Find's Save with
+# nothing attached asks WHERE -- and it checks its destination, asks
+# before replacing, and takes a dropped file as an answer.
+wait 10
+key f ctrl
+wait 6
+key z
+wait 2
+click 642 405
+wait 6
+note Return takes the seeded name into the home folder
+key Return
+wait 8
+expect-file /tmp/trk_home/query
+expect-file-has /tmp/trk_home/query z
+note reopened, a dropped file navigates the panel and lends its name
+click 642 405
+wait 6
+press 85 138
+wait 2
+move 300 300
+wait 2
+move 400 300
+wait 2
+release 400 300
+wait 5
+note the panel now says a.txt in /tmp/trk_script: saving must ASK first
+key Return
+wait 5
+expect-alert Replace
+note Cancel is first: Escape declines and the file is unharmed
+key Escape
+wait 3
+expect-file-has /tmp/trk_script/a.txt hi
+key Return
+wait 5
+key r
+wait 8
+expect-file-has /tmp/trk_script/a.txt v4
+quit

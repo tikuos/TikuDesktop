@@ -31,6 +31,10 @@ typedef struct {
     char                  *status;
     size_t                 status_size;
     tiku_trk_find_window_search_fn search;
+    /* Raised when Save has nowhere attached to save INTO: the shell
+     * answers with the save panel (AW-052). */
+    void                 (*save_as)(void *context);
+    void                  *save_as_context;
     void                  *search_context;
 } tiku_trk_find_window_t;
 

@@ -202,6 +202,13 @@ go(tiku_trk_panel_window_t *controller, const char *directory)
     reload(controller, NULL);
 }
 
+/** @brief Mirror the model's save name into the visible editor. */
+static void
+sync_name(tiku_trk_panel_window_t *controller)
+{
+    tiku_trk_edit_start(&controller->name, controller->model.name);
+}
+
 static void
 commit(tiku_trk_panel_window_t *controller)
 {
@@ -210,6 +217,41 @@ commit(tiku_trk_panel_window_t *controller)
     int count;
 
     if (controller->target == NULL) {
+        return;
+    }
+    if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
+        /* Checked BEFORE anything is written (AW-052): a refusal is said
+         * and the name left selected for another try; an existing file is
+         * a QUESTION, Cancel first, and the checked path waits for the
+         * answer rather than being recomputed after it. */
+        tiku_trk_save_t why = tiku_trk_panel_save_check(&controller->model,
+            controller->backend, controller->pending_save,
+            sizeof controller->pending_save);
+
+        if (why == TIKU_TRK_SAVE_OK) {
+            if (controller->commit != NULL) {
+                controller->commit(controller->commit_context,
+                                   controller->target, controller->command,
+                                   controller->pending_save);
+            }
+            tiku_trk_panel_window_close(controller);
+        } else if (why == TIKU_TRK_SAVE_REPLACE && controller->alert != NULL) {
+            char ask[160];
+
+            snprintf(ask, sizeof ask,
+                     "An item named \"%.64s\" already exists.  Replace it?",
+                     controller->model.name);
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+                                TIKU_TRK_ALERT_TAG_SAVE_REPLACE, ask,
+                                "Cancel|Replace");
+        } else if (controller->alert != NULL) {
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+                                TIKU_TRK_ALERT_TAG_ERROR,
+                                tiku_trk_panel_save_text(why), "Cancel");
+            controller->name.sel_a = 0;
+            controller->name.sel_b = controller->name.len;
+        }
+        mark_dirty(controller);
         return;
     }
     count = selection(controller, selected, 8);
@@ -224,6 +266,48 @@ commit(tiku_trk_panel_window_t *controller)
                            controller->command, destination);
     }
     tiku_trk_panel_window_close(controller);
+}
+
+void
+tiku_trk_panel_window_confirmed(tiku_trk_panel_window_t *controller)
+{
+    if (controller == NULL || controller->pending_save[0] == '\0') {
+        return;
+    }
+    if (controller->commit != NULL) {
+        controller->commit(controller->commit_context, controller->target,
+                           controller->command, controller->pending_save);
+    }
+    tiku_trk_panel_window_close(controller);
+}
+
+void
+tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
+                                tiku_trk_alert_t *alert)
+{
+    if (controller != NULL) {
+        controller->alert = alert;
+    }
+}
+
+void
+tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
+                           const char *path)
+{
+    char select[TIKU_TRK_NAME_MAX];
+
+    if (controller == NULL || controller->window == NULL ||
+        !controller->window->open || path == NULL) {
+        return;
+    }
+    if (tiku_trk_panel_drop(&controller->model, controller->backend, path,
+                            select, sizeof select)) {
+        reload(controller, select[0] != '\0' ? select : NULL);
+        if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
+            sync_name(controller);
+        }
+        mark_dirty(controller);
+    }
 }
 
 static void
@@ -302,6 +386,16 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
     case PANEL_HIT_LIST:
         controller->model.focus = TIKU_TRK_PANEL_FOCUS_LIST;
         tiku_trk_poseview_click(controller->view, row, 0u);
+        {
+            /* A lone file lends its name to the save field, focus left
+             * where it is (AW-054). */
+            tiku_trk_model_t picked[8];
+            int n = selection(controller, picked, 8);
+
+            if (tiku_trk_panel_pick_name(&controller->model, picked, n)) {
+                sync_name(controller);
+            }
+        }
         now = input->time_us != 0 ? input->time_us : tiku_trk_now();
         if (row >= 0 && now - controller->press_at < 500000 &&
             controller->press_row == row) {
@@ -387,6 +481,31 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
 }
 
 void
+tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
+                                void *target, int command,
+                                const char *initial_directory,
+                                const char *initial_name)
+{
+    tiku_trk_panel_window_open(controller, target, command,
+                               initial_directory);
+    if (controller->window == NULL) {
+        return;
+    }
+    /* The same panel asked the other way round: a name to be written
+     * rather than an entry to be chosen, keys landing in the name first. */
+    controller->model.mode = TIKU_TRK_PANEL_SAVE;
+    controller->model.focus = TIKU_TRK_PANEL_FOCUS_NAME;
+    snprintf(controller->model.name, sizeof controller->model.name, "%s",
+             initial_name != NULL ? initial_name : "");
+    controller->model.name_len = (int)strlen(controller->model.name);
+    tiku_trk_edit_start(&controller->name, controller->model.name);
+    controller->pending_save[0] = '\0';
+    snprintf(controller->window->title, sizeof controller->window->title,
+             "%s", "Save");
+    mark_dirty(controller);
+}
+
+void
 tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller)
 {
     if (controller->window != NULL) {
@@ -429,6 +548,9 @@ int
 tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                           unsigned modifiers, char character)
 {
+    if (controller->alert != NULL && controller->alert->open) {
+        return 0;               /* the question owns the keys (AW-052) */
+    }
     tiku_trk_model_t selected[8];
     tiku_trk_panel_key_t action;
     unsigned tracker_mods = 0;
@@ -494,10 +616,17 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
     default:
         if (controller->model.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
             (key == TIKU_DESK_KEY_UP || key == TIKU_DESK_KEY_DOWN)) {
+            tiku_trk_model_t picked[8];
+            int n;
+
             (void)tiku_trk_poseview_key_nav(controller->view,
                 key == TIKU_DESK_KEY_UP ? TIKU_TRK_KEY_UP
                                         : TIKU_TRK_KEY_DOWN,
                 tracker_mods);
+            n = selection(controller, picked, 8);
+            if (tiku_trk_panel_pick_name(&controller->model, picked, n)) {
+                sync_name(controller);
+            }
         } else if (controller->model.mode == TIKU_TRK_PANEL_SAVE &&
                    controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME) {
             if (key == TIKU_DESK_KEY_BACKSPACE) {

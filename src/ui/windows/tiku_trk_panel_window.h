@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include "tiku_desk_window.h"
+#include "tiku_trk_alert.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_poseview.h"
@@ -41,6 +42,10 @@ typedef struct {
     int                    press_row;
     tiku_trk_panel_window_commit_fn commit;
     void                  *commit_context;
+    /* The shell's alert, for a save's refusals and its Replace question;
+     * the checked path waits here while the question is on screen. */
+    tiku_trk_alert_t      *alert;
+    char                   pending_save[TIKU_TRK_PATH_MAX];
 } tiku_trk_panel_window_t;
 
 void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
@@ -51,6 +56,27 @@ void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
 
 void tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller,
     void *target, int command, const char *initial_directory);
+
+/** @brief Raise the panel as a SAVE panel, name field seeded and focused. */
+void tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
+    void *target, int command, const char *initial_directory,
+    const char *initial_name);
+
+/** @brief The Replace question said replace (AW-052). */
+void tiku_trk_panel_window_confirmed(tiku_trk_panel_window_t *controller);
+
+/**
+ * @brief A drop landed on the panel (AW-059).
+ *
+ * One entry navigates the panel; a file is selected in its parent and, in
+ * a save panel, named in the field.  Every drop on the panel is consumed.
+ */
+void tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
+                                const char *path);
+
+/** @brief Give the panel the shell's alert for its save questions. */
+void tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
+                                     tiku_trk_alert_t *alert);
 void tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller);
 void tiku_trk_panel_window_destroy(tiku_trk_panel_window_t *controller);
 

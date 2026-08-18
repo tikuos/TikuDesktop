@@ -69,6 +69,15 @@ save(tiku_trk_find_window_t *controller)
 {
     if (tiku_trk_find_save_current(&controller->model,
                                    (int64_t)time(NULL)) != 0) {
+        /* Nothing attached to save INTO: the question becomes WHERE, and
+         * that question is the save panel's (AW-052).  The old fallback
+         * -- a silent store record under an invented name -- remains only
+         * for a shell that wired no panel. */
+        if (controller->save_as != NULL) {
+            controller->save_as(controller->save_as_context);
+            return;
+        }
+        {
         tiku_trk_query_t query;
         char name[TIKU_TRK_NAME_MAX];
 
@@ -82,6 +91,7 @@ save(tiku_trk_find_window_t *controller)
             set_status(controller, message);
         } else {
             set_status(controller, "could not save the query");
+        }
         }
     } else {
         set_status(controller, tiku_trk_find_note(&controller->model));

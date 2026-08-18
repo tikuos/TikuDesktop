@@ -1007,9 +1007,9 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
     draw_button(s, button_rect(f, frame, 0),
                 tiku_trk_find_primary_is_save(f) ? "Save" : "Search",
                 TIKU_DESK_S_DEFAULT);
-    draw_button(s, button_rect(f, frame, 1), "Save",
-                tiku_trk_find_can_save_current(f)
-                    ? TIKU_DESK_S_NORMAL : TIKU_DESK_S_DISABLED);
+    /* Always live: with something attached it saves back, and with
+     * nothing attached it asks WHERE -- the save panel (AW-052). */
+    draw_button(s, button_rect(f, frame, 1), "Save", TIKU_DESK_S_NORMAL);
     draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_DESK_S_NORMAL);
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
@@ -1049,8 +1049,7 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     if (in(button_rect(f, frame, 0), x, y)) {
         return TIKU_TRK_FIND_HIT_SEARCH;
     }
-    if (tiku_trk_find_can_save_current(f) &&
-        in(button_rect(f, frame, 1), x, y)) {
+    if (in(button_rect(f, frame, 1), x, y)) {
         return TIKU_TRK_FIND_HIT_SAVE;
     }
     if (in(button_rect(f, frame, 2), x, y)) {
