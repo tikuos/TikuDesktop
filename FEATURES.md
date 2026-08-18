@@ -7472,13 +7472,14 @@ ActivateApp: single-team case just be_roster->ActivateApp (refusing when the tar
 **SUBSYSTEM:** Multi-team roster and workspaces remain outside the single-process desktop boundary.
 **PORT:** Committing a switch brings the chosen application's windows forward in their relative order with the selected one last -- the whole of what activation can MEAN inside a single-process, single-workspace desktop, which is this port's declared boundary (the SUBSYSTEM note).  The roster now registers every user process (DB-014/015), so the switcher's strip is real; what other processes lack is windows to raise, because they draw on their own connections rather than through this desktop.
 
-#### DB-058 · polish · partial
+#### DB-058 · polish · done
 **The switcher animates: the outgoing icon shrinks, the strip scrolls to the new slot, the incoming icon grows, and arrow scrollers appear at the ends when there are more apps than the seven visible slots**  
 AnimateIcon does two 20ms inset steps each way between the 24px and 48px cached icons via an offscreen bitmap; scroll step is half the slot size and doubles when wrapping more than 4 slots; the selected icon is drawn large only when not auto-scrolling. Clicking the left/right scroller area jumps by SlotCount-1; clicking above/below the window list scrolls one window  
 `Switcher.cpp` → `TIconView::AnimateIcon`  
 **TIKU:** Animation timing is user-visible feel; on a constrained target consider a static fallback but keep the slot/scroller semantics  
 **PORT:** Every icon's size is a function of the switcher's own clock, so a redraw at any instant shows the animation where it actually is rather than where a frame counter believes it is.  The two icons TRADE size -- their sum is constant -- which is what makes the pair say which way the selection went, and the steps are quantised because a smooth slide would be a different animation wearing the same numbers.  Scroller arrows appear only at an end there is more strip beyond.  
-**MISSING:** The strip does not scroll SMOOTHLY to the new slot; it jumps, since the slot geometry is computed rather than tweened.  Icons are drawn from one cached size scaled, not from separate 24 and 48 px art.  
+**PORT (continued):** The strip now SLIDES to the new slot on the same quantised clock the icon sizes ride -- where it left from is remembered and each step covers its share, landing exactly -- and the icon-art clause turned out better than the source's: every animated size is real vector art rasterized AT that size (the HVIF cache is per size), not two cached rasters blended.  
+*src/core/tiku_trk_switcher.c:tiku_trk_switcher_scroll_px; src/ui/windows/tiku_trk_switcher_window.c (the sliding draw); tests/test_switcher.c (DB-058, mutation-tested)*  
 *Shell: desktop*  
 #### DB-059 · polish · done
 **Clicking an application icon in the switcher selects it, and pressing a mouse button outside the switcher window dismisses it without switching**  

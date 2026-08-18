@@ -73,6 +73,7 @@ typedef struct {
     int               sel;          /* selected application              */
     int               selwin;       /* selected window within it         */
     int               scroll;       /* first visible slot                */
+    int               scroll_from;  /* where the strip is sliding FROM   */
     int64_t           opened;
     int64_t           last_switch;
     /* The selection the strip is animating AWAY from, and when it left.
@@ -135,6 +136,15 @@ int tiku_trk_switcher_animating(const tiku_trk_switcher_t *s, int64_t now);
  * @param right Non-zero for the right-hand one.
  */
 int tiku_trk_switcher_scroller(const tiku_trk_switcher_t *s, int right);
+
+/**
+ * @brief The strip's x offset in pixels at @p now (DB-058).
+ *
+ * The scroll SLIDES to the new slot on the same quantised clock the icon
+ * sizes ride, @p slot_w pixels per slot, rather than jumping whole.
+ */
+int tiku_trk_switcher_scroll_px(const tiku_trk_switcher_t *s, int slot_w,
+                                int64_t now);
 
 /** @brief Where the panel sits on a screen of @p sw by @p sh (DB-060). */
 void tiku_trk_switcher_place(int sw, int sh, int w, int h, int *x, int *y);

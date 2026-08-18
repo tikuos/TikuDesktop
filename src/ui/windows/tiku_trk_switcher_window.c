@@ -52,17 +52,28 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
     slots = controller->model.n < TIKU_TRK_SW_SLOTS
           ? controller->model.n : TIKU_TRK_SW_SLOTS;
-    for (i = 0; i < slots; i++) {
+    {
+        /* The strip slides rather than jumps: everything below draws
+         * relative to where the scroll IS on the animation clock
+         * (DB-058). */
+        int spx = tiku_trk_switcher_scroll_px(&controller->model,
+                                              SWITCHER_SLOT, now);
+        int base = controller->model.scroll * SWITCHER_SLOT - spx;
+
+    for (i = -1; i <= slots; i++) {
         int which = controller->model.scroll + i;
         int size, center_x, center_y;
         tiku_desk_rect_t box;
 
+        if (which < 0) {
+            continue;
+        }
         if (which >= controller->model.n) {
             break;
         }
         size = tiku_trk_switcher_icon_size(&controller->model, which, now);
         center_x = content.x + SWITCHER_PAD + SWITCHER_ARROW
-                 + i * SWITCHER_SLOT + SWITCHER_SLOT / 2;
+                 + i * SWITCHER_SLOT + SWITCHER_SLOT / 2 + base;
         center_y = content.y + SWITCHER_PAD + TIKU_TRK_SW_LARGE / 2;
         box.x = center_x - size / 2;
         box.y = center_y - size / 2;
@@ -74,6 +85,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         if (!tiku_trk_icon_paint(surface, "app", box.x, box.y, size)) {
             tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
         }
+    }
     }
     if (tiku_trk_switcher_scroller(&controller->model, 0)) {
         tiku_desk_text(surface, font, content.x + 4,

@@ -208,6 +208,34 @@ main(void)
               "and at the right end only the left one");
     }
 
+    printf("\nthe strip slides to the new slot (DB-058)\n");
+    {
+        tiku_trk_switcher_t t;
+        int i2;
+
+        tiku_trk_switcher_init(&t);
+        for (i2 = 0; i2 < TIKU_TRK_SW_SLOTS + 3; i2++) {
+            char nm[16];
+
+            snprintf(nm, sizeof nm, "app%d", i2);
+            (void)tiku_trk_switcher_app(&t, nm, 0);
+        }
+        tiku_trk_switcher_open(&t, 90000000, 0);
+        for (i2 = 0; i2 < TIKU_TRK_SW_SLOTS; i2++) {
+            tiku_trk_switcher_open(&t, 90000000 + i2, 0);
+        }
+        /* The selection just crossed the right edge: scroll went 0 -> 1
+         * and the strip is mid-slide. */
+        check(t.scroll > 0 && t.scroll_from == t.scroll - 1, "DB-058",
+              "crossing the edge remembers where the strip slid from");
+        check(tiku_trk_switcher_scroll_px(&t, 100, t.moved + 1) ==
+                  t.scroll_from * 100 + 50, "DB-058",
+              "one step in, the strip is half way to the new slot");
+        check(tiku_trk_switcher_scroll_px(&t, 100,
+                  t.moved + 2 * TIKU_TRK_SW_STEP_US) == t.scroll * 100,
+              "DB-058", "and settled, it sits exactly on it");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the switcher holds");
     return fails ? 1 : 0;
 }

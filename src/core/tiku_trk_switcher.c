@@ -96,12 +96,38 @@ tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
     if (s->sel >= s->n) { s->sel = 0; }
     if (s->sel < 0)     { s->sel = s->n - 1; }
     s->selwin = 0;
-    /* The strip follows the selection rather than the other way round. */
+    /* The strip follows the selection rather than the other way round --
+     * and it SLIDES there, so where it left from is remembered
+     * (DB-058). */
+    s->scroll_from = s->scroll;
     if (s->sel < s->scroll) {
         s->scroll = s->sel;
     } else if (s->sel >= s->scroll + TIKU_TRK_SW_SLOTS) {
         s->scroll = s->sel - TIKU_TRK_SW_SLOTS + 1;
     }
+}
+
+int
+tiku_trk_switcher_scroll_px(const tiku_trk_switcher_t *s, int slot_w,
+                            int64_t now)
+{
+    int64_t gone;
+    int done;
+
+    if (s == NULL) {
+        return 0;
+    }
+    if (!tiku_trk_switcher_animating(s, now) ||
+        s->scroll_from == s->scroll) {
+        return s->scroll * slot_w;
+    }
+    gone = now - s->moved;
+    done = (int)(gone / TIKU_TRK_SW_STEP_US) + 1;
+    if (done > TIKU_TRK_SW_STEPS) { done = TIKU_TRK_SW_STEPS; }
+    /* The same quantised clock the icon sizes ride: each step covers a
+     * share of the distance, and the last step lands exactly. */
+    return s->scroll_from * slot_w +
+           (s->scroll - s->scroll_from) * slot_w * done / TIKU_TRK_SW_STEPS;
 }
 
 int
