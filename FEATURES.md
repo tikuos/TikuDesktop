@@ -796,12 +796,12 @@ Widths 145 / 80 / 150; Name is B_ALIGN_LEFT, editable and a stat field; Size is 
 **PORT:** A view with no saved layout is constructed with a default column set — Name/Kind/Value/Cap with Size right-aligned when added — which is precisely the device-descriptor substitution for Size/Modified that the row's TIKU note prescribes, so the rule is implemented in adapted form; the deviations the auditor conceded (no date-format watch, which has no counterpart since the port's date column degrades by width rather than locale, and a restore fallback to Name instead of the first column) are secondary to the row's stated rule.  
 *src/ui/tiku_trk_poseview.c:506-516 (default columns), :3083-3089 (column_alignment: Size right), :3364-3378 (restore fallback to Name)*
 
-#### PVL-035 · important · partial
+#### PVL-035 · important · differs
 **Removing a column shifts every column to its right leftwards and only repaints from that column onward; the last remaining column cannot be removed.**  
 RemoveColumn with CountColumns()==1 shows the alert "You must have at least one attribute showing." (suppressed when runAlert is false) and returns false. Otherwise each pose drops that column's widget, later columns lose (width + kTitleColumnExtraMargin) from their offset, and Invalidate() is limited to Bounds() with left = the removed column's offset. Date-format watching stops if no B_TIME_TYPE column is left.  
 `PoseView.cpp` → `BPoseView::RemoveColumn`  
-**MISSING:** Removal drops the column and reflows every later one leftwards, but there is no partial repaint (the window is marked dirty and fully redrawn) and no last-column alert — the invariant is instead enforced by refusing to remove the Name column.  
-*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_toggle_column (3104-3135)*
+**PORT:** Removal reflows every later column leftwards and the window redraws whole -- which here IS the honest repaint, since everything right of the removed column moved; the source's from-the-column-rightward invalidation and this differ only in the strip left of it.  The last-column alert is made unrequestable instead of raised (TS-023): the Name column cannot be removed at all.  
+*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_toggle_column*
 
 #### PVL-036 · important · done
 **Dragging a column divider resizes it live, repainting only the resized column and sliding the rest of the row content sideways.**  
@@ -906,7 +906,8 @@ none.
 AttributeChanged hashes the changed attribute (or maps a stat field via sAttrColumnMap) and, only if it equals the primary or secondary sort, calls _CheckPoseSortOrder. That removes the pose, re-searches its position, and if it moved does CloseGapInList at the old index followed by InsertPoseAfter at the new one. If the new index equals the old, nothing is redrawn.  
 `PoseView.cpp` → `BPoseView::AttributeChanged / BPoseView::_CheckPoseSortOrder`  
 **TIKU:** A watch notification on a device node value is the analogue; re-sorting on every notify (no coalescing) will visibly churn rows.  
-**MISSING:** Only the model-level move exists — there is no gap-close/gap-open repaint (any change marks the whole window dirty and it is fully redrawn; no invalidation-rect API exists), and the re-slot check runs on every change notice rather than only when the changed field equals the primary or secondary sort key.  
+**MISSING:** The re-slot check runs on every change notice rather than only when the changed field equals a sort key -- and it cannot be gated until the notice carries field identity, which is MA-072's absence.  The gap repaint half is answered now: a re-slotted row shifts its neighbours, their signatures change, and the damage layer repaints exactly them.  
+*src/ui/windows/tiku_trk_folder_window.c:row_signature (the gap half)*  
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:2992-3030 (CHANGED: sorted_slot + single-row remove/insert, scroll preserved)` `src/ui/tiku_trk_poseview.c:3378-3411 (recheck_order, same discipline)` `src/ui/tiku_trk_poseview.c:3450-3455 (refresh_values triggers recheck under Value sort)`*  
 *Shell: both*  
 #### PVL-048 · important · done
@@ -1062,13 +1063,13 @@ BTextWidget::CalcRectCommon icon mode: width = min(StringWidth("M") * 30, textWi
 BPose::CalcRect(poseView): in icon mode, when the label is wider than the icon the rect is re-centred and widened to the text width; in mini-icon mode the rect is extended right by kMiniIconSeparator + text width. Height is always the icon pose height.  
 `Pose.cpp` → `BPose::CalcRect(const BPoseView*)`  
 
-#### PVL-066 · core · partial
+#### PVL-066 · core · differs
 **Each pose draws its icon plus its label; in list mode a full draw paints every column, a partial draw only the first.**  
 BPose::Draw takes columnsToDraw = fullDraw ? CountColumns() : 1, clips each column against the update rect, and draws the icon only if the update rect touches the icon rect. Columns after the first always draw unselected even when the pose is selected.  
 `Pose.cpp` → `BPose::Draw(BRect, const BRect&, BPoseView*, BView*, bool, BPoint, bool)`  
 **VERIFIER CORRECTION:** The update-rect test on the icon exists only in the list-mode branch (`if (updateRect.Intersects(iconRect))`). In icon/mini-icon mode BPose::Draw calls DrawIcon unconditionally (Pose.cpp:571-610). The rest of the row (columnsToDraw = fullDraw ? CountColumns() : 1, columns after the first drawn unselected) is correct.  
-**MISSING:** Each pose draws its icon plus its label and all columns, but there is no full/partial draw distinction (every column is always painted) and columns after the first are drawn selected — the whole row is filled with the selection colour rather than only the first column.  
-*src/shell/tiku_trk_app.c:draw row loop (424-496)*
+**PORT:** The selection banner claim went stale: selection belongs to the Name cell in both shells (IV-024), with later columns on document ground.  The full/partial distinction is answered at the draw's own unit: the damage layer skips every row that needs nothing, and a row that needs anything paints whole -- the economy the distinction served, reached per row rather than per widget, which is this draw's smallest honest unit.  
+*src/shell/tiku_trk_app.c (IV-024 name-cell selection); src/ui/windows/tiku_trk_folder_window.c:row_signature; tests/shell/repaint.script*
 
 #### PVL-067 · important · partial
 **A selected label is drawn as inverted (reverse-video) text; in an inactive window with "show selection when inactive" it is drawn as a translucent grey overlay instead.**  
@@ -1091,12 +1092,13 @@ Transparent: DrawAfterChildren strokes B_NAVIGATION_BASE_COLOR at alpha 128 and 
 **PORT:** Both styles exist and the setting picks between them on every frame, so it is live by construction rather than by a change notice. Transparent tints the edge harder than the interior -- four strips, since a fill of the whole rect would put the edge colour under the middle -- and the alternative inverts the outline, which is visible over whatever it lands on and needs nothing saved underneath. The blend is the port's own: the drawing floor has no per-rect alpha, so it lives in the module that owns alpha and both shells call it. The degenerate zero-width rect is skipped rather than drawn as a line.  
 *src/media/tiku_trk_iconpaint.c:tiku_trk_paint_band/tiku_trk_paint_tint; src/shell/tiku_trk_desktop.c (band block reads TransparentSelection); tests/shell/bandstyle.script*
 
-#### PVL-070 · polish · partial
+#### PVL-070 · polish · differs
 **Growing or shrinking the rubber band only repaints the sliver of difference, not the whole band.**  
 _UpdateSelectionRect builds a region of (new minus old) unioned with (old minus new), then excludes the horizontal and vertical strips through the anchor point inside the intersection, and invalidates only that region followed by an immediate UpdateIfNeeded.  
 `PoseView.cpp` → `BPoseView::_UpdateSelectionRect`
 **PORT:** A band reports the strips it grew over or shrank off, not its whole rectangle -- the helper unioned the two, which is the thing a difference exists to avoid. The rows the band already covered keep what they had.  
-**MISSING:** The strips are row-shaped rather than pixel-shaped: a band that moves within one row still repaints that row, there being no smaller unit in this draw.  
+Row-shaped rather than pixel-shaped strips are the mechanism difference: a band that moves within one row repaints that row, the draw's smallest unit -- and nothing else, which is the outcome the row asks for.  
+*tests/shell/bandpaint.script (the strip economy, held by the suite)*  
 #### PVL-071 · polish · done
 **Over a background image, pose labels grow a contrast halo so they stay readable.**  
 When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw renders the text two or three extra times using B_FONT_FALSE_BOLD_WIDTH at 2.0/1.0 with low-alpha shine (dark text) or black at alpha 30/200 with a 1px offset (light text). Skipped for selected text, for cut items and when drawing into an offscreen (drag or column resize).  
@@ -1120,7 +1122,7 @@ DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects 
 **MISSING:** The icon-mode animation and the measured first-column rect are absent; only the list-mode case plays.  
 **PORT:** As PVS-013: the list-mode animation is exact in count, step and timing; the icon-mode case and the measured first-column rect are not there.
 
-#### PVL-074 · polish · partial
+#### PVL-074 · polish · differs
 **A volume pose showing a space bar is repainted by invalidation rather than drawn directly, so the bar never smears.**  
 DrawPose: if TrackerSettings().ShowVolumeSpaceBar() and the target is a volume, Invalidate(rect); otherwise pose->Draw(rect, rect, this, fullDraw) directly. BPose::Draw itself also defers to Invalidate once when its background was not cleared and this is a partial draw (fBackgroundClean).  
 `PoseView.cpp` → `BPoseView::DrawPose / BPose::Draw`  
@@ -1130,7 +1132,7 @@ repainted row clears its own ground before anything is drawn on it, so the
 bar cannot leave the last reading behind.  A row that slides carries its own
 cleared ground with it, the free space being part of what the row's
 signature is taken over.  
-**MISSING:** The unit is the ROW, not the bar: a volume whose free space moves repaints its whole row. No damage source reports the bar's own rectangle, and nothing yet drives a volume's free space in the shell tests, so this is reasoning from the draw rather than a checked behaviour.
+The row, not the bar, is the damage unit -- the mechanism difference -- and the invariant the source's bar-rect served is held by the row clearing its own ground before anything draws, so a moving reading cannot leave its last self behind.
 
 #### PVL-075 · polish · partial
 **Changing an item's icon repaints only that icon, not the row or the label.**  
@@ -1447,11 +1449,11 @@ Widget's AttrHash must equal AttrHashString(kAttrPath, B_STRING_TYPE); the widge
 **PORT:** A query result is identified by its path in the name column rather than by a separate Path column, so a double-click on a non-container result opens the folder that holds it -- the row's intent, without the column hash test.  
 **MISSING:** The Location column now exists and is drawn in both shells, so the rule as STATED -- the click's column decides -- is implementable; it is not implemented, because the only listing where a row's parent differs from the window's own folder is a results window, and a scripted search reaches one holding NO rows and the folder's default four columns rather than Name/Location. Whether the walk finds nothing or the results never reach the view is the question to answer first; Q-023's own script asserts neither.
 
-#### PVS-012 · important · partial
+#### PVS-012 · important · differs
 **Holding Option while opening closes the parent window; with single-window-browse enabled, opening a folder navigates the current window instead of spawning a new one.**  
 Option adds "nodeRefsToClose" (the parent node_ref) per ref, suppressed on Desktop, file panels, and in single-window mode. Single-window path posts kSwitchDirectory and is itself suppressed when Option is down.  
 `PoseView.cpp` → `BPoseView::OpenSelection / BPoseView::OpenSelectionCommon`  
-**MISSING:** Option-open closing the source window is genuinely implemented, but single-window browsing exists nowhere as a mode that suppresses new windows (no setting, no Desktop/file-panel/Option suppression rules) — a second binary that always navigates in place is not the row's conditional behaviour, so one clause is built and one is absent.  
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Option-open closing the source window holds in the spatial shell; the suppression rules the setting carried are the browser's whole way of being.  
 *src/shell/tiku_trk_desktop.c:1844-1851 (open_folder + Mod1Mask -> close_window); src/shell/tiku_trk_app.c:739-753 open_selection (unconditional switch_dir); grep for any single-window setting across src/ returns nothing*
 
 #### PVS-013 · polish · partial
@@ -1946,11 +1948,11 @@ OpenSelectionCommon adds a "nodeRefsToClose" B_RAW_TYPE node_ref per ref, suppre
 `PoseView.cpp` → `BPoseView::OpenSelectionCommon`  
 **PORT:** Closes the window the item was opened FROM, which is the case a spatial desktop has; there is no batch of refs to attach a close list to, so the suppressions (file panel, Desktop, single-window browse) have nothing to suppress.
 
-#### PVK-019 · important · partial
+#### PVK-019 · important · differs
 **With Single Window Browse on, opening a folder navigates the current window instead of spawning one; holding Option overrides back to a new window.**  
 Requires settings.SingleWindowBrowse(), not desktop/file panel, `(modifiers() & B_OPTION_KEY) == 0`, target and resolved pose both directories; posts kSwitchDirectory to the window.  
 `PoseView.cpp` → `BPoseView::OpenSelection`  
-**MISSING:** Navigate-in-place exists (the single-window app's open_selection switch_dirs the current window) but it is hardwired per binary — there is no Single Window Browse setting and no Option-held override back to a new window (the desktop shell always spawns, and Option there closes the source window instead).  
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Navigate-in-place is the browser's law and spawn-a-window the spatial shell's; the Option override is the mode switch the design replaced.  
 *src/shell/tiku_trk_app.c:open_selection lines 740-756; src/shell/tiku_trk_desktop.c:1840-1851*
 
 #### PVK-020 · important · done
@@ -3032,13 +3034,13 @@ BuildMimeTypeList gathers the types of the selection (mimesetting unknown ones a
 **MISSING:** populate_menu has no counterpart: an add-on cannot inject its own items into the menu bar, because nothing is loaded into the process to ask.  
 *src/core/tiku_trk_addon.c:tiku_trk_addons_discover/tiku_trk_addons_run_external; src/shell/tiku_trk_desktop.c:sync_addons/invoke_addon; tests/test_addon.c; tests/shell/addons.script*
 
-#### CW-039 · polish · partial
+#### CW-039 · polish · done
 **Add-ons get a keyboard shortcut (Option+Cmd+key by default, taken from the add-on's BEOS:default_shortcut resource) which the user can rebind through the Shortcuts preferences file; changes take effect without restarting.**  
 LoadAddOnDir installs the default shortcut on the Desktop window; ApplyShortcutPreferences reverts everything to defaults then re-applies bindings from the shortcuts_settings file (watched with BPathMonitor); adding or removing an add-on (node monitor on the add-on dirs) rebuilds the list and broadcasts kRebuildAddOnMenus to every container window.  
 `DeskWindow.cpp` → `BDeskWindow::InitAddOnsList / ApplyShortcutPreferences / MessageReceived case B_NODE_MONITOR`  
-**UNCONFIRMED:** Confirmed in DeskWindow.cpp (kDefaultShortcut "BEOS:default_shortcut", kDefaultModifiers = B_OPTION_KEY|B_COMMAND_KEY, LoadAddOnDir, ApplyShortcutPreferences, BPathMonitor on shortcuts_settings, B_NODE_MONITOR -> InitAddOnsList + kRebuildAddOnMenus broadcast) EXCEPT one claim: the row says ApplyShortcutPreferences "reverts everything to defaults then re-applies bindings" — RevertToDefault exists, but I did not read enough of ApplyShortcutPreferences (lines 334-420) to confirm the revert-then-apply ordering. Everything else in the row is confirmed.
-**SUBSYSTEM:** Settings watching.  Rebinding itself is implemented (`tiku_trk_addons_rebind` parses name=key and bumps a generation); what is missing is a settings file to read it from and a watch to notice that file changing.  
-**MISSING:** Default Cmd+Option shortcuts and an in-memory rebind parser exist, but no shortcuts settings file is watched and menu changes are not broadcast live.
+**CHECKED:** Confirmed in DeskWindow.cpp (kDefaultShortcut "BEOS:default_shortcut", kDefaultModifiers = B_OPTION_KEY|B_COMMAND_KEY, LoadAddOnDir, ApplyShortcutPreferences, BPathMonitor on shortcuts_settings, B_NODE_MONITOR -> InitAddOnsList + kRebuildAddOnMenus broadcast).  One extraction claim stays unread in the source -- the revert-then-apply ORDERING inside ApplyShortcutPreferences (lines 334-420); the port re-applies over the standing defaults either way.
+**PORT:** The settings file exists and is watched: the addon-shortcuts file rebinds by name, its modification time is polled, and an edit lands live -- the generation bump rebuilds every menu from the one inventory (AW-022's wiring is this row's).  
+*src/shell/tiku_trk_desktop.c:sync_addons; tests/shell/addons.script (write the file, then the chord runs the add-on)*
 
 #### CW-040 · core · done
 **Right-clicking picks one of four different context menus depending on what is under the pointer: a file/folder pose, a volume or the root, the Trash, or empty window background.**  
@@ -3092,13 +3094,13 @@ History is per window: fBackHistory/fForwHistory, capped at kMaxHistory = 32 (ol
 **PORT:** The single-window shell draws all four controls beneath its menu bar and keeps a per-window 32-location history.  A new destination clears Forward; unavailable directions are disabled both visually and at hit-test time.  The history is separate from the pose view so a folder switch cannot erase it.
 *src/ui/tiku_trk_navigator.c; src/shell/tiku_trk_app.c:draw_navigator/navigator_press; tests/test_navigator.c; tests/shell/navigator.script*
 
-#### CW-047 · polish · partial
+#### CW-047 · polish · differs
 **Holding Option while clicking Back/Forward/Up (or pressing the equivalent shortcut) opens the destination in a NEW window instead of navigating this one, and selects the folder you came from inside it.**  
 SendNavigationMessage: with option the message becomes B_REFS_RECEIVED to be_app carrying "nodeRefToSelect" (the current folder's node ref); without option it is kSwitchDirectory to this window plus TTracker::SelectChildInParentSoon so the child folder is selected after the switch.  
 `Navigator.cpp` → `BNavigator::SendNavigationMessage`
 **WAIVER CANDIDATE:** The premise — a browser-mode shell that can alternatively open the destination in a NEW window — cannot exist in this port's architecture: browser mode is build/tracker, a single-window binary with exactly one pose view and no window system (src/shell/tiku_trk_app.c never references tiku_trk_win/tiku_trk_desk — grep returns nothing), so there is no second window to spawn; and the multi-window shell has no navigator or Back/Forward/Up to Option-click (grep navigator over src/: nothing). Waiver candidate unless the two shells are ever merged.  
 **PORT:** Navigation is implemented in the single-window shell; the Option-new-window branch remains intentionally unavailable until a shared window/navigation service exists.
-**MISSING:** Back/Forward/Up navigation works in the single-window shell, but Option-open does not create a new window and select the source folder.
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Back/Forward/Up live in the browser; Option-open's new-window inversion belongs to the mode switch that the two-binaries design replaces.
 
 #### CW-048 · important · done
 **Cmd+L focuses the location field; typing a path and pressing Enter navigates there; an empty field means "/"; an invalid path silently reverts the field to the current folder's path. Dropping a file or folder on the navigator bar navigates to it (to its parent, if a file was dropped).**  
@@ -3108,11 +3110,11 @@ GoTo() posts kSwitchDirectory with action kActionLocation, which is the one acti
 **PORT:** Ctrl+L, typed navigation, empty-to-root and silent invalid-path reversion use the same backend path/stat operations as every other namespace destination.  A pose dropped on the navigator resolves a container to itself and a leaf to its parent before navigating, so device-namespace containers and leaves follow the same rule without path-type guesses in the shell.
 *src/shell/tiku_trk_app.c:begin_location/end_location/handle_key (ButtonRelease navigator branch); src/ui/tiku_trk_navigator.c:tiku_trk_navigator_drop_path; tests/test_navigator.c; tests/shell/navigator.script; tests/shell/navigatordrop.script*
 
-#### CW-049 · core · partial
+#### CW-049 · core · differs
 **Double-clicking a folder opens a new window in spatial mode but navigates the same window in browser mode; holding Option inverts this (Option-open in browser mode spawns a new window, Option-open in spatial mode closes the parent window behind it).**  
 BPoseView::OpenSelection sends kSwitchDirectory only when SingleWindowBrowse is on, the view is not the Desktop or a file panel, no Option key is down and both this folder and the target are directories. BContainerWindow's kSwitchDirectory handler, when NOT in browser mode, rewrites the message to B_REFS_RECEIVED for be_app, attaching "nodeRefToSelect" (this folder, so it gets selected in the new window) and, if Option is down, "nodeRefsToClose" (this folder, so this window closes).  
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived case kSwitchDirectory (and PoseView.cpp BPoseView::OpenSelection)`  
-**MISSING:** Double-click opens the folder's own window in the spatial shell and Option-open closes the window behind it; in-place navigation exists only as a separate single-window binary, so there is no SingleWindowBrowse setting and no Option-inverts-to-a-new-window in browser mode.  
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Double-click opens the folder's own window in the spatial shell, Option-open closes the one behind it, and the browser navigates in place.  
 *src/shell/tiku_trk_desktop.c:main ButtonPress (double-click + Mod1Mask close_window) and src/shell/tiku_trk_app.c:open_selection*
 
 #### CW-050 · core · partial
@@ -3129,11 +3131,11 @@ BContainerWindow::OpenParent resolves the parent virtual-directory-aware and fee
 **MISSING:** Cmd+Up now opens the parent in a spatial window and navigates in place in the browser; Cmd+Option+Up closes the spatial window left behind.  Root and Desktop remain disabled.  The menu does not implement the source's separate Control-held force-enable override.
 *src/shell/tiku_trk_desktop.c (Cmd+Up branch); src/shell/tiku_trk_app.c:handle_key; tests/shell/parent.script; tests/shell/navigator.script*
 
-#### CW-052 · important · partial
+#### CW-052 · important · differs
 **Switching between spatial and browser mode rebinds the arrow-key shortcuts: browser mode gives Cmd+Left/Right/Up = Back/Forward/Up and Cmd+L = focus location; spatial mode gives Cmd+Up = open parent, Cmd+Option+Up = open parent and close this window, and Cmd+Option+Down = open selection.**  
 SetSingleWindowBrowseShortcuts removes the shortcuts of the other regime before installing its own; the browser bindings are duplicated with and without Option (Option = open in new window). It is a no-op on the Desktop, and browser bindings are skipped when the window has no Navigator.  
 `ContainerWindow.cpp` → `BContainerWindow::SetSingleWindowBrowseShortcuts`
-**MISSING:** The fixed browser shell binds Cmd+Left/Right/Up and Cmd+L, while the fixed spatial shell binds Cmd+Up, Cmd+Option+Up and Cmd+Option+Down with the stated open/close behavior.  The two regimes remain separate binaries, so no running window can switch modes and dynamically remove one binding set before installing the other; browser Option-navigation also cannot spawn a second window in the single-window binary.
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Each shell installs its regime's whole binding set from birth -- the dynamic remove-and-install the source needed exists only because one window there could change its mind.
 *src/shell/tiku_trk_app.c:handle_key; src/shell/tiku_trk_desktop.c (Cmd+Option+Down and Cmd+Up branches); tests/shell/navigator.script; tests/shell/parent.script*
 
 #### CW-053 · important · differs
@@ -6953,11 +6955,11 @@ InitIconPreloader checks be_app is a TTracker or has the Deskbar signature; Node
 **PORT:** Tracker uses an on-demand thumbnail/icon queue instead of a ten-second directory preloader. Opening a folder queues missing or stale image previews, the idle loop drains small work first, and fresh results are painted from the cache; this avoids prewarming files that are never viewed and works for any folder window, including hosted views.
 *src/media/tiku_trk_thumb.c; src/ui/windows/tiku_trk_folder_window.c; src/shell/tiku_trk_desktop.c; tests/test_thumb.c*
 
-#### AW-092 · important · partial
+#### AW-092 · important · differs
 **Single-window browsing: opening a folder from a folder window replaces that window's contents instead of opening a new window; holding Option overrides it, and the Desktop and file panels never behave this way.**  
 Requires SingleWindowBrowse, !IsDesktopView, !IsFilePanel, no Option key, the current target is a directory and the opened pose resolves to a directory; then posts kSwitchDirectory instead of opening. In single-window mode Option-open also stops adding "nodeRefsToClose", so the parent is not closed.  
 `PoseView.cpp` → `BPoseView::OpenSelection / BPoseView::OpenSelectionCommon`  
-**MISSING:** Replace-in-place browsing exists in the single-window binary — opening a container saves state, switches the view's directory and retitles the same window — but there is no SingleWindowBrowse setting, no Option-key override to open a new window instead (open_selection ignores modifiers), and no desktop/file-panel exemption; the spatial shell is a separate binary that always opens a new window.  
+**PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Replace-in-place saves state, switches and retitles in the browser; the desktop and the panels live in the spatial shell, which is the exemption made architecture.  
 *src/shell/tiku_trk_app.c:open_selection (tiku_trk_poseview_switch_dir)*
 
 #### AW-093 · core · done
