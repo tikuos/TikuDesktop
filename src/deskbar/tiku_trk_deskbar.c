@@ -1541,6 +1541,20 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         int tip_y = -1;
 
         if (!db->menu_open && db->win_menu_team < 0 &&
+            !db->clock_menu_open && db->settings.show_clock &&
+            !db->calendar_open && x >= db->frame.x &&
+            x < db->frame.x + db->frame.w &&
+            y >= db->frame.y + db->frame.h - CLOCK_H - PAD &&
+            y < db->frame.y + db->frame.h) {
+            /* The clock's tooltip is the whole long-form date (DB-044),
+             * from the same clock the display reads -- frozen and all. */
+            time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
+            struct tm tmv;
+
+            (void)localtime_r(&now, &tmv);
+            (void)strftime(tip, sizeof tip, "%A, %B %-e, %Y", &tmv);
+            tip_y = db->frame.y + db->frame.h - CLOCK_H - PAD;
+        } else if (!db->menu_open && db->win_menu_team < 0 &&
             !db->clock_menu_open && x >= db->frame.x &&
             x < db->frame.x + db->frame.w) {
             int i, ry = list_y(db);

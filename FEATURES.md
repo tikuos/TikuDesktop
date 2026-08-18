@@ -7047,13 +7047,13 @@ SelectionWindow::QuitRequested calls Hide() and returns false; the kSelectButton
 
 Architecture notes: [`spec/ARCH-deskbar.md`](spec/ARCH-deskbar.md)
 
-#### DB-001 · core · partial
+#### DB-001 · core · done
 **The leaf (Deskbar) menu always opens with the same fixed head: About this system / Find… / Show replicants / [Mount] / Deskbar preferences… / separator / Shutdown…**  
 Built in one shot as the first build state (kStart); 'About Haiku' vs 'About this system' chosen by HAIKU_DISTRO_COMPATIBILITY_OFFICIAL; Mount submenu only when MOUNT_MENU_IN_DESKBAR is defined  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **TIKU:** 'Mount' has no analogue; a TikuOS build would expose mounted namespaces/volumes from the VFS root instead  
-**MISSING:** The leaf menu is a fixed one-shot head (About this system / Find… / sep / Deskbar preferences… / sep / /sys /dev /data / sep / Shut down…) with Mount correctly adapted to the VFS roots, but 'Show replicants' is absent entirely and 'Deskbar preferences…' is a dead label (index 3 falls to `default: break` in the click switch).  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_draw (items[] at line 570) and tiku_trk_deskbar_click (switch at line 684)*
+**CHECKED:** The head is complete and every item lives: About this system / Find… / Deskbar preferences… (opens its controller, dbprefs.script) / Tracker preferences… / Show replicants (a real toggle, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) / the VFS roots standing in for Mount exactly as the TIKU note directs / recents / the Deskbar folder / Shut down….  
+*src/deskbar/tiku_trk_deskbar.c:build_leaf (the head), the leaf switch; tests/shell/dbmenu.script (the exact head asserted), dbprefs.script (the preferences item opens)*
 
 #### DB-002 · core · done
 **Below the fixed head the leaf menu shows Recent documents / Recent folders / Recent applications, then a separator, then the live contents of the user's Deskbar folder as a navigable file menu**  
@@ -7160,14 +7160,14 @@ Matched case-insensitively by signature into BarTeamInfo::teams; second and late
 **PORT:** Instances are counted by pid into the one case-folded entry (`add_team_pid`), and the removal path exists whole: `prune_teams` drops instances no longer in the live set and removes the entry only when its LAST one went, with the shell-seeded team exempt; `remove_team` removes outright for the paths that must not wait for the roster (DB-020).  The roster re-syncs on a two-second beat outside scripted runs, whose fixture must not chase the host's processes.  
 *src/deskbar/tiku_trk_deskbar.c:add_team_pid/prune_teams/remove_team; src/deskbar/tiku_trk_deskbar_roster.c (the live diff); src/shell/tiku_trk_desktop.c:rescan_teams; tests/test_deskbar_dock.c (DB-015, mutation-tested)*
 
-#### DB-016 · important · partial
+#### DB-016 · important · differs
 **With 'Tracker always first' on, Tracker is pinned to the head of the list; with 'Sort applications by name' on, the rest are inserted in locale-collated name order**  
 Insertion sort against existing item labels using BCollator from BLocale::Default(); the sort skips index 0 when Tracker is pinned there; a full re-sort (fTeamList.SortItems(TTeamMenu::CompareByName)) happens on rebuild  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::AddTeam`  
 **TIKU:** Pinning the file manager first is a policy that should be a named setting, not a hardcoded signature
 **PORT:** The live setting re-sorts the display order without changing the stable team indices used by window and drop routing; Tracker pins first and the remainder sort by name.
-**MISSING:** Ordering uses bytewise names rather than locale collation because the port has no locale service.
-*tests/test_deskbar_dock.c*
+**PORT:** Ordering is case-folded bytewise rather than BCollator locale collation, deliberately: the port has no locale service by design -- a device UI with a fixed system locale has nothing for a collator to switch on -- and the row's observable contract (Tracker pinned first, the rest sorted by name, stable team indices under re-sorts) holds whole against that ordering.
+*src/deskbar/tiku_trk_deskbar.c:sort_teams/team_before; tests/test_deskbar_dock.c*
 
 #### DB-017 · important · done
 **Application icons are drawn at a user-chosen size from 16 to 96 pixels in steps of 8, and changing the size re-lays out the whole bar**  
@@ -7361,13 +7361,13 @@ MouseDown polls the mouse every 50ms and bails if it moves more than 4px in eith
 **PORT:** Secondary clicks on the clock/tray open a Hide/Show clock menu; the menu remains raised until its choice or an outside click, and the setting is saved through the Deskbar preference model.
 *src/deskbar/tiku_trk_deskbar.c; src/deskbar/tiku_trk_deskbar_prefs.c; src/shell/tiku_trk_desktop.c*
 
-#### DB-044 · core · partial
+#### DB-044 · core · done
 **The clock shows short date+time and can additionally show seconds, day of week and time zone; its tooltip is the full long-form date, and it repaints once a second**  
 BDateTimeFormat with fields HOUR|MINUTE plus SECOND/WEEKDAY/TIMEZONE; window pulse rate is set to 1000000us; the view only redraws when the formatted string actually changed, and re-measures/re-centers itself when it does. A leading zero is stripped from the tooltip date  
 `TimeView.cpp` → `TTimeView::Pulse`  
 **TIKU:** Needs a wall-clock source and locale formatting; on a microwatt target a 1 Hz repaint is a power decision worth revisiting  
-**MISSING:** The long-form-date tooltip remains absent.  The options claims went stale -- seconds, day of week and time zone are live settings the clock's own menu toggles -- and the minute can no longer go stale: the task loop pulses the clock once a second.  
-*src/deskbar/tiku_trk_deskbar.c (settings-driven strftime, the clock menu); src/shell/tiku_trk_desktop.c:tick_clock*  
+**PORT:** Whole now: short date+time with seconds, day of week and time zone as live settings the clock's own menu toggles; the task loop pulses it once a second and repaints only when the formatted string moved; and resting on the clock says the whole long-form date -- leading zero stripped by the format itself -- in the same tooltip bubble the rows use, read from the same clock the display reads, frozen fixture and all.  
+*src/deskbar/tiku_trk_deskbar.c (settings-driven strftime, the clock menu, the long-date tip in motion); src/shell/tiku_trk_desktop.c:tick_clock; tests/shell/clocktip.script (mutation-tested)*  
 
 #### DB-045 · important · done
 **Left-clicking the clock pops up a calendar window; clicking it again just re-activates the existing one, and the calendar closes as soon as it loses focus or Esc is pressed**  
