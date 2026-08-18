@@ -2504,7 +2504,7 @@ case B_DEVICE_MOUNTED: CreateVolumePose when targetModel->IsRoot(), or when IsVo
 CreateVolumePose returns early if !volume->IsPersistent(), and again if BVolume(ref.device) of the mount point is itself persistent (comment: 'the file system root, /pipe, /dev, etc. are all non-persistent').  
 `PoseView.cpp` → `BPoseView::CreateVolumePose`  
 **PORT:** A volume mounted inside another gets no icon of its own -- it is a detail of that volume, not a second disk -- matched on a whole path component so a sibling whose name merely starts the same keeps its icon.  The boot volume is the exception, since everything is inside it and it is the disk.  
-#### PVN-042 · polish · partial
+#### PVN-042 · polish · done
 **Broken-symlink repair after a mount is deliberately delayed half a second so that a link to a volume resolves as a volume rather than a plain directory.**  
 taskLoop->RunLater(NewMemberFunctionObject(&BPoseView::TryUpdatingBrokenLinks, this), 500000) at the end of case B_DEVICE_MOUNTED.  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`
