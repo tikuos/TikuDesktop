@@ -15,6 +15,10 @@ typedef struct {
     char key;
     unsigned mods;
     int generic;
+    /* Found in the add-ons directory rather than compiled in: command is
+     * the executable's own path, and invoking it is a process of its own
+     * (CW-038's port shape -- no shared objects on TikuOS). */
+    int external;
 } tiku_trk_addon_t;
 
 typedef struct {
@@ -40,5 +44,29 @@ int tiku_trk_addons_invoke(const tiku_trk_addons_t *addons, int command,
                            void *context);
 int tiku_trk_addons_shortcut(const tiku_trk_addons_t *addons, char key,
                              unsigned mods, int command_base);
+
+/**
+ * @brief Refresh the externally discovered add-ons from @p dir (CW-038).
+ *
+ * Executable regular files register as external add-ons named after
+ * themselves; a sidecar named "<file>.types" declares the type its first
+ * line holds, and without one the add-on is generic.  Compiled-in entries
+ * are left alone; what an earlier discovery found is replaced, so a
+ * removed add-on leaves the menu (AW-023).
+ *
+ * @return How many were found.
+ */
+int tiku_trk_addons_discover(tiku_trk_addons_t *addons, const char *dir);
+
+/**
+ * @brief Run an external add-on against @p paths, in a process of its own.
+ *
+ * The separate-thread clause becomes a separate PROCESS here: stronger
+ * isolation, and the only kind TikuOS's no-shared-objects rule leaves.
+ *
+ * @return 0 when the launch started.
+ */
+int tiku_trk_addons_run_external(const tiku_trk_addon_t *addon,
+                                 const char *const *paths, int n);
 
 #endif

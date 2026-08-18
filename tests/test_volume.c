@@ -15,6 +15,7 @@
 
 #include "tiku_trk_fs.h"
 #include "tiku_trk_volume.h"
+#include "tiku_trk_deskicons.h"
 
 static int fails;
 
@@ -417,6 +418,36 @@ main(void)
                      getenv("HOME"));
             made.v[0].read_only = 1;
             made.n = 1;
+            {   /* PVN-040: which volume earns a Desktop pose.  A table we
+                 * control, so every gate can be asked. */
+                tiku_trk_volumes_t t;
+
+                memset(&t, 0, sizeof t);
+                snprintf(t.v[0].mount, sizeof t.v[0].mount, "/");
+                t.v[0].is_boot = 1;
+                t.v[0].persistent = 1;
+                snprintf(t.v[1].mount, sizeof t.v[1].mount, "/data");
+                t.v[1].persistent = 1;
+                snprintf(t.v[2].mount, sizeof t.v[2].mount, "/scratch");
+                t.v[2].persistent = 0;      /* a tmpfs */
+                snprintf(t.v[3].mount, sizeof t.v[3].mount, "/net");
+                t.v[3].persistent = 1;
+                t.v[3].shared = 1;
+                t.n = 4;
+                check(!tiku_trk_deskicons_volume_pose(&t, &t.v[0], 1, 1),
+                      "PVN-040", "the boot volume is already the Disks "
+                      "pose, not a second icon");
+                check(tiku_trk_deskicons_volume_pose(&t, &t.v[1], 1, 1),
+                      "PVN-040", "an ordinary persistent volume earns one");
+                check(!tiku_trk_deskicons_volume_pose(&t, &t.v[2], 1, 1),
+                      "PVN-040", "a RAM filesystem does not -- an icon for "
+                      "a thing that forgets");
+                check(!tiku_trk_deskicons_volume_pose(&t, &t.v[3], 1, 0) &&
+                      tiku_trk_deskicons_volume_pose(&t, &t.v[3], 1, 1),
+                      "PVN-040", "a shared volume follows its own setting");
+                check(!tiku_trk_deskicons_volume_pose(&t, &t.v[1], 0, 1),
+                      "PVN-040", "and the master switch turns them all off");
+            }
             check(tiku_trk_fs_trash_dirs_of(fs3,
                       (const struct tiku_trk_volumes *)&made, got, 8) == 0,
                   "FS-081",

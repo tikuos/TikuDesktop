@@ -2897,14 +2897,13 @@ AddMenus creates File (index 0), Window (index 1), fAttrMenu (added at index 2 o
 **PORT:** The bar composition rule is implemented exactly (File+Window always, Attributes inserted at index 2 only in list mode and removed when the mode changes), and both front ends draw and open that bar over the shared live menu model.  The shell tests open File in both front ends and exercise Window and the list-only Attributes menu in the single-window shell.
 *src/ui/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild; src/shell/tiku_trk_desktop.c:folder_draw; src/shell/tiku_trk_app.c:draw; tests/shell/menubar.script; tests/shell/trackermenu.script*
 
-#### CW-022 · core · partial
+#### CW-022 · core · done
 **File menu inventory: Find… (Cmd+F), New folder (Cmd+N), | Open (Cmd+O), [Edit query], [Open with…], Get info (Cmd+I), Edit name (Cmd+E), [Mount>/Unmount], Duplicate (Cmd+D), Move to Trash (Del), | [Move to/Copy to/Create link], Cut (Cmd+X), Copy (Cmd+C), Paste (Cmd+V), | Identify, Add-ons>.**  
 Trash windows prepend "Empty Trash" + separator and show Delete/Restore instead of Duplicate/Move to Trash; the printers directory prepends "Add printer…" and ends after "Make active printer" (no cut/copy/paste, no identify, no add-ons); the root window has no Duplicate/Trash items, no clipboard block and no Identify.  
 `ContainerWindow.cpp` → `BContainerWindow::AddFileMenu`  
 **TIKU:** "Mount/Unmount" and Trash have no obvious analogue for device nodes; decide whether a device node can be "deleted" at all (probably capability-bit gated).  
-**PORT:** The live bar now includes the Add-ons submenu inventory and volume Mount/Unmount entries (disabled until the mount/add-on service is available), while preserving the Trash and root variants. The printers-folder specialization and service-backed mount/add-on actions remain outside the current backend contract.
-*src/ui/tiku_trk_cwmenu.c:build_file*
-**MISSING:** The Mount submenu's partition enumeration and the add-on service verbs remain unavailable; Unmount itself is live through the volume model.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18).
+**PORT:** The live bar carries the whole inventory now: the Add-ons submenu is populated from the compiled-in registry AND the add-ons directory and opens when it has entries, and a volume selection gets Mount> and Unmount live through the volume model (CW-034), while the Trash and root variants are preserved.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18).
+*src/ui/tiku_trk_cwmenu.c:build_file/build_mount_menu; tests/shell/addons.script; tests/shell/mountmenu.script*
 
 #### CW-023 · core · done
 **Window menu inventory: Icon view> (Cmd+1, with sizes), Mini icon view (Cmd+2), List view (Cmd+3), | Resize to fit (Cmd+Y), [Arrange by>], Select… (Shift+Cmd+A), Select all (Cmd+A), Invert selection (Cmd+S), Open parent (Cmd+Up), Close (Cmd+W), Close all in workspace (Cmd+Q), | Preferences… (Cmd+,).**  
@@ -2997,8 +2996,9 @@ SetupMountMenu inserts after "Select all"+separator on the Desktop, or after "Ed
 `ContainerWindow.cpp` → `BContainerWindow::SetupMountMenu / DetachMountMenu (and MountMenu.cpp AddMenuItemVisitor::Visit)`  
 **TIKU:** Maps to mounting tiers/devices in the VFS; "boot volume cannot be unmounted" becomes "the root namespace cannot be detached".
 **SUBSYSTEM:** Volume model / mount operations. The backend ops table (src/core/tiku_trk_model.h:152-198) has stat/list/read/write/pump/changes/path_of_id/state_store only — no mount, unmount, or partition enumeration — and no MOUNT/UNMOUNT command exists in src/core/tiku_trk_shortcuts.h. Same absence FS-012/FS-013 record: the port knows filesystems only through st_dev.  
-**MISSING:** The Mount submenu's partition enumeration (every partition listed, mounted ones check-marked, Mount all, Settings…) remains absent: the port has no partition source.  Unmount is live -- the menu item and Cmd+U go through the volume model, the boot volume's entry is disabled by the enable rule, and refusals and failures are said out loud.  
-*src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (TIKU_TRK_CMD_UNMOUNT); tests/shell/unmount.script*
+**PORT:** The Mount submenu is live on the volume, root and Desktop menus: every partition the kernel offers, mounted ones check-marked and disabled, plus Mount all and Settings… -- which opens the preferences straight at the Disk mount page.  A mount the system refuses is said out loud, as the unmount already was.  Unmount and Cmd+U go through the volume model, the boot volume's entry disabled by the enable rule.  
+**MISSING:** Shared network volumes are not enumerated into the submenu (the partition source is /proc/partitions, which has no shares), and entries are named by kernel partition name and size rather than the source's content-name fallback chain -- the port has no content-name source to ask.  
+*src/backends/tiku_trk_volume.c:tiku_trk_partitions_scan/tiku_trk_volume_mount; src/ui/tiku_trk_cwmenu.c:build_mount_menu; tests/shell/mountmenu.script; tests/shell/unmount.script*
 
 #### CW-035 · core · partial
 **"Move to >", "Copy to >" and "Create link >" are hierarchical folder pickers offering Current folder, Recent folders, Desktop, Home, then volumes; Move to only offers the item's own volume (no cross-device move), Copy to and Create link offer every writable persistent volume.**  
@@ -3027,8 +3027,9 @@ SetupNewTemplatesMenu scans the templates dir on first use and swaps items in pl
 BuildMimeTypeList gathers the types of the selection (mimesetting unknown ones and resolving symlinks) or of the folder itself when nothing is selected; EachAddOn classifies each add-on as primary (declared type contains a selected type) or secondary (declares B_FILE_MIME_TYPE) and skips ones matching neither. The invocation message carries "refs" (selection), "dir_ref" and a "TrackerViewToken" messenger. Add-ons exporting populate_menu can also inject their own items into the menu bar.  
 `ContainerWindow.cpp` → `BContainerWindow::BuildAddOnsMenu / EachAddOn / AddOnMessage / LoadAddOn (and AddOnMenuGenerate)`  
 **TIKU:** Loading shared objects is not available; the equivalent is capability-gated shell verbs / VFS-exposed commands, discovered from the namespace instead of an add-ons directory.
-**SUBSYSTEM:** Dynamic loading.  The registry, the type classification and the submenu are real (`src/core/tiku_trk_addon.c`, TIKU_TRK_CMD_ADD_ONS); what is unavailable is loading a shared object and running it on a thread of its own.  
-**MISSING:** Static add-ons are MIME-sorted into a menu, but shared-object discovery, selection invocation, and the worker-thread handoff are absent.
+**PORT:** Discovery, invocation and the handoff are real now, in the port's own shape: add-ons are executables found in the add-ons directory (a sidecar names their type and default key -- TikuOS loads no shared objects), MIME-sorted into the submenu with the compiled-in entries, and an invocation runs the executable against the selection in a process of its own -- stronger isolation than the source's thread.  
+**MISSING:** populate_menu has no counterpart: an add-on cannot inject its own items into the menu bar, because nothing is loaded into the process to ask.  
+*src/core/tiku_trk_addon.c:tiku_trk_addons_discover/tiku_trk_addons_run_external; src/shell/tiku_trk_desktop.c:sync_addons/invoke_addon; tests/test_addon.c; tests/shell/addons.script*
 
 #### CW-039 · polish · partial
 **Add-ons get a keyboard shortcut (Option+Cmd+key by default, taken from the add-on's BEOS:default_shortcut resource) which the user can rebind through the Shortcuts preferences file; changes take effect without restarting.**  
@@ -3051,13 +3052,13 @@ ShowContextMenu(where, ref): ref != NULL -> model.IsTrash() ? fTrashContextMenu 
 BPoseView::ShowContextMenu clears the selection and selects the hit pose when it was not already selected, activates the window and forces a redraw before handing off to BContainerWindow::ShowContextMenu.  
 `PoseView.cpp` → `BPoseView::ShowContextMenu`  
 
-#### CW-042 · core · partial
+#### CW-042 · core · done
 **Context menu inventories: pose = Open/[Edit query]/[Open with…]/Get info/Edit name/Duplicate/Move to Trash (or Delete+Restore in Trash), | [Move to/Copy to/Create link], Cut/Copy/Paste, | Identify, Add-ons. Volume/root = Open, Get info, Edit name, | [Mount>/Unmount], Add-ons. Trash = Empty Trash, Open, Get info. Window background = [Empty Trash], [New folder/New>], [icon sizes on Desktop], [Paste], [Clean up on Desktop | Arrange by>], Select…, Select all, [Open parent], | [Mount>], [Add-ons].**  
 Clipboard items are omitted from the pose menu for printers/root/Trash/in-Trash, and from the window menu for printers/root/Trash/in-Trash; "Open parent" is omitted on the Desktop; the Desktop gets the icon-size menu inline instead of an Arrange by menu.  
 `ContainerWindow.cpp` → `BContainerWindow::AddPoseContextMenu / AddVolumeContextMenu / AddTrashContextMenu / AddWindowContextMenu`  
 **PORT:** All four inventories are live in the stated order, including Add-ons placeholders, volume Mount/Unmount placeholders, Trash/root clipboard omissions, the Delete+Restore substitution, the Trash-window prefix, and the Desktop background's inline icon-size submenu. Service-backed mount/add-on verbs and the printers-folder specialization remain pending.
 *src/ui/tiku_trk_cwmenu.c:build_contexts; src/core/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
-**MISSING:** The Mount submenu's partition enumeration and the add-on service verbs remain unavailable; Unmount itself is live through the volume model.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned.
+**PORT:** The add-on verbs are live too now -- the submenu opens when the inventory has entries and an external add-on runs against the selection (CW-038) -- alongside the live Mount/Unmount (CW-034).  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned.
 **PORT:** Three items the inventories offered and enabled did nothing when picked -- Create link, Identify and Select… -- and Duplicate was a fourth. All four now act, and `tools/check_menu_commands.py` fails the build when a menu offers an enabled command no shell carries out, which is what let them sit there.  
 *tests/shell/menudead.script; tools/check_menu_commands.py*
 
@@ -6033,7 +6034,7 @@ Stored as RecentApplications / RecentDocuments / RecentFolders scalars; read tog
 **"Eject when unmounting" is offered on the Disk mount page together with the automount and boot-mount policies.**  
 Default on. This page talks to the mount server (kSetAutomounterParams / kGetAutomounterParams with a 2.5s timeout and a "mount server could not be contacted" alert), not to the Tracker settings file, and it declares itself never defaultable; Revert replays the settings captured when the window was shown. Automount choices additionally request a rescan.  
 `AutoMounterSettings.cpp` → `AutomountSettingsPanel::_SendSettings`
-**SUBSYSTEM:** Disk mount page + mount service. The port has no mounting machinery at all: grep -i mount/eject/automount over src/*.c finds only mount-point comparisons inside the copy engine (src/backends/tiku_trk_fs.c:1002-1044) and an unplug comment in backend_tiku.c:473; there is no mount server to send kSetAutomounterParams to, no automount policy, and no settings window to host the page.  
+**SUBSYSTEM:** Automount policy.  Mount and unmount machinery exists now (tiku_trk_volume_mount/unmount, the partition scan, the live Mount submenu -- CW-034), and the Disk mount page is hosted and persists its settings; what is still absent is a service that ACTS on them: nothing watches for new partitions to automount, so AutoMount and the initial-mount policy have no executor.  
 **MISSING:** The Disk mount page persists EjectWhenUnmounting and AutoMount settings, but it has no automounter service connection or initial-mount policy radio group.
 
 #### TS-058 · core · done
@@ -6279,20 +6280,20 @@ message->FindData("RGBColor", 'RGBC') on a dropped message; BScreen::SetDesktopC
 **PORT:** A typed RGB payload can be attached to a drag and applied to the Desktop's persistent backdrop callback; redraw and future surface resizes use the selected colour. The separate Backgrounds preferences application is intentionally not part of the single-process shell.
 *src/core/tiku_trk_drag.[ch]; src/ui/commands/tiku_trk_drop_controller.[ch]; src/shell/tiku_trk_desktop.c; tests/test_drag.c*
 
-#### AW-022 · important · partial
+#### AW-022 · important · done
 **Tracker add-ons get keyboard shortcuts: each add-on's built-in default key is bound as Cmd+Opt+<key>, and the user's shortcuts settings file can rebind them; edits to that file are applied live.**  
 BEOS:default_shortcut string resource (must be exactly 1 char) -> AddOneShortcut with kDefaultModifiers (B_OPTION_KEY|B_COMMAND_KEY). ApplyShortcutPreferences reads ~/config/settings/shortcuts_settings, accepts only "command" paths under a Tracker add-ons dir, maps mcidx 0/1/3 to Shift/Control/Option (Command always forced), and RevertToDefault first. BPathMonitor on the settings file re-runs it.  
 `DeskWindow.cpp` → `BDeskWindow::InitAddOnsList / BDeskWindow::ApplyShortcutPreferences / AddOneShortcut / RevertToDefault`  
 **TIKU:** Add-ons are dynamically loaded executables; in TikuOS the analogue is statically registered commands, so the 'rescan directory and rebind' half disappears while the user-rebinding half should stay.
-**SUBSYSTEM:** Tracker add-ons -- no add-on loading exists (no dlopen in src/), and shortcut keys are a static compiled table (tiku_trk_sc_key, src/core/tiku_trk_shortcuts.c:140-170) with no settings file, no rebinding path and no file watcher  
-**MISSING:** Static add-on shortcuts and a parser-backed rebind API exist, but the user settings file and live file-watch path are absent.
+**PORT:** All three clauses hold: a discovered add-on's built-in default key (the sidecar's second line, exactly one character as the source requires) is bound as Cmd+Opt+<key>, the user's addon-shortcuts file rebinds by name, and edits to it are applied live by the modification-time watch -- Command always forced by the fixed chord modifiers.  
+*src/core/tiku_trk_addon.c:tiku_trk_addons_discover/tiku_trk_addons_rebind; src/shell/tiku_trk_desktop.c:sync_addons; tests/test_addon.c; tests/shell/addons.script*
 
-#### AW-023 · important · partial
+#### AW-023 · important · done
 **Installing or removing a Tracker add-on updates the shortcuts and rebuilds the add-ons menu in every open window without a restart.**  
 B_NODE_MONITOR on each add-ons directory (watched in LoadAddOnDir) -> InitAddOnsList(true) + ApplyShortcutPreferences(true) + PostMessageToAllContainerWindows(kRebuildAddOnMenus).  
 `DeskWindow.cpp` → `BDeskWindow::MessageReceived / LoadAddOnDir`
-**SUBSYSTEM:** Tracker add-ons -- same absence as AW-022: no add-ons directory, no node monitoring of one, no add-ons menu to rebuild (the menu set is fixed, src/ui/tiku_trk_cwmenu.c:115-283)  
-**MISSING:** Rebuilding the add-on menu is available when explicitly requested, but add-on installation/removal monitoring and all-window broadcasts are absent.
+**PORT:** Installing or removing an add-on lands without a restart: the directory is watched by modification time, a change re-discovers the inventory wholesale -- so a removed add-on leaves the menu -- and every window's menus are rebuilt from that one inventory on their next open, which is the port's all-window broadcast.  
+*src/shell/tiku_trk_desktop.c:sync_addons; src/core/tiku_trk_addon.c:tiku_trk_addons_discover; tests/test_addon.c (removal); tests/shell/addons.script*
 
 #### AW-024 · important · partial
 **The Desktop hosts replicants, persisted in a shelf file, and shows placeholders for replicants whose code is missing.**  
@@ -7028,21 +7029,21 @@ Requires a "cwd" string in the current message; BEntry(&workingDirectory, argv[i
 `Tracker.cpp` → `TTracker::ArgvReceived`  
 **PORT:** The multi-window shell no longer ignores paths: every non-flag argument from i = 1 is collected into openme[] (bounded by TIKU_TRK_WIN_MAX) and each one gets its own open_folder() call, cascaded, with the HOME default only when none was given. argv[0] is still skipped and relative paths still resolve through the process cwd in the backend with absolute paths passing through unchanged, which is the two-stage resolution collapsed onto a CLI launcher. The flag chain is not broken by the new branch — "-seconds" and the other flags start with '-' so they fall past the path branch, and their values are consumed by argv[++i]. Residual, not the row's clause: the single-window tracker binary still does start = argv[i] last-wins (src/shell/tiku_trk_app.c:1103), so with two paths it shows the last rather than the first; it has exactly one view, so it cannot open a window per path either way.
 
-#### AW-101 · polish · partial
+#### AW-101 · polish · done
 **The preferences window is a singleton that is hidden rather than destroyed, and is re-shown or merely activated on subsequent requests; a request can jump straight to a specific page.**  
 ShowSettingsWindow creates it once; if hidden -> Show, else Activate. kRunAutomounterSettings shows it and then selects TrackerSettingsWindow::kAutomountSettings.  
 `Tracker.cpp` → `TTracker::ShowSettingsWindow / TTracker::MessageReceived (kRunAutomounterSettings)`  
 **PORT:** Opening it again brings the existing window forward rather than making a second, and the Revert baseline is re-taken each time it is shown.  
-**MISSING:** A request cannot jump straight to a specific page: nothing in the port asks for one (the automounter that would does not exist), and no open-at-page entry point is offered.  The page last looked at IS remembered -- the controller and its page survive the close; only the desk window is per-open.  
-*src/ui/windows/tiku_trk_prefs_window.c:tiku_trk_prefs_window_open (page untouched on reopen)*  
+**PORT:** All three clauses hold: the window is a singleton whose controller -- model and page -- survives the close (only the desk window is per-open), reopening shows the page last looked at, and a request CAN jump straight to a page now: the Mount submenu's Settings… opens it at the Disk mount page, the same jump the automounter request made (CW-034).  
+*src/ui/windows/tiku_trk_prefs_window.c:tiku_trk_prefs_window_open; src/shell/tiku_trk_desktop.c (TIKU_TRK_CMD_MOUNT_SETTINGS); tests/shell/mountmenu.script*  
 *Shell: desktop*  
-#### AW-102 · polish · partial ⟨found by verification⟩
+#### AW-102 · polish · done ⟨found by verification⟩
 **Tracker add-ons get user-assignable Command shortcuts that run the add-on against the current selection.**  
 AddOneShortcut posts kLoadAddOn with the add-on's ref via window->AddShortcut(key, modifiers, ...); AddOnShortcuts/ApplyShortcutPreferences maintain the key per add-on and RemoveShortcut/re-add on change, with kDefaultModifiers as the default chord.  
 `DeskWindow.cpp` → `AddOneShortcut / RevertToDefault / BDeskWindow::ApplyShortcutPreferences`  
 **TIKU:** The analogue is binding a shell verb to a key against the selected namespace node.
-**SUBSYSTEM:** Dynamic add-on discovery and live settings-file monitoring remain absent; the static registry and shortcut matcher are in `src/core/tiku_trk_addon.[ch]`.
-**MISSING:** Registered add-ons now dispatch their Cmd+Option shortcut against the focused selection, but there is no add-on directory loader or live user shortcut settings file.
+**PORT:** The directory loader and the live user shortcut file exist now (AW-022, AW-023): a rebound chord dispatches the discovered add-on against the focused selection, proven end to end by the shell script.  
+*tests/shell/addons.script (write addon-shortcuts, then the chord runs the add-on)*
 
 #### AW-103 · polish · done
 **In a file panel Cmd-Up opens the parent folder and Cmd-W cancels the panel, regardless of what the pose view would do with those keys.**  

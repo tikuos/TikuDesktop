@@ -120,6 +120,8 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_ADD_ONS:           return "Add-ons" "\xe2\x80\xa6";
     case TIKU_TRK_CMD_MOUNT:             return "Mount";
     case TIKU_TRK_CMD_UNMOUNT:           return "Unmount";
+    case TIKU_TRK_CMD_MOUNT_ALL:         return "Mount all";
+    case TIKU_TRK_CMD_MOUNT_SETTINGS:    return "Settings…";
     case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
     case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";
     case TIKU_TRK_CMD_CANCEL:            return "Cancel";
@@ -315,6 +317,9 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
      * disabled so it cannot be unmounted (CW-034). */
     case TIKU_TRK_CMD_UNMOUNT:
         return c->selection_is_volume && !c->selection_is_boot;
+    case TIKU_TRK_CMD_MOUNT_ALL:
+    case TIKU_TRK_CMD_MOUNT_SETTINGS:
+        return 1;
 
     /* Arrange by is meaningless in list view, where the column titles sort. */
     case TIKU_TRK_CMD_ARRANGE_BY:

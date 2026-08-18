@@ -280,12 +280,13 @@ tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
     tiku_trk_volumes_t volumes;
     tiku_trk_model_t models[64];
     char trash[TIKU_TRK_PATH_MAX];
-    int count = 0;
+    int count = 0, have_volumes;
 
     if (controller == NULL || controller->folder.view == NULL) {
         return;
     }
-    if (tiku_trk_volumes_scan(&volumes) >= 0) {
+    have_volumes = tiku_trk_volumes_scan(&volumes) >= 0;
+    if (have_volumes) {
         tiku_trk_deskicons_sources(&volumes, controller->backend,
             controller->folder.path, &controller->sources);
     }
@@ -311,6 +312,21 @@ tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
     if (tiku_trk_fs_trash_dir(controller->fs, controller->folder.path,
                               trash, sizeof trash) == 0) {
         add_pose(controller, trash);
+    }
+    if (have_volumes &&
+        tiku_trk_prefs_get(controller->prefs, "MountVolumesOntoDesktop")) {
+        /* Every volume that earns one, live with the mount table this
+         * rebuild was called for (PVN-040). */
+        int shared_too = tiku_trk_prefs_get(controller->prefs,
+                             "MountSharedVolumesOntoDesktop") != 0;
+        int i;
+
+        for (i = 0; i < volumes.n; i++) {
+            if (tiku_trk_deskicons_volume_pose(&volumes, &volumes.v[i], 1,
+                                               shared_too)) {
+                add_pose(controller, volumes.v[i].mount);
+            }
+        }
     }
     (void)tiku_trk_poseview_place_unplaced(controller->folder.view,
         tiku_trk_desktop_view_area(controller).w);

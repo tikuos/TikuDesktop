@@ -1,5 +1,6 @@
 # shell: desktop
 # home: fixture
+# prefs: volumes-on
 # PVN-058: the Disks icon follows its setting.  Nothing added or removed it
 # when the setting changed, so turning it off left it on the Desktop until
 # something else happened to rebuild the listing.

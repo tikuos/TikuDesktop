@@ -1,0 +1,18 @@
+# shell: desktop
+# CW-034: the Desktop background grows a Mount submenu listing every
+# partition, with Mount all and Settings…, and Settings… opens the
+# preferences straight at the Disk mount page.
+wait 10
+press 700 500 3
+wait 2
+release 700 500 3
+wait 5
+expect-menu Mount
+menu-pick Mount
+wait 5
+expect-menu Mount all
+expect-menu Settings…
+menu-pick Settings…
+wait 8
+expect-windows 2
+quit

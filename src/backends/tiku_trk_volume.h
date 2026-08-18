@@ -36,6 +36,11 @@ typedef struct {
      * "this is a share rather than a disk" can come from. */
     char     fstype[24];
     int      shared;
+    /* Backed by a device or a network rather than by RAM: what a Desktop
+     * icon is FOR.  A tmpfs on the backdrop would be an icon for a thing
+     * that forgets (PVN-040's persistence gate). */
+    int      persistent;
+    char     source[64];            /* the mount table's device column   */
     uint64_t total, avail;
 } tiku_trk_volume_t;
 
@@ -89,6 +94,36 @@ typedef enum {
  *
  * @param dev The volume's device, so a caller can find its windows.
  */
+/** @brief One block-device partition, mounted or waiting to be. */
+typedef struct {
+    char     name[32];              /* kernel name: nvme0n1p5, sda1, ...  */
+    uint64_t kb;                    /* size in 1K blocks                  */
+    int      mounted;
+    char     mount[TIKU_TRK_PATH_MAX];  /* where, when mounted            */
+} tiku_trk_partition_t;
+
+/**
+ * @brief Every partition the kernel offers, mounted ones marked.
+ *
+ * Whole disks that are carved into partitions are skipped -- the
+ * partitions are the mountable things -- and so are the kernel's own
+ * ram/loop/zram devices.
+ *
+ * @return Count written.
+ */
+int tiku_trk_partitions_scan(tiku_trk_partition_t *out, int max);
+
+/**
+ * @brief Try to mount @p devname (a kernel partition name).
+ *
+ * On this host mounting needs the system's leave; the refusal comes back
+ * in @p why, worded for a person, so the shell can say it out loud
+ * (CW-034).
+ *
+ * @return 0 on success.
+ */
+int tiku_trk_volume_mount(const char *devname, char *why, size_t max);
+
 typedef void (*tiku_trk_before_unmount_fn)(dev_t dev, void *ctx);
 
 /**

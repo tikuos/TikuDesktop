@@ -20,6 +20,10 @@
 #include "tiku_trk_model.h"
 #include "tiku_trk_shortcuts.h"
 
+/* One command per partition in the Mount submenu (CW-034). */
+#define TIKU_TRK_CMD_MOUNT_PART_BASE 1600
+#define TIKU_TRK_MOUNT_PART_MAX 32
+
 typedef struct {
     tiku_trk_menubar_t bar;
     tiku_trk_menu_t    file;
@@ -30,6 +34,12 @@ typedef struct {
     tiku_trk_menu_t    arrange;      /* submenu of Window                   */
     tiku_trk_menu_t    icon_size;    /* submenu of Window                   */
     tiku_trk_menu_t    addons;      /* add-on inventory                      */
+    /* Mount >: every partition, mounted ones marked, plus Mount all and
+     * Settings… (CW-034).  The names are kept beside the menu so a picked
+     * command can be answered without a second scan racing the first. */
+    tiku_trk_menu_t    mount_menu;
+    char               mount_part[TIKU_TRK_MOUNT_PART_MAX][32];
+    int                mount_parts;
     /* The four context menus, kept apart rather than rebuilt into one, so
      * which one appeared is answerable afterwards. */
     tiku_trk_menu_t    pose_ctx;

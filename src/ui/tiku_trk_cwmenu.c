@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_cwmenu.h"
+#include "tiku_trk_volume.h"
 #include "tiku_trk_view_defs.h"
 
 #include <stdio.h>
@@ -390,6 +391,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
     if (c->selection_is_volume) {
+        (void)tiku_trk_menu_add_submenu(m, "Mount", &cw->mount_menu, 1);
         ADD(m, TIKU_TRK_CMD_UNMOUNT);
     }
     /* In the Trash, Delete and Restore stand where Duplicate and Move to
@@ -414,7 +416,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         SEP(m);
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
-    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, cw->addons.count > 0);
 }
 
 /** @brief The New submenu combines the built-in folder and user templates. */
@@ -575,7 +577,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
 
-    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, cw->addons.count > 0);
 
     /* On empty window background. */
     m = &cw->window_ctx;
@@ -613,7 +615,12 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
         ADD(m, TIKU_TRK_CMD_SELECT_ALL);
         ADD(m, TIKU_TRK_CMD_OPEN_PARENT);
-        (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+        if (c->is_desktop || c->is_root) {
+            /* After Select all, as the source inserts it there (CW-034). */
+            SEP(m);
+            (void)tiku_trk_menu_add_submenu(m, "Mount", &cw->mount_menu, 1);
+        }
+        (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, cw->addons.count > 0);
     }
 
     /* On a volume or the root: no clipboard, no trashing. */
@@ -625,9 +632,11 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
-    ADD(m, c->selection_is_volume ? TIKU_TRK_CMD_UNMOUNT
-                                  : TIKU_TRK_CMD_MOUNT);
-    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+    if (c->selection_is_volume) {
+        ADD(m, TIKU_TRK_CMD_UNMOUNT);
+    }
+    (void)tiku_trk_menu_add_submenu(m, "Mount", &cw->mount_menu, 1);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, cw->addons.count > 0);
 
     /* On the Trash itself: three items, and Empty is the first. */
     m = &cw->trash_ctx;
@@ -638,7 +647,41 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
      * and the item is present only when there is one (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
-    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, 0);
+    (void)tiku_trk_menu_add_submenu(m, "Add-ons", &cw->addons, cw->addons.count > 0);
+}
+
+/** @brief Mount >: every partition, mounted ones marked (CW-034). */
+static void
+build_mount_menu(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
+{
+    tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+    (void)c;
+    int n = tiku_trk_partitions_scan(part, TIKU_TRK_MOUNT_PART_MAX);
+    int i;
+
+    tiku_trk_menu_clear(&cw->mount_menu);
+    cw->mount_parts = n;
+    for (i = 0; i < n; i++) {
+        char label[64];
+
+        snprintf(cw->mount_part[i], sizeof cw->mount_part[i], "%s",
+                 part[i].name);
+        snprintf(label, sizeof label, "%s (%llu MB)", part[i].name,
+                 (unsigned long long)(part[i].kb / 1024u));
+        /* A mounted partition is marked and left alone: picking it again
+         * would promise something the mark already says is true. */
+        (void)tiku_trk_menu_add(&cw->mount_menu, label,
+                                TIKU_TRK_CMD_MOUNT_PART_BASE + i, 0, 0u,
+                                !part[i].mounted);
+        tiku_trk_menu_mark(&cw->mount_menu,
+                           TIKU_TRK_CMD_MOUNT_PART_BASE + i,
+                           part[i].mounted);
+    }
+    if (n > 0) {
+        SEP(&cw->mount_menu);
+    }
+    ADD(&cw->mount_menu, TIKU_TRK_CMD_MOUNT_ALL);
+    ADD(&cw->mount_menu, TIKU_TRK_CMD_MOUNT_SETTINGS);
 }
 
 void
@@ -649,6 +692,7 @@ tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     build_icon_size(cw, c);
     build_arrange(cw, c);
+    build_mount_menu(cw, c);
     build_templates(cw);
     build_new(cw, c);
     build_file(cw, c);

@@ -114,4 +114,15 @@ void tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
  */
 int tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop);
 
+/**
+ * @brief Whether @p v earns its own Desktop pose (PVN-040).
+ *
+ * The boot volume is already the Disks pose; a shared volume follows its
+ * own setting; and only a persistent volume shows at all -- an icon for a
+ * RAM filesystem would be an icon for a thing that forgets.
+ */
+int tiku_trk_deskicons_volume_pose(const tiku_trk_volumes_t *vs,
+                                   const tiku_trk_volume_t *v,
+                                   int volumes_on_desktop, int shared_too);
+
 #endif /* TIKU_TRK_DESKICONS_H_ */

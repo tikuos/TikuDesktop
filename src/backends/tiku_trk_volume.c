@@ -80,6 +80,7 @@ tiku_trk_volumes_scan(tiku_trk_volumes_t *vs)
         snprintf(v->mount, sizeof v->mount, "%s", mount);
         name_of(mount, v->name, sizeof v->name);
         v->dev = st.st_dev;
+        snprintf(v->source, sizeof v->source, "%s", dev);
         /* "ro" as a whole option, not a substring: "rootcontext=" and
          * "errors=remount-ro" both contain it. */
         {
@@ -101,6 +102,12 @@ tiku_trk_volumes_scan(tiku_trk_volumes_t *vs)
          * such a volume gets its own icon, and the setting that puts disks
          * on the desktop treats shares separately (IV-006, PVN-040). */
         v->shared = tiku_trk_volume_shared_type(type);
+        v->persistent = !(strcmp(type, "tmpfs") == 0 ||
+                          strcmp(type, "devtmpfs") == 0 ||
+                          strcmp(type, "ramfs") == 0 ||
+                          strcmp(type, "overlay") == 0 ||
+                          strcmp(type, "squashfs") == 0 ||
+                          strncmp(type, "fuse.portal", 11) == 0);
         v->is_boot = (strcmp(mount, "/") == 0);
         v->removable = !v->is_boot;
         if (statvfs(mount, &sv) == 0) {
@@ -374,6 +381,98 @@ tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w, tiku_trk_volchange_t *out,
      * not be reported for ever. */
     w->was = now;
     return n;
+}
+
+int
+tiku_trk_partitions_scan(tiku_trk_partition_t *out, int max)
+{
+    tiku_trk_volumes_t vs;
+    FILE *f;
+    char line[256];
+    int n = 0, have_vols, i, j;
+
+    if (out == NULL || max <= 0) {
+        return 0;
+    }
+    have_vols = tiku_trk_volumes_scan(&vs) > 0;
+    f = fopen("/proc/partitions", "r");
+    if (f == NULL) {
+        return 0;
+    }
+    while (fgets(line, sizeof line, f) != NULL && n < max) {
+        unsigned major, minor;
+        unsigned long long kb;
+        char name[32];
+
+        if (sscanf(line, "%u %u %llu %31s", &major, &minor, &kb,
+                   name) != 4) {
+            continue;
+        }
+        /* The kernel's own ram, loop and zram devices are not disks a
+         * person mounts. */
+        if (strncmp(name, "ram", 3) == 0 || strncmp(name, "loop", 4) == 0 ||
+            strncmp(name, "zram", 4) == 0) {
+            continue;
+        }
+        memset(&out[n], 0, sizeof out[n]);
+        snprintf(out[n].name, sizeof out[n].name, "%s", name);
+        out[n].kb = kb;
+        if (have_vols) {
+            char devpath[80];
+
+            snprintf(devpath, sizeof devpath, "/dev/%s", name);
+            for (i = 0; i < vs.n; i++) {
+                if (strcmp(vs.v[i].source, devpath) == 0) {
+                    out[n].mounted = 1;
+                    snprintf(out[n].mount, sizeof out[n].mount, "%s",
+                             vs.v[i].mount);
+                    break;
+                }
+            }
+        }
+        n++;
+    }
+    (void)fclose(f);
+    /* A disk that is carved into partitions is not itself the mountable
+     * thing: drop any entry another entry's name extends. */
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            size_t li = strlen(out[i].name);
+
+            if (i != j && strncmp(out[j].name, out[i].name, li) == 0 &&
+                strlen(out[j].name) > li) {
+                out[i] = out[--n];
+                i--;
+                break;
+            }
+        }
+    }
+    return n;
+}
+
+int
+tiku_trk_volume_mount(const char *devname, char *why, size_t max)
+{
+    char dev[80];
+
+    if (why != NULL && max > 0u) {
+        why[0] = '\0';
+    }
+    if (devname == NULL || devname[0] == '\0') {
+        return -1;
+    }
+    snprintf(dev, sizeof dev, "/dev/%s", devname);
+    /* The permission check comes before anything else the kernel would
+     * object to, so an unprivileged browser learns the true reason. */
+    if (mount(dev, "/mnt", "ext4", 0, NULL) == 0) {
+        return 0;
+    }
+    if (why != NULL) {
+        snprintf(why, max, (errno == EPERM)
+                     ? "Mounting \"%.40s\" needs the system's leave."
+                     : "\"%.40s\" could not be mounted.", devname);
+    }
+    return -1;
 }
 
 tiku_trk_unmount_t

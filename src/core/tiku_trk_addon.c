@@ -1,3 +1,8 @@
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_trk_addon.h"
 #include <stdio.h>
@@ -125,4 +130,113 @@ tiku_trk_addons_shortcut(const tiku_trk_addons_t *a, char key, unsigned mods,
         }
     }
     return -1;
+}
+
+
+int
+tiku_trk_addons_discover(tiku_trk_addons_t *addons, const char *dir)
+{
+    DIR *d;
+    struct dirent *e;
+    int i, found = 0;
+
+    if (addons == NULL || dir == NULL) {
+        return 0;
+    }
+    /* What an earlier discovery found is replaced wholesale: an add-on
+     * removed from the directory must leave the menu (AW-023). */
+    for (i = 0; i < addons->count; i++) {
+        if (addons->item[i].external) {
+            addons->item[i] = addons->item[--addons->count];
+            i--;
+        }
+    }
+    addons->generation++;
+    d = opendir(dir);
+    if (d == NULL) {
+        return 0;
+    }
+    while ((e = readdir(d)) != NULL &&
+           addons->count < TIKU_TRK_ADDON_MAX) {
+        char path[256], types_path[280], type[TIKU_TRK_TYPE_MAX] = "";
+        char keyline[8] = "";
+        struct stat st;
+        FILE *tf;
+
+        if (e->d_name[0] == '.' || strstr(e->d_name, ".types") != NULL) {
+            continue;
+        }
+        if (snprintf(path, sizeof path, "%s/%s", dir, e->d_name) < 0) {
+            continue;
+        }
+        if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) ||
+            access(path, X_OK) != 0) {
+            continue;
+        }
+        snprintf(types_path, sizeof types_path, "%s.types", path);
+        tf = fopen(types_path, "r");
+        if (tf != NULL) {
+            if (fgets(type, sizeof type, tf) != NULL) {
+                type[strcspn(type, "\n")] = '\0';
+            }
+            /* The second line is the add-on's own default key, the
+             * declaration Haiku kept in a resource (AW-022).  Exactly one
+             * character, as the source requires. */
+            if (fgets(keyline, sizeof keyline, tf) != NULL) {
+                keyline[strcspn(keyline, "\n")] = '\0';
+                if (strlen(keyline) != 1u) {
+                    keyline[0] = '\0';
+                }
+            }
+            (void)fclose(tf);
+        }
+        {
+            tiku_trk_addon_t *a = &addons->item[addons->count++];
+
+            memset(a, 0, sizeof *a);
+            snprintf(a->name, sizeof a->name, "%s", e->d_name);
+            snprintf(a->command, sizeof a->command, "%s", path);
+            snprintf(a->type, sizeof a->type, "%s", type);
+            a->generic = (type[0] == '\0');
+            a->key = keyline[0];
+            a->mods = 0x3u; /* Command+Option, the add-on default chord */
+            a->external = 1;
+            found++;
+        }
+    }
+    (void)closedir(d);
+    return found;
+}
+
+int
+tiku_trk_addons_run_external(const tiku_trk_addon_t *addon,
+                             const char *const *paths, int n)
+{
+    const char *argv[66];
+    int argc = 0, i;
+    pid_t pid;
+
+    if (addon == NULL || !addon->external || addon->command[0] == '\0') {
+        return -1;
+    }
+    argv[argc++] = addon->command;
+    for (i = 0; i < n && argc < (int)(sizeof argv / sizeof argv[0]) - 1;
+         i++) {
+        if (paths[i] != NULL && paths[i][0] != '\0') {
+            argv[argc++] = paths[i];
+        }
+    }
+    argv[argc] = NULL;
+    pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        execvp(argv[0], (char *const *)(void *)argv);
+        _exit(127);
+    }
+    /* Reaped without waiting: an add-on that blocked the window it ran
+     * from would be an add-on the user watches (CW-038). */
+    (void)waitpid(pid, NULL, WNOHANG);
+    return 0;
 }

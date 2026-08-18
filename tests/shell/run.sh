@@ -38,6 +38,15 @@ for s in "$here"/*.script; do
         if grep -q '^# home: fixture' "$s"; then
             deskfill=yes
         fi
+        # EVERY script's desktop is a fixture's: the host's own volumes
+        # must not land icons on it, or arrangement and repaint checks are
+        # at the mercy of whatever this machine mounts and of when its
+        # icons arrive (PVN-040's poses are proven by unit checks and
+        # opted-in scripts instead).
+        volbase=yes
+        if grep -q '^# prefs: volumes-on' "$s"; then
+            volbase=""
+        fi
         case $(basename "$s") in
             session2.script) ;;
             # EVERY device file, not just the home one: the fixture lives
@@ -143,6 +152,18 @@ PYEOF
         # A shared navigator preference is written by the multi-window
         # Preferences UI and observed by the browser process.  This fixture
         # starts with that external setting off so the observer is real.
+        if [ -n "$volbase" ]; then
+            mkdir -p "$deskhome/.config"
+            printf 'MountVolumesOntoDesktop off\nShowDisksIcon on\nShowNavigator on\n' > \
+                "$deskhome/.config/TrackerSettings"
+        fi
+        if grep -q '^# addons: fixture' "$s"; then
+            mkdir -p "$deskhome/.config/tracker/add-ons"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> /tmp/trk_addon_ran\n' \
+                > "$deskhome/.config/tracker/add-ons/stamp"
+            chmod +x "$deskhome/.config/tracker/add-ons/stamp"
+            rm -f /tmp/trk_addon_ran
+        fi
         if grep -q '^# prefs: filter-on' "$s"; then
             mkdir -p "$deskhome/.config"
             printf 'TypeAheadFiltering on\n' > \

@@ -258,6 +258,26 @@ tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
 }
 
 int
+tiku_trk_deskicons_volume_pose(const tiku_trk_volumes_t *vs,
+                               const tiku_trk_volume_t *v,
+                               int volumes_on_desktop, int shared_too)
+{
+    if (vs == NULL || v == NULL || !volumes_on_desktop) {
+        return 0;
+    }
+    if (v->is_boot) {
+        return 0;               /* the boot volume IS the Disks pose */
+    }
+    if (!v->persistent) {
+        return 0;
+    }
+    if (v->shared && !shared_too) {
+        return 0;
+    }
+    return tiku_trk_volume_shows_icon(vs, v);
+}
+
+int
 tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop)
 {
     /* Either alone puts the root on the Desktop; the preferences make them

@@ -14,7 +14,7 @@ press 700 500 3
 wait 2
 release 700 500 3
 wait 5
-expect-menu New folder|Arrange by|Icon size|Paste|Select…|Select all|Open parent|Add-ons|
+expect-menu New folder|Arrange by|Icon size|Paste|Select…|Select all|Open parent||Mount|Add-ons|
 note and reversing the order lays the DESKTOP out again in the other
 note direction: what led the row now trails it
 menu-pick Arrange by

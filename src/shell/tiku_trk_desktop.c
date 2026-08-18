@@ -171,6 +171,14 @@ typedef struct desktop {
      * application all ask the same question (AW-040). */
     tiku_trk_apps_t      apps;
     tiku_trk_addons_t    addons;
+    /* The add-ons directory and the user shortcut file, both watched by
+     * modification time so an install or a rebind lands without a restart
+     * (AW-022, AW-023). */
+    char                 addons_dir[TIKU_TRK_PATH_MAX];
+    char                 addons_keys[TIKU_TRK_PATH_MAX];
+    time_t               addons_mtime;
+    time_t               keys_mtime;
+    int64_t              addons_checked;
     /* What the system knows about a type: its description, its icon, and
      * the columns it is worth showing (AW-013, CW-026). */
     tiku_trk_types_t     types;
@@ -448,6 +456,49 @@ save_before_unmount(dev_t dev, void *context)
         if (desk != NULL && desk->view != NULL &&
             tiku_trk_poseview_on_device(desk->view, (uint64_t)dev)) {
             (void)tiku_trk_poseview_save_state(desk->view);
+        }
+    }
+}
+
+/**
+ * @brief Keep the add-on inventory true to the directory and the user's
+ *        shortcut file (AW-022, AW-023, CW-038).
+ */
+static void
+sync_addons(desktop_t *app, int force)
+{
+    struct stat st;
+    int64_t now = tiku_trk_now();
+
+    if (!force && now - app->addons_checked < 500000) {
+        return;
+    }
+    app->addons_checked = now;
+    if (app->addons_dir[0] != '\0') {
+        time_t mtime = (stat(app->addons_dir, &st) == 0) ? st.st_mtime : 0;
+
+        if (force || mtime != app->addons_mtime) {
+            app->addons_mtime = mtime;
+            (void)tiku_trk_addons_discover(&app->addons, app->addons_dir);
+            app->dirty = 1;
+        }
+    }
+    if (app->addons_keys[0] != '\0') {
+        time_t mtime = (stat(app->addons_keys, &st) == 0) ? st.st_mtime : 0;
+
+        if ((force || mtime != app->keys_mtime) && mtime != 0) {
+            FILE *f = fopen(app->addons_keys, "r");
+
+            app->keys_mtime = mtime;
+            if (f != NULL) {
+                char buf[2048];
+                size_t got = fread(buf, 1u, sizeof buf - 1u, f);
+
+                buf[got] = '\0';
+                (void)fclose(f);
+                (void)tiku_trk_addons_rebind(&app->addons, buf);
+                app->dirty = 1;
+            }
         }
     }
 }
@@ -1047,6 +1098,29 @@ invoke_addon(const tiku_trk_addon_t *addon, void *context)
     if (addon == NULL || app == NULL) {
         return 0;
     }
+    if (addon->external) {
+        /* Run against the selection, in a process of its own -- the
+         * port's separate thread (CW-038). */
+        char paths[64][TIKU_TRK_PATH_MAX];
+        const char *sel[64];
+        folder_t *fl = folder_of(app,
+                                 tiku_desk_workspace_focused(app->desk));
+        int n;
+
+        if (fl == NULL) {
+            fl = desktop_folder(app);
+        }
+        n = tiku_trk_folder_file_actions_selection(fl, paths, sel, 64);
+        if (tiku_trk_addons_run_external(addon, sel, n) == 0) {
+            snprintf(app->status, sizeof app->status,
+                     "running %.48s on %d item%s", addon->name, n,
+                     (n == 1) ? "" : "s");
+        } else {
+            snprintf(app->status, sizeof app->status,
+                     "could not run %.60s", addon->name);
+        }
+        return 1;
+    }
     snprintf(app->status, sizeof app->status, "add-on requested: %.80s",
              addon->name);
     return 1;
@@ -1195,6 +1269,60 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         if (tiku_trk_poseview_paste_layout(fl->view) > 0) {
             (void)tiku_trk_poseview_save_columns(fl->view);
             snprintf(app->status, sizeof app->status, "pasted layout");
+        }
+        app->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
+        /* Straight to the Disk mount page: the one caller the jump-to-page
+         * request has (AW-101, CW-034). */
+        app->prefs_window.page = TIKU_TRK_PAGE_MOUNT;
+        tiku_trk_prefs_window_open(&app->prefs_window);
+        app->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
+        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
+         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
+                       TIKU_TRK_MOUNT_PART_MAX)) {
+        /* Asked of the system, and the answer -- on this host, that
+         * mounting needs its leave -- is said out loud (CW-034). */
+        char why[200];
+        int failed = 0, tried = 0;
+
+        why[0] = '\0';
+        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
+            tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_trk_partitions_scan(part,
+                                              TIKU_TRK_MOUNT_PART_MAX);
+            int k;
+
+            for (k = 0; k < pn; k++) {
+                if (part[k].mounted) {
+                    continue;
+                }
+                tried++;
+                if (tiku_trk_volume_mount(part[k].name, why,
+                                          sizeof why) != 0) {
+                    failed++;
+                    break;
+                }
+            }
+        } else {
+            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
+
+            if (idx < app->menus.mount_parts) {
+                tried++;
+                failed = tiku_trk_volume_mount(app->menus.mount_part[idx],
+                                               why, sizeof why) != 0;
+            }
+        }
+        if (failed && why[0] != '\0') {
+            tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+                                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
+        } else if (tried == 0) {
+            snprintf(app->status, sizeof app->status,
+                     "every partition is already mounted");
         }
         app->dirty = 1;
         return;
@@ -1783,6 +1911,17 @@ tracker_run(int argc, char **argv)
     (void)tiku_trk_addons_register(&app.addons, "Open with Editor", "",
                                    "text/plain", 'e');
     (void)tiku_trk_addons_register(&app.addons, "Inspect", "", "*", 'i');
+    {
+        const char *home = getenv("HOME");
+
+        if (home != NULL && home[0] != '\0') {
+            snprintf(app.addons_dir, sizeof app.addons_dir,
+                     "%s/.config/tracker/add-ons", home);
+            snprintf(app.addons_keys, sizeof app.addons_keys,
+                     "%s/.config/tracker/addon-shortcuts", home);
+        }
+        sync_addons(&app, 1);
+    }
     tiku_trk_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
     tiku_trk_volwatch_init(&app.volwatch);
@@ -2121,6 +2260,7 @@ tracker_run(int argc, char **argv)
 
     while (app.running) {
         sync_folder_preferences(&app);
+        sync_addons(&app, 0);
         for (;;) {
             tiku_desk_event_t ev;
             int have = 0;

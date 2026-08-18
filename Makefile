@@ -233,7 +233,7 @@ $(BUILD)/test_prefs: src/core/tiku_trk_prefs.c src/core/tiku_trk_state.c \
                      tests/test_prefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_volume: $(COMMON) tests/test_volume.c | $(BUILD)
+$(BUILD)/test_volume: $(COMMON) src/deskbar/tiku_trk_deskicons.c tests/test_volume.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_vdir: $(COMMON) tests/test_vdir.c | $(BUILD)
@@ -275,6 +275,7 @@ $(BUILD)/test_edit: src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
 
 $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
                     src/ui/tiku_trk_cwmenu.c src/core/tiku_trk_model.c \
+                    src/backends/tiku_trk_volume.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 

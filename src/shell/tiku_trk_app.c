@@ -2131,6 +2131,61 @@ menu_invoke(app_t *a, int command)
     const char *template_parent;
     int field = -1;
 
+    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
+        /* The preferences page for it lives in the desktop shell. */
+        snprintf(a->status, sizeof a->status,
+                 "mount settings live in the desktop shell's preferences");
+        a->dirty = 1;
+        return;
+    }
+    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
+        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
+         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
+                       TIKU_TRK_MOUNT_PART_MAX)) {
+        /* Asked of the system, and the answer -- on this host, that
+         * mounting needs its leave -- is said out loud (CW-034). */
+        char why[200];
+        int failed = 0, tried = 0;
+
+        why[0] = '\0';
+        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
+            tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_trk_partitions_scan(part,
+                                              TIKU_TRK_MOUNT_PART_MAX);
+            int k;
+
+            for (k = 0; k < pn; k++) {
+                if (part[k].mounted) {
+                    continue;
+                }
+                tried++;
+                if (tiku_trk_volume_mount(part[k].name, why,
+                                          sizeof why) != 0) {
+                    failed++;
+                    break;
+                }
+            }
+        } else {
+            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
+
+            if (idx < a->menus.mount_parts) {
+                tried++;
+                failed = tiku_trk_volume_mount(a->menus.mount_part[idx],
+                                               why, sizeof why) != 0;
+            }
+        }
+        if (failed && why[0] != '\0') {
+            tiku_trk_alert_open(
+                tiku_trk_status_overlay_alert(&a->status_overlay),
+                TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                "Cancel");
+        } else if (tried == 0) {
+            snprintf(a->status, sizeof a->status,
+                     "every partition is already mounted");
+        }
+        a->dirty = 1;
+        return;
+    }
     if (command == TIKU_TRK_CMD_UNMOUNT) {
         /* The selection names the volume; with none, the volume ROOT being
          * shown is the one the gesture means (CW-034).  Everything open on

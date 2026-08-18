@@ -1,0 +1,27 @@
+# shell: desktop
+# addons: fixture
+# CW-038/AW-022/AW-023: add-ons are found in a directory, run against the
+# selection in a process of their own, and the user's shortcut file
+# rebinds them live.
+wait 8
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Add-ons
+wait 3
+expect-menu stamp
+menu-pick stamp
+wait 25
+expect-file /tmp/trk_addon_ran
+expect-file-has /tmp/trk_addon_ran a.txt
+note the shortcut file is read live, and the chord runs the add-on
+remove /tmp/trk_addon_ran
+write /tmp/trk_home/.config/tracker/addon-shortcuts stamp=j
+wait 40
+key j ctrl alt
+wait 25
+expect-file /tmp/trk_addon_ran
+quit
