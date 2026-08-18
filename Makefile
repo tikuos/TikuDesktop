@@ -291,6 +291,7 @@ $(BUILD)/tracker: $(COMMON) src/core/tiku_trk_addon.c $(ICONS) src/ui/tiku_trk_p
                   src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
                   src/ui/tiku_trk_cwmenu.c \
                   src/ui/commands/tiku_trk_folder_file_actions.c \
+                  src/ui/overlays/tiku_trk_status_overlay.c \
                   src/ui/windows/tiku_trk_folder_window.c \
                   src/shell/tiku_trk_script.c src/shell/tiku_trk_app.c \
                   src/shell/tiku_trk_launcher.c | $(BUILD)

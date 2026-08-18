@@ -1,4 +1,4 @@
-# shell: desktop
+# shell: both
 # work: home
 # PVK-038/FS-046: the Delete key, which this shell did not have at all.  What
 # it means depends on where the item is: a move that can be undone where there

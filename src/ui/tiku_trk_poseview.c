@@ -880,6 +880,11 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
      * with them: kept, it would place the first new icon under whatever
      * the last listing left behind (PVL-017). */
     tiku_trk_poseview_reset_hint(v);
+    /* And the armed rename goes with them: the arm names a pose INDEX,
+     * and over a fresh listing that index is whatever happens to land
+     * there -- an arm kept across a reload opened an editor on the row
+     * that slid into the armed slot (MA-043). */
+    tiku_trk_poseview_cancel_edit_wait(v);
     if (v == NULL || v->backend == NULL) {
         return -1;
     }

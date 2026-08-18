@@ -1,4 +1,4 @@
-# shell: desktop
+# shell: both
 # PVL-025/PVL-098: a folder made from the context menu appears where the
 # menu was opened, not wherever auto-placement puts the next icon.
 key 1 ctrl

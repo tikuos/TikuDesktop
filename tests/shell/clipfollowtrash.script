@@ -1,4 +1,4 @@
-# shell: desktop
+# shell: both
 # work: home
 # FS-060: the Trash is a move like any other, so an item cut and then
 # trashed is still on the clipboard -- under the name it has in there.

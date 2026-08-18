@@ -1,4 +1,4 @@
-# shell: desktop
+# shell: both
 # CW-042: a pose menu carries Paste and routes it through the clipboard.
 click-row 1
 key c ctrl

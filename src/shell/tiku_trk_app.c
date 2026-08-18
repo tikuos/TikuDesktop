@@ -31,6 +31,7 @@
 #include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_folder_file_actions.h"
+#include "tiku_trk_status_overlay.h"
 #include "tiku_trk_navigator.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_prefs.h"
@@ -117,9 +118,51 @@ typedef struct {
     tiku_trk_folder_window_t         folder;
     tiku_trk_clip_t                  clip;
     tiku_trk_folder_file_actions_t   file_actions;
+    /* The modal question, hosted the way the desktop shell hosts it: the
+     * same overlay, over this window's one surface, so the delete question
+     * and a collision are the same question in both shells (FS-046). */
+    tiku_trk_status_overlay_t        status_overlay;
 } app_t;
 
 static void menu_invoke(app_t *a, int command);
+
+/** @brief Hand a modal filesystem answer back to the operation engine. */
+static void
+app_alert_answer(void *context, const tiku_trk_alert_t *alert)
+{
+    app_t *a = context;
+
+    if (alert->tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
+        if (alert->chosen == alert->cancel) {
+            tiku_trk_fs_cancel(a->fs);
+        } else {
+            tiku_trk_fs_resolve(a->fs,
+                                tiku_trk_alert_conflict_answer(alert));
+        }
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
+        tiku_trk_fs_resolve_error(a->fs, alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
+        /* Cancel, Move to Trash, Delete, in the order the buttons are
+         * offered (FS-046).  The folder wrapper is refreshed here: the
+         * question was modal, but the answer must still act on the view
+         * the window is showing NOW. */
+        a->folder.view = a->view;
+        snprintf(a->folder.path, sizeof a->folder.path, "%s",
+                 tiku_trk_poseview_path(a->view));
+        tiku_trk_folder_file_actions_answer_delete(&a->file_actions,
+            &a->folder, (tiku_trk_delete_answer_t)alert->chosen);
+    }
+    a->dirty = 1;
+}
+
+/** @brief Stop asks the operation engine to cancel at its safe boundary. */
+static void
+app_alert_stop(void *context)
+{
+    app_t *a = context;
+
+    tiku_trk_fs_cancel(a->fs);
+}
 
 /** @brief Index of the first selected row, or -1. */
 static int
@@ -303,6 +346,10 @@ menu_ctx(app_t *a, unsigned mods)
     }
     p = tiku_trk_poseview_active(a->view);
     c.can_edit_name = (c.selection == 1);
+    /* Without these every Paste stays grey: the enable rules can only see
+     * what the context carries (CW-042). */
+    c.clipboard_has_refs = tiku_trk_clip_count(&a->clip) > 0;
+    c.clipboard_has_layout = tiku_trk_poseview_has_layout_clipboard();
     c.can_open_parent = strcmp(tiku_trk_poseview_path(a->view), "/") != 0;
     c.target_ro = a->read_only;
     c.is_root = !c.can_open_parent;
@@ -763,6 +810,7 @@ draw(app_t *a)
         draw_icons(a, list);
         draw_count(a, list);
         draw_popup(a);
+        tiku_trk_status_overlay_draw(&a->status_overlay);
         a->dirty = 0;
         return;
     }
@@ -946,6 +994,7 @@ draw(app_t *a)
     }
     draw_count(a, list);
     draw_popup(a);
+    tiku_trk_status_overlay_draw(&a->status_overlay);
     (void)count;
     a->dirty = 0;
 }
@@ -1427,6 +1476,47 @@ script_row_point(void *ctx, int row, int *x, int *y)
     return 1;
 }
 
+/** @brief Resolve a named icon to its view-space location (drop space). */
+static int
+script_pose_at(void *ctx, const char *name, int *x, int *y)
+{
+    app_t *a = (app_t *)ctx;
+    int i, n;
+
+    if (a == NULL || name == NULL || x == NULL || y == NULL) {
+        return 0;
+    }
+    n = tiku_trk_poseview_count(a->view);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+
+        if (p != NULL && p->placed &&
+            strcmp(p->model.name, name) == 0) {
+            tiku_trk_poseview_pose_location(a->view, p, x, y);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** @brief Resolve a named icon to the screen point it is drawn at. */
+static int
+script_pose_screen(void *ctx, const char *name, int *x, int *y)
+{
+    app_t *a = (app_t *)ctx;
+    tiku_desk_rect_t lr;
+
+    if (!script_pose_at(ctx, name, x, y)) {
+        return 0;
+    }
+    /* Converted the way draw_icons converts on the way out, so a test can
+     * name a screen point instead of the chrome. */
+    lr = list_rect(a);
+    *x += lr.x;
+    *y += lr.y;
+    return 1;
+}
+
 /** @brief Whether a point is on the title strip, and where in its own space. */
 static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
@@ -1454,6 +1544,12 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
     unsigned mods = 0;
     int nav = 0;
 
+    if (tiku_trk_status_overlay_key(&a->status_overlay, key)) {
+        /* A modal alert owns the keyboard: Escape is Cancel, Return the
+         * default, and a letter presses the button it starts with. */
+        a->dirty = 1;
+        return;
+    }
     if (a->nav_editing) {
         tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
         tiku_trk_edit_result_t result;
@@ -1746,35 +1842,18 @@ not_editing:
         }
         break;
     case TIKU_DESK_KEY_DELETE: {
-        char paths[64][TIKU_TRK_PATH_MAX];
-        const char *sel[64];
-        int n = selection_paths(a, paths, sel, 64);
-
-        if (n > 0 && a->fs != NULL) {
-            /* FS-046/FS-047: what the key MEANS depends on where the items
-             * are.  Somewhere with a Trash it is a move that can be undone;
-             * inside the Trash, or on a store that has none, it is final --
-             * and the wording says which. */
-            int shift = (modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
-            tiku_trk_delete_q_t q =
-                tiku_trk_fs_delete_question(a->fs, sel[0], shift);
-
-            /* Noted BEFORE the listing changes: afterwards the index is
-             * the only thing left pointing at where the item was. */
-            a->select_next = first_selected_index(a);
-
-            if (q == TIKU_TRK_DELETE_STRAIGHT) {
-                snprintf(a->status, sizeof a->status,
-                         "deleting %d item%s -- this cannot be undone", n,
-                         (n == 1) ? "" : "s");
-                (void)tiku_trk_fs_delete(a->fs, sel, n);
-            } else {
-                snprintf(a->status, sizeof a->status,
-                         "moving %d item%s to the Trash", n,
-                         (n == 1) ? "" : "s");
-                (void)tiku_trk_fs_trash(a->fs, sel, n);
-            }
-        }
+        /* What the key MEANS depends on where the items are: a move that
+         * can be undone where there is a Trash to move them to, and a
+         * deletion inside it or when Shift says the user has already
+         * decided (PVK-038).  The key asks the same controller the menu
+         * item does, so the question a delete puts up is one rule and not
+         * one per way of reaching it (FS-046). */
+        /* Noted BEFORE the listing changes: afterwards the index is
+         * the only thing left pointing at where the item was (FS-050). */
+        a->select_next = first_selected_index(a);
+        menu_invoke(a, (modifiers & TIKU_DESK_MOD_SHIFT)
+                           ? TIKU_TRK_CMD_DELETE
+                           : TIKU_TRK_CMD_MOVE_TO_TRASH);
         a->dirty = 1;
         return;
     }
@@ -1909,6 +1988,37 @@ menu_key(app_t *a, unsigned key, unsigned modifiers)
     handle_key(a, &event);
 }
 
+/**
+ * @brief Point a new entry at where it was asked for (PVL-025, PVL-098).
+ *
+ * The menu's own corner is where it was opened, which is the click that
+ * asked for the folder; a keyboard shortcut has no menu, so the last press
+ * answers instead, and only while it is over the view.
+ */
+static int
+seed_new_entry(app_t *a, int *vx, int *vy)
+{
+    tiku_desk_rect_t lr = list_rect(a);
+    int x, y;
+
+    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
+        return 0;
+    }
+    if (a->popup != NULL) {
+        x = a->popup_frame.x;
+        y = a->popup_frame.y;
+    } else {
+        x = a->press_x;
+        y = a->press_y;
+    }
+    if (x < lr.x || x >= lr.x + lr.w || y < lr.y || y >= lr.y + lr.h) {
+        return 0;
+    }
+    *vx = x - lr.x;
+    *vy = y - lr.y;
+    return 1;
+}
+
 /** @brief Carry out a command from the shared container-window menus. */
 static void
 menu_invoke(app_t *a, int command)
@@ -1917,6 +2027,43 @@ menu_invoke(app_t *a, int command)
     const char *template_parent;
     int field = -1;
 
+    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
+        /* Made HERE rather than in the shared controller: only the shell
+         * knows where the asking click landed, and the folder must appear
+         * there rather than in the next free slot (PVL-025, PVL-098). */
+        char made[TIKU_TRK_PATH_MAX], error[200];
+        int seeded, sx = 0, sy = 0, row;
+        const char *slash;
+
+        error[0] = '\0';
+        seeded = seed_new_entry(a, &sx, &sy);
+        if (a->fs != NULL && tiku_trk_fs_new_folder(a->fs,
+                tiku_trk_poseview_path(a->view), made, sizeof made,
+                error, sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            if (seeded) {
+                tiku_trk_poseview_drop_land(a->view,
+                    (slash != NULL) ? slash + 1 : made, sx, sy);
+            }
+            (void)tiku_trk_poseview_reload(a->view);
+            /* A reload drains in one go, so the loading loop never runs
+             * for it: the landing recorded above is applied here or not
+             * at all. */
+            settle_layout(a);
+            row = index_of_path(a, made);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                begin_rename(a);
+            }
+            snprintf(a->status, sizeof a->status, "created '%.180s'",
+                     slash != NULL ? slash + 1 : made);
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                error[0] != '\0' ? error : "could not create a new folder");
+        }
+        a->dirty = 1;
+        return;
+    }
     /* Through the shared controller first: what Delete, Duplicate, Create
      * link, Identify and the clipboard verbs mean is one implementation,
      * not one per shell. */
@@ -1925,7 +2072,12 @@ menu_invoke(app_t *a, int command)
              tiku_trk_poseview_path(a->view));
     if (tiku_trk_folder_file_actions_invoke(&a->file_actions, &a->folder,
                                             command)) {
-        (void)tiku_trk_poseview_reload(a->view);
+        /* No reload here: what a command changed arrives as change notices
+         * and through after_op when the engine goes idle, as it does in
+         * the other shell.  A reload at this point cleared the selection
+         * the command left behind -- the cut it had just tinted, and the
+         * rows the modal delete question re-reads when it is answered
+         * (FS-046, FS-060). */
         a->dirty = 1;
         return;
     }
@@ -2262,13 +2414,18 @@ tracker_run(int argc, char **argv)
     a.fs = tiku_trk_fs_new(a.backend);
     (void)tiku_trk_fs_prepare_trash(a.fs);
     tiku_trk_clip_init(&a.clip);
-    /* No alert layer and no preferences window in this shell: the
-     * controller is told so rather than handed something that cannot
-     * show (FEATURES rule 6). */
-    tiku_trk_folder_file_actions_init(&a.file_actions, a.fs, a.backend,
-                                      &a.clip, NULL, NULL, NULL, NULL, NULL,
-                                      a.status, sizeof a.status, NULL, NULL);
     a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
+    tiku_trk_status_overlay_init(&a.status_overlay, a.surf, WIN_W, WIN_H,
+                                 &a.dirty, app_alert_answer, app_alert_stop,
+                                 &a);
+    /* No preferences window in this shell, but the command layer now has
+     * somewhere to ASK: the overlay's alert, so the delete question and a
+     * collision are put up here exactly as the desktop puts them up
+     * (FS-046, FEATURES rule 6). */
+    tiku_trk_folder_file_actions_init(&a.file_actions, a.fs, a.backend,
+        &a.clip, NULL, NULL,
+        tiku_trk_status_overlay_alert(&a.status_overlay), NULL, NULL,
+        a.status, sizeof a.status, NULL, NULL);
     a.row_h = LIST_ROW_H;
     {
         const char *home = getenv("HOME");
@@ -2411,7 +2568,11 @@ tracker_run(int argc, char **argv)
                 memset(&sst, 0, sizeof sst);
                 sst.status = a.status;
                 sst.title = a.title;
-                sst.alert = NULL;
+                sst.alert =
+                    tiku_trk_status_overlay_alert(&a.status_overlay)->open
+                        ? tiku_trk_status_overlay_alert(&a.status_overlay)
+                              ->text
+                        : NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
                 sst.renaming = a.editing;
@@ -2458,6 +2619,8 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 sst.row_point = script_row_point;
+                sst.pose_at = script_pose_at;
+                sst.pose_screen = script_pose_screen;
                 sst.pose_ctx = &a;
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     a.running = 0;
@@ -2549,6 +2712,10 @@ tracker_run(int argc, char **argv)
                     (void)tiku_desk_surface_resize(a.surf, ev.width,
                                                    ev.height,
                                                    TIKU_DESK_C_PANEL);
+                    /* The overlay centres its alert on these; stale ones
+                     * would put the question off a shrunken window. */
+                    a.status_overlay.screen_w = ev.width;
+                    a.status_overlay.screen_h = ev.height;
                 }
                 a.dirty = 1;
                 break;
@@ -2559,6 +2726,12 @@ tracker_run(int argc, char **argv)
                 handle_key(&a, &ev);
                 break;
             case TIKU_DESK_EVENT_POINTER_DOWN: {
+                if (tiku_trk_status_overlay_pointer(&a.status_overlay,
+                                                    ev.x, ev.y)) {
+                    /* A modal alert eats the click wherever it lands. */
+                    a.dirty = 1;
+                    break;
+                }
                 if (ev.button == 1 &&
                     menubar_press(&a, ev.x, ev.y,
                                   ev.modifiers)) {
@@ -2707,6 +2880,19 @@ tracker_run(int argc, char **argv)
                         (void)tiku_trk_click_press(&click, NULL, 0, 0,
                                                    ev.button, 0u,
                                                    now);
+                        if (ev.button == 3u) {
+                            /* The background asks for its own menu; the
+                             * band is a selection gesture and belongs to
+                             * the primary button (CW-042). */
+                            tiku_trk_poseview_cancel_edit_wait(a.view);
+                            a.press_at = now;
+                            a.press_x = ev.x;
+                            a.press_y = ev.y;
+                            a.press_row = -1;
+                            a.press_down = 1;
+                            a.dirty = 1;
+                            break;
+                        }
                         /* Empty space starts a rubber band.  Without a
                          * modifier the selection is cleared FIRST, so the
                          * band's toggle rule starts from nothing; with one
@@ -2999,32 +3185,17 @@ tracker_run(int argc, char **argv)
             (void)tiku_trk_folder_file_actions_pump(&a.file_actions);
             pr = tiku_trk_fs_progress(a.fs);
             if (pr->conflict) {
-                /* A collision waits for an answer; with no dialog yet, the
-                 * safe answer is to keep both rather than overwrite. */
-                {   /* Show the leaf: the full path does not fit the
-                     * status line and the name is what identifies it.
-                     * Bounded by hand so a long name shortens rather than
-                     * pushing the sentence off the end. */
-                    const char *slash = strrchr(pr->conflict_path, '/');
-                    const char *leaf = (slash != NULL) ? slash + 1
-                                                       : pr->conflict_path;
-                    char shown[80];
-                    size_t ll = strlen(leaf);
-
-                    if (ll >= sizeof shown) { ll = sizeof shown - 1u; }
-                    memcpy(shown, leaf, ll);
-                    shown[ll] = '\0';
-                    snprintf(a.status, sizeof a.status,
-                             "'%s' exists -- keeping both", shown);
+                /* Asked, not assumed.  The engine worked out which form
+                 * the question takes; this puts it up and waits. */
+                if (!tiku_trk_status_overlay_alert(&a.status_overlay)->open) {
+                    tiku_trk_alert_for_conflict(
+                        tiku_trk_status_overlay_alert(&a.status_overlay), pr);
                 }
-                tiku_trk_fs_resolve(a.fs, TIKU_TRK_CONFLICT_RENAME);
             } else if (pr->error_ask) {
-                /* The original puts up a Cancel/OK alert here.  With no
-                 * alert layer, the message is shown and the job carries on
-                 * -- the answer that loses least, since cancelling would
-                 * throw away the items that were about to work. */
-                snprintf(a.status, sizeof a.status, "%.200s", pr->error);
-                tiku_trk_fs_resolve_error(a.fs, 1);
+                if (!tiku_trk_status_overlay_alert(&a.status_overlay)->open) {
+                    tiku_trk_alert_for_error(
+                        tiku_trk_status_overlay_alert(&a.status_overlay), pr);
+                }
             } else {
                 snprintf(a.status, sizeof a.status, "%d of %d%s%s",
                          pr->done + pr->skipped, pr->total,

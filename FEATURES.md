@@ -730,14 +730,14 @@ kArrangeBy: if the attribute has no column yet, add one via HandleAttrMenuItemSe
 **MISSING:** The first half holds — each Sort by <attr> menu case sets the key (including the device Value field) and re-lays out via cleanup() — but re-choosing the same attribute runs sort_by()'s `sort_reverse = !sort_reverse`, i.e. it reverses the listing, which is neither the row's 'arrangement off' nor the corrected real behaviour (same order, secondary cleared); the secondary key is also left alone.  
 *src/shell/tiku_trk_desktop.c:999-1018 (SORT_BY_* -> sort_by + cleanup); src/ui/tiku_trk_poseview.c:1370-1387 (sort_by toggles reverse on the same field)*
 
-#### PVL-025 · polish · partial
+#### PVL-025 · polish · done
 **A new folder created from the context menu appears where you clicked; created by keyboard shortcut in an icon mode it appears under the mouse if the mouse is over the window.**  
 PlaceFolder reads "be:invoke_origin" and converts from screen; otherwise (non-list mode) it uses GetMouse and only sets a position if the screen point is inside Window()->Frame(). The position is written with FSSetPoseLocation before the pose appears.  
 `PoseView.cpp` → `BPoseView::PlaceFolder`  
 **TIKU:** Requires a way to pre-seed a position for a node before it shows up in the view.  
 **PORT:** The place is worked out before the entry exists -- from the corner of the menu that makes it, which is the click that opened it, or from the pointer when there is no menu -- and named to the view, so it survives the reload the creating command does. A point outside the window, or a list-mode view, seeds nothing.  
-**MISSING:** Only the desktop shell asks: the single-window shell creates from its own menu path and does not seed.  
-**PORT:** The position is seeded on the VIEW (tiku_trk_poseview_set_drop_point) and consumed by the next entry to appear, not carried in the invoking message; nothing in this shell creates a folder yet, so the seed has no caller but the mechanism is proven.
+**PORT:** Both shells ask: the single-window shell's New folder seeds from its context menu's corner too (seed_new_entry, src/shell/tiku_trk_app.c), lands the name on the view, and settles the layout itself because its reload drains in one go.  
+*tests/shell/newfolder.script (# shell: both)*
 
 #### PVL-026 · important · done
 **Dragging icons inside their own icon-mode window moves them by the drag delta; holding Command snaps the drop positions to the grid.**  
@@ -1304,13 +1304,13 @@ BPoseView::NewFileFromTemplate: name = "New " + message "name", uniquified with 
 **PORT:** The filesystem backend now copies regular files, folders and links with Tracker's existing tree, permission, timestamp and pose-state rules, assigns a unique `New <template name>`, and both shipped shells reload, select and start inline rename on the result.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_new_from_template; src/shell/tiku_trk_app.c:menu_invoke; src/shell/tiku_trk_desktop.c:menu_invoke; tests/test_fs.c*
 
-#### PVL-098 · polish · partial
+#### PVL-098 · polish · done
 **A newly created folder or template file lands where the user asked for it: at the click point when made from a context menu, or under the mouse pointer when made with the keyboard in icon view.**  
 BPoseView::PlaceFolder writes a pose location with FSSetPoseLocation when the invoking message carries "be:invoke_origin" (converted from screen coords), or, in non-list view, when the current mouse position is inside the window frame. In list view a keyboard-created folder gets no stored position at all.  
 `PoseView.cpp` → `BPoseView::PlaceFolder`  
 **PORT:** New folder and the template commands both name a landing for what they made before reloading, so it appears where it was asked for rather than in the next free slot. The landing table is the one drops already use, so a position asked for before an entry exists is honoured however the entry arrives.  
-**MISSING:** Only the desktop shell asks: the single-window shell creates from its own menu path and does not seed.  
-**PORT:** Same seeding path as PVL-025: proven by the notice handler, without a New folder command to drive it.
+**PORT:** Same seeding path as PVL-025, and both shells drive it now: the landing is named before the reload in each, so the entry appears where it was asked for however the shell refreshes.  
+*tests/shell/newfolder.script (# shell: both)*
 
 #### PVL-099 · important · done ⟨found by verification⟩
 **After "New folder" the new folder is selected and its name is immediately editable inline, so typing renames it.**  
@@ -2095,9 +2095,10 @@ AddShortcut(B_DELETE, B_NO_COMMAND_KEY, kMoveSelectionToTrash) and AddShortcut(B
 and it asks the engine what the key MEANS rather than deciding: a move that
 can be undone where the item's filesystem has a Trash, a deletion where it
 has none or where Shift says the user has decided.  The split is real on this
-host -- a file in the home directory goes to the Trash, the same file under
-/tmp is deleted, because /tmp has no writable Trash -- which is why the
-shell test runs its fixture under home.
+host -- a file whose filesystem reaches a Trash (the home's, or a writable
+volume root the home does not share) moves there, and a file on a store
+with none is deleted -- which is why the shell test runs its fixture under
+home, where the answer is the same on every machine.
 *src/shell/tiku_trk_desktop.c (the XK_Delete arm) through
 tiku_trk_fs_delete_question; tests/shell/trash.script*  
 *Shell: desktop, tracker*  
@@ -3051,7 +3052,7 @@ Clipboard items are omitted from the pose menu for printers/root/Trash/in-Trash,
 `ContainerWindow.cpp` → `BContainerWindow::AddPoseContextMenu / AddVolumeContextMenu / AddTrashContextMenu / AddWindowContextMenu`  
 **PORT:** All four inventories are live in the stated order, including Add-ons placeholders, volume Mount/Unmount placeholders, Trash/root clipboard omissions, the Delete+Restore substitution, the Trash-window prefix, and the Desktop background's inline icon-size submenu. Service-backed mount/add-on verbs and the printers-folder specialization remain pending.
 *src/ui/tiku_trk_cwmenu.c:build_contexts; src/core/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
-**MISSING:** Service-backed mount/add-on verbs and the printers-folder context-menu specialization remain unavailable.
+**MISSING:** Service-backed mount/add-on verbs remain unavailable.  The printers-folder specialization clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned.
 **PORT:** Three items the inventories offered and enabled did nothing when picked -- Create link, Identify and Select… -- and Duplicate was a fourth. All four now act, and `tools/check_menu_commands.py` fails the build when a menu offers an enabled command no shell carries out, which is what let them sit there.  
 *tests/shell/menudead.script; tools/check_menu_commands.py*
 
@@ -3578,13 +3579,13 @@ CopyOneTrashedRefAsEntry splits the selection into entriesToTrash and entriesToD
 CheckVolumeReadOnly raises a B_STOP_ALERT and returns false; it gates both MoveSelectionOrEntryToTrash and DeleteSelection, and is tested on the first selected item's device only.  
 `PoseView.cpp` → `CheckVolumeReadOnly`  
 **PORT:** A move or delete of an item on a read-only volume is refused with the volume NAMED, because a user with several mounted needs to know which one refused.  
-#### FS-046 · core · partial
+#### FS-046 · core · done
 **Delete asks a three-way question — Cancel / Move to Trash / Delete — with Escape, 'm' and 'd' as shortcuts, and warns the operation cannot be reverted.**  
 _DeleteTask shows kDeleteConfirmationStr when confirm is set; case 0 deletes the list and returns B_CANCELED, case 1 (and default) diverts to FSMoveToTrash(list, NULL, false) — running it synchronously on the delete thread — and only case 2 falls through to the real delete.  
 `FSUtils.cpp` → `_DeleteTask`  
 **PORT:** The question is one rule reached from both the menu item and the Delete key, which had its own copy of the decision until now. Cancel is the first button so Escape lands on it, Return takes the last, and a button answers to the letter it starts with -- which is what makes 'm' and 'd' the shortcuts the source names.  
-**MISSING:** The single-window shell has no alert layer at all, so there the engine's answer is still carried by the status line; the question is asked in `build/desktop` only.  
-*src/ui/commands/tiku_trk_folder_file_actions.c:delete_selection and _answer_delete; src/ui/overlays/tiku_trk_status_overlay.c (letter shortcuts); src/shell/tiku_trk_desktop.c:status_answer; tests/shell/trash.script*
+**PORT:** Both shells ask it now: the single-window shell hosts the same status overlay over its one surface, answers through the same controller, and its Delete key goes through the shared command layer instead of the inline delete it carried.  
+*src/ui/commands/tiku_trk_folder_file_actions.c:delete_selection and _answer_delete; src/ui/overlays/tiku_trk_status_overlay.c (letter shortcuts); src/shell/tiku_trk_desktop.c:status_answer; src/shell/tiku_trk_app.c:app_alert_answer; tests/shell/trash.script (# shell: both)*
 
 #### FS-047 · important · done
 **Deleting from inside the Trash window skips the confirmation entirely, and Shift+Delete anywhere deletes instead of trashing.**  
