@@ -3282,8 +3282,16 @@ tracker_run(int argc, char **argv)
                         /* Over the bar: the list scrolls rather than
                          * whatever window happens to be under it
                          * (DB-034). */
+                        int wstep = ((ev.modifiers &
+                                      (TIKU_DESK_MOD_SHIFT |
+                                       TIKU_DESK_MOD_CMD |
+                                       TIKU_DESK_MOD_OPTION)) != 0u)
+                                        ? 3 : 1;
+
+                        /* A modifier scrolls three times as fast, the
+                         * wheel and the arrows alike (DB-034). */
                         if (tiku_trk_deskbar_scroll(app.deskbar,
-                                (ev.button == 4u) ? -1 : 1)) {
+                                (ev.button == 4u) ? -wstep : wstep)) {
                             app.dirty = 1;
                         }
                         break;

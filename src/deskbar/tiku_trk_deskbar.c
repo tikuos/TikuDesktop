@@ -82,6 +82,11 @@ struct tiku_trk_deskbar {
     /* The expander a press is riding: the arrow turns down at once but
      * the state commits only on RELEASE over the same strip (DB-022). */
     int                  expander_press;   /* team index, or -1        */
+    /* The row the pointer is resting on whose FULL name deserves saying:
+     * a truncated label, or any application row while names are hidden
+     * (DB-032). */
+    char                 tip[TIKU_TRK_DB_LABEL_MAX];
+    int                  tip_y;            /* the row's top, or -1     */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
@@ -410,6 +415,10 @@ win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
     return 4;
 }
 
+static void fit_label(const tiku_desk_font_t *f, const char *src,
+                      int budget, char *out, size_t max);
+static int list_y(const tiku_trk_deskbar_t *db);
+
 /** @brief No row is hot until the pointer says so (DB-004). */
 static void
 reset_menu_hots(tiku_trk_deskbar_t *db)
@@ -431,6 +440,7 @@ tiku_trk_deskbar_new(tiku_trk_backend_t *backend)
         db->win_menu_team = -1;
         reset_menu_hots(db);
         db->expander_press = -1;
+        db->tip_y = -1;
         tiku_trk_deskbar_settings_default(&db->settings);
     }
     return db;
@@ -570,6 +580,23 @@ tiku_trk_deskbar_pointer(tiku_trk_deskbar_t *db, int x, int y)
     }
     db->pointer_on = on;
     return (was != on);
+}
+
+void
+tiku_trk_deskbar_arrows(const tiku_trk_deskbar_t *db, int *up, int *down)
+{
+    if (up != NULL) { *up = 0; }
+    if (down != NULL) { *down = 0; }
+    if (db == NULL || !db->overflow) {
+        return;
+    }
+    /* Overflowing at all means something is out of sight: above when the
+     * list has been scrolled, below until it has been scrolled to its
+     * end. */
+    if (up != NULL) { *up = db->scroll > 0; }
+    if (down != NULL) {
+        *down = db->scroll < db->team_count - 1;
+    }
 }
 
 int
@@ -1442,6 +1469,65 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             clock = (y - m.y - 2) / 28;
         }
     }
+    {
+        /* The tooltip half of DB-032: resting on a row whose label was
+         * cut -- or any application row while names are hidden -- says
+         * the whole name.  Menus own the pointer when open. */
+        char tip[TIKU_TRK_DB_LABEL_MAX] = "";
+        int tip_y = -1;
+
+        if (!db->menu_open && db->win_menu_team < 0 &&
+            !db->clock_menu_open && x >= db->frame.x &&
+            x < db->frame.x + db->frame.w) {
+            int i, ry = list_y(db);
+            int team_h = (db->settings.icon_size + 4 > TEAM_H)
+                             ? db->settings.icon_size + 4 : TEAM_H;
+
+            for (i = 0; i < db->team_count && tip_y < 0; i++) {
+                tiku_trk_team_t *t = &db->teams[db->order[i]];
+                int j;
+
+                if (y >= ry && y < ry + team_h) {
+                    char cut[TIKU_TRK_DB_LABEL_MAX];
+
+                    fit_label(font, t->name,
+                              db->frame.w - 4 - db->settings.icon_size -
+                              EXPANDER_W - 14, cut, sizeof cut);
+                    if (db->settings.hide_app_names ||
+                        strcmp(cut, t->name) != 0) {
+                        snprintf(tip, sizeof tip, "%s", t->name);
+                        tip_y = ry;
+                    }
+                    break;
+                }
+                ry += team_h + SEAM;
+                if (!t->expanded) {
+                    continue;
+                }
+                for (j = 0; j < t->win_count; j++) {
+                    if (y >= ry && y < ry + WIN_H) {
+                        char cut[TIKU_TRK_DB_LABEL_MAX];
+
+                        fit_label(font, t->wins[j].title,
+                                  db->frame.w - 4 - WIN_INDENT - 20, cut,
+                                  sizeof cut);
+                        if (strcmp(cut, t->wins[j].title) != 0) {
+                            snprintf(tip, sizeof tip, "%s",
+                                     t->wins[j].title);
+                            tip_y = ry;
+                        }
+                        break;
+                    }
+                    ry += WIN_H + SEAM;
+                }
+            }
+        }
+        if (strcmp(tip, db->tip) != 0 || tip_y != db->tip_y) {
+            snprintf(db->tip, sizeof db->tip, "%s", tip);
+            db->tip_y = tip_y;
+            changed = 1;
+        }
+    }
     if (leaf != db->leaf_hot)   { db->leaf_hot = leaf;   changed = 1; }
     if (sub != db->sub_hot)     { db->sub_hot = sub;     changed = 1; }
     if (win != db->win_hot)     { db->win_hot = win;     changed = 1; }
@@ -2037,6 +2123,39 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                CLOCK_H - 32, 170, 4 * 28 };
         tiku_desk_ui_menu(s, m, items, 4, db->clock_hot);
     }
+    {
+        /* The scroll arrows: shown the moment something is out of sight
+         * in the direction they point (DB-034). */
+        int up = 0, down = 0, k;
+        int ly = list_y(db);
+        int lb = db->frame.y + db->frame.h -
+                 (db->tray_count * TRAY_ROW) -
+                 (db->settings.show_clock ? CLOCK_H : 0) - PAD;
+        int cx = db->frame.x + db->frame.w / 2;
+
+        tiku_trk_deskbar_arrows(db, &up, &down);
+        for (k = 0; k < 4 && up; k++) {
+            tiku_desk_hline(s, cx - k, ly + 1 + k, 2 * k + 1,
+                            TIKU_DESK_C_TEXT);
+        }
+        for (k = 0; k < 4 && down; k++) {
+            tiku_desk_hline(s, cx - (3 - k), lb - 5 + k, 2 * (3 - k) + 1,
+                            TIKU_DESK_C_TEXT);
+        }
+    }
+    if (db->tip_y >= 0 && db->tip[0] != '\0') {
+        /* The whole name, said beside the row that could not fit it
+         * (DB-032). */
+        int tw = tiku_desk_text_width(f, db->tip) + 12;
+        tiku_desk_rect_t b = { db->frame.x - tw - 4, db->tip_y, tw,
+                               f->height + 6 };
+
+        if (b.x < 0) { b.x = 0; }
+        tiku_desk_fill(s, b, TIKU_DESK_RGB(255, 255, 200));
+        tiku_desk_frame(s, b, TIKU_DESK_C_TEXT);
+        tiku_desk_text(s, f, b.x + 6, b.y + 3 + f->ascent, db->tip,
+                       TIKU_DESK_C_TEXT);
+    }
     if (db->calendar_open) {
         /* The clock's calendar: a month grid with steppers, popped beside
          * the bar and dismissed by the next click anywhere. */
@@ -2283,6 +2402,27 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         db->menu_open = 1;
         reset_menu_hots(db);
         return 1;
+    }
+
+    /* The scroll arrows first: while the list overflows, its top and
+     * bottom edges step it -- three rows at a time with a modifier held
+     * (DB-034). */
+    if (db->overflow) {
+        int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
+                              TIKU_DESK_MOD_OPTION)) != 0u) ? 3 : 1;
+        int ly = list_y(db);
+        int lb = db->frame.y + db->frame.h -
+                 (db->tray_count * TRAY_ROW) -
+                 (db->settings.show_clock ? CLOCK_H : 0) - PAD;
+
+        if (y >= ly && y < ly + 8) {
+            (void)tiku_trk_deskbar_scroll(db, -astep);
+            return 1;
+        }
+        if (y >= lb - 8 && y < lb) {
+            (void)tiku_trk_deskbar_scroll(db, astep);
+            return 1;
+        }
     }
 
     /* The application list: the expander toggles, the name opens the window

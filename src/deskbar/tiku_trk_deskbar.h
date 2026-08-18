@@ -259,6 +259,10 @@ int tiku_trk_deskbar_scroll(tiku_trk_deskbar_t *db, int step);
 int tiku_trk_deskbar_scroll_at(const tiku_trk_deskbar_t *db);
 int tiku_trk_deskbar_scrollable(const tiku_trk_deskbar_t *db);
 
+/** @brief Whether each scroll arrow should show (DB-034). */
+void tiku_trk_deskbar_arrows(const tiku_trk_deskbar_t *db, int *up,
+                             int *down);
+
 /**
  * @brief Whether the bar should be drawn ABOVE the windows.
  *

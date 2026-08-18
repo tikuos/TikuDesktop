@@ -7270,13 +7270,13 @@ do_window_action(fID, action, zoomRect, doZoom); zoom only when the state actual
 InsertIndexFor scans from startIndex until NaturalCompare(existing, new) > 0; TWindowMenu::AttachedToWindow uses it for the submenu, the monitor thread for inline items  
 `WindowMenuItem.cpp` → `TWindowMenuItem::InsertIndexFor`  
 
-#### DB-032 · polish · partial
+#### DB-032 · polish · done
 **Application and window labels are truncated to the available width, and hovering an item whose label was truncated (or any app item when names are hidden) shows the full name as a tooltip**  
 Truncation budget is menu MaxContentWidth minus padding, minus kSwitchWidth when the expander is showing; the tooltip is set/cleared on B_INSIDE_VIEW transitions and only when the hovered item changed  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MouseMoved`  
-**UNCONFIRMED:** MouseMoved contains only the tooltip half of the row. No truncation budget is computed there; the cited symbol does not implement the cited rule (the rule itself is real, but in TTruncatableMenuItem::Label(float) in TruncatableMenuItem.cpp).  
-**MISSING:** Truncation with an ellipsis against a real width budget is implemented for both app names and window titles, and the budget correctly subtracts the expander width — but the tooltip half is missing entirely: the deskbar has no hover/MouseMoved path and the string 'tooltip' does not appear anywhere in src.  
-*src/deskbar/tiku_trk_deskbar.c:fit_label, called at lines 488 and 511*
+**CHECKED:** The source's tooltip half lives in MouseMoved; its truncation half in TTruncatableMenuItem::Label(float) (TruncatableMenuItem.cpp) -- the row's cited symbol carries only the first, noted here so the citation reads true.  
+**PORT:** Both halves now: truncation with an ellipsis against the real width budget (expander subtracted), and the tooltip -- the pointer resting on a row whose label was cut, or on any application row while names are hidden, says the whole name in a bubble beside the bar, set and cleared on hover transitions through the bar's own motion path (the one the menu hover already rides).  
+*src/deskbar/tiku_trk_deskbar.c:fit_label (the budget), tiku_trk_deskbar_motion (the tip transitions), the bubble in _draw; tests/test_deskbar_dock.c (DB-032, mutation-tested)*
 
 #### DB-033 · important · partial
 **In horizontal mode the application buttons shrink as more apps launch and grow back as they quit, between a font/icon-derived minimum and 1.25x that; once even the minimum will not fit, scroll arrows appear at the ends of the list**  
@@ -7290,20 +7290,12 @@ still absent, and now absent deliberately rather than for want of a dock.
 *src/deskbar/tiku_trk_deskbar.c (the horizontal arm of _draw);
 tests/test_deskbar_dock.c*
 
-#### DB-034 · important · partial
+#### DB-034 · important · done
 **In vertical mode scroll arrows appear as soon as the app list runs past the bottom of the screen, and the mouse wheel over the list scrolls it — a modifier key (Option/Cmd/Ctrl) or Shift on the arrows scrolls three times as fast**  
 CheckForSizeOverrunVertical compares Window()->Frame().bottom against the screen frame; default small step 19px, large step = 3x small; detaching the scrollers resets the scroll position to the start  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MessageReceived case B_MOUSE_WHEEL_CHANGED`
-**MISSING:** The bar has the overflow state and the wheel now reaches it: a
-list longer than the room left by the tray and the clock scrolls, one that
-fits does not move at all, and the wheel over the bar no longer falls through
-to whatever window is under it.  Two clauses remain: there are no scroll
-ARROWS drawn, and with the surface fixed at 1000x680 and eight application
-slots the list cannot actually overflow on this screen -- the rule is proven
-against a short surface, which is honest but not the same as reachable.
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_scroll/_scrollable and the overflow
-computation in _draw; src/shell/tiku_trk_desktop.c (the wheel);
-tests/test_deskbar_dock.c*
+**PORT:** All of it now: the wheel over the bar scrolls a list that overflows and refuses one that fits; scroll ARROWS are drawn at the list's edges the moment something is out of sight in their direction, and clicking those edges steps the list -- three rows at a time with Shift or a modifier held, on the arrows and the wheel alike.  Reachable on the fixed 1000x680 surface too: eight applications at a 96 px icon size overflow it, which is what the icon-size preference is for.  
+*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_arrows, the arrow strips in _click, the triangles in _draw; src/shell/tiku_trk_desktop.c (the modifier wheel); tests/test_deskbar_dock.c (DB-034, mutation-tested)*
 
 #### DB-035 · important · done
 **Dragging files over the application list highlights the app under the cursor and dropping hands the files to it; apps that cannot open the dragged types are drawn/behaved as unavailable unless Ctrl is held to force acceptance**  

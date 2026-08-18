@@ -250,6 +250,40 @@ main(void)
         check(tiku_trk_deskbar_scroll(db, 1) == 1 &&
               tiku_trk_deskbar_scroll_at(db) == 1, "DB-034",
               "then the wheel moves it");
+        {
+            int up = 0, down = 0;
+
+            tiku_trk_deskbar_arrows(db, &up, &down);
+            check(up && down, "DB-034",
+                  "scrolled into the middle, arrows show both ways");
+            (void)tiku_trk_deskbar_scroll(db, -1);
+            tiku_trk_deskbar_arrows(db, &up, &down);
+            check(!up && down, "DB-034",
+                  "at the top only the down arrow remains");
+            {
+                tiku_trk_db_pick_t apick;
+                tiku_desk_rect_t af = tiku_trk_deskbar_frame(db);
+                int ay;
+
+                /* The bottom edge of the list steps it -- three at a
+                 * time with a modifier held -- found by asking, as every
+                 * strip is (DB-034). */
+                for (ay = af.y + af.h - 1; ay > af.y; ay--) {
+                    memset(&apick, 0, sizeof apick);
+                    (void)tiku_trk_deskbar_click(db, af.x + af.w / 2, ay,
+                        TIKU_TRK_MOD_SHIFT, 1, 1, &apick);
+                    if (tiku_trk_deskbar_scroll_at(db) != 0) {
+                        break;
+                    }
+                }
+                check(tiku_trk_deskbar_scroll_at(db) == 3, "DB-034",
+                      "the arrow with Shift stepped three rows at once");
+                (void)tiku_trk_deskbar_scroll(db, -5);
+                (void)tiku_trk_deskbar_scroll(db, 1);
+                tiku_trk_deskbar_close_menu(db);
+                tiku_trk_deskbar_close_calendar(db);
+            }
+        }
         check(tiku_trk_deskbar_scroll(db, -5) == 1 &&
               tiku_trk_deskbar_scroll_at(db) == 0, "DB-034",
               "and it stops at the top rather than scrolling past it");
@@ -554,6 +588,38 @@ main(void)
         check(pick.what == TIKU_TRK_DB_QUIT_TEAM, "DB-028",
               "an application with no windows offers the polite quit "
               "instead");
+    }
+
+
+    printf("\na name too long for its row is said whole (DB-032)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t bar;
+        int y, team_y = -1, changed = 0, tlong;
+
+        while (tiku_trk_deskbar_team_count(db) > 1) {
+            tiku_trk_deskbar_remove_team(db, 1);
+        }
+        tlong = tiku_trk_deskbar_add_team_pid(db,
+            "a-name-much-too-long-for-any-bar", 999, "/bin/true",
+            &changed);
+        tiku_trk_deskbar_draw(db, s);
+        bar = tiku_trk_deskbar_frame(db);
+        for (y = bar.y; y < bar.y + bar.h && team_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, y,
+                                         TIKU_TRK_MOD_CMD, 1, 1, &pick);
+            if (pick.what == TIKU_TRK_DB_SHOW_ALL && pick.team == tlong) {
+                team_y = y;
+            }
+        }
+        tiku_trk_deskbar_close_menu(db);
+        tiku_trk_deskbar_close_calendar(db);
+        check(tiku_trk_deskbar_motion(db, bar.x + 20, team_y) == 1,
+              "DB-032", "resting on the truncated row is itself a change "
+              "the bar wants repainted");
+        check(tiku_trk_deskbar_motion(db, 10, 10) == 1, "DB-032",
+              "and leaving takes the tooltip away");
     }
 
     tiku_trk_deskbar_free(db);
