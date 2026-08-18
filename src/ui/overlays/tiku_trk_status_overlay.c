@@ -62,10 +62,18 @@ draw_alert(tiku_trk_status_overlay_t *controller)
     if (!controller->alert.open) {
         return;
     }
+    /* A modal window, not a floating slab: the same dark frame and
+     * bevel every window body wears -- BeOS had no borderless windows,
+     * and neither does this one. */
     tiku_desk_fill(controller->surface, frame, TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(controller->surface, frame,
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+    tiku_desk_frame(controller->surface, frame,
+        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 1),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_MAX),
         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 2),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_1),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_1));
     text_y = frame.y + 24;
     {
         const char *text = controller->alert.text;
@@ -112,13 +120,12 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                                    &x, &y, &width, &height);
         button = (tiku_desk_rect_t){ frame.x + x, frame.y + y,
                                      width, height };
-        tiku_desk_fill(controller->surface, button, TIKU_DESK_C_PANEL);
-        tiku_desk_bevel(controller->surface, button,
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-        tiku_desk_text(controller->surface, font, button.x + 10,
-                       button.y + 16, controller->alert.button[i],
-                       TIKU_DESK_C_TEXT);
+        /* The R5 button, ring and all: the rightmost is the default,
+         * which is where the pointer already is after reading. */
+        tiku_desk_ui_button(controller->surface, button,
+                            controller->alert.button[i],
+                            (i == controller->alert.nbutton - 1)
+                                ? TIKU_DESK_S_DEFAULT : 0u);
     }
 }
 
@@ -133,9 +140,14 @@ draw_progress(tiku_trk_status_overlay_t *controller)
         return;
     }
     tiku_desk_fill(controller->surface, frame, TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(controller->surface, frame,
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+    tiku_desk_frame(controller->surface, frame,
+        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 1),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_MAX),
         tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 2),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_1),
+        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_1));
     for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
         tiku_trk_progress_row_t *progress = &controller->progress.row[i];
         char line[160];

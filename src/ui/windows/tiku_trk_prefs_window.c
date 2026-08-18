@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_desk_ui.h"
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_prefs_window.h"
 
@@ -91,15 +92,8 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         button.y = content.y + y;
         button.w = width;
         button.h = height;
-        tiku_desk_fill(surface, button, TIKU_DESK_C_PANEL);
-        tiku_desk_bevel(surface, button,
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-        tiku_desk_text(surface, font, button.x + 12, button.y + 16,
-                       i ? "Revert" : "Defaults",
-                       enabled ? TIKU_DESK_C_TEXT
-                               : tiku_desk_tint(TIKU_DESK_C_TEXT,
-                                                TIKU_DESK_LIGHTEN_2));
+        tiku_desk_ui_button(surface, button, i ? "Revert" : "Defaults",
+                            enabled ? 0u : TIKU_DESK_S_DISABLED);
     }
 }
 

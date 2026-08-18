@@ -39,15 +39,9 @@ static void
 button(tiku_desk_surface_t *surface, tiku_desk_rect_t rect,
        const char *label, int enabled)
 {
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
-
-    tiku_desk_fill(surface, rect, TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(surface, rect,
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-    (void)tiku_desk_text_centered(surface, font, rect, label,
-        enabled ? TIKU_DESK_C_TEXT
-                : tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+    /* The R5 button, not a beveled slab (the toolkit knows the look). */
+    tiku_desk_ui_button(surface, rect, label,
+                        enabled ? 0u : TIKU_DESK_S_DISABLED);
 }
 
 static int
