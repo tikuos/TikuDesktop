@@ -229,6 +229,10 @@ typedef struct {
 typedef struct {
     tiku_trk_volume_t v;
     int               mounted;      /* 1 arrived, 0 left                 */
+    /* The volume stayed; its NAME did not.  A label edited under the
+     * port's feet reaches the windows as this rather than as a
+     * departure-and-arrival (MA-021). */
+    int               renamed;
 } tiku_trk_volchange_t;
 
 /** @brief Take the current table as the baseline; reports nothing. */
@@ -244,6 +248,11 @@ void tiku_trk_volwatch_init(tiku_trk_volwatch_t *w);
  * @return how many changes were written.
  */
 int tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w,
+                           tiku_trk_volchange_t *out, int max);
+
+/** @brief The pure diff the poll runs: testable with tables of our own. */
+int tiku_trk_volwatch_diff(const tiku_trk_volumes_t *was,
+                           const tiku_trk_volumes_t *now,
                            tiku_trk_volchange_t *out, int max);
 
 #endif /* TIKU_TRK_VOLUME_H_ */

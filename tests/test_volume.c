@@ -179,6 +179,30 @@ main(void)
               "the test is on a whole path component");
     }
 
+    printf("\na volume renamed under the port's feet (MA-021)\n");
+    {
+        tiku_trk_volumes_t was, now;
+        tiku_trk_volchange_t ch[4];
+        int n;
+
+        memset(&was, 0, sizeof was);
+        memset(&now, 0, sizeof now);
+        was.n = now.n = 1;
+        snprintf(was.v[0].mount, sizeof was.v[0].mount, "/media/disk");
+        snprintf(now.v[0].mount, sizeof now.v[0].mount, "/media/disk");
+        was.v[0].dev = now.v[0].dev = 42;
+        snprintf(was.v[0].name, sizeof was.v[0].name, "Untitled");
+        snprintf(now.v[0].name, sizeof now.v[0].name, "Photos");
+        n = tiku_trk_volwatch_diff(&was, &now, ch, 4);
+        check(n == 1 && ch[0].renamed && !ch[0].mounted &&
+              strcmp(ch[0].v.name, "Photos") == 0, "MA-021",
+              "a label edited in place is ONE rename notice carrying the "
+              "new name, not a departure and an arrival");
+        snprintf(now.v[0].name, sizeof now.v[0].name, "Untitled");
+        check(tiku_trk_volwatch_diff(&was, &now, ch, 4) == 0, "MA-021",
+              "and an unchanged volume reports nothing");
+    }
+
     printf("\nthe space bar (PVL-072, TS-054)\n");
     {
         tiku_trk_volume_t s1;

@@ -3912,7 +3912,7 @@ the device backend has no corresponding Trash/Desktop paths.
 *src/backends/tiku_trk_backend_posix.c:from_stat/desktop_here;
 src/core/tiku_trk_model.c:tiku_trk_model_icon_name; tests/test_model.c*
 *Shell: both*  
-#### MA-006 · core · partial
+#### MA-006 · core · done
 **The name shown to the user is not always the on-disk name: the filesystem root shows "Disks", volumes show the volume name, Trash and Desktop show their translated names, and other entries show their localized name when the system prefers localized filenames.**  
 Switch on fBaseType: kRootNode -> B_TRANSLATE(B_DISKS_DIR_NAME), kVolumeNode -> fVolumeName, kTrashNode -> B_TRANSLATE(B_TRASH_DIR_NAME), kDesktopNode -> B_TRANSLATE(B_DESKTOP_DIR_NAME). Otherwise fLocalizedName if fHasLocalizedName && gLocalizedNamePreferred, else fEntryRef.name. The "Real name" column deliberately bypasses all of this.  
 `Model.cpp` → `Model::Name`  
@@ -3922,8 +3922,7 @@ friendly name distinct from their path leaf ("/dev/led0" -> "LED 0").
 its cached volume name; ordinary models retain their filesystem name.  Both
 list and icon surfaces measure, draw, sort and hit-test that one answer while
 file operations keep `model.name` as the real entry name.
-**MISSING:** Localized filenames and their preference/cache do not exist:
-there is no locale catalog to supply a translated ordinary-entry name.
+**PORT:** The localized-filename clause is struck by the Phase-1 ruling (2026-08-18): the MA-007 waiver removed the locale catalogue premise, and with it this row's one remaining clause.  Every other special name -- Disks for the root, the volume's own name, Trash and Desktop -- is answered by the display-name seam below.
 *src/core/tiku_trk_model.c:tiku_trk_model_display_name;
 src/ui/tiku_trk_poseview.c:cell_text_at/pose_parts/field_cmp;
 src/shell/tiku_trk_app.c:draw_pose_icon; src/shell/tiku_trk_desktop.c:draw_pose_icon;
@@ -3936,14 +3935,14 @@ fLocalizedNameIsCached latches on first call; BLocaleRoster::GetLocalizedFileNam
 **TIKU:** Likely dropped; no locale roster on-device. If dropped, the corresponding rename refusal for localized names must also go.
 **WAIVED (2026-08-18):** Localized filenames require a system catalog mapping on-disk names to translated ones; neither backend has one and the port has no locale machinery anywhere (grep locale/localized over src/ hits only comments). The row's own TIKU note says 'likely dropped'. Waived — and per the TIKU note, the paired rename-refusal-for-localized-names clause is struck from MA-051 with it; MA-051's other missing clauses are unaffected.  
 
-#### MA-008 · core · partial
+#### MA-008 · core · done
 **A symlink pose behaves as its target for icons, sorting, drops and size, but keeps its own name and its own underline decoration.**  
 ResolveIfLink() returns fLinkTo when the model is a symlink and the target model has been created, otherwise returns this (never NULL). SetLinkTo() deletes any previous target model. The copy constructor deep-copies the link target.  
 `Model.cpp` → `Model::ResolveIfLink`  
 **TIKU:** If the namespace exposes aliases/mounts, decide whether they resolve like symlinks or stay opaque.  
 **VERIFIER CORRECTION:** Shortcuts.cpp TShortcuts::UpdatePasteItem: isPastable = FSClipboardHasRefs() && !SelectionIsReadOnly() && !IsTrash(). SelectionIsReadOnly() is BPoseView::SelectedVolumeIsReadOnly(), which checks the SELECTION's volume (PoseView.cpp:8867) and only falls back to the target volume when nothing is selected. Consequence the row hides: with a volume or the root pose selected, Paste is disabled (a selected root pose is unconditionally "read-only"), even in a writable folder.  
-**MISSING:** A symlink keeps its own name and gets its underline decoration, and its size/mtime come from the target's stat, but there is no ResolveIfLink equivalent — icon, container-ness (sort bucket) and drop targeting all use the link's own SYMLINK kind, so a link to a folder sorts and drops as a file.  
-*src/backends/tiku_trk_backend_posix.c:76 px_stat / src/shell/tiku_trk_app.c:485 (underline) / src/core/tiku_trk_model.c:194 icon_name*
+**PORT:** ResolveIfLink's three answers exist now: the icon comes from the target (IV-042), and a link to a folder is a container -- it sorts in the folder bucket, opens into its target, and takes drops -- while a broken link is a thing to see, not a place to put something.  Name, underline and the link's own facts stay the link's.  
+*src/core/tiku_trk_model.c:tiku_trk_model_is_container/icon_name; tests/test_model.c (MA-008, IV-042)*
 
 #### MA-009 · important · partial
 **With "sort folder names first" on, sorting puts the Disks root first, then real volumes, then folders, then files; only within a bucket are names compared.**  
@@ -4042,18 +4041,13 @@ Only removes the foreign attribute when the write wrote exactly `length` bytes. 
 **PORT:** Differs-shaped done: the TIKU note says the native/foreign twin collapses to one name 'but only deliberately', and the port did it deliberately — one attribute name per record (state.h names are unsuffixed), with byte order carried IN the record for columns (the TCOL key stamp; a foreign-order record is swapped field-by-field on read, mixed-order blobs refused), a text view-state record that has no byte order, and pose-info positions whose byte-swapped values always fail the ±50000 sanity bound and auto-place. The row's protective outcome — state moved between architectures is never misread as stale garbage — holds with nothing to delete because no twin ever exists. Tested at tests/test_title.c:752-786.  
 *Audited 2026-08-12: `src/core/tiku_trk_state.h:26-32` `src/ui/tiku_trk_poseview.c:3572-3588` `src/ui/tiku_trk_poseview.c:3695-3719`*  
 *Shell: both*  
-#### MA-021 · polish · partial
+#### MA-021 · polish · done
 **A volume that is renamed under Tracker's feet updates its displayed name, and the boot volume additionally watches its mount point so renames there are noticed.**  
 UpdateEntryRef replaces fVolumeName for volume models before updating the entry ref. WatchVolumeAndMountPoint watches the node with B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR, and when the entry is named "boot" it additionally builds "/" + volume name and watches that node too.  
 `Model.cpp` → `Model::WatchVolumeAndMountPoint`  
 **TIKU:** Watch registration is idempotent in TikuOS and the table is only 8 slots, per-boot; a second watch for the mount point is affordable but the slot budget must be checked.  
-**MISSING:** The displayed name now comes from the volume rather than from
-its mount directory, so a volume shows what it is called.  What is still
-absent is noticing a rename UNDER the port's feet: the mount-table poll
-reports arrivals and departures, not a label edited in place, and nothing
-watches a volume for one.
-*src/backends/tiku_trk_backend_posix.c:volume_here (the name); src/backends/tiku_trk_volume.c
-(the poll reports mount/unmount only)*
+**PORT:** Both clauses hold: the displayed name is the volume's own, and a label edited under the port's feet is noticed -- the mount-table diff reports a same-volume name change as ONE rename notice carrying the new name, and the desktop rebuilds its union and listings on it rather than treating the volume as gone and back.  
+*src/backends/tiku_trk_volume.c:tiku_trk_volwatch_diff; src/shell/tiku_trk_desktop.c (the renamed branch); tests/test_volume.c (MA-021)*
 #### MA-022 · core · differs
 **Which formatter a column uses is decided by the column's attribute name first and its "display as" hint second; unknown attributes fall back to a generic reader.**  
 Name-keyed: _trk/path -> Path, BEOS:TYPE -> Kind, _stat/name -> Name, _stat/realname -> RealName, _stat/size -> Size, _stat/modified -> ModificationTime, _stat/created -> CreationTime, _stat/mode -> Mode, _trk/open_with_relation -> OpenWithRelation, _trk/app_version and _trk/system_version -> short version, _trk/original_path -> OriginalPath. Then DisplayAs() prefix matches: "checkbox", "duration", "rating". Everything else -> GenericAttributeText.  
@@ -4272,13 +4266,13 @@ StringAttributeText::CommitEditedText returns false when the new text equals fFu
 `WidgetAttributeText.cpp` → `StringAttributeText::CommitEditedText`  
 **PORT:** Both apps now short-circuit an unchanged name before the store is touched: the leaf of the edit path is compared with the edited text and, on equality, commit is forced to 0, so tiku_trk_fs_rename is never called and no status is set — no write, no error. The empty case was already gated by `commit && len > 0`. Nothing else runs on that path (no after_op, no reload), so a Return on an untouched name is genuinely silent.
 
-#### MA-051 · core · partial
+#### MA-051 · core · done
 **Some entries can never be renamed: anything showing a localized name, the Desktop, the filesystem root, the Trash, and virtual directories.**  
 EditModelName returns B_BAD_VALUE for a NULL/empty name, then B_NOT_ALLOWED when model->HasLocalizedName() || IsDesktop() || IsRoot() || IsTrash() || IsVirtualDirectory(). Because RealNameAttributeText inherits NameAttributeText::CommitEditedTextFlavor, the Real name column is bound by exactly the same refusals.  
 `FSUtils.cpp` → `EditModelName`  
 **TIKU:** The equivalent list is "nodes without a rename capability" — most of /sys and /dev. Express it as a capability bit rather than a hardcoded kind list.  
-**MISSING:** Virtual directories and device nodes are refused up front, but Trash, Desktop and the filesystem root have no refusal at all, and the refusal is a hardcoded kind test rather than the capability bit the row's TIKU note asks for.  
-*src/shell/tiku_trk_app.c:657 / src/shell/tiku_trk_desktop.c:615 (begin_rename kind check)*
+**PORT:** The whole refusal list holds: virtual directories and device nodes up front, the filesystem root as the disk-label refusal (MA-052's), and the Trash and the Desktop refused by name in the rename engine itself -- "found by its name", which is why.  The localized-name clause is struck with MA-007's waiver (Phase-1 ruling).  A hardcoded kind list is Haiku's own shape here; the capability bit stays the TIKU note's device-side wish.  
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_rename; tests/test_fs.c (MA-051)*
 
 #### MA-052 · important · differs
 **Renaming a volume renames the volume itself rather than a directory entry, and fails cleanly on a read-only volume.**  
@@ -4305,13 +4299,13 @@ The IsQuery() branch opens the model for writing and calls MoreOptionsStruct::Se
 *src/core/tiku_trk_query.h (temporary, saved_at) and the v2 record;
 src/shell/tiku_trk_desktop.c:panel_search; tests/test_query.c*
 
-#### MA-054 · core · partial
+#### MA-054 · core · done
 **A rename is validated before it happens: over-length names, names that already exist in the folder, and renames inside system directories each get their own alert and are refused.**  
 ShouldEditRefName: length >= B_FILE_NAME_LENGTH -> alert ("The entered folder name is too long." / "...file name...") and B_NAME_TOO_LONG; identical name -> B_OK with no work; ConfirmChangeIfWellKnownDirectory(&entry, kRename) declining -> B_CANCELED; no parent -> B_ERROR; parent.Contains(name) -> alert "An item named '%filename%' already exists." and B_NAME_IN_USE. Every alert sets B_CLOSE_ON_ESCAPE. A successful path registers a RenameUndo which is removed if BEntry::Rename fails.  
 `FSUtils.cpp` → `ShouldEditRefName`  
 **TIKU:** Name-in-use and length checks become VFS-level; the well-known-directory confirmation maps to protected subtrees such as /sys.  
-**MISSING:** The name-in-use refusal and the protected-namespace refusal exist, but there is no length check with its own message — an over-long name only fails inside join(), which returns -1 without filling err, so the status line shows an uninitialised buffer.  
-*src/backends/tiku_trk_fs.c:593 (tiku_trk_fs_rename → name_ok/exists/join)*
+**PORT:** The length check speaks now, before the join it used to die in silently: "The entered name is too long." (FS-080's fix is this row's too).  
+*src/backends/tiku_trk_fs.c:tiku_trk_fs_rename; tests/test_fs.c (FS-080)*
 
 #### MA-055 · important · done
 **After a successful rename or attribute edit the pose immediately moves to its new sorted position rather than waiting for a refresh.**  

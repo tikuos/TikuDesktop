@@ -336,11 +336,58 @@ tiku_trk_volwatch_init(tiku_trk_volwatch_t *w)
 }
 
 int
+tiku_trk_volwatch_diff(const tiku_trk_volumes_t *was,
+                       const tiku_trk_volumes_t *now,
+                       tiku_trk_volchange_t *out, int max)
+{
+    int i, j, n = 0;
+
+    if (was == NULL || now == NULL || out == NULL || max <= 0) {
+        return 0;
+    }
+    for (i = 0; i < was->n && n < max; i++) {
+        for (j = 0; j < now->n; j++) {
+            if (same_volume(&was->v[i], &now->v[j])) {
+                if (strcmp(was->v[i].name, now->v[j].name) != 0) {
+                    /* The volume stayed and its label did not: a rename,
+                     * not a departure (MA-021). */
+                    memset(&out[n], 0, sizeof out[n]);
+                    out[n].v = now->v[j];
+                    out[n].renamed = 1;
+                    n++;
+                }
+                break;
+            }
+        }
+        if (j == now->n && n < max) {
+            memset(&out[n], 0, sizeof out[n]);
+            out[n].v = was->v[i];
+            out[n].mounted = 0;
+            n++;
+        }
+    }
+    for (j = 0; j < now->n && n < max; j++) {
+        for (i = 0; i < was->n; i++) {
+            if (same_volume(&was->v[i], &now->v[j])) {
+                break;
+            }
+        }
+        if (i == was->n) {
+            memset(&out[n], 0, sizeof out[n]);
+            out[n].v = now->v[j];
+            out[n].mounted = 1;
+            n++;
+        }
+    }
+    return n;
+}
+
+int
 tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w, tiku_trk_volchange_t *out,
                        int max)
 {
     tiku_trk_volumes_t now;
-    int i, j, n = 0;
+    int n;
 
     if (w == NULL || out == NULL || max <= 0) {
         return 0;
@@ -352,30 +399,7 @@ tiku_trk_volwatch_poll(tiku_trk_volwatch_t *w, tiku_trk_volchange_t *out,
     if (tiku_trk_volumes_scan(&now) < 0) {
         return 0;
     }
-    for (i = 0; i < w->was.n && n < max; i++) {
-        for (j = 0; j < now.n; j++) {
-            if (same_volume(&w->was.v[i], &now.v[j])) {
-                break;
-            }
-        }
-        if (j == now.n) {
-            out[n].v = w->was.v[i];
-            out[n].mounted = 0;
-            n++;
-        }
-    }
-    for (j = 0; j < now.n && n < max; j++) {
-        for (i = 0; i < w->was.n; i++) {
-            if (same_volume(&w->was.v[i], &now.v[j])) {
-                break;
-            }
-        }
-        if (i == w->was.n) {
-            out[n].v = now.v[j];
-            out[n].mounted = 1;
-            n++;
-        }
-    }
+    n = tiku_trk_volwatch_diff(&w->was, &now, out, max);
     /* The baseline moves whether or not anything was reported, and whether
      * or not the caller had room: a change dropped for want of space must
      * not be reported for ever. */

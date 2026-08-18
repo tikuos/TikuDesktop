@@ -66,6 +66,7 @@ struct tiku_trk_deskbar {
     int                  clock_menu_open;
     int                  calendar_year;
     int                  calendar_month;
+    time_t               fixed_now;     /* frozen clock for fixtures, or 0 */
     int                  calendar_day;
     int                  win_menu_team;    /* -1 = none showing        */
     /* The leaf menu, built from the namespace every time it opens rather
@@ -1542,7 +1543,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         y += TRAY_ROW;
     }
     if (db->settings.show_clock) {
-        time_t now = time(NULL);
+        time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
         struct tm tmv;
         char clock[64];
         char date[32];
@@ -1933,7 +1934,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (secondary) {
             db->clock_menu_open = 1;
         } else {
-            time_t now = time(NULL);
+            time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
             struct tm tmv;
 
             (void)localtime_r(&now, &tmv);
@@ -2140,4 +2141,12 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         return TIKU_TRK_DB_DROP_MENU_FILE;
     }
     return TIKU_TRK_DB_DROP_NONE;
+}
+
+void
+tiku_trk_deskbar_set_clock(tiku_trk_deskbar_t *db, time_t at)
+{
+    if (db != NULL) {
+        db->fixed_now = at;
+    }
 }

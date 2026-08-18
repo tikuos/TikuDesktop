@@ -15,6 +15,7 @@
 #ifndef TIKU_TRK_DESKBAR_H_
 #define TIKU_TRK_DESKBAR_H_
 
+#include <time.h>
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_model.h"
@@ -276,6 +277,15 @@ typedef struct {
 } tiku_trk_db_pick_t;
 
 tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_trk_backend_t *backend);
+
+/**
+ * @brief Freeze the clock at @p at; 0 returns it to the wall.
+ *
+ * A scripted run is a fixture, and its clock must be one too: a minute
+ * rolling over between an incremental frame and its reference redraw
+ * showed up as a fistful of differing clock pixels in nothing else.
+ */
+void tiku_trk_deskbar_set_clock(tiku_trk_deskbar_t *db, time_t at);
 
 /** @brief Attach the durable store used for tray subscriptions. */
 void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,

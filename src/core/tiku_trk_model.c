@@ -30,6 +30,12 @@ tiku_trk_model_is_container(const tiku_trk_model_t *m)
     case TIKU_TRK_KIND_DESKTOP:
     case TIKU_TRK_KIND_QUERY:
         return 1;
+    case TIKU_TRK_KIND_SYMLINK:
+        /* ResolveIfLink's answer: a link to a folder sorts, opens and
+         * takes drops as the folder it leads to; a broken one is a thing
+         * to see, not a place to put something (MA-008). */
+        return !m->facts.link_broken &&
+               strcmp(m->type, "application/x-vnd.Be-directory") == 0;
     default:
         return 0;
     }

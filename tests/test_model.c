@@ -187,6 +187,19 @@ test_posix(void)
         lm.facts.link_broken = 1;
         check(strcmp(tiku_trk_model_icon_name(&lm), "symlink") == 0,
               "IV-042: only a broken link wears the link art");
+        /* MA-008: a link to a folder is a container for sorting and drop
+         * targeting; a broken one is not. */
+        lm.facts.link_broken = 0;
+        check(tiku_trk_model_is_container(&lm),
+              "MA-008: a link to a folder sorts and drops as a folder");
+        snprintf(lm.type, sizeof lm.type, "text/plain");
+        check(!tiku_trk_model_is_container(&lm),
+              "MA-008: a link to a file stays a file");
+        snprintf(lm.type, sizeof lm.type,
+                 "application/x-vnd.Be-directory");
+        lm.facts.link_broken = 1;
+        check(!tiku_trk_model_is_container(&lm),
+              "MA-008: a broken link is nothing's container");
     }
 
 

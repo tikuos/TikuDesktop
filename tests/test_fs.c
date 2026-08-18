@@ -1211,6 +1211,29 @@ main(void)
         }
     }
 
+    {   /* --- the Trash and the Desktop keep their names (MA-051) -------- */
+        const char *home2 = getenv("HOME");
+
+        if (home2 != NULL && home2[0] != '\0') {
+            char tr[600], dk[600], err3[128];
+
+            snprintf(tr, sizeof tr, "%s/.Trash", home2);
+            (void)mkdir(tr, 0755);
+            err3[0] = '\0';
+            check(tiku_trk_fs_rename(fs, tr, "Rubbish", err3,
+                                     sizeof err3) != 0 &&
+                  strstr(err3, "Trash") != NULL, "MA-051",
+                  "the Trash cannot be renamed, and the refusal names it");
+            snprintf(dk, sizeof dk, "%s/Desktop", home2);
+            (void)mkdir(dk, 0755);
+            err3[0] = '\0';
+            check(tiku_trk_fs_rename(fs, dk, "Tabletop", err3,
+                                     sizeof err3) != 0 &&
+                  strstr(err3, "Desktop") != NULL, "MA-051",
+                  "and so it goes for the Desktop");
+        }
+    }
+
     {   /* --- rename refuses an over-long name, in words (FS-080) -------- */
         char longname[300], err2[128];
         int li;

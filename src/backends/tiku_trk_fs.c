@@ -2266,6 +2266,24 @@ tiku_trk_fs_rename(tiku_trk_fs_t *fs, const char *path, const char *new_name,
             }
         }
     }
+    {
+        /* The Trash, the Desktop and the root are found BY their names:
+         * renaming one strands every rule that looks there (MA-051).
+         * Haiku's own refusal is this same predicate list. */
+        tiku_trk_model_t m;
+
+        if (fs->backend->ops->stat(fs->backend, path, &m) == 0 &&
+            (m.kind == TIKU_TRK_KIND_TRASH ||
+             m.kind == TIKU_TRK_KIND_DESKTOP)) {
+            if (err != NULL) {
+                snprintf(err, errmax,
+                         "The %s cannot be renamed: it is found by its "
+                         "name.", (m.kind == TIKU_TRK_KIND_TRASH)
+                                      ? "Trash" : "Desktop");
+            }
+            return -1;
+        }
+    }
     if (strlen(new_name) > 255u) {
         /* NAME_MAX on every host this builds on; said in the source's own
          * words rather than failing the join silently (FS-080). */

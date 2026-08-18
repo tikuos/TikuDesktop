@@ -2097,6 +2097,21 @@ tracker_run(int argc, char **argv)
          * so a scripted run exercises the real draw path -- it just has
          * nobody to show it to (see tiku_trk_script.h). */
         sc = tiku_trk_script_open(script_path);
+        {
+            /* The fixture's clock: 7 Aug 16:26, the sample the clock row
+             * itself quotes.  Live, a minute rolling over mid-comparison
+             * cost the redraw checks a fistful of clock pixels. */
+            struct tm fixed;
+
+            memset(&fixed, 0, sizeof fixed);
+            fixed.tm_year = 2026 - 1900;
+            fixed.tm_mon = 7;
+            fixed.tm_mday = 7;
+            fixed.tm_hour = 16;
+            fixed.tm_min = 26;
+            fixed.tm_isdst = -1;
+            tiku_trk_deskbar_set_clock(app.deskbar, mktime(&fixed));
+        }
         if (sc == NULL) {
             return 2;
         }
@@ -4183,6 +4198,14 @@ tracker_run(int argc, char **argv)
                 int k;
 
                 for (k = 0; k < nv; k++) {
+                    if (vc[k].renamed) {
+                        /* Only the label moved: the union rebuild re-reads
+                         * every volume's name, and the relist refreshes
+                         * open listings (MA-021). */
+                        tiku_trk_desktop_view_rebuild(&app.desktop_view);
+                        changed++;
+                        continue;
+                    }
                     if (vc[k].mounted) {
                         /* A folder window showing the parent finds it by
                          * re-listing, which the poll above already did.
