@@ -1,0 +1,16 @@
+# shell: tracker
+# IV-023: a pose cut to the clipboard is drawn faded, and an aborted cut
+# returns it to full strength.
+wait 8
+expect-pixel 20 123 222015
+click-row 1
+wait 2
+key x ctrl
+wait 3
+expect-pixel 20 123 9b9a95
+note Escape aborts the cut; the art returns at full strength, in the
+note selected paint the still-standing selection asks for
+key Escape
+wait 3
+expect-pixel 20 123 273842
+quit

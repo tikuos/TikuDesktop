@@ -2493,7 +2493,8 @@ case B_DEVICE_MOUNTED: CreateVolumePose when targetModel->IsRoot(), or when IsVo
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`  
 **TIKU:** In TikuOS the device namespace is the mount analogue: a device node appearing must add a row in the same live way, gated by a capability bit rather than volume.IsPersistent().
 **SUBSYSTEM:** Volume model + Desktop icon layer. There are no mount events (grep 'mount' in src returns only the tk_close unplug comment, src/backends/tiku_trk_backend_tiku.c:473-474), no CreateVolumePose, no disks-icon/shared-volume settings, and no desktop icons at all — draw_all paints windows, Deskbar and popups only (src/shell/tiku_trk_desktop.c:1512-1527) and KIND_DESKTOP is never assigned. The only surviving sliver is generic: a node appearing at '/' shows in an open '/' window via relist+diff (src/ui/tiku_trk_poseview.c:3188-3296).  
-**MISSING:** Mount polling detects a newly mounted device and the next relist exposes its entries, but it does not yet create a dedicated Desktop volume pose or apply disks-icon/shared-volume visibility settings.
+**MISSING:** Mount polling detects the event and the Desktop union now rebuilds on it live -- the new volume's Desktop folder joins (and a leaving one's drops from) the merged view at once.  What is still absent is the dedicated per-volume Desktop pose with its disks-icon/shared-volume visibility gating: only the Disks pose and the union's contents appear, and a host needs the persistence gate the row's TIKU note names before every tmpfs could be kept off the backdrop.  
+*src/shell/tiku_trk_desktop.c (volwatch handler -> tiku_trk_desktop_view_rebuild)*
 
 #### PVN-041 · polish · done
 **Only persistent volumes that are not mounted inside another persistent volume get an icon.**  
@@ -5338,7 +5339,8 @@ If !windowActive && ShowSelectionWhenInactive: InvertRect then B_OP_BLEND fill w
 fClipboardMode == kMoveSelectionTo sets B_OP_ALPHA / B_CONSTANT_ALPHA / B_ALPHA_COMPOSITE with alpha 128, high colour black on a dark background and white on a light one; a selected cut item additionally gets a grey B_OP_BLEND over its inverted label rect.  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw / BPose::DrawTextWidget`  
 **VERIFIER CORRECTION:** Polarity is inverted. BPose::Draw tests `poseView->HighColor().IsDark()` and BTextWidget::Draw tests `drawView->LowColor().IsLight()` — both pick BLACK when the text colour is dark / the background is light, and WHITE otherwise. So: black on a LIGHT background, white on a DARK one. The same inverted wording appears in the MakeDragBitmap row (`if (HighColor().IsDark()) SetHighColor(0,0,0,alpha)`), which should be corrected the same way.  
-**MISSING:** The single-window shell never fades a cut pose — src/shell/tiku_trk_app.c contains no clipboard reference at all (grep trk_clip: nothing), so the behaviour exists in one binary only — and a cut item that is also selected keeps its full-strength C_SELECT fill and C_SELTEXT label with only the icon faded (src/shell/tiku_trk_desktop.c:251-252 and :282 vs :262-266), where the source additionally greys the selected label.  
+**MISSING:** A cut item that is also selected keeps its full-strength C_SELECT fill and C_SELTEXT label with only the icon faded, where the source additionally greys the selected label.  The single-window half of the old MISSING is closed: both shells fade a cut pose with the same dim now, in list and icon modes, and an aborted cut returns the art.  
+*src/shell/tiku_trk_app.c (icon_paint_dim at both draw sites); tests/shell/cutfade.script*  
 *Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:249-250` `src/shell/tiku_trk_desktop.c:262-266` `src/shell/tiku_trk_desktop.c:283-286`*  
 *Shell: desktop*  
 #### IV-024 · important · done

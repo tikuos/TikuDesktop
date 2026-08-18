@@ -625,7 +625,12 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
     /* PVL-082: the icon has two states.  An inactive window without "show
      * selection when inactive" reverts to the normal art, which is what
      * makes an inactive window look inactive. */
-    if (!(drawn_sel
+    if (!((tiku_trk_clip_mode_of(&a->clip, p->model.node_id) ==
+               TIKU_TRK_CLIP_MOVE)
+            /* IV-023: cut poses are drawn faded in icon modes too. */
+            ? tiku_trk_icon_paint_dim(s, tiku_trk_model_icon_name(&p->model),
+                  box.x, box.y, art, 0.55f, TIKU_DESK_C_DOC)
+            : drawn_sel
             ? tiku_trk_icon_paint_selected(s,
                   tiku_trk_model_icon_name(&p->model), box.x, box.y, art)
             : tiku_trk_icon_paint(s, tiku_trk_model_icon_name(&p->model),
@@ -884,7 +889,15 @@ draw(app_t *a)
             if (mini > MINI_ICON_MAX) {
                 mini = MINI_ICON_MAX;
             }
-            (void)(drawn_sel
+            (void)((tiku_trk_clip_mode_of(&a->clip, p->model.node_id) ==
+                        TIKU_TRK_CLIP_MOVE)
+                   /* IV-023: a pose cut to the clipboard is drawn faded,
+                    * the same dim the other shell draws it with. */
+                   ? tiku_trk_icon_paint_dim(s,
+                         tiku_trk_model_icon_name(&p->model), ix,
+                         row.y + (a->row_h - mini) / 2, mini, 0.55f,
+                         TIKU_DESK_C_DOC)
+                   : drawn_sel
                    ? tiku_trk_icon_paint_selected(s,
                          tiku_trk_model_icon_name(&p->model), ix,
                          row.y + (a->row_h - mini) / 2, mini)
@@ -1524,6 +1537,20 @@ script_pose_at(void *ctx, const char *name, int *x, int *y)
         }
     }
     return 0;
+}
+
+/** @brief One pixel of the window, for a check that asks about ink. */
+static unsigned
+script_pixel_at(void *ctx, int x, int y)
+{
+    app_t *a = (app_t *)ctx;
+
+    if (a->surf == NULL || a->surf->px == NULL || x < 0 || y < 0 ||
+        x >= a->surf->w || y >= a->surf->h) {
+        return 0u;
+    }
+    return (unsigned)a->surf->px[(size_t)y * (size_t)a->surf->w +
+                                 (size_t)x] & 0xffffffu;
 }
 
 /** @brief Resolve a named icon to the screen point it is drawn at. */
@@ -2730,6 +2757,7 @@ tracker_run(int argc, char **argv)
                 sst.row_point = script_row_point;
                 sst.pose_at = script_pose_at;
                 sst.pose_screen = script_pose_screen;
+                sst.pixel_at = script_pixel_at;
                 sst.pose_ctx = &a;
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     a.running = 0;

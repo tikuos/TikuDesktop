@@ -4000,11 +4000,15 @@ tracker_run(int argc, char **argv)
                     if (vc[k].mounted) {
                         /* A folder window showing the parent finds it by
                          * re-listing, which the poll above already did.
-                         * Nothing else to do until there is a Desktop to
-                         * put an icon on (PVN-040). */
+                         * The Desktop union gains the volume's Desktop
+                         * folder as a source, live (PVN-040, PVN-051). */
+                        tiku_trk_desktop_view_rebuild(&app.desktop_view);
                         changed++;
                         continue;
                     }
+                    /* And loses it: a source that has gone must not be
+                     * polled for. */
+                    tiku_trk_desktop_view_rebuild(&app.desktop_view);
                     /* Unmounted.  A window ON the volume closes -- and its
                      * arrangement is deliberately NOT saved, because the
                      * disk it belongs to has gone; a window merely SHOWING
