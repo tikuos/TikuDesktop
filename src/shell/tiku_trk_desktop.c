@@ -158,6 +158,10 @@ typedef struct desktop {
     int                  dock_x, dock_y;
     unsigned             dock_mods;
     unsigned             dock_button;
+    /* The resize strip along the bar's inner edge (DB-050). */
+    int                  bar_resize;
+    int                  bar_resize_x;
+    int                  bar_resize_w;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -2972,6 +2976,32 @@ tracker_run(int argc, char **argv)
                 app.dirty = 1;
                 break;
             case TIKU_DESK_EVENT_POINTER_DOWN: {
+                if (ev.button == 1u && ev.modifiers == 0u) {
+                    /* The resize strip: four pixels along the bar's
+                     * inner edge, and the drag sets the short axis by
+                     * hand (DB-050). */
+                    tiku_desk_rect_t bf =
+                        tiku_trk_deskbar_frame(app.deskbar);
+                    tiku_trk_db_dock_t dk =
+                        tiku_trk_deskbar_dock(app.deskbar);
+                    int inner_ok = 0;
+
+                    if (dk == TIKU_TRK_DB_RIGHT_EXPANDED &&
+                        ev.x >= bf.x && ev.x < bf.x + 4) {
+                        inner_ok = 1;
+                    }
+                    if (dk == TIKU_TRK_DB_LEFT_EXPANDED &&
+                        ev.x >= bf.x + bf.w - 4 && ev.x < bf.x + bf.w) {
+                        inner_ok = 1;
+                    }
+                    if (inner_ok && ev.y >= bf.y && ev.y < bf.y + bf.h) {
+                        app.bar_resize = 1;
+                        app.bar_resize_x = ev.x;
+                        app.bar_resize_w = tiku_trk_deskbar_width(
+                            app.deskbar);
+                        break;
+                    }
+                }
                 if (ev.button == 1u &&
                     (ev.modifiers & TIKU_DESK_MOD_CMD)) {
                     /* Before anything else -- but ARMED, not decided: a
@@ -3925,6 +3955,17 @@ tracker_run(int argc, char **argv)
                     (void)tiku_trk_band_controller_motion(
                         &app.band_controller, ev.x, ev.y, bm);
                 }
+                if (app.bar_resize) {
+                    int dw = (tiku_trk_deskbar_dock(app.deskbar) ==
+                              TIKU_TRK_DB_RIGHT_EXPANDED)
+                                 ? app.bar_resize_x - ev.x
+                                 : ev.x - app.bar_resize_x;
+
+                    if (tiku_trk_deskbar_set_width(app.deskbar,
+                            app.bar_resize_w + dw) > 0) {
+                        app.dirty = 1;
+                    }
+                }
                 if (app.dock_armed &&
                     ((ev.x - app.dock_x) * (ev.x - app.dock_x) +
                      (ev.y - app.dock_y) * (ev.y - app.dock_y) >
@@ -3965,6 +4006,7 @@ tracker_run(int argc, char **argv)
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 app.dock_drag = 0;
+                app.bar_resize = 0;
                 if (app.dock_armed) {
                     /* The press never moved: it was the chord after all
                      * (DB-019/020/021). */

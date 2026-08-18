@@ -1,0 +1,19 @@
+# shell: desktop
+# home: fixture
+# DB-050: the strip along the bar's inner edge sets the width by hand,
+# clamped at both ends.
+wait 12
+expect-deskbar-at 866 0
+press 867 100 1
+move 800 100
+release 800 100
+wait 3
+note dragged 67 wider, the bar follows the hand
+expect-deskbar-at 799 0
+press 800 100 1
+move 100 100
+release 100 100
+wait 3
+note far past the maximum it stops at the clamp, not at the pointer
+expect-deskbar-at 680 0
+quit

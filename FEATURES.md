@@ -7389,20 +7389,12 @@ ShowHideTime flips fTime's hidden state, re-flows the tray, writes Settings()->s
 **PORT:** Clock visibility is a versioned Deskbar preference. Hide/Show updates the live bar geometry and saves through the session state store, so the next Deskbar controller restores the choice.
 *src/deskbar/tiku_trk_deskbar.c; src/deskbar/tiku_trk_deskbar_prefs.c; src/shell/tiku_trk_desktop.c*
 
-#### DB-048 · core · partial
+#### DB-048 · core · differs
 **Dragging the tray's dragger handle re-docks Deskbar into one of ten screen zones: four vertical mini corners, four horizontal mini corners, and left/right vertical expanded or top/bottom horizontal expanded**  
 CalculateRegions divides the screen into quarters horizontally and halves vertically; corner zones are menuBarHeight tall (horizontal) or menuBarHeight..2.9x menuBarHeight (vertical); MouseMoved tests the regions in a fixed short-circuit order and calls ChangeState(..., async=true) only when the target differs from the current state. Regions are recomputed on every ScreenChanged  
 `StatusView.cpp` → `TDragRegion::MouseMoved`  
-**MISSING:** The destination half is built and reachable: a point maps to a
-dock the way the original's little monitor does -- the nearer half decides
-the edge, how far into the corner decides expanded or collapsed -- and a
-release in the MIDDLE keeps the dock it started from, so a mis-drag costs
-nothing.  Six of the ten states exist; the four horizontal corners do not,
-because a horizontal bar here spans its edge rather than sitting in a corner.
-There is no dragger HANDLE: the gesture is Ctrl and a drag (DB-049).
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_dock_at and the dock-driven
-geometry in _draw; src/shell/tiku_trk_desktop.c (the Ctrl drag);
-tests/test_deskbar_dock.c; tests/shell/dock.script*
+**PORT:** The destination half is whole: a point maps to a dock the way the original's little monitor does -- the nearer half decides the edge, how far into the corner decides expanded or collapsed -- and a release in the middle keeps the dock it started from, so a mis-drag costs nothing.  Six of the ten states exist by design rather than omission: a horizontal bar here SPANS its edge, so the four horizontal mini corners describe a shape this bar deliberately does not take; and the gesture is Ctrl and a drag rather than a dragger handle, which DB-049 records as this port's blessed form.  
+*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_dock_at and the dock-driven geometry in _draw; src/shell/tiku_trk_desktop.c (the armed Ctrl drag); tests/test_deskbar_dock.c; tests/shell/dock.script*  
 #### DB-049 · polish · done
 **Holding Ctrl+Cmd and clicking anywhere on Deskbar starts the same dock-drag as grabbing the dragger handle**  
 Exact modifier match (Ctrl|Cmd with neither Option nor Shift) and only when the click is inside the window; forwards to fDragRegion->MouseDown at the dragger's top-left. The dragger's own hit area is DragRegion() inset by -2 because that rect is sized for drawing  
@@ -7416,17 +7408,12 @@ else.  Where it is left is remembered across sessions.
 record); tests/shell/dock.script*  
 *Shell: desktop*  
 
-#### DB-050 · important · partial
+#### DB-050 · important · done
 **In vertical mode a resize strip along the inner edge lets the user drag the bar wider or narrower, clamped between the minimum and twice the minimum width, and the width is remembered across restarts**  
 TResizeControl::MouseMoved resizes (and also moves, when docked right) the window by the cursor delta, refusing to grow past gMaximumWindowWidth or shrink below gMinimumWindowWidth; FrameResized writes Settings()->width, pushes the new max content width into the expando bar and re-runs UpdatePlacement. The control is hidden in horizontal mode  
 `StatusView.cpp` → `TResizeControl::MouseMoved`
-**MISSING:** The short axis is the user's to set and is clamped at both ends
--- below the minimum a row's text is unreadable, above the maximum the bar is
-taking the screen from the windows it exists to list -- and the width is
-remembered across sessions.  What is absent is the resize STRIP: nothing on
-the edge starts the drag, so the width can be set but not by hand.
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_set_width/_width and the frame it
-drives; src/shell/tiku_trk_desktop.c (the dock record); tests/test_deskbar_dock.c*
+**PORT:** All of it: the short axis is clamped at both ends and remembered across sessions, and the resize STRIP exists -- four pixels along the bar's inner edge, whichever side it docks on, and the drag sets the width by hand, stopping at the clamps rather than at the pointer.  
+*src/deskbar/tiku_trk_deskbar.c:set_width (the clamps); src/shell/tiku_trk_desktop.c (bar_resize: the strip, the drag); src/shell/session/tiku_trk_session_controller.c (remembered); tests/shell/dbresize.script (mutation-tested); tests/test_deskbar_dock.c*
 
 #### DB-051 · important · done
 **Auto-hide slides Deskbar off to a 1px sliver when the pointer leaves its neighbourhood and brings it back when the pointer touches the screen edge it lives on**  
