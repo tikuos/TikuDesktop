@@ -1,0 +1,17 @@
+# shell: desktop
+# home: fixture
+# DB-030/DB-021: a window entry raises its window and CMD+click minimizes
+# it -- reachable at last: a CMD press on the bar is ARMED for the dock
+# drag and delivered as the chord only when it never moves.
+wait 12
+note the folder window is up, white where its list is
+expect-pixel 275 200 ffffff
+click 932 60 1 ctrl
+wait 20
+note CMD+click on its Deskbar entry minimized it: backdrop shows through
+expect-pixel 275 200 336698
+click 932 60 1
+wait 20
+note and a plain click on the same entry brings it back
+expect-pixel 275 200 ffffff
+quit

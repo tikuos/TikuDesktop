@@ -147,6 +147,17 @@ typedef struct desktop {
     /* The Deskbar's own double-click memory (DB-019). */
     int64_t              db_click_at;
     int                  db_click_x, db_click_y;
+    /* The zoom: a frame sliding between the menu item and the window it
+     * names, alive for a few frames after a Deskbar window action
+     * (DB-030). */
+    int64_t              zoom_t0;
+    tiku_desk_rect_t     zoom_from, zoom_to;
+    /* A CMD press on the bar, still ambiguous: moved it re-docks, held
+     * still it is a chord the rows answer (DB-049 vs DB-021). */
+    int                  dock_armed;
+    int                  dock_x, dock_y;
+    unsigned             dock_mods;
+    unsigned             dock_button;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -1393,6 +1404,210 @@ find_save_as(void *context)
                                     "query");
 }
 
+/**
+ * @brief Carry out what a Deskbar click asked for.
+ *
+ * Shared by the press path and the armed-dock release path: a CMD press
+ * on the bar might be the start of a re-dock drag, so its CLICK meaning
+ * is delivered only if the press never moved (DB-049 vs DB-019/021).
+ */
+static void
+deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
+{
+    tiku_desk_window_t *t;
+
+    switch (pick->what) {
+    case TIKU_TRK_DB_FIND:
+        /* The leaf's Find item is the panel: the same
+         * entry point as Ctrl+F, reachable by mouse. */
+        open_panel(app);
+        break;
+    case TIKU_TRK_DB_PREFERENCES:
+        tiku_trk_deskbar_prefs_window_open(
+            &app->deskbar_prefs_window);
+        break;
+    case TIKU_TRK_DB_TRACKER_PREFERENCES:
+        tiku_trk_prefs_window_open(&app->prefs_window);
+        break;
+    case TIKU_TRK_DB_QUIT:
+        /* The ellipsis is a promise: Shut down… asks
+         * before anything is taken down (DB-006). */
+        tiku_trk_alert_open(alert_model(app),
+            TIKU_TRK_ALERT_WARN,
+            TIKU_TRK_ALERT_TAG_SHUTDOWN,
+            "Shut down the desktop?",
+            "Cancel|Shut down");
+        break;
+    case TIKU_TRK_DB_OPEN_PATH:
+        (void)open_folder(app, pick->path);
+        break;
+    case TIKU_TRK_DB_ACTIVATE_WINDOW:
+        /* Invoke is a no-op while dragging: the drop
+         * owns the release, and a window that raised
+         * itself under it would steal the target
+         * (DB-030). */
+        if (tiku_trk_drag_active(&app->drag)) {
+            break;
+        }
+        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        if (t != NULL) {
+            /* The zoom animates only when the state
+             * really changes (DB-030). */
+            if (t->minimized) {
+                app->zoom_t0 = tiku_trk_now();
+                app->zoom_from = (tiku_desk_rect_t){
+                    x - 8, y - 8, 16, 16 };
+                app->zoom_to = t->frame;
+            }
+            t->minimized = 0;
+            tiku_desk_workspace_activate(app->desk, t);
+        }
+        break;
+    case TIKU_TRK_DB_MINIMIZE_WINDOW:
+        if (tiku_trk_drag_active(&app->drag)) {
+            break;
+        }
+        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        if (t != NULL) {
+            if (!t->minimized) {
+                app->zoom_t0 = tiku_trk_now();
+                app->zoom_from = t->frame;
+                app->zoom_to = (tiku_desk_rect_t){
+                    x - 8, y - 8, 16, 16 };
+            }
+            t->minimized = 1;
+        }
+        break;
+    case TIKU_TRK_DB_CLOSE_WINDOW:
+        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        close_window(app, t);
+        break;
+    case TIKU_TRK_DB_ACTIVATE_TEAM: {
+        /* Activating the application: its windows to
+         * the front, the top one focused (DB-019). */
+        int k, m = tiku_desk_workspace_count(app->desk);
+
+        for (k = 0; k < m; k++) {
+            tiku_desk_window_t *ww =
+                tiku_desk_workspace_at(app->desk, k);
+            if (ww != NULL) {
+                ww->minimized = 0;
+            }
+        }
+        if (m > 0) {
+            tiku_desk_workspace_activate(app->desk,
+                tiku_desk_workspace_at(app->desk,
+                                       m - 1));
+        }
+        break;
+    }
+    case TIKU_TRK_DB_LAUNCH_TEAM: {
+        /* Middle click: another instance of the same
+         * image (DB-021). */
+        const char *cmd =
+            tiku_trk_deskbar_team_command(app->deskbar,
+                                          pick->team);
+
+        if (cmd[0] != '\0') {
+            pid_t child = fork();
+
+            if (child == 0) {
+                execlp(cmd, cmd, (char *)NULL);
+                _exit(127);
+            }
+            if (child > 0) {
+                (void)waitpid(child, NULL, WNOHANG);
+            }
+        }
+        break;
+    }
+    case TIKU_TRK_DB_QUIT_TEAM: {
+        /* Politely: SIGTERM, the process's chance to
+         * put its affairs in order (DB-028). */
+        long tp[16];
+        int k, m = tiku_trk_deskbar_team_pids(
+            app->deskbar, pick->team, tp, 16);
+
+        for (k = 0; k < m; k++) {
+            (void)kill((pid_t)tp[k], SIGTERM);
+        }
+        break;
+    }
+    case TIKU_TRK_DB_KILL_TEAM: {
+        /* The Vulcan Death Grip: no quit request,
+         * and the row goes without waiting for the
+         * roster (DB-020). */
+        long tp[16];
+        int k, m = tiku_trk_deskbar_team_pids(
+            app->deskbar, pick->team, tp, 16);
+
+        for (k = 0; k < m; k++) {
+            (void)kill((pid_t)tp[k], SIGKILL);
+        }
+        tiku_trk_deskbar_remove_team(app->deskbar,
+                                     pick->team);
+        break;
+    }
+    case TIKU_TRK_DB_HIDE_ALL:
+    case TIKU_TRK_DB_SHOW_ALL: {
+        int k, m = tiku_desk_workspace_count(app->desk);
+        for (k = 0; k < m; k++) {
+            tiku_desk_window_t *ww =
+                tiku_desk_workspace_at(app->desk, k);
+            if (ww != NULL) {
+                ww->minimized =
+                    (pick->what == TIKU_TRK_DB_HIDE_ALL);
+            }
+        }
+        break;
+    }
+    case TIKU_TRK_DB_CLOSE_ALL: {
+        /* Closing every window of the file manager is a
+         * request to close its WINDOWS, never to quit
+         * it -- the original makes the same
+         * distinction. */
+        while (tiku_desk_workspace_count(app->desk) > 0) {
+            tiku_desk_workspace_close(app->desk,
+                tiku_desk_workspace_at(app->desk, 0));
+        }
+        break;
+    }
+    case TIKU_TRK_DB_CLOCK_HIDE:
+    case TIKU_TRK_DB_CLOCK_SHOW:
+        app->deskbar_prefs_window.model.value.show_clock =
+            (pick->what == TIKU_TRK_DB_CLOCK_SHOW);
+        tiku_trk_deskbar_settings_normalize(
+            &app->deskbar_prefs_window.model.value);
+        tiku_trk_deskbar_apply_settings(app->deskbar,
+            &app->deskbar_prefs_window.model.value);
+        (void)tiku_trk_deskbar_prefs_save(
+            &app->deskbar_prefs_window.model, app->store);
+        break;
+    case TIKU_TRK_DB_CLOCK_SECONDS:
+    case TIKU_TRK_DB_CLOCK_DAY:
+    case TIKU_TRK_DB_CLOCK_ZONE:
+        if (pick->what == TIKU_TRK_DB_CLOCK_SECONDS) {
+            app->deskbar_prefs_window.model.value.show_seconds =
+                !app->deskbar_prefs_window.model.value.show_seconds;
+        } else if (pick->what == TIKU_TRK_DB_CLOCK_DAY) {
+            app->deskbar_prefs_window.model.value.show_day_of_week =
+                !app->deskbar_prefs_window.model.value.show_day_of_week;
+        } else {
+            app->deskbar_prefs_window.model.value.show_timezone =
+                !app->deskbar_prefs_window.model.value.show_timezone;
+        }
+        tiku_trk_deskbar_settings_normalize(
+            &app->deskbar_prefs_window.model.value);
+        tiku_trk_deskbar_apply_settings(app->deskbar,
+            &app->deskbar_prefs_window.model.value);
+        (void)tiku_trk_deskbar_prefs_save(
+            &app->deskbar_prefs_window.model, app->store);
+        break;
+    default:
+        break;
+    }
+}
+
 /** @brief The roster's heartbeat: sync teams with the live processes. */
 static int
 rescan_teams(void *context)
@@ -1962,6 +2177,30 @@ draw_all(desktop_t *app)
     } else {
         tiku_desk_workspace_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    }
+    if (app->zoom_t0 != 0) {
+        /* The window frame sliding out of or into the menu item's
+         * rectangle: four steps of an inverted outline, done in an eye
+         * blink (DB-030). */
+        int64_t age = tiku_trk_now() - app->zoom_t0;
+
+        if (age > 120000) {
+            app->zoom_t0 = 0;
+        } else {
+            int num = (int)(age / 30000) + 1;   /* 1..4 */
+            tiku_desk_rect_t z;
+
+            z.x = app->zoom_from.x +
+                  (app->zoom_to.x - app->zoom_from.x) * num / 4;
+            z.y = app->zoom_from.y +
+                  (app->zoom_to.y - app->zoom_from.y) * num / 4;
+            z.w = app->zoom_from.w +
+                  (app->zoom_to.w - app->zoom_from.w) * num / 4;
+            z.h = app->zoom_from.h +
+                  (app->zoom_to.h - app->zoom_from.h) * num / 4;
+            tiku_desk_invert_frame(app->surf, z);
+            app->dirty = 1;     /* the next frame moves it again */
+        }
     }
     if (tiku_trk_drag_active(&app->drag)) {
         /* What is being carried, drawn at the pointer: a drag with no
@@ -2735,9 +2974,10 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_DOWN: {
                 if (ev.button == 1u &&
                     (ev.modifiers & TIKU_DESK_MOD_CMD)) {
-                    /* Before anything else, because a Ctrl+click on the
-                     * bar means only one thing and every handler below
-                     * would read it as something else (DB-049). */
+                    /* Before anything else -- but ARMED, not decided: a
+                     * CMD press that then moves re-docks the bar
+                     * (DB-049); one that lets go where it landed is a
+                     * chord the rows answer (DB-019/021). */
                     tiku_desk_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
 
@@ -2745,7 +2985,11 @@ tracker_run(int argc, char **argv)
                         ev.x < bf.x + bf.w &&
                         ev.y >= bf.y &&
                         ev.y < bf.y + bf.h) {
-                        app.dock_drag = 1;
+                        app.dock_armed = 1;
+                        app.dock_x = ev.x;
+                        app.dock_y = ev.y;
+                        app.dock_mods = ev.modifiers;
+                        app.dock_button = ev.button;
                         break;
                     }
                 }
@@ -3096,172 +3340,8 @@ tracker_run(int argc, char **argv)
                             app.press_x = ev.x;
                             app.press_y = ev.y;
                         }
-                        tiku_desk_window_t *t;
-
-                        switch (pick.what) {
-                        case TIKU_TRK_DB_FIND:
-                            /* The leaf's Find item is the panel: the same
-                             * entry point as Ctrl+F, reachable by mouse. */
-                            open_panel(&app);
-                            break;
-                        case TIKU_TRK_DB_PREFERENCES:
-                            tiku_trk_deskbar_prefs_window_open(
-                                &app.deskbar_prefs_window);
-                            break;
-                        case TIKU_TRK_DB_TRACKER_PREFERENCES:
-                            tiku_trk_prefs_window_open(&app.prefs_window);
-                            break;
-                        case TIKU_TRK_DB_QUIT:
-                            /* The ellipsis is a promise: Shut down… asks
-                             * before anything is taken down (DB-006). */
-                            tiku_trk_alert_open(alert_model(&app),
-                                TIKU_TRK_ALERT_WARN,
-                                TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                                "Shut down the desktop?",
-                                "Cancel|Shut down");
-                            break;
-                        case TIKU_TRK_DB_OPEN_PATH:
-                            (void)open_folder(&app, pick.path);
-                            break;
-                        case TIKU_TRK_DB_ACTIVATE_WINDOW:
-                            t = tiku_desk_workspace_find(app.desk, pick.tag);
-                            if (t != NULL) {
-                                t->minimized = 0;
-                                tiku_desk_workspace_activate(app.desk, t);
-                            }
-                            break;
-                        case TIKU_TRK_DB_MINIMIZE_WINDOW:
-                            t = tiku_desk_workspace_find(app.desk, pick.tag);
-                            if (t != NULL) { t->minimized = 1; }
-                            break;
-                        case TIKU_TRK_DB_CLOSE_WINDOW:
-                            t = tiku_desk_workspace_find(app.desk, pick.tag);
-                            close_window(&app, t);
-                            break;
-                        case TIKU_TRK_DB_ACTIVATE_TEAM: {
-                            /* Activating the application: its windows to
-                             * the front, the top one focused (DB-019). */
-                            int k, m = tiku_desk_workspace_count(app.desk);
-
-                            for (k = 0; k < m; k++) {
-                                tiku_desk_window_t *ww =
-                                    tiku_desk_workspace_at(app.desk, k);
-                                if (ww != NULL) {
-                                    ww->minimized = 0;
-                                }
-                            }
-                            if (m > 0) {
-                                tiku_desk_workspace_activate(app.desk,
-                                    tiku_desk_workspace_at(app.desk,
-                                                           m - 1));
-                            }
-                            break;
-                        }
-                        case TIKU_TRK_DB_LAUNCH_TEAM: {
-                            /* Middle click: another instance of the same
-                             * image (DB-021). */
-                            const char *cmd =
-                                tiku_trk_deskbar_team_command(app.deskbar,
-                                                              pick.team);
-
-                            if (cmd[0] != '\0') {
-                                pid_t child = fork();
-
-                                if (child == 0) {
-                                    execlp(cmd, cmd, (char *)NULL);
-                                    _exit(127);
-                                }
-                                if (child > 0) {
-                                    (void)waitpid(child, NULL, WNOHANG);
-                                }
-                            }
-                            break;
-                        }
-                        case TIKU_TRK_DB_QUIT_TEAM: {
-                            /* Politely: SIGTERM, the process's chance to
-                             * put its affairs in order (DB-028). */
-                            long tp[16];
-                            int k, m = tiku_trk_deskbar_team_pids(
-                                app.deskbar, pick.team, tp, 16);
-
-                            for (k = 0; k < m; k++) {
-                                (void)kill((pid_t)tp[k], SIGTERM);
-                            }
-                            break;
-                        }
-                        case TIKU_TRK_DB_KILL_TEAM: {
-                            /* The Vulcan Death Grip: no quit request,
-                             * and the row goes without waiting for the
-                             * roster (DB-020). */
-                            long tp[16];
-                            int k, m = tiku_trk_deskbar_team_pids(
-                                app.deskbar, pick.team, tp, 16);
-
-                            for (k = 0; k < m; k++) {
-                                (void)kill((pid_t)tp[k], SIGKILL);
-                            }
-                            tiku_trk_deskbar_remove_team(app.deskbar,
-                                                         pick.team);
-                            break;
-                        }
-                        case TIKU_TRK_DB_HIDE_ALL:
-                        case TIKU_TRK_DB_SHOW_ALL: {
-                            int k, m = tiku_desk_workspace_count(app.desk);
-                            for (k = 0; k < m; k++) {
-                                tiku_desk_window_t *ww =
-                                    tiku_desk_workspace_at(app.desk, k);
-                                if (ww != NULL) {
-                                    ww->minimized =
-                                        (pick.what == TIKU_TRK_DB_HIDE_ALL);
-                                }
-                            }
-                            break;
-                        }
-                        case TIKU_TRK_DB_CLOSE_ALL: {
-                            /* Closing every window of the file manager is a
-                             * request to close its WINDOWS, never to quit
-                             * it -- the original makes the same
-                             * distinction. */
-                            while (tiku_desk_workspace_count(app.desk) > 0) {
-                                tiku_desk_workspace_close(app.desk,
-                                    tiku_desk_workspace_at(app.desk, 0));
-                            }
-                            break;
-                        }
-                        case TIKU_TRK_DB_CLOCK_HIDE:
-                        case TIKU_TRK_DB_CLOCK_SHOW:
-                            app.deskbar_prefs_window.model.value.show_clock =
-                                (pick.what == TIKU_TRK_DB_CLOCK_SHOW);
-                            tiku_trk_deskbar_settings_normalize(
-                                &app.deskbar_prefs_window.model.value);
-                            tiku_trk_deskbar_apply_settings(app.deskbar,
-                                &app.deskbar_prefs_window.model.value);
-                            (void)tiku_trk_deskbar_prefs_save(
-                                &app.deskbar_prefs_window.model, app.store);
-                            break;
-                        case TIKU_TRK_DB_CLOCK_SECONDS:
-                        case TIKU_TRK_DB_CLOCK_DAY:
-                        case TIKU_TRK_DB_CLOCK_ZONE:
-                            if (pick.what == TIKU_TRK_DB_CLOCK_SECONDS) {
-                                app.deskbar_prefs_window.model.value.show_seconds =
-                                    !app.deskbar_prefs_window.model.value.show_seconds;
-                            } else if (pick.what == TIKU_TRK_DB_CLOCK_DAY) {
-                                app.deskbar_prefs_window.model.value.show_day_of_week =
-                                    !app.deskbar_prefs_window.model.value.show_day_of_week;
-                            } else {
-                                app.deskbar_prefs_window.model.value.show_timezone =
-                                    !app.deskbar_prefs_window.model.value.show_timezone;
-                            }
-                            tiku_trk_deskbar_settings_normalize(
-                                &app.deskbar_prefs_window.model.value);
-                            tiku_trk_deskbar_apply_settings(app.deskbar,
-                                &app.deskbar_prefs_window.model.value);
-                            (void)tiku_trk_deskbar_prefs_save(
-                                &app.deskbar_prefs_window.model, app.store);
-                            break;
-                        default:
-                            break;
-                        }
+                        deskbar_pick_dispatch(&app, &pick,
+                                              ev.x, ev.y);
                         app.dirty = 1;
                         break;
                     }
@@ -3845,6 +3925,13 @@ tracker_run(int argc, char **argv)
                     (void)tiku_trk_band_controller_motion(
                         &app.band_controller, ev.x, ev.y, bm);
                 }
+                if (app.dock_armed &&
+                    ((ev.x - app.dock_x) * (ev.x - app.dock_x) +
+                     (ev.y - app.dock_y) * (ev.y - app.dock_y) >
+                     TIKU_TRK_DRAG_SLOP * TIKU_TRK_DRAG_SLOP)) {
+                    app.dock_armed = 0;
+                    app.dock_drag = 1;
+                }
                 if (app.dock_drag) {
                     /* Ctrl held on the bar: the pointer IS the picker.
                      * Where it lets go decides the dock, and a release in
@@ -3878,6 +3965,21 @@ tracker_run(int argc, char **argv)
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 app.dock_drag = 0;
+                if (app.dock_armed) {
+                    /* The press never moved: it was the chord after all
+                     * (DB-019/020/021). */
+                    tiku_trk_db_pick_t hpick;
+
+                    app.dock_armed = 0;
+                    if (tiku_trk_deskbar_click(app.deskbar, app.dock_x,
+                                               app.dock_y, app.dock_mods,
+                                               (int)app.dock_button, 1,
+                                               &hpick)) {
+                        deskbar_pick_dispatch(&app, &hpick, app.dock_x,
+                                              app.dock_y);
+                        app.dirty = 1;
+                    }
+                }
                 app.deskbar_press = 0;
                 if (tiku_trk_deskbar_release(app.deskbar, ev.x, ev.y)) {
                     app.dirty = 1;

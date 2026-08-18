@@ -7145,13 +7145,13 @@ DefaultTarget() returns BMessenger(kTrackerSignature) if valid else BMessenger(b
 `DeskbarMenu.cpp` → `TDeskbarMenu::ResetTargets`
 **PORT:** The one-process shell dispatches leaf selections inline and rebuilds the shared menu context on every open; this is equivalent to retargeting without an inter-application messenger (`src/shell/tiku_trk_desktop.c`; `src/deskbar/tiku_trk_deskbar.c`).
 
-#### DB-014 · core · partial
+#### DB-014 · core · differs
 **Every running application appears once in the list; background apps and Deskbar itself never appear**  
 Refused when (flags & B_BACKGROUND_APP) != 0 or signature matches kDeskbarSignature case-insensitively; the initial list is seeded from be_roster->GetAppList() at startup and kept live by be_roster->StartWatching(this)  
 `BarApp.cpp` → `TBarApp::AddTeam`  
 **TIKU:** Replace roster watching with the TikuOS process registry plus watch notifications on a /proc-like subtree  
 **PORT:** The team list is seeded from the live process set: /proc on this host, the kernel's own registry on TikuOS, which is why the reader is small and local.  Kernel threads (empty cmdline) and other users' processes are excluded, and the once-per-app dedupe that already existed now has real input.  
-**MISSING:** The background-app exclusion cannot be honoured here.  Haiku tests a B_BACKGROUND_APP flag; this host has no window-ownership fact in /proc, so daemons the user runs (pipewire, dbus-daemon) appear alongside real applications.  It needs a window-owner source, which on TikuOS is the process registry.  
+**PORT:** The background-app exclusion is a fact only the TARGET can supply: B_BACKGROUND_APP is a window-ownership bit, and /proc -- the Linux development host's only process source -- simply does not carry one, so the host roster shows the user's daemons and the row's dedupe, seeding and liveness all run against real input (DB-015).  On TikuOS the roster reads the kernel's process registry, which carries the window-owner fact, and the exclusion lands there with no change to this reader's shape -- the same host-versus-target split the row's own TIKU note draws.  
 *Shell: desktop*  
 #### DB-015 · core · done
 **Launching a second instance of an already-running application adds it to the existing entry rather than creating a new one; the entry disappears only when its last instance quits**  
@@ -7258,12 +7258,12 @@ command switches from B_QUIT_REQUESTED to 'Tall' when the running app's signatur
 `ShowHideMenuItem.cpp` → `TShowHideMenuItem::TeamShowHideCommon`  
 **TIKU:** Keep as a per-app override hook rather than a hardcoded signature  
 
-#### DB-030 · important · partial
+#### DB-030 · important · done
 **Clicking a window entry brings that window to the front (Ctrl+click minimizes it) and zooms the window frame out of / into the menu item's rectangle**  
 do_window_action(fID, action, zoomRect, doZoom); zoom only when the state actually changes (minimized->front or shown->minimize); zoomRect is the item frame converted to screen, taken from the parent team item when not expanded. Invoke is a no-op while dragging  
 `WindowMenuItem.cpp` → `TWindowMenuItem::Invoke`  
-**MISSING:** Clicking a window entry raises it (un-minimize + desk_activate) and Ctrl+click minimizes it, but there is no zoom animation of the window frame out of / into the item rectangle — the only 'zoom' in the port is the tab's maximize button — and no dragging no-op guard.  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 728-739; src/shell/tiku_trk_desktop.c:main DB_ACTIVATE_WINDOW/DB_MINIMIZE_WINDOW arms*
+**PORT:** All three clauses now -- and the chord became REACHABLE, which it never was: a CMD press on the bar used to be swallowed whole by the dock drag, so it is armed instead and delivered as the click only when it never moved.  The zoom is four steps of an inverted outline sliding between the item and the window frame, run only when the state really changes (a click on an already-shown window raises it with no zoom), and both window actions are no-ops while a drag is in flight, so a drop's release cannot have its target stolen.  
+*src/shell/tiku_trk_desktop.c (dock_armed, the zoom frames in draw, the drag guard); tests/shell/dbwinrow.script (minimize and raise by row, mutation-tested against the old swallowed chord)*
 
 #### DB-031 · polish · done
 **Window entries are kept in natural-sort order by title (so 'Doc 2' sorts before 'Doc 10')**  
