@@ -1,0 +1,21 @@
+# shell: desktop
+# home: fixture
+# Q-019: the scope list is not fixed at startup -- 'Select folders…' opens
+# the panel and any folder at all becomes a place the search is scoped to.
+wait 10
+key f ctrl
+wait 6
+click 410 373
+wait 3
+note the popup ends with the chooser
+click 360 432
+wait 6
+note the panel walks into /home and chooses it
+click 320 288
+wait 2
+click 675 413
+wait 4
+click 675 413
+wait 4
+expect-status scoped to /home
+quit

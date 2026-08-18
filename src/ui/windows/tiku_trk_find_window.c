@@ -136,6 +136,10 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
     } else if (hit == TIKU_TRK_FIND_HIT_SAVE) {
         save(controller);
     }
+    if (tiku_trk_find_take_folder_request(&controller->model) &&
+        controller->select_folder != NULL) {
+        controller->select_folder(controller->save_as_context);
+    }
     sync_window(controller);
     return 1;
 }

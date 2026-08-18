@@ -89,6 +89,9 @@ typedef struct {
                                       [TIKU_TRK_NAME_MAX];
     int                   place_count;
     unsigned              place_mask;
+    /* Set when 'Select folders...' was chosen: the shell answers with
+     * its folder panel and adds the choice as a place (Q-019). */
+    int                   wants_folder;
     int                   everywhere;
     int                   include_trash;
     tiku_trk_find_focus_t focus;
@@ -221,6 +224,12 @@ int tiku_trk_find_type_menu(struct tiku_trk_store *store,
 
 /** @brief Offer @p name as a place the search can be scoped to. */
 int tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name);
+
+/** @brief Take (and clear) the pending 'Select folders...' request. */
+int tiku_trk_find_take_folder_request(tiku_trk_find_t *f);
+
+/** @brief Add @p path as a place and scope the search to it (Q-019). */
+int tiku_trk_find_scope_to_folder(tiku_trk_find_t *f, const char *path);
 
 /** @brief Offer a place together with the volume identity it belongs to. */
 int tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,

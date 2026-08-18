@@ -35,6 +35,8 @@ typedef struct {
      * answers with the save panel (AW-052). */
     void                 (*save_as)(void *context);
     void                  *save_as_context;
+    /* 'Select folders...' chose the panel; the shell raises it (Q-019). */
+    void                 (*select_folder)(void *context);
     void                  *search_context;
 } tiku_trk_find_window_t;
 

@@ -1347,6 +1347,16 @@ fpanel_commit(void *context, void *target, int command,
     const char *selection[16];
     int count;
 
+    if (command == TIKU_TRK_CMD_ADD_SCOPE && destination != NULL) {
+        /* The chosen folder becomes a place and the search is scoped to
+         * it at once (Q-019). */
+        if (tiku_trk_find_scope_to_folder(&app->find_window.model,
+                                          destination)) {
+            snprintf(app->status, sizeof app->status,
+                     "scoped to %.100s", destination);
+        }
+        return;
+    }
     if (command == TIKU_TRK_CMD_SAVE_QUERY && destination != NULL) {
         /* The panel already checked the destination (AW-052); what is
          * left is the writing: the query's saved text as a real file,
@@ -1391,6 +1401,16 @@ fpanel_commit(void *context, void *target, int command,
         tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
                             destination);
     }
+}
+
+/** @brief Find's 'Select folders...': the panel chooses a scope (Q-019). */
+static void
+find_select_folder(void *context)
+{
+    desktop_t *app = context;
+
+    tiku_trk_panel_window_open(&app->file_panel, app,
+                               TIKU_TRK_CMD_ADD_SCOPE, "/");
 }
 
 /** @brief Find's Save with nowhere attached: ask WHERE with the panel. */
@@ -2613,6 +2633,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_panel_window_set_alert(&app.file_panel, alert_model(&app));
     app.find_window.save_as = find_save_as;
     app.find_window.save_as_context = &app;
+    app.find_window.select_folder = find_select_folder;
     {
         const char *home = getenv("HOME");
         char path[TIKU_TRK_PATH_MAX] = "";

@@ -3380,6 +3380,25 @@ tracker_run(int argc, char **argv)
                         break;
                     }
                 }
+                if (a.drag_active &&
+                    (ev.modifiers & TIKU_DESK_MOD_OPTION) != 0u) {
+                    /* Option makes the same-folder drag a DUPLICATE, not a
+                     * reposition (FS-004): the poses go back where they
+                     * were picked up and the copies are made instead. */
+                    int i, n = tiku_trk_poseview_count(a.view);
+                    int bx = a.press_x - ev.x, by = a.press_y - ev.y;
+
+                    for (i = 0; i < n; i++) {
+                        tiku_trk_pose_t *p = tiku_trk_poseview_at(a.view, i);
+
+                        if (p != NULL && p->selected) {
+                            tiku_trk_poseview_move_pose(a.view, p,
+                                p->loc_x + bx, p->loc_y + by, 0);
+                        }
+                    }
+                    a.drag_active = 0;
+                    menu_key(&a, 'd', TIKU_DESK_MOD_CMD);
+                }
                 if (a.band_active || a.drag_active) {
                     a.band_active = 0;
                     a.drag_active = 0;

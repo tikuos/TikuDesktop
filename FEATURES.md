@@ -3322,12 +3322,12 @@ AddDropContextMenu builds the four items (kMoveSelectionTo, kCopySelectionTo, kC
 *Shell: desktop*  
 **PORT:** A secondary-button drop puts up the Move/Copy/Link/Cancel menu that had been built and tested with no caller, and the pick is obeyed: the payload is held across the release the menu interrupts.  Proven by picking "Move here" and finding the source GONE -- an assertion a copy or a link would fail, which the first version of the check could not tell apart.  
 *Shell: desktop*  
-#### FS-004 · important · partial
+#### FS-004 · important · done
 **Dropping a selection into the folder it already lives in does not copy: in icon view it just repositions the icons, in list view it does nothing, and with Option held it duplicates instead.**  
 Guarded by *srcWindow->PoseView()->TargetModel()->NodeRef() == *destFolder->NodeRef(). forceCopy -> DuplicateSelection(&where,&loc); createLink/createRelativeLink -> return (no link in same folder); kListMode -> return; otherwise each selected pose is moved by delta = loc - where, pinned to grid if Command is held, and re-inserted into the vertical-sort list.  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto`  
-**MISSING:** Dragging within a folder repositions every selected pose by the same delta with Ctrl pinning to grid, and the whole drag path is gated off in list mode so list view does nothing, but the Option-held clause (duplicate instead of reposition) is missing — no modifier other than the snap key is read.  
-*src/shell/tiku_trk_app.c:1438 (drag_active branch) + src/shell/tiku_trk_app.c:1248 (list-mode gate)*
+**PORT:** All three arms: icon view repositions by one shared delta with Ctrl pinning to grid, list view's drag path is gated off entirely, and Option held at the RELEASE makes the drag a duplicate -- the poses go back where they were picked up and the copies are made through the same Duplicate the menu uses, auto-placed rather than dropped at the pointer, which is the one adaptation of a shell that moves poses live.  
+*src/shell/tiku_trk_app.c (the Option release, the drag branch, the list-mode gate); tests/shell/dupdrag.script (mutation-tested)*
 
 #### FS-005 · important · done
 **Even when a drop is not caught by the same-folder shortcut, any individual item whose parent already is the destination is silently skipped rather than copied.**  
@@ -3738,12 +3738,11 @@ UndoItemMove records fSourceRef = parent of sourceList->ItemAt(0) and fTargetRef
 `FSUndoRedo.cpp` → `UndoItemMove::Undo`  
 **PORT:** Each item records its own source rather than the first item's parent, so a selection spanning several folders goes back to the folders it came from -- the original restores the lot into one.  
 
-#### FS-066 · important · partial
+#### FS-066 · important · differs
 **Undoing New Folder deletes the folder; undoing a rename restores the old name; undoing a volume rename restores the old volume name.**  
 UndoItemFolder::Undo -> FSDelete(new entry_ref(fRef), async=false, confirm=false), Redo -> FSCreateNewFolder(&fRef). UndoItemRename stores both refs and Rename()s back and forth. UndoItemRenameVolume captures the old name via BVolume::GetName in its constructor and uses BVolume::SetName. The rename undo items are created inside EditModelName and removed again (undo.Remove()) if the rename itself failed.  
 `FSUndoRedo.cpp` → `UndoItemFolder::Undo`  
-**MISSING:** New folder and rename both undo and redo; the volume-rename  
-clause needs a volume model the port does not have (FS-012).  
+**PORT:** New folder and rename both undo and redo; the volume-rename clause differs by design -- the port deliberately has no renameable volume model (FS-012 records the decision), so there is no volume name for an undo item to capture, and the clause has no referent rather than a missing implementation.  
 
 #### FS-067 · important · done
 **Delete, Empty Trash and Restore from Trash are not undoable at all.**  
@@ -4715,13 +4714,13 @@ AddVolumes puts "All disks" (device -1) first, a separator, then a ModelMenuItem
 MessageReceived case kVolumeItem: for device == -1 it unmarks items 2..count+1 and marks item 0; otherwise it unmarks item 0 and toggles the invoked item. In both paths it then walks items [3+fVolumeItemsCount, count-2) removing each folder filter and unmarking it, and finally calls ShowVolumeMenuLabel().  
 `FindPanel.cpp` → `FindPanel::MessageReceived (case kVolumeItem)`  
 
-#### Q-019 · important · partial
+#### Q-019 · important · done
 **"Select folders…" adds specific folders as search scopes; results are then restricted to those subtrees, and selecting any folder unmarks the disks.**  
 kSelectDirectoryFilter opens a B_OPEN_PANEL with FolderFilter (directories, or symlinks resolving to directories) and multi-select; kAddDirectoryFilters adds each ref via AddDirectoryFilter, which refuses duplicates (B_CANCELED), inserts a marked ModelMenuItem before the trailing separator + "Select folders…" item, and calls UnmarkDisks(). Clicking an added folder item toggles it off/on (kRemoveDirectoryFilter).  
 `FindPanel.cpp` → `FindPanel::MessageReceived (kSelectDirectoryFilter, kAddDirectoryFilters, kRemoveDirectoryFilter) / FindPanel::AddDirectoryFilter / FolderFilter::Filter`  
 **TIKU:** Maps cleanly onto "scope this search to a VFS subtree"; the prefix-match implementation below carries over directly.  
-**MISSING:** Scoping works — the Search-in popup toggles places, choosing one clears "Everywhere" and choosing Everywhere clears the places, duplicates are refused, and results really are restricted (the walk starts at the scopes and in_scope does a trailing-slash prefix test) — but there is no "Select folders…" chooser: the scope list is fixed at startup to the containers found directly under "/", so an arbitrary deeper folder cannot be added.  
-*src/ui/tiku_trk_find.c:open_popup/tiku_trk_find_click (683-696, 743-755), src/core/tiku_trk_query.c:tiku_trk_query_add_scope; places seeded at src/shell/tiku_trk_desktop.c:1293-1305*
+**CHECKED:** Scoping works -- the popup toggles places, Everywhere and the places exclude each other, duplicates are refused, results really are restricted -- and the 'Select folders…' chooser exists now: the popup's last row opens the file panel, and any folder at all becomes a place the search is scoped to at once, not only the containers the startup scan found under "/".  
+*src/ui/tiku_trk_find.c (the chooser row, scope_to_folder); src/shell/tiku_trk_desktop.c (find_select_folder, the ADD_SCOPE commit); tests/shell/findscope.script (mutation-tested)*
 
 #### Q-020 · important · done
 **Folder filters are enforced as path-prefix tests on every result, including results that arrive later from the live query.**  
@@ -5026,13 +5025,13 @@ SelectionWindow builds the popup in that order, marks item 3 (wildcard) and sets
 SelectMatchingEntries pre-compiles the pattern when expressionType == kRegexpMatch and, on InitCheck() != B_OK, shows a B_STOP_ALERT containing RegExp::ErrorString() — one of 15 messages such as "Unmatched parenthesis.", "Nested *?+.", "Invalid bracket range.", "Trailing \\.", "?+* follows nothing." — and selects nothing.  
 `PoseView.cpp` → `BPoseView::SelectMatchingEntries (RegExp.cpp kRegExpErrorStringArray, RegExp::ErrorString)`  
 
-#### Q-049 · important · partial
+#### Q-049 · important · done
 **Wildcard matching must consume the whole name and supports *, ?, and bracket classes with ranges and negation, UTF-8 aware.**  
 StringMatchesPattern: '?' skips one glyph; '*' collapses runs of */? and, when trailing, matches everything; backtracking is stacked up to kWildCardMaximum = 100 levels; success requires both string and pattern to be exhausted. MatchesBracketExpression accepts '^' or '!' as the negator, requires a closing ']' (unmatched bracket = no match), and only allows ranges whose endpoints are both lower, both upper, or both digits — anything else is a syntax error returning false. A leading '[' inside the class is literal.  
 `TrackerString.cpp` → `TrackerString::StringMatchesPattern / TrackerString::MatchesBracketExpression / TrackerString::MatchesGlob`  
 **TIKU:** Recursion-free but uses two 100-entry pointer arrays on the stack (~800 B on 32-bit); on MSP430-class targets that stack cost needs a smaller bound.  
-**MISSING:** glob_match is a faithful port — '?' eats one character, '*' collapses */? runs, trailing '*' matches the rest, a 100-level pattern/string stack backtracks, success needs both exhausted, and bracket_match takes ^ or ! as negator, fails on an unmatched ']', rejects mixed-kind ranges and treats a leading '[' literally — but the UTF-8 clause is missing: glyph handling was deliberately dropped, so '?' and classes step one BYTE (the header states this).  
-*src/core/tiku_trk_match.c:glob_match (88) / bracket_match (46); header note lines 8-11*
+**PORT:** glob_match is the faithful port whole, UTF-8 clause included now: a '?' eats one GLYPH (lead byte decides, truncated sequences count as one byte, honestly), the '*'/'?' collapse and the star's scan step by glyph, and a bracket class lists whole glyphs -- a multi-byte entry matches the string's whole glyph by bytes, while the ASCII range rules stand unchanged.  
+*src/core/tiku_trk_match.c:glyph_len/glob_match/bracket_match; tests/test_match.c (Q-049, mutation-tested)*
 
 #### Q-050 · important · done
 **Regular expressions are Spencer-style basic regexps searched anywhere in the name unless anchored, and case-insensitive matching is done by lowercasing both pattern and text.**  

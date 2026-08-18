@@ -7,8 +7,9 @@
  *
  * The wildcard matcher is TrackerString::StringMatchesPattern ported: the
  * pattern-level stack that lets a failed tail back up to the last '*' is what
- * makes "*a*b" behave, and a simple left-to-right scan does not.  Glyph
- * handling is dropped because a namespace name is ASCII.
+ * makes "*a*b" behave, and a simple left-to-right scan does not.  Glyphs
+ * are UTF-8: a '?' and a bracket class step one glyph, not one byte
+ * (Q-049).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,6 +20,28 @@
 #include <string.h>
 
 #define LOWER(c) (((c) >= 'A' && (c) <= 'Z') ? (char)((c) + 32) : (c))
+
+/**
+ * @brief Bytes in the UTF-8 glyph beginning at @p c (Q-049).
+ *
+ * A '?' eats a GLYPH, not a byte: a name with an accent in it must not
+ * need two question marks for one character.  A stray continuation byte
+ * counts as one, defensively.
+ */
+static int
+glyph_len(const char *c)
+{
+    unsigned char b = (unsigned char)c[0];
+    int n = (b >= 0xF0u) ? 4 : (b >= 0xE0u) ? 3 : (b >= 0xC0u) ? 2 : 1;
+    int i;
+
+    for (i = 1; i < n; i++) {
+        if (((unsigned char)c[i] & 0xC0u) != 0x80u) {
+            return 1;           /* truncated sequence: one byte, honestly */
+        }
+    }
+    return n;
+}
 
 /** @brief Compare two characters, folding case when asked. */
 static int
@@ -70,6 +93,15 @@ bracket_match(const char *string, const char *pattern, int cs)
             } else {
                 return 0;
             }
+        } else if (glyph_len(pattern) > 1) {
+            /* A multi-byte entry matches the string's whole glyph. */
+            int gp = glyph_len(pattern);
+
+            match = (glyph_len(string) == gp &&
+                     memcmp(string, pattern, (size_t)gp) == 0);
+            if (!match) {
+                pattern += gp - 1;      /* the ++ below takes the lead */
+            }
         } else {
             match = chars_equal(testChar, *pattern, cs);
         }
@@ -102,7 +134,7 @@ glob_match(const char *string, const char *pattern, int cs)
                 return 0;               /* '?' needs a character to eat   */
             }
             pattern++;
-            string++;
+            string += glyph_len(string);
             break;
 
         case '*': {
@@ -114,7 +146,7 @@ glob_match(const char *string, const char *pattern, int cs)
             while (*pattern == '*' || *pattern == '?') {
                 pattern++;
                 if (*pattern == '?' && *string != '\0') {
-                    string++;
+                    string += glyph_len(string);
                 }
             }
             if (*pattern == '\0') {
@@ -124,7 +156,8 @@ glob_match(const char *string, const char *pattern, int cs)
             if (*pattern == '[') {
                 pattern++;
                 while (!match && *string != '\0') {
-                    match = bracket_match(string++, pattern, cs);
+                    match = bracket_match(string, pattern, cs);
+                    string += glyph_len(string);
                 }
                 while (*pattern != ']' && *pattern != '\0') {
                     pattern++;
@@ -165,7 +198,7 @@ glob_match(const char *string, const char *pattern, int cs)
                 if (*pattern == '\0') {
                     return 0;
                 }
-                string++;
+                string += glyph_len(string);
                 pattern++;
             }
             break;

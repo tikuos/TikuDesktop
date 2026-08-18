@@ -115,6 +115,21 @@ main(void)
     check(!tiku_trk_match("anything", "anything", 0, TIKU_TRK_MATCH_NONE),
           "Q-047", "the unset rule matches nothing, not everything");
 
+    printf("\na glyph is a glyph, not a byte (Q-049)\n");
+    check(tiku_trk_match("caf\xc3\xa9", "caf?", 1, TIKU_TRK_MATCH_GLOB),
+          "Q-049", "one '?' eats one accented glyph, not half of one");
+    check(!tiku_trk_match("caf\xc3\xa9", "caf??", 1, TIKU_TRK_MATCH_GLOB),
+          "Q-049", "and two question marks find only one glyph there");
+    check(tiku_trk_match("caf\xc3\xa9", "caf[\xc3\xa9x]", 1,
+                         TIKU_TRK_MATCH_GLOB),
+          "Q-049", "a bracket class lists whole glyphs");
+    check(!tiku_trk_match("caf\xc3\xa8", "caf[\xc3\xa9x]", 1,
+                          TIKU_TRK_MATCH_GLOB),
+          "Q-049", "and a different accent is a different glyph");
+    check(tiku_trk_match("na\xc3\xafve.txt", "*\xc3\xaf*", 1,
+                         TIKU_TRK_MATCH_GLOB),
+          "Q-049", "a star scans by glyph and lands on the right one");
+
     printf("\n%s\n", fails ? "FAILURES" : "all match rules hold");
     return fails ? 1 : 0;
 }

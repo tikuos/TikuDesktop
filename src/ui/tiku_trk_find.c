@@ -180,6 +180,46 @@ tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name)
 }
 
 int
+tiku_trk_find_take_folder_request(tiku_trk_find_t *f)
+{
+    int was = (f != NULL) ? f->wants_folder : 0;
+
+    if (f != NULL) {
+        f->wants_folder = 0;
+    }
+    return was;
+}
+
+int
+tiku_trk_find_scope_to_folder(tiku_trk_find_t *f, const char *path)
+{
+    int at;
+
+    if (f == NULL || path == NULL || path[0] != '/' || path[1] == '\0') {
+        return 0;
+    }
+    /* Stored without its leading slash, as every place is; the label and
+     * the scope path both put it back. */
+    if (!tiku_trk_find_add_place(f, path + 1)) {
+        /* Already offered: just scope to it. */
+        int i;
+
+        for (i = 0; i < f->place_count; i++) {
+            if (strcmp(f->place[i], path + 1) == 0) {
+                f->everywhere = 0;
+                f->place_mask |= (1u << i);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    at = f->place_count - 1;
+    f->everywhere = 0;
+    f->place_mask |= (1u << at);
+    return 1;
+}
+
+int
 tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
                                  uint64_t dev, const char *volume)
 {
@@ -1230,6 +1270,11 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                 m->item[m->count - 1].marked = 1;
             }
         }
+        (void)tiku_trk_menu_add_separator(m);
+        /* Any folder at all, not only the roots the startup scan found:
+         * the chooser is the file panel (Q-019). */
+        (void)tiku_trk_menu_add(m, "Select folders\xe2\x80\xa6", 99, 0,
+                                0u, 1);
         break;
     case TIKU_TRK_FIND_HIT_TYPE: {
         char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
@@ -1586,7 +1631,11 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                 f->row[f->popup_row].join = (tiku_trk_qjoin_t)cmd;
                 break;
             case TIKU_TRK_FIND_HIT_SCOPE:
-                if (cmd == 0) {
+                if (cmd == 99) {
+                    /* The shell owns the panel; it will call back with
+                     * the folder (Q-019). */
+                    f->wants_folder = 1;
+                } else if (cmd == 0) {
                     /* Choosing everywhere clears every individual place, as
                      * "All disks" clears every volume mark. */
                     f->everywhere = 1;
