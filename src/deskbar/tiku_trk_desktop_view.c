@@ -360,6 +360,10 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     if (controller->folder.view == NULL) {
         return -1;
     }
+    /* The Desktop's own slot: rearranging the backdrop must not disturb
+     * a folder window opened on the same directory (MA-064). */
+    tiku_trk_poseview_set_state_slot(controller->folder.view,
+                                     TIKU_TRK_KEY_DESKTOP);
     tiku_trk_folder_window_configure(&controller->folder, render);
     tiku_trk_poseview_set_viewport(controller->folder.view,
                                    screen_w, screen_h);

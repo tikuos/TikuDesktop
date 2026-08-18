@@ -89,6 +89,15 @@ struct tiku_trk_poseview {
     int                 land_count;
 
     int                 mode;           /* TIKU_TRK_MODE_*                  */
+    /* Which ICON mode was last live, kept beside the current mode the way
+     * the original keeps fLastIconMode: the stored pose positions are in
+     * ITS geometry, and a folder leaving list mode needs to know whose
+     * grid it is reading (MA-061). */
+    int                 last_icon;
+    /* A named state slot overriding the path: the Desktop and the Disks
+     * window must never collide with a folder window that happens to show
+     * the same directory (MA-064). */
+    char                state_key[16];
     int                 icon_size;
     int                 hint_x, hint_y; /* fHintLocation: where to place next */
     int                 state_dirty;    /* fStateNeedsSaving                */
@@ -1140,6 +1149,7 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     }
     v->backend = backend;
     snprintf(v->path, sizeof v->path, "%s", path ? path : "/");
+    v->last_icon = TIKU_TRK_MODE_ICON;
     v->pivot = -1;
     v->active = -1;
     v->last_added = -1;
@@ -2708,9 +2718,18 @@ tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode)
     v->mode = mode;
     v->state_dirty = 1;
     /* Between the two icon modes the cell changes shape, so what was laid
-     * out has to be carried across; list mode has no grid to carry into. */
-    if (mode != TIKU_TRK_MODE_LIST && old_mode != TIKU_TRK_MODE_LIST) {
-        map_icons(v, old_mode, v->icon_size);
+     * out has to be carried across; list mode has no grid to carry into.
+     * Leaving LIST, the stored positions are in whatever icon grid was
+     * last live -- the fLastIconMode the record kept -- so they are
+     * mapped from THAT, not taken at face value (MA-061). */
+    if (mode != TIKU_TRK_MODE_LIST) {
+        int from = (old_mode != TIKU_TRK_MODE_LIST) ? old_mode
+                                                    : v->last_icon;
+
+        if (from != mode) {
+            map_icons(v, from, v->icon_size);
+        }
+        v->last_icon = mode;
     }
     /* Every rect changed shape, so the box built from the old ones is a
      * box around nothing; and the origin this mode kept is re-clamped
@@ -3661,6 +3680,56 @@ typedef struct {
     int32_t y;
 } pose_info_v1_t;
 
+/**
+ * @brief Where this view's OWN record lives (MA-064's three slots).
+ *
+ * Distinct ATTRIBUTE names on real nodes: the Desktop's arrangement sits
+ * on the Desktop directory under its own name, and the root listing --
+ * this port's Disks window -- keeps its state on the Desktop directory
+ * too, exactly as the original redirects it, because the root itself is
+ * nowhere the store can write.
+ */
+static const char *
+state_node(const tiku_trk_poseview_t *v, char *buf, size_t max)
+{
+    if (v->state_key[0] == '\0' && strcmp(v->path, "/") == 0) {
+        const char *home = getenv("HOME");
+
+        if (home != NULL && home[0] != '\0') {
+            snprintf(buf, max, "%s/Desktop", home);
+            return buf;
+        }
+    }
+    return v->path;
+}
+
+static const char *
+state_attr(const tiku_trk_poseview_t *v)
+{
+    if (v->state_key[0] != '\0') {
+        return TIKU_TRK_ATTR_DESK_VIEW_STATE;
+    }
+    if (strcmp(v->path, "/") == 0) {
+        return TIKU_TRK_ATTR_DISKS_VIEW_STATE;
+    }
+    return TIKU_TRK_ATTR_VIEW_STATE;
+}
+
+void
+tiku_trk_poseview_set_state_slot(tiku_trk_poseview_t *v, const char *key)
+{
+    if (v != NULL) {
+        snprintf(v->state_key, sizeof v->state_key, "%s",
+                 key != NULL ? key : "");
+    }
+}
+
+int
+tiku_trk_poseview_last_icon_mode(const tiku_trk_poseview_t *v)
+{
+    return (v != NULL) ? v->last_icon : TIKU_TRK_MODE_ICON;
+}
+
 int
 tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
 {
@@ -3676,10 +3745,11 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
     }
     /* View state belongs to the FOLDER; pose info to each ENTRY. */
     {
-        char rec[64];
-        int len = tiku_trk_state_read(store, v->path,
-                                      TIKU_TRK_ATTR_VIEW_STATE, rec,
-                                      sizeof rec - 1);
+        char rec[96];
+        char node[TIKU_TRK_PATH_MAX];
+        int len = tiku_trk_state_read(store,
+                                      state_node(v, node, sizeof node),
+                                      state_attr(v), rec, sizeof rec - 1);
         if (len > 0) {
             int px = 0;
 
@@ -3697,9 +3767,10 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
              * constructor's size stands. */
             {
                 int sc = 0, ix = 0, iy = 0, mx = 0, my = 0;
-                int s1 = -1, s2 = -1, rev = 0;
-                int got = sscanf(rec, "%*s %d %d %d %d %d %d %d %d %d", &px,
-                                 &sc, &ix, &iy, &mx, &my, &s1, &s2, &rev);
+                int s1 = -1, s2 = -1, rev = 0, li = -1;
+                int got = sscanf(rec, "%*s %d %d %d %d %d %d %d %d %d %d",
+                                 &px, &sc, &ix, &iy, &mx, &my, &s1, &s2,
+                                 &rev, &li);
 
                 if (got >= 1) {
                     /* Pulled into the ladder rather than dropped for the
@@ -3722,6 +3793,13 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
                     v->icon_y = sane_scroll_origin(iy, 1);
                     v->mini_x = sane_scroll_origin(mx, 1);
                     v->mini_y = sane_scroll_origin(my, 1);
+                }
+                if (got >= 10) {
+                    /* Which icon grid the stored positions belong to; a
+                     * record from before the word simply leaves the
+                     * default standing (MA-061). */
+                    v->last_icon = (li == 1) ? TIKU_TRK_MODE_MINI
+                                             : TIKU_TRK_MODE_ICON;
                 }
                 if (got >= 9 && s1 >= 0 && s1 < TIKU_TRK_COL_KINDS) {
                     /* A record from before the keys were written has no
@@ -3798,7 +3876,7 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
          * arranged at 64 px reopens at 32 and every icon moves. */
         const char *mode = (v->mode == TIKU_TRK_MODE_ICON) ? "icon"
                          : (v->mode == TIKU_TRK_MODE_MINI) ? "mini" : "list";
-        char rec[32];
+        char rec[96];
 
         /* Both origins go with the mode and the size: a folder scrolled
          * somewhere and closed reopens where it was, and the list's row
@@ -3807,12 +3885,16 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
         /* The sort keys go with the rest: a folder arranged by size and
          * closed came back by name, which is the arrangement lost in the
          * one place a user would look for it (MA-061, PVL-041). */
-        snprintf(rec, sizeof rec, "%s %d %d %d %d %d %d %d %d %d", mode,
+        snprintf(rec, sizeof rec, "%s %d %d %d %d %d %d %d %d %d %d", mode,
                  v->icon_size, v->scroll, v->icon_x, v->icon_y, v->mini_x,
                  v->mini_y, v->sort_field, v->sort2_field,
-                 v->sort_reverse);
-        (void)tiku_trk_state_write(store, v->path, TIKU_TRK_ATTR_VIEW_STATE,
-                                   rec, strlen(rec));
+                 v->sort_reverse,
+                 (v->last_icon == TIKU_TRK_MODE_MINI) ? 1 : 0);
+        char node[TIKU_TRK_PATH_MAX];
+
+        (void)tiku_trk_state_write(store,
+                                   state_node(v, node, sizeof node),
+                                   state_attr(v), rec, strlen(rec));
     }
     for (i = 0; i < v->count; i++) {
         pose_info_t info;
@@ -5563,10 +5645,20 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
             }
         }
     }
-    if (tiku_trk_state_write(store, tiku_trk_poseview_layout_path(v),
-                             TIKU_TRK_ATTR_COLUMNS, rec,
-                             sizeof rec[0] * (size_t)v->column_count) != 0) {
-        return 0;
+    {
+        char node[TIKU_TRK_PATH_MAX];
+        const char *at = (v->query_layout[0] == '\0' &&
+                          strcmp(v->path, "/") == 0)
+                             ? TIKU_TRK_ATTR_DISKS_COLUMNS
+                             : TIKU_TRK_ATTR_COLUMNS;
+        const char *nd = (v->query_layout[0] != '\0')
+                             ? v->query_layout
+                             : state_node(v, node, sizeof node);
+
+        if (tiku_trk_state_write(store, nd, at, rec,
+                sizeof rec[0] * (size_t)v->column_count) != 0) {
+            return 0;
+        }
     }
     return v->column_count;
 }
@@ -5599,9 +5691,15 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         return 0;
     }
     {
-        int r = tiku_trk_state_read(store,
-                                    tiku_trk_poseview_layout_path(v),
-                                    TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        char node[TIKU_TRK_PATH_MAX];
+        const char *at = (v->query_layout[0] == '\0' &&
+                          strcmp(v->path, "/") == 0)
+                             ? TIKU_TRK_ATTR_DISKS_COLUMNS
+                             : TIKU_TRK_ATTR_COLUMNS;
+        const char *nd = (v->query_layout[0] != '\0')
+                             ? v->query_layout
+                             : state_node(v, node, sizeof node);
+        int r = tiku_trk_state_read(store, nd, at, rec, sizeof rec);
         if (r <= 0) {
             return 0;
         }

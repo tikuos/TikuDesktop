@@ -488,6 +488,19 @@ int tiku_trk_poseview_mode(const tiku_trk_poseview_t *v);
 /** @brief Switch mode; icon modes lay out, list mode drops back to rows. */
 void tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode);
 
+/** @brief The icon mode last live -- what a list detour returns to. */
+int tiku_trk_poseview_last_icon_mode(const tiku_trk_poseview_t *v);
+
+/**
+ * @brief Key this view's OWN records by @p key instead of its path.
+ *
+ * The Desktop's slot: its arrangement and a folder window showing the
+ * same directory must never collide (MA-064).  The root's Disks slot is
+ * applied automatically.
+ */
+void tiku_trk_poseview_set_state_slot(tiku_trk_poseview_t *v,
+                                      const char *key);
+
 int tiku_trk_poseview_icon_size(const tiku_trk_poseview_t *v);
 
 /**

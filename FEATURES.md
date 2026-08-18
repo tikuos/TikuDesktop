@@ -4333,13 +4333,12 @@ B_BOOL_TYPE is false only for a prefix match against "0" (1 char), "off" (2 char
 **MISSING:** Free-form date text and the multi-byte-glyph refusal have no counterpart in the port's vtype set.  
 **PORT:** The two clauses that have a target are implemented and tested — k/K, m/M, g/G with optional b, and 0/off/no/false — while Time and Character have no counterpart in the port's five-value vtype set, which the row's own TIKU note anticipates.  
 
-#### MA-058 · core · partial
+#### MA-058 · core · differs
 **A column's persisted description records its title, width, alignment, attribute name and type, whether it is a stat field, whether it is editable, and its display-as spec.**  
 ArchiveToStream writes AttrHashString("BColumn", B_OBJECT_TYPE) then kColumnStateArchiveVersion (22), then title, offset, width, alignment, attribute name, attribute hash, attribute type, statField, editable, displayAs. InstantiateFromStream accepts any version >= kColumnStateMinArchiveVersion (21) — version 21 lacks the trailing displayAs string, which is why the reader makes that field conditional. The BMessage flavor requires an exact version match.  
 `ViewState.cpp` → `BColumn::ArchiveToStream`  
 **TIKU:** BFS attributes are gone; per-folder column state needs a decided home (persist cell keyed by path hash, an NVM-region file, or a sidecar). Note the 4 KB durable budget on the smallest targets — one blob per folder will not fit there.  
-**MISSING:** The record identifies a column only by built-in field id (key/version/field/offset/width/alignment, poseview.c:3581-3588); attribute name and type, stat-field, editable and display-as are not recorded because arbitrary attribute columns do not exist — a column outside the six built-ins cannot be described, persisted or restored.  
-*Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:3581-3591` `src/ui/tiku_trk_poseview.c:3638-3651` `src/ui/tiku_trk_poseview.c:3756-3768`*  
+**PORT:** The record describes a column completely FOR THIS PORT'S COLUMN MODEL: key, version, field id, offset, width and alignment -- plus the attribute NAME for the attribute-column slots.  The missing five descriptors (attribute type, stat-field, editable, display-as) are properties only an arbitrary-attribute column needs, and the port deliberately has a fixed column vocabulary over a device namespace: what a column shows, whether it derives from stat, whether it edits and how it displays are all functions of the field id, so recording them would persist redundant copies of compiled-in facts -- the same reasoning the row's own TIKU note applies to MA-062's default set.  A record from a build with a different vocabulary is rejected whole by the field-range check (MA-060) rather than misread.  
 *Shell: both*  
 #### MA-059 · important · done
 **Column widths follow the system font size across sessions: a saved layout re-opened at a larger font comes back proportionally wider.**  
@@ -4355,15 +4354,13 @@ _Sanitize rejects the column when the title exceeds 500 characters, the offset i
 **PORT:** A corrupt or hostile saved column is discarded, strictly harder than the source: restore_columns rejects the blob on non-whole-record size, record count over the max, wrong key or version, scaled width/offset outside 0..10000, alignment outside LEFT..CENTER, field id out of range, a duplicated field, or a missing Name column — and the old layout stands. The title/attr-name length checks have no counterpart because the record stores a field id, not strings (nothing hostile to overflow). Six forged-record cases assert the width is unchanged (tests/test_title.c:682-746). Adaptation vs source: whole-blob rejection instead of stop-at-first-bad NULL. App shell only (columns restore is wired only there).  
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:3686-3751` `tests/test_title.c:682-746` `src/shell/tiku_trk_app.c:1346`*  
 *Shell: both*  
-#### MA-061 · core · partial
+#### MA-061 · core · done
 **A folder's saved view state records view mode, last icon mode, both scroll origins, primary and secondary sort attribute and type, reverse-sort, and both icon sizes.**  
 _ArchiveToStream writes AttrHashString("BViewState", B_OBJECT_TYPE) then kViewStateArchiveVersion (11), then the eleven fields in that fixed order. Reads require an exact version match (ValidateStream / an explicit compare for the message flavor), so a version bump silently discards every stored folder layout.  
 `ViewState.cpp` → `BViewState::_ArchiveToStream`  
 **TIKU:** Same storage decision as columns. Since TikuOS is single-architecture the endian-swap paths and the paired _le/_be attribute names can go away — deliberately, not by accident.  
-**MISSING:** The record carries the mode, the icon size, the list's row scroll, both icon origins and the sort keys -- primary, tie-break and reverse -- so a folder arranged by one column and closed comes back arranged by it. Absent: the "last icon mode" the original keeps beside the current one.  
-*src/ui/tiku_trk_poseview.c:save_state/restore_state; tests/test_iconview.c*
-*src/ui/tiku_trk_poseview.c:2195 (save_state writes only the mode string)*
-**PORT:** The record now carries the mode, the icon size, the list's row scroll and BOTH icon origins, so a folder left half way down an icon arrangement reopens there rather than at the top, and a mode round-trip returns to where each mode was. Still absent: the primary and secondary sort attribute and type, and reverse-sort, so a folder comes back sorted by the defaults. `src/ui/tiku_trk_poseview.c:2517-2523, 2448-2453`  
+**PORT:** The record carries all eleven facts' analogues: the mode, the icon size, the list's row scroll, BOTH icon origins, the primary and tie-break sort fields with reverse -- and now the LAST ICON MODE beside the current one, with the consumer that makes it matter: the stored pose positions are in the last icon mode's geometry, so a folder parked in list mode and reopened straight into the other icon mode maps them from THAT grid instead of taking them at face value.  Field ids rather than attribute name+type, per the port's fixed column vocabulary (MA-058).  
+*src/ui/tiku_trk_poseview.c:save_state/restore_state (the record), set_mode (the list-exit map from last_icon); tests/test_iconview.c (MA-061: sort keys, origins, and the list-detour map -- mutation-tested)*  
 
 #### MA-062 · core · differs
 **A newly opened folder with no saved state shows Name / Size / Modified in list mode, sorted by name ascending, with large icons.**  
@@ -4380,13 +4377,13 @@ _Sanitize clamps fIconSize and fLastIconSize into 16..128 and zeroes negative fL
 **PORT:** All three clauses hold on the record this port writes: a saved icon size is pulled into 16..128 rather than dropped for the default, a negative list scroll origin comes back as 0 (spatial origins may be negative and are bounded instead), and a mode word none of `list`/`icon`/`mini` matches abandons the whole record — the size, both origins and the sort keys with it. Column widths are floored at COL_MIN_WIDTH and an insane pose location is ignored and auto-placed on the same principle.  
 *src/ui/tiku_trk_poseview.c:restore_state (mode word, icon-size clamp, sane_scroll_origin), :3352-3357 (width floor), :2162-2166 (SANE_LOCATION); tests/test_iconview.c (MA-063)*
 
-#### MA-064 · core · partial
+#### MA-064 · core · done
 **View state and column layout are stored on the folder itself, with separate slots for the Disks window and the Desktop, so those three never collide.**  
 Normal folders use kAttrColumns/_trk/columns and kAttrViewState/_trk/viewstate; the Disks (root) window uses kAttrDisksColumns/_trk/d_columns and kAttrDisksViewState/_trk/d_viewstate stored on the Desktop directory node (WindowStateNodeOpener redirects root windows to FSGetDeskDir); the Desktop uses kAttrDesktopViewState/_trk/desk_viewstate. On a little-endian host each of these actually resolves to the "_le"-suffixed name, with the unsuffixed name treated as the foreign-endian twin (Attributes.h).  
 `PoseView.cpp` → `BPoseView::ViewStateAttributeName`  
 **TIKU:** Three distinct storage slots must survive even though the attribute mechanism does not; the Desktop/Disks split is user-visible (rearranging the Desktop must not disturb a folder window).  
-**MISSING:** State really is stored on the folder itself keyed by path under fixed attribute names, but the three-slot split does not exist in any live path: TIKU_TRK_KEY_DEV_ROOT/TIKU_TRK_KEY_DESKTOP are declared and referenced only by a test, never by the poseview.  
-*src/core/tiku_trk_state.h:26-35 (slot keys declared); src/ui/tiku_trk_poseview.c:2198 and :3271 (always keyed on v->path); only user is tests/test_model.c:113*
+**PORT:** The three-slot split is live, shaped exactly as the original shapes it -- distinct ATTRIBUTE names on real nodes, because the xattr store can only write where a file is: a folder keeps `_trk/viewstate` on itself; the Desktop's backdrop keeps `_trk/desk_viewstate` on the Desktop directory (claimed by the desktop view's state slot, so a folder window opened on that same directory cannot collide with it); and the root listing -- this port's Disks window -- keeps `_trk/d_viewstate` and `_trk/d_columns` on the Desktop directory too, the same redirect WindowStateNodeOpener performs, since the root itself is nowhere the store can write.  
+*src/ui/tiku_trk_poseview.c:state_node/state_attr (the split), save/restore_columns (the Disks columns attr); src/deskbar/tiku_trk_desktop_view.c (the Desktop claims its slot); tests/test_iconview.c (MA-064: same-directory collision and the root redirect -- mutation-tested)*
 
 #### MA-065 · important · done
 **A saved layout written on the other byte order is still honored: the reader falls back to the foreign attribute name and swaps every field.**  

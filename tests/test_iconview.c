@@ -533,6 +533,95 @@ main(void)
         }
     }
 
+    printf("\nthe icon mode a list detour left behind (MA-061)\n");
+    {
+        tiku_trk_poseview_t *again, *truth;
+        int ax, ay, tx, ty;
+
+        /* Arranged in MINI, then parked in list mode and saved: the
+         * positions on disk are mini-geometry, and only the record can
+         * say so. */
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_MINI);
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
+        (void)tiku_trk_poseview_save_state(v);
+        again = tiku_trk_poseview_new(b, work);
+        tiku_trk_poseview_set_measure(again, measure, NULL);
+        tiku_trk_poseview_set_font_metrics(again, 12, 9);
+        (void)tiku_trk_poseview_reload(again);
+        (void)tiku_trk_poseview_restore_state(again);
+        check(tiku_trk_poseview_last_icon_mode(again) == TIKU_TRK_MODE_MINI,
+              "MA-061", "the record says WHICH icon mode the folder left, "
+              "not merely that it sits in list mode now");
+        /* The ground truth: go back through mini first, then to icon --
+         * the live path that maps the grid. */
+        truth = tiku_trk_poseview_new(b, work);
+        tiku_trk_poseview_set_measure(truth, measure, NULL);
+        tiku_trk_poseview_set_font_metrics(truth, 12, 9);
+        (void)tiku_trk_poseview_reload(truth);
+        (void)tiku_trk_poseview_restore_state(truth);
+        tiku_trk_poseview_set_mode(truth, TIKU_TRK_MODE_MINI);
+        tiku_trk_poseview_set_mode(truth, TIKU_TRK_MODE_ICON);
+        /* The claim: straight from the restored list into icon mode lands
+         * the poses exactly where the detour through mini would have. */
+        tiku_trk_poseview_set_mode(again, TIKU_TRK_MODE_ICON);
+        ax = tiku_trk_poseview_at(again, 0)->loc_x;
+        ay = tiku_trk_poseview_at(again, 0)->loc_y;
+        tx = tiku_trk_poseview_at(truth, 0)->loc_x;
+        ty = tiku_trk_poseview_at(truth, 0)->loc_y;
+        check(ax == tx && ay == ty, "MA-061",
+              "so leaving list straight for icon maps the stored "
+              "mini-geometry instead of taking it for icon-geometry");
+        tiku_trk_poseview_free(again);
+        tiku_trk_poseview_free(truth);
+    }
+
+    printf("\nthree state slots that never collide (MA-064)\n");
+    {
+        struct tiku_trk_store *store = b->ops->state_store(b);
+        tiku_trk_poseview_t *desk, *folder, *desk2, *root;
+        char buf[96];
+
+        /* The Desktop's arrangement and a folder window on the SAME
+         * directory are different records: rearranging one must not
+         * disturb the other. */
+        desk = tiku_trk_poseview_new(b, work);
+        tiku_trk_poseview_set_state_slot(desk, TIKU_TRK_KEY_DESKTOP);
+        tiku_trk_poseview_set_mode(desk, TIKU_TRK_MODE_ICON);
+        (void)tiku_trk_poseview_save_state(desk);
+        folder = tiku_trk_poseview_new(b, work);
+        tiku_trk_poseview_set_mode(folder, TIKU_TRK_MODE_MINI);
+        (void)tiku_trk_poseview_save_state(folder);
+        desk2 = tiku_trk_poseview_new(b, work);
+        tiku_trk_poseview_set_state_slot(desk2, TIKU_TRK_KEY_DESKTOP);
+        (void)tiku_trk_poseview_restore_state(desk2);
+        check(tiku_trk_poseview_mode(desk2) == TIKU_TRK_MODE_ICON,
+              "MA-064", "the Desktop slot survives a folder window "
+              "arranging the same directory its own way");
+        /* And the Disks window: the root's state is redirected onto the
+         * Desktop directory under its own attribute name, exactly as the
+         * original redirects it -- the root itself is nowhere the store
+         * can write. */
+        {
+            char deskdir[256];
+
+            snprintf(deskdir, sizeof deskdir, "%s/Desktop", work);
+            sh("mkdir -p '%s'", deskdir);
+            (void)setenv("HOME", work, 1);
+            root = tiku_trk_poseview_new(b, "/");
+            tiku_trk_poseview_set_mode(root, TIKU_TRK_MODE_MINI);
+            (void)tiku_trk_poseview_save_state(root);
+            check(tiku_trk_state_read(store, deskdir,
+                                      TIKU_TRK_ATTR_DISKS_VIEW_STATE, buf,
+                                      sizeof buf) > 0,
+                  "MA-064", "the root window writes the Disks slot on the "
+                  "Desktop directory, colliding with no folder's own");
+        }
+        tiku_trk_poseview_free(desk);
+        tiku_trk_poseview_free(folder);
+        tiku_trk_poseview_free(desk2);
+        tiku_trk_poseview_free(root);
+    }
+
     printf("\nsaved state that is out of range (MA-063)\n");
     {
         struct tiku_trk_store *store = b->ops->state_store(b);

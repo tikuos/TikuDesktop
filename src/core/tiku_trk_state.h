@@ -26,6 +26,14 @@
 #define TIKU_TRK_ATTR_POSE_INFO   "_trk/pinfo"
 #define TIKU_TRK_ATTR_COLUMNS     "_trk/columns"
 #define TIKU_TRK_ATTR_VIEW_STATE  "_trk/viewstate"
+/* The Desktop's and the Disks window's own slots (MA-064).  Separate
+ * ATTRIBUTE names on real nodes rather than synthetic node keys, because
+ * the xattr store can only write where a file actually is -- the same
+ * reason the original redirects the root window's state to the Desktop
+ * directory. */
+#define TIKU_TRK_ATTR_DESK_VIEW_STATE  "_trk/desk_viewstate"
+#define TIKU_TRK_ATTR_DISKS_VIEW_STATE "_trk/d_viewstate"
+#define TIKU_TRK_ATTR_DISKS_COLUMNS    "_trk/d_columns"
 /* Where a trashed item came from.  Tracker writes this on the node itself,
  * so it travels with the file; this store is keyed by path, so the record
  * is written under the item's TRASHED path and moves with it there. */
