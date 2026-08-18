@@ -767,6 +767,57 @@ main(void)
         tiku_trk_deskbar_close_menu(db);
     }
 
+
+    printf("\nmini mode folds the list into one popping icon (DB-037)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t mf;
+        const tiku_desk_font_t *font = tiku_desk_font_plain();
+        int rowh = font->height + 6;
+
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_MINI);
+        tiku_trk_deskbar_draw(db, s);
+        mf = tiku_trk_deskbar_frame(db);
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, mf.x + mf.w / 2,
+                                     mf.y + 26 + 2 + 10, 0u, 1, 1, &pick);
+        check(tiku_trk_deskbar_apps_menu_open(db), "DB-037",
+              "the second icon under the leaf pops the running-apps menu");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, mf.x - 178 + 10,
+                                     mf.y + 2 + 26 + 2 + 2 + rowh / 2, 0u,
+                                     1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_ACTIVATE_TEAM, "DB-037",
+              "choosing a row activates that application");
+        {
+            /* And with nothing running, the one row is said, not
+             * chosen. */
+            tiku_trk_deskbar_t *bare = tiku_trk_deskbar_new(NULL);
+            tiku_desk_surface_t *bs = tiku_desk_surface_new(400, 300,
+                                              TIKU_DESK_C_BACKDROP);
+            tiku_desk_rect_t bf2;
+
+            tiku_trk_deskbar_set_dock(bare, TIKU_TRK_DB_RIGHT_MINI);
+            tiku_trk_deskbar_draw(bare, bs);
+            bf2 = tiku_trk_deskbar_frame(bare);
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(bare, bf2.x + bf2.w / 2,
+                                         bf2.y + 26 + 2 + 10, 0u, 1, 1,
+                                         &pick);
+            check(tiku_trk_deskbar_apps_menu_open(bare), "DB-037",
+                  "the empty menu still opens");
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(bare, bf2.x - 178 + 10,
+                                         bf2.y + 2 + 26 + 2 + 2 +
+                                         rowh / 2, 0u, 1, 1, &pick);
+            check(pick.what == TIKU_TRK_DB_NONE, "DB-037",
+                  "its 'no application running' row is said, not chosen");
+            tiku_trk_deskbar_free(bare);
+            tiku_desk_surface_free(bs);
+        }
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    }
+
     tiku_trk_deskbar_free(db);
     tiku_desk_surface_free(s);
     printf("\n%s\n", fails ? "FAILURES" : "the bar sits where it is put");

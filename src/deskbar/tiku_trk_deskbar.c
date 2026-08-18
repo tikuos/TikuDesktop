@@ -94,6 +94,9 @@ struct tiku_trk_deskbar {
     int                  hbutton_w;
     int                  hleft;            /* first button's left edge */
     int                  hoverflow;
+    /* Mini mode's second icon: the running-apps popup (DB-037). */
+    int                  apps_menu_open;
+    int                  apps_hot;
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
@@ -487,6 +490,7 @@ reset_menu_hots(tiku_trk_deskbar_t *db)
     db->sub_hot = -1;
     db->win_hot = -1;
     db->clock_hot = -1;
+    db->apps_hot = -1;
 }
 
 tiku_trk_deskbar_t *
@@ -923,6 +927,12 @@ tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live, int n)
         }
     }
     return changed;
+}
+
+int
+tiku_trk_deskbar_apps_menu_open(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL) ? db->apps_menu_open : 0;
 }
 
 int
@@ -1583,6 +1593,30 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             }
         }
     }
+    if (db->apps_menu_open) {
+        const tiku_desk_font_t *fm = tiku_desk_font_plain();
+        int mrowh = fm->height + 6;
+        int nn = (db->team_count > 0) ? db->team_count : 1;
+        tiku_desk_rect_t am;
+        int ahot = -1;
+
+        am.w = 176;
+        am.h = nn * mrowh + 4;
+        am.y = db->frame.y + 2 + LEAF_H + 2;
+        am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
+                                 : db->frame.x + db->frame.w + 2;
+        if (x >= am.x && x < am.x + am.w && y >= am.y + 2 &&
+            y < am.y + 2 + nn * mrowh) {
+            ahot = (y - am.y - 2) / mrowh;
+            if (ahot >= db->team_count) {
+                ahot = -1;      /* the disabled empty row */
+            }
+        }
+        if (ahot != db->apps_hot) {
+            db->apps_hot = ahot;
+            changed = 1;
+        }
+    }
     if (db->clock_menu_open) {
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y +
                                db->frame.h - CLOCK_H - 32, 170, 4 * 28 };
@@ -2035,6 +2069,51 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                     tiku_desk_tint(TIKU_DESK_C_TAB, TIKU_DESK_LIGHTEN_1),
                     tiku_desk_tint(TIKU_DESK_C_TAB, TIKU_DESK_DARKEN_2));
     (void)tiku_desk_text_centered(s, fb, leaf, "TikuOS", TIKU_DESK_C_TEXT);
+
+    if (tiku_trk_deskbar_mini(db->dock)) {
+        /* The collapsed dock's second icon: the application list folded
+         * into one button that pops the running-apps menu (DB-037). */
+        tiku_desk_rect_t ab = { db->frame.x + 2,
+                                db->frame.y + 2 + LEAF_H + 2,
+                                db->frame.w - 4, TEAM_H };
+
+        draw_row_bg(s, ab, db->apps_menu_open);
+        (void)tiku_trk_icon_paint(s, "application",
+                                  ab.x + (ab.w - 16) / 2,
+                                  ab.y + (ab.h - 16) / 2, 16);
+        if (db->apps_menu_open) {
+            const char *items[TIKU_TRK_DB_TEAMS_MAX];
+            int n = db->team_count, k;
+            int rowh = f->height + 6;
+            tiku_desk_rect_t am;
+
+            if (n == 0) {
+                items[0] = "no application running";
+                n = 1;
+            } else {
+                for (k = 0; k < n; k++) {
+                    items[k] = db->teams[db->order[k]].name;
+                }
+            }
+            am.w = 176;
+            am.h = n * rowh + 4;
+            am.y = ab.y;
+            am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
+                                     : db->frame.x + db->frame.w + 2;
+            tiku_desk_ui_menu(s, am, items, n, db->apps_hot);
+            if (db->team_count == 0) {
+                /* Disabled the one way this layer says it (DB-004). */
+                tiku_desk_rect_t r = { am.x + 2, am.y + 2, am.w - 4,
+                                       rowh };
+
+                tiku_desk_fill(s, r, TIKU_DESK_C_PANEL);
+                tiku_desk_text(s, f, r.x + 10,
+                               r.y + (rowh - f->height) / 2 + f->ascent,
+                               items[0],
+                               tiku_desk_tint(TIKU_DESK_C_PANEL, 1.55f));
+            }
+        }
+    }
 
     if (!tiku_trk_deskbar_mini(db->dock) &&
         !tiku_trk_deskbar_vertical(db->dock)) {
@@ -2619,6 +2698,32 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         db->sub_of = -1;
         return 1;
     }
+    if (db->apps_menu_open) {
+        const tiku_desk_font_t *fm = tiku_desk_font_plain();
+        int rowh = fm->height + 6;
+        int n = (db->team_count > 0) ? db->team_count : 1;
+        tiku_desk_rect_t ab = { db->frame.x + 2,
+                                db->frame.y + 2 + LEAF_H + 2,
+                                db->frame.w - 4, TEAM_H };
+        tiku_desk_rect_t am;
+        int idx;
+
+        am.w = 176;
+        am.h = n * rowh + 4;
+        am.y = ab.y;
+        am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
+                                 : db->frame.x + db->frame.w + 2;
+        idx = (y - am.y - 2) / rowh;
+        db->apps_menu_open = 0;
+        if (x >= am.x && x < am.x + am.w && y >= am.y &&
+            y < am.y + am.h && idx >= 0 && idx < db->team_count) {
+            /* Choosing an application activates it (DB-037); the empty
+             * menu's one row is said, not chosen. */
+            pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
+            pick->team = db->order[idx];
+        }
+        return 1;
+    }
     if (!tiku_trk_deskbar_hit(db, x, y)) {
         return 0;
     }
@@ -2661,6 +2766,14 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
         reset_menu_hots(db);
+        return 1;
+    }
+    if (tiku_trk_deskbar_mini(db->dock)) {
+        if (y < db->frame.y + LEAF_H + 4 + TEAM_H) {
+            /* The second icon: the running-apps menu (DB-037). */
+            db->apps_menu_open = 1;
+            reset_menu_hots(db);
+        }
         return 1;
     }
 

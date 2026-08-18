@@ -7306,16 +7306,12 @@ MenuTrackingHook returns 'end the menu' only when the point is outside the menu 
 `BarView.cpp` → `TBarView::MenuTrackingHook`
 **PORT:** Deskbar menu tracking has an explicit 20px margin around the leaf and open submenu; the shell can keep the menu alive while the pointer crosses the gap (`src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_menu_keeps_open`; `tests/test_deskbar_dock.c`).
 
-#### DB-037 · core · partial
+#### DB-037 · core · done
 **In mini mode the application list collapses into a second icon next to the leaf logo which pops up the running-apps menu; with no apps running that menu shows a disabled 'no application running'**  
 PlaceDeskbarMenu adds the team title in kMiniState and removes it in vertical expando (replacing it with a separator in horizontal); the title is inserted at index 0 when docked left, index 1 when docked right. TTeamMenu rebuilds its whole item list in AttachedToWindow and computes a max content width from the widest app name (capped at gMaximumWindowWidth)  
 `BarView.cpp` → `TBarView::PlaceDeskbarMenu`  
-**MISSING:** Both collapsed docks exist now, left and right, and collapsing
-is what drops the application list.  The row's second icon -- the one that
-pops the running-app list, disabled when nothing is running -- does not: the
-mini bar shows the leaf and the tray and nothing between them.
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_mini and the mini arms of _draw;
-tests/test_deskbar_dock.c*
+**PORT:** The second icon exists: in either collapsed dock a button sits under the leaf and pops the running-apps menu beside the bar -- one row per application, hover-lit, choosing one activates it -- and with nothing running the menu is the single dimmed 'no application running' row, said but never chosen.  
+*src/deskbar/tiku_trk_deskbar.c (the mini button and its popup in _draw, _click and _motion); tests/test_deskbar_dock.c (DB-037, mutation-tested)*
 
 #### DB-038 · core · done
 **Replicants can be added to the tray by any application, by archived view or by add-on file, and are addressable afterwards by numeric id or by view name**  
