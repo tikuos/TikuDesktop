@@ -10,27 +10,30 @@
 
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "tiku_trk_deskbar_roster.h"
 
-void
+int
 tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
 {
     DIR *directory;
     struct dirent *entry;
+    long live[512];
+    int nlive = 0, changed = 0;
 
     if (deskbar == NULL) {
-        return;
+        return 0;
     }
     directory = opendir("/proc");
     if (directory == NULL) {
-        return;
+        return 0;
     }
     while ((entry = readdir(directory)) != NULL) {
-        char path[TIKU_TRK_PATH_MAX], name[64];
+        char path[TIKU_TRK_PATH_MAX], name[64], argv0[160];
         FILE *file;
         size_t length;
         struct stat process;
@@ -52,11 +55,13 @@ tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
         if (file == NULL) {
             continue;
         }
-        length = fread(name, 1, sizeof name, file);
+        length = fread(argv0, 1, sizeof argv0 - 1u, file);
         (void)fclose(file);
         if (length == 0u) {
             continue;
         }
+        argv0[length < sizeof argv0 - 1u ? length : sizeof argv0 - 1u] =
+            '\0';
         if (snprintf(path, sizeof path, "/proc/%s/comm",
                      entry->d_name) < 0) {
             continue;
@@ -78,10 +83,22 @@ tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
         /* Tracker is seeded by its shell, so discovering it again would
          * publish the same application twice. */
         if (name[0] != '\0' && strcmp(name, "desktop") != 0) {
-            (void)tiku_trk_deskbar_add_team(deskbar, name);
+            long pid = atol(entry->d_name);
+
+            (void)tiku_trk_deskbar_add_team_pid(deskbar, name, pid, argv0,
+                                                &changed);
+            if (nlive < (int)(sizeof live / sizeof live[0])) {
+                live[nlive++] = pid;
+            }
         }
     }
     (void)closedir(directory);
+    /* The other half of a roster: what QUIT since last time.  An entry
+     * whose last instance went disappears (DB-015). */
+    if (tiku_trk_deskbar_prune_teams(deskbar, live, nlive)) {
+        changed = 1;
+    }
+    return changed;
 }
 
 void

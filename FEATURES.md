@@ -7153,12 +7153,12 @@ Refused when (flags & B_BACKGROUND_APP) != 0 or signature matches kDeskbarSignat
 **PORT:** The team list is seeded from the live process set: /proc on this host, the kernel's own registry on TikuOS, which is why the reader is small and local.  Kernel threads (empty cmdline) and other users' processes are excluded, and the once-per-app dedupe that already existed now has real input.  
 **MISSING:** The background-app exclusion cannot be honoured here.  Haiku tests a B_BACKGROUND_APP flag; this host has no window-ownership fact in /proc, so daemons the user runs (pipewire, dbus-daemon) appear alongside real applications.  It needs a window-owner source, which on TikuOS is the process registry.  
 *Shell: desktop*  
-#### DB-015 · core · partial
+#### DB-015 · core · done
 **Launching a second instance of an already-running application adds it to the existing entry rather than creating a new one; the entry disappears only when its last instance quits**  
 Matched case-insensitively by signature into BarTeamInfo::teams; second and later launches broadcast kAddTeam, and quits broadcast kRemoveTeam until the last one, which broadcasts B_SOME_APP_QUIT and deletes the BarTeamInfo  
 `BarApp.cpp` → `TBarApp::RemoveTeam`  
-**MISSING:** There is no instance count and no removal path -- no remove_team, no team_count decrement -- so the 'disappears when its last instance quits' clause is missing.  Matching folds case now, as the source folds signatures.  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_add_team (dedupe loop line 99); no remove_team in src*
+**PORT:** Instances are counted by pid into the one case-folded entry (`add_team_pid`), and the removal path exists whole: `prune_teams` drops instances no longer in the live set and removes the entry only when its LAST one went, with the shell-seeded team exempt; `remove_team` removes outright for the paths that must not wait for the roster (DB-020).  The roster re-syncs on a two-second beat outside scripted runs, whose fixture must not chase the host's processes.  
+*src/deskbar/tiku_trk_deskbar.c:add_team_pid/prune_teams/remove_team; src/deskbar/tiku_trk_deskbar_roster.c (the live diff); src/shell/tiku_trk_desktop.c:rescan_teams; tests/test_deskbar_dock.c (DB-015, mutation-tested)*
 
 #### DB-016 · important · partial
 **With 'Tracker always first' on, Tracker is pinned to the head of the list; with 'Sort applications by name' on, the rest are inserted in locale-collated name order**  
@@ -7183,26 +7183,27 @@ be_roster GetAppInfo -> BAppFileInfo::GetIcon, else BMimeType(B_APP_MIME_TYPE)::
 **TIKU:** Icon comes from the device/app descriptor in the namespace instead of a file's attribute  
 **PORT:** The opaque blue placeholder rect + frame is deleted. The row now paints only tiku_trk_icon_paint("folder" for Tracker's own team, "application" for everything else); tiku_trk_icons_bitmap() returns NULL for an unknown name or a failed HVIF parse/render, paint() returns 0 without touching a pixel, so the slot keeps the already-drawn row background — the port's equivalent of B_TRANSPARENT bits showing the parent through — with no garbage and no fake icon. The chain is two-step rather than three (there is no per-app icon lookup; every non-Tracker team gets the generic one), but that is the TIKU note on the row, not the clause that was missing.
 
-#### DB-019 · important · partial
+#### DB-019 · important · done
 **Double-clicking an application in the list activates that application; a single click just opens its window menu**  
 Requires clicks>1, the same item as the previous click, and delta <= get_click_speed(); activates team 0 of the group via be_roster->ActivateApp. fLastClickTime is deliberately NOT refreshed when the double-click fires, so a triple click does not re-trigger  
 `ExpandoMenuBar.cpp` → `TExpandoMenuBar::MouseDown`  
-**MISSING:** The window menu opens on the *secondary* button on a team row (win_menu_team = i), and the double-click-activates-the-application clause is entirely missing — deskbar_click has no click count parameter and no activate-app action exists (the double-click plumbing in desktop.c serves folder rows only).  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 716-723*
+**PORT:** deskbar_click now carries the click count and a double primary on a team row asks TIKU_TRK_DB_ACTIVATE_TEAM -- the shell brings the application's windows up and focuses the top one -- while a single click keeps meaning the menu gesture.  The shell's double-click memory is deliberately NOT refreshed when it fires, so a triple click cannot re-trigger, exactly the source's discipline.  
+*src/deskbar/tiku_trk_deskbar.c (the clicks parameter and the team-row map); src/shell/tiku_trk_desktop.c (db_click_at, ACTIVATE_TEAM); tests/test_deskbar_dock.c (DB-019)*
 
-#### DB-020 · important · open
+#### DB-020 · important · done
 **Cmd+Ctrl+Shift click on an application (the 'Vulcan Death Grip') kills every team behind it immediately, with no quit request**  
 kill_team() per team, then B_SOME_APP_QUIT to be_app and B_SOME_APP_QUIT (single team) or kRemoveTeam (multiple) with "itemIndex" to the owning menu so it removes the item without waiting for the roster  
 `TeamMenuItem.cpp` → `TTeamMenuItem::HandleMouseDown`  
 **TIKU:** Needs a force-terminate capability bit; guard it behind a capability rather than a modifier combo alone
-**BLOCKED:** Half of this blocker went stale: the multi-app roster exists (DB-014 seeds the team list from the live process set -- /proc on this host). What is still absent is only the force-terminate path itself: the team-row click handles the expander strip and the secondary button (src/deskbar/tiku_trk_deskbar.c:738-744) and nothing in src calls kill(). Ruled in scope (Phase-1 rulings, 2026-08-18): kill(2) on the team's pids behind the same modifier chord here; the capability-guarded force-terminate of the TIKU note on device.
+**PORT:** Ruled in scope (Phase-1 rulings, 2026-08-18) and now done: Cmd+Option+Shift+primary on a team row asks TIKU_TRK_DB_KILL_TEAM naming the row, the shell sends SIGKILL to every pid behind it -- no quit request -- and removes the entry outright with `remove_team`, without waiting for the roster's next beat.  The capability-guarded force-terminate of the TIKU note remains the on-device form.  
+*src/deskbar/tiku_trk_deskbar.c (the grip in the team-row map); src/shell/tiku_trk_desktop.c (KILL_TEAM: kill(2) + remove_team); tests/test_deskbar_dock.c (DB-020, mutation-tested)*
 
-#### DB-021 · important · partial
+#### DB-021 · important · done
 **Middle-clicking an application launches a new instance of it; Ctrl+click brings all its windows to front; Ctrl+Shift+click minimizes them all; Shift+middle-click on a window entry closes that window**  
 Middle-click requires Shift NOT held; Ctrl paths post kBringTeamToFront/kMinimizeTeam with "itemIndex" to the menu, which resolves the item and calls TeamShowHideCommon with the item's screen frame for the zoom animation. The window-close path builds a BMessenger from client_window_info team/port/token and sends B_QUIT_REQUESTED  
 `TeamMenuItem.cpp` → `TTeamMenuItem::HandleMouseDown`  
-**MISSING:** Only the close-a-window clause exists, remapped to right-click on a window row; there is no middle-button path at all (desktop.c derives only `secondary = button == 3`), Ctrl on a team row does nothing, and Ctrl+Shift minimize-all is absent (Hide all lives in the window menu, not as a chord).  
-*src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click lines 716-741; src/shell/tiku_trk_desktop.c:main line 1595*
+**PORT:** All four clauses, on the port's modifier vocabulary (Ctrl reads as CMD here, as everywhere in these shells): middle-click on a team row launches a new instance of its recorded image -- and not with Shift held, as the source requires; CMD+click brings the windows to the front; CMD+Shift+click minimizes them all; and Shift+middle on a window entry closes that window, the same request the secondary click already made.  The button now travels into deskbar_click whole instead of collapsing to a secondary flag.  
+*src/deskbar/tiku_trk_deskbar.c (the team-row chord map, the window-row Shift+middle); src/shell/tiku_trk_desktop.c (LAUNCH_TEAM fork/exec; full modifiers passed); tests/test_deskbar_dock.c (DB-021, all chords)*
 
 #### DB-022 · important · partial
 **In vertical expanded mode with 'Show application expander' on, each app grows a triangle on its right edge; clicking it expands the app's windows inline underneath it, and the triangle animates down on press before committing on release**  

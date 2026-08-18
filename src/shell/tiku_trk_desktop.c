@@ -13,6 +13,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <signal.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -142,6 +144,9 @@ typedef struct desktop {
     tiku_trk_find_window_t find_window;
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
+    /* The Deskbar's own double-click memory (DB-019). */
+    int64_t              db_click_at;
+    int                  db_click_x, db_click_y;
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -1388,6 +1393,18 @@ find_save_as(void *context)
                                     "query");
 }
 
+/** @brief The roster's heartbeat: sync teams with the live processes. */
+static int
+rescan_teams(void *context)
+{
+    desktop_t *app = context;
+
+    if (tiku_trk_deskbar_scan_processes(app->deskbar)) {
+        app->dirty = 1;
+    }
+    return 0;                   /* keep the beat */
+}
+
 /** @brief Ask the reusable panel where an operation should put its items. */
 static void
 fpanel_open(desktop_t *app, folder_t *folder, int command)
@@ -2209,7 +2226,7 @@ tracker_run(int argc, char **argv)
     app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
-    tiku_trk_deskbar_scan_processes(app.deskbar);
+    (void)tiku_trk_deskbar_scan_processes(app.deskbar);
     tiku_trk_cwmenu_init(&app.menus);
     tiku_trk_status_overlay_init(&app.status_overlay, app.surf,
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
@@ -2220,6 +2237,14 @@ tracker_run(int argc, char **argv)
      * nothing else dirties the surface (DB-044). */
     (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
                                 0);
+    if (script_path == NULL) {
+        /* The living half of the roster: applications that quit leave
+         * the list, new ones join it (DB-014/DB-015).  Never in a
+         * scripted run, whose fixture must not chase the host's
+         * processes. */
+        (void)tiku_trk_run_periodic(app.loop, rescan_teams, &app, NULL,
+                                    2000000, 0);
+    }
     tiku_trk_open_with_window_init(&app.open_with_window, app.desk,
         DESK_W, DESK_H, &app.dirty, open_with_window_launch, &app,
         alert_model(&app), app.store);
@@ -3042,15 +3067,29 @@ tracker_run(int argc, char **argv)
                 if (tiku_trk_deskbar_menu_open(app.deskbar) ||
                     tiku_trk_deskbar_hit(app.deskbar, ev.x,
                                          ev.y)) {
-                    unsigned dmods = 0;
                     int secondary = (ev.button == 3);
+                    int dclicks = 1;
 
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
-                        dmods |= TIKU_TRK_MOD_CMD;
+                    /* The Deskbar's own double-click: same spot, inside
+                     * the interval -- and NOT refreshed when it fires,
+                     * so a triple click cannot re-trigger (DB-019). */
+                    if (ev.button == 1u &&
+                        tiku_trk_now() - app.db_click_at < 500000 &&
+                        ev.x - app.db_click_x <= 4 &&
+                        app.db_click_x - ev.x <= 4 &&
+                        ev.y - app.db_click_y <= 4 &&
+                        app.db_click_y - ev.y <= 4) {
+                        dclicks = 2;
+                        app.db_click_at = 0;
+                    } else if (ev.button == 1u) {
+                        app.db_click_at = tiku_trk_now();
+                        app.db_click_x = ev.x;
+                        app.db_click_y = ev.y;
                     }
                     if (tiku_trk_deskbar_click(app.deskbar, ev.x,
-                                               ev.y, dmods,
-                                               secondary, &pick)) {
+                                               ev.y, ev.modifiers,
+                                               (int)ev.button, dclicks,
+                                               &pick)) {
                         if (ev.button == 1u && !secondary) {
                             app.deskbar_press = 1;
                             app.press_at = tiku_trk_now();
@@ -3099,6 +3138,60 @@ tracker_run(int argc, char **argv)
                             t = tiku_desk_workspace_find(app.desk, pick.tag);
                             close_window(&app, t);
                             break;
+                        case TIKU_TRK_DB_ACTIVATE_TEAM: {
+                            /* Activating the application: its windows to
+                             * the front, the top one focused (DB-019). */
+                            int k, m = tiku_desk_workspace_count(app.desk);
+
+                            for (k = 0; k < m; k++) {
+                                tiku_desk_window_t *ww =
+                                    tiku_desk_workspace_at(app.desk, k);
+                                if (ww != NULL) {
+                                    ww->minimized = 0;
+                                }
+                            }
+                            if (m > 0) {
+                                tiku_desk_workspace_activate(app.desk,
+                                    tiku_desk_workspace_at(app.desk,
+                                                           m - 1));
+                            }
+                            break;
+                        }
+                        case TIKU_TRK_DB_LAUNCH_TEAM: {
+                            /* Middle click: another instance of the same
+                             * image (DB-021). */
+                            const char *cmd =
+                                tiku_trk_deskbar_team_command(app.deskbar,
+                                                              pick.team);
+
+                            if (cmd[0] != '\0') {
+                                pid_t child = fork();
+
+                                if (child == 0) {
+                                    execlp(cmd, cmd, (char *)NULL);
+                                    _exit(127);
+                                }
+                                if (child > 0) {
+                                    (void)waitpid(child, NULL, WNOHANG);
+                                }
+                            }
+                            break;
+                        }
+                        case TIKU_TRK_DB_KILL_TEAM: {
+                            /* The Vulcan Death Grip: no quit request,
+                             * and the row goes without waiting for the
+                             * roster (DB-020). */
+                            long tp[16];
+                            int k, m = tiku_trk_deskbar_team_pids(
+                                app.deskbar, pick.team, tp, 16);
+
+                            for (k = 0; k < m; k++) {
+                                (void)kill((pid_t)tp[k], SIGKILL);
+                            }
+                            tiku_trk_deskbar_remove_team(app.deskbar,
+                                                         pick.team);
+                            break;
+                        }
                         case TIKU_TRK_DB_HIDE_ALL:
                         case TIKU_TRK_DB_SHOW_ALL: {
                             int k, m = tiku_desk_workspace_count(app.desk);
@@ -4477,7 +4570,7 @@ tracker_run(int argc, char **argv)
              * options without waiting for release. */
             tiku_trk_deskbar_close_calendar(app.deskbar);
             (void)tiku_trk_deskbar_click(app.deskbar, app.press_x,
-                                         app.press_y, 0u, 1, &dbpick);
+                                         app.press_y, 0u, 3, 1, &dbpick);
             app.deskbar_press = 0;
             app.dirty = 1;
         }

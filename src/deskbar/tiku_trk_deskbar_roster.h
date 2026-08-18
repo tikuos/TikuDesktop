@@ -14,7 +14,8 @@
 #include "tiku_trk_deskbar.h"
 
 /** @brief Add this user's foreground host processes to the Deskbar. */
-void tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar);
+/** @brief Sync the roster with the live process set.  @return changed. */
+int tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar);
 
 /** @brief Publish a workspace's open windows beneath one Deskbar team. */
 void tiku_trk_deskbar_publish_workspace(tiku_trk_deskbar_t *deskbar,

@@ -675,8 +675,136 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
      * open anything nothing else claims. */
     db->teams[i].takes_anything = (strcmp(name, "Tracker") == 0);
     db->teams[i].expanded = db->settings.expand_new_apps;
+    /* Added without a pid: the shell's own seed, never pruned away. */
+    db->teams[i].shell = 1;
     sort_teams(db);
     return i;
+}
+
+int
+tiku_trk_deskbar_add_team_pid(tiku_trk_deskbar_t *db, const char *name,
+                              long pid, const char *command, int *changed)
+{
+    int i, k, was = -1;
+
+    if (db == NULL || name == NULL) {
+        return -1;
+    }
+    for (i = 0; i < db->team_count; i++) {
+        if (strcasecmp(db->teams[i].name, name) == 0) {
+            was = i;
+            break;
+        }
+    }
+    if (was < 0) {
+        was = tiku_trk_deskbar_add_team(db, name);
+        if (was < 0) {
+            return -1;
+        }
+        db->teams[was].shell = 0;
+        if (changed != NULL) { *changed = 1; }
+    }
+    for (k = 0; k < db->teams[was].pid_count; k++) {
+        if (db->teams[was].pids[k] == pid) {
+            return was;                    /* already counted */
+        }
+    }
+    if (db->teams[was].pid_count <
+        (int)(sizeof db->teams[was].pids / sizeof db->teams[was].pids[0])) {
+        db->teams[was].pids[db->teams[was].pid_count++] = pid;
+        if (changed != NULL) { *changed = 1; }
+    }
+    if (db->teams[was].command[0] == '\0' && command != NULL) {
+        snprintf(db->teams[was].command, sizeof db->teams[was].command,
+                 "%s", command);
+    }
+    return was;
+}
+
+void
+tiku_trk_deskbar_remove_team(tiku_trk_deskbar_t *db, int team)
+{
+    int i;
+
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return;
+    }
+    for (i = team; i < db->team_count - 1; i++) {
+        db->teams[i] = db->teams[i + 1];
+    }
+    db->team_count--;
+    /* The display order indexed rows that have moved: rebuilt whole,
+     * which is what sort_teams does anyway. */
+    for (i = 0; i < db->team_count; i++) {
+        db->order[i] = i;
+    }
+    db->win_menu_team = -1;
+    sort_teams(db);
+}
+
+int
+tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live, int n)
+{
+    int i, changed = 0;
+
+    if (db == NULL) {
+        return 0;
+    }
+    for (i = db->team_count - 1; i >= 0; i--) {
+        tiku_trk_team_t *t = &db->teams[i];
+        int k, kept = 0;
+
+        if (t->shell) {
+            continue;
+        }
+        for (k = 0; k < t->pid_count; k++) {
+            int j, alive = 0;
+
+            for (j = 0; j < n; j++) {
+                if (live != NULL && live[j] == t->pids[k]) {
+                    alive = 1;
+                    break;
+                }
+            }
+            if (alive) {
+                t->pids[kept++] = t->pids[k];
+            } else {
+                changed = 1;
+            }
+        }
+        t->pid_count = kept;
+        if (kept == 0) {
+            /* The last instance went, and the entry goes with it
+             * (DB-015). */
+            tiku_trk_deskbar_remove_team(db, i);
+            changed = 1;
+        }
+    }
+    return changed;
+}
+
+int
+tiku_trk_deskbar_team_pids(const tiku_trk_deskbar_t *db, int team, long *out,
+                           int max)
+{
+    int k, n = 0;
+
+    if (db == NULL || team < 0 || team >= db->team_count || out == NULL) {
+        return 0;
+    }
+    for (k = 0; k < db->teams[team].pid_count && n < max; k++) {
+        out[n++] = db->teams[team].pids[k];
+    }
+    return n;
+}
+
+const char *
+tiku_trk_deskbar_team_command(const tiku_trk_deskbar_t *db, int team)
+{
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return "";
+    }
+    return db->teams[team].command;
 }
 
 void
@@ -1843,8 +1971,9 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
 
 int
 tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
-                       int secondary, tiku_trk_db_pick_t *pick)
+                       int button, int clicks, tiku_trk_db_pick_t *pick)
 {
+    int secondary = (button == 3);
     const tiku_desk_font_t *f = tiku_desk_font_plain();
     int i, j, ry;
 
@@ -2035,6 +2164,32 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             } else if (secondary) {
                 db->win_menu_team = team;
                 db->win_hot = -1;
+            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
+                       (mods & TIKU_DESK_MOD_OPTION) != 0u &&
+                       (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
+                /* The Vulcan Death Grip: every process behind the row,
+                 * killed outright, no quit request (DB-020). */
+                pick->what = TIKU_TRK_DB_KILL_TEAM;
+                pick->team = team;
+            } else if (button == 2) {
+                /* Middle launches another instance -- with Shift NOT
+                 * held, as the source requires (DB-021). */
+                if ((mods & TIKU_TRK_MOD_SHIFT) == 0u) {
+                    pick->what = TIKU_TRK_DB_LAUNCH_TEAM;
+                    pick->team = team;
+                }
+            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
+                       (mods & TIKU_TRK_MOD_SHIFT) != 0u) {
+                pick->what = TIKU_TRK_DB_HIDE_ALL;     /* minimize all */
+                pick->team = team;
+            } else if ((mods & TIKU_TRK_MOD_CMD) != 0u) {
+                pick->what = TIKU_TRK_DB_SHOW_ALL;     /* all to front */
+                pick->team = team;
+            } else if (clicks > 1) {
+                /* The double-click activates the application; a single
+                 * click keeps meaning the menu gesture (DB-019). */
+                pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
+                pick->team = team;
             }
             return 1;
         }
@@ -2045,7 +2200,11 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         for (j = 0; j < t->win_count; j++) {
             if (y >= ry && y < ry + WIN_H) {
                 pick->tag = t->wins[j].tag;
-                if (secondary) {
+                if (secondary || (button == 2 &&
+                                  (mods & TIKU_TRK_MOD_SHIFT) != 0u)) {
+                    /* Shift+middle on a window entry closes that window,
+                     * the same request the secondary click makes
+                     * (DB-021). */
                     pick->what = TIKU_TRK_DB_CLOSE_WINDOW;
                 } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
                            (mods & TIKU_DESK_MOD_OPTION) != 0u) {

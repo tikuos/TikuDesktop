@@ -67,6 +67,12 @@ typedef struct {
     char             type[8][TIKU_TRK_TYPE_MAX];
     int              ntype;
     int              takes_anything;
+    /* The processes behind the entry: one row however many there are,
+     * gone only when the last one is (DB-015). */
+    long             pids[16];
+    int              pid_count;
+    char             command[160];       /* argv[0], for a new instance */
+    int              shell;              /* seeded by the shell, kept   */
 } tiku_trk_team_t;
 
 /** @brief A tray item: a namespace node rendered as label + value. */
@@ -283,11 +289,15 @@ typedef enum {
     TIKU_TRK_DB_CLOCK_SECONDS,
     TIKU_TRK_DB_CLOCK_DAY,
     TIKU_TRK_DB_CLOCK_ZONE,
+    TIKU_TRK_DB_ACTIVATE_TEAM,    /* double-click: the application  */
+    TIKU_TRK_DB_LAUNCH_TEAM,      /* middle-click: a new instance   */
+    TIKU_TRK_DB_KILL_TEAM,        /* the Vulcan Death Grip (DB-020) */
 } tiku_trk_db_action_t;
 
 typedef struct {
     tiku_trk_db_action_t what;
     void                *tag;
+    int                  team;          /* the row the action names */
     char                 path[TIKU_TRK_PATH_MAX];
 } tiku_trk_db_pick_t;
 
@@ -353,6 +363,36 @@ void tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
  */
 int tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name);
 
+/**
+ * @brief One instance of @p name, by pid: added to its entry (DB-015).
+ *
+ * @return the team index, and nonzero in @p changed when a row appeared
+ *         or an instance was new.
+ */
+int tiku_trk_deskbar_add_team_pid(tiku_trk_deskbar_t *db, const char *name,
+                                  long pid, const char *command,
+                                  int *changed);
+
+/**
+ * @brief Drop instances no longer in @p live; a team whose last one went
+ *        disappears (DB-015).  Shell-seeded teams stay.
+ *
+ * @return nonzero when anything changed.
+ */
+int tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live,
+                                 int n);
+
+/** @brief Remove one entry outright, without waiting for the roster. */
+void tiku_trk_deskbar_remove_team(tiku_trk_deskbar_t *db, int team);
+
+/** @brief The pids behind entry @p team.  @return how many were written. */
+int tiku_trk_deskbar_team_pids(const tiku_trk_deskbar_t *db, int team,
+                               long *out, int max);
+
+/** @brief The command a new instance of @p team would run, or "". */
+const char *tiku_trk_deskbar_team_command(const tiku_trk_deskbar_t *db,
+                                          int team);
+
 /** @brief Replace an application's window list, keeping its expanded state. */
 void tiku_trk_deskbar_set_windows(tiku_trk_deskbar_t *db, int team,
                                   const tiku_trk_dbwin_t *wins, int n,
@@ -401,7 +441,7 @@ int tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y);
  * @return 1 when the click was consumed.
  */
 int tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y,
-                           unsigned mods, int secondary,
+                           unsigned mods, int button, int clicks,
                            tiku_trk_db_pick_t *pick);
 
 /*---------------------------------------------------------------------------*/

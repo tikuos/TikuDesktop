@@ -160,7 +160,7 @@ main(void)
     tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
     tiku_trk_deskbar_draw(db, s);
     f = tiku_trk_deskbar_frame(db);
-    check(tiku_trk_deskbar_click(db, f.x + 4, f.y + f.h - 4, 0, 0,
+    check(tiku_trk_deskbar_click(db, f.x + 4, f.y + f.h - 4, 0, 1, 1,
                                  &(tiku_trk_db_pick_t){0}) == 1 &&
           tiku_trk_deskbar_calendar_open(db), "DB-046",
           "clicking the clock opens a calendar popup");
@@ -172,13 +172,13 @@ main(void)
         old_month = month;
         memset(&pick, 0, sizeof pick);
         (void)tiku_trk_deskbar_click(db, f.x - 135, f.y + f.h - 140,
-                                     0, 0, &pick);
+                                     0, 1, 1, &pick);
         tiku_trk_deskbar_calendar_date(db, NULL, &month, NULL);
         check(month == (old_month == 12 ? 1 : old_month + 1), "DB-046",
               "the month stepper advances the displayed month");
         (void)tiku_trk_deskbar_click(db, f.x - 180 + 6 + 2 * 25 + 5,
                                      f.y + f.h - 150 + 22 + 2 * 20 + 5,
-                                     0, 0, &pick);
+                                     0, 1, 1, &pick);
         tiku_trk_deskbar_calendar_date(db, NULL, NULL, &day);
         check(day >= 1 && day <= 31, "DB-046",
               "clicking a valid calendar cell changes the selected day");
@@ -206,7 +206,7 @@ main(void)
         for (y = bar.y; y < bar.y + bar.h && row_y < 0; y++) {
             memset(&pick, 0, sizeof pick);
             (void)tiku_trk_deskbar_click(db, bar.x + 20, y, TIKU_TRK_MOD_CMD,
-                                         0, &pick);
+                                         1, 1, &pick);
             if (pick.what == TIKU_TRK_DB_MINIMIZE_WINDOW &&
                 pick.tag == (void *)1) {
                 row_y = y;
@@ -218,7 +218,7 @@ main(void)
         memset(&pick, 0, sizeof pick);
         (void)tiku_trk_deskbar_click(db, bar.x + 20, row_y,
                                      TIKU_TRK_MOD_CMD | TIKU_DESK_MOD_OPTION,
-                                     0, &pick);
+                                     1, 1, &pick);
         check(pick.what == TIKU_TRK_DB_HIDE_ALL, "CW-014",
               "and Option on that same gesture takes the whole application "
               "down, rather than only the window under the pointer");
@@ -332,6 +332,109 @@ main(void)
         check(tiku_trk_deskbar_raised(ordered), "DB-073",
               "always-on-top wins over auto-raise and changes live z-order");
         tiku_trk_deskbar_free(ordered);
+    }
+
+
+    printf("\nthe roster's other half: instances and removal (DB-015)\n");
+    {
+        int changed = 0, t1, t2;
+        long live1[1] = { 100 };
+
+        /* The earlier scenes filled the roster; removal clears the stage
+         * and is itself the API a kill uses (DB-020). */
+        while (tiku_trk_deskbar_team_count(db) > 1) {
+            tiku_trk_deskbar_remove_team(db, 1);
+        }
+        check(tiku_trk_deskbar_team_count(db) == 1, "DB-015",
+              "an entry can be removed outright");
+        t1 = tiku_trk_deskbar_add_team_pid(db, "editor", 100, "/bin/ed",
+                                           &changed);
+        t2 = tiku_trk_deskbar_add_team_pid(db, "EDITOR", 200, "/bin/ed",
+                                           &changed);
+        check(t1 >= 0 && t1 == t2, "DB-015",
+              "a second instance joins the existing entry, matched "
+              "without regard to case");
+        check(tiku_trk_deskbar_prune_teams(db, live1, 1) &&
+              tiku_trk_deskbar_team_count(db) >= 1, "DB-015",
+              "one instance quitting changes the roster but not the row");
+        {
+            int still = 0, k;
+
+            for (k = 0; k < tiku_trk_deskbar_team_count(db); k++) {
+                if (strcasecmp(tiku_trk_deskbar_team_name(db, k),
+                               "editor") == 0) {
+                    still = 1;
+                }
+            }
+            check(still, "DB-015", "the entry stands while one lives");
+        }
+        (void)tiku_trk_deskbar_prune_teams(db, NULL, 0);
+        {
+            int still = 0, k;
+
+            for (k = 0; k < tiku_trk_deskbar_team_count(db); k++) {
+                if (strcasecmp(tiku_trk_deskbar_team_name(db, k),
+                               "editor") == 0) {
+                    still = 1;
+                }
+            }
+            check(!still, "DB-015",
+                  "the entry disappears only when its LAST instance quits");
+        }
+        check(tiku_trk_deskbar_team_count(db) >= 1, "DB-015",
+              "the shell-seeded team is never pruned away");
+    }
+
+    printf("\nwhat a click on an application asks for (DB-019/020/021)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t bar;
+        int y, team_y = -1, changed = 0;
+
+        (void)tiku_trk_deskbar_add_team_pid(db, "editor", 300, "/bin/ed",
+                                            &changed);
+        tiku_trk_deskbar_draw(db, s);
+        bar = tiku_trk_deskbar_frame(db);
+        for (y = bar.y; y < bar.y + bar.h && team_y < 0; y++) {
+            memset(&pick, 0, sizeof pick);
+            (void)tiku_trk_deskbar_click(db, bar.x + 20, y,
+                                         TIKU_TRK_MOD_CMD, 1, 1, &pick);
+            if (pick.what == TIKU_TRK_DB_SHOW_ALL) {
+                team_y = y;
+            }
+        }
+        check(team_y >= 0, "DB-021",
+              "Ctrl+click on an application asks for all its windows "
+              "to the front");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y,
+                                     TIKU_TRK_MOD_CMD | TIKU_TRK_MOD_SHIFT,
+                                     1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_HIDE_ALL, "DB-021",
+              "and Ctrl+Shift+click asks to minimize them all");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 2, 1,
+                                     &pick);
+        check(pick.what == TIKU_TRK_DB_LAUNCH_TEAM, "DB-021",
+              "middle-click asks for a new instance");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y,
+                                     TIKU_TRK_MOD_SHIFT, 2, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_NONE, "DB-021",
+              "but not with Shift held, exactly as the source requires");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y, 0u, 1, 2,
+                                     &pick);
+        check(pick.what == TIKU_TRK_DB_ACTIVATE_TEAM, "DB-019",
+              "a double-click activates the application; the single "
+              "click never did");
+        memset(&pick, 0, sizeof pick);
+        (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y,
+                                     TIKU_TRK_MOD_CMD | TIKU_TRK_MOD_SHIFT |
+                                     TIKU_DESK_MOD_OPTION, 1, 1, &pick);
+        check(pick.what == TIKU_TRK_DB_KILL_TEAM && pick.team >= 0,
+              "DB-020", "and the full grip asks for the kill, naming "
+              "the row");
     }
 
     tiku_trk_deskbar_free(db);
