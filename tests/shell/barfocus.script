@@ -1,0 +1,13 @@
+# shell: desktop
+# CW-019: the scroll bar highlights with the focus border -- framed in the
+# focus colour while its window is the focused one, plain the moment
+# another window takes the keyboard.
+wait 10
+expect-pixel 499 200 0000e5
+note the Trash window takes focus; the first window's bar goes plain
+click 170 30
+wait 2
+click 170 30
+wait 8
+expect-pixel 499 200 f0f0f0
+quit

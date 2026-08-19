@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <dirent.h>
+
 #include "tiku_trk_desktop_view.h"
 #include "tiku_trk_deskicons.h"
 #include "tiku_trk_volume.h"
@@ -380,6 +382,69 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     tiku_trk_desktop_view_rebuild(controller);
     tiku_trk_vdir_watch_init(&controller->watch, &controller->sources);
     tiku_desk_workspace_set_backdrop(render->workspace, draw, controller);
+    return 0;
+}
+
+/** @brief Whether @p path is a directory with anything in it. */
+static int
+dv_dir_has_entries(const char *path)
+{
+    DIR *d = opendir(path);
+    struct dirent *e;
+    int any = 0;
+
+    if (d == NULL) {
+        return 0;
+    }
+    while (!any && (e = readdir(d)) != NULL) {
+        any = (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0);
+    }
+    (void)closedir(d);
+    return any;
+}
+
+/**
+ * @brief Re-ask whether the Trash is full, across every volume (AW-029).
+ *
+ * The listing diff only re-stats an entry whose own directory changed, and
+ * a file trashed on ANOTHER volume changes nothing under the Desktop.  So
+ * on the owner's slow beat the desk Trash pose is asked again -- and the
+ * answer is the union over the same trash directories the union window
+ * lists (PVN-027): a file trashed on a memory stick fills the desk icon
+ * even while the home trash is empty.
+ *
+ * @return nonzero when the icon flipped and a repaint is owed.
+ */
+int
+tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller)
+{
+    tiku_trk_poseview_t *v;
+    int i, n;
+
+    if (controller == NULL || controller->fs == NULL) {
+        return 0;
+    }
+    v = controller->folder.view;
+    n = tiku_trk_poseview_count(v);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *pose = tiku_trk_poseview_at(v, i);
+        char dirs[TIKU_TRK_VOLUME_MAX][TIKU_TRK_PATH_MAX];
+        int k, nd, full = 0;
+
+        if (pose == NULL || pose->model.kind != TIKU_TRK_KIND_TRASH) {
+            continue;
+        }
+        nd = tiku_trk_fs_trash_dirs(controller->fs, dirs,
+                                    TIKU_TRK_VOLUME_MAX);
+        for (k = 0; k < nd && !full; k++) {
+            full = dv_dir_has_entries(dirs[k]);
+        }
+        if (full != pose->model.facts.trash_full) {
+            pose->model.facts.trash_full = full;
+            return 1;
+        }
+        return 0;
+    }
     return 0;
 }
 

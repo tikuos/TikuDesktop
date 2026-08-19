@@ -51,6 +51,9 @@ int tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
 int tiku_trk_desktop_view_ensure_visible(
     tiku_trk_desktop_view_t *controller);
 void tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller);
+/** @brief Re-stat the desk Trash pose's fullness (AW-029). */
+int tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller);
+
 int tiku_trk_desktop_view_poll(tiku_trk_desktop_view_t *controller,
     int64_t now, const tiku_trk_change_t *changes, int change_count,
     int complete);

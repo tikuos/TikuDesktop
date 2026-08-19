@@ -157,6 +157,26 @@ main(void)
               "a pose being dragged is never its own target: dropping on "
               "the selection means the window behind it");
     }
+    {
+        tiku_trk_model_t ln;
+
+        memset(&ln, 0, sizeof ln);
+        snprintf(ln.path, sizeof ln.path, "/dst/alias");
+        ln.kind = TIKU_TRK_KIND_SYMLINK;
+        snprintf(ln.type, sizeof ln.type, "application/x-vnd.Be-directory");
+        ln.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+        check(tiku_trk_drag_can_drop(&d, &ln), "MA-016",
+              "a symlink defers to its target: a link to a writable "
+              "folder takes the drop");
+        ln.facts.link_broken = 1;
+        check(!tiku_trk_drag_can_drop(&d, &ln), "MA-016",
+              "a broken link refuses -- there is nothing to land in");
+        ln.facts.link_broken = 0;
+        snprintf(ln.type, sizeof ln.type, "text/plain");
+        check(!tiku_trk_drag_can_drop(&d, &ln), "MA-016",
+              "and a link to a plain file is no more a target than "
+              "the file itself");
+    }
 
     printf("\nwhat a drop means (PVS-037, PVS-038, FS-002)\n");
     check(tiku_trk_drag_action(&d, "/dst", 0u, 1) == TIKU_TRK_DROP_MOVE,

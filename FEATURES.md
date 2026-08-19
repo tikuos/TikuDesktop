@@ -2858,11 +2858,11 @@ _AddFolderIcon adds a DraggableContainerIcon sized to the menu bar height; the d
 A common B_MOUSE_DOWN filter activates the window unless the target view is a BPoseView or DraggableContainerIcon.  
 `ContainerWindow.cpp` → `ActivateWindowFilter`  
 
-#### CW-019 · polish · differs
+#### CW-019 · polish · done
 **The pose view draws a coloured focus border when it has focus and the window is active, and the scroll bars highlight with it.**  
 BorderedView::PoseViewFocused switches the view colour between B_DOCUMENT_BACKGROUND_COLOR/B_DARKEN_2_TINT and B_KEYBOARD_NAVIGATION_COLOR, and calls SetBorderHighlighted on both scroll bars; highlight can be disabled per window (EnableBorderHighlight(false) for query windows and the main container).  
 `ContainerWindow.cpp` → `BorderedView::PoseViewFocused / BorderedView::WindowActivated`  
-**PORT:** The focus border marks the VIEW it wraps, and the scroll bar sits outside that border by the port's layout -- the border says where the keyboard aims, which is the list, not its chrome.  The per-window off switch differs by API shape: windows here carry no flag word for a view to set, and no window has wanted the highlight off; the one global look keeps every window honest about focus.  
+**PORT:** The bars highlight with the border now: while the window is the focused one, the vertical and horizontal bars are framed in the focus colour, and the frame drops the moment another window takes the keyboard (tests/shell/barfocus.script, barfocustrk.script).  Haiku's per-window off switch is honoured where Haiku uses it: a query window keeps the plain bar, matching EnableBorderHighlight(false) for query windows; there is no general flag word because no other window has wanted one.  
 #### CW-020 · polish · done
 **A folder's background image is shown in icon/mini-icon view and removed when switching to list view, and comes back when switching away from list view.**  
 ViewModeChanged: newMode == kListMode -> Remove(); oldMode == kListMode -> Show(). Image is looked up on the folder node first, then on the DefaultFolderTemplate node; suppressed entirely in safe mode and in file panels.  
@@ -3975,12 +3975,12 @@ draw-time resolution only reads nodes that advertised a custom descriptor or
 thumbnail.  `tests/test_nodeicon.c` covers the no-read fast path and generic
 fallback.
 
-#### MA-016 · important · differs
+#### MA-016 · important · done
 **Whether a pose highlights as a drop target depends on what it is: folders take anything, symlinks defer to their target, applications take only the types they declare, and everything else refuses.**  
 CanHandleDrops: directory or virtual directory -> kCanHandle; symlink -> resolve and recurse, refusing a self-referencing link to avoid infinite recursion; executable -> kNeedToCheckType; anything else -> kCannotHandle. IsDropTarget with a NULL document accepts any kCanHandle/kNeedToCheckType target; with traverse it re-reads the dropped file's type through the resolved entry.  
 `Model.cpp` → `Model::CanHandleDrops`  
 **TIKU:** Writable VFS nodes are drop targets for text/values, not for files. The capability bit (writable) replaces the executable/supported-types test.  
-**PORT:** A writable container takes the drop and nothing else does, answered during the hover rather than after it.  
+**PORT:** Answered during the hover, and each kind by its own rule as Haiku's ladder has it: a writable container takes anything; a symlink defers to its target -- a link to a writable folder highlights and the drop lands in the folder, while a broken or looping link refuses (the resolve fails and the model keeps the link with link_broken set); an application takes documents (PVS-044); everything else refuses (tests/shell/linkdrop.script, tests/test_drag.c).  
 **PORT:** The ladder answers per kind, and the per-type acceptance the row wants EXISTS where it has a subject: an application pose accepts exactly the types its registry entry claims (PVS-044), a container accepts everything mutable, a broken link nothing.  Symlink pre-resolution differs by the backend's shape: a link is typed as ITSELF here (PVN-044's registration), and the backend offers no resolve-to-target op to chain through -- the drop on a link therefore answers as the link, the declared node-identity boundary.  
 *Shell: desktop*  
 #### MA-017 · important · done
@@ -6274,12 +6274,12 @@ SetHighColor(LowColor().Brightness() <= ui_color(B_DESKTOP_COLOR).Brightness() ?
 **PORT:** The Desktop's labels take their ink from the BACKDROP's brightness -- white on the dark fill this port ships -- and a window's labels are unaffected, which is the independence the row is about.  
 *src/shell/tiku_trk_desktop.c:draw_pose_icon; tests/shell/desktop.script (a pixel of the one label no window covers)*  
 
-#### AW-029 · important · differs
+#### AW-029 · important · done
 **The Trash icon shows full vs empty, updated live as items enter or leave the trash on any volume, including volumes mounted later.**  
 BTrashWatcher watches every persistent writable volume's trash dir plus B_WATCH_MOUNT; ENTRY_CREATED sets full, MOVED (only across directories) / REMOVED / DEVICE_UNMOUNTED re-check all trash dirs; UpdateTrashIcon writes R_TrashIcon/R_TrashFullIcon into the boot trash dir's icon attributes.  
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon / BTrashWatcher::WatchTrashDirs`  
 **TIKU:** Writing the icon into the object's own attributes is how state is published; with typed VFS descriptors the fullness would be a readable node value plus a notify, not a stored icon.  
-**PORT:** The liveness half holds -- and had been worse than the row said: the 400 ms diff never compared fullness, so a filling Trash changed nothing until this was fixed.  The remaining scope differs by the volume model: fullness is per-entry and a Trash on ANOTHER volume filling does not repaint this one's icon -- the union Trash (PVN-027) is where cross-volume fullness surfaces -- and there is no boot-Trash icon ATTRIBUTE to write because icons here are drawn from state, not stamped onto nodes.
+**PORT:** The desk Trash pose is re-asked on the desktop's slow beat, and the answer is the union over the same trash directories the union window lists (PVN-027) -- a file trashed on another volume fills the icon while the home trash stays empty, and emptying that trash empties it again, both live (tests/shell/trashfullany.script).  Volumes mounted later join because the set is re-derived from the mount table on every ask.  There is still no boot-Trash icon ATTRIBUTE to write: icons here are drawn from state, not stamped onto nodes, which is a storage difference with the same picture on screen.
 *src/backends/tiku_trk_notify.c:facts_differ (the trash_full term);
 tests/test_notify.c*
 #### AW-030 · core · differs

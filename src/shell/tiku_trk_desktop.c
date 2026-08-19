@@ -6161,6 +6161,8 @@ tracker_run(int argc, char **argv)
                         }
                     }
                 }
+                changed += tiku_trk_desktop_view_trash_check(
+                    &app.desktop_view);
                 last_requery = tiku_trk_now();
             }
             last_pump = tiku_trk_now();

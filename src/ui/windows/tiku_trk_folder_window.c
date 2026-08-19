@@ -1272,6 +1272,16 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
             pos = 0.0f;
         }
         tiku_desk_ui_scrollbar(surface, sb, pos, frac, 0);
+        /* CW-019: the bar highlights with the view's focus border, so the
+         * chrome agrees with the list about where the keyboard aims.  A
+         * query window keeps the plain bar, as Haiku turns the highlight
+         * off for query windows. */
+        if (!tiku_trk_poseview_is_query(folder->view) &&
+            (folder->win == NULL ||
+             folder->win ==
+                 tiku_desk_workspace_focused(folder->render->workspace))) {
+            tiku_desk_frame(surface, sb, TIKU_DESK_C_FOCUS);
+        }
     }
     draw_count(folder, surface, content, total);
 }

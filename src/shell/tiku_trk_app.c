@@ -664,6 +664,9 @@ draw_count(app_t *a, tiku_desk_rect_t list)
             pos = 0.0f;
         }
         tiku_desk_ui_scrollbar(s, a->hsb_rect, pos, frac, 1);
+        if (a->active && !tiku_trk_poseview_is_query(a->view)) {
+            tiku_desk_frame(s, a->hsb_rect, TIKU_DESK_C_FOCUS);
+        }
     } else {
         a->hsb_rect = (tiku_desk_rect_t){ 0, 0, 0, 0 };
     }
@@ -1088,6 +1091,11 @@ draw(app_t *a)
         }
         a->sb_rect = sb;
         tiku_desk_ui_scrollbar(s, sb, pos, frac, 0);
+        /* CW-019: the bar highlights with the focus border -- except in a
+         * query window, where Haiku keeps the highlight off. */
+        if (a->active && !tiku_trk_poseview_is_query(a->view)) {
+            tiku_desk_frame(s, sb, TIKU_DESK_C_FOCUS);
+        }
     }
 
     if (a->tv.track == TIKU_TRK_TRACK_RESIZE && a->tv.line_x >= 0) {

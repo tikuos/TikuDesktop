@@ -1,0 +1,24 @@
+# shell: desktop
+# home: fixture
+# MA-016: a symlink defers to its TARGET as a drop target -- dropping on a
+# link to a folder lands the item in the folder; a broken link refuses.
+note rows: 0 alias->sub, 1 sub, 2 a.txt, 3 b.txt, 4 broken, 5 c.txt
+press-row 2
+move-row 0
+move-row 0
+wait 2
+release-row 0
+wait 20
+expect-file /tmp/trk_script/sub/a.txt
+expect-no-file /tmp/trk_script/a.txt
+note a broken link is not a target: the drop falls through and nothing
+note moves -- rows shifted up once a.txt left: 2 b.txt, 3 broken
+press-row 2
+move-row 3
+move-row 3
+wait 2
+release-row 3
+wait 20
+expect-file /tmp/trk_script/b.txt
+expect-no-file /tmp/trk_script/sub/b.txt
+quit

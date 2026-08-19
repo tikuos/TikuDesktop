@@ -1,0 +1,16 @@
+# shell: desktop
+# AW-029: the desk Trash icon speaks for EVERY volume's trash -- a file
+# trashed on another volume fills it, and emptying it empties the icon,
+# both live on the refresh beat, with the home trash empty throughout.
+wait 10
+note the empty-trash art at rest
+expect-pixel 175 23 336698
+write /dev/shm/.Trash/xplant.txt hi
+wait 200
+note another volume's trash gained a file: the icon fills
+expect-pixel 175 23 000000
+remove /dev/shm/.Trash/xplant.txt
+wait 200
+note and empties again when that trash empties
+expect-pixel 175 23 336698
+quit

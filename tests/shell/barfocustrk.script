@@ -1,0 +1,9 @@
+# shell: tracker
+# home: fixture
+# CW-019: the browser's bars highlight with the focus border too -- the
+# vertical bar and the horizontal bar both framed in the focus colour
+# while the window is active.
+wait 10
+expect-pixel 754 300 0000e5
+expect-pixel 300 514 0000e5
+quit

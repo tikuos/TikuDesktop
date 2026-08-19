@@ -93,7 +93,7 @@ for s in "$here"/*.script; do
         # A scrolling test needs more rows than a window holds.
         mkdir -p "$deskhome/Desktop"
         case $(basename "$s") in
-            bandscroll.script|scroll.script|scrollbar.script|insertabove.script|resizefit.script|winbar.script) i=1; while [ $i -le 40 ]; do
+            bandscroll.script|scroll.script|scrollbar.script|insertabove.script|resizefit.script|winbar.script|barfocus.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
             dbdrop.script) rm -rf "$deskhome/.config/deskbar" ;;
             dbprefs.script) rm -rf "$deskhome/.config/deskbar" ;;
@@ -136,9 +136,15 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            linkdrop.script)
+                ln -s "$work/sub" "$work/alias"
+                ln -s /nowhere-at-all "$work/broken" ;;
             trashunion.script)
                 mkdir -p /dev/shm/.Trash
                 echo hi > /dev/shm/.Trash/planted.txt ;;
+            trashfullany.script)
+                mkdir -p /dev/shm/.Trash
+                rm -f /dev/shm/.Trash/xplant.txt ;;
             hoverpop.script)
                 mkdir -p "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row"
                 echo hi > "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row/deep.txt" ;;
