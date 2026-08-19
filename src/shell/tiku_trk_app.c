@@ -2076,6 +2076,17 @@ not_editing:
     default:
         break;
     }
+    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+        /* The standard set's tail, from the same table the menus read:
+         * a chord the menu advertises must answer here too (PVK-042). */
+        int fcmd = tiku_trk_sc_command_for_key(key, modifiers);
+
+        if (fcmd != 0) {
+            menu_invoke(a, fcmd);
+            a->dirty = 1;
+            return;
+        }
+    }
     {
         char typed = key_char(event);
 

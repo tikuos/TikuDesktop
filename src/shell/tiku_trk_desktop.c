@@ -4467,6 +4467,16 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                    tiku_trk_sc_command_for_key(key, ev.modifiers) != 0) {
+                    /* The rest of the standard set, resolved from the one
+                     * table the menus draw their shortcuts from -- a
+                     * chord the menu advertises must answer (PVK-042). */
+                    menu_invoke(&app, fl,
+                        tiku_trk_sc_command_for_key(key, ev.modifiers));
+                    app.dirty = 1;
+                    break;
+                }
+                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
                     (key == '1' || key == '2' || key == '3')) {
                     /* AW-025/CW-065: the same chords the single-window app
                      * binds.  The menu offers these modes; a shortcut that

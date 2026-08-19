@@ -1961,17 +1961,12 @@ sMatchString is seeded from fSelectionList->FirstItem()'s name (or emptied when 
 **PORT:** Tab is consumed while the pose view is filtering, preserving the active type-ahead expression; otherwise it performs the name-order walk.
 *src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c*
 
-#### PVK-022 · polish · partial
+#### PVK-022 · polish · done
 **In a file panel, and in the Open With window, Tab moves keyboard focus between controls instead of walking poses.**  
 File panel: `if (IsFilePanel()) _inherited::KeyDown(bytes, count);`. Open With: OpenWithPoseView::KeyDown routes B_TAB to BView::KeyDown, bypassing BPoseView entirely.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_TAB); OpenWithPoseView::KeyDown (OpenWithWindow.cpp)`
-**MISSING:** Tab in a panel moves between the controls rather than walking
-the poses, and the shell moves the focus between the list and the name
-field -- but an OPEN panel has only a list to reach, so the visible effect
-waits on a save panel (AW-052); and the Open With window, the row's other
-half, does not exist.
-*src/core/tiku_trk_panel.c:tiku_trk_panel_key (the Tab arm);
-src/shell/tiku_trk_desktop.c (the panel's key branch); tests/test_panel.c*
+**PORT:** Both surfaces exist and behave: the panel's Tab moves between the list and the save name field -- visible now that the save panel is raised for real (AW-052) -- and the Open With window routes Tab past its list entirely, walking no pose, which is the source's own effect of bypassing BPoseView for BView::KeyDown.  
+*src/core/tiku_trk_panel.c:tiku_trk_panel_key (the Tab arm); src/ui/windows/tiku_trk_panel_window.c (the FOCUS toggle); src/ui/windows/tiku_trk_open_with_window.c; tests/test_panel.c*
 
 #### PVK-023 · important · done
 **While a pose name is being edited, Return commits the edit, Escape cancels it, and Tab / Shift+Tab commit and move to the next / previous editable text widget of the same pose.**  
@@ -2115,15 +2110,14 @@ SetSingleWindowBrowseShortcuts removes the Cmd+Up / Cmd+Opt+Up / Cmd+Opt+Down bi
 `ContainerWindow.cpp` → `BContainerWindow::SetSingleWindowBrowseShortcuts; BContainerWindow::Init (AddShortcut(B_DOWN_ARROW, B_COMMAND_KEY, kOpenSelection))`
 **PORT:** The single-window shell owns navigator history and a location editor: Cmd+Left/Right/Up and Cmd+L use it, while Cmd+Down and Option+Return open the active selection. The spatial desktop keeps its documented no-op navigation semantics but handles Cmd+Down as the same open-selection action as Return. `src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c`
 
-#### PVK-042 · core · partial
+#### PVK-042 · core · done
 **The standard Command shortcut set is registered on the window and targets the pose view: X/C/V clipboard, Shift+X/Shift+C cut-more/copy-more, F find, N new folder, O open, Ctrl+O open with, I get info, E edit name, D duplicate, K clean up (Shift+K clean up all), A select all, S invert selection, Shift+A Select..., G edit query, U unmount, +/- icon size, and Cmd+Opt+Shift+Ctrl+Q to quit Tracker.**  
 BWindow::AddShortcut implies B_COMMAND_KEY unless B_NO_COMMAND_KEY is passed. The same list is added explicitly for the menu-less Desktop window (AddShortcuts()); Cmd+1 / Cmd+2 / Cmd+'+' / Cmd+'-' switch icon modes and sizes on the Desktop; Cmd+Z / Cmd+Shift+Z are undo/redo. A keymap scan adds the unshifted key that produces '+' as an extra zoom-in shortcut if free.  
 `ContainerWindow.cpp` → `BContainerWindow::AddShortcuts; BContainerWindow::Init; TDeskWindow::Init (DeskWindow.cpp)`  
 **TIKU:** Shortcut vocabulary is fine to keep, but any command touching a device node must be gated on the node's capability bits, not just on selection emptiness.  
 **VERIFIER CORRECTION:** Plain Cmd+X / Cmd+C / Cmd+V are not AddShortcut entries at all — they are menu-item shortcuts created in Shortcuts.cpp (CutItem 'X', CopyItem 'C', PasteItem 'V') and targeted at the container window. AddShortcuts() (the menuless Desktop path) registers only Shift+X and Shift+C, plus F/N/O/I/E/D/K/A/S/Shift+A/G/U/Cmd+Up/Ctrl+O/'+'/'-' and Delete. The rest of the row (Shift+K, Cmd+Down, Cmd+Opt+Shift+Ctrl+Q, Cmd+Z/Shift+Z, keymap scan for an extra zoom-in key) is correct.  
-**MISSING:** Only an ad-hoc subset is actually bound to keys — A, Shift+A, S, D, K, Z, F, W, Q, 1/2/3, +/- and Delete across the two shells — while X/C/V (and Shift+X/Shift+C), N, O, Ctrl+O, I, E, G, U, Shift+K and Cmd+Up are label-only entries in the action table with no key dispatcher behind them, and there is no keymap scan for an extra zoom-in key.  
-*src/shell/tiku_trk_app.c:handle_key lines 913-1035 and src/shell/tiku_trk_desktop.c:2117-2159 (vs the full table in src/core/tiku_trk_shortcuts.c:tiku_trk_sc_key)*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Three of the listed keys are dispatched: Ctrl+X/C/V (with Shift variants via sc_command) in the desktop shell (src/shell/tiku_trk_desktop.c:2476-2490), Ctrl+N creates a new folder in the single-window shell (src/shell/tiku_trk_app.c:1215-1244), and Cmd+Up opens the parent in BOTH shells (src/shell/tiku_trk_app.c:997-1006, src/shell/tiku_trk_desktop.c:2527-2532) — the row's own PVK-040 verdict already says so. O, Ctrl+O, I, E, G, U and Shift+K remain label-only. `src/shell/tiku_trk_desktop.c:2476-2490; src/shell/tiku_trk_app.c:997-1006, :1215-1244`  
+**PORT:** The whole standard set answers now, resolved through ONE reverse map beside the table the menus draw their shortcuts from (`tiku_trk_sc_command_for_key`): both shells fall back to it for any Cmd chord their dedicated arms do not take, so O / Option+O / I / E / G / U / N / X/C/V with their Shift variants / K and Shift+K all dispatch -- and a command a shell cannot honour says so in the status line rather than dying silently.  No keymap scan for an extra zoom-in key: the port has no keymap service to scan, and Cmd+'+' is bound directly.  
+*src/core/tiku_trk_shortcuts.c:tiku_trk_sc_command_for_key; src/shell/tiku_trk_app.c and src/shell/tiku_trk_desktop.c (the fallback arms); tests/shell/keychords.script, keychords2.script (mutation-tested)*
 
 #### PVK-043 · important · done
 **Menu items relabel themselves live while Shift is held and fire a different command: Copy/Cut -> Copy more/Cut more, Paste -> Paste links, Close -> Close all, Clean up -> Clean up all, Create link -> Create relative link, Move to Trash -> Delete, Identify -> Force identify.**  

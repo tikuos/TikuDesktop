@@ -1,0 +1,21 @@
+# shell: tracker
+# PVK-042: the clipboard chords answer in the single-window shell too,
+# resolved from the same table the menus read.
+wait 8
+click-row 1
+wait 3
+key x ctrl
+wait 5
+click-row 0
+wait 2
+key Return
+wait 10
+key v ctrl
+wait 20
+expect-file /tmp/trk_script/sub/a.txt
+note and a chord only the shared table knows answers too: Cmd+I here
+note says honestly that this shell has no Info window
+key i ctrl
+wait 3
+expect-status not available in this shell
+quit

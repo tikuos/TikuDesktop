@@ -1,0 +1,20 @@
+# shell: desktop
+# home: fixture
+# PVK-042: the standard chords answer from the one table the menus read.
+wait 10
+click-row 1
+wait 3
+note Cmd+I opens Get info for the selection
+key i ctrl
+wait 6
+expect-windows 2
+expect-title a.txt info
+key w ctrl
+wait 3
+note Cmd+E begins the rename, in place
+key e ctrl
+wait 3
+expect-renaming 1
+key Escape
+wait 2
+quit

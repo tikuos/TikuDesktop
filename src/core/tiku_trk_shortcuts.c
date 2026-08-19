@@ -164,6 +164,28 @@ tiku_trk_sc_command(int command, unsigned mods)
     }
 }
 
+int
+tiku_trk_sc_command_for_key(unsigned key, unsigned mods)
+{
+    int shift = (mods & 0x01u) != 0;    /* TIKU_DESK_MOD_SHIFT  */
+    int option = (mods & 0x04u) != 0;   /* TIKU_DESK_MOD_OPTION */
+
+    switch (key) {
+    case 'o': return option ? TIKU_TRK_CMD_OPEN_WITH : TIKU_TRK_CMD_OPEN;
+    case 'i': return TIKU_TRK_CMD_GET_INFO;
+    case 'e': return TIKU_TRK_CMD_EDIT_NAME;
+    case 'g': return TIKU_TRK_CMD_EDIT_QUERY;
+    case 'u': return TIKU_TRK_CMD_UNMOUNT;
+    case 'n': return TIKU_TRK_CMD_NEW_FOLDER;
+    case 'x': return shift ? TIKU_TRK_CMD_CUT_MORE : TIKU_TRK_CMD_CUT;
+    case 'c': return shift ? TIKU_TRK_CMD_COPY_MORE : TIKU_TRK_CMD_COPY;
+    case 'v': return shift ? TIKU_TRK_CMD_PASTE_LINKS : TIKU_TRK_CMD_PASTE;
+    case 'k': return shift ? TIKU_TRK_CMD_CLEANUP_ALL
+                           : TIKU_TRK_CMD_CLEANUP;
+    default:  return 0;
+    }
+}
+
 char
 tiku_trk_sc_key(int command)
 {

@@ -161,6 +161,15 @@ int tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c);
 /** @brief The shortcut key for an action, or 0. */
 char tiku_trk_sc_key(int command);
 
+/**
+ * @brief The command a bare Cmd+letter chord asks for, or 0 (PVK-042).
+ *
+ * The reverse of tiku_trk_sc_key, for the shells' key fallback: only the
+ * vocabulary the standard shortcut set defines, with Shift and Option
+ * picking the variants the menu labels pick.
+ */
+int tiku_trk_sc_command_for_key(unsigned key, unsigned mods);
+
 /** @brief The modifier mask drawn with the shortcut, given live modifiers. */
 unsigned tiku_trk_sc_mods(int command, unsigned mods);
 
