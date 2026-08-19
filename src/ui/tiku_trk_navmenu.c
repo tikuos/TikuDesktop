@@ -9,6 +9,9 @@
  */
 
 #include "tiku_trk_navmenu.h"
+
+#include "tiku_trk_launch.h"
+#include "tiku_trk_springmenu.h"
 #include "tiku_trk_volume.h"
 
 #include <stdio.h>
@@ -38,6 +41,62 @@ tiku_trk_nav_top(tiku_trk_nav_t *nav)
         return NULL;
     }
     return &nav->level[nav->depth - 1];
+}
+
+
+void
+tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
+                           const struct tiku_trk_apps *apps,
+                           const char *const *types, int ntypes)
+{
+    const tiku_trk_apps_t *reg = (const tiku_trk_apps_t *)apps;
+    int k;
+
+    if (nav == NULL) {
+        return;
+    }
+    for (k = 0; k < nav->depth; k++) {
+        tiku_trk_nav_level_t *lv = &nav->level[k];
+        int i;
+
+        for (i = 0; i < lv->n; i++) {
+            tiku_trk_nav_item_t *it = &lv->item[i];
+            tiku_trk_model_t m;
+            int broken = 0;
+            int accepts = 0;
+
+            /* An entry that cannot be resolved is a broken link: listed,
+             * greyed, never a landing. */
+            if (nav->backend != NULL &&
+                nav->backend->ops->stat(nav->backend, it->path, &m) == 0) {
+                broken = m.facts.link_broken;
+            } else {
+                broken = 1;
+            }
+            if (!it->is_container && !broken && reg != NULL) {
+                int a;
+
+                for (a = 0; a < reg->count && !accepts; a++) {
+                    const tiku_trk_app_t *ap = &reg->app[a];
+                    int t;
+
+                    if (ap->is_tracker ||
+                        !((ap->cmd[0] != '\0' &&
+                           strcmp(ap->cmd, it->path) == 0) ||
+                          (ap->path[0] != '\0' &&
+                           strcmp(ap->path, it->path) == 0))) {
+                        continue;
+                    }
+                    for (t = 0; t < ntypes && !accepts; t++) {
+                        accepts = tiku_trk_launch_relation(ap, types[t]) !=
+                                  TIKU_TRK_REL_NONE;
+                    }
+                }
+            }
+            it->enabled = tiku_trk_springmenu_item_enabled(
+                it->is_container, accepts, broken);
+        }
+    }
 }
 
 int

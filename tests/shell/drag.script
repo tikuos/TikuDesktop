@@ -34,12 +34,12 @@ wait 25
 expect-file /tmp/trk_script/sub/c.txt
 note and Move is what it obeyed: a copy or a link would leave the source
 expect-no-file /tmp/trk_script/c.txt
-note PVS-051: a drag resting on a folder springs it open
+note PVS-051: a drag resting on a folder springs a menu of its contents
 press-row 1
 move-row 0
 move-row 0
 wait 60
-expect-title sub
+expect-pixel 600 115 d8d8d8
 note PVS-056: moving off the target drops the highlight, so the release is
 note handled by whatever is really under it -- the desktop, which takes the
 note file -- and not by the folder the drag used to rest on

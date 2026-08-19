@@ -124,6 +124,19 @@ void tiku_trk_nav_place(const tiku_trk_nav_t *nav, int level, int px,
                         int py, int screen_w, int screen_h,
                         int *x, int *y, int *w, int *h);
 
+/**
+ * @brief Enable a SPRING menu's entries by what the drag can land on.
+ *
+ * Containers are always enabled, a broken entry never, and a file only
+ * when it is a registered application claiming one of the dragged types --
+ * the same three-way rule SpringLoadedFolderSetMenuStates applies
+ * (PVS-052), combined through tiku_trk_springmenu_item_enabled.
+ */
+struct tiku_trk_apps;
+void tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
+                                const struct tiku_trk_apps *apps,
+                                const char *const *types, int ntypes);
+
 /** @brief The item at a point in @p level, or -1. */
 int tiku_trk_nav_item_at(const tiku_trk_nav_t *nav, int level, int fx,
                          int fy, int x, int y);

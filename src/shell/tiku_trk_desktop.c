@@ -240,6 +240,11 @@ typedef struct desktop {
     tiku_trk_switcher_window_t switcher_window;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
     int                  nav_on;
+    /* The SPRING navigation: the same walk, anchored to a sprung pose
+     * instead of a context-menu row (PVS-051). */
+    int                  spring_nav_on;
+    int                  spring_nav_x;
+    int                  spring_nav_y;
     tiku_desk_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
     int                  ptr_x, ptr_y;  /* where the pointer last was      */
@@ -765,6 +770,162 @@ open_with_window_launch(void *context, const tiku_trk_app_t *application,
     desktop_t *app = context;
 
     (void)launch_paths(app, application, paths, count);
+}
+
+
+/** @brief Re-apply the spring menu's enabled states from the live drag. */
+static void
+spring_nav_states(desktop_t *app)
+{
+    const char *types[TIKU_TRK_DRAG_TYPES];
+    int i;
+
+    for (i = 0; i < app->drag.ntype; i++) {
+        types[i] = app->drag.type[i];
+    }
+    tiku_trk_nav_spring_states(&app->nav,
+        (const struct tiku_trk_apps *)&app->apps, types, app->drag.ntype);
+}
+
+/**
+ * @brief The spring: a drag resting on a folder opens a NAVIGABLE menu of
+ *        its contents rather than a window (PVS-051).
+ */
+static void
+spring_open_nav(void *context, const char *path)
+{
+    desktop_t *app = context;
+
+    tiku_trk_nav_open(&app->nav, app->backend, path);
+    app->nav.hide_dotfiles = tiku_trk_prefs_get(prefs_model(app),
+                                                "HideDotFiles");
+    app->nav.folders_first = tiku_trk_prefs_get(prefs_model(app),
+                                                "SortFolderNamesFirst");
+    app->spring_nav_on = 1;
+    app->spring_nav_x = app->drag_target.spring.x +
+                        app->drag_target.spring.w;
+    app->spring_nav_y = app->drag_target.spring.y;
+    app->dirty = 1;
+}
+
+/** @brief Close every spring level and put the walk away. */
+static void
+spring_nav_close(desktop_t *app)
+{
+    while (tiku_trk_nav_leave(&app->nav)) {
+    }
+    app->nav.depth = 0;
+    app->spring_nav_on = 0;
+    app->dirty = 1;
+}
+
+/**
+ * @brief The frame of spring level @p k, chained the way the draw chains.
+ */
+static tiku_desk_rect_t
+spring_nav_frame(desktop_t *app, int k)
+{
+    int px = app->spring_nav_x;
+    int py = app->spring_nav_y;
+    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    int j;
+
+    for (j = 0; j <= k && j < app->nav.depth; j++) {
+        tiku_trk_nav_level_t *lv = &app->nav.level[j];
+
+        tiku_trk_nav_place(&app->nav, j, px, py, app->surf->w,
+                           app->surf->h, &r.x, &r.y, &r.w, &r.h);
+        px = r.x + r.w - 4;
+        py = r.y + 2 + ((lv->sel >= 0) ? lv->sel : 0) * TIKU_TRK_NAV_ROW;
+    }
+    return r;
+}
+
+/**
+ * @brief Follow the pointer over the spring levels (PVS-051, PVS-054).
+ *
+ * Hovering a row selects it; a container row opens the next level in
+ * place; leaving every level (and the sprung pose) by more than the
+ * margin closes the whole thing.
+ */
+static void
+spring_nav_track(desktop_t *app, int x, int y)
+{
+    int hit_level = -1;
+    int hit_item = -1;
+    int inside_margin = 0;
+    int k;
+
+    for (k = 0; k < app->nav.depth; k++) {
+        tiku_desk_rect_t r = spring_nav_frame(app, k);
+        int at;
+
+        if (x >= r.x - TIKU_TRK_SPRING_MARGIN &&
+            x < r.x + r.w + TIKU_TRK_SPRING_MARGIN &&
+            y >= r.y - TIKU_TRK_SPRING_MARGIN &&
+            y < r.y + r.h + TIKU_TRK_SPRING_MARGIN) {
+            inside_margin = 1;
+        }
+        at = tiku_trk_nav_item_at(&app->nav, k, r.x, r.y, x, y);
+        if (at >= 0) {
+            hit_level = k;
+            hit_item = at;
+        }
+    }
+    if (hit_level >= 0) {
+        tiku_trk_nav_level_t *lv = &app->nav.level[hit_level];
+
+        if (lv->sel != hit_item) {
+            /* A new row: anything deeper hung off the OLD row. */
+            while (app->nav.depth > hit_level + 1) {
+                (void)tiku_trk_nav_leave(&app->nav);
+            }
+            lv->sel = hit_item;
+            if (lv->item[hit_item].is_container &&
+                lv->item[hit_item].enabled) {
+                (void)tiku_trk_nav_enter(&app->nav, hit_item);
+            }
+            app->dirty = 1;
+        }
+        return;
+    }
+    /* Off every level: the sprung pose itself keeps it alive too, so the
+     * pointer can travel from the pose into the menu (PVS-054). */
+    if (!inside_margin &&
+        !tiku_trk_springmenu_inside(&app->drag_target.spring, x, y)) {
+        spring_nav_close(app);
+    }
+}
+
+/**
+ * @brief What releasing the drag at @p x,@p y over the spring means.
+ *
+ * @return 1 with @p dest set for an enabled row, 2 for a disabled row
+ *         (the release is swallowed), 0 when the menu was not hit.
+ */
+static int
+spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max)
+{
+    int k;
+
+    for (k = app->nav.depth - 1; k >= 0; k--) {
+        tiku_desk_rect_t r = spring_nav_frame(app, k);
+        int at = tiku_trk_nav_item_at(&app->nav, k, r.x, r.y, x, y);
+
+        if (at >= 0) {
+            tiku_trk_nav_level_t *lv = &app->nav.level[k];
+
+            if (!lv->item[at].enabled) {
+                return 2;
+            }
+            snprintf(dest, max, "%s", lv->item[at].path);
+            return 1;
+        }
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+            return 2;               /* in the menu, between rows */
+        }
+    }
+    return 0;
 }
 
 /** @brief A drop on an application pose is the same one act (PVS-044). */
@@ -2216,6 +2377,8 @@ resize_desktop(desktop_t *app, int width, int height)
     return 1;
 }
 
+static void draw_nav_levels(desktop_t *app, int px, int py);
+
 static void
 draw_all(desktop_t *app)
 {
@@ -2393,11 +2556,25 @@ draw_all(desktop_t *app)
         }
     }
     if (app->nav_on && app->popup != NULL) {
-        /* Every open level, outermost first, each hanging off the row that
-         * opened it -- so the trail back out is on screen (CW-045). */
+        draw_nav_levels(app, app->popup_frame.x + app->popup_frame.w - 4,
+                        app->popup_frame.y + 4);
+    } else if (app->spring_nav_on) {
+        /* The spring's walk hangs off the sprung pose (PVS-051). */
+        draw_nav_levels(app, app->spring_nav_x, app->spring_nav_y);
+    }
+    tiku_trk_status_overlay_draw(&app->status_overlay);
+    app->dirty = 0;
+}
+
+/**
+ * @brief Every open nav level, outermost first, each hanging off the row
+ *        that opened it -- so the trail back out is on screen (CW-045).
+ */
+static void
+draw_nav_levels(desktop_t *app, int px, int py)
+{
+    {
         const tiku_desk_font_t *nf = tiku_desk_font_plain();
-        int px = app->popup_frame.x + app->popup_frame.w - 4;
-        int py = app->popup_frame.y + 4;
         int k;
 
         for (k = 0; k < app->nav.depth; k++) {
@@ -2448,8 +2625,6 @@ draw_all(desktop_t *app)
                  TIKU_TRK_NAV_ROW;
         }
     }
-    tiku_trk_status_overlay_draw(&app->status_overlay);
-    app->dirty = 0;
 }
 
 /**
@@ -2762,7 +2937,7 @@ tracker_run(int argc, char **argv)
         prefs_model(&app), app.deskbar, &app.folder_render, DESK_W, DESK_H);
     tiku_trk_drag_target_init(&app.drag_target, app.desk, app.deskbar,
         &app.desktop_view, &app.drag, app.folders, &app.folder_count,
-        app.row_h, &app.dirty, launch_open_path, &app);
+        app.row_h, &app.dirty, spring_open_nav, &app);
     tiku_trk_script_adapter_init(&app.script_adapter, app.desk, app.surf,
         &app.folder_lifecycle, &app.desktop_view, app.deskbar,
         alert_model(&app), &app.find_window, &app.file_panel,
@@ -2821,6 +2996,7 @@ tracker_run(int argc, char **argv)
         /* A scripted wait is a number of turns: count the autoscroll hold
          * in pulses so the same script passes under any load (PVS-050). */
         tiku_trk_band_controller_set_script_delay(&app.band_controller, 30);
+        tiku_trk_drag_target_set_script_delay(&app.drag_target, 30);
         {
             /* The fixture's clock: 7 Aug 16:26, the sample the clock row
              * itself quotes.  Live, a minute rolling over mid-comparison
@@ -4033,6 +4209,9 @@ tracker_run(int argc, char **argv)
                 }
                 if (tiku_trk_drag_moved(&app.drag, ev.x, ev.y) ||
                     tiku_trk_drag_active(&app.drag)) {
+                    if (app.spring_nav_on) {
+                        spring_nav_track(&app, ev.x, ev.y);
+                    }
                     (void)tiku_trk_drag_target_motion(&app.drag_target,
                                                       ev.x, ev.y,
                                                       tiku_trk_now());
@@ -4139,7 +4318,24 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                 }
                 (void)tiku_trk_band_controller_finish(&app.band_controller);
-                if (dropped && drop_on_panel(&app, ev.x, ev.y)) {
+                if (dropped && app.spring_nav_on) {
+                    /* Choosing a spring entry IS the drop (PVS-051): the
+                     * chosen row is where the items land, a disabled row
+                     * swallows the release, and a release outside the
+                     * menu falls back to the drop under the pointer. */
+                    char sdest[TIKU_TRK_PATH_MAX];
+                    int got = spring_nav_hit(&app, ev.x, ev.y, sdest,
+                                             sizeof sdest);
+
+                    spring_nav_close(&app);
+                    if (got == 1) {
+                        tiku_trk_drop_controller_execute_into(
+                            &app.drop_controller, sdest, ev.x, ev.y,
+                            ev.modifiers, ev.button, 0);
+                    } else if (got == 0) {
+                        do_drop(&app, ev.x, ev.y, ev.modifiers, ev.button);
+                    }
+                } else if (dropped && drop_on_panel(&app, ev.x, ev.y)) {
                     /* Consumed by the panel, action or not (AW-059). */
                 } else if (dropped && drop_on_info_icon(&app, ev.x, ev.y,
                                                  ev.modifiers)) {
@@ -4792,10 +4988,15 @@ tracker_run(int argc, char **argv)
             }
         }
 
-        if (app.nav_on && app.popup != NULL) {
+        if ((app.nav_on && app.popup != NULL) || app.spring_nav_on) {
             /* A chunk per turn: the menu answers the mouse while a large
              * folder is still arriving (CW-055). */
             if (tiku_trk_nav_fill(&app.nav, app.nav.depth - 1)) {
+                if (app.spring_nav_on) {
+                    /* What the drag can land on is per entry, so fresh
+                     * entries get their states as they arrive (PVS-052). */
+                    spring_nav_states(&app);
+                }
                 app.dirty = 1;
             }
         } else if (app.nav_on && app.popup == NULL) {

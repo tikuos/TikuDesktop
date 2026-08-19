@@ -77,6 +77,18 @@ void tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                       int x, int y, unsigned modifiers,
                                       unsigned button);
 
+/**
+ * @brief The drop's acts against an EXPLICIT destination (PVS-051).
+ *
+ * What a spring menu's chosen entry runs: the same modifier, filter and
+ * refusal rules as a drop in the view, aimed where the menu pointed.
+ * @p in_view zero skips the pieces that only make sense under the pointer
+ * (colour payloads, icon landings, the secondary-button menu).
+ */
+void tiku_trk_drop_controller_execute_into(
+    tiku_trk_drop_controller_t *controller, const char *destination, int x,
+    int y, unsigned modifiers, unsigned button, int in_view);
+
 /** @brief Teach the controller which poses are applications (PVS-044). */
 void tiku_trk_drop_controller_set_launcher(
     tiku_trk_drop_controller_t *controller, const struct tiku_trk_apps *apps,

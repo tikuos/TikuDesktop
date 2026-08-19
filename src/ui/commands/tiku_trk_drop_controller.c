@@ -367,7 +367,7 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
 
     tiku_trk_model_t target;
 
-    if (*controller->drop_row < 0 || controller->launch == NULL) {
+    if (controller->launch == NULL) {
         return 0;
     }
     if (controller->backend->ops->stat(controller->backend, destination,
@@ -415,12 +415,7 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                  int x, int y, unsigned modifiers,
                                  unsigned button)
 {
-    const char *paths[TIKU_TRK_DRAG_MAX];
     char destination[TIKU_TRK_PATH_MAX];
-    unsigned drag_modifiers = 0;
-    tiku_trk_drop_t action;
-    int same_store;
-    int count;
 
     if (controller == NULL || drop_on_deskbar(controller, x, y, modifiers) ||
         *controller->drop_folder == NULL ||
@@ -428,10 +423,32 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
         !drop_destination(controller, destination, sizeof destination)) {
         return;
     }
+    tiku_trk_drop_controller_execute_into(controller, destination, x, y,
+                                          modifiers, button, 1);
+}
+
+void
+tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
+                                      const char *destination_in, int x,
+                                      int y, unsigned modifiers,
+                                      unsigned button, int in_view)
+{
+    const char *paths[TIKU_TRK_DRAG_MAX];
+    char destination[TIKU_TRK_PATH_MAX];
+    unsigned drag_modifiers = 0;
+    tiku_trk_drop_t action;
+    int same_store;
+    int count;
+
+    if (controller == NULL || destination_in == NULL ||
+        destination_in[0] == '\0') {
+        return;
+    }
+    snprintf(destination, sizeof destination, "%s", destination_in);
     if (drop_on_application(controller, destination, modifiers)) {
         return;
     }
-    if (controller->drag->payload_size > 0u &&
+    if (in_view && controller->drag->payload_size > 0u &&
         (strcmp(controller->drag->payload_type, "application/x-rgb-color") == 0 ||
          strcmp(controller->drag->payload_type, "text/x-color") == 0)) {
         tiku_trk_color_t color;
@@ -466,7 +483,7 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
     if (action == TIKU_TRK_DROP_NOTHING || count == 0) {
         return;
     }
-    if (button == 3u) {
+    if (in_view && button == 3u) {
         tiku_trk_model_t model;
         int destination_read_only = 0;
         int source_read_only = 0;
@@ -492,7 +509,9 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                       controller->screen_h });
         return;
     }
-    reserve_icon_landings(controller, paths, count, x, y);
+    if (in_view) {
+        reserve_icon_landings(controller, paths, count, x, y);
+    }
     snprintf(controller->progress_destination,
              controller->progress_destination_size, "%s", destination);
     switch (action) {

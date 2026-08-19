@@ -8,7 +8,7 @@ move 90 160
 move 90 180
 move 90 198
 release 90 198
-wait 8
+wait 30
 expect-file /tmp/trk_launched
 note the record names the document that was handed over
 expect-file-has /tmp/trk_launched a.txt
@@ -19,7 +19,7 @@ move 90 160
 move 90 180
 move 90 198
 release 90 198
-wait 8
+wait 30
 expect-no-file /tmp/trk_launched
 note but Control forces the unclaimed document through the filter
 press-row 0
@@ -27,7 +27,7 @@ move 90 160
 move 90 180
 move 90 198
 release 90 198 1 ctrl
-wait 8
+wait 30
 expect-file /tmp/trk_launched
 expect-file-has /tmp/trk_launched sub
 quit

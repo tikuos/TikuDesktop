@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_navmenu.h"
+#include "tiku_trk_launch.h"
 
 static int fails;
 
@@ -223,6 +224,56 @@ main(void)
         check(vols == 1 && dirs == 0, "CW-057",
               "a menu on the root lists volumes -- the boot volume once, "
               "and never /usr or /etc as rows");
+    }
+
+    /* --- what a SPRING menu enables (PVS-052) --------------------------- */
+    printf("\nwhat a spring menu enables (PVS-052)\n");
+    {
+        char sdir[] = "/tmp/trk_nav_spring";
+        tiku_trk_apps_t reg;
+        tiku_trk_nav_t sn;
+        const char *types[1] = { "text/plain" };
+        char appfile[600];
+        int i;
+
+        (void)system("rm -rf /tmp/trk_nav_spring");
+        (void)mkdir(sdir, 0755);
+        (void)mkdir("/tmp/trk_nav_spring/folder", 0755);
+        put(sdir, "plain.txt");
+        put(sdir, "editor");
+        (void)symlink("/nowhere-such", "/tmp/trk_nav_spring/dangler");
+        snprintf(appfile, sizeof appfile, "%s/editor", sdir);
+        tiku_trk_launch_clear(&reg);
+        (void)tiku_trk_launch_add(&reg, "Editor", appfile, "text/plain");
+
+        tiku_trk_nav_open(&sn, b, sdir);
+        tiku_trk_nav_fill_all(&sn, 0);
+        tiku_trk_nav_spring_states(&sn,
+            (const struct tiku_trk_apps *)&reg, types, 1);
+        lv = &sn.level[0];
+        i = find(lv, "folder");
+        check(i >= 0 && lv->item[i].enabled, "PVS-052",
+              "a container is always enabled");
+        i = find(lv, "editor");
+        check(i >= 0 && lv->item[i].enabled, "PVS-052",
+              "an application claiming a dragged type is enabled");
+        i = find(lv, "plain.txt");
+        check(i >= 0 && !lv->item[i].enabled, "PVS-052",
+              "a file nothing claims is greyed");
+        i = find(lv, "dangler");
+        check(i < 0 || !lv->item[i].enabled, "PVS-052",
+              "a broken link is never a landing");
+        {
+            const char *none[1] = { "image/png" };
+
+            tiku_trk_nav_spring_states(&sn,
+                (const struct tiku_trk_apps *)&reg, none, 1);
+            i = find(lv, "editor");
+            check(i >= 0 && !lv->item[i].enabled, "PVS-052",
+                  "and the same application greys when the drag carries "
+                  "nothing it claims");
+        }
+        (void)system("rm -rf /tmp/trk_nav_spring");
     }
 
     (void)system("rm -rf /tmp/trk_nav /tmp/trk_nav_big");

@@ -100,6 +100,7 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
         controller->hover_at = now;
         controller->sprung = 0;
         tiku_trk_springmenu_reset(&controller->spring);
+        controller->spring_held = 0;
         if (folder != NULL && row >= 0) {
             tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, row);
             int px = 0, py = 0, pw = 1, ph = 1;
@@ -204,10 +205,27 @@ tiku_trk_drag_target_pulse(tiku_trk_drag_target_t *controller, int64_t now)
 {
     int changed = auto_scroll(controller, now);
 
-    if (tiku_trk_drag_active(controller->drag) &&
-        controller->folder != NULL && controller->row >= 0 &&
-        !controller->sprung &&
-        tiku_trk_springmenu_pulse(&controller->spring, now)) {
+    int spring_fired = 0;
+
+    if (controller->spring_script_pulses > 0) {
+        /* Scripted: a hold is a number of turns (PVS-050's lesson). */
+        if (tiku_trk_drag_active(controller->drag) &&
+            controller->folder != NULL && controller->row >= 0 &&
+            !controller->sprung && controller->spring.armed &&
+            !controller->spring.open) {
+            if (++controller->spring_held >=
+                controller->spring_script_pulses) {
+                controller->spring.open = 1;
+                spring_fired = 1;
+            }
+        }
+    } else {
+        spring_fired = tiku_trk_drag_active(controller->drag) &&
+                       controller->folder != NULL &&
+                       controller->row >= 0 && !controller->sprung &&
+                       tiku_trk_springmenu_pulse(&controller->spring, now);
+    }
+    if (spring_fired) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(controller->folder->view,
                                                      controller->row);
 
@@ -222,6 +240,13 @@ tiku_trk_drag_target_pulse(tiku_trk_drag_target_t *controller, int64_t now)
 }
 
 void
+tiku_trk_drag_target_set_script_delay(tiku_trk_drag_target_t *controller,
+                                      int pulses)
+{
+    controller->spring_script_pulses = pulses;
+}
+
+void
 tiku_trk_drag_target_reset(tiku_trk_drag_target_t *controller)
 {
     controller->folder = NULL;
@@ -229,6 +254,7 @@ tiku_trk_drag_target_reset(tiku_trk_drag_target_t *controller)
     controller->hover_at = 0;
     controller->scroll_at = 0;
     controller->sprung = 0;
+    controller->spring_held = 0;
     tiku_trk_springmenu_reset(&controller->spring);
     tiku_trk_deskbar_set_dragging(controller->deskbar, 0);
 }

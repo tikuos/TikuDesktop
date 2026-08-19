@@ -1,0 +1,45 @@
+# shell: desktop
+# PVS-051/052/054: a drag resting on a folder springs a NAVIGABLE menu of
+# its contents; containers are enabled and descend in place, a file nothing
+# claims is greyed and swallows the release, choosing an entry drops the
+# dragged items there, and leaving the menu closes it.
+wait 10
+note dragging a.txt onto sub and holding springs the menu
+press-row 1
+move 90 150
+move 90 118
+wait 40
+expect-pixel 600 115 d8d8d8
+note hovering the inner folder opens ITS level beside it, in place
+move 520 119
+wait 6
+expect-pixel 850 120 d8d8d8
+note releasing on inner drops a.txt there -- the chosen row is the drop
+release 520 119
+wait 10
+expect-file /tmp/trk_script/sub/inner/a.txt
+expect-no-file /tmp/trk_script/a.txt
+note a drag that leaves the menu by more than the margin closes it
+press-row 1
+move 90 150
+move 90 118
+wait 40
+expect-pixel 600 115 d8d8d8
+move 300 450
+wait 4
+expect-pixel 600 115 336698
+move 200 250
+release 200 250
+wait 4
+expect-file /tmp/trk_script/b.txt
+note a greyed row swallows the release: nothing moves anywhere
+press-row 1
+move 90 150
+move 90 118
+wait 40
+expect-pixel 600 115 d8d8d8
+release 520 137
+wait 8
+expect-file /tmp/trk_script/b.txt
+expect-no-file /tmp/trk_script/sub/b.txt
+quit

@@ -36,8 +36,16 @@ typedef struct {
     int64_t hover_at;
     int64_t scroll_at;
     int sprung;
+    /* Non-zero when a script drives the shell: the spring hold is counted
+     * in pulses, not wall time, for the same reason the band's is. */
+    int spring_script_pulses;
+    int spring_held;
     tiku_trk_springmenu_t spring;
 } tiku_trk_drag_target_t;
+
+/** @brief Count the spring hold in pulses rather than wall time. */
+void tiku_trk_drag_target_set_script_delay(
+    tiku_trk_drag_target_t *controller, int pulses);
 
 void tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
     tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,

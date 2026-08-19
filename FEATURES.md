@@ -1730,33 +1730,33 @@ auto-scroll has no analogue in the spatial shell: its folder views expose no
 horizontal scrolling surface.
 *src/shell/tiku_trk_desktop.c (band_scroll_at/folder_band_select and drag scroll);
 tests/shell/bandscroll.script; tests/shell/scroll.script*
-#### PVS-051 · important · partial
+#### PVS-051 · important · done
 **Spring-loaded folders: hovering a drag over a folder pose without moving pops up a navigable menu of that folder's contents, and choosing an entry drops the dragged items there.**  
 B_MOUSE_IDLE -> MouseIdle requires buttons != 0 and IsDragging(); with fDropTarget set it records the target frame (FrameForPose) and calls ShowContextMenu, which in the dragging case opens fDragContextMenu (BPopUpNavMenu) asynchronously on the resolved directory ref - never for Printers, never for a non-directory, and never twice (IsShowing guard). Selecting an item posts B_REFS_RECEIVED, which BContainerWindow answers by calling HandleDropCommon with the cached DragMessage() against that folder, then DragStop.  
 `PoseView.cpp` → `BPoseView::MouseIdle / BContainerWindow::ShowContextMenu / BContainerWindow::MessageReceived case B_REFS_RECEIVED`  
 **TIKU:** Spring-loading a device directory means enumerating live nodes on hover; decide whether that is allowed to have side effects, and whether watch notifications should refresh an open menu.  
-**PORT:** A drag resting on a folder for 700 ms opens it, checked on the IDLE tick rather than on motion -- a drag holding perfectly still is exactly the case, and it produces no motion events at all.  
-**MISSING:** It opens a WINDOW rather than a navigable menu of the folder's contents, so there is no in-place descent through several levels and no choosing an entry from the popup; and nothing springs closed again.  
+**PORT:** A drag resting on a folder springs a NAVIGABLE menu of its contents, checked on the idle tick rather than on motion -- a drag holding perfectly still produces no motion events at all.  The menu is the folder-walk the context menu already used (CW-045's levels): hovering a container row opens its own level beside it, in place, through several levels; releasing on a row IS the drop, run through the drop controller's one act against that row's path -- so the modifier, filter and refusal rules of a drop in the view hold in the menu too.  A release on a greyed row is swallowed, and a release outside the menu falls back to the drop under the pointer.  
+*src/shell/tiku_trk_desktop.c (spring_open_nav / spring_nav_track / spring_nav_hit); src/ui/commands/tiku_trk_drop_controller.c:tiku_trk_drop_controller_execute_into; tests/shell/springnav.script (spring, descent, drop, swallow -- mutation-tested three ways)*  
 *Shell: desktop*  
-#### PVS-052 · polish · partial
+#### PVS-052 · polish · done
 **Entries in the spring-loaded menu are enabled or greyed by whether they can accept the dragged types; containers are always enabled.**  
 SpringLoadedFolderSetMenuStates walks ModelMenuItems and calls Model::SupportsMimeType(NULL, typeslist) for files/executables; directories, roots and volumes are unconditionally enabled; symlinks are resolved first and a broken symlink is disabled.  
 `NavMenu.cpp` → `SpringLoadedFolderSetMenuStates`  
 **TIKU:** Type support becomes a capability-bit query on the typed descriptor.
-**SUBSYSTEM:** The remaining gap is the live child-menu rebuild; the reusable predicate is `tiku_trk_springmenu_item_enabled` and is covered by `tests/test_springmenu.c`.
-**MISSING:** The reusable spring-menu state machine now gates container/type/broken-link entries, but the folder popup itself does not yet rebuild every child entry from live MIME capabilities.
+**PORT:** The folder popup's entries are gated live now: `tiku_trk_nav_spring_states` walks every open level as its entries arrive and enables each through `tiku_trk_springmenu_item_enabled` -- containers always, a broken link never, and a file only when it is a registered application claiming one of the DRAGGED types, which is this port's SupportsMimeType.  Re-run per fill chunk, so entries a large folder is still delivering get their states as they land.  
+*src/ui/tiku_trk_navmenu.c:tiku_trk_nav_spring_states; tests/test_navmenu.c PVS-052 block (five cases, mutation-tested); tests/shell/springnav.script (the greyed row swallowing a release)*
 
 #### PVS-053 · polish · done
 **The dragged message and its unique MIME-type list are cached once per drag and reused; re-entering the view with the same drag does not rebuild them.**  
 DragStart returns early when IsDragging() && SpringLoadedFolderCompareMessages(...), which compares every ref AND the "click_pt" so a fresh drag of the same files is still treated as new. IsDragging() == (fDragMessage != NULL && fCachedTypesList != NULL). Symlink refs contribute both the link type and the resolved type.  
 `PoseView.cpp` → `BPoseView::DragStart / SpringLoadedFolderCompareMessages / SpringLoadedFolderCacheDragData`  
 **PORT:** The distinct types are collected as the drag is built and the list is SEALED on the first ask: re-entering a view with the same drag must not rebuild it, which is how a hover becomes expensive.  
-#### PVS-054 · polish · partial
+#### PVS-054 · polish · done
 **A spring-loaded menu closes when the pointer leaves it (and all of its open submenus) by more than a margin.**  
 kMenuTrackMargin = 20 px inset applied to the menu bounds and to each visible submenu window frame; returns true (go away) only when the pointer is outside all of them. Installed via InitTrackingHook with BPoseView::MenuTrackingHook.  
 `PoseView.cpp` → `BPoseView::MenuTrackingHook`
-**SUBSYSTEM:** The remaining missing piece is nested popup tracking; `src/ui/tiku_trk_springmenu.[ch]` and `tests/test_springmenu.c` cover the margin and leave state used by the shell drag controller.
-**MISSING:** Pointer-leave margins are implemented by the spring-menu controller and used for drag hover state, but nested popup windows are not yet tracked as a full submenu tree.
+**PORT:** The whole submenu tree is tracked now: spring_nav_track walks every open level's frame, and the menu closes only when the pointer is outside ALL of them by more than the 20 px margin -- and outside the sprung pose's own margin, so the pointer can travel from the pose into the menu without the spring collapsing under it.  
+*src/shell/tiku_trk_desktop.c:spring_nav_track (the inside_margin sweep); tests/shell/springnav.script (leave closes, mutation-tested)*
 
 #### PVS-055 · polish · done
 **Hovering a drag over the empty part of an inactive window raises that window.**  

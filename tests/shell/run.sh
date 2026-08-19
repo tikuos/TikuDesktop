@@ -136,6 +136,11 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            # A folder with an inner folder and a file, so the spring
+            # menu has a level to descend into and a row to grey.
+            springnav.script)
+                mkdir -p "$work/sub/inner"
+                echo hi > "$work/sub/doc.txt" ;;
             # An application that lives IN the folder, so a pose exists to
             # drop documents onto; the registry names it as the Dropper.
             appdrop.script)
