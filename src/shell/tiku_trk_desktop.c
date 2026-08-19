@@ -197,6 +197,7 @@ typedef struct desktop {
      * by whichever folder window the press landed in. */
     tiku_trk_titleview_t tstrip;
     folder_t            *tstrip_fl;
+    folder_t            *sbar_fl;   /* whose bar holds the pointer      */
     int                  strip_ptr_x;
     int                  strip_ptr_y;
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
@@ -4385,6 +4386,38 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 if (w != NULL && ev.button == 1u) {
+                    /* The window's own scroll bar (PVL-051): arrows step,
+                     * the track pages, the thumb is held. */
+                    folder_t *sfl = folder_of(&app, w);
+                    tiku_desk_rect_t sb = (sfl != NULL)
+                        ? tiku_trk_folder_window_scrollbar(sfl)
+                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+
+                    if (sfl != NULL && sb.w > 0 && ev.x >= sb.x &&
+                        ev.x < sb.x + sb.w && ev.y >= sb.y &&
+                        ev.y < sb.y + sb.h) {
+                        int at = ev.y - sb.y;
+                        int btn = sb.w;
+
+                        if (at < btn) {
+                            tiku_trk_poseview_scroll_to(sfl->view,
+                                tiku_trk_poseview_scroll(sfl->view) -
+                                    tiku_trk_scroll_line(&sfl->sbar));
+                        } else if (at >= sb.h - btn) {
+                            tiku_trk_poseview_scroll_to(sfl->view,
+                                tiku_trk_poseview_scroll(sfl->view) +
+                                    tiku_trk_scroll_line(&sfl->sbar));
+                        } else {
+                            tiku_trk_poseview_scroll_to(sfl->view,
+                                tiku_trk_scroll_press(&sfl->sbar,
+                                    sb.h - 2 * btn, at - btn));
+                        }
+                        app.sbar_fl = sfl;
+                        app.dirty = 1;
+                        break;
+                    }
+                }
+                if (w != NULL && ev.button == 1u) {
                     /* The column strip: a press starts the one tracker
                      * every heading gesture lives behind -- click sorts,
                      * Shift-click seconds, an edge drags a new width, a
@@ -4843,6 +4876,16 @@ tracker_run(int argc, char **argv)
                     }
                     app.press_down = 0;
                 }
+                if (app.sbar_fl != NULL && app.sbar_fl->sbar.tracking) {
+                    tiku_desk_rect_t sb =
+                        tiku_trk_folder_window_scrollbar(app.sbar_fl);
+
+                    tiku_trk_poseview_scroll_to(app.sbar_fl->view,
+                        tiku_trk_scroll_drag(&app.sbar_fl->sbar,
+                            sb.h - 2 * sb.w, ev.y - sb.y - sb.w));
+                    app.dirty = 1;
+                    break;
+                }
                 if (tiku_trk_titleview_tracking(&app.tstrip) !=
                         TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
                     tiku_desk_rect_t st =
@@ -5092,6 +5135,10 @@ tracker_run(int argc, char **argv)
                      * clicked in back over the window it just opened. */
                     tiku_desk_workspace_activate(app.desk,
                                                   app.press_window);
+                }
+                if (app.sbar_fl != NULL) {
+                    tiku_trk_scroll_release(&app.sbar_fl->sbar);
+                    app.sbar_fl = NULL;
                 }
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_drag_target_reset(&app.drag_target);

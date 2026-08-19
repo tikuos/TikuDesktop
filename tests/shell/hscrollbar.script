@@ -1,0 +1,37 @@
+# shell: tracker
+# TS-044/PVL-051: the count view keeps the bottom-left and the horizontal
+# scroll bar shares its row; the stepper arrows step half a line, and the
+# columns slide under the strip as the bar moves.
+wait 8
+note widen the content past the window with three more columns
+click 150 36
+wait 3
+menu-pick Location
+wait 3
+click 150 36
+wait 3
+menu-pick Permissions
+wait 3
+click 150 36
+wait 3
+menu-pick Original path
+wait 3
+note the Kind heading's K sits at 283,81 before any scroll
+expect-pixel 283 81 010101
+note three clicks of the right stepper slide the columns left
+click 732 504
+wait 2
+click 732 504
+wait 2
+click 732 504
+wait 3
+expect-pixel 283 81 d8d8d8
+note and the left stepper walks back
+click 141 504
+wait 2
+click 141 504
+wait 2
+click 141 504
+wait 3
+expect-pixel 283 81 010101
+quit

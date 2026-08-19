@@ -1,0 +1,17 @@
+# shell: desktop
+# PVL-051: the spatial shell's folder windows draw a real bar too --
+# a track that pages, a thumb, and steppers that walk half a line.
+wait 10
+expect-scroll 0
+expect-scroll-at-most 0
+note a press in the track below the thumb pages down
+click 492 280
+wait 4
+expect-scroll 5
+note the top stepper walks back half a line at a time
+click 492 118
+wait 2
+click 492 118
+wait 4
+expect-scroll-at-most 8
+quit

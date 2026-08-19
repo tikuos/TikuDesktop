@@ -949,11 +949,12 @@ does, which is what stops a removed icon leaving empty space to scroll into.
 move_pose and remove_pose; tests/test_iconview.c*  
 *Shell: desktop*  
 
-#### PVL-051 · core · partial
+#### PVL-051 · core · done
 **Scrollbar range, step and thumb proportion track the content: half a row per click, a full page per page-jump, thumb sized by visible fraction.**  
 UpdateScrollRange: min = min(extent.leftTop, origin), max = (extent.rightBottom - bounds.rightBottom) + origin clamped to be at least origin; SetSteps(fListElemHeight/2, bounds.Width()/Height()); proportion = bounds dimension / (extent | bounds) dimension. Range and proportion are only written when they actually changed. The window is locked for the Bounds/Extent read and unlocked before touching the scrollbars.  
 `PoseView.cpp` → `BPoseView::UpdateScrollRange`  
-**MISSING:** The bar is a thing now: a range with a thumb sized by the visible fraction and floored so it can still be grabbed, a press that pages or takes hold, and a drag that keeps the grip rather than jumping the thumb's top under the pointer. A stepper click is half a line, rounded up. Absent: the stepper ARROWS themselves, and the desktop shell's folder windows draw no bar at all.  
+**PORT:** The bar is whole now, in BOTH shells.  The range, the visible-fraction thumb with its grab floor, the track that pages, the drag that keeps its grip, and the STEPPER ARROWS -- real controls stepping half a line, top and bottom, left and right -- all answer; and the spatial shell's folder windows draw a bar of their own at last, each window holding its own scroll state so a grip survives the frame.  
+*src/ui/tiku_trk_scroll.c; src/shell/tiku_trk_app.c (both bars); src/ui/windows/tiku_trk_folder_window.c + src/shell/tiku_trk_desktop.c (the window bar); tests/shell/scrollbar.script, hscrollbar.script, winbar.script (all mutation-tested); tests/test_scroll.c*
 *src/ui/tiku_trk_scroll.c; src/shell/tiku_trk_app.c (the bar's press, drag and release); tests/test_scroll.c; tests/shell/scrollbar.script*  
 *Shell: tracker*
 *src/shell/tiku_trk_app.c:draw (500-507) and ButtonPress wheel handling (1213-1226); src/ui/tiku_trk_poseview.c:tiku_trk_poseview_set_visible_rows (2244-2251)*
@@ -5881,11 +5882,12 @@ Activates and updates the window first; suppressed in file panels, when there is
 `CountView.cpp` → `BCountView::MouseDown`
 **PORT:** Both shells now hit-test the count strip and perform nearest-parent navigation; the reusable hierarchy helper supplies every ancestor for a richer popup (`src/ui/windows/tiku_trk_folder_window.c`; `src/ui/tiku_trk_navigator.c`; `tests/test_navigator.c`).
 
-#### TS-044 · polish · partial
+#### TS-044 · polish · done
 **The count view is laid out at the bottom-left, sharing the row with the horizontal scroll bar and matching its height.**  
 Added to the count container with weight 0.25 and given the h-scrollbar's MinSize as its explicit minimum (1px less in file panels, which have no upper border). The title view is inserted at index 0 of the bordered pose container.  
 `ContainerWindow.cpp` → `BContainerWindow::InitLayout`  
-**MISSING:** The count view is at the bottom-left of the pose container at a fixed height, but it spans the full width and there is no horizontal scroll bar in the window at all (only the vertical one), so nothing shares its row, its min-size or its height.  
+**PORT:** The count view keeps the bottom-LEFT at its fixed width, and the horizontal scroll bar shares the row at the same height -- arrows, track, thumb and knurl, wired to the columns' width against the window's, so a listing wider than its window scrolls sideways from the bar for the first time.  Icon modes keep the full-width count as before.  
+*src/shell/tiku_trk_app.c (draw_count's split, the hbar wiring); tests/shell/hscrollbar.script (the K glyph sliding away and back -- mutation-tested)*
 *src/shell/tiku_trk_app.c:214 (draw_count rect) and :505 (only scrollbar drawn)*
 
 #### TS-045 · core · done

@@ -19,6 +19,7 @@
 #include "tiku_trk_frame.h"
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_scroll.h"
 #include "tiku_trk_background.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_query.h"
@@ -98,6 +99,7 @@ struct tiku_trk_folder_window {
     int                        live;
     int                        gone;
     tiku_trk_frame_t           opened_with;
+    tiku_trk_scroll_t          sbar;    /* the window's own bar (PVL-051) */
     int                        had_frame;
     int                        count_last_total;
     int                        count_last_selected;
@@ -163,6 +165,10 @@ tiku_desk_rect_t tiku_trk_folder_window_content(
     const tiku_trk_folder_window_t *folder);
 tiku_desk_rect_t tiku_trk_folder_window_bar(
     const tiku_trk_folder_window_t *folder);
+/** @brief The vertical scroll bar's rectangle (list mode), or w=0. */
+tiku_desk_rect_t tiku_trk_folder_window_scrollbar(
+    const tiku_trk_folder_window_t *folder);
+
 tiku_desk_rect_t tiku_trk_folder_window_title(
     const tiku_trk_folder_window_t *folder);
 tiku_desk_rect_t tiku_trk_folder_window_icon(

@@ -95,6 +95,8 @@ typedef struct {
      * the user drags it, and detached while a bulk re-layout runs
      * (PVL-051, PVL-052, PVL-060). */
     tiku_trk_scroll_t    sb;
+    tiku_trk_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
+    tiku_desk_rect_t     hsb_rect;
     tiku_desk_rect_t     sb_rect;
     /* The same container-window menus the desktop shell presents. */
     tiku_trk_cwmenu_t    menus;
@@ -635,6 +637,36 @@ draw_count(app_t *a, tiku_desk_rect_t list)
     tiku_desk_rect_t count = { list.x, list.y + list.h, list.w, COUNT_H };
     const char *typed = tiku_trk_poseview_type_string(a->view);
     char label[240];
+
+    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST &&
+        list.w > 260) {
+        /* The count keeps the bottom-LEFT and the horizontal scroll bar
+         * shares the row at the same height (TS-044). */
+        int content = tiku_trk_poseview_columns_width(a->view);
+        float frac, pos;
+        int tpos = 0, tlen = 0;
+
+        count.w = 130;
+        a->hsb_rect = (tiku_desk_rect_t){ list.x + count.w,
+                                          count.y, list.w - count.w,
+                                          COUNT_H };
+        (void)tiku_trk_scroll_set_range(&a->hsb, content, list.w);
+        if (!a->hsb.tracking) {
+            (void)tiku_trk_scroll_to(&a->hsb,
+                                     tiku_trk_poseview_hscroll(a->view));
+        }
+        if (tiku_trk_scroll_thumb(&a->hsb, a->hsb_rect.w, &tpos, &tlen)) {
+            frac = (float)tlen / (float)a->hsb_rect.w;
+            pos = (a->hsb_rect.w > tlen)
+                      ? (float)tpos / (float)(a->hsb_rect.w - tlen) : 0.0f;
+        } else {
+            frac = 1.0f;
+            pos = 0.0f;
+        }
+        tiku_desk_ui_scrollbar(s, a->hsb_rect, pos, frac, 1);
+    } else {
+        a->hsb_rect = (tiku_desk_rect_t){ 0, 0, 0, 0 };
+    }
 
     /* While typing, the string replaces the count on a document ground --
      * the user needs to see what they have typed, not how many items. */
@@ -2686,6 +2718,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_menu_set_icon_painter(paint_menu_icon);
     a.loop = tiku_trk_loop_new();
     tiku_trk_scroll_init(&a.sb, 1);
+    tiku_trk_scroll_init(&a.hsb, 20);
     a.view = tiku_trk_poseview_new(a.backend, start);
     if (a.view != NULL) {
         (void)tiku_trk_poseview_restore_state(a.view);
@@ -3075,13 +3108,51 @@ tracker_run(int argc, char **argv)
                     ev.x < a.sb_rect.x + a.sb_rect.w &&
                     ev.y >= a.sb_rect.y &&
                     ev.y < a.sb_rect.y + a.sb_rect.h) {
-                    /* The bar takes it: a press pages or takes hold of the
-                     * thumb, and while it is held the view follows the bar
-                     * rather than the other way round (PVL-051). */
+                    /* The bar takes it: an ARROW steps half a line, a
+                     * press in the track pages or takes hold of the
+                     * thumb, and while it is held the view follows the
+                     * bar rather than the other way round (PVL-051). */
                     int at = ev.y - a.sb_rect.y;
+                    int btn = a.sb_rect.w;
 
-                    tiku_trk_poseview_scroll_to(a.view,
-                        tiku_trk_scroll_press(&a.sb, a.sb_rect.h, at));
+                    if (at < btn) {
+                        tiku_trk_poseview_scroll_to(a.view,
+                            tiku_trk_poseview_scroll(a.view) -
+                                tiku_trk_scroll_line(&a.sb));
+                    } else if (at >= a.sb_rect.h - btn) {
+                        tiku_trk_poseview_scroll_to(a.view,
+                            tiku_trk_poseview_scroll(a.view) +
+                                tiku_trk_scroll_line(&a.sb));
+                    } else {
+                        tiku_trk_poseview_scroll_to(a.view,
+                            tiku_trk_scroll_press(&a.sb,
+                                a.sb_rect.h - 2 * btn, at - btn));
+                    }
+                    a.dirty = 1;
+                    break;
+                }
+                if (a.hsb_rect.w > 0 && ev.x >= a.hsb_rect.x &&
+                    ev.x < a.hsb_rect.x + a.hsb_rect.w &&
+                    ev.y >= a.hsb_rect.y &&
+                    ev.y < a.hsb_rect.y + a.hsb_rect.h) {
+                    /* The horizontal bar, sharing the count row (TS-044):
+                     * the same arrows, track and thumb, sideways. */
+                    int at = ev.x - a.hsb_rect.x;
+                    int btn = a.hsb_rect.h;
+
+                    if (at < btn) {
+                        tiku_trk_poseview_set_hscroll(a.view,
+                            tiku_trk_poseview_hscroll(a.view) -
+                                tiku_trk_scroll_line(&a.hsb));
+                    } else if (at >= a.hsb_rect.w - btn) {
+                        tiku_trk_poseview_set_hscroll(a.view,
+                            tiku_trk_poseview_hscroll(a.view) +
+                                tiku_trk_scroll_line(&a.hsb));
+                    } else {
+                        tiku_trk_poseview_set_hscroll(a.view,
+                            tiku_trk_scroll_press(&a.hsb,
+                                a.hsb_rect.w - 2 * btn, at - btn));
+                    }
                     a.dirty = 1;
                     break;
                 }
@@ -3353,8 +3424,17 @@ tracker_run(int argc, char **argv)
                 }
                 if (a.sb.tracking) {
                     tiku_trk_poseview_scroll_to(a.view,
-                        tiku_trk_scroll_drag(&a.sb, a.sb_rect.h,
-                                             ev.y - a.sb_rect.y));
+                        tiku_trk_scroll_drag(&a.sb,
+                            a.sb_rect.h - 2 * a.sb_rect.w,
+                            ev.y - a.sb_rect.y - a.sb_rect.w));
+                    a.dirty = 1;
+                    break;
+                }
+                if (a.hsb.tracking) {
+                    tiku_trk_poseview_set_hscroll(a.view,
+                        tiku_trk_scroll_drag(&a.hsb,
+                            a.hsb_rect.w - 2 * a.hsb_rect.h,
+                            ev.x - a.hsb_rect.x - a.hsb_rect.h));
                     a.dirty = 1;
                     break;
                 }
@@ -3438,6 +3518,7 @@ tracker_run(int argc, char **argv)
                 /* Letting go applies whatever range arrived while the bar
                  * was held (PVL-052). */
                 tiku_trk_scroll_release(&a.sb);
+                tiku_trk_scroll_release(&a.hsb);
                 if (tiku_trk_titleview_tracking(&a.tv) !=
                         TIKU_TRK_TRACK_NONE) {
                     int cx = 0, cy = 0;

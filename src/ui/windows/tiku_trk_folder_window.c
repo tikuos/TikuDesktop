@@ -1011,6 +1011,9 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
         draw_title(folder, surface, title);
         list.y += TITLE_HEIGHT;
         list.h -= TITLE_HEIGHT;
+        /* The bar's gutter (PVL-051): list mode only, so an icon
+         * arrangement keeps every pixel it had. */
+        list.w -= 15;
     }
     list.h -= COUNT_HEIGHT;
     icons = tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST;
@@ -1249,7 +1252,43 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
         tiku_desk_blit(surface, list.x, list.y, &folder->kept);
         folder->kept_ready = 1;
     }
+    if (!icons) {
+        /* The bar itself: a CONTROL, drawn from its own held state so a
+         * grip survives the frame (PVL-051). */
+        tiku_desk_rect_t sb = { list.x + list.w, list.y, 15, list.h };
+        int tpos = 0, tlen = 0;
+        float frac, pos;
+
+        (void)tiku_trk_scroll_set_range(&folder->sbar, total, rows);
+        if (!folder->sbar.tracking) {
+            (void)tiku_trk_scroll_to(&folder->sbar, scroll);
+        }
+        if (tiku_trk_scroll_thumb(&folder->sbar, sb.h, &tpos, &tlen)) {
+            frac = (float)tlen / (float)sb.h;
+            pos = (sb.h > tlen) ? (float)tpos / (float)(sb.h - tlen)
+                                : 0.0f;
+        } else {
+            frac = 1.0f;
+            pos = 0.0f;
+        }
+        tiku_desk_ui_scrollbar(surface, sb, pos, frac, 0);
+    }
     draw_count(folder, surface, content, total);
+}
+
+tiku_desk_rect_t
+tiku_trk_folder_window_scrollbar(const tiku_trk_folder_window_t *folder)
+{
+    tiku_desk_rect_t none = { 0, 0, 0, 0 };
+    tiku_desk_rect_t content;
+
+    if (folder == NULL || folder->win == NULL || !folder->win->open ||
+        tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST) {
+        return none;
+    }
+    content = tiku_trk_folder_window_content(folder);
+    return (tiku_desk_rect_t){ content.x + content.w - 15, content.y,
+                               15, content.h - COUNT_HEIGHT };
 }
 
 int

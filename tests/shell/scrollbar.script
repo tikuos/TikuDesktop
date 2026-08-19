@@ -7,8 +7,24 @@ note a press on the track below the thumb pages the listing down
 click 745 400
 wait 4
 expect-scroll 5
-note and a press above it comes back
-click 745 105
+note and a press above it, in the track, comes back
+click 745 150
 wait 4
 expect-scroll-at-most 1
+note the stepper arrows are real now: the bottom one steps half a line
+click 745 400
+wait 4
+expect-scroll 5
+click 745 492
+wait 2
+click 745 492
+wait 4
+expect-scroll 7
+note and the top one steps back the same two half-lines
+click 745 98
+wait 2
+click 745 98
+wait 4
+expect-scroll 19
+expect-scroll-at-most 19
 quit
