@@ -1,0 +1,26 @@
+# shell: tracker
+# home: fixture
+# PVS-011: a double click INSIDE the Location column answers with the
+# containing folder, not the row -- a folder row is NOT entered from its
+# Location cell, while the same clicks on its Name still enter it.
+wait 8
+click 150 36
+wait 3
+menu-pick Location
+wait 3
+note sub's Location cell: the view stays where it is instead of entering
+click 720 102
+wait 3
+expect-selected-name sub
+click 720 102
+wait 1
+click 720 102
+wait 6
+expect-no-title sub
+note sub's Name: entered as always
+click 100 102
+wait 1
+click 100 102
+wait 6
+expect-title sub
+quit

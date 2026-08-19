@@ -946,6 +946,19 @@ label_at(tiku_desk_surface_t *s, int x, tiku_desk_rect_t r, const char *text)
                    text, TIKU_DESK_C_TEXT);
 }
 
+tiku_desk_rect_t
+tiku_trk_find_icon_rect(const tiku_trk_find_t *f, tiku_desk_rect_t frame)
+{
+    tiku_desk_rect_t none = { 0, 0, 0, 0 };
+    tiku_desk_rect_t r = { frame.x + frame.w - PAD - 32, frame.y + PAD,
+                           32, 32 };
+
+    if (f == NULL || f->edit_template) {
+        return none;
+    }
+    return r;
+}
+
 void
 tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                    tiku_desk_rect_t frame)

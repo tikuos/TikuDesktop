@@ -287,6 +287,15 @@ void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                         tiku_desk_rect_t frame);
 
 /**
+ * @brief Where the draggable query icon sits (Q-034), or an empty rect.
+ *
+ * Empty in template-edit mode, as Haiku omits the icon there: the window
+ * is not a search to save, it is a record being edited in place.
+ */
+tiku_desk_rect_t tiku_trk_find_icon_rect(const tiku_trk_find_t *f,
+                                         tiku_desk_rect_t frame);
+
+/**
  * @brief What is under a point.
  *
  * @param row Receives the row index for row-owned parts.

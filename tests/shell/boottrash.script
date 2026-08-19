@@ -1,0 +1,25 @@
+# shell: desktop
+# home: fixture
+# FS-041: dragging a whole volume to the Trash means UNMOUNT -- and the
+# boot volume refuses with its name, rather than deleting anything.
+wait 12
+key w ctrl
+wait 3
+click 410 35
+wait 3
+expect-desk-selected-name Boot
+key Delete
+wait 8
+expect-alert cannot unmount the boot volume
+key Return
+wait 3
+note the DRAG says the same: dropping the volume on the Trash asks for an
+note unmount and the boot volume refuses again
+press 410 35
+move 470 35
+move 530 35
+wait 2
+release 530 35
+wait 6
+expect-alert cannot unmount the boot volume
+quit

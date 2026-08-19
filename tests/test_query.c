@@ -82,6 +82,74 @@ trash_walk_list(tiku_trk_backend_t *b, const char *path,
     return n;
 }
 
+static int
+depth_walk_stat(tiku_trk_backend_t *b, const char *path,
+                tiku_trk_model_t *out)
+{
+    (void)b;
+    memset(out, 0, sizeof *out);
+    out->kind = TIKU_TRK_KIND_DIRECTORY;
+    snprintf(out->path, sizeof out->path, "%s", path);
+    snprintf(out->name, sizeof out->name, "scope");
+    return strcmp(path, "/scope") == 0 ? 0 : -1;
+}
+
+/** @brief /scope holds dirs a then b; each holds one matching file. */
+static int
+depth_walk_list(tiku_trk_backend_t *b, const char *path,
+                tiku_trk_entry_fn fn, void *ctx)
+{
+    tiku_trk_model_t m;
+    int n = 0;
+
+    (void)b;
+    memset(&m, 0, sizeof m);
+    if (strcmp(path, "/scope") == 0) {
+        m.kind = TIKU_TRK_KIND_DIRECTORY;
+        snprintf(m.name, sizeof m.name, "a");
+        snprintf(m.path, sizeof m.path, "/scope/a");
+        n += fn(&m, ctx) >= 0;
+        snprintf(m.name, sizeof m.name, "b");
+        snprintf(m.path, sizeof m.path, "/scope/b");
+        n += fn(&m, ctx) >= 0;
+    } else if (strcmp(path, "/scope/a") == 0 ||
+               strcmp(path, "/scope/b") == 0) {
+        m.kind = TIKU_TRK_KIND_FILE;
+        snprintf(m.name, sizeof m.name, "%c-hit", path[7]);
+        snprintf(m.path, sizeof m.path, "%s/%c-hit", path, path[7]);
+        n += fn(&m, ctx) >= 0;
+    }
+    return n;
+}
+
+/** @brief /scope holds one matching symlink whose target is /scope. */
+static int
+cycle_walk_list(tiku_trk_backend_t *b, const char *path,
+                tiku_trk_entry_fn fn, void *ctx)
+{
+    tiku_trk_model_t m;
+    int n = 0;
+
+    (void)b;
+    memset(&m, 0, sizeof m);
+    m.kind = TIKU_TRK_KIND_SYMLINK;
+    snprintf(m.type, sizeof m.type, "application/x-vnd.Be-directory");
+    snprintf(m.name, sizeof m.name, "loop-hit");
+    snprintf(m.path, sizeof m.path, "%s/loop-hit", path);
+    n += fn(&m, ctx) >= 0;
+    return n;
+}
+
+static const tiku_trk_backend_ops_t CYCLE_WALK_OPS = {
+    .stat = depth_walk_stat,
+    .list = cycle_walk_list
+};
+
+static const tiku_trk_backend_ops_t DEPTH_WALK_OPS = {
+    .stat = depth_walk_stat,
+    .list = depth_walk_list
+};
+
 static const tiku_trk_backend_ops_t TRASH_WALK_OPS = {
     .stat = trash_walk_stat,
     .list = trash_walk_list
@@ -1307,6 +1375,54 @@ main(void)
               "toggles it as a fall-through side effect");
         tiku_trk_store_free(st5);
     }
+
+    printf("\ndepth-first walk order (PVN-069)\n");
+    {
+        tiku_trk_backend_t backend = { &DEPTH_WALK_OPS, "", NULL };
+        tiku_trk_query_t q;
+        tiku_trk_qrun_t *run;
+
+        tiku_trk_query_init(&q);
+        tiku_trk_query_set_name(&q, "hit");
+        (void)tiku_trk_query_add_scope(&q, "/scope");
+        run = tiku_trk_query_start(&backend, &q);
+        (void)tiku_trk_query_step(run, 2);   /* lists /scope: queues a, b */
+        (void)tiku_trk_query_step(run, 2);   /* pops ONE directory        */
+        check(run != NULL && tiku_trk_query_count(run) == 1 &&
+              strcmp(tiku_trk_query_at(run, 0)->name, "b-hit") == 0,
+              "the walk descends into the newest directory first -- a "
+              "STACK, the source's depth-first order, not a queue");
+        while (run != NULL && !tiku_trk_query_done(run)) {
+            (void)tiku_trk_query_step(run, 4);
+        }
+        check(run != NULL && tiku_trk_query_count(run) == 2,
+              "and still visits everything in the end");
+        tiku_trk_query_stop(run);
+    }
+
+    printf("\nsymlinks are entries, not places to descend (PVN-069)\n");
+    {
+        tiku_trk_backend_t backend = { &CYCLE_WALK_OPS, "", NULL };
+        tiku_trk_query_t q;
+        tiku_trk_qrun_t *run;
+        int guard = 0;
+
+        tiku_trk_query_init(&q);
+        tiku_trk_query_set_name(&q, "hit");
+        (void)tiku_trk_query_add_scope(&q, "/scope");
+        run = tiku_trk_query_start(&backend, &q);
+        while (run != NULL && !tiku_trk_query_done(run) && guard++ < 64) {
+            (void)tiku_trk_query_step(run, 4);
+        }
+        check(run != NULL && tiku_trk_query_done(run),
+              "a namespace with a symlink cycle still finishes: only real "
+              "directories are descended, as the source walks only "
+              "B_DIRECTORY_NODE entries");
+        check(run != NULL && tiku_trk_query_count(run) == 1,
+              "and the link itself was still SEEN as an entry");
+        tiku_trk_query_stop(run);
+    }
+
 
     printf("\n%s\n", fails ? "FAILURES" : "every query rule holds");
     return fails ? 1 : 0;

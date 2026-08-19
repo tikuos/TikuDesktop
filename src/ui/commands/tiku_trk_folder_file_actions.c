@@ -13,6 +13,7 @@
 
 #include "tiku_trk_folder_file_actions.h"
 #include "tiku_trk_shortcuts.h"
+#include "tiku_trk_volume.h"
 
 /**
  * @brief The clipboard follows a file the engine has just moved (FS-060).
@@ -253,6 +254,86 @@ delete_outright(tiku_trk_folder_file_actions_t *controller,
     close_selected(controller, selection, count);
 }
 
+/**
+ * @brief Silently drop the Trash from the selection (PVL-085).
+ *
+ * You cannot trash the Trash, and the way that is said is by the pose
+ * quietly leaving the selection before the operation counts anything --
+ * the status line and the highlight agree with what the queue will do.
+ */
+static void
+prune_trash_pose(tiku_trk_folder_window_t *folder)
+{
+    int i, n;
+
+    if (folder == NULL || folder->view == NULL) {
+        return;
+    }
+    n = tiku_trk_poseview_count(folder->view);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(folder->view, i);
+
+        if (p != NULL && p->selected &&
+            p->model.kind == TIKU_TRK_KIND_TRASH) {
+            p->selected = 0;
+        }
+    }
+}
+
+/**
+ * @brief Volumes leave the selection as UNMOUNTS (FS-041).
+ *
+ * A whole volume put in the Trash never meant delete: each selected
+ * volume pose is taken out of the selection and unmounted -- the boot
+ * volume refuses by name -- before the trash/delete question is even
+ * asked about whatever is left.
+ */
+static void
+unmount_selected_volumes(tiku_trk_folder_file_actions_t *controller,
+                         tiku_trk_folder_window_t *folder)
+{
+    tiku_trk_volumes_t vols;
+    int scanned = 0;
+    int i, n;
+
+    if (folder == NULL || folder->view == NULL) {
+        return;
+    }
+    n = tiku_trk_poseview_count(folder->view);
+    for (i = 0; i < n; i++) {
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(folder->view, i);
+        char why[200];
+
+        if (p == NULL || !p->selected ||
+            (p->model.kind != TIKU_TRK_KIND_VOLUME &&
+             p->model.kind != TIKU_TRK_KIND_ROOT)) {
+            continue;
+        }
+        p->selected = 0;
+        if (!scanned) {
+            scanned = (tiku_trk_volumes_scan(&vols) > 0) ? 1 : -1;
+        }
+        if (scanned < 0) {
+            continue;
+        }
+        why[0] = '\0';
+        if (!tiku_trk_volume_may_unmount(&vols, p->model.path, why,
+                                         sizeof why)) {
+            if (why[0] != '\0') {
+                tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+                    TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
+            }
+        } else if (tiku_trk_volume_unmount(&vols, p->model.path, NULL,
+                       NULL, why, sizeof why) == TIKU_TRK_UNMOUNT_OK) {
+            snprintf(controller->status, controller->status_size,
+                     "unmounted \"%.60s\"", p->model.name);
+        } else if (why[0] != '\0') {
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
+        }
+    }
+}
+
 /** @brief Move the selection to the Trash, refusing what must not go. */
 static void
 move_to_trash(tiku_trk_folder_file_actions_t *controller,
@@ -260,9 +341,15 @@ move_to_trash(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX];
     const char *selection[64];
-    int count = selection_of(controller, folder, paths, selection, 64);
+    int count;
     int i;
 
+    prune_trash_pose(folder);
+    count = selection_of(controller, folder, paths, selection, 64);
+
+    if (count == 0) {
+        return;
+    }
     if (count == 0) {
         return;
     }
@@ -313,8 +400,12 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_TRK_PATH_MAX];
     const char *selection[64];
-    int count = selection_of(controller, folder, paths, selection, 64);
+    int count;
     int shift = command == TIKU_TRK_CMD_DELETE;
+
+    prune_trash_pose(folder);
+    unmount_selected_volumes(controller, folder);
+    count = selection_of(controller, folder, paths, selection, 64);
 
     if (count == 0) {
         return;

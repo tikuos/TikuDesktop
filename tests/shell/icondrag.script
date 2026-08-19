@@ -1,0 +1,23 @@
+# shell: desktop
+# home: fixture
+# IV-057: the window's folder icon arms a drag only from an OPAQUE pixel --
+# an icon is not a rectangle, and its transparent corner is not a handle.
+wait 12
+note a press on the transparent corner picks nothing up
+press 481 82
+move 600 400
+move 700 500
+wait 2
+release 700 500
+wait 10
+expect-file /tmp/trk_script/a.txt
+expect-no-file /tmp/trk_home/Desktop/trk_script
+note from a pixel of the picture the folder itself travels
+press 487 76
+move 600 400
+move 700 500
+wait 2
+release 700 500
+wait 30
+expect-file /tmp/trk_home/Desktop/trk_script/a.txt
+quit

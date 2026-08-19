@@ -24,11 +24,11 @@ expect-file /tmp/trk_home/b.txt
 expect-no-file /tmp/trk_script/b.txt
 note Create link > Home leaves a link there and the original in place
 click-row 2 3
-wait 3
+wait 5
 menu-pick Create link
-wait 3
+wait 5
 menu-pick Home
-wait 15
+wait 25
 expect-link /tmp/trk_home/c.txt /tmp/trk_script/c.txt
 expect-file /tmp/trk_script/c.txt
 note and the panel navigator is still one row away

@@ -11,15 +11,16 @@ wait 3
 menu-pick Get info
 wait 6
 note before the drag, the icon wears its plain coat
-expect-pixel 158 120 000000
+expect-pixel 144 136 fccd7d
 press 85 138
 wait 2
 move 300 450
 wait 2
 move 141 119
 wait 3
-note hovered by a drag it can take, the icon answers in its selected coat
-expect-pixel 158 120 112335
+note hovered by a drag it can take, the icon answers in its selected
+note coat -- the plain art at 66% brightness (IV-018)
+expect-pixel 144 136 a68752
 release 141 119
 wait 8
 note the drop landed: a.txt now lives in sub

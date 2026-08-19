@@ -137,4 +137,8 @@ tiku_trk_menu_t *tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw,
                                       int dst_read_only, int src_read_only,
                                       unsigned mods);
 
+/** @brief The Find icon's drop menu: query, template, cancel (Q-034). */
+tiku_trk_menu_t *tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw,
+                                            int dst_read_only);
+
 #endif /* TIKU_TRK_CWMENU_H_ */

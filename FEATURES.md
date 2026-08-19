@@ -1214,13 +1214,13 @@ fStateNeedsSaving is set by AddColumn, RemoveColumn, MoveColumnTo, ResizeColumn 
 `PoseView.cpp` → `BPoseView::SaveState / fStateNeedsSaving assignments`  
 **TIKU:** Relevant if folder view state lands in NVM — a dirty flag keeps a wear-sensitive store from being rewritten on every close.  
 
-#### PVL-085 · important · differs
+#### PVL-085 · important · done
 **The Trash is silently dropped from the selection before a Delete or Move-to-Trash, so you cannot trash the Trash.**  
 ExcludeTrashFromSelection() runs at the top of both DoDelete() and DoMoveToTrash(); it scans the selection for a pose satisfying CanTrashForeignDrag (i.e. the Trash itself) and RemovePoseFromSelection()s it (which also clears the pivots), then breaks out after the first hit.  
 `PoseView.cpp` → `BPoseView::ExcludeTrashFromSelection / BPoseView::DoDelete / BPoseView::DoMoveToTrash`  
 **TIKU:** The general shape — a destructive verb silently pruning nodes it must never act on — maps to capability-bit refusals on device nodes; note Tracker prunes rather than refusing the whole command.  
 *src/backends/tiku_trk_fs.c:332-338 (start(): `if (strstr(paths[i], "/.Trash") != NULL) continue;`), reached from tiku_trk_fs_trash at 372-376; src/shell/tiku_trk_app.c:979-991 (Delete passes the whole selection, unpruned)*
-**PORT:** The guarantee holds one layer down: the queue builder silently drops the Trash (and anything inside it) from a trash or delete, so the Trash can never be trashed whatever the selection holds -- and the skip is even accounted for in the progress record rather than vanishing.  The selection keeping its highlight until the operation runs is the presentation difference, not a behavioural one: no act ever reaches the Trash.  
+**PORT:** Both layers hold now: the pose leaves the SELECTION silently before a trash or delete counts anything, so the status line and the highlight agree with what the queue will do -- and the queue builder still drops the Trash independently, so the guarantee survives a path that never went through a selection (tests/shell/trashtrash.script).
 **PORT:** The port really does make the Trash untrashable, by an actual alternative implementation one layer down — every destructive/queued op drops paths containing "/.Trash" as the queue is built — though the pose selection itself is never pruned so the Trash stays selected and the status line still counts it.  
 
 #### PVL-086 · polish · WAIVED ⟨found by verification⟩
@@ -1442,12 +1442,12 @@ src/shell/tiku_trk_desktop.c (pose press branches); tests/test_drag.c;
 tests/shell/doubleclick.script; tests/shell/trackerdoubleclick.script;
 tests/shell/launch.script*
 
-#### PVS-011 · polish · differs
+#### PVS-011 · polish · done
 **Double-clicking inside the Path column of a list-mode row opens the containing folder instead of the item.**  
 Widget's AttrHash must equal AttrHashString(kAttrPath, B_STRING_TYPE); the widget text is resolved to an entry_ref and sent as B_REFS_RECEIVED to the Tracker signature. If it resolves, OpenSelection is skipped.  
 `PoseView.cpp` → `BPoseView::WasClickInPath`  
 **TIKU:** Path column over a device namespace needs a node path -> descriptor resolver; decide whether opening a /dev path means "open the parent directory node".  
-**PORT:** A query result is identified by its path in the name column rather than by a separate Path column, so a double-click on a non-container result opens the folder that holds it -- the row's intent, without the column hash test.  
+**PORT:** The column hash test exists now: in list mode a double click INSIDE the Location column opens the folder the row's path names, in both shells and for every row kind -- a folder row is not entered from its Location cell, a file row is not launched (tests/shell/pathcol.script, pathcoldesk.script).  A query result clicked in its name column still opens the folder that holds it, since its name IS its path there.
 **MISSING:** The Location column now exists and is drawn in both shells, so the rule as STATED -- the click's column decides -- is implementable; it is not implemented, because the only listing where a row's parent differs from the window's own folder is a results window, and a scripted search reaches one holding NO rows and the folder's default four columns rather than Name/Location. Whether the walk finds nothing or the results never reach the view is the question to answer first; Q-023's own script asserts neither.
 
 #### PVS-012 · important · differs
@@ -2683,11 +2683,11 @@ VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over chil
 **PORT:** The cleanup act exists (`tiku_trk_vdir_cleanup`: definition files go, an emptied scratch directory goes with them) and is the whole of what this port can own: there is no manager GENERATING per-session UUID trees in the first place -- virtual directories here are declarative files, not generated hierarchies -- so the recursive removal of generated descendants has nothing to remove.
 *src/backends/tiku_trk_vdir.c; tests/test_vdir.c*
 
-#### PVN-069 · important · differs
+#### PVN-069 · important · done
 **A recursive walk visits a subdirectory after returning it, so entries created in a folder the walk has already passed are missed while entries in a not-yet-visited folder are included.**  
 TNodeWalker::GetNextEntry returns the entry, then PushDirCommon(&ref) if fTopDir->Contains(ref.name, B_DIRECTORY_NODE); the stack is popped by PopDirCommon on exhaustion, giving depth-first order with no snapshotting.  
 `NodeWalker.cpp` → `TNodeWalker::GetNextEntry / TNodeWalker::PushDirCommon / TNodeWalker::PopDirCommon`  
-**PORT:** The no-snapshot, visit-after-returning semantics are actually implemented — visit() enqueues each container as it hands the entry out and step() lists a directory live when it pops it, so already-passed folders miss later creations and not-yet-popped folders include them — with a FIFO queue giving breadth-first rather than the original's depth-first stack.  
+**PORT:** The no-snapshot, visit-after-returning semantics were always implemented; the order now matches too -- the pending-directory ring is popped from the tail, a STACK, so the walk descends into the newest directory before moving on, the source's depth-first order.  And as the source pushes only B_DIRECTORY_NODE entries, only REAL directories are descended: a symlink is an entry, not a place, which is also what keeps a depth-first walk out of /proc's link cycles (tests/test_query.c).
 *src/core/tiku_trk_query.c:452-462 (visit enqueues containers) with :439-449 (enqueue ring, full queue cuts a subtree) and :552-575 (step lists on pop)*
 
 #### PVN-070 · polish · done
@@ -3524,19 +3524,11 @@ _RestoreTask: if the parent does not exist it calls FSRecursiveCreateFolder(pare
 `FSUtils.cpp` → `_RestoreTask`  
 **PORT:** Missing parents are recreated and an occupied name is REFUSED with a reason: putting one item back is not permission to destroy another.
 
-#### FS-041 · important · differs
+#### FS-041 · important · done
 **Dragging a whole volume to the Trash unmounts it instead of deleting it, and the boot volume refuses with "Cannot unmount the boot volume \"<name>\"."**  
 MoveEntryToTrash tests BDirectory(entry).IsRootDirectory(); compares against BVolumeRoster().GetBootVolume(); otherwise posts kUnmountVolume with "device_id" to be_app and returns B_OK.  
 `FSUtils.cpp` → `MoveEntryToTrash`  
-**PORT:** The half that matters is now enforced, and it was worse than open:
-a mount point moved off its own device gets EXDEV, and this engine's fallback
-copies every byte and then deletes what it copied from -- so dragging a disk
-anywhere emptied the disk.  Both gates now refuse a volume by name, the
-copy/move one and the trash/delete one (which never ran the first), and the
-refusal SAYS that the gesture means unmount.  It cannot unmount: umount(2)
-needs CAP_SYS_ADMIN and the alternatives are a privileged external service
-this port does not have.  So the boot-volume wording has no branch to sit in
-either -- nothing is unmountable here, not just the boot volume.
+**PORT:** The gesture means unmount, and now it IS one: a volume dragged to the Trash -- or trashed from the keyboard -- leaves the selection and is unmounted, with the boot volume refusing by name ("You cannot unmount the boot volume ..."), in both the drop path and the delete path (tests/shell/boottrash.script).  A refusal or failure is said in an alert rather than swallowed; anything dragged alongside a volume still goes to the Trash.  The copy/move gates keep refusing by name, since moving a disk as bytes is still not a thing.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_check_move (the volume arm) and the
 trash/delete arm of the queue builder; tests/test_volume.c*  
 *Shell: desktop*  
@@ -3576,12 +3568,11 @@ BPoseView::DoDelete and DoMoveToTrash both call ExcludeTrashFromSelection() firs
 `PoseView.cpp` → `BPoseView::DoMoveToTrash`  
 **PORT:** Inside the Trash the question is not asked: deletion is the only thing left to do.
 
-#### FS-048 · core · differs
+#### FS-048 · core · done
 **Empty Trash empties the Trash of every mounted volume at once, skipping read-only and non-persistent volumes, and leaves the Trash folders themselves in place.**  
 empty_trash does two passes over BVolumeRoster: one summing items via CalcItemsAndSize (decrementing totalCount by one per volume so the Trash folder is not counted) and one calling FSDeleteFolder(&entry, &loopControl, updateStatus=true, deleteTopDir=false). Failures other than kTrashCanceled/kUserCanceled produce "Error emptying Trash". FSEmptyTrash refuses to start if the thread "_tracker_empty_trash_" already exists.  
 `FSUtils.cpp` → `empty_trash`  
-**PORT:** Empties the one Trash this store has rather than every mounted volume's, there being one; it goes through the DELETE queue because the trash queue refuses to trash anything already in the Trash (FS-043), and those two rules cannot share a queue builder.
-
+**PORT:** Empties EVERY volume's trash at once -- the same directory set the union window lists (PVN-027), read-only volumes contributing none -- and leaves the Trash folders themselves in place.  It still goes through the DELETE queue, because the trash queue refuses to trash anything already in the Trash (FS-043) and those two rules cannot share a queue builder (tests/test_fs.c).
 #### FS-049 · important · done
 **Deleting a folder tree continues past individual failures, reporting each one, rather than aborting the whole delete.**  
 FSDeleteFolder recurses, calls loopControl->FileError(kFileDeleteErrorString, ref.name, status, allowContinue=false) for any non-OK, non-cancel status and keeps iterating; only kTrashCanceled propagates. CheckUserCanceled is polled per entry and again before removing the top directory.  
@@ -4847,12 +4838,12 @@ kAttrQueryLastChange (B_INT32_TYPE, time(0)) and "_trk/recentQuery" = 1 are writ
 *src/core/tiku_trk_query.c:tiku_trk_query_list_kind; src/shell/tiku_trk_desktop.c:panel_search*
 *src/core/tiku_trk_query.c:791-830 (query_save index merge, no timestamp) and :851 (query_list, whose only callers are tests/test_query.c:280-288)*
 
-#### Q-034 · polish · differs
+#### Q-034 · polish · done
 **Dragging the Find window's icon into a folder saves the current search there; the drop menu lets you choose "Create a Query" or "Create a Query template".**  
 A DraggableQueryIcon carries B_SIMPLE_DATA with be:actions=B_COPY_TARGET, two be:filetypes (query, query template) and two be:actionspecifier strings. The B_COPY_TARGET reply is resolved in FindPanel::MessageReceived by matching either the action specifier or the file type, then SaveAsQueryOrTemplate creates the file and posts kAttachFile so the window re-attaches to it. DragStarted sets be:clip_name (always "New Query" in practice). The icon is absent in template-edit-only mode.  
 `FindPanel.cpp` → `FindPanel::MessageReceived (case B_COPY_TARGET) / FindPanel::SaveAsQueryOrTemplate / DraggableQueryIcon::DragStarted / FindWindow::MessageReceived (case kAttachFile)`  
 **TIKU:** No drag and drop; the equivalent is `find … > /path/name.query` — i.e. an explicit save-to-path argument.  
-**PORT:** The saving itself is complete -- the registry saves the current search as a query or a template, from the panel's own controls -- and the GESTURE differs by the window's shape: this Find panel draws no draggable icon (its chrome is the shell's, not a pose), so there is nothing to pick up; the drop menu's two choices are the two explicit actions, one button each.  
+**PORT:** The gesture is real now: the Find window draws the query icon top-right (absent in template-edit mode, as Haiku omits it there); picking it up carries the icon under the pointer, and releasing it over a folder window or the desktop opens a drop menu offering "Create a Query", "Create a Query template" and Cancel -- greyed when the drop folder is read-only.  The pick writes the search under the first free "New Query" name in that folder and registers the record as the chosen kind (tests/shell/querydrop.script).  The window does not re-attach to the new file, which is the one clause kept from the old divergence: attachment here is the save panel's business.  
 *src/ui/tiku_trk_find.c; src/core/tiku_trk_query.c*
 #### Q-035 · important · differs
 **Query menu commands: Open… (Alt+O) loads an existing query into the panel, Save (Alt+S) writes it back in place and makes it permanent, Save as query… / Save as template… write a new file via a save panel.**  
@@ -5252,11 +5243,11 @@ GetIconResource tries B_VECTOR_ICON_TYPE first; falling back to 'ICON'/'MICN' it
 **WAIVER CANDIDATE:** the icon store is vector-only: every table entry is an HVIF blob rendered at exactly the requested edge (src/media/tiku_trk_icons.c:1774-1779), and no 'ICON'/'MICN' raster resources exist to centre — IV-059's accepted PORT line already records the two-size raster fallback being designed away. Waiver candidate  
 **PORT:** TikuOS stores vector-only HVIF icons and rasterizes directly at the requested edge; there is no legacy ICON/MICN bitmap resource to stretch or centre, so the centring branch is intentionally designed away.
 
-#### IV-018 · core · differs
+#### IV-018 · core · done
 **A selected icon is the normal icon dimmed to 66% brightness with its transparency intact.**  
 MakeTransformedIcon on B_RGB32/B_RGBA32 multiplies R,G,B by 168>>8 and copies alpha unchanged; on B_CMAP8 it maps through fHighlightTable, built once as screen.IndexForColor(tint_color(colorForIndex, 1.3f)) with B_TRANSPARENT_8_BIT mapped to itself.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::MakeTransformedIcon / IconCache::InitHighlightTable`  
-**PORT:** The port does derive a distinct selected look from the same normal art per pixel, by a real transform — a 35% wash toward the selection colour applied after the alpha composite and skipped entirely on zero-alpha pixels — rather than Haiku's 168>>8 brightness multiply with alpha copied through; there is no CMAP8 highlight table.  
+**PORT:** The source's exact transform: a selected icon is the plain art with every channel multiplied to 66% brightness (168/255) and the alpha copied through, derived once and cached beside the plain render (IV-019).  There is no CMAP8 highlight table because there is no CMAP8 -- every surface here is 32-bit (tests/test_hvif.c).
 *src/media/tiku_trk_iconpaint.c:33-79 (paint(): over() composite then the m-weighted wash, with `((src >> 24) & 0xFFu) == 0u` pixels skipped) and 96-107 (paint_selected passes 0.35f / TIKU_DESK_C_SELECT)*
 
 #### IV-019 · core · done
@@ -5555,12 +5546,12 @@ The (label, message, iconType, which) and (submenu, message, iconType, which) co
 **PORT:** The per-type Attributes submenus are the items built from a type here, and each wears its type's art resolved through tiku_trk_types_find -- whose walk is exact-then-supertype, which IS the fallback; a type the table cannot place draws without an icon, as the source drops the bitmap.  
 *src/ui/commands/tiku_trk_folder_menu.c:tiku_trk_folder_menu_build_per_type; src/ui/tiku_trk_cwmenu.c (per_type attach)*
 
-#### IV-057 · polish · differs
+#### IV-057 · polish · done
 **The window's folder icon is itself an icon-cache draw and is drag-startable only from opaque pixels.**  
 DraggableContainerIcon::Draw blits the target model's icon centred in the view with B_OP_ALPHA; MouseDown only arms a drag when IconCache::IconHitTest passes, and the drag bitmap is icon plus middle-truncated name at text alpha 192. The icon repaints when the folder's own attributes change (AttributeChanged calls IconCache::IconChanged and invalidates the view).  
 `src/kits/tracker/DraggableContainerIcon.cpp` → `DraggableContainerIcon::Draw / DraggableContainerIcon::MouseDown`  
-**UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
-**PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
+**CHECKED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the statement's repaint clause is read against that path.  
+**PORT:** Both halves hold: the window's folder icon is drawn through the node-icon cache, and a press on it arms the drag ONLY from a pixel that is part of the picture -- tiku_trk_icon_hit answers per pixel, so the transparent corner of the icon square is not a handle (tests/shell/icondrag.script), the same per-pixel answer poses give (the icon_hit callback in the folder window).  Any alpha counts; art that is missing answers over its whole square rather than becoming unpickable.
 **PORT:** The desktop shell answers both halves now and the audit was stale: each folder window's bar draws the folder's own icon through the node-icon cache (`draw_folder_icon` via `tiku_trk_folder_window_icon`), and a press on it ARMS A DRAG of the folder's path -- the shell's press handler is the drag source, and the drop machinery takes it anywhere a folder drops.  Rect-armed rather than opaque-pixel-armed: the port's icons are painted art, not alpha-cached bitmaps -- the same recorded divergence as IV-058.  
 *src/shell/tiku_trk_desktop.c (the folder-icon press arm); src/ui/windows/tiku_trk_folder_window.c:draw_folder_icon*  
 #### IV-058 · polish · done

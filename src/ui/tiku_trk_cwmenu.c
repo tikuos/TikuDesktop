@@ -801,3 +801,31 @@ tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw, int dst_read_only,
     }
     return m;
 }
+
+tiku_trk_menu_t *
+tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw, int dst_read_only)
+{
+    tiku_trk_sc_ctx_t ctx;
+    const tiku_trk_sc_ctx_t *c = &ctx;
+    tiku_trk_menu_t *m;
+
+    if (cw == NULL) {
+        return NULL;
+    }
+    /* The Find icon's drop menu (Q-034): the two ways the gesture can
+     * save the search, and a way out.  Reuses the drop menu's storage --
+     * only one drop menu is ever open. */
+    memset(&ctx, 0, sizeof ctx);
+    ctx.selection = 1;
+    m = &cw->drop_ctx;
+    tiku_trk_menu_clear(m);
+    ADD(m, TIKU_TRK_CMD_CREATE_QUERY);
+    ADD(m, TIKU_TRK_CMD_CREATE_QUERY_TPL);
+    SEP(m);
+    ADD(m, TIKU_TRK_CMD_CANCEL);
+    if (dst_read_only) {
+        tiku_trk_menu_enable(m, TIKU_TRK_CMD_CREATE_QUERY, 0);
+        tiku_trk_menu_enable(m, TIKU_TRK_CMD_CREATE_QUERY_TPL, 0);
+    }
+    return m;
+}

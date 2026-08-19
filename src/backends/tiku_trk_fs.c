@@ -1749,37 +1749,40 @@ tiku_trk_fs_restore(tiku_trk_fs_t *fs, const char *const *paths, int n,
 int
 tiku_trk_fs_empty_trash(tiku_trk_fs_t *fs)
 {
-    char trash[TIKU_TRK_PATH_MAX];
-    const char *home = getenv("HOME");
+    char dirs[TIKU_TRK_VOLUME_MAX][TIKU_TRK_PATH_MAX];
     char paths[FS_QUEUE_MAX][TIKU_TRK_PATH_MAX];
     const char *sel[FS_QUEUE_MAX];
     int n = 0;
-    DIR *d;
+    int nd, k;
 
-    if (fs == NULL || tiku_trk_fs_trash_dir(fs, home, trash,
-                                            sizeof trash) != 0) {
+    if (fs == NULL) {
         return 0;
     }
-    d = opendir(trash);
-    if (d == NULL) {
-        return 0;
-    }
-    {
+    /* EVERY volume's trash at once (FS-048), the same set the union
+     * window lists (PVN-027) -- read-only and unreachable volumes simply
+     * contribute no directory.  The Trash folders themselves stay: only
+     * what is IN them is queued. */
+    nd = tiku_trk_fs_trash_dirs(fs, dirs, TIKU_TRK_VOLUME_MAX);
+    for (k = 0; k < nd; k++) {
+        DIR *d = opendir(dirs[k]);
         struct dirent *e;
 
+        if (d == NULL) {
+            continue;
+        }
         while ((e = readdir(d)) != NULL && n < FS_QUEUE_MAX) {
             if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
                 continue;
             }
-            if ((int)snprintf(paths[n], sizeof paths[n], "%s/%s", trash,
+            if ((int)snprintf(paths[n], sizeof paths[n], "%s/%s", dirs[k],
                               e->d_name) >= (int)sizeof paths[n]) {
                 continue;               /* a name that cannot be addressed */
             }
             sel[n] = paths[n];
             n++;
         }
+        (void)closedir(d);
     }
-    (void)closedir(d);
     if (n == 0) {
         return 0;
     }

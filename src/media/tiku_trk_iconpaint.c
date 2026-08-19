@@ -129,20 +129,22 @@ int
 tiku_trk_icon_paint_selected(tiku_desk_surface_t *s, const char *name, int x,
                              int y, int size)
 {
-    /* Light enough that the art is still recognisable -- the icon says WHAT
-     * the row is, and a selection that obliterated it would cost more than
-     * it conveys.  Derived once and CACHED beside the plain render, so a
-     * selected composite costs what a plain one does (IV-019); the wash
-     * falls back to the per-pixel path only when the cache cannot hold. */
+    /* The source's exact transform (IV-018): every channel multiplied to
+     * 66% brightness (168/255) with the alpha kept -- a darkened icon, not
+     * a tinted one, so the art stays recognisable in any palette.  Derived
+     * once and CACHED beside the plain render, so a selected composite
+     * costs what a plain one does (IV-019); the wash falls back to the
+     * per-pixel path only when the cache cannot hold.  A wash toward black
+     * at 87/255 IS the 168/255 multiply. */
     {
         const uint32_t *w = tiku_trk_icons_bitmap_washed(name, size,
-            (uint32_t)TIKU_DESK_C_SELECT, 89u);
+            0x000000u, 87u);
 
         if (w != NULL) {
             return paint_bmp(s, w, x, y, size);
         }
     }
-    return paint(s, name, x, y, size, 0.35f, TIKU_DESK_C_SELECT);
+    return paint(s, name, x, y, size, 0.341f, TIKU_DESK_RGB(0, 0, 0));
 }
 
 void

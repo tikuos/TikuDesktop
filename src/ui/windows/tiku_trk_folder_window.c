@@ -1388,6 +1388,31 @@ tiku_trk_folder_window_count_at(const tiku_trk_folder_window_t *folder,
 }
 
 int
+tiku_trk_folder_window_column_at(const tiku_trk_folder_window_t *folder,
+                                 int x)
+{
+    const tiku_trk_column_t *cols = NULL;
+    tiku_desk_rect_t content;
+    int ncol, j, hs;
+
+    if (folder == NULL || folder->view == NULL ||
+        tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST) {
+        return -1;
+    }
+    content = tiku_trk_folder_window_content(folder);
+    ncol = tiku_trk_poseview_columns(folder->view, &cols);
+    hs = tiku_trk_poseview_hscroll(folder->view);
+    for (j = 0; j < ncol; j++) {
+        int cx = content.x + 2 + cols[j].offset - hs;
+
+        if (x >= cx && x < cx + cols[j].width) {
+            return cols[j].field;
+        }
+    }
+    return -1;
+}
+
+int
 tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
                                int row, int x, int y)
 {

@@ -897,17 +897,48 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     case OP_EXPECT_FILEHAS: {
-        FILE *f = fopen(cur->text, "r");
+        char path[sizeof cur->text + sizeof cur->text2];
+        char needle[sizeof cur->text2];
+        FILE *f;
         char got[512] = "";
         int ok = 0;
 
+        /* A path with spaces in it cannot be one word.  The path is the
+         * LONGEST prefix of the line that names a real file and the
+         * needle is the rest -- longest, so "New Query 2" is not
+         * shadowed by a "New Query" beside it; one-word paths behave
+         * exactly as they always did. */
+        {
+            char line[sizeof path];
+            size_t k, len, best = 0;
+            struct stat pst;
+
+            snprintf(line, sizeof line, "%s%s%s", cur->text,
+                     cur->text2[0] != '\0' ? " " : "", cur->text2);
+            len = strlen(line);
+            for (k = strlen(cur->text); k <= len; k++) {
+                if (line[k] != '\0' && line[k] != ' ') {
+                    continue;
+                }
+                snprintf(path, sizeof path, "%.*s", (int)k, line);
+                if (stat(path, &pst) == 0) {
+                    best = k;
+                }
+            }
+            if (best == 0) {
+                best = strlen(cur->text);
+            }
+            snprintf(path, sizeof path, "%.*s", (int)best, line);
+            snprintf(needle, sizeof needle, "%s",
+                     (best < len) ? line + best + 1 : "");
+        }
+        f = fopen(path, "r");
         if (f != NULL) {
             size_t rd = fread(got, 1u, sizeof got - 1u, f);
 
             got[rd] = '\0';
             (void)fclose(f);
-            ok = (cur->text2[0] != '\0' &&
-                  strstr(got, cur->text2) != NULL);
+            ok = (needle[0] != '\0' && strstr(got, needle) != NULL);
         }
         /* What it HOLDS, not that it exists: a file written by something
          * that ran with no arguments exists just as readily. */

@@ -146,6 +146,9 @@ typedef struct desktop {
     tiku_trk_find_window_t find_window;
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
+    /* The Find icon in flight (Q-034): dragged, and where it landed. */
+    int                  qdrag_on;
+    char                 qdrop_dest[TIKU_TRK_PATH_MAX];
     /* The Deskbar's own double-click memory (DB-019). */
     int64_t              db_click_at;
     int                  db_click_x, db_click_y;
@@ -2371,6 +2374,38 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (fl == NULL) {
         return;
     }
+    if (command == TIKU_TRK_CMD_CREATE_QUERY ||
+        command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
+        /* The Find icon's drop chose (Q-034): the current search becomes
+         * a record in the folder it was dropped on, under the first free
+         * "New Query" name, as a query or as a template. */
+        char dest[TIKU_TRK_PATH_MAX];
+        tiku_trk_model_t probe;
+        int k;
+
+        if (app->qdrop_dest[0] == '\0') {
+            return;
+        }
+        tiku_trk_find_build(&app->find_window.model, &app->pending_query);
+        app->pending_query.kind =
+            (command == TIKU_TRK_CMD_CREATE_QUERY_TPL)
+                ? TIKU_TRK_QREC_TEMPLATE : TIKU_TRK_QREC_QUERY;
+        for (k = 0; k < 100; k++) {
+            if (k == 0) {
+                snprintf(dest, sizeof dest, "%s/New Query",
+                         app->qdrop_dest);
+            } else {
+                snprintf(dest, sizeof dest, "%s/New Query %d",
+                         app->qdrop_dest, k + 1);
+            }
+            if (app->backend->ops->stat(app->backend, dest, &probe) != 0) {
+                break;
+            }
+        }
+        fpanel_commit(app, fl, TIKU_TRK_CMD_SAVE_QUERY, dest);
+        app->qdrop_dest[0] = '\0';
+        return;
+    }
     if (command >= TIKU_TRK_CMD_DEST_BASE &&
         command < TIKU_TRK_CMD_DEST_BASE + 3 * TIKU_TRK_CMD_DEST_MAX) {
         /* A picker row IS the destination (CW-035): the same act the
@@ -3085,6 +3120,11 @@ draw_all(desktop_t *app)
             tiku_trk_menu_draw(app->popup_sub, app->surf,
                                app->popup_sub_frame);
         }
+    }
+    if (app->qdrag_on) {
+        /* The query icon in flight (Q-034), riding under the pointer. */
+        (void)tiku_trk_icon_paint(app->surf, "query", app->ptr_x - 16,
+                                  app->ptr_y - 16, 32);
     }
     if (app->nav_on && app->popup != NULL) {
         draw_nav_levels(app, app->popup_frame.x + app->popup_frame.w - 4,
@@ -4400,9 +4440,22 @@ tracker_run(int argc, char **argv)
                             ev.y >= fi.y && ev.y < fi.y + fi.h) {
                             tiku_trk_model_t model;
                             char parent[TIKU_TRK_PATH_MAX];
+                            char art[TIKU_TRK_NAME_MAX];
 
+                            art[0] = '\0';
+
+                            /* IV-057: the drag arms only from a pixel
+                             * that is part of the PICTURE -- an icon is
+                             * not a rectangle, and its transparent corner
+                             * is not a handle. */
                             if (app.backend->ops->stat(app.backend, bfl->path,
                                                        &model) == 0) {
+                                (void)tiku_trk_nodeicon_resolve(&app.nicons,
+                                    app.store, &model, art, sizeof art);
+                            }
+                            if (art[0] != '\0' &&
+                                tiku_trk_icon_hit(art, fi.w, ev.x - fi.x,
+                                                  ev.y - fi.y)) {
                                 parent_path(bfl->path, parent, sizeof parent);
                                 tiku_desk_workspace_activate(app.desk, w);
                                 app.press_at = tiku_trk_now();
@@ -4624,6 +4677,16 @@ tracker_run(int argc, char **argv)
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_find_window_handle(
+                                    &app.find_window) &&
+                           ev.button == 1u &&
+                           tiku_trk_find_window_icon_at(&app.find_window,
+                                                        ev.x, ev.y)) {
+                    /* Picking up the query icon (Q-034): the search
+                     * travels with the pointer until it is dropped. */
+                    app.qdrag_on = 1;
+                    app.dirty = 1;
+                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                           w == tiku_trk_find_window_handle(
                                     &app.find_window)) {
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT) {
@@ -4834,6 +4897,27 @@ tracker_run(int argc, char **argv)
                                 tiku_trk_pose_t *p =
                                     tiku_trk_poseview_at(fl->view, row);
                                 if (p != NULL &&
+                                    tiku_trk_folder_window_column_at(fl,
+                                        ev.x) == TIKU_TRK_COL_PATH) {
+                                    /* PVS-011: a double click INSIDE the
+                                     * Location column opens the folder the
+                                     * path names -- the column's answer,
+                                     * not the row's. */
+                                    char parent[TIKU_TRK_PATH_MAX];
+                                    char *slash;
+
+                                    snprintf(parent, sizeof parent, "%s",
+                                             p->model.path);
+                                    slash = strrchr(parent, '/');
+                                    if (slash != NULL) {
+                                        if (slash == parent) {
+                                            parent[1] = '\0';
+                                        } else {
+                                            *slash = '\0';
+                                        }
+                                        (void)open_folder(&app, parent);
+                                    }
+                                } else if (p != NULL &&
                                     tiku_trk_model_is_container(&p->model)) {
                                     /* A folder opens its OWN window, which
                                      * is what makes this spatial rather
@@ -4903,6 +4987,9 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
+                if (app.qdrag_on) {
+                    app.dirty = 1;
+                }
                 if (tiku_trk_deskbar_motion(app.deskbar, ev.x, ev.y)) {
                     app.dirty = 1;
                 }
@@ -5085,6 +5172,44 @@ tracker_run(int argc, char **argv)
                 break;
             case TIKU_DESK_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
+
+                if (app.qdrag_on) {
+                    /* The query icon lands (Q-034): over a folder window
+                     * or the desktop, the drop menu asks what to make of
+                     * it; back on the Find window it is just put down. */
+                    tiku_desk_window_t *tw = NULL;
+                    folder_t *tfl;
+
+                    (void)tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
+                                                  &tw);
+                    tfl = (tw != NULL) ? folder_of(&app, tw)
+                                       : desktop_folder(&app);
+                    app.qdrag_on = 0;
+                    if (tfl != NULL && tfl->view != NULL &&
+                        (tw == NULL ||
+                         tw != tiku_trk_find_window_handle(
+                                   &app.find_window))) {
+                        tiku_trk_model_t dm;
+                        int ro = 1;
+
+                        if (app.backend->ops->stat(app.backend, tfl->path,
+                                                   &dm) == 0) {
+                            ro = !tiku_trk_model_is_mutable_container(&dm);
+                        }
+                        snprintf(app.qdrop_dest, sizeof app.qdrop_dest,
+                                 "%s", tfl->path);
+                        app.popup = tiku_trk_cwmenu_query_drop(&app.menus,
+                                                               ro);
+                        app.popup_fl = tfl;
+                        app.popup_sub = NULL;
+                        app.popup_frame = tiku_trk_menu_place(app.popup,
+                            ev.x, ev.y,
+                            (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                app.surf->h });
+                    }
+                    app.dirty = 1;
+                    break;
+                }
 
                 if (tiku_trk_titleview_tracking(&app.tstrip) !=
                         TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
@@ -5460,6 +5585,11 @@ tracker_run(int argc, char **argv)
                     }
                     /* Nothing pending: fall through for whoever else
                      * answers to Escape. */
+                }
+                if (key == TIKU_DESK_KEY_DELETE && fl == NULL) {
+                    /* No window focused: the key speaks to the Desktop's
+                     * own selection, as it does in Tracker. */
+                    fl = desktop_folder(&app);
                 }
                 if (key == TIKU_DESK_KEY_DELETE && fl != NULL) {
                     /* What the key MEANS depends on where the items are: a

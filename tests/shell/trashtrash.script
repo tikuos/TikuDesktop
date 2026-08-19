@@ -1,0 +1,24 @@
+# shell: desktop
+# home: fixture
+# PVL-085: the Trash cannot be trashed -- and it is dropped from the
+# SELECTION, silently, so the highlight and the count agree with what the
+# operation will actually do.
+wait 12
+note the work window would swallow the keystroke: close it first
+key w ctrl
+wait 3
+click 531 33
+wait 2
+expect-desk-selected-name .Trash
+click 166 35 1 ctrl
+wait 2
+key Delete
+wait 5
+note the question is asked about the file alone: the Trash already left
+note the selection
+expect-desk-selected-name notes.txt
+key m
+wait 30
+expect-file /tmp/trk_home/.Trash/notes.txt
+expect-desk-icon .Trash
+quit

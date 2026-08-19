@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "tiku_trk_find_window.h"
+#include "tiku_trk_iconpaint.h"
 
 #define FIND_WIDTH 560
 
@@ -39,8 +40,31 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 {
     tiku_trk_find_window_t *controller = context;
 
+    tiku_desk_rect_t ir;
+
     (void)window;
     tiku_trk_find_draw(&controller->model, surface, content);
+    /* The draggable query icon (Q-034): picked up, it carries the search
+     * to whatever folder it is dropped on. */
+    ir = tiku_trk_find_icon_rect(&controller->model, content);
+    if (ir.w > 0) {
+        (void)tiku_trk_icon_paint(surface, "query", ir.x, ir.y, 32);
+    }
+}
+
+int
+tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
+                             int x, int y)
+{
+    tiku_desk_rect_t ir;
+
+    if (controller == NULL || controller->window == NULL) {
+        return 0;
+    }
+    ir = tiku_trk_find_icon_rect(&controller->model,
+        tiku_desk_window_content(controller->window));
+    return ir.w > 0 && x >= ir.x && x < ir.x + ir.w &&
+           y >= ir.y && y < ir.y + ir.h;
 }
 
 static void

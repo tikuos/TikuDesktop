@@ -103,6 +103,9 @@ enum {
     TIKU_TRK_CMD_COPY_HERE,
     TIKU_TRK_CMD_LINK_HERE,
     TIKU_TRK_CMD_REL_LINK_HERE,      /* Shift                               */
+    /* Query-icon drop menu (Q-034) */
+    TIKU_TRK_CMD_CREATE_QUERY,
+    TIKU_TRK_CMD_CREATE_QUERY_TPL,
     TIKU_TRK_CMD_CANCEL
 };
 

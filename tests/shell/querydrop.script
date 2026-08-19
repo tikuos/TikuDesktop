@@ -1,0 +1,39 @@
+# shell: desktop
+# home: fixture
+# Q-034: dragging the Find window's query icon into a folder saves the
+# search there -- the drop menu offers a query or a template, the file
+# lands under the first free "New Query" name, and the record says which
+# kind it is.
+wait 10
+key f ctrl
+wait 6
+key z
+wait 2
+note pick the icon up, carry it to the desktop, and choose a query
+press 750 293
+wait 2
+move 500 600
+wait 2
+move 850 600
+wait 2
+release 850 600
+wait 5
+expect-menu Create a Query
+menu-pick Create a Query
+wait 10
+expect-file /tmp/trk_home/Desktop/New Query
+expect-file-has /tmp/trk_home/Desktop/New Query kind 0
+note the same drop again chooses a template under the next free name
+press 750 293
+wait 2
+move 500 600
+wait 2
+move 850 600
+wait 2
+release 850 600
+wait 5
+menu-pick Create a Query template
+wait 10
+expect-file /tmp/trk_home/Desktop/New Query 2
+expect-file-has /tmp/trk_home/Desktop/New Query 2 kind 1
+quit

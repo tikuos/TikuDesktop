@@ -3390,7 +3390,43 @@ tracker_run(int argc, char **argv)
                                 open_animation(&a, from);
                             }
                         }
-                        open_selection(&a);
+                        {
+                            /* PVS-011: a double click INSIDE the Location
+                             * column opens the folder the path names --
+                             * the column's answer, not the row's. */
+                            const tiku_trk_column_t *cols = NULL;
+                            int nc = tiku_trk_poseview_columns(a.view,
+                                                               &cols);
+                            int j, in_path = 0;
+
+                            for (j = 0; j < nc; j++) {
+                                int cx = col_x(&a, &cols[j]);
+
+                                if (cols[j].field == TIKU_TRK_COL_PATH &&
+                                    ev.x >= cx &&
+                                    ev.x < cx + cols[j].width) {
+                                    in_path = 1;
+                                }
+                            }
+                            if (in_path && pose != NULL) {
+                                char parent[TIKU_TRK_PATH_MAX];
+                                char *slash;
+
+                                snprintf(parent, sizeof parent, "%s",
+                                         pose->model.path);
+                                slash = strrchr(parent, '/');
+                                if (slash != NULL) {
+                                    if (slash == parent) {
+                                        parent[1] = '\0';
+                                    } else {
+                                        *slash = '\0';
+                                    }
+                                    (void)navigate_to(&a, parent, 1);
+                                }
+                            } else {
+                                open_selection(&a);
+                            }
+                        }
                     }
                     if (on_name && row >= 0) {
                         /* Not started here: armed.  The rename begins only

@@ -1,0 +1,31 @@
+# shell: desktop
+# home: fixture
+# PVS-011 in the spatial shell: the Location cell answers with the
+# containing folder; the Name cell still enters the folder.
+wait 10
+click 190 76
+wait 3
+menu-pick Kind
+wait 3
+click 190 76
+wait 3
+menu-pick Value
+wait 3
+click 190 76
+wait 3
+menu-pick Location
+wait 3
+note sub's Location cell: no new window opens
+click 420 118
+wait 1
+click 420 118
+wait 6
+expect-windows 1
+note sub's Name: its own window opens, spatially
+click 100 118
+wait 1
+click 100 118
+wait 6
+expect-windows 2
+expect-title sub
+quit

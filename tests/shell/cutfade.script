@@ -9,8 +9,8 @@ key x ctrl
 wait 3
 expect-pixel 20 123 9b9a95
 note Escape aborts the cut; the art returns at full strength, in the
-note selected paint the still-standing selection asks for
+note selected paint -- the plain art at 66% brightness (IV-018)
 key Escape
 wait 3
-expect-pixel 20 123 273842
+expect-pixel 20 123 16150d
 quit

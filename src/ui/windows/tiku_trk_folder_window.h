@@ -184,6 +184,10 @@ int tiku_trk_folder_window_row_at(const tiku_trk_folder_window_t *folder,
 /** @brief Whether a point is in the bottom count/navigation strip (TS-043). */
 int tiku_trk_folder_window_count_at(
     const tiku_trk_folder_window_t *folder, int x, int y);
+/** @brief The list-mode column field under screen @p x, or -1 (PVS-011). */
+int tiku_trk_folder_window_column_at(const tiku_trk_folder_window_t *folder,
+                                     int x);
+
 int tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
                                    int row, int x, int y);
 

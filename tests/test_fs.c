@@ -791,6 +791,24 @@ main(void)
             check(tiku_trk_fs_empty_trash(fs) >= 2, "FS-048",
                   "emptying the Trash removes what is in it");
             run_to_end(fs);
+            {
+                /* EVERY volume's trash at once: a file sitting in another
+                 * volume's trash is emptied with the rest. */
+                char foreign[600];
+                struct stat fst;
+
+                (void)mkdir("/dev/shm/.Trash", 0755);
+                snprintf(foreign, sizeof foreign,
+                         "/dev/shm/.Trash/trk_foreign_%d.txt",
+                         (int)getpid());
+                put(foreign, "F");
+                check(tiku_trk_fs_empty_trash(fs) >= 1, "FS-048",
+                      "another volume's trash counts toward the empty");
+                run_to_end(fs);
+                check(stat(foreign, &fst) != 0, "FS-048",
+                      "and its contents are gone with the rest");
+                (void)unlink(foreign);
+            }
             (void)rmdir(work);
         }
     }

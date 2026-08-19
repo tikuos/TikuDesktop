@@ -472,6 +472,54 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
+    if (tiku_trk_fs_in_trash(controller->fs, destination)) {
+        /* FS-041: a whole volume dragged to the Trash means UNMOUNT, not
+         * delete -- the boot volume refuses by name.  Volumes are taken
+         * out of the drop here; anything else dragged alongside them
+         * still goes to the Trash below. */
+        tiku_trk_volumes_t vols;
+        int scanned = 0, vols_dropped = 0, others = 0;
+        int di;
+
+        for (di = 0; di < controller->drag->count; di++) {
+            const char *path = controller->drag->path[di];
+            char why[200];
+
+            if (!scanned) {
+                scanned = (tiku_trk_volumes_scan(&vols) > 0) ? 1 : -1;
+            }
+            if (scanned < 0 || !tiku_trk_volume_is_root(&vols, path)) {
+                others++;
+                continue;
+            }
+            vols_dropped++;
+            why[0] = '\0';
+            if (!tiku_trk_volume_may_unmount(&vols, path, why,
+                                             sizeof why)) {
+                if (why[0] != '\0') {
+                    tiku_trk_alert_open(controller->alert,
+                        TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
+                        why, "Cancel");
+                }
+            } else if (tiku_trk_volume_unmount(&vols, path, NULL, NULL,
+                           why, sizeof why) == TIKU_TRK_UNMOUNT_OK) {
+                const tiku_trk_volume_t *vol =
+                    tiku_trk_volume_of(&vols, path);
+
+                snprintf(controller->status, controller->status_size,
+                         "unmounted \"%.60s\"",
+                         (vol != NULL) ? vol->name : path);
+            } else if (why[0] != '\0') {
+                tiku_trk_alert_open(controller->alert,
+                    TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
+                    why, "Cancel");
+            }
+        }
+        if (vols_dropped > 0 && others == 0) {
+            *controller->dirty = 1;
+            return;
+        }
+    }
     if (!drop_allowed(controller, destination, drag_modifiers)) {
         return;
     }

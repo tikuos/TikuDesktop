@@ -62,6 +62,10 @@ int tiku_trk_find_window_key(tiku_trk_find_window_t *controller,
     unsigned key, char character);
 
 /** @return Nonzero while a popup extends outside the Find window. */
+/** @brief Whether (x, y) is on the draggable query icon (Q-034). */
+int tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
+                                 int x, int y);
+
 int tiku_trk_find_window_popup_open(
     const tiku_trk_find_window_t *controller);
 

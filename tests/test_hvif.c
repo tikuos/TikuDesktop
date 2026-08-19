@@ -408,6 +408,62 @@ main(void)
             check(held, "IV-019: an opaque pixel is the wash formula, so "
                   "the cached look equals the recomputed one");
         }
+        {   /* IV-018: the SELECTED look is the source's exact transform --
+             * every channel at 66%% brightness (168/255), alpha intact.  A
+             * black wash at 87/255 must therefore equal the multiply. */
+            const uint32_t *sel =
+                tiku_trk_icons_bitmap_washed("folder", 32, 0x000000u, 87u);
+            size_t k, n = 32u * 32u;
+            int held = (sel != NULL);
+
+            for (k = 0; sel != NULL && k < n; k++) {
+                uint32_t src = plain[k];
+
+                if (((src >> 24) & 0xffu) == 0xffu) {
+                    unsigned r = ((src >> 16) & 0xffu) * 168u / 255u;
+
+                    if (((sel[k] >> 16) & 0xffu) != r) { held = 0; }
+                }
+                if (((sel[k] >> 24) & 0xffu) !=
+                    ((src >> 24) & 0xffu)) { held = 0; }
+            }
+            check(held, "IV-018: selected = 66%% brightness with the "
+                  "transparency intact, the source's own transform");
+        }
+        {   /* And THROUGH the selected paint itself, not just the wash
+             * primitive: an opaque pixel painted selected must land at
+             * exactly 66%% of the plain paint. */
+            tiku_desk_surface_t *ps = tiku_desk_surface_new(80, 40, TIKU_DESK_C_PANEL);
+            size_t k, n = 32u * 32u;
+            int held = (ps != NULL);
+            int probed = 0;
+
+            if (ps != NULL) {
+                (void)tiku_trk_icon_paint(ps, "folder", 0, 0, 32);
+                (void)tiku_trk_icon_paint_selected(ps, "folder", 40, 0, 32);
+                for (k = 0; k < n; k++) {
+                    if (((plain[k] >> 24) & 0xffu) == 0xffu) {
+                        int px = (int)(k % 32u), py = (int)(k / 32u);
+                        uint32_t a = ps->px[(size_t)py * (size_t)ps->w +
+                                            (size_t)px];
+                        uint32_t b = ps->px[(size_t)py * (size_t)ps->w +
+                                            (size_t)px + 40u];
+
+                        probed = 1;
+                        if (((b >> 16) & 0xffu) !=
+                                ((a >> 16) & 0xffu) * 168u / 255u ||
+                            ((b >> 8) & 0xffu) !=
+                                ((a >> 8) & 0xffu) * 168u / 255u ||
+                            (b & 0xffu) != (a & 0xffu) * 168u / 255u) {
+                            held = 0;
+                        }
+                    }
+                }
+                tiku_desk_surface_free(ps);
+            }
+            check(held && probed, "IV-018: the selected PAINT is the 66%% "
+                  "multiply of the plain paint, pixel for pixel");
+        }
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every icon parses and renders");

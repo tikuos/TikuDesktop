@@ -144,7 +144,10 @@ PYBG
                 echo hi > /dev/shm/.Trash/planted.txt ;;
             trashfullany.script)
                 mkdir -p /dev/shm/.Trash
-                rm -f /dev/shm/.Trash/xplant.txt ;;
+                # Also the union script's plant: it stays behind after a
+                # full run, and "empty at rest" must mean empty.
+                rm -f /dev/shm/.Trash/xplant.txt \
+                      /dev/shm/.Trash/planted.txt ;;
             hoverpop.script)
                 mkdir -p "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row"
                 echo hi > "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row/deep.txt" ;;

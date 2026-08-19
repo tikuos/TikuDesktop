@@ -939,9 +939,14 @@ visit(const tiku_trk_model_t *m, void *ctx)
     if (!tiku_trk_query_allows_path(&r->q, m)) {
         return 0;
     }
-    if (tiku_trk_model_is_container(m)) {
+    if (tiku_trk_model_is_container(m) &&
+        m->kind != TIKU_TRK_KIND_SYMLINK) {
         /* Descend regardless of whether the directory itself matches: what
-         * is being searched for is usually inside it. */
+         * is being searched for is usually inside it.  Only REAL
+         * directories are descended, as the source pushes only
+         * B_DIRECTORY_NODE entries: a symlink is an entry, not a place --
+         * and following links is how /proc's cycles make a depth-first
+         * walk never come home. */
         enqueue(r, m->path);
     }
     if (r->count >= r->q.max_results) {
@@ -1084,8 +1089,12 @@ tiku_trk_query_step(tiku_trk_qrun_t *r, int budget)
     while (budget-- > 0 && r->head != r->tail) {
         char dir[TIKU_TRK_PATH_MAX];
 
-        snprintf(dir, sizeof dir, "%s", r->queue[r->head]);
-        r->head = (r->head + 1) % QUEUE_MAX;
+        /* The most recently found directory first: a STACK, so the walk
+         * descends before it moves on, in the source's depth-first order
+         * (PVN-069).  The no-snapshot semantics are unchanged -- a folder
+         * already passed still misses later creations. */
+        r->tail = (r->tail + QUEUE_MAX - 1) % QUEUE_MAX;
+        snprintf(dir, sizeof dir, "%s", r->queue[r->tail]);
         r->visited++;
         (void)r->backend->ops->list(r->backend, dir, visit, r);
         if (r->count >= r->q.max_results) {
