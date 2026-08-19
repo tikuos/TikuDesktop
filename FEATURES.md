@@ -1452,12 +1452,12 @@ Option adds "nodeRefsToClose" (the parent node_ref) per ref, suppressed on Deskt
 **PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Option-open closing the source window holds in the spatial shell; the suppression rules the setting carried are the browser's whole way of being.  
 *src/shell/tiku_trk_desktop.c:1844-1851 (open_folder + Mod1Mask -> close_window); src/shell/tiku_trk_app.c:739-753 open_selection (unconditional switch_dir); grep for any single-window setting across src/ returns nothing*
 
-#### PVS-013 · polish · partial
+#### PVS-013 · polish · done
 **Opening from a double-click plays a zoom animation of expanding inverted rectangles out of the clicked pose.**  
 7 iterations, B_OP_INVERT mixed-colors rects growing by 2 px, snooze(10000) per step; only drawn when a pose was actually clicked (not for keyboard open).  
 `PoseView.cpp` → `BPoseView::DrawOpenAnimation`  
-**MISSING:** Icon mode plays no animation at all, and the rectangle is the row's first 200 px rather than the measured first column.  
-**PORT:** Seven inverted rectangles, 10 ms apart, growing 2 px, only on a mouse open.  The rectangle is the row's first 200 px rather than the measured first column, and icon mode has no animation.
+**PORT:** Seven inverted rectangles, 10 ms apart, growing 2 px, only on a mouse open.  The rectangle is the right one now: `tiku_trk_poseview_open_anim_rect` answers with the row's slice of the MEASURED first column in list mode, and with the clicked pose's picture cell in the icon modes -- so icon mode plays the animation out of the icon, as the source draws it.  
+*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_open_anim_rect; src/shell/tiku_trk_app.c (the double-click open); tests/test_poseview.c PVS-013 block (mutation-tested)*
 
 #### PVS-014 · important · done
 **A second, slow click on the name of an already-selected pose starts inline rename after the double-click interval elapses with no further click.**  

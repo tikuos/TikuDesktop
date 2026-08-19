@@ -1547,6 +1547,43 @@ main(void)
         tiku_trk_poseview_scroll_to(v, 0);
     }
 
+    /* --- the open animation grows out of the RIGHT rectangle (PVS-013) - */
+    printf("\nthe open animation rectangle (PVS-013)\n");
+    {
+        tiku_trk_poseview_t *av = tiku_trk_poseview_new(b, dir);
+        int x = 0, y = 0, w = 0, h = 0;
+
+        if (av != NULL && tiku_trk_poseview_count(av) > 0) {
+            const tiku_trk_column_t *cs = NULL;
+            int nc = tiku_trk_poseview_columns(av, &cs);
+
+            tiku_trk_poseview_set_mode(av, TIKU_TRK_MODE_LIST);
+            check(tiku_trk_poseview_open_anim_rect(av, 0, 20, &x, &y, &w,
+                                                   &h) == 1,
+                  "PVS-013", "a clicked row has a rectangle");
+            check(nc > 0 && cs != NULL && w == cs[0].width && h == 20,
+                  "PVS-013",
+                  "in list mode it is the MEASURED first column's slice, "
+                  "not a 200 px guess");
+            tiku_trk_poseview_set_mode(av, TIKU_TRK_MODE_ICON);
+            {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(av, 0);
+                int px = 0, py = 0;
+
+                tiku_trk_poseview_pose_location(av, p, &px, &py);
+                check(tiku_trk_poseview_open_anim_rect(av, 0, 20, &x, &y,
+                                                       &w, &h) == 1 &&
+                      x == px && y == py && w == 32 && h == 32,
+                      "PVS-013",
+                      "in icon mode it is the clicked pose's picture cell");
+            }
+            check(tiku_trk_poseview_open_anim_rect(av, 999, 20, &x, &y, &w,
+                                                   &h) == 0,
+                  "PVS-013", "a row with no pose has none");
+        }
+        tiku_trk_poseview_free(av);
+    }
+
     printf("\nquery windows stay lists (Q-041)\n");
     {
         tiku_trk_model_t result[2];

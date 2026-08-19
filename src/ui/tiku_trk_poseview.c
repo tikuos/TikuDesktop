@@ -2867,6 +2867,36 @@ tiku_trk_poseview_pin_to_grid(const tiku_trk_poseview_t *v, int *x, int *y)
     }
 }
 
+int
+tiku_trk_poseview_open_anim_rect(const tiku_trk_poseview_t *v, int row,
+                                 int row_h, int *x, int *y, int *w, int *h)
+{
+    const tiku_trk_pose_t *p;
+
+    if (v == NULL || row < 0 || row >= tiku_trk_poseview_count(v)) {
+        return 0;
+    }
+    p = v->filtering ? &v->poses[v->filtered[row]] : &v->poses[row];
+    if (v->mode != TIKU_TRK_MODE_LIST) {
+        int cell = (v->mode == TIKU_TRK_MODE_MINI) ? 16 : 32;
+        int px = 0;
+        int py = 0;
+
+        tiku_trk_poseview_pose_location(v, p, &px, &py);
+        *x = px;
+        *y = py;
+        *w = cell;
+        *h = cell;
+        return 1;
+    }
+    *x = 2;
+    *y = 2 + (row - v->scroll) * row_h;
+    /* The MEASURED first column, not a guess (PVS-013). */
+    *w = (v->column_count > 0) ? v->columns[0].width : 200;
+    *h = row_h;
+    return 1;
+}
+
 void
 tiku_trk_poseview_pose_location(const tiku_trk_poseview_t *v,
                                 const tiku_trk_pose_t *p, int *x, int *y)

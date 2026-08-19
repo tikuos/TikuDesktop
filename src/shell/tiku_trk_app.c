@@ -3221,13 +3221,20 @@ tracker_run(int argc, char **argv)
                         tiku_desk_rect_t lr = list_rect(&a);
                         tiku_desk_rect_t from;
 
-                        from.x = lr.x + 2;
-                        from.y = lr.y + 2 + (row -
-                                    tiku_trk_poseview_scroll(a.view)) *
-                                    a.row_h;
-                        from.w = 200;
-                        from.h = a.row_h;
-                        open_animation(&a, from);
+                        {
+                            int ax = 0, ay = 0, aw = 0, ah = 0;
+                            int ox = 0, oy = 0;
+
+                            if (tiku_trk_poseview_open_anim_rect(a.view,
+                                    row, a.row_h, &ax, &ay, &aw, &ah)) {
+                                tiku_trk_poseview_origin(a.view, &ox, &oy);
+                                from.x = lr.x + ax - ox;
+                                from.y = lr.y + ay - oy;
+                                from.w = aw;
+                                from.h = ah;
+                                open_animation(&a, from);
+                            }
+                        }
                         open_selection(&a);
                     }
                     if (on_name && row >= 0) {

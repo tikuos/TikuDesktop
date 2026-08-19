@@ -940,6 +940,16 @@ int tiku_trk_poseview_columns(const tiku_trk_poseview_t *v,
 int tiku_trk_poseview_has_column(const tiku_trk_poseview_t *v, int field);
 
 /**
+ * @brief The view-space rectangle the open animation grows out of (PVS-013).
+ *
+ * List mode: the row's slice of the MEASURED first column.  Icon modes: the
+ * clicked pose's picture cell.  @return 0 when @p row has no pose.
+ */
+int tiku_trk_poseview_open_anim_rect(const tiku_trk_poseview_t *v, int row,
+                                     int row_h, int *x, int *y, int *w,
+                                     int *h);
+
+/**
  * @brief Where the first column's data starts.
  *
  * The strip to its left belongs to the row's icon, not to any column, which
