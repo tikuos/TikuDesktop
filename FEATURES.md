@@ -1886,31 +1886,26 @@ read by nothing that draws icons.
 *src/ui/tiku_trk_poseview.c (the icon branch of key_nav); tests/test_iconview.c*  
 *Shell: desktop*  
 
-#### PVK-011 · important · partial
+#### PVK-011 · important · done
 **Page Up selects the first fully visible pose; if that pose is already the first selected one, the view scrolls up one page first and then selects the new first-visible pose. Page Down is the mirror image using the last visible pose.**  
 Compares FirstVisiblePose()'s index with CurrentPoseList()->IndexOf(fSelectionList->FirstItem()) (Page Down uses LastItem()); ScrollView(B_PAGE_UP/DOWN) moves the scrollbar by its own `max` step. In icon modes Page Up/Down only scroll.  
 `PoseView.cpp` → `BPoseView::KeyDown (case B_PAGE_UP, case B_PAGE_DOWN); BPoseView::FirstVisiblePose / LastVisiblePose`  
-**MISSING:** The icon half holds -- a page is exactly the window's height in
-pixels, and the keys are now bound in the multi-window shell, which bound
-neither of them.  The LIST half is unchanged: paging still steps from the
-selected row rather than from the first VISIBLE one, so a page from a
-selection scrolled out of sight goes to the wrong place.
-*src/ui/tiku_trk_poseview.c (the icon branch of key_nav, and the list branch
-which still pages from the active row); tests/test_iconview.c*
+**PORT:** Both halves: an icon page is exactly the window's height in pixels, and a LIST page now steps from the first VISIBLE row -- a selection parked six screens away no longer decides where a page lands, only a selection actually on screen does.  Bound in both shells.  
+*src/ui/tiku_trk_poseview.c (the base row in the PGUP/PGDN arm); tests/test_poseview.c (PVK-011)*
 
-#### PVK-012 · important · partial
+#### PVK-012 · important · done
 **Home/End/PageUp/PageDown with Shift held extend the selection from the existing anchor to the destination instead of replacing it.**  
 MoveOrChangePoseSelection(to): when a first selection exists, fMultipleSelection is set and Shift is down, it walks from firstIndex (if moving up) or lastIndex (if moving down) to `to` selecting every pose in between; it only ADDS (select = true, shrinking is a TODO in the source) and scrolls the target into view.  
 `PoseView.cpp` → `BPoseView::MoveOrChangePoseSelection`  
-**MISSING:** Shift is honoured on these keys but only ever adds the single destination pose — the walk from the existing anchor to the destination selecting everything in between is missing, so Shift+End extends by one row, not to the end.  
-*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_key_nav lines 994-1010 (no select_range call)*
+**PORT:** A jump key with Shift selects the whole WALK: everything between where the selection stood and where the jump lands, so Shift+End extends to the end and Shift+Page a page, with the pivot planted where the walk began.  
+*src/ui/tiku_trk_poseview.c (the jump-select arm in key_nav); tests/test_poseview.c (PVK-012, mutation-tested)*
 
-#### PVK-013 · polish · partial
+#### PVK-013 · polish · done
 **Scrolling a pose into view never happens on the Desktop, and in list mode only vertical scrolling occurs.**  
 ScrollIntoView(BRect) returns immediately if IsDesktopView(); the horizontal adjustment block is skipped when ViewMode() == kListMode. A pose taller/wider than the view is aligned to its top/left.  
 `PoseView.cpp` → `BPoseView::ScrollIntoView(BRect)`  
-**MISSING:** The list-mode half is genuinely implemented — scroll_into_view is a row-index clamp that only touches v->scroll and aligns an above-window target to the top — but the Desktop exemption has no counterpart at all: the shell's backdrop holds no pose view to exempt, and the auditor's own wording concedes the absence rather than naming an alternative.  
-*src/ui/tiku_trk_poseview.c:3664-3679; src/shell/tiku_trk_desktop.c:1096 (the only poseview_new, for a folder window)*
+**PORT:** Both halves now: scroll_into_view is the row-index clamp it was, and the Desktop's exemption is real -- the backdrop's pose view (it has one now) is marked no_autoscroll, so no key scrolls it to reveal anything: neither the jump keys' origin moves nor a selection's reveal touch it.  
+*src/ui/tiku_trk_poseview.c (no_autoscroll and its two gates); src/deskbar/tiku_trk_desktop_view.c (the Desktop marks itself); tests/test_poseview.c (PVK-013)*
 
 #### PVK-014 · core · done
 **Return opens the current selection.**  
@@ -2020,13 +2015,13 @@ fCountView->SetTypeAhead(sMatchString.String()); a BMessageRunner (fKeyRunner) f
 ComputeTypeAheadScore returns kExactMatchScore (INFINITY) when strcasestr finds the match at position 0, 1.f/(found-text) otherwise, and -1 when absent (wordMode defaults to false, so the word-beginning heuristic is NOT used from the pose view). bestScore starts at -1 and comparison is strictly `>`, so a no-match leaves the selection untouched and ties go to the earliest pose.  
 `Utilities.cpp` → `ComputeTypeAheadScore; BPoseView::FindBestMatch (PoseView.cpp)`  
 
-#### PVK-029 · important · partial
+#### PVK-029 · important · done
 **In list mode type-ahead matches against column text, not just the name: it tries each column in order and stops at the first column that produces any match; in icon modes only the pose name is matched.**  
 Outer loop over CountColumns() with `if (bestScore > 0 || ViewMode() != kListMode) break;`; list mode reads pose->WidgetFor(column,...)->Text(this), icon modes read pose->TargetModel()->Name().  
 `PoseView.cpp` → `BPoseView::FindBestMatch`  
 **TIKU:** Column text becomes typed descriptor fields of a namespace node; decide which fields participate in type-ahead.  
-**MISSING:** The icon-mode half is right (matching is against model.name), but the list-mode clause is missing: type_select_best never walks the columns, so column text only participates in FILTERING, not in type-ahead selection.  
-*src/ui/tiku_trk_poseview.c:type_select_best lines 1184-1203 (vs tiku_trk_poseview_filter_pose lines 1075-1094 which does walk columns)*
+**PORT:** Both modes: icon mode matches names, and LIST-mode type-ahead walks every column the way the filter's walk does -- a kind or a value typed at the list lands on the row that shows it, the name keeping first claim through the same scorer.  
+*src/ui/tiku_trk_poseview.c:type_select_best (the column walk); tests/test_poseview.c (PVK-029, mutation-tested)*
 
 #### PVK-030 · core · done
 **With the 'Type-ahead filtering' setting on and in list mode, typing FILTERS the listing (hiding non-matching poses) instead of selecting a pose.**  
