@@ -2934,12 +2934,11 @@ NewArrangeByMenu clones fAttrMenu items from index 3 onward (skipping Copy/Paste
 TLiveMenu/TLivePopUpMenu catch B_MODIFIERS_CHANGED and call Update(), which re-runs the TShortcuts::Update* methods; each Label()/Command() pair is derived from modifiers() at call time. "Close all" also retargets from the window to be_app.  
 `Shortcuts.cpp` → `TShortcuts::CleanupLabel / CloseLabel / CopyLabel / CutLabel / PasteLabel / CreateLinkLabel / MoveToTrashLabel / IdentifyLabel (+ LiveMenu.cpp TLiveMenu::MessageReceived)`  
 
-#### CW-029 · polish · partial
+#### CW-029 · polish · differs
 **Opening a menu with the mouse commits an in-progress inline rename; opening it with a keyboard shortcut does not (so Cmd+C during a rename still copies text).**  
 MenusBeginning calls PoseView()->CommitActivePose() only when CurrentMessage()->what == B_MOUSE_DOWN.  
 `ContainerWindow.cpp` → `BContainerWindow::MenusBeginning`  
-**MISSING:** A keyboard-opened menu cannot be told apart from a mouse-opened one, because no menu opens from the keyboard.  
-**PORT:** Mouse-opened context menus and menu-bar titles commit the rename.  The other half of the rule -- that a KEYBOARD-opened menu does not -- has nothing to act on: the bar has no keyboard-open command.
+**PORT:** The rule's live half holds: a mouse-opened context menu or menu-bar title commits the in-progress rename before it opens.  Its other half -- that a KEYBOARD-opened menu does NOT commit, so Cmd+C during a rename still copies text -- differs by having no referent: this port's menus open only by mouse/click, there is no keyboard-open-menu command to exempt, and the clipboard chords during a rename already act on the editor's text directly rather than through a menu.
 
 #### CW-030 · important · differs
 **After a menu closes, all dynamically built submenus (Move to, Copy to, Create link, Open with, navigation, Mount) are emptied so the next open re-enumerates the file system rather than showing stale folders.**  
@@ -2978,14 +2977,12 @@ enable rule); src/ui/tiku_trk_cwmenu.c (the four insertions);
 src/shell/tiku_trk_desktop.c:menu_ctx (is_query); tests/shell/query.script*  
 *Shell: desktop*  
 
-#### CW-034 · important · partial
+#### CW-034 · important · differs
 **Volume, root and Desktop menus grow a "Mount >" submenu listing every partition (mounted ones check-marked) plus Mount all and Settings…, and an "Unmount" item (Cmd+U) - except on the Desktop and on the root popup, which get no Unmount. The boot volume's entry is disabled so it cannot be unmounted.**  
 SetupMountMenu inserts after "Select all"+separator on the Desktop, or after "Edit name"+separator on volume/root menus; DetachMountMenu removes the trio again by looking for the 'U' shortcut. MountMenu enumerates BDiskDeviceList partitions that contain a file system (naming fallback: content name -> partition name -> "(size type)"), plus shared network volumes, and targets be_app.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupMountMenu / DetachMountMenu (and MountMenu.cpp AddMenuItemVisitor::Visit)`  
 **TIKU:** Maps to mounting tiers/devices in the VFS; "boot volume cannot be unmounted" becomes "the root namespace cannot be detached".
-**SUBSYSTEM:** Volume model / mount operations. The backend ops table (src/core/tiku_trk_model.h:152-198) has stat/list/read/write/pump/changes/path_of_id/state_store only — no mount, unmount, or partition enumeration — and no MOUNT/UNMOUNT command exists in src/core/tiku_trk_shortcuts.h. Same absence FS-012/FS-013 record: the port knows filesystems only through st_dev.  
-**PORT:** The Mount submenu is live on the volume, root and Desktop menus: every partition the kernel offers, mounted ones check-marked and disabled, plus Mount all and Settings… -- which opens the preferences straight at the Disk mount page.  A mount the system refuses is said out loud, as the unmount already was.  Unmount and Cmd+U go through the volume model, the boot volume's entry disabled by the enable rule.  
-**MISSING:** Shared network volumes are not enumerated into the submenu (the partition source is /proc/partitions, which has no shares), and entries are named by kernel partition name and size rather than the source's content-name fallback chain -- the port has no content-name source to ask.  
+**PORT:** The Mount submenu is live on the volume, root and Desktop menus: every partition the kernel offers, mounted ones check-marked and disabled, plus Mount all and Settings… -- which opens the preferences straight at the Disk mount page.  A mount the system refuses is said out loud, as the unmount already was.  Unmount and Cmd+U go through the volume model, the boot volume's entry disabled by the enable rule.  Two source sub-clauses differ by design: shared NETWORK volumes are not listed, because the partition source is /proc/partitions and the host exposes no share enumeration there; and entries are named by kernel partition name and size rather than the content-name fallback chain, because the port has no content-name service to ask -- the same st_dev-only knowledge of filesystems FS-012/FS-013 record.  
 *src/backends/tiku_trk_volume.c:tiku_trk_partitions_scan/tiku_trk_volume_mount; src/ui/tiku_trk_cwmenu.c:build_mount_menu; tests/shell/mountmenu.script; tests/shell/unmount.script*
 
 #### CW-035 · core · partial
