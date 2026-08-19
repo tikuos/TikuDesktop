@@ -243,6 +243,7 @@ typedef struct desktop {
     tiku_trk_prefs_window_t prefs_window;
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;
     int                  applied_hide_dotfiles;
+    int                  applied_full_path;
     int                  applied_folders_first;
     tiku_trk_switcher_window_t switcher_window;
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
@@ -357,7 +358,28 @@ sync_folder_preferences(desktop_t *app)
     int hide = tiku_trk_prefs_get(prefs, "HideDotFiles") != 0;
     int folders_first = tiku_trk_prefs_get(prefs, "SortFolderNamesFirst") != 0;
     int filter = tiku_trk_prefs_get(prefs, "TypeAheadFiltering") != 0;
+    int full_path = tiku_trk_prefs_get(prefs, "ShowFullPathInTitleBar") != 0;
     int i;
+
+    /* The thumbnail queue's own switch IS the preference (TS-053). */
+    app->thumbs.enabled = tiku_trk_prefs_get(prefs,
+                              "GenerateImageThumbnails") != 0;
+
+    if (full_path != app->applied_full_path) {
+        /* kWindowsShowFullPathChanged: every OPEN window re-titles the
+         * moment the preference moves (TS-047). */
+        app->applied_full_path = full_path;
+        for (i = 0; i < app->folder_count; i++) {
+            folder_t *folder = &app->folders[i];
+
+            if (folder->view != NULL && folder->win != NULL) {
+                tiku_trk_folder_title_for(prefs, folder->path,
+                                          folder->win->title,
+                                          sizeof folder->win->title);
+            }
+        }
+        app->dirty = 1;
+    }
 
     /* Every turn, not only on change: a window opened or switched to list
      * mode since the last pass must pick the preference up too, and the
@@ -3257,10 +3279,30 @@ tracker_run(int argc, char **argv)
     }
     app.running = 1;
     app.applied_hide_dotfiles = -1;
+    app.applied_full_path = -1;
     app.applied_folders_first = -1;
     app.dirty = 1;
 
     while (app.running) {
+        {   /* The settings FILE is a doorway too: a change written by
+             * anything -- another shell, a script, an editor -- lands in
+             * the live model, the reload the browser shell already does
+             * (TS-052, TS-047). */
+            static time_t settings_mtime;
+            static off_t settings_size;
+            struct stat sst;
+
+            if (app.prefs_window.path[0] != '\0' &&
+                stat(app.prefs_window.path, &sst) == 0 &&
+                (sst.st_mtime != settings_mtime ||
+                 sst.st_size != settings_size)) {
+                settings_mtime = sst.st_mtime;
+                settings_size = sst.st_size;
+                (void)tiku_trk_prefs_load(prefs_model(&app),
+                                          app.prefs_window.path);
+                app.dirty = 1;
+            }
+        }
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
         for (;;) {

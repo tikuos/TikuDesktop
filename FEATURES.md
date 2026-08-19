@@ -5859,12 +5859,13 @@ Name 145px left-aligned (editable, stat field), Size 80px right-aligned, Modifie
 BViewState defaults: view mode kListMode, icon size and last icon size B_LARGE_ICON, both origins (0,0), primary sort = hash of the name attribute with B_STRING_TYPE, secondary 0, reverse false. On restore, if no column matches the saved primary sort the first column becomes the primary sort, and a primary equal to the secondary clears the secondary.  
 `ViewState.cpp` → `BViewState::_Init`  
 
-#### TS-036 · important · partial
+#### TS-036 · important · done
 **Column and sort changes are written back to the folder only when something actually changed.**  
 Resize, reorder, add and remove set fStateNeedsSaving; sort/mode/origin changes are detected by BViewState comparing every field against a shadow copy taken at construction and at each archive. The window checks both before saving on close.  
 `ViewState.h` → `BViewState::StateNeedsSaving`  
 **TIKU:** With a namespace store, the same dirty-bit discipline avoids a write per drag frame — important if the backing store is NVM.  
-**MISSING:** The dirty-bit discipline exists and works for view state -- resize, move, add, remove, sort_click, set_mode and set_icon_size all set state_dirty and save_state early-returns when it is clear -- but the column write is ungated: save_columns never consults state_dirty and the window calls it on every title-bar release, so a click that only re-sorted rewrites the layout record.  
+**PORT:** Both writes are gated now: view state by state_dirty as before, and the column record by its own columns_dirty, set only by the column mutators (resize, reorder, add, remove) -- so a release that merely re-sorted writes nothing, and a successful write clears the debt.  The defaults installer forces its own write deliberately.  
+*src/ui/tiku_trk_poseview.c (columns_dirty); tests/test_poseview.c TS-036 block (mutation-tested)*
 *src/ui/tiku_trk_poseview.c:2187 (save_state gate) vs :3217 (save_columns, no gate); caller src/shell/tiku_trk_app.c:1472*
 
 #### TS-037 · core · done
@@ -5891,19 +5892,21 @@ BCountView caches fLastCount/fLastCountSelected (initialised to -1 so the first 
 `CountView.cpp` → `BCountView::CheckCount`
 **PORT:** Count text formatting is gated by cached total/selection values, so unchanged counts do not rebuild their label; the compositor remains whole-surface by design (`src/ui/windows/tiku_trk_folder_window.c`; `tests/test_poseview.c`).
 
-#### TS-041 · important · partial
+#### TS-041 · important · done
 **Typing to jump to an item replaces the count with the typed string, on a document-coloured background, and the string disappears after a pause.**  
 The count view background switches to B_DOCUMENT_BACKGROUND_COLOR and the text to B_DOCUMENT_TEXT_COLOR while typing ahead, and the string is truncated from the beginning so the most recent characters stay visible. A BMessageRunner ticking at the double-click speed clears it once 2x double-click-speed has elapsed since the last key; the same 2x window decides whether a new keystroke extends or restarts the match string.  
 `CountView.cpp` → `BCountView::SetTypeAhead`  
-**MISSING:** The typed string replaces the count on a sunken document ground and is cleared by type_tick once the quiet period (1 s = 2x click speed) has passed since the last key, with backspace restarting it; the missing clause is truncation -- the string is printed whole, not truncated from the beginning to keep the newest characters visible.  
+**PORT:** The typed string replaces the count on a sunken document ground, clears after the quiet period, and is truncated FROM THE BEGINNING now: tiku_trk_text_fit grew a TRUNC_BEGIN mode whose survivor is the tail -- the characters still being typed.  
+*src/core/tiku_trk_attr.c (TRUNC_BEGIN); src/shell/tiku_trk_app.c:count_label; tests/test_attr.c TS-041 block (mutation-tested)*
 *src/shell/tiku_trk_app.c:226 (draw_count type-ahead branch) and :1557 (type_tick); src/ui/tiku_trk_poseview.c:1307*
 
-#### TS-042 · important · partial
+#### TS-042 · important · done
 **With type-ahead filtering on, typed characters accumulate in the status area as a live filter and the list shrinks to matching items.**  
 Count view shows "K/N filter" when something is selected, else "N filter", truncated in the middle. Backspace removes one character (RemoveFilterCharacter); Shift+Space starts a second, independent filter term shown as "|" (all terms must match, each against any column's text, case-insensitive substring); Escape or Shift+Return cancels filtering and CancelFilter clears the string. Filtering is list-mode only, and Tab type-select is disabled while the preference is on.  
 `CountView.cpp` → `BCountView::AddFilterCharacter`  
 **TIKU:** Filter matches the rendered text of every column, so it depends on descriptor formatting; decide whether device nodes with expensive reads participate in filtering.  
-**MISSING:** Characters accumulate into a live filter that shrinks the list, backspace removes one character and then a whole term, Shift+Space starts an independent term shown joined by '|', every term must match and each may match any column's rendered text case-insensitively, and Shift+Return cancels; missing is only the count-view label form -- it shows the raw filter text, never "N filter"/"K/N filter" middle-truncated.  Escape clearing the terms while the preference keeps the mode is the source's own behaviour now that the mode is the preference (TS-052).  
+**PORT:** Characters accumulate into a live filter, backspace peels a character and then a term, Shift+Space starts an independent term joined by '|', every term must match any column case-insensitively, and the count view says the label form now: "N filter" -- "K/N filter" with a selection -- the expression middle-truncated so both ends survive.  Escape clearing the terms while the preference keeps the mode is the source's own behaviour (TS-052).  
+*src/shell/tiku_trk_app.c:count_label; tests/shell/typefilter.script (the count assertion)*
 *src/ui/tiku_trk_poseview.c:1211 (type_ahead filtering branch), :1277 (type_string '|' join), :filter_pose; Escape at src/shell/tiku_trk_app.c:904*
 
 #### TS-043 · important · done
@@ -5927,19 +5930,20 @@ Each line is "Name value", booleans written as on/off, colours as 0x%08x; the fi
 **PORT:** A plain-text file, one "Name value" per line, booleans as on/off and colours as 0x%08x, rewritten wholesale.  A file that is not there leaves the defaults rather than failing.  
 **PORT:** A plain-text file, one "Name value" per line, booleans as on/off and colours as 0x%08x, rewritten wholesale on every change.  Loaded at startup and saved the moment a control is clicked.  A file that is not there leaves the defaults rather than failing.  
 *Shell: desktop*  
-#### TS-046 · important · partial
+#### TS-046 · important · done
 **"Show Disks icon" and "Show volumes on Desktop" are mutually exclusive, and "Show shared volumes on Desktop" is only available with the latter.**  
 Defaults: ShowDisksIcon off, MountVolumesOntoDesktop on, MountSharedVolumesOntoDesktop on. Setting either one through the API forces the other to its complement (SetShowDisksIcon also sets MountVolumesOntoDesktop to !enabled). Changing them broadcasts kVolumesOnDesktopChanged (and kDesktopIntegrationChanged on Defaults/Revert) with all three booleans so open windows adapt live.  
 `SettingsViews.cpp` → `DesktopSettingsView::MessageReceived (kShowDisksIconChanged)`  
 **TIKU:** "Volumes" become namespace mounts; the same one-of-two policy should apply to whether mounts appear on the Desktop or under a Disks node.  
 **PORT:** The volume list excludes the kernel's own bookkeeping filesystems, so what it offers are places a person could browse.  
-**MISSING:** The two settings themselves do not exist; they need the preferences window.  
-#### TS-047 · polish · partial
+**PORT:** Both settings live on the preferences window's Desktop page, and the interlocks hold through one door for the window's click and a programmatic set alike: turning either of the pair on turns the other off (they are two answers to what the Desktop shows for storage), turning volumes-on-Desktop off takes shared volumes with it, and the shared control is greyed -- click-refused -- until the base setting returns.  
+*src/core/tiku_trk_prefs.c:interlock/tiku_trk_prefs_control_enabled; src/ui/windows/tiku_trk_prefs_window.c; tests/test_prefs.c TS-046 block (mutation-tested)*
+#### TS-047 · polish · done
 **"Show folder location in title tab" puts the full path in the window title.**  
 Default off (kDefaultShowFullPathInTitleBar). Notifies kWindowsShowFullPathChanged; also enables path watching so the title tracks renames of ancestors.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kWindowsShowFullPathChanged)`  
-**MISSING:** The full path does reach the title and follows the folder's own rename through the MOVED/RETITLE notice, but the row's rule is a preference: there is no setting, no default-off, no kWindowsShowFullPathChanged-style propagation, and no ancestor path watching — the port hard-codes the on state, which is absence of the mechanism, not another route to it.  
-*src/shell/tiku_trk_app.c:559-570 (retitle builds the path unconditionally); src/shell/tiku_trk_desktop.c:2302-2306 (RETITLE copies poseview path); src/ui/tiku_trk_poseview.c:2460-2462 (only the folder's own MOVED)*
+**PORT:** The rule is the preference now: ShowFullPathInTitleBar sits on the Windows page, default off, honoured by the title composer (CW-016), and PROPAGATED the way kWindowsShowFullPathChanged was -- flipping it re-titles every open window on the next turn, and the desktop shell reloads the settings file live so a change from anywhere lands.  Ancestor-chain watching stays out on the boundary CW-016 records: notices here are path-keyed, and a parent renamed out from under a window is the unwatched-ancestor gap the source's node-monitor closes.  
+*src/shell/tiku_trk_desktop.c:sync_folder_preferences (the retitle sweep) and the settings mtime reload; tests/shell/pathtitle.script (the live flip, mutation-tested)*
 
 #### TS-048 · important · done
 **"Single window navigation" reuses one window when opening folders, and "Show navigator" (only selectable with it on) adds the back/forward/up bar.**  
@@ -5981,13 +5985,14 @@ Default off. While on, Tab-based type-select is disabled in list mode. If the pr
 **PORT:** The preference is read now, in both shells: the browser polls the settings file and applies it live, the desktop applies it from its own preferences model to every open list view each turn, and a view returning to list mode picks it back up.  Off by default; switching it off drops the terms and restores the listing on every view at once.  Tab is a name-order walk that filtering swallows, never a mode switch.  
 *src/shell/tiku_trk_app.c:sync_navigator_preference; src/shell/tiku_trk_desktop.c:sync_folder_preferences; src/ui/tiku_trk_poseview.c (filter-vs-select branch); tests/shell/typefilter.script*
 
-#### TS-053 · polish · partial
+#### TS-053 · polish · done
 **"Generate image thumbnails" controls whether image files show a thumbnail instead of a type icon.**  
 Default on; consulted per file when deciding whether a thumbnail should be produced.  
 `SettingsViews.cpp` → `WindowsSettingsView::MessageReceived (kGenerateImageThumbnailsChanged)`  
 **TIKU:** Thumbnail generation is a per-node capability question in a device namespace; nodes without readable bulk content must not be probed.  
 **PORT:** The setting exists and gates thumbnailing, on by default.  
-**MISSING:** Nothing surfaces it: there is no preferences window to turn it off from, so it can only be changed in code (the preferences subsystem).  
+**PORT:** The setting sits on the Windows page (default on) and is the thumbnail queue's own switch: with it off nothing is queued, decoded, cached, or even conjures the cache directory -- a freshness check no longer mkdirs, the save does -- and image rows keep their type icon.  
+*src/shell/tiku_trk_desktop.c (the enabled sync); src/media/tiku_trk_thumb.c (queue gate, save-side mkdir); tests/shell/thumboff.script (mutation-tested) and thumb.script (the on state)*
 #### TS-054 · important · done
 **"Show space bars on volumes" draws a used/free capacity bar on volume icons, with three user-chosen colours.**  
 Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0, all with alpha 192 (the alpha is forced to 192 on every pick because BColorControl ignores alpha but equality checks do not). The bar is drawn along the right edge of the icon, 7/32 of icon width (min 4px); the warning colour replaces the used colour when free space is below 5%. Toggling the setting or a colour makes Tracker force a periodic update of all volume poses; with the setting off, Tracker's Pulse skips that update entirely.  

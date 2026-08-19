@@ -133,7 +133,8 @@ int tiku_trk_attr_compare(const tiku_trk_desc_t *d, const char *a,
 /** @brief Where an over-long string loses its middle, or its end. */
 typedef enum {
     TIKU_TRK_TRUNC_MIDDLE = 0,   /* names and generic values              */
-    TIKU_TRK_TRUNC_END           /* sizes, and the open-with relation     */
+    TIKU_TRK_TRUNC_END,          /* sizes, and the open-with relation     */
+    TIKU_TRK_TRUNC_BEGIN         /* type-ahead: the newest characters win */
 } tiku_trk_trunc_t;
 
 /**

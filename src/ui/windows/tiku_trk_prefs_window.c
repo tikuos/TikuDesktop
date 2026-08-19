@@ -65,12 +65,18 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         box.y = content.y + y + 4;
         box.w = 12;
         box.h = 12;
+        int on = tiku_trk_prefs_control_enabled(&controller->model, pref);
+        unsigned ink = on ? TIKU_DESK_C_TEXT
+                          : tiku_desk_tint(TIKU_DESK_C_TEXT,
+                                           TIKU_DESK_LIGHTEN_2);
+
         if (pref->type == TIKU_TRK_PREF_BOOL) {
-            tiku_desk_fill(surface, box, TIKU_DESK_C_DOC);
-            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
+            tiku_desk_fill(surface, box,
+                           on ? TIKU_DESK_C_DOC : TIKU_DESK_C_PANEL);
+            tiku_desk_frame(surface, box, ink);
             if (pref->value) {
                 tiku_desk_text(surface, font, box.x + 2, box.y + 11, "x",
-                               TIKU_DESK_C_TEXT);
+                               ink);
             }
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
             /* The swatch IS the control: it shows the colour and a click
@@ -80,7 +86,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
         }
         tiku_desk_text(surface, font, content.x + x + 18,
-                       content.y + y + 14, pref->name, TIKU_DESK_C_TEXT);
+                       content.y + y + 14, pref->name, ink);
     }
     for (i = 0; i < 2; i++) {
         tiku_desk_rect_t button;
@@ -123,8 +129,12 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
     } else if (hit == TIKU_TRK_PREF_HIT_SETTING) {
         tiku_trk_pref_t *pref = &controller->model.pref[which];
 
+        if (!tiku_trk_prefs_control_enabled(&controller->model, pref)) {
+            return 1;               /* greyed: the click is refused */
+        }
         if (pref->type == TIKU_TRK_PREF_BOOL) {
-            pref->value = !pref->value;
+            tiku_trk_prefs_set(&controller->model, pref->name,
+                               !pref->value);
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
             pref->value = tiku_trk_prefs_colour_next(pref->value);
         }

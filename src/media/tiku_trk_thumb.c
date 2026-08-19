@@ -42,11 +42,9 @@ blob_path(const char *path, char *out, size_t max)
     for (p = (const unsigned char *)path; *p != '\0'; p++) {
         h = ((h << 5) + h) ^ (unsigned long)*p;   /* djb2 */
     }
-    if (snprintf(out, max, "%s/.cache/tiku-tracker", home) < 0) {
-        return -1;
-    }
-    (void)tiku_trk_state_mkparents(out);
-    (void)mkdir(out, 0755);
+    /* No mkdir here: this is called by mere freshness CHECKS, and a
+     * check must not conjure the cache the setting says not to build
+     * (TS-053).  The save makes the directory when it writes. */
     return (snprintf(out, max, "%s/.cache/tiku-tracker/%08lx.raw", home,
                      h & 0xffffffffful) > 0) ? 0 : -1;
 }
@@ -128,7 +126,7 @@ tiku_trk_thumb_queue(tiku_trk_thumb_q_t *q, const char *path, int64_t bytes,
 {
     tiku_trk_thumb_job_t *slot;
 
-    if (q == NULL || path == NULL || path[0] == '\0') {
+    if (q == NULL || !q->enabled || path == NULL || path[0] == '\0') {
         return -1;
     }
     /* The same file is never worked twice at once: two windows showing one
@@ -205,6 +203,18 @@ tiku_trk_thumb_step(tiku_trk_thumb_q_t *q, tiku_trk_store_t *store)
             char blob[TIKU_TRK_PATH_MAX];
 
             if (blob_path(job.path, blob, sizeof blob) == 0) {
+                {   /* The write conjures the cache directory; nothing
+                     * else does (TS-053). */
+                    char dir[TIKU_TRK_PATH_MAX];
+                    const char *home = getenv("HOME");
+
+                    if (home != NULL &&
+                        snprintf(dir, sizeof dir, "%s/.cache/tiku-tracker",
+                                 home) > 0) {
+                        (void)tiku_trk_state_mkparents(dir);
+                        (void)mkdir(dir, 0755);
+                    }
+                }
                 (void)blob_write(blob, thumb.px,
                                  (size_t)thumb.w * (size_t)thumb.h *
                                      sizeof *thumb.px);

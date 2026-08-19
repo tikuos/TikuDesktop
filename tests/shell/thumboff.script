@@ -1,0 +1,8 @@
+# shell: desktop
+# prefs: thumbs-off
+# TS-053: with "Generate image thumbnails" off, an image file keeps its
+# type icon and no thumbnail is made or cached.
+wait 40
+expect-title trk_script
+expect-no-file /tmp/trk_home/.cache/tiku-tracker
+quit

@@ -10,6 +10,8 @@ key .
 key t
 wait 3
 expect-rows 1
+note the count view says "N filter", not the raw text alone (TS-042)
+expect-count 1 a.t
 note Escape clears the terms but the preference keeps the mode engaged
 key Escape
 wait 3

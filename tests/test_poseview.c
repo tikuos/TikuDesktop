@@ -1584,6 +1584,27 @@ main(void)
         tiku_trk_poseview_free(av);
     }
 
+    /* --- the layout record is written only when it changed (TS-036) --- */
+    printf("\ncolumn writes are gated by change (TS-036)\n");
+    {
+        tiku_trk_poseview_t *cv = tiku_trk_poseview_new(b, dir);
+
+        if (cv != NULL) {
+            (void)tiku_trk_poseview_save_columns(cv);   /* settle */
+            tiku_trk_poseview_sort_click(cv, TIKU_TRK_COL_KIND, 0);
+            check(tiku_trk_poseview_save_columns(cv) == 0, "TS-036",
+                  "a click that only re-sorted writes no layout record");
+            (void)tiku_trk_poseview_resize_column(cv, TIKU_TRK_COL_NAME,
+                                                  180);
+            check(tiku_trk_poseview_save_columns(cv) > 0, "TS-036",
+                  "a real resize writes it");
+            check(tiku_trk_poseview_save_columns(cv) == 0, "TS-036",
+                  "and the write clears the debt -- the next release "
+                  "writes nothing again");
+        }
+        tiku_trk_poseview_free(cv);
+    }
+
     printf("\nquery windows stay lists (Q-041)\n");
     {
         tiku_trk_model_t result[2];

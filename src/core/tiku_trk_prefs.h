@@ -67,6 +67,10 @@ tiku_trk_pref_t *tiku_trk_prefs_find(tiku_trk_prefs_t *p, const char *name);
 int32_t tiku_trk_prefs_get(tiku_trk_prefs_t *p, const char *name);
 void tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v);
 
+/** @brief Whether a control answers clicks, by the interlocks (TS-046). */
+int tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
+                                   const tiku_trk_pref_t *pref);
+
 /** @brief Read the settings file; missing is not an error. */
 int tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path);
 

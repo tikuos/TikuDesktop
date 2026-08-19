@@ -10,4 +10,8 @@ wait 5
 expect-title sub
 note the whole path is NOT the title: this substring is absent from "sub"
 expect-no-title /tmp/trk_script
+note flipping the preference re-titles the OPEN window, live (TS-047)
+write /tmp/trk_home/.config/TrackerSettings ShowFullPathInTitleBar on
+wait 12
+expect-title /tmp/trk_script/sub
 quit

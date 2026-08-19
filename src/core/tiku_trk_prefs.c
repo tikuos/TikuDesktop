@@ -117,6 +117,55 @@ tiku_trk_prefs_get(tiku_trk_prefs_t *p, const char *name)
     return (f != NULL) ? f->value : 0;
 }
 
+/**
+ * @brief The rules that keep settings from contradicting each other.
+ *
+ * Applied after ANY change to @p name, however it arrived -- the window's
+ * click and a programmatic set go through the same door (TS-046).
+ */
+static void
+interlock(tiku_trk_prefs_t *p, const char *name, int32_t v)
+{
+    if (strcmp(name, "SingleWindowBrowse") == 0 && v == 0) {
+        tiku_trk_pref_t *nav = tiku_trk_prefs_find(p, "ShowNavigator");
+
+        if (nav != NULL) {
+            nav->value = 0;
+        }
+    }
+    /* The Disks icon and volumes-on-Desktop are two answers to one
+     * question -- what the Desktop shows for storage -- so turning one
+     * on turns the other off (TS-046). */
+    if (strcmp(name, "ShowDisksIcon") == 0 && v != 0) {
+        tiku_trk_pref_t *m = tiku_trk_prefs_find(p,
+                                 "MountVolumesOntoDesktop");
+
+        if (m != NULL) {
+            m->value = 0;
+            /* And what rode on it goes with it. */
+            interlock(p, "MountVolumesOntoDesktop", 0);
+        }
+    }
+    if (strcmp(name, "MountVolumesOntoDesktop") == 0) {
+        if (v != 0) {
+            tiku_trk_pref_t *d = tiku_trk_prefs_find(p, "ShowDisksIcon");
+
+            if (d != NULL) {
+                d->value = 0;
+            }
+        } else {
+            /* Shared volumes ride on volumes-on-Desktop: with the base
+             * setting off there is nothing for them to ride (TS-046). */
+            tiku_trk_pref_t *sh = tiku_trk_prefs_find(p,
+                                      "MountSharedVolumesOntoDesktop");
+
+            if (sh != NULL) {
+                sh->value = 0;
+            }
+        }
+    }
+}
+
 void
 tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v)
 {
@@ -124,14 +173,22 @@ tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v)
 
     if (f != NULL) {
         f->value = v;
-        if (strcmp(name, "SingleWindowBrowse") == 0 && v == 0) {
-            tiku_trk_pref_t *nav = tiku_trk_prefs_find(p, "ShowNavigator");
-
-            if (nav != NULL) {
-                nav->value = 0;
-            }
-        }
+        interlock(p, name, v);
     }
+}
+
+int
+tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
+                               const tiku_trk_pref_t *pref)
+{
+    if (pref != NULL &&
+        strcmp(pref->name, "MountSharedVolumesOntoDesktop") == 0) {
+        const tiku_trk_pref_t *m = tiku_trk_prefs_find(
+            (tiku_trk_prefs_t *)p, "MountVolumesOntoDesktop");
+
+        return m != NULL && m->value != 0;
+    }
+    return 1;
 }
 
 /** @brief Remember a line naming no setting we know. */

@@ -223,6 +223,31 @@ main(void)
               "while empty space is nothing");
     }
 
+    printf("\nthe Desktop page interlocks (TS-046)\n");
+    {
+        tiku_trk_prefs_t q;
+
+        tiku_trk_prefs_init(&q);
+        tiku_trk_prefs_set(&q, "MountVolumesOntoDesktop", 1);
+        tiku_trk_prefs_set(&q, "MountSharedVolumesOntoDesktop", 1);
+        tiku_trk_prefs_set(&q, "ShowDisksIcon", 1);
+        check(tiku_trk_prefs_get(&q, "MountVolumesOntoDesktop") == 0,
+              "TS-046", "the Disks icon turns volumes-on-Desktop off");
+        check(tiku_trk_prefs_get(&q, "MountSharedVolumesOntoDesktop") == 0,
+              "TS-046", "and shared volumes went with it");
+        check(!tiku_trk_prefs_control_enabled(&q,
+                  tiku_trk_prefs_find(&q, "MountSharedVolumesOntoDesktop")),
+              "TS-046", "with the base setting off, the shared control is greyed");
+        tiku_trk_prefs_set(&q, "MountVolumesOntoDesktop", 1);
+        check(tiku_trk_prefs_get(&q, "ShowDisksIcon") == 0,
+              "TS-046", "and volumes-on-Desktop turns the Disks icon off -- the two "
+              "are one question");
+        check(tiku_trk_prefs_control_enabled(&q,
+                  tiku_trk_prefs_find(&q, "MountSharedVolumesOntoDesktop")),
+              "TS-046", "which un-greys shared volumes again");
+        tiku_trk_prefs_free(&q);
+    }
+
     (void)remove(path);
     tiku_trk_prefs_free(&p);
     printf("\n%s\n", fails ? "FAILURES" : "the settings hold");

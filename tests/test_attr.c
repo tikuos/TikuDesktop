@@ -365,6 +365,22 @@ main(void)
               "plain count rather than eliding something readable");
     }
 
+    printf("\ntruncation from the beginning (TS-041)\n");
+    {
+        char out[64];
+
+        (void)tiku_trk_text_fit("abcdefghij", 6, TIKU_TRK_TRUNC_BEGIN,
+                                char_measure, NULL, out, sizeof out);
+        check(strcmp(out + strlen(out) - 3, "hij") == 0,
+              "what survives is the TAIL -- the newest characters typed");
+        check(out[0] != 'a',
+              "and the head is what was given up");
+        (void)tiku_trk_text_fit("abc", 10, TIKU_TRK_TRUNC_BEGIN,
+                                char_measure, NULL, out, sizeof out);
+        check(strcmp(out, "abc") == 0,
+              "a string that fits is left alone");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every attribute rule holds");
     return fails ? 1 : 0;
 }

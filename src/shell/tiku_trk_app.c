@@ -551,51 +551,82 @@ draw_pole(app_t *a, tiku_desk_rect_t count)
 
 /** @brief The count view, shared by both modes. */
 static void
+count_label(app_t *a, int width, char *label, size_t max)
+{
+    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const char *typed = tiku_trk_poseview_type_string(a->view);
+    int total = tiku_trk_poseview_count(a->view);
+
+    if (a->status[0] != '\0') {
+        /* An operation's progress, a refusal, or a conflict question: the
+         * count can wait, this is what the user needs to read. */
+        snprintf(label, max, "%s", a->status);
+    } else if (typed[0] != '\0' && tiku_trk_poseview_is_filtering(a->view)) {
+        /* TS-042: the filter label carries its own count -- "N filter",
+         * or "K/N filter" with a selection -- middle-truncated so both
+         * ends survive a long expression. */
+        char fit[200];
+        int sel = tiku_trk_poseview_selection_count(a->view);
+
+        if (tiku_trk_text_fit(typed, width - 70, TIKU_TRK_TRUNC_MIDDLE,
+                              measure_text, (void *)f, fit,
+                              sizeof fit) < 0) {
+            snprintf(fit, sizeof fit, "%s", typed);
+        }
+        if (sel > 0) {
+            snprintf(label, max, "%d/%d %s", sel, total, fit);
+        } else {
+            snprintf(label, max, "%d %s", total, fit);
+        }
+    } else if (typed[0] != '\0') {
+        /* TS-041: truncated from the BEGINNING, so the newest characters
+         * -- the ones being typed -- stay visible. */
+        if (tiku_trk_text_fit(typed, width - 12, TIKU_TRK_TRUNC_BEGIN,
+                              measure_text, (void *)f, label,
+                              max > 240u ? 240u : max) < 0) {
+            snprintf(label, max, "%s", typed);
+        }
+    } else if (tiku_trk_poseview_pole(a->view, tiku_trk_now())) {
+        /* TS-038: a load long enough to notice says so.  The count is not
+         * final yet, so it is not shown as though it were. */
+        snprintf(label, max, "%d item%s so far", total,
+                 (total == 1) ? "" : "s");
+    } else if (total == 0) {
+        /* TS-037: an empty folder says so in words.  "0 items" reads like
+         * a count that failed rather than a folder with nothing in it. */
+        snprintf(label, max, "%s",
+                 tiku_trk_poseview_is_filtering(a->view)
+                     ? "nothing matches" : "empty folder");
+    } else if (tiku_trk_poseview_selection_count(a->view) > 0) {
+        /* What is picked out is the thing being worked on, so the count
+         * says how much of the folder that is (TS-037). */
+        snprintf(label, max, "%d/%d selected",
+                 tiku_trk_poseview_selection_count(a->view), total);
+    } else {
+        snprintf(label, max, "%d item%s%s", total,
+                 (total == 1) ? "" : "s",
+                 tiku_trk_poseview_is_filtering(a->view)
+                     ? " (filtered)" : "");
+    }
+}
+
+static void
 draw_count(app_t *a, tiku_desk_rect_t list)
 {
     tiku_desk_surface_t *s = a->surf;
     const tiku_desk_font_t *f = tiku_desk_font_plain();
     tiku_desk_rect_t count = { list.x, list.y + list.h, list.w, COUNT_H };
     const char *typed = tiku_trk_poseview_type_string(a->view);
-    int total = tiku_trk_poseview_count(a->view);
     char label[240];
 
     /* While typing, the string replaces the count on a document ground --
      * the user needs to see what they have typed, not how many items. */
-    if (a->status[0] != '\0') {
-        /* An operation's progress, a refusal, or a conflict question: the
-         * count can wait, this is what the user needs to read. */
-        tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-        snprintf(label, sizeof label, "%s", a->status);
-    } else if (typed[0] != '\0') {
+    if (a->status[0] == '\0' && typed[0] != '\0') {
         tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
-        snprintf(label, sizeof label, "%s", typed);
-    } else if (tiku_trk_poseview_pole(a->view, tiku_trk_now())) {
-        /* TS-038: a load long enough to notice says so.  The count is not
-         * final yet, so it is not shown as though it were. */
-        tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-        snprintf(label, sizeof label, "%d item%s so far", total,
-                 (total == 1) ? "" : "s");
     } else {
         tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
-        /* TS-037: an empty folder says so in words.  "0 items" reads like
-         * a count that failed rather than a folder with nothing in it. */
-        if (total == 0) {
-            snprintf(label, sizeof label, "%s",
-                     tiku_trk_poseview_is_filtering(a->view)
-                         ? "nothing matches" : "empty folder");
-        } else if (tiku_trk_poseview_selection_count(a->view) > 0) {
-            /* What is picked out is the thing being worked on, so the
-             * count says how much of the folder that is (TS-037). */
-            snprintf(label, sizeof label, "%d/%d selected",
-                     tiku_trk_poseview_selection_count(a->view), total);
-        } else {
-            snprintf(label, sizeof label, "%d item%s%s", total,
-                     (total == 1) ? "" : "s",
-                     tiku_trk_poseview_is_filtering(a->view)
-                         ? " (filtered)" : "");
-        }
     }
+    count_label(a, count.w, label, sizeof label);
     {   /* TS-039: while the pole is up the text gives up the strip it
          * occupies, so the two never overlap. */
         int pole = tiku_trk_poseview_pole(a->view, tiku_trk_now());
@@ -2807,6 +2838,13 @@ tracker_run(int argc, char **argv)
                         : NULL;
                 sst.scroll = tiku_trk_poseview_scroll(a.view);
                 sst.rows = tiku_trk_poseview_count(a.view);
+                {
+                    static char script_count[240];
+
+                    count_label(&a, list_rect(&a).w, script_count,
+                                sizeof script_count);
+                    sst.count = script_count;
+                }
                 sst.renaming = a.editing;
                 sst.location = tiku_trk_navigator_current(&a.nav);
                 sst.nav_back = tiku_trk_navigator_can_back(&a.nav);

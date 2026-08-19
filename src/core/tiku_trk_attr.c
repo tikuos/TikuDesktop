@@ -465,6 +465,23 @@ tiku_trk_text_fit(const char *in, int width, tiku_trk_trunc_t how,
         out[0] = '\0';
         return 0;
     }
+    if (how == TIKU_TRK_TRUNC_BEGIN) {
+        /* From the BEGINNING: what survives is the tail, which for a
+         * string being typed is the part still changing (TS-041). */
+        size_t skip;
+
+        for (skip = 1u; skip < n; skip++) {
+            char try[256];
+
+            snprintf(try, sizeof try, ELLIPSIS "%s", in + skip);
+            if (measure(try, ctx) <= width) {
+                snprintf(out, max, "%s", try);
+                return (int)strlen(out);
+            }
+        }
+        snprintf(out, max, ELLIPSIS);
+        return (int)strlen(out);
+    }
     /* Middle: give up a character from each side in turn, so the head and
      * the tail shrink together and both stay legible. */
     for (keep = (int)n - 1; keep > 0; keep--) {

@@ -100,7 +100,10 @@ struct tiku_trk_poseview {
     char                state_key[16];
     int                 icon_size;
     int                 hint_x, hint_y; /* fHintLocation: where to place next */
-    int                 state_dirty;    /* fStateNeedsSaving                */
+    int                 state_dirty;
+    /* Set only by the column mutators, so a release that merely
+     * re-sorted does not rewrite the layout record (TS-036). */
+    int                 columns_dirty;    /* fStateNeedsSaving                */
     int                 is_query;       /* results, not a directory         */
     char                query_layout[TIKU_TRK_PATH_MAX];
     char                query_type[TIKU_TRK_TYPE_MAX];
@@ -5691,7 +5694,8 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
         /* PVL-081: the filter matches column TEXT, so a column that has
          * gone can only take rows away -- thin the list in place. */
         filter_changed(v, 1);
-        v->state_dirty = 1;
+        v->columns_dirty = 1;
+    v->state_dirty = 1;
         return 1;
     }
     if (v->column_count >= TIKU_TRK_COLUMNS_MAX) {
@@ -5789,6 +5793,12 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
     if (v == NULL) {
         return 0;
     }
+    if (!v->columns_dirty) {
+        /* Nothing about the columns changed, so nothing is written: a
+         * click that only re-sorted must not rewrite the layout record
+         * (TS-036). */
+        return 0;
+    }
     store = (v->query_layout[0] != '\0' && v->layout_store != NULL)
           ? v->layout_store
           : ((v->backend->ops->state_store != NULL)
@@ -5828,6 +5838,7 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
             return 0;
         }
     }
+    v->columns_dirty = 0;
     return v->column_count;
 }
 
@@ -6034,6 +6045,9 @@ tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
                     frame.h >= TIKU_TRK_FRAME_MIN_H;
         if (!has_columns) {
             (void)tiku_trk_poseview_set_results(v, NULL, 0);
+            /* The install IS the change being recorded: the gate that
+             * spares a sort-only release must not spare it (TS-036). */
+            v->columns_dirty = 1;
             (void)tiku_trk_poseview_save_columns(v);
         }
         if (!has_frame) {
@@ -6109,6 +6123,7 @@ tiku_trk_poseview_resize_column(tiku_trk_poseview_t *v, int field, int width)
     }
     v->columns[i].width = width;
     tiku_trk_poseview_reflow_columns(v);
+    v->columns_dirty = 1;
     v->state_dirty = 1;
     return 1;
 }
@@ -6145,6 +6160,7 @@ tiku_trk_poseview_move_column_to(tiku_trk_poseview_t *v, int field, int to)
     }
     v->columns[to] = moved;
     tiku_trk_poseview_reflow_columns(v);
+    v->columns_dirty = 1;
     v->state_dirty = 1;
     return 1;
 }
@@ -6199,6 +6215,7 @@ tiku_trk_poseview_move_column(tiku_trk_poseview_t *v, int field, int before)
     }
     v->columns[to] = moved;
     tiku_trk_poseview_reflow_columns(v);
+    v->columns_dirty = 1;
     v->state_dirty = 1;
     return 1;
 }

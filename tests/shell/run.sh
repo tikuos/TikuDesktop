@@ -152,6 +152,17 @@ PYBG
                 printf 'Dropper\t/tmp/trk_script/zapp.sh\ttext/plain\n' \
                     > "$deskhome/.config/tracker/apps" ;;
             brokenlink.script) ln -s /nowhere-at-all "$work/dangling" ;;
+            thumboff.script)
+                python3 - "$work" <<'PYOFF'
+import struct,sys
+w,h=64,48
+rows=b"".join((b"".join(bytes([(x*4)%256,(y*5)%256,200]) for x in range(w))
+               + b"\0"*((4-(w*3)%4)%4)) for y in range(h))
+d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
+  struct.pack("<IiiHHIIiiII",40,w,-h,1,24,0,len(rows),2835,2835,0,0)+rows
+open(sys.argv[1]+"/picture.bmp","wb").write(d)
+PYOFF
+                           ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys
 w,h=64,48
@@ -190,6 +201,11 @@ PYEOF
             mkdir -p "$prefhome/.config"
             printf 'ShowNavigator off\n' > \
                 "$prefhome/.config/TrackerSettings"
+        fi
+        if grep -q '^# prefs: thumbs-off' "$s"; then
+            mkdir -p "$deskhome/.config"
+            printf 'GenerateImageThumbnails off\n' >> \
+                "$deskhome/.config/TrackerSettings"
         fi
         if grep -q '^# prefs: fullpath-on' "$s"; then
             mkdir -p "$deskhome/.config"
