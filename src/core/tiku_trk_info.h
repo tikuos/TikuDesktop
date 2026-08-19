@@ -46,7 +46,8 @@ typedef enum {
     TIKU_TRK_INFO_F_LOCATION,   /* clicking opens the parent, selected    */
     TIKU_TRK_INFO_F_LINK,       /* clicking follows it, or re-points it   */
     TIKU_TRK_INFO_F_DIMENSIONS,
-    TIKU_TRK_INFO_F_FILESYSTEM
+    TIKU_TRK_INFO_F_FILESYSTEM,
+    TIKU_TRK_INFO_F_OPENS_WITH  /* clicking walks the candidates (AW-071) */
 } tiku_trk_info_field_t;
 
 /** @brief How far a folder-size walk has got. */
@@ -94,6 +95,9 @@ typedef struct {
      * actually granted. */
     unsigned             perm;
     int                  perm_editable;
+    /* "Opens with": the resolved handler's NAME, filled by the shell --
+     * the registry is the shell's to ask (AW-071).  Empty hides the row. */
+    char                 opens_with[48];
 } tiku_trk_info_t;
 
 /**

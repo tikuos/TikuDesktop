@@ -93,6 +93,13 @@ field_list(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     if (in->model.kind == TIKU_TRK_KIND_SYMLINK && n < max) {
         out[n++] = TIKU_TRK_INFO_F_LINK;
     }
+    if (in->opens_with[0] != '\0' && n < max &&
+        !tiku_trk_model_is_container(&in->model) &&
+        (in->model.facts.perm & TIKU_TRK_P_EXEC) == 0u) {
+        /* Not for executables, directories or volumes: an application
+         * does not open THROUGH another application (AW-071). */
+        out[n++] = TIKU_TRK_INFO_F_OPENS_WITH;
+    }
     if ((in->model.kind == TIKU_TRK_KIND_VOLUME ||
          in->model.kind == TIKU_TRK_KIND_ROOT) && n < max) {
         out[n++] = TIKU_TRK_INFO_F_FILESYSTEM;
@@ -180,6 +187,10 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     case TIKU_TRK_INFO_F_KIND:
         if (label != NULL) { *label = "Kind"; }
         snprintf(value, max, "%s", tiku_trk_model_kind_string(&in->model));
+        break;
+    case TIKU_TRK_INFO_F_OPENS_WITH:
+        if (label != NULL) { *label = "Opens with"; }
+        snprintf(value, max, "%s", in->opens_with);
         break;
     case TIKU_TRK_INFO_F_LOCATION: {
         char dir[TIKU_TRK_PATH_MAX];

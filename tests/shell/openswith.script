@@ -1,0 +1,30 @@
+# shell: desktop
+# apps: fixture
+# AW-071: the Info window's "Opens with" walks the type's supporting
+# applications and writes the preference at once.
+wait 10
+click-row 1
+wait 2
+key i ctrl
+wait 10
+note the row starts at the default; a click chooses Stamper
+click 280 285
+wait 3
+expect-status opens with Stamper
+note past the last candidate the choice returns to the default
+click 280 285
+wait 3
+expect-status default application
+note and around again, kept this time
+click 280 285
+wait 3
+expect-status opens with Stamper
+note the preference is real: opening the file now launches Stamper
+key w ctrl
+wait 3
+click-row 1
+click-row 1
+wait 30
+expect-file /tmp/trk_launched
+expect-file-has /tmp/trk_launched a.txt
+quit

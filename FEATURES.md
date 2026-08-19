@@ -6692,15 +6692,12 @@ refuses.
 tests/shell/info.script*  
 *Shell: desktop*  
 
-#### AW-071 · important · partial
+#### AW-071 · important · done
 **Non-executable files get an "Opens with:" pop-up listing the type's supporting apps plus "Default application"; choosing one writes that file's preferred app immediately.**  
 Menu built from BMimeType::GetSupportingApps, items labelled with the resolved application's file name (falling back to the signature), current preference pre-marked, "Default application" marked by default; kSetPreferredApp writes via BNodeInfo::SetPreferredApp and updates the model. Not offered for executables, directories or volumes.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::GeneralInfoView / GeneralInfoView::MessageReceived (kSetPreferredApp)`
-**SUBSYSTEM:** application registry -- the window exists now, but there is
-nothing to populate an "Opens with" list from: no application knows which
-types it reads and nothing is ever launched (the same absence AW-035..048
-wait on).
-**MISSING:** The application registry and Open With menu exist, but the info window has no Opens-with popup or preferred-app write action.
+**PORT:** The Info window carries an "Opens with" row for non-executable, non-container entries: it names the preferred handler ("Default application" when the ranking's own choice stands), and CLICKING it walks the type's supporting applications -- each step writes the preference at once through the same registry the Open With menu ranks by, past the last candidate returning to the default.  A walk rather than a popup: the same choose-one-of-N surface, one click per step, and the launch really follows the choice.  
+*src/shell/tiku_trk_desktop.c:info_opens_with_fill/_next; src/core/tiku_trk_info.c (the row); tests/shell/openswith.script (walk, wrap, and the launch obeying it -- mutation-tested)*
 
 #### AW-072 · important · done
 **Location and "Link to" are clickable: Location opens the item's parent folder with the item selected, Link to does the same for the target, and a broken link instead opens a file panel to pick a new target.**  

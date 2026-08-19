@@ -274,6 +274,8 @@ typedef struct desktop {
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
+static void info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info);
+static void info_opens_with_next(desktop_t *app, tiku_trk_info_t *info);
 static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
 static folder_t *desktop_folder(desktop_t *app);
 static void close_window(desktop_t *app, tiku_desk_window_t *w);
@@ -567,8 +569,15 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_BROKEN_OPEN) {
         if (alert->chosen != alert->cancel &&
             app->broken_open_path[0] != '\0') {
-            (void)tiku_trk_info_windows_open(&app->info_windows,
-                                             app->broken_open_path);
+            {
+                int islot = tiku_trk_info_windows_open(&app->info_windows,
+                                                app->broken_open_path);
+
+                if (islot >= 0) {
+                    info_opens_with_fill(app,
+                        &app->info_windows.model[islot]);
+                }
+            }
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
         /* Cancel, Move to Trash, Delete, in the order the buttons are
@@ -930,6 +939,78 @@ static const tiku_trk_app_t *
 handler_for(desktop_t *app, const tiku_trk_model_t *model)
 {
     return tiku_trk_launch_controller_handler(&app->launcher, model);
+}
+
+/**
+ * @brief Fill an Info window's "Opens with" row from the registry (AW-071).
+ *
+ * The user's preferred handler when one is set, the best candidate when
+ * not, and "Default application" when the choice is the ranking's own.
+ */
+static void
+info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info)
+{
+    const char *pref;
+
+    info->opens_with[0] = '\0';
+    if (info == NULL || tiku_trk_model_is_container(&info->model) ||
+        (info->model.facts.perm & TIKU_TRK_P_EXEC) != 0u) {
+        return;
+    }
+    char prefbuf[48];
+
+    pref = tiku_trk_launch_preferred(app->store, info->model.type, prefbuf,
+                                     sizeof prefbuf);
+    if (pref != NULL && pref[0] != '\0') {
+        snprintf(info->opens_with, sizeof info->opens_with, "%s", pref);
+    } else {
+        snprintf(info->opens_with, sizeof info->opens_with,
+                 "Default application");
+    }
+}
+
+/** @brief Walk "Opens with" to the next candidate and keep it (AW-071). */
+static void
+info_opens_with_next(desktop_t *app, tiku_trk_info_t *info)
+{
+    const char *types[1];
+    tiku_trk_cand_t cand[16];
+    const char *current;
+    int count, i, at = -1;
+
+    types[0] = info->model.type;
+    count = tiku_trk_launch_candidates(&app->apps, types, 1, app->store,
+                                       cand, 16);
+    if (count == 0) {
+        snprintf(app->status, sizeof app->status,
+                 "no application claims %s", info->model.type);
+        return;
+    }
+    char curbuf[48];
+
+    current = tiku_trk_launch_preferred(app->store, info->model.type,
+                                        curbuf, sizeof curbuf);
+    for (i = 0; i < count; i++) {
+        if (current != NULL && strcmp(cand[i].app->name, current) == 0) {
+            at = i;
+        }
+    }
+    if (at + 1 < count) {
+        (void)tiku_trk_launch_set_preferred(app->store, info->model.type,
+                                            cand[at + 1].app->name);
+        snprintf(app->status, sizeof app->status, "%s opens with %s",
+                 info->model.name, cand[at + 1].app->name);
+    } else {
+        /* Past the last candidate the choice returns to the ranking's
+         * own: "Default application". */
+        (void)tiku_trk_launch_set_preferred(app->store, info->model.type,
+                                            "");
+        snprintf(app->status, sizeof app->status,
+                 "%s opens with the default application",
+                 info->model.name);
+    }
+    (void)tiku_trk_store_flush(app->store);
+    info_opens_with_fill(app, info);
 }
 
 /** @brief The Open With window's launch: the same one act (AW-039). */
@@ -2444,8 +2525,14 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         /* The selection if there is one, else the folder itself: asking
          * about "this window" with nothing picked is asking about the
          * folder it is showing. */
-        (void)tiku_trk_info_windows_open(&app->info_windows,
-            (p != NULL && p->selected) ? p->model.path : fl->path);
+        {
+            int islot = tiku_trk_info_windows_open(&app->info_windows,
+                (p != NULL && p->selected) ? p->model.path : fl->path);
+
+            if (islot >= 0) {
+                info_opens_with_fill(app, &app->info_windows.model[islot]);
+            }
+        }
         break;
     }
     case TIKU_TRK_CMD_EDIT_QUERY: {
@@ -3673,6 +3760,15 @@ tracker_run(int argc, char **argv)
                             char dir[TIKU_TRK_PATH_MAX];
                             char sel[TIKU_TRK_NAME_MAX];
 
+                            if (fk == TIKU_TRK_INFO_F_OPENS_WITH) {
+                                /* The pop-up as a walk: each click moves
+                                 * to the next supporting application and
+                                 * writes the preference at once
+                                 * (AW-071). */
+                                info_opens_with_next(&app, info);
+                                app.dirty = 1;
+                                break;
+                            }
                             if (fk == TIKU_TRK_INFO_F_SIZE &&
                                 tiku_trk_model_is_container(
                                     &info->model)) {
