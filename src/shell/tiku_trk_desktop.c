@@ -4908,6 +4908,40 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && key == 'z') {
+                    /* Cmd+Z / Shift+Cmd+Z: the file operations' undo and
+                     * redo, in this shell too (CW-061).  The inline editor
+                     * kept the key above, so a focused text field never
+                     * loses it. */
+                    char what[64], err[200];
+
+                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                        if (tiku_trk_fs_can_redo(app.fs, what,
+                                                 sizeof what)) {
+                            int n = tiku_trk_fs_redo(app.fs, err,
+                                                     sizeof err);
+
+                            snprintf(app.status, sizeof app.status,
+                                     "redid %s (%d item%s)", what, n,
+                                     (n == 1) ? "" : "s");
+                        } else {
+                            snprintf(app.status, sizeof app.status,
+                                     "nothing to redo");
+                        }
+                    } else if (tiku_trk_fs_can_undo(app.fs, what,
+                                                    sizeof what)) {
+                        int n = tiku_trk_fs_undo(app.fs, err, sizeof err);
+
+                        snprintf(app.status, sizeof app.status,
+                                 "undid %s (%d item%s)", what, n,
+                                 (n == 1) ? "" : "s");
+                    } else {
+                        snprintf(app.status, sizeof app.status,
+                                 "nothing to undo");
+                    }
+                    app.dirty = 1;
+                    break;
+                }
                 if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
                     tiku_trk_sc_command_for_key(key, ev.modifiers) != 0) {
                     /* The rest of the standard set, resolved from the one

@@ -1,0 +1,18 @@
+# shell: desktop
+# CW-061: Cmd+Z undoes the last file operation and Shift+Cmd+Z redoes it,
+# in the spatial shell too.
+wait 10
+click-row 1
+wait 2
+key d ctrl
+wait 10
+expect-file /tmp/trk_script/a.txt copy
+key z ctrl
+wait 8
+expect-no-file /tmp/trk_script/a.txt copy
+expect-status undid
+key z ctrl shift
+wait 8
+expect-file /tmp/trk_script/a.txt copy
+expect-status redid
+quit

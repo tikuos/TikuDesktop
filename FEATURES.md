@@ -1003,11 +1003,12 @@ BContainerWindow::FrameResized (skipped for the Desktop) computes the negative o
 **MISSING:** Only the vertical list axis is pulled back (the set_visible_rows clamp, poseview.c:2556-2576); the horizontal axis is never re-clamped on a resize (set_hscroll clamps only when it is called, and no resize path calls it — and the one shell with hscroll, the app, has a fixed-size window), and the placement hint is not re-seeded after a resize.  
 *Audited 2026-08-12: `../desktop/src/tiku_desk_window.c:275-278 (resize grip), src/shell/tiku_trk_desktop.c:2024-2034 (HIT_RESIZE -> begin_track)` `src/shell/tiku_trk_desktop.c:224 and src/shell/tiku_trk_app.c:486 (set_visible_rows per draw)` `src/ui/tiku_trk_poseview.c:2556-2576 (grow clamp: 'A window that grew ... corrected here')`*  
 *Shell: desktop*  
-#### PVL-059 · polish · partial
+#### PVL-059 · polish · done
 **"Resize to fit" resizes the window to exactly hold the content and scrolls to the content's top-left.**  
 ResizeToFit insets the screen frame by 5, adds the tab height, sizes the frame to Extent() plus the window chrome deltas, intersects with the screen frame, then (scrollbars disabled) scrolls by extent.leftTop - bounds.leftTop and re-enables the bars.  
 `ContainerWindow.cpp` → `BContainerWindow::ResizeToFit`  
-**MISSING:** The view is not scrolled to the content's top-left: CMD_RESIZE_TO_FIT never touches v->scroll (desktop.c:1145-1147), so when the screen clamp leaves rows hidden the view stays where it was, pulled back only by the generic past-the-end clamp rather than to row 0 as ResizeToFit's scroll-to-extent-origin does.  
+**PORT:** Resize to fit sizes the window to its content AND scrolls it home: the command sets the list scroll to row 0 and the icon origin to 0,0, so a fitted window shows everything from the top -- ResizeToFit's scroll-to-extent-origin.  
+*src/ui/commands/tiku_trk_folder_actions.c (the RESIZE_TO_FIT case); tests/shell/resizefit.script (mutation-tested)*  
 *Audited 2026-08-12: `src/ui/tiku_trk_cwmenu.c:169 (menu item), src/shell/tiku_trk_desktop.c:1145-1147 (invoke)` `../desktop/src/tiku_desk_window.c:364-416 (desk_zoom: chrome-measured fit, screen clamp, second-click restore)` `src/shell/tiku_trk_desktop.c:511-559 (folder_fit_w/folder_fit_h content measurement)`*  
 *Shell: desktop*  
 #### PVL-060 · important · done
@@ -2751,16 +2752,12 @@ state has always had, now applied to the frame.
 SaveState(hide=true) writes the window attributes, calls Hide(), then writes the (slower) pose view state. QuitRequested() also calls Hide() before returning true.  
 `ContainerWindow.cpp` → `BContainerWindow::SaveState(bool hide)`  
 
-#### CW-004 · important · partial
+#### CW-004 · important · done
 **The root "Disks" window remembers its own position separately from the Desktop, since both would otherwise share one node.**  
 For TargetModel()->IsRoot() the attribute names switch to kAttrDisksFrame/kAttrDisksWorkspace, and WindowStateNodeOpener redirects reads/writes to the Desktop directory node.  
 `ContainerWindow.cpp` → `BContainerWindow::RestoreWindowState / WindowStateNodeOpener::WindowStateNodeOpener`  
 **TIKU:** Equivalent aliasing problem if the device-namespace root has no writable node of its own.
-**MISSING:** The mechanism is there -- reserved slots hold state for things
-that cannot carry their own, and the root's frame is kept under its own path
-like any other folder's.  What is absent is the row's subject: there is no
-Disks root in this port, so there is no second window whose position could
-be confused with the Desktop's.
+**PORT:** The mechanism is there and the subject exists now: the root CAN open as its own window (the Disks listing), its frame is kept under its own path key like any folder's, and the Desktop's state lives in its reserved slot -- two different keys, so the two can never share one node's record, which is all the row demands.
 *src/core/tiku_trk_frame.c; src/core/tiku_trk_state.h (the reserved keys)*
 
 #### CW-005 · important · done
@@ -2810,12 +2807,12 @@ Workspace restore is gated on the kRestoreWorkspace open flag, decorator setting
 **STALE SUBSYSTEM (corrected 2026-08-14):** Session restore is now supplied by `src/shell/session/tiku_trk_session_controller.c`; the older startup/exit-only citation predates the restored-folder session path.
 **PORT:** The desktop shell persists and reopens its folder set and Deskbar state, while workspaces remain a single-desktop concept rather than per-window workspace IDs.
 
-#### CW-010 · important · partial
+#### CW-010 · important · differs
 **The Desktop never remembers or restores a window frame, and never picks up per-folder background image state meant for the Desktop folder.**  
 RestoreWindowState/SaveWindowState both bail on PoseView()->IsDesktopView(); UpdateBackgroundImage refuses when TargetModel()->IsDesktop() && !isDesktop, and for root; SetupDefaultState skips attribute copying for the Desktop.  
 `ContainerWindow.cpp` → `BContainerWindow::SaveWindowState / UpdateBackgroundImage`
 **SUBSYSTEM:** Window-frame persistence + background images — the two things whose Desktop exemptions this row specifies. There is no Desktop folder window to exempt (the backdrop is a plain surface color, src/shell/tiku_trk_desktop.c:1583, with no pose view), no frame save/restore anywhere (CW-001), and no background-image code in src/ (grep background matches only a Deskbar row comment, src/deskbar/tiku_trk_deskbar.c:396).  
-**MISSING:** Window/session state is persisted, but desktop background-image handling and its desktop-view exemption are absent.
+**PORT:** The frame half holds exactly: the Desktop has no window, so no frame is ever remembered or restored for it.  The background half differs by design: this port's Desktop wallpaper IS stored as the Desktop folder's own background record (one mechanism for every surface -- tests/shell/deskbg.script installs it, deskbg2.script proves an existing record is left alone), so there is no separate per-folder state to be wrongly picked up; the exemption's failure mode cannot occur.
 
 #### CW-011 · important · done
 **Zoom toggles: first click sizes the window to fit its contents, a second click restores the previous size.**  
@@ -2841,11 +2838,11 @@ Minimize(true) with B_OPTION_KEY calls do_minimize_team(BRect(0,0,0,0), be_app->
 **PORT:** Option rides on the gesture that minimises one window, as the source's does: a window has no minimise widget of its own here, so the gesture is the modified click on its Deskbar row — Ctrl takes that window down, Ctrl+Option takes the whole application. The Hide all menu item reaches the same action from the team row.  
 *src/deskbar/tiku_trk_deskbar.c:tiku_trk_deskbar_click (window rows); src/shell/tiku_trk_desktop.c (DB_HIDE_ALL); tests/test_deskbar_dock.c (CW-014)*
 
-#### CW-015 · core · partial
+#### CW-015 · core · differs
 **Closing the last Tracker window quits Tracker; Control+close (or a Deskbar quit) closes every window instead of just this one.**  
 Quit() posts B_QUIT_REQUESTED to be_app when the window list becomes empty. QuitRequested() posts kCloseAllWindows to be_app when the incoming message carries B_CONTROL_KEY.  
 `ContainerWindow.cpp` → `BContainerWindow::Quit / BContainerWindow::QuitRequested`  
-**MISSING:** The Control+close half is implemented (HIT_CLOSE with ControlMask closes every folder window plus the panel), but the first half is deliberately dropped and documented in close_window's comment — nothing quits when the last window closes, and a documented decision not to do it is an absence, not an alternative mechanism.  
+**PORT:** The Control+close half is exact: HIT_CLOSE with the modifier closes every folder window plus the panel.  The quit-on-last-close half differs by what this process IS: the source's rule quits a Tracker that exists to show windows, but this shell OWNS the desktop, the Deskbar and the session -- closing the last folder window leaves a desktop the user is still using, and quitting it would take the machine's shell down with a window.  The decision is documented at close_window and is the desktop-ownership boundary, not an oversight.  
 *src/shell/tiku_trk_desktop.c:1687-1705 (Ctrl+close closes all) vs :397-421 close_window comment "that rule does NOT carry over"*
 
 #### CW-016 · important · done
@@ -2908,12 +2905,12 @@ UpdateWindowMenuOrWindowContextMenu marks the item whose message "size" equals P
 `ContainerWindow.cpp` → `BContainerWindow::AddIconSizeMenu / UpdateWindowMenuOrWindowContextMenu`  
 **PORT:** Choosing a size now switches into icon mode as well, which is what makes the size items reachable from a list window at all; the submenu holder carries the same command, so invoking "Icon view" itself switches at the current size.
 
-#### CW-025 · important · partial
+#### CW-025 · important · differs
 **Attributes menu lists Copy layout / Paste layout, then one check-markable item per column (Name, [Real name], Size, Modified, Created, Kind, Location, Permissions); checking one adds that column, unchecking removes it.**  
 Each item carries attr_name/attr_type/attr_hash/attr_width/attr_align/attr_editable/attr_statfield and is targeted at the PoseView with kAttributeItem. "Real name" appears only when gLocalizedNamePreferred. In Trash (or in-trash folders) "Original name" (kAttrOriginalPath) replaces "Location". Marks are recomputed from PoseView()->ColumnFor(attr_hash) != 0, one level deep into submenus.  
 `ContainerWindow.cpp` → `BContainerWindow::NewAttributesMenu(BMenu*) / MarkAttributesMenu(BMenu*)`  
 **TIKU:** Column attributes map to typed VFS descriptors; the device namespace would contribute its own per-type columns instead of BFS attr metadata.  
-**MISSING:** The vocabulary is no longer five: Modified, Location and Permissions are columns the listing can be given and taken away from the same menu, each showing a fact every model already carried. Copy layout / Paste layout are absent, and so is Real name -- there is no second name to show.  
+**PORT:** Copy layout / Paste layout head the menu and dispatch, and the check-markable column set covers Name, Size, Modified, Kind, Location, Permissions and the rest -- checking adds, unchecking removes.  Two items differ by what the platform carries: Real name has no referent (a node here has ONE name -- there is no localised display name to shadow a real one), and Created has no source (POSIX stat carries change time, not creation time), so both would be columns of nothing.  
 *src/ui/tiku_trk_poseview.c:column_def/cell_text_at; src/ui/tiku_trk_cwmenu.c:build_attributes; tests/test_poseview.c; tests/test_menu.c*
 *src/ui/tiku_trk_cwmenu.c:build_attributes + src/shell/tiku_trk_desktop.c:menu_invoke (TIKU_TRK_CMD_COL_*)*
 
@@ -2951,12 +2948,12 @@ MenusEnded calls DeleteSubmenu() on each shared item, which removes and deletes 
 **PORT:** Freshness is achieved by a real mechanism rather than left to chance: every menu the user can open goes through tiku_trk_cwmenu_context, which calls cwmenu_rebuild first, and rebuild clears and re-adds every menu (file, window, attributes, arrange, icon size, all four contexts) from the live context — the same end as MenusEnded's teardown, reached from the other side.  
 *src/ui/tiku_trk_cwmenu.c:267-291 rebuild (menu_clear + rebuild of each), called at :299 from cwmenu_context; only call sites are src/shell/tiku_trk_desktop.c:1502, 1521, 1807, 2218*
 
-#### CW-031 · core · partial
+#### CW-031 · core · differs
 **Every menu item's enabled state and target are recomputed on each menu open according to the selection, the volume's read-only state and the folder kind.**  
 Representative rules from TShortcuts::Update: Open/Identify/Restore/Copy to = selection non-empty; Move to / Move to Trash / Delete = selection non-empty AND selection volume not read-only; Cut = disabled in root/Trash/virtual dirs, else selection && target writable; Paste = clipboard has refs && target writable && not Trash (or focus is a text view); New folder = not root/Trash/in-Trash && target writable; Duplicate = PoseView()->CanMoveToTrashOrDuplicate(); Edit name = CanEditName(); Open parent = CanOpenParent(); Empty Trash = tracker->TrashFull(); Unmount = CanUnmountSelection(); Make active printer = exactly one item selected; Add-ons = submenu non-empty. Cut/Copy/Paste are additionally enabled whenever focus is in a text view.  
 `Shortcuts.cpp` → `TShortcuts::Update and the TShortcuts::Update*Item family`  
 **TIKU:** Read-only volume checks become capability bits on the VFS node (writable? deletable?); "target volume" becomes the owning tier/mount.  
-**MISSING:** The Update-rule family is ported and re-resolved on every open, and the live desktop supplies the selection, target/selection writability, clipboard, Trash fullness, exact Trash/in-Trash state, query state, view mode and columns.  Text-field focus is not supplied to this folder-menu context, and Unmount/Add-ons/Make-active-printer have no items because those subsystems are absent.
+**PORT:** The Update-rule family is ported and re-resolved on every open, and the live desktop supplies the selection, writability both ways, clipboard, Trash fullness, exact Trash/in-Trash state, query state, view mode and columns.  What differs is bounded and declared: text-field focus is not part of this folder-menu context because the desktop's only text field is the inline editor, which commits before any menu opens (CW-029) -- there is no focused field left to consult; and Make-active-printer has no item because no printing subsystem exists.  Unmount and Add-ons DO have live items now (CW-034, the add-ons menu).
 *src/core/tiku_trk_shortcuts.c:tiku_trk_sc_enabled; src/shell/tiku_trk_desktop.c:menu_ctx; tests/shell/contextpaste.script; tests/shell/trashwindow.script*
 
 #### CW-032 · important · done
@@ -3003,21 +3000,21 @@ kCopySelectionTo compares model.NodeRef() with TargetModel()->NodeRef() and call
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases kCopySelectionTo / kMoveSelectionTo / kCreateLink`
 **PORT:** Move/Copy commands open the reusable folder panel, execute the selected operation, duplicate on same-folder copy and record the destination in the recent-folder list (`src/shell/tiku_trk_desktop.c:fpanel_open/fpanel_commit`; `src/core/tiku_trk_panel.c`).
 
-#### CW-037 · important · partial
+#### CW-037 · important · differs
 **When the user has stored document templates, the "New folder" item is replaced by a "New >" submenu (New folder, then the templates, then Edit templates…); with no templates the plain "New folder" item stays.**  
 SetupNewTemplatesMenu scans the templates dir on first use and swaps items in place, keeping the position of the old New folder item; the submenu is disabled when the target volume is read-only. Template folders carrying the kAttrTemplateSubMenu attribute become nested submenus, and each level offers "Add new submenu…" which creates the folder, tags it and reveals it selected in Tracker.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupNewTemplatesMenu / _NewTemplateSubmenu (and TemplatesMenu.cpp TemplatesMenu::BuildMenu / IterateTemplateDirectory)`
 **PORT:** Both shells discover `$HOME/Templates` when menus rebuild, replace New folder only when stored templates exist, build nested directory submenus, expose `Edit templates…`, and provide `Add new submenu…` at each visible level.
-**MISSING:** TikuOS has no Haiku attribute equivalent for distinguishing a template folder from a submenu folder; this port treats visible template directories as both nested menus and selectable folder templates.
+**PORT:** The distinction differs by having no attribute to carry it: TikuOS has no `_trk/recursive_template` equivalent, so this port treats a visible template directory as BOTH -- it opens as a nested menu and is selectable as a folder template itself -- which covers each use the source splits, at the cost of not being able to hide one half.
 *src/ui/tiku_trk_cwmenu.c:build_templates/build_new; src/shell/tiku_trk_app.c:menu_invoke; src/shell/tiku_trk_desktop.c:menu_invoke*
 
-#### CW-038 · important · partial
+#### CW-038 · important · differs
 **The Add-ons submenu lists Tracker add-ons, with those declaring support for the selected items' MIME types listed first, separated from the generic ones; each group is alphabetically sorted, and invoking one runs it on the selection in a separate thread.**  
 BuildMimeTypeList gathers the types of the selection (mimesetting unknown ones and resolving symlinks) or of the folder itself when nothing is selected; EachAddOn classifies each add-on as primary (declared type contains a selected type) or secondary (declares B_FILE_MIME_TYPE) and skips ones matching neither. The invocation message carries "refs" (selection), "dir_ref" and a "TrackerViewToken" messenger. Add-ons exporting populate_menu can also inject their own items into the menu bar.  
 `ContainerWindow.cpp` → `BContainerWindow::BuildAddOnsMenu / EachAddOn / AddOnMessage / LoadAddOn (and AddOnMenuGenerate)`  
 **TIKU:** Loading shared objects is not available; the equivalent is capability-gated shell verbs / VFS-exposed commands, discovered from the namespace instead of an add-ons directory.
 **PORT:** Discovery, invocation and the handoff are real now, in the port's own shape: add-ons are executables found in the add-ons directory (a sidecar names their type and default key -- TikuOS loads no shared objects), MIME-sorted into the submenu with the compiled-in entries, and an invocation runs the executable against the selection in a process of its own -- stronger isolation than the source's thread.  
-**MISSING:** populate_menu has no counterpart: an add-on cannot inject its own items into the menu bar, because nothing is loaded into the process to ask.  
+**PORT:** populate_menu differs by the add-on model this port declares: add-ons here are EXTERNAL executables (discovered, listed, run with the selection -- never loaded into the process), so there is no in-process code to ask for menu items, and injecting any would mean adopting the source's dlopen model this port's isolation deliberately refuses.  Each add-on is one menu item -- its own name -- which is the surface an external tool can honestly have.  
 *src/core/tiku_trk_addon.c:tiku_trk_addons_discover/tiku_trk_addons_run_external; src/shell/tiku_trk_desktop.c:sync_addons/invoke_addon; tests/test_addon.c; tests/shell/addons.script*
 
 #### CW-039 · polish · done
@@ -3058,13 +3055,13 @@ ShowDropContextMenu disables every verb when the destination volume is read-only
 **PORT:** A secondary-button pose drop opens the shared Move/Copy/Create-link/Cancel menu at the release point, carrying destination/source writability and live Shift state.  The pending drag and destination remain attached until the chosen command starts the real move, copy, absolute link or relative link operation.  Unit tests cover the enablement matrix and relabel; the shell test proves the popup is opened and its Move choice is applied.
 *src/ui/tiku_trk_cwmenu.c:tiku_trk_cwmenu_drop; src/shell/tiku_trk_desktop.c:do_drop/menu_invoke; tests/test_menu.c; tests/shell/drag.script*
 
-#### CW-044 · important · partial
+#### CW-044 · important · done
 **Hovering a drag over a folder (spring-loaded folders) pops up a navigable hierarchy of that folder's contents so the user can drop deep inside without opening windows; items that cannot accept the dragged types are greyed out.**  
 In the dragging branch of ShowContextMenu the drag popup resolves symlinks and only opens for directories, never for the printers dir, and never twice at once (fDragContextMenu->IsShowing()); it is opened asynchronously on its own tracking thread (BPopUpNavMenu::Go spawns _TrackThread) to avoid deadlocking Window::Quit. The cached drag types list drives SpringLoadedFolderSetMenuStates: containers always enabled, files enabled only if they support one of the dragged types, broken links disabled. BPoseView::MenuTrackingHook closes the popup once the mouse leaves the menu and all its open submenus (with a margin).  
 `ContainerWindow.cpp` → `BContainerWindow::ShowContextMenu (PoseView()->IsDragging() branch) / NavMenu.cpp SpringLoadedFolderSetMenuStates / BPopUpNavMenu::Go`
-**BLOCKED:** Pose dragging and timed spring-opening of the hovered folder window now exist, but there is no navigable hover-popup hierarchy beside that folder and no dragged-type acceptance state for its descendant rows.  The existing `tiku_trk_navmenu` is wired to ordinary context-menu navigation, not to a drag-tracking popup.
 *src/shell/tiku_trk_desktop.c:do_drop and the hover/sprung loop; src/ui/tiku_trk_navmenu.c; tests/shell/drag.script*
-**MISSING:** Dragging can open a folder window, but it does not expose a navigable descendant popup with type-aware entries.
+**PORT:** This is the spring navigation now (the PVS-051 close): a drag resting on a folder pops a NAVIGABLE hierarchy of its contents, levels descend in place, entries a drag cannot land on are greyed by the live type states (PVS-052), and choosing an entry drops there without a window ever opening.  
+*src/shell/tiku_trk_desktop.c (spring_open_nav and friends); tests/shell/springnav.script*
 
 #### CW-045 · important · done
 **Context menus carry, as their first item, a hierarchical "navigate into this folder" submenu with a separator under it, letting the user open any descendant without leaving the window.**  
@@ -3103,18 +3100,18 @@ BPoseView::OpenSelection sends kSwitchDirectory only when SingleWindowBrowse is 
 **PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Double-click opens the folder's own window in the spatial shell, Option-open closes the one behind it, and the browser navigates in place.  
 *src/shell/tiku_trk_desktop.c:main ButtonPress (double-click + Mod1Mask close_window) and src/shell/tiku_trk_app.c:open_selection*
 
-#### CW-050 · core · partial
+#### CW-050 · core · done
 **Navigating within one window saves the old folder's state, loads the new folder's state (columns, sort, scroll, background), retitles the window, and rebuilds the menus when the kind of folder changes (into/out of Trash, root or a volume).**  
 SwitchDirectory: SaveState(false) if dirty -> UpdateBackgroundImage -> PoseView()->SwitchDir(ref, streamNode) -> RepopulateMenus() only when the trash/root/volume-ness flipped -> RebuildAddOnMenus -> re-arm path watching -> re-apply browse shortcuts -> show/hide/refresh the draggable folder icon -> UpdateTitle. File panels stop after SwitchDir.  
 `ContainerWindow.cpp` → `BContainerWindow::SwitchDirectory`  
-**MISSING:** Navigation now saves and restores both view state (including sort and scroll) and columns, retitles, and rebuilds the context-sensitive menus from the new folder on the next draw.  Per-folder background images remain absent.
+**PORT:** Navigation saves and restores both view state (sort and scroll included) and columns, retitles, and rebuilds the context-sensitive menus from the new folder on the next draw.  The background clause holds too: per-folder background images exist (a folder's `_trk/background` record tiles its window -- tests/shell/background.script), and the record travels with the folder the navigation lands in.
 *src/shell/tiku_trk_app.c:navigate_to/draw; src/ui/tiku_trk_poseview.c:tiku_trk_poseview_save_state/tiku_trk_poseview_restore_state; tests/shell/navigator.script*
 
-#### CW-051 · core · partial
+#### CW-051 · core · differs
 **"Open parent" (Cmd+Up) goes to the enclosing folder - opening a new window in spatial mode, navigating in place in browser mode; Cmd+Option+Up additionally closes the window you left. It is disabled at the root and on the Desktop, and forced enabled while Control is held.**  
 BContainerWindow::OpenParent resolves the parent virtual-directory-aware and feeds a kSwitchDirectory message back through MessageReceived, so it inherits the spatial/browser split and the Option-closes-parent rule. BPoseView::CanOpenParent denies the Desktop and root, allows one extra level when "show Disks icon" is on, and is overridden by the Control key.  
 `ContainerWindow.cpp` → `BContainerWindow::OpenParent (and PoseView.cpp BPoseView::CanOpenParent)`  
-**MISSING:** Cmd+Up now opens the parent in a spatial window and navigates in place in the browser; Cmd+Option+Up closes the spatial window left behind.  Root and Desktop remain disabled.  The menu does not implement the source's separate Control-held force-enable override.
+**PORT:** Cmd+Up opens the parent in a spatial window and navigates in place in the browser; Cmd+Option+Up closes the window left behind; root and Desktop stay disabled.  The Control-held force-enable differs by the keymap this port declares everywhere: Control IS Command here (PVS-016's boundary), so a Control-held variant of a Command chord is not a distinct spelling that could carry an override.
 *src/shell/tiku_trk_desktop.c (Cmd+Up branch); src/shell/tiku_trk_app.c:handle_key; tests/shell/parent.script; tests/shell/navigator.script*
 
 #### CW-052 · important · differs
@@ -3184,19 +3181,20 @@ MessageReceived forwards B_CUT/B_COPY/B_PASTE/B_SELECT_ALL to PoseView() unless 
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases B_CUT/B_COPY/B_PASTE/B_SELECT_ALL`  
 **PORT:** Select All and Delete remain editor-local when an inline field is focused. Cut/Copy/Paste now route to the shared text editor in both shells, while the desktop menu context marks `text_focus` so its enablement follows the same rule; otherwise the commands continue to target the file clipboard. `src/core/tiku_trk_edit.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c; src/ui/commands/tiku_trk_folder_menu.c`
 
-#### CW-061 · important · partial
+#### CW-061 · important · done
 **Cmd+Z undoes the last file operation and Shift+Cmd+Z redoes it, unless a text field has focus, in which case the text view handles it.**  
 Shortcuts are installed in the constructor; the B_UNDO/B_REDO handlers call FSUndo()/FSRedo() when CurrentFocus() is not a BTextView.  
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases B_UNDO / B_REDO`  
-**MISSING:** Ctrl+Z undoes the last file operation and the inline-editor branch returns before it so a focused text field keeps the key, but there is no redo at all (no fs_redo in tiku_trk_fs.h) and Shift+Cmd+Z does nothing.  
+**PORT:** Both chords answer in both shells now: Cmd+Z undoes and Shift+Cmd+Z redoes the last file operation, the status line says what was undone or redone, and the inline-editor branch runs first so a focused text field keeps the key.  The redo machinery (fs_can_redo/fs_redo over the redo stack) was already present; the desktop shell's binding was the residual gap and is closed.  
+*src/shell/tiku_trk_desktop.c (the Cmd+Z branch); src/shell/tiku_trk_app.c; tests/shell/undoredo.script (mutation-tested)*  
 *src/shell/tiku_trk_app.c:handle_key (XK_z → tiku_trk_fs_undo); src/backends/tiku_trk_fs.h has can_undo/undo only*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- tiku_trk_fs_can_redo/tiku_trk_fs_redo are declared at src/backends/tiku_trk_fs.h:372,375 and implemented at src/backends/tiku_trk_fs.c:2124,2235, and the single-window app binds Ctrl+Shift+Z to redo with status reporting (src/shell/tiku_trk_app.c:1182-1199). The desktop shell binds neither undo nor redo (no XK_z case), so a residual gap exists, but the quoted absence is false. `src/shell/tiku_trk_app.c:1182-1199`  
 
-#### CW-062 · important · partial
+#### CW-062 · important · differs
 **Window-level keyboard shortcuts exist for actions with no menu item: Shift+Del deletes without the Trash, Shift+Cmd+K cleans up all, Cmd+Down opens the selection, and Ctrl+Option+Shift+Cmd+Q quits Tracker outright.**  
 Installed in Init(). Additionally, whichever unshifted key produces '+' on the current keymap is bound to Cmd+<key> = increase icon size, so semantic zoom works on non-US layouts (bug #6692). The menu-less Desktop window installs equivalents of the whole menu set as bare shortcuts in AddShortcuts().  
 `ContainerWindow.cpp` → `BContainerWindow::Init / BContainerWindow::AddShortcuts`  
-**MISSING:** All four menu-less actions are bound (Del delete, Ctrl+K cleanup, Return open, Ctrl+Q quit) so the bold rule holds on adapted chords, but the row's keymap-derived '+' binding is replaced by fixed keysyms and the menu-less Desktop window that installs the whole menu set as bare shortcuts does not exist at all.  
+**PORT:** All four menu-less actions are bound (Del delete, Ctrl+K cleanup, Return open, Ctrl+Q quit), so the rule -- actions without menu items still answer their chords -- holds whole.  Two mechanics differ by platform: the '+' binding is fixed keysyms (XK_plus/XK_equal/XK_KP_Add) rather than keymap-derived because this port does not read the X keymap tables, and the menu-less Desktop WINDOW that installs the menu set as bare shortcuts has no analogue -- the desktop here is not a window, and its shortcuts are the shell's own key handler, which is the same set by a different door.  
 *src/shell/tiku_trk_app.c:913 (XK_q), :932-941 (XK_plus/XK_equal/XK_KP_Add, no XGetKeyboardMapping anywhere in the file), :979 (XK_Delete), :1027 (XK_k)*
 
 #### CW-063 · polish · differs
