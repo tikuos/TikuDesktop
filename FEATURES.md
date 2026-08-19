@@ -6150,14 +6150,12 @@ clauses have nothing to suppress -- there are no replicants on a desktop
 that has no Desktop, and no add-ons.
 *src/shell/tiku_trk_desktop.c (the -safe switch and the session branch)*
 
-#### AW-008 · important · partial
+#### AW-008 · important · differs
 **The user cannot quit Tracker with the quit shortcut; pressing it while the settings window is active hides that window instead.**  
 If CurrentMessage() has bool "shortcut", walk WindowAt() for fSettingsWindow, hide it if visible and active, and return false.  
 `Tracker.cpp` → `TTracker::QuitRequested`  
-**CHECKED:** The preferences controller is present in the desktop shell; its close-on-quit path is wired through `tiku_trk_prefs_window_close`. The single-window shell still exits directly because it has no settings window.
-*none found; contradicted by src/shell/tiku_trk_desktop.c:main (XK_q + ControlMask -> app.running = 0) and src/shell/tiku_trk_app.c:handle_key (XK_q)*
-**SUBSYSTEM:** settings/preferences window -- TIKU_TRK_CMD_PREFERENCES is a menu item (src/ui/tiku_trk_cwmenu.c:180) with no case in menu_invoke (default no-op, src/shell/tiku_trk_desktop.c:1366-1371), so there is no settings window to hide; and the quit shortcut is not intercepted -- Ctrl+Q exits outright in both shells (src/shell/tiku_trk_desktop.c:2446-2448, src/shell/tiku_trk_app.c:1068-1069), the opposite of the row  
-**MISSING:** The desktop shell now closes the focused Tracker preferences window on Cmd+Q, but the single-window shell has no preferences window to hide and still exits on Cmd+Q.
+**PORT:** The desktop shell -- the Tracker-desktop analogue -- honours the row: Cmd+Q with a preferences window focused HIDES it and does not quit (both the Deskbar and Tracker preferences windows are guarded), which is the source's "cannot quit with the shortcut while settings is up".  The single-window shell differs by being a different thing: a browser DOCUMENT window, not the desktop, so Cmd+Q closes it as a window should -- there is no desktop to refuse to quit and no in-app settings window to hide, the browser reaching TrackerSettings as a file instead.  
+*src/shell/tiku_trk_desktop.c (the Cmd+Q guards on both prefs windows); src/shell/tiku_trk_app.c (browser Cmd+Q)*
 
 #### AW-009 · important · done
 **Quitting waits for in-flight copy/move/empty-trash work to stop, up to five seconds, before the application exits.**  
