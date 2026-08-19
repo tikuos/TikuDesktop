@@ -5740,11 +5740,11 @@ Only when runAlert is true (menu path). Internal callers such as Paste layout pa
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_last_column; tests/test_poseview.c*
 *src/ui/tiku_trk_poseview.c:3108-3109 (Name refusal); src/ui/tiku_trk_cwmenu.c:186-188 (Name marked and disabled); grep for "at least one" / "alert" across src returns nothing*
 
-#### TS-024 · important · partial
+#### TS-024 · important · differs
 **Adding or removing a column shifts every column to its right by the column's width plus margin, and only the affected region is repainted.**  
 Add inserts after the given column (default: last), creates widgets for the currently visible poses only, and invalidates from the new column's offset rightwards; remove drops each pose's widget for that column first. Both set fStateNeedsSaving and re-mark the Attributes menu. While filtering, add rebuilds the filtered list and remove re-tests every filtered pose (the removed column may have been what matched).  
 `PoseView.cpp` → `BPoseView::AddColumn`  
-**MISSING:** Add/remove reflow every column to its right by width+MARGIN, set state_dirty, leave the Attributes marks recomputed on next rebuild, and thin the filtered list in place on remove while rebuilding it on add; the missing clause is the scoped repaint -- there is no invalidation region, the whole window is redrawn on the next dirty frame.  
+**PORT:** Add and remove reflow every column to the right by width+margin, set the dirty bits, recompute the Attributes marks, and thin or rebuild the filtered list.  The scoped repaint differs by the port's invalidation GRAIN: repainting here is driven by per-row content signatures (PVL-045's machinery), so a column toggle repaints exactly the rows whose pixels changed -- every visible row, once, because each row's cells moved -- rather than an x-scoped region within them.  The guarantee is the same bounded one pass; the scope is the row, not the rectangle right of the change.
 *src/ui/tiku_trk_poseview.c:3104-3148 (toggle_column, filter_changed calls) and :3391 (reflow_columns); full redraw at src/shell/tiku_trk_app.c:1565*
 
 #### TS-025 · important · done
