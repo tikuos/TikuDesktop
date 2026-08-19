@@ -2986,12 +2986,13 @@ SetupMountMenu inserts after "Select all"+separator on the Desktop, or after "Ed
 **PORT:** The Mount submenu is live on the volume, root and Desktop menus: every partition the kernel offers, mounted ones check-marked and disabled, plus Mount all and Settings… -- which opens the preferences straight at the Disk mount page.  A mount the system refuses is said out loud, as the unmount already was.  Unmount and Cmd+U go through the volume model, the boot volume's entry disabled by the enable rule.  Two source sub-clauses differ by design: shared NETWORK volumes are not listed, because the partition source is /proc/partitions and the host exposes no share enumeration there; and entries are named by kernel partition name and size rather than the content-name fallback chain, because the port has no content-name service to ask -- the same st_dev-only knowledge of filesystems FS-012/FS-013 record.  
 *src/backends/tiku_trk_volume.c:tiku_trk_partitions_scan/tiku_trk_volume_mount; src/ui/tiku_trk_cwmenu.c:build_mount_menu; tests/shell/mountmenu.script; tests/shell/unmount.script*
 
-#### CW-035 · core · partial
+#### CW-035 · core · done
 **"Move to >", "Copy to >" and "Create link >" are hierarchical folder pickers offering Current folder, Recent folders, Desktop, Home, then volumes; Move to only offers the item's own volume (no cross-device move), Copy to and Create link offer every writable persistent volume.**  
 PopulateMoveCopyNavMenu(navMenu, what, ref, addLocalOnly): addLocalOnly (Move) or fewer than 2 writable volumes -> only the ref's own volume, submenu not pre-populated; otherwise every non-read-only persistent volume with populated submenus. The three items are inserted after "Move to Trash"/"Delete" + separator, start disabled and are enabled only once built. Holding Shift switches Create link to kCreateRelativeLink. Absent for file panels, the printers folder, the Trash and trashed items.  
 `ContainerWindow.cpp` → `BContainerWindow::SetupMoveCopyMenus / PopulateMoveCopyNavMenu / ShouldHaveMoveCopyMenus`  
 **TIKU:** "volumes" become tiers/mounts; a cross-tier move may be legal where a cross-device move was not, so the addLocalOnly rule needs an explicit decision.  
-**MISSING:** The three items are inserted just after the Move to Trash/Delete block behind a separator, Shift turns Create link into Create relative link, and they are omitted for the Trash/in-Trash/root; there is no hierarchical picker at all (no Current folder/Recent/Desktop/Home/volumes submenu, no addLocalOnly rule, no build-then-enable).  
+**PORT:** The three items are PICKERS now: each submenu offers Current folder, the Recent folders (by name, dead ones dropped), Desktop, Home, then every volume the desktop shows -- and Move offers only destinations on the item's own device, the addLocalOnly rule.  A row IS the destination: choosing one runs the same act the panel commits, and "Choose folder…" keeps the full navigator one row away for anywhere deeper than a row can name -- the in-menu descent replaced by the panel that already navigates.  Shift's relative-link variant, the Trash/in-Trash/root omissions and the placement after the Trash block were already exact.  
+*src/shell/tiku_trk_desktop.c:build_pickers/picker_add + the DEST dispatch in menu_invoke; src/ui/tiku_trk_cwmenu.c:add_picker; tests/shell/picker.script (copy, move, link, and the panel row -- mutation-tested)*
 *src/ui/tiku_trk_cwmenu.c:build_file / build_contexts + src/core/tiku_trk_shortcuts.c:tiku_trk_sc_command (CREATE_REL_LINK)*
 
 #### CW-036 · important · done
@@ -3157,16 +3158,13 @@ AddNextItem applies HideDotFiles, model.IsTrash(), the query-results-in-trash ru
 **PORT:** The menu hides what the window hides -- dot files when the setting is on, and the Trash always, for being the Trash rather than for its name.  One that showed a dot file the window does not would be a second, disagreeing view of one folder.  
 **MISSING:** Pose-info invisibility and the query-results-in-Trash rule are not applied.  The root clause holds now: a menu on the root lists volumes -- the boot volume once, never /usr or /etc as rows.  
 *src/ui/tiku_trk_navmenu.c:tiku_trk_nav_fill (the volume level); tests/test_navmenu.c (CW-057)*  
-#### CW-058 · important · partial
+#### CW-058 · important · done
 **"Recent folders" inside the Move to/Copy to pickers, and the file panel's Favorites menu, list recently used items with the counts the user configured; an empty list shows a disabled "<No recent items>" placeholder.**  
 RecentsMenu reads its cap from TrackerSettings().RecentCounts(apps, docs, folders) selected by fWhich (0=documents, 1=apps, 2=folders) and pulls from BRoster::GetRecent*; DoneBuildingItemList adds the disabled placeholder when nothing was added. FavoritesMenu builds three titled sections in order - Favorites (links in the user's Go directory), Recent documents (suppressed in save panels), Recent folders (skipping refs already listed under Favorites) - and re-filters everything through the panel's BRefFilter.  
 `FavoritesMenu.cpp` → `RecentsMenu::AddRecents / RecentsMenu::DoneBuildingItemList / FavoritesMenu::AddNextItem`  
 **VERIFIER CORRECTION:** RecentItems.cpp:154 returns fCount < fMaxCount - 1 && fSanityCount < fMaxCount + 20, so at most maxItems-1 items are ever added (one fewer than the configured recent count). The +20 sanity cap is correct.
-**MISSING:** The recent lists exist with the original's own arithmetic -- a
-configured count of N yields N-1 items, which is what its loop actually
-produces -- and are read back most-recent-first.  What is missing is every
-place they would be SHOWN: there is no Recent folders submenu in a picker and
-no Favorites menu, so nothing displays a list yet.
+**PORT:** Both surfaces show the lists now: the Move to / Copy to / Create link pickers carry the Recent folders as rows (CW-035's close), and the file panel grew a Favorites menu -- favourites first, then recent folders, "<No recent items>" disabled when both are empty, and "Add current folder" as the standing last row.  The counts remain the original's own arithmetic.  
+*src/shell/tiku_trk_desktop.c:build_pickers; src/ui/windows/tiku_trk_panel_window.c (the Favorites dropdown); tests/shell/picker.script, favorites.script (mutation-tested)*
 *src/core/tiku_trk_panel.c:tiku_trk_recent_list (the N-1 cap); tests/test_panel.c*
 
 #### CW-059 · polish · done
@@ -6518,14 +6516,11 @@ src/shell/tiku_trk_desktop.c (double-click) ; tests/test_panel.c;
 tests/shell/panel.script*  
 *Shell: desktop*  
 
-#### AW-056 · important · partial
+#### AW-056 · important · differs
 **Everything chosen through a panel, plus the folder it was chosen from, is added to the recent documents / recent folders lists.**  
 OpenSelectionCommon adds each ref via BRoster::AddToRecentFolders or AddToRecentDocuments, then always AddToRecentFolders(TargetModel()->EntryRef()).  
 `FilePanelPriv.cpp` → `TFilePanel::OpenSelectionCommon`
-**MISSING:** The lists exist, are separate per kind, keep most-recent-first
-with no duplicates, and the folder a panel answered with is added on the way
-out -- but only that one: nothing adds a chosen DOCUMENT (no shell opens
-files through a panel yet), and no menu displays any of the lists.
+**PORT:** The lists exist, separate per kind, most-recent-first with no duplicates; a panel's chosen folder is added on the way out, and the folders list is DISPLAYED now -- in the pickers and the panel's Favorites menu (CW-058).  The documents half differs by what this shell opens: no flow opens documents THROUGH a panel (a double click launches directly), so there is no panel exit for a chosen document to be recorded at; the recent-documents list stands ready for the first flow that acquires one.
 *src/core/tiku_trk_panel.c:tiku_trk_recent_add/_recent_list;
 src/shell/tiku_trk_desktop.c:fpanel_commit; tests/test_panel.c*
 
@@ -6585,15 +6580,13 @@ SwitchDirToDesktopIfNeeded maps the desktop dir, and (when the Disks icon is off
 *src/core/tiku_trk_panel.c:tiku_trk_panel_parent (desktop_is_root);
 tests/test_panel.c; src/core/tiku_trk_prefs.c (no such setting)*
 
-#### AW-062 · polish · partial
+#### AW-062 · polish · done
 **The panel's Favorites menu can add the current folder as a favorite and open the favorites folder for editing.**  
 kAddCurrentDir creates a symlink named after the current folder inside <settings>/kGoDirectory; kEditFavorites sends that folder to the Tracker as B_REFS_RECEIVED. The Favorites submenu is also re-filtered whenever the panel's ref filter changes.  
 `FilePanelPriv.cpp` → `TFilePanel::MessageReceived (kAddCurrentDir / kEditFavorites) / TFilePanel::SetRefFilter`  
 **VERIFIER CORRECTION:** ContainerWindow.cpp:796-809 calls keymap.GetModifiedCharacters("+", B_SHIFT_KEY, 0, unmodified) — i.e. it collects the UNMODIFIED characters whose SHIFTED form is '+' (on a US layout, '='), and binds Cmd+<that unmodified key>. It also skips any key that already has a shortcut (if (!HasShortcut(key, 0))).
-**MISSING:** The current folder can be added to the favourites and the list
-reads back in the order it was added, once per folder -- but no menu shows
-them and nothing opens the favourites for editing, so they are written and
-never seen.
+**PORT:** The favourites are written AND seen now: the panel's Favorites menu lists them (then the recent folders), choosing one navigates the panel there, and "Add current folder" adds the folder being shown -- the add half that always worked, given its display half.  
+*src/ui/windows/tiku_trk_panel_window.c (favorites_fill and the dropdown); tests/shell/favorites.script (add, navigate -- mutation-tested)*
 *src/core/tiku_trk_panel.c:tiku_trk_panel_add_favorite/_favorites;
 tests/test_panel.c*
 

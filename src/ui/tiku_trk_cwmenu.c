@@ -348,6 +348,25 @@ wants_clipboard(const tiku_trk_sc_ctx_t *c)
  * nothing behind it -- rather than disappearing: an item that comes and
  * goes is harder to find than one that is greyed.
  */
+/**
+ * @brief One picker item: a submenu when the shell built one, the plain
+ *        panel command when it did not (CW-035).
+ */
+static void
+add_picker(tiku_trk_cwmenu_t *cw, tiku_trk_menu_t *m, int k,
+           const tiku_trk_sc_ctx_t *c)
+{
+    static const int cmd[3] = { TIKU_TRK_CMD_MOVE_TO, TIKU_TRK_CMD_COPY_TO,
+                                TIKU_TRK_CMD_CREATE_LINK };
+
+    if (cw->picker[k].count > 0) {
+        (void)tiku_trk_menu_add_submenu(m, cw->picker[k].title,
+                                        &cw->picker[k], 1);
+    } else {
+        ADD(m, cmd[k]);
+    }
+}
+
 static void
 add_open_with(tiku_trk_cwmenu_t *cw, tiku_trk_menu_t *m,
               const tiku_trk_sc_ctx_t *c)
@@ -405,9 +424,9 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     if (wants_clipboard(c)) {
         SEP(m);
-        ADD(m, TIKU_TRK_CMD_MOVE_TO);
-        ADD(m, TIKU_TRK_CMD_COPY_TO);
-        ADD(m, TIKU_TRK_CMD_CREATE_LINK);
+        add_picker(cw, m, 0, c);
+        add_picker(cw, m, 1, c);
+        add_picker(cw, m, 2, c);
         ADD(m, TIKU_TRK_CMD_CUT);
         ADD(m, TIKU_TRK_CMD_COPY);
         if (!c->is_query) {
@@ -574,9 +593,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     if (wants_clipboard(c)) {
         SEP(m);
-        ADD(m, TIKU_TRK_CMD_MOVE_TO);
-        ADD(m, TIKU_TRK_CMD_COPY_TO);
-        ADD(m, TIKU_TRK_CMD_CREATE_LINK);
+        add_picker(cw, m, 0, c);
+        add_picker(cw, m, 1, c);
+        add_picker(cw, m, 2, c);
         ADD(m, TIKU_TRK_CMD_CUT);
         ADD(m, TIKU_TRK_CMD_COPY);
         ADD(m, TIKU_TRK_CMD_PASTE);

@@ -1,0 +1,42 @@
+# shell: desktop
+# CW-035/CW-058: Move to, Copy to and Create link are pickers -- Current
+# folder, Recent folders, Desktop, Home, volumes -- a row IS the
+# destination, Move offers only the item's own device, and the panel stays
+# one row away as Choose folder.
+wait 10
+note Copy to > Desktop copies there and keeps the original
+click-row 1 3
+wait 3
+menu-pick Copy to
+wait 3
+menu-pick Desktop
+wait 15
+expect-file /tmp/trk_home/Desktop/a.txt
+expect-file /tmp/trk_script/a.txt
+note Move to > Home moves b.txt there
+click-row 2 3
+wait 3
+menu-pick Move to
+wait 3
+menu-pick Home
+wait 15
+expect-file /tmp/trk_home/b.txt
+expect-no-file /tmp/trk_script/b.txt
+note Create link > Home leaves a link there and the original in place
+click-row 2 3
+wait 3
+menu-pick Create link
+wait 3
+menu-pick Home
+wait 15
+expect-link /tmp/trk_home/c.txt /tmp/trk_script/c.txt
+expect-file /tmp/trk_script/c.txt
+note and the panel navigator is still one row away
+click-row 1 3
+wait 3
+menu-pick Copy to
+wait 3
+menu-pick Choose folder
+wait 5
+expect-title Tracker: Open
+quit

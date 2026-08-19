@@ -769,6 +769,120 @@ menu_ctx(desktop_t *app, folder_t *fl, unsigned mods)
     return tiku_trk_folder_menu_context(&app->folder_menu, fl, mods);
 }
 
+/** @brief One destination row of a picker (CW-035). */
+static void
+picker_add(desktop_t *app, int k, const char *label, const char *path,
+           int move_dev_ok)
+{
+    tiku_trk_cwmenu_t *cw = &app->menus;
+    int n = cw->picker_paths[k];
+    int i;
+
+    if (path == NULL || path[0] == '\0' || n >= TIKU_TRK_CMD_DEST_MAX ||
+        (k == 0 && !move_dev_ok)) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        if (strcmp(cw->picker_path[k][i], path) == 0) {
+            return;             /* one row per destination */
+        }
+    }
+    if (tiku_trk_menu_add(&cw->picker[k], label,
+            TIKU_TRK_CMD_DEST_BASE + k * TIKU_TRK_CMD_DEST_MAX + n,
+            0, 0u, 1) >= 0) {
+        snprintf(cw->picker_path[k][n], TIKU_TRK_PATH_MAX, "%s", path);
+        cw->picker_paths[k] = n + 1;
+    }
+}
+
+/**
+ * @brief The Move to / Copy to / Create link pickers (CW-035, CW-058).
+ *
+ * Current folder, Recent folders, Desktop, Home, then volumes -- and Move
+ * offers only destinations on the item's own device, the addLocalOnly
+ * rule: a cross-device move is a copy wearing the wrong name.
+ */
+static void
+build_pickers(desktop_t *app, folder_t *fl)
+{
+    static const char *title[3] = { "Move to", "Copy to", "Create link" };
+    const char *home = getenv("HOME");
+    char recent[8][TIKU_TRK_PATH_MAX];
+    char desk[TIKU_TRK_PATH_MAX];
+    struct stat here;
+    tiku_trk_volumes_t vs;
+    int have_here;
+    int nrecent;
+    int nvol;
+    int k, i;
+
+    if (fl == NULL) {
+        return;
+    }
+    have_here = stat(fl->path, &here) == 0;
+    nrecent = tiku_trk_recent_list(app->store, TIKU_TRK_RECENT_FOLDERS, 6,
+                                   recent, 8);
+    nvol = (tiku_trk_volumes_scan(&vs) > 0) ? vs.n : 0;
+    snprintf(desk, sizeof desk, "%s/Desktop",
+             (home != NULL && home[0] != '\0') ? home : "");
+    for (k = 0; k < 3; k++) {
+        tiku_trk_menu_clear(&app->menus.picker[k]);
+        snprintf(app->menus.picker[k].title,
+                 sizeof app->menus.picker[k].title, "%s", title[k]);
+        app->menus.picker_paths[k] = 0;
+        picker_add(app, k, "Current folder", fl->path, 1);
+        for (i = 0; i < nrecent; i++) {
+            struct stat rst;
+            const char *leaf = strrchr(recent[i], '/');
+
+            if (stat(recent[i], &rst) != 0) {
+                continue;       /* a destination that went away */
+            }
+            if (strcmp(recent[i], desk) == 0 ||
+                (home != NULL && strcmp(recent[i], home) == 0)) {
+                /* Desktop and Home keep their own NAMED rows below; a
+                 * recent that is one of them would shadow the name. */
+                continue;
+            }
+            picker_add(app, k, (leaf != NULL && leaf[1] != '\0')
+                                   ? leaf + 1 : recent[i],
+                       recent[i],
+                       have_here && rst.st_dev == here.st_dev);
+        }
+        {
+            struct stat dst;
+
+            if (stat(desk, &dst) == 0) {
+                picker_add(app, k, "Desktop", desk,
+                           have_here && dst.st_dev == here.st_dev);
+            }
+            if (home != NULL && stat(home, &dst) == 0) {
+                picker_add(app, k, "Home", home,
+                           have_here && dst.st_dev == here.st_dev);
+            }
+        }
+        for (i = 0; i < nvol; i++) {
+            struct stat vst;
+
+            if (!tiku_trk_volume_shows_icon(&vs, &vs.v[i]) ||
+                stat(vs.v[i].mount, &vst) != 0) {
+                continue;
+            }
+            picker_add(app, k, vs.v[i].name, vs.v[i].mount,
+                       have_here && vst.st_dev == here.st_dev);
+        }
+        if (k < 2 && app->menus.picker[k].count > 0) {
+            /* Somewhere deeper than a row can name: the panel is the
+             * navigator (AW-050), reached from inside the picker. */
+            (void)tiku_trk_menu_add_separator(&app->menus.picker[k]);
+            (void)tiku_trk_menu_add(&app->menus.picker[k],
+                "Choose folder\xe2\x80\xa6",
+                (k == 0) ? TIKU_TRK_CMD_MOVE_TO : TIKU_TRK_CMD_COPY_TO,
+                0, 0u, 1);
+        }
+    }
+}
+
 /**
  * @brief Fill the Open-with submenu for what @p fl has selected (AW-040).
  *
@@ -780,6 +894,7 @@ static void
 build_open_with(desktop_t *app, folder_t *fl)
 {
     tiku_trk_folder_menu_build_open_with(&app->folder_menu, fl);
+    build_pickers(app, fl);
     if (fl != NULL && fl->view != NULL) {
         const char *types[TIKU_TRK_APP_TYPES_MAX];
         int n = tiku_trk_poseview_types_present(fl->view, types,
@@ -2023,6 +2138,35 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     int seeded = 0, seed_x = 0, seed_y = 0;
 
     if (fl == NULL) {
+        return;
+    }
+    if (command >= TIKU_TRK_CMD_DEST_BASE &&
+        command < TIKU_TRK_CMD_DEST_BASE + 3 * TIKU_TRK_CMD_DEST_MAX) {
+        /* A picker row IS the destination (CW-035): the same act the
+         * panel commits, aimed where the row points. */
+        int k = (command - TIKU_TRK_CMD_DEST_BASE) / TIKU_TRK_CMD_DEST_MAX;
+        int at = (command - TIKU_TRK_CMD_DEST_BASE) % TIKU_TRK_CMD_DEST_MAX;
+        const char *dest = app->menus.picker_path[k][at];
+
+        if (at >= app->menus.picker_paths[k]) {
+            return;
+        }
+        if (k == 2) {
+            char paths[16][TIKU_TRK_PATH_MAX];
+            const char *selection[16];
+            int count = folder_selection(app, fl, paths, selection, 16);
+
+            if (count > 0) {
+                (void)tiku_trk_fs_link(app->fs, selection, count, dest, 0);
+                snprintf(app->status, sizeof app->status,
+                         "linking %d item%s", count, count == 1 ? "" : "s");
+                tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
+                                    dest);
+            }
+        } else {
+            fpanel_commit(app, fl, (k == 0) ? TIKU_TRK_CMD_MOVE_TO
+                                            : TIKU_TRK_CMD_COPY_TO, dest);
+        }
         return;
     }
     template_path = tiku_trk_cwmenu_template_path(&app->menus, command);

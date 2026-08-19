@@ -25,6 +25,10 @@
 /* The save panel's own errand: write the Find panel's query as a file. */
 #define TIKU_TRK_CMD_SAVE_QUERY      1700
 #define TIKU_TRK_CMD_ADD_SCOPE       1701
+/* The Move to / Copy to / Create link pickers: 16 destinations each
+ * (CW-035).  (command - BASE) / 16 says which picker, % 16 which entry. */
+#define TIKU_TRK_CMD_DEST_BASE       1720
+#define TIKU_TRK_CMD_DEST_MAX        16
 #define TIKU_TRK_MOUNT_PART_MAX 32
 
 typedef struct {
@@ -54,6 +58,12 @@ typedef struct {
      * "Open with" item.  Built by the shell, which is what knows the
      * registry, and attached here so both menus show the same one. */
     tiku_trk_menu_t    open_with;
+    /* Move to / Copy to / Create link as hierarchical pickers: Current
+     * folder, Recent folders, Desktop, Home, volumes -- built by the
+     * shell, which knows the recents and the mounts (CW-035, CW-058). */
+    tiku_trk_menu_t    picker[3];
+    char               picker_path[3][TIKU_TRK_CMD_DEST_MAX][TIKU_TRK_PATH_MAX];
+    int                picker_paths[3];
     /* One submenu per type the folder actually holds, each offering the
      * columns that type has to show (CW-026).  Filled by the shell, which
      * is what can see the listing. */

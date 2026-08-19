@@ -1,0 +1,29 @@
+# shell: desktop
+# AW-062/CW-058: the panel's Favorites menu -- an empty list says so, the
+# current folder can be added, and a favourite navigates the panel back.
+wait 10
+click-row 1 3
+wait 3
+menu-pick Copy to
+wait 3
+menu-pick Choose folder
+wait 5
+expect-title Tracker: Open
+note the current folder is added to the favourites
+click 323 414
+wait 3
+click 340 403
+wait 3
+note the panel walks into sub, which is empty
+click 400 168
+click 400 168
+wait 5
+expect-rows 0
+note choosing the favourite brings the panel back to trk_script
+click 323 414
+wait 3
+click 340 377
+wait 5
+expect-rows 4
+key w ctrl
+quit

@@ -5,6 +5,8 @@ wait 10
 click-row 1 3
 wait 3
 menu-pick Copy to
+wait 3
+menu-pick Choose folder
 wait 5
 expect-title Tracker: Open
 note three Ups: /tmp, then /, then -- setting on by default -- the Desktop

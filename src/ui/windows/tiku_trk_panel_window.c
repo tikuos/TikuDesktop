@@ -29,8 +29,12 @@ typedef enum {
     PANEL_HIT_LIST,
     PANEL_HIT_NAME,
     PANEL_HIT_DEFAULT,
-    PANEL_HIT_CANCEL
+    PANEL_HIT_CANCEL,
+    PANEL_HIT_FAVORITES,
+    PANEL_HIT_FAV_ROW
 } panel_hit_t;
+
+#define PANEL_FAV_ROW_H 18
 
 static void
 mark_dirty(tiku_trk_panel_window_t *controller)
@@ -64,6 +68,60 @@ layout(const tiku_trk_panel_window_t *controller, tiku_desk_rect_t content,
         bottom, PANEL_BUTTON_W, PANEL_BUTTON_H };
     *cancel = *default_button;
     cancel->x -= PANEL_PADDING + PANEL_BUTTON_W;
+}
+
+/** @brief The Favorites button, bottom-left, and its open list. */
+static tiku_desk_rect_t
+favorites_button(const tiku_trk_panel_window_t *controller)
+{
+    tiku_desk_rect_t content = tiku_desk_window_content(controller->window);
+
+    return (tiku_desk_rect_t){ content.x + PANEL_PADDING,
+                               content.y + content.h - PANEL_PADDING -
+                                   PANEL_BUTTON_H,
+                               PANEL_BUTTON_W, PANEL_BUTTON_H };
+}
+
+static tiku_desk_rect_t
+favorites_list_rect(const tiku_trk_panel_window_t *controller)
+{
+    tiku_desk_rect_t button = favorites_button(controller);
+    int rows = (controller->fav_count > 0 ? controller->fav_count : 1) + 1;
+    tiku_desk_rect_t r = { button.x, 0, 200,
+                           rows * PANEL_FAV_ROW_H + 4 };
+
+    r.y = button.y - r.h;
+    return r;
+}
+
+/** @brief Fill the list: favourites first, then recent folders (CW-058). */
+static void
+favorites_fill(tiku_trk_panel_window_t *controller)
+{
+    char rows[12][TIKU_TRK_PATH_MAX];
+    int n, i;
+
+    controller->fav_count = 0;
+    n = tiku_trk_panel_favorites(controller->store, rows, 6);
+    n += tiku_trk_recent_list(controller->store, TIKU_TRK_RECENT_FOLDERS,
+                              6, rows + n, 12 - n);
+    for (i = 0; i < n && controller->fav_count < 12; i++) {
+        const char *leaf = strrchr(rows[i], '/');
+        int k, dup = 0;
+
+        for (k = 0; k < controller->fav_count && !dup; k++) {
+            dup = strcmp(controller->fav_path[k], rows[i]) == 0;
+        }
+        if (dup) {
+            continue;
+        }
+        k = controller->fav_count;
+        snprintf(controller->fav_path[k], TIKU_TRK_PATH_MAX, "%s", rows[i]);
+        snprintf(controller->fav_label[k], sizeof controller->fav_label[k],
+                 "%s", (leaf != NULL && leaf[1] != '\0') ? leaf + 1
+                                                          : rows[i]);
+        controller->fav_count++;
+    }
 }
 
 static int
@@ -151,6 +209,37 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         tiku_trk_panel_button_enabled(&controller->model, selected,
                                       selected_count)
             ? TIKU_DESK_S_DEFAULT : TIKU_DESK_S_DISABLED);
+    tiku_desk_ui_button(surface, favorites_button(controller), "Favorites",
+                        0u);
+    if (controller->fav_open) {
+        /* Favourites first, then recent folders, and "Add current folder"
+         * as the last row (AW-062, CW-058). */
+        tiku_desk_rect_t fr = favorites_list_rect(controller);
+        int i;
+
+        tiku_desk_fill(surface, fr, TIKU_DESK_C_PANEL);
+        tiku_desk_bevel(surface, fr,
+            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
+            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+        if (controller->fav_count == 0) {
+            /* An empty list says so, disabled, rather than showing
+             * nothing (CW-058). */
+            tiku_desk_text(surface, font, fr.x + 8,
+                fr.y + 2 + font->ascent + 1, "<No recent items>",
+                tiku_desk_tint(TIKU_DESK_C_TEXT, TIKU_DESK_LIGHTEN_2));
+        }
+        for (i = 0; i <= controller->fav_count; i++) {
+            const char *text = (i == controller->fav_count)
+                                   ? "Add current folder"
+                                   : controller->fav_label[i];
+            int at = (controller->fav_count == 0 &&
+                      i == controller->fav_count) ? 1 : i;
+
+            tiku_desk_text(surface, font, fr.x + 8,
+                fr.y + 2 + at * PANEL_FAV_ROW_H + font->ascent + 1, text,
+                TIKU_DESK_C_TEXT);
+        }
+    }
 }
 
 static void
@@ -341,6 +430,21 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
     layout(controller, content, &list, &name, &default_button, &cancel);
 #define INSIDE(rect) (x >= (rect).x && x < (rect).x + (rect).w && \
                       y >= (rect).y && y < (rect).y + (rect).h)
+    {
+        tiku_desk_rect_t fav = favorites_button(controller);
+
+        if (controller->fav_open) {
+            tiku_desk_rect_t fr = favorites_list_rect(controller);
+
+            if (INSIDE(fr)) {
+                if (row != NULL) {
+                    *row = (y - fr.y - 2) / PANEL_FAV_ROW_H;
+                }
+                return PANEL_HIT_FAV_ROW;
+            }
+        }
+        if (INSIDE(fav)) { return PANEL_HIT_FAVORITES; }
+    }
     if (INSIDE(default_button)) { return PANEL_HIT_DEFAULT; }
     if (INSIDE(cancel))         { return PANEL_HIT_CANCEL; }
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE && INSIDE(name)) {
@@ -374,6 +478,25 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
         return 0;
     }
     switch (hit(controller, input->x, input->y, &row)) {
+    case PANEL_HIT_FAVORITES:
+        if (!controller->fav_open) {
+            favorites_fill(controller);
+        }
+        controller->fav_open = !controller->fav_open;
+        break;
+    case PANEL_HIT_FAV_ROW:
+        if (controller->fav_count == 0) {
+            row -= 1;           /* row 0 is the disabled placeholder */
+        }
+        if (row == controller->fav_count) {
+            /* The last row adds the folder being shown (AW-062). */
+            (void)tiku_trk_panel_add_favorite(&controller->model,
+                                              controller->store);
+        } else if (row >= 0 && row < controller->fav_count) {
+            go(controller, controller->fav_path[row]);
+        }
+        controller->fav_open = 0;
+        break;
     case PANEL_HIT_CANCEL:
         tiku_trk_panel_window_close(controller);
         break;
@@ -382,8 +505,10 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
         break;
     case PANEL_HIT_NAME:
         controller->model.focus = TIKU_TRK_PANEL_FOCUS_NAME;
+        controller->fav_open = 0;
         break;
     case PANEL_HIT_LIST:
+        controller->fav_open = 0;
         controller->model.focus = TIKU_TRK_PANEL_FOCUS_LIST;
         tiku_trk_poseview_click(controller->view, row, 0u);
         {

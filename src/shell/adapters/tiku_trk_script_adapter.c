@@ -450,16 +450,29 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
         fprintf(stderr, "script: no menu is open for '%s'\n", label);
         return 0;
     }
-    for (i = 0; i < menu->count; i++) {
-        if (!menu->item[i].separator &&
-            strstr(menu->item[i].label, label) != NULL) {
-            event->type = TIKU_DESK_EVENT_POINTER_DOWN;
-            event->x = frame.x + 8;
-            event->y = frame.y + tiku_trk_menu_item_top(menu, i) +
-                tiku_trk_menu_item_height(menu, i) / 2;
-            event->button = 1u;
-            event->time_us = tiku_trk_now();
-            return 1;
+    {
+        /* An exact label outranks a substring: "Move to" must not land on
+         * "Move to Trash" merely because the Trash row comes first. */
+        int pass;
+
+        for (pass = 0; pass < 2; pass++) {
+            for (i = 0; i < menu->count; i++) {
+                if (menu->item[i].separator) {
+                    continue;
+                }
+                if (pass == 0
+                        ? strcmp(menu->item[i].label, label) != 0
+                        : strstr(menu->item[i].label, label) == NULL) {
+                    continue;
+                }
+                event->type = TIKU_DESK_EVENT_POINTER_DOWN;
+                event->x = frame.x + 8;
+                event->y = frame.y + tiku_trk_menu_item_top(menu, i) +
+                    tiku_trk_menu_item_height(menu, i) / 2;
+                event->button = 1u;
+                event->time_us = tiku_trk_now();
+                return 1;
+            }
         }
     }
     fprintf(stderr, "script: no menu item matching '%s'\n", label);

@@ -46,6 +46,12 @@ typedef struct {
      * the checked path waits here while the question is on screen. */
     tiku_trk_alert_t      *alert;
     char                   pending_save[TIKU_TRK_PATH_MAX];
+    /* The Favorites menu: favourites, then recent folders, dropped up
+     * from the bottom-left button (AW-062, CW-058). */
+    int                    fav_open;
+    int                    fav_count;
+    char                   fav_path[12][TIKU_TRK_PATH_MAX];
+    char                   fav_label[12][48];
 } tiku_trk_panel_window_t;
 
 void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,

@@ -11,6 +11,8 @@ wait 2
 release-row 1 3
 wait 5
 menu-pick Create link
+wait 3
+menu-pick Current folder
 wait 30
 expect-link /tmp/trk_script/a.txt link /tmp/trk_script/a.txt
 note Identify re-asks what a thing IS.  The type table is read at startup,
