@@ -1,0 +1,22 @@
+# shell: desktop
+# home: fixture
+# AW-032/PVK-018: Option-double-clicking a folder opens its window and closes
+# the one it came from -- a spatial desktop walked without a trail.
+wait 10
+expect-windows 1
+note a plain double-click on sub opens its window; the source stays
+click 90 118
+wait 2
+click 90 118
+wait 4
+expect-windows 2
+key w ctrl
+wait 3
+expect-windows 1
+note now Option-double-click sub: the source window closes behind it
+click 90 118
+wait 2
+click 90 118 1 alt
+wait 6
+expect-windows 1
+quit

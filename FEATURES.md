@@ -6340,12 +6340,12 @@ BEntry(ref, true).InitCheck() failure -> warning alert with buttons Get info / C
 **PORT:** The open path has the branch now: a double click or Open on a link that leads nowhere puts up a warning with Cancel and Get info -- Escape closes it, and choosing Get info opens the window that can say what is wrong and re-point the link (AW-072's picker).  
 *src/shell/tiku_trk_desktop.c:offer_broken_link; tests/shell/brokenlink.script*
 
-#### AW-032 · important · partial
+#### AW-032 · important · done
 **Option-opening a document closes the parent window about a second after the launch succeeds; option-opening a folder closes the parent only once the child window has actually appeared, and gives up after five seconds.**  
 Documents: Thread::Launch of LaunchAndCloseParentIfOK -> synchronous TrackerLaunch, then fTaskLoop->RunLater(CloseParent, 1000000). Containers: CloseParentWaitingForChildSoon -> RunLater(CloseParentWaitingForChild, delay 200ms, period 100ms, timeout 5s), which resolves symlinks and requires the child window to be non-hidden. The Desktop is never closed as a parent.  
 `Tracker.cpp` → `TTracker::LaunchAndCloseParentIfOK / TTracker::CloseParentWaitingForChild / TTracker::CloseParentWindowCommon`  
-**MISSING:** Option-opening a document closes the window it came from once the launch has actually happened -- a launch that failed leaves the window, which is the point of the row's "after the launch succeeds". The one-second delay is not ported: there is nothing here that would use the interval.  
-*src/shell/tiku_trk_desktop.c (the double-click launch, Mod1)*
+**PORT:** Option-open closes the source window once the open has actually happened -- gated on the launch's success (`went`) for a document and on the folder open for a container, so a failed launch leaves the window standing.  The one-second delay is deliberately not ported: nothing here uses the interval the source's animation needed.  
+*src/shell/tiku_trk_desktop.c (the Option branch of the double-click open); tests/shell/optionopen.script (mutation-tested)*
 
 #### AW-033 · important · done
 **After an operation that creates an entry, Tracker selects that entry in its parent window once it shows up, retrying for up to five seconds.**  
