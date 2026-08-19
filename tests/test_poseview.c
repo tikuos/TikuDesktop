@@ -1641,6 +1641,25 @@ main(void)
         tiku_trk_poseview_free(lv);
     }
 
+    /* --- growing a window pulls scrolled content back (PVL-058) --------- */
+    printf("\nresize pulls both axes back (PVL-058)\n");
+    {
+        tiku_trk_poseview_t *hv = tiku_trk_poseview_new(b, dir);
+        int content = tiku_trk_poseview_columns_width(hv);
+
+        tiku_trk_poseview_set_viewport(hv, content - 100, 200);
+        tiku_trk_poseview_set_hscroll(hv, 100000);
+        check(tiku_trk_poseview_hscroll(hv) == 100, "PVL-058",
+              "the horizontal clamp ends where the last column meets the "
+              "window's edge, not at the content's whole width");
+        tiku_trk_poseview_set_viewport(hv, content - 40, 200);
+        check(tiku_trk_poseview_hscroll(hv) == 40, "PVL-058",
+              "and ENLARGING the window pulls the content back with it -- "
+              "the scrolled-away part re-anchors instead of leaving a "
+              "blank gulf");
+        tiku_trk_poseview_free(hv);
+    }
+
     printf("\nquery windows stay lists (Q-041)\n");
     {
         tiku_trk_model_t result[2];

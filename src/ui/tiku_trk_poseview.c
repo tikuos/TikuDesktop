@@ -4104,6 +4104,10 @@ tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
     }
     v->view_w = w;
     v->view_h = h;
+    /* And the horizontal axis is pulled back like the vertical one: a
+     * window grown past its scrolled-away content re-anchors the content
+     * to the window instead of keeping a blank gulf (PVL-058). */
+    tiku_trk_poseview_set_hscroll(v, v->hscroll);
     /* The row count follows from the height, so a caller that says how big
      * the window is has said everything: two numbers that could disagree
      * are two numbers that will. */
@@ -6312,6 +6316,15 @@ tiku_trk_poseview_set_hscroll(tiku_trk_poseview_t *v, int px)
         return;
     }
     max = tiku_trk_poseview_columns_width(v);
+    if (v->view_w > 0) {
+        /* The clamp is against what CANNOT be shown, not against the
+         * content's whole width: scrolling ends where the last column
+         * meets the window's right edge (PVL-058). */
+        max -= v->view_w;
+        if (max < 0) {
+            max = 0;
+        }
+    }
     if (px > max) { px = max; }
     if (px < 0)   { px = 0; }
     v->hscroll = px;

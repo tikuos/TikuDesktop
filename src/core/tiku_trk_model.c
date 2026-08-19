@@ -141,8 +141,45 @@ fold_eq(const char *a, const char *b, size_t n)
 }
 
 /** @brief The table row @p type matches, or -1.  Exact beats supertype. */
+static int type_row_walk(const char *type);
+
+/**
+ * @brief The table row @p type matches, memoised (IV-011).
+ *
+ * A type that has no row of its own is remembered AS SUCH, so the miss is
+ * paid once -- the alias entry the source inserts after falling back, as a
+ * four-slot memo over the walk.  Hits are remembered too: the memo is the
+ * answer, whatever the answer was.
+ */
 static int
 type_row(const char *type)
+{
+    static struct {
+        char type[64];
+        int  row;
+    } memo[4];
+    static int next;
+    int i, row;
+
+    if (type == NULL || type[0] == '\0') {
+        return -1;
+    }
+    for (i = 0; i < 4; i++) {
+        if (memo[i].type[0] != '\0' && strcmp(memo[i].type, type) == 0) {
+            return memo[i].row;
+        }
+    }
+    row = type_row_walk(type);
+    if (strlen(type) < sizeof memo[next].type) {
+        snprintf(memo[next].type, sizeof memo[next].type, "%s", type);
+        memo[next].row = row;
+        next = (next + 1) % 4;
+    }
+    return row;
+}
+
+static int
+type_row_walk(const char *type)
 {
     int i;
     const char *slash;

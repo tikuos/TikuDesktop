@@ -47,6 +47,7 @@
 #include "tiku_trk_navmenu.h"
 #include "tiku_trk_titleview.h"
 #include "tiku_trk_script.h"
+#include "tiku_trk_script_api.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskbar_roster.h"
@@ -1023,6 +1024,113 @@ open_with_window_launch(void *context, const tiku_trk_app_t *application,
     (void)launch_paths(app, application, paths, count);
 }
 
+
+/**
+ * @brief Run one scripting line against the shell (PVK-052).
+ *
+ * The suite resolves what a verb acts on and NAMES it; the shell is the
+ * caller that acts -- execute opens exactly as a double-click would, and
+ * delete moves to the Trash.  Replies go beside the command file, in-band
+ * (PVK-054's rule: reported, never thrown).
+ */
+static void
+script_command_line(desktop_t *app, const char *line, FILE *reply)
+{
+    char store[8][TIKU_TRK_PATH_MAX];
+    tiku_trk_req_t req;
+    tiku_trk_rep_t rep;
+    folder_t *fl = NULL;
+    int i;
+
+    {
+        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
+
+        fl = folder_of(app, fw);
+        if (fl == NULL && app->folder_count > 0) {
+            fl = &app->folders[0];
+        }
+    }
+    if (fl == NULL || fl->view == NULL ||
+        tiku_trk_script_parse(line, &req, store) != 0) {
+        if (reply != NULL) {
+            fprintf(reply, "error unhandled\n");
+        }
+        return;
+    }
+    memset(&rep, 0, sizeof rep);
+    tiku_trk_script_run(fl->view, &req, &rep);
+    if (rep.error != TIKU_TRK_ERR_OK) {
+        if (reply != NULL) {
+            fprintf(reply, "error %d\n", rep.error);
+        }
+        return;
+    }
+    if (req.verb == TIKU_TRK_VERB_EXECUTE) {
+        for (i = 0; i < rep.nresult; i++) {
+            tiku_trk_model_t m;
+
+            if (app->backend->ops->stat(app->backend, rep.result[i],
+                                        &m) != 0) {
+                continue;
+            }
+            if (tiku_trk_model_is_container(&m)) {
+                (void)open_folder(app, rep.result[i]);
+            } else {
+                const char *one[1];
+
+                one[0] = rep.result[i];
+                (void)launch_paths(app, handler_for(app, &m), one, 1);
+            }
+        }
+    } else if (req.verb == TIKU_TRK_VERB_DELETE) {
+        const char *sel[64];
+        int n = 0;
+
+        for (i = 0; i < rep.nresult && n < 64; i++) {
+            sel[n++] = rep.result[i];
+        }
+        if (n > 0) {
+            (void)tiku_trk_fs_trash(app->fs, sel, n);
+        }
+    }
+    if (reply != NULL) {
+        fprintf(reply, "ok %d\n", rep.nresult);
+        for (i = 0; i < rep.nresult; i++) {
+            fprintf(reply, "%s\n", rep.result[i]);
+        }
+    }
+    app->dirty = 1;
+}
+
+/** @brief The command FILE is the transport (PVK-052): read, act, reply. */
+static void
+script_command_file(desktop_t *app, const char *path)
+{
+    FILE *f = fopen(path, "r");
+    FILE *reply = NULL;
+    char rpath[TIKU_TRK_PATH_MAX];
+    char line[512];
+
+    if (f == NULL) {
+        return;
+    }
+    snprintf(rpath, sizeof rpath, "%s.reply", path);
+    reply = fopen(rpath, "w");
+    while (fgets(line, sizeof line, f) != NULL) {
+        char *nl = strchr(line, '\n');
+
+        if (nl != NULL) {
+            *nl = '\0';
+        }
+        if (line[0] != '\0' && line[0] != '#') {
+            script_command_line(app, line, reply);
+        }
+    }
+    (void)fclose(f);
+    if (reply != NULL) {
+        (void)fclose(reply);
+    }
+}
 
 /** @brief Re-apply the spring menu's enabled states from the live drag. */
 static void
@@ -3597,6 +3705,28 @@ tracker_run(int argc, char **argv)
                 (void)tiku_trk_prefs_load(prefs_model(&app),
                                           app.prefs_window.path);
                 app.dirty = 1;
+            }
+        }
+        {   /* The scripting suite's transport (PVK-052): a command file
+             * whose change delivers verb/property/specifier lines into
+             * this running shell. */
+            static int64_t command_stamp;
+            struct stat cst;
+            char cpath[TIKU_TRK_PATH_MAX];
+            const char *chome = getenv("HOME");
+
+            snprintf(cpath, sizeof cpath, "%s/.config/tracker/command",
+                     (chome != NULL && chome[0] != '\0') ? chome : "");
+            if (stat(cpath, &cst) == 0) {
+                /* Nanoseconds, not seconds: two commands written within
+                 * one second are two commands. */
+                int64_t stamp = (int64_t)cst.st_mtim.tv_sec * 1000000000 +
+                                cst.st_mtim.tv_nsec;
+
+                if (stamp != command_stamp) {
+                    command_stamp = stamp;
+                    script_command_file(&app, cpath);
+                }
             }
         }
         sync_folder_preferences(&app);

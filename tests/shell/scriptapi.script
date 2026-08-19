@@ -1,0 +1,22 @@
+# shell: desktop
+# apps: fixture
+# PVK-052: 'execute Entry' opens exactly as a double-click would, and
+# 'delete Entry' moves to the Trash -- the verbs arrive as text through
+# the command file, into this running shell, and reply in-band.
+wait 10
+note execute by PATH launches a document in what claims its type
+write /tmp/trk_home/.config/tracker/command execute Entry /tmp/trk_script/a.txt
+wait 30
+expect-file /tmp/trk_launched
+expect-file-has /tmp/trk_launched a.txt
+note delete Entry moves to the Trash rather than destroying
+write /tmp/trk_home/.config/tracker/command delete Entry /tmp/trk_script/b.txt
+wait 30
+expect-no-file /tmp/trk_script/b.txt
+expect-file-has /tmp/trk_home/.config/tracker/command.reply ok
+note execute Entry 0 opens sub in its own window, as a double-click would
+write /tmp/trk_home/.config/tracker/command execute Entry 0
+wait 15
+expect-windows 2
+expect-title sub
+quit

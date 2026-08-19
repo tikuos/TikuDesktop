@@ -2987,6 +2987,17 @@ tracker_run(int argc, char **argv)
                      * would put the question off a shrunken window. */
                     a.status_overlay.screen_w = ev.width;
                     a.status_overlay.screen_h = ev.height;
+                    {
+                        /* Both axes re-anchor to the new window: the
+                         * vertical clamp always ran through visible_rows,
+                         * and the horizontal one runs here (PVL-058). */
+                        tiku_desk_rect_t lr = list_rect(&a);
+
+                        tiku_trk_poseview_set_viewport(a.view, lr.w - 4,
+                                                       lr.h - 4);
+                        tiku_trk_poseview_set_hscroll(a.view,
+                            tiku_trk_poseview_hscroll(a.view));
+                    }
                 }
                 a.dirty = 1;
                 break;
