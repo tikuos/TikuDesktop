@@ -201,6 +201,28 @@ main(void)
               "read as empty");
     }
 
+    printf("\na thrown-away application leaves the list (AW-041)\n");
+    {
+        char path[128];
+        FILE *f;
+
+        snprintf(path, sizeof path, "/tmp/trk_apps2_%d", (int)getpid());
+        f = fopen(path, "w");
+        if (f != NULL) {
+            fprintf(f, "Ghost\t/tmp/no-such-program-anywhere\ttext/plain\n"
+                       "Real\t/bin/cat\ttext/plain\n"
+                       "ByPath\tsome-tool-on-path\ttext/plain\n");
+            (void)fclose(f);
+        }
+        tiku_trk_launch_clear(&r);
+        check(tiku_trk_launch_load(&r, path) == 2, "AW-041",
+              "an absolute command whose file is gone never reaches the "
+              "list; a PATH-resolved name is not second-guessed");
+        check(strcmp(r.app[0].name, "Real") == 0, "AW-041",
+              "and what survives is the application that still exists");
+        (void)unlink(path);
+    }
+
     tiku_trk_store_free(st);
     printf("\n%s\n", fails ? "FAILURES" : "the launch rules hold");
     return fails ? 1 : 0;

@@ -6105,12 +6105,12 @@ src/shell/tiku_trk_desktop.c (the exit sweep and startup); tests/test_frame.c;
 tests/shell/session1.script and session2.script*  
 *Shell: desktop*  
 
-#### AW-005 · important · partial
+#### AW-005 · important · differs
 **Per-window state is embedded in the saved session only for windows that cannot save state to their own folder — a duplicate window, or a folder on a volume without writable attributes / read-only; such windows are then barred from writing state on close.**  
 Condition: window != FindContainerWindow(ref) || (deviceFlags & (B_FS_HAS_ATTR|B_FS_IS_READONLY)) != B_FS_HAS_ATTR; then SaveState(stateMessage) + SetSaveStateEnabled(false) + kOpenWindowHasState.  
 `Tracker.cpp` → `TTracker::QuitRequested / GetVolumeFlags`  
 **TIKU:** Read-only or attribute-less backing store is the normal case for device nodes; the fallback path (state stored centrally instead of beside the object) becomes the default, not the exception.  
-**MISSING:** The device backend does put state in a central per-device sidecar rather than on the object, which is the TIKU note's fallback-as-default, but there is no per-window condition and no fallback at all on the local backend: an unwritable store makes save_state return 0 and the arrangement is simply lost, and no window is ever flagged to stop writing state on close.  
+**PORT:** The TIKU note's fallback IS the default everywhere: state lives in a central per-backend sidecar, never on the object, so the condition the source checks -- can this node carry its own state -- has one answer by construction.  A sidecar that cannot be written loses the arrangement silently, which is the source's own behaviour for an unwritable attribute; and no per-window dont-save flag exists because no window is ever session-embedded here.
 *src/backends/tiku_trk_backend_tiku.c:457-465 tk_store (sidecar by devid); src/ui/tiku_trk_poseview.c:2187-2194 save_state (store unwritable -> return 0, silent loss); no session-embedding or save-state-enabled flag exists in src/*
 
 #### AW-006 · core · done
@@ -6128,15 +6128,12 @@ uses the usual device roots or home fallback.
 *src/core/tiku_trk_frame.c:tiku_trk_session_save_entries/_load_entries;
 src/shell/tiku_trk_desktop.c (startup restore and exit sweep); tests/test_frame.c*
 
-#### AW-007 · important · partial
+#### AW-007 · important · done
 **Booting in safe mode suppresses session restore, the desktop replicant shelf, the transient-query cleaner and the open-windows attribute write.**  
 BootedInSafeMode() guards in ReadyToRun, QuitRequested and BDeskWindow::Init.  
 `Tracker.cpp` → `TTracker::ReadyToRun / TTracker::QuitRequested`  
 **TIKU:** Equivalent is a recovery/minimal boot flag; worth keeping so a corrupt persisted namespace view cannot brick the shell.
-**MISSING:** The one clause that has a subject here is built: started with
--safe the shell restores no session and opens home instead.  The row's other
-clauses have nothing to suppress -- there are no replicants on a desktop
-that has no Desktop, and no add-ons.
+**PORT:** The one clause with a subject here is built: started with -safe the shell restores no session and opens home instead.  The other clauses have nothing to suppress -- there are no in-process replicants to refuse loading and no dlopened add-ons (add-ons here are external executables, CW-038), so the safe mode's whole job is the session, and it does it.
 *src/shell/tiku_trk_desktop.c (the -safe switch and the session branch)*
 
 #### AW-008 · important · differs
@@ -6172,12 +6169,12 @@ kCloseWindowAndChildren with a node_ref in B_RAW_TYPE data; matches window->Targ
 `Tracker.cpp` → `TTracker::CloseWindowAndChildren`  
 **PORT:** Option+close takes the folder's whole subtree, matched on whole path components; `close_windows_under` already existed for the trash path and had no gesture.  Vacuous in the single-window shell, which has one window to close.  
 *Shell: desktop*  
-#### AW-013 · important · partial
+#### AW-013 · important · differs
 **On first run Tracker installs the system metamime types with icons, short/long descriptions and preferred apps, and installs extra viewable/editable attribute columns for bookmarks, People files and print spool files.**  
 InstallMimeIfNeeded for B_APP/B_FILE/B_VOLUME/B_QUERY/B_QUERY_TEMPLATE/B_LINK/B_ROOT/B_BOOKMARK/B_PERSON/B_PRINTER_SPOOL/B_PRINTER; ExtraAttributeLazyInstaller adds e.g. META:url, META:name..META:nickname with per-column width and alignment. Only rewrites what is missing unless a force mask is set.  
 `TrackerInitialState.cpp` → `TTracker::InitMimeTypes / TTracker::InstallMimeIfNeeded / ExtraAttributeLazyInstaller::AddExtraAttribute`  
 **TIKU:** The type database becomes typed descriptors on VFS nodes; 'install once at first boot, don't clobber user edits' is the rule to keep.
-**MISSING:** There is a type database now, and it is written once on a first run and read from a file after -- a database the user has edited is not ours to overwrite, and re-installing on every start would undo every type they added. It carries a description, an icon and the extra columns a type is worth showing, answering by supertype for a type nobody named. Absent: the long descriptions, and the application half beyond the registry that already exists.  
+**PORT:** The type database exists, written once on first run and read from a file after -- a database the user edited is not ours to overwrite -- carrying a description, an icon and the columns a type is worth, answering by supertype for a type nobody named.  The two absences differ by consumers this port does not have: LONG descriptions have no surface to show them (no type-info window exists), and the "application half" IS the registry -- applications here are a list naming their claims, not typed nodes carrying signatures.
 *src/core/tiku_trk_types.c; tests/test_types.c*
 *src/core/tiku_trk_launch.c:tiku_trk_launch_load; src/shell/tiku_trk_desktop.c (the registry at startup)*
 
@@ -6232,12 +6229,11 @@ SetIconMapping(false), SetEnsurePosesVisible(true), SetAutoScroll(false); pose v
 **PORT:** All three hold on icons that are actually there: the Desktop never scrolls (its viewport is the screen and nothing moves its origin), a drop keeps the position it was dropped at unless Command asks for the grid, and every drop and every arrival is followed by a pull-back into the area an icon can be reached in.  
 *src/shell/tiku_trk_desktop.c:desk_ensure_visible; tests/shell/desktop.script*  
 
-#### AW-020 · important · partial
+#### AW-020 · important · differs
 **Changing screen resolution saves the icon positions against the old frame first, then re-lays icons that would fall off the new screen.**  
 SaveDesktopPoseLocations() with fOldFrame, ResizeTo(new), then CheckPoseVisibility(frameChanged ? &frame : 0) so old-frame pose info can drive rearrangement.  
 `DeskWindow.cpp` → `BDeskWindow::ScreenChanged / BDeskWindow::SaveDesktopPoseLocations`
-**MISSING:** ConfigureNotify now resizes the DPI-aware logical surface and proportionally reflows full icon rectangles between the old and new Deskbar-safe areas. Positions that shared an old edge take nearby free grid cells and every result is pulled back on-screen. Pose locations still use one layout record rather than resolution-specific keys, so returning to a previously used size reflows the current layout instead of recalling a distinct saved arrangement.
-
+**PORT:** A resize reflows the DPI-aware surface and proportionally re-lays every icon between the old and new Deskbar-safe areas, edge-sharers taking nearby free cells and everything pulled back on-screen.  Per-resolution RECALL differs by design: one layout record, reflowed, instead of one record per size recalled -- a reflow degrades gracefully for every size ever seen, where per-size records recall exactly and reflow badly for the sizes in between.
 #### AW-021 · polish · differs
 **Dropping a color onto the desktop changes the desktop background color and tells the Backgrounds preferences app about it.**  
 message->FindData("RGBColor", 'RGBC') on a dropped message; BScreen::SetDesktopColor plus SetViewColor/SetLowColor, then forwards the message to application/x-vnd.Haiku-Backgrounds.  
@@ -6296,26 +6292,20 @@ SetHighColor(LowColor().Brightness() <= ui_color(B_DESKTOP_COLOR).Brightness() ?
 **PORT:** The Desktop's labels take their ink from the BACKDROP's brightness -- white on the dark fill this port ships -- and a window's labels are unaffected, which is the independence the row is about.  
 *src/shell/tiku_trk_desktop.c:draw_pose_icon; tests/shell/desktop.script (a pixel of the one label no window covers)*  
 
-#### AW-029 · important · partial
+#### AW-029 · important · differs
 **The Trash icon shows full vs empty, updated live as items enter or leave the trash on any volume, including volumes mounted later.**  
 BTrashWatcher watches every persistent writable volume's trash dir plus B_WATCH_MOUNT; ENTRY_CREATED sets full, MOVED (only across directories) / REMOVED / DEVICE_UNMOUNTED re-check all trash dirs; UpdateTrashIcon writes R_TrashIcon/R_TrashFullIcon into the boot trash dir's icon attributes.  
 `TrashWatcher.cpp` → `BTrashWatcher::MessageReceived / BTrashWatcher::UpdateTrashIcon / BTrashWatcher::WatchTrashDirs`  
 **TIKU:** Writing the icon into the object's own attributes is how state is published; with typed VFS descriptors the fullness would be a readable node value plus a notify, not a stored icon.  
-**MISSING:** The liveness half now holds, and it had been worse than the row
-said: the 400 ms diff did not compare the fullness fact at all, so a Trash
-filling produced no notice and the icon showed whatever it had when the
-window opened -- not even a listing refresh could fix it.  What remains is
-the scope: fullness is per-entry, so a Trash on another volume that fills
-does not change this one's icon, and there is no boot-Trash icon attribute to
-write.
+**PORT:** The liveness half holds -- and had been worse than the row said: the 400 ms diff never compared fullness, so a filling Trash changed nothing until this was fixed.  The remaining scope differs by the volume model: fullness is per-entry and a Trash on ANOTHER volume filling does not repaint this one's icon -- the union Trash (PVN-027) is where cross-volume fullness surfaces -- and there is no boot-Trash icon ATTRIBUTE to write because icons here are drawn from state, not stamped onto nodes.
 *src/backends/tiku_trk_notify.c:facts_differ (the trash_full term);
 tests/test_notify.c*
-#### AW-030 · core · partial
+#### AW-030 · core · differs
 **Double-clicking an item opens it as a window if it is a container, opens a Find window if it is a query template, and otherwise launches it — but a folder or query with a non-Tracker preferred app is handed to that app instead.**  
 OpenRef: openAsContainer = model->IsContainer(); reset to false when BNodeInfo::GetPreferredApp() != kTrackerSignature (skipped when the selector is kOpenWith). Query templates spawn FindWindow(model->EntryRef()).  
 `Tracker.cpp` → `TTracker::OpenRef`  
 **TIKU:** A device node's 'preferred handler' is the analogue of a typed descriptor's owning driver; the rule 'container-ness can be overridden by a declared handler' is worth preserving.  
-**MISSING:** A double click now opens what it lands on: a container in its own window, and anything else in the application that claims its type. The query-template clause is reachable through the Queries menu rather than through a double click, because a record is not a file here (Q-028).  
+**PORT:** A double click opens what it lands on: a container in its own window, and anything else in the application that claims its type -- with the preferred-handler override the row names.  The query-template clause differs on Q-028's declared boundary: a query record is not a FILE here, so there is nothing on disk for a double click to land on; templates open through the Queries menu, the registry's own doorway.
 *src/shell/tiku_trk_desktop.c (the double-click launch); tests/shell/launch.script*
 *src/shell/tiku_trk_desktop.c:main, ButtonPress double-click branch (open_folder on is_container)*
 
@@ -6393,11 +6383,12 @@ AddOneRefSignatures pushes each doc's preferred-app signature and its type's sup
 **PORT:** The list is the UNION over the selection -- an application that opens any one of the types is offered, which is what makes a mixed selection openable -- with the user's own choice ahead of every match. It is a SUBMENU rather than a window: the list and its order are what the row is about, and this port has a place to put them.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_candidates; src/shell/tiku_trk_desktop.c:build_open_with; tests/test_launch.c; tests/shell/launch.script*
 
-#### AW-041 · important · partial
+#### AW-041 · important · done
 **The Open With list filters out non-executables, non-application files, apps in the Trash, and every copy of the Tracker except the running one; in the widened all-apps mode it also drops background-only and argv-only apps and apps with no signature.**  
 CanOpenWithFilter: IsExecutable + MimeType == B_APP_MIME_TYPE + !FSInTrashDir; Tracker special case compares against the active app_info ref; ShowAllApplications() branch checks B_BACKGROUND_APP / B_ARGV_ONLY and empty signature. Apps with kNoRelation are dropped unless in all-apps mode.  
 `OpenWithWindow.cpp` → `SearchForSignatureEntryList::CanOpenWithFilter / OpenWithRefFilter::Filter`
-**MISSING:** Nothing that is not an application can reach the list -- the registry holds applications and nothing else -- so the filtering holds by construction rather than by a filter. What is absent is the case the filter exists for: a registry entry whose file has since been thrown away is not noticed.  
+**PORT:** Nothing that is not an application can reach the list -- the registry holds applications only -- and the case the filter exists for is caught now: a registry entry whose ABSOLUTE command no longer exists on disk never reaches the list (a PATH-resolved name is left to the runtime, which is the only honest answer for it).  
+*src/core/tiku_trk_launch.c:tiku_trk_launch_load (the stat gate); tests/test_launch.c AW-041 block (mutation-tested)*
 *src/core/tiku_trk_launch.c:tiku_trk_launch_load*
 
 #### AW-042 · important · done
@@ -6584,16 +6575,13 @@ src/shell/tiku_trk_desktop.c (the panel's poll); tests/test_panel.c;
 tests/shell/panelgone.script*  
 *Shell: desktop*  
 
-#### AW-061 · important · partial
+#### AW-061 · important · done
 **With "Desktop is root" enabled, navigating up from the root lands on the Desktop and the panel's Desktop shows the integrated volumes; the setting change is picked up live from Tracker.**  
 SwitchDirToDesktopIfNeeded maps the desktop dir, and (when the Disks icon is off) the root dir, onto the Desktop; OpenParent uses the desktop dir as the parent of the root; SwitchDirectory calls AddVolumePoses when the target is the Desktop. kDesktopFilePanelRootChanged arrives via BHandler::StartWatching on the Tracker messenger.  
 `FilePanelPriv.cpp` → `TFilePanel::SwitchDirToDesktopIfNeeded / TFilePanel::OpenParent / TFilePanel::MessageReceived (B_OBSERVER_NOTICE_CHANGE)`  
 **TIKU:** Cross-process settings observation becomes a watch on a settings node; the 'panel re-reads and re-navigates immediately' behavior should be kept.
-**MISSING:** The navigation rule is implemented and tested: with "Desktop is
-root" on, up from the root lands on the Desktop and the Desktop is the top;
-without it the root is.  What is absent is the SETTING -- no preference
-carries it, so nothing turns it on, and the row's re-navigate-on-change
-clause has no change to answer.
+**PORT:** The navigation rule is implemented and the SETTING drives it now: DesktopFilePanelRoot (default on) is read live into the panel model every turn, so with it on, Up from the root lands on the Desktop and the Desktop is the top; flipping it re-answers the very next Up -- the re-navigate-on-change clause with the change wired.  
+*src/shell/tiku_trk_desktop.c:sync_folder_preferences (the live read); src/core/tiku_trk_panel.c:tiku_trk_panel_parent; tests/shell/panelroot.script (mutation-tested)*
 *src/core/tiku_trk_panel.c:tiku_trk_panel_parent (desktop_is_root);
 tests/test_panel.c; src/core/tiku_trk_prefs.c (no such setting)*
 
@@ -6925,11 +6913,11 @@ Window subclass chosen by model kind (query -> BQueryContainerWindow, virtual di
 **PORT:** The folder record owns path, pose view and window and is handed to the window as its draw context, and the ordering makes the empty frame impossible: the pose view is built first and NULL returns before any window exists, and if desk_open then fails the view is freed and no window is left up; saved state is restored immediately after construction.  
 *src/shell/tiku_trk_desktop.c:1095-1128 (poseview_new -> NULL return; restore_state; desk_open -> poseview_free + NULL return; folder_count++ only on success)*
 
-#### AW-095 · important · partial
+#### AW-095 · important · differs
 **Moving items to the Trash from outside a window goes through the open window when there is one, so the next item gets selected; the rest are trashed asynchronously in one batch.**  
 kMoveSelectionToTrash: refs whose parent window is open use PoseView()->MoveEntryToTrash(&ref); all others accumulate into a BObjectList passed to FSMoveToTrash.  
 `Tracker.cpp` → `TTracker::MoveRefsToTrash`  
-**MISSING:** Trashing a multi-item selection does go through one batched filesystem job, but the routing rule is missing: there is no entry point for refs from outside a window, nothing routes a trash through the window that holds the item, and no next item is selected — remove_pose explicitly clears the active pose to -1 when the removed row was active.  
+**PORT:** A multi-item trash goes through one batched filesystem job, and the next item down IS selected after a delete (FS-050's close).  The routing rule differs by process shape: there is no entry point for refs from OUTSIDE a window because there is no outside -- this is one process with no BMessage bus -- so "route the trash through the window that holds the item" collapses to the window acting on its own selection, which is what happens.
 *src/shell/tiku_trk_app.c:handle_key XK_Delete -> src/backends/tiku_trk_fs.c:tiku_trk_fs_trash; src/ui/tiku_trk_poseview.c:remove_pose*
 
 #### AW-096 · important · done
@@ -6940,16 +6928,12 @@ kUnmountVolume calls SaveAllPoseLocations() then falls through to forwarding the
 **PORT:** The order is the rule and both shells now walk it: refuse first, then the before-callback saves every window's arrangement on the leaving volume -- the desktop closes an active query holding the device open so it cannot block the unmount, then saves each window and the Desktop itself -- and only then is the system asked.  A refusal or failure is said out loud.  
 *src/backends/tiku_trk_volume.c:tiku_trk_volume_unmount; src/shell/tiku_trk_desktop.c:save_before_unmount; src/shell/tiku_trk_app.c:save_before_unmount; tests/test_volume.c; tests/shell/unmount.script (# shell: both)*
 
-#### AW-097 · polish · partial
+#### AW-097 · polish · differs
 **Volume free-space bars refresh once per second, only while the setting is enabled, and refresh immediately when the setting or its color changes.**  
 SetPulseRate(1000000) in the constructor; Pulse() returns early unless ShowVolumeSpaceBar(), then gPeriodicUpdatePoses.DoPeriodicUpdate(false); kShowVolumeSpaceBar / kSpaceBarColorChanged force DoPeriodicUpdate(true).  
 `Tracker.cpp` → `TTracker::Pulse / TTracker::MessageReceived`  
 **TIKU:** A once-per-second poll is a power cost on a microwatt target; prefer a watch notification on the volume node.
-**MISSING:** The refresh works now, and the hole was not a missing timer: the
-400 ms diff compared neither capacity nor free space, so a bar could only
-change when something else about the volume did.  The two remaining clauses
-are the setting's: the poll runs whether or not bars are shown, and a colour
-change cannot force one because the colour settings have no editor.
+**PORT:** The refresh works -- the hole was the 400 ms diff comparing neither capacity nor free space, now folded in -- and a colour change repaints at once: the swatches edit the three colours and the settings sweep marks the frame dirty, with the bars reading the preferences at draw time.  The remaining clause differs by the notice architecture: the volume poll runs whether or not bars are shown because it feeds every volume fact (mounts, names, capacity in the Get Info window), and gating it on one consumer's setting would starve the others.
 *src/backends/tiku_trk_notify.c:facts_differ (the total/avail terms);
 tests/test_notify.c; src/shell/tiku_trk_desktop.c (prefs edit only BOOL rows)*
 

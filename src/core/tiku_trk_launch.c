@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -103,6 +104,18 @@ tiku_trk_launch_load(tiku_trk_apps_t *r, const char *path)
         types = strchr(cmd, '\t');
         if (types != NULL) {
             *types++ = '\0';
+        }
+        {
+            /* A registry entry whose program has been thrown away is not
+             * an application any more: listed, it would rank in Open With
+             * and then fail to run (AW-041).  Only an ABSOLUTE command
+             * can be checked -- a bare name is resolved by PATH at run
+             * time and is not ours to second-guess. */
+            struct stat st;
+
+            if (cmd[0] == '/' && stat(cmd, &st) != 0) {
+                continue;
+            }
         }
         if (tiku_trk_launch_add(r, name, cmd, types) >= 0) {
             n++;

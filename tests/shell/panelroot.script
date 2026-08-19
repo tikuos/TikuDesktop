@@ -1,0 +1,28 @@
+# shell: desktop
+# AW-061: with "Desktop is root" on, Up from the root lands on the Desktop
+# and the Desktop is the top; turning it off re-answers the next Up.
+wait 10
+click-row 1 3
+wait 3
+menu-pick Copy to
+wait 5
+expect-title Tracker: Open
+note three Ups: /tmp, then /, then -- setting on by default -- the Desktop
+key Up ctrl
+wait 3
+key Up ctrl
+wait 3
+key Up ctrl
+wait 3
+expect-rows 0
+note the Desktop is the top: another Up stays put
+key Up ctrl
+wait 3
+expect-rows 0
+note with the setting off the next Up climbs into the real parent
+write /tmp/trk_home/.config/TrackerSettings DesktopFilePanelRoot off
+wait 12
+key Up ctrl
+wait 3
+expect-rows-at-least 1
+quit

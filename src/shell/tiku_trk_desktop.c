@@ -364,6 +364,11 @@ sync_folder_preferences(desktop_t *app)
     /* The thumbnail queue's own switch IS the preference (TS-053). */
     app->thumbs.enabled = tiku_trk_prefs_get(prefs,
                               "GenerateImageThumbnails") != 0;
+    /* The file panel's top: with the setting on, Up from the root lands
+     * on the Desktop and the Desktop is the top (AW-061).  Read live, so
+     * a change re-answers the very next Up. */
+    app->file_panel.model.desktop_is_root =
+        tiku_trk_prefs_get(prefs, "DesktopFilePanelRoot") != 0;
 
     {   /* With BOTH storage settings off there is no doorway to the root
          * left on the Desktop, so a Disks window still open is a view of
