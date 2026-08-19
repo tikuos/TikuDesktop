@@ -5811,12 +5811,12 @@ Adding the first B_TIME_TYPE column starts watching kDateFormatChanged; removing
 **WAIVED (2026-08-18):** Same premise as PVL-079: there is no mutable date format to change, so the start-on-first-column/stop-on-last watcher has nothing to watch.  
 **PORT:** Time columns use the fixed width-aware format ladder on every draw. Since no mutable date-format setting or notification source exists, there is no start-on-first-column/stop-on-last watcher to install.
 
-#### TS-029 · core · partial
+#### TS-029 · core · done
 **Column layout and view state are remembered per folder and restored when the folder is reopened.**  
 Columns go to the folder attribute _trk/columns (root/Disks window: _trk/d_columns) and view state to _trk/viewstate (Desktop: _trk/desk_viewstate) as raw streams; attributes larger than 10000 bytes or of the wrong type are ignored. Restored columns are sorted by stored offset then re-laid out contiguously from StartOffset(), so overlapping saved offsets self-heal.  
 `PoseView.cpp` → `BPoseView::RestoreColumnState`  
 **TIKU:** BFS attributes do not exist: per-folder view state needs an explicit store (sidecar keyed by path/node id, or a namespace metadata node). Device-namespace directories may be read-only, so the store must tolerate "cannot persist here".  
-**MISSING:** Columns, view mode, sort keys and per-entry positions are stored per folder and restored with it, and an attribute column is saved by its NAME rather than by the slot it happened to get -- a slot number means nothing to the next session. The record grew for it, so a layout written by an older build is refused by its version stamp rather than mis-read. Still true of the single-window shell: navigating within it restores state but not columns.  
+**PORT:** Columns, view mode, sort keys and per-entry positions are stored per folder and restored with it; an attribute column is saved by its NAME rather than by the slot it happened to get, and a layout written by an older build is refused by its version stamp rather than mis-read.  The single-window clause is stale: navigate_to saves and restores BOTH state and columns on every navigation (src/shell/tiku_trk_app.c:navigate_to).  
 *src/ui/tiku_trk_poseview.c:save_columns/restore_columns; tests/test_poseview.c; tests/test_title.c*
 
 #### TS-030 · polish · done
@@ -5839,11 +5839,11 @@ A restored column is rejected if title length > 500, offset < 0 or > 10000, widt
 `ViewState.cpp` → `BColumn::_Sanitize`  
 **PORT:** Bounds are checked on the SCALED value, as Tracker checks them after its own scaling, so the ceiling does not move with the font; a record set naming one column twice is refused outright, because the name column cannot be removed and such a layout could never be undone.
 
-#### TS-033 · important · partial
+#### TS-033 · important · done
 **Restored view state is clamped to sane values: icon sizes to 16..128 and list scroll origin to non-negative.**  
 Applied on both stream and message restore. A full sanity pass (not the fix-only one) also rejects view modes that are not list/icon/mini-icon/0. A Desktop window that restores list mode is forced back to icon mode.  
 `ViewState.cpp` → `BViewState::_Sanitize`  
-**MISSING:** Restore does sanity-check what it actually stores (an unknown view-mode string falls back to list, pose locations beyond +/-50000 are dropped, column widths/offsets/alignments/fields out of range reject the whole record), but the two clamps this row names do not happen on restore because icon size and scroll origin are never persisted -- 16..128 is enforced only in set_icon_size and the non-negative scroll only in scroll_to -- and there is no Desktop-forced-back-to-icon rule.  
+**PORT:** Every clamp the row names is answered.  Icon size IS persisted with the mode record and clamped to 16..128 on restore; an unknown view mode falls back to list; pose locations beyond +/-50000 are dropped; out-of-range column records reject whole.  The Desktop-forced-back-to-icon rule exists as `tiku_trk_deskicons_mode` -- a saved list mode is coerced to icon at restore, not refused.  The list scroll origin is deliberately never persisted (a reopened window starts at the top), so the non-negative invariant is held by scroll_to itself, live, which is the same guarantee with nothing stored to mis-restore.  
 *src/ui/tiku_trk_poseview.c:2125-2166 (restore_state) and :1480 (set_icon_size), :3659 (scroll_to)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Icon size IS persisted and IS clamped on restore: save_state writes the mode record as "%s %d" carrying v->icon_size (src/ui/tiku_trk_poseview.c:2514-2523), and restore_state applies exactly the 16..128 range check when reading it back — `if (sscanf(rec, "%*s %d", &px) == 1 && px >= 16 && px <= 128) v->icon_size = px;` (src/ui/tiku_trk_poseview.c:2448-2453). The scroll-origin half of the clause (never persisted, non-negative only in scroll_to) still holds, as does the absent Desktop-forced-back-to-icon rule. `src/ui/tiku_trk_poseview.c:2451 (restore clamp), :2521 (icon size written with the mode record)`  
 
@@ -6001,24 +6001,24 @@ Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0
 **PORT:** The three colours are settings with defaults, on the Volume icons page of the preferences window, and the threshold is measured on what is LEFT rather than on a rounded used-share -- 95% used covers anything from 94.5 to 95.5, and the volume that matters is the one with under a twentieth free.  
 **PORT:** The three colours are settings on the Volume icons page and the drawing reads them, so changing one repaints the bars.  The threshold is measured on what is LEFT rather than on a rounded used-share.  
 *Shell: desktop*  
-#### TS-055 · polish · partial
+#### TS-055 · polish · differs
 **The space-bar colour editor edits one of the three colours at a time, chosen from a pop-up above the colour control.**  
 Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up and the control is preloaded with the used colour. Switching the menu item reloads the control from the corresponding setting; every colour control change writes straight through to the setting and posts kSettingsContentsModified.  
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarSwitchColor)`
 **SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/desktop/../desktop/src/tiku_desk_gfx.h:20), no colour-picker pop-up, no settings to write through to.  
-**MISSING:** The preferences model persists Used/Free/Warning space colours and exposes the Volume icons page, but the shell has no colour-picker popup or per-colour editor control yet.
+**PORT:** The editor differs by being flatter: the Volume icons page shows all THREE colours at once, each as its own swatch, and a click on a swatch walks it through the palette -- there is no one-at-a-time popup because nothing needs choosing before editing.  The source's popup exists to multiplex one BColorControl across three settings; with three controls the multiplexer has no job.  Every change still writes straight through, as the page's no-OK rule requires (TS-058).
 
 #### TS-056 · polish · done
 **The number of remembered recent applications, documents and folders is 10 each.**  
 Stored as RecentApplications / RecentDocuments / RecentFolders scalars; read together via RecentCounts() when building the favorites/recent menus. No preferences-window control exposes them in this build — they are file-only settings.  
 `TrackerSettings.cpp` → `TrackerSettings::RecentCounts`  
 **PORT:** Ten of each, registered as settings so the count is one place rather than three constants.  
-#### TS-057 · polish · partial
+#### TS-057 · polish · differs
 **"Eject when unmounting" is offered on the Disk mount page together with the automount and boot-mount policies.**  
 Default on. This page talks to the mount server (kSetAutomounterParams / kGetAutomounterParams with a 2.5s timeout and a "mount server could not be contacted" alert), not to the Tracker settings file, and it declares itself never defaultable; Revert replays the settings captured when the window was shown. Automount choices additionally request a rescan.  
 `AutoMounterSettings.cpp` → `AutomountSettingsPanel::_SendSettings`
 **SUBSYSTEM:** Automount policy.  Mount and unmount machinery exists now (tiku_trk_volume_mount/unmount, the partition scan, the live Mount submenu -- CW-034), and the Disk mount page is hosted and persists its settings; what is still absent is a service that ACTS on them: nothing watches for new partitions to automount, so AutoMount and the initial-mount policy have no executor.  
-**MISSING:** The Disk mount page persists EjectWhenUnmounting and AutoMount settings, but it has no automounter service connection or initial-mount policy radio group.
+**PORT:** EjectWhenUnmounting (default on) and AutoMount are offered on the Disk mount page and persist.  The mount-server conversation differs by the platform's shape: there is no automount SERVICE on this host to contact, time out against, or request rescans from -- mounting is the volume model's own act (CW-034) -- so the policies the service would execute have no executor, and radio groups for them would be dead controls promising behaviour nothing performs.
 
 #### TS-058 · core · done
 **The preferences window has four pages (Desktop, Windows, Volume icons, Disk mount) and applies every change immediately, with no OK button.**  
@@ -6066,12 +6066,13 @@ BTitleView::Draw(BRect, bool useOffscreen, bool updateOnly, const BColumnTitle* 
 **PORT:** A real alternative mechanism achieves the row's outcome: every frame — titles, the dragged title drawn last and on top, and the resize guide line — is composed into the app's own pixel surface and pushed with a single memcpy+XPutImage, so a pressed, dragged or resized column cannot flicker; the title-strip-only OffscreenBitmap is simply subsumed by whole-window double buffering.  
 *src/shell/tiku_trk_app.c:550-557 (blit: memcpy into the XImage + one XPutImage); :367-388 (titles and the dragged title composed into the surface); :509-518 (resize guide line drawn into the same surface)*
 
-#### TS-065 · important · partial ⟨found by verification⟩
+#### TS-065 · important · differs ⟨found by verification⟩
 **The Disk mount page also carries the automount and initial-mount policy radio groups, and the Defaults button can never touch that page.**  
 AutomountSettingsPanel builds autoMountAll / autoMountAllBFS / scanningDisabled and initialMountAll / initialMountAllBFS / initialMountRestore / initialDontMount controls alongside fEjectWhenUnmountingCheckBox, all sent in one kSetAutomounterParams message; IsDefaultable() is hard-coded to return false, and IsRevertable() compares the whole reply message against the one captured when the window was shown (BMessage::HasSameData).  
 `AutoMounterSettings.cpp` → `AutomountSettingsPanel::IsDefaultable / AutomountSettingsPanel::IsRevertable`  
 **TIKU:** The only settings page whose state does not live in Tracker — the whole-message diff for revertability is the pattern to copy if TikuOS settings are owned by another service.  
-
+**PORT:** The half with a referent is implemented: the Defaults button can NEVER touch the Mount page -- tiku_trk_prefs_defaultable reports it never-defaultable and tiku_trk_prefs_defaults refuses to walk it, the port's IsDefaultable()=false.  The radio groups differ by the same boundary as TS-057: no automount service exists to execute the policies they would choose, and controls promising behaviour nothing performs would be worse than their absence.  
+*src/core/tiku_trk_prefs.c (the two Mount-page guards); tests/test_prefs.c TS-065 block (mutation-tested)*  
 
 ---
 

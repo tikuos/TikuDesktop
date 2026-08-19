@@ -329,8 +329,8 @@ tiku_trk_prefs_defaultable(tiku_trk_prefs_t *p, tiku_trk_page_t page)
 {
     int i;
 
-    if (p == NULL) {
-        return 0;
+    if (p == NULL || page == TIKU_TRK_PAGE_MOUNT) {
+        return 0;   /* the Mount page is never defaultable (TS-065) */
     }
     for (i = 0; i < p->n; i++) {
         if (p->pref[i].page == page && p->pref[i].value != p->pref[i].def) {
@@ -389,6 +389,13 @@ tiku_trk_prefs_defaults(tiku_trk_prefs_t *p, tiku_trk_page_t page)
     int i;
 
     if (p == NULL) {
+        return;
+    }
+    if (page == TIKU_TRK_PAGE_MOUNT) {
+        /* The Disk mount page can NEVER be defaulted: a mount policy set
+         * back to a default behind the user's back is a disk appearing or
+         * refusing to, which the source hard-codes IsDefaultable()=false
+         * for (TS-065). */
         return;
     }
     for (i = 0; i < p->n; i++) {

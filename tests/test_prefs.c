@@ -245,6 +245,19 @@ main(void)
         check(tiku_trk_prefs_control_enabled(&q,
                   tiku_trk_prefs_find(&q, "MountSharedVolumesOntoDesktop")),
               "TS-046", "which un-greys shared volumes again");
+        {   /* The Mount page can never be defaulted (TS-065). */
+            tiku_trk_prefs_t r;
+
+            tiku_trk_prefs_init(&r);
+            tiku_trk_prefs_set(&r, "EjectWhenUnmounting", 0);
+            check(!tiku_trk_prefs_defaultable(&r, TIKU_TRK_PAGE_MOUNT),
+                  "TS-065", "the Mount page never reports defaultable");
+            tiku_trk_prefs_defaults(&r, TIKU_TRK_PAGE_MOUNT);
+            check(tiku_trk_prefs_get(&r, "EjectWhenUnmounting") == 0,
+                  "TS-065", "and Defaults cannot touch it -- the mount "
+                  "policy stays what the user set");
+            tiku_trk_prefs_free(&r);
+        }
         tiku_trk_prefs_free(&q);
     }
 
