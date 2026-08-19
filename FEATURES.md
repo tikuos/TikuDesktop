@@ -1764,12 +1764,12 @@ MouseIdle else-branch: with a button down and a drag in progress but no drop tar
 `PoseView.cpp` → `BPoseView::MouseIdle`  
 **PORT:** Hovering the empty part of a window behind brings it forward, so a drag can reach what it covers without being dropped first.  
 *Shell: desktop*  
-#### PVS-056 · polish · partial
+#### PVS-056 · polish · differs
 **Leaving the view with a drag drops the highlight, restores the default cursor and discards the cached drag state; entering (re)arms auto-scroll.**  
 MouseMoved B_EXITED_VIEW -> DragStop(), SetViewCursor(B_CURSOR_SYSTEM_DEFAULT), fCursorCheck = false, and if a context menu is up, HiliteDropTarget(false) + fDropTarget = NULL. B_ENTERED_VIEW/B_INSIDE_VIEW -> UpdateDropTarget and, if auto-scroll was off, kWaitForTransition at a 100 ms pulse. Drop handling and the next MouseDown also call DragStop to dispose of drag data lazily.  
 `PoseView.cpp` → `BPoseView::MouseMoved / BPoseView::DragStop`  
 **PORT:** Leaving a target drops the highlight and restarts the hover clock, so the spring does not fire on a folder the drag has already left.  
-**MISSING:** No cursor to restore (the multi-window shell has no cursor API, the same absence as PVS-036), no cached drag state to discard (there is no types cache -- PVS-053), and no auto-scroll to re-arm (PVS-050).  
+**PORT:** The three restorations differ because each has been answered another way.  There is no cursor to restore: the copy indication is the ghost's badge (PVS-036), which follows the pointer's target decision and so rights itself the moment the view is left.  The drag's types cache is deliberately SEALED rather than discarded on exit (PVS-053's port decision -- re-entering with the same drag must not rebuild it).  And auto-scroll needs no re-arming: the band's 600 ms hold clock restarts whenever the band is re-entered (PVS-050).  The highlight itself drops on leave and the hover clock restarts, as recorded above.  
 *Shell: desktop*  
 #### PVS-057 · important · done
 **When a pose disappears (deleted, unmounted, or filtered out) it is silently removed from the selection, and any drop-target or pivot reference to it is dropped so later shift-clicks and drops do not act on a dead item.**  
