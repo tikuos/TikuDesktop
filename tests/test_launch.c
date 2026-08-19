@@ -161,10 +161,17 @@ main(void)
               TIKU_TRK_LAUNCH_IS_TRACKER, "AW-035",
               "choosing this Tracker is not a launch: the running one "
               "takes it rather than a second copy appearing");
-        check(tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NO_APP)[0] != '\0',
+        check(tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NO_APP)[0] != '\0' &&
+              tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NOTHING)[0] != '\0' &&
+              tiku_trk_launch_reason(TIKU_TRK_LAUNCH_FAILED)[0] != '\0' &&
+              strcmp(tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NO_APP),
+                     tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NOTHING)) != 0 &&
+              strcmp(tiku_trk_launch_reason(TIKU_TRK_LAUNCH_NOTHING),
+                     tiku_trk_launch_reason(TIKU_TRK_LAUNCH_FAILED)) != 0,
               "AW-039",
-              "and a launch that cannot happen says WHICH thing went "
-              "wrong, not that something did");
+              "each failure says WHICH thing went wrong in its OWN words: "
+              "nothing claims the type, nothing to open, could not start "
+              "-- three distinct messages, not one");
     }
 
     printf("\nthe registry as a file (AW-013)\n");

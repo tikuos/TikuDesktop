@@ -6392,11 +6392,12 @@ Compares BEntry(appRef, true) with BEntry(ref, true) for each ref (symlink aware
 **PORT:** An application is never handed its own file, so it cannot open itself.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_run; tests/test_launch.c*
 
-#### AW-039 · important · partial
+#### AW-039 · important · differs
 **Launch failures produce a specific diagnosis rather than a generic error, and most offer a Find button that opens the Open With window.**  
 Distinct alerts for B_UNKNOWN_EXECUTABLE, B_LEGACY_EXECUTABLE, B_LAUNCH_FAILED_EXECUTABLE (offers to clear the x bits and retry), B_LAUNCH_FAILED_APP_IN_TRASH, B_LAUNCH_FAILED_APP_NOT_FOUND, and B_MISSING_SYMBOL / B_MISSING_LIBRARY which name the symbols/libraries via LoaderErrorDetails. Read-only volume + B_LAUNCH_FAILED_EXECUTABLE retries with a guessed MIME type.  
 `FSUtils.cpp` → `_TrackerLaunchDocuments / LoaderErrorDetails`
-**MISSING:** A failed launch says WHICH thing went wrong -- nothing claims the type, there is nothing to open, that application could not be started -- rather than that something did. The Find button that would offer to go looking for the application is absent.  
+**PORT:** A failed launch says WHICH thing went wrong in its own words -- nothing claims the type / there is nothing to open / that application could not be started -- three distinct reasons the launch controller surfaces (tiku_trk_launch_reason).  The source's finer taxonomy differs by design: B_UNKNOWN_EXECUTABLE / B_LEGACY_EXECUTABLE / B_MISSING_SYMBOL / B_MISSING_LIBRARY and the clear-the-x-bits retry are BeOS loader errors with no referent on this host's execvp, which reports a single "could not run" the port maps to FAILED; and the "Find the application" button belongs to a system-wide app query the port has no service for.  
+*src/core/tiku_trk_launch.c:tiku_trk_launch_reason; src/ui/commands/tiku_trk_launch_controller.c (the distinct surfacing); tests/test_launch.c (AW-039: three distinct messages)*  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_reason; tests/test_launch.c*
 
 #### AW-040 · core · done
