@@ -45,6 +45,7 @@
 #include "tiku_trk_switcher.h"
 #include "tiku_trk_switcher_window.h"
 #include "tiku_trk_navmenu.h"
+#include "tiku_trk_titleview.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -191,6 +192,12 @@ typedef struct desktop {
     int                  press_row;
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
     unsigned             drag_live_mods; /* modifiers as of the last move  */
+    /* The column strip's tracker (TS-063): one gesture at a time, owned
+     * by whichever folder window the press landed in. */
+    tiku_trk_titleview_t tstrip;
+    folder_t            *tstrip_fl;
+    int                  strip_ptr_x;
+    int                  strip_ptr_y;
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     /* ONE node-icon cache for the desktop: the same file shown in two
      * windows is one entry, and an icon edited on disk is dropped once
@@ -2382,6 +2389,12 @@ static void draw_nav_levels(desktop_t *app, int px, int py);
 static void
 draw_all(desktop_t *app)
 {
+    /* The strip tracker's owner, refreshed per frame so only the window a
+     * gesture is running in draws the slide and the guide (TS-063). */
+    app->folder_render.strip_owner =
+        (tiku_trk_titleview_tracking(&app->tstrip) != TIKU_TRK_TRACK_NONE)
+            ? app->tstrip_fl : NULL;
+
     tiku_desk_fill(app->surf,
                    (tiku_desk_rect_t){ 0, 0, app->surf->w, app->surf->h },
                    app->backdrop_color);
@@ -2418,6 +2431,31 @@ draw_all(desktop_t *app)
                   (app->zoom_to.h - app->zoom_from.h) * num / 4;
             tiku_desk_invert_frame(app->surf, z);
             app->dirty = 1;     /* the next frame moves it again */
+        }
+    }
+    if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
+        app->tstrip.removed) {
+        /* The torn-out column follows the pointer as a dotted outline
+         * (TS-008): dashes, drawn over everything, the column's own width
+         * and the strip's height. */
+        int wds = app->tstrip.removed_width;
+        int x0 = app->strip_ptr_x - wds / 2;
+        int y0 = app->strip_ptr_y - 20 /* TITLE_HEIGHT */ / 2;
+        int d;
+
+        for (d = 0; d < wds; d += 4) {
+            tiku_desk_rect_t dash = { x0 + d, y0, 2, 1 };
+
+            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            dash.y = y0 + 20 /* TITLE_HEIGHT */ - 1;
+            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+        }
+        for (d = 0; d < 20 /* TITLE_HEIGHT */; d += 4) {
+            tiku_desk_rect_t dash = { x0, y0 + d, 1, 2 };
+
+            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            dash.x = x0 + wds - 1;
+            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
         }
     }
     if (tiku_trk_drag_active(&app->drag)) {
@@ -2924,6 +2962,8 @@ tracker_run(int argc, char **argv)
         .drop_folder = &app.drag_target.folder,
         .drop_row = &app.drag_target.row,
         .prepare_menu = tiku_trk_folder_menu_prepare,
+        .strip = &app.tstrip,
+        .strip_owner = NULL,
         .prepare_context = &app.folder_menu
     };
     tiku_trk_folder_lifecycle_init(&app.folder_lifecycle, app.folders,
@@ -3791,6 +3831,49 @@ tracker_run(int argc, char **argv)
                         }
                     }
                 }
+                if (w != NULL && ev.button == 1u) {
+                    /* The column strip: a press starts the one tracker
+                     * every heading gesture lives behind -- click sorts,
+                     * Shift-click seconds, an edge drags a new width, a
+                     * title slides to reorder, and out of the strip tears
+                     * the column off (TS-063). */
+                    folder_t *tfl = folder_of(&app, w);
+                    tiku_desk_rect_t title = (tfl != NULL)
+                        ? tiku_trk_folder_window_title(tfl)
+                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+
+                    if (tfl != NULL && title.w > 0 && ev.x >= title.x &&
+                        ev.x < title.x + title.w && ev.y >= title.y &&
+                        ev.y < title.y + title.h) {
+                        unsigned tf;
+
+                        commit_rename(&app, 1);
+                        tiku_trk_poseview_cancel_edit_wait(tfl->view);
+                        if (app.tstrip_fl != tfl) {
+                            tiku_trk_titleview_init(&app.tstrip, tfl->view,
+                                                    title.h);
+                            app.tstrip_fl = tfl;
+                        }
+                        tf = tiku_trk_titleview_mouse_down(&app.tstrip,
+                            ev.x - title.x, ev.y - title.y, 1,
+                            w == tiku_desk_workspace_focused(app.desk),
+                            tiku_trk_now());
+                        if ((tf & TIKU_TRK_TT_ACTIVATE) != 0u) {
+                            tiku_desk_workspace_activate(app.desk, w);
+                        }
+                        if (tiku_trk_titleview_tracking(&app.tstrip) !=
+                                TIKU_TRK_TRACK_NONE) {
+                            /* The press engaged a title or an edge.  A
+                             * press in the strip's empty gutter is NOT the
+                             * strip's: it falls through to the view, where
+                             * it starts a band as it always has. */
+                            app.strip_ptr_x = ev.x;
+                            app.strip_ptr_y = ev.y;
+                            app.dirty = 1;
+                            break;
+                        }
+                    }
+                }
                 if (w != NULL && ev.button == 3u) {
                     folder_t *tfl = folder_of(&app, w);
                     tiku_desk_rect_t title = (tfl != NULL)
@@ -4207,6 +4290,22 @@ tracker_run(int argc, char **argv)
                     }
                     app.press_down = 0;
                 }
+                if (tiku_trk_titleview_tracking(&app.tstrip) !=
+                        TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
+                    tiku_desk_rect_t st =
+                        tiku_trk_folder_window_title(app.tstrip_fl);
+                    unsigned tf = tiku_trk_titleview_mouse_moved(
+                        &app.tstrip, ev.x - st.x, ev.y - st.y,
+                        tiku_trk_now());
+
+                    app.strip_ptr_x = ev.x;
+                    app.strip_ptr_y = ev.y;
+                    if ((tf & (TIKU_TRK_TT_REDRAW | TIKU_TRK_TT_LINE |
+                               TIKU_TRK_TT_NO_LINE)) != 0u) {
+                        app.dirty = 1;
+                    }
+                    break;
+                }
                 if (tiku_trk_drag_moved(&app.drag, ev.x, ev.y) ||
                     tiku_trk_drag_active(&app.drag)) {
                     if (app.spring_nav_on) {
@@ -4295,6 +4394,20 @@ tracker_run(int argc, char **argv)
                 break;
             case TIKU_DESK_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
+
+                if (tiku_trk_titleview_tracking(&app.tstrip) !=
+                        TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
+                    tiku_desk_rect_t st =
+                        tiku_trk_folder_window_title(app.tstrip_fl);
+                    unsigned tf = tiku_trk_titleview_mouse_up(&app.tstrip,
+                        ev.x - st.x, ev.y - st.y,
+                        (ev.modifiers & TIKU_DESK_MOD_SHIFT) != 0,
+                        tiku_trk_now());
+
+                    (void)tf;
+                    app.dirty = 1;
+                    break;
+                }
 
                 app.dock_drag = 0;
                 app.bar_resize = 0;

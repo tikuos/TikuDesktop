@@ -5679,12 +5679,12 @@ Triangle drawn 6px left of the title text, centred vertically; apex down for asc
 A swap happens only when the pointer is over a different title AND either that title starts at or after the dragged title's right edge (moving right), or the pointer has passed the neighbour's left edge plus the dragged column's width (moving left) — the latter prevents an immediate snap-back oscillation. Offsets of all columns are recomputed from StartOffset() after the move.  
 `TitleView.cpp` → `ColumnDragState::Moved`  
 
-#### TS-008 · important · partial
+#### TS-008 · important · done
 **Dragging a column header out of the title bar (vertically) removes that column, which then follows the mouse as a dotted outline rectangle.**  
 Hysteresis: removal only fires once the pointer leaves the title bounds inset by kRemoveTitleMargin (10px) vertically. The column is archived to a BMallocIO first so it can be restored; if RemoveColumn refuses (last column) nothing is removed.  
 `TitleView.cpp` → `ColumnDragState::Moved`  
-**MISSING:** A torn-out column leaves the strip without a dotted outline rectangle following the pointer.  
-**PORT:** The ten-pixel vertical hysteresis, the removal and the release-stands rule are exact.  A torn-out column simply leaves the strip; there is no dotted rectangle following the pointer around the screen, because nothing here draws outside its own window.
+**PORT:** The ten-pixel vertical hysteresis, the removal and the release-stands rule are exact, and the torn column follows the pointer as a DOTTED OUTLINE now: the spatial shell owns the whole surface, so the dashes travel anywhere on it, the column's own width and the strip's height, and a drag that returns to the strip still puts the column back.  The single-window browser keeps its recorded boundary -- it cannot draw outside its own window -- but the feature's home shell shows the rectangle the row describes.  
+*src/shell/tiku_trk_desktop.c (the dashes in draw_all); src/ui/tiku_trk_titleview.c (removal/restore); tests/shell/colstrip.script (outline pixel, restore, removal -- mutation-tested)*
 
 #### TS-009 · important · done
 **Dragging a removed column back into the title bar re-inserts it, after whichever header the mouse is over.**  
@@ -6047,13 +6047,12 @@ WindowsSettingsView::Revert calls settings.SetSortFolderNamesFirst(fHideDotFiles
 DesktopFilePanelRoot (default true) and ShowSelectionWhenInactive (default true) are registered and exposed through the API but have no control in the preferences window; ShowSelectionWhenInactive is still honoured by pose views (cached at construction, updated on kShowSelectionWhenInactiveChanged).  
 `TrackerSettings.cpp` → `TTrackerState::LoadSettingsIfNeeded`  
 **PORT:** A line naming a setting this build does not know is KEPT and written back, so an older or newer Tracker's file round-trips through this one rather than being quietly emptied.  The two obsolete settings the row names are registered with no page, which is the same mechanism.  
-#### TS-063 · polish · partial ⟨found by verification⟩
+#### TS-063 · polish · done ⟨found by verification⟩
 **Right-clicking the column title bar opens the Attributes menu directly.**  
 BTitleView::MouseDown: if SecondaryMouseButtonDown(modifiers(), buttons) it builds a BPopUpMenu, fills it via window->NewAttributesMenu() + AddMimeTypesToMenu() + MarkAttributesMenu(), targets the pose view and Go()es at the click point, then returns without starting any column tracking.  
 `TitleView.cpp` → `BTitleView::MouseDown (secondary-button branch)`  
-**PORT:** The single-window shell opens the Attributes menu on a secondary click anywhere in the column strip, starting no resize or drag -- the same branch the source takes.  
-**MISSING:** The multi-window shell has no column-strip interaction at all: it draws the headings and never hit-tests them, so neither this menu nor the resize and reorder gestures reach it there.  
-*src/ui/tiku_trk_titleview.c:tiku_trk_titleview_mouse_down; acted on at src/shell/tiku_trk_app.c (TIKU_TRK_TT_MENU -> the Attributes popup); nothing in src/ui/windows/tiku_trk_folder_window.c hit-tests the strip*
+**PORT:** Both shells open the Attributes menu on a secondary click anywhere in the column strip, starting no resize or drag -- the same branch the source takes.  The multi-window shell's strip answers the whole gesture set now: a press engages the one tracker every heading gesture lives behind (click sorts, a second click reverses, Shift seconds, an edge drags a width behind a guide line, a title slides to reorder, out of the strip tears the column off), and a press in the strip's empty gutter still falls through to the view, where it starts a band as it always has.  
+*src/ui/tiku_trk_titleview.c:tiku_trk_titleview_mouse_down; src/shell/tiku_trk_app.c and src/shell/tiku_trk_desktop.c (the strip wiring); tests/shell/colstrip.script (sort, reverse, tear, restore, menu -- mutation-tested)*
 
 #### TS-064 · polish · differs ⟨found by verification⟩
 **The column title bar renders through a shared offscreen bitmap whenever a column is pressed, dragged or resized, so the tracked column does not flicker.**  

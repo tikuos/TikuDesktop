@@ -81,6 +81,11 @@ typedef struct {
     int                   *drop_row;
     tiku_trk_folder_prepare_menu_fn prepare_menu;
     void                  *prepare_context;
+    /* The column strip's live gesture, when one is running: the window it
+     * belongs to draws the dragged title sliding and the resize guide
+     * (TS-008, TS-063).  Both NULL when nothing is being tracked. */
+    const struct tiku_trk_titleview *strip;
+    const tiku_trk_folder_window_t *strip_owner;
 } tiku_trk_folder_render_t;
 
 /** @brief One folder window and the query or frame state it retains. */

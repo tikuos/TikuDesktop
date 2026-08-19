@@ -14,6 +14,8 @@
 
 #include "tiku_trk_attr.h"
 #include "tiku_trk_folder_window.h"
+
+#include "tiku_trk_titleview.h"
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_volume.h"
@@ -688,6 +690,14 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
     const tiku_desk_font_t *font = tiku_desk_font_plain();
     int n, i;
 
+    int dragged = -1;
+    int drag_dx = 0;
+
+    if (folder->render->strip != NULL &&
+        folder->render->strip_owner == folder) {
+        dragged = tiku_trk_titleview_dragged(folder->render->strip,
+                                             &drag_dx);
+    }
     tiku_desk_fill(surface, title, TIKU_DESK_C_PANEL);
     n = tiku_trk_poseview_columns(folder->view, &columns);
     tiku_desk_clip_set(surface, title);
@@ -699,6 +709,11 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
         char fit[64];
         int tw, tx;
 
+        if (c->field == dragged) {
+            /* The dragged title slides with the pointer and goes on TOP,
+             * so it is drawn after its neighbours (TS-005). */
+            continue;
+        }
         tiku_desk_fill(surface, r, TIKU_DESK_C_PANEL);
         tiku_desk_bevel(surface, r,
                         tiku_desk_tint(TIKU_DESK_C_PANEL, 0.0f),
@@ -717,9 +732,57 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                        title.y + (title.h - font->height) / 2 + font->ascent,
                        fit, TIKU_DESK_C_TEXT);
     }
+    if (dragged >= 0) {
+        for (i = 0; i < n; i++) {
+            const tiku_trk_column_t *c = &columns[i];
+
+            if (c->field == dragged) {
+                tiku_desk_rect_t r = { title.x + c->offset -
+                                           TIKU_TRK_COL_LEFT_MARGIN +
+                                           drag_dx,
+                                       title.y,
+                                       c->width + TIKU_TRK_COL_MARGIN,
+                                       title.h };
+                char fit[64];
+                int tw, tx;
+
+                tiku_desk_fill(surface, r,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, 0.94f));
+                tiku_desk_bevel(surface, r,
+                                tiku_desk_tint(TIKU_DESK_C_PANEL, 1.06f),
+                                tiku_desk_tint(TIKU_DESK_C_PANEL, 0.0f));
+                (void)tiku_trk_text_fit(c->title, c->width,
+                                        TIKU_TRK_TRUNC_END, measure_label,
+                                        NULL, fit, sizeof fit);
+                tw = tiku_desk_text_width(font, fit);
+                if (c->alignment == TIKU_TRK_ALIGN_RIGHT) {
+                    tx = r.x + TIKU_TRK_COL_LEFT_MARGIN + c->width - tw;
+                } else if (c->alignment == TIKU_TRK_ALIGN_CENTER) {
+                    tx = r.x + (r.w - tw) / 2;
+                } else {
+                    tx = r.x + TIKU_TRK_COL_LEFT_MARGIN + 1;
+                }
+                tiku_desk_text(surface, font, tx,
+                    title.y + (title.h - font->height) / 2 + font->ascent,
+                    fit, TIKU_DESK_C_TEXT);
+            }
+        }
+    }
     tiku_desk_clip_reset(surface);
     tiku_desk_hline(surface, title.x, title.y + title.h - 1, title.w,
                     tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    if (folder->render->strip != NULL &&
+        folder->render->strip_owner == folder &&
+        folder->render->strip->line_x >= 0) {
+        /* The resize guide: one vertical line where the new edge will
+         * land, the full height of the listing (TS-004). */
+        tiku_desk_rect_t content = tiku_trk_folder_window_content(folder);
+        tiku_desk_rect_t line = { title.x + folder->render->strip->line_x,
+                                  title.y, 1,
+                                  title.h + content.h };
+
+        tiku_desk_fill(surface, line, TIKU_DESK_C_TEXT);
+    }
 }
 
 static void

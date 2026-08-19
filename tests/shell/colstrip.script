@@ -1,0 +1,44 @@
+# shell: desktop
+# TS-063/TS-001/TS-008: the desktop shell's column strip answers gestures --
+# a click sorts, a second click reverses, a title dragged out of the strip
+# tears the column off behind a dotted outline, and a drag that returns
+# puts it back; right-clicking the strip opens the Attributes menu.
+wait 10
+note clicking the Name title reverses the sort: the files flip to c,b,a
+click 100 96
+wait 4
+click-row 3
+wait 2
+expect-selected-name a.txt
+wait 40
+note clicking it again puts them back ascending
+click 100 96
+wait 4
+click-row 3
+wait 2
+expect-selected-name c.txt
+note a column dragged out of the strip is torn off behind a dotted outline
+expect-columns 4
+press 340 96
+move 340 130
+move 340 200
+wait 2
+expect-pixel 270 190 000000
+note but a drag that RETURNS to the strip puts the column back
+move 340 130
+move 340 96
+release 340 96
+wait 3
+expect-columns 4
+note dragged out and released, the removal stands
+press 340 96
+move 340 130
+move 340 200
+release 340 200
+wait 3
+expect-columns 3
+note right-clicking the strip opens the Attributes menu in place
+click 200 96 3
+wait 3
+expect-menu Kind
+quit

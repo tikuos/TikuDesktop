@@ -48,7 +48,7 @@ typedef enum {
 #define TIKU_TRK_TT_NO_LINE   0x20u   /* and now it is off                */
 #define TIKU_TRK_TT_CURSOR    0x40u   /* the pointer is over a resize edge */
 
-typedef struct {
+typedef struct tiku_trk_titleview {
     tiku_trk_poseview_t *view;
     int              height;          /* the strip's height              */
     tiku_trk_track_t track;
