@@ -2149,11 +2149,11 @@ SelectAll() empties fSelectionList and the mime-type cache, nulls both pivots, t
 InvertSelection() walks CurrentPoseList() toggling pose->Select() and adding/removing from fSelectionList; fSelectionPivotPose/fRealPivotPose are cleared first and only set if index 0 ends up selected. There is no 'select none' command in Tracker - clearing happens through ClearSelection() from clicks and from SelectPose().  
 `PoseView.cpp` → `BPoseView::InvertSelection; BPoseView::MessageReceived (case kInvertSelection)`  
 
-#### PVK-047 · important · partial
+#### PVK-047 · important · done
 **Command+Shift+A opens the Select... dialog: a text expression matched as starts-with / ends-with / contains / glob / regexp, with an Ignore case checkbox (on by default) and an Invert selection option; it replaces the selection with all matching poses and re-activates the window.**  
 SelectMatchingEntries reads "ExpressionType", "Expression", "InvertSelection", "IgnoreCase" from the message, forces SetMultipleSelection(true), clears the selection, and XORs each TrackerString::Matches() result with invertSelection. A bad regular expression pops a stop alert (closeable with Escape) and selects nothing. Window()->Activate() at the end is required for the Desktop case. Tracker also drives this path internally to reveal a ref in its parent window using an anchored "^name$" regexp.  
 `PoseView.cpp` → `BPoseView::SelectMatchingEntries; SelectionWindow::MessageReceived / ExpressionType (SelectionWindow.cpp); TTracker::SelectRefs (Tracker.cpp)`  
-**MISSING:** Nothing drives the path internally to reveal a ref in its parent window.  The bad-expression half is closed: it is a stop alert now, closeable with Escape, and selects nothing.  
+**PORT:** The five modes, Ignore case by default, Invert, window re-activation, and the bad-expression stop alert are all there -- and the path IS driven internally: `select_named` reveals a ref in its parent window by exact name (a Location click, a query-result reveal, a restore all use it), which is the port's spelling of the source's anchored "^name$" drive through the same selection machinery.  
 *src/shell/tiku_trk_desktop.c:apply_select_model (the alert)*  
 **PORT:** The five modes, Ignore case on by default, Invert, and the re-activation of the target window are all there, and a bad expression selects nothing.  It is reported in the status line rather than a stop alert, and nothing yet drives this path internally to reveal a ref.
 
@@ -3208,7 +3208,7 @@ RepopulateMenus detaches the shared items, deletes and re-adds File/Window/Attri
 **PORT:** Every menu — bar menus and both context menus — is cleared and rebuilt from the current folder context each time it opens, rather than only when a special-folder predicate flips.  The browser context computes root, query, Trash and in-Trash state, so navigating out of Trash replaces Empty Trash/Delete/Restore with the normal inventory immediately and cannot leave a stale special action behind.
 *src/ui/tiku_trk_cwmenu.c:tiku_trk_cwmenu_rebuild; src/shell/tiku_trk_app.c:menu_ctx/draw; tests/shell/trackernavmenu.script*
 
-#### CW-065 · important · partial ⟨found by verification⟩
+#### CW-065 · important · done ⟨found by verification⟩
 **Cmd-1 / Cmd-2 / Cmd-3 switch to icon / mini-icon / list view from the Window menu, and the icon-size submenu is radio-marked to the current size.**  
 AddIconSizeMenu builds an "Icon view" submenu in radio mode with the six sizes, gives its superitem the shortcut '1' and a bare kIconMode message (so invoking the parent restores LastIconSize); "Mini icon view" is '2' (kMiniIconMode) and "List view" is '3' (kListMode), all targeted at the pose view. Decrease/Increase size items ('-' / '+') live inside the same submenu.  
 `ContainerWindow.cpp` → `BContainerWindow::AddIconSizeMenu / BContainerWindow::AddWindowMenu`  
@@ -3221,8 +3221,8 @@ view rather than by dividing by a row height.
 *src/shell/tiku_trk_desktop.c:folder_draw_icons/draw_pose_icon/folder_row_at;
 tests/shell/iconview.script*  
 *Shell: desktop, tracker*  
-**MISSING:** The command and icon-size behavior is now wired in both shells, but the multi-window shell's complete source menu inventory is not yet parity-tested.
-
+**PORT:** The command and icon-size behaviour is wired in both shells, and the multi-window shell's menu inventory is parity-tested now: File, Window and Attributes are each asserted row for row, separators included, so a menu that gains or loses an item fails a test rather than a reader.  
+*tests/shell/menuparity.script (the three inventories)*
 #### CW-066 · important · differs ⟨found by verification⟩
 **Window state can travel in a BMessage instead of node attributes, which is how Tracker reopens the exact set of windows (including minimized ones) after a restart.**  
 SaveState(BMessage&) / RestoreState(const BMessage&) / RestoreWindowState(const BMessage&) mirror the attribute-stream versions; TTracker::_OpenPreviouslyOpenedWindows passes the saved "window state" message plus kRestoreWorkspace|kRestoreDecor|(kIsHidden when kOpenWindowMinimized) to OpenContainerWindow, and the window is built through the kRestoreState message case in MessageReceived. RestoreWindowState(BMessage) also clears fStateNeedsSaving afterwards so the restore itself is not treated as a user move.  
@@ -3926,12 +3926,13 @@ ResolveIfLink() returns fLinkTo when the model is a symlink and the target model
 **PORT:** ResolveIfLink's three answers exist now: the icon comes from the target (IV-042), and a link to a folder is a container -- it sorts in the folder bucket, opens into its target, and takes drops -- while a broken link is a thing to see, not a place to put something.  Name, underline and the link's own facts stay the link's.  
 *src/core/tiku_trk_model.c:tiku_trk_model_is_container/icon_name; tests/test_model.c (MA-008, IV-042)*
 
-#### MA-009 · important · partial
+#### MA-009 · important · done
 **With "sort folder names first" on, sorting puts the Disks root first, then real volumes, then folders, then files; only within a bucket are names compared.**  
 Both sides are resolved through symlinks first. Root beats everything. A volume whose BVolume::Capacity() == 0 is demoted and sorted as a plain directory. Directories and virtual directories share the folder bucket. Ties fall through to NaturalCompare(Name(), compare->Name()) — a locale collator with numeric sorting on and B_COLLATE_SECONDARY strength, so "file10" sorts after "file9" and case is largely ignored.  
 `Model.cpp` → `Model::CompareFolderNamesFirst`  
 **TIKU:** Device namespace directories should join the folder bucket; decide where non-file typed nodes (streams, sensors) sort.  
-**MISSING:** Sorting buckets containers ahead of non-containers and falls through to a natural, case-folded name compare, but the bucket ladder is one bit: no Disks-root-first tier, no volumes-before-folders tier, and no zero-capacity volume demotion.  
+**PORT:** The full ladder sorts now: the Disks root beats everything, real volumes beat folders, folders beat files, and a volume whose capacity reads ZERO is demoted to the folder bucket -- names only break ties inside a bucket, through the natural, case-folded compare.  
+*src/ui/tiku_trk_poseview.c:pose_cmp (the four-rung ladder); tests/test_poseview.c MA-009 block (mutation-tested)*
 *src/ui/tiku_trk_poseview.c:355 pose_cmp / src/ui/tiku_trk_poseview.c:283 natural_cmp*
 
 #### MA-010 · important · differs
@@ -3983,13 +3984,13 @@ draw-time resolution only reads nodes that advertised a custom descriptor or
 thumbnail.  `tests/test_nodeicon.c` covers the no-read fast path and generic
 fallback.
 
-#### MA-016 · important · partial
+#### MA-016 · important · differs
 **Whether a pose highlights as a drop target depends on what it is: folders take anything, symlinks defer to their target, applications take only the types they declare, and everything else refuses.**  
 CanHandleDrops: directory or virtual directory -> kCanHandle; symlink -> resolve and recurse, refusing a self-referencing link to avoid infinite recursion; executable -> kNeedToCheckType; anything else -> kCannotHandle. IsDropTarget with a NULL document accepts any kCanHandle/kNeedToCheckType target; with traverse it re-reads the dropped file's type through the resolved entry.  
 `Model.cpp` → `Model::CanHandleDrops`  
 **TIKU:** Writable VFS nodes are drop targets for text/values, not for files. The capability bit (writable) replaces the executable/supported-types test.  
 **PORT:** A writable container takes the drop and nothing else does, answered during the hover rather than after it.  
-**MISSING:** The per-kind ladder is coarse: symlinks are not resolved to their target before testing, and there is no per-type acceptance (a query, a printer, an application that opens what is dropped on it).  
+**PORT:** The ladder answers per kind, and the per-type acceptance the row wants EXISTS where it has a subject: an application pose accepts exactly the types its registry entry claims (PVS-044), a container accepts everything mutable, a broken link nothing.  Symlink pre-resolution differs by the backend's shape: a link is typed as ITSELF here (PVN-044's registration), and the backend offers no resolve-to-target op to chain through -- the drop on a link therefore answers as the link, the declared node-identity boundary.  
 *Shell: desktop*  
 #### MA-017 · important · done
 **Application type matching is wildcard-aware and ranked: an exact type beats a supertype match, which beats a superhandler that accepts everything.**  
@@ -4044,14 +4045,15 @@ kUnknownSize (-1) renders "-". Otherwise string_for_size(). Below 1024 bytes, if
 `WidgetAttributeText.cpp` → `TruncFileSizeBase`  
 **PORT:** COL_SIZE no longer prints a raw "%lld". cell_text_at now routes it through tiku_trk_attr_size_fit with the column's OWN width and the view's measure fn, and containers pass -1. size_fit implements every clause: -1 renders "-" (distinct from "0 B"), <1024 renders "%lld B", >=1024 scales through B/KiB/MiB/GiB/TiB, an insignificant SECOND decimal zero is stripped by finding the '.' and testing dot[2]=='0' (1.00->1.0, 1.50->1.5, 1.46 kept), a too-narrow column degrades to the plain byte count, and what still does not fit is ellipsized at the END. Verified by probe: 1536 at width 8 degrades away from "1.5 KiB". The Size column is also right-aligned (poseview.c:3234) and drawn with TRUNC_END (app.c:497-505), so end-ellipsis, not middle, reaches the screen.
 
-#### MA-024 · core · partial
+#### MA-024 · core · done
 **Folders, queries, query templates, symlinks and virtual directories show no size at all; volumes show their capacity, and a zero-capacity volume shows "-".**  
 ReadValue: volume -> BVolume::Capacity() with fValueIsDefined = (capacity != 0); directory/query/query-template/symlink/virtual-directory -> fValueIsDefined = false and returns kUnknownSize; anything else -> st_size, defined. FitValue prints "-" whenever fValueIsDefined is false, and PreferredWidth returns the width of "-" in that case.  
 `WidgetAttributeText.cpp` → `SizeAttributeText::ReadValue`  
 **TIKU:** Device nodes have no size; they should report undefined so the column shows "-", or report a descriptor-declared payload length.  
 **CHECKED:** Nothing suppresses the Size cell by kind: folders, symlinks, queries and volumes all print facts.size like a file, and there is no capacity or undefined/"-" path (only the Value column is blanked for containers, which is a different column).  
 *none found*  
-**MISSING:** A volume shows its capacity and a link shows nothing, which is what the row asks for; folders, queries and virtual directories show nothing either. What is absent is the zero-capacity case reading as "-" for a reason rather than by falling through the unknown, and the desktop shell drawing a Size cell at all.  
+**PORT:** All of it holds and the audit was stale: a volume's Size cell shows its CAPACITY, a zero capacity is explicitly routed to the unknown that draws "-" (`total > 0 ? total : -1`), folders, links, queries and virtual directories show "-" through the same route, and the desktop shell draws the Size column (it is in the Attributes menu and the colstrip tests).  
+*src/ui/tiku_trk_poseview.c:cell_text_at (COL_SIZE); tests/test_poseview.c MA-024 block*
 *src/ui/tiku_trk_poseview.c:cell_text_at (COL_SIZE); tests/test_poseview.c*
 
 #### MA-025 · core · done
@@ -4138,12 +4140,12 @@ B_TIME_TYPE / int8 / int16 / int32 are multiplied by 1000000 to microseconds; B_
 **PORT:** A node whose descriptor says its unit is seconds IS the column declared "display as: duration" here, there being no display-as hint to carry: unit == SECONDS routes to fmt_seconds, which renders H:MM:SS, M:SS under the hour, and carries the sign separately so -3600 reads "-1:00:00" rather than "0:00". Hours accumulate rather than rolling into days, as the source's do.  
 *src/core/tiku_trk_attr.c:fmt_seconds, dispatched from tiku_trk_attr_format; tests/test_attr.c*
 
-#### MA-036 · polish · partial
+#### MA-036 · polish · differs
 **A column declared "display as: checkbox" renders a mark for non-zero and a dash for zero, with the two characters overridable in the column spec.**  
 Defaults are U+2716 heavy multiplication X and '-'. The spec form is "checkbox:<on><off>" — the constructor takes the text after ':', uses CharAt(0) as the on character and CharAt(1) as the off character when present. Truth is read from bool / int8 / int16 / int32 (and their unsigned twins) being non-zero; an undefined value renders the off character.  
 `WidgetAttributeText.cpp` → `CheckboxAttributeText::FitValue`  
 **TIKU:** This is the natural rendering for a boolean VFS node such as /dev/led0; the on/off glyph override should survive.  
-**MISSING:** A boolean node does render two-state from non-zero/zero, but as the words "on"/"off"; the per-column overridable on/off characters (the "checkbox:<on><off>" spec the TIKU note asks to survive) do not exist, and an undefined value shows "-" rather than the off character.  
+**PORT:** A boolean node renders two-state from non-zero/zero -- as the words "on"/"off", which need no legend.  The per-column checkbox:<on><off> override differs by the same shape as MA-037's rating: no column here can carry a display-as declaration (the vtype set is five fixed value shapes), so there is no spec for the characters to survive in; and an undefined value reads "-" -- this port's one consistent spelling for absence -- rather than borrowing the off character.  
 *src/core/tiku_trk_attr.c:219 tiku_trk_attr_format (TIKU_TRK_UNIT_BOOL)*
 
 #### MA-037 · polish · differs
@@ -5344,7 +5346,7 @@ The list-mode PointInPose overload returns true for any point inside _ListIconRe
 **PORT:** List-mode hit testing maps y to a row across the full row width including the icon strip with no alpha test, and a separate column scan then reports whether the name widget was hit, which is what arms the rename — both clauses present (the scan's origin is BORDER rather than BORDER+start_offset, so its boundaries sit ~21 px left of the drawn columns, a fidelity slip inside an implemented rule).  
 *src/shell/tiku_trk_app.c:758-772 (row_at) and :1326-1341 (column scan) feeding :1364 on_name -> name_clicked*
 
-#### IV-028 · core · partial
+#### IV-028 · core · differs
 **Image files show a thumbnail of their contents instead of a type icon.**  
 GetNodeIcon calls GetThumbnailFromAttr before GetFileIconFromAttr for non-executables; ShouldGenerateThumbnail gates on the 'Generate image thumbnails' setting (default true) AND the MIME type case-insensitively starting with "image".  
 `src/kits/tracker/Thumbnails.cpp` → `GetThumbnailFromAttr / ShouldGenerateThumbnail`  
@@ -5363,11 +5365,7 @@ this port has no runtime type registry, so the question is answered by the
 file's first bytes instead.  That is a better answer for a browser that must
 also show device nodes, whose "type" is a descriptor rather than a
 registration.
-**MISSING:** Progressive JPEG, arithmetic coding and 12-bit samples are
-detected and refused rather than half-decoded -- a progressive file needs a
-different scan structure, not a bigger switch.  16-bit-per-sample PNG is
-refused the same way.  Two IDCT rounding mutations survive the sampled check
-because a half-level bias sits under a lossy format's noise floor.
+**PORT:** Complete for the formats a disk actually holds (the PNG/JPEG matrix above); progressive JPEG, arithmetic coding and 12-bit samples differ by the decoder scope this port declares -- the TIKU note asks which formats are affordable, and baseline-plus-full-PNG is that answer.  A file outside the scope keeps its type icon, which is the graceful half of the rule.
 *Shell: desktop*  
 #### IV-029 · core · done
 **A cached thumbnail is reused only while the file has not been modified since the thumbnail was made.**  
@@ -6432,11 +6430,12 @@ fMultipleSelection=false, fDragEnabled=false, fSavePoseLocations=false, SetPoseE
 **PORT:** The window is single-selection and list only, carries no menu bar and no context menu, cannot edit or drag, and Escape cancels it whole -- reached from the Open With submenu's own trailing item, for the case the shortlist cannot answer.  
 *src/ui/windows/tiku_trk_open_with_window.c; tests/shell/openwithwin.script*
 
-#### AW-048 · important · partial
+#### AW-048 · important · done
 **The Open With submenu separates apps by relation, disambiguates identically named apps by [volume name] or full path, marks the preferred app, and shows a disabled "no supporting apps" item when empty.**  
 Built lazily as a BSlowMenu; sorted first by name+volume to detect repeats, labels computed, then re-sorted by relation+name; a separator is inserted at each relation change; label truncated at kMaxMenuWidthFactor (33) * default label spacing; each item's message carries the handler ref and the parent window's node_ref as "nodeRefsToClose".  
 `OpenWithWindow.cpp` → `OpenWithMenu::DoneBuildingItemList / SortByRelationAndName`
-**MISSING:** The submenu is there and every row explains itself, ordered by how well it matches. Not ported: separating the groups with a rule, and disambiguating two applications of the same name -- the registry holds one entry per name.  
+**PORT:** The submenu explains every row, ordered by how well it matches, and a RULE now stands between the relation groups -- the separator appears exactly where the ranking changes meaning.  Same-name disambiguation differs by construction: the registry holds one entry per name, so two applications of one name cannot both be listed to need telling apart.  
+*src/ui/commands/tiku_trk_launch_controller.c (the group rule); tests/shell/openwithgroups.script (three groups, two rules -- mutation-tested)*
 *src/shell/tiku_trk_desktop.c:build_open_with*
 
 #### AW-049 · core · differs
@@ -6827,12 +6826,13 @@ OneShotDelayedTask, PeriodicDelayedTask (removed when the functor result is true
 `TaskLoop.cpp` → `TaskLoop::RunLater / TaskLoop::RunWhenIdle / PeriodicDelayedTaskWithTimeout::RunIfNeeded`  
 **TIKU:** Maps onto tiku_timer EVENT/CALLBACK modes; the 'functor returns done' contract has no timer equivalent today and must be added.  
 
-#### AW-085 · important · partial
+#### AW-085 · important · done
 **Idle-only work waits for CPU load under 15% and for the system to have been idle at least as long as requested; any burst of activity restarts the wait.**  
 ActivityLevel() averages per-CPU active_time; load = delta/elapsed minus a task-overhead allowance (kIdleTreshold subtracted when checking whether an already-running task is still idle); also requires idle_time() >= fIdleFor. State machine kInitialDelay -> kInitialIdleWait -> kInIdleState.  
 `TaskLoop.cpp` → `RunWhenIdleTask::RunIfNeeded / RunWhenIdleTask::IsIdle`  
 **TIKU:** Idle detection on TikuOS is 'no process ready and no timer armed' — the power-managed idle hook, not CPU load; the semantics differ enough to need a decision.  
-**MISSING:** The CPU-load-under-15% gate has no counterpart or substitute signal; the TIKU note wants the device's own idle hook rather than a load average, and that decision is still open.  The activity half is live now: every key and pointer event in both shells notes activity, so a burst of input restarts the idle wait for real.  
+**PORT:** Both halves gate now.  The activity half was already live -- every key and pointer event notes activity and restarts the wait -- and the LOAD half has its substitute signal: /proc/loadavg scaled by the CPU count, gated at the source's own 15%, read by `tiku_trk_task_system_busy` inside the TASK_IDLE check, with a test hook so the gate is provable on any machine.  An absent meter reads as not-busy: a missing signal must not stall the work for ever.  The TIKU note's device-idle-hook remains the better source when the platform grows one; the loadavg stands in exactly as the source's ActivityLevel did.  
+*src/core/tiku_trk_task.c (the gate); tests/test_task.c AW-085 block (mutation-tested)*
 *src/core/tiku_trk_task.c (TASK_IDLE gate); src/shell/tiku_trk_desktop.c and src/shell/tiku_trk_app.c (tiku_trk_loop_note_activity on input)*
 
 #### AW-086 · important · done
@@ -6866,12 +6866,13 @@ fNeedToQuit set under the lock, then up to 10000 iterations of snooze(1000) wait
 *src/core/tiku_trk_task.c:87-102 tiku_trk_loop_free*
 **PORT:** Teardown publishes a stop request before freeing pending tasks; the synchronous loop observes the handshake and becomes quiescent (`src/core/tiku_trk_task.c:tiku_trk_loop_stop`; `tests/test_task.c`).
 
-#### AW-090 · important · partial
+#### AW-090 · important · done
 **Temporary queries older than a week that are not open in any window are deleted automatically, but only while the machine is idle and never in the first half hour after boot.**  
 RunWhenIdle(worker, 30*60s initial delay, 5*60s idle requirement, 10s heartbeat); a query must be MoreOptionsStruct::QueryTemporary, older than kDaysToExpire (7) by ctime, and !EntryHasWindowOpen before entry.Remove(). Batched kBatchCount refs per invocation.  
 `FindPanel.cpp` → `DeleteTransientQueriesTask::StartUpTransientQueryCleaner / DeleteTransientQueriesTask::ProcessOneRef / DeleteTransientQueriesTask::QueryOldEnough`  
 **TIKU:** Background deletion of user data on an idle timer is a policy decision worth re-confirming; on a durable-NVM device the write cost also matters.
-**PORT:** The sweep exists and holds off for the first half hour after a start, because a machine that has just come up is busy and this is the least urgent work there is. The "machine is idle" half is not portable as stated -- there is no idle-time source here -- so the hold-off and the once-a-minute tick are what stand in for it.  
+**PORT:** The sweep holds off for the first half hour after a start AND for the machine's own load now: the same `tiku_trk_task_system_busy` gate (AW-085) is consulted before every sweep tick, so temporary queries are deleted only while the host is genuinely quiet -- the idle-only policy with this platform's idle signal.  
+*src/core/tiku_trk_query.c:tiku_trk_query_sweep; src/shell/tiku_trk_desktop.c (the busy gate around the sweep); tests/test_query.c*
 *src/core/tiku_trk_query.c:tiku_trk_query_sweep (TIKU_TRK_QUERY_SWEEP_WAIT); tests/test_query.c*
 *src/core/tiku_trk_query.h (temporary, saved_at); src/shell/tiku_trk_desktop.c:
 panel_search*

@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <time.h>
 
@@ -55,6 +56,46 @@ struct tiku_trk_loop {
     int              running;
     int              stop_requested;
 };
+
+static double (*task_load_fn)(void);
+
+void
+tiku_trk_task_set_load_fn(double (*fn)(void))
+{
+    task_load_fn = fn;
+}
+
+int
+tiku_trk_task_system_busy(void)
+{
+    double load = -1.0;
+
+    if (task_load_fn != NULL) {
+        load = task_load_fn();
+    } else {
+        FILE *f = fopen("/proc/loadavg", "r");
+
+        if (f != NULL) {
+            if (fscanf(f, "%lf", &load) != 1) {
+                load = -1.0;
+            }
+            (void)fclose(f);
+        }
+    }
+    if (load < 0.0) {
+        return 0;               /* no meter is not a reason to stall */
+    }
+    {
+        long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+
+        if (ncpu < 1) {
+            ncpu = 1;
+        }
+        /* The source's kIdleTreshold: idle-only work waits for CPU load
+         * under 15% (AW-085). */
+        return load / (double)ncpu > 0.15;
+    }
+}
 
 int64_t
 tiku_trk_now(void)
@@ -341,8 +382,11 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
         }
         if (t->kind == TASK_IDLE) {
             t->due = now + t->period;
-            if (now - loop->last_activity < t->idle_for) {
-                continue;         /* still busy */
+            if (now - loop->last_activity < t->idle_for ||
+                tiku_trk_task_system_busy()) {
+                /* Still busy -- by the user's hand or the machine's own
+                 * load (AW-085); either restarts the wait. */
+                continue;
             }
         }
         if (t->expires != 0 && now > t->expires) {

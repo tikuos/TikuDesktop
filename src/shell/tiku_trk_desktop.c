@@ -5747,9 +5747,14 @@ tracker_run(int argc, char **argv)
                     open[nopen++] = app.folders[i].qname;
                 }
             }
-            (void)tiku_trk_query_sweep(app.store, (int64_t)time(NULL),
-                                       (tiku_trk_now() - started_at) /
-                                           1000000, open, nopen);
+            if (!tiku_trk_task_system_busy()) {
+                /* Deleting user data is idle-only work twice over: the
+                 * half-hour hold-off AND the machine's own load gate
+                 * (AW-090). */
+                (void)tiku_trk_query_sweep(app.store, (int64_t)time(NULL),
+                                           (tiku_trk_now() - started_at) /
+                                               1000000, open, nopen);
+            }
             last_sweep = tiku_trk_now();
         }
         if (tiku_trk_now() - last_pump > 400000) {

@@ -1,0 +1,11 @@
+# shell: desktop
+# apps: fixture3
+# AW-048: Open With rows group by how well they match, and a rule stands
+# where the order changes meaning -- exact, then supertype, then anything.
+wait 10
+click-row 1 3
+wait 3
+menu-pick Open with
+wait 3
+expect-menu Stamper (opens this type)||Texty (opens this kind of file)||Anything (opens anything)
+quit

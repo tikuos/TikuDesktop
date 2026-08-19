@@ -1605,6 +1605,42 @@ main(void)
         tiku_trk_poseview_free(cv);
     }
 
+    /* --- the folders-first ladder has four rungs (MA-009) --------------- */
+    printf("\nthe folders-first ladder (MA-009)\n");
+    {
+        tiku_trk_model_t rows[4];
+        tiku_trk_poseview_t *lv = tiku_trk_poseview_new(b, dir);
+
+        memset(rows, 0, sizeof rows);
+        snprintf(rows[0].name, sizeof rows[0].name, "afile");
+        snprintf(rows[0].path, sizeof rows[0].path, "/x/afile");
+        rows[0].kind = TIKU_TRK_KIND_FILE;
+        snprintf(rows[1].name, sizeof rows[1].name, "bfolder");
+        snprintf(rows[1].path, sizeof rows[1].path, "/x/bfolder");
+        rows[1].kind = TIKU_TRK_KIND_DIRECTORY;
+        snprintf(rows[2].name, sizeof rows[2].name, "cvol");
+        snprintf(rows[2].path, sizeof rows[2].path, "/x/cvol");
+        rows[2].kind = TIKU_TRK_KIND_VOLUME;
+        rows[2].facts.total = 1000u;
+        snprintf(rows[3].name, sizeof rows[3].name, "droot");
+        snprintf(rows[3].path, sizeof rows[3].path, "/");
+        rows[3].kind = TIKU_TRK_KIND_ROOT;
+        (void)tiku_trk_poseview_set_models(lv, rows, 4);
+        check(strcmp(tiku_trk_poseview_at(lv, 0)->model.name, "droot") == 0 &&
+              strcmp(tiku_trk_poseview_at(lv, 1)->model.name, "cvol") == 0 &&
+              strcmp(tiku_trk_poseview_at(lv, 2)->model.name, "bfolder") == 0 &&
+              strcmp(tiku_trk_poseview_at(lv, 3)->model.name, "afile") == 0,
+              "MA-009", "root, then volumes, then folders, then files -- "
+              "names only break ties inside a bucket");
+        rows[2].facts.total = 0u;
+        (void)tiku_trk_poseview_set_models(lv, rows, 4);
+        check(strcmp(tiku_trk_poseview_at(lv, 1)->model.name, "bfolder") == 0 &&
+              strcmp(tiku_trk_poseview_at(lv, 2)->model.name, "cvol") == 0,
+              "MA-009", "a zero-capacity volume is demoted to the folder "
+              "bucket and sorts by name there");
+        tiku_trk_poseview_free(lv);
+    }
+
     printf("\nquery windows stay lists (Q-041)\n");
     {
         tiku_trk_model_t result[2];

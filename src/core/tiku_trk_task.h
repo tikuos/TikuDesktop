@@ -19,6 +19,18 @@
 /** @brief Microseconds on the monotonic clock. */
 int64_t tiku_trk_now(void);
 
+/**
+ * @brief Whether the HOST is too busy for idle-only work (AW-085).
+ *
+ * The source's gate is CPU load under 15%; this host's substitute signal
+ * is /proc/loadavg scaled by the CPU count.  Unknown reads as not busy --
+ * a missing meter must not stall the work for ever.
+ */
+int tiku_trk_task_system_busy(void);
+
+/** @brief Replace the load source, for tests.  NULL restores the host's. */
+void tiku_trk_task_set_load_fn(double (*fn)(void));
+
 typedef struct tiku_trk_loop tiku_trk_loop_t;
 typedef struct tiku_trk_task tiku_trk_task_t;
 

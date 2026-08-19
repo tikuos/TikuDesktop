@@ -18,6 +18,9 @@
 
 #include "tiku_trk_task.h"
 
+static double fake_load_high(void) { return 99.0; }
+static double fake_load_low(void)  { return 0.0; }
+
 static int fails;
 
 static void
@@ -154,6 +157,10 @@ main(void)
     /* run-when-idle: waits for quiet */
     {
         tiku_trk_loop_t *l4 = tiku_trk_loop_new();
+
+        /* The USER-idle half under test; the host's own load is pinned
+         * quiet so a busy build machine cannot fail it (AW-085). */
+        tiku_trk_task_set_load_fn(fake_load_low);
         struct counter q = { 0, 0 };
 
         tiku_trk_run_when_idle(l4, bump_once, &q, NULL, 40000);
@@ -186,6 +193,27 @@ main(void)
           "a stop request quiesces the event loop before teardown");
     check(tiku_trk_loop_pulse(loop) == 0,
           "deferred panel work is pumped by an existing pulse, not a worker thread");
+
+    /* --- idle work also waits for the MACHINE to be idle (AW-085) ------- */
+    {
+        tiku_trk_loop_t *l6 = tiku_trk_loop_new();
+        struct counter q6 = { 0 };
+
+        tiku_trk_task_set_load_fn(fake_load_high);
+        tiku_trk_run_when_idle(l6, bump_once, &q6, NULL, 1);
+        usleep(2000);
+        (void)tiku_trk_loop_pulse(l6);
+        check(q6.runs == 0,
+              "AW-085: idle work holds off while the host's load is high, "
+              "however quiet the user is");
+        tiku_trk_task_set_load_fn(fake_load_low);
+        usleep(2000);
+        (void)tiku_trk_loop_pulse(l6);
+        check(q6.runs == 1,
+              "and runs once the load falls under the gate");
+        tiku_trk_task_set_load_fn(NULL);
+        tiku_trk_loop_free(l6);
+    }
 
     tiku_trk_loop_free(loop);
     printf("%s\n", fails ? "FAILURES" : "all task-loop checks passed");

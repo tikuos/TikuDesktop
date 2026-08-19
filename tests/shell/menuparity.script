@@ -1,0 +1,18 @@
+# shell: desktop
+# CW-065: the multi-window shell's bar menus carry the source inventory --
+# File, Window and Attributes, each row in its place.
+wait 10
+click 70 76
+wait 3
+expect-menu Find…|New folder||Open|Edit query|Open with…|Get info|Edit name|Duplicate|Move to Trash||Move to|Copy to|Create link|Cut|Copy|Paste||Identify|Add-ons|
+click 600 500
+wait 3
+click 120 76
+wait 3
+expect-menu Icon view|Mini icon view|List view||Resize to fit|Arrange by|Select…|Select all|Invert selection|Open parent|Close|Close all in workspace||Preferences…|
+click 600 500
+wait 3
+click 190 76
+wait 3
+expect-menu Name|Kind|Value|Size|Capability|Modified|Location|Permissions|Original path||Copy layout|Paste layout|
+quit

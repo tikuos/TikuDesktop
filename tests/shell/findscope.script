@@ -11,7 +11,7 @@ note the popup ends with the chooser
 click 360 432
 wait 6
 note the panel walks into /home and chooses it
-click 320 288
+click 320 200
 wait 2
 click 675 413
 wait 4

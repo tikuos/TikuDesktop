@@ -16,12 +16,14 @@ release 700 500 3
 wait 5
 expect-menu New folder|Arrange by|Icon size|Paste|Select…|Select all|Open parent||Mount|Add-ons|
 note and reversing the order lays the DESKTOP out again in the other
-note direction: what led the row now trails it
+note direction inside each bucket -- the Disks root keeps the head of the
+note row whichever way the names run (MA-009's ladder sits outside the
+note reverse, as the source wraps it)
 menu-pick Arrange by
 wait 3
 menu-pick Reverse order
 wait 10
-expect-icon-screen .Trash 22 22
-expect-icon-screen photos 142 22
+expect-icon-screen .Trash 142 22
+expect-icon-screen photos 262 22
 expect-icon-screen notes.txt 502 22
 quit

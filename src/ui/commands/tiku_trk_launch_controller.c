@@ -144,6 +144,12 @@ tiku_trk_launch_controller_build_menu(
     for (i = 0; i < count; i++) {
         char label[TIKU_TRK_APP_NAME_MAX + 40];
 
+        if (i > 0 && candidates[i].rel != candidates[i - 1].rel) {
+            /* A rule between the relation groups: how well an entry
+             * matches is the menu's ORDER, and the rule is where the
+             * order changes meaning (AW-048). */
+            (void)tiku_trk_menu_add_separator(menu);
+        }
         snprintf(label, sizeof label, "%s (%s)", candidates[i].app->name,
                  tiku_trk_launch_relation_label(candidates[i].rel));
         (void)tiku_trk_menu_add(menu, label,

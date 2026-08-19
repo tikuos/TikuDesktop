@@ -221,7 +221,15 @@ PYEOF
         # A script that says "# apps: fixture" gets an application registry
         # of its own: one application that writes down what it was handed,
         # which is the only way to check a launch really happened.
-        if grep -q '^# apps: fixture' "$s"; then
+        if grep -q '^# apps: fixture3' "$s"; then
+            mkdir -p "$deskhome/.config/tracker"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
+                > /tmp/trk_stamp.sh
+            chmod +x /tmp/trk_stamp.sh
+            rm -f /tmp/trk_launched
+            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\nTexty\t/tmp/trk_stamp.sh\ttext/\nAnything\t/tmp/trk_stamp.sh\t*\n' \
+                > "$deskhome/.config/tracker/apps"
+        elif grep -q '^# apps: fixture' "$s"; then
             mkdir -p "$deskhome/.config/tracker"
             printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
                 > /tmp/trk_stamp.sh

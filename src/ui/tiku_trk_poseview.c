@@ -683,10 +683,22 @@ pose_cmp(const void *pa, const void *pb)
      * though -- the user can ask for one list sorted by the column alone
      * (MA-039). */
     if (g_sorting->folders_first) {
-        int ca = tiku_trk_model_is_container(&a->model);
-        int cb = tiku_trk_model_is_container(&b->model);
-        if (ca != cb) {
-            return cb - ca;
+        /* The full ladder, not one bit: the Disks root beats everything,
+         * real volumes beat folders, folders beat files -- and a volume
+         * whose capacity reads zero is DEMOTED to the folder bucket, the
+         * way the source sorts a volume that cannot say its size
+         * (MA-009). */
+        int ba = (a->model.kind == TIKU_TRK_KIND_ROOT) ? 3
+               : (a->model.kind == TIKU_TRK_KIND_VOLUME &&
+                  a->model.facts.total > 0u)           ? 2
+               : tiku_trk_model_is_container(&a->model) ? 1 : 0;
+        int bb = (b->model.kind == TIKU_TRK_KIND_ROOT) ? 3
+               : (b->model.kind == TIKU_TRK_KIND_VOLUME &&
+                  b->model.facts.total > 0u)           ? 2
+               : tiku_trk_model_is_container(&b->model) ? 1 : 0;
+
+        if (ba != bb) {
+            return bb - ba;
         }
     }
     /* An entry with no value for the sort field sorts LAST whichever way
