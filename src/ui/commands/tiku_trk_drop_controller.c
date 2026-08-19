@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 
 #include "tiku_trk_drop_controller.h"
+
+#include "tiku_trk_launch.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_drop_protocol.h"
 #include "tiku_trk_model.h"
@@ -309,6 +311,106 @@ reserve_icon_landings(tiku_trk_drop_controller_t *controller,
 }
 
 void
+tiku_trk_drop_controller_set_launcher(
+    tiku_trk_drop_controller_t *controller, const struct tiku_trk_apps *apps,
+    tiku_trk_drop_launch_fn launch, void *launch_context)
+{
+    controller->apps = apps;
+    controller->launch = launch;
+    controller->launch_context = launch_context;
+}
+
+/** @brief The registry entry whose program IS @p path, or NULL. */
+static const tiku_trk_app_t *
+app_at_path(const tiku_trk_drop_controller_t *controller, const char *path)
+{
+    const tiku_trk_apps_t *apps = (const tiku_trk_apps_t *)controller->apps;
+    int i;
+
+    if (apps == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < apps->count; i++) {
+        const tiku_trk_app_t *a = &apps->app[i];
+
+        if (a->is_tracker) {
+            continue;
+        }
+        if ((a->cmd[0] != '\0' && strcmp(a->cmd, path) == 0) ||
+            (a->path[0] != '\0' && strcmp(a->path, path) == 0)) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief A drop on an application pose launches it (PVS-044).
+ *
+ * Only the documents the target claims to handle are passed; Cmd held at
+ * the release forces every one of them through (the source's Control).
+ * With nothing surviving the filter, nothing is launched.
+ *
+ * @return Nonzero when the drop was an application drop, handled or not.
+ */
+static int
+drop_on_application(tiku_trk_drop_controller_t *controller,
+                    const char *destination, unsigned modifiers)
+{
+    const char *paths[TIKU_TRK_DRAG_MAX];
+    const char *kept[TIKU_TRK_DRAG_MAX];
+    const tiku_trk_app_t *application;
+    int force = (modifiers & TIKU_DESK_MOD_CMD) != 0u;
+    int count;
+    int n = 0;
+    int i;
+
+    tiku_trk_model_t target;
+
+    if (*controller->drop_row < 0 || controller->launch == NULL) {
+        return 0;
+    }
+    if (controller->backend->ops->stat(controller->backend, destination,
+                                       &target) != 0 ||
+        tiku_trk_model_is_container(&target)) {
+        return 0;
+    }
+    application = app_at_path(controller, destination);
+    if (application == NULL) {
+        /* An executable nothing registered: saying so beats pretending the
+         * drop was a move into a file. */
+        snprintf(controller->status, controller->status_size,
+                 "%s is not a registered application", target.name);
+        *controller->dirty = 1;
+        return 1;
+    }
+    count = drop_paths(controller, paths);
+    for (i = 0; i < count; i++) {
+        tiku_trk_model_t model;
+
+        if (force) {
+            kept[n++] = paths[i];
+            continue;
+        }
+        if (controller->backend->ops->stat(controller->backend, paths[i],
+                                           &model) == 0 &&
+            tiku_trk_launch_relation(application, model.type) !=
+                TIKU_TRK_REL_NONE) {
+            kept[n++] = paths[i];
+        }
+    }
+    if (n == 0) {
+        snprintf(controller->status, controller->status_size,
+                 "%s claims none of those types", application->name);
+        *controller->dirty = 1;
+        return 1;
+    }
+    (void)controller->launch(controller->launch_context, application,
+                             kept, n);
+    return 1;
+}
+
+void
 tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                  int x, int y, unsigned modifiers,
                                  unsigned button)
@@ -324,6 +426,9 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
         *controller->drop_folder == NULL ||
         arrange_in_source(controller, x, y, modifiers) ||
         !drop_destination(controller, destination, sizeof destination)) {
+        return;
+    }
+    if (drop_on_application(controller, destination, modifiers)) {
         return;
     }
     if (controller->drag->payload_size > 0u &&

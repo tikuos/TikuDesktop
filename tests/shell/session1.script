@@ -18,12 +18,12 @@ note not only by the quit
 click-row 0
 click-row 0
 wait 8
-expect-title /tmp/trk_script/sub
+expect-title sub
 note it opens cascaded, since its parent has no saved frame yet
 expect-window-at 67 62
-press 150 71
-move 500 400
-release 500 400
+press 97 71
+move 447 400
+release 447 400
 wait 5
 expect-window-at 417 391
 key w ctrl
@@ -32,6 +32,6 @@ note re-opening it brings it back where it was closed
 click-row 0
 click-row 0
 wait 8
-expect-title /tmp/trk_script/sub
+expect-title sub
 expect-window-at 417 391
 quit

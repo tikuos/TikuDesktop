@@ -20,7 +20,7 @@ expect-windows 2
 key w ctrl
 wait 5
 expect-windows 1
-expect-title /tmp/trk_script
+expect-title trk_script
 note a permission is applied the moment it is ticked, with no OK button
 key i ctrl
 wait 10
@@ -49,5 +49,5 @@ expect-no-file /tmp/trk_script/a.txt
 note and the window goes when the entry does
 remove /tmp/trk_script/renamed
 wait 40
-expect-title /tmp/trk_script
+expect-title trk_script
 quit

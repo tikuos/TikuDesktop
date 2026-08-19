@@ -766,6 +766,17 @@ open_with_window_launch(void *context, const tiku_trk_app_t *application,
     (void)launch_paths(app, application, paths, count);
 }
 
+/** @brief A drop on an application pose is the same one act (PVS-044). */
+static int
+drop_launch(void *context, const struct tiku_trk_app *application,
+            const char *const *paths, int count)
+{
+    desktop_t *app = context;
+
+    return launch_paths(app, (const tiku_trk_app_t *)application, paths,
+                        count);
+}
+
 /** @brief Open the selection with the candidate at @p at (AW-040). */
 static void
 open_with_pick(desktop_t *app, folder_t *fl, int at)
@@ -2719,6 +2730,8 @@ tracker_run(int argc, char **argv)
         &app.popup, &app.popup_sub, &app.popup_frame, app.prog_dest,
         sizeof app.prog_dest, app.status, sizeof app.status, &app.dirty,
         DESK_W, DESK_H, set_backdrop_color, &app);
+    tiku_trk_drop_controller_set_launcher(&app.drop_controller,
+        (const struct tiku_trk_apps *)&app.apps, drop_launch, &app);
 
     if (use_device) {
         /* The tray is the device: three values that say at a glance whether

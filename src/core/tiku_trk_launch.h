@@ -43,7 +43,7 @@ typedef enum {
 } tiku_trk_relation_t;
 
 /** @brief One application the registry knows about. */
-typedef struct {
+typedef struct tiku_trk_app {
     char name[TIKU_TRK_APP_NAME_MAX];
     char cmd[TIKU_TRK_APP_CMD_MAX];      /* argv[0], run with the paths   */
     char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TRK_TYPE_MAX];
@@ -63,7 +63,7 @@ typedef struct {
     int                   preferred;     /* the user's choice for the type */
 } tiku_trk_cand_t;
 
-typedef struct {
+typedef struct tiku_trk_apps {
     tiku_trk_app_t app[TIKU_TRK_APP_MAX];
     int            count;
 } tiku_trk_apps_t;

@@ -136,6 +136,16 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            # An application that lives IN the folder, so a pose exists to
+            # drop documents onto; the registry names it as the Dropper.
+            appdrop.script)
+                printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
+                    > "$work/zapp.sh"
+                chmod +x "$work/zapp.sh"
+                rm -f /tmp/trk_launched
+                mkdir -p "$deskhome/.config/tracker"
+                printf 'Dropper\t/tmp/trk_script/zapp.sh\ttext/plain\n' \
+                    > "$deskhome/.config/tracker/apps" ;;
             brokenlink.script) ln -s /nowhere-at-all "$work/dangling" ;;
             thumb.script)  python3 - "$work" <<'PYEOF'
 import struct,sys

@@ -6,7 +6,7 @@ wait 8
 note the windows nobody asked for are the ones that were open last time
 expect-windows 2
 note reopened in the order they were opened, so the last one is in front
-expect-title /tmp/trk_script/sub
+expect-title sub
 note and each is where it was left, not where the cascade would put it
 expect-window-at 417 391
 note with the same columns the folder was left showing

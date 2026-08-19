@@ -211,7 +211,11 @@ tiku_trk_drag_can_drop(const tiku_trk_drag_t *d, const tiku_trk_model_t *over)
         return 0;
     }
     if (!tiku_trk_model_is_container(over)) {
-        return 0;
+        /* An executable is a target too: dropping documents on an
+         * application launches it with them (PVS-044), the same
+         * IsDropTarget the source's Model answered. */
+        return (over->facts.perm & TIKU_TRK_P_EXEC) != 0u &&
+               over->kind == TIKU_TRK_KIND_FILE;
     }
     /* A container that will not accept new entries -- a read-only store, a
      * device node's virtual directory -- is not a target either, and saying

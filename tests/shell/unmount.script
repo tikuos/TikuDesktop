@@ -4,7 +4,7 @@
 wait 8
 key Up ctrl
 wait 8
-expect-title /tmp
+expect-title tmp
 note Cmd+U on the volume being shown; without the right to unmount it,
 note the refusal is said out loud rather than nothing happening
 key u ctrl

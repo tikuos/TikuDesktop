@@ -24,6 +24,12 @@
 typedef void (*tiku_trk_drop_color_fn)(void *context,
                                        const tiku_trk_color_t *color);
 
+struct tiku_trk_apps;
+struct tiku_trk_app;
+typedef int (*tiku_trk_drop_launch_fn)(void *context,
+    const struct tiku_trk_app *application, const char *const *paths,
+    int count);
+
 /** @brief Dependencies and retained decision state for a pointer drop. */
 typedef struct {
     tiku_trk_deskbar_t *deskbar;
@@ -47,6 +53,12 @@ typedef struct {
     int *dirty;
     tiku_trk_drop_color_fn set_color;
     void *color_context;
+    /* A drop landing on an application pose is a LAUNCH, not a move
+     * (PVS-044): the registry says which poses are applications, and the
+     * shell supplies the one act that runs one. */
+    const struct tiku_trk_apps *apps;
+    tiku_trk_drop_launch_fn launch;
+    void *launch_context;
     int screen_w;
     int screen_h;
 } tiku_trk_drop_controller_t;
@@ -64,5 +76,10 @@ void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
 void tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                       int x, int y, unsigned modifiers,
                                       unsigned button);
+
+/** @brief Teach the controller which poses are applications (PVS-044). */
+void tiku_trk_drop_controller_set_launcher(
+    tiku_trk_drop_controller_t *controller, const struct tiku_trk_apps *apps,
+    tiku_trk_drop_launch_fn launch, void *launch_context);
 
 #endif /* TIKU_TRK_DROP_CONTROLLER_H_ */

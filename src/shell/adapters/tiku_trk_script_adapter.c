@@ -63,8 +63,18 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
         tiku_desk_window_t *w = tiku_desk_workspace_at(adapter->workspace,
                                                        i);
 
-        if (w == NULL || !w->open || strstr(w->title, title) == NULL) {
+        if (w == NULL || !w->open) {
             continue;
+        }
+        if (strstr(w->title, title) == NULL) {
+            /* Titles are the folder's NAME now (CW-016); a script that
+             * still addresses a window by path finds it by the leaf. */
+            const char *leaf = strrchr(title, '/');
+
+            if (leaf == NULL || leaf[1] == '\0' ||
+                strstr(w->title, leaf + 1) == NULL) {
+                continue;
+            }
         }
         /* Inside its tab: the strip is TAB_H deep from the frame's top
          * edge, and starts four pixels in.  Thirty across is inside the

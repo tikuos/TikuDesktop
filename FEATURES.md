@@ -1675,12 +1675,12 @@ Four separate BAlerts in MoveSelectionInto, each B_WARNING_ALERT with Cancel and
 *Shell: desktop*  
 **PORT:** All four refusals are said out loud -- a read-only destination, a copy into the Trash, a link into the Trash, and the engine's own refusals (a folder into itself, the Trash itself, a file over a folder) in its own words.  Each is a Cancel-only warning that Escape closes.  A drop that quietly did nothing looked like a drop that missed, and the user tried again harder.  
 *Shell: desktop*  
-#### PVS-044 · important · partial
+#### PVS-044 · important · done
 **Dropping files on an application or document pose launches it with those files as arguments, passing only the files that target claims to handle; holding Control bypasses the type check and forces all of them through.**  
 HandleDropCommon: ignoreTypes = (modifiers() & B_CONTROL_KEY) != 0; LaunchAppWithSelection filters via Model::IsDropTarget(pose->TargetModel(), true) per pose and launches only if at least one ref survived.  
 `PoseView.cpp` → `BPoseView::HandleDropCommon / BPoseView::LaunchAppWithSelection`
-**BLOCKED:** Waits on launch machinery that exists nowhere in the port: grep execv/execl/fork/posix_spawn/system( over src/ returns nothing (PVS-010's audit already records 'the port has no launch path'), and on the missing drop pipeline to hand refs to it.  
-**MISSING:** Launching and type-filtering exist for explicit Open With and double-click paths, but dropping directly onto an application pose is not wired.
+**PORT:** A drop landing on an application's pose is a LAUNCH now: an executable is a drop target (the same IsDropTarget the source's Model answered), the registry says which application the pose is, and only the documents whose type it claims are passed -- Cmd held at the release forces every one of them through, and with nothing surviving the filter nothing is launched, said in the status.  An executable nothing registered is refused in words rather than treated as a move destination.  
+*src/core/tiku_trk_drag.c:tiku_trk_drag_can_drop; src/ui/commands/tiku_trk_drop_controller.c:drop_on_application; tests/shell/appdrop.script (claimed, unclaimed, and forced -- mutation-tested both ways)*
 
 #### PVS-045 · important · done
 **Icons dropped on the background of an icon-mode window land at the drop point preserving their relative layout; a selection dragged out of a list-mode window stacks vertically at the drop point.**  
