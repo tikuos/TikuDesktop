@@ -15,6 +15,8 @@
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_info_window.h"
 
+#include "tiku_trk_attr.h"
+
 #define INFO_WIDTH    360
 #define INFO_HEIGHT   300
 #define INFO_PAD       10
@@ -53,6 +55,12 @@ layout(tiku_desk_rect_t content, tiku_desk_rect_t *icon,
     if (body->h < 20) {
         body->h = 20;
     }
+}
+
+static int
+measure_info_text(const char *text, void *ctx)
+{
+    return tiku_desk_text_width((const tiku_desk_font_t *)ctx, text);
 }
 
 static tiku_desk_rect_t
@@ -125,8 +133,23 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             }
             tiku_desk_text(surface, font, body.x + 8, y, label,
                            TIKU_DESK_C_TEXT);
-            tiku_desk_text(surface, font, body.x + 96, y, value,
-                           TIKU_DESK_C_TEXT);
+            {
+                /* Truncated to the row, so a long path has something for
+                 * the hover pop-up to expand (AW-073). */
+                char fitted[TIKU_TRK_INFO_VAL_MAX];
+                int room = body.w - 96 - 12;
+
+                if (tiku_desk_text_width(font, value) > room &&
+                    tiku_trk_text_fit(value, room, TIKU_TRK_TRUNC_MIDDLE,
+                                      measure_info_text, (void *)font,
+                                      fitted, sizeof fitted) >= 0) {
+                    tiku_desk_text(surface, font, body.x + 96, y, fitted,
+                                   TIKU_DESK_C_TEXT);
+                } else {
+                    tiku_desk_text(surface, font, body.x + 96, y, value,
+                                   TIKU_DESK_C_TEXT);
+                }
+            }
         }
     } else if (info->tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
         static const char *const labels[] = { "Read", "Write", "Execute" };
@@ -232,6 +255,8 @@ tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
 
     memset(controller, 0, sizeof *controller);
     controller->drop_hot = -1;
+    controller->hover_slot = -1;
+    controller->hover_field = -1;
     controller->workspace = workspace;
     controller->backend = backend;
     controller->store = store;
@@ -382,6 +407,27 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
     }
 #undef INSIDE
     return TIKU_TRK_INFO_HIT_NONE;
+}
+
+int
+tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
+                                 int slot, int i, int *x, int *y, int *w,
+                                 int *h)
+{
+    tiku_desk_rect_t content, icon, name, tabs, body;
+
+    if (slot < 0 || slot >= TIKU_TRK_INFO_WINDOW_MAX ||
+        controller->window[slot] == NULL ||
+        !controller->window[slot]->open) {
+        return 0;
+    }
+    content = tiku_desk_window_content(controller->window[slot]);
+    layout(content, &icon, &name, &tabs, &body);
+    if (x != NULL) { *x = body.x + 96; }
+    if (y != NULL) { *y = body.y + 6 + i * INFO_ROW_H; }
+    if (w != NULL) { *w = body.w - 96 - 12; }
+    if (h != NULL) { *h = INFO_ROW_H; }
+    return 1;
 }
 
 void

@@ -53,6 +53,10 @@ struct tiku_trk_info_windows {
      * answers a hover the way a pose does, by its selected variant
      * (IV-058). */
     int                            drop_hot;
+    /* The field the pointer rests on, for the truncated-value pop-up
+     * (AW-073): -1 when nowhere. */
+    int                            hover_slot;
+    int                            hover_field;
     int                           *dirty;
 };
 
@@ -73,6 +77,11 @@ tiku_desk_window_t *tiku_trk_info_windows_handle(
 
 tiku_trk_info_hit_t tiku_trk_info_windows_hit(
     tiku_trk_info_windows_t *controller, int slot, int x, int y, int *which);
+/** @brief The screen rectangle of field row @p i in @p slot (AW-073). */
+int tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
+                                     int slot, int i,
+                                     int *x, int *y, int *w, int *h);
+
 void tiku_trk_info_windows_begin_rename(
     tiku_trk_info_windows_t *controller, int slot);
 

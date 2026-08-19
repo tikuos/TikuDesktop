@@ -2712,6 +2712,45 @@ draw_all(desktop_t *app)
             app->dirty = 1;     /* the next frame moves it again */
         }
     }
+    if (app->info_windows.hover_slot >= 0 &&
+        app->info_windows.hover_field >= 0) {
+        /* The truncated field's full text, floated over everything and
+         * clamped to the screen (AW-073).  Only when the value really is
+         * wider than its row -- a pop-up repeating what is already
+         * readable would be noise. */
+        int slot = app->info_windows.hover_slot;
+        tiku_trk_info_t *info = &app->info_windows.model[slot];
+        char value[TIKU_TRK_INFO_VAL_MAX];
+        const char *label = "";
+        int fx, fy, fw, fh;
+
+        if (tiku_trk_info_field(info, app->store,
+                app->info_windows.hover_field, &label, value,
+                sizeof value) != TIKU_TRK_INFO_F_NONE &&
+            tiku_trk_info_windows_field_rect(&app->info_windows, slot,
+                app->info_windows.hover_field, &fx, &fy, &fw, &fh)) {
+            const tiku_desk_font_t *font = tiku_desk_font_plain();
+            int tw = tiku_desk_text_width(font, value);
+
+            if (tw > fw) {
+                tiku_desk_rect_t box = { fx - 4, fy - 2, tw + 12,
+                                         font->height + 6 };
+
+                if (box.x + box.w > app->surf->w) {
+                    box.x = app->surf->w - box.w;
+                }
+                if (box.x < 0) {
+                    box.x = 0;
+                }
+                tiku_desk_fill(app->surf, box,
+                               TIKU_DESK_RGB(255, 255, 200));
+                tiku_desk_frame(app->surf, box, TIKU_DESK_RGB(0, 0, 0));
+                tiku_desk_text(app->surf, font, box.x + 5,
+                               box.y + 2 + font->ascent, value,
+                               TIKU_DESK_C_TEXT);
+            }
+        }
+    }
     if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
         app->tstrip.removed) {
         /* The torn-out column follows the pointer as a dotted outline
@@ -4718,6 +4757,35 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 {
+                    /* The pointer resting on a truncated Info field opens
+                     * the expanding pop-up; leaving takes it away
+                     * (AW-073). */
+                    tiku_desk_window_t *hw = NULL;
+                    int hslot = -1, hfield = -1, hwhich = -1;
+
+                    if (!tiku_trk_drag_active(&app.drag)) {
+                        (void)tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
+                                                      &hw);
+                        hslot = tiku_trk_info_windows_slot(
+                            &app.info_windows, hw);
+                        if (hslot >= 0 &&
+                            hw == tiku_desk_workspace_focused(app.desk) &&
+                            tiku_trk_info_windows_hit(&app.info_windows,
+                                hslot, ev.x, ev.y, &hwhich) ==
+                                TIKU_TRK_INFO_HIT_FIELD) {
+                            hfield = hwhich;
+                        } else {
+                            hslot = -1;
+                        }
+                    }
+                    if (hslot != app.info_windows.hover_slot ||
+                        hfield != app.info_windows.hover_field) {
+                        app.info_windows.hover_slot = hslot;
+                        app.info_windows.hover_field = hfield;
+                        app.dirty = 1;
+                    }
+                }
+                {
                     unsigned bm = 0u;
 
                     if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
@@ -4898,6 +4966,8 @@ tracker_run(int argc, char **argv)
                 tiku_trk_drag_reset(&app.drag);
                 tiku_trk_drag_target_reset(&app.drag_target);
                 app.info_windows.drop_hot = -1;
+                app.info_windows.hover_slot = -1;
+                app.info_windows.hover_field = -1;
                 /* A release ends whatever the press began -- a drag with a
                  * picture under the pointer, a band, a drop that raised an
                  * alert.  All of it is on the screen until a frame says

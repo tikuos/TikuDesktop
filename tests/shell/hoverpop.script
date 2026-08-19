@@ -1,0 +1,26 @@
+# shell: desktop
+# AW-073: a truncated Info field reveals its full text in a floating
+# pop-up while hovered, and the pop-up leaves with the pointer.
+wait 10
+click 90 118
+wait 2
+click 90 118
+wait 6
+click-row 0
+wait 2
+click-row 0
+wait 6
+click-row 0
+wait 2
+key i ctrl
+wait 10
+note the Location is longer than its row; resting on it floats the whole
+move 300 260
+move 300 267
+wait 12
+expect-pixel 600 258 ffffc8
+note and the pop-up leaves with the pointer
+move 300 400
+wait 4
+expect-pixel 600 258 336698
+quit

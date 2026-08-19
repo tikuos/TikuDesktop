@@ -136,6 +136,9 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            hoverpop.script)
+                mkdir -p "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row"
+                echo hi > "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row/deep.txt" ;;
             # A folder with an inner folder and a file, so the spring
             # menu has a level to descend into and a row to grey.
             springnav.script)

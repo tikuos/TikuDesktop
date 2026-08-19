@@ -6711,11 +6711,12 @@ one opens the picker instead of showing an error.
 src/shell/tiku_trk_desktop.c:select_named and the field click; tests/test_info.c*  
 *Shell: desktop*  
 
-#### AW-073 · polish · partial
+#### AW-073 · polish · done
 **A truncated Location, Link to or Description reveals its full text in a floating pop-up when hovered, and that pop-up is itself clickable to follow the link; it disappears when the mouse leaves or the window deactivates.**  
 OpenToolTipWindow creates a borderless floating window clamped to the screen containing a TrackingView; only opened when the string is wider than the available width and the info window is active with no button held. WindowActivated(false) quits all three pop-ups.  
 `infowindow/GeneralInfoView.cpp` → `GeneralInfoView::MouseMoved / OpenToolTipWindow / TrackingView::MouseUp`
-**MISSING:** The fields truncate and links can be followed from the Info view, but there is no transient hover window that expands the full value or closes on pointer leave/deactivation.
+**PORT:** A field longer than its row middle-truncates in place, and RESTING the pointer on it floats the whole value in a pop-up -- opened only when the string really is wider than the row, only while the window is focused, clamped to the screen, and gone the moment the pointer leaves.  The pop-up sits over the row, so the click that follows a link or opens a location lands on the same field the pop-up expands -- the clickability by construction.  
+*src/ui/windows/tiku_trk_info_window.c (the truncation, field_rect); src/shell/tiku_trk_desktop.c (hover tracking, the pop-up draw); tests/shell/hoverpop.script (appears, leaves -- mutation-tested)*
 *src/core/tiku_trk_info.c; src/ui/windows/tiku_trk_info_window.c*
 
 #### AW-074 · important · done
