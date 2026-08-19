@@ -253,13 +253,55 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         return 0;
     }
     if (controller->renaming && key == TIKU_DESK_KEY_TAB) {
-        int row = next_rename_row(folder, controller->rename_row,
-                                  (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+        int backwards = (modifiers & TIKU_DESK_MOD_SHIFT) != 0u;
+        int row = controller->rename_row;
 
         tiku_trk_folder_edit_finish_rename(controller, 1);
+        if (!backwards && folder != NULL &&
+            tiku_trk_poseview_has_column(folder->view,
+                                         TIKU_TRK_COL_VALUE)) {
+            /* Tab walks to the NEXT EDITABLE COLUMN of the same pose,
+             * committing the current one (MA-047): here that is the
+             * Value column, when the entry can carry one. */
+            tiku_trk_pose_t *pose;
+
+            tiku_trk_poseview_click(folder->view, row, 0u);
+            pose = tiku_trk_poseview_active(folder->view);
+            if (pose != NULL &&
+                tiku_trk_attr_editable(&pose->model, &pose->desc)) {
+                tiku_trk_folder_edit_begin_value(controller, folder);
+                *controller->dirty = 1;
+                return 1;
+            }
+        }
+        /* No editable column that way: the walk continues into the next
+         * row's name, which is where the next editable thing lives. */
+        row = next_rename_row(folder, row, backwards);
         if (row >= 0) {
             tiku_trk_poseview_click(folder->view, row, 0u);
             tiku_trk_folder_edit_begin_rename(controller, folder, row);
+        }
+        *controller->dirty = 1;
+        return 1;
+    }
+    if (controller->editing && !controller->renaming &&
+        key == TIKU_DESK_KEY_TAB && folder != NULL) {
+        int backwards = (modifiers & TIKU_DESK_MOD_SHIFT) != 0u;
+        tiku_trk_pose_t *pose = tiku_trk_poseview_active(folder->view);
+        int row = (pose != NULL) ? pose->index : -1;
+
+        tiku_trk_folder_edit_commit_value(controller, folder);
+        if (backwards && row >= 0) {
+            /* Shift-Tab walks BACK to the name column of the same pose. */
+            tiku_trk_folder_edit_begin_rename(controller, folder, row);
+        } else {
+            int next = next_rename_row(folder, row, 0);
+
+            if (next >= 0) {
+                tiku_trk_poseview_click(folder->view, next, 0u);
+                tiku_trk_folder_edit_begin_rename(controller, folder,
+                                                  next);
+            }
         }
         *controller->dirty = 1;
         return 1;

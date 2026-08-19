@@ -4216,11 +4216,12 @@ DisallowChar for every code below 0x20 plus '/'. Separately DisallowMetaKeys blo
 **TIKU:** Namespace paths have their own illegal characters; the disallow set should be derived from the VFS path rules rather than hardcoded to '/'.  
 **PORT:** '/' is now swallowed at the keystroke. tiku_trk_edit_t carries a `deny` set consulted at the top of the CHAR case, before delete_selection, so a denied character neither appears nor clobbers the selection; both rename entry points arm it with tiku_trk_fs_name_deny(). The control-character and meta-key halves were already there (ch < 0x20 || ch == 0x7f is dropped; Tab/Escape/Delete/Home/End are consumed by the editor's own switch). The deny set is sourced from the store as the TIKU note asks — NAME_DENY lives once in tiku_trk_fs.c next to tiku_trk_fs_name_ok, so the keystroke filter and the commit check cannot drift apart. test_edit.c:89-104 covers both the armed and unarmed cases.
 
-#### MA-047 · core · partial
+#### MA-047 · core · done
 **Return commits the rename, Escape abandons it, Tab moves to the next editable column committing the current one, and Shift-Tab moves to the previous.**  
 TextViewKeyDownFilter intercepts B_RETURN and B_ESCAPE and calls view->CommitActivePose(key == B_RETURN) — so Escape commits with saveChanges=false, i.e. discards. B_TAB dispatches to BPose::EditNextWidget / EditPreviousWidget, which walk the column list in the chosen direction, commit the currently active widget when they reach it, and StartEdit on the next column whose Editable() is set.  
 `TextWidget.cpp` → `TextViewKeyDownFilter`  
-**MISSING:** Return commits and Escape abandons the rename, but Tab/Shift-Tab column traversal is missing entirely — Tab reaches the editor as 0x09, is rejected by the <0x20 guard, and no key path walks to the next editable column.  
+**PORT:** All four keys answer: Return commits, Escape abandons, and TAB commits the current editor and walks to the next editable column -- the Value column when the entry can carry one, with Shift-Tab walking back from the value editor to the name.  Where no editable column remains in the walk's direction, the walk continues into the next row's name, which is where the next editable thing lives.  
+*src/ui/windows/tiku_trk_folder_edit.c (the Tab walk); tests/shell/tabcolumns.script (forward into Value -- proven by the value it writes -- and back; mutation-tested)*
 *src/shell/tiku_trk_app.c:808 (editing key switch) / src/core/tiku_trk_edit.c:153 (COMMIT/CANCEL)*
 
 #### MA-048 · important · done

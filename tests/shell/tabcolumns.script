@@ -1,0 +1,34 @@
+# shell: desktop
+# MA-047: Tab commits the current editor and walks to the next editable
+# column -- name to Value here -- and Shift-Tab walks back.
+wait 8
+note arm the rename on a.txt with the slow second click
+click-row 1
+wait 120
+click-row 1
+wait 120
+expect-renaming 1
+note Tab commits the (unchanged) name and opens the VALUE editor
+key Tab
+wait 5
+expect-renaming 0
+key n
+key e
+key w
+key Return
+wait 20
+expect-file-has /tmp/trk_script/a.txt new
+note and Shift-Tab from the value editor walks back to the name
+click-row 2
+wait 120
+click-row 2
+wait 120
+expect-renaming 1
+key Tab
+wait 5
+expect-renaming 0
+key Tab shift
+wait 5
+expect-renaming 1
+key Escape
+quit
