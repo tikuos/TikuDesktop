@@ -20,7 +20,10 @@
 
 #define COUNT_HEIGHT 16
 #define TITLE_HEIGHT 20
-#define MINI_ICON    16
+/* The list's mini icon follows the row, which follows the font (the row
+ * is the plain face's height plus five): at the reference 12 px face the
+ * row is 20 and this reads 16, exactly the old constant (IV-013). */
+#define MINI_ICON_FOR(row_h) ((row_h) - 4)
 #define VALUE_GAP   120
 
 static int
@@ -209,6 +212,12 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     if (selected) {
         tiku_desk_rgb_t band = TIKU_DESK_C_SELECT;
 
+        if (folder->win != NULL &&
+            folder->win !=
+                tiku_desk_workspace_focused(render->workspace)) {
+            /* Shown while inactive, shown in grey (IV-022). */
+            band = TIKU_DESK_RGB(154, 154, 154);
+        }
         if (folder->win == NULL) {
             /* The Desktop's backdrop is the selection blue itself, so its
              * chosen labels carry their own, darker colour -- adjustable
@@ -336,6 +345,12 @@ pose_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
     h = sig_bytes(h, &pose->loc_x, sizeof pose->loc_x);
     h = sig_bytes(h, &pose->loc_y, sizeof pose->loc_y);
     h = sig_bytes(h, &pose->selected, sizeof pose->selected);
+    if (pose->selected && folder->win != NULL) {
+        int act = (folder->win ==
+                   tiku_desk_workspace_focused(render->workspace));
+
+        h = sig_bytes(h, &act, sizeof act);
+    }
     h = sig_bytes(h, &pose->model.facts.link_broken,
                   sizeof pose->model.facts.link_broken);
     h = sig_bytes(h, &pose->model.facts.trash_full,
@@ -384,8 +399,8 @@ queue_thumbnail(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
     char art[TIKU_TRK_NAME_MAX];
     int mini = render->row_h - 2;
 
-    if (mini > MINI_ICON) {
-        mini = MINI_ICON;
+    if (mini > MINI_ICON_FOR(render->row_h)) {
+        mini = MINI_ICON_FOR(render->row_h);
     }
     if (tiku_trk_nodeicon_resolve(render->icons, render->store, &pose->model,
                                   art, sizeof art) != TIKU_TRK_ICON_FROM_THUMB) {
@@ -440,6 +455,15 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     h = sig_bytes(h, &pose->model.node_id, sizeof pose->model.node_id);
     h = sig_bytes(h, &selected, sizeof selected);
     h = sig_bytes(h, &cut, sizeof cut);
+    if (selected) {
+        /* The selection's COLOUR follows the window's activity when it
+         * shows while inactive (IV-022). */
+        int act = (folder->win == NULL ||
+                   folder->win ==
+                       tiku_desk_workspace_focused(render->workspace));
+
+        h = sig_bytes(h, &act, sizeof act);
+    }
     h = sig_bytes(h, &pose->model.kind, sizeof pose->model.kind);
     h = sig_bytes(h, &pose->model.facts.link_broken,
                   sizeof pose->model.facts.link_broken);
@@ -480,6 +504,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
     const tiku_desk_font_t *font = tiku_desk_font_plain();
     const tiku_trk_repaint_rect_t *damage = folder->render->damage;
     int ndamage = folder->render->ndamage;
+    int win_active = (folder->win == NULL ||
+                      folder->win ==
+                          tiku_desk_workspace_focused(render->workspace));
     int i;
 
     for (i = 0; i < rows && scroll + i < total; i++) {
@@ -538,8 +565,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             tiku_trk_icon_from_t source = tiku_trk_nodeicon_resolve(
                 render->icons, render->store, &pose->model, art, sizeof art);
 
-            if (mini > MINI_ICON) {
-                mini = MINI_ICON;
+            if (mini > MINI_ICON_FOR(render->row_h)) {
+                mini = MINI_ICON_FOR(render->row_h);
             }
             /* IV-024: the selection covers the icon and the NAME column,
              * and stops there -- the other columns stay normal, which is
@@ -555,7 +582,11 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                 if (name.w < 0) {
                     name.w = 0;
                 }
-                tiku_desk_fill(surface, name, TIKU_DESK_C_SELECT);
+                /* Shown-while-inactive is shown in GREY: still there,
+                 * plainly not the window the keyboard is in (IV-022). */
+                tiku_desk_fill(surface, name,
+                    win_active ? TIKU_DESK_C_SELECT
+                               : TIKU_DESK_RGB(154, 154, 154));
             }
             if ((pose->model.kind == TIKU_TRK_KIND_VOLUME ||
                  pose->model.kind == TIKU_TRK_KIND_ROOT) &&
@@ -625,7 +656,13 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                 }
                 tiku_desk_text(surface, font, cell_x, text_y, fitted,
                     (selected && j == 0)
-                        ? TIKU_DESK_C_SELTEXT
+                        /* A cut label greys even while selected, as the
+                         * source greys it (IV-023); an inactive window's
+                         * selection reads in plain ink over its grey. */
+                        ? (!win_active ? TIKU_DESK_C_TEXT
+                           : cut ? tiku_desk_tint(TIKU_DESK_C_SELTEXT,
+                                                  1.45f)
+                                 : TIKU_DESK_C_SELTEXT)
                         : (cut ? tiku_desk_tint(TIKU_DESK_C_TEXT,
                                                 TIKU_DESK_LIGHTEN_2)
                                : TIKU_DESK_C_TEXT));
@@ -873,6 +910,10 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
     if (render->prepare_menu != NULL) {
         render->prepare_menu(render->prepare_context, folder);
     }
+    /* The live setting, read where it acts: whether a selection shows in
+     * an inactive window at all (IV-022). */
+    tiku_trk_poseview_show_selection_when_inactive(folder->view,
+        tiku_trk_prefs_get(render->prefs, "ShowSelectionWhenInactive"));
     bar.h = render->menus->bar.height;
     tiku_trk_menubar_draw(&render->menus->bar, surface, bar);
     draw_folder_icon(folder, surface);
@@ -1139,7 +1180,8 @@ tiku_trk_folder_window_fit_width(const tiku_trk_folder_window_t *folder)
         if (pose == NULL) {
             continue;
         }
-        width = MINI_ICON + 6 + tiku_desk_text_width(font,
+        width = MINI_ICON_FOR(folder->render->row_h) + 6 +
+                tiku_desk_text_width(font,
             query ? pose->model.path : pose->model.name);
         if (!tiku_trk_model_is_container(&pose->model)) {
             int needed;

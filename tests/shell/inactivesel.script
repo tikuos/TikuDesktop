@@ -1,0 +1,14 @@
+# shell: desktop
+# home: fixture
+# IV-022: with the setting on (its default), an inactive window still shows
+# its selection -- in grey, plainly not the window the keyboard is in.
+wait 8
+click-row 1
+wait 3
+note active: the selection wears the selection blue
+expect-pixel 130 138 336698
+key f ctrl
+wait 6
+note the Find window took the focus: the selection stays, in grey
+expect-pixel 130 138 9a9a9a
+quit

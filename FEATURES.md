@@ -5246,12 +5246,12 @@ HaveIconBitmap requires fLargeIcon->Bounds().Size() == requested size; a mismatc
 **PORT:** A size-keyed cache with mismatch-is-a-miss, with four slots per icon rather than one non-mini slot -- so a first switch to a new size re-renders and switching back does not. The size policy the row's TIKU note asks for is a byte budget over the whole cache (TIKU_TRK_ICONS_BUDGET, 512 KiB): a slot count bounds nothing when one 1024 px render is four megabytes, so the oldest render anywhere goes when a new one would cross it. A single render larger than the budget is the one thing that may exceed it, because the pointer is borrowed until the next flush.  
 *src/media/tiku_trk_icons.c:evict_oldest and tiku_trk_icons_bitmap; tests/test_hvif.c (IV-012)*
 
-#### IV-013 · important · partial
+#### IV-013 · important · done
 **Icon sizes scale with the UI font, and are always square.**  
 IconCache::sMiniIconSize = be_control_look->ComposeIconSize(B_MINI_ICON); BPoseView::IconSize() composes the view-state size the same way and caches it; icon_size_for() asserts width == height and returns width + 1.  
 `src/kits/tracker/IconCache.cpp` → `icon_size_for / IconCache::IconCache`  
-**MISSING:** Icons are always square (render and paint are size x size), but nothing scales with the UI font: the ladder is a fixed pixel list, the mini size is the constant TIKU_TRK_MINI_ICON 16, and the list row is the constant LIST_ROW_H 20 with only a comment recalling the font metric it was derived from.  
-*src/ui/tiku_trk_poseview.c:icon_ladder / src/shell/tiku_trk_app.c:48 LIST_ROW_H*
+**PORT:** The list row now follows the UI font -- row_h is the plain face's height plus five (20 at the reference 12 px face, exactly the old constant, and taller as the font-size preference grows), and the mini icon is the row less four, so both scale together.  The icon LADDER stays a fixed pixel list by design: icon sizes are the user's explicit choice on the Icon-size preference, not a function of text.  
+*src/shell/tiku_trk_app.c and src/shell/tiku_trk_desktop.c (row_h from the face); src/ui/windows/tiku_trk_folder_window.c:MINI_ICON_FOR*
 
 #### IV-014 · important · done
 **Icon view offers six icon sizes and zoom in/out steps through them.**  
@@ -5308,22 +5308,21 @@ BTextWidget::Draw fills the text rect with the low colour and sets high = Invert
 **PORT:** There is a real alternative selected-label renderer to point at — the label rect is filled with C_SELECT and the ink switched to C_SELTEXT, the same fill-then-contrast pair Haiku reaches via InvertRect — so the pose's label does read as selected, by colour rather than by inversion.  
 *src/shell/tiku_trk_app.c:287-293 (icon mode hl fill + C_SELTEXT), :424 and :482 (list row fill + per-column ink); src/shell/tiku_trk_desktop.c:239,270*
 
-#### IV-022 · important · partial
+#### IV-022 · important · done
 **When the window is not active, selection is shown as a translucent grey overlay, or not at all.**  
 If !windowActive && ShowSelectionWhenInactive: InvertRect then B_OP_BLEND fill with 128,128,128,255 (192 or 64 grey for cut items). If ShowSelectionWhenInactive is off, drawIconUnselected is true and BPose::DrawIcon requests kNormalIcon even for selected poses.  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw / BPose::DrawTextWidget`  
-**MISSING:** The translucent grey overlay — with 'show selection when inactive' on, an inactive window paints the identical full C_SELECT/C_SELTEXT selection it shows when active (draws_selected collapses active and inactive into one bit at src/ui/tiku_trk_poseview.c:1101; no grey blend exists anywhere), and nothing in either shell or the tests ever calls tiku_trk_poseview_show_selection_when_inactive (grep: only its definition and header), so the overlay branch is unreachable from any UI as well as wrong.  
-*Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:1092-1142` `src/shell/tiku_trk_app.c:353` `src/shell/tiku_trk_app.c:363-370`*  
-*Shell: both*  
-#### IV-023 · important · partial
+**PORT:** Shown-while-inactive is real and reachable: the folder draw reads `ShowSelectionWhenInactive` on every frame and passes it to the view, and an inactive window paints its selection in GREY (154,154,154) with plain-ink labels rather than the active window's blue -- the row's translucent overlay adapted to an opaque surface as a distinct fill, the two states no longer collapsed into one bit.  The colour is folded into the row/pose signature, so a focus change repaints exactly the selected rows.  
+*src/ui/windows/tiku_trk_folder_window.c (win_active fill + signature; the pref wired at draw); src/ui/tiku_trk_poseview.c:draws_selected; tests/shell/inactivesel.script (mutation-tested)*
+
+#### IV-023 · important · done
 **Files cut to the clipboard are drawn semi-transparent.**  
 fClipboardMode == kMoveSelectionTo sets B_OP_ALPHA / B_CONSTANT_ALPHA / B_ALPHA_COMPOSITE with alpha 128, high colour black on a dark background and white on a light one; a selected cut item additionally gets a grey B_OP_BLEND over its inverted label rect.  
 `src/kits/tracker/Pose.cpp` → `BPose::Draw / BPose::DrawTextWidget`  
 **VERIFIER CORRECTION:** Polarity is inverted. BPose::Draw tests `poseView->HighColor().IsDark()` and BTextWidget::Draw tests `drawView->LowColor().IsLight()` — both pick BLACK when the text colour is dark / the background is light, and WHITE otherwise. So: black on a LIGHT background, white on a DARK one. The same inverted wording appears in the MakeDragBitmap row (`if (HighColor().IsDark()) SetHighColor(0,0,0,alpha)`), which should be corrected the same way.  
-**MISSING:** A cut item that is also selected keeps its full-strength C_SELECT fill and C_SELTEXT label with only the icon faded, where the source additionally greys the selected label.  The single-window half of the old MISSING is closed: both shells fade a cut pose with the same dim now, in list and icon modes, and an aborted cut returns the art.  
-*src/shell/tiku_trk_app.c (icon_paint_dim at both draw sites); tests/shell/cutfade.script*  
-*Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:249-250` `src/shell/tiku_trk_desktop.c:262-266` `src/shell/tiku_trk_desktop.c:283-286`*  
-*Shell: desktop*  
+**PORT:** A cut pose that is also selected now greys its LABEL as the source does, not only its icon -- the selected-and-cut label reads in a dimmed seltext over the selection band, in both shells and both modes -- and an aborted cut returns art and ink alike.  
+*src/ui/windows/tiku_trk_folder_window.c (the cut+selected label tint); tests/shell/cutfade.script*
+
 #### IV-024 · important · done
 **In list mode only the name column is drawn selected; the other columns stay normal.**  
 BPose::Draw sets 'if (index > 0) selected = false' inside the column loop. Also, a non-full draw redraws only column 0 (columnsToDraw = 1 unless fullDraw).  

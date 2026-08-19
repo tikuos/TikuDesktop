@@ -2506,7 +2506,7 @@ tracker_run(int argc, char **argv)
     (void)tiku_trk_fs_prepare_trash(app.fs);
     app.backdrop_color = TIKU_DESK_C_BACKDROP;
     app.surf = tiku_desk_surface_new(DESK_W, DESK_H, app.backdrop_color);
-    app.row_h = LIST_ROW_H;
+    app.row_h = tiku_desk_font_plain()->height + 5;
     app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");

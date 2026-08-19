@@ -2652,7 +2652,9 @@ tracker_run(int argc, char **argv)
         &a.clip, NULL, NULL,
         tiku_trk_status_overlay_alert(&a.status_overlay), NULL, NULL,
         a.status, sizeof a.status, NULL, NULL);
-    a.row_h = LIST_ROW_H;
+    /* Derived from the live face, not a constant: the row grows with
+     * the UI font the way the original's font metric did (IV-013). */
+    a.row_h = tiku_desk_font_plain()->height + 5;
     {
         const char *home = getenv("HOME");
 
