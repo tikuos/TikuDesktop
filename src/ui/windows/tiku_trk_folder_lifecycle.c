@@ -87,6 +87,16 @@ tiku_trk_folder_lifecycle_find(tiku_trk_folder_lifecycle_t *controller,
     if (controller == NULL || window == NULL) {
         return NULL;
     }
+    /* The workspace recycles window objects, so a CLOSED folder can still
+     * hold the same pointer a reopened window was just given.  The open
+     * one is the one on screen; it answers first, and the closed match is
+     * only a fallback for callers sweeping up after a close. */
+    for (i = 0; i < *controller->count; i++) {
+        if (controller->folders[i].win == window &&
+            controller->folders[i].win->open) {
+            return &controller->folders[i];
+        }
+    }
     for (i = 0; i < *controller->count; i++) {
         if (controller->folders[i].win == window) {
             return &controller->folders[i];
@@ -129,6 +139,11 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
      * for another folder starts from a blank frame, not from what the last
      * one left in it. */
     tiku_trk_folder_window_forget(folder);
+    /* And the window pointer goes too: the workspace recycles window
+     * objects, so a closed slot still holding one would later claim a
+     * REOPENED window that happens to land at the same address -- two
+     * slots, one window, and the stale one answering for it. */
+    folder->win = NULL;
     *controller->dirty = 1;
 }
 

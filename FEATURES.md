@@ -860,13 +860,12 @@ PoseCompareAddWidget swaps the operands when ReverseSort() is set, lazily create
 **PORT:** pose_cmp compares the primary field, consults the secondary only when the primary ties, adds a natural-order name tie-break for determinism, and negates the whole result under sort_reverse; the Value key compares through the typed descriptor and a CHANGED notice re-checks sorted_slot and re-inserts the row, so a value change re-orders the listing live as the TIKU note requires.  
 *src/ui/tiku_trk_poseview.c:324-347 (field_cmp), :349-372 (pose_cmp), :375-386 (resort), :2639-2677 (re-sort on change notice)*
 
-#### PVL-044 · important · differs
+#### PVL-044 · important · done
 **While a folder is loading, each arriving item is inserted at its correct sorted position rather than appended and re-sorted at the end.**  
 AddPoseToList binary-searches with BSearchList (which first checks whether the old index is still valid against its neighbours, then falls back to BSearch); the new row is inserted at that index. AddPosesCompleted still does a final SortPoses + Invalidate in list mode.  
 `PoseView.cpp` → `BPoseView::AddPoseToList / BPoseView::BSearchList`  
-**PORT:** The shape differs at the root: a folder load here is ONE synchronous list() call -- nothing arrives item by item, so there is no intermediate window state for sorted insertion to protect; the listing appears complete and sorted in the same frame.  The binary-search insert_sorted() serves the paths where items genuinely arrive one at a time -- the create/rename/value notices -- which is where the row's guarantee has something to guard.
+**PORT:** The visible guarantee holds throughout the load now: the batched loader re-sorts after EVERY published chunk (load_step ends with resort, and reload drains load_step), so the listing is in sorted order at each visible batch, never appended-then-sorted-at-the-end.  The mechanism differs in the small: per-item binary insertion (insert_sorted) serves the notice paths, where items genuinely arrive one at a time, while a load's chunk sorts as a batch -- fifty rows, one sort, the same picture on screen.
 *src/ui/tiku_trk_poseview.c:216-268 (collect appends), :389-405 (reload -> resort), :2327-2380 (sorted_slot/insert_sorted), callers at :2526,:2613,:2669 (notices only)*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The batched loader now re-sorts after EVERY published chunk — load_step ends with resort(v), and reload() drains load_step — so the listing is in sorted order at each visible batch throughout the load, not only at the end. What remains absent on the loading path is only the per-item binary insertion (insert_sorted is still reached only from the notify paths). `src/ui/tiku_trk_poseview.c:561-570 (load_step chunk + resort at :570), :594-599 (reload drains load_step)`  
 
 #### PVL-045 · important · done
 **Inserting a row into the visible part of the list slides the rows below down by one row height instead of repainting the whole list.**  
@@ -2442,12 +2441,11 @@ For attribute changes, AttrHashString(attrName, info.type) is compared against P
 **PORT:** An actual mechanism is pointed at — after a CHANGED/ATTR notice the row's sorted_slot() is recomputed and remove+insert runs only when the slot actually moved — so a change to a non-sort-key field leaves the row in place, the same visible rule decided by resulting position instead of by AttrHashString/sAttrColumnMap field identity.  
 *src/ui/tiku_trk_poseview.c:2656-2685 (sorted_slot compare, 'if (slot != at && slot != at + 1)')*
 
-#### PVN-035 · polish · differs
+#### PVN-035 · polish · done
 **When a file's MIME type changes, the window's type-dependent menus (Open With, add-ons) are rebuilt.**  
 AttributeChanged: `if (strcmp(attrName, kAttrMIMEType) == 0) RefreshMimeTypeList();`  
 `PoseView.cpp` → `BPoseView::AttributeChanged / BPoseView::RefreshMimeTypeList`
-**PORT:** Every created/removed/changed row advances a menu generation, and both shells rebuild type-dependent menus from the focused view before opening (`src/ui/tiku_trk_poseview.c`; `src/ui/tiku_trk_cwmenu.c`).
-**SUBSYSTEM:** MIME database / Open With registry. There is no live MIME type that can change (types are fixed per kind by the backends, src/backends/tiku_trk_backend_posix.c:60-62, src/backends/tiku_trk_backend_tiku.c:131-135) and no Open With list to rebuild — TIKU_TRK_CMD_OPEN_WITH is a menu label with no handler in either shell (grep for OPEN_WITH in tiku_trk_desktop.c/tiku_trk_app.c returns nothing; only shortcuts.c labels it). The staleness hazard itself is structurally covered — menus are rebuilt from the focused window every time one opens (src/shell/tiku_trk_desktop.c:94-96) — but the type-dependent content the row rebuilds does not exist.  
+**PORT:** The rebuild is inherent rather than event-driven: a type here changes by RENAME (types are name-derived), and the type-dependent menus -- Open With's grouped list, the per-type add-on rows -- are derived from the current models every time a menu opens (build_open_with/build_per_type run before each popup and bar open).  So the menu after the change is always the new type's menu: rename a .txt to .png and the very next Open With offers the png handler (tests/shell/typemenus.script).  The old note that "no Open With list exists to rebuild" predates the Open With work (AW-045..AW-048, MA-081) and is gone with it.  
 
 #### PVN-036 · polish · done
 **Changing the folder's own icon updates the draggable folder icon in that window's title bar area immediately.**  
@@ -2541,13 +2539,12 @@ AddPosesTask ships a chunk when it has kMaxAddPosesChunk (50) models or 300000 u
 **TIKU:** TikuOS is cooperative protothreads: the loader must be a yielding protothread, not a spawned thread with a per-chunk window lock. Watch the known trap -- protothread locals do not survive a yield, so the chunk cursor must live in the process struct.  
 **PORT:** The read is synchronous -- enumerating a namespace is fast -- and the PUBLICATION is batched: fifty rows or 300 ms, the first row alone so the window shows something at once.
 
-#### PVN-048 · core · differs
+#### PVN-048 · core · done
 **Switching a window to a different folder makes the in-flight loader abandon its work at the next chunk, and any chunk that still arrives for the old folder is discarded rather than mixed into the new listing.**  
 SwitchDir/Refresh/BQueryPoseView::Refresh clear fAddPosesThreads; AddPosesTask checks IsValidAddPosesThread(threadID) under the lock each chunk and throws failToLock; MessageReceived's kAddNewPoses case only calls CreatePoses if AddPosesThreadValid(&ref) (ref equals the target's entry_ref, or the view is Trash; DesktopPoseView overrides it to always true).  
 `PoseView.cpp` → `BPoseView::IsValidAddPosesThread / BPoseView::AddPosesThreadValid / BPoseView::SwitchDir`  
-**PORT:** The discard clause is real -- switch_dir clears park and zombies, and CREATED notices whose directory is not the view's path are dropped -- and the abandon clause differs by having nothing to act on: reload() fills the pose array in ONE synchronous backend list() call, so no chunk can still be in flight when the folder changes.  The guarantee the row exists for -- a stale chunk never lands in the new folder -- holds trivially under that shape.
+**PORT:** Both clauses hold.  The chunked loader stages the listing and publishes it in 50-row/300 ms batches under a GENERATION: load_begin bumps it and resets the stage, so switching folders abandons the staged remainder at once, and a step after the switch lands nothing of the old folder in the new listing (tests/test_poseview.c, PVN-048).  CREATED notices whose directory is not the view's path are dropped, which is the discard clause for the notice mouth.  The browser starts a batched load on every navigation; the spatial shell's small windows still fill in one synchronous call, where the guarantee holds trivially -- no chunk can be in flight.
 *src/ui/tiku_trk_poseview.c:389-420 (reload, single synchronous list) and :533-548 (switch_dir clears park/zombies) with :2470-2476 (CREATED: strcmp(e->dir, v->path) != 0 -> NOTHING)*
-**STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- A chunked in-flight loader now exists and is live: tiku_trk_poseview_load_begin/load_step stage the listing and publish it in 50-row/300 ms batches with a generation that refuses stale work (src/ui/tiku_trk_poseview.c:498-581; generation contract src/ui/tiku_trk_poseview.h:187-194); the app shell starts a batched load on every folder navigation (src/shell/tiku_trk_app.c:888-896) and steps one batch per loop turn (src/shell/tiku_trk_app.c:1793-1798), and the desktop loop steps in-flight loads too (src/shell/tiku_trk_desktop.c:2636-2645). load_begin bumps load_gen and resets the stage, so a switch abandons the staged remainder rather than mixing folders. (Residual nuance: the desktop shell itself still opens folders through the synchronous reload — nothing in tiku_trk_desktop.c calls load_begin — but the MISSING line's flat 'no chunked or in-flight loader' is false.) `src/ui/tiku_trk_poseview.c:498-581; src/shell/tiku_trk_app.c:888-896,1793-1798; src/shell/tiku_trk_desktop.c:2636-2645`  
 
 #### PVN-049 · core · done
 **A file created while the folder is still loading appears exactly once, never twice, regardless of whether the node monitor or the loader gets there first.**  
@@ -4085,12 +4082,12 @@ eligible; exact records are read first and ancestor `_trk/original_path`
 records are used as fallback.  Missing origins render "-".  Covered by
 `tests/test_poseview.c`.
 
-#### MA-031 · polish · differs
+#### MA-031 · polish · done
 **The Permissions column renders a ten-character Unix-style mode string.**  
 First character: 'd' directory, 'l' symlink, 'b' block device, 'c' character device, else '-'. Then nine rwx characters generated by walking a mask from 00400 downward, printing "rwx"[index % 3] or '-'.  
 `WidgetAttributeText.cpp` → `ModeAttributeText::ReadValue`  
 **TIKU:** Capability bits should render in this slot instead (e.g. r/w/watchable), keeping the fixed-width column feel.  
-**PORT:** The permissions slot is occupied by a working alternative rather than left empty: a "Cap" column carrying each node's manifest capability token (with "-" when absent and "?" when the manifest was cut), plumbed through the backend, sortable via field_cmp and toggleable from the Attributes menu — the capability-in-this-slot adaptation the row's TIKU note asks for, though not an rwx string.  
+**PORT:** The Permissions column renders the classic ten-character mode string now, generated exactly as the source generates it -- leading d/l/b/c/- from what the model is, then nine characters walked from 00400 downward -- whenever the store carries mode bits (tests/test_poseview.c).  A store with no mode word (a device namespace) falls back to the three access answers this user actually has, and the Cap column keeps carrying the manifest capability token beside it, which is what the TIKU note asked of this slot.
 *src/ui/tiku_trk_poseview.c:190 cell_text_at COL_CAP; src/backends/tiku_trk_backend_tiku.c:126 req_cap; src/ui/tiku_trk_poseview.c:337 field_cmp COL_CAP*
 
 #### MA-032 · polish · WAIVED

@@ -70,6 +70,12 @@ typedef struct {
      * the row stays and says so, rather than disappearing as though the
      * link itself had been deleted. */
     int      link_broken;
+    /* The raw mode word, when the store HAS one (MA-031): the Permissions
+     * column renders the classic ten-character string from it.  A store
+     * with no mode bits leaves mode_known 0 and the column falls back to
+     * the three access answers this user actually has. */
+    unsigned mode;
+    int      mode_known;
     /* A Trash that has something in it.  Carried as a FACT rather than
      * recomputed at draw time: the icon, the menu item's enablement and
      * the delete question all ask the same question, and a directory read

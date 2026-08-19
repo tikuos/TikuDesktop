@@ -152,6 +152,8 @@ from_stat(tiku_trk_model_t *m, const char *path, const struct stat *st,
      * swept for without re-stat()ing every open window (PVN-043). */
     m->facts.dev = (uint64_t)st->st_dev;
     m->facts.size = (int64_t)st->st_size;
+    m->facts.mode = (unsigned)st->st_mode;
+    m->facts.mode_known = 1;
     m->facts.mtime = (int64_t)st->st_mtime;
     m->facts.cap_known = 1;
     snprintf(m->facts.req_cap, sizeof m->facts.req_cap, "-");

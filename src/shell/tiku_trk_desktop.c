@@ -2809,7 +2809,6 @@ open_folder(desktop_t *app, const char *path)
 
             if (models != NULL) {
                 int n = trash_union_models(app, models, 256);
-
                 (void)tiku_trk_poseview_set_results(fl->view, models, n);
                 free(models);
                 fl->trash_union = 1;

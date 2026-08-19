@@ -415,9 +415,27 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
     case TIKU_TRK_COL_PERM: {
         unsigned perm = p->model.facts.perm;
 
-        /* What THIS user may do, which is what the fact carries: a listing
-         * that showed the raw mode bits would answer a question nobody
-         * asked. */
+        if (p->model.facts.mode_known && max >= 11u) {
+            /* The classic ten characters (MA-031), walked from 00400 down
+             * exactly as the source walks them.  The leading character
+             * comes from what the MODEL is -- a link statted through
+             * carries its target's bits, but it is still a link. */
+            unsigned mode = p->model.facts.mode;
+            unsigned mask = 0400u;
+            int i;
+
+            buf[0] = (p->model.kind == TIKU_TRK_KIND_SYMLINK) ? 'l'
+                   : tiku_trk_model_is_container(&p->model) ? 'd'
+                   : ((mode & 0170000u) == 0060000u) ? 'b'
+                   : ((mode & 0170000u) == 0020000u) ? 'c' : '-';
+            for (i = 0; i < 9; i++, mask >>= 1) {
+                buf[i + 1] = (mode & mask) ? "rwx"[i % 3] : '-';
+            }
+            buf[10] = '\0';
+            return buf;
+        }
+        /* No mode word in this store: what THIS user may do, which is
+         * what the access fact carries. */
         snprintf(buf, max, "%c%c%c",
                  (perm & TIKU_TRK_P_READ) ? 'r' : '-',
                  (perm & TIKU_TRK_P_WRITE) ? 'w' : '-',

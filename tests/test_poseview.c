@@ -624,6 +624,28 @@ main(void)
         check(tiku_trk_poseview_generation(v) != gen_before + 1, "PVL-089",
               "and switching folders moves it again, so a batch still in "
               "flight for the old one can be told apart");
+        {
+            /* PVN-048: the staged remainder of the OLD folder's load is
+             * abandoned -- stepping after the switch lands nothing of the
+             * old folder in the new listing. */
+            int k, n, stale = 0;
+
+            while (tiku_trk_poseview_load_step(v, 0)) {
+            }
+            n = tiku_trk_poseview_count(v);
+            for (k = 0; k < n; k++) {
+                const tiku_trk_pose_t *sp = tiku_trk_poseview_at(v, k);
+
+                if (sp != NULL &&
+                    strncmp(sp->model.path, dir, strlen(dir)) == 0 &&
+                    sp->model.path[strlen(dir)] == '/') {
+                    stale = 1;
+                }
+            }
+            check(!stale, "PVN-048",
+                  "a chunk still in flight for the old folder is discarded "
+                  "rather than mixed into the new listing");
+        }
         (void)tiku_trk_poseview_switch_dir(v, dir);
     }
 
@@ -1267,11 +1289,46 @@ main(void)
               "and it shows the folder the entry is IN, not its own path: "
               "the row already says its name");
         check(tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PERM) == 1 &&
-              strcmp(tiku_trk_poseview_cell_text(v, p0, TIKU_TRK_COL_PERM,
-                                                 buf, sizeof buf),
-                     "rw-") == 0, "CW-025",
-              "Permissions is another, and it answers what THIS user may "
-              "do rather than printing the raw mode bits");
+              strlen(tiku_trk_poseview_cell_text(v, p0, TIKU_TRK_COL_PERM,
+                                                 buf, sizeof buf)) == 10 &&
+              buf[0] == '-' && strncmp(buf + 1, "rw-", 3) == 0, "MA-031",
+              "Permissions renders the classic ten-character mode string "
+              "when the store carries mode bits");
+        {
+            /* MA-031: the string is the source's exact walk, char by
+             * char, for each leading-kind and each bit pattern. */
+            tiku_trk_pose_t fake;
+
+            memset(&fake, 0, sizeof fake);
+            fake.model.kind = TIKU_TRK_KIND_FILE;
+            fake.model.facts.mode_known = 1;
+            fake.model.facts.mode = 0754;
+            check(strcmp(tiku_trk_poseview_cell_text(v, &fake,
+                             TIKU_TRK_COL_PERM, buf, sizeof buf),
+                         "-rwxr-xr--") == 0, "MA-031",
+                  "0754 reads -rwxr-xr--, the 00400-downward walk");
+            fake.model.kind = TIKU_TRK_KIND_DIRECTORY;
+            check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
+                                              buf, sizeof buf)[0] == 'd',
+                  "MA-031", "a directory leads with d");
+            fake.model.kind = TIKU_TRK_KIND_SYMLINK;
+            check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
+                                              buf, sizeof buf)[0] == 'l',
+                  "MA-031", "a symlink leads with l");
+            fake.model.kind = TIKU_TRK_KIND_FILE;
+            fake.model.facts.mode = 0060644;
+            fake.model.node_id = 999u;    /* a fresh cell, not the cache */
+            check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
+                                              buf, sizeof buf)[0] == 'b',
+                  "MA-031", "a block device leads with b");
+            fake.model.facts.mode_known = 0;
+            fake.model.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+            check(strcmp(tiku_trk_poseview_cell_text(v, &fake,
+                             TIKU_TRK_COL_PERM, buf, sizeof buf),
+                         "rw-") == 0, "MA-031",
+                  "and a store with no mode bits still answers what THIS "
+                  "user may do");
+        }
         check(tiku_trk_poseview_toggle_column(v, TIKU_TRK_COL_PATH) == 1 &&
               !tiku_trk_poseview_has_column(v, TIKU_TRK_COL_PATH),
               "CW-025", "and the same item takes it away again");
