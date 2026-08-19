@@ -259,6 +259,68 @@ main(void)
         check(!there(victim), "FS-trash", "the item is gone");
     }
 
+    /* --- a tree delete continues past failures, saying each (FS-049) --- */
+    {
+        char tree[600], locked[700], caged[800], sib[700], deep[700];
+        const char *del[1];
+        int asks = 0;
+        char first[256] = "";
+
+        snprintf(tree, sizeof tree, "%s/doomtree", A);
+        snprintf(locked, sizeof locked, "%s/keep", tree);
+        snprintf(caged, sizeof caged, "%s/caged.txt", locked);
+        snprintf(sib, sizeof sib, "%s/gone.txt", tree);
+        snprintf(deep, sizeof deep, "%s/sub/also.txt", tree);
+        (void)mkdir(tree, 0755);
+        (void)mkdir(locked, 0755);
+        {
+            char subd[700];
+
+            snprintf(subd, sizeof subd, "%s/sub", tree);
+            (void)mkdir(subd, 0755);
+        }
+        put(caged, "x");
+        put(sib, "x");
+        put(deep, "x");
+        (void)chmod(locked, 0555);       /* no unlink inside this one */
+        del[0] = tree;
+        check(tiku_trk_fs_delete(fs, del, 1) == 0, "FS-049",
+              "the tree delete starts");
+        {
+            int guard = 0;
+
+            while (guard++ < 400) {
+                if (tiku_trk_fs_step(fs, 4) != 0) {
+                    continue;
+                }
+                if (tiku_trk_fs_progress(fs)->error_ask) {
+                    if (asks == 0) {
+                        snprintf(first, sizeof first, "%s",
+                                 tiku_trk_fs_progress(fs)->error);
+                    }
+                    asks++;
+                    tiku_trk_fs_resolve_error(fs, 0);
+                    continue;
+                }
+                break;
+            }
+        }
+        check(there(caged) && there(locked), "FS-049",
+              "what could not go is still there");
+        check(!there(sib) && !there(deep), "FS-049",
+              "a failure on one child does not abandon its siblings -- the "
+              "rest of the tree went");
+        check(asks >= 2, "FS-049",
+              "each failure is reported separately, not one message for "
+              "the whole walk");
+        check(strstr(first, "caged.txt") != NULL, "FS-049",
+              "and the report names the entry that failed, not the tree");
+        (void)chmod(locked, 0755);
+        (void)remove(caged);
+        (void)rmdir(locked);
+        (void)rmdir(tree);
+    }
+
 
 
 

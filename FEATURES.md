@@ -3591,12 +3591,12 @@ empty_trash does two passes over BVolumeRoster: one summing items via CalcItemsA
 `FSUtils.cpp` → `empty_trash`  
 **PORT:** Empties the one Trash this store has rather than every mounted volume's, there being one; it goes through the DELETE queue because the trash queue refuses to trash anything already in the Trash (FS-043), and those two rules cannot share a queue builder.
 
-#### FS-049 · important · partial
+#### FS-049 · important · done
 **Deleting a folder tree continues past individual failures, reporting each one, rather than aborting the whole delete.**  
 FSDeleteFolder recurses, calls loopControl->FileError(kFileDeleteErrorString, ref.name, status, allowContinue=false) for any non-OK, non-cancel status and keeps iterating; only kTrashCanceled propagates. CheckUserCanceled is polled per entry and again before removing the top directory.  
 `FSUtils.cpp` → `FSDeleteFolder`  
-**MISSING:** Each failure is not reported separately: one message survives in the progress record for the whole walk.  
-**PORT:** A failure on one child does not abandon the rest -- the walk is best-effort, as the original's delete loop is -- but each failure is not separately reported: one message survives in the progress record.
+**PORT:** A folder is deleted children-first through the queue itself: each child becomes an item of its own, a child that will not go is reported by NAME in a dialog of its own, and the walk continues past it -- the dialog's answer does not abandon the tree, matching FSDeleteFolder's keep-iterating loop where only a cancel propagates.  A folder whose grandchildren are still queued steps to the back of the line rather than failing early, and the cancel poll per entry is the step machinery's own.  
+*src/backends/tiku_trk_fs.c (the delete branch's expansion + tiku_trk_fs_resolve_error); tests/test_fs.c FS-049 block (mutation-tested both ways)*
 
 #### FS-050 · polish · done
 **After a delete or restore in list view, the next item down is selected automatically.**  

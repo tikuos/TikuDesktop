@@ -63,6 +63,10 @@ static void undo_stack_clear(undo_op_t *stack, int *count);
 struct tiku_trk_fs {
     tiku_trk_backend_t *backend;
     char                queue[FS_QUEUE_MAX][TIKU_TRK_PATH_MAX];
+    /* Set once a folder's children have been queued ahead of its second
+     * visit, so a folder whose children WILL NOT go is not expanded again
+     * forever (FS-049). */
+    unsigned char       qexpanded[FS_QUEUE_MAX];
     int                 qcount;
     int                 qcursor;
     char                dst[TIKU_TRK_PATH_MAX];
@@ -543,6 +547,7 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
                 continue;
             }
         }
+        fs->qexpanded[fs->qcount] = 0;
         snprintf(fs->queue[fs->qcount++], TIKU_TRK_PATH_MAX, "%s", paths[i]);
     }
     fs->qcursor = 0;
@@ -1938,15 +1943,82 @@ step_one(tiku_trk_fs_t *fs)
             } else {
                 fs->prog.done++;
             }
-        } else if (remove(src) != 0) {
-            /* The message is for a human in a dialog: show the leaf name,
-             * which is what they selected, not the whole path. */
-            char msg[240];
+        } else if (is_dir(src) && !fs->qexpanded[fs->qcursor]) {
+            /* A folder goes children-first: each child is queued as an
+             * item of its own, then the folder again, so a child that
+             * cannot go is reported by NAME and its siblings still go --
+             * the walk continues past individual failures rather than
+             * abandoning the tree (FS-049). */
+            DIR *d = opendir(src);
+            int before = fs->qcount;
 
-            snprintf(msg, sizeof msg, "Error deleting \"%.60s\": %.150s.",
-                     leaf_of(src), strerror(errno));
-            return fail_ask(fs, msg, 0);
+            if (d != NULL) {
+                struct dirent *e;
+
+                while ((e = readdir(d)) != NULL &&
+                       fs->qcount < FS_QUEUE_MAX - 1) {
+                    if (strcmp(e->d_name, ".") == 0 ||
+                        strcmp(e->d_name, "..") == 0) {
+                        continue;
+                    }
+                    if (join(fs->queue[fs->qcount], TIKU_TRK_PATH_MAX,
+                             src, e->d_name) == 0) {
+                        fs->qexpanded[fs->qcount] = 0;
+                        fs->qcount++;
+                    }
+                }
+                (void)closedir(d);
+            }
+            if (fs->qcount > before && fs->qcount < FS_QUEUE_MAX) {
+                /* The folder's second visit, after its children. */
+                fs->qexpanded[fs->qcount] = 1;
+                snprintf(fs->queue[fs->qcount], TIKU_TRK_PATH_MAX, "%s",
+                         src);
+                fs->qcount++;
+                fs->prog.total = fs->qcount;
+                fs->qcursor++;
+                return 1;
+            }
+            /* Nothing inside (or no room to expand): fall through to the
+             * straight attempt below by treating it as visited. */
+            goto delete_attempt;
         } else {
+delete_attempt:
+            if (remove(src) != 0) {
+                if (errno == ENOTEMPTY || errno == EEXIST) {
+                    /* Its grandchildren may still be queued behind this
+                     * visit: as long as a descendant is pending, the
+                     * folder steps to the back of the line instead of
+                     * failing -- it can only be empty AFTER them. */
+                    size_t plen = strlen(src);
+                    int k;
+
+                    for (k = fs->qcursor + 1; k < fs->qcount; k++) {
+                        if (strncmp(fs->queue[k], src, plen) == 0 &&
+                            fs->queue[k][plen] == '/') {
+                            break;
+                        }
+                    }
+                    if (k < fs->qcount && fs->qcount < FS_QUEUE_MAX) {
+                        fs->qexpanded[fs->qcount] = 1;
+                        snprintf(fs->queue[fs->qcount], TIKU_TRK_PATH_MAX,
+                                 "%s", src);
+                        fs->qcount++;
+                        fs->prog.total = fs->qcount;
+                        fs->qcursor++;
+                        return 1;
+                    }
+                }
+                /* The message is for a human in a dialog: show the leaf
+                 * name, which is what they selected, not the whole
+                 * path. */
+                char msg[240];
+
+                snprintf(msg, sizeof msg,
+                         "Error deleting \"%.60s\": %.150s.",
+                         leaf_of(src), strerror(errno));
+                return fail_ask(fs, msg, 0);
+            }
             fs->prog.done++;
         }
         fs->qcursor++;
@@ -2220,6 +2292,12 @@ tiku_trk_fs_resolve_error(tiku_trk_fs_t *fs, int keep_going)
     fs->prog.error_ask = 0;
     fs->prog.failed++;
     fs->qcursor++;
+    if (fs->prog.op == TIKU_TRK_OP_DELETE) {
+        /* FSDeleteFolder keeps iterating past a failure whatever the
+         * dialog said -- only a cancel propagates -- so a child that will
+         * not go costs that child, not the rest of the tree (FS-049). */
+        return;
+    }
     if (!keep_going || !fs->prog.error_can_continue) {
         (void)give_up(fs);
     }
