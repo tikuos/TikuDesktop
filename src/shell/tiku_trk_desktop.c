@@ -190,6 +190,7 @@ typedef struct desktop {
     int                  press_x, press_y;
     int                  press_row;
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
+    unsigned             drag_live_mods; /* modifiers as of the last move  */
     tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     /* ONE node-icon cache for the desktop: the same file shown in two
      * windows is one entry, and an icon edited on disk is dropped once
@@ -2303,6 +2304,53 @@ draw_all(desktop_t *app)
                 tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
             }
         }
+        /* The copy cursor's spelling here: when the drop in front of the
+         * pointer would COPY -- a directory on another store, or Option
+         * forcing it -- the ghost wears a small plus badge, so the user is
+         * told before the release which of the two acts this is
+         * (PVS-036). */
+        if (app->drag_target.folder != NULL) {
+            char dest[TIKU_TRK_PATH_MAX];
+            unsigned dmods = 0u;
+            int same;
+
+            if (app->drag_target.row >= 0) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(
+                    app->drag_target.folder->view, app->drag_target.row);
+
+                snprintf(dest, sizeof dest, "%s",
+                         (p != NULL) ? p->model.path : "");
+            } else {
+                snprintf(dest, sizeof dest, "%s",
+                         app->drag_target.folder->path);
+            }
+            if ((app->drag_live_mods & TIKU_DESK_MOD_OPTION) != 0u) {
+                dmods |= TIKU_TRK_DRAG_MOD_COPY;
+            }
+            if ((app->drag_live_mods & TIKU_DESK_MOD_CMD) != 0u) {
+                dmods |= TIKU_TRK_DRAG_MOD_LINK;
+            }
+            same = dest[0] != '\0' &&
+                   tiku_trk_fs_drop_action(app->fs, app->drag.path[0],
+                                           dest, 0) == TIKU_TRK_OP_MOVE;
+            if (dest[0] != '\0' &&
+                tiku_trk_drag_action(&app->drag, dest, dmods, same) ==
+                    TIKU_TRK_DROP_COPY) {
+                tiku_desk_rect_t badge = { app->drag.x + 10,
+                                           app->drag.y + 10, 13, 13 };
+                tiku_desk_rect_t stroke;
+
+                tiku_desk_fill(app->surf, badge,
+                               TIKU_DESK_RGB(255, 255, 190));
+                tiku_desk_frame(app->surf, badge, TIKU_DESK_RGB(0, 0, 0));
+                stroke = (tiku_desk_rect_t){ badge.x + 3, badge.y + 6,
+                                             7, 1 };
+                tiku_desk_fill(app->surf, stroke, TIKU_DESK_RGB(0, 0, 0));
+                stroke = (tiku_desk_rect_t){ badge.x + 6, badge.y + 3,
+                                             1, 7 };
+                tiku_desk_fill(app->surf, stroke, TIKU_DESK_RGB(0, 0, 0));
+            }
+        }
     }
     /* Drawing another folder rebuilt the one shared menu model for that
      * folder.  Put it back on the bar that actually owns the popup before
@@ -3985,6 +4033,12 @@ tracker_run(int argc, char **argv)
                     (void)tiku_trk_drag_target_motion(&app.drag_target,
                                                       ev.x, ev.y,
                                                       tiku_trk_now());
+                    /* Read at the badge, so the copy indication follows
+                     * the modifier live, as the cursor did (PVS-036). */
+                    if (app.drag_live_mods != ev.modifiers) {
+                        app.drag_live_mods = ev.modifiers;
+                        app.dirty = 1;
+                    }
                 }
                 {
                     /* An Info window's icon answers a hovering drag with

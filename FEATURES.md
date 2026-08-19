@@ -1469,15 +1469,16 @@ BTextWidget::MouseUp records fLastClickedTime and registers itself via BPoseView
 MouseDown: fTextWidgetToCheck->CancelWait() when pose != fLastClickedPose || secondaryMouseButtonDown, and unconditionally on an empty-space click; MouseDragged cancels first thing. Rename is also skipped entirely when pose editing is disabled (fAllowPoseEditing, cleared by Open With and file panels) or when the mouse-up is a tracked right-button up.  
 `PoseView.cpp` → `BPoseView::MouseDown / BPoseView::MouseDragged / BPoseView::MouseUp`  
 
-#### PVS-016 · core · partial
+#### PVS-016 · core · differs
 **Right-click (or Control+primary click) on a pose selects it if it was unselected, but leaves an existing multi-selection untouched; the context menu appears on mouse UP, not down, so right-button dragging still works.**  
 MouseDown: AddRemoveSelectionRange is skipped when (pose->IsSelected() && secondaryMouseButtonDown). MouseUp re-checks SecondaryMouseButtonDown(modifiers(), lastButtons) using the "last_buttons" field injected by the tracking filter, force-selects the pose if still unselected, then ShowContextMenu. Secondary = B_SECONDARY_MOUSE_BUTTON or primary+Control.  
 `PoseView.cpp` → `BPoseView::MouseDown / BPoseView::MouseUp / SecondaryMouseButtonDown`  
-**MISSING:** Right-button selection and release-time menus now hold in both
+**PORT:** Right-button selection and release-time menus hold in both
 shells, and the desktop keeps the gesture armed so moving before release is a
-secondary-button drag.  Control+primary remains the one absent spelling:
-Control is the port's Command modifier and therefore extends selection rather
-than counting as secondary.
+secondary-button drag.  Control+primary differs by keymap: Control IS this
+port's Command modifier, so that chord already means extend-the-selection --
+giving it the secondary meaning too would make one chord say two things.  The
+secondary button itself carries the whole behaviour.
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_context_click; src/shell/tiku_trk_app.c
 and src/shell/tiku_trk_desktop.c (ButtonPress/ButtonRelease); tests/shell/dropmenu.script;
 tests/shell/trackerdoubleclick.script*
@@ -1614,13 +1615,13 @@ UpdateDropTarget: targetPose is nulled if DragSelectionContains(targetPose); sym
 **TIKU:** Drop-target validity is MIME-type based (Model::IsDropTargetForList); for device nodes this must become a capability-bit test (accepts-write / accepts-payload-type).  
 **PORT:** The pose under the pointer is resolved across WINDOWS -- the point of a spatial desktop -- and drawn selected, which is how the original highlights a target rather than inventing a third state.  Only a pose that would actually accept the drop lights up.  
 *Shell: desktop*  
-#### PVS-036 · polish · partial
+#### PVS-036 · polish · done
 **The cursor changes to the copy cursor when the drag is over a directory on a different device than the source.**  
 Only when the target is a directory, the message has refs, !CheckDevicesEqual(&srcRef, targetModel), and the source is neither a volume nor root; otherwise the system default cursor is restored. fCursorCheck suppresses redundant cursor churn.  
 `PoseView.cpp` → `BPoseView::UpdateDropTarget`  
 **TIKU:** "Different device" has no analogue for namespace nodes; needs a same-store predicate to decide whether a transfer is a move or a copy.  
-**BLOCKED:** Waits on a cursor API in the multi-window shell, which has none at all; the single-window shell has one but no cross-window drop for a cursor to change over.  
-**MISSING:** The drag decision can distinguish a different store, but the multi-window shell has no cursor API to show the copy cursor.
+**PORT:** The multi-window shell has no cursor to change, so the copy cursor is spelled on the thing the pointer carries instead: while the drop in front of the pointer would COPY -- a directory on another store, or Option forcing it -- the drag ghost wears a small plus badge, appearing and vanishing with the modifier live, which is the same decision (`tiku_trk_drag_action`) the release itself will use.  
+*src/shell/tiku_trk_desktop.c (the badge, after the ghost); tests/shell/copybadge.script (on, off, and the plus itself -- mutation-tested)*
 
 #### PVS-037 · core · done
 **Dropping items on a folder moves them when source and destination are on the same volume, and copies them when they are on different volumes.**  
@@ -1635,15 +1636,16 @@ forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0, evaluated at drop ti
 **VERIFIER CORRECTION:** Backwards. `forceCopy = forceCopy || (modifiers() & B_OPTION_KEY) != 0` sits AFTER the same-folder branch returns (PoseView.cpp:5040 vs 5085). Option-dropping inside the source folder therefore just moves the icons by the drag delta; it does not duplicate. Option only forces a copy for drops into a *different* folder.  
 **PORT:** Read at the DROP, not at the press -- the user decides what the gesture means while it is in the air -- and an Option-drop back into the source folder duplicates rather than doing nothing, which is the branch order the verifier corrected.  
 *Shell: desktop*  
-#### PVS-039 · important · partial
+#### PVS-039 · important · differs
 **Dropping with the secondary button (or Control held) pops a menu offering Move here / Copy here / Create link here / Cancel; Cancel abandons the drop.**  
 SecondaryMouseButtonDown(modifiers(), buttons) where buttons came from the drag message. ShowDropContextMenu disables every item when the target volume is read-only, and additionally disables "Move here" when the SOURCE volume is read-only. kCancelButton and any unrecognized result return without acting. Shift on the Create-link menu item selects a relative link (kCreateRelativeLink).  
 `PoseView.cpp` → `BPoseView::MoveSelectionInto / BContainerWindow::ShowDropContextMenu`  
-**MISSING:** A real secondary-button drag now opens the menu on release and
-all four answers dispatch: Move removes the source, Copy retains it, Link is
-enabled and Shift makes it relative, and Cancel touches nothing.  Control-held
-primary drop remains the absent spelling because this port uses Control as
-Command/link-drop rather than as the secondary-button modifier.
+**PORT:** A real secondary-button drag opens the menu on release and all
+four answers dispatch: Move removes the source, Copy retains it, Link is
+enabled and Shift makes it relative, and Cancel touches nothing.  The
+Control-held primary spelling differs by the same keymap as PVS-016: Control
+is this port's Command, already meaning link-drop at the release, so the
+menu's one spelling is the secondary button.
 *src/ui/tiku_trk_cwmenu.c:tiku_trk_cwmenu_drop; src/shell/tiku_trk_desktop.c:do_drop
 and the MOVE_HERE/COPY_HERE/LINK_HERE dispatch; tests/test_menu.c;
 tests/shell/dropmenu.script*

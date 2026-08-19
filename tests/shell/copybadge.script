@@ -1,0 +1,25 @@
+# shell: desktop
+# home: fixture
+# PVS-036: while a drag hovers where the drop would COPY, the pointer
+# picture wears a plus badge -- the copy cursor's spelling here.  Option
+# forces a copy, so the badge follows the modifier live.
+wait 10
+press-row 1
+move 90 160
+move 90 198
+wait 2
+note a plain drag over its own folder is a move: no badge
+expect-pixel 103 211 ffffff
+note Option makes the same drop a copy, and the badge says so
+move 90 198 1 alt
+wait 2
+expect-pixel 103 211 ffffbe
+note the plus itself, black across the badge's middle
+expect-pixel 106 214 000000
+note letting Option go takes the badge away again -- what is left at the
+note probe is the ghost picture's own tinted pixel, not the badge fill
+move 90 198
+wait 2
+expect-pixel 103 211 b9cadb
+release 90 198
+quit
