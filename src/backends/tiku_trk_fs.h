@@ -74,6 +74,9 @@ typedef struct {
      * from: items done says nothing about rate when their sizes differ by
      * orders of magnitude. */
     int64_t       bytes;
+    /* Where the job is putting things -- the "To: <dir>" half of what is
+     * happening (FS-069).  Empty for jobs with no destination. */
+    char          to[TIKU_TRK_PATH_MAX];
 } tiku_trk_progress_t;
 
 /**

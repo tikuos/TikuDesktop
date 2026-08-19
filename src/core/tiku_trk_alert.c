@@ -226,7 +226,7 @@ tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
 /* The pause and stop buttons (FS-074)                                       */
 /*---------------------------------------------------------------------------*/
 
-#define PROG_ROW_H  34
+#define PROG_ROW_H  48
 #define PROG_TOP    14
 #define PROG_BTN    18
 #define PROG_BTN_GAP 4

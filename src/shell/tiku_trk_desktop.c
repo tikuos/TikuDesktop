@@ -5124,7 +5124,8 @@ tracker_run(int argc, char **argv)
                  * happening": a file name alone does not say whether this
                  * is the copy the user meant (FS-069). */
                 tiku_trk_progress_update(progress_model(&app), 0, pr, 1,
-                                         app.prog_dest[0] != '\0'
+                                         pr->to[0] != '\0' ? pr->to
+                                         : app.prog_dest[0] != '\0'
                                              ? app.prog_dest : NULL);
                 tiku_trk_progress_sample(progress_model(&app), 0, pr->bytes,
                                          tiku_trk_now());

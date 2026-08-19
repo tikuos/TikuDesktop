@@ -656,6 +656,7 @@ start(tiku_trk_fs_t *fs, tiku_trk_op_t op, const char *const *paths, int n,
     }
     fs->prog.op = op;
     fs->prog.total = fs->qcount;
+    snprintf(fs->prog.to, sizeof fs->prog.to, "%s", dst ? dst : "");
     fs->cancelling = 0;             /* a new job is not the cancelled one */
     undo_reset(fs, op);
     return 0;

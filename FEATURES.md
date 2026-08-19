@@ -3740,13 +3740,14 @@ Only MoveTask (via MoveCopyUndo), FSCreateNewFolderIn (NewFolderUndo) and EditMo
 UndoItem replays call FSMoveToFolder with FSUndoMoveMode(mode), which sets the top byte to 'U'; MoveTask evaluates fromUndo = FSIsUndoMoveMode(moveMode), strips the tag with FSMoveMode(), and calls undo.Remove() when fromUndo is set so the Undo destructor never registers it.  
 `FSUtils.cpp` → `MoveTask`  
 
-#### FS-069 · core · partial
+#### FS-069 · core · done
 **A progress window appears for copies, moves, deletes, Empty Trash and Restore, showing the current file name, an "n of N" counter, the destination folder as "To: <dir>", and a progress bar.**  
 BStatusView's caption per StatusWindowState: kCopyState "Preparing to copy items..."/"Copying: ", kMoveState "Moving: ", kCreateLinkState "Creating links: ", kTrashState "Emptying Trash... ", kDeleteState "Deleting: ", kRestoreFromTrashState "Restoring: ". InitStatus builds the trailing "of %items" text and sets max value 1; _DestinationString renders "To: %dir" from the destination entry's leaf name.  
 `StatusWindow.cpp` → `BStatusView::InitStatus`  
 **TIKU:** On a shell/console front end this is a line of progress output; the per-job identity and the cancel channel still have to exist.  
 **PORT:** The window exists: one row per job with the operation's caption, the file being processed, the n-of-N counter and a bar.  It opens with the first job and closes with the last, so it is never an empty window.  
-**MISSING:** The progress window says what is being done, to which file, how many of how many, and now the folder it is going INTO -- the row was plumbed for a destination and the shell passed none. Pause and stop remain (FS-074).  
+**PORT:** The progress window says what is being done, to which file, how many of how many, and the folder it is going INTO: the job's own record now carries its destination (`prog.to`, set where the queue is built, so every caller says it -- drop, menu Copy/Move-to, paste alike), and the row paints it as "To: <dir>" under the name.  A delete carries no destination and says none.  Pause and stop are FS-074's, already present.  
+*src/backends/tiku_trk_fs.c (prog.to); src/ui/overlays/tiku_trk_status_overlay.c:draw_progress (the To: line); tests/test_fs.c FS-069 block (mutation-tested); tests/test_alert.c*
 
 *Shell: desktop*  
 #### FS-070 · polish · done

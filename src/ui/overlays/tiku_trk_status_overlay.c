@@ -19,7 +19,7 @@
 #define ALERT_HEIGHT    150
 #define PROGRESS_WIDTH  380
 #define PROGRESS_MARGIN 24
-#define PROGRESS_ROW_H  34
+#define PROGRESS_ROW_H  48
 #define PROGRESS_TOP    22
 
 static void
@@ -265,7 +265,18 @@ draw_progress(tiku_trk_status_overlay_t *controller)
         }
         tiku_desk_text(controller->surface, font, frame.x + frame.w - 70,
                        y, line, TIKU_DESK_C_TEXT);
-        bar = (tiku_desk_rect_t){ frame.x + 10, y + 6,
+        /* Where it is going, under the name: a file name alone does not
+         * say whether this is the copy the user meant (FS-069). */
+        if (progress->dest[0] != '\0') {
+            const char *to = strrchr(progress->dest, '/');
+
+            snprintf(line, sizeof line, "To: %.60s",
+                     (to != NULL && to[1] != '\0') ? to + 1
+                                                   : progress->dest);
+            tiku_desk_text(controller->surface, font, frame.x + 10, y + 16,
+                           line, TIKU_DESK_C_TEXT);
+        }
+        bar = (tiku_desk_rect_t){ frame.x + 10, y + 34,
                                   frame.w - 20, 8 };
         tiku_desk_fill(controller->surface, bar, TIKU_DESK_C_DOC);
         if (progress->total > 0) {

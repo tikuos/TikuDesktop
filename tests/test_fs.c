@@ -259,6 +259,37 @@ main(void)
         check(!there(victim), "FS-trash", "the item is gone");
     }
 
+    /* --- the job says where it is putting things (FS-069) -------------- */
+    {
+        char one[600];
+        const char *sel[1];
+
+        snprintf(one, sizeof one, "%s/renamed.txt", A);
+        sel[0] = one;
+        (void)tiku_trk_fs_copy(fs, sel, 1, B, TIKU_TRK_CONFLICT_REPLACE);
+        check(strcmp(tiku_trk_fs_progress(fs)->to, B) == 0, "FS-069",
+              "a copy's progress record carries the destination -- the "
+              "\"To:\" half of what is happening");
+        run_to_end(fs);
+        {
+            char copied[700];
+
+            snprintf(copied, sizeof copied, "%s/renamed.txt", B);
+            (void)remove(copied);
+        }
+        {
+            char victim2[700];
+
+            snprintf(victim2, sizeof victim2, "%s/togone.txt", A);
+            put(victim2, "x");
+            sel[0] = victim2;
+            (void)tiku_trk_fs_delete(fs, sel, 1);
+            check(tiku_trk_fs_progress(fs)->to[0] == '\0', "FS-069",
+                  "a delete has no destination to say");
+            run_to_end(fs);
+        }
+    }
+
     /* --- a tree delete continues past failures, saying each (FS-049) --- */
     {
         char tree[600], locked[700], caged[800], sib[700], deep[700];
