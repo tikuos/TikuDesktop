@@ -859,11 +859,11 @@ PoseCompareAddWidget swaps the operands when ReverseSort() is set, lazily create
 **PORT:** pose_cmp compares the primary field, consults the secondary only when the primary ties, adds a natural-order name tie-break for determinism, and negates the whole result under sort_reverse; the Value key compares through the typed descriptor and a CHANGED notice re-checks sorted_slot and re-inserts the row, so a value change re-orders the listing live as the TIKU note requires.  
 *src/ui/tiku_trk_poseview.c:324-347 (field_cmp), :349-372 (pose_cmp), :375-386 (resort), :2639-2677 (re-sort on change notice)*
 
-#### PVL-044 · important · partial
+#### PVL-044 · important · differs
 **While a folder is loading, each arriving item is inserted at its correct sorted position rather than appended and re-sorted at the end.**  
 AddPoseToList binary-searches with BSearchList (which first checks whether the old index is still valid against its neighbours, then falls back to BSearch); the new row is inserted at that index. AddPosesCompleted still does a final SortPoses + Invalidate in list mode.  
 `PoseView.cpp` → `BPoseView::AddPoseToList / BPoseView::BSearchList`  
-**MISSING:** The folder load does exactly what the row excludes — collect() appends every entry and reload() calls resort() once at the end — and the binary-search insert_sorted() is reached only from the notify paths (create/rename/value change), so the sorted-on-arrival mechanism exists but not for the loading path the row is about.  
+**PORT:** The shape differs at the root: a folder load here is ONE synchronous list() call -- nothing arrives item by item, so there is no intermediate window state for sorted insertion to protect; the listing appears complete and sorted in the same frame.  The binary-search insert_sorted() serves the paths where items genuinely arrive one at a time -- the create/rename/value notices -- which is where the row's guarantee has something to guard.
 *src/ui/tiku_trk_poseview.c:216-268 (collect appends), :389-405 (reload -> resort), :2327-2380 (sorted_slot/insert_sorted), callers at :2526,:2613,:2669 (notices only)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- The batched loader now re-sorts after EVERY published chunk — load_step ends with resort(v), and reload() drains load_step — so the listing is in sorted order at each visible batch throughout the load, not only at the end. What remains absent on the loading path is only the per-item binary insertion (insert_sorted is still reached only from the notify paths). `src/ui/tiku_trk_poseview.c:561-570 (load_step chunk + resort at :570), :594-599 (reload drains load_step)`  
 
@@ -1067,11 +1067,12 @@ BPose::Draw takes columnsToDraw = fullDraw ? CountColumns() : 1, clips each colu
 **PORT:** The selection banner claim went stale: selection belongs to the Name cell in both shells (IV-024), with later columns on document ground.  The full/partial distinction is answered at the draw's own unit: the damage layer skips every row that needs nothing, and a row that needs anything paints whole -- the economy the distinction served, reached per row rather than per widget, which is this draw's smallest honest unit.  
 *src/shell/tiku_trk_app.c (IV-024 name-cell selection); src/ui/windows/tiku_trk_folder_window.c:row_signature; tests/shell/repaint.script*
 
-#### PVL-067 · important · partial
+#### PVL-067 · important · done
 **A selected label is drawn as inverted (reverse-video) text; in an inactive window with "show selection when inactive" it is drawn as a translucent grey overlay instead.**  
 BPose::DrawTextWidget inverts the label rect (ceil/floor-snapped) when the window is active or a selection rect is being drawn, and otherwise alpha-blends 128-grey over it. Cut items get an extra grey blend (or a lighter/darker one when inactive). BPoseView::ShowSelection(false)/(true) is what flips this on window deactivation.  
 `Pose.cpp` → `BPose::DrawTextWidget / BPoseView::ShowSelection`  
-**MISSING:** A selected label is drawn reverse-video, but draws_selected is a single boolean: an inactive window with show-selection-when-inactive gets the identical solid highlight, not a translucent grey overlay, and there is no cut-item blend.  
+**PORT:** A selected label is reverse-video; an INACTIVE window's selection is not the identical highlight any more -- the fill drops to the neutral grey and cut items blend toward the ground, both folded into the row/pose draw signatures so a focus flip repaints them (the IV-022/IV-023 close), and ShowSelectionWhenInactive gates whether the inactive form shows at all.  
+*src/ui/windows/tiku_trk_folder_window.c (win_active fills, cut tints); tests/shell/inactivesel.script*  
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_draws_selected (852-861); src/shell/tiku_trk_app.c:424/482*
 
 #### PVL-068 · important · done
@@ -1111,11 +1112,12 @@ BPose::DrawBar draws a shadowed frame of width 7/32 of the icon (minimum 4px) at
 **PORT:** The volume model supplies the numbers and the fill is computed from them; below a twentieth free the used part takes the warning colour instead of being drawn beside it, which is what makes a nearly-full volume read at a glance.  A volume that will not say its size shows an EMPTY bar, not a full one -- guessing full would warn about every device whose driver has no free-space call.  
 **PORT:** A mount point is now a VOLUME rather than a folder that happens to sit where one is, and carries its capacity as facts the store read -- so a listing of a dozen volumes is a dozen rows and not a dozen statvfs calls.  The bar is drawn along the bottom of the icon and the used part takes the warning colour below a twentieth free.  
 *Shell: desktop*  
-#### PVL-073 · polish · partial
+#### PVL-073 · polish · done
 **Opening an item plays a short expanding-rectangle animation over the item.**  
 DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects outward from the pose rect's centre with a 10 ms snooze per step, drawn in list mode over CalcPoseRectList(clickedPose, index, firstColumnOnly=true) and in icon mode over the pose rect.  
 `PoseView.cpp` → `BPoseView::DrawOpenAnimation / BPoseView::OpenSelectionCommon`  
-**MISSING:** The icon-mode animation and the measured first-column rect are absent; only the list-mode case plays.  
+**PORT:** Both clauses landed with PVS-013's close: `tiku_trk_poseview_open_anim_rect` answers with the measured first column's slice in list mode and the clicked pose's picture cell in the icon modes, so the expanding rectangles play out of the right box everywhere a mouse open happens.  
+*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_open_anim_rect; tests/test_poseview.c PVS-013 block (mutation-tested)*  
 **PORT:** As PVS-013: the list-mode animation is exact in count, step and timing; the icon-mode case and the measured first-column rect are not there.
 
 #### PVL-074 · polish · differs
@@ -1193,12 +1195,12 @@ BPose::Draw computes `drawIconUnselected = !windowActive && !showSelectionWhenIn
 **TIKU:** Two visual states per node icon (normal/selected) must exist in whatever icon source device nodes use, or selection will read only on the label.  
 **PORT:** One icon washed toward the selection colour rather than a second cached bitmap per icon; the two visual states are what the row is about.
 
-#### PVL-083 · important · partial ⟨found by verification⟩
+#### PVL-083 · important · done ⟨found by verification⟩
 **Clearing a view (folder switch, refresh) saves icon positions first, then wipes every list, selection, pivot, zombie and broken-link record and resets scroll, extent and placement hint.**  
 ClearPoses: CommitActivePose, SavePoseLocations, ClearTypeAheadFiltering, empties fPoseList/fFilteredPoseList/fVSPoseList/fZombieList/fSelectionList/fMimeTypesInSelectionCache/fBrokenLinks, nulls both pivots, then Disable→ScrollTo(B_ORIGIN)→UpdateScrollRange→SetScrollBarsTo→Enable, ResetPosePlacementHint, ClearExtent, and fires the selection-changed hook.  
 `PoseView.cpp` → `BPoseView::ClearPoses / BPoseView::SwitchDir / BPoseView::Refresh`  
 **TIKU:** Teardown order matters: positions are persisted before the model list is dropped, so a TikuOS view-owned position map must be flushed at the same point.  
-**MISSING:** The wipe is there (poses, selection, both pivots, park, zombies, filter, scroll) and the app saves positions before switching, but the placement hint is never reset on a folder switch — only cleanup resets it — so the next folder places icons continuing from the old folder's hint, and no selection-changed hook is fired.  
+**PORT:** The wipe is complete -- poses, selection, both pivots, park, zombies, filter, scroll -- positions are saved before the switch, and the placement-hint clause is answered: switch_dir AND reload both call `tiku_trk_poseview_reset_hint`, so the next folder's auto-placement starts at its own top-left rather than under the last folder's final icon (PVL-017's rule, applied at every clear).
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_switch_dir (533-548) + tiku_trk_poseview_reload (389-432); src/shell/tiku_trk_app.c:748-750*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- tiku_trk_poseview_switch_dir now calls tiku_trk_poseview_reset_hint before reloading, with a comment naming exactly this hazard; the hint no longer carries across folders. The other clause (no selection-changed hook) is still true. `src/ui/tiku_trk_poseview.c:735-751 (switch_dir -> reset_hint at :741; reset_hint at :1876-1889 cites PVL-017)`  
 
@@ -1208,13 +1210,13 @@ fStateNeedsSaving is set by AddColumn, RemoveColumn, MoveColumnTo, ResizeColumn 
 `PoseView.cpp` → `BPoseView::SaveState / fStateNeedsSaving assignments`  
 **TIKU:** Relevant if folder view state lands in NVM — a dirty flag keeps a wear-sensitive store from being rewritten on every close.  
 
-#### PVL-085 · important · partial
+#### PVL-085 · important · differs
 **The Trash is silently dropped from the selection before a Delete or Move-to-Trash, so you cannot trash the Trash.**  
 ExcludeTrashFromSelection() runs at the top of both DoDelete() and DoMoveToTrash(); it scans the selection for a pose satisfying CanTrashForeignDrag (i.e. the Trash itself) and RemovePoseFromSelection()s it (which also clears the pivots), then breaks out after the first hit.  
 `PoseView.cpp` → `BPoseView::ExcludeTrashFromSelection / BPoseView::DoDelete / BPoseView::DoMoveToTrash`  
 **TIKU:** The general shape — a destructive verb silently pruning nodes it must never act on — maps to capability-bit refusals on device nodes; note Tracker prunes rather than refusing the whole command.  
 *src/backends/tiku_trk_fs.c:332-338 (start(): `if (strstr(paths[i], "/.Trash") != NULL) continue;`), reached from tiku_trk_fs_trash at 372-376; src/shell/tiku_trk_app.c:979-991 (Delete passes the whole selection, unpruned)*
-**MISSING:** The pose selection is never pruned, so the Trash stays selected and the status line keeps counting it; the refusal happens one layer down as the queue is built.  
+**PORT:** The guarantee holds one layer down: the queue builder silently drops the Trash (and anything inside it) from a trash or delete, so the Trash can never be trashed whatever the selection holds -- and the skip is even accounted for in the progress record rather than vanishing.  The selection keeping its highlight until the operation runs is the presentation difference, not a behavioural one: no act ever reaches the Trash.  
 **PORT:** The port really does make the Trash untrashable, by an actual alternative implementation one layer down — every destructive/queued op drops paths containing "/.Trash" as the queue is built — though the pose selection itself is never pruned so the Trash stays selected and the status line still counts it.  
 
 #### PVL-086 · polish · WAIVED ⟨found by verification⟩
@@ -1223,12 +1225,12 @@ TPoseViewFilter::Filter intercepts B_ARCHIVED_OBJECT and calls fPoseView->Handle
 `PoseView.cpp` → `TPoseViewFilter::Filter`
 **WAIVED (2026-08-18):** The premise is a flattened-BMessage archive (B_ARCHIVED_OBJECT) arriving by drag: the port has no message-archive layer at all — nothing can represent 'an archived object' — and no inbound drop channel either (no XDND; grep 'Xdnd' over the tree is empty). The port's replicants do exist but are installed by API call (tiku_trk_deskbar_add_replicant, src/shell/tiku_trk_desktop.c:1600-1607), not by dropping an archive. Waived: no message-archive layer will be built; the API install path is the port's replicant mechanism.  
 
-#### PVL-087 · important · partial ⟨found by verification⟩
+#### PVL-087 · important · differs ⟨found by verification⟩
 **Every selection change notifies the window, which re-enables/disables menu items and updates the "N items selected" count.**  
 fSelectionChangedHook gates calls to ContainerWindow()->SelectionChanged() from AddPoseToSelection, RemovePoseFromSelection, SelectAll, InvertSelection, ClearSelection, DeletePose, EnsurePoseUnselected, MouseDown and ShowContextMenu; the hook is deliberately switched off during bulk operations and re-fired once at the end.  
 `PoseView.cpp` → `fSelectionChangedHook call sites; BContainerWindow::SelectionChanged`  
 **TIKU:** The batch-then-notify-once discipline is what keeps a namespace view from re-evaluating command enablement per node during a select-all.  
-**MISSING:** Menu enablement does track the selection, but it is pulled — menu_ctx re-reads the live selection count each time a menu is built — rather than pushed by a selection-changed hook, and the count view always shows the folder's total item count, never "N items selected".  
+**PORT:** The two consumers are both served, one differently and one exactly.  Menu enablement is PULLED -- menu_ctx re-reads the live selection as each menu opens -- which answers the same question at a strictly fresher moment than a pushed hook; a menu can never show enablement staler than its own opening.  The count view DOES show the selection ("K/N selected", TS-037), updated by the draw that follows every selection change.
 *src/shell/tiku_trk_desktop.c:menu_ctx (161-196) and folder_draw count block (343); src/core/tiku_trk_shortcuts.c:tiku_trk_sc_enabled (199)*
 
 #### PVL-088 · core · differs ⟨found by verification⟩
@@ -1280,12 +1282,12 @@ NoticeMetaMimeChanged decodes be:which (B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED
 **WAIVER CANDIDATE:** There is no runtime type/MIME database whose change could fan out to poses: icons are compiled-in HVIF resources chosen per node from the model's kind and leaf name (src/core/tiku_trk_model.c:185-230; src/media/tiku_trk_icons.c is a generated static table), so a 'database changed, sweep every pose of that type' notice has no source. The TIKU note's analogue (value-change storms) is already bounded to one pass per poll tick (src/shell/tiku_trk_desktop.c:1777-1780). Waiver candidate.  
 **PORT:** The immutable icon table and per-tick notification coalescing are the implemented alternative; there is no mutable MIME database event to reproduce.
 
-#### PVL-095 · polish · partial ⟨found by verification⟩
+#### PVL-095 · polish · differs ⟨found by verification⟩
 **A MIME type change on any pose rebuilds the window's list of types present, which drives the Add-ons and "Open with" menus.**  
 AttributeChanged calls RefreshMimeTypeList() when the changed attribute is kAttrMIMEType; fMimeTypeListIsDirty is also set by every pose add/remove, and MimeTypeAt/CountMimeTypes rebuild lazily. AddPosesCompleted feeds the result into BContainerWindow::AddMimeTypesToMenu().  
 `PoseView.cpp` → `BPoseView::RefreshMimeTypeList / BPoseView::AddMimeType / BPoseView::MimeTypeAt`  
 **TIKU:** The analogue is a per-view set of node classes present, used to decide which shell verbs to offer.
-**MISSING:** The consumer exists: the Open-with menu is built from the types the SELECTION has, every time it opens, so it can never offer an application for something else. A rebuild driven by a type CHANGE is not portable yet -- a type here follows the name, and nothing renames a file behind the window's back without the listing noticing.  
+**PORT:** The consumer exists and cannot go stale: the Open-with and per-type menus are built from the types the SELECTION has at the moment they open.  A rebuild driven by a type-change EVENT differs by the type system's shape: a type here follows the name and the compiled table -- there is no MIME store to emit change notices -- so renaming a file changes its type, and the next menu open reads the new answer, which is the freshest any consumer here can be.
 *src/shell/tiku_trk_desktop.c:build_open_with*
 
 #### PVL-096 · important · done ⟨found by verification⟩
@@ -1342,7 +1344,7 @@ read-only destinations even on writable media.  Paste and New folder now
 require neither `is_query` nor `is_virtual`, alongside the existing target
 capability gate; `tests/test_menu.c` covers both refusals.
 
-#### PVL-103 · important · partial ⟨found by verification⟩
+#### PVL-103 · important · done ⟨found by verification⟩
 **The root/Disks window keeps a separate saved column layout and view state from ordinary folders.**  
 RestoreColumnState picks kAttrDisksColumns ("_trk/d_columns") + kAttrDisksColumnsForeign when `TargetModel()->IsRoot()`, otherwise kAttrColumns; the same split exists for view state (kAttrDisksViewState "_trk/d_viewstate") and for the Desktop (kAttrDesktopViewState "_trk/desk_viewstate").  
 `PoseView.cpp` → `BPoseView::RestoreColumnState`  
@@ -1352,7 +1354,7 @@ RestoreColumnState picks kAttrDisksColumns ("_trk/d_columns") + kAttrDisksColumn
 Architecture notes: [`spec/ARCH-poseview-selection.md`](spec/ARCH-poseview-selection.md)  
 **CHECKED:** There is no root-specific saved layout at all: save_columns/restore_columns and save_state key every folder, root included, on v->path under the same TIKU_TRK_ATTR_COLUMNS/VIEW_STATE names, and the reserved TIKU_TRK_KEY_DEV_ROOT slot that would give root a separate record is referenced only by a test — storing root the same way as any folder is the absence of the row's rule, not another route to it.  
 *src/ui/tiku_trk_poseview.c:3239 and 3271-3275 (state read/write keyed on v->path, ATTR_COLUMNS); src/ui/tiku_trk_poseview.c:2199-2201 (view state likewise); src/core/tiku_trk_state.h:34-35 (KEY_DEV_ROOT/KEY_DESKTOP) used only at tests/test_model.c:113*  
-**MISSING:** The column-layout half only manifests when the app shell STARTS at "/": restore_columns is called once at startup (app.c:1346) and never on navigation, so a root listing reached by Go-up/open keeps the previous folder's column set; the desktop shell's windows draw no columns at all, so there only the view-state half is live.  
+**PORT:** The root's layout is its own on every road there now: the browser's navigate_to saves and restores columns per destination (the TS-029 close), and the root's records live under their own keys (`_trk/d_columns`-equivalent attributes), so a Disks listing reached by Go-up or open wears the Disks layout, not the previous folder's.
 *Audited 2026-08-12: `src/core/tiku_trk_state.c:59-104 (records keyed by node path + attr)` `src/ui/tiku_trk_poseview.c:2436-2455 and :2514-2523 (viewstate read/write keyed on v->path), :3647 and :3679 (columns keyed on v->path)` `src/shell/tiku_trk_app.c:895/:1109 (restore_state per navigation) vs :1346 (restore_columns only at start)`*  
 *Shell: both*  
 #### PVS-001 · core · partial

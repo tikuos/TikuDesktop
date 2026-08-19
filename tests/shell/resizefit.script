@@ -1,0 +1,19 @@
+# shell: desktop
+# PVL-059: Resize to fit sizes the window to its content AND scrolls it to
+# the content's top-left -- a fitted window shows everything from the top.
+wait 10
+note scroll the list down first
+press-row 2
+wait 2
+key Down
+key Down
+wait 2
+key End
+wait 3
+expect-scroll 1
+click 120 76
+wait 3
+menu-pick Resize to fit
+wait 5
+expect-scroll-at-most 0
+quit

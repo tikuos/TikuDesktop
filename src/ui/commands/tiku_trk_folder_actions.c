@@ -127,6 +127,11 @@ tiku_trk_folder_actions_invoke(tiku_desk_workspace_t *workspace,
             (void)tiku_desk_workspace_zoom(workspace, folder->win,
                 tiku_trk_folder_window_fit_width(folder),
                 tiku_trk_folder_window_fit_height(folder));
+            /* And to the content's TOP-LEFT: a fit that leaves the view
+             * scrolled shows a window sized for everything displaying
+             * only some of it (PVL-059). */
+            tiku_trk_poseview_scroll_to(folder->view, 0);
+            tiku_trk_poseview_set_origin(folder->view, 0, 0);
         }
         return 1;
     default:
