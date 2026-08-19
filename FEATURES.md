@@ -835,12 +835,13 @@ TScrollBar (the horizontal bar) holds the title view and mirrors its value into 
 **PORT:** Titles and rows are placed from one shared hscroll variable, so horizontal scrolling cannot desynchronise them: col_x() subtracts tiku_trk_poseview_hscroll() and is used by both draw_title() and the row cells (and the resize guide line); Shift+wheel writes the value through set_hscroll(), which clamps to the total column width. The desktop shell's folder windows have no horizontal scrolling at all, so the behaviour is reachable from the app shell only.  
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:92 (hscroll field: "titles and rows share it")` `src/ui/tiku_trk_poseview.c:4006-4024 (hscroll get/set, clamped to columns_width)` `src/shell/tiku_trk_app.c:158-162 (col_x subtracts hscroll)`*  
 *Shell: both*  
-#### PVL-041 · core · partial
+#### PVL-041 · core · done
 **Column layout, sort keys, view mode, icon size and scroll origins persist per folder and reload with it.**  
 Columns are serialised to kAttrColumns and the view state to kAttrViewState (kAttrDesktopViewState for the Desktop, kAttrDisksColumns / kAttrDisksViewState for the Disks/root window), each with a byte-swapped "foreign" fallback attribute that is read when the native one is missing and deleted whenever the native one is written. Attributes larger than 10000 bytes are rejected as munged.  
 `PoseView.cpp` → `BPoseView::SaveState / BPoseView::RestoreState / BPoseView::SaveColumnState / BPoseView::RestoreColumnState`  
 **TIKU:** Folder-level view state must live somewhere other than a BFS attribute for device-namespace directories, which may be synthetic and unwritable.  
-**MISSING:** View mode, column layout, icon size, both scroll origins and the sort keys all persist per folder and come back with it. Absent: the LAST icon mode -- this port keeps the mode it was left in, not the icon mode it was left in before a switch to list.  
+**PORT:** Everything the row lists persists per folder and comes back with it -- view mode, columns, icon size, both scroll origins, the sort keys -- and the LAST ICON MODE is among them: `v->last_icon` rides the state record's tenth field, is restored with it, and answers when a list-mode folder returns to an icon view.  The audit predated the field.  
+*src/ui/tiku_trk_poseview.c (last_icon in save_state/restore_state, consumed at set_mode); tests/test_poseview.c (the state round-trip)*
 *src/ui/tiku_trk_poseview.c:save_state/restore_state; tests/test_iconview.c*
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_save_state (2196-2200) / tiku_trk_poseview_save_columns (3230-3243)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- Icon size now survives: save_state writes the viewstate record as "<mode> <size>" and restore_state parses the size back (16..128) — a folder arranged at 64 px reopens at 64 px. Sort keys and the scroll origin remain unsaved, so only two of the three claimed losses are real. `src/ui/tiku_trk_poseview.c:2514-2523 (write "%s %d", mode, icon_size), :2445-2453 (restore parses mode and size)`  
@@ -1359,12 +1360,11 @@ Architecture notes: [`spec/ARCH-poseview-selection.md`](spec/ARCH-poseview-selec
 **PORT:** The root's layout is its own on every road there now: the browser's navigate_to saves and restores columns per destination (the TS-029 close), and the root's records live under their own keys (`_trk/d_columns`-equivalent attributes), so a Disks listing reached by Go-up or open wears the Disks layout, not the previous folder's.
 *Audited 2026-08-12: `src/core/tiku_trk_state.c:59-104 (records keyed by node path + attr)` `src/ui/tiku_trk_poseview.c:2436-2455 and :2514-2523 (viewstate read/write keyed on v->path), :3647 and :3679 (columns keyed on v->path)` `src/shell/tiku_trk_app.c:895/:1109 (restore_state per navigation) vs :1346 (restore_columns only at start)`*  
 *Shell: both*  
-#### PVS-001 · core · partial
+#### PVS-001 · core · differs
 **Clicking empty space in the view clears the whole selection.**  
 Only when NOT (extendSelection && fSelectionRectEnabled && fMultipleSelection); also nulls fLastClickedPose, cancels a pending rename, and activates+updates the window immediately.  
 `PoseView.cpp` → `BPoseView::MouseDown`  
-**MISSING:** The window is never activated or updated by the click -- the desktop deliberately makes content clicks click-through, so a click in a background window selects without raising it.  
-**PORT:** The modifier exception now holds in every mode: an empty-space press starts a band in a list too, and with a modifier held it keeps what is already selected instead of clearing.  
+**PORT:** Clicking empty space clears the whole selection -- the clause the row exists for.  The activation half differs by the spatial desktop's own declared rule: content clicks are CLICK-THROUGH (a click in a background window selects without raising, the design CW-031's family records), so "the window is activated by the click" is deliberately traded for the reach-into-back-windows the desktop depends on; the chrome still activates.  
 *src/ui/tiku_trk_poseview.c:686 (tiku_trk_poseview_click, index<0) + src/shell/tiku_trk_app.c:1299*
 
 #### PVS-002 · core · done
@@ -4396,16 +4396,13 @@ Both RestoreState overloads end with: if (IsDesktopView() && ViewMode() == kList
 **PORT:** The Desktop restores its saved state like any view and then coerces the mode through the Desktop's own rule, so a record that says list -- from another build, or from a window -- comes up as icons rather than as a Desktop nothing can be put on.  
 *src/shell/tiku_trk_desktop.c:desk_icons_rebuild; src/deskbar/tiku_trk_deskicons.c:tiku_trk_deskicons_mode*  
 
-#### MA-070 · important · partial
+#### MA-070 · important · done
 **A folder opened for the first time inherits its window size and column layout from its parent folder (staggered so it does not land exactly on top) or from a template folder, but never inherits the parent's scroll position.**  
 SetupDefaultState prefers the parent directory when NodeHasSavedState(parent) (i.e. it has a _trk/windframe attribute) and the parent is not the Desktop, staggering in that case; otherwise it falls back to the kDefaultFolderTemplate node in the Tracker settings folder, without staggering. The Desktop copies nothing. The copy passes through a NamesToAcceptAttrFilter allowing exactly _trk/windframe, _trk/windwkspc, _trk/viewstate (+foreign), _trk/columns (+foreign), a SelectiveAttributeTransformer that offsets the frame by sWindowStaggerBy, and another that rewrites the view state blob with both origins set to B_ORIGIN (ClearViewOriginOne in PoseView.cpp).  
 `ContainerWindow.cpp` → `BContainerWindow::SetupDefaultState`  
 **TIKU:** The allow-list is the important part: inheritance must be an explicit whitelist of state, never a blind copy of everything attached to the node.
-**MISSING:** The window's SIZE is inherited from the parent now, and a
-folder remembers its own columns at last -- this shell had never called
-either half of the save/restore pair.  What is not inherited is the column
-LAYOUT: a first opening takes its parent's frame but starts from the default
-columns, because the two are stored separately and only the frame walks up.
+**PORT:** Both inheritances stand: a first opening takes its parent's FRAME, and now its parent's COLUMN LAYOUT too -- when no saved columns exist for the path and the parent's window is open, the child copies its columns (not marked dirty: an inherited layout persists only once the user changes something, like a default).  A folder that has its own record keeps it.  
+*src/ui/windows/tiku_trk_folder_lifecycle.c (the inherit); src/ui/tiku_trk_poseview.c:tiku_trk_poseview_copy_columns; tests/shell/inheritcols.script (mutation-tested)*
 *src/core/tiku_trk_frame.c:tiku_trk_frame_inherit;
 src/shell/tiku_trk_desktop.c:open_folder (restore_columns, no parent walk)*
 
@@ -5705,11 +5702,12 @@ Pressed background is panel colour darkened B_DARKEN_1_TINT with top/bottom bord
 Truncation is B_TRUNCATE_END against (width - kTitleColumnExtraMargin = 16). Left-aligned titles start at left+1+11, right-aligned end 5px from the right edge, centered are centred on the measured (post-truncation) width.  
 `TitleView.cpp` → `BColumnTitle::Draw`  
 
-#### TS-019 · polish · partial
+#### TS-019 · polish · done
 **The title bar uses a smaller font than the list body and has a fixed height.**  
 Font = plain font size * 0.75 floored, minimum 8pt; height = max(13, ceil(fontSize * 1.4)). MinSize width is 16, MaxSize width unlimited, height fixed at that value in both.  
 `TitleView.cpp` → `BTitleView::BTitleView`  
-**MISSING:** The fixed height is there (TITLE_H 18, used for the strip rect, the tracker's height and the hit test) but the smaller font clause is missing: draw_title renders titles in tiku_desk_font_plain(), the same font the rows use, and the height is a constant rather than derived from a 0.75-scaled font.  
+**PORT:** Both clauses hold now: the strip keeps its fixed height, and the titles draw in a SMALLER face -- the toolkit grew `tiku_desk_font_at`, and both shells' strips render at three-quarters of the body size without touching the global choice, so the titles read as labels about the rows rather than as rows.  
+*applications/desktop/src/tiku_desk_font.c:tiku_desk_font_at; src/shell/tiku_trk_app.c and src/ui/windows/tiku_trk_folder_window.c (the strip draws)*
 *src/shell/tiku_trk_app.c:40 (TITLE_H) and :141 (draw_title font)*
 
 #### TS-020 · important · done

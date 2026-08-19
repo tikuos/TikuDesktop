@@ -446,7 +446,10 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
            int pressed, int drag_dx)
 {
     tiku_desk_surface_t *s = a->surf;
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    /* Three-quarters of the body text, the source's own strip proportion
+     * (TS-019): the titles are labels ABOUT the rows, not rows. */
+    const tiku_desk_font_t *f =
+        tiku_desk_font_at(tiku_desk_font_size() * 3 / 4);
     tiku_desk_rect_t r;
     char fit[64];
     int tw, tx, data_x = col_x(a, c) + drag_dx;

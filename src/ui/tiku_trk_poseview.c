@@ -5867,6 +5867,22 @@ rec_cmp(const void *a, const void *b)
     return (x->offset < y->offset) ? -1 : ((x->offset > y->offset) ? 1 : 0);
 }
 
+void
+tiku_trk_poseview_copy_columns(tiku_trk_poseview_t *v,
+                               const tiku_trk_poseview_t *from)
+{
+    int i;
+
+    if (v == NULL || from == NULL || from->column_count == 0) {
+        return;
+    }
+    v->column_count = from->column_count;
+    for (i = 0; i < from->column_count; i++) {
+        v->columns[i] = from->columns[i];
+    }
+    tiku_trk_poseview_reflow_columns(v);
+}
+
 int
 tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
 {

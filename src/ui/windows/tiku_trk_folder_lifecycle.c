@@ -241,7 +241,28 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
         tiku_trk_prefs_get(controller->prefs, "SortFolderNamesFirst"));
     tiku_trk_poseview_set_hide_dotfiles(folder->view,
         tiku_trk_prefs_get(controller->prefs, "HideDotFiles"));
-    (void)tiku_trk_poseview_restore_columns(folder->view);
+    if (tiku_trk_poseview_restore_columns(folder->view) == 0) {
+        /* A first opening inherits its PARENT's layout, like the frame
+         * (MA-070): what the user shaped for the folder above is the best
+         * guess for the folder within it. */
+        char parent[TIKU_TRK_PATH_MAX];
+        const char *slash = strrchr(path, '/');
+        int i;
+
+        if (slash != NULL && slash != path) {
+            snprintf(parent, sizeof parent, "%.*s",
+                     (int)(slash - path), path);
+            for (i = 0; i < *controller->count; i++) {
+                tiku_trk_folder_window_t *pf = &controller->folders[i];
+
+                if (pf != folder && pf->view != NULL &&
+                    strcmp(pf->path, parent) == 0) {
+                    tiku_trk_poseview_copy_columns(folder->view, pf->view);
+                    break;
+                }
+            }
+        }
+    }
     (void)tiku_trk_poseview_restore_state(folder->view);
     frame = next_frame(controller, path, folder);
     folder->win = tiku_desk_workspace_open(controller->workspace, path, frame,

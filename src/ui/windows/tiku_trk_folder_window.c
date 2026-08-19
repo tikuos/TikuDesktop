@@ -687,7 +687,10 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
            tiku_desk_rect_t title)
 {
     const tiku_trk_column_t *columns;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    /* Three-quarters of the body text, the source's strip proportion
+     * (TS-019). */
+    const tiku_desk_font_t *font =
+        tiku_desk_font_at(tiku_desk_font_size() * 3 / 4);
     int n, i;
 
     int dragged = -1;

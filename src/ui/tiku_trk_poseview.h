@@ -1042,6 +1042,15 @@ int tiku_trk_poseview_columns_width(const tiku_trk_poseview_t *v);
 int tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v);
 int tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v);
 
+/**
+ * @brief Take @p from's column layout, for a first opening (MA-070).
+ *
+ * Not marked dirty: an inherited layout persists only once the user
+ * changes something, the same as a default would.
+ */
+void tiku_trk_poseview_copy_columns(tiku_trk_poseview_t *v,
+                                    const tiku_trk_poseview_t *from);
+
 /** Copy/paste the complete column and sort layout through the typed channel. */
 int tiku_trk_poseview_copy_layout(const tiku_trk_poseview_t *v);
 int tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v);

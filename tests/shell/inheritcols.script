@@ -1,0 +1,21 @@
+# shell: desktop
+# MA-070: a first opening inherits its parent's column layout the way it
+# inherits the frame -- a column torn from the parent stays gone in the
+# child, until the child saves a layout of its own.
+wait 10
+expect-columns 4
+note tear the Kind column out of the parent
+press 340 96
+move 340 130
+move 340 200
+release 340 200
+wait 3
+expect-columns 3
+note the child, opened for the first time, wears the parent's three
+click 90 118
+wait 2
+click 90 118
+wait 6
+expect-title sub
+expect-columns 3
+quit
