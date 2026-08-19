@@ -27,6 +27,8 @@
 #define TIKU_TRK_CMD_ADD_SCOPE       1701
 /* The Move to / Copy to / Create link pickers: 16 destinations each
  * (CW-035).  (command - BASE) / 16 says which picker, % 16 which entry. */
+#define TIKU_TRK_CMD_RECALC_SIZE     1702
+#define TIKU_TRK_CMD_SET_LINK_TARGET 1703
 #define TIKU_TRK_CMD_DEST_BASE       1720
 #define TIKU_TRK_CMD_DEST_MAX        16
 #define TIKU_TRK_MOUNT_PART_MAX 32
@@ -54,6 +56,10 @@ typedef struct {
     tiku_trk_menu_t    volume_ctx;
     tiku_trk_menu_t    trash_ctx;
     tiku_trk_menu_t    drop_ctx;
+    /* The Info window icon's own copy of its context menu: the shared
+     * pose_ctx is rebuilt by every folder draw, and the icon's extra
+     * items (AW-076) must survive the frame. */
+    tiku_trk_menu_t    info_ctx;
     /* The applications that can open what is selected, as a submenu of the
      * "Open with" item.  Built by the shell, which is what knows the
      * registry, and attached here so both menus show the same one. */

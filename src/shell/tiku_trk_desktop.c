@@ -3706,11 +3706,47 @@ tracker_run(int argc, char **argv)
                                         info->path, &m) != 0) {
                                     break;
                                 }
+                                /* The menu acts on ONE NAMED THING: the
+                                 * enable rules must see it as the
+                                 * selection, whatever the desktop's
+                                 * selection happens to be (AW-076). */
+                                c.selection = 1;
+                                c.selection_is_volume =
+                                    m.kind == TIKU_TRK_KIND_VOLUME;
+                                c.selection_ro =
+                                    !tiku_trk_model_is_writable(&m);
+                                c.can_trash_or_dup = !c.selection_ro;
+                                c.can_edit_name =
+                                    m.kind != TIKU_TRK_KIND_TRASH &&
+                                    m.kind != TIKU_TRK_KIND_DESKTOP &&
+                                    !c.selection_ro;
                                 snprintf(app.popup_path,
                                          sizeof app.popup_path, "%s",
                                          info->path);
                                 app.popup = tiku_trk_cwmenu_context(
                                     &app.menus, &m, &c);
+                                /* A COPY: every folder draw rebuilds the
+                                 * shared context menu, and the icon's
+                                 * extra rows must survive the frame. */
+                                app.menus.info_ctx = *app.popup;
+                                app.popup = &app.menus.info_ctx;
+                                /* The items the source adds for THIS menu
+                                 * alone (AW-076): a folder recounts, a
+                                 * link re-points. */
+                                if (tiku_trk_model_is_container(&m) &&
+                                    m.kind != TIKU_TRK_KIND_VOLUME &&
+                                    m.kind != TIKU_TRK_KIND_ROOT) {
+                                    (void)tiku_trk_menu_add(app.popup,
+                                        "Recalculate folder size",
+                                        TIKU_TRK_CMD_RECALC_SIZE, 0, 0u,
+                                        1);
+                                }
+                                if (m.kind == TIKU_TRK_KIND_SYMLINK) {
+                                    (void)tiku_trk_menu_add(app.popup,
+                                        "Set new link target",
+                                        TIKU_TRK_CMD_SET_LINK_TARGET, 0,
+                                        0u, 1);
+                                }
                                 app.popup_sub = NULL;
                                 app.popup_frame = tiku_trk_menu_place(
                                     app.popup, ev.x, ev.y,
@@ -3945,9 +3981,49 @@ tracker_run(int argc, char **argv)
                                 break;
                             }
                             if (app.popup_path[0] != '\0') {
-                                (void)tiku_trk_folder_file_actions_invoke_path(
-                                    &app.file_actions, app.popup_path,
-                                    app.popup->item[pick].command);
+                                int pc = app.popup->item[pick].command;
+                                int islot = -1;
+                                {
+                                    int fi;
+
+                                    for (fi = 0;
+                                         fi < TIKU_TRK_INFO_WINDOW_MAX;
+                                         fi++) {
+                                        tiku_trk_info_t *im =
+                                            &app.info_windows.model[fi];
+
+                                        if (im->used &&
+                                            strcmp(im->path,
+                                                   app.popup_path) == 0) {
+                                            islot = fi;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (pc == TIKU_TRK_CMD_RECALC_SIZE &&
+                                    islot >= 0) {
+                                    tiku_trk_info_calc_start(
+                                        &app.info_windows.model[islot]);
+                                } else if (pc ==
+                                               TIKU_TRK_CMD_SET_LINK_TARGET
+                                           && islot >= 0) {
+                                    /* The same picker AW-074's broken-
+                                     * link flow raises. */
+                                    folder_t *ffl2 = folder_of(&app,
+                                        tiku_desk_workspace_focused(
+                                            app.desk));
+
+                                    app.info_relink = islot;
+                                    fpanel_open(&app,
+                                        (ffl2 != NULL) ? ffl2
+                                                       : &app.folders[0],
+                                        TIKU_TRK_CMD_GET_INFO);
+                                } else {
+                                    (void)tiku_trk_folder_file_actions_invoke_path(
+                                        &app.file_actions, app.popup_path,
+                                        pc);
+                                }
                                 app.dirty = 1;
                             } else {
                                 menu_invoke(&app, ffl,

@@ -208,6 +208,11 @@ px_stat(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
          * Tracker shows a broken link differently from a live one. */
         if (stat(path, &st) == 0) {
             from_stat(out, path, &st, 1);
+            /* The link's IDENTITY is its own inode, not its target's: a
+             * link beside its target would otherwise share the target's
+             * identity, and an identity-keyed diff would never see the
+             * new row (the node_ref of the link, as the source keeps). */
+            out->node_id = (uint64_t)lst.st_ino;
         } else {
             /* The target has gone.  The LINK has not, so it keeps its row
              * and carries the fact -- a broken link is a thing to see, not
