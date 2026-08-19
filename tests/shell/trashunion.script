@@ -1,0 +1,36 @@
+# shell: desktop
+# work: home
+# PVN-027: the Trash window is the union over every volume's trash, kept
+# live -- a move into ANY trash appears there on the refresh beat.
+wait 10
+note trash a.txt, answering the question, then open the Trash
+click-row 1
+wait 2
+key Delete
+wait 5
+key m
+wait 30
+expect-file /tmp/trk_home/.Trash/a.txt
+click 170 30
+wait 2
+click 170 30
+wait 8
+expect-windows 2
+note TWO rows: the file just trashed here, and the one another volume's
+note trash already held -- the union, not the folder
+expect-rows 2
+note a second file trashed while the window is open joins the union live
+key w ctrl
+wait 3
+click-row 1
+wait 2
+key Delete
+wait 5
+key m
+wait 30
+click 170 30
+wait 2
+click 170 30
+wait 8
+expect-rows 3
+quit

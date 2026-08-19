@@ -136,6 +136,9 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            trashunion.script)
+                mkdir -p /dev/shm/.Trash
+                echo hi > /dev/shm/.Trash/planted.txt ;;
             hoverpop.script)
                 mkdir -p "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row"
                 echo hi > "$work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row/deep.txt" ;;

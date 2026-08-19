@@ -100,6 +100,8 @@ struct tiku_trk_folder_window {
     int                        gone;
     tiku_trk_frame_t           opened_with;
     tiku_trk_scroll_t          sbar;    /* the window's own bar (PVL-051) */
+    int                        trash_union; /* every volume's trash, one
+                                             * window (PVN-027) */
     int                        had_frame;
     int                        count_last_total;
     int                        count_last_selected;

@@ -2381,15 +2381,12 @@ EntryMoved stats '/' and, if the notice's dirNode matches it, stats "/" + name a
 EntryMoved tail: `else if (oldDir == thisDirNode.node) DeletePose(&itemNode); else if (dirNode.node == thisDirNode.node) EntryCreated(&dirNode, &itemNode, name);`  
 `PoseView.cpp` → `BPoseView::EntryMoved`  
 
-#### PVN-027 · important · partial
+#### PVN-027 · important · done
 **The Trash window shows the union of every volume's trash, so a move into any volume's trash appears there.**  
 EntryMoved resolves thisDirNode via FSGetTrashDir(&trashDir, itemNode.device) when TargetModel()->IsTrash(), instead of using the target model's node_ref.  
 `PoseView.cpp` → `BPoseView::EntryMoved`
-**MISSING:** The union's INPUT exists: every Trash on the machine, each
-listed once however many mounts resolve to it -- a place listed twice would
-show every item in it twice.  What is missing is the window: nothing opens a
-view over that set, and the merge machinery that would do it
-(tiku_trk_vdir) has never been pointed at the Trash.
+**PORT:** The Trash window is the UNION now: opening any trash turns the view into a result set over every volume's Trash (each listed once however many mounts resolve to it), refreshed on the query beat, and each entry keeps its REAL path so restore and delete land on the volume that holds it.  A move into any volume's trash appears there -- proven by planting a file in another volume's trash and finding it beside the one trashed at home.  
+*src/shell/tiku_trk_desktop.c (the union open and refresh); src/backends/tiku_trk_fs.c:tiku_trk_fs_trash_dirs; tests/shell/trashunion.script (cross-volume, mutation-tested)*
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_trash_dirs; src/backends/tiku_trk_vdir.c (the merge,
 unused for this); tests/test_volume.c*
 

@@ -276,6 +276,8 @@ typedef struct desktop {
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
+static int list_children(tiku_trk_backend_t *b, const char *path,
+                         tiku_trk_model_t *out, int max);
 static void info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info);
 static void info_opens_with_next(desktop_t *app, tiku_trk_info_t *info);
 static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
@@ -1131,6 +1133,45 @@ script_command_file(desktop_t *app, const char *path)
     if (reply != NULL) {
         (void)fclose(reply);
     }
+}
+
+/**
+ * @brief The union every volume's Trash makes (PVN-027).
+ *
+ * Each Trash on the machine contributes its entries; the models keep
+ * their REAL paths, so restore and delete act on the file wherever its
+ * volume keeps it.
+ */
+static int
+trash_union_models(desktop_t *app, tiku_trk_model_t *out, int max)
+{
+    char dirs[8][TIKU_TRK_PATH_MAX];
+    int ndirs = tiku_trk_fs_trash_dirs(app->fs, dirs, 8);
+    int i, n = 0;
+
+    for (i = 0; i < ndirs; i++) {
+        n += list_children(app->backend, dirs[i], out + n, max - n);
+    }
+    return n;
+}
+
+/** @brief Re-derive a union Trash window from its contributors. */
+static int
+trash_union_refresh(desktop_t *app, folder_t *fl)
+{
+    tiku_trk_model_t *models;
+    unsigned nf;
+    int n;
+
+    models = calloc(256, sizeof *models);
+    if (models == NULL) {
+        return 0;
+    }
+    n = trash_union_models(app, models, 256);
+    nf = tiku_trk_poseview_apply_results(fl->view, models, n,
+                                         tiku_trk_now());
+    free(models);
+    return nf != TIKU_TRK_NOTIFY_NOTHING;
 }
 
 /** @brief Re-apply the spring menu's enabled states from the live drag. */
@@ -2715,7 +2756,32 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 static folder_t *
 open_folder(desktop_t *app, const char *path)
 {
-    return tiku_trk_folder_lifecycle_open(&app->folder_lifecycle, path);
+    folder_t *fl = tiku_trk_folder_lifecycle_open(&app->folder_lifecycle,
+                                                  path);
+
+    if (fl != NULL && fl->view != NULL && !fl->trash_union &&
+        path != NULL && tiku_trk_fs_in_trash(app->fs, path)) {
+        /* A Trash window shows the UNION of every volume's trash
+         * (PVN-027): the view becomes a result set over the
+         * contributors, refreshed on the query beat, each entry keeping
+         * its real path so restore and delete land on the right
+         * volume. */
+        tiku_trk_model_t m;
+
+        if (app->backend->ops->stat(app->backend, path, &m) == 0 &&
+            m.kind == TIKU_TRK_KIND_TRASH) {
+            tiku_trk_model_t *models = calloc(256, sizeof *models);
+
+            if (models != NULL) {
+                int n = trash_union_models(app, models, 256);
+
+                (void)tiku_trk_poseview_set_results(fl->view, models, n);
+                free(models);
+                fl->trash_union = 1;
+            }
+        }
+    }
+    return fl;
 }
 
 /** @brief The folder behind a window, or NULL. */
@@ -6089,6 +6155,10 @@ tracker_run(int argc, char **argv)
                     if (app.folders[i].win != NULL &&
                         app.folders[i].win->open) {
                         changed += refresh_results(&app, &app.folders[i]);
+                        if (app.folders[i].trash_union) {
+                            changed += trash_union_refresh(&app,
+                                                           &app.folders[i]);
+                        }
                     }
                 }
                 last_requery = tiku_trk_now();
