@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "tiku_trk_attr.h"
+#include "tiku_trk_view_defs.h"
 
 static int fails;
 
@@ -379,6 +380,18 @@ main(void)
                                 char_measure, NULL, out, sizeof out);
         check(strcmp(out, "abc") == 0,
               "a string that fits is left alone");
+    }
+
+    printf("\nwhich end a column gives up (MA-026)\n");
+    {
+        check(!tiku_trk_col_trunc_end(TIKU_TRK_COL_NAME) &&
+              !tiku_trk_col_trunc_end(TIKU_TRK_COL_VALUE) &&
+              !tiku_trk_col_trunc_end(TIKU_TRK_COL_PATH) &&
+              !tiku_trk_col_trunc_end(TIKU_TRK_COL_ATTR_BASE),
+              "generic strings keep both ends -- the middle goes");
+        check(tiku_trk_col_trunc_end(TIKU_TRK_COL_SIZE) &&
+              tiku_trk_col_trunc_end(TIKU_TRK_COL_DATE),
+              "formatted values keep their head -- the end goes");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "every attribute rule holds");

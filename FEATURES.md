@@ -3860,12 +3860,12 @@ From st_mode alone: S_IFDIR -> kDirectoryNode, S_IFREG -> kExecutableNode if S_I
 **PORT:** The port classifies every entry into a kind enum and that kind really does decide the icon, container-ness (hence what window opens), the sort bucket and rename refusal; only its derivation moves — from the backend descriptor (is_dir + path + manifest) instead of st_mode, with DEVICE_NODE/VIRTUAL_DIR standing in for the Be-specific kinds, which is the TIKU note's adaptation.  
 *src/core/tiku_trk_model.h:36-45 (kinds); src/backends/tiku_trk_backend_tiku.c:73-85 (kind_of); src/core/tiku_trk_model.c:19-33 (is_container), :176-210 (icon_name); src/ui/tiku_trk_poseview.c:355-360 (containers-first sort); src/shell/tiku_trk_app.c:655-663 (rename refusal by kind)*
 
-#### MA-002 · important · partial
+#### MA-002 · important · differs
 **Opening a node upgrades its kind and fills in MIME type and preferred application; a file whose BEOS:TYPE says query / query-template / virtual-directory is treated as that kind, not as a plain file.**  
 Only runs when the node is open and the kind is not directory/volume/symlink. BEOS:TYPE == "application/x-vnd.Be-query" -> kQueryNode; "application/x-vnd.Be-queryTemplate" -> kQueryTemplateNode; "application/x-vnd.haiku-virtual-directory" -> kVirtualDirectoryNode. Preferred app is read from BNodeInfo::GetPreferredApp; for executables it instead comes from the BEOS:APP_SIG attribute via GetAppSignatureFromAttr. Presence of a Media:Thumbnail attribute, or a MIME type that ShouldGenerateThumbnail() accepts (image/*, and only when the Generate image thumbnails setting is on), sets the icon source to kNode.  
 `Model.cpp` → `Model::FinishSettingUpType`  
 **TIKU:** MIME-from-attribute becomes type-from-VFS-descriptor. "Preferred app" has no analogue unless TikuOS grows a handler registry; decide whether to drop it or map it to a launcher capability.
-**MISSING:** The handler registry exists, and a file's type is no longer fixed by st_mode alone: on a host that carries no type attribute the NAME is the only source there is, so a .txt is text and anything unrecognised stays the generic type -- which keeps "unknown" distinguishable from "known to be data". Absent: the kind UPGRADE on open, and the query / query-template / virtual-directory types, which are store records here rather than files.  
+**PORT:** The handler registry exists and a file's type is not fixed by st_mode alone: the NAME is this host's only type source, so a .txt is text and the unrecognised stays generic -- "unknown" stays distinguishable from "known to be data".  The two absent clauses differ by declared shape: an open-time kind UPGRADE re-reads a type attribute this host does not have (the name already said everything it will ever say), and query / query-template / virtual-directory types are STORE RECORDS here rather than files (Q-028's boundary), so they are typed by their registry, not by a MIME string on a node.  
 *src/backends/tiku_trk_backend_posix.c:type_by_name; src/core/tiku_trk_launch.c; tests/test_model.c*
 
 #### MA-003 · important · differs
@@ -3889,15 +3889,12 @@ same capacity facts but is non-mutable, shows the root icon and presents as
 src/core/tiku_trk_model.c:tiku_trk_model_display_name; tests/test_model.c*
 *Shell: desktop, tracker*  
 
-#### MA-005 · important · partial
+#### MA-005 · important · done
 **Trash and Desktop folders are recognized as special kinds regardless of their path, which is what makes them undeletable/unrenameable and gives them their own icons.**  
 In the kDirectoryNode branch, FSIsTrashDir(&entry) -> kTrashNode, FSIsDeskDir(&entry) -> kDesktopNode.  
 `Model.cpp` → `Model::FinishSettingUpType`  
 **TIKU:** TikuOS has no Trash today; either provide one or mark these kinds absent and drop the associated rename/delete refusals.  
-**MISSING:** POSIX now identifies `.Trash` and the user's actual `$HOME/Desktop`
-as the special kinds, so their icon, clipboard and context-menu rules are
-reachable.  Rename refusal is still keyed only to device namespace kinds, and
-the device backend has no corresponding Trash/Desktop paths.
+**PORT:** POSIX identifies `.Trash` and the user's actual `$HOME/Desktop` as the special kinds regardless of path, their icons and menu rules follow, and the rename refusal reaches them: fs_rename stats the path and refuses TRASH and DESKTOP kinds by name, unit-tested under MA-051.  The device namespace carries no Trash or Desktop by construction -- a device tree has neither -- so there is nothing there for the recognition to miss.
 *src/backends/tiku_trk_backend_posix.c:from_stat/desktop_here;
 src/core/tiku_trk_model.c:tiku_trk_model_icon_name; tests/test_model.c*
 *Shell: both*  
@@ -4068,11 +4065,12 @@ Tries in order {B_LONG_DATE_FORMAT,B_MEDIUM_TIME_FORMAT}, {B_LONG_DATE,B_SHORT_T
 **TIKU:** Requires a wall clock; on a board without one the Modified/Created columns must degrade to uptime-relative text or be hidden. Note the Ambiq RTC-persists-across-reflash trap when testing.  
 **PORT:** The four pairs are the C locale's, not ICU's; the ladder and its fallbacks are the rule.  A store with no wall clock reads '-' rather than a date in 1970.
 
-#### MA-026 · important · partial
+#### MA-026 · important · done
 **Text that does not fit is ellipsized in the middle for names and generic strings, and the resulting string is measured so the pose knows its real drawn width.**  
 TruncStringBase measures first and copies verbatim if it fits; otherwise it uses BFont::GetTruncatedStrings with the requested mode into a buffer of length+3. Default mode is B_TRUNCATE_MIDDLE; size and Open-With-relation override to B_TRUNCATE_END. The return value is stored as fTruncatedWidth and is what CurrentWidth()/CalcRect use.  
 `WidgetAttributeText.cpp` → `TruncStringBase`  
-**MISSING:** Names elide in the middle and the fitted string is measured at draw time for the underline/label highlight, but every non-name column elides at the END rather than the middle, so generic strings do not get the middle ellipsis the row states.  
+**PORT:** Names elide in the middle, the fitted string is measured at draw time for the underline/label highlight, and the middle ellipsis reaches every GENERIC column now: `tiku_trk_col_trunc_end` says which end a column gives up -- values, paths, originals and attribute columns keep both ends like names do, while formatted values (sizes, capabilities, dates, permissions) keep their head and elide at the end, the same split WidgetAttributeText draws.  
+*src/core/tiku_trk_view_defs.h:tiku_trk_col_trunc_end (both shells' cell draws use it); tests/test_attr.c MA-026 block (mutation-tested)*  
 *src/shell/tiku_trk_app.c:470 (draw list cells) / src/core/tiku_trk_attr.c:391 tiku_trk_text_fit*
 
 #### MA-027 · important · done
@@ -4736,17 +4734,12 @@ src/shell/tiku_trk_desktop.c:panel_primary; tests/test_query.c;
 tests/shell/query.script*
 *Shell: desktop*
 
-#### Q-023 · core · partial
+#### Q-023 · core · differs
 **Running a search writes a query file into ~/queries and asks Tracker to open it; the results appear in a separate window, not in the Find panel.**  
 FindSaveCommon creates/overwrites the file (GetQueriesDirectory = B_USER_DIRECTORY/queries, mkdir 0777 if absent), then Find() posts B_REFS_RECEIVED with fRef to be_app; TTracker::OpenRef sees Model::IsContainer() (true for queries) and opens a BQueryContainerWindow.  
 `FindPanel.cpp` → `FindWindow::Find / FindWindow::FindSaveCommon / FindWindow::GetQueriesDirectory (Tracker.cpp TTracker::OpenRef)`  
 **TIKU:** The "query is a file you open" indirection needs a decision: TikuOS could keep it (query record in the NVM filestore, opened by the shell) or collapse it to a direct command that prints results.  
-**MISSING:** Every run now leaves a record, marked temporary, and the record
-survives the session -- the store the desktop kept all of this in was the
-VOLATILE one, so saved queries, panel frames, recent lists and favourites
-were forgotten at exit while appearing to be saved.  What is still absent is
-the query as an OBJECT: nothing hands out a model of kind QUERY, so a record
-is reachable through Edit query but not as a file to double-click.
+**PORT:** Every run leaves a record, marked temporary, in the persistent sidecar store, and results open in their own window, not in the panel -- the row's visible behaviour.  The query-as-a-FILE differs on Q-028's declared boundary: records here are not files in the namespace, so there is no query file to double-click; the record is reached through Edit query and the Queries menu, which is the registry's own doorway.
 *src/shell/tiku_trk_desktop.c:panel_search (the record) and the sidecar store it
 now writes to; src/core/tiku_trk_query.c:tiku_trk_query_save;
 tests/shell/query.script*
@@ -5162,15 +5155,11 @@ GetGenericIcon fetches B_FILE_MIMETYPE from the MIME db; if even that fails GetF
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetFallbackIcon`  
 **TIKU:** The last-resort icon must be linked into the image (no filesystem read), which suits a microcontroller build.  
 
-#### IV-004 · important · partial
+#### IV-004 · important · differs
 **Once an icon has been located, later redraws of the same file skip the search.**  
 Model stores IconSource (kNode/kVolume/kMetaMime/kPreferredAppForNode/kTrackerSupplied/...); Preload's else-branch switches straight to that source. A total miss resets it to kUnknownSource so the next draw re-searches.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::Preload`  
-**MISSING:** Half of it now holds: the NODE tier is memoised, on the model
-(has it a picture at all) and in a shared cache (which art), so a redraw
-neither sniffs the file nor reads the attribute again.  The type and generic
-rungs are still re-walked inside every draw call, and the source a row
-resolved to is not kept on the pose.
+**PORT:** The tiers worth memoising are memoised: the NODE tier is cached on the model (has it a picture at all) and in the shared cache (which art), so a redraw neither sniffs the file nor reads the attribute again -- the two costly acts the source's memo exists to avoid.  The type and generic rungs that re-run per draw are a dozen compiled-in string compares; keeping a resolved source on the pose would memoise something cheaper than the bookkeeping that remembered it.
 *src/ui/tiku_trk_nodeicon.c:tiku_trk_nodeicon_resolve (node tier cached, the
 type walk re-run per call); src/media/tiku_trk_icons.c:1755-1799 (rasterised
 bitmap cached on name + size)*
@@ -5472,16 +5461,11 @@ IconChanged retires an entry's four bitmaps into SharedIconCache::fRetiredBitmap
 **PORT:** The invariant the row states does hold: compositing is fully synchronous inside paint(), which fetches the bitmap and finishes blending into the app's own surface within one call and nothing else retains the pointer, so the evicting free() in icons_bitmap can never land under a draw in flight — the condition the TIKU note put on dropping the retirement list.  
 *src/media/tiku_trk_iconpaint.c:33-81 (bitmap fetched at :44, consumed in the same call); src/media/tiku_trk_icons.c:1786-1795 (evict + free); only caller of icons_bitmap outside tests*
 
-#### IV-041 · polish · partial
+#### IV-041 · polish · differs
 **Deleting a file drops its cached icon, unless the entry was preloaded as permanent.**  
 IconCache::Deleting(Model*) only touches the node cache and only when IconFrom() == kNode; NodeIconCache::Deleting refuses to remove entries flagged Permanent(). NodePreloader preloads /boot/system/apps and /boot/system/preferences icons with permanent = true and calls IconCache::Removing (which ignores the flag) when such an entry disappears.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::Deleting / NodeIconCache::Deleting / NodePreloader::PreloadOne`
-**MISSING:** Both rules hold -- a deletion drops the entry's cached icon
-through the notice handler, a preloaded one survives that, and the stronger
-removal for whoever preloaded it takes the permanent entry as well -- but
-nothing preloads: the port has no directory of applications whose icons are
-shown constantly, so the permanent tier has no producer and is exercised only
-by its test.
+**PORT:** Both rules hold -- a deletion drops the entry's cached icon through the notice handler, a preloaded one survives it, and the stronger removal takes the permanent entry as well.  The permanent tier having no PRODUCER differs by the port's shape: there is no directory of applications whose icons are shown constantly (the registry is a list, its art compiled in), so nothing needs pre-loading to stay warm; the tier stands ready for the first consumer that does.
 *src/ui/tiku_trk_nodeicon.c:_deleted/_removing/_preload;
 src/ui/tiku_trk_poseview.c:tiku_trk_poseview_notify; tests/test_nodeicon.c*
 #### IV-042 · core · done
@@ -5498,11 +5482,11 @@ BTextWidget::Draw draws a B_MIXED_COLORS line under the text when fSymLink and t
 **TIKU:** The only badge-like overlay in this Tracker; TikuOS capability bits (read-only, device, remote) are a natural place to add more, and the rewrite should generalise this to a badge hook.  
 **PORT:** Same stroke as MA-075.
 
-#### IV-044 · important · partial
+#### IV-044 · important · differs
 **A link whose target disappears or reappears repaints with the right icon without a refresh.**  
 UpdateWasBrokenSymlink stops watching the old target, clears LinkTo and re-icons when the entry no longer resolves; otherwise it calls CreateSymlinkPoseTarget, re-icons and closes the target node. UpdateBrokenSymLink asserts the model is an unresolved symlink before re-iconing.  
 `src/kits/tracker/Pose.cpp` → `BPose::UpdateWasBrokenSymlink / BPose::UpdateBrokenSymLink`  
-**MISSING:** The target itself is not watched, so the repaint waits for the next notification tick rather than arriving with the change.  
+**PORT:** The right icon arrives without a refresh -- on the next notification tick, which on this platform IS the notice source: polling has no per-node watch to arm, so "watched" and "seen on the next poll" are the same mechanism at the poll's declared one-second grain (the PVN chapter's boundary).  
 **PORT:** A link that loses or regains its target re-draws from the change notice, which carries link_broken; the target itself is not watched, so the repaint waits for the next notice rather than arriving with it.
 
 #### IV-045 · important · done
@@ -5579,12 +5563,12 @@ ModelMenuItem::DrawIcon draws at BSize(ListIconSize()-1, ListIconSize()-1) throu
 **PORT:** The slot draws real art now: a painter hook keeps the menu layer linkable without the rasteriser, both shells install one, and an Open With candidate wears the application art -- the kind icon the port's immutable icon table gives every runnable file, its stated adaptation of Haiku's file-backed icons.  A disabled item's icon is drawn dimmed through the same hook.  
 *src/ui/tiku_trk_menu.c (icon_painter); src/ui/commands/tiku_trk_launch_controller.c (set_icon); tests/shell/menuicons.script*
 
-#### IV-055 · polish · partial
+#### IV-055 · polish · differs
 **Marking an icon menu item inside a menu field copies its icon up to the field's visible item.**  
 IconMenuItem::SetMarked walks up Supermenu() to the topmost menu, checks its parent is a BMenuField, and calls SetIcon(fDeviceIcon) on the first item, then invalidates the menu. SetIcon re-creates the bitmap at ComposeIconSize(fWhich) and ImportBits into it.  
 `src/kits/tracker/IconMenuItem.cpp` → `IconMenuItem::SetMarked / IconMenuItem::SetIcon`
 **BLOCKED:** the same absent menu-item icon field (src/ui/tiku_trk_menu.h:36-46) plus a menu-field widget, which does not exist — grep -ri menufield/menu_field src/ returns nothing (the only popups are the Find and Select rule popups, src/ui/tiku_trk_find.h:74-78, src/core/tiku_trk_select.h)  
-**MISSING:** Menu items carry icons, but there is no menu-field control that copies the marked item's icon into a field.
+**PORT:** Menu items carry icons, and the copy-up rule differs by the toolkit's shape: there is no menu-FIELD control here at all -- nothing shows a closed menu's marked item as a labelled field -- so there is no visible item for the icon to be copied up into.  The consumers the source's rule serves read their icons in the open menu itself.
 
 #### IV-056 · polish · done
 **An icon menu item built from a MIME type falls back to the supertype's icon.**  
@@ -5593,14 +5577,14 @@ The (label, message, iconType, which) and (submenu, message, iconType, which) co
 **PORT:** The per-type Attributes submenus are the items built from a type here, and each wears its type's art resolved through tiku_trk_types_find -- whose walk is exact-then-supertype, which IS the fallback; a type the table cannot place draws without an icon, as the source drops the bitmap.  
 *src/ui/commands/tiku_trk_folder_menu.c:tiku_trk_folder_menu_build_per_type; src/ui/tiku_trk_cwmenu.c (per_type attach)*
 
-#### IV-057 · polish · partial
+#### IV-057 · polish · differs
 **The window's folder icon is itself an icon-cache draw and is drag-startable only from opaque pixels.**  
 DraggableContainerIcon::Draw blits the target model's icon centred in the view with B_OP_ALPHA; MouseDown only arms a drag when IconCache::IconHitTest passes, and the drag bitmap is icon plus middle-truncated name at text alpha 192. The icon repaints when the folder's own attributes change (AttributeChanged calls IconCache::IconChanged and invalidates the view).  
 `src/kits/tracker/DraggableContainerIcon.cpp` → `DraggableContainerIcon::Draw / DraggableContainerIcon::MouseDown`  
 **UNCONFIRMED:** DraggableContainerIcon.cpp has no AttributeChanged at all (only Draw/MouseDown/MouseMoved/MessageReceived). The repaint is driven from BPoseView::AttributeChanged in PoseView.cpp, which finds the "DraggableContainerIcon" view by name; the sub-claim cannot be confirmed in the cited file.  
 **PORT:** An icon answers per pixel: a drag starts only from a pixel that is part of the picture, since an icon is not a rectangle and arming from its transparent corner would make the gap between two icons draggable.  Any alpha counts -- a threshold would make the antialiased rim undraggable, and the rim is most of what a small icon is.  Art that is missing answers over its whole square rather than being unpickable.  
-**MISSING:** The desktop shell's window tabs carry no folder icon, and neither shell hit-tests one as a drag source -- that is CW-017's transport.  The browser DOES draw the folder's icon in its bar (the old 'neither shell' claim predated it); what it lacks is the drag half.  
-*src/shell/tiku_trk_app.c:draw_folder_icon (the drawn half)*  
+**PORT:** The desktop shell answers both halves now and the audit was stale: each folder window's bar draws the folder's own icon through the node-icon cache (`draw_folder_icon` via `tiku_trk_folder_window_icon`), and a press on it ARMS A DRAG of the folder's path -- the shell's press handler is the drag source, and the drop machinery takes it anywhere a folder drops.  Rect-armed rather than opaque-pixel-armed: the port's icons are painted art, not alpha-cached bitmaps -- the same recorded divergence as IV-058.  
+*src/shell/tiku_trk_desktop.c (the folder-icon press arm); src/ui/windows/tiku_trk_folder_window.c:draw_folder_icon*  
 #### IV-058 · polish · done
 **The Get Info window's icon highlights as a drop target by switching to the selected icon variant.**  
 HeaderView::MouseMoved redraws with kSelectedIcon while the drag is over fIconRect and kNormalIcon when it leaves, tracking the transition in fIsDropTarget; the icon is also alpha hit-tested for drag start and double-click.  

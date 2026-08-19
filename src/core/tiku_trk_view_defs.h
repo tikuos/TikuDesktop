@@ -59,4 +59,21 @@ typedef struct {
 #define TIKU_TRK_COL_ATTR_MAX   8
 #define TIKU_TRK_ATTR_NAME_MAX 32
 
+/**
+ * @brief How a column's cell elides when it does not fit (MA-026).
+ *
+ * Generic strings -- names, values, paths, whatever an attribute column
+ * carries -- keep both ends and give up the middle, because either end may
+ * be the distinguishing part.  Formatted values (sizes, capabilities,
+ * dates, permission strings) elide at the end: their head is the value.
+ *
+ * @return 0 for middle (TIKU_TRK_TRUNC_MIDDLE), 1 for end.
+ */
+static inline int
+tiku_trk_col_trunc_end(int field)
+{
+    return field == TIKU_TRK_COL_SIZE || field == TIKU_TRK_COL_CAP ||
+           field == TIKU_TRK_COL_DATE || field == TIKU_TRK_COL_PERM;
+}
+
 #endif /* TIKU_TRK_VIEW_DEFS_H_ */

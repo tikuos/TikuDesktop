@@ -649,8 +649,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
                     tiku_desk_clip_set(surface, cell);
                 }
                 (void)tiku_trk_text_fit(txt, cols[j].width,
-                    (cols[j].field == TIKU_TRK_COL_NAME)
-                        ? TIKU_TRK_TRUNC_MIDDLE : TIKU_TRK_TRUNC_END,
+                    tiku_trk_col_trunc_end(cols[j].field)
+                        ? TIKU_TRK_TRUNC_END : TIKU_TRK_TRUNC_MIDDLE,
                     measure_label, NULL, fitted, sizeof fitted);
                 tw = tiku_desk_text_width(font, fitted);
                 if (cols[j].alignment == TIKU_TRK_ALIGN_RIGHT) {

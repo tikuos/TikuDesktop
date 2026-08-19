@@ -987,9 +987,9 @@ draw(app_t *a)
                 tiku_desk_clip_set(s, cell);
             }
             (void)tiku_trk_text_fit(txt, cols[j].width,
-                                    (cols[j].field == TIKU_TRK_COL_NAME)
-                                        ? TIKU_TRK_TRUNC_MIDDLE
-                                        : TIKU_TRK_TRUNC_END,
+                                    tiku_trk_col_trunc_end(cols[j].field)
+                                        ? TIKU_TRK_TRUNC_END
+                                        : TIKU_TRK_TRUNC_MIDDLE,
                                     measure_text, (void *)f, fitted,
                                     sizeof fitted);
             tw = tiku_desk_text_width(f, fitted);
