@@ -24,9 +24,19 @@ typedef struct {
     int y1;
     unsigned modifiers;
     int64_t scroll_at;
+    /* Non-zero when a SCRIPT drives the shell: the hold delay is counted
+     * in loop pulses instead of wall time, because a scripted wait is a
+     * number of turns and the wall clock under load crosses a 600 ms line
+     * whenever it pleases.  A real user's shell leaves this 0. */
+    int script_delay_pulses;
+    int held_pulses;
     int row_h;
     int *dirty;
 } tiku_trk_band_controller_t;
+
+/** @brief Count the hold delay in pulses rather than wall time. */
+void tiku_trk_band_controller_set_script_delay(
+    tiku_trk_band_controller_t *controller, int pulses);
 
 void tiku_trk_band_controller_init(tiku_trk_band_controller_t *controller,
                                    int row_h, int *dirty);

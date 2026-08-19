@@ -2818,6 +2818,9 @@ tracker_run(int argc, char **argv)
          * so a scripted run exercises the real draw path -- it just has
          * nobody to show it to (see tiku_trk_script.h). */
         sc = tiku_trk_script_open(script_path);
+        /* A scripted wait is a number of turns: count the autoscroll hold
+         * in pulses so the same script passes under any load (PVS-050). */
+        tiku_trk_band_controller_set_script_delay(&app.band_controller, 30);
         {
             /* The fixture's clock: 7 Aug 16:26, the sample the clock row
              * itself quotes.  Live, a minute rolling over mid-comparison

@@ -56,6 +56,7 @@ tiku_trk_band_controller_arm(tiku_trk_band_controller_t *controller,
     controller->y0 = controller->y1 = y;
     controller->modifiers = modifiers;
     controller->scroll_at = 0;
+    controller->held_pulses = 0;
 }
 
 int
@@ -89,6 +90,7 @@ tiku_trk_band_controller_finish(tiku_trk_band_controller_t *controller)
 
     controller->armed_folder = NULL;
     controller->scroll_at = 0;
+    controller->held_pulses = 0;
     if (controller->folder != NULL) {
         tiku_trk_poseview_set_band(controller->folder->view, 0);
         (void)tiku_trk_poseview_save_state(controller->folder->view);
@@ -96,6 +98,13 @@ tiku_trk_band_controller_finish(tiku_trk_band_controller_t *controller)
         *controller->dirty = 1;
     }
     return active;
+}
+
+void
+tiku_trk_band_controller_set_script_delay(
+    tiku_trk_band_controller_t *controller, int pulses)
+{
+    controller->script_delay_pulses = pulses;
 }
 
 int
@@ -122,14 +131,24 @@ tiku_trk_band_controller_pulse(tiku_trk_band_controller_t *controller,
     }
     if (overshoot == 0) {
         controller->scroll_at = 0;
+        controller->held_pulses = 0;
         return 0;
     }
-    if (controller->scroll_at == 0) {
-        controller->scroll_at = now;
-        return 0;
-    }
-    if (now - controller->scroll_at <= AUTOSCROLL_DELAY_US) {
-        return 0;
+    if (controller->script_delay_pulses > 0) {
+        /* Scripted: the delay is a NUMBER OF TURNS, so the same script
+         * passes on a loaded machine and an idle one alike. */
+        if (controller->held_pulses < controller->script_delay_pulses) {
+            controller->held_pulses++;
+            return 0;
+        }
+    } else {
+        if (controller->scroll_at == 0) {
+            controller->scroll_at = now;
+            return 0;
+        }
+        if (now - controller->scroll_at <= AUTOSCROLL_DELAY_US) {
+            return 0;
+        }
     }
     distance = overshoot < 0 ? -overshoot : overshoot;
     step = distance > AUTOSCROLL_FAST ? 3 : 1;
