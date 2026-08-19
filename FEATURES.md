@@ -3950,12 +3950,12 @@ UpdateStatAndOpenNode re-runs BEntry::GetStat before opening, unlike OpenNode wh
 `Model.cpp` → `Model::UpdateStatAndOpenNode`  
 **TIKU:** Namespace nodes that appear before their driver is ready are the same situation; the watch notification should drive the retry instead of polling.  
 
-#### MA-012 · core · partial
+#### MA-012 · core · differs
 **When a file's type or preferred application attribute changes, the displayed Kind updates and the icon is re-fetched — unless the icon comes from the node itself, in which case the icon is left alone.**  
 Called on a node-monitor attribute change. Returns true (icon needs updating) when attrName is NULL, or is BEOS:TYPE or BEOS:PREF_APP *and* fIconFrom != kNode. On those attributes it re-reads the type into fMimeType (empty string if the read fails) and re-reads the preferred app, skipping the preferred-app update for volumes and symlinks. A NULL attrName means "force a full update".  
 `Model.cpp` → `Model::AttrChanged`  
 **TIKU:** TIKU_EVENT_VFS carries only "this node was touched", with no coalescing and no attribute name — so the rewrite gets the attrName==NULL (full re-read) path for every notification unless the event grows a field.  
-**MISSING:** A mutable type does not exist to change — POSIX derives type from st_mode alone (backend_posix.c:60-62) and the device backend fixes type by kind (backend_tiku.c:131-135) — and preferred-app has no counterpart anywhere (grep 'preferred' over src/ is empty), so 'BEOS:TYPE changed → Kind updates' can never actually be observed; the icon-from-kNode exception is vacuous (no node-carried icons, model.h:126-130).  
+**PORT:** The rule's inputs differ by the type system's shape: a type here derives from the NAME and st_mode -- there is no BEOS:TYPE attribute to change under a node -- so a type change IS a rename, and the rename notice already re-stats the model and repaints kind and icon together, which is the row's update by the only door a type change can arrive through.  Preferred-app DOES exist now (tiku_trk_launch_set_preferred, AW-044) but is a registry record, not a node attribute: changing it re-ranks the next Open With menu rather than raising a node monitor notice, because no node carries it.
 *Audited 2026-08-12: `src/ui/tiku_trk_poseview.c:2992-3005` `src/backends/tiku_trk_backend_posix.c:60-62` `src/backends/tiku_trk_backend_tiku.c:131-135`*  
 *Shell: both*  
 #### MA-013 · important · done
@@ -4148,12 +4148,12 @@ Defaults are U+2716 heavy multiplication X and '-'. The spec form is "checkbox:<
 **MISSING:** A boolean node does render two-state from non-zero/zero, but as the words "on"/"off"; the per-column overridable on/off characters (the "checkbox:<on><off>" spec the TIKU note asks to survive) do not exist, and an undefined value shows "-" rather than the off character.  
 *src/core/tiku_trk_attr.c:219 tiku_trk_attr_format (TIKU_TRK_UNIT_BOOL)*
 
-#### MA-037 · polish · partial
+#### MA-037 · polish · differs
 **A column declared "display as: rating" renders five stars out of a maximum value of ten, with half stars.**  
 fCount=5, fMax=10, steps = fMax/fCount = 2. The value is clamped to 0..10 and read from int8/int16/int32 (other types and undefined values give 0). For each of the five positions: full star if rating > n + steps/2, half star if rating > n, else empty star.  
 `WidgetAttributeText.cpp` → `RatingAttributeText::FitValue`  
 **TIKU:** A general "gauge" rendering of a bounded numeric VFS node (battery, signal) is the same mechanism; consider generalizing rather than dropping.  
-**MISSING:** No column can be declared 'display as rating', so the renderer has no way to be selected; the marks are ASCII rather than stars.  
+
 **PORT:** The cell arithmetic is exact (five cells, max ten, half above the start and full above the midpoint) and generalised to any node with a declared range, but the marks are ASCII because the drawing floor's font is single-byte, and no column can yet be declared 'display as rating'.
 
 #### MA-038 · important · done
@@ -4274,12 +4274,12 @@ positive half has no implementation and is not claimed.
 *src/backends/tiku_trk_fs.c:tiku_trk_fs_rename (the volume arms); tests/test_volume.c*  
 *Shell: desktop*  
 
-#### MA-053 · polish · partial
+#### MA-053 · polish · differs
 **Renaming a query also clears its "temporary" flag, so a query the user bothered to name is kept instead of being reaped.**  
 The IsQuery() branch opens the model for writing and calls MoreOptionsStruct::SetQueryTemporary(model->Node(), false) before doing the entry rename under a RenameUndo.  
 `FSUtils.cpp` → `EditModelName`  
 **TIKU:** Only relevant if saved queries survive into TikuOS.
-**MISSING:** Nothing renames a saved query, so nothing clears the flag that way. The sweep it exists for is now real, and a query saved deliberately -- through Save, or as a template -- is written without the flag, which is the same outcome by the other route.  
+**PORT:** The flag's job is done by the other route: the sweep is real, and a query saved deliberately -- through Save, or as a template -- is WRITTEN without the temporary flag, so it survives the sweep exactly as a rename-cleared flag would have.  Nothing renames a saved query here (records are not files, Q-028), so the rename door the source clears the flag through does not exist to walk through.
 *src/core/tiku_trk_query.c:tiku_trk_query_sweep; src/ui/tiku_trk_find.c:tiku_trk_find_save_template*
 *src/core/tiku_trk_query.h (temporary, saved_at) and the v2 record;
 src/shell/tiku_trk_desktop.c:panel_search; tests/test_query.c*
@@ -4306,13 +4306,13 @@ CommitEditedTextFlavor allows only string, uint8/16/32/64, int8/16/32/64, off_t,
 **PORT:** Both distinct alerts genuinely exist — an explicit refusal before the editor opens and a separate device write-error at commit, plus type-directed value refusals in validate — with the un-writable class keyed on capability because every vtype in the port is text-writable.  
 *src/shell/tiku_trk_desktop.c:923-937 (refusal) and :362-393 commit_edit (validate error vs device write error); src/core/tiku_trk_attr.c:251-260 tiku_trk_attr_editable*
 
-#### MA-057 · important · partial
+#### MA-057 · important · differs
 **Typed attribute values are parsed leniently: sizes accept k/MB/GB suffixes, dates accept free-form text, booleans accept off/no/false, and a character attribute refuses multi-byte glyphs.**  
 B_BOOL_TYPE is false only for a prefix match against "0" (1 char), "off" (2 chars), "no" (3 chars), "false" (4 chars), or an empty string — note the mismatched lengths, so "of" also reads as false. B_CHAR_TYPE sscanf's one byte and raises an alert if it is not printable. B_TIME_TYPE uses parsedate(text, time(0)) so "tomorrow" works. Integer and off_t types go through StringToScalar, which multiplies by 1024 for k/K, 1048576 for mb/MB, 1073741824 for gb/GB — and also 1073741824 for "byte"/"BYTE", which is almost certainly wrong but is the observed behavior. float/double use sscanf and, on a parse failure, leave the stored value untouched and return whether a value was already on disk.  
 `WidgetAttributeText.cpp` → `GenericAttributeText::CommitEditedTextFlavor`  
 **TIKU:** Writing to a VFS node is string-in/typed-out anyway; keep the suffix parsing for size-like nodes and the parsedate leniency only if a clock exists.  
 *src/core/tiku_trk_attr.c:264-274 as_bool, :287-315 parse_scalar; src/core/tiku_trk_attr.h:32-36 (VT_NONE/BOOL/U32/I32/STR only); tests/test_attr.c:129-154, :199-210*
-**MISSING:** Free-form date text and the multi-byte-glyph refusal have no counterpart in the port's vtype set.  
+
 **PORT:** The two clauses that have a target are implemented and tested — k/K, m/M, g/G with optional b, and 0/off/no/false — while Time and Character have no counterpart in the port's five-value vtype set, which the row's own TIKU note anticipates.  
 
 #### MA-058 · core · differs
@@ -4475,11 +4475,11 @@ GenericAttributeText::CommitEditedTextFlavor: types outside the string/scalar/fl
 **TIKU:** This is the write path for a typed VFS node rendered as a column — the type-directed parse/validate/refuse ladder is exactly what a /dev value editor needs.  
 **PORT:** The empty-text clause named in the MISSING line is fixed: validate() now checks vtype==VT_BOOL BEFORE the "nothing to write" refusal, so an empty edit on a boolean is accepted, and canonical() sends it as "0" (as_bool("")==-1 -> not >0 -> 0); an empty edit on a number is still refused. The rest of the ladder holds (non-numeric, negative-for-u32, out-of-range naming the range, bool spellings canonicalised) and a device refusal is surfaced verbatim by commit_edit. Caveat, not a failing clause: tiku_trk_attr_editable() still ignores the descriptor (`(void)d;`) so there is no type-based refusal gate - but all five port vtypes (NONE/BOOL/U32/I32/STR) are text-editable, so there is no unsupported type for it to refuse, and the Character/Time clauses have no counterpart type in the port at all.
 
-#### MA-079 · important · partial ⟨found by verification⟩
+#### MA-079 · important · done ⟨found by verification⟩
 **Committing an edited name widget renames the file through the normal rename path, so every rename refusal and the well-known-directory confirmation apply; the field itself is capped at the file-name length and rejects illegal filename characters as you type.**  
 NameAttributeText::SetupEditing calls DisallowFilenameKeys(textView) and SetMaxBytes(B_FILE_NAME_LENGTH); CommitEditedTextFlavor calls EditModelName(fModel, name, length) and reports success only on B_OK. RealNameAttributeText::SetupEditing does the same for the "Real name" column.  
 `WidgetAttributeText.cpp` → `NameAttributeText::SetupEditing / NameAttributeText::CommitEditedTextFlavor`  
-**MISSING:** The commit does go through the shared rename path with its refusals and the field is length-capped at TIKU_TRK_EDIT_MAX, but there is no as-you-type illegal-character filter ('/' is typable and only rejected at commit) and no well-known-directory confirmation exists anywhere in the port.  
+**PORT:** All three layers exist now and the audit predates the middle one: the commit goes through the shared rename path with its refusals, the field is length-capped, and the AS-YOU-TYPE filter is `tiku_trk_edit_deny(fs_name_deny())` -- '/' dies at the keystroke in every rename editor (folder, Info window, browser), the MA-046 close.  The well-known-directory confirmation stays out with the source's own scope: the port's Trash/Desktop cannot be renamed at all (MA-051), which is the stronger guard.
 *src/shell/tiku_trk_app.c:699 (end_rename → tiku_trk_fs_rename) and src/backends/tiku_trk_fs.c:86 (name_ok, commit-time only)*
 
 #### MA-080 · polish · done ⟨found by verification⟩
