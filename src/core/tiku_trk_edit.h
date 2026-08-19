@@ -93,6 +93,17 @@ tiku_trk_edit_result_t tiku_trk_edit_key(tiku_trk_edit_t *e,
 /** @brief Close without deciding; the text is left as it stands. */
 void tiku_trk_edit_stop(tiku_trk_edit_t *e);
 
+/**
+ * @brief How wide the editor should draw, and how far to slide (MA-049).
+ *
+ * Grows with the text between @p min_w and @p max_w; past the cap the box
+ * stays at @p max_w and @p scroll_px slides the text so the caret is
+ * visible.  @p measure_prefix measures the first n bytes of the text.
+ */
+void tiku_trk_edit_metrics(const tiku_trk_edit_t *e, int min_w, int max_w,
+                           int (*measure_prefix)(const char *, int, void *),
+                           void *ctx, int *out_w, int *out_scroll);
+
 /** @brief The selected range, ordered.  @return 1 when there is one. */
 int tiku_trk_edit_selection(const tiku_trk_edit_t *e, int *from, int *to);
 

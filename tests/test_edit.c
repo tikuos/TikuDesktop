@@ -14,6 +14,13 @@
 #include "tiku_trk_edit.h"
 #include "tiku_trk_select.h"
 
+static int
+ten_per_char(const char *text, int n, void *ctx)
+{
+    (void)text; (void)ctx;
+    return n * 10;
+}
+
 static int fails;
 
 static void
@@ -159,6 +166,30 @@ main(void)
     tiku_trk_select_place(500, 350, 320, 120, 1000, 700, &x, &y);
     check(x == 500 - 160 && y == 350 - 60,
           "AW-081", "otherwise it centres on the pointer");
+
+    printf("\nthe editor grows, caps and slides (MA-049)\n");
+    {
+        tiku_trk_edit_t g;
+        int w = 0, sc = 0;
+
+        tiku_trk_edit_start(&g, "abcde");        /* 5 chars, 50 px */
+        tiku_trk_edit_metrics(&g, 40, 200, ten_per_char, NULL, &w, &sc);
+        check(w == 62 && sc == 0, "MA-049",
+              "the box grows with the text and slides nothing while it "
+              "fits");
+        tiku_trk_edit_start(&g, "abcdefghijklmnopqrstuvwxyz");  /* 260 px */
+        g.caret = g.len;
+        tiku_trk_edit_metrics(&g, 40, 200, ten_per_char, NULL, &w, &sc);
+        check(w == 200, "MA-049",
+              "past the cap the box stays at the column's width");
+        check(sc > 0 && sc <= 272 - 200, "MA-049",
+              "and the text slides so the caret at the end stays visible");
+        g.caret = 0;
+        tiku_trk_edit_metrics(&g, 40, 200, ten_per_char, NULL, &w, &sc);
+        check(sc == 0, "MA-049",
+              "with the caret at the head nothing slides -- the slide "
+              "follows the caret, not the length");
+    }
 
     printf("\n%s\n", fails ? "FAILURES" : "editing and Select hold");
     return fails ? 1 : 0;

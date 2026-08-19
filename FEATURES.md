@@ -4231,11 +4231,12 @@ StartEdit calls textView->MakeEditable(false) and MakeSelectable(true) when view
 **TIKU:** Map directly to the node's write capability bit: no write capability -> selectable, not editable.  
 **PORT:** The rename editor opens for read-only volume files, keeps selection/caret navigation, and rejects all mutating keys and paste while writable files retain normal editing. `tests/test_edit.c` covers the split.  
 
-#### MA-049 · polish · partial
+#### MA-049 · polish · done
 **The rename editor grows as you type but never past the column width (list view) or ~30 characters (icon views), scrolling instead.**  
 fMaxWidth is the column width in list mode, else StringWidth("M")*30. MakeResizable(!tooWide, tooWide ? NULL : scrollView) toggles between grow-with-text and fixed-width-with-scrolling; the key-down filter re-evaluates on every keystroke. TextViewPasteFilter computes the post-paste width (text width, minus the selected region being replaced, plus the clipboard text width) and, when too wide, resizes the scroll view to exactly maxWidth, shifting it left by half the delta for centered text and the full delta for right-aligned text.  
 `TextWidget.cpp` → `TextViewPasteFilter`  
-**MISSING:** The cap clause holds by construction — the field is drawn at exactly the name column's width (260 px in the desktop shell) and clipped — but it never grows with the text, has no ~30-character icon-mode form, and does not scroll to keep the caret visible when the text overruns.  
+**PORT:** The editor GROWS with the text now, in both shells, and never past the name column's width; past the cap the box stays put and the text SLIDES so the caret stays visible -- never past the text's own end, and not at all while the caret sits at the head.  The arithmetic is one core function (`tiku_trk_edit_metrics`), unit-tested, drawn through the toolkit's new sliding text field.  The ~30-character icon-mode form has no referent: neither shell opens an inline editor in icon mode -- renames are the list's -- so the list cap is the only cap with a subject.  
+*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/desktop/src/tiku_desk_ui.c:tiku_desk_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
 *src/shell/tiku_trk_app.c:533 (editor box = cols[0].width); src/shell/tiku_trk_desktop.c:299*
 
 #### MA-050 · core · done

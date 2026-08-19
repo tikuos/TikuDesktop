@@ -682,6 +682,20 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
     }
 }
 
+/** @brief The first @p n bytes' width in the UI face (MA-049). */
+static int
+fw_measure_prefix(const char *text, int n, void *ctx)
+{
+    char tmp[TIKU_TRK_EDIT_MAX];
+
+    (void)ctx;
+    if (n < 0) { n = 0; }
+    if (n >= (int)sizeof tmp) { n = (int)sizeof tmp - 1; }
+    memcpy(tmp, text, (size_t)n);
+    tmp[n] = '\0';
+    return tiku_desk_text_width(tiku_desk_font_plain(), tmp);
+}
+
 static void
 draw_title(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
            tiku_desk_rect_t title)
@@ -885,13 +899,20 @@ draw_transients(tiku_trk_folder_window_t *folder,
         int at = *render->rename_row - scroll;
 
         if (at >= 0 && at < rows) {
-            tiku_desk_rect_t box = { list.x + 2,
-                list.y + 2 + at * render->row_h,
-                list.w - 4 > 260 ? 260 : list.w - 4, render->row_h };
+            /* Grown with the text, capped at the name column, slid to
+             * keep the caret visible past the cap (MA-049). */
+            int cap = list.w - 4 > 260 ? 260 : list.w - 4;
+            int bw = cap, bs = 0;
+            tiku_desk_rect_t box;
 
-            tiku_desk_ui_textfield_sel(surface, box, render->rename_edit->text,
-                render->rename_edit->caret, render->rename_edit->sel_a,
-                render->rename_edit->sel_b, TIKU_DESK_S_FOCUS);
+            tiku_trk_edit_metrics(render->rename_edit, 60, cap,
+                                  fw_measure_prefix, NULL, &bw, &bs);
+            box = (tiku_desk_rect_t){ list.x + 2,
+                list.y + 2 + at * render->row_h, bw, render->row_h };
+            tiku_desk_ui_textfield_scroll(surface, box,
+                render->rename_edit->text, render->rename_edit->caret,
+                render->rename_edit->sel_a, render->rename_edit->sel_b,
+                TIKU_DESK_S_FOCUS, bs);
         }
     }
 }

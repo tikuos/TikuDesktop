@@ -251,6 +251,20 @@ index_of_path(app_t *a, const char *path)
     return -1;
 }
 
+/** @brief The first @p n bytes' width in the UI face (MA-049). */
+static int
+measure_prefix_px(const char *text, int n, void *ctx)
+{
+    char tmp[TIKU_TRK_EDIT_MAX];
+
+    (void)ctx;
+    if (n < 0) { n = 0; }
+    if (n >= (int)sizeof tmp) { n = (int)sizeof tmp - 1; }
+    memcpy(tmp, text, (size_t)n);
+    tmp[n] = '\0';
+    return tiku_desk_text_width(tiku_desk_font_plain(), tmp);
+}
+
 static void blit(app_t *a);
 static tiku_desk_rect_t menubar_rect(const app_t *a);
 
@@ -1068,13 +1082,23 @@ draw(app_t *a)
             if (p == NULL || strcmp(p->model.path, a->edit_path) != 0) {
                 continue;
             }
-            box.x = col_x(a, &cols[0]);
-            box.y = list.y + 2 + (i - scroll) * a->row_h;
-            box.w = cols[0].width;
-            box.h = a->row_h;
-            tiku_desk_ui_textfield_sel(s, box, a->ed.text, a->ed.caret,
-                                       a->ed.sel_a, a->ed.sel_b,
-                                       TIKU_DESK_S_FOCUS);
+            {
+                /* The editor grows with the text and never past the name
+                 * column; past the cap the text slides so the caret stays
+                 * visible (MA-049). */
+                int bw = cols[0].width, bs = 0;
+
+                tiku_trk_edit_metrics(&a->ed, 60, cols[0].width,
+                                      measure_prefix_px, NULL, &bw, &bs);
+                box.x = col_x(a, &cols[0]);
+                box.y = list.y + 2 + (i - scroll) * a->row_h;
+                box.w = bw;
+                box.h = a->row_h;
+                tiku_desk_ui_textfield_scroll(s, box, a->ed.text,
+                                              a->ed.caret, a->ed.sel_a,
+                                              a->ed.sel_b,
+                                              TIKU_DESK_S_FOCUS, bs);
+            }
             break;
         }
     }

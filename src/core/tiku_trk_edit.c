@@ -70,6 +70,42 @@ tiku_trk_edit_deny(tiku_trk_edit_t *e, const char *deny)
 }
 
 void
+tiku_trk_edit_metrics(const tiku_trk_edit_t *e, int min_w, int max_w,
+                      int (*measure_prefix)(const char *, int, void *),
+                      void *ctx, int *out_w, int *out_scroll)
+{
+    int text_w, caret_px, want, w, scroll = 0;
+
+    if (e == NULL || measure_prefix == NULL) {
+        if (out_w != NULL) { *out_w = min_w; }
+        if (out_scroll != NULL) { *out_scroll = 0; }
+        return;
+    }
+    text_w = measure_prefix(e->text, e->len, ctx);
+    caret_px = measure_prefix(e->text, e->caret, ctx);
+    want = text_w + 12;             /* caret room and the sunken frame */
+    w = want;
+    if (w < min_w) { w = min_w; }
+    if (w > max_w) { w = max_w; }
+    if (want > w) {
+        /* The box is full: slide so the caret stays visible, but never
+         * past the text's own end -- a slide that left blank space would
+         * hide text for nothing. */
+        if (caret_px + 8 > w - 8) {
+            scroll = caret_px + 8 - (w - 8);
+        }
+        if (scroll > want - w) {
+            scroll = want - w;
+        }
+        if (scroll < 0) {
+            scroll = 0;
+        }
+    }
+    if (out_w != NULL) { *out_w = w; }
+    if (out_scroll != NULL) { *out_scroll = scroll; }
+}
+
+void
 tiku_trk_edit_stop(tiku_trk_edit_t *e)
 {
     if (e != NULL) {
