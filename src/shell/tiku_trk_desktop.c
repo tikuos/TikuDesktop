@@ -365,6 +365,27 @@ sync_folder_preferences(desktop_t *app)
     app->thumbs.enabled = tiku_trk_prefs_get(prefs,
                               "GenerateImageThumbnails") != 0;
 
+    {   /* With BOTH storage settings off there is no doorway to the root
+         * left on the Desktop, so a Disks window still open is a view of
+         * something the user just asked not to see: it closes with the
+         * icon (PVN-058). */
+        int disks = tiku_trk_prefs_get(prefs, "ShowDisksIcon") != 0 ||
+                    tiku_trk_prefs_get(prefs,
+                                       "MountVolumesOntoDesktop") != 0;
+
+        if (!disks) {
+            for (i = app->folder_count - 1; i >= 0; i--) {
+                folder_t *folder = &app->folders[i];
+
+                if (folder->win != NULL && folder->win->open &&
+                    strcmp(folder->path, "/") == 0) {
+                    close_window(app, folder->win);
+                    app->dirty = 1;
+                }
+            }
+        }
+    }
+
     if (full_path != app->applied_full_path) {
         /* kWindowsShowFullPathChanged: every OPEN window re-titles the
          * moment the preference moves (TS-047). */

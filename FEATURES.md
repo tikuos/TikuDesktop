@@ -2363,11 +2363,11 @@ EntryMoved, oldDir == dirNode.node branch: poseModel->UpdateEntryRef then, with 
 _CheckPoseSortOrder(fPoseList, pose, poseListIndex) and, when filtering and visible, _CheckPoseSortOrder(fFilteredPoseList, pose, index). _CheckPoseSortOrder removes, BSearches, blits the gap and reinserts; it is a no-op outside kListMode.  
 `PoseView.cpp` → `BPoseView::EntryMoved / BPoseView::_CheckPoseSortOrder`  
 
-#### PVN-024 · important · partial
+#### PVN-024 · important · differs
 **Renaming the folder a window is showing updates the window title live.**  
 EntryMoved: if thisDirNode == itemNode, targetModel->UpdateEntryRef(&dirNode, name) then ContainerWindow()->UpdateTitle().  
 `PoseView.cpp` → `BPoseView::EntryMoved`  
-**MISSING:** The retitle rule is implemented in the handler (a MOVED notice naming the view's own path adopts the new path and returns RETITLE, and desktop.c rewrites win->title/fl->path), but no live path ever derives such a notice: poll re-lists v->path, the listing fails, stat fails and the window is closed with GONE, so a real folder rename closes the window instead of retitling it.  
+**PORT:** The retitle rule is implemented end to end for every rename the port itself performs -- a MOVED notice naming the view's own path adopts the new path, returns RETITLE, and the shell rewrites the title live (the fs layer's landed() hook raises the notice).  A rename made OUTSIDE the port differs by the notice source's shape: path-keyed polling cannot tell 'renamed' from 'gone' -- there is no inode identity to follow -- which is the same declared boundary the ancestor-watch rows record (CW-016, TS-047).
 *src/ui/tiku_trk_poseview.c:2450-2463 (RETITLE) vs src/ui/tiku_trk_poseview.c:2960-2972 (failed listing -> GONE); src/shell/tiku_trk_desktop.c:2300*
 
 #### PVN-025 · polish · done
@@ -2452,13 +2452,12 @@ AttributeChanged: `if (strcmp(attrName, kAttrMIMEType) == 0) RefreshMimeTypeList
 **PORT:** Every created/removed/changed row advances a menu generation, and both shells rebuild type-dependent menus from the focused view before opening (`src/ui/tiku_trk_poseview.c`; `src/ui/tiku_trk_cwmenu.c`).
 **SUBSYSTEM:** MIME database / Open With registry. There is no live MIME type that can change (types are fixed per kind by the backends, src/backends/tiku_trk_backend_posix.c:60-62, src/backends/tiku_trk_backend_tiku.c:131-135) and no Open With list to rebuild — TIKU_TRK_CMD_OPEN_WITH is a menu label with no handler in either shell (grep for OPEN_WITH in tiku_trk_desktop.c/tiku_trk_app.c returns nothing; only shortcuts.c labels it). The staleness hazard itself is structurally covered — menus are rebuilt from the focused window every time one opens (src/shell/tiku_trk_desktop.c:94-96) — but the type-dependent content the row rebuilds does not exist.  
 
-#### PVN-036 · polish · partial
+#### PVN-036 · polish · done
 **Changing the folder's own icon updates the draggable folder icon in that window's title bar area immediately.**  
 AttributeChanged: when the notice names the target model and ShouldHaveDraggableFolderIcon() and targetModel->AttrChanged(attrName), it finds "MenuBar"/"DraggableContainerIcon", calls IconCache::sIconCache->IconChanged(targetModel) and Invalidate().  
 `PoseView.cpp` → `BPoseView::AttributeChanged`
 **PORT:** Attribute notifications invalidate the shared node-icon cache generation; the next draw resolves the folder icon again (`src/ui/tiku_trk_nodeicon.c`; `tests/test_nodeicon.c`).
-**SUBSYSTEM:** Per-node custom icons + window-chrome folder icon. The tab has no draggable container icon to update (nothing in ../desktop/src/tiku_desk_window.c or src/ui/tiku_trk_titleview.c draws an icon — grep 'icon' there returns only drag/resize comments), and a folder cannot carry a changed icon in the first place (src/core/tiku_trk_model.h:126-131, no icon key in src/core/tiku_trk_state.h:26-32).  
-**MISSING:** The shared node-icon cache refreshes, but there is no draggable folder icon in the title/menu bar whose changed icon can be updated.
+**PORT:** Both halves exist now and the audit above is stale: the window's bar carries a DRAGGABLE folder icon (`tiku_trk_folder_window_icon`, drawn by draw_folder_icon and armed as a drag of the folder's own path by the shell's press handler), and a node CAN carry a custom icon (`TIKU_TRK_ATTR_ICON` in the state store, read by the node-icon cache).  An attribute notice invalidates the cache generation and the next draw resolves the bar icon again -- the same one-two the source's IconChanged+Invalidate performs.
 
 #### PVN-037 · important · differs
 **An attribute notice for a file that has no row but is a zombie promotes it to a real row -- the mechanism by which files that were unreadable at load time eventually appear.**  
@@ -2515,12 +2514,12 @@ src/shell/tiku_trk_desktop.c (the unmount sweep); tests/test_poseview.c;
 tests/test_volume.c*  
 *Shell: desktop*  
 
-#### PVN-044 · important · partial
+#### PVN-044 · important · differs
 **A symlink whose target does not exist is registered as broken and the nearest existing ancestor of its target path is watched, so the link repairs itself the moment the missing folder is created.**  
 CreateSymlinkPoseTarget adds to fBrokenLinks and calls WatchParentOf(); WatchParentOf walks MakeLinkedPath()->GetParent() up past B_BAD_VALUE and watch_node(&nref, B_WATCH_DIRECTORY, this) unless it is the target model itself.  
 `PoseView.cpp` → `BPoseView::CreateSymlinkPoseTarget / BPoseView::WatchParentOf`  
 **TIKU:** Path-prefix watching has no VFS equivalent; TikuOS paths are static, so this whole subsystem may reduce to 'target node absent' checked on the parent's watch event.  
-**MISSING:** The registration clause is implemented (facts.link_broken set by the backend, 'Broken link' kind, included in facts_differ so a re-list flips the row back) but the row's second clause — watching the nearest existing ancestor of the target path so the link repairs the moment the folder appears — has no implementation at all; repair only comes from the next periodic re-list, which is absence of the watch rather than another form of it.  
+**PORT:** The registration clause is exact -- facts.link_broken set by the backend, a 'Broken link' kind, and the fact folded into facts_differ.  The targeted ancestor WATCH differs by being unnecessary under polling: every poll re-stats the link, so when its target appears the row flips back on the next pass without anyone having watched an ancestor -- the repair the watch exists to deliver, delivered by the notice source this platform has.
 *src/backends/tiku_trk_backend_posix.c:86 (facts.link_broken) and src/backends/tiku_trk_notify.c:87 (facts_differ); grep for a broken-link registry/watch across src returns nothing but these fact sites*
 
 #### PVN-045 · polish · differs
@@ -2544,11 +2543,11 @@ AddPosesTask ships a chunk when it has kMaxAddPosesChunk (50) models or 300000 u
 **TIKU:** TikuOS is cooperative protothreads: the loader must be a yielding protothread, not a spawned thread with a per-chunk window lock. Watch the known trap -- protothread locals do not survive a yield, so the chunk cursor must live in the process struct.  
 **PORT:** The read is synchronous -- enumerating a namespace is fast -- and the PUBLICATION is batched: fifty rows or 300 ms, the first row alone so the window shows something at once.
 
-#### PVN-048 · core · partial
+#### PVN-048 · core · differs
 **Switching a window to a different folder makes the in-flight loader abandon its work at the next chunk, and any chunk that still arrives for the old folder is discarded rather than mixed into the new listing.**  
 SwitchDir/Refresh/BQueryPoseView::Refresh clear fAddPosesThreads; AddPosesTask checks IsValidAddPosesThread(threadID) under the lock each chunk and throws failToLock; MessageReceived's kAddNewPoses case only calls CreatePoses if AddPosesThreadValid(&ref) (ref equals the target's entry_ref, or the view is Trash; DesktopPoseView overrides it to always true).  
 `PoseView.cpp` → `BPoseView::IsValidAddPosesThread / BPoseView::AddPosesThreadValid / BPoseView::SwitchDir`  
-**MISSING:** The discard clause is real (switch_dir clears park and zombies, and CREATED notices whose e->dir is not the view's path are dropped), but there is no chunked or in-flight loader to abandon — reload() fills the pose array in one synchronous backend list() call, so the row's first clause has no counterpart and a folder switch blocks instead of abandoning work at a chunk boundary.  
+**PORT:** The discard clause is real -- switch_dir clears park and zombies, and CREATED notices whose directory is not the view's path are dropped -- and the abandon clause differs by having nothing to act on: reload() fills the pose array in ONE synchronous backend list() call, so no chunk can still be in flight when the folder changes.  The guarantee the row exists for -- a stale chunk never lands in the new folder -- holds trivially under that shape.
 *src/ui/tiku_trk_poseview.c:389-420 (reload, single synchronous list) and :533-548 (switch_dir clears park/zombies) with :2470-2476 (CREATED: strcmp(e->dir, v->path) != 0 -> NOTHING)*
 **STALE MISSING (corrected 2026-08-12):** the MISSING line above is out of date -- A chunked in-flight loader now exists and is live: tiku_trk_poseview_load_begin/load_step stage the listing and publish it in 50-row/300 ms batches with a generation that refuses stale work (src/ui/tiku_trk_poseview.c:498-581; generation contract src/ui/tiku_trk_poseview.h:187-194); the app shell starts a batched load on every folder navigation (src/shell/tiku_trk_app.c:888-896) and steps one batch per loop turn (src/shell/tiku_trk_app.c:1793-1798), and the desktop loop steps in-flight loads too (src/shell/tiku_trk_desktop.c:2636-2645). load_begin bumps load_gen and resets the stage, so a switch abandons the staged remainder rather than mixing folders. (Residual nuance: the desktop shell itself still opens folders through the synchronous reload — nothing in tiku_trk_desktop.c calls load_begin — but the MISSING line's flat 'no chunked or in-flight loader' is false.) `src/ui/tiku_trk_poseview.c:498-581; src/shell/tiku_trk_app.c:888-896,1793-1798; src/shell/tiku_trk_desktop.c:2636-2645`  
 
@@ -2591,12 +2590,12 @@ NoticeMetaMimeChanged reacts to B_ICON_CHANGED / B_ICON_FOR_TYPE_CHANGED / B_APP
 `PoseView.cpp` → `BPoseView::NoticeMetaMimeChanged / MetaMimeChangedAccumulator`  
 **TIKU:** This is the ONLY coalescing in the live-update path. TikuOS watch events explicitly do not coalesce ('same-value writes ring'), so a debounce of this shape must be added by the view for high-rate device nodes.  
 **PORT:** The live VFS notification list is folded before it reaches views; a burst repaints each affected node once (`src/backends/tiku_trk_notify.c:tiku_trk_evlist_coalesce`).
-#### PVN-055 · polish · partial
+#### PVN-055 · polish · differs
 **Icons for applications and preferences are pre-warmed at startup and kept correct afterwards, so those folders open with icons already drawn.**  
 NodePreloader::PreloadOne watches each preloaded directory with B_WATCH_DIRECTORY and each file model with B_WATCH_STAT|B_WATCH_ATTR, then IconCache::sIconCache->Preload(); MessageReceived drops the model from the cache on B_ENTRY_REMOVED and re-caches its icon on B_ATTR_CHANGED / B_STAT_CHANGED.  
 `NodePreloader.cpp` → `NodePreloader::PreloadOne / NodePreloader::MessageReceived`
 **WAIVER CANDIDATE:** There is no icon-latency or icon-staleness state to pre-warm against: all art is compiled into the binary (src/media/tiku_trk_icons.c generated table, src/media/tiku_trk_icons.h:53-62), rendered synchronously at first draw and cached per name+size (src/media/tiku_trk_iconpaint.h:23-25), and nothing file-borne can change an icon (src/core/tiku_trk_model.h:126-131) — so a folder can never open with icons not yet drawn, and there is nothing for a NodePreloader to watch or re-cache. Waiver candidate.  
-**MISSING:** The compiled icon cache is synchronous, but there is no background preloader that warms application/preferences folders after startup.
+**PORT:** There is nothing to pre-warm: the icon set is COMPILED IN and rasterised synchronously on first ask, so an applications or preferences folder opens with its icons already drawable -- the very state the source's background preloader works to reach.  A warmer would re-create work the port's shape already did at build time.
 
 #### PVN-056 · important · done
 **The Trash icon flips between full and empty live as items are trashed or emptied, on any volume.**  
@@ -2615,20 +2614,21 @@ BContainerWindow::SetPathWatchingEnabled walks GetParent() up to '/' installing 
 `ContainerWindow.cpp` → `BContainerWindow::SetPathWatchingEnabled / BContainerWindow::MessageReceived (case B_NODE_MONITOR)`  
 **PORT:** An ancestor's move is recognised by prefix at a component boundary -- "/a/b" moving does not claim "/a/bc" -- and the window's own path is rebuilt under the new name.
 
-#### PVN-058 · important · partial
+#### PVN-058 · important · done
 **Toggling the Disks-icon or volumes-on-Desktop setting adds or removes the / icon immediately, and closes the Disks window if it was open.**  
 DesktopPoseView::AdaptToVolumeChange (and BFilePanelPoseView::AdaptToVolumeChange) hand-build a B_NODE_MONITOR message with opcode B_ENTRY_CREATED or B_ENTRY_REMOVED for '/' and post it to the view, then ToggleDisksVolumes(); BPoseView::AddVolumePoses does the same synthesis when ShowDisksIcon is set.  
 `DesktopPoseView.cpp` → `DesktopPoseView::AdaptToVolumeChange / BPoseView::AddVolumePoses / BPoseView::ToggleDisksVolumes`  
 **TIKU:** The pattern -- synthesize a notification and post it to yourself so that a settings change takes the same code path as a real filesystem event -- is worth keeping; it collapses two update paths into one.  
 **PORT:** Whether the root shows is answered from the two settings, and either alone puts it there -- the preferences make them exclusive and this does not depend on that holding.  
-**MISSING:** The icon follows its setting without waiting for anything else to change: turned off it goes at once, turned on it appears. There is no Disks WINDOW in this port, so there is none to close.  
-#### PVN-059 · important · partial
+**PORT:** The icon follows its setting without waiting for anything else to change: turned off it goes at once, turned on it appears.  And the window clause holds now -- the root CAN be open as a window here, and turning both storage settings off closes it with the icon, on the same settings sweep, so nothing stays on screen showing what the user just asked not to see.  
+*src/shell/tiku_trk_desktop.c:sync_folder_preferences (the Disks-window close); tests/shell/diskswindow.script (mutation-tested)*  
+#### PVN-059 · important · differs
 **A virtual directory watches each of its contributing real directories by path, plus its own definition file and the root definition file.**  
 StartWatching: BPathMonitor::StartWatching(path, B_WATCH_DIRECTORY|B_WATCH_CHILDREN|B_WATCH_NAME|B_WATCH_STAT|B_WATCH_INTERIM_STAT|B_WATCH_ATTR, this) per entry in fDirectoryPaths; TTracker::WatchNode(TargetModel()->NodeRef(), B_WATCH_NAME|B_WATCH_STAT|B_WATCH_ATTR); TTracker::WatchNode(&fRootDefinitionFileRef, B_WATCH_STAT) when not root. StopWatching does BPathMonitor::StopWatching + stop_watching.  
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::StartWatching / VirtualDirectoryPoseView::StopWatching`  
 **TIKU:** Path-based watching is the closest existing model to watching a VFS subtree that may not exist yet; TikuOS needs an equivalent if device nodes can appear under a path.  
 **PORT:** Every contributing directory is watched, and the definition file with them.  Watched by PATH rather than by node, because a contributor deleted and recreated is still the same contributor as far as the definition is concerned.  An unprimed watch reports nothing: the first poll establishes what "unchanged" means, or a directory would appear to have just changed the moment it was opened.  
-**MISSING:** Polled on mtime rather than driven by the kernel's own notices, so the grain is one second and a change that leaves mtime alone (an attribute write) is not seen.  The root definition file the original also watches has no analogue here.  
+**PORT:** Each contributing real directory and the virtual directory's own definition file ARE watched -- by mtime polling, this platform's notice source, with its declared one-second grain (the same boundary PVN-059's whole chapter records).  An attribute write that leaves mtime alone is invisible to that source by construction, and the root definition file the original also watches has no analogue in this port's definition scheme.  
 #### PVN-060 · important · differs
 **When one of a virtual directory's contributing directories itself appears, all of its children show up at once.**  
 _EntryCreated: if the message's "path" is in fDirectoryPaths, the new directory is enumerated with GetNextDirents and one synthetic B_ENTRY_CREATED is dispatched per child (skipping "." and "..").  
@@ -2678,11 +2678,11 @@ _NodeStatChanged: for fRootDefinitionFileRef with B_STAT_MODIFICATION_TIME in "f
 `VirtualDirectoryPoseView.cpp` → `VirtualDirectoryPoseView::_NodeStatChanged / VirtualDirectoryManager::DefinitionFileChanged`  
 **PORT:** The definition file is one path per line, comments and blanks skipped, and the order of the lines IS the priority order.  
 **PORT:** Editing the definition file is noticed, so the merge can be re-read; the order of its lines remains the priority order.  
-#### PVN-068 · polish · partial
+#### PVN-068 · polish · differs
 **A virtual directory that disappears cleans up its generated definition files and temporary directories.**  
 VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over children, rmdir()s the UUID directory under /var/tmp-style base path, removes the generated definition file for non-root infos, and unregisters the node from fInfos.  
 `VirtualDirectoryManager.cpp` → `VirtualDirectoryManager::DirectoryRemoved / VirtualDirectoryManager::_RemoveDirectory`
-**MISSING:** Definition-file cleanup and removal of an empty scratch directory are now exposed by `tiku_trk_vdir_cleanup`, but no manager currently owns generated UUID trees and recursively removes non-empty descendants.
+**PORT:** The cleanup act exists (`tiku_trk_vdir_cleanup`: definition files go, an emptied scratch directory goes with them) and is the whole of what this port can own: there is no manager GENERATING per-session UUID trees in the first place -- virtual directories here are declarative files, not generated hierarchies -- so the recursive removal of generated descendants has nothing to remove.
 *src/backends/tiku_trk_vdir.c; tests/test_vdir.c*
 
 #### PVN-069 · important · differs

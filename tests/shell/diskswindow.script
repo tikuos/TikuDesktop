@@ -1,0 +1,16 @@
+# shell: desktop
+# PVN-058: turning the storage settings off takes the Disks WINDOW with the
+# icon -- a window showing what the user asked not to see does not stay.
+wait 10
+expect-windows 1
+note double-clicking the Disks icon opens the root window
+click 50 30
+wait 2
+click 50 30
+wait 6
+expect-windows 2
+note both storage settings off: the icon goes, and the window goes with it
+write /tmp/trk_home/.config/TrackerSettings ShowDisksIcon off
+wait 12
+expect-windows 1
+quit
