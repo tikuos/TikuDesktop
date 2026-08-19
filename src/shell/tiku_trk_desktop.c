@@ -4939,8 +4939,9 @@ tracker_run(int argc, char **argv)
                     changed++;
                 } else if (nf != TIKU_TRK_NOTIFY_NOTHING) {
                     if ((nf & TIKU_TRK_NOTIFY_RETITLE) != 0u) {
-                        snprintf(fl->win->title, sizeof fl->win->title, "%s",
-                                 tiku_trk_poseview_path(fl->view));
+                        tiku_trk_folder_title_for(prefs_model(&app),
+                            tiku_trk_poseview_path(fl->view),
+                            fl->win->title, sizeof fl->win->title);
                         snprintf(fl->path, sizeof fl->path, "%s",
                                  tiku_trk_poseview_path(fl->view));
                     }

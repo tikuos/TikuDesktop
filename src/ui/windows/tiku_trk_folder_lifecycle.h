@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_FOLDER_LIFECYCLE_H_
 #define TIKU_TRK_FOLDER_LIFECYCLE_H_
 
+
 #include <stddef.h>
 
 #include "tiku_trk_folder_window.h"
@@ -70,5 +71,9 @@ tiku_trk_folder_window_t *tiku_trk_folder_lifecycle_open_results(
 int tiku_trk_folder_lifecycle_refresh_results(
     tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_window_t *folder);
+
+/** @brief Compose a folder window's title honouring the path preference. */
+void tiku_trk_folder_title_for(tiku_trk_prefs_t *prefs,
+                               const char *path, char *out, size_t max);
 
 #endif /* TIKU_TRK_FOLDER_LIFECYCLE_H_ */

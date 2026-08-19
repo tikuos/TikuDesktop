@@ -176,6 +176,11 @@ PYEOF
             printf 'ShowNavigator off\n' > \
                 "$prefhome/.config/TrackerSettings"
         fi
+        if grep -q '^# prefs: fullpath-on' "$s"; then
+            mkdir -p "$deskhome/.config"
+            printf 'ShowFullPathInTitleBar on\n' > \
+                "$deskhome/.config/TrackerSettings"
+        fi
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         # A script that says "# argv: none" is started with no path at all,
         # which is the only way to exercise what the shell opens on its own.

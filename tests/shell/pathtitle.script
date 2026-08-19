@@ -1,0 +1,13 @@
+# shell: desktop
+# home: fixture
+# CW-016: by default the title is the folder's own name, not its path -- a
+# name that appears NOWHERE in the full path proves the leaf was taken.
+wait 10
+click 90 118
+wait 2
+click 90 118
+wait 5
+expect-title sub
+note the whole path is NOT the title: this substring is absent from "sub"
+expect-no-title /tmp/trk_script
+quit

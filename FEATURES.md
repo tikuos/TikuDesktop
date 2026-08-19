@@ -2844,13 +2844,13 @@ Quit() posts B_QUIT_REQUESTED to be_app when the window list becomes empty. Quit
 **MISSING:** The Control+close half is implemented (HIT_CLOSE with ControlMask closes every folder window plus the panel), but the first half is deliberately dropped and documented in close_window's comment — nothing quits when the last window closes, and a documented decision not to do it is an absence, not an alternative mechanism.  
 *src/shell/tiku_trk_desktop.c:1687-1705 (Ctrl+close closes all) vs :397-421 close_window comment "that rule does NOT carry over"*
 
-#### CW-016 · important · partial
+#### CW-016 · important · done
 **The title bar shows the folder name, or the full path when "show full path in title bar" is on, and it updates live when any ancestor folder is renamed or moved.**  
 UpdateTitle() also pushes the location into the Navigator with kActionUpdatePath. SetPathWatchingEnabled(true) walks every parent up to "/" calling watch_node(B_WATCH_NAME); any B_NODE_MONITOR message just calls UpdateTitle().  
 `ContainerWindow.cpp` → `BContainerWindow::UpdateTitle / SetPathWatchingEnabled / MessageReceived case B_NODE_MONITOR`  
 **TIKU:** Ancestor-chain watching maps onto VFS watch notifications; TikuOS watch table is only TIKU_VFS_WATCH_MAX (8) slots, so watching every ancestor of every open window needs a different scheme (single path-prefix watch or re-derive on demand).  
-**MISSING:** The title is the folder's full path and is re-set live when the folder itself is renamed/moved (NOTIFY_RETITLE), but there is no ancestor-chain watching (notify matches only the folder's own path or its old path) and no name-vs-full-path preference — it is always the full path.  
-*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_notify (RETITLE branch) + src/shell/tiku_trk_desktop.c:main pump loop*
+**PORT:** The name-vs-full-path preference is honoured now: `tiku_trk_folder_title_for` reads `ShowFullPathInTitleBar` and titles the window with the folder's own name by default, its whole path when the setting is on -- at open, at switch-dir, and at the live retitle a rename triggers alike.  Ancestor-chain watching stays absent by the same boundary as CW-016's live retitle: a notice matches the folder's own path, and a parent renamed out from under it is the same unwatched-ancestor gap the source's node-monitor closes and this port's path-keyed notices do not.  
+*src/ui/windows/tiku_trk_folder_lifecycle.c:tiku_trk_folder_title_for (the three title sites); src/shell/tiku_trk_desktop.c (the retitle); tests/shell/pathtitle.script, pathtitlefull.script (both directions, mutation-tested)*
 
 #### CW-017 · important · differs
 **The folder's icon sits at the right end of the menu bar and can be dragged out to move the folder itself (Option-drag copies).**  

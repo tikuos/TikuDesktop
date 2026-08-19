@@ -16,6 +16,34 @@
 #include "tiku_trk_panel.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_task.h"
+/**
+ * @brief The title a folder window shows for @p path (CW-016).
+ *
+ * The whole path when ShowFullPathInTitleBar is on, the folder's own
+ * name otherwise -- root and an empty path stay "/".
+ */
+void
+tiku_trk_folder_title_for(tiku_trk_prefs_t *prefs, const char *path,
+                          char *out, size_t max)
+{
+    const char *slash;
+
+    if (path == NULL || path[0] == '\0') {
+        snprintf(out, max, "/");
+        return;
+    }
+    if (tiku_trk_prefs_get(prefs, "ShowFullPathInTitleBar")) {
+        snprintf(out, max, "%s", path);
+        return;
+    }
+    slash = strrchr(path, '/');
+    if (slash == NULL || slash[1] == '\0') {
+        snprintf(out, max, "%s", path);   /* "/" or no slash: as-is */
+    } else {
+        snprintf(out, max, "%s", slash + 1);
+    }
+}
+
 
 #define CASCADE_HOME_X 45
 #define CASCADE_HOME_Y 40
@@ -176,8 +204,9 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
             snprintf(folder->path, sizeof folder->path, "%s", path);
             snprintf(folder->state_path, sizeof folder->state_path, "%s",
                      path);
-            snprintf(folder->win->title, sizeof folder->win->title, "%s",
-                     path);
+            tiku_trk_folder_title_for(controller->prefs, path,
+                                      folder->win->title,
+                                      sizeof folder->win->title);
             tiku_trk_recent_add(controller->store, TIKU_TRK_RECENT_FOLDERS,
                                 path);
             tiku_desk_workspace_activate(controller->workspace, folder->win);
@@ -217,6 +246,11 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     frame = next_frame(controller, path, folder);
     folder->win = tiku_desk_workspace_open(controller->workspace, path, frame,
         tiku_trk_folder_window_draw, folder, folder->path);
+    if (folder->win != NULL) {
+        tiku_trk_folder_title_for(controller->prefs, path,
+                                  folder->win->title,
+                                  sizeof folder->win->title);
+    }
     if (folder->win == NULL) {
         tiku_trk_poseview_free(folder->view);
         folder->view = NULL;

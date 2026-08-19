@@ -1,0 +1,11 @@
+# shell: desktop
+# home: fixture
+# prefs: fullpath-on
+# CW-016: with ShowFullPathInTitleBar on, the title is the whole path.
+wait 10
+click 90 118
+wait 2
+click 90 118
+wait 5
+expect-title /tmp/trk_script/sub
+quit
