@@ -2473,13 +2473,14 @@ AttributeChanged and EntryMoved both re-test FilterPose(pose) and then either Ad
 BQueryPoseView::AttributeChanged copies the message and RemoveName("attr") when attrName is "last_modified" or "size", then delegates to BPoseView::AttributeChanged.  
 `QueryPoseView.cpp` → `BQueryPoseView::AttributeChanged`  
 
-#### PVN-040 · important · partial
+#### PVN-040 · important · done
 **Mounting a volume adds its icon to the Desktop / Disks window live, honoring the disks-icon and shared-volume settings; a Trash window additionally gains that volume's trashed items.**  
 case B_DEVICE_MOUNTED: CreateVolumePose when targetModel->IsRoot(), or when IsVolumesRoot() && MountVolumesOntoDesktop() && (!volume.IsShared() || MountSharedVolumesOntoDesktop()); if IsTrash(), FSGetTrashDir for the new device and AddPoses(&model).  
 `PoseView.cpp` → `BPoseView::FSNotification (case B_DEVICE_MOUNTED)`  
 **TIKU:** In TikuOS the device namespace is the mount analogue: a device node appearing must add a row in the same live way, gated by a capability bit rather than volume.IsPersistent().
-**SUBSYSTEM:** Volume model + Desktop icon layer. There are no mount events (grep 'mount' in src returns only the tk_close unplug comment, src/backends/tiku_trk_backend_tiku.c:473-474), no CreateVolumePose, no disks-icon/shared-volume settings, and no desktop icons at all — draw_all paints windows, Deskbar and popups only (src/shell/tiku_trk_desktop.c:1512-1527) and KIND_DESKTOP is never assigned. The only surviving sliver is generic: a node appearing at '/' shows in an open '/' window via relist+diff (src/ui/tiku_trk_poseview.c:3188-3296).  
-**MISSING:** Mount polling detects the event and the Desktop union now rebuilds on it live -- the new volume's Desktop folder joins (and a leaving one's drops from) the merged view at once.  What is still absent is the dedicated per-volume Desktop pose with its disks-icon/shared-volume visibility gating: only the Disks pose and the union's contents appear, and a host needs the persistence gate the row's TIKU note names before every tmpfs could be kept off the backdrop.  
+
+**PORT:** Every clause answers now, and the audit was stale.  Mount and unmount arrive live from the mount-table diff and rebuild the Desktop; each volume that earns one gets its own pose, gated exactly as the source gates it -- MountVolumesOntoDesktop, the shared-volume setting, the boot volume excluded because it IS the Disks pose, a volume nested under another excluded, and the TIKU note's persistence gate keeping every RAM filesystem off the backdrop.  And a Trash window gains the new volume's trashed items through the union (PVN-027).  
+*src/deskbar/tiku_trk_deskicons.c:tiku_trk_deskicons_volume_pose; src/deskbar/tiku_trk_desktop_view.c (the live rebuild); tests/test_volume.c PVN-040 block (boot, persistent, tmpfs, shared -- all four gates)*
 *src/shell/tiku_trk_desktop.c (volwatch handler -> tiku_trk_desktop_view_rebuild)*
 
 #### PVN-041 · polish · done
