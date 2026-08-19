@@ -5221,13 +5221,12 @@ GetRootIcon uses B_ROOT_MIMETYPE, GetPrinterIcon uses B_PRINTER_MIMETYPE, both s
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetRootIcon / IconCache::GetPrinterIcon`  
 **PORT:** The root clause holds.  The printer clause is struck by the Phase-1 ruling (2026-08-18): no printing subsystem exists or is planned, so no backend will classify a node as a printer.
 
-#### IV-010 · polish · partial
+#### IV-010 · polish · differs
 **Asking an application for a type's icon lowercases the type first.**  
 GetIconForPreferredApp copies fileTypeSignature into a BString and calls ToLower() before BMimeType::GetIconForType, so mixed-case types still match.  
 `src/kits/tracker/IconCache.cpp` → `IconCache::GetIconForPreferredApp`  
 *src/core/tiku_trk_model.c:93-107 (fold_eq) used by type_row at 111-140; no preferred-app icon path anywhere in src/core/tiku_trk_model.c or src/media/tiku_trk_icons.c*
-**MISSING:** No rung asks an application for a type's icon, so the lowercasing the row is about has nothing to act on; the type table folds case on compare instead.  
-**PORT:** The port never asks an application for a type's icon — that rung does not exist — so the row's rule is not implemented as stated; what it has is the same case-insensitivity reached another way, by folding both sides during the type-table compare instead of lowercasing the type first.  
+**PORT:** The port never asks an application for a type's icon -- that rung does not exist in the icon cache's tiers -- so the lowercasing the row is about has nothing to act on.  The user-visible guarantee it exists FOR, case-insensitive type matching, is reached another way: fold_eq folds both sides during the type-table compare rather than lowercasing the type first, so a mixed-case type still finds its row.  
 
 #### IV-011 · important · partial
 **A type that has no icon of its own is remembered as such, so the miss is paid only once.**  
@@ -6377,13 +6376,12 @@ gLaunchLooper (LaunchLooper) is created and Run() in the TTracker constructor; A
 **PORT:** The launch does not block the window it was asked from: the child is started and reaped without waiting, so a slow application cannot hold the desktop still. A dedicated looper has no analogue in a single-threaded shell -- not waiting is what the row is protecting.  
 *src/core/tiku_trk_launch.c:tiku_trk_launch_run; tests/test_launch.c*
 
-#### AW-037 · important · partial
+#### AW-037 · important · differs
 **A launch that fails is retried once after force-mime-setting files that have no type or a generic one.**  
 SniffIfGeneric removes kAttrMIMEType and calls update_mime_info when the node has no type or B_FILE_MIME_TYPE; the launch loop runs at most twice (mimesetIt guard).  
 `FSUtils.cpp` → `_TrackerLaunchDocuments / _TrackerLaunchAppWithDocuments / SniffIfGeneric`  
 **TIKU:** Type sniffing has no analogue for device nodes, which carry a declared descriptor type; decide whether unknown files get sniffed at all.
-**SUBSYSTEM:** app launching -- no launch exists to retry, and no type sniffing exists either: types come from the compiled table at draw time (src/core/tiku_trk_model.c:69-89), there is no update_mime_info analogue or stored type attribute to remove  
-**MISSING:** Launch errors are reported, but failed generic files are not sniffed and retried once with a forced type update.
+**PORT:** The sniff-and-retry differs by design, on two boundaries the row's own TIKU note names.  There is no content type-sniffer to run: a file's type comes from the compiled type table at draw time, not from an update_mime_info pass over its bytes, and there is no stored MIME attribute to remove and recompute.  And a device node -- what this namespace is about -- carries a DECLARED descriptor type, so "no type or a generic one" is not a state it can be in.  Launch DOES report its failure distinctly (AW-039); what it does not do is re-sniff, because there is nothing here to sniff with.
 
 #### AW-038 · polish · done
 **When launching documents, the application itself is removed from the list of refs handed to it so it never opens itself, and a lone double-clicked app is launched with no refs.**  
