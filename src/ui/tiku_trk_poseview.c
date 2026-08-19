@@ -112,6 +112,7 @@ struct tiku_trk_poseview {
     int                 font_h, font_a;
     int                 row_h;      /* what the owner draws, 0 = derive  */
     int                 folders_first;  /* the setting, on by default    */
+    int                 no_autoscroll;  /* the Desktop's exemption       */
     int                 hide_dotfiles;
     /* Columns that show a named ATTRIBUTE rather than a fixed fact.  The
      * slot is the field id; the name is what a saved layout carries. */
@@ -1994,13 +1995,19 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
          * twenty rows in a window that holds eight skips twelve of them
          * unseen, which is the one thing paging must not do. */
         int page = (v->visible_rows > 1) ? v->visible_rows - 1 : 1;
+        /* From the first VISIBLE row, not the selected one: a page is a
+         * movement of the window, and stepping it from a selection six
+         * screens away pages somewhere the user is not looking
+         * (PVK-011). */
+        int base = (row >= 0 && row >= v->scroll &&
+                    row < v->scroll + v->visible_rows) ? row : v->scroll;
 
-        if (row < 0) {
-            target = (key == TIKU_TRK_KEY_PGUP) ? 0 : n - 1;
+        if (n == 0) {
+            target = -1;
         } else if (key == TIKU_TRK_KEY_PGUP) {
-            target = (row > page) ? row - page : 0;
+            target = (base > page) ? base - page : 0;
         } else {
-            target = (row + page < n) ? row + page : n - 1;
+            target = (base + page < n) ? base + page : n - 1;
         }
         break;
     }
@@ -2012,6 +2019,13 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
      * the selection alone -- there is no "first row" to select when the
      * poses are arranged in two dimensions, and jumping the selection to a
      * corner of the layout is not what the key means there. */
+    if (v->no_autoscroll &&
+        (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
+         key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
+        /* The Desktop is exempt: it does not scroll for anyone
+         * (PVK-013). */
+        return 1;
+    }
     if (v->mode != TIKU_TRK_MODE_LIST &&
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
@@ -2037,7 +2051,37 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
     }
 
     }
-    if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only) {
+    if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only &&
+        (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
+         key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
+        /* A jump key with Shift selects EVERYTHING between where the
+         * selection stood and where the jump lands -- Shift+End extends
+         * to the end, not by one row (PVK-012). */
+        int from = (row >= 0) ? row : target;
+        int lo = (from < target) ? from : target;
+        int hi = (from > target) ? from : target;
+        int r2;
+
+        for (r2 = lo; r2 <= hi; r2++) {
+            tiku_trk_pose_t *t2 = tiku_trk_poseview_at(v, r2);
+
+            if (t2 != NULL) {
+                set_selected(t2, 1);
+            }
+        }
+        {
+            tiku_trk_pose_t *t2 = tiku_trk_poseview_at(v, target);
+
+            if (t2 != NULL) {
+                v->last_added = t2->index;
+                if (v->pivot < 0) {
+                    v->pivot = (row >= 0)
+                                   ? tiku_trk_poseview_at(v, row)->index
+                                   : t2->index;
+                }
+            }
+        }
+    } else if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only) {
         /* PVK-005: grow by one, or walk back when the target is already in
          * the selection.  In a single-selection view Shift adds nothing --
          * it is a plain arrow (PVK-006). */
@@ -2243,7 +2287,27 @@ type_select_best(tiku_trk_poseview_t *v)
     float bestscore = 0.0f;
 
     for (i = 0; i < n; i++) {
-        float s = type_score(tiku_trk_poseview_at(v, i)->model.name, v->typed);
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
+        float s = type_score(p->model.name, v->typed);
+
+        if (v->mode == TIKU_TRK_MODE_LIST) {
+            /* Every COLUMN participates, as the filter's walk does: a
+             * kind or a value typed at the list should land on the row
+             * that shows it (PVK-029). */
+            int c;
+
+            for (c = 0; c < v->column_count; c++) {
+                char buf[160];
+                const char *text = tiku_trk_poseview_cell_text(v, p,
+                    v->columns[c].field, buf, sizeof buf);
+                float cs = (text != NULL) ? type_score(text, v->typed)
+                                          : 0.0f;
+
+                if (cs > s) {
+                    s = cs;
+                }
+            }
+        }
         if (s > bestscore) {
             bestscore = s;
             best = i;
@@ -3713,6 +3777,14 @@ state_attr(const tiku_trk_poseview_t *v)
         return TIKU_TRK_ATTR_DISKS_VIEW_STATE;
     }
     return TIKU_TRK_ATTR_VIEW_STATE;
+}
+
+void
+tiku_trk_poseview_set_no_autoscroll(tiku_trk_poseview_t *v, int on)
+{
+    if (v != NULL) {
+        v->no_autoscroll = on;
+    }
 }
 
 void
@@ -6240,7 +6312,7 @@ void
 tiku_trk_poseview_scroll_into_view(tiku_trk_poseview_t *v, int index,
                                    int visible_rows)
 {
-    if (v == NULL || visible_rows <= 0) {
+    if (v == NULL || visible_rows <= 0 || v->no_autoscroll) {
         return;
     }
     if (index < v->scroll) {

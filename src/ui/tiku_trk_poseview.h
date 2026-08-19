@@ -501,6 +501,9 @@ int tiku_trk_poseview_last_icon_mode(const tiku_trk_poseview_t *v);
 void tiku_trk_poseview_set_state_slot(tiku_trk_poseview_t *v,
                                       const char *key);
 
+/** @brief The Desktop's exemption: it scrolls for no key (PVK-013). */
+void tiku_trk_poseview_set_no_autoscroll(tiku_trk_poseview_t *v, int on);
+
 int tiku_trk_poseview_icon_size(const tiku_trk_poseview_t *v);
 
 /**

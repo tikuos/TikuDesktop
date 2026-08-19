@@ -364,6 +364,7 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
      * a folder window opened on the same directory (MA-064). */
     tiku_trk_poseview_set_state_slot(controller->folder.view,
                                      TIKU_TRK_KEY_DESKTOP);
+    tiku_trk_poseview_set_no_autoscroll(controller->folder.view, 1);
     tiku_trk_folder_window_configure(&controller->folder, render);
     tiku_trk_poseview_set_viewport(controller->folder.view,
                                    screen_w, screen_h);

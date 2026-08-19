@@ -1445,6 +1445,81 @@ main(void)
         (void)tiku_trk_poseview_toggle_column(v, f);
     }
 
+    printf("\nthe jump keys, whole (PVK-011/012/013/029)\n");
+    {
+        int k, selected;
+
+        tiku_trk_poseview_set_filtering(v, 0);
+        tiku_trk_poseview_type_clear(v);
+        tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
+        (void)tiku_trk_poseview_reload(v);
+        tiku_trk_poseview_set_visible_rows(v, 3);
+        tiku_trk_poseview_click(v, 0, 0);
+        (void)tiku_trk_poseview_key_nav(v, TIKU_TRK_KEY_END,
+                                        TIKU_TRK_MOD_SHIFT);
+        selected = tiku_trk_poseview_selection_count(v);
+        check(selected == tiku_trk_poseview_count(v), "PVK-012",
+              "Shift+End extends from the anchor to the END, not by one");
+        tiku_trk_poseview_click(v, -1, 0);
+        tiku_trk_poseview_click(v, 0, 0);
+        {
+            /* Scroll the window away from the selection: a page must
+             * step from what is VISIBLE, not from the far-off row. */
+            int i2;
+
+            tiku_trk_poseview_scroll_to(v, 3);
+            (void)i2;
+        }
+        (void)tiku_trk_poseview_key_nav(v, TIKU_TRK_KEY_PGDN, 0u);
+        k = -1;
+        for (selected = 0; selected < tiku_trk_poseview_count(v);
+             selected++) {
+            if (tiku_trk_poseview_at(v, selected)->selected) {
+                k = selected;
+            }
+        }
+        check(k > 3, "PVK-011",
+              "a page steps from the first visible row, not from the "
+              "selection parked off screen");
+        tiku_trk_poseview_type_clear(v);
+        tiku_trk_poseview_select_none(v);
+        tiku_trk_poseview_type_ahead(v, 't');
+        tiku_trk_poseview_type_ahead(v, 'e');
+        tiku_trk_poseview_type_ahead(v, 'x');
+        {
+            tiku_trk_pose_t *sel2 = NULL;
+            int i2;
+
+            for (i2 = 0; i2 < tiku_trk_poseview_count(v); i2++) {
+                if (tiku_trk_poseview_at(v, i2)->selected) {
+                    sel2 = tiku_trk_poseview_at(v, i2);
+                }
+            }
+            /* With the columns in play every row's Kind says "Text file"
+             * and the tie goes to the FIRST row; by name alone the best
+             * 't' is beta's.  Which row answers is the proof. */
+            check(sel2 != NULL &&
+                  strcmp(sel2->model.name, "alpha.txt") == 0, "PVK-029",
+                  "typing a KIND ('tex't file) matches by COLUMN text: "
+                  "type-ahead walks the columns, as the filter does");
+        }
+        tiku_trk_poseview_type_clear(v);
+        {
+            int sc_before, sc_after;
+
+            tiku_trk_poseview_set_no_autoscroll(v, 1);
+            tiku_trk_poseview_scroll_to(v, 0);
+            sc_before = tiku_trk_poseview_scroll(v);
+            tiku_trk_poseview_click(v, tiku_trk_poseview_count(v) - 1, 0);
+            (void)tiku_trk_poseview_key_nav(v, TIKU_TRK_KEY_END, 0u);
+            sc_after = tiku_trk_poseview_scroll(v);
+            check(sc_before == sc_after, "PVK-013",
+                  "the Desktop's exemption: no key scrolls it to reveal "
+                  "anything");
+            tiku_trk_poseview_set_no_autoscroll(v, 0);
+        }
+    }
+
     printf("\nwhat a selection the user cannot see is (PVL-054)\n");
     {
         tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_LIST);
@@ -1572,6 +1647,7 @@ main(void)
     tiku_trk_poseview_free(v);
     tiku_trk_backend_close(b);
     rm_tree(dir);
+
 
     printf("\n%s\n", fails ? "FAILURES" : "all poseview rules match the source");
     return fails ? 1 : 0;
