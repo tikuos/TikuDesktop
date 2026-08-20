@@ -61,6 +61,11 @@ struct tiku_trk_deskbar {
     int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
     int                  dark;      /* which way the theme leans       */
+    struct {
+        char label[TIKU_TRK_DB_LABEL_MAX];
+        char command[TIKU_TRK_PATH_MAX];
+    }                    app[4];    /* programs the shell offered      */
+    int                  app_count;
     int                  top_inset; /* the global bar owns this much   */
     tiku_trk_deskbar_settings_t settings;
     int                  autohide;
@@ -281,6 +286,10 @@ build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
              db->show_replicants ? "Hide replicants" : "Show replicants",
              NULL, 0);
+    for (i = 0; i < db->app_count; i++) {
+        add_item(db, TIKU_TRK_DB_ITEM_APP, db->app[i].label,
+                 db->app[i].command, 0);
+    }
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
     add_item(db, TIKU_TRK_DB_ITEM_PATH, "/dev", "/dev", 0);
@@ -1469,6 +1478,22 @@ tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on)
     if (db != NULL) {
         db->dark = !!on;
     }
+}
+
+int
+tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
+                         const char *command)
+{
+    if (db == NULL || label == NULL || command == NULL ||
+        db->app_count >= (int)(sizeof db->app / sizeof db->app[0])) {
+        return 0;
+    }
+    snprintf(db->app[db->app_count].label,
+             sizeof db->app[db->app_count].label, "%s", label);
+    snprintf(db->app[db->app_count].command,
+             sizeof db->app[db->app_count].command, "%s", command);
+    db->app_count++;
+    return 1;
 }
 
 void
@@ -2833,6 +2858,10 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                     return 1;
                 }
                 pick->what = TIKU_TRK_DB_QUIT;
+                break;
+            case TIKU_TRK_DB_ITEM_APP:
+                pick->what = TIKU_TRK_DB_LAUNCH_APP;
+                snprintf(pick->path, sizeof pick->path, "%s", it->path);
                 break;
             case TIKU_TRK_DB_ITEM_PATH:
                 pick->what = TIKU_TRK_DB_OPEN_PATH;

@@ -1,0 +1,16 @@
+# shell: desktop
+# home: fixture
+# The leaf menu offers the programs that are installed beside this shell,
+# and choosing one STARTS it: the editor opens a window of its own over
+# the session, which is the same route any application takes.
+wait 12
+click 980 20
+wait 4
+expect-menu Terminal|Text editor
+note choosing the editor starts it; its window arrives over the session
+menu-pick Text editor
+wait 90
+expect-title Edit
+key Escape
+wait 20
+expect-no-title Edit

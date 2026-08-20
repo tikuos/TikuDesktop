@@ -2594,6 +2594,22 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     case TIKU_TRK_DB_TRACKER_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
         break;
+    case TIKU_TRK_DB_LAUNCH_APP: {
+        /* Started, not opened: these are programs, and they place their
+         * own windows through the session the same way any application
+         * does. */
+        tiku_trk_app_t program;
+
+        memset(&program, 0, sizeof program);
+        snprintf(program.name, sizeof program.name, "%s", pick->path);
+        snprintf(program.cmd, sizeof program.cmd, "%s", pick->path);
+        if (tiku_trk_launch_run(&program, NULL, 0) != TIKU_TRK_LAUNCH_OK) {
+            snprintf(app->status, sizeof app->status,
+                     "could not start %s", pick->path);
+            app->dirty = 1;
+        }
+        break;
+    }
     case TIKU_TRK_DB_TOGGLE_DARK: {
         /* The switch IS the DarkMode setting: flip it, write it down,
          * and let the one sync path repaint the world -- so the switch,
@@ -3857,6 +3873,98 @@ draw_nav_levels(desktop_t *app, int px, int py)
  * the check exists to do without.  The from-scratch draw stands: it is the
  * picture the shell should be showing anyway.
  */
+/**
+ * @brief Locate a companion program shipped beside this shell.
+ *
+ * Looked for where the build puts it, relative to THIS binary, so a tree
+ * that was moved or built elsewhere still finds its own programs.
+ *
+ * @return nonzero when @p out names a program that exists.
+ */
+static int
+find_companion(const char *argv0, const char *name, char *out, size_t max)
+{
+    static const char *const where[] = {
+        "%s/%s",                        /* installed beside this shell   */
+        "%s/desktop/build/%s",          /* built in place                */
+        "%s/libexec/tiku/%s"
+    };
+    char dir[TIKU_TRK_PATH_MAX];
+    char *slash;
+    size_t i;
+    int up;
+
+    if (getenv("TIKU_DESK_APPS") != NULL) {
+        snprintf(out, max, "%s/%s", getenv("TIKU_DESK_APPS"), name);
+        return access(out, X_OK) == 0;
+    }
+    snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
+    slash = strrchr(dir, '/');
+    if (slash != NULL) {
+        *slash = '\0';
+    } else {
+        snprintf(dir, sizeof dir, ".");
+    }
+    /* Up the tree rather than a fixed number of dots: a development
+     * build sits one directory deeper than an installed one, and a count
+     * that is right for either is wrong for the other.  Climbing by
+     * APPENDING "/.." rather than trimming keeps a relative argv[0]
+     * working, which one trimmed down to "." cannot. */
+    for (up = 0; up < 5; up++) {
+        char step[TIKU_TRK_PATH_MAX];
+        int k;
+
+        snprintf(step, sizeof step, "%s", dir);
+        for (k = 0; k < up; k++) {
+            size_t used = strlen(step);
+
+            if (used + 4u >= sizeof step) {
+                break;
+            }
+            snprintf(step + used, sizeof step - used, "/..");
+        }
+        for (i = 0; i < sizeof where / sizeof where[0]; i++) {
+            char found[TIKU_TRK_PATH_MAX];
+
+            snprintf(found, sizeof found, where[i], step, name);
+            if (access(found, X_OK) != 0) {
+                continue;
+            }
+            /* ABSOLUTE, because everything launched starts in the user's
+             * home: a path relative to this shell's directory names
+             * nothing once the child has moved there. */
+            if (realpath(found, out) == NULL) {
+                snprintf(out, max, "%s", found);
+            }
+            return 1;
+        }
+    }
+    out[0] = '\0';
+    return 0;
+}
+
+/** @brief Offer the companion programs that are actually installed. */
+static void
+offer_companions(desktop_t *app, const char *argv0)
+{
+    static const struct {
+        const char *label;
+        const char *binary;
+    } known[] = {
+        { "Terminal", "tiku-term" },
+        { "Text editor", "tiku-edit" }
+    };
+    char path[TIKU_TRK_PATH_MAX];
+    size_t i;
+
+    for (i = 0; i < sizeof known / sizeof known[0]; i++) {
+        if (find_companion(argv0, known[i].binary, path, sizeof path)) {
+            (void)tiku_trk_deskbar_add_app(app->deskbar, known[i].label,
+                                           path);
+        }
+    }
+}
+
 /*---------------------------------------------------------------------------*/
 /* The conductor channel: what an outside driver may do to this shell       */
 /*---------------------------------------------------------------------------*/
@@ -4180,6 +4288,7 @@ tracker_run(int argc, char **argv)
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
     tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
                                DESK_H, &app.dirty);
+    offer_companions(&app, argv[0]);
     if (tiku_desk_remote_listen(&app.remote) != 0) {
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;

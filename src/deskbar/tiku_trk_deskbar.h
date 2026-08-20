@@ -106,7 +106,8 @@ typedef enum {
     TIKU_TRK_DB_ITEM_RECENT,    /* one of the three recent lists         */
     TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
     TIKU_TRK_DB_ITEM_POWER_OFF, /* inside Shut down: immediate (DB-006)  */
-    TIKU_TRK_DB_ITEM_RESTART
+    TIKU_TRK_DB_ITEM_RESTART,
+    TIKU_TRK_DB_ITEM_APP        /* start the program named by its path  */
 } tiku_trk_db_item_kind_t;
 
 /** @brief Which recent list a RECENT row shows. */
@@ -310,6 +311,7 @@ typedef enum {
     TIKU_TRK_DB_POWER_OFF,        /* no confirmation: chosen inside */
     TIKU_TRK_DB_RESTART,          /* the submenu acts (DB-006)      */
     TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
+    TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -601,6 +603,17 @@ void tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on);
 
 /** @brief Reserve the top @p px of the screen (the global menu bar). */
 void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
+
+/**
+ * @brief Offer @p label in the leaf menu, starting @p command when chosen.
+ *
+ * The shell registers what it can find, so a program that is not
+ * installed leaves no row behind to disappoint anyone.
+ *
+ * @return nonzero when the row was taken.
+ */
+int tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
+                             const char *command);
 
 /** @brief Where the theme switch sits, so a test can put a finger on it. */
 tiku_desk_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);
