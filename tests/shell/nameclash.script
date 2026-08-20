@@ -1,0 +1,30 @@
+# shell: desktop
+# home: fixture
+# NeXT UIG ch8: two rows sharing a name gain the MINIMUM distinguishing
+# path -- here in the Move to picker's recent folders.
+wait 10
+note open both folders named sub, so both become recents
+click-row 0
+wait 1
+click-row 0
+wait 8
+expect-title sub
+key w ctrl
+wait 3
+click-desk sub
+wait 1
+click-desk sub
+wait 8
+expect-title sub
+key w ctrl
+wait 3
+note the picker cannot call them both plain sub
+click-window trk_script
+wait 3
+click-row 1 3
+wait 3
+menu-pick Move to
+wait 3
+expect-menu sub -- .../trk_script
+expect-menu sub -- .../Desktop
+quit

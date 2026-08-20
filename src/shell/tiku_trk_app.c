@@ -24,6 +24,7 @@
 #include "tiku_trk_application.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_drag.h"
+#include "tiku_trk_panel.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_model.h"
 #include "tiku_trk_fs.h"
@@ -104,6 +105,7 @@ typedef struct {
     tiku_trk_menu_t     *popup_sub;
     tiku_desk_rect_t     popup_frame;
     tiku_desk_rect_t     popup_sub_frame;
+    tiku_desk_rect_t     viewbtn_rect;  /* the gutter's view popup    */
     int                  bar_open;
     /* Browser chrome owns its history and location editor per window. */
     tiku_trk_navigator_t nav;
@@ -654,6 +656,12 @@ draw_count(app_t *a, tiku_desk_rect_t list)
     const char *typed = tiku_trk_poseview_type_string(a->view);
     char label[240];
 
+    /* The view-mode popup lives IN the scroller gutter, the one kind of
+     * control that may (NeXT UIG ch7: only controls that decide how the
+     * document is viewed belong beside the scrollers). */
+    a->viewbtn_rect = (tiku_desk_rect_t){ list.x + 110, count.y + 1, 18,
+                                          COUNT_H - 2 };
+
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST &&
         list.w > 260) {
         /* The count keeps the bottom-LEFT and the horizontal scroll bar
@@ -710,6 +718,20 @@ draw_count(app_t *a, tiku_desk_rect_t list)
         tiku_desk_clip_reset(s);
         if (pole) {
             draw_pole(a, count);
+        }
+    }
+    {   /* The popup itself: a small raised button wearing the popup
+         * triangle, beside the count. */
+        tiku_desk_rect_t b = a->viewbtn_rect;
+        int cx = b.x + b.w / 2, cy = b.y + b.h / 2, i;
+
+        tiku_desk_fill(s, b, TIKU_DESK_C_PANEL);
+        tiku_desk_bevel(s, b, TIKU_DESK_RGB(255, 255, 255),
+                        tiku_desk_tint(TIKU_DESK_C_PANEL,
+                                       TIKU_DESK_DARKEN_2));
+        for (i = 0; i < 4; i++) {
+            tiku_desk_hline(s, cx - 3 + i, cy - 2 + i, 7 - 2 * i,
+                            TIKU_DESK_RGB(60, 60, 60));
         }
     }
 }
@@ -1442,8 +1464,27 @@ end_rename(app_t *a, int commit)
         return;
     }
     if (commit && a->ed.len > 0) {
+        char renamed[TIKU_TRK_PATH_MAX];
+        char parent[TIKU_TRK_PATH_MAX];
+        char *slash;
+        int row;
+
         a->status[0] = '\0';
         after_op(a);
+        /* The rename re-sorted the row; the application moved it, so the
+         * application keeps it visible (NeXT UIG ch3). */
+        snprintf(parent, sizeof parent, "%s", a->edit_path);
+        slash = strrchr(parent, '/');
+        if (slash != NULL) {
+            *slash = '\0';
+            snprintf(renamed, sizeof renamed, "%s/%s", parent, a->ed.text);
+            row = index_of_path(a, renamed);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                tiku_trk_poseview_scroll_into_view(a->view, row,
+                                                   visible_rows(a));
+            }
+        }
     }
     a->editing = 0;
     tiku_trk_edit_stop(&a->ed);
@@ -1756,6 +1797,32 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
         int shift = (modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
+        if (key == ' ' && (modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+            /* Cmd-Space completes the last path component against the
+             * folder the rest of the path names (NeXT UIG ch3). */
+            char dir[TIKU_TRK_PATH_MAX], full[TIKU_TRK_PATH_MAX];
+            char *slash;
+
+            snprintf(dir, sizeof dir, "%s", a->nav_edit.text);
+            slash = strrchr(dir, '/');
+            if (slash != NULL) {
+                char leaf[TIKU_TRK_NAME_MAX];
+
+                snprintf(leaf, sizeof leaf, "%s", slash + 1);
+                slash[(slash == dir) ? 1 : 0] = '\0';
+                if (tiku_trk_panel_complete(a->backend, dir, leaf, leaf,
+                                            sizeof leaf) > 0) {
+                    snprintf(full, sizeof full, "%s%s%s", dir,
+                             (dir[strlen(dir) - 1u] == '/') ? "" : "/",
+                             leaf);
+                    tiku_trk_edit_start(&a->nav_edit, full);
+                    a->nav_edit.sel_a = a->nav_edit.sel_b =
+                        a->nav_edit.caret = a->nav_edit.len;
+                }
+            }
+            a->dirty = 1;
+            return;
+        }
         switch (key) {
         case TIKU_DESK_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;     break;
         case TIKU_DESK_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;     break;
@@ -3200,6 +3267,21 @@ tracker_run(int argc, char **argv)
                             tiku_trk_scroll_press(&a.sb,
                                 a.sb_rect.h - 2 * btn, at - btn));
                     }
+                    a.dirty = 1;
+                    break;
+                }
+                if (a.viewbtn_rect.w > 0 && ev.x >= a.viewbtn_rect.x &&
+                    ev.x < a.viewbtn_rect.x + a.viewbtn_rect.w &&
+                    ev.y >= a.viewbtn_rect.y &&
+                    ev.y < a.viewbtn_rect.y + a.viewbtn_rect.h) {
+                    /* The gutter's view-mode popup (NeXT UIG ch7). */
+                    tiku_trk_sc_ctx_t vc = menu_ctx(&a, 0u);
+
+                    a.popup = tiku_trk_cwmenu_view_popup(&a.menus, &vc);
+                    a.popup_sub = NULL;
+                    a.popup_frame = tiku_trk_menu_place(a.popup,
+                        a.viewbtn_rect.x, a.viewbtn_rect.y,
+                        (tiku_desk_rect_t){ 0, 0, a.surf->w, a.surf->h });
                     a.dirty = 1;
                     break;
                 }

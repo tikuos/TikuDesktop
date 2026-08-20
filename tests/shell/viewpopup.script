@@ -1,0 +1,13 @@
+# shell: tracker
+# home: fixture
+# NeXT UIG ch7: the scroller gutter may hold controls that decide how the
+# document is VIEWED -- this one holds the view-mode popup.
+wait 8
+expect-pixel 283 81 010101
+click 124 506
+wait 3
+expect-menu Icon view|Mini icon view|List view
+menu-pick Icon view
+wait 5
+expect-pixel 283 81 ffffff
+quit

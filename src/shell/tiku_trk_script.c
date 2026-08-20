@@ -582,9 +582,11 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_MOVE_DESK:
     case OP_RELEASE_DESK: {
         int px = 0, py = 0;
+        int (*at)(void *, const char *, int *, int *) =
+            (st != NULL && st->pose_desk_at != NULL) ? st->pose_desk_at
+            : (st != NULL) ? st->pose_at : NULL;
 
-        if (st == NULL || st->pose_at == NULL ||
-            !st->pose_at(st->pose_ctx, cur->text, &px, &py)) {
+        if (at == NULL || !at(st->pose_ctx, cur->text, &px, &py)) {
             verdict(s, 0, "no desktop icon named:", cur->text);
             return 1;
         }

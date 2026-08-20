@@ -333,6 +333,20 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
     buf[0] = '\0';
     switch (field) {
     case TIKU_TRK_COL_NAME:
+        if (v->is_query) {
+            /* Results come from EVERYWHERE, so two rows can share a name;
+             * the one that does gains the minimum distinguishing path
+             * (NeXT UIG ch8) -- computed against the rows shown. */
+            const char *others[POSES_MAX];
+            int k;
+
+            for (k = 0; k < v->count; k++) {
+                others[k] = v->poses[k].model.path;
+            }
+            (void)tiku_trk_attr_disambiguate(p->model.path, others,
+                                             v->count, buf, max);
+            return buf;
+        }
         return tiku_trk_model_display_name(&p->model);
     case TIKU_TRK_COL_KIND:
         return tiku_trk_model_kind_string(&p->model);
@@ -466,6 +480,12 @@ tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     } while (0)
     MIX_CELL(field);
     MIX_CELL(p->model.node_id);
+    if (v->is_query && field == TIKU_TRK_COL_NAME) {
+        /* A result's NAME can depend on its neighbours (the
+         * disambiguating suffix), so membership is part of the key. */
+        MIX_CELL(v->count);
+        MIX_CELL(v->load_gen);
+    }
     MIX_CELL(p->model.kind);
     MIX_CELL(p->model.facts.size);
     MIX_CELL(p->model.facts.mtime);
@@ -4865,6 +4885,17 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
                 v->poses[now_at].selected = was_selected;
                 if (was_active) {
                     v->active = now_at;
+                }
+                if ((was_selected || was_active) &&
+                    v->mode == TIKU_TRK_MODE_LIST &&
+                    v->visible_rows > 0) {
+                    /* The APPLICATION moved the selection, so it is the
+                     * application's job to keep it visible (NeXT UIG ch3:
+                     * never move the selection out of view) -- a rename
+                     * that re-sorts the row past the viewport follows it
+                     * there.  A user's own scrolling is never chased. */
+                    tiku_trk_poseview_scroll_into_view(v, now_at,
+                                                       v->visible_rows);
                 }
             }
             flags |= TIKU_TRK_NOTIFY_REDRAW;

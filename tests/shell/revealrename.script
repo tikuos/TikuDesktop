@@ -1,0 +1,22 @@
+# shell: tracker
+# NeXT UIG ch3: when the APPLICATION moves the selection, it keeps it in
+# view -- a rename that re-sorts the row past the viewport follows it.
+wait 8
+expect-scroll 0
+click-row 1
+wait 2
+key e ctrl
+wait 3
+key z
+key z
+key z
+key Return
+wait 8
+expect-selected-name zzz
+expect-scroll 24
+note the user's own scrolling is never chased back
+press 747 105
+wait 2
+release 747 105
+wait 3
+quit

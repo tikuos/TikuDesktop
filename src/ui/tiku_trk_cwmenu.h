@@ -56,6 +56,7 @@ typedef struct {
     tiku_trk_menu_t    volume_ctx;
     tiku_trk_menu_t    trash_ctx;
     tiku_trk_menu_t    drop_ctx;
+    tiku_trk_menu_t    view_ctx;    /* the gutter's view-mode popup     */
     /* The Info window icon's own copy of its context menu: the shared
      * pose_ctx is rebuilt by every folder draw, and the icon's extra
      * items (AW-076) must survive the frame. */
@@ -140,5 +141,13 @@ tiku_trk_menu_t *tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw,
 /** @brief The Find icon's drop menu: query, template, cancel (Q-034). */
 tiku_trk_menu_t *tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw,
                                             int dst_read_only);
+
+/**
+ * @brief The view-mode popup the scroller gutter offers (NeXT UIG ch7:
+ *        only controls that decide how the document is VIEWED may live in
+ *        the scroller area -- and a view-mode popup is the named example).
+ */
+tiku_trk_menu_t *tiku_trk_cwmenu_view_popup(tiku_trk_cwmenu_t *cw,
+                                            const tiku_trk_sc_ctx_t *c);
 
 #endif /* TIKU_TRK_CWMENU_H_ */

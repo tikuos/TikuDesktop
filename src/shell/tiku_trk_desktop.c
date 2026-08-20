@@ -867,19 +867,28 @@ build_pickers(desktop_t *app, folder_t *fl)
         for (i = 0; i < nrecent; i++) {
             struct stat rst;
             const char *leaf = strrchr(recent[i], '/');
+            const char *rows[8];
+            char label[TIKU_TRK_PATH_MAX];
+            int r;
 
             if (stat(recent[i], &rst) != 0) {
                 continue;       /* a destination that went away */
             }
+            /* Two recents can share a leaf name; the one that does gains
+             * the minimum distinguishing path (NeXT UIG ch8). */
+            for (r = 0; r < nrecent; r++) {
+                rows[r] = recent[r];
+            }
+            (void)tiku_trk_attr_disambiguate(recent[i], rows, nrecent,
+                                             label, sizeof label);
             if (strcmp(recent[i], desk) == 0 ||
                 (home != NULL && strcmp(recent[i], home) == 0)) {
                 /* Desktop and Home keep their own NAMED rows below; a
                  * recent that is one of them would shadow the name. */
                 continue;
             }
-            picker_add(app, k, (leaf != NULL && leaf[1] != '\0')
-                                   ? leaf + 1 : recent[i],
-                       recent[i],
+            (void)leaf;
+            picker_add(app, k, label, recent[i],
                        have_here && rst.st_dev == here.st_dev);
         }
         {
@@ -2287,7 +2296,11 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
 
         if (p != NULL && strcmp(p->model.name, name) == 0) {
             tiku_trk_poseview_click(fl->view, i, 0u);
-            tiku_trk_poseview_scroll_to(fl->view, i);
+            /* Into view, minimally: the application changed the selection,
+             * so it keeps it visible (NeXT UIG ch3) -- but a row already
+             * on screen must not jump to the top. */
+            tiku_trk_poseview_scroll_into_view(fl->view, i,
+                tiku_trk_poseview_visible_rows(fl->view));
             app->dirty = 1;
             return i;
         }
@@ -5483,6 +5496,41 @@ tracker_run(int argc, char **argv)
                 if (tiku_trk_panel_window_key(&app.file_panel, key,
                                               ev.modifiers,
                                               key_char(&ev))) {
+                    break;
+                }
+                if (tiku_desk_workspace_focused(app.desk) ==
+                        tiku_trk_find_window_handle(&app.find_window) &&
+                    app.find_window.model.focus ==
+                        TIKU_TRK_FIND_FOCUS_NAME &&
+                    key == ' ' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                    /* Cmd-Space completes the name against the first
+                     * scoped place, or home when the search is everywhere
+                     * (NeXT UIG ch3). */
+                    tiku_trk_find_t *fm = &app.find_window.model;
+                    char dir[TIKU_TRK_PATH_MAX];
+                    char full[TIKU_TRK_NAME_MAX];
+                    const char *home = getenv("HOME");
+                    int pi, chosen = -1;
+
+                    for (pi = 0; pi < fm->place_count; pi++) {
+                        if (fm->place_mask & (1u << pi)) {
+                            chosen = pi;
+                            break;
+                        }
+                    }
+                    if (chosen >= 0) {
+                        snprintf(dir, sizeof dir, "/%s", fm->place[chosen]);
+                    } else {
+                        snprintf(dir, sizeof dir, "%s",
+                                 (home != NULL && home[0] != '\0') ? home
+                                                                    : "/");
+                    }
+                    if (tiku_trk_panel_complete(app.backend, dir,
+                            fm->name_text, full, sizeof full) > 0) {
+                        snprintf(fm->name_text, sizeof fm->name_text,
+                                 "%s", full);
+                    }
+                    app.dirty = 1;
                     break;
                 }
                 if (tiku_trk_find_window_key(&app.find_window, key,

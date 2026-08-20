@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# NeXT UIG ch3 in the desktop shell: Cmd-Space completes in the Find
+# window's name field and in the save panel's.
+wait 10
+key f ctrl
+wait 5
+key D
+key e
+key s
+key space ctrl
+wait 3
+expect-find-text Desktop
+key Escape
+wait 3
+note the save panel completes against the folder it shows
+key f ctrl
+wait 5
+key z
+wait 2
+click 642 405
+wait 6
+key a ctrl
+key BackSpace
+key r
+key e
+key c
+key space ctrl
+wait 3
+key Return
+wait 6
+expect-alert already
+quit

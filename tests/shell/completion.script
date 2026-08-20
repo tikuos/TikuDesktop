@@ -1,0 +1,31 @@
+# shell: tracker
+# home: fixture
+# NeXT UIG ch3: Cmd-Space completes a partial file name wherever one may
+# be typed -- here the last component of the location field's path.
+wait 8
+key l ctrl
+wait 3
+key /
+key t
+key m
+key p
+key /
+key t
+key r
+key k
+key _
+key h
+key o
+key m
+key e
+key /
+key D
+key e
+key s
+key k
+key space ctrl
+wait 3
+key Return
+wait 8
+expect-location /tmp/trk_home/Desktop
+quit

@@ -754,7 +754,20 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             }
         } else if (controller->model.mode == TIKU_TRK_PANEL_SAVE &&
                    controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME) {
-            if (key == TIKU_DESK_KEY_BACKSPACE) {
+            if (key == ' ' && (modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+                /* Cmd-Space completes the name against the folder shown
+                 * (NeXT UIG ch3: file-name completion wherever a file
+                 * name may be typed). */
+                char full[TIKU_TRK_NAME_MAX];
+
+                if (tiku_trk_panel_complete(controller->backend,
+                        controller->model.dir, controller->name.text,
+                        full, sizeof full) > 0) {
+                    tiku_trk_edit_start(&controller->name, full);
+                    controller->name.sel_a = controller->name.sel_b =
+                        controller->name.caret = controller->name.len;
+                }
+            } else if (key == TIKU_DESK_KEY_BACKSPACE) {
                 (void)tiku_trk_edit_key(&controller->name,
                     TIKU_TRK_EDIT_BACKSPACE, tracker_mods, '\0');
             } else if (character != '\0') {

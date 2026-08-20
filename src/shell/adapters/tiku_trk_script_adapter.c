@@ -168,6 +168,35 @@ tiku_trk_script_adapter_pose_at(void *context, const char *name,
     }
 }
 
+/** @brief Like pose_at, but the DESKTOP only: what click-desk aims at. */
+static int
+tiku_trk_script_adapter_pose_desk_at(void *context, const char *name,
+                                     int *x, int *y)
+{
+    tiku_trk_script_adapter_t *adapter = context;
+    tiku_trk_folder_window_t *folder;
+    int i, count, width, height;
+
+    if (adapter == NULL || name == NULL) {
+        return 0;
+    }
+    folder = tiku_trk_desktop_view_folder(adapter->desktop_view);
+    if (folder == NULL || folder->view == NULL) {
+        return 0;
+    }
+    count = tiku_trk_poseview_count(folder->view);
+    for (i = 0; i < count; i++) {
+        tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
+
+        if (pose != NULL && strcmp(pose->model.name, name) == 0) {
+            tiku_trk_poseview_pose_rect(folder->view, pose, x, y,
+                                        &width, &height);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int
 tiku_trk_script_adapter_rows_drawn(void *context, int reset)
 {
@@ -408,6 +437,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
         state->rows = tiku_trk_panel_window_rows(adapter->panel_window);
     }
     state->pose_at = tiku_trk_script_adapter_pose_at;
+    state->pose_desk_at = tiku_trk_script_adapter_pose_desk_at;
     state->pose_screen = tiku_trk_script_adapter_pose_screen;
     state->row_point = tiku_trk_script_adapter_row_point;
     state->cell_point = tiku_trk_script_adapter_cell_point;

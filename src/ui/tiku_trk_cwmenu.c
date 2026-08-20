@@ -803,6 +803,32 @@ tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw, int dst_read_only,
 }
 
 tiku_trk_menu_t *
+tiku_trk_cwmenu_view_popup(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
+{
+    static const int modes[] = { TIKU_TRK_CMD_ICON_VIEW,
+                                 TIKU_TRK_CMD_MINI_ICON_VIEW,
+                                 TIKU_TRK_CMD_LIST_VIEW };
+    tiku_trk_menu_t *m;
+    int chosen;
+
+    if (cw == NULL || c == NULL) {
+        return NULL;
+    }
+    m = &cw->view_ctx;
+    tiku_trk_menu_clear(m);
+    ADD(m, TIKU_TRK_CMD_ICON_VIEW);
+    ADD(m, TIKU_TRK_CMD_MINI_ICON_VIEW);
+    ADD(m, TIKU_TRK_CMD_LIST_VIEW);
+    switch (c->view_mode) {
+    case TIKU_TRK_MODE_ICON: chosen = TIKU_TRK_CMD_ICON_VIEW;      break;
+    case TIKU_TRK_MODE_MINI: chosen = TIKU_TRK_CMD_MINI_ICON_VIEW; break;
+    default:                 chosen = TIKU_TRK_CMD_LIST_VIEW;      break;
+    }
+    tiku_trk_menu_mark_radio(m, modes, 3, chosen);
+    return m;
+}
+
+tiku_trk_menu_t *
 tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw, int dst_read_only)
 {
     tiku_trk_sc_ctx_t ctx;

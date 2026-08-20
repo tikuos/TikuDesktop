@@ -260,4 +260,17 @@ int tiku_trk_panel_restore_frame(tiku_trk_store_t *s, int *x, int *y,
 void tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w,
                                int h);
 
+/**
+ * @brief Complete a partial file name against @p dir (NeXT UIG ch3:
+ *        file-name completion wherever a file name may be typed).
+ *
+ * @p out receives the longest common extension of every entry in @p dir
+ * whose name begins with @p prefix -- at least the prefix itself.
+ *
+ * @return how many entries matched: 0 leaves @p out alone, 1 means the
+ *         completion is a whole name.
+ */
+int tiku_trk_panel_complete(tiku_trk_backend_t *b, const char *dir,
+                            const char *prefix, char *out, size_t max);
+
 #endif /* TIKU_TRK_PANEL_H_ */

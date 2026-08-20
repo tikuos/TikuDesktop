@@ -205,4 +205,17 @@ int tiku_trk_attr_rating(long value, char *out, size_t max);
 int tiku_trk_attr_gauge(const tiku_trk_desc_t *d, const char *raw, int cells,
                         char *out, size_t max);
 
+/**
+ * @brief A display name that tells same-named neighbours apart (NeXT UIG
+ *        ch8): the leaf alone when it is unique among @p others, otherwise
+ *        "leaf -- .../suffix" with the MINIMUM trailing path that
+ *        distinguishes it -- computed against the rows actually shown,
+ *        not against the whole namespace.
+ *
+ * @return the length written.
+ */
+int tiku_trk_attr_disambiguate(const char *path,
+                               const char *const *others, int n,
+                               char *out, size_t max);
+
 #endif /* TIKU_TRK_ATTR_H_ */

@@ -394,6 +394,33 @@ main(void)
               "formatted values keep their head -- the end goes");
     }
 
+    printf("\ndisambiguating path suffixes (NeXT UIG ch8)\n");
+    {
+        const char *rows[4] = { "/net/work/notes.txt",
+                                "/net/home/notes.txt",
+                                "/net/home/todo.txt",
+                                "/deep/a/x/notes.txt" };
+        char out[128];
+
+        (void)tiku_trk_attr_disambiguate(rows[2], rows, 4, out, sizeof out);
+        check(strcmp(out, "todo.txt") == 0,
+              "NEXT-91: a name with no same-named neighbour stays plain");
+        (void)tiku_trk_attr_disambiguate(rows[0], rows, 4, out, sizeof out);
+        check(strcmp(out, "notes.txt -- .../work") == 0,
+              "NEXT-91: the MINIMUM suffix, one component when enough");
+        (void)tiku_trk_attr_disambiguate(rows[3], rows, 4, out, sizeof out);
+        check(strcmp(out, "notes.txt -- .../x") == 0,
+              "NEXT-91: computed against the rows shown, not path depth");
+        {
+            const char *two[2] = { "/a/b/n.txt", "/c/b/n.txt" };
+
+            (void)tiku_trk_attr_disambiguate(two[0], two, 2, out,
+                                             sizeof out);
+            check(strcmp(out, "n.txt -- /a/b") == 0,
+                  "NEXT-91: a whole parent is shown whole, no dots");
+        }
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every attribute rule holds");
     return fails ? 1 : 0;
 }

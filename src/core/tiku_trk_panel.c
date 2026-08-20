@@ -627,3 +627,56 @@ tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w, int h)
     fr[3] = (int32_t)clamp(h, TIKU_TRK_PANEL_MIN_H, TIKU_TRK_PANEL_MAX_H);
     (void)tiku_trk_state_write(s, PANEL_SLOT, ATTR_FRAME, fr, sizeof fr);
 }
+
+/** @brief Collects the longest common extension during the list walk. */
+struct complete_ctx {
+    const char *prefix;
+    size_t      plen;
+    char        best[TIKU_TRK_NAME_MAX];
+    int         matches;
+};
+
+static int
+complete_one(const tiku_trk_model_t *m, void *ctx)
+{
+    struct complete_ctx *c = ctx;
+
+    if (strncmp(m->name, c->prefix, c->plen) != 0) {
+        return 0;
+    }
+    if (c->matches == 0) {
+        snprintf(c->best, sizeof c->best, "%s", m->name);
+    } else {
+        size_t k = 0;
+
+        while (c->best[k] != '\0' && c->best[k] == m->name[k]) {
+            k++;
+        }
+        c->best[k] = '\0';
+    }
+    c->matches++;
+    return 0;
+}
+
+int
+tiku_trk_panel_complete(tiku_trk_backend_t *b, const char *dir,
+                        const char *prefix, char *out, size_t max)
+{
+    struct complete_ctx c;
+
+    if (b == NULL || b->ops->list == NULL || dir == NULL ||
+        prefix == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    memset(&c, 0, sizeof c);
+    c.prefix = prefix;
+    c.plen = strlen(prefix);
+    if (c.plen == 0u) {
+        return 0;               /* nothing typed: nothing to extend */
+    }
+    (void)b->ops->list(b, dir, complete_one, &c);
+    if (c.matches > 0) {
+        snprintf(out, max, "%s", c.best);
+    }
+    return c.matches;
+}

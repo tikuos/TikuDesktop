@@ -652,3 +652,89 @@ tiku_trk_attr_gauge(const tiku_trk_desc_t *d, const char *raw, int cells,
     }
     return gauge_cells(v - d->lo, d->hi - d->lo, cells, out, max);
 }
+
+/** @brief The name after the last slash. */
+static const char *
+dis_leaf(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+
+    return (slash != NULL && slash[1] != '\0') ? slash + 1 : path;
+}
+
+/** @brief The suffix of @p dir spanning its last @p depth components. */
+static const char *
+dis_suffix(const char *dir, int depth)
+{
+    const char *at = dir + strlen(dir);
+    int seen = 0;
+
+    while (at > dir) {
+        if (at[-1] == '/') {
+            seen++;
+            if (seen >= depth) {
+                return at - 1;
+            }
+        }
+        at--;
+    }
+    return dir;
+}
+
+int
+tiku_trk_attr_disambiguate(const char *path, const char *const *others,
+                           int n, char *out, size_t max)
+{
+    const char *leaf;
+    char dir[TIKU_TRK_PATH_MAX];
+    const char *slash;
+    int i, depth, colliding = 0;
+
+    if (path == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    leaf = dis_leaf(path);
+    for (i = 0; i < n; i++) {
+        if (others[i] != NULL && strcmp(others[i], path) != 0 &&
+            strcmp(dis_leaf(others[i]), leaf) == 0) {
+            colliding = 1;
+        }
+    }
+    if (!colliding) {
+        return snprintf(out, max, "%s", leaf);
+    }
+    snprintf(dir, sizeof dir, "%s", path);
+    slash = strrchr(dir, '/');
+    dir[(slash != NULL) ? (size_t)(slash - dir) : 0u] = '\0';
+    /* The MINIMUM that tells them apart: one trailing component, then two,
+     * until no colliding neighbour shares the suffix. */
+    for (depth = 1; ; depth++) {
+        const char *mine = dis_suffix(dir, depth);
+        int clash = 0, whole = (mine == dir);
+
+        for (i = 0; i < n; i++) {
+            char odir[TIKU_TRK_PATH_MAX];
+            const char *oslash;
+
+            if (others[i] == NULL || strcmp(others[i], path) == 0 ||
+                strcmp(dis_leaf(others[i]), leaf) != 0) {
+                continue;
+            }
+            snprintf(odir, sizeof odir, "%s", others[i]);
+            oslash = strrchr(odir, '/');
+            odir[(oslash != NULL) ? (size_t)(oslash - odir) : 0u] = '\0';
+            if (strcmp(dis_suffix(odir, depth), mine) == 0 &&
+                !(whole && strcmp(odir, dir) == 0)) {
+                clash = 1;
+            }
+        }
+        if (!clash || whole) {
+            /* Dots stand for what was left OUT; a suffix that is the
+             * whole parent shows the parent as it is. */
+            return whole
+                ? snprintf(out, max, "%s -- %s", leaf,
+                           dir[0] != '\0' ? dir : "/")
+                : snprintf(out, max, "%s -- ...%s", leaf, mine);
+        }
+    }
+}

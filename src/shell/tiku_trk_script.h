@@ -80,6 +80,10 @@ typedef struct {
      * position is the only way to check an ARRANGEMENT -- how many rows a
      * window holds says nothing about where a drop put them. */
     int       (*pose_at)(void *ctx, const char *name, int *x, int *y);
+    /* The DESKTOP's poses only: what the *-desk ops aim at, so a same-named
+     * row in the focused window cannot shadow the icon.  NULL falls back
+     * to pose_at. */
+    int       (*pose_desk_at)(void *ctx, const char *name, int *x, int *y);
     int       (*pose_screen)(void *ctx, const char *name, int *x, int *y);
     /* Where a visible list row can be clicked in shell coordinates.  The
      * shell owns chrome geometry, so scripts must not reconstruct it. */
