@@ -8,6 +8,16 @@ wait 40
 expect-title About (remote)
 note the frame's pixels came over the wire: the wordmark's amber rule
 expect-pixel 330 216 ffcb00
+note a drag crosses the process boundary and leaves footprints: MOVE
+note paints amber, RELEASE stamps ink -- each round-tripping the wire
+press 400 300
+move 430 310
+move 450 315
+wait 4
+release 470 320
+wait 30
+expect-pixel 450 315 ffcb00
+expect-pixel 470 320 000000
 note its menus reach the strip over the wire
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
 wait 20

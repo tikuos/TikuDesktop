@@ -28,6 +28,18 @@
 #define MINI_ICON_FOR(row_h) ((row_h) - 4)
 #define VALUE_GAP   120
 
+
+/* The document ground, read through the THEME so dark mode follows; a
+ * query view is set slightly off it so the read-only cue survives
+ * whichever way the theme leans. */
+static uint32_t
+folder_background(const tiku_trk_poseview_t *v)
+{
+    return (v != NULL && tiku_trk_poseview_is_query(v))
+               ? tiku_desk_tint(TIKU_DESK_C_DOC, 1.06f)
+               : TIKU_DESK_C_DOC;
+}
+
 static int
 measure_label(const char *text, void *context)
 {
@@ -1103,12 +1115,12 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
             }
             if (strip.h > 0) {
                 tiku_desk_fill(paint, strip,
-                               tiku_trk_poseview_background(folder->view));
+                               folder_background(folder->view));
             }
         }
     } else {
         tiku_desk_ui_sunken(paint, area,
-                            tiku_trk_poseview_background(folder->view));
+                            folder_background(folder->view));
     }
     tiku_trk_poseview_set_viewport(folder->view, list.w - 4, list.h - 4);
     tiku_trk_poseview_set_row_height(folder->view, render->row_h);
@@ -1142,7 +1154,7 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
         vsig = sig_bytes(vsig, &area.h, sizeof area.h);
         {
             int m = tiku_trk_poseview_mode(folder->view);
-            tiku_desk_rgb_t bg = tiku_trk_poseview_background(folder->view);
+            tiku_desk_rgb_t bg = folder_background(folder->view);
 
             vsig = sig_bytes(vsig, &m, sizeof m);
             vsig = sig_bytes(vsig, &bg, sizeof bg);
@@ -1199,7 +1211,7 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
             /* The frame's border lies OUTSIDE the pose clip. */
             tiku_desk_clip_reset(paint);
             tiku_desk_ui_sunken(paint, area,
-                                tiku_trk_poseview_background(folder->view));
+                                folder_background(folder->view));
             tiku_desk_clip_set(paint, inner);
             folder->bg_drawn = tiku_trk_folder_window_draw_background(
                 folder, paint, inner);
@@ -1221,7 +1233,7 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
                 }
                 tiku_desk_clip_set(paint, r);
                 tiku_desk_fill(paint, r,
-                    tiku_trk_poseview_background(folder->view));
+                    folder_background(folder->view));
                 (void)tiku_trk_folder_window_draw_background(folder, paint,
                                                              inner);
                 for (j = 0; j < cur_n; j++) {

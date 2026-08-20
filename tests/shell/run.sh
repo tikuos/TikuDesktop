@@ -54,6 +54,7 @@ for s in "$here"/*.script; do
         # its own leftovers.
         deskhome="/tmp/trk_home"
         deskfill=""
+        embed=""
         if grep -q '^# home: fixture' "$s"; then
             deskfill=yes
         fi
@@ -159,7 +160,10 @@ PYBG
                 echo q > "$deskhome/recipes.query" ;;
             nameclash.script)
                 mkdir -p "$deskhome/Desktop/sub" ;;
-            dev33.script|remoteapp.script)
+            embedapp.script)
+                # The SAME descriptor, hosted linked-in this time.
+                embed=1 ;;
+            remoteapp.script)
                 # The out-of-process client: started BESIDE the desktop,
                 # its connect retry covers the launch order.
                 ( HOME="$deskhome" "$root/../desktop/build/tiku-about-app" \
@@ -288,10 +292,12 @@ PYEOF
             echo hi > "$deskhome/Desktop/todo.txt"
         fi
         if grep -q '^# argv: none' "$s"; then
-            DISPLAY= HOME="$deskhome" "$root/build/$bin" \
+            DISPLAY= HOME="$deskhome" \
+                env ${embed:+TIKU_EMBED_ABOUT=1} "$root/build/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
-            DISPLAY= HOME="$deskhome" "$root/build/$bin" $work \
+            DISPLAY= HOME="$deskhome" \
+                env ${embed:+TIKU_EMBED_ABOUT=1} "$root/build/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done

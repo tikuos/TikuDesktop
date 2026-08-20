@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# The both-ways proof, linked-in half: the SAME About descriptor the
+# client runner takes out of process is hosted here inside the desktop,
+# over workspace-backed services -- and it cannot tell.
+wait 15
+note the work window covers it: put that away first
+key w ctrl
+wait 3
+click-window About (remote)
+wait 3
+expect-title About (remote)
+note a drag leaves footprints: MOVE paints amber, RELEASE stamps ink
+press 400 300
+move 430 310
+move 450 315
+wait 2
+release 470 320
+wait 6
+expect-pixel 450 315 ffcb00
+expect-pixel 470 320 000000
+note its published menu reaches the strip from inside the process
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click-window About (remote)
+wait 4
+click 68 8
+wait 4
+expect-menu Refresh
+menu-pick Quit
+wait 10
+expect-no-title About (remote)
+quit

@@ -67,6 +67,7 @@
 #include "tiku_trk_find_window.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_desk_remote.h"
+#include "tiku_desk_about_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -149,6 +150,22 @@ typedef struct desktop {
     tiku_trk_find_window_t find_window;
     tiku_trk_about_window_t about_window;
     tiku_desk_remote_listener_t remote;
+    /* One EMBEDDED descriptor slot: the same application code the client
+     * runner takes out of process, hosted here with workspace-backed
+     * services -- the both-ways proof. */
+    struct {
+        const tiku_desk_app_descriptor_t *descriptor;
+        void                *state;
+        tiku_desk_window_t  *window;
+        uint32_t            *frame;
+        int                  fw, fh;
+        uint32_t             next_id;
+        int                  running;
+    } embed;
+    /* The remote window owning the current press, so MOVE and RELEASE
+     * follow the DOWN to the same session -- a drag is one conversation. */
+    tiku_desk_window_t  *remote_press;
+    int                  embed_press;   /* drag owned by the embed  */
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
@@ -994,6 +1011,147 @@ build_pickers(desktop_t *app, folder_t *fl)
 static void menu_invoke(desktop_t *app, folder_t *fl, int command);
 
 /*---------------------------------------------------------------------------*/
+/* The embedded descriptor host: the services contract over the workspace   */
+/*---------------------------------------------------------------------------*/
+
+static void embed_stop(desktop_t *app);
+
+static void
+embed_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
+                  tiku_desk_rect_t content, void *context)
+{
+    desktop_t *app = context;
+    int x, y, w, h;
+
+    (void)window;
+    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    if (app->embed.frame == NULL) {
+        return;
+    }
+    w = (app->embed.fw < content.w) ? app->embed.fw : content.w;
+    h = (app->embed.fh < content.h) ? app->embed.fh : content.h;
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            tiku_desk_pixel(surface, content.x + x, content.y + y,
+                app->embed.frame[(size_t)y * (size_t)app->embed.fw + x]);
+        }
+    }
+}
+
+static uint32_t
+embed_svc_open(void *ctx, const char *title, int w, int h)
+{
+    desktop_t *app = ctx;
+    tiku_desk_rect_t frame;
+
+    frame.w = w + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.h = h + TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.x = (app->surf->w - frame.w) / 2;
+    frame.y = (app->surf->h - frame.h) / 3;
+    app->embed.window = tiku_desk_workspace_open(app->desk, title, frame,
+        embed_window_draw, app, &app->embed);
+    if (app->embed.window != NULL) {
+        tiku_desk_window_set_size_controls(app->embed.window, 0, 0);
+    }
+    app->dirty = 1;
+    return app->embed.next_id++;
+}
+
+static int
+embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
+{
+    desktop_t *app = ctx;
+    uint32_t *copy;
+
+    (void)id;
+    if (px == NULL || w < 1 || h < 1) {
+        return -1;
+    }
+    copy = realloc(app->embed.frame, 4u * (size_t)w * (size_t)h);
+    if (copy == NULL) {
+        return -1;
+    }
+    memcpy(copy, px, 4u * (size_t)w * (size_t)h);
+    app->embed.frame = copy;
+    app->embed.fw = w;
+    app->embed.fh = h;
+    app->dirty = 1;
+    return 0;
+}
+
+static void
+embed_menu_pick(tiku_desk_window_t *window, int command, void *context)
+{
+    desktop_t *app = context;
+
+    (void)window;
+    if (app->embed.running && app->embed.descriptor->pick != NULL &&
+        app->embed.descriptor->pick(app->embed.state, 1, command)) {
+        embed_stop(app);
+    }
+}
+
+static int
+embed_svc_menus(void *ctx, uint32_t id, const tiku_desk_menuset_t *set)
+{
+    desktop_t *app = ctx;
+
+    (void)id;
+    if (app->embed.window != NULL) {
+        tiku_desk_window_publish_menus(app->embed.window, set,
+                                       embed_menu_pick, app);
+    }
+    return 0;
+}
+
+static void
+embed_svc_close(void *ctx, uint32_t id)
+{
+    (void)ctx;
+    (void)id;
+}
+
+static void
+embed_stop(desktop_t *app)
+{
+    if (!app->embed.running) {
+        return;
+    }
+    app->embed.running = 0;
+    if (app->embed.descriptor->stop != NULL) {
+        app->embed.descriptor->stop(app->embed.state);
+    }
+    app->embed.state = NULL;
+    if (app->embed.window != NULL) {
+        tiku_desk_workspace_close(app->desk, app->embed.window);
+        app->embed.window = NULL;
+    }
+    free(app->embed.frame);
+    app->embed.frame = NULL;
+    app->dirty = 1;
+}
+
+/** @brief Host @p descriptor in this process, over these services. */
+static void
+embed_start(desktop_t *app, const tiku_desk_app_descriptor_t *descriptor)
+{
+    /* Static: the descriptor keeps the pointer for its lifetime. */
+    static tiku_desk_app_services_t services;
+
+    services.ctx = app;
+    services.open = embed_svc_open;
+    services.frame = embed_svc_frame;
+    services.menus = embed_svc_menus;
+    services.close = embed_svc_close;
+    app->embed.descriptor = descriptor;
+    app->embed.next_id = 1;
+    if (descriptor->start != NULL &&
+        descriptor->start(&app->embed.state, &services) == 0) {
+        app->embed.running = 1;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 /* Remote sessions: out-of-process windows over the desk socket              */
 /*---------------------------------------------------------------------------*/
 
@@ -1781,6 +1939,10 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
     }
     if (w == tiku_trk_panel_window_handle(&app->file_panel)) {
         tiku_trk_panel_window_close(&app->file_panel);
+        return;
+    }
+    if (app->embed.running && w == app->embed.window) {
+        embed_stop(app);
         return;
     }
     if (tiku_desk_remote_owner(&app->remote, w) != NULL) {
@@ -3835,6 +3997,11 @@ tracker_run(int argc, char **argv)
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;
     }
+    if (getenv("TIKU_EMBED_ABOUT") != NULL) {
+        /* The both-ways proof: the SAME descriptor the client runner
+         * takes out of process, hosted here linked-in. */
+        embed_start(&app, &tiku_desk_about_app);
+    }
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
      * nothing else dirties the surface (DB-044). */
@@ -4355,6 +4522,9 @@ tracker_run(int argc, char **argv)
         }
         remote_reconcile(&app);
         remote_sweep(&app);
+        if (app.embed.running && app.embed.descriptor->tick != NULL) {
+            app.embed.descriptor->tick(app.embed.state, tiku_trk_now());
+        }
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
         for (;;) {
@@ -5222,6 +5392,22 @@ tracker_run(int argc, char **argv)
                                     &app.file_panel)) {
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                           app.embed.running && w == app.embed.window) {
+                    tiku_desk_event_t rev = ev;
+                    tiku_desk_rect_t rc = tiku_desk_window_content(w);
+
+                    tiku_desk_workspace_activate(app.desk, w);
+                    rev.x -= rc.x;
+                    rev.y -= rc.y;
+                    if (app.embed.descriptor->event != NULL &&
+                        app.embed.descriptor->event(app.embed.state,
+                                                    &rev)) {
+                        embed_stop(&app);
+                    } else {
+                        app.embed_press = 1;
+                    }
+                    app.dirty = 1;
+                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            tiku_desk_remote_owner(&app.remote, w) != NULL) {
                     /* A remote window's content belongs to its session:
                      * the event rides the wire in window coordinates. */
@@ -5232,6 +5418,7 @@ tracker_run(int argc, char **argv)
                     rev.x -= rc.x;
                     rev.y -= rc.y;
                     tiku_desk_remote_event(&app.remote, w, &rev);
+                    app.remote_press = w;
                     app.dirty = 1;
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_find_window_handle(
@@ -5545,6 +5732,37 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
+                if (app.embed_press && app.embed.running &&
+                    app.embed.window != NULL) {
+                    tiku_desk_event_t rev = ev;
+                    tiku_desk_rect_t rc =
+                        tiku_desk_window_content(app.embed.window);
+
+                    rev.x -= rc.x;
+                    rev.y -= rc.y;
+                    if (app.embed.descriptor->event != NULL &&
+                        app.embed.descriptor->event(app.embed.state,
+                                                    &rev)) {
+                        embed_stop(&app);
+                        app.embed_press = 0;
+                    }
+                    app.dirty = 1;
+                    break;
+                }
+                if (app.remote_press != NULL &&
+                    tiku_desk_remote_owner(&app.remote,
+                                           app.remote_press) != NULL) {
+                    tiku_desk_event_t rev = ev;
+                    tiku_desk_rect_t rc =
+                        tiku_desk_window_content(app.remote_press);
+
+                    rev.x -= rc.x;
+                    rev.y -= rc.y;
+                    tiku_desk_remote_event(&app.remote, app.remote_press,
+                                           &rev);
+                    app.dirty = 1;
+                    break;
+                }
                 if (app.qdrag_on) {
                     app.dirty = 1;
                 }
@@ -5730,6 +5948,41 @@ tracker_run(int argc, char **argv)
                 break;
             case TIKU_DESK_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
+
+                if (app.embed_press) {
+                    app.embed_press = 0;
+                    if (app.embed.running && app.embed.window != NULL) {
+                        tiku_desk_event_t rev = ev;
+                        tiku_desk_rect_t rc =
+                            tiku_desk_window_content(app.embed.window);
+
+                        rev.x -= rc.x;
+                        rev.y -= rc.y;
+                        if (app.embed.descriptor->event != NULL &&
+                            app.embed.descriptor->event(app.embed.state,
+                                                        &rev)) {
+                            embed_stop(&app);
+                        }
+                    }
+                    app.dirty = 1;
+                    break;
+                }
+                if (app.remote_press != NULL) {
+                    if (tiku_desk_remote_owner(&app.remote,
+                                               app.remote_press) != NULL) {
+                        tiku_desk_event_t rev = ev;
+                        tiku_desk_rect_t rc =
+                            tiku_desk_window_content(app.remote_press);
+
+                        rev.x -= rc.x;
+                        rev.y -= rc.y;
+                        tiku_desk_remote_event(&app.remote,
+                                               app.remote_press, &rev);
+                    }
+                    app.remote_press = NULL;
+                    app.dirty = 1;
+                    break;
+                }
 
                 if (app.qdrag_on) {
                     /* The query icon lands (Q-034): over a folder window
@@ -6036,6 +6289,17 @@ tracker_run(int argc, char **argv)
                     tiku_desk_window_t *rfw =
                         tiku_desk_workspace_focused(app.desk);
 
+                    if (app.embed.running && rfw == app.embed.window) {
+                        tiku_desk_event_t rev = ev;
+
+                        if (app.embed.descriptor->event != NULL &&
+                            app.embed.descriptor->event(app.embed.state,
+                                                        &rev)) {
+                            embed_stop(&app);
+                        }
+                        app.dirty = 1;
+                        break;
+                    }
                     if (tiku_desk_remote_owner(&app.remote, rfw) != NULL) {
                         tiku_desk_event_t rev = ev;
 

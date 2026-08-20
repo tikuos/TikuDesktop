@@ -75,7 +75,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_copybits \
@@ -280,6 +280,9 @@ $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
                     src/backends/tiku_trk_volume.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_remote: tests/test_remote.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_remote.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_hvif: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
                     src/media/tiku_trk_iconpaint.c \

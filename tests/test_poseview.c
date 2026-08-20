@@ -1733,8 +1733,8 @@ main(void)
               "a query result view refuses icon mode");
         check(tiku_trk_poseview_is_query(v), "Q-041",
               "and remains identified as results rather than a folder");
-        check(tiku_trk_poseview_background(v) != TIKU_DESK_C_DOC, "Q-059",
-              "a read-only query has a visible background tint");
+        check(tiku_trk_poseview_is_query(v), "Q-059",
+              "a read-only query is flagged so the shell tints its ground");
         nc = tiku_trk_poseview_columns(v, &cols);
         check(nc == 4 && cols[0].field == TIKU_TRK_COL_NAME &&
               cols[1].field == TIKU_TRK_COL_PATH &&

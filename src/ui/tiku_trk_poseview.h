@@ -212,7 +212,6 @@ int tiku_trk_poseview_adopt(tiku_trk_poseview_t *v,
 int tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v);
 
 /** @brief Document colour for this view, tinted when it is read-only. */
-uint32_t tiku_trk_poseview_background(const tiku_trk_poseview_t *v);
 
 /** @brief Select the saved column/frame layout shared by this query type. */
 void tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v,
