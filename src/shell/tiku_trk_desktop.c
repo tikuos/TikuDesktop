@@ -65,6 +65,7 @@
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
+#include "tiku_trk_about_window.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -145,6 +146,7 @@ typedef struct desktop {
     int                  find_len;
     int                  find_serial;
     tiku_trk_find_window_t find_window;
+    tiku_trk_about_window_t about_window;
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
@@ -1091,6 +1093,9 @@ rebuild_global_bar(desktop_t *app)
     /* The system menu first, where the corner ritual lives. */
     tiku_trk_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
+    (void)tiku_trk_menu_add(&app->sysmenu, "About this system…",
+                            TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
+    (void)tiku_trk_menu_add_separator(&app->sysmenu);
     (void)tiku_trk_menu_add(&app->sysmenu, "Find…", TIKU_TRK_CMD_FIND,
                             'f', TIKU_TRK_MOD_CMD, 1);
     (void)tiku_trk_menu_add(&app->sysmenu, "Preferences…",
@@ -1670,6 +1675,10 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
     }
     if (w == tiku_trk_panel_window_handle(&app->file_panel)) {
         tiku_trk_panel_window_close(&app->file_panel);
+        return;
+    }
+    if (w == tiku_trk_about_window_handle(&app->about_window)) {
+        tiku_trk_about_window_close(&app->about_window);
         return;
     }
     if (w == tiku_trk_find_window_handle(&app->find_window)) {
@@ -2298,6 +2307,9 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     case TIKU_TRK_DB_TRACKER_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
         break;
+    case TIKU_TRK_DB_SHOW_ABOUT:
+        tiku_trk_about_window_open(&app->about_window);
+        break;
     case TIKU_TRK_DB_QUIT:
         /* The ellipsis is a promise: Shut down… asks
          * before anything is taken down (DB-006). */
@@ -2665,6 +2677,10 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             *&app->dirty = 1;
             return;
         }
+    }
+    if (command == TIKU_TRK_CMD_ABOUT) {
+        tiku_trk_about_window_open(&app->about_window);
+        return;
     }
     if (command == TIKU_TRK_CMD_SHUTDOWN) {
         /* The system menu's corner ritual, by the same question the
@@ -3702,6 +3718,8 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
     tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
+    tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
+                               DESK_H, &app.dirty);
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
      * nothing else dirties the surface (DB-044). */
@@ -5882,6 +5900,9 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (tiku_trk_about_window_key(&app.about_window, key)) {
+                    break;
+                }
                 if (tiku_trk_find_window_key(&app.find_window, key,
                                              key_char(&ev))) {
                     break;
@@ -6725,6 +6746,10 @@ tracker_run(int argc, char **argv)
             changed += tiku_trk_info_windows_refresh(&app.info_windows,
                                                       tiku_trk_now());
             changed += tiku_trk_deskbar_refresh(app.deskbar);
+            if (tiku_trk_about_window_handle(&app.about_window) != NULL) {
+                /* The About box's uptime ticks while it stands. */
+                changed++;
+            }
             /* Live queries re-evaluate on a slower beat than values are
              * read: a re-walk costs a directory listing per subtree, and a
              * result set that moves every 400 ms is unreadable anyway. */

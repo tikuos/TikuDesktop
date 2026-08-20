@@ -33,6 +33,7 @@ DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/ui/commands/tiku_trk_folder_menu.c \
                        src/ui/commands/tiku_trk_launch_controller.c \
                        src/ui/windows/tiku_trk_find_window.c \
+                       src/ui/windows/tiku_trk_about_window.c \
                        src/ui/windows/tiku_trk_folder_edit.c \
                        src/ui/windows/tiku_trk_folder_lifecycle.c \
                        src/ui/windows/tiku_trk_folder_window.c \

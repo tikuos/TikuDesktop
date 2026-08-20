@@ -1,0 +1,30 @@
+# shell: desktop
+# home: fixture
+# The About box, in the R5 manner: reached from the Deskbar and from the
+# global bar's system menu, modeless, closed by Escape -- and its facts
+# come from the host underneath, not from constants.
+wait 12
+note from the Deskbar first, whose About row had no consumer until now
+press 900 20 1
+wait 2
+release 900 20 1
+wait 4
+menu-pick About this system
+wait 6
+expect-title About this system
+note Escape closes it, as a panel that announces should
+key Escape
+wait 4
+expect-no-title About this system
+note and from the global bar's Tiku menu, the corner ritual's first row
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click 20 8
+wait 4
+expect-menu About this system
+menu-pick About this system
+wait 6
+expect-title About this system
+note the identity column wears the wordmark over its amber rule
+expect-pixel 330 208 ffcb00
+quit
