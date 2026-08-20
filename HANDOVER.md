@@ -110,6 +110,15 @@ silently stopped running still prints no failures.
 - **A test binary in `TESTBINS` is not necessarily run.** `test_launch` sat
   built-but-never-run for a whole session because it was missing from the
   `test:` recipe. If you add a suite, add it to both.
+- **Two drivers, one grammar.** Most scripts are read by the interpreter
+  compiled into `build/dev/` (in-process, the full 82-op vocabulary). The
+  scripts named in `run.sh`'s `conducted` list are ALSO read by
+  `build/dev/trk-conduct`, a program that speaks the conductor channel to a
+  **shipping** shell started with `-conduct <socket>` and links nothing of
+  Tracker. Its grammar is a spelled-identical subset, so the same file
+  proves the same thing twice, two ways. An op it lacks is a FAILURE, never
+  a skip. The channel offers only inject-event and query-pixel/named-string;
+  every expectation is composed in the driver.
 - **The harness runs `build/dev/`, not `build/`.** A script handed to a
   shipping shell is refused loudly rather than ignored, so a lane pointed at
   the wrong binary fails instead of passing quietly. Both flavours are built

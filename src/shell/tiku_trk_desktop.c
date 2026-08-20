@@ -47,6 +47,7 @@
 #include "tiku_trk_switcher_window.h"
 #include "tiku_trk_navmenu.h"
 #include "tiku_trk_titleview.h"
+#include "tiku_desk_conduct.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_script_api.h"
 #include "tiku_trk_cwmenu.h"
@@ -150,6 +151,14 @@ typedef struct desktop {
     tiku_trk_find_window_t find_window;
     tiku_trk_about_window_t about_window;
     tiku_desk_remote_listener_t remote;
+    /* The conductor channel: an outside driver's events and questions.
+     * Off unless -conduct asked for it.  Injected events queue here and
+     * are drained by the same loop that drains the display's, so a
+     * driven shell and a used one take exactly the same path. */
+    tiku_desk_conduct_t         conduct;
+    int                         conduct_on;
+    tiku_desk_event_t           cq[64];
+    int                         cq_head, cq_tail;
     /* One EMBEDDED descriptor slot: the same application code the client
      * runner takes out of process, hosted here with workspace-backed
      * services -- the both-ways proof. */
@@ -3848,6 +3857,155 @@ draw_nav_levels(desktop_t *app, int px, int py)
  * the check exists to do without.  The from-scratch draw stands: it is the
  * picture the shell should be showing anyway.
  */
+/*---------------------------------------------------------------------------*/
+/* The conductor channel: what an outside driver may do to this shell       */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Append one menu's rows to @p out, the way a driver reads them. */
+static void
+conduct_append_menu(char *out, size_t max, const tiku_trk_menu_t *menu)
+{
+    int i;
+
+    if (menu == NULL) {
+        return;
+    }
+    for (i = 0; i < menu->count; i++) {
+        size_t used = strlen(out);
+
+        if (used + 2u >= max) {
+            return;
+        }
+        snprintf(out + used, max - used, "%s|", menu->item[i].label);
+    }
+}
+
+/** @brief The labels of whatever menu is open, or the Deskbar leaf's. */
+static const char *
+conduct_menu_labels(desktop_t *app)
+{
+    static char labels[512];
+
+    labels[0] = ' ';
+    conduct_append_menu(labels, sizeof labels, app->popup);
+    conduct_append_menu(labels, sizeof labels, app->popup_sub);
+    if (labels[0] == ' ') {
+        /* The Deskbar's leaf is a menu too: without it a driver could
+         * only reach those rows by pixel, and they move with whatever
+         * was recently opened. */
+        size_t used;
+
+        (void)tiku_trk_deskbar_menu_labels(app->deskbar, 0, labels,
+                                           sizeof labels);
+        used = strlen(labels);
+        (void)tiku_trk_deskbar_menu_labels(app->deskbar, 1, labels + used,
+                                           sizeof labels - used);
+    }
+    return labels;
+}
+
+/** @brief Queue an injected event for the loop that drains the display's. */
+static void
+conduct_inject(void *context, const tiku_desk_event_t *event)
+{
+    desktop_t *app = context;
+    int next = (app->cq_tail + 1) % (int)(sizeof app->cq / sizeof app->cq[0]);
+
+    /* A full queue drops the newest rather than overwriting the oldest:
+     * a driver that outruns the shell is told by what it observes next,
+     * and an out-of-order gesture would be a worse lie than a missing
+     * one. */
+    if (next == app->cq_head) {
+        return;
+    }
+    app->cq[app->cq_tail] = *event;
+    app->cq_tail = next;
+}
+
+/**
+ * @brief The pixel a driver asks about, off the same surface the display
+ *        is shown.
+ *
+ * The answer is about the LAST PAINTED frame, and the loop paints every
+ * turn it owes one -- so a driver reads what a person would see one turn
+ * after acting, which is what the grammar's `wait` is for.  Repainting
+ * here instead was tried and removed: nothing could be made to fail with
+ * it gone, and an answer that quietly paints is an observation that
+ * changes what it observes.
+ */
+static unsigned
+conduct_pixel(void *context, int x, int y)
+{
+    desktop_t *app = context;
+
+    if (app->surf == NULL || x < 0 || y < 0 ||
+        x >= app->surf->w || y >= app->surf->h) {
+        return 0u;
+    }
+    return app->surf->px[(size_t)y * (size_t)app->surf->w + (size_t)x] &
+           0xffffffu;
+}
+
+/**
+ * @brief The named things this shell can say about itself.
+ *
+ * Deliberately a short list of what the shell ALREADY knows -- a title, a
+ * count, the labels of the menu that is open.  Everything a driver wants
+ * to assert is composed from these on its side; a name this build does
+ * not know is refused, so a driver is told rather than guessing.
+ */
+static int
+conduct_text(void *context, const char *name, char *out, size_t max)
+{
+    desktop_t *app = context;
+
+    if (name == NULL || out == NULL) {
+        return 0;
+    }
+    if (strcmp(name, "title") == 0) {
+        tiku_desk_window_t *w = tiku_desk_workspace_focused(app->desk);
+
+        snprintf(out, max, "%s", (w != NULL) ? w->title : "");
+        return 1;
+    }
+    if (strcmp(name, "titles") == 0) {
+        /* Every open window, so a driver can assert that one is GONE --
+         * which no single focused title can answer. */
+        int i;
+        size_t used = 0u;
+
+        out[0] = '\0';
+        for (i = 0; i < TIKU_DESK_WINDOW_MAX; i++) {
+            tiku_desk_window_t *w = tiku_desk_workspace_at(app->desk, i);
+
+            if (w == NULL || !w->open) {
+                continue;
+            }
+            used += (size_t)snprintf(out + used, (used < max) ? max - used : 0u,
+                                     "%s|", w->title);
+            if (used >= max) {
+                break;
+            }
+        }
+        return 1;
+    }
+    if (strcmp(name, "status") == 0) {
+        snprintf(out, max, "%s", app->status);
+        return 1;
+    }
+    if (strcmp(name, "count") == 0) {
+        snprintf(out, max, "%s", app->count_text);
+        return 1;
+    }
+    if (strcmp(name, "menu") == 0) {
+        /* Whatever menu is open, as its labels: the popup the shell is
+         * showing, or the global bar's dropped one. */
+        snprintf(out, max, "%s", conduct_menu_labels(app));
+        return 1;
+    }
+    return 0;                   /* a name this build cannot say */
+}
+
 static long
 script_redraw_diff(void *ctx)
 {
@@ -3886,6 +4044,11 @@ tracker_run(int argc, char **argv)
 {
     desktop_t app;
     const char *port = NULL, *shot = NULL, *script_path = NULL;
+    /* The conductor channel is OFF unless asked for by name: a shell that
+     * anything reaching its socket could puppet is a shell with a hole in
+     * it.  The path is given rather than derived so a harness can run more
+     * than one driven shell at once. */
+    const char *conduct_path = NULL;
 
     restart_argv = argv;
     tiku_trk_script_t *sc = NULL;
@@ -3964,6 +4127,7 @@ tracker_run(int argc, char **argv)
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { shot = argv[++i]; }
         else if (strcmp(argv[i], "-shotmenu") == 0) { shot_menu = 1; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { script_path = argv[++i]; }
+        else if (strcmp(argv[i], "-conduct") == 0 && i + 1 < argc) { conduct_path = argv[++i]; }
         else if (strcmp(argv[i], "-shotedit") == 0 && i + 1 < argc) {
             shot_edit = argv[++i];
         }
@@ -4025,7 +4189,7 @@ tracker_run(int argc, char **argv)
      * nothing else dirties the surface (DB-044). */
     (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
                                 0);
-    if (script_path == NULL) {
+    if (script_path == NULL && conduct_path == NULL) {
         /* The living half of the roster: applications that quit leave
          * the list, new ones join it (DB-014/DB-015).  Never in a
          * scripted run, whose fixture must not chase the host's
@@ -4260,6 +4424,31 @@ tracker_run(int argc, char **argv)
 
     (void)tiku_trk_find_open_default(find_model(&app), (int64_t)time(NULL));
 
+    if (conduct_path != NULL) {
+        if (tiku_desk_conduct_listen(&app.conduct, conduct_path, &app,
+                                     conduct_inject, conduct_pixel,
+                                     conduct_text) != 0) {
+            fprintf(stderr, "tracker: cannot offer the conductor channel "
+                            "on %s\n", conduct_path);
+            return 3;
+        }
+        app.conduct_on = 1;
+        /* The same fixture clock a scripted run froze: a driver comparing
+         * pixels across a minute boundary would otherwise be told the
+         * clock changed, which is true and useless. */
+        {
+            struct tm fixed;
+
+            memset(&fixed, 0, sizeof fixed);
+            fixed.tm_year = 2026 - 1900;
+            fixed.tm_mon = 7;
+            fixed.tm_mday = 7;
+            fixed.tm_hour = 16;
+            fixed.tm_min = 26;
+            fixed.tm_isdst = -1;
+            tiku_trk_deskbar_set_clock(app.deskbar, mktime(&fixed));
+        }
+    }
     if (script_path != NULL) {
         /* Displayless.  The shell draws into the same surface either way,
          * so a scripted run exercises the real draw path -- it just has
@@ -4287,6 +4476,10 @@ tracker_run(int argc, char **argv)
         if (sc == NULL) {
             return 2;
         }
+    } else if (app.conduct_on) {
+        /* Driven and displayless: the surface IS the output, and the
+         * driver reads it through the channel. */
+        app.host = NULL;
     } else {
         app.host = tiku_desk_host_open(DESK_W, DESK_H, "TikuOS Desktop");
         if (app.host == NULL) {
@@ -4538,6 +4731,9 @@ tracker_run(int argc, char **argv)
         if (tiku_desk_remote_poll(&app.remote)) {
             app.dirty = 1;
         }
+        if (app.conduct_on) {
+            (void)tiku_desk_conduct_poll(&app.conduct);
+        }
         remote_reconcile(&app);
         remote_sweep(&app);
         if (app.embed.running && app.embed.descriptor->tick != NULL) {
@@ -4565,7 +4761,16 @@ tracker_run(int argc, char **argv)
                         app.surf, app.script_adapter.shot_path);
                 }
                 have = script_result == TIKU_TRK_SCRIPT_ADAPTER_EVENT;
-           } else if (tiku_desk_host_poll(app.host, &ev)) {
+            } else if (app.cq_head != app.cq_tail) {
+                /* An injected event, taken in the order it arrived and
+                 * handled by everything below exactly as the display's
+                 * own would be. */
+                ev = app.cq[app.cq_head];
+                app.cq_head = (app.cq_head + 1) %
+                              (int)(sizeof app.cq / sizeof app.cq[0]);
+                have = 1;
+            } else if (app.host != NULL && tiku_desk_host_poll(app.host,
+                                                               &ev)) {
                 have = 1;
             }
             if (!have) {
@@ -7352,6 +7557,9 @@ tracker_run(int argc, char **argv)
     }
     tiku_trk_fs_free(app.fs);
     tiku_trk_backend_close(app.backend);
+    if (app.conduct_on) {
+        tiku_desk_conduct_shutdown(&app.conduct);
+    }
     tiku_desk_host_close(app.host);
     tiku_desk_surface_free(app.surf);
     return rc;

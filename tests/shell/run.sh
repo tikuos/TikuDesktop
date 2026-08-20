@@ -16,6 +16,11 @@ fails=0
 # a harness pointed at the wrong one fails rather than passing quietly.
 devbin="$root/build/dev"
 
+# Scripts that are also run through the OUT-OF-PROCESS driver, against the
+# shipping shell.  Keep this list to scripts written in the subset
+# trk-conduct speaks (see tests/trk_conduct.c).
+conducted="defaultbar.script"
+
 # The rescue path first: -reset-settings must move the settings and every
 # device state aside WITHOUT drawing a pixel, for the day a setting makes
 # the screen unreadable.
@@ -318,6 +323,34 @@ PYEOF
         fi
     done
 done
+# The conducted lane: the SHIPPING desktop, driven from OUTSIDE its
+# process by trk-conduct over the conductor channel.  Every script above
+# was read by an interpreter compiled into the shell; these are read by a
+# program that was never linked against Tracker at all, and the shell it
+# drives is the one that goes on a device.  A script listed here must be
+# written in the subset both drivers speak, so the same file proves the
+# same thing twice, two ways.
+for s in $conducted; do
+    cs="$root/tests/shell/$s"
+    [ -e "$cs" ] || continue
+    printf '\n== %s (conducted, shipping shell)\n' "$s"
+    chome=/tmp/trk_conduct_home
+    csock=/tmp/trk_conduct.sock
+    rm -rf "$chome" "$work" "$csock"
+    mkdir -p "$chome/Desktop" "$work/sub"
+    echo hi > "$work/a.txt"
+    echo hi > "$work/b.txt"
+    echo hi > "$work/c.txt"
+    ( DISPLAY= HOME="$chome" "$root/build/desktop" "$work" \
+        -conduct "$csock" > /dev/null 2>&1 & )
+    "$root/build/dev/trk-conduct" -s "$csock" -n conducted "$cs" ||
+        fails=$((fails+1))
+    # By name, not by pattern: a -f pattern matches the shell running
+    # this script too, whose command line contains it.
+    pkill -x desktop > /dev/null 2>&1
+    rm -rf "$chome" "$csock"
+done
+
 rm -rf $work
 if [ $fails -gt 0 ]; then
     printf '\n%d shell script(s) FAILED\n' $fails

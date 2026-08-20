@@ -105,7 +105,8 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_state_pipeline
 
 all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop \
-     $(DEVBUILD)/tracker $(DEVBUILD)/desktop
+     $(DEVBUILD)/tracker $(DEVBUILD)/desktop \
+     $(DEVBUILD)/trk-conduct
 
 $(DESK_LIBS) &: $(DESK_SOURCES)
 	$(MAKE) --no-print-directory -C $(DESK_ROOT) libs
@@ -345,6 +346,14 @@ $(BUILD)/desktop: $(DESKTOP_SRC) $(SCRIPT_STUB) | $(BUILD)
 
 $(DEVBUILD)/desktop: $(DESKTOP_SRC) $(SCRIPT_ENGINE_DESKTOP) | $(DEVBUILD)
 	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
+
+# The out-of-process driver: an ordinary program that speaks the conductor
+# channel.  It links the transport and NOTHING of Tracker -- which is the
+# whole claim being made, and the link line is where it is kept honest.
+$(DEVBUILD)/trk-conduct: tests/trk_conduct.c $(DESK_TRANSPORT_LIB) \
+                         $(DESK_RUNTIME_LIB) | $(DEVBUILD)
+	$(CC) $(CFLAGS) -o $@ tests/trk_conduct.c $(DESK_RUNTIME_LIB) \
+	      $(DESK_TRANSPORT_LIB) $(LDFLAGS) -lX11 -lm
 
 $(BUILD):
 	@mkdir -p $(BUILD)
