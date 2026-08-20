@@ -159,6 +159,11 @@ PYBG
                 echo q > "$deskhome/recipes.query" ;;
             nameclash.script)
                 mkdir -p "$deskhome/Desktop/sub" ;;
+            dev33.script|remoteapp.script)
+                # The out-of-process client: started BESIDE the desktop,
+                # its connect retry covers the launch order.
+                ( HOME="$deskhome" "$root/../desktop/build/tiku-about-app" \
+                      >/dev/null 2>&1 & ) ;;
             safedefault.script)
                 mkdir -p "$deskhome/.Trash" "$deskhome/.config/tracker"
                 echo hi > "$deskhome/.Trash/planted.txt" ;;

@@ -1,0 +1,24 @@
+# shell: desktop
+# home: fixture
+# The process boundary as a deployment property: the About panel runs as
+# its OWN binary, appears through the window session, publishes its menus
+# as the same plain data a linked-in window would -- and the global bar
+# cannot tell the difference.
+wait 40
+expect-title About (remote)
+note the frame's pixels came over the wire: the wordmark's amber rule
+expect-pixel 330 216 ffcb00
+note its menus reach the strip over the wire
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click-window About (remote)
+wait 4
+click 68 8
+wait 4
+expect-menu Refresh
+note and a pick rides the wire back: Quit ends the process, and the
+note compositor sweeps the window whose session died
+menu-pick Quit
+wait 30
+expect-no-title About (remote)
+quit

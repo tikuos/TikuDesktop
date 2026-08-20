@@ -66,6 +66,7 @@
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
 #include "tiku_trk_about_window.h"
+#include "tiku_desk_remote.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -147,6 +148,7 @@ typedef struct desktop {
     int                  find_serial;
     tiku_trk_find_window_t find_window;
     tiku_trk_about_window_t about_window;
+    tiku_desk_remote_listener_t remote;
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
@@ -992,6 +994,110 @@ build_pickers(desktop_t *app, folder_t *fl)
 static void menu_invoke(desktop_t *app, folder_t *fl, int command);
 
 /*---------------------------------------------------------------------------*/
+/* Remote sessions: out-of-process windows over the desk socket              */
+/*---------------------------------------------------------------------------*/
+
+/** @brief A remote window's pixels are whatever its session last sent. */
+static void
+remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
+                   tiku_desk_rect_t content, void *context)
+{
+    tiku_desk_remote_session_t *s = context;
+    int y, w, h;
+
+    (void)window;
+    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    if (s == NULL || s->frame == NULL) {
+        return;
+    }
+    w = (s->fw < content.w) ? s->fw : content.w;
+    h = (s->fh < content.h) ? s->fh : content.h;
+    for (y = 0; y < h; y++) {
+        int x;
+
+        for (x = 0; x < w; x++) {
+            tiku_desk_pixel(surface, content.x + x, content.y + y,
+                            s->frame[(size_t)y * (size_t)s->fw + x]);
+        }
+    }
+}
+
+/** @brief A pick in a remote window's published menu rides the wire back. */
+static void
+remote_menu_pick(tiku_desk_window_t *window, int command, void *context)
+{
+    desktop_t *app = context;
+
+    tiku_desk_remote_pick(&app->remote, window, command);
+}
+
+/**
+ * @brief Give every session what it is owed: a window for an OPEN, the
+ *        published menus for a MENUS -- the same publish path a linked-in
+ *        window uses, which is the whole point.
+ */
+static void
+remote_reconcile(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < TIKU_DESK_REMOTE_SESSIONS; i++) {
+        tiku_desk_remote_session_t *s = &app->remote.session[i];
+
+        if (!s->used) {
+            continue;
+        }
+        if (s->opened && s->window == NULL) {
+            tiku_desk_rect_t frame;
+
+            frame.w = s->open_w + 2 * TIKU_DESK_WINDOW_BORDER;
+            frame.h = s->open_h + TIKU_DESK_WINDOW_TAB_H +
+                      2 * TIKU_DESK_WINDOW_BORDER;
+            frame.x = (app->surf->w - frame.w) / 2;
+            frame.y = (app->surf->h - frame.h) / 3;
+            s->window = tiku_desk_workspace_open(app->desk, s->title,
+                frame, remote_window_draw, s, s);
+            if (s->window != NULL) {
+                tiku_desk_window_set_size_controls(s->window, 0, 0);
+            }
+            app->dirty = 1;
+        }
+        if (s->window != NULL && s->menus_fresh) {
+            tiku_desk_window_publish_menus(s->window, &s->menus,
+                                           remote_menu_pick, app);
+            s->menus_fresh = 0;
+            app->dirty = 1;
+        }
+        if (!s->used && s->window != NULL) {
+            tiku_desk_workspace_close(app->desk, s->window);
+            s->window = NULL;
+        }
+    }
+}
+
+/** @brief Close the windows of sessions that died since the last poll. */
+static void
+remote_sweep(desktop_t *app)
+{
+    /* A window whose session vanished is swept by tag: the workspace
+     * still holds it, but no session claims it. */
+    tiku_desk_window_t *w;
+    int i;
+
+    for (i = 0; ; i++) {
+        w = tiku_desk_workspace_at(app->desk, i);
+        if (w == NULL) {
+            break;
+        }
+        if (w->open && w->draw == remote_window_draw &&
+            tiku_desk_remote_owner(&app->remote, w) == NULL) {
+            tiku_desk_workspace_close(app->desk, w);
+            app->dirty = 1;
+        }
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 /* The global menu bar (phase one) over the publish protocol (phase two)     */
 /*---------------------------------------------------------------------------*/
 
@@ -1675,6 +1781,11 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
     }
     if (w == tiku_trk_panel_window_handle(&app->file_panel)) {
         tiku_trk_panel_window_close(&app->file_panel);
+        return;
+    }
+    if (tiku_desk_remote_owner(&app->remote, w) != NULL) {
+        tiku_desk_remote_window_closed(&app->remote, w);
+        tiku_desk_workspace_close(app->desk, w);
         return;
     }
     if (w == tiku_trk_about_window_handle(&app->about_window)) {
@@ -3720,6 +3831,10 @@ tracker_run(int argc, char **argv)
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
     tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
                                DESK_H, &app.dirty);
+    if (tiku_desk_remote_listen(&app.remote) != 0) {
+        /* No socket, no sessions: the desktop still stands alone. */
+        app.remote.fd = -1;
+    }
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
      * nothing else dirties the surface (DB-044). */
@@ -4235,6 +4350,11 @@ tracker_run(int argc, char **argv)
                 }
             }
         }
+        if (tiku_desk_remote_poll(&app.remote)) {
+            app.dirty = 1;
+        }
+        remote_reconcile(&app);
+        remote_sweep(&app);
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
         for (;;) {
@@ -5102,6 +5222,18 @@ tracker_run(int argc, char **argv)
                                     &app.file_panel)) {
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                           tiku_desk_remote_owner(&app.remote, w) != NULL) {
+                    /* A remote window's content belongs to its session:
+                     * the event rides the wire in window coordinates. */
+                    tiku_desk_event_t rev = ev;
+                    tiku_desk_rect_t rc = tiku_desk_window_content(w);
+
+                    tiku_desk_workspace_activate(app.desk, w);
+                    rev.x -= rc.x;
+                    rev.y -= rc.y;
+                    tiku_desk_remote_event(&app.remote, w, &rev);
+                    app.dirty = 1;
+                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_find_window_handle(
                                     &app.find_window) &&
                            ev.button == 1u &&
@@ -5899,6 +6031,18 @@ tracker_run(int argc, char **argv)
                     }
                     app.dirty = 1;
                     break;
+                }
+                {
+                    tiku_desk_window_t *rfw =
+                        tiku_desk_workspace_focused(app.desk);
+
+                    if (tiku_desk_remote_owner(&app.remote, rfw) != NULL) {
+                        tiku_desk_event_t rev = ev;
+
+                        tiku_desk_remote_event(&app.remote, rfw, &rev);
+                        app.dirty = 1;
+                        break;
+                    }
                 }
                 if (tiku_trk_about_window_key(&app.about_window, key)) {
                     break;
@@ -6914,6 +7058,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_deskbar_prefs_window_destroy(&app.deskbar_prefs_window);
     tiku_trk_prefs_window_destroy(&app.prefs_window);
     tiku_trk_deskbar_free(app.deskbar);
+    tiku_desk_remote_shutdown(&app.remote);
     tiku_desk_workspace_free(app.desk);
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
