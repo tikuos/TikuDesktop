@@ -61,6 +61,7 @@ struct tiku_trk_deskbar {
     int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
     int                  dark;      /* which way the theme leans       */
+    int                  top_inset; /* the global bar owns this much   */
     tiku_trk_deskbar_settings_t settings;
     int                  autohide;
     int                  autoraise;
@@ -1470,6 +1471,14 @@ tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on)
     }
 }
 
+void
+tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px)
+{
+    if (db != NULL) {
+        db->top_inset = (px > 0) ? px : 0;
+    }
+}
+
 int
 tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y)
 {
@@ -1588,7 +1597,7 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 
     m.w = 176;
     m.h = rows * rowh + 4;
-    m.y = LEAF_H + 2;
+    m.y = db->frame.y + LEAF_H + 2;
     m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
            db->dock == TIKU_TRK_DB_LEFT_MINI)
           ? db->frame.x + db->frame.w + 2
@@ -2132,8 +2141,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         /* How much room the list actually has, once the leaf, the tray and
          * the clock have taken theirs.  A list longer than that is what
          * makes the bar scrollable (DB-034). */
-        int room = s->h - (LEAF_H + PAD) - (db->tray_count * TRAY_ROW) -
-                   SWITCH_ROW -
+        int room = s->h - db->top_inset - (LEAF_H + PAD) -
+                   (db->tray_count * TRAY_ROW) - SWITCH_ROW -
                    (db->settings.show_clock ? CLOCK_H : 0) - 2 * PAD;
 
         db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
@@ -2146,7 +2155,10 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         }
     }
     db->frame.w = tiku_trk_deskbar_width(db);
-    db->frame.y = 0;
+    /* The bar starts below whatever owns the top of the screen: with the
+     * global menu bar on, a Deskbar at y 0 would put its own leaf under
+     * the strip. */
+    db->frame.y = db->top_inset;
     if (tiku_trk_deskbar_vertical(db->dock)) {
         db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
                        db->dock == TIKU_TRK_DB_LEFT_MINI)
@@ -2163,7 +2175,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         db->frame.w = s->w;
         db->frame.h = LEAF_H + PAD;
         db->frame.y = (db->dock == TIKU_TRK_DB_TOP)
-                          ? 0 : s->h - db->frame.h;
+                          ? db->top_inset : s->h - db->frame.h;
         rows = 0;
     }
     if (!tiku_trk_deskbar_shown(db)) {

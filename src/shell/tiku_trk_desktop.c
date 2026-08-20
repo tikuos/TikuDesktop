@@ -420,6 +420,8 @@ sync_folder_preferences(desktop_t *app)
             app->folder_render.global_bar = gon;
             tiku_trk_desktop_view_set_top_inset(&app->desktop_view,
                 gon ? app->menus.bar.height : 0);
+            tiku_trk_deskbar_set_top_inset(app->deskbar,
+                gon ? app->menus.bar.height : 0);
             for (i = 0; i < app->folder_count; i++) {
                 tiku_trk_folder_window_forget(&app->folders[i]);
             }

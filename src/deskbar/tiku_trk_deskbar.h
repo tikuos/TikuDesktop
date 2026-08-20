@@ -599,6 +599,9 @@ void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
  */
 void tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on);
 
+/** @brief Reserve the top @p px of the screen (the global menu bar). */
+void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
+
 /** @brief Where the theme switch sits, so a test can put a finger on it. */
 tiku_desk_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);
 

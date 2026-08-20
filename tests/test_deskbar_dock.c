@@ -16,6 +16,8 @@
 #include "tiku_trk_input.h"
 #include "tiku_trk_deskbar_prefs.h"
 
+#define LEAF_TOP_PX 10   /* inside the leaf button, below its top edge */
+
 static int fails;
 
 /* Where the fake backend says a lost node went (DB-040). */
@@ -117,6 +119,42 @@ main(void)
               pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-002",
               "so does the strip along the top of the screen");
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    }
+
+    printf("the global bar owns the top of the screen (DEV-003)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t sw;
+
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+        tiku_trk_deskbar_set_top_inset(db, 20);
+        tiku_trk_deskbar_draw(db, s);
+        f = tiku_trk_deskbar_frame(db);
+        check(f.y == 20, "DEV-003",
+              "with a 20 px inset the vertical dock starts below it: the "
+              "leaf is not half-hidden under the global bar");
+        check(tiku_trk_deskbar_click(db, f.x + f.w / 2, 20 + LEAF_TOP_PX,
+                                     0u, 1, 1, &pick) &&
+              tiku_trk_deskbar_menu_open(db), "DEV-003",
+              "and the leaf answers at its shifted place");
+        tiku_trk_deskbar_close_menu(db);
+        sw = tiku_trk_deskbar_switch_rect(db);
+        check(tiku_trk_deskbar_click(db, sw.x + sw.w / 2,
+                                     sw.y + sw.h / 2, 0u, 1, 1, &pick) &&
+              pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-003",
+              "the theme switch followed the frame down with it");
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_TOP);
+        tiku_trk_deskbar_draw(db, s);
+        f = tiku_trk_deskbar_frame(db);
+        check(f.y == 20, "DEV-003", "the top strip starts below it too");
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_BOTTOM);
+        tiku_trk_deskbar_draw(db, s);
+        f = tiku_trk_deskbar_frame(db);
+        check(f.y + f.h == 680, "DEV-003",
+              "while the bottom edge is not the global bar's to take");
+        tiku_trk_deskbar_set_top_inset(db, 0);
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+        tiku_trk_deskbar_draw(db, s);
     }
 
     printf("which edge, and how far into the corner (DB-048)\n");
