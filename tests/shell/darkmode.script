@@ -9,8 +9,9 @@ note flip the setting behind the shell's back: the file IS the switch
 write /tmp/trk_home/.config/TrackerSettings DarkMode on
 wait 20
 expect-pixel 500 660 1c2a3a
-note the panels darken with it, and the tab stays Be yellow
-expect-pixel 60 42 ffcb00
+note the tab darkens with the theme: deep amber, no glowing bar on a
+note dark device screen -- the accent survives, the brightness does not
+expect-pixel 60 42 6e580c
 note the list ground reads the theme too: dark below the last row
 expect-pixel 300 250 1e1e1e
 note and back: NULL restores the R5 table exactly
