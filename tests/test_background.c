@@ -9,6 +9,8 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include "tiku_desk_gfx.h"
+#include "tiku_desk_font.h"
 
 #include "tiku_trk_background.h"
 
@@ -93,6 +95,44 @@ main(void)
         check(covered_x >= 400 && covered_y >= 300, "AW-016",
               "and the last row and column run past the edge rather than "
               "stopping short of it, which would leave a bare strip");
+    }
+
+    printf("\nthe theme is a table, not a constant\n");
+    {
+        /* The Appearance Manager lesson: swap the table and every
+         * semantic colour follows; hand back NULL and the R5 default
+         * returns.  Layout is untouched throughout -- only the ink. */
+        tiku_desk_theme_t inverted = *tiku_desk_theme();
+        tiku_desk_surface_t *s2 = tiku_desk_surface_new(8, 8,
+                                                        TIKU_DESK_C_PANEL);
+
+        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(216, 216, 216),
+              "THEME", "the default table IS the R5 look");
+        inverted.panel = TIKU_DESK_RGB(20, 20, 20);
+        tiku_desk_theme_set(&inverted);
+        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(20, 20, 20),
+              "THEME", "a swapped table recolours the semantic names");
+        if (s2 != NULL) {
+            tiku_desk_fill(s2, (tiku_desk_rect_t){ 0, 0, 8, 8 },
+                           TIKU_DESK_C_PANEL);
+            check(s2->px[0] == TIKU_DESK_RGB(20, 20, 20), "THEME",
+                  "and what is painted through them follows the table");
+            tiku_desk_surface_free(s2);
+        }
+        tiku_desk_theme_set(NULL);
+        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(216, 216, 216),
+              "THEME", "NULL restores the default rather than crashing");
+    }
+    {
+        /* The metric-reference rule (Mac HIG ch1): every face the toolkit
+         * offers must fit the plain face's metrics, so layout computed
+         * against the reference survives any display face. */
+        const tiku_desk_font_t *plain = tiku_desk_font_plain();
+        const tiku_desk_font_t *bold = tiku_desk_font_bold();
+
+        check(bold->height <= plain->height + 2 &&
+              bold->height >= plain->height - 2, "METRIC",
+              "the bold face lives within the reference metrics");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the background holds");

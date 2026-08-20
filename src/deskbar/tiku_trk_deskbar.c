@@ -2497,7 +2497,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                f->height + 6 };
 
         if (b.x < 0) { b.x = 0; }
-        tiku_desk_fill(s, b, TIKU_DESK_RGB(255, 255, 200));
+        tiku_desk_fill(s, b, TIKU_DESK_C_NOTE);
         tiku_desk_frame(s, b, TIKU_DESK_C_TEXT);
         tiku_desk_text(s, f, b.x + 6, b.y + 3 + f->ascent, db->tip,
                        TIKU_DESK_C_TEXT);

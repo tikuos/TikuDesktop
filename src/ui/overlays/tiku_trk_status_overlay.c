@@ -81,7 +81,7 @@ draw_alert_icon(tiku_desk_surface_t *surface, int cx, int cy,
                 tiku_trk_alert_kind_t kind)
 {
     tiku_desk_rgb_t body = (kind == TIKU_TRK_ALERT_STOP)
-                               ? TIKU_DESK_RGB(203, 48, 48)
+                               ? TIKU_DESK_C_DANGER
                          : (kind == TIKU_TRK_ALERT_WARN)
                                ? TIKU_DESK_C_TAB
                                : TIKU_DESK_C_SELECT;

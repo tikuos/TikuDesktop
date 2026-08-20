@@ -3009,9 +3009,8 @@ draw_all(desktop_t *app)
                 if (box.x < 0) {
                     box.x = 0;
                 }
-                tiku_desk_fill(app->surf, box,
-                               TIKU_DESK_RGB(255, 255, 200));
-                tiku_desk_frame(app->surf, box, TIKU_DESK_RGB(0, 0, 0));
+                tiku_desk_fill(app->surf, box, TIKU_DESK_C_NOTE);
+                tiku_desk_frame(app->surf, box, TIKU_DESK_C_TEXT);
                 tiku_desk_text(app->surf, font, box.x + 5,
                                box.y + 2 + font->ascent, value,
                                TIKU_DESK_C_TEXT);
@@ -3128,13 +3127,13 @@ draw_all(desktop_t *app)
 
                 tiku_desk_fill(app->surf, badge,
                                TIKU_DESK_RGB(255, 255, 190));
-                tiku_desk_frame(app->surf, badge, TIKU_DESK_RGB(0, 0, 0));
+                tiku_desk_frame(app->surf, badge, TIKU_DESK_C_TEXT);
                 stroke = (tiku_desk_rect_t){ badge.x + 3, badge.y + 6,
                                              7, 1 };
-                tiku_desk_fill(app->surf, stroke, TIKU_DESK_RGB(0, 0, 0));
+                tiku_desk_fill(app->surf, stroke, TIKU_DESK_C_TEXT);
                 stroke = (tiku_desk_rect_t){ badge.x + 6, badge.y + 3,
                                              1, 7 };
-                tiku_desk_fill(app->surf, stroke, TIKU_DESK_RGB(0, 0, 0));
+                tiku_desk_fill(app->surf, stroke, TIKU_DESK_C_TEXT);
             }
         }
     }
