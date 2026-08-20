@@ -428,6 +428,14 @@ main(int argc, char **argv)
     const char *port = NULL;
     int baud = 115200, i;
 
+    /* Sidecar state stores resolve under $HOME, and this test writes
+     * real ones (uid-TESTBOARD0001, the local device).  Left on the
+     * inherited HOME they land in the PERSON'S home -- which is exactly
+     * what happened: the suite quietly seeded ~/.local/share/tracker
+     * with fixture state on every run. */
+    (void)mkdir("/tmp/trk_model_home", 0755);
+    (void)setenv("HOME", "/tmp/trk_model_home", 1);
+
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)      { port = argv[++i]; }
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { baud = atoi(argv[++i]); }
