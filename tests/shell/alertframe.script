@@ -19,7 +19,7 @@ expect-pixel 310 212 ffcb00
 expect-pixel 318 212 000000
 expect-pixel 300 280 d4d4d4
 note and the default button's ring around Shut down
-expect-pixel 602 301 828282
+expect-pixel 603 301 828282
 key Escape
 wait 3
 expect-file /tmp/trk_script/a.txt

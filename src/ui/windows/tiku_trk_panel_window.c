@@ -206,9 +206,16 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     tiku_desk_ui_button(surface, default_button,
         tiku_trk_panel_button_label(&controller->model, selected,
                                     selected_count),
-        tiku_trk_panel_button_enabled(&controller->model, selected,
-                                      selected_count)
-            ? TIKU_DESK_S_DEFAULT : TIKU_DESK_S_DISABLED);
+        !tiku_trk_panel_button_enabled(&controller->model, selected,
+                                       selected_count)
+            ? TIKU_DESK_S_DISABLED
+        /* The ring is drawn only while the panel owns the keyboard, so
+         * it never promises a Return the window would not receive
+         * (NeXT UIG ch7). */
+        : (controller->window != NULL &&
+           controller->window ==
+               tiku_desk_workspace_focused(controller->workspace))
+            ? TIKU_DESK_S_DEFAULT : TIKU_DESK_S_NORMAL);
     tiku_desk_ui_button(surface, favorites_button(controller), "Favorites",
                         0u);
     if (controller->fav_open) {

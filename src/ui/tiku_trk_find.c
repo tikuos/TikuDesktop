@@ -1059,7 +1059,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 
     draw_button(s, button_rect(f, frame, 0),
                 tiku_trk_find_primary_is_save(f) ? "Save" : "Search",
-                TIKU_DESK_S_DEFAULT);
+                f->has_keyboard ? TIKU_DESK_S_DEFAULT
+                                : TIKU_DESK_S_NORMAL);
     /* Always live: with something attached it saves back, and with
      * nothing attached it asks WHERE -- the save panel (AW-052). */
     draw_button(s, button_rect(f, frame, 1), "Save", TIKU_DESK_S_NORMAL);

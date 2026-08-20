@@ -150,41 +150,98 @@ draw_alert(tiku_trk_status_overlay_t *controller)
     }
     text_y = frame.y + 24;
     {
+        /* Two tiers (Mac HIG ch3): the first sentence is the SUMMARY and
+         * wears the bold face; whatever follows is the detail, in the
+         * plain face below it.  One text block in, two voices out -- no
+         * caller changes. */
+        const tiku_desk_font_t *bold = tiku_desk_font_bold();
         const char *text = controller->alert.text;
-        char line[80] = "";
+        const char *split = NULL;
+        const char *at;
         size_t lines = 0;
+        int tier;
 
-        while (*text != '\0' && text_y < frame.y + frame.h - 46) {
-            size_t length = 0;
-            const char *space = NULL;
-
-            while (text[length] != '\0' &&
-                   length < sizeof line - 1u) {
-                if (text[length] == ' ') {
-                    space = text + length;
-                }
-                line[length] = text[length];
-                line[length + 1u] = '\0';
-                if (tiku_desk_text_width(font, line) > frame.w - 88) {
-                    break;
-                }
-                length++;
-            }
-            if (text[length] != '\0' && space != NULL && space > text) {
-                length = (size_t)(space - text);
-                line[length] = '\0';
-            }
-            tiku_desk_text(controller->surface, font, frame.x + 66, text_y,
-                           line, TIKU_DESK_C_TEXT);
-            text_y += font->height + 4;
-            text += length;
-            while (*text == ' ') {
-                text++;
-            }
-            if (++lines > 6u) {
+        for (at = text; *at != '\0'; at++) {
+            if ((*at == '.' || *at == '?' || *at == '!') &&
+                (at[1] == ' ' || at[1] == '\0')) {
+                split = at + 1;
                 break;
             }
         }
+        for (tier = 0; tier < 2; tier++) {
+            const tiku_desk_font_t *face = (tier == 0 && split != NULL)
+                                               ? bold : font;
+            const char *end = (tier == 0) ? split : NULL;
+            char line[80] = "";
+
+            if (tier == 1) {
+                if (split == NULL || *split == '\0') {
+                    break;
+                }
+                text = split;
+                while (*text == ' ') {
+                    text++;
+                }
+                text_y += 2;    /* a breath between the voices */
+            }
+            while (*text != '\0' && (end == NULL || text < end) &&
+                   text_y < frame.y + frame.h - 46) {
+                size_t length = 0;
+                const char *space = NULL;
+
+                while (text[length] != '\0' &&
+                       (end == NULL || text + length < end) &&
+                       length < sizeof line - 1u) {
+                    if (text[length] == ' ') {
+                        space = text + length;
+                    }
+                    line[length] = text[length];
+                    line[length + 1u] = '\0';
+                    if (tiku_desk_text_width(face, line) > frame.w - 88) {
+                        break;
+                    }
+                    length++;
+                }
+                if (text[length] != '\0' &&
+                    (end == NULL || text + length < end) &&
+                    space != NULL && space > text) {
+                    length = (size_t)(space - text);
+                    line[length] = '\0';
+                }
+                tiku_desk_text(controller->surface, face, frame.x + 66,
+                               text_y, line, TIKU_DESK_C_TEXT);
+                text_y += face->height + 4;
+                text += length;
+                while (*text == ' ') {
+                    text++;
+                }
+                if (++lines > 6u) {
+                    break;
+                }
+            }
+            if (split == NULL) {
+                break;
+            }
+        }
+    }
+    {
+        /* Uniform buttons, sized by the longest label (Mac HIG ch3): the
+         * geometry lives in the core, the fonts live here, so the width
+         * is measured here and handed over. */
+        int widest = 0;
+
+        for (i = 0; i < controller->alert.nbutton; i++) {
+            int lw = tiku_desk_text_width(font,
+                                          controller->alert.button[i]);
+
+            if (lw > widest) {
+                widest = lw;
+            }
+        }
+        widest += 20;
+        if (widest < 58) { widest = 58; }
+        if (widest > 150) { widest = 150; }
+        controller->alert.btn_w = widest;
     }
     for (i = 0; i < controller->alert.nbutton; i++) {
         tiku_desk_rect_t button;

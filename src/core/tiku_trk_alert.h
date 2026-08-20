@@ -42,6 +42,11 @@ typedef struct {
      * erases something must be an aimed click, never a keyboard reflex
      * (Mac HIG ch3 / NeXT UIG ch5). */
     int                   dflt;
+    /* Button width for THIS alert, measured from its longest label by the
+     * renderer (which owns the fonts); 0 falls back to the classic fixed
+     * width.  One width for the whole set: uniform buttons, sized by the
+     * longest label (Mac HIG ch3). */
+    int                   btn_w;
     int                   chosen;   /* -1 until one is pressed           */
     /* What the answer is FOR.  An alert raised by a collision has to hand
      * its answer back to the engine, and the shell must not have to

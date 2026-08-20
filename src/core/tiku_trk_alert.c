@@ -140,11 +140,18 @@ tiku_trk_alert_button_rect(const tiku_trk_alert_t *a, int i, int w, int h,
     /* Laid out from the right edge: the default action is the rightmost,
      * which is where the pointer already is after reading the text. */
     from_right = a->nbutton - 1 - i;
-    if (bx != NULL) {
-        *bx = w - BTN_PAD - BTN_W - from_right * (BTN_W + BTN_GAP);
+    {
+        /* One width for the whole set, from the longest label when the
+         * renderer has measured one (Mac HIG ch3: uniform buttons, sized
+         * by the longest). */
+        int bwidth = (a->btn_w > 0) ? a->btn_w : BTN_W;
+
+        if (bx != NULL) {
+            *bx = w - BTN_PAD - bwidth - from_right * (bwidth + BTN_GAP);
+        }
+        if (bw != NULL) { *bw = bwidth; }
     }
     if (by != NULL) { *by = h - BTN_PAD - BTN_H; }
-    if (bw != NULL) { *bw = BTN_W; }
     if (bh != NULL) { *bh = BTN_H; }
 }
 

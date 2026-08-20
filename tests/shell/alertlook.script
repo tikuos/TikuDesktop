@@ -1,0 +1,39 @@
+# shell: desktop
+# home: fixture
+# The alert layer's classic-HIG looks: a bold one-line summary over plain
+# detail (Mac ch3), buttons sized uniformly by the longest label, the STOP
+# severity wearing its own red, and a default ring only while the window
+# owns the keyboard (NeXT ch7).
+wait 10
+click-row 1
+wait 2
+key Delete
+wait 5
+note the summary line is BOLD: the doubled stem of its first letter
+expect-pixel 537 190 000000
+expect-pixel 550 190 000000
+note the buttons are label-sized: Cancel starts where Move to Trash needs
+expect-pixel 371 290 828282
+key Escape
+wait 3
+note a refusal is a STOP and wears the red disc, not the caution yellow
+key w ctrl
+wait 3
+click-desk Boot
+wait 3
+key Delete
+wait 6
+expect-pixel 308 212 cb3030
+key Return
+wait 3
+note the Find window's Search ring shows only while Return would hit it
+key f ctrl
+wait 5
+expect-pixel 690 391 cbcbcb
+note focus elsewhere: the ring must not promise a Return it will not get
+click-desk photos
+wait 1
+click-desk photos
+wait 6
+expect-pixel 690 391 ffffff
+quit

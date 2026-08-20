@@ -94,6 +94,11 @@ typedef struct {
     int                   wants_folder;
     int                   everywhere;
     int                   include_trash;
+    /* Whether the panel's window owns the keyboard right now: the owner
+     * sets it before drawing, and the default ring is drawn only while it
+     * is TRUE -- an affordance shown only while Return would honour it
+     * (NeXT UIG ch7). */
+    int                   has_keyboard;
     tiku_trk_find_focus_t focus;
     int                   focus_row;
     /* A popup currently showing, and what it belongs to. */

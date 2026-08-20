@@ -42,7 +42,9 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
     tiku_desk_rect_t ir;
 
-    (void)window;
+    controller->model.has_keyboard =
+        (window != NULL &&
+         window == tiku_desk_workspace_focused(controller->workspace));
     tiku_trk_find_draw(&controller->model, surface, content);
     /* The draggable query icon (Q-034): picked up, it carries the search
      * to whatever folder it is dropped on. */
