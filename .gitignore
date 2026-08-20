@@ -5,3 +5,6 @@ build/
 *.o
 *.swp
 .DS_Store
+
+# HIG reference documents, kept beside the code but not in it.
+temp/
