@@ -279,6 +279,15 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
     for (i = 0; i < p->n; i++) {
         const tiku_trk_pref_t *pr = &p->pref[i];
 
+        /* Only what the user actually moved.  A file that repeats every
+         * default freezes TODAY'S defaults into it forever: when a later
+         * build ships a better default, every saved file silently vetoes
+         * it (this happened -- the global bar's default flipped on and
+         * old files kept saying off).  A divergence is a decision and is
+         * written down; agreement is not. */
+        if (pr->value == pr->def) {
+            continue;
+        }
         if (pr->type == TIKU_TRK_PREF_BOOL) {
             fprintf(f, "%s %s\n", pr->name, pr->value ? "on" : "off");
         } else if (pr->type == TIKU_TRK_PREF_COLOUR) {

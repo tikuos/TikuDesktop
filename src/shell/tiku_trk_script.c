@@ -28,7 +28,7 @@ typedef enum {
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK,
-    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_WRITE, OP_SAME_AS_REDRAW, OP_QUIT
 } sc_op_t;
 
@@ -411,6 +411,10 @@ tiku_trk_script_open(const char *path)
             snprintf(st->text, sizeof st->text, "%s", w[3]);
         } else if (strcmp(w[0], "expect-file-has") == 0 && n >= 3) {
             st->op = OP_EXPECT_FILEHAS;
+            snprintf(st->text, sizeof st->text, "%s", w[1]);
+            rest(w, n, 2, st->text2, sizeof st->text2);
+        } else if (strcmp(w[0], "expect-file-lacks") == 0 && n >= 3) {
+            st->op = OP_EXPECT_FILELACKS;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
             rest(w, n, 2, st->text2, sizeof st->text2);
         } else if (strcmp(w[0], "expect-link") == 0 && n >= 3) {
@@ -943,7 +947,8 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, strcasecmp(got, cur->text) == 0, "pixel:", got);
         return 1;
     }
-    case OP_EXPECT_FILEHAS: {
+    case OP_EXPECT_FILEHAS:
+    case OP_EXPECT_FILELACKS: {
         char path[sizeof cur->text + sizeof cur->text2];
         char needle[sizeof cur->text2];
         FILE *f;
@@ -988,8 +993,16 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
             ok = (needle[0] != '\0' && strstr(got, needle) != NULL);
         }
         /* What it HOLDS, not that it exists: a file written by something
-         * that ran with no arguments exists just as readily. */
-        verdict(s, ok, "in file:", cur->text2);
+         * that ran with no arguments exists just as readily.  The LACKS
+         * form asserts the absence of a line: since the settings file
+         * records decisions rather than defaults, "back to the default"
+         * is proved by the line being GONE, not by an "off" appearing. */
+        if (cur->op == OP_EXPECT_FILELACKS) {
+            ok = (needle[0] != '\0' && strstr(got, needle) == NULL);
+            verdict(s, ok, "absent from file:", cur->text2);
+        } else {
+            verdict(s, ok, "in file:", cur->text2);
+        }
         return 1;
     }
     case OP_EXPECT_LINK: {

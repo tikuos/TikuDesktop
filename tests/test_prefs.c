@@ -72,6 +72,10 @@ main(void)
         buf[n] = '\0';
         check(strstr(buf, "HideDotFiles on") != NULL, "TS-045",
               "booleans are written on/off, not 1/0");
+        check(strstr(buf, "GlobalMenuBar") == NULL, "TS-063",
+              "a setting still at its default is NOT written: the file "
+              "records decisions, so a later build's better default is "
+              "not vetoed by every file saved before it");
         check(strstr(buf, "UsedSpaceColor 0x11223344") != NULL, "TS-045",
               "and colours as 0x%08x");
     }

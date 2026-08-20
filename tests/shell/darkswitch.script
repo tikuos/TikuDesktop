@@ -13,4 +13,4 @@ expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode on
 click 933 229
 wait 25
 expect-pixel 300 500 336698
-expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode off
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings DarkMode on
