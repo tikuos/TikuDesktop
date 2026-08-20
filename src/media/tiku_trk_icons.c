@@ -16,6 +16,8 @@
  */
 
 #include <stdlib.h>
+#include <dirent.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "tiku_trk_hvif.h"
@@ -1708,32 +1710,58 @@ static const tiku_trk_icon_t tiku_trk_icon_table[TIKU_TRK_ICON_COUNT] = {
       sizeof tiku_trk_icon_share },
 };
 
+/*
+ * The set as it stands: the baked art to begin with, and afterwards
+ * whatever a directory replaced or added.  The render cache is indexed
+ * by an icon's place in HERE, so nothing hands out a pointer from
+ * anywhere else.
+ */
+static tiku_trk_icon_t tiku_trk_icon_live[TIKU_TRK_ICON_COUNT +
+                                          TIKU_TRK_ICON_EXTRA];
+static int tiku_trk_icon_live_count;
+
+static void icons_forget(int index);
+
+/** @brief Bring the live set up, once, from what was baked in. */
+static void
+icons_wake(void)
+{
+    if (tiku_trk_icon_live_count == 0) {
+        memcpy(tiku_trk_icon_live, tiku_trk_icon_table,
+               sizeof tiku_trk_icon_table);
+        tiku_trk_icon_live_count = TIKU_TRK_ICON_COUNT;
+    }
+}
+
 int
 tiku_trk_icons_count(void)
 {
-    return (int)(sizeof tiku_trk_icon_table / sizeof tiku_trk_icon_table[0]);
+    icons_wake();
+    return tiku_trk_icon_live_count;
 }
 
 const tiku_trk_icon_t *
 tiku_trk_icons_at(int i)
 {
-    if (i < 0 || i >= tiku_trk_icons_count()) {
+    icons_wake();
+    if (i < 0 || i >= tiku_trk_icon_live_count) {
         return NULL;
     }
-    return &tiku_trk_icon_table[i];
+    return &tiku_trk_icon_live[i];
 }
 
 const tiku_trk_icon_t *
 tiku_trk_icons_find(const char *name)
 {
-    int i, n = tiku_trk_icons_count();
+    int i;
 
+    icons_wake();
     if (name == NULL) {
         return NULL;
     }
-    for (i = 0; i < n; i++) {
-        if (strcmp(tiku_trk_icon_table[i].name, name) == 0) {
-            return &tiku_trk_icon_table[i];
+    for (i = 0; i < tiku_trk_icon_live_count; i++) {
+        if (strcmp(tiku_trk_icon_live[i].name, name) == 0) {
+            return &tiku_trk_icon_live[i];
         }
     }
     return NULL;
@@ -1756,7 +1784,8 @@ typedef struct {
 } tiku_trk_icon_slot_t;
 
 static tiku_trk_icon_slot_t
-tiku_trk_icon_cache[TIKU_TRK_ICON_COUNT][TIKU_TRK_ICONS_SLOTS];
+tiku_trk_icon_cache[TIKU_TRK_ICON_COUNT + TIKU_TRK_ICON_EXTRA]
+                   [TIKU_TRK_ICONS_SLOTS];
 static size_t   tiku_trk_icon_bytes;
 static unsigned tiku_trk_icon_clock;
 
@@ -1768,6 +1797,124 @@ slot_bytes(const tiku_trk_icon_slot_t *slot)
     return (slot->washed != NULL) ? one * 2u : one;
 }
 
+/** @brief Drop what was rendered from the icon at @p index. */
+static void
+icons_forget(int index)
+{
+    int k;
+
+    if (index < 0 || index >= TIKU_TRK_ICON_COUNT + TIKU_TRK_ICON_EXTRA) {
+        return;
+    }
+    for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
+        tiku_trk_icon_slot_t *slot = &tiku_trk_icon_cache[index][k];
+
+        if (slot->bmp != NULL) {
+            tiku_trk_icon_bytes -= slot_bytes(slot);
+        }
+        free(slot->bmp);
+        free(slot->washed);
+        slot->bmp = NULL;
+        slot->washed = NULL;
+        slot->size = 0;
+    }
+}
+
+/** @brief Take one file as the icon named @p name.  @return nonzero. */
+static int
+icons_take(const char *path, const char *name)
+{
+    unsigned char *blob;
+    long size;
+    FILE *f = fopen(path, "rb");
+    int i, at = -1;
+
+    if (f == NULL) {
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) <= 0 ||
+        size > 256 * 1024 || fseek(f, 0, SEEK_SET) != 0) {
+        (void)fclose(f);
+        return 0;
+    }
+    blob = malloc((size_t)size);
+    if (blob == NULL || fread(blob, 1u, (size_t)size, f) != (size_t)size) {
+        free(blob);
+        (void)fclose(f);
+        return 0;
+    }
+    (void)fclose(f);
+    /* A file replaces the art of the same name and keeps its place, so
+     * everything already drawing "folder" draws the new one. */
+    for (i = 0; i < tiku_trk_icon_live_count; i++) {
+        if (strcmp(tiku_trk_icon_live[i].name, name) == 0) {
+            at = i;
+            break;
+        }
+    }
+    if (at < 0) {
+        if (tiku_trk_icon_live_count >=
+            TIKU_TRK_ICON_COUNT + TIKU_TRK_ICON_EXTRA) {
+            free(blob);
+            return 0;
+        }
+        at = tiku_trk_icon_live_count++;
+        tiku_trk_icon_live[at].name = NULL;
+    }
+    icons_forget(at);
+    /* The name is kept beside the art: the file's own, outliving the
+     * directory walk that found it. */
+    {
+        char *kept = malloc(strlen(name) + 1u);
+
+        if (kept == NULL) {
+            free(blob);
+            return 0;
+        }
+        memcpy(kept, name, strlen(name) + 1u);
+        if (at >= TIKU_TRK_ICON_COUNT) {
+            free((void *)(size_t)tiku_trk_icon_live[at].name);
+        }
+        tiku_trk_icon_live[at].name = kept;
+    }
+    tiku_trk_icon_live[at].data = blob;
+    tiku_trk_icon_live[at].len = (size_t)size;
+    return 1;
+}
+
+int
+tiku_trk_icons_load_dir(const char *dir)
+{
+    struct dirent *entry;
+    DIR *open_dir;
+    int taken = 0;
+
+    icons_wake();
+    if (dir == NULL || dir[0] == '\0') {
+        return 0;
+    }
+    open_dir = opendir(dir);
+    if (open_dir == NULL) {
+        return 0;
+    }
+    while ((entry = readdir(open_dir)) != NULL) {
+        char path[1024];
+        char name[64];
+        size_t n = strlen(entry->d_name);
+
+        if (n < 6u || n >= sizeof name + 5u ||
+            strcmp(entry->d_name + n - 5, ".hvif") != 0) {
+            continue;
+        }
+        snprintf(name, sizeof name, "%.*s", (int)(n - 5), entry->d_name);
+        snprintf(path, sizeof path, "%s/%s", dir, entry->d_name);
+        taken += icons_take(path, name);
+    }
+    (void)closedir(open_dir);
+    return taken;
+}
+
+
 /** @brief Free the oldest render anywhere in the cache.  @return its bytes. */
 static size_t
 evict_oldest(void)
@@ -1775,7 +1922,7 @@ evict_oldest(void)
     tiku_trk_icon_slot_t *oldest = NULL;
     int i, k;
 
-    for (i = 0; i < TIKU_TRK_ICON_COUNT; i++) {
+    for (i = 0; i < TIKU_TRK_ICON_COUNT + TIKU_TRK_ICON_EXTRA; i++) {
         for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
             tiku_trk_icon_slot_t *slot = &tiku_trk_icon_cache[i][k];
 
@@ -1816,7 +1963,7 @@ tiku_trk_icons_cached(const char *name, int size)
     if (ic == NULL) {
         return 0;
     }
-    idx = (int)(ic - tiku_trk_icon_table);
+    idx = (int)(ic - tiku_trk_icon_live);
     for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
         if (tiku_trk_icon_cache[idx][k].bmp != NULL &&
             tiku_trk_icon_cache[idx][k].size == size) {
@@ -1838,7 +1985,7 @@ tiku_trk_icons_bitmap(const char *name, int size)
     if (ic == NULL || size <= 0 || size > 1024) {
         return NULL;
     }
-    idx = (int)(ic - tiku_trk_icon_table);
+    idx = (int)(ic - tiku_trk_icon_live);
     row = tiku_trk_icon_cache[idx];
     for (i = 0; i < TIKU_TRK_ICONS_SLOTS; i++) {
         if (row[i].bmp != NULL && row[i].size == size) {
@@ -1897,7 +2044,7 @@ tiku_trk_icons_flush(void)
 {
     int i, k;
 
-    for (i = 0; i < TIKU_TRK_ICON_COUNT; i++) {
+    for (i = 0; i < TIKU_TRK_ICON_COUNT + TIKU_TRK_ICON_EXTRA; i++) {
         for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
             free(tiku_trk_icon_cache[i][k].bmp);
             tiku_trk_icon_cache[i][k].bmp = NULL;
@@ -1927,7 +2074,7 @@ tiku_trk_icons_bitmap_washed(const char *name, int size, uint32_t wash,
     if (ic == NULL || tiku_trk_icons_bitmap(name, size) == NULL) {
         return NULL;            /* the plain render is the source */
     }
-    idx = (int)(ic - tiku_trk_icon_table);
+    idx = (int)(ic - tiku_trk_icon_live);
     row = tiku_trk_icon_cache[idx];
     for (i = 0; i < TIKU_TRK_ICONS_SLOTS; i++) {
         if (row[i].bmp == NULL || row[i].size != size) {

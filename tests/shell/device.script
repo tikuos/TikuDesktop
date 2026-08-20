@@ -1,0 +1,18 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# What a first run looks like: this Desktop belongs to a device, so the
+# machine's own storage is not poured onto it, and the Deskbar lists
+# this shell rather than every process the machine happens to run.
+wait 20
+expect-no-desk-icon Disks
+note the Deskbar knows this shell and nothing it did not start
+note the global bar is on, so the leaf sits below it
+click 980 40
+wait 4
+expect-menu Applications
+key Escape
+wait 4
+note and the places a person drops things into are already there
+expect-file /tmp/trk_home/Desktop
+expect-file /tmp/trk_home/.config/tracker/icons

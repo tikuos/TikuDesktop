@@ -188,7 +188,11 @@ tiku_trk_script_adapter_pose_desk_at(void *context, const char *name,
     for (i = 0; i < count; i++) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
 
-        if (pose != NULL && strcmp(pose->model.name, name) == 0) {
+        /* By the name it SHOWS as well as the name it has: a synthetic
+         * pose like Disks has no file name to be asked for. */
+        if (pose != NULL &&
+            (strcmp(pose->model.name, name) == 0 ||
+             strcmp(tiku_trk_model_display_name(&pose->model), name) == 0)) {
             tiku_trk_poseview_pose_rect(folder->view, pose, x, y,
                                         &width, &height);
             return 1;

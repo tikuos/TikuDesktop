@@ -57,6 +57,7 @@
 #include "tiku_trk_launch.h"
 #include "tiku_trk_types.h"
 #include "tiku_trk_iconpaint.h"
+#include "tiku_trk_icons.h"
 #include "tiku_trk_fs.h"
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_model.h"
@@ -2903,22 +2904,6 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     }
 }
 
-/** @brief The roster's heartbeat: sync teams with the live processes. */
-static int
-rescan_teams(void *context)
-{
-    desktop_t *app = context;
-
-    if (tiku_trk_deskbar_scan_processes(app->deskbar)) {
-        app->dirty = 1;
-    }
-    /* The tray rides the same beat: a subscription whose file moved is
-     * re-pointed, one whose file went is removed (DB-040). */
-    if (tiku_trk_deskbar_sync_replicants(app->deskbar)) {
-        app->dirty = 1;
-    }
-    return 0;                   /* keep the beat */
-}
 
 /** @brief Ask the reusable panel where an operation should put its items. */
 static void
@@ -4104,6 +4089,42 @@ app_label(const char *file, char *out, size_t max)
 }
 
 /**
+ * @brief Where art dropped by hand is taken from, and the Desktop.
+ *
+ * Both live under the user's own configuration, both are made if they
+ * are not there: a directory nobody can find is a directory nobody
+ * fills, and an empty Desktop is still a Desktop.
+ */
+static void
+prepare_places(desktop_t *app)
+{
+    const char *home = getenv("HOME");
+    char path[TIKU_TRK_PATH_MAX];
+    const char *icons = getenv("TIKU_DESK_ICONS");
+
+    (void)app;
+    if (icons == NULL || icons[0] == '\0') {
+        if (home == NULL || home[0] == '\0') {
+            return;
+        }
+        snprintf(path, sizeof path, "%s/.config/tracker/icons", home);
+        icons = path;
+    }
+    (void)tiku_trk_state_mkparents(icons);
+    (void)mkdir(icons, 0755);
+    /* Whatever is in there wins over what was baked in, by name, so a
+     * device can say what its own folders and programs look like. */
+    (void)tiku_trk_icons_load_dir(icons);
+
+    if (home != NULL && home[0] != '\0') {
+        char desktop[TIKU_TRK_PATH_MAX];
+
+        snprintf(desktop, sizeof desktop, "%s/Desktop", home);
+        (void)mkdir(desktop, 0755);
+    }
+}
+
+/**
  * @brief The art a program's row wears, guessed from its file name.
  *
  * A hint, not a fact: nothing but the file's name is known without
@@ -4532,7 +4553,9 @@ tracker_run(int argc, char **argv)
     app.desk = tiku_desk_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
-    (void)tiku_trk_deskbar_scan_processes(app.deskbar);
+    /* The machine's own processes are not this desktop's business: what
+     * belongs in the bar is what runs ON the device, which is this shell
+     * and the applications it hosts. */
     tiku_trk_cwmenu_init(&app.menus);
     tiku_trk_status_overlay_init(&app.status_overlay, app.surf,
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
@@ -4540,6 +4563,7 @@ tracker_run(int argc, char **argv)
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
     tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
                                DESK_H, &app.dirty);
+    prepare_places(&app);
     offer_installed(&app, argv[0]);
     if (tiku_desk_remote_listen(&app.remote) != 0) {
         /* No socket, no sessions: the desktop still stands alone. */
@@ -4557,12 +4581,8 @@ tracker_run(int argc, char **argv)
                                 0);
     if (script_path == NULL && conduct_path == NULL &&
         conduct_tty == NULL) {
-        /* The living half of the roster: applications that quit leave
-         * the list, new ones join it (DB-014/DB-015).  Never in a
-         * scripted run, whose fixture must not chase the host's
-         * processes. */
-        (void)tiku_trk_run_periodic(app.loop, rescan_teams, &app, NULL,
-                                    2000000, 0);
+        /* Nothing to rescan: the bar lists this shell and what it
+         * hosts, and neither arrives by looking at /proc. */
     }
     tiku_trk_open_with_window_init(&app.open_with_window, app.desk,
         DESK_W, DESK_H, &app.dirty, open_with_window_launch, &app,

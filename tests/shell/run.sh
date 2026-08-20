@@ -77,7 +77,14 @@ for s in "$here"/*.script; do
         # icons arrive (PVN-040's poses are proven by unit checks and
         # opted-in scripts instead).
         volbase=yes
+        volumes_on=""
         if grep -q '^# prefs: volumes-on' "$s"; then
+            volbase=""
+            volumes_on=yes
+        fi
+        # A factory lane means EXACTLY that: nothing written, so what it
+        # sees is what a person sees on a first run.
+        if grep -q '^# prefs: factory' "$s"; then
             volbase=""
         fi
         case $(basename "$s") in
@@ -186,6 +193,12 @@ PYBG
             embedapp.script)
                 # The SAME descriptor, hosted linked-in this time.
                 embed=1 ;;
+            icondir.script)
+                # Art dropped where the desktop looks: the folder icon is
+                # the printer's, which nothing would draw by accident.
+                mkdir -p "$deskhome/.config/tracker/icons"
+                "$root/build/icon-export" printer \
+                    "$deskhome/.config/tracker/icons/folder.hvif" ;;
             appsdir.script)
                 # Installed, not linked: a trusted copy for the desktop
                 # to load, and a plain one for the runner to start.
@@ -271,6 +284,14 @@ PYEOF
         if [ -n "$volbase" ]; then
             mkdir -p "$deskhome/.config"
             printf 'MountVolumesOntoDesktop off\nShowDisksIcon on\nShowNavigator on\n' > \
+                "$deskhome/.config/TrackerSettings"
+        fi
+        # Asked for by name, and written AFTER the home is remade: volumes
+        # on the Desktop is not what a device does by default any more, so
+        # a lane about them says so instead of relying on a fresh install.
+        if [ -n "$volumes_on" ]; then
+            mkdir -p "$deskhome/.config"
+            printf 'MountVolumesOntoDesktop on\n' > \
                 "$deskhome/.config/TrackerSettings"
         fi
         if grep -q '^# addons: fixture' "$s"; then

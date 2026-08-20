@@ -95,7 +95,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
 TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
-            $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
+            $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -104,7 +104,7 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
             $(BUILD)/test_state_pipeline
 
-all: $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop \
+all: $(TESTBINS) $(BUILD)/icon-export $(BUILD)/tracker $(BUILD)/desktop \
      $(DEVBUILD)/tracker $(DEVBUILD)/desktop \
      $(DEVBUILD)/trk-conduct
 
@@ -324,6 +324,19 @@ $(BUILD)/test_hvif: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
+$(BUILD)/icon-export: src/media/tiku_trk_icons.c src/media/tiku_trk_hvif.c \
+                      tools/tiku_trk_icon_export.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ src/media/tiku_trk_icons.c \
+	      src/media/tiku_trk_hvif.c tools/tiku_trk_icon_export.c \
+	      $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(BUILD)/test_icondir: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
+                       src/media/tiku_trk_iconpaint.c \
+                       tests/test_icondir.c \
+                       | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+
 TRACKER_SRC := $(COMMON) src/core/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
@@ -387,6 +400,7 @@ test: all
 	@$(BUILD)/test_launch
 	@$(BUILD)/test_fs
 	@$(BUILD)/test_hvif
+	@$(BUILD)/test_icondir
 	@$(BUILD)/test_menu
 	@$(BUILD)/test_attr
 	@$(BUILD)/test_query

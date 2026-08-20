@@ -22,7 +22,9 @@
 /** @brief Every setting, with the name it has in the file. */
 static const tiku_trk_pref_t table[] = {
     { "ShowDisksIcon",           B, TIKU_TRK_PAGE_DESKTOP, 0, 0, 0 },
-    { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
+    /* Off: this Desktop is a device's, and the machine's volumes are
+     * not what it is for.  The Preferences page still offers them. */
+    { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 0, 0, 0 },
     { "MountSharedVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
     { "IntegrateNonBootBeOSDesktops", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
     /* Last on its page so the rows above it keep their places. */

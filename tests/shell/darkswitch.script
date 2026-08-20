@@ -6,11 +6,11 @@
 # sync path the Preferences checkbox uses answers here.
 wait 12
 expect-pixel 300 500 336698
-click 933 229
+click 933 82
 wait 25
 expect-pixel 300 500 1c2a3a
 expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode on
-click 933 229
+click 933 82
 wait 25
 expect-pixel 300 500 336698
 expect-file-lacks /tmp/trk_home/.config/TrackerSettings DarkMode on

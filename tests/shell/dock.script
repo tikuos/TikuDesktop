@@ -4,7 +4,7 @@
 note the bar starts docked right
 expect-deskbar-at 866 0
 note Ctrl-dragging it to the top edge re-docks it
-press 900 120 1 ctrl
+press 900 60 1 ctrl
 move 500 200
 move 500 3
 release 500 3

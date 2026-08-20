@@ -29,14 +29,14 @@ note dragged against the Deskbar it comes back clear of it: the Desktop
 note cannot scroll, so an icon behind the bar is an icon that is gone
 press 400 400
 move 700 200
-move 850 150
-release 850 150
+move 850 60
+release 850 60
 wait 6
-expect-icon-at photos 815 135
+expect-icon-at photos 815 45
 note and a double click opens the folder's own window
-click 838 150
+click 838 60
 wait 2
-click 838 150
+click 838 60
 wait 12
 expect-windows 2
 expect-title photos

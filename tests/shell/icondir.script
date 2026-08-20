@@ -1,0 +1,12 @@
+# shell: desktop
+# home: fixture
+# The art the desktop draws comes from a directory when one holds it: a
+# file called folder.hvif IS the folder icon, for every folder on the
+# screen, without a rebuild.  Here it holds the printer's art, which no
+# folder would otherwise wear.
+wait 20
+key w ctrl
+wait 6
+note the printer's paper stands where a folder's art never reaches
+expect-pixel 50 24 ffffff
+expect-pixel 48 24 000000

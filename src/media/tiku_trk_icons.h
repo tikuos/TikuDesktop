@@ -23,8 +23,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief How many icons the set holds. */
+/** @brief How many icons are baked in. */
 #define TIKU_TRK_ICON_COUNT 34
+
+/** @brief How many more a directory may add on top of them. */
+#define TIKU_TRK_ICON_EXTRA 32
 
 /** @brief One named HVIF blob. */
 typedef struct {
@@ -46,6 +49,17 @@ const tiku_trk_icon_t *tiku_trk_icons_at(int i);
  * @return The blob, or NULL if nothing carries that name.
  */
 const tiku_trk_icon_t *tiku_trk_icons_find(const char *name);
+
+/**
+ * @brief Take every icon in @p dir into the set, by its file name.
+ *
+ * A file called `folder.hvif` becomes the icon named `folder`, replacing
+ * the baked one; a name nothing bakes is added.  This is how a program
+ * or a device says what it looks like without a rebuild.
+ *
+ * @return how many files were taken.
+ */
+int tiku_trk_icons_load_dir(const char *dir);
 
 /**
  * @brief Render @p name at @p size x @p size, once per size.
