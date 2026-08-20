@@ -10,6 +10,25 @@ root=$here/../..
 work=/tmp/trk_script
 fails=0
 
+# The rescue path first: -reset-settings must move the settings and every
+# device state aside WITHOUT drawing a pixel, for the day a setting makes
+# the screen unreadable.
+if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
+    rsthome=/tmp/trk_reset_home
+    rm -rf "$rsthome"
+    mkdir -p "$rsthome/.config" "$rsthome/.local/share/tracker/devices"
+    echo "DarkMode on" > "$rsthome/.config/TrackerSettings"
+    echo junk > "$rsthome/.local/share/tracker/devices/local.state"
+    HOME="$rsthome" "$root/build/desktop" -reset-settings > /dev/null
+    if [ -e "$rsthome/.config/TrackerSettings" ] ||
+       [ -e "$rsthome/.local/share/tracker/devices/local.state" ] ||
+       [ ! -e "$rsthome/.config/TrackerSettings.factory-reset" ]; then
+        echo "  [FAIL] -reset-settings leaves factory defaults"
+        fails=$((fails+1))
+    fi
+    rm -rf "$rsthome"
+fi
+
 for s in "$here"/*.script; do
     if [ -n "${TRK_SHELL_ONLY:-}" ] &&
        [ "$(basename "$s")" != "$TRK_SHELL_ONLY" ]; then

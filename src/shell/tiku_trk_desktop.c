@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <locale.h>
@@ -3351,6 +3352,51 @@ tracker_run(int argc, char **argv)
     (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-reset-settings") == 0 ||
+            strcmp(argv[i], "--reset-settings") == 0) {
+            /* The rescue path: settings back to factory WITHOUT drawing a
+             * pixel, for the day a setting makes the screen unreadable.
+             * The files are moved aside rather than destroyed. */
+            const char *home = getenv("HOME");
+            char from[TIKU_TRK_PATH_MAX], to[TIKU_TRK_PATH_MAX];
+
+            if (home == NULL || home[0] == '\0') {
+                fprintf(stderr, "reset-settings: no HOME\n");
+                return 1;
+            }
+            snprintf(from, sizeof from, "%s/.config/TrackerSettings", home);
+            snprintf(to, sizeof to, "%s.factory-reset", from);
+            if (rename(from, to) == 0) {
+                printf("moved %s -> %s\n", from, to);
+            }
+            {
+                char dir[TIKU_TRK_PATH_MAX];
+                DIR *d;
+                struct dirent *e;
+
+                snprintf(dir, sizeof dir,
+                         "%s/.local/share/tracker/devices", home);
+                d = opendir(dir);
+                while (d != NULL && (e = readdir(d)) != NULL) {
+                    size_t len = strlen(e->d_name);
+
+                    if (len > 6u &&
+                        strcmp(e->d_name + len - 6u, ".state") == 0) {
+                        snprintf(from, sizeof from, "%s/%s", dir,
+                                 e->d_name);
+                        snprintf(to, sizeof to, "%s.factory-reset", from);
+                        if (rename(from, to) == 0) {
+                            printf("moved %s -> %s\n", from, to);
+                        }
+                    }
+                }
+                if (d != NULL) {
+                    (void)closedir(d);
+                }
+            }
+            printf("settings are factory defaults on the next start\n");
+            return 0;
+        }
         if (strcmp(argv[i], "-d") == 0)                      { use_device = 1; }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { port = argv[++i]; use_device = 1; }
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { baud = atoi(argv[++i]); }
