@@ -1,0 +1,113 @@
+# shell: desktop
+# home: fixture
+# The terminal is a terminal, not a transcript: a shell runs on a pty, a
+# full-screen program addresses the cursor, and what it draws lands where
+# it asked.  less is the check because it uses the three things a toy
+# terminal lacks -- cursor addressing, erase, and reverse video.
+wait 70
+click-window Terminal
+wait 6
+key s
+key e
+key q
+key space
+key 1
+key space
+key 4
+key 0
+key space
+key >
+key space
+key /
+key t
+key m
+key p
+key /
+key t
+key r
+key k
+key _
+key t
+key e
+key r
+key m
+key _
+key l
+key i
+key n
+key e
+key s
+key .
+key t
+key x
+key t
+key Return
+wait 40
+key l
+key e
+key s
+key s
+key space
+key /
+key t
+key m
+key p
+key /
+key t
+key r
+key k
+key _
+key t
+key e
+key r
+key m
+key _
+key l
+key i
+key n
+key e
+key s
+key .
+key t
+key x
+key t
+key Return
+wait 70
+note the file name sits in a REVERSE VIDEO bar along the bottom
+expect-pixel 187 510 000000
+note space pages forward through the file
+key space
+wait 60
+note quitting puts the shell back and takes the bar with it
+key q
+wait 60
+expect-pixel 187 510 ffffff
+note a row painted at an ABSOLUTE position lands on that row
+key s
+key h
+key space
+key /
+key t
+key m
+key p
+key /
+key t
+key r
+key k
+key _
+key t
+key e
+key r
+key m
+key _
+key c
+key u
+key p
+key .
+key s
+key h
+key Return
+wait 60
+expect-pixel 500 293 000000
+note and nothing above it moved: row 11 is still the shell's own text
+expect-pixel 500 275 ffffff
