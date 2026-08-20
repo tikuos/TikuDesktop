@@ -109,19 +109,22 @@ static const tiku_desk_app_descriptor_t echo_app = {
     .event = echo_event
 };
 
-/** @brief Read messages until a frame arrives, or @p budget_ms passes. */
+/**
+ * @brief Wait for the desktop to be told something, or @p budget_ms.
+ *
+ * The poll's own answer is what is watched: a frame may arrive as
+ * pixels or as a note that a shared surface changed, and the difference
+ * is not this test's business.
+ */
 static int64_t
 await_frame(tiku_desk_remote_listener_t *listener, int budget_ms)
 {
     int64_t start = now_ms();
-    tiku_desk_remote_session_t *s = &listener->session[0];
 
-    s->fw = 0;
     while (now_ms() - start < budget_ms) {
         struct timespec nap;
 
-        (void)tiku_desk_remote_poll(listener);
-        if (s->fw > 0) {
+        if (tiku_desk_remote_poll(listener)) {
             return now_ms() - start;
         }
         nap.tv_sec = 0;

@@ -1231,11 +1231,18 @@ remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                    tiku_desk_rect_t content, void *context)
 {
     tiku_desk_remote_session_t *s = context;
+    const uint32_t *px;
     int y, w, h;
 
     (void)window;
     tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
-    if (s == NULL || s->frame == NULL) {
+    if (s == NULL) {
+        return;
+    }
+    /* A shared surface is drawn out of the application's own pixels; a
+     * copied frame out of the copy.  Nothing else differs. */
+    px = tiku_desk_remote_pixels(s);
+    if (px == NULL) {
         return;
     }
     w = (s->fw < content.w) ? s->fw : content.w;
@@ -1245,7 +1252,7 @@ remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
         for (x = 0; x < w; x++) {
             tiku_desk_pixel(surface, content.x + x, content.y + y,
-                            s->frame[(size_t)y * (size_t)s->fw + x]);
+                            px[(size_t)y * (size_t)s->fw + x]);
         }
     }
 }

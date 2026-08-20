@@ -94,7 +94,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
+TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_copybits \
@@ -315,6 +315,9 @@ $(BUILD)/test_client_wake: tests/test_client_wake.c $(DESK_LIBS) | $(BUILD)
 $(BUILD)/test_appload: tests/test_appload.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_appload.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm -ldl
 
+$(BUILD)/test_shm: tests/test_shm.c $(DESK_LIBS) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_shm.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm -lrt
+
 $(BUILD)/test_hvif: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
                     src/media/tiku_trk_iconpaint.c \
                     tests/test_hvif.c \
@@ -397,6 +400,7 @@ test: all
 	@$(BUILD)/test_conduct
 	@$(BUILD)/test_client_wake
 	@$(BUILD)/test_appload
+	@$(BUILD)/test_shm
 	@$(BUILD)/test_thumb
 	@$(BUILD)/test_inflate
 	@$(BUILD)/test_alert
