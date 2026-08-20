@@ -18,13 +18,13 @@ expect-windows 0
 click 980 20
 wait 3
 note the recents row EXPANDS rather than choosing: the menu stays up
-expect-menu About this system|Find…|Deskbar preferences…|Tracker preferences…|Show replicants|Terminal|Text editor|-|/sys|/dev|/data|-|Recent folders|-|<Deskbar folder is empty>|-|Shut down…|
+expect-menu About this system|Find…|Deskbar preferences…|Tracker preferences…|Show replicants|Editor|Terminal|-|/sys|/dev|/data|-|Recent folders|-|<Deskbar folder is empty>|-|Shut down…|
 menu-pick Recent folders
 wait 3
 expect-windows 0
 note and its entry opens the folder it names
 note the row expanded: the folders just opened are BESIDE the leaf menu
-expect-menu About this system|Find…|Deskbar preferences…|Tracker preferences…|Show replicants|Terminal|Text editor|-|/sys|/dev|/data|-|Recent folders|-|<Deskbar folder is empty>|-|Shut down…|sub|trk_script|
+expect-menu About this system|Find…|Deskbar preferences…|Tracker preferences…|Show replicants|Editor|Terminal|-|/sys|/dev|/data|-|Recent folders|-|<Deskbar folder is empty>|-|Shut down…|sub|trk_script|
 menu-pick sub
 wait 8
 expect-windows 1

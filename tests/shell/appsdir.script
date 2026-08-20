@@ -1,0 +1,24 @@
+# shell: desktop
+# home: fixture
+# Where a file is installed decides how it runs.  The clock in
+# apps/trusted is LOADED into this process and is already showing when
+# the desktop opens; the sketch beside it is a row that starts in a
+# process of its own when chosen.  Neither was linked into anything.
+wait 25
+note the folder window opened over it; the clock was there first
+key w ctrl
+wait 6
+note the trusted application is already open, without being asked for
+click-window Clock
+wait 4
+expect-title Clock
+click 980 20
+wait 4
+expect-menu Editor|Sketch|Terminal
+note choosing one that is not trusted starts it through the runner
+menu-pick Sketch
+wait 110
+expect-title Sketch
+key Escape
+wait 20
+expect-no-title Sketch

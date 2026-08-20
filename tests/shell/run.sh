@@ -119,6 +119,16 @@ for s in "$here"/*.script; do
             session2.script) rm -rf /tmp/trk_script ;;
             *) rm -rf /tmp/trk_script "$deskhome" ;;
         esac
+        # What is INSTALLED is the fixture's to say: a lane must not
+        # depend on whatever is sitting in the build tree, and a stray
+        # trusted application would open a window in every script.
+        appsdir=/tmp/trk_apps
+        rm -rf "$appsdir"
+        mkdir -p "$appsdir"
+        cp -f "$root/../desktop/build/apps/terminal.so" \
+              "$root/../desktop/build/apps/editor.so" "$appsdir/" \
+            2>/dev/null || true
+
         mkdir -p $work/sub
         echo hi > $work/a.txt
         echo hi > $work/b.txt
@@ -176,6 +186,13 @@ PYBG
             embedapp.script)
                 # The SAME descriptor, hosted linked-in this time.
                 embed=1 ;;
+            appsdir.script)
+                # Installed, not linked: a trusted copy for the desktop
+                # to load, and a plain one for the runner to start.
+                mkdir -p "$appsdir/trusted"
+                cp -f "$root/../desktop/build/apps/sketch.so" "$appsdir/"
+                cp -f "$root/../desktop/build/apps/clock.so" \
+                      "$appsdir/trusted/" ;;
             terminal.script)
                 # A program that paints one row at an ABSOLUTE position:
                 # written to a file because typing backslashes through
@@ -323,11 +340,13 @@ PYEOF
         fi
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} "$devbin/$bin" \
+                env ${embed:+TIKU_EMBED_ABOUT=1} \
+                TIKU_DESK_APPS="$appsdir" "$devbin/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} "$devbin/$bin" $work \
+                env ${embed:+TIKU_EMBED_ABOUT=1} \
+                TIKU_DESK_APPS="$appsdir" "$devbin/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done
@@ -350,8 +369,9 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
-    ( DISPLAY= HOME="$chome" "$root/build/desktop" "$work" \
-        -conduct "$csock" > /dev/null 2>&1 & )
+    ( DISPLAY= HOME="$chome" TIKU_DESK_APPS=/tmp/trk_apps \
+        "$root/build/desktop" "$work" -conduct "$csock" \
+        > /dev/null 2>&1 & )
     "$root/build/dev/trk-conduct" -s "$csock" -n conducted "$cs" ||
         fails=$((fails+1))
     # By name, not by pattern: a -f pattern matches the shell running
@@ -371,7 +391,8 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
-    DISPLAY= HOME="$chome" "$root/build/dev/trk-conduct" \
+    DISPLAY= HOME="$chome" TIKU_DESK_APPS=/tmp/trk_apps \
+        "$root/build/dev/trk-conduct" \
         -n "over a line" "$cs" -- "$root/build/desktop" "$work" ||
         fails=$((fails+1))
     pkill -x desktop > /dev/null 2>&1

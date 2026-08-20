@@ -88,6 +88,9 @@
 #include "tiku_trk_script_adapter.h"
 #include "tiku_desk_window.h"
 
+/* How many applications this desktop hosts in its own process. */
+#define TIKU_TRK_EMBED_MAX 8
+
 #define DESK_W 1000
 #define DESK_H  680
 #define COUNT_H  16
@@ -162,19 +165,24 @@ typedef struct desktop {
     /* One EMBEDDED descriptor slot: the same application code the client
      * runner takes out of process, hosted here with workspace-backed
      * services -- the both-ways proof. */
-    struct {
+    struct desktop_embed {
+        struct desktop      *app;       /* the slot's way back      */
         const tiku_desk_app_descriptor_t *descriptor;
+        tiku_desk_app_services_t services;
         void                *state;
         tiku_desk_window_t  *window;
         uint32_t            *frame;
         int                  fw, fh;
         uint32_t             next_id;
         int                  running;
-    } embed;
+    } embeds[TIKU_TRK_EMBED_MAX];
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_desk_window_t  *remote_press;
-    int                  embed_press;   /* drag owned by the embed  */
+    struct desktop_embed *embed_press;  /* the slot holding a press */
+    /* Where the runner is, for starting an installed application in a
+     * process of its own. */
+    char                 runner[TIKU_TRK_PATH_MAX];
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
@@ -1028,92 +1036,116 @@ static void menu_invoke(desktop_t *app, folder_t *fl, int command);
 /* The embedded descriptor host: the services contract over the workspace   */
 /*---------------------------------------------------------------------------*/
 
-static void embed_stop(desktop_t *app);
 
+/** @brief An in-process application's window shows its latest frame. */
 static void
 embed_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                   tiku_desk_rect_t content, void *context)
 {
-    desktop_t *app = context;
+    struct desktop_embed *slot = context;
     int x, y, w, h;
 
     (void)window;
     tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
-    if (app->embed.frame == NULL) {
+    if (slot == NULL || slot->frame == NULL) {
         return;
     }
-    w = (app->embed.fw < content.w) ? app->embed.fw : content.w;
-    h = (app->embed.fh < content.h) ? app->embed.fh : content.h;
+    w = (slot->fw < content.w) ? slot->fw : content.w;
+    h = (slot->fh < content.h) ? slot->fh : content.h;
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
             tiku_desk_pixel(surface, content.x + x, content.y + y,
-                app->embed.frame[(size_t)y * (size_t)app->embed.fw + x]);
+                            slot->frame[(size_t)y * (size_t)slot->fw + x]);
         }
     }
 }
 
+/** @brief The hosted application owning @p w, or NULL. */
+static struct desktop_embed *
+embed_of_window(desktop_t *app, const tiku_desk_window_t *w)
+{
+    int i;
+
+    if (w == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < TIKU_TRK_EMBED_MAX; i++) {
+        if (app->embeds[i].running && app->embeds[i].window == w) {
+            return &app->embeds[i];
+        }
+    }
+    return NULL;
+}
+
+static void embed_stop(struct desktop_embed *slot);
+
 static uint32_t
 embed_svc_open(void *ctx, const char *title, int w, int h)
 {
-    desktop_t *app = ctx;
+    struct desktop_embed *slot = ctx;
+    desktop_t *app = slot->app;
     tiku_desk_rect_t frame;
 
     frame.w = w + 2 * TIKU_DESK_WINDOW_BORDER;
     frame.h = h + TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
     frame.x = (app->surf->w - frame.w) / 2;
     frame.y = (app->surf->h - frame.h) / 3;
-    app->embed.window = tiku_desk_workspace_open(app->desk, title, frame,
-        embed_window_draw, app, &app->embed);
-    if (app->embed.window != NULL) {
-        tiku_desk_window_set_size_controls(app->embed.window, 0, 0);
+    /* Stepped down and across per slot, so a second application does not
+     * open exactly on top of the first. */
+    frame.x += (int)(slot - app->embeds) * 24;
+    frame.y += (int)(slot - app->embeds) * 20;
+    slot->window = tiku_desk_workspace_open(app->desk, title, frame,
+                                            embed_window_draw, slot, slot);
+    if (slot->window != NULL) {
+        tiku_desk_window_set_size_controls(slot->window, 0, 0);
     }
     app->dirty = 1;
-    return app->embed.next_id++;
+    return slot->next_id++;
 }
 
 static int
 embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
-    desktop_t *app = ctx;
+    struct desktop_embed *slot = ctx;
     uint32_t *copy;
 
     (void)id;
     if (px == NULL || w < 1 || h < 1) {
         return -1;
     }
-    copy = realloc(app->embed.frame, 4u * (size_t)w * (size_t)h);
+    copy = realloc(slot->frame, 4u * (size_t)w * (size_t)h);
     if (copy == NULL) {
         return -1;
     }
     memcpy(copy, px, 4u * (size_t)w * (size_t)h);
-    app->embed.frame = copy;
-    app->embed.fw = w;
-    app->embed.fh = h;
-    app->dirty = 1;
+    slot->frame = copy;
+    slot->fw = w;
+    slot->fh = h;
+    slot->app->dirty = 1;
     return 0;
 }
 
 static void
 embed_menu_pick(tiku_desk_window_t *window, int command, void *context)
 {
-    desktop_t *app = context;
+    struct desktop_embed *slot = context;
 
     (void)window;
-    if (app->embed.running && app->embed.descriptor->pick != NULL &&
-        app->embed.descriptor->pick(app->embed.state, 1, command)) {
-        embed_stop(app);
+    if (slot->running && slot->descriptor->pick != NULL &&
+        slot->descriptor->pick(slot->state, 1, command)) {
+        embed_stop(slot);
     }
 }
 
 static int
 embed_svc_menus(void *ctx, uint32_t id, const tiku_desk_menuset_t *set)
 {
-    desktop_t *app = ctx;
+    struct desktop_embed *slot = ctx;
 
     (void)id;
-    if (app->embed.window != NULL) {
-        tiku_desk_window_publish_menus(app->embed.window, set,
-                                       embed_menu_pick, app);
+    if (slot->window != NULL) {
+        tiku_desk_window_publish_menus(slot->window, set, embed_menu_pick,
+                                       slot);
     }
     return 0;
 }
@@ -1126,43 +1158,67 @@ embed_svc_close(void *ctx, uint32_t id)
 }
 
 static void
-embed_stop(desktop_t *app)
+embed_stop(struct desktop_embed *slot)
 {
-    if (!app->embed.running) {
+    desktop_t *app = slot->app;
+
+    if (!slot->running) {
         return;
     }
-    app->embed.running = 0;
-    if (app->embed.descriptor->stop != NULL) {
-        app->embed.descriptor->stop(app->embed.state);
+    slot->running = 0;
+    if (slot->descriptor->stop != NULL) {
+        slot->descriptor->stop(slot->state);
     }
-    app->embed.state = NULL;
-    if (app->embed.window != NULL) {
-        tiku_desk_workspace_close(app->desk, app->embed.window);
-        app->embed.window = NULL;
+    slot->state = NULL;
+    if (slot->window != NULL) {
+        tiku_desk_workspace_close(app->desk, slot->window);
+        slot->window = NULL;
     }
-    free(app->embed.frame);
-    app->embed.frame = NULL;
+    free(slot->frame);
+    slot->frame = NULL;
+    if (app->embed_press == slot) {
+        app->embed_press = NULL;
+    }
     app->dirty = 1;
 }
 
-/** @brief Host @p descriptor in this process, over these services. */
-static void
+/**
+ * @brief Host @p descriptor in this process, over workspace services.
+ *
+ * @return nonzero when it started and took a slot.
+ */
+static int
 embed_start(desktop_t *app, const tiku_desk_app_descriptor_t *descriptor)
 {
-    /* Static: the descriptor keeps the pointer for its lifetime. */
-    static tiku_desk_app_services_t services;
+    struct desktop_embed *slot = NULL;
+    int i;
 
-    services.ctx = app;
-    services.open = embed_svc_open;
-    services.frame = embed_svc_frame;
-    services.menus = embed_svc_menus;
-    services.close = embed_svc_close;
-    app->embed.descriptor = descriptor;
-    app->embed.next_id = 1;
-    if (descriptor->start != NULL &&
-        descriptor->start(&app->embed.state, &services) == 0) {
-        app->embed.running = 1;
+    for (i = 0; i < TIKU_TRK_EMBED_MAX; i++) {
+        if (!app->embeds[i].running) {
+            slot = &app->embeds[i];
+            break;
+        }
     }
+    if (slot == NULL || descriptor == NULL || descriptor->start == NULL) {
+        return 0;
+    }
+    memset(slot, 0, sizeof *slot);
+    slot->app = app;
+    slot->descriptor = descriptor;
+    slot->next_id = 1;
+    /* The services live in the SLOT: a descriptor keeps the pointer for
+     * its lifetime, and one static set would give every application the
+     * last one's window. */
+    slot->services.ctx = slot;
+    slot->services.open = embed_svc_open;
+    slot->services.frame = embed_svc_frame;
+    slot->services.menus = embed_svc_menus;
+    slot->services.close = embed_svc_close;
+    if (descriptor->start(&slot->state, &slot->services) != 0) {
+        return 0;
+    }
+    slot->running = 1;
+    return 1;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1955,9 +2011,13 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
         tiku_trk_panel_window_close(&app->file_panel);
         return;
     }
-    if (app->embed.running && w == app->embed.window) {
-        embed_stop(app);
-        return;
+    {
+        struct desktop_embed *slot = embed_of_window(app, w);
+
+        if (slot != NULL) {
+            embed_stop(slot);
+            return;
+        }
     }
     if (tiku_desk_remote_owner(&app->remote, w) != NULL) {
         tiku_desk_remote_window_closed(&app->remote, w);
@@ -2600,10 +2660,22 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
          * does. */
         tiku_trk_app_t program;
 
+        const char *args[1];
+        size_t n = strlen(pick->path);
+        int nargs = 0;
+
         memset(&program, 0, sizeof program);
         snprintf(program.name, sizeof program.name, "%s", pick->path);
-        snprintf(program.cmd, sizeof program.cmd, "%s", pick->path);
-        if (tiku_trk_launch_run(&program, NULL, 0) != TIKU_TRK_LAUNCH_OK) {
+        if (n > 3u && strcmp(pick->path + n - 3, ".so") == 0) {
+            /* A loadable application: the runner gives it the process
+             * this desktop is not giving it. */
+            snprintf(program.cmd, sizeof program.cmd, "%s", app->runner);
+            args[nargs++] = pick->path;
+        } else {
+            snprintf(program.cmd, sizeof program.cmd, "%s", pick->path);
+        }
+        if (tiku_trk_launch_run(&program, (nargs > 0) ? args : NULL,
+                                nargs) != TIKU_TRK_LAUNCH_OK) {
             snprintf(app->status, sizeof app->status,
                      "could not start %s", pick->path);
             app->dirty = 1;
@@ -3894,10 +3966,10 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     size_t i;
     int up;
 
-    if (getenv("TIKU_DESK_APPS") != NULL) {
-        snprintf(out, max, "%s/%s", getenv("TIKU_DESK_APPS"), name);
-        return access(out, X_OK) == 0;
-    }
+    /* TIKU_DESK_APPS says where APPLICATIONS are installed, which is not
+     * where this desktop's own companion programs live; a runner looked
+     * for there would be missing on every install that separates the
+     * two. */
     snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
     slash = strrchr(dir, '/');
     if (slash != NULL) {
@@ -3941,6 +4013,176 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     }
     out[0] = '\0';
     return 0;
+}
+
+/**
+ * @brief Find the directory of installed applications, if there is one.
+ *
+ * Climbed from this binary the same way a companion program is, so a
+ * development tree and an installed one both answer.
+ */
+static int
+find_apps_dir(const char *argv0, char *out, size_t max)
+{
+    char dir[TIKU_TRK_PATH_MAX];
+    char *slash;
+    int up;
+
+    if (getenv("TIKU_DESK_APPS") != NULL) {
+        snprintf(out, max, "%s", getenv("TIKU_DESK_APPS"));
+        return access(out, X_OK) == 0;
+    }
+    snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
+    slash = strrchr(dir, '/');
+    if (slash != NULL) {
+        *slash = '\0';
+    } else {
+        snprintf(dir, sizeof dir, ".");
+    }
+    for (up = 0; up < 5; up++) {
+        char step[TIKU_TRK_PATH_MAX];
+        char found[TIKU_TRK_PATH_MAX];
+        int k;
+
+        snprintf(step, sizeof step, "%s", dir);
+        for (k = 0; k < up; k++) {
+            size_t used = strlen(step);
+
+            if (used + 4u >= sizeof step) {
+                break;
+            }
+            snprintf(step + used, sizeof step - used, "/..");
+        }
+        snprintf(found, sizeof found, "%s/desktop/build/apps", step);
+        if (access(found, X_OK) == 0 && realpath(found, out) != NULL) {
+            return 1;
+        }
+    }
+    out[0] = '\0';
+    return 0;
+}
+
+/** @brief The label an installed file is offered under. */
+static void
+app_label(const char *file, char *out, size_t max)
+{
+    size_t i;
+
+    /* From the file's own name: reading it would mean loading it, and a
+     * file the desktop will not load has no name to read. */
+    if (strncmp(file, "tiku_", 5) == 0) {
+        file += 5;
+    }
+    snprintf(out, max, "%s", file);
+    for (i = 0; out[i] != '\0'; i++) {
+        if (out[i] == '_') {
+            out[i] = ' ';
+        }
+    }
+    i = strlen(out);
+    if (i > 3u && strcmp(out + i - 3, ".so") == 0) {
+        out[i - 3] = '\0';
+    }
+    if (out[0] >= 'a' && out[0] <= 'z') {
+        out[0] = (char)(out[0] - 'a' + 'A');
+    }
+}
+
+/**
+ * @brief Offer every application installed beside this desktop.
+ *
+ * A file in `apps` is started in a process of its own through the
+ * runner; one in `apps/trusted` is loaded into this process.  Moving the
+ * file between the two is the whole of the decision.
+ */
+static void
+offer_installed(desktop_t *app, const char *argv0)
+{
+    char root[TIKU_TRK_PATH_MAX];
+    char runner[TIKU_TRK_PATH_MAX];
+    char trusted[TIKU_TRK_PATH_MAX];
+    struct dirent *entry;
+    DIR *dir;
+    int have_runner;
+
+    if (!find_apps_dir(argv0, root, sizeof root)) {
+        return;
+    }
+    have_runner = find_companion(argv0, "tiku-run", runner, sizeof runner);
+    if (have_runner) {
+        snprintf(app->runner, sizeof app->runner, "%s", runner);
+    }
+
+    /* Loaded first, so a trusted application is running before anything
+     * the user could click. */
+    snprintf(trusted, sizeof trusted, "%s/trusted", root);
+    dir = opendir(trusted);
+    while (dir != NULL && (entry = readdir(dir)) != NULL) {
+        char path[TIKU_TRK_PATH_MAX];
+        char why[192];
+        const tiku_desk_app_descriptor_t *loaded;
+        size_t n = strlen(entry->d_name);
+
+        if (n < 4u || strcmp(entry->d_name + n - 3, ".so") != 0) {
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s", trusted, entry->d_name);
+        loaded = tiku_desk_app_load(path, why, sizeof why);
+        if (loaded == NULL || !embed_start(app, loaded)) {
+            /* Said, not swallowed: an application that was installed and
+             * did not appear is a fault the user has to be told about. */
+            snprintf(app->status, sizeof app->status, "%s: %s",
+                     entry->d_name, (loaded == NULL) ? why : "no room");
+            app->dirty = 1;
+        }
+    }
+    if (dir != NULL) {
+        (void)closedir(dir);
+    }
+
+    {
+        /* Sorted, because a directory hands its entries back in whatever
+         * order it likes and a menu whose rows move between runs is a
+         * menu nobody can learn. */
+        char name[TIKU_TRK_DB_APPS_MAX][64];
+        int count = 0;
+        int i, j;
+
+        dir = opendir(root);
+        while (dir != NULL && (entry = readdir(dir)) != NULL &&
+               count < TIKU_TRK_DB_APPS_MAX) {
+            size_t n = strlen(entry->d_name);
+
+            if (n < 4u || n >= sizeof name[0] ||
+                strcmp(entry->d_name + n - 3, ".so") != 0 || !have_runner) {
+                continue;
+            }
+            snprintf(name[count++], sizeof name[0], "%s", entry->d_name);
+        }
+        if (dir != NULL) {
+            (void)closedir(dir);
+        }
+        for (i = 1; i < count; i++) {
+            char hold[64];
+
+            snprintf(hold, sizeof hold, "%s", name[i]);
+            for (j = i; j > 0 && strcmp(name[j - 1], hold) > 0; j--) {
+                snprintf(name[j], sizeof name[0], "%s", name[j - 1]);
+            }
+            snprintf(name[j], sizeof name[0], "%s", hold);
+        }
+        for (i = 0; i < count; i++) {
+            char path[TIKU_TRK_PATH_MAX];
+            char label[TIKU_TRK_DB_LABEL_MAX];
+
+            snprintf(path, sizeof path, "%s/%s", root, name[i]);
+            app_label(name[i], label, sizeof label);
+            /* The row carries the FILE; how it is started is decided
+             * where the pick is answered, which is the one place that
+             * knows the runner's own path. */
+            (void)tiku_trk_deskbar_add_app(app->deskbar, label, path);
+        }
+    }
 }
 
 /** @brief Offer the companion programs that are actually installed. */
@@ -4288,7 +4530,7 @@ tracker_run(int argc, char **argv)
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
     tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
                                DESK_H, &app.dirty);
-    offer_companions(&app, argv[0]);
+    offer_installed(&app, argv[0]);
     if (tiku_desk_remote_listen(&app.remote) != 0) {
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;
@@ -4296,7 +4538,7 @@ tracker_run(int argc, char **argv)
     if (getenv("TIKU_EMBED_ABOUT") != NULL) {
         /* The both-ways proof: the SAME descriptor the client runner
          * takes out of process, hosted here linked-in. */
-        embed_start(&app, &tiku_desk_about_app);
+        (void)embed_start(&app, &tiku_desk_about_app);
     }
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
@@ -4866,8 +5108,16 @@ tracker_run(int argc, char **argv)
         }
         remote_reconcile(&app);
         remote_sweep(&app);
-        if (app.embed.running && app.embed.descriptor->tick != NULL) {
-            app.embed.descriptor->tick(app.embed.state, tiku_trk_now());
+        {
+            int e;
+
+            for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
+                if (app.embeds[e].running &&
+                    app.embeds[e].descriptor->tick != NULL) {
+                    app.embeds[e].descriptor->tick(app.embeds[e].state,
+                                                   tiku_trk_now());
+                }
+            }
         }
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
@@ -5745,19 +5995,19 @@ tracker_run(int argc, char **argv)
                                     &app.file_panel)) {
                     (void)tiku_desk_window_send(w, &ev);
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
-                           app.embed.running && w == app.embed.window) {
+                           embed_of_window(&app, w) != NULL) {
+                    struct desktop_embed *slot = embed_of_window(&app, w);
                     tiku_desk_event_t rev = ev;
                     tiku_desk_rect_t rc = tiku_desk_window_content(w);
 
                     tiku_desk_workspace_activate(app.desk, w);
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    if (app.embed.descriptor->event != NULL &&
-                        app.embed.descriptor->event(app.embed.state,
-                                                    &rev)) {
-                        embed_stop(&app);
+                    if (slot->descriptor->event != NULL &&
+                        slot->descriptor->event(slot->state, &rev)) {
+                        embed_stop(slot);
                     } else {
-                        app.embed_press = 1;
+                        app.embed_press = slot;
                     }
                     app.dirty = 1;
                 } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
@@ -6085,19 +6335,18 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
-                if (app.embed_press && app.embed.running &&
-                    app.embed.window != NULL) {
+                if (app.embed_press != NULL &&
+                    app.embed_press->window != NULL) {
+                    struct desktop_embed *slot = app.embed_press;
                     tiku_desk_event_t rev = ev;
                     tiku_desk_rect_t rc =
-                        tiku_desk_window_content(app.embed.window);
+                        tiku_desk_window_content(slot->window);
 
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    if (app.embed.descriptor->event != NULL &&
-                        app.embed.descriptor->event(app.embed.state,
-                                                    &rev)) {
-                        embed_stop(&app);
-                        app.embed_press = 0;
+                    if (slot->descriptor->event != NULL &&
+                        slot->descriptor->event(slot->state, &rev)) {
+                        embed_stop(slot);
                     }
                     app.dirty = 1;
                     break;
@@ -6302,19 +6551,20 @@ tracker_run(int argc, char **argv)
             case TIKU_DESK_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
 
-                if (app.embed_press) {
-                    app.embed_press = 0;
-                    if (app.embed.running && app.embed.window != NULL) {
+                if (app.embed_press != NULL) {
+                    struct desktop_embed *slot = app.embed_press;
+
+                    app.embed_press = NULL;
+                    if (slot->running && slot->window != NULL) {
                         tiku_desk_event_t rev = ev;
                         tiku_desk_rect_t rc =
-                            tiku_desk_window_content(app.embed.window);
+                            tiku_desk_window_content(slot->window);
 
                         rev.x -= rc.x;
                         rev.y -= rc.y;
-                        if (app.embed.descriptor->event != NULL &&
-                            app.embed.descriptor->event(app.embed.state,
-                                                        &rev)) {
-                            embed_stop(&app);
+                        if (slot->descriptor->event != NULL &&
+                            slot->descriptor->event(slot->state, &rev)) {
+                            embed_stop(slot);
                         }
                     }
                     app.dirty = 1;
@@ -6642,13 +6892,14 @@ tracker_run(int argc, char **argv)
                     tiku_desk_window_t *rfw =
                         tiku_desk_workspace_focused(app.desk);
 
-                    if (app.embed.running && rfw == app.embed.window) {
+                    if (embed_of_window(&app, rfw) != NULL) {
+                        struct desktop_embed *slot =
+                            embed_of_window(&app, rfw);
                         tiku_desk_event_t rev = ev;
 
-                        if (app.embed.descriptor->event != NULL &&
-                            app.embed.descriptor->event(app.embed.state,
-                                                        &rev)) {
-                            embed_stop(&app);
+                        if (slot->descriptor->event != NULL &&
+                            slot->descriptor->event(slot->state, &rev)) {
+                            embed_stop(slot);
                         }
                         app.dirty = 1;
                         break;

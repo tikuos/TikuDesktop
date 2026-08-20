@@ -64,7 +64,7 @@ struct tiku_trk_deskbar {
     struct {
         char label[TIKU_TRK_DB_LABEL_MAX];
         char command[TIKU_TRK_PATH_MAX];
-    }                    app[4];    /* programs the shell offered      */
+    }                    app[TIKU_TRK_DB_APPS_MAX];
     int                  app_count;
     int                  top_inset; /* the global bar owns this much   */
     tiku_trk_deskbar_settings_t settings;
