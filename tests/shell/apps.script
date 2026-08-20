@@ -6,7 +6,14 @@
 wait 12
 click 980 20
 wait 4
+note the programs are under Applications, with their own art
+menu-pick Applications
+wait 4
 expect-menu Editor|Terminal
+note each row wears its own art: paper for the editor, an application
+note for the terminal, and they are not the same picture
+expect-pixel 494 146 fffcc0
+expect-pixel 492 171 ec6666
 note choosing the editor starts it; its window arrives over the session
 menu-pick Editor
 wait 90

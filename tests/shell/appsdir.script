@@ -14,6 +14,9 @@ wait 4
 expect-title Clock
 click 980 20
 wait 4
+note the programs are under Applications, one row that expands
+menu-pick Applications
+wait 4
 expect-menu Editor|Sketch|Terminal
 note choosing one that is not trusted starts it through the runner
 menu-pick Sketch

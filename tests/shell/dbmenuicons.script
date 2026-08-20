@@ -1,11 +1,12 @@
 # shell: desktop
 # home: fixture
 # DB-002: the leaf menu's rows carry real art -- a folder beside /sys,
-# painted by the shell through the injected painter.  The row sits two
-# below the programs the shell offers, which is where the art moves with
-# it.
+# painted by the shell through the injected painter.  The row sits below
+# Applications, and the art moves down with it.
 wait 12
 click 980 20
 wait 3
-expect-pixel 701 210 fac468
+expect-pixel 701 189 fac468
+note and the Applications row carries art of its own
+expect-pixel 701 147 fac468
 quit

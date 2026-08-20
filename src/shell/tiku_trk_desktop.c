@@ -626,6 +626,14 @@ deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
         art = (stat(item->path, &st) == 0 && S_ISDIR(st.st_mode))
                   ? "folder" : "file";
         break;
+    case TIKU_TRK_DB_ITEM_APPS:
+        art = "folder_apps";
+        break;
+    case TIKU_TRK_DB_ITEM_APP:
+        /* Whatever the shell named when it offered the row; a program
+         * that said nothing is drawn as what it is. */
+        art = (item->icon[0] != '\0') ? item->icon : "application";
+        break;
     default:
         return 0;               /* a command row carries no art */
     }
@@ -4096,6 +4104,22 @@ app_label(const char *file, char *out, size_t max)
 }
 
 /**
+ * @brief The art a program's row wears, guessed from its file name.
+ *
+ * A hint, not a fact: nothing but the file's name is known without
+ * loading it, and a program the desktop will not load has nothing else
+ * to say for itself.
+ */
+static const char *
+app_icon(const char *file)
+{
+    if (strstr(file, "edit") != NULL) {
+        return "text_file";
+    }
+    return "application";
+}
+
+/**
  * @brief Offer every application installed beside this desktop.
  *
  * A file in `apps` is started in a process of its own through the
@@ -4187,29 +4211,8 @@ offer_installed(desktop_t *app, const char *argv0)
             /* The row carries the FILE; how it is started is decided
              * where the pick is answered, which is the one place that
              * knows the runner's own path. */
-            (void)tiku_trk_deskbar_add_app(app->deskbar, label, path);
-        }
-    }
-}
-
-/** @brief Offer the companion programs that are actually installed. */
-static void
-offer_companions(desktop_t *app, const char *argv0)
-{
-    static const struct {
-        const char *label;
-        const char *binary;
-    } known[] = {
-        { "Terminal", "tiku-term" },
-        { "Text editor", "tiku-edit" }
-    };
-    char path[TIKU_TRK_PATH_MAX];
-    size_t i;
-
-    for (i = 0; i < sizeof known / sizeof known[0]; i++) {
-        if (find_companion(argv0, known[i].binary, path, sizeof path)) {
-            (void)tiku_trk_deskbar_add_app(app->deskbar, known[i].label,
-                                           path);
+            (void)tiku_trk_deskbar_add_app(app->deskbar, label, path,
+                                           app_icon(name[i]));
         }
     }
 }

@@ -107,6 +107,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
     TIKU_TRK_DB_ITEM_POWER_OFF, /* inside Shut down: immediate (DB-006)  */
     TIKU_TRK_DB_ITEM_RESTART,
+    TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
     TIKU_TRK_DB_ITEM_APP        /* start the program named by its path  */
 } tiku_trk_db_item_kind_t;
 
@@ -126,6 +127,9 @@ typedef struct {
     char                    path[TIKU_TRK_PATH_MAX];
     tiku_trk_db_item_kind_t kind;
     int                     which;   /* RECENT: which list              */
+    /* The art this row wears, named by whoever offered it.  The bar
+     * carries the name and paints nothing itself. */
+    char                    icon[24];
 } tiku_trk_db_item_t;
 
 typedef struct tiku_trk_deskbar tiku_trk_deskbar_t;
@@ -608,7 +612,8 @@ void tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on);
 void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
 
 /**
- * @brief Offer @p label in the leaf menu, starting @p command when chosen.
+ * @brief Offer @p label under Applications, starting @p command when
+ *        chosen, drawn with the art named by @p icon.
  *
  * The shell registers what it can find, so a program that is not
  * installed leaves no row behind to disappoint anyone.
@@ -616,7 +621,7 @@ void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
  * @return nonzero when the row was taken.
  */
 int tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
-                             const char *command);
+                             const char *command, const char *icon);
 
 /** @brief Where the theme switch sits, so a test can put a finger on it. */
 tiku_desk_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);

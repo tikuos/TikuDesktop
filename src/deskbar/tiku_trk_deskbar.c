@@ -64,6 +64,7 @@ struct tiku_trk_deskbar {
     struct {
         char label[TIKU_TRK_DB_LABEL_MAX];
         char command[TIKU_TRK_PATH_MAX];
+        char icon[24];
     }                    app[TIKU_TRK_DB_APPS_MAX];
     int                  app_count;
     int                  top_inset; /* the global bar owns this much   */
@@ -286,9 +287,11 @@ build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
              db->show_replicants ? "Hide replicants" : "Show replicants",
              NULL, 0);
-    for (i = 0; i < db->app_count; i++) {
-        add_item(db, TIKU_TRK_DB_ITEM_APP, db->app[i].label,
-                 db->app[i].command, 0);
+    if (db->app_count > 0) {
+        /* One row, not one per program: the leaf is the system's own
+         * menu, and a list of what happens to be installed belongs
+         * inside it rather than across it. */
+        add_item(db, TIKU_TRK_DB_ITEM_APPS, "Applications", NULL, 0);
     }
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
@@ -1484,7 +1487,7 @@ tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on)
 
 int
 tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
-                         const char *command)
+                         const char *command, const char *icon)
 {
     if (db == NULL || label == NULL || command == NULL ||
         db->app_count >= (int)(sizeof db->app / sizeof db->app[0])) {
@@ -1494,6 +1497,9 @@ tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
              sizeof db->app[db->app_count].label, "%s", label);
     snprintf(db->app[db->app_count].command,
              sizeof db->app[db->app_count].command, "%s", command);
+    snprintf(db->app[db->app_count].icon,
+             sizeof db->app[db->app_count].icon, "%s",
+             (icon != NULL) ? icon : "");
     db->app_count++;
     return 1;
 }
@@ -2016,7 +2022,19 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         db->sub_hot = -1;
         return;
     }
-    if (it->kind == TIKU_TRK_DB_ITEM_RECENT) {
+    if (it->kind == TIKU_TRK_DB_ITEM_APPS) {
+        int i;
+
+        for (i = 0; i < db->app_count && i < TIKU_TRK_DB_SUB_MAX; i++) {
+            tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
+
+            memset(si, 0, sizeof *si);
+            si->kind = TIKU_TRK_DB_ITEM_APP;
+            snprintf(si->label, sizeof si->label, "%s", db->app[i].label);
+            snprintf(si->path, sizeof si->path, "%s", db->app[i].command);
+            snprintf(si->icon, sizeof si->icon, "%s", db->app[i].icon);
+        }
+    } else if (it->kind == TIKU_TRK_DB_ITEM_RECENT) {
         int i;
 
         for (i = 0; i < db->recent_count[it->which] &&
@@ -2530,6 +2548,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                tiku_desk_tint(TIKU_DESK_C_PANEL, 1.55f));
             } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT ||
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_APPS ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
                 /* What expands says so, the way every hierarchical menu
                  * marks the rows that go somewhere (DB-002). */
@@ -2814,6 +2833,10 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                     pick->what = TIKU_TRK_DB_POWER_OFF;
                 } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_RESTART) {
                     pick->what = TIKU_TRK_DB_RESTART;
+                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_APP) {
+                    pick->what = TIKU_TRK_DB_LAUNCH_APP;
+                    snprintf(pick->path, sizeof pick->path, "%s",
+                             db->sub[si].path);
                 } else {
                     pick->what = TIKU_TRK_DB_OPEN_PATH;
                     snprintf(pick->path, sizeof pick->path, "%s",
@@ -2830,6 +2853,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             switch (it->kind) {
             case TIKU_TRK_DB_ITEM_DIR:
             case TIKU_TRK_DB_ITEM_RECENT:
+            case TIKU_TRK_DB_ITEM_APPS:
                 /* Expanding is not choosing: the menu stays up, with the
                  * row's contents beside it. */
                 open_sub(db, idx);
