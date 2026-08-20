@@ -349,6 +349,24 @@ for s in $conducted; do
     # this script too, whose command line contains it.
     pkill -x desktop > /dev/null 2>&1
     rm -rf "$chome" "$csock"
+
+    # And again over a LINE: the driver makes a pty pair, starts the same
+    # shipping shell on the far end with -conduct-tty, and speaks the
+    # channel down it.  This is the rehearsal for a real board -- a raw
+    # terminal with a line discipline and a baud rate, only the copper
+    # missing -- and it is the reason the driver was put outside the
+    # process in the first place.
+    printf '\n== %s (conducted over a line, shipping shell)\n' "$s"
+    rm -rf "$chome" "$work"
+    mkdir -p "$chome/Desktop" "$work/sub"
+    echo hi > "$work/a.txt"
+    echo hi > "$work/b.txt"
+    echo hi > "$work/c.txt"
+    DISPLAY= HOME="$chome" "$root/build/dev/trk-conduct" \
+        -n "over a line" "$cs" -- "$root/build/desktop" "$work" ||
+        fails=$((fails+1))
+    pkill -x desktop > /dev/null 2>&1
+    rm -rf "$chome"
 done
 
 rm -rf $work

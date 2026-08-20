@@ -4049,6 +4049,10 @@ tracker_run(int argc, char **argv)
      * it.  The path is given rather than derived so a harness can run more
      * than one driven shell at once. */
     const char *conduct_path = NULL;
+    /* The same channel over a LINE instead of a socket: this is how a
+     * shell on a real board is driven, from whatever is on the other end
+     * of its console cable. */
+    const char *conduct_tty = NULL;
 
     restart_argv = argv;
     tiku_trk_script_t *sc = NULL;
@@ -4128,6 +4132,7 @@ tracker_run(int argc, char **argv)
         else if (strcmp(argv[i], "-shotmenu") == 0) { shot_menu = 1; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { script_path = argv[++i]; }
         else if (strcmp(argv[i], "-conduct") == 0 && i + 1 < argc) { conduct_path = argv[++i]; }
+        else if (strcmp(argv[i], "-conduct-tty") == 0 && i + 1 < argc) { conduct_tty = argv[++i]; }
         else if (strcmp(argv[i], "-shotedit") == 0 && i + 1 < argc) {
             shot_edit = argv[++i];
         }
@@ -4189,7 +4194,8 @@ tracker_run(int argc, char **argv)
      * nothing else dirties the surface (DB-044). */
     (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
                                 0);
-    if (script_path == NULL && conduct_path == NULL) {
+    if (script_path == NULL && conduct_path == NULL &&
+        conduct_tty == NULL) {
         /* The living half of the roster: applications that quit leave
          * the list, new ones join it (DB-014/DB-015).  Never in a
          * scripted run, whose fixture must not chase the host's
@@ -4424,6 +4430,19 @@ tracker_run(int argc, char **argv)
 
     (void)tiku_trk_find_open_default(find_model(&app), (int64_t)time(NULL));
 
+    if (conduct_tty != NULL) {
+        int line = tiku_desk_conduct_open_tty(conduct_tty, 0);
+
+        if (line < 0 ||
+            tiku_desk_conduct_adopt(&app.conduct, line, &app,
+                                    conduct_inject, conduct_pixel,
+                                    conduct_text) != 0) {
+            fprintf(stderr, "tracker: cannot speak the conductor channel "
+                            "over %s\n", conduct_tty);
+            return 3;
+        }
+        app.conduct_on = 1;
+    }
     if (conduct_path != NULL) {
         if (tiku_desk_conduct_listen(&app.conduct, conduct_path, &app,
                                      conduct_inject, conduct_pixel,
@@ -4433,6 +4452,8 @@ tracker_run(int argc, char **argv)
             return 3;
         }
         app.conduct_on = 1;
+    }
+    if (app.conduct_on) {
         /* The same fixture clock a scripted run froze: a driver comparing
          * pixels across a minute boundary would otherwise be told the
          * clock changed, which is true and useless. */

@@ -110,6 +110,17 @@ silently stopped running still prints no failures.
 - **A test binary in `TESTBINS` is not necessarily run.** `test_launch` sat
   built-but-never-run for a whole session because it was missing from the
   `test:` recipe. If you add a suite, add it to both.
+- **Three ways to reach a shell.** `-conduct <socket>` offers the channel on
+  a local socket; `-conduct-tty <device>` offers it over a **raw serial
+  line**, which is how a shell on a real board is driven from whatever holds
+  the other end of its console cable. `trk-conduct` speaks all three:
+  `-s <socket>`, `-t <tty>`, or `-- <shell> <args>` (it makes a pty pair,
+  starts that shell on the far end with `-conduct-tty`, and drives down the
+  line). `defaultbar.script` runs BOTH ways in the suite, plus
+  `test_conduct` over a pty pair in two processes. Serial trap, found the
+  hard way: leave `VMIN` at 1 (cfmakeraw's value) -- with `VMIN` 0 a quiet
+  terminal answers a read with ZERO BYTES, and zero from a socket means the
+  peer hung up, so every quiet moment looks like an unplugged cable.
 - **Two drivers, one grammar.** Most scripts are read by the interpreter
   compiled into `build/dev/` (in-process, the full 82-op vocabulary). The
   scripts named in `run.sh`'s `conducted` list are ALSO read by

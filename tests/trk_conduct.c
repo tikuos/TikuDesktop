@@ -30,10 +30,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE 1
+#define _GNU_SOURCE 1
+
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <termios.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "tiku_desk_conduct.h"
 #include "tiku_desk_event.h"
@@ -179,25 +188,113 @@ ask_text(tiku_desk_conduct_client_t *c, const char *name, char *out,
                                    out, max);
 }
 
+/**
+ * @brief Put a line in the state a frame needs: raw, and nothing else.
+ *
+ * VMIN is left where cfmakeraw puts it -- see the note in
+ * tiku_desk_conduct_open_tty.  A terminal set to poll answers a quiet
+ * moment with zero bytes, and zero bytes from a socket means the far end
+ * hung up; the two must not be made to look alike.
+ */
+static void
+raw_line(int fd)
+{
+    struct termios tio;
+
+    if (tcgetattr(fd, &tio) == 0) {
+        cfmakeraw(&tio);
+        (void)tcsetattr(fd, TCSANOW, &tio);
+    }
+}
+
+/**
+ * @brief Start @p cmd on the far end of a fresh line, and take this end.
+ *
+ * The rehearsal for a real board: the shell is handed a serial device and
+ * knows nothing else about who is driving it, and the driver holds the
+ * other end of the cable.  Nothing here is pretending -- it IS a tty, with
+ * a line discipline and a baud rate; only the copper is missing.
+ *
+ * @return the master fd, or -1.  @p kid receives the child's pid.
+ */
+static int
+spawn_on_line(char **cmd, pid_t *kid)
+{
+    char slave_name[128];
+    int master, slave;
+    pid_t pid;
+
+    master = posix_openpt(O_RDWR | O_NOCTTY);
+    if (master < 0 || grantpt(master) != 0 || unlockpt(master) != 0 ||
+        ptsname_r(master, slave_name, sizeof slave_name) != 0) {
+        return -1;
+    }
+    /* Opened here and HELD, never read.  It covers the window before the
+     * child has opened the line for itself: a master whose slave nobody
+     * holds reads EIO, and the child is still on its way to exec.  The
+     * window is short enough that nothing here fails without this on an
+     * idle machine, which is exactly why it stays -- a loaded one is not
+     * a different contract, only a slower exec. */
+    slave = open(slave_name, O_RDWR | O_NOCTTY);
+    if (slave < 0) {
+        (void)close(master);
+        return -1;
+    }
+    raw_line(master);
+    raw_line(slave);
+
+    pid = fork();
+    if (pid < 0) {
+        (void)close(master);
+        (void)close(slave);
+        return -1;
+    }
+    if (pid == 0) {
+        char *args[32];
+        int n = 0;
+
+        (void)close(master);
+        while (cmd[n] != NULL && n < 28) {
+            args[n] = cmd[n];
+            n++;
+        }
+        args[n++] = (char *)"-conduct-tty";
+        args[n++] = slave_name;
+        args[n] = NULL;
+        (void)execv(args[0], args);
+        _exit(127);
+    }
+    *kid = pid;
+    return master;
+}
+
 int
 main(int argc, char **argv)
 {
     tiku_desk_conduct_client_t client;
     const char *sock = NULL;
+    const char *tty = NULL;
     const char *path = NULL;
     const char *who = "conducted";
+    char **spawn = NULL;
+    pid_t kid = -1;
     FILE *f;
     char line[LINE_MAX_CHARS];
     int i;
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)      { sock = argv[++i]; }
+        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) { tty = argv[++i]; }
         else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) { who = argv[++i]; }
+        else if (strcmp(argv[i], "--") == 0 && i + 1 < argc) {
+            spawn = &argv[i + 1];
+            break;              /* the rest is the shell's command line */
+        }
         else                                                 { path = argv[i]; }
     }
-    if (sock == NULL || path == NULL) {
-        fprintf(stderr, "usage: trk-conduct -s <socket> [-n <name>] "
-                        "<script>\n");
+    if ((sock == NULL && tty == NULL && spawn == NULL) || path == NULL) {
+        fprintf(stderr, "usage: trk-conduct [-s <socket> | -t <tty>] "
+                        "[-n <name>] <script> [-- <shell> <args>...]\n");
         return 2;
     }
     f = fopen(path, "r");
@@ -205,9 +302,28 @@ main(int argc, char **argv)
         fprintf(stderr, "trk-conduct: cannot read %s\n", path);
         return 2;
     }
-    /* The shell may still be starting; the wait is what frees the harness
-     * from sequencing two processes by hand. */
-    if (tiku_desk_conduct_connect(&client, sock, 8000) != 0) {
+    if (spawn != NULL) {
+        int master = spawn_on_line(spawn, &kid);
+
+        if (master < 0 ||
+            tiku_desk_conduct_connect_fd(&client, master) != 0) {
+            fprintf(stderr, "trk-conduct: cannot start %s on a line\n",
+                    spawn[0]);
+            (void)fclose(f);
+            return 2;
+        }
+    } else if (tty != NULL) {
+        int line_fd = tiku_desk_conduct_open_tty(tty, 0);
+
+        if (line_fd < 0 ||
+            tiku_desk_conduct_connect_fd(&client, line_fd) != 0) {
+            fprintf(stderr, "trk-conduct: cannot speak over %s\n", tty);
+            (void)fclose(f);
+            return 2;
+        }
+    } else if (tiku_desk_conduct_connect(&client, sock, 8000) != 0) {
+        /* The shell may still be starting; the wait is what frees the
+         * harness from sequencing two processes by hand. */
         fprintf(stderr, "trk-conduct: no shell answered on %s\n", sock);
         (void)fclose(f);
         return 2;
@@ -330,6 +446,13 @@ main(int argc, char **argv)
     }
     (void)fclose(f);
     tiku_desk_conduct_disconnect(&client);
+    if (kid > 0) {
+        /* A shell we started on a line is ours to end: the line is gone
+         * the moment we are, and a shell left holding a dead cable would
+         * outlive every run that followed. */
+        (void)kill(kid, SIGTERM);
+        (void)waitpid(kid, NULL, 0);
+    }
 
     printf("\n%s: %d passed, %d failed\n", who, passes, fails);
     return (fails > 0) ? 1 : 0;
