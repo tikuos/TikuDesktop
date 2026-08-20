@@ -1387,8 +1387,10 @@ list_rows(const tiku_trk_deskbar_t *db)
 static int
 list_y(const tiku_trk_deskbar_t *db)
 {
-    (void)db;
-    return LEAF_H + PAD;
+    /* Below the leaf, WHEREVER the frame starts: with the global bar on
+     * the whole bar sits lower, and a list still measured from the top
+     * of the screen would draw across the leaf itself. */
+    return db->frame.y + LEAF_H + PAD;
 }
 
 static int
@@ -2420,7 +2422,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     /* The tray, then the clock beneath it: the original reserves the
      * clock's room in the first row, and stacking it here is the vertical
      * equivalent. */
-    y = tiku_trk_deskbar_mini(db->dock) ? LEAF_H + PAD : tray_y(db);
+    y = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + LEAF_H + PAD
+                                        : tray_y(db);
     tiku_desk_hline(s, db->frame.x + 4, y - 3, db->frame.w - 8,
                     tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
     tiku_desk_hline(s, db->frame.x + 4, y - 2, db->frame.w - 8,

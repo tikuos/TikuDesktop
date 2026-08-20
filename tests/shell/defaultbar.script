@@ -8,6 +8,8 @@ wait 12
 expect-pixel 300 8 d8d8d8
 note and the Deskbar moved down out from under it: its leaf shows whole
 expect-pixel 930 26 ffcb00
+note the WHOLE leaf: the list below starts under it, not across it
+expect-pixel 900 42 ffcb00
 click 60 8
 wait 4
 expect-menu New folder
