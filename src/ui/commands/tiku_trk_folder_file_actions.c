@@ -380,6 +380,22 @@ move_to_trash(tiku_trk_folder_file_actions_t *controller,
 }
 
 void
+tiku_trk_folder_file_actions_answer_empty(
+    tiku_trk_folder_file_actions_t *controller)
+{
+    int count;
+
+    if (controller == NULL) {
+        return;
+    }
+    count = tiku_trk_fs_empty_trash(controller->fs);
+    snprintf(controller->status, controller->status_size,
+             count > 0 ? "emptying the Trash: %d item%s"
+                       : "the Trash is empty",
+             count, count == 1 ? "" : "s");
+}
+
+void
 tiku_trk_folder_file_actions_answer_delete(
     tiku_trk_folder_file_actions_t *controller,
     tiku_trk_folder_window_t *folder, tiku_trk_delete_answer_t answer)
@@ -694,15 +710,19 @@ tiku_trk_folder_file_actions_invoke(
     case TIKU_TRK_CMD_RESTORE:
         restore_selection(controller, folder);
         return 1;
-    case TIKU_TRK_CMD_EMPTY_TRASH: {
-        int count = tiku_trk_fs_empty_trash(controller->fs);
-
-        snprintf(controller->status, controller->status_size,
-                 count > 0 ? "emptying the Trash: %d item%s"
-                           : "the Trash is empty",
-                 count, count == 1 ? "" : "s");
+    case TIKU_TRK_CMD_EMPTY_TRASH:
+        /* Asked first, as the source asks -- and the destructive verb
+         * does not ride Return: Cancel keeps the default ring and
+         * emptying takes an aimed press (item 5's rule). */
+        if (controller->alert != NULL) {
+            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+                TIKU_TRK_ALERT_TAG_EMPTY_TRASH,
+                "Are you sure you want to empty the Trash?  This "
+                "operation cannot be reverted.", "Cancel|Empty Trash");
+            return 1;
+        }
+        tiku_trk_folder_file_actions_answer_empty(controller);
         return 1;
-    }
     case TIKU_TRK_CMD_CUT:
     case TIKU_TRK_CMD_CUT_MORE:
     case TIKU_TRK_CMD_COPY:

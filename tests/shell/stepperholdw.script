@@ -1,0 +1,12 @@
+# shell: desktop
+# NeXT UIG ch3, in the spatial shell's window bar: a held stepper arrow
+# keeps walking without further clicks.
+wait 10
+expect-scroll 0
+note hold the bottom arrow: the view keeps stepping down
+press 492 310
+wait 60
+release 492 310
+wait 3
+expect-scroll 14
+quit

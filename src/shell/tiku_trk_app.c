@@ -164,7 +164,22 @@ app_alert_answer(void *context, const tiku_trk_alert_t *alert)
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
         tiku_trk_fs_resolve_error(a->fs, alert->chosen != alert->cancel);
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_EMPTY_TRASH) {
+        if (alert->chosen != alert->cancel) {
+            tiku_trk_folder_file_actions_answer_empty(&a->file_actions);
+        }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
+        {
+            /* Cancel, Move to Trash, Delete, in the order the buttons
+             * are offered (FS-046); the alert's own default already
+             * steps left of Delete, so Return lands on Move to Trash. */
+            static const tiku_trk_delete_answer_t by_button[] = {
+                TIKU_TRK_DELETE_ANSWER_CANCEL,
+                TIKU_TRK_DELETE_ANSWER_TRASH,
+                TIKU_TRK_DELETE_ANSWER_DELETE,
+            };
+            int chosen = (alert->chosen >= 0 && alert->chosen < 3)
+                             ? alert->chosen : 0;
         /* Cancel, Move to Trash, Delete, in the order the buttons are
          * offered (FS-046).  The folder wrapper is refreshed here: the
          * question was modal, but the answer must still act on the view
@@ -173,7 +188,8 @@ app_alert_answer(void *context, const tiku_trk_alert_t *alert)
         snprintf(a->folder.path, sizeof a->folder.path, "%s",
                  tiku_trk_poseview_path(a->view));
         tiku_trk_folder_file_actions_answer_delete(&a->file_actions,
-            &a->folder, (tiku_trk_delete_answer_t)alert->chosen);
+            &a->folder, by_button[chosen]);
+        }
     }
     a->dirty = 1;
 }
@@ -1400,8 +1416,6 @@ end_rename(app_t *a, int commit)
     if (!a->editing) {
         return;
     }
-    a->editing = 0;
-    tiku_trk_edit_stop(&a->ed);
     {   /* MA-050: a name that was not changed is not a rename.  Sent
          * anyway, the store finds the file already there and reports a
          * collision with itself -- an error where the rule wants silence. */
@@ -1412,15 +1426,27 @@ end_rename(app_t *a, int commit)
             commit = 0;
         }
     }
-    if (commit && a->ed.len > 0) {
-        if (tiku_trk_fs_rename(a->fs, a->edit_path, a->ed.text, err,
-                               sizeof err) != 0) {
-            snprintf(a->status, sizeof a->status, "%s", err);
-        } else {
-            a->status[0] = '\0';
-            after_op(a);
-        }
+    if (commit && a->ed.len > 0 &&
+        tiku_trk_fs_rename(a->fs, a->edit_path, a->ed.text, err,
+                           sizeof err) != 0) {
+        /* A rejected name keeps the EDITOR, not just the reason: the text
+         * stays, selected whole, so the user retypes immediately instead
+         * of starting the rename over (NeXT UIG ch7: a rejected entry is
+         * selected and highlighted for retyping). */
+        snprintf(a->status, sizeof a->status, "%s", err);
+        a->ed.active = 1;               /* Return had already closed it */
+        a->ed.sel_a = 0;
+        a->ed.sel_b = a->ed.len;
+        a->ed.caret = a->ed.len;
+        a->dirty = 1;
+        return;
     }
+    if (commit && a->ed.len > 0) {
+        a->status[0] = '\0';
+        after_op(a);
+    }
+    a->editing = 0;
+    tiku_trk_edit_stop(&a->ed);
     a->dirty = 1;
 }
 
@@ -1870,6 +1896,14 @@ not_editing:
     switch (key) {
     case 'o':
         if (mods & TIKU_TRK_MOD_CMD) {
+            if (tiku_trk_poseview_active(a->view) == NULL) {
+                /* Grey in the menu; said out loud for the chord
+                 * (NeXT UIG ch6). */
+                snprintf(a->status, sizeof a->status,
+                         "Open is not available here");
+                a->dirty = 1;
+                return;
+            }
             open_selection(a);
             return;
         }
@@ -2262,6 +2296,29 @@ menu_invoke(app_t *a, int command)
     const char *template_parent;
     int field = -1;
 
+    {
+        /* The one enablement the menus use gates EVERY route here: a
+         * chord for a command the menu would show grey answers out loud
+         * instead of being silently swallowed (NeXT UIG ch6). */
+        tiku_trk_sc_ctx_t gc = menu_ctx(a, 0u);
+
+        /* Three commands are exempt because their handlers carry WIDER
+         * semantics than the menu rule and say their own refusals:
+         * Unmount acts on the volume being SHOWN when nothing is
+         * selected (AW-096), and the trash/delete pair routes a selected
+         * VOLUME to an unmount with its own boot-volume refusal
+         * (FS-041). */
+        if (command != TIKU_TRK_CMD_UNMOUNT &&
+            command != TIKU_TRK_CMD_MOVE_TO_TRASH &&
+            command != TIKU_TRK_CMD_DELETE &&
+            !tiku_trk_sc_enabled(command, &gc)) {
+            snprintf(a->status, sizeof a->status,
+                     "%s is not available here",
+                     tiku_trk_sc_label(command, 0u));
+            a->dirty = 1;
+            return;
+        }
+    }
     if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
         /* The preferences page for it lives in the desktop shell. */
         snprintf(a->status, sizeof a->status,
@@ -2345,6 +2402,11 @@ menu_invoke(app_t *a, int command)
                     TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
                     "Cancel");
             }
+        } else {
+            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
+             * ch6). */
+            snprintf(a->status, sizeof a->status,
+                     "Unmount is not available here");
         }
         a->dirty = 1;
         return;
@@ -3124,10 +3186,12 @@ tracker_run(int argc, char **argv)
                     int btn = a.sb_rect.w;
 
                     if (at < btn) {
+                        tiku_trk_scroll_arrow_press(&a.sb, -1);
                         tiku_trk_poseview_scroll_to(a.view,
                             tiku_trk_poseview_scroll(a.view) -
                                 tiku_trk_scroll_line(&a.sb));
                     } else if (at >= a.sb_rect.h - btn) {
+                        tiku_trk_scroll_arrow_press(&a.sb, 1);
                         tiku_trk_poseview_scroll_to(a.view,
                             tiku_trk_poseview_scroll(a.view) +
                                 tiku_trk_scroll_line(&a.sb));
@@ -3149,10 +3213,12 @@ tracker_run(int argc, char **argv)
                     int btn = a.hsb_rect.h;
 
                     if (at < btn) {
+                        tiku_trk_scroll_arrow_press(&a.hsb, -1);
                         tiku_trk_poseview_set_hscroll(a.view,
                             tiku_trk_poseview_hscroll(a.view) -
                                 tiku_trk_scroll_line(&a.hsb));
                     } else if (at >= a.hsb_rect.w - btn) {
+                        tiku_trk_scroll_arrow_press(&a.hsb, 1);
                         tiku_trk_poseview_set_hscroll(a.view,
                             tiku_trk_poseview_hscroll(a.view) +
                                 tiku_trk_scroll_line(&a.hsb));
@@ -3735,6 +3801,23 @@ tracker_run(int argc, char **argv)
             /* A task that changed something on screen dirties the surface
              * itself; running is not, by itself, a repaint. */
             (void)tiku_trk_loop_pulse(a.loop);
+            {   /* A held arrow keeps stepping (NeXT UIG ch3). */
+                int rep = tiku_trk_scroll_arrow_repeat(&a.sb);
+
+                if (rep != 0) {
+                    tiku_trk_poseview_scroll_to(a.view,
+                        tiku_trk_poseview_scroll(a.view) +
+                            rep * tiku_trk_scroll_line(&a.sb));
+                    a.dirty = 1;
+                }
+                rep = tiku_trk_scroll_arrow_repeat(&a.hsb);
+                if (rep != 0) {
+                    tiku_trk_poseview_set_hscroll(a.view,
+                        tiku_trk_poseview_hscroll(a.view) +
+                            rep * tiku_trk_scroll_line(&a.hsb));
+                    a.dirty = 1;
+                }
+            }
         }
         {
             /* Sleep until the next task is due, or one heartbeat,

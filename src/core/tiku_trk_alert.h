@@ -37,6 +37,11 @@ typedef struct {
     char                  button[TIKU_TRK_ALERT_BUTTONS][40];
     int                   nbutton;
     int                   cancel;   /* which button Escape presses       */
+    /* Which button Return presses, drawn with the default ring.  The
+     * rightmost unless the rightmost is DESTRUCTIVE: a default that
+     * erases something must be an aimed click, never a keyboard reflex
+     * (Mac HIG ch3 / NeXT UIG ch5). */
+    int                   dflt;
     int                   chosen;   /* -1 until one is pressed           */
     /* What the answer is FOR.  An alert raised by a collision has to hand
      * its answer back to the engine, and the shell must not have to
@@ -54,6 +59,7 @@ typedef struct {
 #define TIKU_TRK_ALERT_TAG_OPEN_ANYWAY 6
 #define TIKU_TRK_ALERT_TAG_SHUTDOWN 7
 #define TIKU_TRK_ALERT_TAG_SAVE_REPLACE 8   /* a save would overwrite */
+#define TIKU_TRK_ALERT_TAG_EMPTY_TRASH 9    /* asks before emptying   */
 
 void tiku_trk_alert_reset(tiku_trk_alert_t *a);
 

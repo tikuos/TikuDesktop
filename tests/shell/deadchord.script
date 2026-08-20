@@ -1,0 +1,14 @@
+# shell: both
+# home: fixture
+# NeXT UIG ch6: a keyboard chord for a command the menu would show grey
+# answers out loud instead of being silently swallowed.
+wait 8
+note nothing is selected, so Open by chord has nothing to open
+key o ctrl
+wait 3
+expect-status not available here
+note and the fall-through table is gated the same way
+key u ctrl
+wait 3
+expect-status Unmount is not available here
+quit

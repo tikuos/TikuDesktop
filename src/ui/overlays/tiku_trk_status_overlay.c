@@ -198,7 +198,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
          * which is where the pointer already is after reading. */
         tiku_desk_ui_button(controller->surface, button,
                             controller->alert.button[i],
-                            (i == controller->alert.nbutton - 1)
+                            (i == controller->alert.dflt)
                                 ? TIKU_DESK_S_DEFAULT : 0u);
     }
 }
@@ -437,7 +437,9 @@ tiku_trk_status_overlay_key(tiku_trk_status_overlay_t *controller,
         answer(controller, controller->alert.cancel);
     } else if (key == TIKU_DESK_KEY_RETURN &&
                controller->alert.nbutton > 0) {
-        answer(controller, controller->alert.nbutton - 1);
+        answer(controller, controller->alert.dflt >= 0
+                               ? controller->alert.dflt
+                               : controller->alert.nbutton - 1);
     } else if (key >= 'a' && key <= 'z') {
         /* A button answers to the letter it starts with, which is what
          * makes the delete question's 'm' and 'd' the shortcuts the

@@ -58,6 +58,32 @@ tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind, int tag,
      * and makes it the escape route, so the safe answer is the one a
      * keyboard reflex reaches. */
     a->cancel = (a->nbutton > 0) ? 0 : -1;
+    a->dflt = a->nbutton - 1;
+    {
+        /* A destructive verb never rides Return: while the default names
+         * an action that erases or overwrites, it steps LEFT toward the
+         * safer answers -- the delete question's Return lands on Move to
+         * Trash, an overwrite's on Cancel -- and the destructive answer
+         * takes an aimed click (Mac HIG ch3; NeXT UIG ch5: the default
+         * should be the safest of the alternatives). */
+        static const char *harm[] = { "Delete", "Replace", "Replace all",
+                                      "Empty Trash" };
+        int harmful = 1;
+
+        while (harmful && a->dflt > 0) {
+            size_t k;
+
+            harmful = 0;
+            for (k = 0; k < sizeof harm / sizeof harm[0]; k++) {
+                if (strcmp(a->button[a->dflt], harm[k]) == 0) {
+                    harmful = 1;
+                }
+            }
+            if (harmful) {
+                a->dflt--;
+            }
+        }
+    }
     a->open = 1;
 }
 

@@ -586,6 +586,10 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
                 }
             }
         }
+    } else if (alert->tag == TIKU_TRK_ALERT_TAG_EMPTY_TRASH) {
+        if (alert->chosen != alert->cancel) {
+            tiku_trk_folder_file_actions_answer_empty(&app->file_actions);
+        }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
         /* Cancel, Move to Trash, Delete, in the order the buttons are
          * offered (FS-046). */
@@ -594,8 +598,21 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
         if (fl == NULL) {
             fl = desktop_folder(app);
         }
-        tiku_trk_folder_file_actions_answer_delete(&app->file_actions, fl,
-            (tiku_trk_delete_answer_t)alert->chosen);
+        {
+            /* Cancel, Move to Trash, Delete, in the order the buttons
+             * are offered (FS-046); the alert's own default already
+             * steps left of Delete, so Return lands on Move to Trash. */
+            static const tiku_trk_delete_answer_t by_button[] = {
+                TIKU_TRK_DELETE_ANSWER_CANCEL,
+                TIKU_TRK_DELETE_ANSWER_TRASH,
+                TIKU_TRK_DELETE_ANSWER_DELETE,
+            };
+            int chosen = (alert->chosen >= 0 && alert->chosen < 3)
+                             ? alert->chosen : 0;
+
+            tiku_trk_folder_file_actions_answer_delete(&app->file_actions,
+                fl, by_button[chosen]);
+        }
     }
 }
 
@@ -2374,6 +2391,29 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (fl == NULL) {
         return;
     }
+    {
+        /* The one enablement the menus use gates EVERY route here: a
+         * chord for a command the menu would show grey answers out loud
+         * instead of being silently swallowed (NeXT UIG ch6). */
+        tiku_trk_sc_ctx_t gc = menu_ctx(app, fl, 0u);
+
+        /* Three commands are exempt because their handlers carry WIDER
+         * semantics than the menu rule and say their own refusals:
+         * Unmount acts on the volume being SHOWN when nothing is
+         * selected (AW-096), and the trash/delete pair routes a selected
+         * VOLUME to an unmount with its own boot-volume refusal
+         * (FS-041). */
+        if (command != TIKU_TRK_CMD_UNMOUNT &&
+            command != TIKU_TRK_CMD_MOVE_TO_TRASH &&
+            command != TIKU_TRK_CMD_DELETE &&
+            !tiku_trk_sc_enabled(command, &gc)) {
+            snprintf(app->status, sizeof app->status,
+                     "%s is not available here",
+                     tiku_trk_sc_label(command, 0u));
+            *&app->dirty = 1;
+            return;
+        }
+    }
     if (command == TIKU_TRK_CMD_CREATE_QUERY ||
         command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
         /* The Find icon's drop chose (Q-034): the current search becomes
@@ -2637,6 +2677,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                                     TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
                                     "Cancel");
             }
+        } else {
+            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
+             * ch6). */
+            snprintf(app->status, sizeof app->status,
+                     "Unmount is not available here");
         }
         app->dirty = 1;
         return;
@@ -4518,10 +4563,12 @@ tracker_run(int argc, char **argv)
                         int btn = sb.w;
 
                         if (at < btn) {
+                            tiku_trk_scroll_arrow_press(&sfl->sbar, -1);
                             tiku_trk_poseview_scroll_to(sfl->view,
                                 tiku_trk_poseview_scroll(sfl->view) -
                                     tiku_trk_scroll_line(&sfl->sbar));
                         } else if (at >= sb.h - btn) {
+                            tiku_trk_scroll_arrow_press(&sfl->sbar, 1);
                             tiku_trk_poseview_scroll_to(sfl->view,
                                 tiku_trk_poseview_scroll(sfl->view) +
                                     tiku_trk_scroll_line(&sfl->sbar));
@@ -5629,6 +5676,11 @@ tracker_run(int argc, char **argv)
                         (void)open_folder(&app, p->model.path);
                     } else if (p != NULL) {
                         begin_edit(&app, fl);
+                    } else {
+                        /* Grey in the menu; said out loud for the chord
+                         * (NeXT UIG ch6). */
+                        snprintf(app.status, sizeof app.status,
+                                 "Open is not available here");
                     }
                     app.dirty = 1;
                     break;
@@ -6402,6 +6454,17 @@ tracker_run(int argc, char **argv)
             /* A task that changed something on screen dirties the surface
              * itself; running is not, by itself, a repaint. */
             (void)tiku_trk_loop_pulse(app.loop);
+            if (app.sbar_fl != NULL && app.sbar_fl->view != NULL) {
+                /* A held arrow keeps stepping (NeXT UIG ch3). */
+                int rep = tiku_trk_scroll_arrow_repeat(&app.sbar_fl->sbar);
+
+                if (rep != 0) {
+                    tiku_trk_poseview_scroll_to(app.sbar_fl->view,
+                        tiku_trk_poseview_scroll(app.sbar_fl->view) +
+                            rep * tiku_trk_scroll_line(&app.sbar_fl->sbar));
+                    app.dirty = 1;
+                }
+            }
         }
         {
             /* Sleep until the next task is due, or one heartbeat,

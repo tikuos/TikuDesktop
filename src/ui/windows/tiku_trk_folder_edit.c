@@ -156,22 +156,31 @@ tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
     if (controller == NULL || !controller->renaming) {
         return;
     }
-    controller->renaming = 0;
-    tiku_trk_edit_stop(&controller->rename_edit);
     slash = strrchr(controller->rename_path, '/');
     old_name = slash != NULL ? slash + 1 : controller->rename_path;
     if (commit && strcmp(old_name, controller->rename_edit.text) == 0) {
         commit = 0;
     }
-    if (commit && controller->rename_edit.len > 0) {
-        if (tiku_trk_fs_rename(controller->fs, controller->rename_path,
-                controller->rename_edit.text, error, sizeof error) != 0) {
-            snprintf(controller->status, controller->status_size, "%s",
-                     error);
-        } else {
-            controller->status[0] = '\0';
-        }
+    if (commit && controller->rename_edit.len > 0 &&
+        tiku_trk_fs_rename(controller->fs, controller->rename_path,
+            controller->rename_edit.text, error, sizeof error) != 0) {
+        /* A rejected name keeps the EDITOR, not just the reason: the text
+         * stays, selected whole, so the user retypes immediately instead
+         * of starting the rename over (NeXT UIG ch7: a rejected entry is
+         * selected and highlighted for retyping). */
+        snprintf(controller->status, controller->status_size, "%s", error);
+        controller->rename_edit.active = 1; /* Return had closed it      */
+        controller->rename_edit.sel_a = 0;
+        controller->rename_edit.sel_b = controller->rename_edit.len;
+        controller->rename_edit.caret = controller->rename_edit.len;
+        *controller->dirty = 1;
+        return;
     }
+    if (commit && controller->rename_edit.len > 0) {
+        controller->status[0] = '\0';
+    }
+    controller->renaming = 0;
+    tiku_trk_edit_stop(&controller->rename_edit);
     *controller->dirty = 1;
 }
 

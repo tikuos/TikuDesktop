@@ -1,0 +1,27 @@
+# shell: both
+# home: fixture
+# NeXT UIG ch7: a rejected entry stays IN the editor, selected whole, so
+# the user retypes immediately -- the editor does not close on failure.
+wait 8
+click-row 1
+wait 2
+key e ctrl
+wait 3
+expect-renaming 1
+note type the name of the neighbour: the rename must be refused
+key b
+key .
+key t
+key x
+key t
+key Return
+wait 5
+expect-renaming 1
+expect-file /tmp/trk_script/a.txt
+note everything is selected: the next keystroke replaces it all
+key z
+key Return
+wait 5
+expect-file /tmp/trk_script/z
+expect-no-file /tmp/trk_script/a.txt
+quit

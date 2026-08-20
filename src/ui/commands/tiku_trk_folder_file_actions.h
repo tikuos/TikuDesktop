@@ -86,6 +86,10 @@ typedef enum {
  * the question is modal, so nothing can have changed it, and a copy would
  * be a second list to keep true.
  */
+/** @brief The Empty Trash question said yes. */
+void tiku_trk_folder_file_actions_answer_empty(
+    tiku_trk_folder_file_actions_t *controller);
+
 void tiku_trk_folder_file_actions_answer_delete(
     tiku_trk_folder_file_actions_t *controller,
     tiku_trk_folder_window_t *folder, tiku_trk_delete_answer_t answer);

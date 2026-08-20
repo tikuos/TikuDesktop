@@ -222,7 +222,34 @@ tiku_trk_scroll_release(tiku_trk_scroll_t *sb)
     }
     sb->tracking = 0;
     sb->grab_off = 0;
+    sb->arrow_dir = 0;
+    sb->arrow_pulses = 0;
     apply_pending(sb);
+}
+
+void
+tiku_trk_scroll_arrow_press(tiku_trk_scroll_t *sb, int dir)
+{
+    if (sb == NULL) {
+        return;
+    }
+    sb->arrow_dir = (dir < 0) ? -1 : 1;
+    sb->arrow_pulses = 0;
+}
+
+int
+tiku_trk_scroll_arrow_repeat(tiku_trk_scroll_t *sb)
+{
+    if (sb == NULL || sb->arrow_dir == 0) {
+        return 0;
+    }
+    sb->arrow_pulses++;
+    /* An initial hesitation, then a steady walk: the pause is what keeps
+     * a plain click from stepping twice. */
+    if (sb->arrow_pulses < 12 || (sb->arrow_pulses - 12) % 4 != 0) {
+        return 0;
+    }
+    return sb->arrow_dir;
 }
 
 void

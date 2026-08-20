@@ -33,6 +33,11 @@ typedef struct {
     int pend_total, pend_visible;
     int pending;
     int tracking;         /* a button is held on the bar             */
+    /* A held ARROW repeats its step (NeXT UIG ch3: wherever clicking
+     * repeats an action, pressing repeats it automatically).  Counted in
+     * loop pulses so a script can hold an arrow deterministically. */
+    int arrow_dir;        /* -1 back, +1 on, 0 when no arrow is held */
+    int arrow_pulses;
     int detached;         /* a bulk re-layout is in progress         */
     int grab_off;         /* where in the thumb the grab landed      */
 } tiku_trk_scroll_t;
@@ -52,6 +57,17 @@ int tiku_trk_scroll_set_range(tiku_trk_scroll_t *sb, int total, int visible);
 
 /** @brief Move to @p value, clamped to what there is to show. */
 int tiku_trk_scroll_to(tiku_trk_scroll_t *sb, int value);
+
+/** @brief An arrow was pressed and is now held. */
+void tiku_trk_scroll_arrow_press(tiku_trk_scroll_t *sb, int dir);
+
+/**
+ * @brief One loop pulse with the arrow still held.
+ *
+ * @return the direction to step, or 0 when no repeat is due yet -- the
+ *         first repeat waits, the rest come steadily.
+ */
+int tiku_trk_scroll_arrow_repeat(tiku_trk_scroll_t *sb);
 
 /** @brief The largest value that still shows content. */
 int tiku_trk_scroll_max(const tiku_trk_scroll_t *sb);

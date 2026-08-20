@@ -22,7 +22,7 @@
 
 /** @brief What one line was asking for. */
 typedef enum {
-    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW, OP_DRAG_WINDOW,
+    OP_KEY = 0, OP_PRESS, OP_MOVE, OP_RELEASE, OP_CLICK, OP_CLICK_ROW, OP_CLICK_DESK, OP_PRESS_DESK, OP_MOVE_DESK, OP_RELEASE_DESK, OP_DRAG_WINDOW,
     OP_PRESS_ROW, OP_MOVE_ROW, OP_RELEASE_ROW, OP_CLICK_WINDOW, OP_CLICK_CELL,
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
@@ -427,6 +427,26 @@ tiku_trk_script_open(const char *path)
             rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-no-menu") == 0) {
             st->op = OP_EXPECT_NO_MENU;
+        } else if ((strcmp(w[0], "press-desk") == 0 ||
+                    strcmp(w[0], "move-desk") == 0 ||
+                    strcmp(w[0], "release-desk") == 0) && n >= 2) {
+            /* The pieces of a drag, aimed by NAME like click-desk. */
+            st->op = (w[0][0] == 'p') ? OP_PRESS_DESK
+                   : (w[0][0] == 'm') ? OP_MOVE_DESK : OP_RELEASE_DESK;
+            st->button = 1;
+            rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "click-desk") == 0 && n >= 2) {
+            /* By NAME, not by pixel: where a Desktop icon lands depends
+             * on when its source reported it, which moves under load --
+             * the name is the only stable address a script has. */
+            st->op = OP_CLICK_DESK;
+            st->button = 1;
+            if (n >= 3 && atoi(w[n - 1]) > 0) {
+                st->button = atoi(w[n - 1]);
+                rest(w, n - 1, 1, st->text, sizeof st->text);
+            } else {
+                rest(w, n, 1, st->text, sizeof st->text);
+            }
         } else if (strcmp(w[0], "expect-desk-selected") == 0 && n >= 2) {
             st->op = OP_EXPECT_DESKSEL;
             st->count = atoi(w[1]);
@@ -557,6 +577,31 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->key = cur->key;
         out->modifiers = cur->modifiers;
         return 1;
+    case OP_CLICK_DESK:
+    case OP_PRESS_DESK:
+    case OP_MOVE_DESK:
+    case OP_RELEASE_DESK: {
+        int px = 0, py = 0;
+
+        if (st == NULL || st->pose_at == NULL ||
+            !st->pose_at(st->pose_ctx, cur->text, &px, &py)) {
+            verdict(s, 0, "no desktop icon named:", cur->text);
+            return 1;
+        }
+        /* The reported point is the icon's corner; the CENTRE is what a
+         * click can always hit. */
+        cur->x = px + 16;
+        cur->y = py + 16;
+        out->what = (cur->op == OP_RELEASE_DESK) ? TIKU_TRK_SC_RELEASE
+                  : (cur->op == OP_MOVE_DESK) ? TIKU_TRK_SC_MOVE
+                                              : TIKU_TRK_SC_PRESS;
+        out->x = cur->x;
+        out->y = cur->y;
+        out->button = cur->button;
+        out->modifiers = cur->modifiers;
+        s->pending_release = (cur->op == OP_CLICK_DESK);
+        return 1;
+    }
     case OP_PRESS:
     case OP_CLICK:
         out->what = TIKU_TRK_SC_PRESS;

@@ -5,7 +5,7 @@
 wait 12
 key w ctrl
 wait 3
-click 410 35
+click-desk Boot
 wait 3
 expect-desk-selected-name Boot
 key Delete
@@ -15,11 +15,11 @@ key Return
 wait 3
 note the DRAG says the same: dropping the volume on the Trash asks for an
 note unmount and the boot volume refuses again
-press 410 35
-move 470 35
-move 530 35
+press-desk Boot
+move 600 400
+move-desk .Trash
 wait 2
-release 530 35
+release-desk .Trash
 wait 6
 expect-alert cannot unmount the boot volume
 quit

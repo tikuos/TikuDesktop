@@ -1,0 +1,12 @@
+# shell: tracker
+# NeXT UIG ch3: wherever clicking repeats a step, PRESSING repeats it --
+# a held stepper arrow keeps walking without further clicks.
+wait 8
+expect-scroll 0
+note press and HOLD the down arrow: the view keeps stepping
+press 747 490
+wait 60
+release 747 490
+wait 3
+expect-scroll 14
+quit

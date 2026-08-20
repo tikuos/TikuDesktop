@@ -1,0 +1,35 @@
+# shell: desktop
+# home: fixture
+# Item 5 of the HIG adoption: a destructive verb never rides Return.
+# Empty Trash asks and its default is Cancel; Delete's question completes
+# reversibly by default -- Return lands on Move to Trash, never Delete.
+wait 12
+note Empty Trash asks, and Return means Cancel: the load stays
+click-desk .Trash 3
+wait 4
+menu-pick Empty Trash
+wait 5
+expect-alert empty the Trash
+key Return
+wait 5
+expect-file /tmp/trk_home/.Trash/planted.txt
+note an aimed answer empties it
+click-desk .Trash 3
+wait 4
+menu-pick Empty Trash
+wait 5
+key e
+wait 25
+expect-no-file /tmp/trk_home/.Trash/planted.txt
+note Delete asks; Return takes the reversible way through
+click-row 1
+wait 3
+expect-selected-name a.txt
+key Delete
+wait 5
+expect-alert cannot be reverted
+key Return
+wait 25
+expect-file /tmp/trk_home/.Trash/a.txt
+expect-no-file /tmp/trk_script/a.txt
+quit
