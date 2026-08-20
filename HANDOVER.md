@@ -18,6 +18,17 @@ front-ends are built from one core:
 - **`build/tracker`** — the single-window shell, with the column strip, the
   scrollbar and the status view.
 
+Each is built in **two flavours from one source tree**. `build/desktop` and
+`build/tracker` are the product: they link a stub that refuses `-script`, and
+carry neither the script interpreter nor the presentation adapter that reads
+rows, menus and pixels back out of a running shell. `build/dev/desktop` and
+`build/dev/tracker` link that engine and are what `tests/shell/run.sh` drives.
+The test infrastructure is a developer tool, not something a device image
+should carry; `tools/check_shipping.py` (run inside `make test`) proves the
+script vocabulary is absent from what ships and present in what the harness
+runs. If you are running a shell by hand and it says *"this build has no
+script engine"*, you wanted `build/dev/`.
+
 **A behaviour proven in one front-end is not proven in the other.** Rows say
 which shell they were tested in when it matters (`*Shell: desktop*`).
 
@@ -99,6 +110,10 @@ silently stopped running still prints no failures.
 - **A test binary in `TESTBINS` is not necessarily run.** `test_launch` sat
   built-but-never-run for a whole session because it was missing from the
   `test:` recipe. If you add a suite, add it to both.
+- **The harness runs `build/dev/`, not `build/`.** A script handed to a
+  shipping shell is refused loudly rather than ignored, so a lane pointed at
+  the wrong binary fails instead of passing quietly. Both flavours are built
+  by a bare `make`.
 - **Do not read a pass from a stale binary.** If `make` fails, `run.sh` will
   happily run the previous build and report green. I was fooled by this
   twice. Never pass `-s` to make while debugging, and check that the error

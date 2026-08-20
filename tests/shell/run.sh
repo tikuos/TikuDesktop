@@ -10,6 +10,12 @@ root=$here/../..
 work=/tmp/trk_script
 fails=0
 
+# The scripted shells are the DEVELOPMENT flavour: the interpreter that
+# reads these files is test infrastructure and is not linked into what
+# ships (build/desktop, build/tracker).  Those refuse -script loudly, so
+# a harness pointed at the wrong one fails rather than passing quietly.
+devbin="$root/build/dev"
+
 # The rescue path first: -reset-settings must move the settings and every
 # device state aside WITHOUT drawing a pixel, for the day a setting makes
 # the screen unreadable.
@@ -19,6 +25,8 @@ if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
     mkdir -p "$rsthome/.config" "$rsthome/.local/share/tracker/devices"
     echo "DarkMode on" > "$rsthome/.config/TrackerSettings"
     echo junk > "$rsthome/.local/share/tracker/devices/local.state"
+    # The SHIPPING binary here on purpose: the rescue path is a product
+    # feature, and this is the one check that proves what ships has it.
     HOME="$rsthome" "$root/build/desktop" -reset-settings > /dev/null
     if [ -e "$rsthome/.config/TrackerSettings" ] ||
        [ -e "$rsthome/.local/share/tracker/devices/local.state" ] ||
@@ -301,11 +309,11 @@ PYEOF
         fi
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} "$root/build/$bin" \
+                env ${embed:+TIKU_EMBED_ABOUT=1} "$devbin/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} "$root/build/$bin" $work \
+                env ${embed:+TIKU_EMBED_ABOUT=1} "$devbin/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done
