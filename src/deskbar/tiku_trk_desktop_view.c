@@ -88,7 +88,8 @@ desktop_area_at(const tiku_trk_desktop_view_t *controller,
         return (tiku_trk_rect_t){ 0, 0, 0, 0 };
     }
     frame = deskbar_frame_at(controller, screen_w, screen_h);
-    area = (tiku_trk_rect_t){ 0, 0, screen_w, screen_h };
+    area = (tiku_trk_rect_t){ 0, controller->top_inset, screen_w,
+                              screen_h - controller->top_inset };
     if (frame.w <= 0 || frame.h <= 0) {
         return area;
     }
@@ -415,6 +416,20 @@ dv_dir_has_entries(const char *path)
  *
  * @return nonzero when the icon flipped and a repaint is owed.
  */
+void
+tiku_trk_desktop_view_set_top_inset(tiku_trk_desktop_view_t *controller,
+                                    int inset)
+{
+    if (controller == NULL || controller->top_inset == inset) {
+        return;
+    }
+    controller->top_inset = inset;
+    /* The poses move out from under the strip (or reclaim it): the same
+     * reflow a screen resize runs. */
+    (void)tiku_trk_desktop_view_resize(controller, controller->screen_w,
+                                       controller->screen_h);
+}
+
 int
 tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller)
 {

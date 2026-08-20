@@ -87,6 +87,10 @@ typedef struct {
      * (TS-008, TS-063).  Both NULL when nothing is being tracked. */
     const struct tiku_trk_titleview *strip;
     const tiku_trk_folder_window_t *strip_owner;
+    /* One menu bar at the top of the SCREEN instead of one per window:
+     * with this set the windows carry no bar of their own (and no bar
+     * icon), and the content reclaims the strip. */
+    int                    global_bar;
 } tiku_trk_folder_render_t;
 
 /** @brief One folder window and the query or frame state it retains. */

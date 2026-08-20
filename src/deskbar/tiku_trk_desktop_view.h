@@ -31,6 +31,9 @@ typedef struct {
     int                      screen_w;
     int                      screen_h;
     int                      disks_shown;
+    /* Pixels at the top the poses must keep clear (the global menu
+     * bar's strip). */
+    int                      top_inset;
 } tiku_trk_desktop_view_t;
 
 int tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
@@ -51,6 +54,10 @@ int tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
 int tiku_trk_desktop_view_ensure_visible(
     tiku_trk_desktop_view_t *controller);
 void tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller);
+/** @brief Keep @p inset pixels at the top clear of poses. */
+void tiku_trk_desktop_view_set_top_inset(tiku_trk_desktop_view_t *controller,
+                                         int inset);
+
 /** @brief Re-stat the desk Trash pose's fullness (AW-029). */
 int tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller);
 

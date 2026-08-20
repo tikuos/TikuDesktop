@@ -125,6 +125,7 @@ tiku_trk_sc_label(int command, unsigned mods)
     case TIKU_TRK_CMD_OPEN_WITH_WINDOW:  return "Open with…";
     case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
     case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";
+    case TIKU_TRK_CMD_SHUTDOWN:          return "Shut down…";
     case TIKU_TRK_CMD_CREATE_QUERY:      return "Create a Query";
     case TIKU_TRK_CMD_CREATE_QUERY_TPL:  return "Create a Query template";
     case TIKU_TRK_CMD_CANCEL:            return "Cancel";
@@ -271,6 +272,7 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_ICON_VIEW:
     case TIKU_TRK_CMD_MINI_ICON_VIEW:
     case TIKU_TRK_CMD_LIST_VIEW:
+    case TIKU_TRK_CMD_SHUTDOWN:
     case TIKU_TRK_CMD_CREATE_QUERY:
     case TIKU_TRK_CMD_CREATE_QUERY_TPL:
     case TIKU_TRK_CMD_CANCEL:

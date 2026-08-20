@@ -40,6 +40,9 @@ static const tiku_trk_pref_t table[] = {
     /* Not a Haiku setting: the theme swap the toolkit's table makes
      * possible.  Appended so every row above keeps its place. */
     { "DarkMode",                B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
+    /* Not a Haiku setting either: one menu bar at the top of the screen,
+     * fed by whatever the focused window publishes. */
+    { "GlobalMenuBar",           B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
     { "ShowVolumeSpaceBar",      B, TIKU_TRK_PAGE_VOLUMES, 0, 0, 0 },
     { "UsedSpaceColor",          C, TIKU_TRK_PAGE_VOLUMES,
       (int32_t)0xc000cb00, 0, 0 },

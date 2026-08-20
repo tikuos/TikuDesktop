@@ -71,8 +71,10 @@ tiku_trk_folder_window_content(const tiku_trk_folder_window_t *folder)
     if (folder->win != NULL) {
         tiku_desk_rect_t content = tiku_desk_window_content(folder->win);
 
-        content.y += render->menus->bar.height;
-        content.h -= render->menus->bar.height;
+        if (!render->global_bar) {
+            content.y += render->menus->bar.height;
+            content.h -= render->menus->bar.height;
+        }
         if (tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
             content.y += TITLE_HEIGHT;
             content.h -= TITLE_HEIGHT;
@@ -93,7 +95,9 @@ tiku_trk_folder_window_title(const tiku_trk_folder_window_t *folder)
     if (folder != NULL && folder->win != NULL &&
         tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
         title = tiku_desk_window_content(folder->win);
-        title.y += folder->render->menus->bar.height;
+        if (!folder->render->global_bar) {
+            title.y += folder->render->menus->bar.height;
+        }
         title.h = TITLE_HEIGHT;
     }
     return title;
@@ -120,7 +124,8 @@ tiku_trk_folder_window_bar(const tiku_trk_folder_window_t *folder)
 {
     tiku_desk_rect_t bar = { 0, 0, 0, 0 };
 
-    if (folder != NULL && folder->win != NULL) {
+    if (folder != NULL && folder->win != NULL &&
+        !folder->render->global_bar) {
         bar = tiku_desk_window_content(folder->win);
         bar.h = folder->render->menus->bar.height;
     }
@@ -1001,9 +1006,11 @@ tiku_trk_folder_window_draw(tiku_desk_window_t *window,
      * an inactive window at all (IV-022). */
     tiku_trk_poseview_show_selection_when_inactive(folder->view,
         tiku_trk_prefs_get(render->prefs, "ShowSelectionWhenInactive"));
-    bar.h = render->menus->bar.height;
-    tiku_trk_menubar_draw(&render->menus->bar, surface, bar);
-    draw_folder_icon(folder, surface);
+    bar.h = render->global_bar ? 0 : render->menus->bar.height;
+    if (!render->global_bar) {
+        tiku_trk_menubar_draw(&render->menus->bar, surface, bar);
+        draw_folder_icon(folder, surface);
+    }
     list.y += bar.h;
     list.h -= bar.h;
     title = (tiku_desk_rect_t){ list.x, list.y, list.w, TITLE_HEIGHT };

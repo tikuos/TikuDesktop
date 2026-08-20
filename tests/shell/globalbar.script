@@ -1,0 +1,35 @@
+# shell: desktop
+# home: fixture
+# The global menu bar, phase one over phase two: ONE strip at the top of
+# the screen, rendering whatever the focused window PUBLISHED through the
+# toolkit's menu protocol, with the system menu at its left.  The windows
+# go bare and the desk poses move out from under the strip.
+wait 12
+expect-pixel 300 8 336698
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+note the strip is there now
+expect-pixel 300 8 d8d8d8
+note the focused window's File menu, served from its PUBLISHED description
+click 60 8
+wait 4
+expect-menu New folder
+menu-pick New folder
+wait 15
+expect-file /tmp/trk_script/New folder
+key Escape
+wait 3
+note the system menu keeps the corner ritual
+click 20 8
+wait 4
+expect-menu Shut down
+menu-pick Shut down
+wait 5
+expect-alert Shut down the desktop
+key Escape
+wait 3
+note and off again: the strip returns its pixels to the backdrop
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar off
+wait 20
+expect-pixel 300 8 336698
+quit

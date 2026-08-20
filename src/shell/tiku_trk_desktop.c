@@ -149,6 +149,18 @@ typedef struct desktop {
     tiku_trk_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
     int                  theme_dark;
+    /* The global menu bar (phase one): one strip at the top of the
+     * screen, fed by whatever the focused window PUBLISHED (phase two's
+     * protocol) plus the system menu at its left.  The scratch menus are
+     * rebuilt per draw from the published data alone -- the strip never
+     * reaches into a window's widgets. */
+    int                  gbar_on;       /* -1 until the first sync      */
+    tiku_trk_menu_t      sysmenu;
+    tiku_trk_menu_t      gmenu[TIKU_DESK_MENUSET_MENUS];
+    tiku_trk_menu_t      gsub[TIKU_DESK_MENUSET_MENUS][4];
+    tiku_trk_menubar_t   gbar;
+    tiku_desk_window_t  *gbar_from;     /* whose menus the strip shows  */
+    int                  gbar_open;     /* open strip menu, or -1       */
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
     int                  qdrag_on;
     char                 qdrop_dest[TIKU_TRK_PATH_MAX];
@@ -376,6 +388,24 @@ sync_folder_preferences(desktop_t *app)
     /* The thumbnail queue's own switch IS the preference (TS-053). */
     app->thumbs.enabled = tiku_trk_prefs_get(prefs,
                               "GenerateImageThumbnails") != 0;
+    {
+        /* One bar at the top of the screen, or one per window: flipping
+         * re-teaches every window its shape, so the pixels are forgotten
+         * and the desk poses move out from under the strip. */
+        int gon = tiku_trk_prefs_get(prefs, "GlobalMenuBar") != 0;
+
+        if (gon != app->gbar_on) {
+            app->gbar_on = gon;
+            app->folder_render.global_bar = gon;
+            tiku_trk_desktop_view_set_top_inset(&app->desktop_view,
+                gon ? app->menus.bar.height : 0);
+            for (i = 0; i < app->folder_count; i++) {
+                tiku_trk_folder_window_forget(&app->folders[i]);
+            }
+            app->gbar_open = -1;
+            app->dirty = 1;
+        }
+    }
     {
         /* Dark mode is a THEME SWAP, applied the moment the setting says
          * so (settings semantics: immediate, no OK button).  A flip
@@ -957,6 +987,190 @@ build_pickers(desktop_t *app, folder_t *fl)
  * selection, and a list that outlived the selection would offer an
  * application for something else (PVL-095, PVN-035).
  */
+static void menu_invoke(desktop_t *app, folder_t *fl, int command);
+
+/*---------------------------------------------------------------------------*/
+/* The global menu bar (phase one) over the publish protocol (phase two)     */
+/*---------------------------------------------------------------------------*/
+
+/** @brief The strip's rectangle, empty when the bar is off. */
+static tiku_desk_rect_t
+global_bar_rect(desktop_t *app)
+{
+    if (app->gbar_on != 1) {
+        return (tiku_desk_rect_t){ 0, 0, 0, 0 };
+    }
+    return (tiku_desk_rect_t){ 0, 0, app->surf->w,
+                               app->menus.bar.height };
+}
+
+/** @brief A published pick lands back in the shell's one command path. */
+static void
+folder_menu_pick(tiku_desk_window_t *window, int command, void *context)
+{
+    desktop_t *app = context;
+    folder_t *fl = folder_of(app, window);
+
+    if (fl != NULL) {
+        menu_invoke(app, fl, command);
+    }
+}
+
+/** @brief Describe the focused folder's menus and publish them (phase 2). */
+static void
+publish_folder_menus(desktop_t *app, folder_t *fl)
+{
+    tiku_desk_menuset_t set;
+    int m;
+
+    if (fl == NULL || fl->win == NULL) {
+        return;
+    }
+    memset(&set, 0, sizeof set);
+    for (m = 0; m < app->menus.bar.count &&
+                set.nmenu < TIKU_DESK_MENUSET_MENUS; m++) {
+        const tiku_trk_menu_t *from = app->menus.bar.menu[m];
+        tiku_desk_menu_list_t *to = &set.menu[set.nmenu];
+        int i;
+
+        snprintf(to->title, sizeof to->title, "%s", from->title);
+        for (i = 0; i < from->count; i++) {
+            const tiku_trk_mitem_t *fi = &from->item[i];
+            tiku_desk_menu_entry_t *ti;
+
+            if (to->nitem >= TIKU_DESK_MENUSET_ITEMS) {
+                break;
+            }
+            ti = &to->item[to->nitem++];
+            snprintf(ti->label, sizeof ti->label, "%s", fi->label);
+            ti->command = fi->command;
+            ti->sc = fi->shortcut;
+            ti->mods = fi->mods;
+            ti->enabled = (unsigned char)!!fi->enabled;
+            ti->marked = (unsigned char)!!fi->marked;
+            ti->separator = (unsigned char)!!fi->separator;
+            ti->level = 0;
+            if (fi->submenu != NULL) {
+                /* The submenu rides along as level-1 entries under its
+                 * holder, which is all the flat description needs. */
+                const tiku_trk_menu_t *sub = fi->submenu;
+                int k;
+
+                for (k = 0; k < sub->count &&
+                            to->nitem < TIKU_DESK_MENUSET_ITEMS; k++) {
+                    const tiku_trk_mitem_t *si = &sub->item[k];
+                    tiku_desk_menu_entry_t *st = &to->item[to->nitem++];
+
+                    snprintf(st->label, sizeof st->label, "%s", si->label);
+                    st->command = si->command;
+                    st->sc = si->shortcut;
+                    st->mods = si->mods;
+                    st->enabled = (unsigned char)!!si->enabled;
+                    st->marked = (unsigned char)!!si->marked;
+                    st->separator = (unsigned char)!!si->separator;
+                    st->level = 1;
+                }
+            }
+        }
+        set.nmenu++;
+    }
+    tiku_desk_window_publish_menus(fl->win, &set, folder_menu_pick, app);
+}
+
+/** @brief Rebuild the strip's scratch menus from the PUBLISHED data. */
+static void
+rebuild_global_bar(desktop_t *app)
+{
+    tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
+    const tiku_desk_menuset_t *set =
+        (fw != NULL) ? tiku_desk_window_menus(fw) : NULL;
+    int was_open = app->gbar_open;
+    int m;
+
+    tiku_trk_menubar_init(&app->gbar);
+    /* The system menu first, where the corner ritual lives. */
+    tiku_trk_menu_clear(&app->sysmenu);
+    snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
+    (void)tiku_trk_menu_add(&app->sysmenu, "Find…", TIKU_TRK_CMD_FIND,
+                            'f', TIKU_TRK_MOD_CMD, 1);
+    (void)tiku_trk_menu_add(&app->sysmenu, "Preferences…",
+                            TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
+    (void)tiku_trk_menu_add_separator(&app->sysmenu);
+    (void)tiku_trk_menu_add(&app->sysmenu, "Shut down…",
+                            TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
+    (void)tiku_trk_menubar_add(&app->gbar, &app->sysmenu);
+    app->gbar_from = (set != NULL) ? fw : NULL;
+    for (m = 0; set != NULL && m < set->nmenu; m++) {
+        const tiku_desk_menu_list_t *from = &set->menu[m];
+        tiku_trk_menu_t *to = &app->gmenu[m];
+        int i, nsub = 0;
+
+        tiku_trk_menu_clear(to);
+        snprintf(to->title, sizeof to->title, "%s", from->title);
+        for (i = 0; i < from->nitem; i++) {
+            const tiku_desk_menu_entry_t *fi = &from->item[i];
+
+            if (fi->level == 1) {
+                continue;           /* consumed with its holder below */
+            }
+            if (fi->separator) {
+                (void)tiku_trk_menu_add_separator(to);
+            } else if (i + 1 < from->nitem &&
+                       from->item[i + 1].level == 1 && nsub < 4) {
+                tiku_trk_menu_t *sub = &app->gsub[m][nsub++];
+                int k = i + 1;
+
+                tiku_trk_menu_clear(sub);
+                snprintf(sub->title, sizeof sub->title, "%s", fi->label);
+                for (; k < from->nitem && from->item[k].level == 1; k++) {
+                    const tiku_desk_menu_entry_t *si = &from->item[k];
+
+                    if (si->separator) {
+                        (void)tiku_trk_menu_add_separator(sub);
+                    } else {
+                        (void)tiku_trk_menu_add(sub, si->label,
+                            si->command, si->sc, si->mods, si->enabled);
+                        if (si->marked) {
+                            tiku_trk_menu_mark(sub, si->command, 1);
+                        }
+                    }
+                }
+                (void)tiku_trk_menu_add_submenu(to, fi->label, sub,
+                                                fi->enabled);
+                if (fi->marked && to->count > 0) {
+                    to->item[to->count - 1].marked = 1;
+                }
+            } else {
+                (void)tiku_trk_menu_add(to, fi->label, fi->command,
+                                        fi->sc, fi->mods, fi->enabled);
+                if (fi->marked) {
+                    tiku_trk_menu_mark(to, fi->command, 1);
+                }
+            }
+        }
+        (void)tiku_trk_menubar_add(&app->gbar, to);
+    }
+    app->gbar.open = was_open;
+}
+
+/**
+ * @brief Route a pick: a strip pick goes back to whoever PUBLISHED the
+ *        menu, which is the other half of the protocol; everything else
+ *        (and the system menu) takes the shell's own command path.
+ */
+static void
+global_or_invoke(desktop_t *app, folder_t *ffl, int command)
+{
+    if (app->gbar_open >= 0 && app->gbar_from != NULL &&
+        app->popup != &app->sysmenu &&
+        app->gbar_from->menu_pick != NULL) {
+        app->gbar_from->menu_pick(app->gbar_from, command,
+                                  app->gbar_from->menu_pick_context);
+        return;
+    }
+    menu_invoke(app, ffl, command);
+}
+
 static void
 build_open_with(desktop_t *app, folder_t *fl)
 {
@@ -2452,6 +2666,14 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             return;
         }
     }
+    if (command == TIKU_TRK_CMD_SHUTDOWN) {
+        /* The system menu's corner ritual, by the same question the
+         * Deskbar asks (DB-006). */
+        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+                            TIKU_TRK_ALERT_TAG_SHUTDOWN,
+                            "Shut down the desktop?", "Cancel|Shut down");
+        return;
+    }
     if (command == TIKU_TRK_CMD_CREATE_QUERY ||
         command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
         /* The Find icon's drop chose (Q-034): the current search becomes
@@ -3186,6 +3408,35 @@ draw_all(desktop_t *app)
             app->popup = app->menus.bar.menu[app->bar_open];
         }
     }
+    if (app->gbar_on == 1) {
+        /* The global bar: the focused folder's menus are REBUILT and
+         * PUBLISHED, and the strip renders only what was published --
+         * the same data a foreign window would hand in. */
+        tiku_desk_rect_t strip;
+        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
+        folder_t *ffl = folder_of(app, fw);
+
+        if (ffl != NULL) {
+            tiku_trk_sc_ctx_t gc;
+
+            build_open_with(app, ffl);
+            build_per_type(app, ffl);
+            gc = menu_ctx(app, ffl, 0u);
+            tiku_trk_cwmenu_rebuild(&app->menus, &gc);
+            publish_folder_menus(app, ffl);
+        }
+        rebuild_global_bar(app);
+        strip = global_bar_rect(app);
+        tiku_desk_fill(app->surf, strip, TIKU_DESK_C_PANEL);
+        tiku_desk_hline(app->surf, strip.x, strip.y + strip.h - 1,
+                        strip.w, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+        tiku_trk_menubar_draw(&app->gbar, app->surf, strip);
+        if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
+            app->popup = app->gbar.menu[app->gbar_open];
+            app->popup_frame = tiku_trk_menubar_panel(&app->gbar, strip,
+                (tiku_desk_rect_t){ 0, 0, app->surf->w, app->surf->h });
+        }
+    }
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {
@@ -3349,6 +3600,9 @@ tracker_run(int argc, char **argv)
 
     memset(&app, 0, sizeof app);
     app.theme_dark = -1;      /* unapplied: the first sync decides */
+    app.gbar_on = -1;
+    app.gbar_open = -1;
+    tiku_trk_menubar_init(&app.gbar);
     (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
@@ -4360,7 +4614,7 @@ tracker_run(int argc, char **argv)
                                     app.popup_sub->item[pick].command);
                                 app.dirty = 1;
                             } else {
-                                menu_invoke(&app, ffl,
+                                global_or_invoke(&app, ffl,
                                     app.popup_sub->item[pick].command);
                             }
                         }
@@ -4429,8 +4683,8 @@ tracker_run(int argc, char **argv)
                                 }
                                 app.dirty = 1;
                             } else {
-                                menu_invoke(&app, ffl,
-                                            app.popup->item[pick].command);
+                                global_or_invoke(&app, ffl,
+                                    app.popup->item[pick].command);
                             }
                         }
                     }
@@ -4440,9 +4694,34 @@ tracker_run(int argc, char **argv)
                     app.popup_sub = NULL;
                     app.bar_fl = NULL;
                     app.bar_open = -1;
+                    app.gbar_open = -1;
+                    app.gbar.open = -1;
                     app.menus.bar.open = -1;
                     app.dirty = 1;
                     break;
+                }
+
+                if (app.gbar_on == 1 && app.popup == NULL &&
+                    ev.y < app.menus.bar.height && ev.button == 1u) {
+                    /* The strip: a press on a title opens its menu, from
+                     * the published description alone. */
+                    tiku_desk_rect_t strip = global_bar_rect(&app);
+                    int bi = tiku_trk_menubar_title_at(&app.gbar, strip,
+                                                       ev.x, ev.y);
+
+                    if (bi >= 0) {
+                        commit_rename(&app, 1);
+                        app.gbar_open = bi;
+                        app.gbar.open = bi;
+                        app.popup = app.gbar.menu[bi];
+                        app.popup_sub = NULL;
+                        app.popup_frame = tiku_trk_menubar_panel(&app.gbar,
+                            strip, (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                                       app.surf->h });
+                        app.nav_on = 0;
+                        app.dirty = 1;
+                        break;
+                    }
                 }
 
                 /* The Deskbar and its menu take precedence: it sits above
@@ -4469,7 +4748,7 @@ tracker_run(int argc, char **argv)
                         app.db_click_x = ev.x;
                         app.db_click_y = ev.y;
                     }
-                    if (tiku_trk_deskbar_click(app.deskbar, ev.x,
+                if (tiku_trk_deskbar_click(app.deskbar, ev.x,
                                                ev.y, ev.modifiers,
                                                (int)ev.button, dclicks,
                                                &pick)) {
