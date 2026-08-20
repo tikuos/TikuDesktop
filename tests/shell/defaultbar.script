@@ -1,0 +1,12 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Out of the box -- no settings file at all -- the global menu bar is
+# already there: on a tikuOS device the delegated bar is the product,
+# not an option someone has to find.
+wait 12
+expect-pixel 300 8 d8d8d8
+click 60 8
+wait 4
+expect-menu New folder
+key Escape

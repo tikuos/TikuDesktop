@@ -434,6 +434,9 @@ sync_folder_preferences(desktop_t *app)
          * palette -- and repaints the world once. */
         int dark = tiku_trk_prefs_get(prefs, "DarkMode") != 0;
 
+        /* The Deskbar's switch shows the same state, wherever it was
+         * flipped from. */
+        tiku_trk_deskbar_set_dark(app->deskbar, dark);
         if (dark != app->theme_dark) {
             tiku_trk_folder_window_t *desk =
                 tiku_trk_desktop_view_folder(&app->desktop_view);
@@ -2580,6 +2583,19 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     case TIKU_TRK_DB_TRACKER_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
         break;
+    case TIKU_TRK_DB_TOGGLE_DARK: {
+        /* The switch IS the DarkMode setting: flip it, write it down,
+         * and let the one sync path repaint the world -- so the switch,
+         * the checkbox and the settings file can never disagree. */
+        tiku_trk_prefs_t *prefs = prefs_model(app);
+
+        tiku_trk_prefs_set(prefs, "DarkMode",
+                           tiku_trk_prefs_get(prefs, "DarkMode") == 0);
+        (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
+        sync_folder_preferences(app);
+        app->dirty = 1;
+        break;
+    }
     case TIKU_TRK_DB_SHOW_ABOUT:
         tiku_trk_about_window_open(&app->about_window);
         break;

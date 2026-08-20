@@ -1,0 +1,16 @@
+# shell: desktop
+# home: fixture
+# The little switch on the Deskbar's tray: one click flips the whole
+# desktop between light and dark, writes the DarkMode setting down, and
+# a second click flips it back.  The switch IS the setting: the same
+# sync path the Preferences checkbox uses answers here.
+wait 12
+expect-pixel 300 500 336698
+click 933 229
+wait 25
+expect-pixel 300 500 1c2a3a
+expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode on
+click 933 229
+wait 25
+expect-pixel 300 500 336698
+expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode off

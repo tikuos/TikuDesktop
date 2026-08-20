@@ -75,6 +75,50 @@ main(void)
         (void)unlink(path);
     }
 
+    printf("the theme switch on the tray (DEV-002)\n");
+    {
+        tiku_trk_db_pick_t pick;
+        tiku_desk_rect_t sw;
+        uint32_t track_light, track_dark;
+
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+        tiku_trk_deskbar_draw(db, s);
+        sw = tiku_trk_deskbar_switch_rect(db);
+        f = tiku_trk_deskbar_frame(db);
+        check(sw.w > 0 && sw.x >= f.x && sw.x + sw.w <= f.x + f.w &&
+              sw.y >= f.y && sw.y + sw.h <= f.y + f.h, "DEV-002",
+              "the switch sits inside the expanded dock's frame");
+        track_light = s->px[(sw.y + sw.h / 2) * s->w + (sw.x + sw.w - 3)];
+        tiku_trk_deskbar_set_dark(db, 1);
+        tiku_trk_deskbar_draw(db, s);
+        track_dark = s->px[(sw.y + sw.h / 2) * s->w + (sw.x + 3)];
+        check(track_light != track_dark ||
+              s->px[(sw.y + sw.h / 2) * s->w + (sw.x + sw.w - 3)] !=
+              track_light, "DEV-002",
+              "flipping the state moves the knob: the two ends of the "
+              "track do not paint the same before and after");
+        tiku_trk_deskbar_set_dark(db, 0);
+        check(tiku_trk_deskbar_click(db, sw.x + sw.w / 2,
+                                     sw.y + sw.h / 2, 0u, 1, 1, &pick) &&
+              pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-002",
+              "a click on the switch asks the shell to flip the theme");
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_MINI);
+        tiku_trk_deskbar_draw(db, s);
+        sw = tiku_trk_deskbar_switch_rect(db);
+        check(tiku_trk_deskbar_click(db, sw.x + sw.w / 2,
+                                     sw.y + sw.h / 2, 0u, 1, 1, &pick) &&
+              pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-002",
+              "the collapsed dock keeps the switch in reach");
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_TOP);
+        tiku_trk_deskbar_draw(db, s);
+        sw = tiku_trk_deskbar_switch_rect(db);
+        check(tiku_trk_deskbar_click(db, sw.x + sw.w / 2,
+                                     sw.y + sw.h / 2, 0u, 1, 1, &pick) &&
+              pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-002",
+              "so does the strip along the top of the screen");
+        tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
+    }
+
     printf("which edge, and how far into the corner (DB-048)\n");
     check(tiku_trk_deskbar_dock_at(4, 300, 1000, 680,
                                    TIKU_TRK_DB_RIGHT_EXPANDED) ==
@@ -670,7 +714,10 @@ main(void)
               "eight on a narrow screen shrink to the minimum and even "
               "that will not fit: the ends grow arrows");
         {
-            tiku_desk_surface_t *mid = tiku_desk_surface_new(800, 150,
+            /* 36 px wider than it used to be: the strip's far end now
+             * belongs to the theme switch, and the breathing room this
+             * row measures excludes it. */
+            tiku_desk_surface_t *mid = tiku_desk_surface_new(836, 150,
                                               TIKU_DESK_C_BACKDROP);
 
             tiku_trk_deskbar_draw(db, mid);

@@ -34,6 +34,9 @@ main(void)
           "thumbnails are on by default");
     check(tiku_trk_prefs_get(&p, "HideDotFiles") == 0, "TS-051",
           "dotfiles are shown by default");
+    check(tiku_trk_prefs_get(&p, "GlobalMenuBar") == 1, "DEV-001",
+          "the global menu bar is on by default: the delegated UI is "
+          "the product, not an option");
 
     check(tiku_trk_prefs_get(&p, "SelectedLabelColor") ==
           (int32_t)0xc01a3350, "TS-045",

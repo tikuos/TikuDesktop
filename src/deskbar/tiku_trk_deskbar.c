@@ -43,6 +43,9 @@
 #define EXPANDER_PEN   2
 #define TRAY_PAD       3     /* fTrayPadding                               */
 #define CLOCK_MARGIN  12     /* fClockMargin = fTrayPadding * 4            */
+#define SWITCH_ROW    16     /* the theme switch's own strip of tray        */
+#define SWITCH_W      26     /* the track */
+#define SWITCH_H      12
 
 struct tiku_trk_deskbar {
     tiku_trk_backend_t  *backend;
@@ -57,6 +60,7 @@ struct tiku_trk_deskbar {
     int                  tray_count;
     int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
+    int                  dark;      /* which way the theme leans       */
     tiku_trk_deskbar_settings_t settings;
     int                  autohide;
     int                  autoraise;
@@ -1391,6 +1395,81 @@ tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db)
     return (db != NULL) ? db->frame : r;
 }
 
+tiku_desk_rect_t
+tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
+{
+    tiku_desk_rect_t r = { 0, 0, SWITCH_W, SWITCH_H };
+
+    if (db == NULL) {
+        return r;
+    }
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        /* Its own strip between the tray and the clock, anchored to the
+         * bottom the same way the clock is, so the two agree in every
+         * dock mode. */
+        r.x = db->frame.x + (db->frame.w - SWITCH_W) / 2;
+        r.y = db->frame.y + db->frame.h - PAD -
+              (db->settings.show_clock ? CLOCK_H : 0) - SWITCH_ROW +
+              (SWITCH_ROW - SWITCH_H) / 2;
+    } else {
+        /* Along an edge: the strip's far end, past the last button. */
+        r.x = db->frame.x + db->frame.w - SWITCH_W - 8;
+        r.y = db->frame.y + (db->frame.h - SWITCH_H) / 2;
+    }
+    return r;
+}
+
+/**
+ * The theme switch, drawn like the physical part: a recessed track the
+ * knob slides in, lit with the accent colour while the dark side is on --
+ * a pilot lamp, not a torch.  The knob is a raised cap with grip lines,
+ * left for light, right for dark.
+ */
+static void
+draw_switch(const tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
+{
+    tiku_desk_rect_t t = tiku_trk_deskbar_switch_rect(db);
+    tiku_desk_rgb_t well = db->dark
+        ? TIKU_DESK_C_TAB
+        : tiku_desk_tint(TIKU_DESK_C_PANEL, 1.10f);
+    tiku_desk_rect_t knob;
+    int k;
+
+    /* The well: filled, framed, and shadowed along the top edge the way
+     * a recess catches light from above. */
+    tiku_desk_fill(s, t, well);
+    tiku_desk_frame(s, t, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+    tiku_desk_hline(s, t.x + 1, t.y + 1, t.w - 2,
+                    tiku_desk_tint(well, TIKU_DESK_DARKEN_2));
+    tiku_desk_hline(s, t.x + 1, t.y + t.h, t.w,
+                    tiku_desk_tint(TIKU_DESK_C_PANEL,
+                                   TIKU_DESK_LIGHTEN_MAX));
+
+    /* The knob rides a shade proud of the track, top and bottom. */
+    knob = (tiku_desk_rect_t){ db->dark ? t.x + t.w - SWITCH_H - 1
+                                        : t.x + 1,
+                               t.y - 1, SWITCH_H, t.h + 2 };
+    tiku_desk_fill(s, knob, TIKU_DESK_C_PANEL);
+    tiku_desk_frame(s, knob, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+    tiku_desk_bevel(s, tiku_desk_inset(knob, 1),
+                    tiku_desk_tint(TIKU_DESK_C_PANEL,
+                                   TIKU_DESK_LIGHTEN_MAX),
+                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    for (k = 0; k < 3; k++) {
+        tiku_desk_vline(s, knob.x + 3 + 3 * k, knob.y + 4, knob.h - 8,
+                        tiku_desk_tint(TIKU_DESK_C_PANEL,
+                                       TIKU_DESK_DARKEN_2));
+    }
+}
+
+void
+tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on)
+{
+    if (db != NULL) {
+        db->dark = !!on;
+    }
+}
+
 int
 tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y)
 {
@@ -2054,6 +2133,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
          * the clock have taken theirs.  A list longer than that is what
          * makes the bar scrollable (DB-034). */
         int room = s->h - (LEAF_H + PAD) - (db->tray_count * TRAY_ROW) -
+                   SWITCH_ROW -
                    (db->settings.show_clock ? CLOCK_H : 0) - 2 * PAD;
 
         db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
@@ -2072,7 +2152,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                        db->dock == TIKU_TRK_DB_LEFT_MINI)
                           ? 0 : s->w - db->frame.w;
         db->frame.h = LEAF_H + PAD + rows + PAD +
-                      db->tray_count * TRAY_ROW +
+                      (tiku_trk_deskbar_mini(db->dock) ? TEAM_H + 2 : 0) +
+                      db->tray_count * TRAY_ROW + SWITCH_ROW +
                       (db->settings.show_clock ? CLOCK_H : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one
@@ -2178,7 +2259,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         int min_w = 24 + tiku_desk_text_width(f, "abcdefgh");
         int max_w = min_w + min_w / 4;
         int left = db->frame.x + 2 + HLEAF_W + 4;
-        int right = db->frame.x + db->frame.w - 4;
+        int right = db->frame.x + db->frame.w - (SWITCH_W + 14);
         int avail = right - left;
         int bw = (n > 0) ? avail / n : max_w;
         int bx, i2, k;
@@ -2326,6 +2407,10 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         tiku_desk_text(s, f, db->frame.x + db->frame.w - 6 - vw, ty, val,
                        TIKU_DESK_C_TEXT);
         y += TRAY_ROW;
+    }
+    draw_switch(db, s);
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        y += SWITCH_ROW;
     }
     if (db->settings.show_clock) {
         time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
@@ -2787,6 +2872,12 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             reset_menu_hots(db);
             return 1;
         }
+        if (x >= db->frame.x + db->frame.w - SWITCH_W - 10) {
+            /* The strip's far end is the theme switch: the whole
+             * reserved end answers, not only the painted track. */
+            pick->what = TIKU_TRK_DB_TOGGLE_DARK;
+            return 1;
+        }
         if (!tiku_trk_deskbar_mini(db->dock) && db->hbutton_w > 0) {
             int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
                                   TIKU_DESK_MOD_OPTION)) != 0u) ? 3 : 1;
@@ -2819,12 +2910,27 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         reset_menu_hots(db);
         return 1;
     }
-    if (tiku_trk_deskbar_mini(db->dock)) {
-        if (y < db->frame.y + LEAF_H + 4 + TEAM_H) {
-            /* The second icon: the running-apps menu (DB-037). */
-            db->apps_menu_open = 1;
-            reset_menu_hots(db);
+    if (tiku_trk_deskbar_mini(db->dock) &&
+        y < db->frame.y + LEAF_H + 4 + TEAM_H) {
+        /* The second icon: the running-apps menu (DB-037). */
+        db->apps_menu_open = 1;
+        reset_menu_hots(db);
+        return 1;
+    }
+    {
+        /* The theme switch's strip, checked before anything below it so
+         * the collapsed dock reaches it too.  The whole row answers: a
+         * 26 px track is a target for a pointer, the row is one for a
+         * finger. */
+        tiku_desk_rect_t sw = tiku_trk_deskbar_switch_rect(db);
+
+        if (!secondary && y >= sw.y - (SWITCH_ROW - SWITCH_H) / 2 &&
+            y < sw.y + sw.h + (SWITCH_ROW - SWITCH_H) / 2) {
+            pick->what = TIKU_TRK_DB_TOGGLE_DARK;
+            return 1;
         }
+    }
+    if (tiku_trk_deskbar_mini(db->dock)) {
         return 1;
     }
 

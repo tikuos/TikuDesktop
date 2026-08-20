@@ -309,6 +309,7 @@ typedef enum {
     TIKU_TRK_DB_QUIT_TEAM,        /* the polite request (DB-028)    */
     TIKU_TRK_DB_POWER_OFF,        /* no confirmation: chosen inside */
     TIKU_TRK_DB_RESTART,          /* the submenu acts (DB-006)      */
+    TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -586,6 +587,20 @@ int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
 void tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db);
 
 void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
+
+/**
+ * @brief Tell the bar which way the theme currently leans.
+ *
+ * The tray carries a small slide switch drawn like the physical thing: a
+ * recessed track and a raised knob that sits left for light, right for
+ * dark.  The bar only DRAWS the state; flipping it is a pick
+ * (TIKU_TRK_DB_TOGGLE_DARK) the shell answers by rewriting the DarkMode
+ * setting, so the switch and the Preferences checkbox can never disagree.
+ */
+void tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on);
+
+/** @brief Where the theme switch sits, so a test can put a finger on it. */
+tiku_desk_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);
 
 /** @brief Whether the clock's calendar is showing. */
 int tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db);

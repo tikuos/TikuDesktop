@@ -262,6 +262,14 @@ PYEOF
             printf 'ShowFullPathInTitleBar on\n' > \
                 "$deskhome/.config/TrackerSettings"
         fi
+        # The global bar now defaults ON for people; the suite's scripts
+        # are pinned to the classic layout, so the fixture pins the bar
+        # off the way it freezes the clock.  A script that wants the bar
+        # turns it on itself at runtime.
+        if ! grep -q '^# prefs: factory' "$s"; then
+            mkdir -p "$deskhome/.config"
+            printf 'GlobalMenuBar off\n' >> "$deskhome/.config/TrackerSettings"
+        fi
         printf '\n== %s (%s)\n' "$(basename "$s")" "$bin"
         # A script that says "# argv: none" is started with no path at all,
         # which is the only way to exercise what the shell opens on its own.

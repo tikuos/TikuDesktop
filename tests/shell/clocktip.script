@@ -3,12 +3,12 @@
 # DB-044: resting on the clock says the whole long-form date.
 wait 12
 note nothing said while the pointer is elsewhere
-expect-pixel 720 230 336698
-move 930 240
+expect-pixel 720 246 336698
+move 930 250
 wait 3
 note the bubble carries the frozen fixture date, Friday, August 7, 2026
-expect-pixel 720 230 ffffc8
+expect-pixel 720 246 ffffc8
 move 500 400
 wait 3
-expect-pixel 720 230 336698
+expect-pixel 720 246 336698
 quit
