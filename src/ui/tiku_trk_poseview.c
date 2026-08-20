@@ -12,6 +12,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "tiku_desk_gfx.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_state.h"
@@ -1133,10 +1134,12 @@ tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v)
 uint32_t
 tiku_trk_poseview_background(const tiku_trk_poseview_t *v)
 {
-    /* A tint below 1 lightens, and white cannot get lighter; use the
-     * concrete read-only shade so the cue is visible on the document white. */
-    return (v != NULL && v->is_query) ? UINT32_C(0x00f0f0f0)
-                                      : UINT32_C(0x00ffffff);
+    /* The document ground, read through the THEME so dark mode follows;
+     * a query view is set slightly off it so the read-only cue survives
+     * whichever way the theme leans. */
+    return (v != NULL && v->is_query)
+               ? tiku_desk_tint(TIKU_DESK_C_DOC, 1.06f)
+               : TIKU_DESK_C_DOC;
 }
 
 void

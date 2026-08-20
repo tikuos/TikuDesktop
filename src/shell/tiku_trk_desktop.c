@@ -146,6 +146,8 @@ typedef struct desktop {
     tiku_trk_find_window_t find_window;
     /* The query the save panel is asking a destination for. */
     tiku_trk_query_t     pending_query;
+    /* Which theme the desktop is wearing; -1 until first applied. */
+    int                  theme_dark;
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
     int                  qdrag_on;
     char                 qdrop_dest[TIKU_TRK_PATH_MAX];
@@ -373,6 +375,28 @@ sync_folder_preferences(desktop_t *app)
     /* The thumbnail queue's own switch IS the preference (TS-053). */
     app->thumbs.enabled = tiku_trk_prefs_get(prefs,
                               "GenerateImageThumbnails") != 0;
+    {
+        /* Dark mode is a THEME SWAP, applied the moment the setting says
+         * so (settings semantics: immediate, no OK button).  A flip
+         * forgets every window's pixels -- they were painted in the other
+         * palette -- and repaints the world once. */
+        int dark = tiku_trk_prefs_get(prefs, "DarkMode") != 0;
+
+        if (dark != app->theme_dark) {
+            tiku_trk_folder_window_t *desk =
+                tiku_trk_desktop_view_folder(&app->desktop_view);
+
+            app->theme_dark = dark;
+            tiku_desk_theme_set(dark ? tiku_desk_theme_dark() : NULL);
+            for (i = 0; i < app->folder_count; i++) {
+                tiku_trk_folder_window_forget(&app->folders[i]);
+            }
+            if (desk != NULL) {
+                tiku_trk_folder_window_forget(desk);
+            }
+            app->dirty = 1;
+        }
+    }
     /* The file panel's top: with the setting on, Up from the root lands
      * on the Desktop and the Desktop is the top (AW-061).  Read live, so
      * a change re-answers the very next Up. */
@@ -3323,6 +3347,7 @@ tracker_run(int argc, char **argv)
     int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
+    app.theme_dark = -1;      /* unapplied: the first sync decides */
     (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
