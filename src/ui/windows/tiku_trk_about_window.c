@@ -225,7 +225,7 @@ tiku_trk_about_window_open(tiku_trk_about_window_t *controller)
     }
     read_cpu(controller->cpu, sizeof controller->cpu, &controller->ncpu);
     frame.w = ABOUT_W;
-    frame.h = ABOUT_H + TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.h = ABOUT_H + tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
     frame.x = (controller->screen_w - frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel that
      * announces something. */

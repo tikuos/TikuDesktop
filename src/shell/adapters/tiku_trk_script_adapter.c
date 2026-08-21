@@ -80,7 +80,7 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
          * edge, and starts four pixels in.  Thirty across is inside the
          * narrowest tab the window layer will draw. */
         *x = w->frame.x + 30;
-        *y = w->frame.y + TIKU_DESK_WINDOW_TAB_H / 2;
+        *y = w->frame.y + tiku_desk_window_tab_h() / 2;
         return 1;
     }
     return 0;

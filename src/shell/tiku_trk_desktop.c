@@ -1119,7 +1119,7 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
     tiku_desk_rect_t frame;
 
     frame.w = w + 2 * TIKU_DESK_WINDOW_BORDER;
-    frame.h = h + TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.h = h + tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
     frame.x = (app->surf->w - frame.w) / 2;
     frame.y = (app->surf->h - frame.h) / 3;
     /* Stepped down and across per slot, so a second application does not
@@ -1318,7 +1318,7 @@ remote_reconcile(desktop_t *app)
             tiku_desk_rect_t frame;
 
             frame.w = s->open_w + 2 * TIKU_DESK_WINDOW_BORDER;
-            frame.h = s->open_h + TIKU_DESK_WINDOW_TAB_H +
+            frame.h = s->open_h + tiku_desk_window_tab_h() +
                       2 * TIKU_DESK_WINDOW_BORDER;
             frame.x = (app->surf->w - frame.w) / 2;
             frame.y = (app->surf->h - frame.h) / 3;

@@ -81,7 +81,7 @@ sync_window(tiku_trk_find_window_t *controller)
         "%s", tiku_trk_find_editing_template(&controller->model)
                     ? "Edit Query template" : "Find");
     controller->window->frame.h = tiku_trk_find_height(&controller->model) +
-        TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
+        tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
     note = tiku_trk_find_note(&controller->model);
     if (note[0] != '\0') {
         set_status(controller, note);
@@ -229,7 +229,7 @@ tiku_trk_find_window_open(tiku_trk_find_window_t *controller)
     }
     frame.w = FIND_WIDTH;
     frame.h = tiku_trk_find_height(&controller->model) +
-        TIKU_DESK_WINDOW_TAB_H + 2 * TIKU_DESK_WINDOW_BORDER;
+        tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 2;
     controller->window = tiku_desk_workspace_open(controller->workspace,

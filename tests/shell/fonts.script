@@ -28,7 +28,7 @@ expect-font Mono 12
 shot /tmp/trk_fonts_mono.png
 wait 3
 note and the size is a ladder beside it
-click 630 296
+click 652 300
 wait 12
 expect-font Mono 14
 note a face chosen here survives the OTHER window that owns the record
@@ -46,8 +46,32 @@ key w ctrl
 wait 6
 expect-title Fonts
 note Defaults puts back the face the interface came with
-click 382 397
+click 382 415
 wait 12
 expect-font Sans 12
 shot /tmp/trk_fonts_default.png
 wait 3
+note and the ladder must be clickable WHERE IT IS DRAWN, at every rung
+click 563 300
+wait 12
+expect-font Sans 10
+note the plus is in the same place at 10 px as at 12: press it again
+click 652 292
+wait 12
+expect-font Sans 12
+note the window must GROW with the letters, or the words fall out of the foot
+expect-pixel 500 458 336698
+click 652 300
+wait 12
+expect-font Sans 14
+click 652 310
+wait 12
+expect-font Sans 16
+shot /tmp/trk_fonts_16.png
+wait 3
+note and now the foot of the window reaches past where it used to end
+expect-pixel 500 458 d8d8d8
+click 382 435
+wait 12
+expect-font Sans 12
+expect-pixel 500 458 336698
