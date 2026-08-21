@@ -21,6 +21,7 @@
 #include "tiku_desk_gfx.h"
 #include "tiku_desk_ui.h"
 #include "tiku_trk_deskbar_prefs.h"
+#include "tiku_trk_strings.h"
 
 #define PAD        16
 #define ROW_H      22
@@ -115,7 +116,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     (void)window;
     tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
     tiku_desk_text(surface, bold, content.x + PAD, content.y + 22,
-                   "Family", TIKU_DESK_C_TEXT);
+                   tiku_trk_str("prefs.fonts.family"), TIKU_DESK_C_TEXT);
     {
         tiku_desk_rect_t list = { content.x + PAD, content.y + LIST_Y,
                                   content.w - 2 * PAD, rows * ROW_H };
@@ -145,7 +146,8 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     }
 
     tiku_desk_text(surface, bold, content.x + PAD,
-                   content.y + size_y(controller) + font->ascent, "Size",
+                   content.y + size_y(controller) + font->ascent,
+                   tiku_trk_str("prefs.fonts.size"),
                    TIKU_DESK_C_TEXT);
     snprintf(number, sizeof number, "-   %d px   +", v->size);
     tiku_desk_text(surface, font, content.x + STEP_X,
@@ -165,25 +167,27 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                         tiku_desk_tint(TIKU_DESK_C_PANEL,
                                        TIKU_DESK_DARKEN_2));
         tiku_desk_text(surface, bold, paper.x + 10,
-                       paper.y + 6 + bold->ascent, "TikuOS Tracker",
+                       paper.y + 6 + bold->ascent,
+                       tiku_trk_str("prefs.fonts.sample_title"),
                        TIKU_DESK_C_TEXT);
         tiku_desk_text(surface, font, paper.x + 10,
                        paper.y + 10 + bold->height + font->ascent,
-                       "Handgloves 0123456789", TIKU_DESK_C_TEXT);
+                       tiku_trk_str("prefs.fonts.sample_body"),
+                       TIKU_DESK_C_TEXT);
     }
 
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD,
                                             content.y + button_y(controller),
                                             112, 26 },
-                        "Defaults",
+                        tiku_trk_str("button.defaults"),
                         tiku_trk_fontprefs_defaultable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD + 122,
                                             content.y + button_y(controller),
                                             100, 26 },
-                        "Revert",
+                        tiku_trk_str("button.revert"),
                         tiku_trk_fontprefs_revertable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
 }
@@ -291,7 +295,7 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 3;
     controller->window = tiku_desk_workspace_open(controller->workspace,
-        "Fonts", frame, draw, controller, NULL);
+        tiku_trk_str("title.fonts"), frame, draw, controller, NULL);
     if (controller->window != NULL) {
         tiku_desk_window_set_size_controls(controller->window, 0, 0);
         tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);

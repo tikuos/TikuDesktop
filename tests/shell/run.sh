@@ -82,6 +82,14 @@ for s in "$here"/*.script; do
             volbase=""
             volumes_on=yes
         fi
+        # A script may ask to run in another language, to prove the words
+        # come from the catalogue rather than the code.
+        lang=""
+        langdir=""
+        if grep -q '^# lang: ' "$s"; then
+            lang=$(sed -n 's/^# lang: //p' "$s" | head -1)
+            langdir="$root/strings"
+        fi
         # A factory lane means EXACTLY that: nothing written, so what it
         # sees is what a person sees on a first run.
         if grep -q '^# prefs: factory' "$s"; then
@@ -403,11 +411,13 @@ PYEOF
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
+                ${lang:+TIKU_DESK_LANG=$lang} ${langdir:+TIKU_DESK_STRINGS=$langdir} \
                 TIKU_DESK_APPS="$appsdir" "$devbin/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
+                ${lang:+TIKU_DESK_LANG=$lang} ${langdir:+TIKU_DESK_STRINGS=$langdir} \
                 TIKU_DESK_APPS="$appsdir" "$devbin/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi

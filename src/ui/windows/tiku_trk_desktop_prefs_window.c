@@ -21,6 +21,7 @@
 #include "tiku_desk_gfx.h"
 #include "tiku_desk_ui.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_strings.h"
 
 #define PAD        16
 #define ROW_H      22
@@ -32,8 +33,11 @@
 #define ICON_Y     (MODE_Y + 4 * ROW_H + 26)
 #define BUTTON_Y   (ICON_Y + 44)
 
-static const char *const kModes[4] = {
-    "At its own corner", "Centred", "Scaled to fit", "Tiled"
+/* The keys of the four laying modes; the words come from the catalogue
+ * when a row is drawn, so a translation reaches them too. */
+static const char *const kModeKeys[4] = {
+    "prefs.desktop.mode.corner", "prefs.desktop.mode.centred",
+    "prefs.desktop.mode.scaled", "prefs.desktop.mode.tiled"
 };
 
 static int
@@ -88,7 +92,8 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     (void)window;
     tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
     tiku_desk_text(surface, bold, content.x + PAD,
-                   content.y + 22, "Picture", TIKU_DESK_C_TEXT);
+                   content.y + 22, tiku_trk_str("prefs.desktop.picture"),
+                   TIKU_DESK_C_TEXT);
 
     /* The list: what is there to choose, and which one is showing. */
     {
@@ -107,7 +112,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             int chosen;
 
             if (i == 0) {
-                label = "No picture";
+                label = tiku_trk_str("prefs.desktop.no_picture");
                 chosen = !v->have_bg;
             } else if (i - 1 < controller->pictures.count) {
                 label = leaf_of(controller->pictures.picture[i - 1]);
@@ -128,13 +133,13 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         if (controller->pictures.count == 0) {
             tiku_desk_text(surface, font, list.x + 8,
                            list.y + ROW_H + 15,
-                           "Drop a picture in the Desktop to offer it here",
+                           tiku_trk_str("prefs.desktop.drop_hint"),
                            tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
         }
     }
 
     tiku_desk_text(surface, bold, content.x + PAD,
-                   content.y + MODE_Y - 12, "How it is laid",
+                   content.y + MODE_Y - 12, tiku_trk_str("prefs.desktop.how_laid"),
                    TIKU_DESK_C_TEXT);
     for (i = 0; i < 4; i++) {
         int y = content.y + MODE_Y + i * ROW_H;
@@ -147,14 +152,14 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                            TIKU_DESK_C_TEXT);
         }
         tiku_desk_text(surface, font, content.x + PAD + 24,
-                       y + 4 + font->ascent, kModes[i],
+                       y + 4 + font->ascent, tiku_trk_str(kModeKeys[i]),
                        v->have_bg ? TIKU_DESK_C_TEXT
                                   : tiku_desk_tint(TIKU_DESK_C_PANEL,
                                                    1.45f));
     }
 
     tiku_desk_text(surface, bold, content.x + PAD,
-                   content.y + ICON_Y + font->ascent, "Icon size",
+                   content.y + ICON_Y + font->ascent, tiku_trk_str("label.icon_size"),
                    TIKU_DESK_C_TEXT);
     snprintf(number, sizeof number, "-   %d px   +", v->icon_size);
     tiku_desk_text(surface, font, content.x + 240,
@@ -164,13 +169,13 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD,
                                             content.y + BUTTON_Y, 112, 26 },
-                        "Defaults",
+                        tiku_trk_str("button.defaults"),
                         tiku_trk_deskprefs_defaultable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD + 122,
                                             content.y + BUTTON_Y, 100, 26 },
-                        "Revert",
+                        tiku_trk_str("button.revert"),
                         tiku_trk_deskprefs_revertable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
 }
@@ -301,7 +306,8 @@ tiku_trk_desktop_prefs_window_open(
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 3;
     controller->window = tiku_desk_workspace_open(controller->workspace,
-        "Desktop preferences", frame, draw, controller, NULL);
+        tiku_trk_str("title.desktop_prefs"), frame, draw, controller,
+        NULL);
     if (controller->window != NULL) {
         tiku_desk_window_set_size_controls(controller->window, 0, 0);
         tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);

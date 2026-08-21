@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_gfx_dep.h"
+#include "tiku_trk_strings.h"
 #include "tiku_desk_host.h"
 #include "tiku_trk_application.h"
 #include "tiku_trk_attr.h"
@@ -2832,6 +2833,7 @@ tracker_run(int argc, char **argv)
     int64_t shot_at_us = 0;
 
     memset(&a, 0, sizeof a);
+    (void)tiku_trk_strings_init(NULL, NULL);
     tiku_trk_cwmenu_init(&a.menus);
     a.bar_open = -1;
     a.show_nav = 1;

@@ -44,6 +44,7 @@
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_volume.h"
 #include "tiku_trk_switcher.h"
 #include "tiku_trk_switcher_window.h"
@@ -4516,6 +4517,10 @@ tracker_run(int argc, char **argv)
     const char *conduct_tty = NULL;
 
     restart_argv = argv;
+    /* The words the interface is made of, before anything is drawn with
+     * them: the language comes from the environment, the English is baked
+     * in as the floor. */
+    (void)tiku_trk_strings_init(NULL, NULL);
     tiku_trk_script_t *sc = NULL;
     int rc = 0;
     int baud = 115200, use_device = 0, i;

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Les mots de l'interface, en français.
+
+  Une traduction est une copie de en.xml : les mêmes clés, les valeurs
+  changées.  Une clé sans traduction retombe sur l'anglais, donc un
+  fichier partiel est parfaitement valable.
+-->
+<strings lang="fr">
+
+  <string name="button.defaults">Par défaut</string>
+  <string name="button.revert">Rétablir</string>
+
+  <string name="label.icon_size">Taille des icônes</string>
+  <string name="label.recent_documents">Documents récents</string>
+  <string name="label.recent_folders">Dossiers récents</string>
+  <string name="label.recent_applications">Applications récentes</string>
+
+  <string name="title.deskbar_prefs">Préférences du Deskbar</string>
+  <string name="title.desktop_prefs">Préférences du bureau</string>
+  <string name="title.fonts">Polices</string>
+
+  <string name="menu.about">À propos de ce système</string>
+  <string name="menu.find">Rechercher…</string>
+  <string name="menu.settings">Réglages</string>
+  <string name="menu.applications">Applications</string>
+  <string name="menu.deskbar_prefs">Préférences du Deskbar…</string>
+  <string name="menu.tracker_prefs">Préférences de Tracker…</string>
+  <string name="menu.desktop_prefs">Préférences du bureau…</string>
+  <string name="menu.fonts">Polices…</string>
+  <string name="menu.show_replicants">Afficher les replicants</string>
+  <string name="menu.hide_replicants">Masquer les replicants</string>
+  <string name="menu.restart">Redémarrer le système</string>
+  <string name="menu.power_off">Éteindre</string>
+  <string name="menu.shut_down">Arrêter…</string>
+  <string name="menu.show_all">Tout afficher</string>
+  <string name="menu.hide_all">Tout masquer</string>
+  <string name="menu.close_all">Tout fermer</string>
+  <string name="menu.clock.show">Afficher l'horloge</string>
+  <string name="menu.clock.hide">Masquer l'horloge</string>
+  <string name="menu.seconds.show">Afficher les secondes</string>
+  <string name="menu.seconds.hide">Masquer les secondes</string>
+  <string name="menu.day.show">Afficher le jour</string>
+  <string name="menu.day.hide">Masquer le jour</string>
+  <string name="menu.zone.show">Afficher le fuseau horaire</string>
+  <string name="menu.zone.hide">Masquer le fuseau horaire</string>
+
+  <string name="prefs.deskbar.sort_apps">Trier les applications par nom</string>
+  <string name="prefs.deskbar.tracker_first">Tracker toujours en premier</string>
+  <string name="prefs.deskbar.show_expander">Afficher le déplieur</string>
+  <string name="prefs.deskbar.expand_new">Déplier les nouvelles applications</string>
+  <string name="prefs.deskbar.hide_app_names">Masquer les noms d'applications</string>
+  <string name="prefs.deskbar.font_size">Taille du texte</string>
+  <string name="prefs.deskbar.always_on_top">Toujours au premier plan</string>
+  <string name="prefs.deskbar.auto_raise">Remontée automatique</string>
+  <string name="prefs.deskbar.auto_hide">Masquage automatique</string>
+  <string name="prefs.deskbar.dock_location">Emplacement du dock</string>
+  <string name="prefs.deskbar.dock_n">Dock : %d</string>
+  <string name="prefs.deskbar.edit_in_tracker">Modifier dans Tracker…</string>
+
+  <string name="prefs.desktop.picture">Image</string>
+  <string name="prefs.desktop.no_picture">Aucune image</string>
+  <string name="prefs.desktop.drop_hint">Déposez une image dans le bureau pour la proposer ici</string>
+  <string name="prefs.desktop.how_laid">Disposition</string>
+  <string name="prefs.desktop.mode.corner">Dans son coin</string>
+  <string name="prefs.desktop.mode.centred">Centrée</string>
+  <string name="prefs.desktop.mode.scaled">Ajustée</string>
+  <string name="prefs.desktop.mode.tiled">Mosaïque</string>
+
+  <string name="prefs.fonts.family">Famille</string>
+  <string name="prefs.fonts.size">Taille</string>
+  <string name="prefs.fonts.sample_title">TikuOS Tracker</string>
+  <string name="prefs.fonts.sample_body">Élégant café 0123456789</string>
+
+</strings>

@@ -14,6 +14,7 @@
 
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_deskbar_prefs_window.h"
+#include "tiku_trk_strings.h"
 
 enum {
     ROW_SORT = 0, ROW_TRACKER, ROW_EXPANDER, ROW_EXPAND_NEW,
@@ -21,12 +22,16 @@ enum {
     ROW_ALWAYS_TOP, ROW_AUTO_RAISE, ROW_AUTO_HIDE, ROW_COUNT
 };
 
-static const char *const labels[ROW_COUNT] = {
-    "Sort applications by name", "Tracker always first",
-    "Show application expander", "Expand new applications",
-    "Hide application names", "Icon size", "Font size", "Recent documents",
-    "Recent folders", "Recent applications", "Always on top",
-    "Auto-raise", "Auto-hide"
+/* One key per row, in ROW order; the words come from the catalogue when
+ * the row is drawn, so a translation reaches every label. */
+static const char *const label_keys[ROW_COUNT] = {
+    "prefs.deskbar.sort_apps", "prefs.deskbar.tracker_first",
+    "prefs.deskbar.show_expander", "prefs.deskbar.expand_new",
+    "prefs.deskbar.hide_app_names", "label.icon_size",
+    "prefs.deskbar.font_size", "label.recent_documents",
+    "label.recent_folders", "label.recent_applications",
+    "prefs.deskbar.always_on_top", "prefs.deskbar.auto_raise",
+    "prefs.deskbar.auto_hide"
 };
 
 static int
@@ -112,7 +117,8 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                                TIKU_DESK_C_TEXT);
             }
         }
-        tiku_desk_text(surface, font, content.x + 40, y + 12, labels[row],
+        tiku_desk_text(surface, font, content.x + 40, y + 12,
+            tiku_trk_str(label_keys[row]),
             enabled ? TIKU_DESK_C_TEXT
                     : tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
         if (row == ROW_ICON) {
@@ -147,20 +153,22 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
         tiku_desk_fill(surface, monitor, TIKU_DESK_C_DOC);
         tiku_desk_frame(surface, monitor, TIKU_DESK_C_TEXT);
-        snprintf(current, sizeof current, "Dock: %d", (int)dock);
+        snprintf(current, sizeof current, tiku_trk_str("prefs.deskbar.dock_n"),
+                 (int)dock);
         tiku_desk_text(surface, font, monitor.x + 29, monitor.y + 45,
                        current, TIKU_DESK_C_TEXT);
         tiku_desk_text(surface, font, content.x + 18, content.y + 432,
-                       "Dock location", TIKU_DESK_C_TEXT);
+                       tiku_trk_str("prefs.deskbar.dock_location"),
+                       TIKU_DESK_C_TEXT);
     }
     button(surface, (tiku_desk_rect_t){ content.x + 18, content.y + 488,
-           112, 26 }, "Defaults",
+           112, 26 }, tiku_trk_str("button.defaults"),
            tiku_trk_deskbar_prefs_defaultable(&controller->model));
     button(surface, (tiku_desk_rect_t){ content.x + 140, content.y + 488,
-           100, 26 }, "Revert",
+           100, 26 }, tiku_trk_str("button.revert"),
            tiku_trk_deskbar_prefs_revertable(&controller->model));
     button(surface, (tiku_desk_rect_t){ content.x + 278, content.y + 488,
-           142, 26 }, "Edit in Tracker...", 1);
+           142, 26 }, tiku_trk_str("prefs.deskbar.edit_in_tracker"), 1);
 }
 
 static int
@@ -308,7 +316,8 @@ tiku_trk_deskbar_prefs_window_open(
     (void)tiku_trk_deskbar_prefs_load(&controller->model, controller->store);
     tiku_trk_deskbar_prefs_mark_opened(&controller->model);
     controller->window = tiku_desk_workspace_open(controller->workspace,
-        "Deskbar preferences", saved_frame(controller), draw, controller,
+        tiku_trk_str("title.deskbar_prefs"), saved_frame(controller), draw,
+        controller,
         NULL);
     if (controller->window != NULL) {
         tiku_desk_window_set_size_controls(controller->window, 0, 0);

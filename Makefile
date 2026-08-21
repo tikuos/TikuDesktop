@@ -82,7 +82,8 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_panel.c src/core/tiku_trk_deskprefs.c src/core/tiku_trk_info.c \
         src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
         src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
-        src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c
+        src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c \
+        src/core/tiku_trk_strings.c
 BACKENDS := src/backends/tiku_trk_notify.c src/backends/tiku_trk_vdir.c \
             src/backends/tiku_trk_volume.c \
             src/backends/tiku_trk_backend_posix.c \
@@ -101,7 +102,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_deskprefs $(BUILD)/test_fontprefs $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
-            $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff \
+            $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff $(BUILD)/test_strings \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
@@ -276,6 +277,10 @@ $(BUILD)/test_scripting: $(COMMON) src/ui/tiku_trk_poseview.c \
 
 $(BUILD)/test_prefs: src/core/tiku_trk_prefs.c src/core/tiku_trk_state.c \
                      tests/test_prefs.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD)/test_strings: src/core/tiku_trk_strings.c tests/test_strings.c \
+                       | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_volume: $(COMMON) src/deskbar/tiku_trk_deskicons.c tests/test_volume.c | $(BUILD)
@@ -469,6 +474,7 @@ test: all
 	@$(BUILD)/test_deskbar_dock
 	@$(BUILD)/test_deskbar_prefs
 	@$(BUILD)/test_fontprefs
+	@$(BUILD)/test_strings
 	@$(BUILD)/test_text
 	@$(BUILD)/test_ttf
 	@$(BUILD)/test_cff

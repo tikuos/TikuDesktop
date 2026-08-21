@@ -16,6 +16,7 @@
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_trk_iconpaint.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_input.h"
 
 #include <stdio.h>
@@ -270,25 +271,29 @@ menu_dir_of(const tiku_trk_deskbar_t *db)
 static void
 build_leaf(tiku_trk_deskbar_t *db)
 {
-    static const char *const kRecentLabel[TIKU_TRK_DB_RECENT_KINDS] = {
-        "Recent documents", "Recent folders", "Recent applications"
+    static const char *const kRecentKey[TIKU_TRK_DB_RECENT_KINDS] = {
+        "label.recent_documents", "label.recent_folders",
+        "label.recent_applications"
     };
     const char *dir;
     int i;
 
     db->leaf_count = 0;
     db->sub_of = -1;
-    add_item(db, TIKU_TRK_DB_ITEM_ABOUT, "About this system", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_FIND, "Find\xe2\x80\xa6", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_ABOUT, tiku_trk_str("menu.about"), NULL,
+             0);
+    add_item(db, TIKU_TRK_DB_ITEM_FIND, tiku_trk_str("menu.find"), NULL, 0);
     /* One row for everything that configures the desktop, the way the
      * programs have one: the leaf says what a person can do here, and
      * the lists live inside it. */
-    add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, "Settings", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_trk_str("menu.settings"),
+             NULL, 0);
     if (db->app_count > 0) {
         /* One row, not one per program: the leaf is the system's own
          * menu, and a list of what happens to be installed belongs
          * inside it rather than across it. */
-        add_item(db, TIKU_TRK_DB_ITEM_APPS, "Applications", NULL, 0);
+        add_item(db, TIKU_TRK_DB_ITEM_APPS, tiku_trk_str("menu.applications"),
+                 NULL, 0);
     }
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
@@ -307,7 +312,8 @@ build_leaf(tiku_trk_deskbar_t *db)
                 }
                 /* A list nobody has anything in is not shown at all --
                  * an empty submenu is a promise of nothing (DB-074). */
-                add_item(db, TIKU_TRK_DB_ITEM_RECENT, kRecentLabel[i], NULL,
+                add_item(db, TIKU_TRK_DB_ITEM_RECENT, tiku_trk_str(kRecentKey[i]),
+                         NULL,
                          i);
             }
         }
@@ -331,7 +337,8 @@ build_leaf(tiku_trk_deskbar_t *db)
                  NULL, 0);
     }
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_QUIT, "Shut down\xe2\x80\xa6", NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_QUIT, tiku_trk_str("menu.shut_down"), NULL,
+             0);
 }
 
 void
@@ -429,13 +436,13 @@ win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
             mini++;
         }
     }
-    items[0] = "Hide all";
+    items[0] = tiku_trk_str("menu.hide_all");
     enabled[0] = (mini < t->win_count);
-    items[1] = "Show all";
+    items[1] = tiku_trk_str("menu.show_all");
     enabled[1] = (mini > 0);
     items[2] = "-";
     enabled[2] = 0;
-    items[3] = "Close all";
+    items[3] = tiku_trk_str("menu.close_all");
     enabled[3] = 1;
     return 4;
 }
@@ -2011,11 +2018,13 @@ open_sub(tiku_trk_deskbar_t *db, int at)
 
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_POWER_OFF;
-        snprintf(si->label, sizeof si->label, "%s", "Power off");
+        snprintf(si->label, sizeof si->label, "%s",
+                 tiku_trk_str("menu.power_off"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_RESTART;
-        snprintf(si->label, sizeof si->label, "%s", "Restart system");
+        snprintf(si->label, sizeof si->label, "%s",
+                 tiku_trk_str("menu.restart"));
         db->sub_of = at;
         db->sub_hot = -1;
         return;
@@ -2026,29 +2035,30 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_PREFS;
         snprintf(si->label, sizeof si->label, "%s",
-                 "Deskbar preferences\xe2\x80\xa6");
+                 tiku_trk_str("menu.deskbar_prefs"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_TRACKER_PREFS;
         snprintf(si->label, sizeof si->label, "%s",
-                 "Tracker preferences\xe2\x80\xa6");
+                 tiku_trk_str("menu.tracker_prefs"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_DESKTOP_PREFS;
         snprintf(si->label, sizeof si->label, "%s",
-                 "Desktop preferences\xe2\x80\xa6");
+                 tiku_trk_str("menu.desktop_prefs"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_FONT_PREFS;
-        snprintf(si->label, sizeof si->label, "%s", "Fonts\xe2\x80\xa6");
+        snprintf(si->label, sizeof si->label, "%s",
+                 tiku_trk_str("menu.fonts"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
         /* Says what choosing it DOES, which is the other state: a row
          * labelled with the state it is in reads as a heading. */
         snprintf(si->label, sizeof si->label, "%s",
-                 db->show_replicants ? "Hide replicants"
-                                     : "Show replicants");
+                 tiku_trk_str(db->show_replicants ? "menu.hide_replicants"
+                                                  : "menu.show_replicants"));
     } else if (it->kind == TIKU_TRK_DB_ITEM_APPS) {
         int i;
 
@@ -2632,10 +2642,14 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     }
     if (db->clock_menu_open) {
         const char *items[] = {
-            db->settings.show_clock ? "Hide clock" : "Show clock",
-            db->settings.show_seconds ? "Hide seconds" : "Show seconds",
-            db->settings.show_day_of_week ? "Hide day of week" : "Show day of week",
-            db->settings.show_timezone ? "Hide time zone" : "Show time zone"
+            tiku_trk_str(db->settings.show_clock ? "menu.clock.hide"
+                                                 : "menu.clock.show"),
+            tiku_trk_str(db->settings.show_seconds ? "menu.seconds.hide"
+                                                   : "menu.seconds.show"),
+            tiku_trk_str(db->settings.show_day_of_week ? "menu.day.hide"
+                                                       : "menu.day.show"),
+            tiku_trk_str(db->settings.show_timezone ? "menu.zone.hide"
+                                                    : "menu.zone.show")
         };
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
                                CLOCK_H - 32, 170, 4 * 28 };

@@ -1,0 +1,17 @@
+# shell: desktop
+# lang: fr
+# The words come from the catalogue, not the code: run in French, and the
+# menu and the window that open are French, accents and all.
+wait 15
+key w ctrl
+wait 5
+click 980 20
+wait 6
+expect-menu À propos de ce système|Rechercher…|Réglages|Applications|-|/sys|/dev|/data|-|Dossiers récents|-|<Deskbar folder is empty>|-|Arrêter…|
+menu-pick Réglages
+wait 5
+menu-pick Polices
+wait 12
+expect-title Polices
+note the window's own labels are French too
+quit
