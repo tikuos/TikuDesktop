@@ -1051,6 +1051,7 @@ build_pickers(desktop_t *app, folder_t *fl)
  * application for something else (PVL-095, PVN-035).
  */
 static void menu_invoke(desktop_t *app, folder_t *fl, int command);
+static void open_panel(desktop_t *app);
 
 /*---------------------------------------------------------------------------*/
 /* The embedded descriptor host: the services contract over the workspace   */
@@ -1520,6 +1521,42 @@ rebuild_global_bar(desktop_t *app)
 }
 
 /**
+ * @brief The system menu's own commands, which belong to no window.
+ *
+ * They are answered here rather than on the folder path, which returns
+ * at once when no folder window is focused -- and the system menu is
+ * reachable when none is.
+ *
+ * @return nonzero when the command was one of these.
+ */
+static int
+system_invoke(desktop_t *app, int command)
+{
+    switch (command) {
+    case TIKU_TRK_CMD_ABOUT:
+        tiku_trk_about_window_open(&app->about_window);
+        return 1;
+
+    case TIKU_TRK_CMD_FIND:
+        open_panel(app);
+        return 1;
+    case TIKU_TRK_CMD_PREFERENCES:
+        tiku_trk_prefs_window_open(&app->prefs_window);
+        return 1;
+    case TIKU_TRK_CMD_SHUTDOWN:
+        /* The ellipsis is a promise: Shut down… asks before anything is
+         * taken down (DB-006), the same question the leaf asks. */
+        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+                            TIKU_TRK_ALERT_TAG_SHUTDOWN,
+                            "Shut down the desktop?", "Cancel|Shut down");
+        return 1;
+    default:
+        break;
+    }
+    return 0;
+}
+
+/**
  * @brief Route a pick: a strip pick goes back to whoever PUBLISHED the
  *        menu, which is the other half of the protocol; everything else
  *        (and the system menu) takes the shell's own command path.
@@ -1532,6 +1569,9 @@ global_or_invoke(desktop_t *app, folder_t *ffl, int command)
         app->gbar_from->menu_pick != NULL) {
         app->gbar_from->menu_pick(app->gbar_from, command,
                                   app->gbar_from->menu_pick_context);
+        return;
+    }
+    if (system_invoke(app, command)) {
         return;
     }
     menu_invoke(app, ffl, command);

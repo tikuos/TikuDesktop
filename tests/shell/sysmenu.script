@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The strip at the top of the screen is a MENU, not a picture of one: the
+# system menu's rows do what the Deskbar's do, because both take the same
+# command path.  The Deskbar answered these while the strip swallowed
+# them, which is what a menu nobody wired looks like.
+wait 18
+note About opens the same window the leaf opens
+click 20 8
+wait 5
+expect-menu About this system
+menu-pick About this system
+wait 12
+expect-title About
+key w ctrl
+wait 6
+note and Find opens the panel, from the strip as from anywhere else
+click 20 8
+wait 5
+menu-pick Find
+wait 12
+expect-title Find
+key Escape
+wait 6
+note Preferences opens Tracker's own, as Ctrl+comma does
+click 20 8
+wait 5
+menu-pick Preferences
+wait 12
+expect-title Tracker preferences
+key w ctrl
+wait 6
