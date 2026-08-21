@@ -288,6 +288,33 @@ main(void)
                       "force to make room for itself");
             }
         }
+        /*
+         * A space is a glyph the file HAS, with an advance of its own and
+         * nothing to draw.  Read that as "the file has not got it" and
+         * the width comes from the baked face instead -- so every space
+         * in a dropped font would be the wrong width, which is a thing
+         * only a monospaced face says out loud.
+         */
+        {
+            static const char *const mono[] = {
+                "/usr/share/fonts/source-foundry-hack-fonts/Hack-Regular.ttf",
+                "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf"
+            };
+            const char *grid = pick(mono, 2);
+
+            tiku_desk_font_use_baked();
+            if (grid != NULL && tiku_desk_font_set_files(grid, NULL)) {
+                const tiku_desk_font_t *f2;
+
+                (void)tiku_desk_font_set_size(12);
+                f2 = tiku_desk_font_plain();
+                check(tiku_desk_text_width(f2, " ") ==
+                      tiku_desk_text_width(f2, "M") &&
+                      tiku_desk_text_width(f2, " ") > 0, "DEV-011",
+                      "a space in a dropped face is the FILE's space: on a "
+                      "monospaced one it is exactly as wide as an M");
+            }
+        }
         tiku_desk_font_use_baked();
         (void)tiku_desk_font_set_family(0);
         (void)tiku_desk_font_set_size(12);
