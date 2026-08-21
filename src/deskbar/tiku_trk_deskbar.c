@@ -30,14 +30,14 @@
  * not tile: each is drawn one pixel short and the seam between them is left
  * unpainted, so the pitch is the row plus SEAM. */
 #define BAR_W        134     /* gMinimumWindowWidth at the 12 px face      */
-#define LEAF_H        26
+#define LEAF_MIN      26     /* what a 12 px face needed  */
 #define HLEAF_W 120     /* the leaf button, horizontal (DB-033) */
-#define TEAM_H        20     /* kMinTeamItemHeight; pitch 21               */
-#define WIN_H         19     /* pitch 20                                   */
+#define TEAM_MIN      20     /* kMinTeamItemHeight; pitch 21               */
+#define WIN_MIN       19     /* pitch 20                                   */
 #define SEAM           1     /* kGutter: the unpainted row between items   */
 #define WIN_INDENT    22
 #define TRAY_ROW      18     /* kGutter + fMaxReplicantHeight + kGutter    */
-#define CLOCK_H       20
+#define CLOCK_MIN     20
 #define PAD            4
 #define EXPANDER_W    13     /* ExpanderBounds() is 13 px, not 12          */
 #define EXPANDER_ARM   5
@@ -47,6 +47,43 @@
 #define SWITCH_ROW    16     /* the theme switch's own strip of tray        */
 #define SWITCH_W      26     /* the track */
 #define SWITCH_H      12
+
+/*
+ * The strip's own rows, from the face rather than from memory.
+ *
+ * Every number above was measured against a 12 px face, back when that
+ * was the only face there was.  The face is a preference now and the
+ * Deskbar applies it to ITSELF -- so a row left at 26 pixels is one whose
+ * word gets drawn at 16 px and centred into a strip too short to hold it.
+ *
+ * Each answers exactly the number it replaces at 12 px, and never less,
+ * so the bar has not moved for anyone who left the face alone.
+ */
+static int
+at_least(int want, int least)
+{
+    return (want > least) ? want : least;
+}
+
+static int leaf_row(void)
+{
+    return at_least(tiku_desk_font_plain()->height + 11, LEAF_MIN);
+}
+
+static int clock_row(void)
+{
+    return at_least(tiku_desk_font_plain()->height + 5, CLOCK_MIN);
+}
+
+static int team_row(void)
+{
+    return at_least(tiku_desk_font_plain()->height + 5, TEAM_MIN);
+}
+
+static int win_row(void)
+{
+    return at_least(tiku_desk_font_plain()->height + 4, WIN_MIN);
+}
 
 struct tiku_trk_deskbar {
     tiku_trk_backend_t  *backend;
@@ -461,7 +498,7 @@ win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh)
     m.h = rows * rowh + 4;
     if (tiku_trk_deskbar_vertical(db->dock)) {
         m.x = db->frame.x - 130;
-        m.y = list_y(db) + TEAM_H;
+        m.y = list_y(db) + team_row();
     } else {
         m.x = db->frame.x + HLEAF_W + 8;
         m.y = (db->dock == TIKU_TRK_DB_TOP)
@@ -515,7 +552,7 @@ calendar_rect(const tiku_trk_deskbar_t *db)
 
     c.y = db->frame.y + db->frame.h + 4;
     if (db->screen_h > 0 && c.y + c.h > db->screen_h) {
-        c.y = db->frame.y + db->frame.h - CLOCK_H - PAD - 4 - c.h;
+        c.y = db->frame.y + db->frame.h - clock_row() - PAD - 4 - c.h;
     }
     return c;
 }
@@ -1380,13 +1417,13 @@ static int
 list_rows(const tiku_trk_deskbar_t *db)
 {
     int i, h = 0;
-    int team_h = (db->settings.icon_size + 4 > TEAM_H)
-                     ? db->settings.icon_size + 4 : TEAM_H;
+    int team_h = (db->settings.icon_size + 4 > team_row())
+                     ? db->settings.icon_size + 4 : team_row();
 
     for (i = 0; i < db->team_count; i++) {
         h += team_h + SEAM;
         if (db->teams[i].expanded) {
-            h += db->teams[i].win_count * (WIN_H + SEAM);
+            h += db->teams[i].win_count * (win_row() + SEAM);
         }
     }
     return h;
@@ -1398,7 +1435,7 @@ list_y(const tiku_trk_deskbar_t *db)
     /* Below the leaf, WHEREVER the frame starts: with the global bar on
      * the whole bar sits lower, and a list still measured from the top
      * of the screen would draw across the leaf itself. */
-    return db->frame.y + LEAF_H + PAD;
+    return db->frame.y + leaf_row() + PAD;
 }
 
 static int
@@ -1429,7 +1466,7 @@ tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
          * dock mode. */
         r.x = db->frame.x + (db->frame.w - SWITCH_W) / 2;
         r.y = db->frame.y + db->frame.h - PAD -
-              (db->settings.show_clock ? CLOCK_H : 0) - SWITCH_ROW +
+              (db->settings.show_clock ? clock_row() : 0) - SWITCH_ROW +
               (SWITCH_ROW - SWITCH_H) / 2;
     } else {
         /* Along an edge: the strip's far end, past the last button. */
@@ -1635,7 +1672,7 @@ leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 
     m.w = 176;
     m.h = rows * rowh + 4;
-    m.y = db->frame.y + LEAF_H + 2;
+    m.y = db->frame.y + leaf_row() + 2;
     m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
            db->dock == TIKU_TRK_DB_LEFT_MINI)
           ? db->frame.x + db->frame.w + 2
@@ -1693,8 +1730,8 @@ tiku_trk_deskbar_release(tiku_trk_deskbar_t *db, int x, int y)
         for (i = 0; i < db->team_count; i++) {
             int at = db->order[i];
             tiku_trk_team_t *t = &db->teams[at];
-            int team_h = (db->settings.icon_size + 4 > TEAM_H)
-                             ? db->settings.icon_size + 4 : TEAM_H;
+            int team_h = (db->settings.icon_size + 4 > team_row())
+                             ? db->settings.icon_size + 4 : team_row();
 
             if (y >= ry && y < ry + team_h) {
                 if (at == team) {
@@ -1708,7 +1745,7 @@ tiku_trk_deskbar_release(tiku_trk_deskbar_t *db, int x, int y)
                 int j;
 
                 for (j = 0; j < t->win_count; j++) {
-                    ry += WIN_H + SEAM;
+                    ry += win_row() + SEAM;
                 }
             }
         }
@@ -1780,7 +1817,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 
         am.w = 176;
         am.h = nn * mrowh + 4;
-        am.y = db->frame.y + 2 + LEAF_H + 2;
+        am.y = db->frame.y + 2 + leaf_row() + 2;
         am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
                                  : db->frame.x + db->frame.w + 2;
         if (x >= am.x && x < am.x + am.w && y >= am.y + 2 &&
@@ -1797,7 +1834,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
     }
     if (db->clock_menu_open) {
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y +
-                               db->frame.h - CLOCK_H - 32, 170, 4 * 28 };
+                               db->frame.h - clock_row() - 32, 170, 4 * 28 };
 
         if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
             y < m.y + 2 + 4 * 28) {
@@ -1815,7 +1852,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             !db->clock_menu_open && db->settings.show_clock &&
             !db->calendar_open && x >= db->frame.x &&
             x < db->frame.x + db->frame.w &&
-            y >= db->frame.y + db->frame.h - CLOCK_H - PAD &&
+            y >= db->frame.y + db->frame.h - clock_row() - PAD &&
             y < db->frame.y + db->frame.h) {
             /* The clock's tooltip is the whole long-form date (DB-044),
              * from the same clock the display reads -- frozen and all. */
@@ -1824,13 +1861,13 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 
             (void)localtime_r(&now, &tmv);
             (void)strftime(tip, sizeof tip, "%A, %B %-e, %Y", &tmv);
-            tip_y = db->frame.y + db->frame.h - CLOCK_H - PAD;
+            tip_y = db->frame.y + db->frame.h - clock_row() - PAD;
         } else if (!db->menu_open && db->win_menu_team < 0 &&
             !db->clock_menu_open && x >= db->frame.x &&
             x < db->frame.x + db->frame.w) {
             int i, ry = list_y(db);
-            int team_h = (db->settings.icon_size + 4 > TEAM_H)
-                             ? db->settings.icon_size + 4 : TEAM_H;
+            int team_h = (db->settings.icon_size + 4 > team_row())
+                             ? db->settings.icon_size + 4 : team_row();
 
             for (i = 0; i < db->team_count && tip_y < 0; i++) {
                 tiku_trk_team_t *t = &db->teams[db->order[i]];
@@ -1854,7 +1891,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
                     continue;
                 }
                 for (j = 0; j < t->win_count; j++) {
-                    if (y >= ry && y < ry + WIN_H) {
+                    if (y >= ry && y < ry + win_row()) {
                         char cut[TIKU_TRK_DB_LABEL_MAX];
 
                         fit_label(font, t->wins[j].title,
@@ -1867,7 +1904,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
                         }
                         break;
                     }
-                    ry += WIN_H + SEAM;
+                    ry += win_row() + SEAM;
                 }
             }
         }
@@ -2215,17 +2252,17 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     if (db == NULL || s == NULL) {
         return;
     }
-    team_h = (db->settings.icon_size + 4 > TEAM_H)
-                 ? db->settings.icon_size + 4 : TEAM_H;
+    team_h = (db->settings.icon_size + 4 > team_row())
+                 ? db->settings.icon_size + 4 : team_row();
     db->screen_h = s->h;
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : list_rows(db);
     {
         /* How much room the list actually has, once the leaf, the tray and
          * the clock have taken theirs.  A list longer than that is what
          * makes the bar scrollable (DB-034). */
-        int room = s->h - db->top_inset - (LEAF_H + PAD) -
+        int room = s->h - db->top_inset - (leaf_row() + PAD) -
                    (db->tray_count * TRAY_ROW) - SWITCH_ROW -
-                   (db->settings.show_clock ? CLOCK_H : 0) - 2 * PAD;
+                   (db->settings.show_clock ? clock_row() : 0) - 2 * PAD;
 
         db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
                         room > 0);
@@ -2245,17 +2282,17 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
                        db->dock == TIKU_TRK_DB_LEFT_MINI)
                           ? 0 : s->w - db->frame.w;
-        db->frame.h = LEAF_H + PAD + rows + PAD +
-                      (tiku_trk_deskbar_mini(db->dock) ? TEAM_H + 2 : 0) +
+        db->frame.h = leaf_row() + PAD + rows + PAD +
+                      (tiku_trk_deskbar_mini(db->dock) ? team_row() + 2 : 0) +
                       db->tray_count * TRAY_ROW + SWITCH_ROW +
-                      (db->settings.show_clock ? CLOCK_H : 0) + PAD;
+                      (db->settings.show_clock ? clock_row() : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one
          * row needs.  The application STRIP lives here -- buttons that
          * shrink as more launch and grow back as they quit (DB-033). */
         db->frame.x = 0;
         db->frame.w = s->w;
-        db->frame.h = LEAF_H + PAD;
+        db->frame.h = leaf_row() + PAD;
         db->frame.y = (db->dock == TIKU_TRK_DB_TOP)
                           ? db->top_inset : s->h - db->frame.h;
         rows = 0;
@@ -2290,7 +2327,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     leaf = (tiku_desk_rect_t){ db->frame.x + 2, db->frame.y + 2,
                                tiku_trk_deskbar_vertical(db->dock)
                                    ? db->frame.w - 4 : HLEAF_W,
-                               LEAF_H };
+                               leaf_row() };
     tiku_desk_fill(s, leaf, TIKU_DESK_C_TAB);
     tiku_desk_frame(s, leaf, dark);
     tiku_desk_bevel(s, tiku_desk_inset(leaf, 1),
@@ -2302,8 +2339,8 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         /* The collapsed dock's second icon: the application list folded
          * into one button that pops the running-apps menu (DB-037). */
         tiku_desk_rect_t ab = { db->frame.x + 2,
-                                db->frame.y + 2 + LEAF_H + 2,
-                                db->frame.w - 4, TEAM_H };
+                                db->frame.y + 2 + leaf_row() + 2,
+                                db->frame.w - 4, team_row() };
 
         draw_row_bg(s, ab, db->apps_menu_open);
         (void)tiku_trk_icon_paint(s, "application",
@@ -2373,7 +2410,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         bx = left;
         for (i2 = (db->hoverflow ? db->scroll : 0); i2 < n; i2++) {
             tiku_trk_team_t *t = &db->teams[db->order[i2]];
-            tiku_desk_rect_t b = { bx, db->frame.y + 2, bw - 2, LEAF_H };
+            tiku_desk_rect_t b = { bx, db->frame.y + 2, bw - 2, leaf_row() };
             char label[TIKU_TRK_DB_LABEL_MAX];
 
             if (bx + bw > right) {
@@ -2382,10 +2419,10 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             draw_row_bg(s, b, t->active);
             (void)tiku_trk_icon_paint(s,
                 strcmp(t->name, "Tracker") == 0 ? "folder" : "application",
-                b.x + 3, b.y + (LEAF_H - 16) / 2, 16);
+                b.x + 3, b.y + (leaf_row() - 16) / 2, 16);
             fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
             tiku_desk_text(s, f, b.x + 16 + 6,
-                           b.y + (LEAF_H - f->height) / 2 + f->ascent,
+                           b.y + (leaf_row() - f->height) / 2 + f->ascent,
                            label, TIKU_DESK_C_TEXT);
             bx += bw;
         }
@@ -2456,20 +2493,20 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             for (j = 0; j < t->win_count; j++) {
                 tiku_trk_dbwin_t *w = &t->wins[j];
                 tiku_desk_rect_t wr = { db->frame.x + 2, y, db->frame.w - 4,
-                                        WIN_H };
+                                        win_row() };
                 char wl[TIKU_TRK_DB_LABEL_MAX];
 
                 draw_row_bg(s, wr, w->current);
                 draw_win_icon(s, wr.x + WIN_INDENT,
-                              y + (WIN_H - 9) / 2,
+                              y + (win_row() - 9) / 2,
                               w->state == TIKU_TRK_DBW_MINIMIZED,
                               0);
                 fit_label(f, w->title, wr.w - WIN_INDENT - 20, wl,
                           sizeof wl);
                 tiku_desk_text(s, f, wr.x + WIN_INDENT + 14,
-                               y + (WIN_H - f->height) / 2 + f->ascent, wl,
+                               y + (win_row() - f->height) / 2 + f->ascent, wl,
                                TIKU_DESK_C_TEXT);
-                y += WIN_H + SEAM;
+                y += win_row() + SEAM;
             }
         }
     }
@@ -2477,7 +2514,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
     /* The tray, then the clock beneath it: the original reserves the
      * clock's room in the first row, and stacking it here is the vertical
      * equivalent. */
-    y = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + LEAF_H + PAD
+    y = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + leaf_row() + PAD
                                         : tray_y(db);
     tiku_desk_hline(s, db->frame.x + 4, y - 3, db->frame.w - 8,
                     tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
@@ -2547,7 +2584,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         }
         cw = tiku_desk_text_width(f, clock);
         tiku_desk_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
-                       y + (CLOCK_H - f->height) / 2 + f->ascent, clock,
+                       y + (clock_row() - f->height) / 2 + f->ascent, clock,
                        TIKU_DESK_C_TEXT);
     }
 
@@ -2652,7 +2689,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
                                                     : "menu.zone.show")
         };
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               CLOCK_H - 32, 170, 4 * 28 };
+                               clock_row() - 32, 170, 4 * 28 };
         tiku_desk_ui_menu(s, m, items, 4, db->clock_hot);
     }
     {
@@ -2662,7 +2699,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         int ly = list_y(db);
         int lb = db->frame.y + db->frame.h -
                  (db->tray_count * TRAY_ROW) -
-                 (db->settings.show_clock ? CLOCK_H : 0) - PAD;
+                 (db->settings.show_clock ? clock_row() : 0) - PAD;
         int cx = db->frame.x + db->frame.w / 2;
 
         tiku_trk_deskbar_arrows(db, &up, &down);
@@ -2764,7 +2801,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         /* A second click on the clock reactivates the existing popup. */
         if (db->settings.show_clock &&
             x >= db->frame.x && x < db->frame.x + db->frame.w &&
-            y >= db->frame.y + db->frame.h - CLOCK_H - PAD) {
+            y >= db->frame.y + db->frame.h - clock_row() - PAD) {
             return 1;
         }
         {
@@ -2818,7 +2855,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
     if (db->clock_menu_open) {
         tiku_desk_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               CLOCK_H - 32, 170, 4 * 28 };
+                               clock_row() - 32, 170, 4 * 28 };
         int inside = x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h;
         int item = inside ? (y - m.y) / 28 : -1;
         db->clock_menu_open = 0;
@@ -2970,8 +3007,8 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         int rowh = fm->height + 6;
         int n = (db->team_count > 0) ? db->team_count : 1;
         tiku_desk_rect_t ab = { db->frame.x + 2,
-                                db->frame.y + 2 + LEAF_H + 2,
-                                db->frame.w - 4, TEAM_H };
+                                db->frame.y + 2 + leaf_row() + 2,
+                                db->frame.w - 4, team_row() };
         tiku_desk_rect_t am;
         int idx;
 
@@ -3035,14 +3072,14 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         }
         return 1;
     }
-    if (y < db->frame.y + LEAF_H + 2) {
+    if (y < db->frame.y + leaf_row() + 2) {
         build_leaf(db);         /* from disk, every time (DB-005) */
         db->menu_open = 1;
         reset_menu_hots(db);
         return 1;
     }
     if (tiku_trk_deskbar_mini(db->dock) &&
-        y < db->frame.y + LEAF_H + 4 + TEAM_H) {
+        y < db->frame.y + leaf_row() + 4 + team_row()) {
         /* The second icon: the running-apps menu (DB-037). */
         db->apps_menu_open = 1;
         reset_menu_hots(db);
@@ -3074,7 +3111,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         int ly = list_y(db);
         int lb = db->frame.y + db->frame.h -
                  (db->tray_count * TRAY_ROW) -
-                 (db->settings.show_clock ? CLOCK_H : 0) - PAD;
+                 (db->settings.show_clock ? clock_row() : 0) - PAD;
 
         if (y >= ly && y < ly + 8) {
             (void)tiku_trk_deskbar_scroll(db, -astep);
@@ -3092,8 +3129,8 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     for (i = 0; i < db->team_count; i++) {
         int team = db->order[i];
         tiku_trk_team_t *t = &db->teams[team];
-        int team_h = (db->settings.icon_size + 4 > TEAM_H)
-                         ? db->settings.icon_size + 4 : TEAM_H;
+        int team_h = (db->settings.icon_size + 4 > team_row())
+                         ? db->settings.icon_size + 4 : team_row();
 
         /* The seam belongs to neither row; a click on it is a miss, which
          * is why hit-testing uses the row height and stepping uses the
@@ -3118,7 +3155,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             continue;
         }
         for (j = 0; j < t->win_count; j++) {
-            if (y >= ry && y < ry + WIN_H) {
+            if (y >= ry && y < ry + win_row()) {
                 pick->tag = t->wins[j].tag;
                 if (secondary || (button == 2 &&
                                   (mods & TIKU_TRK_MOD_SHIFT) != 0u)) {
@@ -3138,12 +3175,12 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 }
                 return 1;
             }
-            ry += WIN_H + SEAM;
+            ry += win_row() + SEAM;
         }
     }
     /* Secondary click on the tray opens clock options. */
     if (db->settings.show_clock && y >= db->frame.y + db->frame.h -
-        CLOCK_H - PAD) {
+        clock_row() - PAD) {
         if (secondary) {
             db->clock_menu_open = 1;
         reset_menu_hots(db);
@@ -3158,7 +3195,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             db->calendar_open = 1;
         }
     } else if (secondary && y >= db->frame.y + db->frame.h -
-               CLOCK_H - PAD - TRAY_ROW) {
+               clock_row() - PAD - TRAY_ROW) {
         db->clock_menu_open = 1;
         reset_menu_hots(db);
     }
@@ -3193,14 +3230,14 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
     }
     f = tiku_trk_deskbar_frame(db);
     ry = y - f.y;
-    if (ry < LEAF_H) {
+    if (ry < leaf_row()) {
         return TIKU_TRK_DB_DROP_LEAF;
     }
-    ry -= LEAF_H + PAD;
+    ry -= leaf_row() + PAD;
     for (i = 0; i < db->team_count; i++) {
         int team = db->order[i];
-        int team_h = (db->settings.icon_size + 4 > TEAM_H)
-                         ? db->settings.icon_size + 4 : TEAM_H;
+        int team_h = (db->settings.icon_size + 4 > team_row())
+                         ? db->settings.icon_size + 4 : team_row();
 
         if (ry >= 0 && ry < team_h) {
             if (which != NULL) { *which = team; }
@@ -3210,12 +3247,12 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         if (db->teams[team].expanded) {
             /* A window row is not a drop target of its own: the drop
              * belongs to the application that owns it. */
-            ry -= db->teams[team].win_count * (WIN_H + SEAM);
+            ry -= db->teams[team].win_count * (win_row() + SEAM);
         }
     }
     if (tiku_trk_deskbar_vertical(db->dock) &&
         y >= f.y + f.h - (db->tray_count * TRAY_ROW) -
-            (db->settings.show_clock ? CLOCK_H : 0) - PAD) {
+            (db->settings.show_clock ? clock_row() : 0) - PAD) {
         /* The tray and its clock: a dropped node is a subscription
          * request (DB-038). */
         return TIKU_TRK_DB_DROP_TRAY;

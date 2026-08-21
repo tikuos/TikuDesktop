@@ -12,6 +12,8 @@
 # arithmetic no redraw can fake.
 wait 15
 expect-visible-rows 10
+note and the Deskbar's own leaf, which is a row of the strip like any other
+expect-pixel 990 28 d8d8d8
 note put the interface up to 16 px from the window that chooses it
 click 980 20
 wait 4
@@ -31,3 +33,6 @@ note and back to the folder, whose rows are now taller than they were
 key w ctrl
 wait 8
 expect-visible-rows 8
+note the leaf reaches four pixels further down than it did: the strip is
+note drawn in the face it is now being asked to hold
+expect-pixel 990 28 ffcb00

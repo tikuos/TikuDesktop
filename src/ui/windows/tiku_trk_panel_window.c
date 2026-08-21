@@ -18,12 +18,37 @@
 #include "tiku_trk_task.h"
 
 #define PANEL_BUTTON_W 78
-#define PANEL_BUTTON_H 22
+#define PANEL_BUTTON_MIN_H 22   /* what a 12 px face needs; see button_h() */
 #define PANEL_PADDING  10
-#define PANEL_FIELD_H  22
+#define PANEL_FIELD_MIN_H 22
 #define PANEL_WIDTH    460
 #define PANEL_HEIGHT   320
 #define PANEL_MINI_ICON 16
+
+/*
+ * A button, a name field and a favourite are each a row of text, so each
+ * is as tall as the text in it.  They were written down against a 12 px
+ * face; this panel is opened from a shell whose face is a preference, so
+ * a name typed at 16 px was being typed into a field sized for 12.
+ *
+ * Each answers what it replaces at 12 px, and never less.
+ */
+static int
+panel_at_least(int want, int least)
+{
+    return (want > least) ? want : least;
+}
+
+static int button_h(void)
+{
+    return panel_at_least(tiku_desk_ui_row_h(), PANEL_BUTTON_MIN_H);
+}
+
+static int field_h(void)
+{
+    return panel_at_least(tiku_desk_ui_row_h(), PANEL_FIELD_MIN_H);
+}
+
 
 typedef enum {
     PANEL_HIT_NONE = 0,
@@ -35,7 +60,13 @@ typedef enum {
     PANEL_HIT_FAV_ROW
 } panel_hit_t;
 
-#define PANEL_FAV_ROW_H 18
+#define PANEL_FAV_MIN_H 18
+
+static int fav_row_h(void)
+{
+    return panel_at_least(tiku_desk_font_plain()->height + 3,
+                          PANEL_FAV_MIN_H);
+}
 
 static void
 mark_dirty(tiku_trk_panel_window_t *controller)
@@ -50,9 +81,9 @@ layout(const tiku_trk_panel_window_t *controller, tiku_desk_rect_t content,
        tiku_desk_rect_t *list, tiku_desk_rect_t *name,
        tiku_desk_rect_t *default_button, tiku_desk_rect_t *cancel)
 {
-    int bottom = content.y + content.h - PANEL_PADDING - PANEL_BUTTON_H;
+    int bottom = content.y + content.h - PANEL_PADDING - button_h();
     int field = controller->model.mode == TIKU_TRK_PANEL_SAVE
-                    ? PANEL_FIELD_H + PANEL_PADDING : 0;
+                    ? field_h() + PANEL_PADDING : 0;
 
     *list = (tiku_desk_rect_t){ content.x + PANEL_PADDING,
                                 content.y + PANEL_PADDING,
@@ -63,10 +94,10 @@ layout(const tiku_trk_panel_window_t *controller, tiku_desk_rect_t content,
     }
     *name = (tiku_desk_rect_t){ list->x,
                                 list->y + list->h + PANEL_PADDING,
-                                list->w, PANEL_FIELD_H };
+                                list->w, field_h() };
     *default_button = (tiku_desk_rect_t){
         content.x + content.w - PANEL_PADDING - PANEL_BUTTON_W,
-        bottom, PANEL_BUTTON_W, PANEL_BUTTON_H };
+        bottom, PANEL_BUTTON_W, button_h() };
     *cancel = *default_button;
     cancel->x -= PANEL_PADDING + PANEL_BUTTON_W;
 }
@@ -79,8 +110,8 @@ favorites_button(const tiku_trk_panel_window_t *controller)
 
     return (tiku_desk_rect_t){ content.x + PANEL_PADDING,
                                content.y + content.h - PANEL_PADDING -
-                                   PANEL_BUTTON_H,
-                               PANEL_BUTTON_W, PANEL_BUTTON_H };
+                                   button_h(),
+                               PANEL_BUTTON_W, button_h() };
 }
 
 static tiku_desk_rect_t
@@ -89,7 +120,7 @@ favorites_list_rect(const tiku_trk_panel_window_t *controller)
     tiku_desk_rect_t button = favorites_button(controller);
     int rows = (controller->fav_count > 0 ? controller->fav_count : 1) + 1;
     tiku_desk_rect_t r = { button.x, 0, 200,
-                           rows * PANEL_FAV_ROW_H + 4 };
+                           rows * fav_row_h() + 4 };
 
     r.y = button.y - r.h;
     return r;
@@ -244,7 +275,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                       i == controller->fav_count) ? 1 : i;
 
             tiku_desk_text(surface, font, fr.x + 8,
-                fr.y + 2 + at * PANEL_FAV_ROW_H + font->ascent + 1, text,
+                fr.y + 2 + at * fav_row_h() + font->ascent + 1, text,
                 TIKU_DESK_C_TEXT);
         }
     }
@@ -446,7 +477,7 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 
             if (INSIDE(fr)) {
                 if (row != NULL) {
-                    *row = (y - fr.y - 2) / PANEL_FAV_ROW_H;
+                    *row = (y - fr.y - 2) / fav_row_h();
                 }
                 return PANEL_HIT_FAV_ROW;
             }
