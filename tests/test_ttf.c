@@ -191,6 +191,111 @@ main(void)
     tiku_desk_ttf_close(ttf);
 
     /*
+     * A VARIABLE font, whose outlines are CFF2 -- the same charstrings
+     * left adjustable.  We draw the default instance: the blend operator
+     * keeps each value's default and steps over its deltas, and getting
+     * that step wrong desyncs the whole charstring.  So a ring must come
+     * out a ring, and an ideograph must have ink -- the CJK faces on a
+     * system are all this kind, and were refused whole before.
+     */
+    {
+        static const char *const vf[] = {
+            "/usr/share/fonts/abattis-cantarell-vf-fonts/Cantarell-VF.otf",
+            "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc",
+            "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf"
+        };
+        const char *path2 = pick(vf, 3);
+        tiku_desk_ttf_t *var = (path2 != NULL) ? tiku_desk_ttf_open(path2)
+                                               : NULL;
+
+        check(path2 == NULL || var != NULL, "DEV-012",
+              "a variable font opens: its default instance is a face");
+        if (var != NULL) {
+            tiku_desk_ttf_glyph_t ring;
+
+            check(tiku_desk_ttf_render(var, 'O', 28, &ring) &&
+                  ring.cover != NULL && has_hole(&ring), "DEV-012",
+                  "and draws a ring for an O");
+            tiku_desk_ttf_free_glyph(&ring);
+            tiku_desk_ttf_close(var);
+        }
+        /*
+         * The proof it draws the DEFAULT instance right, and not just
+         * SOMETHING: a variable font's default should render the same as
+         * the static font of the same design.  A blend that kept its
+         * deltas, a wrong region count, an unread vstore -- any of them
+         * desyncs the charstring and collapses the glyph.  A 'g' is a
+         * good witness: an O survives a broken blend, a g does not.
+         */
+        {
+            const char *vpath =
+                "/usr/share/fonts/abattis-cantarell-vf-fonts/Cantarell-VF.otf";
+            const char *spath =
+                "/usr/share/fonts/abattis-cantarell-fonts/"
+                "Cantarell-Regular.otf";
+            struct stat sv, ss;
+
+            if (stat(vpath, &sv) == 0 && stat(spath, &ss) == 0) {
+                tiku_desk_ttf_t *tv = tiku_desk_ttf_open(vpath);
+                tiku_desk_ttf_t *ts = tiku_desk_ttf_open(spath);
+                tiku_desk_ttf_glyph_t gv, gs;
+                long iv = 0, is = 0;
+                int k;
+
+                if (tv != NULL && ts != NULL) {
+                    int drewv = tiku_desk_ttf_render(tv, 'g', 20, &gv);
+                    int drews = tiku_desk_ttf_render(ts, 'g', 20, &gs);
+
+                    /* The ink is counted OUTSIDE the guard: a broken
+                     * blend renders a g with no cover at all, and the
+                     * check has to see that as a failure, not skip it. */
+                    if (drewv && gv.cover != NULL) {
+                        for (k = 0; k < gv.w * gv.h; k++) { iv += gv.cover[k]; }
+                    }
+                    if (drews && gs.cover != NULL) {
+                        for (k = 0; k < gs.w * gs.h; k++) { is += gs.cover[k]; }
+                    }
+                    check(is > 0 && gv.w == gs.w && gv.h == gs.h &&
+                          iv > is - is / 6 && iv < is + is / 6, "DEV-012",
+                          "the default instance of a variable font draws "
+                          "the same as the static font of its design");
+                    if (drewv) { tiku_desk_ttf_free_glyph(&gv); }
+                    if (drews) { tiku_desk_ttf_free_glyph(&gs); }
+                }
+                if (tv != NULL) { tiku_desk_ttf_close(tv); }
+                if (ts != NULL) { tiku_desk_ttf_close(ts); }
+            }
+        }
+        {
+            /* The point of all this: a Chinese face, which is a variable
+             * one on every system I have seen, and which no static table
+             * we could bake would ever hold. */
+            static const char *const cjk[] = {
+                "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/"
+                "NotoSansCJK-VF.ttc",
+                "/usr/share/fonts/google-droid-sans-fonts/"
+                "DroidSansFallbackFull.ttf"
+            };
+            const char *cpath = pick(cjk, 2);
+            tiku_desk_ttf_t *han = (cpath != NULL) ? tiku_desk_ttf_open(cpath)
+                                                   : NULL;
+
+            if (han != NULL && tiku_desk_ttf_has(han, 0x65E5u)) {
+                tiku_desk_ttf_glyph_t sun;
+
+                check(tiku_desk_ttf_render(han, 0x65E5u, 28, &sun) &&
+                      sun.cover != NULL && ink_of(&sun) > 0 &&
+                      has_hole(&sun), "DEV-012",
+                      "the ideograph for 'sun' draws, hole and all");
+                tiku_desk_ttf_free_glyph(&sun);
+            }
+            if (han != NULL) {
+                tiku_desk_ttf_close(han);
+            }
+        }
+    }
+
+    /*
      * The OTHER kind of outline.  An OpenType file with PostScript
      * curves keeps them in a CFF table as little programs, and a fifth
      * of the faces on a plain system are these.
