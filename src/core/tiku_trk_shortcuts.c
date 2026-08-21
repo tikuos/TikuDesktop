@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_shortcuts.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_input.h"
 #include "tiku_trk_view_defs.h"
 
@@ -51,85 +52,151 @@ tiku_trk_sc_label(int command, unsigned mods)
     /* Delete is also the shifted form of Move to Trash, but a Trash menu
      * asks for Delete directly and must not need Shift to say what it does. */
     if (command == TIKU_TRK_CMD_DELETE) {
-        return "Delete";
+        return tiku_trk_str("cmd.delete");
     }
     switch (canonical(command)) {
     /* The nine that rename themselves.  Capitalisation is the original's:
      * "Move to Trash" and "Empty Trash" capitalise Trash, the rest do not
      * capitalise their second word. */
-    case TIKU_TRK_CMD_CLEANUP:        return sh ? "Clean up all" : "Clean up";
-    case TIKU_TRK_CMD_CLOSE:          return sh ? "Close all" : "Close";
-    case TIKU_TRK_CMD_COPY:           return sh ? "Copy more" : "Copy";
-    case TIKU_TRK_CMD_CUT:            return sh ? "Cut more" : "Cut";
-    case TIKU_TRK_CMD_PASTE:          return sh ? "Paste links" : "Paste";
-    case TIKU_TRK_CMD_COPY_LAYOUT:    return "Copy layout";
-    case TIKU_TRK_CMD_PASTE_LAYOUT:   return "Paste layout";
+    case TIKU_TRK_CMD_CLEANUP:
+        return tiku_trk_str(sh ? "cmd.cleanup_shift" : "cmd.cleanup");
+    case TIKU_TRK_CMD_CLOSE:
+        return tiku_trk_str(sh ? "cmd.close_shift" : "cmd.close");
+    case TIKU_TRK_CMD_COPY:
+        return tiku_trk_str(sh ? "cmd.copy_shift" : "cmd.copy");
+    case TIKU_TRK_CMD_CUT:
+        return tiku_trk_str(sh ? "cmd.cut_shift" : "cmd.cut");
+    case TIKU_TRK_CMD_PASTE:
+        return tiku_trk_str(sh ? "cmd.paste_shift" : "cmd.paste");
+    case TIKU_TRK_CMD_COPY_LAYOUT:
+        return tiku_trk_str("cmd.copy_layout");
+    case TIKU_TRK_CMD_PASTE_LAYOUT:
+        return tiku_trk_str("cmd.paste_layout");
     case TIKU_TRK_CMD_CREATE_LINK:
-        return sh ? "Create relative link" : "Create link";
+        return tiku_trk_str(sh ? "cmd.create_link_shift" : "cmd.create_link");
     case TIKU_TRK_CMD_LINK_HERE:
-        return sh ? "Create relative link here" : "Create link here";
-    case TIKU_TRK_CMD_IDENTIFY:       return sh ? "Force identify"
-                                                : "Identify";
-    case TIKU_TRK_CMD_MOVE_TO_TRASH:  return sh ? "Delete" : "Move to Trash";
+        return tiku_trk_str(sh ? "cmd.link_here_shift" : "cmd.link_here");
+    case TIKU_TRK_CMD_IDENTIFY:
+        return tiku_trk_str(sh ? "cmd.identify_shift" : "cmd.identify");
+    case TIKU_TRK_CMD_MOVE_TO_TRASH:
+        return tiku_trk_str(sh ? "cmd.move_to_trash_shift" : "cmd.move_to_trash");
 
-    case TIKU_TRK_CMD_FIND:              return "Find" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_NEW_FOLDER:        return "New folder";
-    case TIKU_TRK_CMD_OPEN:              return "Open";
-    case TIKU_TRK_CMD_EDIT_QUERY:        return "Edit query";
-    case TIKU_TRK_CMD_OPEN_WITH:         return "Open with" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_GET_INFO:          return "Get info";
-    case TIKU_TRK_CMD_EDIT_NAME:         return "Edit name";
-    case TIKU_TRK_CMD_DUPLICATE:         return "Duplicate";
-    case TIKU_TRK_CMD_RESTORE:           return "Restore";
-    case TIKU_TRK_CMD_EMPTY_TRASH:       return "Empty Trash";
-    case TIKU_TRK_CMD_MOVE_TO:           return "Move to";
-    case TIKU_TRK_CMD_COPY_TO:           return "Copy to";
-    case TIKU_TRK_CMD_ICON_VIEW:         return "Icon view";
-    case TIKU_TRK_CMD_MINI_ICON_VIEW:    return "Mini icon view";
-    case TIKU_TRK_CMD_LIST_VIEW:         return "List view";
-    case TIKU_TRK_CMD_RESIZE_TO_FIT:     return "Resize to fit";
-    case TIKU_TRK_CMD_ARRANGE_BY:        return "Arrange by";
-    case TIKU_TRK_CMD_REVERSE_ORDER:     return "Reverse order";
-    case TIKU_TRK_CMD_SELECT_MATCHING:   return "Select" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_SELECT_ALL:        return "Select all";
-    case TIKU_TRK_CMD_INVERT_SELECTION:  return "Invert selection";
-    case TIKU_TRK_CMD_OPEN_PARENT:       return "Open parent";
-    case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE: return "Close all in workspace";
-    case TIKU_TRK_CMD_PREFERENCES:       return "Preferences" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_EDIT_TEMPLATES:    return "Edit templates" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_SORT_BY_NAME:      return "Name";
-    case TIKU_TRK_CMD_SORT_BY_KIND:      return "Kind";
-    case TIKU_TRK_CMD_SORT_BY_SIZE:      return "Size";
-    case TIKU_TRK_CMD_SORT_BY_VALUE:     return "Value";
-    case TIKU_TRK_CMD_ICON_SIZE_32:      return "32 x 32";
-    case TIKU_TRK_CMD_ICON_SIZE_40:      return "40 x 40";
-    case TIKU_TRK_CMD_ICON_SIZE_48:      return "48 x 48";
-    case TIKU_TRK_CMD_ICON_SIZE_64:      return "64 x 64";
-    case TIKU_TRK_CMD_ICON_SIZE_96:      return "96 x 96";
-    case TIKU_TRK_CMD_ICON_SIZE_128:     return "128 x 128";
-    case TIKU_TRK_CMD_SORT_BY_CAP:       return "Capability";
-    case TIKU_TRK_CMD_COL_NAME:          return "Name";
-    case TIKU_TRK_CMD_COL_KIND:          return "Kind";
-    case TIKU_TRK_CMD_COL_SIZE:          return "Size";
-    case TIKU_TRK_CMD_COL_VALUE:         return "Value";
-    case TIKU_TRK_CMD_COL_DATE:          return "Modified";
-    case TIKU_TRK_CMD_COL_PATH:          return "Location";
-    case TIKU_TRK_CMD_COL_PERM:          return "Permissions";
-    case TIKU_TRK_CMD_COL_ORIGINAL:      return "Original path";
-    case TIKU_TRK_CMD_COL_CAP:           return "Capability";
-    case TIKU_TRK_CMD_ADD_ONS:           return "Add-ons" "\xe2\x80\xa6";
-    case TIKU_TRK_CMD_MOUNT:             return "Mount";
-    case TIKU_TRK_CMD_UNMOUNT:           return "Unmount";
-    case TIKU_TRK_CMD_MOUNT_ALL:         return "Mount all";
-    case TIKU_TRK_CMD_MOUNT_SETTINGS:    return "Settings…";
-    case TIKU_TRK_CMD_OPEN_WITH_WINDOW:  return "Open with…";
-    case TIKU_TRK_CMD_MOVE_HERE:         return "Move here";
-    case TIKU_TRK_CMD_COPY_HERE:         return "Copy here";
-    case TIKU_TRK_CMD_ABOUT:             return "About this system…";
-    case TIKU_TRK_CMD_SHUTDOWN:          return "Shut down…";
-    case TIKU_TRK_CMD_CREATE_QUERY:      return "Create a Query";
-    case TIKU_TRK_CMD_CREATE_QUERY_TPL:  return "Create a Query template";
-    case TIKU_TRK_CMD_CANCEL:            return "Cancel";
+    case TIKU_TRK_CMD_FIND:
+        return tiku_trk_str("cmd.find");
+    case TIKU_TRK_CMD_NEW_FOLDER:
+        return tiku_trk_str("cmd.new_folder");
+    case TIKU_TRK_CMD_OPEN:
+        return tiku_trk_str("cmd.open");
+    case TIKU_TRK_CMD_EDIT_QUERY:
+        return tiku_trk_str("cmd.edit_query");
+    case TIKU_TRK_CMD_OPEN_WITH:
+        return tiku_trk_str("cmd.open_with");
+    case TIKU_TRK_CMD_GET_INFO:
+        return tiku_trk_str("cmd.get_info");
+    case TIKU_TRK_CMD_EDIT_NAME:
+        return tiku_trk_str("cmd.edit_name");
+    case TIKU_TRK_CMD_DUPLICATE:
+        return tiku_trk_str("cmd.duplicate");
+    case TIKU_TRK_CMD_RESTORE:
+        return tiku_trk_str("cmd.restore");
+    case TIKU_TRK_CMD_EMPTY_TRASH:
+        return tiku_trk_str("cmd.empty_trash");
+    case TIKU_TRK_CMD_MOVE_TO:
+        return tiku_trk_str("cmd.move_to");
+    case TIKU_TRK_CMD_COPY_TO:
+        return tiku_trk_str("cmd.copy_to");
+    case TIKU_TRK_CMD_ICON_VIEW:
+        return tiku_trk_str("cmd.icon_view");
+    case TIKU_TRK_CMD_MINI_ICON_VIEW:
+        return tiku_trk_str("cmd.mini_icon_view");
+    case TIKU_TRK_CMD_LIST_VIEW:
+        return tiku_trk_str("cmd.list_view");
+    case TIKU_TRK_CMD_RESIZE_TO_FIT:
+        return tiku_trk_str("cmd.resize_to_fit");
+    case TIKU_TRK_CMD_ARRANGE_BY:
+        return tiku_trk_str("cmd.arrange_by");
+    case TIKU_TRK_CMD_REVERSE_ORDER:
+        return tiku_trk_str("cmd.reverse_order");
+    case TIKU_TRK_CMD_SELECT_MATCHING:
+        return tiku_trk_str("cmd.select_matching");
+    case TIKU_TRK_CMD_SELECT_ALL:
+        return tiku_trk_str("cmd.select_all");
+    case TIKU_TRK_CMD_INVERT_SELECTION:
+        return tiku_trk_str("cmd.invert_selection");
+    case TIKU_TRK_CMD_OPEN_PARENT:
+        return tiku_trk_str("cmd.open_parent");
+    case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE:
+        return tiku_trk_str("cmd.close_all_workspace");
+    case TIKU_TRK_CMD_PREFERENCES:
+        return tiku_trk_str("cmd.preferences");
+    case TIKU_TRK_CMD_EDIT_TEMPLATES:
+        return tiku_trk_str("cmd.edit_templates");
+    case TIKU_TRK_CMD_SORT_BY_NAME:
+        return tiku_trk_str("label.name");
+    case TIKU_TRK_CMD_SORT_BY_KIND:
+        return tiku_trk_str("label.kind");
+    case TIKU_TRK_CMD_SORT_BY_SIZE:
+        return tiku_trk_str("label.size");
+    case TIKU_TRK_CMD_SORT_BY_VALUE:
+        return tiku_trk_str("label.value");
+    case TIKU_TRK_CMD_ICON_SIZE_32:
+        return tiku_trk_str("cmd.icon_size_32");
+    case TIKU_TRK_CMD_ICON_SIZE_40:
+        return tiku_trk_str("cmd.icon_size_40");
+    case TIKU_TRK_CMD_ICON_SIZE_48:
+        return tiku_trk_str("cmd.icon_size_48");
+    case TIKU_TRK_CMD_ICON_SIZE_64:
+        return tiku_trk_str("cmd.icon_size_64");
+    case TIKU_TRK_CMD_ICON_SIZE_96:
+        return tiku_trk_str("cmd.icon_size_96");
+    case TIKU_TRK_CMD_ICON_SIZE_128:
+        return tiku_trk_str("cmd.icon_size_128");
+    case TIKU_TRK_CMD_SORT_BY_CAP:
+        return tiku_trk_str("label.capability");
+    case TIKU_TRK_CMD_COL_NAME:
+        return tiku_trk_str("label.name");
+    case TIKU_TRK_CMD_COL_KIND:
+        return tiku_trk_str("label.kind");
+    case TIKU_TRK_CMD_COL_SIZE:
+        return tiku_trk_str("label.size");
+    case TIKU_TRK_CMD_COL_VALUE:
+        return tiku_trk_str("label.value");
+    case TIKU_TRK_CMD_COL_DATE:
+        return tiku_trk_str("cmd.col_date");
+    case TIKU_TRK_CMD_COL_PATH:
+        return tiku_trk_str("cmd.col_path");
+    case TIKU_TRK_CMD_COL_PERM:
+        return tiku_trk_str("cmd.col_perm");
+    case TIKU_TRK_CMD_COL_ORIGINAL:
+        return tiku_trk_str("cmd.col_original");
+    case TIKU_TRK_CMD_COL_CAP:
+        return tiku_trk_str("label.capability");
+    case TIKU_TRK_CMD_ADD_ONS:
+        return tiku_trk_str("cmd.add_ons");
+    case TIKU_TRK_CMD_MOUNT:
+        return tiku_trk_str("cmd.mount");
+    case TIKU_TRK_CMD_UNMOUNT:
+        return tiku_trk_str("cmd.unmount");
+    case TIKU_TRK_CMD_MOUNT_ALL:
+        return tiku_trk_str("cmd.mount_all");
+    case TIKU_TRK_CMD_MOUNT_SETTINGS:
+        return tiku_trk_str("cmd.mount_settings");
+    case TIKU_TRK_CMD_OPEN_WITH_WINDOW:
+        return tiku_trk_str("cmd.open_with_window");
+    case TIKU_TRK_CMD_MOVE_HERE:
+        return tiku_trk_str("cmd.move_here");
+    case TIKU_TRK_CMD_COPY_HERE:
+        return tiku_trk_str("cmd.copy_here");
+    case TIKU_TRK_CMD_ABOUT:
+        return tiku_trk_str("cmd.about");
+    case TIKU_TRK_CMD_SHUTDOWN:
+        return tiku_trk_str("cmd.shutdown");
+    case TIKU_TRK_CMD_CREATE_QUERY:
+        return tiku_trk_str("cmd.create_query");
+    case TIKU_TRK_CMD_CREATE_QUERY_TPL:
+        return tiku_trk_str("cmd.create_query_tpl");
+    case TIKU_TRK_CMD_CANCEL:
+        return tiku_trk_str("button.cancel");
     default:                             return "";
     }
 }

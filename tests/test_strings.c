@@ -112,6 +112,43 @@ main(void)
     tiku_trk_strings_reset();
 
     /*
+     * The name attribute, found among others.  A reader that matched the
+     * letters "name" anywhere would take a key out of a neighbour's value
+     * or lose the entry; an unterminated quote must be refused, not kept.
+     */
+    p = plant("<strings>\n"
+              "  <string tip=\"pick a name here\" name=\"greet\">Hi</string>\n"
+              "  <string other=\"name='trap'\" name=\"real\">Yes</string>\n"
+              "  <string namely=\"trap\" name=\"right\">Yes</string>\n  <string name=\"open\">Close</string>\n"
+              "</strings>\n");
+    (void)(p != NULL && tiku_trk_strings_load_file(p));
+    check(strcmp(tiku_trk_str("greet"), "Hi") == 0,
+          "the name= attribute is found past a decoy in another value");
+    check(strcmp(tiku_trk_str("real"), "Yes") == 0 &&
+          strcmp(tiku_trk_str("trap"), "trap") == 0,
+          "and a name='...' inside another value is not taken for the key");
+    check(strcmp(tiku_trk_str("open"), "Close") == 0,
+          "a plain entry beside the decoys still reads");
+    check(strcmp(tiku_trk_str("right"), "Yes") == 0 &&
+          strcmp(tiku_trk_str("namely"), "namely") == 0,
+          "and an attribute merely BEGINNING with name is not it either");
+    if (p != NULL) {
+        (void)remove(p);
+    }
+    tiku_trk_strings_reset();
+    {
+        const char *bad = plant("<string name=\"ab>text</string>");
+
+        (void)(bad != NULL && tiku_trk_strings_load_file(bad));
+        check(strcmp(tiku_trk_str("ab"), "ab") == 0,
+              "an attribute quote that never closes is refused, not stored");
+        if (bad != NULL) {
+            (void)remove(bad);
+        }
+        tiku_trk_strings_reset();
+    }
+
+    /*
      * A catalogue built to hurt.  These files arrive by being dropped in
      * a folder; an unterminated tag, an entity with no semicolon, a value
      * that never closes -- each must be read without running off the end,

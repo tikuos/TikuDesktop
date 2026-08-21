@@ -251,35 +251,71 @@ decode(const char *p, const char *close)
     return out;
 }
 
-/** @brief The value of attribute @p name inside the tag [p,tagend). */
+/** @brief Whether @p c ends an attribute name or separates tokens. */
+static int
+is_space(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+/**
+ * @brief The value of attribute @p name inside the tag [p,tagend).
+ *
+ * A proper walk, attribute by attribute: read a NAME, an '=', a quoted
+ * VALUE, and match only when the WHOLE name equals @p name.  Anything
+ * else -- the letters of @p name inside another attribute's value, an
+ * attribute called something-name, a value whose quote never closes --
+ * is stepped over rather than mistaken for the one we want.
+ */
 static char *
 attr(const char *p, const char *tagend, const char *name)
 {
     size_t nlen = strlen(name);
 
     while (p < tagend) {
-        if ((size_t)(tagend - p) > nlen && memcmp(p, name, nlen) == 0 &&
-            (p == tagend || p[nlen] == '=' || p[nlen] == ' ')) {
-            const char *q = p + nlen;
-            char quote;
+        const char *ns, *ne;
+        char quote;
 
-            while (q < tagend && (*q == ' ' || *q == '=')) {
-                q++;
-            }
-            if (q >= tagend || (*q != '"' && *q != '\'')) {
-                return NULL;
-            }
-            quote = *q++;
-            {
-                const char *close = q;
-
-                while (close < tagend && *close != quote) {
-                    close++;
-                }
-                return (close <= tagend) ? decode(q, close) : NULL;
-            }
+        while (p < tagend && is_space(*p)) {
+            p++;
+        }
+        ns = p;
+        while (p < tagend && *p != '=' && *p != '/' && !is_space(*p)) {
+            p++;
+        }
+        ne = p;
+        if (ne == ns) {
+            p++;                /* a stray '=' or '/' : step past it, on */
+            continue;
+        }
+        while (p < tagend && is_space(*p)) {
+            p++;
+        }
+        if (p >= tagend || *p != '=') {
+            continue;           /* an attribute with no value: skip it */
         }
         p++;
+        while (p < tagend && is_space(*p)) {
+            p++;
+        }
+        if (p >= tagend || (*p != '"' && *p != '\'')) {
+            return NULL;        /* value not quoted: the tag is malformed */
+        }
+        quote = *p++;
+        {
+            const char *vstart = p;
+
+            while (p < tagend && *p != quote) {
+                p++;
+            }
+            if (p >= tagend) {
+                return NULL;    /* the quote never closes: reject it */
+            }
+            if ((size_t)(ne - ns) == nlen && memcmp(ns, name, nlen) == 0) {
+                return decode(vstart, p);
+            }
+            p++;                /* past the closing quote, to the next */
+        }
     }
     return NULL;
 }

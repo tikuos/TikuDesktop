@@ -325,6 +325,7 @@ $(BUILD)/test_edit: src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
 
 $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
                     src/ui/tiku_trk_cwmenu.c src/core/tiku_trk_model.c \
+                    src/core/tiku_trk_strings.c \
                     src/backends/tiku_trk_volume.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
