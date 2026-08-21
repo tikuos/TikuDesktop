@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_find.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_state.h"
 #include "tiku_desk_ui.h"
 
@@ -46,16 +47,16 @@ static const struct {
     unsigned          ops;          /* bit per tiku_trk_qop_t              */
     tiku_trk_qop_t    first;
 } kFields[] = {
-    { TIKU_TRK_QF_NAME,     "Name",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
-    { TIKU_TRK_QF_PATH,     "Path",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
-    { TIKU_TRK_QF_KIND,     "Kind",       OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_VALUE,    "Value",      OPS_TEXT | OPS_NUM,
+    { TIKU_TRK_QF_NAME,     "label.name",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
+    { TIKU_TRK_QF_PATH,     "find.path",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
+    { TIKU_TRK_QF_KIND,     "label.kind",       OPS_TEXT,  TIKU_TRK_OP_IS },
+    { TIKU_TRK_QF_VALUE,    "label.value",      OPS_TEXT | OPS_NUM,
                                                      TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_UNIT,     "Unit",       OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_CAP,      "Capability", OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_SIZE,     "Size",       OPS_NUM,   TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_MODIFIED, "Modified",   OPS_DATE,  TIKU_TRK_OP_LESS },
-    { TIKU_TRK_QF_WRITABLE, "Writable",   OPS_EXACT, TIKU_TRK_OP_IS }
+    { TIKU_TRK_QF_UNIT,     "find.unit",       OPS_TEXT,  TIKU_TRK_OP_IS },
+    { TIKU_TRK_QF_CAP,      "label.capability", OPS_TEXT,  TIKU_TRK_OP_IS },
+    { TIKU_TRK_QF_SIZE,     "label.size",       OPS_NUM,   TIKU_TRK_OP_IS },
+    { TIKU_TRK_QF_MODIFIED, "label.modified",   OPS_DATE,  TIKU_TRK_OP_LESS },
+    { TIKU_TRK_QF_WRITABLE, "find.writable",   OPS_EXACT, TIKU_TRK_OP_IS }
 };
 #define NFIELDS ((int)(sizeof kFields / sizeof kFields[0]))
 
@@ -81,10 +82,10 @@ field_label(tiku_trk_qfield_t f)
 
     for (i = 0; i < NFIELDS; i++) {
         if (kFields[i].field == f) {
-            return kFields[i].label;
+            return tiku_trk_str(kFields[i].label);
         }
     }
-    return "Name";
+    return tiku_trk_str("label.name");
 }
 
 /** @brief The operators @p f offers, as a bit per operator. */
@@ -485,7 +486,7 @@ tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out, size_t max)
         return 0;
     }
     if (f == NULL || f->everywhere) {
-        snprintf(out, max, "Everywhere");
+        snprintf(out, max, "%s", tiku_trk_str("find.everywhere"));
         return (int)strlen(out);
     }
     for (i = 0; i < f->place_count; i++) {
@@ -497,7 +498,7 @@ tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out, size_t max)
     /* One place is named; several are counted.  Listing them would not fit
      * and would not be read. */
     if (n == 0) {
-        snprintf(out, max, "Everywhere");
+        snprintf(out, max, "%s", tiku_trk_str("find.everywhere"));
     } else if (n == 1) {
         snprintf(out, max, "/%.*s", (int)max - 2, f->place[last]);
     } else {
@@ -604,7 +605,7 @@ tiku_trk_find_type_label(const tiku_trk_find_t *f)
     const char *t, *label;
 
     if (f == NULL || f->type[0] == '\0') {
-        return "All files and folders";
+        return tiku_trk_str("find.all_files");
     }
     record = tiku_trk_types_exact(f->types, f->type);
     if (record != NULL && record->desc[0] != '\0') {
@@ -974,12 +975,12 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
     tiku_desk_fill(s, frame, TIKU_DESK_C_PANEL);
 
     r = mode_rect(frame);
-    label_at(s, frame.x + PAD, r, "Find");
+    label_at(s, frame.x + PAD, r, tiku_trk_str("find.find"));
     draw_popup_button(s, r, kModes[f->mode]);
 
     if (f->mode == TIKU_TRK_QMODE_NAME) {
         r = row_rect(frame, 0);
-        label_at(s, r.x, r, "Name contains");
+        label_at(s, r.x, r, tiku_trk_str("find.name_contains"));
         r.x += LABEL_W + 40;
         r.w = VALUE_W + OP_W;
         r.y += (ROW_H - TEXT_H) / 2;
@@ -988,7 +989,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                    f->focus == TIKU_TRK_FIND_FOCUS_NAME);
     } else if (f->mode == TIKU_TRK_QMODE_FORMULA) {
         r = row_rect(frame, 0);
-        label_at(s, r.x, r, "Formula");
+        label_at(s, r.x, r, tiku_trk_str("find.formula"));
         r.x += LABEL_W;
         r.w = frame.w - 2 * PAD - LABEL_W;
         r.y += (ROW_H - TEXT_H) / 2;
@@ -1029,14 +1030,14 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 
     if (tiku_trk_find_type_shown(f)) {
         r = type_rect(f, frame);
-        label_at(s, frame.x + PAD, r, "Of type");
+        label_at(s, frame.x + PAD, r, tiku_trk_str("find.of_type"));
         draw_popup_button(s, r, tiku_trk_find_type_label(f));
     }
     r = scope_rect(f, frame);
-    label_at(s, frame.x + PAD, r, "Search in");
+    label_at(s, frame.x + PAD, r, tiku_trk_str("find.search_in"));
     (void)tiku_trk_find_scope_label(f, buf, sizeof buf);
     draw_popup_button(s, r, buf);
-    tiku_desk_ui_checkbox(s, trash_rect(f, frame), "Include Trash",
+    tiku_desk_ui_checkbox(s, trash_rect(f, frame), tiku_trk_str("find.include_trash"),
                           f->include_trash ? TIKU_DESK_S_ON : 0u);
 
     if (f->mode == TIKU_TRK_QMODE_ATTRIBUTE) {
@@ -1058,7 +1059,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
     }
 
     draw_button(s, button_rect(f, frame, 0),
-                tiku_trk_find_primary_is_save(f) ? "Save" : "Search",
+                tiku_trk_find_primary_is_save(f) ? tiku_trk_str("find.save")
+                                                 : tiku_trk_str("find.search"),
                 f->has_keyboard ? TIKU_DESK_S_DEFAULT
                                 : TIKU_DESK_S_NORMAL);
     /* Always live: with something attached it saves back, and with
@@ -1206,7 +1208,8 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             if (!field_in_menu(f, kFields[i].field)) {
                 continue;
             }
-            at = tiku_trk_menu_add(m, kFields[i].label, i, 0, 0u, 1);
+            at = tiku_trk_menu_add(m, tiku_trk_str(kFields[i].label), i, 0,
+                                   0u, 1);
             if (kFields[i].field == f->row[row].field) {
                 m->item[at].marked = 1;
             }
@@ -1241,7 +1244,8 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         char names[TIKU_TRK_QUERY_LIST_MAX][128];
         int n;
 
-        (void)tiku_trk_menu_add(m, "Save as template", 0, 0, 0u, 1);
+        (void)tiku_trk_menu_add(m, tiku_trk_str("find.save_as_template"), 0, 0,
+                                0u, 1);
         /* Templates ABOVE the queries that were run, which is the order
          * the original's menu has them in: a template is a thing you keep,
          * a run is a thing that happened (Q-032). */
@@ -1266,7 +1270,8 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         if (f->loaded_kind == TIKU_TRK_QREC_TEMPLATE &&
             f->loaded_name[0] != '\0' && !f->edit_template) {
             (void)tiku_trk_menu_add_separator(m);
-            (void)tiku_trk_menu_add(m, "Edit loaded template", 1, 0, 0u,
+            (void)tiku_trk_menu_add(m, tiku_trk_str("find.edit_loaded_template"), 1,
+                                    0, 0u,
                                     1);
         }
         break;
@@ -1287,14 +1292,14 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         (void)tiku_trk_menu_add_separator(m);
         /* Any folder at all, not only the roots the startup scan found:
          * the chooser is the file panel (Q-019). */
-        (void)tiku_trk_menu_add(m, "Select folders\xe2\x80\xa6", 99, 0,
+        (void)tiku_trk_menu_add(m, tiku_trk_str("find.select_folders"), 99, 0,
                                 0u, 1);
         break;
     case TIKU_TRK_FIND_HIT_TYPE: {
         char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
         int nu = used_read(f->store, used, TIKU_TRK_FIND_MOST_USED);
 
-        (void)tiku_trk_menu_add(m, "All files and folders", 0, 0, 0u, 1);
+        (void)tiku_trk_menu_add(m, tiku_trk_str("find.all_files"), 0, 0, 0u, 1);
         m->item[0].marked = (f->type[0] == '\0');
         (void)tiku_trk_menu_add_separator(m);
         for (i = 0; i < nu; i++) {

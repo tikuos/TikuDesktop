@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_info.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_attr.h"
 #include "tiku_trk_thumb.h"
 
@@ -58,9 +59,9 @@ const char *
 tiku_trk_info_tab_name(tiku_trk_info_tab_t tab)
 {
     switch (tab) {
-    case TIKU_TRK_INFO_TAB_PERMISSIONS: return "Permissions";
-    case TIKU_TRK_INFO_TAB_ATTRIBUTES:  return "Attributes";
-    default:                            return "Information";
+    case TIKU_TRK_INFO_TAB_PERMISSIONS: return tiku_trk_str("info.permissions");
+    case TIKU_TRK_INFO_TAB_ATTRIBUTES:  return tiku_trk_str("menu.attributes");
+    default:                            return tiku_trk_str("info.information");
     }
 }
 
@@ -139,7 +140,7 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     f = list[i];
     switch (f) {
     case TIKU_TRK_INFO_F_SIZE:
-        if (label != NULL) { *label = "Size"; }
+        if (label != NULL) { *label = tiku_trk_str("label.size"); }
         if (tiku_trk_model_is_container(&in->model)) {
             if (in->calc == TIKU_TRK_INFO_CALC_RUNNING) {
                 /* Not "0 bytes" and not blank: the window says what it is
@@ -166,7 +167,7 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     case TIKU_TRK_INFO_F_CAPACITY: {
         char total[32], avail[32];
 
-        if (label != NULL) { *label = "Capacity"; }
+        if (label != NULL) { *label = tiku_trk_str("info.capacity"); }
         (void)tiku_trk_attr_size_fit((int64_t)in->model.facts.total, 32,
                                      chars, NULL, total, sizeof total);
         (void)tiku_trk_attr_size_fit((int64_t)in->model.facts.avail, 32,
@@ -177,7 +178,8 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     case TIKU_TRK_INFO_F_CREATED:
     case TIKU_TRK_INFO_F_MODIFIED:
         if (label != NULL) {
-            *label = (f == TIKU_TRK_INFO_F_CREATED) ? "Created" : "Modified";
+            *label = (f == TIKU_TRK_INFO_F_CREATED) ? tiku_trk_str("info.created")
+                                           : tiku_trk_str("label.modified");
         }
         /* Through the columns' own formatter, so a date reads the same
          * here as it does in the list (MA-041). */
@@ -185,24 +187,24 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
                                      value, max);
         break;
     case TIKU_TRK_INFO_F_KIND:
-        if (label != NULL) { *label = "Kind"; }
+        if (label != NULL) { *label = tiku_trk_str("label.kind"); }
         snprintf(value, max, "%s", tiku_trk_model_kind_string(&in->model));
         break;
     case TIKU_TRK_INFO_F_OPENS_WITH:
-        if (label != NULL) { *label = "Opens with"; }
+        if (label != NULL) { *label = tiku_trk_str("info.opens_with"); }
         snprintf(value, max, "%s", in->opens_with);
         break;
     case TIKU_TRK_INFO_F_LOCATION: {
         char dir[TIKU_TRK_PATH_MAX];
 
-        if (label != NULL) { *label = "Location"; }
+        if (label != NULL) { *label = tiku_trk_str("label.location"); }
         if (tiku_trk_info_location(in, dir, sizeof dir, NULL, 0)) {
             snprintf(value, max, "%s", dir);
         }
         break;
     }
     case TIKU_TRK_INFO_F_LINK:
-        if (label != NULL) { *label = "Link to"; }
+        if (label != NULL) { *label = tiku_trk_str("info.link_to"); }
         {
             char tgt[TIKU_TRK_PATH_MAX];
             ssize_t got = readlink(in->path, tgt, sizeof tgt - 1u);
@@ -219,14 +221,14 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_trk_store_t *store,
     case TIKU_TRK_INFO_F_DIMENSIONS: {
         uint32_t dim[2] = { 0u, 0u };
 
-        if (label != NULL) { *label = "Dimensions"; }
+        if (label != NULL) { *label = tiku_trk_str("info.dimensions"); }
         (void)tiku_trk_state_read(store, in->path, TIKU_TRK_ATTR_THUMB_DIM,
                                   dim, sizeof dim);
         snprintf(value, max, "%u x %u", (unsigned)dim[0], (unsigned)dim[1]);
         break;
     }
     case TIKU_TRK_INFO_F_FILESYSTEM:
-        if (label != NULL) { *label = "Filesystem"; }
+        if (label != NULL) { *label = tiku_trk_str("info.filesystem"); }
         snprintf(value, max, "%s",
                  (in->model.backend != NULL &&
                   in->model.backend->ops != NULL)
@@ -483,7 +485,8 @@ tiku_trk_info_perm_toggle(tiku_trk_info_t *in, tiku_trk_backend_t *b,
     }
     if (!in->perm_editable || b == NULL || b->ops == NULL ||
         b->ops->setperm == NULL) {
-        snprintf(err, errmax, "This item's permissions cannot be changed.");
+        snprintf(err, errmax, "%s",
+                 tiku_trk_str("info.msg.perms_cannot_change"));
         return -1;
     }
     want = in->perm ^ perm_bit(which);
@@ -690,11 +693,11 @@ tiku_trk_info_relink(tiku_trk_info_t *in, tiku_trk_backend_t *b,
         err[0] = '\0';
     }
     if (in == NULL || !in->used || target == NULL || target[0] == '\0') {
-        snprintf(err, errmax, "Nothing to point it at.");
+        snprintf(err, errmax, "%s", tiku_trk_str("info.msg.nothing_to_point"));
         return -1;
     }
     if (in->model.kind != TIKU_TRK_KIND_SYMLINK) {
-        snprintf(err, errmax, "That is not a link.");
+        snprintf(err, errmax, "%s", tiku_trk_str("info.msg.not_a_link"));
         return -1;
     }
     /* Read BEFORE the link is replaced, and read RAW: a store that keeps
@@ -706,7 +709,7 @@ tiku_trk_info_relink(tiku_trk_info_t *in, tiku_trk_backend_t *b,
         (void)tiku_trk_state_each(store, in->path, keep_attr, &kept);
     }
     if (unlink(in->path) != 0 || symlink(target, in->path) != 0) {
-        snprintf(err, errmax, "The link could not be re-pointed.");
+        snprintf(err, errmax, "%s", tiku_trk_str("info.msg.repoint_failed"));
         return -1;
     }
     for (i = 0; i < kept.n; i++) {

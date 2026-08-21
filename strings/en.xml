@@ -211,4 +211,47 @@
   <string name="kind.desktop">Desktop</string>
   <string name="kind.unknown">Unknown</string>
 
+  <!-- Browser menus -->
+  <string name="menu.file">File</string>
+  <string name="menu.new">New</string>
+  <string name="menu.templates">Templates</string>
+  <string name="menu.window">Window</string>
+  <string name="menu.attributes">Attributes</string>
+  <string name="menu.add_ons">Add-ons</string>
+  <string name="menu.no_add_ons">No add-ons</string>
+  <string name="menu.open_with">Open with</string>
+  <string name="menu.add_new_submenu">Add new submenu…</string>
+
+  <!-- Find window -->
+  <string name="find.path">Path</string>
+  <string name="find.unit">Unit</string>
+  <string name="find.writable">Writable</string>
+  <string name="find.find">Find</string>
+  <string name="find.name_contains">Name contains</string>
+  <string name="find.formula">Formula</string>
+  <string name="find.of_type">Of type</string>
+  <string name="find.search_in">Search in</string>
+  <string name="find.include_trash">Include Trash</string>
+  <string name="find.save">Save</string>
+  <string name="find.search">Search</string>
+  <string name="find.everywhere">Everywhere</string>
+  <string name="find.all_files">All files and folders</string>
+  <string name="find.save_as_template">Save as template</string>
+  <string name="find.edit_loaded_template">Edit loaded template</string>
+  <string name="find.select_folders">Select folders…</string>
+
+  <!-- Info window -->
+  <string name="info.capacity">Capacity</string>
+  <string name="info.opens_with">Opens with</string>
+  <string name="info.link_to">Link to</string>
+  <string name="info.dimensions">Dimensions</string>
+  <string name="info.filesystem">Filesystem</string>
+  <string name="info.created">Created</string>
+  <string name="info.information">Information</string>
+  <string name="info.permissions">Permissions</string>
+  <string name="info.msg.perms_cannot_change">This item's permissions cannot be changed.</string>
+  <string name="info.msg.nothing_to_point">Nothing to point it at.</string>
+  <string name="info.msg.not_a_link">That is not a link.</string>
+  <string name="info.msg.repoint_failed">The link could not be re-pointed.</string>
+
 </strings>

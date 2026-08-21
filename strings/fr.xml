@@ -193,4 +193,47 @@
   <string name="kind.desktop">Bureau</string>
   <string name="kind.unknown">Inconnu</string>
 
+  <!-- Menus -->
+  <string name="menu.file">Fichier</string>
+  <string name="menu.new">Nouveau</string>
+  <string name="menu.templates">Modèles</string>
+  <string name="menu.window">Fenêtre</string>
+  <string name="menu.attributes">Attributs</string>
+  <string name="menu.add_ons">Extensions</string>
+  <string name="menu.no_add_ons">Aucune extension</string>
+  <string name="menu.open_with">Ouvrir avec</string>
+  <string name="menu.add_new_submenu">Ajouter un sous-menu…</string>
+
+  <!-- Fenêtre Rechercher -->
+  <string name="find.path">Chemin</string>
+  <string name="find.unit">Unité</string>
+  <string name="find.writable">Modifiable</string>
+  <string name="find.find">Rechercher</string>
+  <string name="find.name_contains">Le nom contient</string>
+  <string name="find.formula">Formule</string>
+  <string name="find.of_type">Du type</string>
+  <string name="find.search_in">Rechercher dans</string>
+  <string name="find.include_trash">Inclure la corbeille</string>
+  <string name="find.save">Enregistrer</string>
+  <string name="find.search">Rechercher</string>
+  <string name="find.everywhere">Partout</string>
+  <string name="find.all_files">Tous les fichiers et dossiers</string>
+  <string name="find.save_as_template">Enregistrer comme modèle</string>
+  <string name="find.edit_loaded_template">Modifier le modèle chargé</string>
+  <string name="find.select_folders">Choisir des dossiers…</string>
+
+  <!-- Fenêtre Informations -->
+  <string name="info.capacity">Capacité</string>
+  <string name="info.opens_with">Ouvre avec</string>
+  <string name="info.link_to">Lien vers</string>
+  <string name="info.dimensions">Dimensions</string>
+  <string name="info.filesystem">Système de fichiers</string>
+  <string name="info.created">Créé</string>
+  <string name="info.information">Informations</string>
+  <string name="info.permissions">Permissions</string>
+  <string name="info.msg.perms_cannot_change">Les permissions de cet élément ne peuvent pas être changées.</string>
+  <string name="info.msg.nothing_to_point">Rien vers quoi le pointer.</string>
+  <string name="info.msg.not_a_link">Ce n'est pas un lien.</string>
+  <string name="info.msg.repoint_failed">Le lien n'a pas pu être re-pointé.</string>
+
 </strings>
