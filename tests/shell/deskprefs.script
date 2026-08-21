@@ -26,8 +26,15 @@ wait 12
 expect-pixel 100 120 10c810
 shot /tmp/trk_deskprefs_shot.png
 wait 3
-note and the icons have a size of their own
-click 600 435
+note and the icons have a size of their own, on a stepper of two buttons
+note whose halves are asked for rather than guessed at: it was one string
+note split at a written-down pixel, and which half a press landed in
+note depended on the face the number happened to be drawn in
+click 680 440
 wait 10
-shot /tmp/trk_deskprefs_icon.png
-wait 3
+expect-icon-at photos 42 25
+note and the - beside it takes them back again
+click 580 440
+wait 10
+expect-icon-at photos 29 20
+quit

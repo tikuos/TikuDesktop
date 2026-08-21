@@ -15,7 +15,6 @@
 #include "tiku_trk_desktop_view.h"
 
 #define TIKU_TRK_DESK_PREFS_W 430
-#define TIKU_TRK_DESK_PREFS_H 430
 
 typedef struct {
     tiku_trk_deskprefs_t          model;
