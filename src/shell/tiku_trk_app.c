@@ -628,24 +628,25 @@ count_label(app_t *a, int width, char *label, size_t max)
     } else if (tiku_trk_poseview_pole(a->view, tiku_trk_now())) {
         /* TS-038: a load long enough to notice says so.  The count is not
          * final yet, so it is not shown as though it were. */
-        snprintf(label, max, "%d item%s so far", total,
+        snprintf(label, max, tiku_trk_str("status.items_so_far"), total,
                  (total == 1) ? "" : "s");
     } else if (total == 0) {
         /* TS-037: an empty folder says so in words.  "0 items" reads like
          * a count that failed rather than a folder with nothing in it. */
         snprintf(label, max, "%s",
                  tiku_trk_poseview_is_filtering(a->view)
-                     ? "nothing matches" : "empty folder");
+                     ? tiku_trk_str("status.nothing_matches")
+                     : tiku_trk_str("status.empty_folder"));
     } else if (tiku_trk_poseview_selection_count(a->view) > 0) {
         /* What is picked out is the thing being worked on, so the count
          * says how much of the folder that is (TS-037). */
-        snprintf(label, max, "%d/%d selected",
+        snprintf(label, max, tiku_trk_str("status.selected"),
                  tiku_trk_poseview_selection_count(a->view), total);
     } else {
-        snprintf(label, max, "%d item%s%s", total,
+        snprintf(label, max, tiku_trk_str("status.items_n"), total,
                  (total == 1) ? "" : "s",
                  tiku_trk_poseview_is_filtering(a->view)
-                     ? " (filtered)" : "");
+                     ? tiku_trk_str("status.filtered") : "");
     }
 }
 

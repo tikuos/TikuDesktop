@@ -110,12 +110,73 @@ tiku_trk_strings_builtin_count(void)
 
 /* ------------------------------------------------------------- the file */
 
+/**
+ * @brief The sequence of conversions in @p fmt, e.g. "ds" for "%d of %s".
+ *
+ * A translation is passed to snprintf as a FORMAT where the English was;
+ * if it does not carry the same conversions, in the same order, it could
+ * read arguments that are not there.  So the signature is compared before
+ * a translation is let in, and a mismatch keeps the English (which the
+ * code was written against) rather than the translator's guess.
+ */
+static void
+format_sig(const char *fmt, char *out, size_t max)
+{
+    size_t at = 0;
+
+    if (fmt == NULL) {
+        if (max > 0) { out[0] = '\0'; }
+        return;
+    }
+    while (*fmt != '\0' && at + 1 < max) {
+        if (*fmt == '%') {
+            fmt++;
+            if (*fmt == '%') {          /* a literal percent is not one */
+                fmt++;
+                continue;
+            }
+            /* skip flags, width, precision, length -- keep the conversion */
+            while (*fmt != '\0' && strchr("-+ #0123456789.*hlLqjzt", *fmt)) {
+                fmt++;
+            }
+            if (*fmt != '\0') {
+                out[at++] = *fmt++;
+            }
+        } else {
+            fmt++;
+        }
+    }
+    out[at] = '\0';
+}
+
+/** @brief Whether a translation's specifiers match the baked English's. */
+static int
+format_ok(const char *key, const char *value)
+{
+    const char *en = builtin_of(key);
+    char a[32], b[32];
+
+    if (en == NULL) {
+        return 1;               /* a key with no English to disagree with */
+    }
+    format_sig(en, a, sizeof a);
+    format_sig(value, b, sizeof b);
+    return strcmp(a, b) == 0;
+}
+
 /** @brief Put @p key -> @p value into the override table, replacing. */
 static void
 put(char *key, char *value)
 {
     int i;
 
+    if (!format_ok(key, value)) {
+        /* A translation that would misread its arguments is no better
+         * than the English it fails to replace: keep the English. */
+        free(key);
+        free(value);
+        return;
+    }
     for (i = 0; i < g_over_count; i++) {
         if (strcmp(g_over[i].key, key) == 0) {
             free(g_over[i].value);

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "tiku_trk_attr.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_folder_window.h"
 
 #include "tiku_trk_titleview.h"
@@ -973,12 +974,13 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_desk_surface_t *surface,
             snprintf(label, sizeof label, "%s", folder->count_text);
         } else {
             if (total == 0) {
-                snprintf(label, sizeof label, "empty folder");
+                snprintf(label, sizeof label, "%s",
+                             tiku_trk_str("status.empty_folder"));
             } else if (selected > 0) {
-                snprintf(label, sizeof label, "%d/%d selected", selected,
-                         total);
+                snprintf(label, sizeof label, tiku_trk_str("status.selected"),
+                         selected, total);
             } else {
-                snprintf(label, sizeof label, "%d item%s", total,
+                snprintf(label, sizeof label, tiku_trk_str("status.items"), total,
                          total == 1 ? "" : "s");
             }
             folder->count_last_total = total;

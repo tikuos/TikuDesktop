@@ -149,6 +149,25 @@ main(void)
     }
 
     /*
+     * A translation is passed to snprintf as a format where the English
+     * was, so one whose %-specifiers do not match must be refused -- else
+     * "Dock: %d" could become "Dock: %s %s" and read arguments not there.
+     */
+    p = plant("<strings>\n"
+              "  <string name=\"prefs.deskbar.dock_n\">Quai : %s %s</string>\n"
+              "  <string name=\"button.defaults\">D\xc3\xa9""fauts</string>\n"
+              "</strings>\n");
+    (void)(p != NULL && tiku_trk_strings_load_file(p));
+    check(strcmp(tiku_trk_str("prefs.deskbar.dock_n"), "Dock: %d") == 0,
+          "a translation whose format does not match is refused");
+    check(strcmp(tiku_trk_str("button.defaults"), "D\xc3\xa9""fauts") == 0,
+          "while a plain translation beside it is still taken");
+    if (p != NULL) {
+        (void)remove(p);
+    }
+    tiku_trk_strings_reset();
+
+    /*
      * A catalogue built to hurt.  These files arrive by being dropped in
      * a folder; an unterminated tag, an entity with no semicolon, a value
      * that never closes -- each must be read without running off the end,

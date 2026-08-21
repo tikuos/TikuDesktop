@@ -284,4 +284,14 @@
   <string name="month.11">November</string>
   <string name="month.12">December</string>
 
+  <!-- Status bar -->
+  <string name="status.selected">%d/%d selected</string>
+  <string name="status.items">%d item%s</string>
+  <string name="status.items_so_far">%d item%s so far</string>
+  <string name="status.items_n">%d item%s%s</string>
+  <string name="status.filtered"> (filtered)</string>
+  <string name="status.empty_folder">empty folder</string>
+  <string name="status.nothing_matches">nothing matches</string>
+  <string name="status.clipboard">%d item%s on the clipboard</string>
+
 </strings>

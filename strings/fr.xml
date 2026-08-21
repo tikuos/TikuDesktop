@@ -266,4 +266,14 @@
   <string name="month.11">novembre</string>
   <string name="month.12">décembre</string>
 
+  <!-- Barre d'état -->
+  <string name="status.selected">%d/%d sélectionnés</string>
+  <string name="status.items">%d élément%s</string>
+  <string name="status.items_so_far">%d élément%s jusqu’ici</string>
+  <string name="status.items_n">%d élément%s%s</string>
+  <string name="status.filtered"> (filtrés)</string>
+  <string name="status.empty_folder">dossier vide</string>
+  <string name="status.nothing_matches">aucune correspondance</string>
+  <string name="status.clipboard">%d élément%s dans le presse-papiers</string>
+
 </strings>

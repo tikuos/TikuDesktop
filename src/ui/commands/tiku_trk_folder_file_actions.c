@@ -501,7 +501,7 @@ copy_selection(tiku_trk_folder_file_actions_t *controller,
     (void)tiku_trk_clip_add(controller->clip, selection, selected,
         cut ? TIKU_TRK_CLIP_MOVE : TIKU_TRK_CLIP_COPY, !more);
     snprintf(controller->status, controller->status_size,
-             "%d item%s on the clipboard",
+             tiku_trk_str("status.clipboard"),
              tiku_trk_clip_count(controller->clip),
              tiku_trk_clip_count(controller->clip) == 1 ? "" : "s");
 }
