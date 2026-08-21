@@ -46,6 +46,29 @@ pick(const char *const *paths, int n)
     return NULL;
 }
 
+/**
+ * @brief Whether @p g is a ring: ink around the outside, paper within.
+ *
+ * A capital O is two contours wound against each other, and the hole is
+ * what nonzero winding is FOR.  Fill it in -- by losing a contour, by
+ * losing the sign of one, by flattening the curves that make it -- and
+ * this is the check that notices.
+ */
+static int
+has_hole(const tiku_desk_ttf_glyph_t *g)
+{
+    int cx = g->w / 2, cy = g->h / 2;
+
+    if (g->w < 5 || g->h < 5 || g->cover == NULL) {
+        return 0;
+    }
+    /* Paper in the middle, ink to the left and right of it on the same
+     * row: a disc fails the first, a bar fails the second. */
+    return g->cover[cy * g->w + cx] < 40 &&
+           g->cover[cy * g->w + 1] > 100 &&
+           g->cover[cy * g->w + (g->w - 2)] > 100;
+}
+
 /** @brief How much ink a rasterised glyph carries. */
 static long
 ink_of(const tiku_desk_ttf_glyph_t *g)
@@ -58,6 +81,9 @@ ink_of(const tiku_desk_ttf_glyph_t *g)
     }
     return sum;
 }
+
+/** @brief Read every truncation of @p path, drawing all of each. */
+static void truncations_of(const char *path);
 
 int
 main(void)
@@ -132,6 +158,14 @@ main(void)
         check(acute.h > a.h - 4, "DEV-012",
               "and is taller than its bare letter: the accent is on it");
 
+        {
+            tiku_desk_ttf_glyph_t ring;
+
+            check(tiku_desk_ttf_render(ttf, 'O', 28, &ring) &&
+                  has_hole(&ring), "DEV-012",
+                  "a capital O is a ring here too, drawn from quadratics");
+            tiku_desk_ttf_free_glyph(&ring);
+        }
         check(tiku_desk_ttf_render(ttf, ' ', 16, &space) &&
               space.adv > 0 && (space.cover == NULL ||
                                 ink_of(&space) == 0), "DEV-012",
@@ -156,17 +190,51 @@ main(void)
     }
     tiku_desk_ttf_close(ttf);
 
-    /* A PostScript-outline face says so in its first four bytes.  Better
-     * to be turned away at the door than half-drawn. */
+    /*
+     * The OTHER kind of outline.  An OpenType file with PostScript
+     * curves keeps them in a CFF table as little programs, and a fifth
+     * of the faces on a plain system are these.
+     */
     {
         const char *other = pick(cff, 2);
+        tiku_desk_ttf_t *ps = (other != NULL) ? tiku_desk_ttf_open(other)
+                                              : NULL;
 
-        if (other != NULL && strstr(other, ".otf") != NULL) {
-            check(!tiku_desk_ttf_is_font(other) &&
-                  tiku_desk_ttf_open(other) == NULL, "DEV-012",
-                  "a face whose outlines we cannot read is refused whole");
+        check(other == NULL || ps != NULL, "DEV-012",
+              "a PostScript-outline face opens like any other");
+        if (ps != NULL) {
+            tiku_desk_ttf_glyph_t a, acute;
+
+            check(tiku_desk_ttf_family(ps) != NULL &&
+                  tiku_desk_ttf_family(ps)[0] != '\0' &&
+                  tiku_desk_ttf_has(ps, 'A'), "DEV-012",
+                  "names itself and answers its character map the same way");
+            check(tiku_desk_ttf_render(ps, 'A', 16, &a) && a.cover != NULL &&
+                  ink_of(&a) > 0 && a.adv > 0, "DEV-012",
+                  "and its charstrings draw: cubics, where the other had "
+                  "quadratics");
+            check(a.oy < 0 && a.h > 6 && a.h < 24, "DEV-012",
+                  "to about the size and place a 16 px capital belongs");
+            check(tiku_desk_ttf_render(ps, 0xE9u, 16, &acute) &&
+                  acute.cover != NULL && ink_of(&acute) > 0 &&
+                  acute.h > a.h - 4, "DEV-012",
+                  "accents too, which a charstring draws rather than places");
+            {
+                tiku_desk_ttf_glyph_t ring;
+
+                check(tiku_desk_ttf_render(ps, 'O', 28, &ring) &&
+                      has_hole(&ring), "DEV-012",
+                      "and a capital O comes out a ring, not a blot: its "
+                      "two contours are wound against each other");
+                tiku_desk_ttf_free_glyph(&ring);
+            }
+            tiku_desk_ttf_free_glyph(&a);
+            tiku_desk_ttf_free_glyph(&acute);
+            tiku_desk_ttf_close(ps);
         }
     }
+    check(!tiku_desk_ttf_is_font("/etc/hostname"), "DEV-012",
+          "while a file that is neither is still turned away unread");
 
     /*
      * These files arrive by being dropped in a folder, which is to say
@@ -174,28 +242,91 @@ main(void)
      * read without reaching outside it.
      */
     {
+        /* Both kinds of outline: a charstring is a PROGRAM, and a bent
+         * one can ask for a subroutine that is not there. */
+        const char *bent[2];
+        int which;
+
+        bent[0] = path;
+        bent[1] = pick(cff, 2);
+        for (which = 0; which < 2; which++) {
+            if (bent[which] != NULL) {
+                truncations_of(bent[which]);
+            }
+        }
+        check(1, "DEV-012",
+              "and every truncation of one is read without running off it");
+    }
+
+    if (fails > 0) {
+        printf("\nFAILURES\n");
+        return 1;
+    }
+    printf("\na dropped face reads and draws\n");
+    return 0;
+}
+
+/**
+ * @brief A repeatable stream of nonsense.
+ *
+ * Seeded and its own, so a failure here is a failure anybody can have
+ * again by running the test: a fuzzer nobody can reproduce is a rumour.
+ */
+static unsigned long bend_seed = 0x5eed1234ul;
+
+static unsigned long
+bend_next(void)
+{
+    bend_seed = bend_seed * 6364136223846793005ul + 1442695040888963407ul;
+    return bend_seed >> 33;
+}
+
+static void
+truncations_of(const char *path)
+{
+    {
         unsigned char *whole;
         long size;
         FILE *f = fopen(path, "rb");
-        int cut, survived = 1;
+        int cut;
 
         if (f != NULL && fseek(f, 0L, SEEK_END) == 0 &&
             (size = ftell(f)) > 0 && fseek(f, 0L, SEEK_SET) == 0) {
             whole = malloc((size_t)size);
             if (whole != NULL && fread(whole, 1u, (size_t)size, f) ==
                                  (size_t)size) {
-                for (cut = 1; cut < 32; cut++) {
+                for (cut = 1; cut < 220; cut++) {
                     char tmp[] = "/tmp/trk_ttf_cutXXXXXX";
-                    long keep = size * cut / 32;
+                    long keep = (cut < 32) ? size * cut / 32 : size;
                     int fd = mkstemp(tmp);
                     FILE *w;
+                    unsigned char *copy = malloc((size_t)size);
 
-                    if (fd < 0) {
+                    if (fd < 0 || copy == NULL) {
+                        free(copy);
                         continue;
+                    }
+                    memcpy(copy, whole, (size_t)size);
+                    if (cut >= 32) {
+                        /* Not cut short but BENT: an offset that points
+                         * somewhere else entirely is what a half-read
+                         * table looks like, and a truncation never makes
+                         * one.  This is the shape that found a crash.
+                         *
+                         * A FEW bytes, not many: bend enough of a file
+                         * and it stops being a font at the first table,
+                         * so the deep paths -- the ones with the bugs in
+                         * them -- are never reached at all. */
+                        int b, n = 1 + (int)(bend_next() % 6u);
+
+                        for (b = 0; b < n; b++) {
+                            copy[bend_next() % (unsigned long)size] =
+                                (unsigned char)(bend_next() & 0xffu);
+                        }
                     }
                     w = fdopen(fd, "wb");
                     if (w != NULL) {
-                        (void)fwrite(whole, 1u, (size_t)keep, w);
+                        (void)fwrite(copy, 1u, (size_t)keep, w);
                         (void)fclose(w);
                         {
                             tiku_desk_ttf_t *hurt = tiku_desk_ttf_open(tmp);
@@ -214,6 +345,7 @@ main(void)
                             }
                         }
                     }
+                    free(copy);
                     (void)remove(tmp);
                 }
             }
@@ -222,14 +354,5 @@ main(void)
         if (f != NULL) {
             (void)fclose(f);
         }
-        check(survived, "DEV-012",
-              "and every truncation of one is read without running off it");
     }
-
-    if (fails > 0) {
-        printf("\nFAILURES\n");
-        return 1;
-    }
-    printf("\na dropped face reads and draws\n");
-    return 0;
 }

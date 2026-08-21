@@ -13,7 +13,9 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "tiku_desk_font.h"
 #include "tiku_desk_gfx.h"
@@ -73,6 +75,57 @@ ink_of(const char *text, int scale)
     count = inked(s);
     tiku_desk_surface_free(s);
     return count;
+}
+
+/** @brief The first of @p paths that is there, or NULL. */
+static const char *
+pick(const char *const *paths, int n)
+{
+    struct stat st;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (stat(paths[i], &st) == 0) {
+            return paths[i];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief The share of a drawing's ink that is neither ink nor paper.
+ *
+ * A soft horizontal edge spends its coverage in the middle of the scale;
+ * a crisp one commits.  This is what grid-fitting is FOR, and it can be
+ * measured without any reference renderer to compare against.
+ */
+static double
+ambiguous(const char *text)
+{
+    tiku_desk_surface_t *s = tiku_desk_surface_new(400, 40,
+                                                   TIKU_DESK_RGB(255, 255,
+                                                                 255));
+    int gray = 0, inked = 0;
+    long i, n;
+
+    if (s == NULL) {
+        return -1.0;
+    }
+    tiku_desk_text(s, tiku_desk_font_plain(), 4, 28, text,
+                   TIKU_DESK_RGB(0, 0, 0));
+    n = (long)s->w * s->h;
+    for (i = 0; i < n; i++) {
+        unsigned v = 255u - (s->px[i] & 0xffu);
+
+        if (v > 8u) {
+            inked++;
+            if (v >= 48u && v <= 208u) {
+                gray++;
+            }
+        }
+    }
+    tiku_desk_surface_free(s);
+    return inked ? (double)gray / (double)inked : -1.0;
 }
 
 int
@@ -153,6 +206,61 @@ main(void)
                   "DEV-011", what);
         }
         (void)tiku_desk_font_set_family(0);
+    }
+
+    /*
+     * A face read from a file, rather than baked.  What it can draw is
+     * what the FILE has -- which is the whole point of the folder.
+     */
+    {
+        static const char *const cjk[] = {
+            "/usr/share/fonts/google-droid-sans-fonts/DroidSansFallbackFull.ttf",
+            "/usr/share/fonts/google-droid-sans-fonts/DroidSansJapanese.ttf"
+        };
+        static const char *const sans[] = {
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        };
+        const char *wide = pick(cjk, 2);
+        const char *plain_file = pick(sans, 2);
+
+        if (wide != NULL && tiku_desk_font_set_files(wide, NULL)) {
+            (void)tiku_desk_font_set_size(16);
+            check(ink_of("\xe4\xb8\x80", 1) > 0 &&
+                  ink_of("\xe3\x81\x82", 1) > 0, "DEV-011",
+                  "a dropped face draws the letters IT has, Chinese included");
+            check(tiku_desk_text_width(tiku_desk_font_plain(),
+                                       "\xe4\xb8\x80") > space * 2,
+                  "DEV-011",
+                  "and gives them the room the file says, not a blank's");
+            /*
+             * This face has no Latin at all.  Every menu in the desktop
+             * is Latin, so a face dropped in for one script must not
+             * blank every other one.
+             */
+            check(ink_of("Tracker", 1) > 0 && ink_of("A", 1) > 0, "DEV-011",
+                  "while a letter it has NOT got falls back to a baked face");
+        }
+        if (plain_file != NULL) {
+            double fitted, loose;
+
+            (void)tiku_desk_font_use_baked();
+            (void)setenv("TIKU_DESK_HINT", "0", 1);
+            (void)tiku_desk_font_set_files(plain_file, NULL);
+            (void)tiku_desk_font_set_size(12);
+            loose = ambiguous("Handgloves 0123456789 AHOxen");
+            (void)tiku_desk_font_use_baked();
+            (void)unsetenv("TIKU_DESK_HINT");
+            (void)tiku_desk_font_set_files(plain_file, NULL);
+            (void)tiku_desk_font_set_size(12);
+            fitted = ambiguous("Handgloves 0123456789 AHOxen");
+            check(fitted > 0.0 && loose > 0.0 && fitted < loose, "DEV-011",
+                  "and the vertical fit commits its edges: less of the ink "
+                  "is left at neither end of the scale");
+        }
+        tiku_desk_font_use_baked();
+        (void)tiku_desk_font_set_family(0);
+        (void)tiku_desk_font_set_size(12);
     }
 
     if (fails > 0) {

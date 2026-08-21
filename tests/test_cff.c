@@ -1,0 +1,258 @@
+/*
+ * The new Tracker for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * test_cff.c - a PostScript-outline face built byte by byte.
+ *
+ * The other tests read the fonts on this machine, which is the right way
+ * to find out whether we can draw with real ones.  It is the wrong way
+ * to prove what happens to a BAD one: a fuzzer found a crash here in a
+ * single byte of an 88 KB file -- three bytes in the whole file reach
+ * it -- so no amount of bending at random would catch it coming back.
+ *
+ * So this builds the smallest CFF that gets as far as the bug: a Private
+ * DICT whose subroutine index sits two bytes from the end of the table,
+ * where its count can be read and its offsets cannot, and a charstring
+ * that calls into it.  A reader that lets a half-read index out of the
+ * door walks a null pointer here, every time, on every machine.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#define _DEFAULT_SOURCE 1
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "tiku_desk_ttf.h"
+
+static int fails;
+
+static void
+check(int cond, const char *row, const char *what)
+{
+    printf("  [%s] %-9s %s\n", cond ? "PASS" : "FAIL", row, what);
+    if (!cond) {
+        fails++;
+    }
+}
+
+/* ------------------------------------------------------------ building */
+
+static unsigned char file[4096];
+static size_t at;
+
+static void
+u8(unsigned v)
+{
+    if (at < sizeof file) {
+        file[at++] = (unsigned char)(v & 0xffu);
+    }
+}
+
+static void
+u16(unsigned v)
+{
+    u8(v >> 8);
+    u8(v);
+}
+
+static void
+u32(unsigned long v)
+{
+    u16((unsigned)(v >> 16));
+    u16((unsigned)v);
+}
+
+/** @brief A DICT operand, in the five-byte form, so sizes are known. */
+static void
+dict_int(long v)
+{
+    u8(29u);
+    u32((unsigned long)v);
+}
+
+#define CFF_AT      256         /* where the CFF table starts in the file */
+#define CFF_LEN     52          /* and how long it says it is */
+
+/**
+ * @brief Lay out a CFF table whose Subrs index is cut off by two bytes.
+ *
+ * Offsets are counted from the table, and every length below is what the
+ * structure above it forced, so the numbers are arithmetic rather than
+ * magic.  Header 4, an empty Name INDEX 2, a Top DICT INDEX of 5 + 17,
+ * two more empty INDEXes 4: the charstrings land at 32 and run 9 bytes,
+ * so the Private DICT lands at 41 and the subroutine index it names
+ * lands at 49 -- three bytes from the end of a table 52 long.
+ *
+ * THREE, not two: at two the index cannot even read its offSize, so the
+ * offsets it never sets are never walked either, and the bug hides.  It
+ * has to get far enough in to believe itself.
+ */
+static void
+build_cff(void)
+{
+    size_t base = at;
+
+    u8(1u); u8(0u); u8(4u); u8(1u);         /* major, minor, hdrSize, offSize */
+    u16(0u);                                /* Name INDEX: empty */
+
+    /* Top DICT INDEX: one dictionary, seventeen bytes of it. */
+    u16(1u); u8(1u); u8(1u); u8(18u);
+    dict_int(32); u8(17u);                  /* CharStrings at 32 */
+    dict_int(6); dict_int(41); u8(18u);     /* Private: 6 bytes, at 41 */
+
+    u16(0u);                                /* String INDEX: empty */
+    u16(0u);                                /* Global Subrs: empty */
+
+    /* CharStrings INDEX at 32: glyph 0 draws nothing, glyph 1 calls a
+     * subroutine that the index cannot hand back. */
+    u16(2u); u8(1u); u8(1u); u8(2u); u8(4u);
+    u8(0x0Eu);                              /* glyph 0: endchar */
+    u8(0x20u); u8(0x0Au);                   /* glyph 1: -107, callsubr */
+
+    /* Private DICT at 41: Subrs eight bytes further on, at 49. */
+    dict_int(8); u8(19u);
+
+    u8(0u); u8(0u);                         /* 47, 48: padding */
+    u16(5u);                                /* 49: five elements, it says */
+    u8(1u);                                 /* 51: one byte per offset --
+                                             *     and then the table ends,
+                                             *     with no offsets in it */
+    while (at - base < CFF_LEN) {
+        u8(0u);
+    }
+}
+
+/** @brief The smallest OpenType file that carries the above. */
+static void
+build_font(void)
+{
+    size_t i;
+
+    memset(file, 0, sizeof file);
+    at = 0;
+    /* Offset table: OTTO, six tables. */
+    u32(0x4F54544Ful);                      /* 'OTTO' */
+    u16(6u); u16(0u); u16(0u); u16(0u);
+
+    /* The directory, in tag order, pointing at fixed places. */
+    {
+        const char *tag[6] = { "CFF ", "cmap", "head", "hhea", "hmtx",
+                               "maxp" };
+        unsigned long off[6] = { CFF_AT, 512, 640, 768, 896, 960 };
+        unsigned long len[6] = { CFF_LEN, 24, 54, 36, 8, 6 };
+
+        for (i = 0; i < 6; i++) {
+            u8((unsigned)tag[i][0]); u8((unsigned)tag[i][1]);
+            u8((unsigned)tag[i][2]); u8((unsigned)tag[i][3]);
+            u32(0ul);
+            u32(off[i]);
+            u32(len[i]);
+        }
+    }
+
+    at = CFF_AT;
+    build_cff();
+
+    /* cmap: one trimmed subtable, mapping 'A' to glyph 1. */
+    at = 512;
+    u16(0u); u16(1u);
+    u16(3u); u16(1u); u32(12ul);
+    at = 512 + 12;
+    u16(6u); u16(12u); u16(0u);
+    u16(65u); u16(1u); u16(1u);
+
+    at = 640;                               /* head */
+    u32(0x00010000ul); u32(0ul); u32(0ul); u32(0x5F0F3CF5ul);
+    u16(0u); u16(1000u);                    /* +18: unitsPerEm */
+    at = 640 + 50;
+    u16(0u);                                /* indexToLocFormat */
+
+    at = 768;                               /* hhea */
+    u32(0x00010000ul);
+    u16(800u); u16(0xFF38u);                /* ascender, descender */
+    at = 768 + 34;
+    u16(2u);                                /* numberOfHMetrics */
+
+    at = 896;                               /* hmtx: two of them */
+    u16(500u); u16(0u); u16(500u); u16(0u);
+
+    at = 960;                               /* maxp */
+    u32(0x00010000ul); u16(2u);             /* numGlyphs */
+
+    at = 1024;
+}
+
+/** @brief Write what we built, and hand back the path. */
+static const char *
+plant(void)
+{
+    static char path[] = "/tmp/trk_cff_madeXXXXXX";
+    int fd = mkstemp(path);
+    FILE *f;
+
+    if (fd < 0) {
+        return NULL;
+    }
+    f = fdopen(fd, "wb");
+    if (f == NULL) {
+        return NULL;
+    }
+    (void)fwrite(file, 1u, at, f);
+    (void)fclose(f);
+    return path;
+}
+
+int
+main(void)
+{
+    const char *path;
+    tiku_desk_ttf_t *ttf;
+
+    printf("a PostScript-outline face built byte by byte (DEV-013)\n");
+
+    build_font();
+    path = plant();
+    if (path == NULL) {
+        printf("  [FAIL] DEV-013   nowhere to write the face\n");
+        return 1;
+    }
+    check(tiku_desk_ttf_is_font(path), "DEV-013",
+          "what we built is taken for a face, as a bad one would be");
+
+    ttf = tiku_desk_ttf_open(path);
+    check(ttf != NULL, "DEV-013",
+          "and opens: everything it says about itself is well formed");
+    if (ttf != NULL) {
+        tiku_desk_ttf_glyph_t g;
+
+        /*
+         * THE ONE THAT MATTERS.  Glyph 1's charstring calls subroutine
+         * zero of an index whose count says five and whose offsets are
+         * off the end of the table.  A reader that keeps the count from
+         * a read that FAILED will follow a pointer it never set.
+         */
+        memset(&g, 0, sizeof g);
+        (void)tiku_desk_ttf_render(ttf, 'A', 16, &g);
+        tiku_desk_ttf_free_glyph(&g);
+        check(1, "DEV-013",
+              "a subroutine index cut off two bytes short draws nothing, "
+              "rather than following a pointer nobody set");
+
+        (void)tiku_desk_ttf_render(ttf, 'B', 16, &g);
+        tiku_desk_ttf_free_glyph(&g);
+        check(1, "DEV-013",
+              "and a letter the map has not got is simply not drawn");
+        tiku_desk_ttf_close(ttf);
+    }
+    (void)remove(path);
+
+    if (fails > 0) {
+        printf("\nFAILURES\n");
+        return 1;
+    }
+    printf("\nthe made-up face is read without harm\n");
+    return 0;
+}
