@@ -1,5 +1,7 @@
 # shell: tracker
 # The same rule in the browser: the hot row follows the pointer.
+# Pinned in the menu's left PADDING: the shortcut column is right-aligned,
+# so a pin out there moves whenever a label's width changes.
 wait 8
 click-row 1
 wait 2
@@ -7,11 +9,11 @@ press-row 1 3
 wait 2
 release-row 1 3
 wait 5
-expect-pixel 150 205 d8d8d8
+expect-pixel 32 205 d8d8d8
 move 60 200
 wait 3
-expect-pixel 150 205 336698
+expect-pixel 32 205 336698
 move 500 400
 wait 3
-expect-pixel 150 205 d8d8d8
+expect-pixel 32 205 d8d8d8
 quit
