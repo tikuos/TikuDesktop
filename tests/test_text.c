@@ -258,6 +258,36 @@ main(void)
                   "and the vertical fit commits its edges: less of the ink "
                   "is left at neither end of the scale");
         }
+        /*
+         * Six faces is all the collection holds, and the interface asks
+         * for more than six: a pair at each size, and the smaller faces
+         * chrome asks for by size alone.  Making room for one must not
+         * take out the face the SAME call already handed back, which was
+         * a zeroed face and a crash on the next letter drawn.
+         */
+        if (plain_file != NULL) {
+            const char *bold_file =
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf";
+            struct stat st;
+
+            tiku_desk_font_use_baked();
+            if (stat(bold_file, &st) != 0) {
+                bold_file = NULL;
+            }
+            if (tiku_desk_font_set_files(plain_file, bold_file)) {
+                (void)tiku_desk_font_set_size(12);
+                (void)tiku_desk_font_at(10);
+                (void)tiku_desk_font_at(14);
+                (void)tiku_desk_font_at(16);
+                (void)tiku_desk_font_set_size(14);
+                (void)tiku_desk_font_set_size(16);
+                check(tiku_desk_text_width(tiku_desk_font_plain(),
+                                           "Handgloves") > 0 &&
+                      ink_of("Handgloves", 1) > 0, "DEV-011",
+                      "and a seventh face does not take out the pair in "
+                      "force to make room for itself");
+            }
+        }
         tiku_desk_font_use_baked();
         (void)tiku_desk_font_set_family(0);
         (void)tiku_desk_font_set_size(12);

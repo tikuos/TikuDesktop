@@ -125,7 +125,57 @@ build_cff(void)
     }
 }
 
+/**
+ * @brief A second CFF, where a subroutine ends the glyph.
+ *
+ * Type 2's endchar finishes the GLYPH.  Meet one inside a subroutine and
+ * everything after the call that reached it must not draw -- a reader
+ * that treats it as an ordinary return carries on and puts down whatever
+ * follows.  So: glyph 1 calls a subroutine that is nothing but endchar,
+ * and then tries to draw a triangle.  The triangle must not appear.
+ *
+ * Header 4, Name 2, Top DICT 5 + 17, two empty INDEXes 4: charstrings at
+ * 32 running 19 bytes, Private DICT at 51, its Subrs at 57.
+ */
+static void
+build_endchar_cff(void)
+{
+    size_t base = at;
+
+    u8(1u); u8(0u); u8(4u); u8(1u);
+    u16(0u);                                /* Name INDEX: empty */
+
+    u16(1u); u8(1u); u8(1u); u8(18u);       /* Top DICT INDEX */
+    dict_int(32); u8(17u);                  /* CharStrings at 32 */
+    dict_int(6); dict_int(51); u8(18u);     /* Private: 6 bytes, at 51 */
+
+    u16(0u);                                /* String INDEX: empty */
+    u16(0u);                                /* Global Subrs: empty */
+
+    /* CharStrings at 32: 2 + 1 + 3 offsets + 13 of data. */
+    u16(2u); u8(1u); u8(1u); u8(2u); u8(14u);
+    u8(0x0Eu);                              /* glyph 0: endchar */
+    u8(0x20u); u8(0x0Au);                   /* glyph 1: -107, callsubr */
+    u8(0xEFu); u8(0x8Bu); u8(0x15u);        /* then 100 0 rmoveto ... */
+    u8(0x8Bu); u8(0xEFu); u8(0x05u);        /* ... 0 100 rlineto ... */
+    u8(0xEFu); u8(0x8Bu); u8(0x05u);        /* ... 100 0 rlineto ... */
+    u8(0x0Eu);                              /* ... endchar */
+
+    /* Private DICT at 51: Subrs six bytes on, at 57. */
+    dict_int(6); u8(19u);
+
+    /* Subrs INDEX at 57: one subroutine, and it is an endchar. */
+    u16(1u); u8(1u); u8(1u); u8(2u);
+    u8(0x0Eu);
+
+    while (at - base < 64u) {
+        u8(0u);
+    }
+}
+
 /** @brief The smallest OpenType file that carries the above. */
+static int which_cff;
+
 static void
 build_font(void)
 {
@@ -142,7 +192,8 @@ build_font(void)
         const char *tag[6] = { "CFF ", "cmap", "head", "hhea", "hmtx",
                                "maxp" };
         unsigned long off[6] = { CFF_AT, 512, 640, 768, 896, 960 };
-        unsigned long len[6] = { CFF_LEN, 24, 54, 36, 8, 6 };
+        unsigned long len[6] = { which_cff ? 64u : CFF_LEN, 24, 54, 36, 8,
+                                 6 };
 
         for (i = 0; i < 6; i++) {
             u8((unsigned)tag[i][0]); u8((unsigned)tag[i][1]);
@@ -154,7 +205,11 @@ build_font(void)
     }
 
     at = CFF_AT;
-    build_cff();
+    if (which_cff == 0) {
+        build_cff();
+    } else {
+        build_endchar_cff();
+    }
 
     /* cmap: one trimmed subtable, mapping 'A' to glyph 1. */
     at = 512;
@@ -189,9 +244,14 @@ build_font(void)
 static const char *
 plant(void)
 {
-    static char path[] = "/tmp/trk_cff_madeXXXXXX";
-    int fd = mkstemp(path);
+    /* Written afresh every time: mkstemp EATS the template, so a static
+     * one works once and hands back nothing ever after. */
+    static char path[32];
+    int fd;
     FILE *f;
+
+    snprintf(path, sizeof path, "/tmp/trk_cff_madeXXXXXX");
+    fd = mkstemp(path);
 
     if (fd < 0) {
         return NULL;
@@ -248,6 +308,35 @@ main(void)
         tiku_desk_ttf_close(ttf);
     }
     (void)remove(path);
+
+    /* The second one: a subroutine that ends the glyph. */
+    which_cff = 1;
+    build_font();
+    path = plant();
+    if (path != NULL) {
+        ttf = tiku_desk_ttf_open(path);
+        check(ttf != NULL, "DEV-013",
+              "a second face, whose subroutine is nothing but an endchar");
+        if (ttf != NULL) {
+            tiku_desk_ttf_glyph_t g;
+            long ink = 0;
+
+            memset(&g, 0, sizeof g);
+            if (tiku_desk_ttf_render(ttf, 'A', 40, &g) && g.cover != NULL) {
+                int k;
+
+                for (k = 0; k < g.w * g.h; k++) {
+                    ink += g.cover[k];
+                }
+            }
+            check(ink == 0, "DEV-013",
+                  "ends the GLYPH: the triangle drawn after the call that "
+                  "reached it never appears");
+            tiku_desk_ttf_free_glyph(&g);
+            tiku_desk_ttf_close(ttf);
+        }
+        (void)remove(path);
+    }
 
     if (fails > 0) {
         printf("\nFAILURES\n");
