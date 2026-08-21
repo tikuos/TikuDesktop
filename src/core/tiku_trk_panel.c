@@ -10,6 +10,7 @@
  */
 
 #include "tiku_trk_panel.h"
+#include "tiku_trk_state.h"
 #include "tiku_trk_input.h"
 
 #include <stdio.h>
@@ -66,10 +67,7 @@ tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
     snprintf(p->client, sizeof p->client, "%s",
              (client != NULL) ? client : "Tracker");
     snprintf(p->home, sizeof p->home, "%s", home_dir());
-    if (p->home[0] != '\0' &&
-        strlen(p->home) + sizeof "/Desktop" <= sizeof p->desktop) {
-        snprintf(p->desktop, sizeof p->desktop, "%s/Desktop", p->home);
-    }
+    (void)tiku_trk_desktop_dir(p->desktop, sizeof p->desktop);
     /* Three rungs, and the last cannot fail: a panel that opened nowhere
      * would be a window with no folder in it (AW-050). */
     if (is_dir(b, want, NULL)) {

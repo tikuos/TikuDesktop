@@ -3831,12 +3831,7 @@ static const char *
 state_node(const tiku_trk_poseview_t *v, char *buf, size_t max)
 {
     if (v->state_key[0] == '\0' && strcmp(v->path, "/") == 0) {
-        const char *home = getenv("HOME");
-
-        if (home != NULL && home[0] != '\0') {
-            snprintf(buf, max, "%s/Desktop", home);
-            return buf;
-        }
+        return tiku_trk_desktop_dir(buf, max);
     }
     return v->path;
 }

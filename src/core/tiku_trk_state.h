@@ -154,4 +154,15 @@ int tiku_trk_store_count(const tiku_trk_store_t *s);
  */
 int tiku_trk_state_mkparents(const char *path);
 
+/**
+ * @brief Where this Tracker's Desktop is.
+ *
+ * Its OWN, under the user's configuration, rather than the desktop the
+ * host system keeps: what shows here belongs to the device this is a
+ * screen for, and is not a view of somebody's login session.
+ *
+ * @return @p out.
+ */
+const char *tiku_trk_desktop_dir(char *out, size_t max);
+
 #endif /* TIKU_TRK_STATE_H_ */

@@ -15,6 +15,8 @@
 #include <dirent.h>
 
 #include "tiku_trk_desktop_view.h"
+
+#include "tiku_trk_state.h"
 #include "tiku_trk_deskicons.h"
 #include "tiku_trk_volume.h"
 
@@ -356,8 +358,9 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     controller->screen_w = screen_w;
     controller->screen_h = screen_h;
     home = getenv("HOME");
-    snprintf(controller->folder.path, sizeof controller->folder.path,
-             "%s/Desktop", home != NULL && home[0] != '\0' ? home : "");
+    (void)home;
+    (void)tiku_trk_desktop_dir(controller->folder.path,
+                               sizeof controller->folder.path);
     controller->folder.view = tiku_trk_poseview_new(
         backend, controller->folder.path);
     if (controller->folder.view == NULL) {

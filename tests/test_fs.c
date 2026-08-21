@@ -1335,7 +1335,10 @@ main(void)
                                      sizeof err3) != 0 &&
                   strstr(err3, "Trash") != NULL, "MA-051",
                   "the Trash cannot be renamed, and the refusal names it");
-            snprintf(dk, sizeof dk, "%s/Desktop", home2);
+            /* Wherever this Tracker keeps its Desktop, which is not
+             * the login session's. */
+            (void)tiku_trk_desktop_dir(dk, sizeof dk);
+            (void)tiku_trk_state_mkparents(dk);
             (void)mkdir(dk, 0755);
             err3[0] = '\0';
             check(tiku_trk_fs_rename(fs, dk, "Tabletop", err3,

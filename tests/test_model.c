@@ -256,16 +256,19 @@ test_posix(void)
 
     {   /* A path leaf alone is not the Desktop: only the user's actual
          * Desktop gets the special kind and its non-file-manager rules. */
-        char desk[96], old_home[TIKU_TRK_PATH_MAX];
+        char desk[TIKU_TRK_PATH_MAX], old_home[TIKU_TRK_PATH_MAX];
         const char *was_home = getenv("HOME");
         int had_home = (was_home != NULL);
 
         if (had_home) {
             snprintf(old_home, sizeof old_home, "%s", was_home);
         }
-        snprintf(desk, sizeof desk, "%s/Desktop", dir);
-        (void)mkdir(desk, 0755);
         (void)setenv("HOME", dir, 1);
+        /* Tracker's own Desktop, wherever the one function says it is:
+         * a device's screen is not the login session's desktop. */
+        (void)tiku_trk_desktop_dir(desk, sizeof desk);
+        (void)tiku_trk_state_mkparents(desk);
+        (void)mkdir(desk, 0755);
         check(b->ops->stat(b, desk, &m) == 0 &&
               m.kind == TIKU_TRK_KIND_DESKTOP &&
               strcmp(tiku_trk_model_display_name(&m), "Desktop") == 0,
@@ -285,7 +288,24 @@ test_posix(void)
         } else {
             (void)unsetenv("HOME");
         }
-        (void)rmdir(desk);
+        /* And the tree it needed: the very next check lists this
+         * directory, and a stray .config would be an entry in it. */
+        {
+            char up[TIKU_TRK_PATH_MAX];
+            char *slash;
+
+            (void)rmdir(desk);
+            snprintf(up, sizeof up, "%s", desk);
+            for (slash = strrchr(up, '/');
+                 slash != NULL && strcmp(up, dir) != 0;
+                 slash = strrchr(up, '/')) {
+                *slash = '\0';
+                if (strcmp(up, dir) == 0) {
+                    break;
+                }
+                (void)rmdir(up);
+            }
+        }
     }
 
     check(b->ops->stat(b, f1, &m) == 0, "stat a file");

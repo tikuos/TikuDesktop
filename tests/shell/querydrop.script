@@ -21,8 +21,8 @@ wait 5
 expect-menu Create a Query
 menu-pick Create a Query
 wait 10
-expect-file /tmp/trk_home/Desktop/New Query
-expect-file-has /tmp/trk_home/Desktop/New Query kind 0
+expect-file /tmp/trk_home/.config/tracker/Desktop/New Query
+expect-file-has /tmp/trk_home/.config/tracker/Desktop/New Query kind 0
 note the same drop again chooses a template under the next free name
 press 750 293
 wait 2
@@ -34,6 +34,6 @@ release 850 600
 wait 5
 menu-pick Create a Query template
 wait 10
-expect-file /tmp/trk_home/Desktop/New Query 2
-expect-file-has /tmp/trk_home/Desktop/New Query 2 kind 1
+expect-file /tmp/trk_home/.config/tracker/Desktop/New Query 2
+expect-file-has /tmp/trk_home/.config/tracker/Desktop/New Query 2 kind 1
 quit

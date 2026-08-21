@@ -6,11 +6,11 @@ wait 10
 key f ctrl
 wait 5
 key D
-key e
-key s
+key o
+key c
 key space ctrl
 wait 3
-expect-find-text Desktop
+expect-find-text Documents
 key Escape
 wait 3
 note the save panel completes against the folder it shows

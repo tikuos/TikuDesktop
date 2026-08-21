@@ -11,7 +11,7 @@ wait 2
 release 700 500
 wait 10
 expect-file /tmp/trk_script/a.txt
-expect-no-file /tmp/trk_home/Desktop/trk_script
+expect-no-file /tmp/trk_home/.config/tracker/Desktop/trk_script
 note from a pixel of the picture the folder itself travels
 press 487 76
 move 600 400
@@ -19,5 +19,5 @@ move 700 500
 wait 2
 release 700 500
 wait 30
-expect-file /tmp/trk_home/Desktop/trk_script/a.txt
+expect-file /tmp/trk_home/.config/tracker/Desktop/trk_script/a.txt
 quit

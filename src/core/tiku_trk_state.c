@@ -489,6 +489,24 @@ tiku_trk_store_count(const tiku_trk_store_t *s)
     return n;
 }
 
+const char *
+tiku_trk_desktop_dir(char *out, size_t max)
+{
+    const char *set = getenv("TIKU_DESK_DESKTOP");
+    const char *home = getenv("HOME");
+
+    if (out == NULL || max == 0u) {
+        return out;
+    }
+    if (set != NULL && set[0] != '\0') {
+        snprintf(out, max, "%s", set);
+        return out;
+    }
+    snprintf(out, max, "%s/.config/tracker/Desktop",
+             (home != NULL && home[0] != '\0') ? home : "");
+    return out;
+}
+
 int
 tiku_trk_state_mkparents(const char *path)
 {

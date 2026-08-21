@@ -1,11 +1,14 @@
 # shell: desktop
 # home: fixture
 # prefs: factory
-# What a first run looks like: this Desktop belongs to a device, so the
-# machine's own storage is not poured onto it, and the Deskbar lists
-# this shell rather than every process the machine happens to run.
+# What a first run looks like: the Desktop is Tracker's own, one icon
+# leads to the machine's filesystem for whoever wants it, the volumes
+# are not poured onto the screen, and the Deskbar lists this shell
+# rather than every process the machine happens to run.
 wait 20
-expect-no-desk-icon Disks
+note one way in to the machine's filesystem, named for the volume it
+note opens, as the Disks pose has always been
+expect-desk-icon Boot
 note the Deskbar knows this shell and nothing it did not start
 note the global bar is on, so the leaf sits below it
 click 980 40
@@ -13,6 +16,8 @@ wait 4
 expect-menu Applications
 key Escape
 wait 4
-note and the places a person drops things into are already there
-expect-file /tmp/trk_home/Desktop
+note and what the screen shows is THAT Desktop, not the login session's
+expect-desk-icon notes.txt
+note the places a person drops things into are already there
+expect-file /tmp/trk_home/.config/tracker/Desktop
 expect-file /tmp/trk_home/.config/tracker/icons

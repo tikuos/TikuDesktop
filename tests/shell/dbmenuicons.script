@@ -9,4 +9,10 @@ wait 3
 expect-pixel 701 147 fac468
 note and the rows that expand carry art of their own
 expect-pixel 701 105 fac468
+note and so do the rows inside them: what configures the bar, and what
+note configures Tracker, each beside its own picture
+menu-pick Settings
+wait 5
+expect-pixel 492 79 f8c874
+expect-pixel 492 100 f8c874
 quit

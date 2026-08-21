@@ -20,12 +20,11 @@ key m
 key e
 key /
 key D
-key e
-key s
-key k
+key o
+key c
 key space ctrl
 wait 3
 key Return
 wait 8
-expect-location /tmp/trk_home/Desktop
+expect-location /tmp/trk_home/Documents
 quit

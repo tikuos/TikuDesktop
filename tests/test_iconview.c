@@ -602,11 +602,13 @@ main(void)
          * original redirects it -- the root itself is nowhere the store
          * can write. */
         {
-            char deskdir[256];
+            char deskdir[TIKU_TRK_PATH_MAX];
 
-            snprintf(deskdir, sizeof deskdir, "%s/Desktop", work);
-            sh("mkdir -p '%s'", deskdir);
             (void)setenv("HOME", work, 1);
+            /* Wherever this Tracker's Desktop is; the root's state is
+             * redirected onto it, not onto the login session's. */
+            (void)tiku_trk_desktop_dir(deskdir, sizeof deskdir);
+            sh("mkdir -p '%s'", deskdir);
             root = tiku_trk_poseview_new(b, "/");
             tiku_trk_poseview_set_mode(root, TIKU_TRK_MODE_MINI);
             (void)tiku_trk_poseview_save_state(root);

@@ -141,7 +141,6 @@ for s in "$here"/*.script; do
         echo hi > $work/b.txt
         echo hi > $work/c.txt
         # A scrolling test needs more rows than a window holds.
-        mkdir -p "$deskhome/Desktop"
         case $(basename "$s") in
             bandscroll.script|scroll.script|scrollbar.script|insertabove.script|resizefit.script|winbar.script|barfocus.script|stepperhold.script|stepperholdw.script|dimarrows.script|revealrename.script|revealrenamew.script) i=1; while [ $i -le 40 ]; do
                                echo hi > "$work/f$i.txt"; i=$((i+1)); done ;;
@@ -168,10 +167,11 @@ d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
   struct.pack("<IiiHHIIiiII",40,w,-h,1,24,0,len(rows),2835,2835,0,0)+rows
 open(sys.argv[1]+"/desktop-background","wb").write(d)
 PYDB
+                mkdir -p "$deskhome/.config/tracker/Desktop"
                 if [ "$(basename "$s")" = deskbg2.script ]; then
                     setfattr -n 'user._trk/background' \
                         -v "0 600 400 $deskhome/.config/tracker/desktop-background" \
-                        "$deskhome/Desktop"
+                        "$deskhome/.config/tracker/Desktop"
                 fi ;;
             background.script)
                 python3 - "$work" <<'PYBG'
@@ -187,9 +187,12 @@ PYBG
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
             completionw.script)
+                mkdir -p "$deskhome/Documents"
                 echo q > "$deskhome/recipes.query" ;;
+            completion.script)
+                mkdir -p "$deskhome/Documents" ;;
             nameclash.script)
-                mkdir -p "$deskhome/Desktop/sub" ;;
+                mkdir -p "$deskhome/.config/tracker/Desktop/sub" ;;
             embedapp.script)
                 # The SAME descriptor, hosted linked-in this time.
                 embed=1 ;;
@@ -291,7 +294,10 @@ PYEOF
         # a lane about them says so instead of relying on a fresh install.
         if [ -n "$volumes_on" ]; then
             mkdir -p "$deskhome/.config"
-            printf 'MountVolumesOntoDesktop on\n' > \
+            # Both, because the two are one question -- what the
+            # Desktop shows for storage -- and this lane turns the
+            # volumes off to watch the answer change.
+            printf 'MountVolumesOntoDesktop on\nShowDisksIcon off\n' > \
                 "$deskhome/.config/TrackerSettings"
         fi
         if grep -q '^# addons: fixture' "$s"; then
@@ -353,11 +359,13 @@ PYEOF
             printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\nOddball\t/tmp/trk_stamp.sh\timage/png\n' \
                 > "$deskhome/.config/tracker/apps"
         fi
-        mkdir -p "$deskhome/Desktop"
+        # Tracker's own Desktop, which is not the login session's.
+        deskdir="$deskhome/.config/tracker/Desktop"
+        mkdir -p "$deskdir"
         if [ -n "$deskfill" ]; then
-            mkdir -p "$deskhome/Desktop/photos"
-            echo hi > "$deskhome/Desktop/notes.txt"
-            echo hi > "$deskhome/Desktop/todo.txt"
+            mkdir -p "$deskdir/photos"
+            echo hi > "$deskdir/notes.txt"
+            echo hi > "$deskdir/todo.txt"
         fi
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \

@@ -11,7 +11,7 @@ menu-pick Copy to
 wait 3
 menu-pick Desktop
 wait 15
-expect-file /tmp/trk_home/Desktop/a.txt
+expect-file /tmp/trk_home/.config/tracker/Desktop/a.txt
 expect-file /tmp/trk_script/a.txt
 note Move to > Home moves b.txt there
 click-row 2 3

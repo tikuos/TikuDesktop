@@ -46,6 +46,6 @@ note file -- and not by the folder the drag used to rest on
 move 700 500
 release 700 500
 wait 20
-expect-file /tmp/trk_home/Desktop/b.txt
+expect-file /tmp/trk_home/.config/tracker/Desktop/b.txt
 expect-no-file /tmp/trk_script/b.txt
 quit

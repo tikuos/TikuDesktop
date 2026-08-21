@@ -91,12 +91,9 @@ dir_has_entries(const char *path)
 static int
 desktop_here(const char *path)
 {
-    const char *home = getenv("HOME");
     char desk[TIKU_TRK_PATH_MAX];
 
-    return home != NULL && home[0] != '\0' &&
-           snprintf(desk, sizeof desk, "%s/Desktop", home) > 0 &&
-           strcmp(path, desk) == 0;
+    return strcmp(path, tiku_trk_desktop_dir(desk, sizeof desk)) == 0;
 }
 
 /**

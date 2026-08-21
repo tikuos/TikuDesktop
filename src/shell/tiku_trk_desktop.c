@@ -631,7 +631,16 @@ deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
         art = "folder_apps";
         break;
     case TIKU_TRK_DB_ITEM_SETTINGS:
+        art = "folder_system";
+        break;
+    case TIKU_TRK_DB_ITEM_PREFS:
+        art = "folder_config";
+        break;
+    case TIKU_TRK_DB_ITEM_TRACKER_PREFS:
         art = "folder_prefs";
+        break;
+    case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
+        art = "package";
         break;
     case TIKU_TRK_DB_ITEM_APP:
         /* Whatever the shell named when it offered the row; a program
@@ -966,8 +975,7 @@ build_pickers(desktop_t *app, folder_t *fl)
     nrecent = tiku_trk_recent_list(app->store, TIKU_TRK_RECENT_FOLDERS, 6,
                                    recent, 8);
     nvol = (tiku_trk_volumes_scan(&vs) > 0) ? vs.n : 0;
-    snprintf(desk, sizeof desk, "%s/Desktop",
-             (home != NULL && home[0] != '\0') ? home : "");
+    (void)tiku_trk_desktop_dir(desk, sizeof desk);
     for (k = 0; k < 3; k++) {
         tiku_trk_menu_clear(&app->menus.picker[k]);
         snprintf(app->menus.picker[k].title,
@@ -4119,10 +4127,14 @@ prepare_places(desktop_t *app)
      * device can say what its own folders and programs look like. */
     (void)tiku_trk_icons_load_dir(icons);
 
-    if (home != NULL && home[0] != '\0') {
+    {
+        /* This Tracker's own Desktop, not the login session's: what a
+         * device shows is the device's, and a host desktop full of
+         * somebody's work is not it. */
         char desktop[TIKU_TRK_PATH_MAX];
 
-        snprintf(desktop, sizeof desktop, "%s/Desktop", home);
+        (void)tiku_trk_desktop_dir(desktop, sizeof desktop);
+        (void)tiku_trk_state_mkparents(desktop);
         (void)mkdir(desktop, 0755);
     }
 }
