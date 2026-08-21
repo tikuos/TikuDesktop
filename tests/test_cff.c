@@ -174,6 +174,53 @@ build_endchar_cff(void)
 }
 
 /** @brief The smallest OpenType file that carries the above. */
+/**
+ * @brief A third CFF, which says its em is a thousandth of a pixel.
+ *
+ * The FontMatrix states how big a unit is.  Believe one claiming a
+ * thousand units to the pixel and every coordinate leaves the range an
+ * int can hold, where the conversion has no defined answer -- INT_MIN on
+ * one machine, a saturated INT_MAX on another, and an index eight
+ * gigabytes below the row either way.
+ *
+ * Header 4, Name 2, Top DICT 5 + 49, two empty INDEXes 4: charstrings at
+ * 64 running 17 bytes, Private DICT at 81, its (empty) Subrs at 87.
+ */
+static void
+build_hugescale_cff(void)
+{
+    size_t base = at;
+
+    u8(1u); u8(0u); u8(4u); u8(1u);
+    u16(0u);                                /* Name INDEX: empty */
+
+    u16(1u); u8(1u); u8(1u); u8(50u);       /* Top DICT INDEX: 49 bytes */
+    dict_int(64); u8(17u);                  /* CharStrings at 64 */
+    dict_int(6); dict_int(81); u8(18u);     /* Private: 6 bytes, at 81 */
+    dict_int(1000); dict_int(0); dict_int(0);
+    dict_int(1000); dict_int(0); dict_int(0);
+    u8(12u); u8(7u);                        /* FontMatrix: a thousand to one */
+
+    u16(0u);                                /* String INDEX: empty */
+    u16(0u);                                /* Global Subrs: empty */
+
+    /* CharStrings at 64: glyph 1 draws a small triangle -- small, until
+     * the matrix is believed. */
+    u16(2u); u8(1u); u8(1u); u8(2u); u8(12u);
+    u8(0x0Eu);                              /* glyph 0: endchar */
+    u8(0xEFu); u8(0x8Bu); u8(0x15u);        /* 100 0 rmoveto */
+    u8(0x8Bu); u8(0xEFu); u8(0x05u);        /* 0 100 rlineto */
+    u8(0xEFu); u8(0x8Bu); u8(0x05u);        /* 100 0 rlineto */
+    u8(0x0Eu);                              /* endchar */
+
+    dict_int(6); u8(19u);                   /* Private at 81, Subrs at 87 */
+    u16(0u);                                /* an empty Subrs INDEX */
+
+    while (at - base < 96u) {
+        u8(0u);
+    }
+}
+
 static int which_cff;
 
 static void
@@ -192,8 +239,9 @@ build_font(void)
         const char *tag[6] = { "CFF ", "cmap", "head", "hhea", "hmtx",
                                "maxp" };
         unsigned long off[6] = { CFF_AT, 512, 640, 768, 896, 960 };
-        unsigned long len[6] = { which_cff ? 64u : CFF_LEN, 24, 54, 36, 8,
-                                 6 };
+        unsigned long len[6] = { (which_cff == 0) ? CFF_LEN
+                                 : ((which_cff == 1) ? 64u : 96u),
+                                 24, 54, 36, 8, 6 };
 
         for (i = 0; i < 6; i++) {
             u8((unsigned)tag[i][0]); u8((unsigned)tag[i][1]);
@@ -207,8 +255,10 @@ build_font(void)
     at = CFF_AT;
     if (which_cff == 0) {
         build_cff();
-    } else {
+    } else if (which_cff == 1) {
         build_endchar_cff();
+    } else {
+        build_hugescale_cff();
     }
 
     /* cmap: one trimmed subtable, mapping 'A' to glyph 1. */
@@ -332,6 +382,28 @@ main(void)
             check(ink == 0, "DEV-013",
                   "ends the GLYPH: the triangle drawn after the call that "
                   "reached it never appears");
+            tiku_desk_ttf_free_glyph(&g);
+            tiku_desk_ttf_close(ttf);
+        }
+        (void)remove(path);
+    }
+
+    /* The third: a face whose own units are a thousandth of a pixel. */
+    which_cff = 2;
+    build_font();
+    path = plant();
+    if (path != NULL) {
+        ttf = tiku_desk_ttf_open(path);
+        check(ttf != NULL, "DEV-013",
+              "a third face, claiming a thousand units to the pixel");
+        if (ttf != NULL) {
+            tiku_desk_ttf_glyph_t g;
+
+            memset(&g, 0, sizeof g);
+            (void)tiku_desk_ttf_render(ttf, 'A', 12, &g);
+            check(g.w >= 0 && g.w < 64 && g.h >= 0 && g.h < 64, "DEV-013",
+                  "is not believed: a 12 px letter stays the size of one, "
+                  "rather than running past what an int can hold");
             tiku_desk_ttf_free_glyph(&g);
             tiku_desk_ttf_close(ttf);
         }
