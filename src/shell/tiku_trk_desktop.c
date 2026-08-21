@@ -4706,6 +4706,16 @@ tracker_run(int argc, char **argv)
     tiku_trk_fonts_window_init(&app.fonts_window, app.desk, app.deskbar,
                                app.store, DESK_W, DESK_H, &app.dirty);
     {
+        /* After the Deskbar's own settings have been applied, because a
+         * face dropped in the fonts folder has to win over the baked
+         * family they name -- and from startup, not from whenever
+         * somebody next opens the window that chose it. */
+        tiku_trk_fontprefs_t chosen;
+
+        (void)tiku_trk_fontprefs_load(&chosen, app.store);
+        tiku_trk_fontprefs_apply(&chosen);
+    }
+    {
         /* Which applications there are.  A file rather than a database:
          * what the rows are about is the ANSWERS -- which application
          * opens what, and how well -- not where the list is kept. */

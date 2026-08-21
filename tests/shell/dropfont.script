@@ -1,0 +1,25 @@
+# shell: desktop
+# A folder is the interface: a face dropped in the fonts folder is
+# offered under the name it gives ITSELF, and choosing it draws the whole
+# desktop in a file nobody compiled in.
+wait 15
+key w ctrl
+wait 5
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+expect-font Sans 12
+note the dropped face is offered after the baked ones, by its own name
+click 400 263
+wait 12
+expect-font DejaVu Sans 12
+shot /tmp/trk_dropfont.png
+wait 3
+note and a baked family takes the interface back
+click 400 197
+wait 12
+expect-font Sans 12

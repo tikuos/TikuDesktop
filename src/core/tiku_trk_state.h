@@ -50,6 +50,10 @@
  * because the bar belongs to the desktop, not to any folder. */
 #define TIKU_TRK_ATTR_DOCK        "_trk/dock"
 #define TIKU_TRK_ATTR_DESKBAR_PREFS "_trk/deskbar_prefs"
+/* The face dropped in the fonts folder that the interface is drawn in.
+ * A NAME rather than a path: the folder is the list, and a family that
+ * has been taken out of it should fall back rather than dangle. */
+#define TIKU_TRK_ATTR_UI_FONT "_trk/ui_font"
 #define TIKU_TRK_ATTR_DESKBAR_PREFS_FRAME "_trk/deskbar_prefs_frame"
 #define TIKU_TRK_ATTR_REPLICANTS "_trk/replicants"
 
@@ -164,5 +168,11 @@ int tiku_trk_state_mkparents(const char *path);
  * @return @p out.
  */
 const char *tiku_trk_desktop_dir(char *out, size_t max);
+
+/**
+ * @brief Where faces dropped in live: $TIKU_DESK_FONTS, else under the
+ *        Tracker's own folder.  One answer, as for the Desktop.
+ */
+const char *tiku_trk_fonts_dir(char *out, size_t max);
 
 #endif /* TIKU_TRK_STATE_H_ */

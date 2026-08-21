@@ -47,6 +47,7 @@ DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
 DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/deskbar/tiku_trk_deskbar_prefs.c \
                        src/deskbar/tiku_trk_fontprefs.c \
+                       src/media/tiku_trk_fontdir.c \
                        src/deskbar/tiku_trk_desktop_view.c \
                        src/ui/commands/tiku_trk_drop_controller.c \
                        src/ui/commands/tiku_trk_folder_actions.c \
@@ -100,7 +101,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
             $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_deskprefs $(BUILD)/test_fontprefs $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
-            $(BUILD)/test_text \
+            $(BUILD)/test_text $(BUILD)/test_ttf \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
@@ -202,9 +203,13 @@ $(BUILD)/test_deskbar_dock: $(COMMON) $(ICONS) \
 $(BUILD)/test_text: tests/test_text.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
+$(BUILD)/test_ttf: tests/test_ttf.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
 $(BUILD)/test_fontprefs: src/core/tiku_trk_state.c \
                          src/deskbar/tiku_trk_deskbar_prefs.c \
                          src/deskbar/tiku_trk_fontprefs.c \
+                         src/media/tiku_trk_fontdir.c \
                          tests/test_fontprefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -462,6 +467,7 @@ test: all
 	@$(BUILD)/test_deskbar_prefs
 	@$(BUILD)/test_fontprefs
 	@$(BUILD)/test_text
+	@$(BUILD)/test_ttf
 	@# The shells are the other half of the product and have no unit
 	@# tests of their own; these drive the real binaries with no display.
 	@# The contract is data every count is drawn from; a copy of it that

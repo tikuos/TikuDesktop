@@ -11,9 +11,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdio.h>
-#include <string.h>
+#define _DEFAULT_SOURCE 1
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "tiku_desk_font.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_trk_fontprefs.h"
 
@@ -123,6 +128,87 @@ main(void)
         tiku_trk_fontprefs_revert(&opened);
         check(opened.value.family == 1 && opened.value.size == 14,
               "DEV-010", "and does");
+    }
+
+    /*
+     * A face dropped in the fonts folder.  The folder IS the list: what
+     * is offered is what is in it, and it is offered under the name the
+     * file gives itself rather than the name it was saved as.
+     */
+    {
+        static const char *const sans[] = {
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf"
+        };
+        const char *from = NULL;
+        struct stat st;
+        int i, baked;
+        tiku_trk_fontprefs_offer_t offer;
+
+        for (i = 0; i < 3 && from == NULL; i++) {
+            if (stat(sans[i], &st) == 0) {
+                from = sans[i];
+            }
+        }
+        (void)system("rm -rf /tmp/trk_fontdir && mkdir -p /tmp/trk_fontdir");
+        setenv("TIKU_DESK_FONTS", "/tmp/trk_fontdir", 1);
+
+        baked = tiku_trk_fontprefs_offer(&offer);
+        check(baked == tiku_trk_fontprefs_family_count(), "DEV-010",
+              "an empty fonts folder offers the baked families and no more");
+
+        if (from != NULL) {
+            char cmd[512];
+
+            snprintf(cmd, sizeof cmd,
+                     "cp '%s' /tmp/trk_fontdir/whatever-it-is-called.ttf",
+                     from);
+            (void)system(cmd);
+            (void)system("echo not-a-font > /tmp/trk_fontdir/README");
+
+            check(tiku_trk_fontprefs_offer(&offer) == baked + 1, "DEV-010",
+                  "a face dropped in it is offered, and a README is not");
+            check(offer.dropped[baked] &&
+                  strstr(offer.name[baked], "whatever") == NULL &&
+                  offer.name[baked][0] != '\0', "DEV-010",
+                  "under the family name the FILE gives, not its own name");
+
+            tiku_trk_fontprefs_init(&prefs);
+            check(tiku_trk_fontprefs_choose(&prefs, &offer, baked) &&
+                  tiku_trk_fontprefs_chosen(&prefs, &offer) == baked,
+                  "DEV-010", "choosing it is choosing that row");
+            check(tiku_trk_fontprefs_defaultable(&prefs), "DEV-010",
+                  "which Defaults can undo, like any other choice");
+
+            (void)tiku_trk_fontprefs_save(&prefs, store);
+            {
+                tiku_trk_fontprefs_t again;
+
+                (void)tiku_trk_fontprefs_load(&again, store);
+                check(strcmp(again.value.dropped,
+                             prefs.value.dropped) == 0, "DEV-010",
+                      "the dropped family is remembered by name");
+                tiku_trk_fontprefs_apply(&again);
+                check(strcmp(tiku_desk_font_current_family(),
+                             prefs.value.dropped) == 0, "DEV-010",
+                      "and applying it draws the interface in that file");
+            }
+
+            /* Taken out of the folder again: the interface still has to
+             * be drawn in something. */
+            (void)system("rm -f /tmp/trk_fontdir/*.ttf");
+            tiku_trk_fontprefs_apply(&prefs);
+            check(strcmp(tiku_desk_font_current_family(),
+                         tiku_trk_fontprefs_family_name(
+                             prefs.value.family)) == 0, "DEV-010",
+                  "a family taken out of the folder falls back to a baked one");
+            check(tiku_trk_fontprefs_chosen(&prefs, &offer) == baked,
+                  "DEV-010", "though the choice is remembered, not thrown away");
+        }
+        (void)system("rm -rf /tmp/trk_fontdir");
+        unsetenv("TIKU_DESK_FONTS");
+        tiku_trk_fontprefs_init(&prefs);
     }
 
     check(!tiku_trk_fontprefs_save(&prefs, NULL) &&

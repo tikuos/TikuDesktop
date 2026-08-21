@@ -923,8 +923,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         /* Asked of the TOOLKIT, which is where every label in the
          * interface gets its metrics: what it answers is what the whole
          * desktop is drawn in, not what one window believes. */
-        const char *name =
-            tiku_desk_font_family_name(tiku_desk_font_family());
+        const char *name = tiku_desk_font_current_family();
         char got[64];
 
         snprintf(got, sizeof got, "%s %d px",

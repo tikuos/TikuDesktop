@@ -217,6 +217,18 @@ d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
 open(sys.argv[1]+"/meadow.bmp","wb").write(d)
 PYDP
                 ;;
+            dropfont.script)
+                # A face dropped where faces are dropped.  DejaVu is the
+                # file the baked tables are made from, so a tree that can
+                # build the fonts has this one to drop.
+                mkdir -p "$deskhome/.config/tracker/fonts"
+                for f in /usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf \
+                         /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf; do
+                    if [ -f "$f" ]; then
+                        cp "$f" "$deskhome/.config/tracker/fonts/dropped.ttf"
+                        break
+                    fi
+                done ;;
             icondir.script)
                 # Art dropped where the desktop looks: the folder icon is
                 # the printer's, which nothing would draw by accident.

@@ -17,7 +17,8 @@
 #define TIKU_TRK_FONTS_W 372
 
 typedef struct {
-    tiku_trk_fontprefs_t   model;
+    tiku_trk_fontprefs_t       model;
+    tiku_trk_fontprefs_offer_t offer;
     tiku_desk_workspace_t *workspace;
     tiku_desk_window_t    *window;
     tiku_trk_deskbar_t    *deskbar;

@@ -28,41 +28,41 @@
 #define STEP_X     240          /* where the size stepper starts */
 #define PLUS_X     300          /* and where its + half begins */
 
-/** @brief How many families the list shows. */
+/** @brief How many families the list shows: the folder decides. */
 static int
-rows_of(void)
+rows_of(const tiku_trk_fonts_window_t *controller)
 {
-    int n = tiku_trk_fontprefs_family_count();
+    int n = controller->offer.count;
 
     return (n > 0) ? n : 1;
 }
 
 /** @brief Where the size stepper sits, under however many families. */
 static int
-size_y(void)
+size_y(const tiku_trk_fonts_window_t *controller)
 {
-    return LIST_Y + rows_of() * ROW_H + 30;
+    return LIST_Y + rows_of(controller) * ROW_H + 30;
 }
 
 /** @brief Where the specimen sits, under that. */
 static int
-sample_y(void)
+sample_y(const tiku_trk_fonts_window_t *controller)
 {
-    return size_y() + 34;
+    return size_y(controller) + 34;
 }
 
 /** @brief And the buttons, under that. */
 static int
-button_y(void)
+button_y(const tiku_trk_fonts_window_t *controller)
 {
-    return sample_y() + 62;
+    return sample_y(controller) + 62;
 }
 
 /** @brief The whole window, title bar and all. */
 static int
-window_height(void)
+window_height(const tiku_trk_fonts_window_t *controller)
 {
-    return button_y() + 26 + PAD + 26;
+    return button_y(controller) + 26 + PAD + 26;
 }
 
 static int
@@ -90,6 +90,9 @@ apply(tiku_trk_fonts_window_t *controller)
         record.value.font_size = controller->model.value.size;
     }
     tiku_trk_deskbar_apply_settings(controller->deskbar, &record.value);
+    /* Last, because the Deskbar's own apply puts a BAKED family in force
+     * and a dropped one has to win. */
+    tiku_trk_fontprefs_apply(&controller->model);
     if (controller->dirty != NULL) {
         *controller->dirty = 1;
     }
@@ -104,7 +107,9 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     const tiku_desk_font_t *font = tiku_desk_font_plain();
     const tiku_desk_font_t *bold = tiku_desk_font_bold();
     char number[32];
-    int rows = rows_of();
+    int rows = rows_of(controller);
+    int chosen_row = tiku_trk_fontprefs_chosen(&controller->model,
+                                               &controller->offer);
     int i;
 
     (void)window;
@@ -122,10 +127,11 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         for (i = 0; i < rows; i++) {
             tiku_desk_rect_t row = { list.x + 1, list.y + 1 + i * ROW_H,
                                      list.w - 2, ROW_H };
-            const char *name = tiku_trk_fontprefs_family_name(i);
-            int chosen = (v->family == i);
+            const char *name = (i < controller->offer.count)
+                                   ? controller->offer.name[i] : NULL;
+            int chosen = (i == chosen_row);
 
-            if (name == NULL) {
+            if (name == NULL || name[0] == '\0') {
                 continue;
             }
             if (chosen) {
@@ -139,18 +145,19 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     }
 
     tiku_desk_text(surface, bold, content.x + PAD,
-                   content.y + size_y() + font->ascent, "Size",
+                   content.y + size_y(controller) + font->ascent, "Size",
                    TIKU_DESK_C_TEXT);
     snprintf(number, sizeof number, "-   %d px   +", v->size);
     tiku_desk_text(surface, font, content.x + STEP_X,
-                   content.y + size_y() + font->ascent, number,
+                   content.y + size_y(controller) + font->ascent, number,
                    TIKU_DESK_C_TEXT);
 
     /* The specimen: the face itself, at the size itself, drawn on paper
      * rather than on the panel so the ink is judged against what a
      * document will show it against. */
     {
-        tiku_desk_rect_t paper = { content.x + PAD, content.y + sample_y(),
+        tiku_desk_rect_t paper = { content.x + PAD,
+                                   content.y + sample_y(controller),
                                    content.w - 2 * PAD, 52 };
 
         tiku_desk_fill(surface, paper, TIKU_DESK_C_DOC);
@@ -167,13 +174,15 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD,
-                                            content.y + button_y(), 112, 26 },
+                                            content.y + button_y(controller),
+                                            112, 26 },
                         "Defaults",
                         tiku_trk_fontprefs_defaultable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
     tiku_desk_ui_button(surface,
                         (tiku_desk_rect_t){ content.x + PAD + 122,
-                                            content.y + button_y(), 100, 26 },
+                                            content.y + button_y(controller),
+                                            100, 26 },
                         "Revert",
                         tiku_trk_fontprefs_revertable(&controller->model)
                             ? 0u : TIKU_DESK_S_DISABLED);
@@ -186,7 +195,7 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
     tiku_trk_fonts_window_t *controller = context;
     tiku_desk_rect_t content = tiku_desk_window_content(window);
     int x = event->x - content.x, y = event->y - content.y;
-    int rows = rows_of();
+    int rows = rows_of(controller);
 
     if (event->type != TIKU_DESK_EVENT_POINTER_DOWN ||
         !inside(content, event->x, event->y)) {
@@ -194,25 +203,28 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
     }
     if (y >= LIST_Y && y < LIST_Y + rows * ROW_H &&
         x >= PAD && x < content.w - PAD) {
-        if (tiku_trk_fontprefs_set_family(&controller->model,
-                                          (y - LIST_Y - 1) / ROW_H)) {
+        if (tiku_trk_fontprefs_choose(&controller->model, &controller->offer,
+                                      (y - LIST_Y - 1) / ROW_H)) {
             apply(controller);
         }
         return 1;
     }
-    if (y >= size_y() && y < size_y() + ROW_H && x >= STEP_X) {
+    if (y >= size_y(controller) && y < size_y(controller) + ROW_H &&
+        x >= STEP_X) {
         if (tiku_trk_fontprefs_step_size(&controller->model, x >= PLUS_X)) {
             apply(controller);
         }
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ PAD, button_y(), 112, 26 }, x, y) &&
+    if (inside((tiku_desk_rect_t){ PAD, button_y(controller), 112, 26 },
+               x, y) &&
         tiku_trk_fontprefs_defaultable(&controller->model)) {
         tiku_trk_fontprefs_defaults(&controller->model);
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ PAD + 122, button_y(), 100, 26 }, x, y) &&
+    if (inside((tiku_desk_rect_t){ PAD + 122, button_y(controller), 100, 26 },
+               x, y) &&
         tiku_trk_fontprefs_revertable(&controller->model)) {
         tiku_trk_fontprefs_revert(&controller->model);
         apply(controller);
@@ -270,9 +282,12 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
      * preferences, and a stale window would put the old one back. */
     (void)tiku_trk_fontprefs_load(&controller->model, controller->store);
     tiku_trk_fontprefs_mark_opened(&controller->model);
+    /* The folder is the list, so it is read every time the window opens:
+     * a face dropped in while it was shut is offered when it reopens. */
+    (void)tiku_trk_fontprefs_offer(&controller->offer);
 
     frame.w = TIKU_TRK_FONTS_W;
-    frame.h = window_height();
+    frame.h = window_height(controller);
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 3;
     controller->window = tiku_desk_workspace_open(controller->workspace,
