@@ -800,7 +800,8 @@ tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
         }
     }
     /* The whole interface reads its metrics from these faces, so the
-     * size preference lands everywhere on the next paint. */
+     * size and the family land everywhere on the next paint. */
+    (void)tiku_desk_font_set_family(db->settings.font_family);
     (void)tiku_desk_font_set_size(db->settings.font_size);
     sort_teams(db);
 }
@@ -2038,6 +2039,10 @@ open_sub(tiku_trk_deskbar_t *db, int at)
                  "Desktop preferences\xe2\x80\xa6");
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_FONT_PREFS;
+        snprintf(si->label, sizeof si->label, "%s", "Fonts\xe2\x80\xa6");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
         /* Says what choosing it DOES, which is the other state: a row
          * labelled with the state it is in reads as a heading. */
@@ -2868,6 +2873,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_DESKTOP_PREFS) {
                     pick->what = TIKU_TRK_DB_DESKTOP_PREFERENCES;
+                } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_FONT_PREFS) {
+                    pick->what = TIKU_TRK_DB_FONT_PREFERENCES;
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
                     /* A toggle is not a departure: the menu stays up

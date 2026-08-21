@@ -134,6 +134,45 @@ main(void)
               bold->height >= plain->height - 2, "METRIC",
               "the bold face lives within the reference metrics");
     }
+    {
+        /* And so does every family the picker offers: a person choosing
+         * Serif is choosing letters, not a new layout, so each family is
+         * baked at the same sizes and inside the same two pixels. */
+        int family, px, worst = 0;
+
+        check(tiku_desk_font_family_count() >= 2 &&
+              tiku_desk_font_family_name(0) != NULL &&
+              tiku_desk_font_family_name(tiku_desk_font_family_count())
+                  == NULL, "METRIC",
+              "the toolkit offers named families, and says where they end");
+        for (px = 10; px <= 16; px += 2) {
+            int reference, d;
+
+            (void)tiku_desk_font_set_family(0);
+            (void)tiku_desk_font_set_size(px);
+            reference = tiku_desk_font_plain()->height;
+            for (family = 0; family < tiku_desk_font_family_count();
+                 family++) {
+                (void)tiku_desk_font_set_family(family);
+                d = tiku_desk_font_plain()->height - reference;
+                worst = (d < 0 ? -d : d) > worst ? (d < 0 ? -d : d) : worst;
+                d = tiku_desk_font_bold()->height - reference;
+                worst = (d < 0 ? -d : d) > worst ? (d < 0 ? -d : d) : worst;
+            }
+        }
+        check(worst <= 2, "METRIC",
+              "every family, both weights, all four sizes, within them too");
+
+        (void)tiku_desk_font_set_family(1);
+        check(tiku_desk_font_set_size(16) == 16 &&
+              tiku_desk_font_family() == 1, "METRIC",
+              "and a chosen family outlives a change of size");
+        check(tiku_desk_font_set_family(tiku_desk_font_family_count()) == 1 &&
+              tiku_desk_font_set_family(-1) == 1, "METRIC",
+              "asking for a family that is not there keeps the one in force");
+        (void)tiku_desk_font_set_family(0);
+        (void)tiku_desk_font_set_size(12);
+    }
 
     printf("\n%s\n", fails ? "FAILURES" : "the background holds");
     return fails ? 1 : 0;

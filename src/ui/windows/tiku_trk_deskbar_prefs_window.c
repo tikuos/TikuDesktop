@@ -301,6 +301,11 @@ tiku_trk_deskbar_prefs_window_open(
                                      controller->window);
         return;
     }
+    /* Read afresh, as the other preference windows do: the Fonts window
+     * writes two of these fields, and a model left saying what they were
+     * when this window last closed would put the old face back the next
+     * time anything here was touched. */
+    (void)tiku_trk_deskbar_prefs_load(&controller->model, controller->store);
     tiku_trk_deskbar_prefs_mark_opened(&controller->model);
     controller->window = tiku_desk_workspace_open(controller->workspace,
         "Deskbar preferences", saved_frame(controller), draw, controller,

@@ -10,6 +10,8 @@
 
 #include "tiku_trk_script.h"
 
+#include "tiku_desk_font.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +29,7 @@ typedef enum {
     OP_WAIT, OP_SHOT, OP_EXPECT_LOCATION, OP_EXPECT_NAV_BACK,
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
-    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK,
+    OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_FONT,
     OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_WRITE, OP_SAME_AS_REDRAW, OP_QUIT
 } sc_op_t;
@@ -298,6 +300,9 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "shot") == 0 && n >= 2) {
             st->op = OP_SHOT;
             snprintf(st->text, sizeof st->text, "%s", w[1]);
+        } else if (strcmp(w[0], "expect-font") == 0 && n >= 2) {
+            st->op = OP_EXPECT_FONT;
+            rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-status") == 0 && n >= 2) {
             st->op = OP_EXPECT_STATUS;
             rest(w, n, 1, st->text, sizeof st->text);
@@ -912,6 +917,21 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, got >= 0 && (cur->x ? got >= cur->count
                                        : got <= cur->count),
                 "rows painted:", n);
+        return 1;
+    }
+    case OP_EXPECT_FONT: {
+        /* Asked of the TOOLKIT, which is where every label in the
+         * interface gets its metrics: what it answers is what the whole
+         * desktop is drawn in, not what one window believes. */
+        const char *name =
+            tiku_desk_font_family_name(tiku_desk_font_family());
+        char got[64];
+
+        snprintf(got, sizeof got, "%s %d px",
+                 (name != NULL) ? name : "nothing",
+                 tiku_desk_font_size());
+        verdict(s, strstr(got, cur->text) != NULL,
+                "the interface is drawn in", got);
         return 1;
     }
     case OP_EXPECT_INK: {

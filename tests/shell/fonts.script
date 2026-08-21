@@ -1,0 +1,53 @@
+# shell: desktop
+# The letters the interface is drawn in are a preference: the families
+# the toolkit carries are offered by name, choosing one redraws the whole
+# desktop in it at once, and the size beside it moves a rung at a time.
+wait 15
+key w ctrl
+wait 5
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+note the window opens on what the interface is drawn in right now
+expect-font Sans 12
+shot /tmp/trk_fonts_sans.png
+wait 3
+note choosing another family redraws everything, this window included
+click 400 225
+wait 12
+expect-font Serif 12
+shot /tmp/trk_fonts_serif.png
+wait 3
+click 400 247
+wait 12
+expect-font Mono 12
+shot /tmp/trk_fonts_mono.png
+wait 3
+note and the size is a ladder beside it
+click 630 296
+wait 12
+expect-font Mono 14
+note a face chosen here survives the OTHER window that owns the record
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Deskbar preferences
+wait 8
+expect-title Deskbar preferences
+click 400 100
+wait 10
+expect-font Mono 14
+key w ctrl
+wait 6
+expect-title Fonts
+note Defaults puts back the face the interface came with
+click 382 397
+wait 12
+expect-font Sans 12
+shot /tmp/trk_fonts_default.png
+wait 3

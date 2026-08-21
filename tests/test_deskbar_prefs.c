@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -59,6 +60,54 @@ main(void)
         check(saved.value.font_size == 14, "DB-062",
               "the chosen text size survives a save and reload");
         tiku_trk_deskbar_prefs_init(&prefs);
+    }
+
+    /* The family the interface is drawn in travels with the size. */
+    check(prefs.value.font_family == 0, "DB-062",
+          "the interface is drawn in the first family until told otherwise");
+    prefs.value.font_family = 99;
+    tiku_trk_deskbar_settings_normalize(&prefs.value);
+    check(prefs.value.font_family == 0, "DB-062",
+          "a family the toolkit does not carry falls back to the first");
+    prefs.value.font_family = -1;
+    tiku_trk_deskbar_settings_normalize(&prefs.value);
+    check(prefs.value.font_family == 0, "DB-062",
+          "and so does a nonsense one");
+    {
+        tiku_trk_deskbar_prefs_t saved;
+
+        prefs.value.font_family = 1;
+        check(tiku_trk_deskbar_prefs_defaultable(&prefs), "DB-062",
+              "choosing another family gives Defaults something to do");
+        (void)tiku_trk_deskbar_prefs_save(&prefs, store);
+        tiku_trk_deskbar_prefs_init(&saved);
+        (void)tiku_trk_deskbar_prefs_load(&saved, store);
+        check(saved.value.font_family == 1, "DB-062",
+              "the chosen family survives a save and reload too");
+        tiku_trk_deskbar_prefs_init(&prefs);
+    }
+    {
+        /* A record written before there WAS a family: every other value
+         * in it must still arrive, or an upgrade quietly resets the
+         * Deskbar to how it came out of the box. */
+        int32_t older[21];
+        tiku_trk_deskbar_prefs_t saved;
+        int i;
+
+        for (i = 0; i < 21; i++) { older[i] = 0; }
+        older[0] = 4;               /* the version before this one */
+        older[6] = 24;              /* icon size */
+        older[20] = 16;             /* font size, the last field it had */
+        (void)tiku_trk_state_write(store, TIKU_TRK_KEY_SESSION,
+                                   TIKU_TRK_ATTR_DESKBAR_PREFS, older,
+                                   sizeof older);
+        tiku_trk_deskbar_prefs_init(&saved);
+        check(tiku_trk_deskbar_prefs_load(&saved, store) == 0, "DB-062",
+              "a record from before the family is still read");
+        check(saved.value.font_size == 16 && saved.value.icon_size == 24,
+              "DB-062", "with everything it did say still in it");
+        check(saved.value.font_family == 0, "DB-062",
+              "and the family it could not have said left at the first");
     }
     prefs.value.icon_size = 99;
     prefs.value.recent_count[TIKU_TRK_DB_RECENT_DOCS] = -4;

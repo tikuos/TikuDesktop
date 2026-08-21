@@ -11,10 +11,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "tiku_desk_font.h"
 #include "tiku_trk_deskbar_prefs.h"
 
-#define PREF_VERSION 4
-#define PREF_FIELDS  21
+#define PREF_VERSION 5
+#define PREF_FIELDS  22
+#define PREF_FIELDS_V4 21
 #define PREF_FIELDS_V3 20
 #define PREF_FIELDS_V2 17
 #define PREF_FIELDS_V1 16
@@ -37,7 +39,8 @@ same(const tiku_trk_deskbar_settings_t *a,
         a->show_seconds != b->show_seconds ||
         a->show_day_of_week != b->show_day_of_week ||
         a->show_timezone != b->show_timezone ||
-        a->font_size != b->font_size) {
+        a->font_size != b->font_size ||
+        a->font_family != b->font_family) {
         return 0;
     }
     for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
@@ -106,6 +109,12 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     if (settings->font_size < 10) { settings->font_size = 10; }
     if (settings->font_size > 16) { settings->font_size = 16; }
     settings->font_size &= ~1;      /* the baked faces are even-sized */
+    /* The toolkit is the authority on how many families it carries: a
+     * record naming one that is not there falls back to the first. */
+    if (settings->font_family < 0 ||
+        settings->font_family >= tiku_desk_font_family_count()) {
+        settings->font_family = 0;
+    }
 }
 
 void
@@ -196,6 +205,7 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->show_day_of_week;
     v[at++] = s->show_timezone;
     v[at++] = s->font_size;
+    v[at++] = s->font_family;
 }
 
 static void
@@ -219,6 +229,7 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
     s->show_day_of_week = (v[0] >= 3) ? v[at++] : 0;
     s->show_timezone = (v[0] >= 3) ? v[at++] : 0;
     s->font_size = (v[0] >= 4) ? v[at++] : 12;
+    s->font_family = (v[0] >= 5) ? v[at++] : 0;
     tiku_trk_deskbar_settings_normalize(s);
 }
 
@@ -241,6 +252,7 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                                 PREF_FIELDS_V1 * sizeof *record);
     }
     if (n != (int)sizeof record &&
+        n != PREF_FIELDS_V4 * (int)sizeof *record &&
         n != PREF_FIELDS_V3 * (int)sizeof *record &&
         n != PREF_FIELDS_V2 * (int)sizeof *record &&
         n != PREF_FIELDS_V1 * (int)sizeof *record) {

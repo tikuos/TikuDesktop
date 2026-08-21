@@ -43,6 +43,7 @@
 #include "tiku_trk_prefs_window.h"
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
+#include "tiku_trk_fonts_window.h"
 #include "tiku_trk_volume.h"
 #include "tiku_trk_switcher.h"
 #include "tiku_trk_switcher_window.h"
@@ -303,6 +304,7 @@ typedef struct desktop {
     tiku_trk_prefs_window_t prefs_window;
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;
+    tiku_trk_fonts_window_t         fonts_window;
     int                  applied_hide_dotfiles;
     int                  applied_full_path;
     int                  applied_folders_first;
@@ -643,6 +645,9 @@ deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
         break;
     case TIKU_TRK_DB_ITEM_DESKTOP_PREFS:
         art = "desktop";
+        break;
+    case TIKU_TRK_DB_ITEM_FONT_PREFS:
+        art = "folder_fonts";
         break;
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";
@@ -2114,6 +2119,10 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
         tiku_trk_desktop_prefs_window_close(&app->desktop_prefs_window);
         return;
     }
+    if (w == tiku_trk_fonts_window_handle(&app->fonts_window)) {
+        tiku_trk_fonts_window_close(&app->fonts_window);
+        return;
+    }
     info_slot = tiku_trk_info_windows_slot(&app->info_windows, w);
     if (info_slot >= 0) {
         tiku_trk_info_windows_close(&app->info_windows, info_slot);
@@ -2730,6 +2739,9 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         break;
     case TIKU_TRK_DB_TRACKER_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
+        break;
+    case TIKU_TRK_DB_FONT_PREFERENCES:
+        tiku_trk_fonts_window_open(&app->fonts_window);
         break;
     case TIKU_TRK_DB_DESKTOP_PREFERENCES:
         tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
@@ -4691,6 +4703,8 @@ tracker_run(int argc, char **argv)
         (app.backend != NULL && app.backend->ops->state_store != NULL)
             ? app.backend->ops->state_store(app.backend) : NULL,
         DESK_W, DESK_H, &app.dirty);
+    tiku_trk_fonts_window_init(&app.fonts_window, app.desk, app.deskbar,
+                               app.store, DESK_W, DESK_H, &app.dirty);
     {
         /* Which applications there are.  A file rather than a database:
          * what the rows are about is the ANSWERS -- which application
@@ -5557,6 +5571,24 @@ tracker_run(int argc, char **argv)
                         window_event.y = ev.y;
                         window_event.button = ev.button;
                         if (tiku_desk_window_send(dkprefs, &window_event)) {
+                            break;
+                        }
+                    }
+                }
+                {
+                    tiku_desk_window_t *fonts =
+                        tiku_trk_fonts_window_handle(&app.fonts_window);
+
+                    if (fonts != NULL && fonts->open &&
+                        !alert_model(&app)->open) {
+                        tiku_desk_event_t window_event = { 0 };
+
+                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.time_us = tiku_trk_now();
+                        window_event.x = ev.x;
+                        window_event.y = ev.y;
+                        window_event.button = ev.button;
+                        if (tiku_desk_window_send(fonts, &window_event)) {
                             break;
                         }
                     }
@@ -8053,6 +8085,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_panel_window_destroy(&app.file_panel);
     tiku_trk_deskbar_prefs_window_destroy(&app.deskbar_prefs_window);
     tiku_trk_desktop_prefs_window_destroy(&app.desktop_prefs_window);
+    tiku_trk_fonts_window_destroy(&app.fonts_window);
     tiku_trk_prefs_window_destroy(&app.prefs_window);
     tiku_trk_deskbar_free(app.deskbar);
     tiku_desk_remote_shutdown(&app.remote);
