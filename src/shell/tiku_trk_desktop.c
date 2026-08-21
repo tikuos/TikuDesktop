@@ -4335,10 +4335,10 @@ conduct_menu_labels(desktop_t *app)
 {
     static char labels[512];
 
-    labels[0] = ' ';
+    labels[0] = '\0';
     conduct_append_menu(labels, sizeof labels, app->popup);
     conduct_append_menu(labels, sizeof labels, app->popup_sub);
-    if (labels[0] == ' ') {
+    if (labels[0] == '\0') {
         /* The Deskbar's leaf is a menu too: without it a driver could
          * only reach those rows by pixel, and they move with whatever
          * was recently opened. */
