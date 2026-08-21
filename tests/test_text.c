@@ -242,21 +242,30 @@ main(void)
                   "while a letter it has NOT got falls back to a baked face");
         }
         if (plain_file != NULL) {
-            double fitted, loose;
+            const char *sample = "Handgloves 0123456789 AHOxen";
+            double hinted, linear;
 
             (void)tiku_desk_font_use_baked();
             (void)setenv("TIKU_DESK_HINT", "0", 1);
             (void)tiku_desk_font_set_files(plain_file, NULL);
-            (void)tiku_desk_font_set_size(12);
-            loose = ambiguous("Handgloves 0123456789 AHOxen");
+            (void)tiku_desk_font_set_size(10);
+            linear = ambiguous(sample);
             (void)tiku_desk_font_use_baked();
             (void)unsetenv("TIKU_DESK_HINT");
             (void)tiku_desk_font_set_files(plain_file, NULL);
-            (void)tiku_desk_font_set_size(12);
-            fitted = ambiguous("Handgloves 0123456789 AHOxen");
-            check(fitted > 0.0 && loose > 0.0 && fitted < loose, "DEV-011",
-                  "and the vertical fit commits its edges: less of the ink "
-                  "is left at neither end of the scale");
+            (void)tiku_desk_font_set_size(10);
+            hinted = ambiguous(sample);
+            /*
+             * At ten pixels the honest, linear coverage leaves most of a
+             * stem grey.  The grid-fit and the stem darkening together
+             * put it down solid: below three-fifths ambiguous, which is
+             * about what the baked faces reach and which the linear
+             * render (near two-thirds) does not.
+             */
+            check(hinted > 0.0 && linear > 0.0 && hinted < linear &&
+                  hinted < 0.60, "DEV-011",
+                  "and hinting commits the edges: at 10 px far less of the "
+                  "ink is left at neither end of the scale");
         }
         /*
          * The baked families reach past Latin now: a file named in Greek
