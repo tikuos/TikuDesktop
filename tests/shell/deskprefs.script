@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# The Desktop is dressed from a window, not from an attribute set by
+# hand: the pictures offered are the ones lying on the Desktop, choosing
+# one shows it at once, and how it is laid is a choice beside it.
+wait 15
+key w ctrl
+wait 5
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Desktop preferences
+wait 12
+expect-title Desktop preferences
+note the picture on the Desktop is offered, and choosing it shows it
+expect-pixel 60 300 336698
+click 400 180
+wait 12
+expect-pixel 60 300 10c810
+note scaled stretches the corner over an eighth of the screen
+expect-pixel 100 120 c81010
+note tiled repeats the small picture instead, so the same point is field
+click 350 395
+wait 12
+expect-pixel 100 120 10c810
+shot /tmp/trk_deskprefs_shot.png
+wait 3
+note and the icons have a size of their own
+click 600 435
+wait 10
+shot /tmp/trk_deskprefs_icon.png
+wait 3

@@ -2033,6 +2033,11 @@ open_sub(tiku_trk_deskbar_t *db, int at)
                  "Tracker preferences\xe2\x80\xa6");
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_DESKTOP_PREFS;
+        snprintf(si->label, sizeof si->label, "%s",
+                 "Desktop preferences\xe2\x80\xa6");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
         /* Says what choosing it DOES, which is the other state: a row
          * labelled with the state it is in reads as a heading. */
@@ -2860,6 +2865,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_TRACKER_PREFS) {
                     pick->what = TIKU_TRK_DB_TRACKER_PREFERENCES;
+                } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_DESKTOP_PREFS) {
+                    pick->what = TIKU_TRK_DB_DESKTOP_PREFERENCES;
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
                     /* A toggle is not a departure: the menu stays up

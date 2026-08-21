@@ -62,6 +62,7 @@ DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/ui/windows/tiku_trk_panel_window.c \
                        src/ui/windows/tiku_trk_prefs_window.c \
                        src/ui/windows/tiku_trk_deskbar_prefs_window.c \
+                       src/ui/windows/tiku_trk_desktop_prefs_window.c \
                        src/ui/windows/tiku_trk_select_window.c \
                        src/ui/windows/tiku_trk_switcher_window.c \
                        src/ui/input/tiku_trk_band_controller.c \
@@ -75,7 +76,7 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
         src/core/tiku_trk_alert.c src/core/tiku_trk_launch.c \
         src/core/tiku_trk_types.c src/core/tiku_trk_prefs.c \
         src/core/tiku_trk_switcher.c src/core/tiku_trk_frame.c \
-        src/core/tiku_trk_panel.c src/core/tiku_trk_info.c \
+        src/core/tiku_trk_panel.c src/core/tiku_trk_deskprefs.c src/core/tiku_trk_info.c \
         src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
         src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
         src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c
@@ -95,7 +96,7 @@ COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
 TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
-            $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_menu \
+            $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_deskprefs $(BUILD)/test_menu \
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
@@ -330,6 +331,15 @@ $(BUILD)/icon-export: src/media/tiku_trk_icons.c src/media/tiku_trk_hvif.c \
 	      src/media/tiku_trk_hvif.c tools/tiku_trk_icon_export.c \
 	      $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
 
+$(BUILD)/test_deskprefs: src/core/tiku_trk_deskprefs.c \
+                        src/core/tiku_trk_background.c \
+                        src/core/tiku_trk_state.c \
+                        src/media/tiku_trk_image.c \
+                        src/media/tiku_trk_inflate.c \
+                        src/media/tiku_trk_jpeg.c \
+                        tests/test_deskprefs.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
 $(BUILD)/test_icondir: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
                        src/media/tiku_trk_iconpaint.c \
                        tests/test_icondir.c \
@@ -401,6 +411,7 @@ test: all
 	@$(BUILD)/test_fs
 	@$(BUILD)/test_hvif
 	@$(BUILD)/test_icondir
+	@$(BUILD)/test_deskprefs
 	@$(BUILD)/test_menu
 	@$(BUILD)/test_attr
 	@$(BUILD)/test_query
