@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_gfx_dep.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_open_with_window.h"
 
 #define OW_WIDTH   420
@@ -162,7 +163,7 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
                  "anyway?", pick->app->name);
         tiku_trk_alert_open(c->alert, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_OPEN_ANYWAY, text,
-                            "Cancel|Open");
+                            tiku_trk_str("alert.btn.open"));
         return;                     /* the answer re-enters via confirmed */
     }
     if (c->open != NULL) {

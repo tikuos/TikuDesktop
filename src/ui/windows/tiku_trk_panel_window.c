@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_gfx_dep.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_iconpaint.h"
 #include "tiku_trk_panel_window.h"
 #include "tiku_trk_task.h"
@@ -335,11 +336,11 @@ commit(tiku_trk_panel_window_t *controller)
             char ask[160];
 
             snprintf(ask, sizeof ask,
-                     "An item named \"%.64s\" already exists.  Replace it?",
+                     tiku_trk_str("alert.msg.exists_replace"),
                      controller->model.name);
             tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_SAVE_REPLACE, ask,
-                                "Cancel|Replace");
+                                tiku_trk_str("alert.btn.replace"));
         } else if (controller->alert != NULL) {
             tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_ERROR,

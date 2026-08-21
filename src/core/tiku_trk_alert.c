@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_alert.h"
+#include "tiku_trk_strings.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -99,18 +100,18 @@ tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
     leaf = strrchr(pr->conflict_path, '/');
     leaf = (leaf != NULL) ? leaf + 1 : pr->conflict_path;
     snprintf(text, sizeof text,
-             "An item named \"%.80s\" already exists here.", leaf);
+             tiku_trk_str("alert.msg.exists_here"), leaf);
     /* The four-way form when a folder is involved or more than one
      * collision is pending; otherwise the short one.  The engine already
      * decided which -- this only renders it (FS-018, FS-019). */
     if (pr->conflict_many) {
         tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
-                            "Cancel|Skip|Skip all|Replace all");
+                            tiku_trk_str("alert.btn.conflict"));
     } else {
         tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
-                            "Cancel|Replace");
+                            tiku_trk_str("alert.btn.replace"));
     }
 }
 
@@ -125,7 +126,8 @@ tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
      * guessing from the message. */
     tiku_trk_alert_open(a, TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_ERROR,
                         pr->error,
-                        pr->error_can_continue ? "Cancel|OK" : "Cancel");
+                        pr->error_can_continue ? tiku_trk_str("alert.btn.ok")
+                                               : tiku_trk_str("button.cancel"));
 }
 
 void

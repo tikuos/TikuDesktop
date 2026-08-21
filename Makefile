@@ -171,7 +171,7 @@ $(BUILD)/test_query: src/core/tiku_trk_query.c src/core/tiku_trk_attr.c \
                      src/ui/tiku_trk_menu.c tests/test_query.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_notify: src/backends/tiku_trk_notify.c src/ui/tiku_trk_poseview.c \
+$(BUILD)/test_notify: src/backends/tiku_trk_notify.c src/ui/tiku_trk_poseview.c src/core/tiku_trk_strings.c \
                       src/core/tiku_trk_model.c src/core/tiku_trk_attr.c \
                       src/core/tiku_trk_match.c src/core/tiku_trk_clip.c \
                       src/core/tiku_trk_state.c src/backends/tiku_trk_backend_posix.c \
@@ -289,7 +289,8 @@ $(BUILD)/test_volume: $(COMMON) src/deskbar/tiku_trk_deskicons.c tests/test_volu
 $(BUILD)/test_vdir: $(COMMON) tests/test_vdir.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_alert: src/core/tiku_trk_alert.c src/backends/tiku_trk_fs.c \
+$(BUILD)/test_alert: src/core/tiku_trk_alert.c src/core/tiku_trk_strings.c \
+                     src/backends/tiku_trk_fs.c \
                      src/backends/tiku_trk_volume.c \
                      src/core/tiku_trk_model.c src/core/tiku_trk_state.c \
                      src/backends/tiku_trk_backend_posix.c src/backends/tiku_trk_backend_tiku.c \

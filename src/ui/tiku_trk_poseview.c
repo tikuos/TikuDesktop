@@ -13,6 +13,7 @@
  */
 
 #include "tiku_trk_poseview.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_state.h"
 #include "tiku_trk_task.h"
@@ -1016,28 +1017,28 @@ query_default_columns(tiku_trk_poseview_t *v)
     person = strcasecmp(v->query_type, "application/x-person") == 0;
     mail = strcasecmp(v->query_type, "text/x-email") == 0 ||
            strcasecmp(v->query_type, "application/x-vnd.Be-mail") == 0;
-    v->columns[0] = (tiku_trk_column_t){ "Name", 145,
+    v->columns[0] = (tiku_trk_column_t){ tiku_trk_str("label.name"), 145,
         TIKU_TRK_COL_NAME, 0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[1] = (tiku_trk_column_t){ "Location", 225,
+    v->columns[1] = (tiku_trk_column_t){ tiku_trk_str("label.location"), 225,
         TIKU_TRK_COL_PATH, 0, TIKU_TRK_ALIGN_LEFT };
     v->column_count = 2;
     if (bookmark) {
-        query_attr_column(v, "META:title", "Title", 180);
-        query_attr_column(v, "META:url", "URL", 260);
+        query_attr_column(v, "META:title", tiku_trk_str("col.title"), 180);
+        query_attr_column(v, "META:url", tiku_trk_str("col.url"), 260);
     } else if (person) {
-        query_attr_column(v, "META:name", "Name", 160);
-        query_attr_column(v, "META:nickname", "Nickname", 110);
-        query_attr_column(v, "META:email", "E-mail", 190);
-        query_attr_column(v, "META:phone", "Phone", 120);
+        query_attr_column(v, "META:name", tiku_trk_str("label.name"), 160);
+        query_attr_column(v, "META:nickname", tiku_trk_str("col.nickname"), 110);
+        query_attr_column(v, "META:email", tiku_trk_str("col.email"), 190);
+        query_attr_column(v, "META:phone", tiku_trk_str("col.phone"), 120);
     } else if (mail) {
-        query_attr_column(v, "MAIL:subject", "Subject", 220);
-        query_attr_column(v, "MAIL:from", "From", 170);
-        query_attr_column(v, "MAIL:when", "When", 135);
-        query_attr_column(v, "MAIL:status", "Status", 90);
+        query_attr_column(v, "MAIL:subject", tiku_trk_str("col.subject"), 220);
+        query_attr_column(v, "MAIL:from", tiku_trk_str("col.from"), 170);
+        query_attr_column(v, "MAIL:when", tiku_trk_str("col.when"), 135);
+        query_attr_column(v, "MAIL:status", tiku_trk_str("col.status"), 90);
     } else {
-        v->columns[2] = (tiku_trk_column_t){ "Size", 80,
+        v->columns[2] = (tiku_trk_column_t){ tiku_trk_str("label.size"), 80,
             TIKU_TRK_COL_SIZE, 0, TIKU_TRK_ALIGN_RIGHT };
-        v->columns[3] = (tiku_trk_column_t){ "Modified", 150,
+        v->columns[3] = (tiku_trk_column_t){ tiku_trk_str("label.modified"), 150,
             TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
         v->column_count = 4;
     }
@@ -1210,13 +1211,13 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     v->font_px = TIKU_TRK_FONT_REF;
     tiku_trk_repaint_init(&v->repaint);
 
-    v->columns[0] = (tiku_trk_column_t){ "Name",  240, TIKU_TRK_COL_NAME,
+    v->columns[0] = (tiku_trk_column_t){ tiku_trk_str("label.name"),  240, TIKU_TRK_COL_NAME,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[1] = (tiku_trk_column_t){ "Kind",  140, TIKU_TRK_COL_KIND,
+    v->columns[1] = (tiku_trk_column_t){ tiku_trk_str("label.kind"),  140, TIKU_TRK_COL_KIND,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[2] = (tiku_trk_column_t){ "Value", 190, TIKU_TRK_COL_VALUE,
+    v->columns[2] = (tiku_trk_column_t){ tiku_trk_str("label.value"), 190, TIKU_TRK_COL_VALUE,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[3] = (tiku_trk_column_t){ "Cap",    60, TIKU_TRK_COL_CAP,
+    v->columns[3] = (tiku_trk_column_t){ tiku_trk_str("label.cap"),    60, TIKU_TRK_COL_CAP,
                                          0, TIKU_TRK_ALIGN_LEFT };
     v->column_count = 4;
     tiku_trk_poseview_reflow_columns(v);

@@ -160,4 +160,35 @@
   <string name="label.size">Size</string>
   <string name="label.value">Value</string>
 
+  <!-- Columns -->
+  <string name="label.location">Location</string>
+  <string name="label.modified">Modified</string>
+  <string name="label.cap">Cap</string>
+  <string name="col.title">Title</string>
+  <string name="col.url">URL</string>
+  <string name="col.nickname">Nickname</string>
+  <string name="col.email">E-mail</string>
+  <string name="col.phone">Phone</string>
+  <string name="col.subject">Subject</string>
+  <string name="col.from">From</string>
+  <string name="col.when">When</string>
+  <string name="col.status">Status</string>
+
+  <!-- Alerts -->
+  <string name="alert.btn.empty_trash">Cancel|Empty Trash</string>
+  <string name="alert.btn.get_info">Cancel|Get info</string>
+  <string name="alert.btn.trash_delete">Cancel|Move to Trash|Delete</string>
+  <string name="alert.btn.ok">Cancel|OK</string>
+  <string name="alert.btn.open">Cancel|Open</string>
+  <string name="alert.btn.replace">Cancel|Replace</string>
+  <string name="alert.btn.shut_down">Cancel|Shut down</string>
+  <string name="alert.btn.conflict">Cancel|Skip|Skip all|Replace all</string>
+  <string name="alert.msg.exists_here">An item named "%.80s" already exists here.</string>
+  <string name="alert.msg.exists_replace">An item named "%.64s" already exists.  Replace it?</string>
+  <string name="alert.msg.delete_items">Are you sure you want to delete %d item%s?  This operation cannot be reverted.</string>
+  <string name="alert.msg.empty_trash">Are you sure you want to empty the Trash?  This operation cannot be reverted.</string>
+  <string name="alert.msg.shut_down">Shut down the desktop?</string>
+  <string name="alert.msg.broken_open">There is no file to open: the link's target cannot be found.</string>
+  <string name="alert.msg.perms_not_yours">This item's permissions are not yours to set.</string>
+
 </strings>

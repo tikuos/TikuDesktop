@@ -603,8 +603,8 @@ offer_broken_link(desktop_t *app, const char *path)
              path);
     tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                         TIKU_TRK_ALERT_TAG_BROKEN_OPEN,
-                        "There is no file to open: the link's target "
-                        "cannot be found.", "Cancel|Get info");
+                        tiku_trk_str("alert.msg.broken_open"),
+                        tiku_trk_str("alert.btn.get_info"));
 }
 
 
@@ -1559,7 +1559,7 @@ system_invoke(desktop_t *app, int command)
          * taken down (DB-006), the same question the leaf asks. */
         tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                            "Shut down the desktop?", "Cancel|Shut down");
+                            tiku_trk_str("alert.msg.shut_down"), tiku_trk_str("alert.btn.shut_down"));
         return 1;
     default:
         break;
@@ -2798,7 +2798,7 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
             TIKU_TRK_ALERT_WARN,
             TIKU_TRK_ALERT_TAG_SHUTDOWN,
             "Shut down the desktop?",
-            "Cancel|Shut down");
+            tiku_trk_str("alert.btn.shut_down"));
         break;
     case TIKU_TRK_DB_OPEN_PATH:
         (void)open_folder(app, pick->path);
@@ -3152,7 +3152,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * Deskbar asks (DB-006). */
         tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                            "Shut down the desktop?", "Cancel|Shut down");
+                            tiku_trk_str("alert.msg.shut_down"), tiku_trk_str("alert.btn.shut_down"));
         return;
     }
     if (command == TIKU_TRK_CMD_CREATE_QUERY ||

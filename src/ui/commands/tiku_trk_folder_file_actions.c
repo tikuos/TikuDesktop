@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_folder_file_actions.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_shortcuts.h"
 #include "tiku_trk_volume.h"
 
@@ -450,12 +451,11 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
         char message[300];
 
         snprintf(message, sizeof message,
-                 "Are you sure you want to delete %d item%s?  This "
-                 "operation cannot be reverted.", count,
+                 tiku_trk_str("alert.msg.delete_items"), count,
                  count == 1 ? "" : "s");
         tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_DELETE, message,
-                            "Cancel|Move to Trash|Delete");
+                            tiku_trk_str("alert.btn.trash_delete"));
     }
 }
 
@@ -717,8 +717,8 @@ tiku_trk_folder_file_actions_invoke(
         if (controller->alert != NULL) {
             tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                 TIKU_TRK_ALERT_TAG_EMPTY_TRASH,
-                "Are you sure you want to empty the Trash?  This "
-                "operation cannot be reverted.", "Cancel|Empty Trash");
+                tiku_trk_str("alert.msg.empty_trash"),
+                tiku_trk_str("alert.btn.empty_trash"));
             return 1;
         }
         tiku_trk_folder_file_actions_answer_empty(controller);

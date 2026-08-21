@@ -142,4 +142,35 @@
   <string name="label.size">Taille</string>
   <string name="label.value">Valeur</string>
 
+  <!-- Colonnes -->
+  <string name="label.location">Emplacement</string>
+  <string name="label.modified">Modifié</string>
+  <string name="label.cap">Cap.</string>
+  <string name="col.title">Titre</string>
+  <string name="col.url">URL</string>
+  <string name="col.nickname">Surnom</string>
+  <string name="col.email">Courriel</string>
+  <string name="col.phone">Téléphone</string>
+  <string name="col.subject">Objet</string>
+  <string name="col.from">De</string>
+  <string name="col.when">Date</string>
+  <string name="col.status">État</string>
+
+  <!-- Alertes -->
+  <string name="alert.btn.empty_trash">Annuler|Vider la corbeille</string>
+  <string name="alert.btn.get_info">Annuler|Informations</string>
+  <string name="alert.btn.trash_delete">Annuler|Mettre à la corbeille|Supprimer</string>
+  <string name="alert.btn.ok">Annuler|OK</string>
+  <string name="alert.btn.open">Annuler|Ouvrir</string>
+  <string name="alert.btn.replace">Annuler|Remplacer</string>
+  <string name="alert.btn.shut_down">Annuler|Arrêter</string>
+  <string name="alert.btn.conflict">Annuler|Ignorer|Tout ignorer|Tout remplacer</string>
+  <string name="alert.msg.exists_here">Un élément nommé « %.80s » existe déjà ici.</string>
+  <string name="alert.msg.exists_replace">Un élément nommé « %.64s » existe déjà.  Le remplacer ?</string>
+  <string name="alert.msg.delete_items">Voulez-vous vraiment supprimer %d élément%s ?  Cette opération est irréversible.</string>
+  <string name="alert.msg.empty_trash">Voulez-vous vraiment vider la corbeille ?  Cette opération est irréversible.</string>
+  <string name="alert.msg.shut_down">Arrêter le bureau ?</string>
+  <string name="alert.msg.broken_open">Aucun fichier à ouvrir : la cible du lien est introuvable.</string>
+  <string name="alert.msg.perms_not_yours">Les permissions de cet élément ne sont pas les vôtres à définir.</string>
+
 </strings>
