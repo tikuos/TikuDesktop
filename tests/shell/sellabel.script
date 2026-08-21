@@ -12,7 +12,9 @@ note the label band is the preference's deep navy, not the backdrop blue
 expect-pixel 546 68 1a3350
 click 980 20
 wait 2
-click 780 110
+menu-pick Settings
+wait 3
+menu-pick Tracker preferences
 wait 5
 note the swatch walks the colour wheel: after navy comes black
 click 432 268

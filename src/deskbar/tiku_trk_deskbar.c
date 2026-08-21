@@ -280,13 +280,10 @@ build_leaf(tiku_trk_deskbar_t *db)
     db->sub_of = -1;
     add_item(db, TIKU_TRK_DB_ITEM_ABOUT, "About this system", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_FIND, "Find\xe2\x80\xa6", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_PREFS, "Deskbar preferences\xe2\x80\xa6",
-             NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_TRACKER_PREFS,
-             "Tracker preferences\xe2\x80\xa6", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
-             db->show_replicants ? "Hide replicants" : "Show replicants",
-             NULL, 0);
+    /* One row for everything that configures the desktop, the way the
+     * programs have one: the leaf says what a person can do here, and
+     * the lists live inside it. */
+    add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, "Settings", NULL, 0);
     if (db->app_count > 0) {
         /* One row, not one per program: the leaf is the system's own
          * menu, and a list of what happens to be installed belongs
@@ -2022,7 +2019,27 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         db->sub_hot = -1;
         return;
     }
-    if (it->kind == TIKU_TRK_DB_ITEM_APPS) {
+    if (it->kind == TIKU_TRK_DB_ITEM_SETTINGS) {
+        tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
+
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_PREFS;
+        snprintf(si->label, sizeof si->label, "%s",
+                 "Deskbar preferences\xe2\x80\xa6");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_TRACKER_PREFS;
+        snprintf(si->label, sizeof si->label, "%s",
+                 "Tracker preferences\xe2\x80\xa6");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
+        /* Says what choosing it DOES, which is the other state: a row
+         * labelled with the state it is in reads as a heading. */
+        snprintf(si->label, sizeof si->label, "%s",
+                 db->show_replicants ? "Hide replicants"
+                                     : "Show replicants");
+    } else if (it->kind == TIKU_TRK_DB_ITEM_APPS) {
         int i;
 
         for (i = 0; i < db->app_count && i < TIKU_TRK_DB_SUB_MAX; i++) {
@@ -2549,6 +2566,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
             } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_APPS ||
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_SETTINGS ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
                 /* What expands says so, the way every hierarchical menu
                  * marks the rows that go somewhere (DB-002). */
@@ -2837,6 +2855,20 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                     pick->what = TIKU_TRK_DB_LAUNCH_APP;
                     snprintf(pick->path, sizeof pick->path, "%s",
                              db->sub[si].path);
+                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PREFS) {
+                    pick->what = TIKU_TRK_DB_PREFERENCES;
+                } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_TRACKER_PREFS) {
+                    pick->what = TIKU_TRK_DB_TRACKER_PREFERENCES;
+                } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
+                    /* A toggle is not a departure: the menu stays up
+                     * with the row saying the other thing now. */
+                    int of = db->sub_of;
+
+                    db->show_replicants = !db->show_replicants;
+                    open_sub(db, of);
+                    return 1;
                 } else {
                     pick->what = TIKU_TRK_DB_OPEN_PATH;
                     snprintf(pick->path, sizeof pick->path, "%s",
@@ -2854,6 +2886,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_DIR:
             case TIKU_TRK_DB_ITEM_RECENT:
             case TIKU_TRK_DB_ITEM_APPS:
+            case TIKU_TRK_DB_ITEM_SETTINGS:
                 /* Expanding is not choosing: the menu stays up, with the
                  * row's contents beside it. */
                 open_sub(db, idx);

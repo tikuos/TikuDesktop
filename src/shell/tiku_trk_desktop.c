@@ -630,6 +630,9 @@ deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
     case TIKU_TRK_DB_ITEM_APPS:
         art = "folder_apps";
         break;
+    case TIKU_TRK_DB_ITEM_SETTINGS:
+        art = "folder_prefs";
+        break;
     case TIKU_TRK_DB_ITEM_APP:
         /* Whatever the shell named when it offered the row; a program
          * that said nothing is drawn as what it is. */

@@ -6,7 +6,7 @@
 wait 12
 click 980 20
 wait 3
-expect-pixel 701 189 fac468
-note and the Applications row carries art of its own
 expect-pixel 701 147 fac468
+note and the rows that expand carry art of their own
+expect-pixel 701 105 fac468
 quit

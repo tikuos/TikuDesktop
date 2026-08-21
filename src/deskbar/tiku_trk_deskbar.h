@@ -107,6 +107,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
     TIKU_TRK_DB_ITEM_POWER_OFF, /* inside Shut down: immediate (DB-006)  */
     TIKU_TRK_DB_ITEM_RESTART,
+    TIKU_TRK_DB_ITEM_SETTINGS,  /* expand it: what configures this      */
     TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
     TIKU_TRK_DB_ITEM_APP        /* start the program named by its path  */
 } tiku_trk_db_item_kind_t;

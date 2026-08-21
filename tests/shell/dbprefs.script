@@ -5,7 +5,9 @@ wait 8
 expect-windows 1
 click 980 20
 wait 2
-click 780 90
+menu-pick Settings
+wait 3
+menu-pick Deskbar preferences
 wait 4
 note the formerly dead leaf item opens the dedicated preferences window
 expect-windows 2
@@ -16,7 +18,9 @@ note closing hides the controller without quitting the desktop
 expect-windows 1
 click 980 20
 wait 2
-click 780 90
+menu-pick Settings
+wait 3
+menu-pick Deskbar preferences
 wait 4
 expect-windows 2
 expect-title Deskbar preferences
