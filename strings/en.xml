@@ -254,4 +254,34 @@
   <string name="info.msg.not_a_link">That is not a link.</string>
   <string name="info.msg.repoint_failed">The link could not be re-pointed.</string>
 
+  <!-- Tracker preferences window -->
+  <string name="title.tracker_prefs">Tracker preferences</string>
+  <string name="prefs.page.desktop">Desktop</string>
+  <string name="prefs.page.windows">Windows</string>
+  <string name="prefs.page.volumes">Volume icons</string>
+  <string name="prefs.page.mount">Disk mount</string>
+
+  <!-- Operators and months -->
+  <string name="op.contains">contains</string>
+  <string name="op.is">is</string>
+  <string name="op.is_not">is not</string>
+  <string name="op.starts_with">starts with</string>
+  <string name="op.ends_with">ends with</string>
+  <string name="op.greater_than">greater than</string>
+  <string name="op.less_than">less than</string>
+  <string name="op.after">after</string>
+  <string name="op.before">before</string>
+  <string name="month.1">January</string>
+  <string name="month.2">February</string>
+  <string name="month.3">March</string>
+  <string name="month.4">April</string>
+  <string name="month.5">May</string>
+  <string name="month.6">June</string>
+  <string name="month.7">July</string>
+  <string name="month.8">August</string>
+  <string name="month.9">September</string>
+  <string name="month.10">October</string>
+  <string name="month.11">November</string>
+  <string name="month.12">December</string>
+
 </strings>

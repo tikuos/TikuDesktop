@@ -2711,10 +2711,10 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s)
         {
             char head[32];
             snprintf(head, sizeof head, "%s %d",
-                     (const char *[]){ "January", "February", "March",
-                       "April", "May", "June", "July", "August",
-                       "September", "October", "November",
-                       "December" }[tmv.tm_mon], 1900 + tmv.tm_year);
+                     tiku_trk_str((const char *[]){ "month.1", "month.2",
+                       "month.3", "month.4", "month.5", "month.6", "month.7",
+                       "month.8", "month.9", "month.10", "month.11",
+                       "month.12" }[tmv.tm_mon]), 1900 + tmv.tm_year);
             (void)tiku_desk_text_centered(s, fb,
                 (tiku_desk_rect_t){ c.x, c.y + 2, c.w, 18 }, head,
                 TIKU_DESK_C_TEXT);

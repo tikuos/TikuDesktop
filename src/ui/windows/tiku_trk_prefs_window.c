@@ -13,6 +13,7 @@
 
 #include "tiku_desk_ui.h"
 #include "tiku_trk_gfx_dep.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_prefs_window.h"
 
 /** @brief Draw the preferences model owned by this controller. */
@@ -98,7 +99,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         button.y = content.y + y;
         button.w = width;
         button.h = height;
-        tiku_desk_ui_button(surface, button, i ? "Revert" : "Defaults",
+        tiku_desk_ui_button(surface, button, i ? tiku_trk_str("button.revert") : tiku_trk_str("button.defaults"),
                             enabled ? 0u : TIKU_DESK_S_DISABLED);
     }
 }
@@ -218,7 +219,7 @@ tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller)
     frame.h = TIKU_TRK_PREF_H + 26;
     tiku_trk_prefs_mark_opened(&controller->model);
     controller->window = tiku_desk_workspace_open(controller->workspace,
-        "Tracker preferences", frame, draw, controller, NULL);
+        tiku_trk_str("title.tracker_prefs"), frame, draw, controller, NULL);
     if (controller->window != NULL) {
         tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);
     }

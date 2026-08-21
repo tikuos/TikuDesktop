@@ -62,17 +62,18 @@ static const struct {
 
 /** @brief Operator labels, in the original's order. */
 static const char *kOps[] = {
-    "contains", "is", "is not", "starts with", "ends with",
-    "greater than", "less than"
+    "op.contains", "op.is", "op.is_not", "op.starts_with", "op.ends_with",
+    "op.greater_than", "op.less_than"
 };
 
 static const char *
 op_label(tiku_trk_qfield_t field, tiku_trk_qop_t op)
 {
     if (field == TIKU_TRK_QF_MODIFIED) {
-        return (op == TIKU_TRK_OP_GREATER) ? "after" : "before";
+        return (op == TIKU_TRK_OP_GREATER) ? tiku_trk_str("op.after")
+                                             : tiku_trk_str("op.before");
     }
-    return kOps[op];
+    return tiku_trk_str(kOps[op]);
 }
 
 static const char *

@@ -275,7 +275,7 @@ $(BUILD)/test_scripting: $(COMMON) src/ui/tiku_trk_poseview.c \
                         | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_prefs: src/core/tiku_trk_prefs.c src/core/tiku_trk_state.c \
+$(BUILD)/test_prefs: src/core/tiku_trk_prefs.c src/core/tiku_trk_state.c src/core/tiku_trk_strings.c \
                      tests/test_prefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 

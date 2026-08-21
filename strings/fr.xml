@@ -236,4 +236,34 @@
   <string name="info.msg.not_a_link">Ce n'est pas un lien.</string>
   <string name="info.msg.repoint_failed">Le lien n'a pas pu être re-pointé.</string>
 
+  <!-- Préférences Tracker -->
+  <string name="title.tracker_prefs">Préférences de Tracker</string>
+  <string name="prefs.page.desktop">Bureau</string>
+  <string name="prefs.page.windows">Fenêtres</string>
+  <string name="prefs.page.volumes">Icônes de volume</string>
+  <string name="prefs.page.mount">Montage des disques</string>
+
+  <!-- Opérateurs et mois -->
+  <string name="op.contains">contient</string>
+  <string name="op.is">est</string>
+  <string name="op.is_not">n'est pas</string>
+  <string name="op.starts_with">commence par</string>
+  <string name="op.ends_with">finit par</string>
+  <string name="op.greater_than">supérieur à</string>
+  <string name="op.less_than">inférieur à</string>
+  <string name="op.after">après</string>
+  <string name="op.before">avant</string>
+  <string name="month.1">janvier</string>
+  <string name="month.2">février</string>
+  <string name="month.3">mars</string>
+  <string name="month.4">avril</string>
+  <string name="month.5">mai</string>
+  <string name="month.6">juin</string>
+  <string name="month.7">juillet</string>
+  <string name="month.8">août</string>
+  <string name="month.9">septembre</string>
+  <string name="month.10">octobre</string>
+  <string name="month.11">novembre</string>
+  <string name="month.12">décembre</string>
+
 </strings>
