@@ -56,7 +56,6 @@
 #define MINI_ICON_MAX 16
 
 /* Tracker's own list row: ceilf(plain font size * 1.65) = 20 at 12 px. */
-#define LIST_ROW_H 20
 
 typedef struct {
     tiku_desk_host_t    *host;

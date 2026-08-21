@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# A row is as tall as the letters in it, and the letters are a preference.
+#
+# The height was worked out once, when the shell started, and handed to
+# everything that draws a list -- so changing the face redrew the words at
+# their new size into rows still sized for the old one.  At 16 px they did
+# not fit; the fix is that the height is taken again every frame.
+#
+# Asked here the only way a script can see it: how many rows the window
+# SHOWS.  A taller row means fewer of them in the same window, which is
+# arithmetic no redraw can fake.
+wait 15
+expect-visible-rows 10
+note put the interface up to 16 px from the window that chooses it
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+expect-font Sans 12
+click 652 300
+wait 12
+expect-font Sans 14
+click 652 310
+wait 12
+expect-font Sans 16
+note and back to the folder, whose rows are now taller than they were
+key w ctrl
+wait 8
+expect-visible-rows 8

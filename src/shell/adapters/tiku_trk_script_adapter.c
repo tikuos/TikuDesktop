@@ -435,6 +435,12 @@ fill_state(tiku_trk_script_adapter_t *adapter,
         state->columns = tiku_trk_poseview_columns(folder->view, &columns);
         state->scroll = tiku_trk_poseview_scroll(folder->view);
         state->rows = tiku_trk_poseview_count(folder->view);
+        /*
+         * How many of them the window can SHOW, which is the list's
+         * height divided by a row's -- so it is the one number a script
+         * can ask that moves when the face does.
+         */
+        state->viewport_rows = tiku_trk_poseview_visible_rows(folder->view);
     } else if (focused != NULL && focused ==
                tiku_trk_panel_window_handle(adapter->panel_window)) {
         state->scroll = tiku_trk_panel_window_scroll(adapter->panel_window);

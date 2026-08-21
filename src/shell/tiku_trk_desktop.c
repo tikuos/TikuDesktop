@@ -106,7 +106,6 @@
 /* Tracker's own list row: ceilf(plain font size * 1.65), which at the 12 px
  * face is 20 -- tall enough that a 16 px mini icon sits in it with room, and
  * the reason rows do not tighten onto the text. */
-#define LIST_ROW_H 20
 
 /** @brief How much of the count view's text a script can read. */
 #define TIKU_TRK_COUNT_TEXT_MAX 64
@@ -3661,9 +3660,48 @@ resize_desktop(desktop_t *app, int width, int height)
 
 static void draw_nav_levels(desktop_t *app, int px, int py);
 
+/**
+ * @brief Follow the face, whatever changed it.
+ *
+ * A row has always been as tall as the letters in it -- but it was worked
+ * out ONCE, at startup, and handed to everything that draws a list.  The
+ * face is a preference now, changeable at any moment from either of two
+ * windows, so a row worked out at launch is a row that stops fitting its
+ * own words the moment somebody changes it.
+ *
+ * Taken every frame instead, and pushed to the copies.  Which is cheap:
+ * it is one compare until it is not, and when it is, a redraw was owed
+ * anyway.  Noticing here rather than at each place that can change the
+ * face is deliberate -- there is no third window somebody might add later
+ * that this would miss.
+ */
+static void
+follow_font(desktop_t *app)
+{
+    int want = tiku_desk_font_plain()->height + 5;
+
+    if (want == app->row_h) {
+        return;
+    }
+    app->row_h = want;
+    app->folder_render.row_h = want;
+    app->band_controller.row_h = want;
+    app->drag_target.row_h = want;
+    app->file_panel.row_h = want;
+    app->script_adapter.row_h = want;
+    /*
+     * The open views are not touched here: a folder sets its own view's
+     * row height from folder_render every time it draws, and this runs
+     * first.  Reaching into them as well would be a second way of saying
+     * the same thing, and the two would eventually disagree.
+     */
+    app->dirty = 1;
+}
+
 static void
 draw_all(desktop_t *app)
 {
+    follow_font(app);
     /* The strip tracker's owner, refreshed per frame so only the window a
      * gesture is running in draws the slide and the guide (TS-063). */
     app->folder_render.strip_owner =
