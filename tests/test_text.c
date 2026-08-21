@@ -123,8 +123,13 @@ main(void)
      */
     check(ink_of("caf\xc3\xa9", 2) > ink_of("caf", 2), "DEV-011",
           "and on a doubled screen too, where the 2x face has no accents");
-    check(ink_of("Tracker", 2) > ink_of("Tracker", 1), "DEV-011",
-          "while ASCII still gets the real 2x face's extra detail");
+    /*
+     * Replicated ink comes in 2x2 blocks, so it is EXACTLY four times the
+     * 1x ink; a real 2x face rasterises the letter again and lands on a
+     * different number.  That is the difference the eye sees as coarse.
+     */
+    check(ink_of("\xc3\xa9", 2) == 4 * ink_of("\xc3\xa9", 1), "DEV-011",
+          "an accent IS replicated: the 2x faces carry ASCII only");
 
     /* Every family carries them: choosing Serif is not choosing English. */
     {
@@ -140,6 +145,11 @@ main(void)
             check(ink_of("\xc3\xa9", 1) > 0 &&
                   tiku_desk_text_width(tiku_desk_font_plain(),
                                        "\xc3\xa9") > space,
+                  "DEV-011", what);
+            snprintf(what, sizeof what,
+                     "%s is drawn at real 2x detail, not blown up",
+                     tiku_desk_font_family_name(family));
+            check(ink_of("Tracker", 2) != 4 * ink_of("Tracker", 1),
                   "DEV-011", what);
         }
         (void)tiku_desk_font_set_family(0);
