@@ -259,6 +259,30 @@ main(void)
                   "is left at neither end of the scale");
         }
         /*
+         * The baked families reach past Latin now: a file named in Greek
+         * or Cyrillic shows on the Desktop out of the box, and a dropped
+         * face that has neither still falls back to letters rather than
+         * blanks.  CJK stays a font to drop -- too much to bake.
+         */
+        {
+            tiku_desk_font_use_baked();
+            (void)tiku_desk_font_set_family(0);
+            (void)tiku_desk_font_set_size(16);
+            check(ink_of("\xce\xb1", 1) > 0 &&
+                  tiku_desk_text_width(tiku_desk_font_plain(),
+                                       "\xce\xb1") > space, "DEV-011",
+                  "Greek is baked: an alpha draws and takes real room");
+            check(ink_of("\xd0\x96", 1) > 0 &&
+                  tiku_desk_text_width(tiku_desk_font_plain(),
+                                       "\xd0\x96") > space, "DEV-011",
+                  "and Cyrillic: a Zhe draws and takes real room");
+            check(ink_of("A", 1) > 0 && ink_of("caf\xc3\xa9", 1) > 0,
+                  "DEV-011", "while Latin still draws as it always did");
+            check(ink_of("\xe4\xb8\x80", 1) == 0, "DEV-011",
+                  "and an ideograph is NOT baked: too much to carry");
+        }
+
+        /*
          * Six faces is all the collection holds, and the interface asks
          * for more than six: a pair at each size, and the smaller faces
          * chrome asks for by size alone.  Making room for one must not
