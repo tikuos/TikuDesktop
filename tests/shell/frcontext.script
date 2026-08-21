@@ -1,0 +1,14 @@
+# shell: tracker
+# lang: fr
+# The file commands come from the catalogue: a right-click in French
+# opens a French context menu -- Open, Get info, Move to Trash and the
+# rest, each by its French name, accents and all.
+wait 10
+click-row 1
+wait 2
+press-row 1 3
+wait 2
+release-row 1 3
+wait 4
+expect-menu Ouvrir|Modifier la requête|Ouvrir avec…|Informations|Modifier le nom|Dupliquer|Mettre à la corbeille||Déplacer vers|Copier vers|Créer un lien|Couper|Copier|Coller||Identifier|Extensions|
+quit

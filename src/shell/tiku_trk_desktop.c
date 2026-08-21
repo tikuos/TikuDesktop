@@ -1466,15 +1466,16 @@ rebuild_global_bar(desktop_t *app)
     /* The system menu first, where the corner ritual lives. */
     tiku_trk_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    (void)tiku_trk_menu_add(&app->sysmenu, "About this system…",
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.about"),
                             TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
     (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, "Find…", TIKU_TRK_CMD_FIND,
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.find"),
+                            TIKU_TRK_CMD_FIND,
                             'f', TIKU_TRK_MOD_CMD, 1);
-    (void)tiku_trk_menu_add(&app->sysmenu, "Preferences…",
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.preferences"),
                             TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
     (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, "Shut down…",
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.shutdown"),
                             TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
     (void)tiku_trk_menubar_add(&app->gbar, &app->sysmenu);
     app->gbar_from = (set != NULL) ? fw : NULL;
