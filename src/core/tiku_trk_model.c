@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_model.h"
+#include "tiku_trk_strings.h"
 #include "tiku_trk_state.h"
 
 #include <stdlib.h>
@@ -65,9 +66,9 @@ tiku_trk_model_display_name(const tiku_trk_model_t *m)
         return "";
     }
     switch (m->kind) {
-    case TIKU_TRK_KIND_ROOT:    return "Disks";
-    case TIKU_TRK_KIND_TRASH:   return "Trash";
-    case TIKU_TRK_KIND_DESKTOP: return "Desktop";
+    case TIKU_TRK_KIND_ROOT:    return tiku_trk_str("kind.disks");
+    case TIKU_TRK_KIND_TRASH:   return tiku_trk_str("kind.trash");
+    case TIKU_TRK_KIND_DESKTOP: return tiku_trk_str("kind.desktop");
     default:                    return m->name;
     }
 }
@@ -93,20 +94,20 @@ static const struct {
     const char *kind;
     const char *icon;
 } kTypes[] = {
-    { "application/x-vnd.be-directory", "Folder",        "folder" },
-    { "application/x-vnd.be-symlink",   "Symbolic link", "symlink" },
-    { "application/x-vnd.be-volume",    "Volume",        "volume" },
-    { "application/x-vnd.be-root",      "Disks",         "root" },
-    { "application/x-vnd.be-query",     "Query",         "query" },
-    { "application/x-vnd.be-trash",     "Trash",         "trash_empty" },
-    { "application/x-vnd.be-app",       "Application",   "application" },
+    { "application/x-vnd.be-directory", "kind.folder",        "folder" },
+    { "application/x-vnd.be-symlink",   "kind.symlink", "symlink" },
+    { "application/x-vnd.be-volume",    "kind.volume",        "volume" },
+    { "application/x-vnd.be-root",      "kind.disks",         "root" },
+    { "application/x-vnd.be-query",     "kind.query",         "query" },
+    { "application/x-vnd.be-trash",     "kind.trash",         "trash_empty" },
+    { "application/x-vnd.be-app",       "kind.application",   "application" },
     /* No bare "application/" row: it would claim octet-stream, which is a
      * generic blob and not a program.  A real executable is recognised by
      * its permission bits before this table is consulted. */
-    { "text/",                          "Text file",     "text_file" },
-    { "image/",                         "Image",         "file" },
-    { "audio/",                         "Audio",         "file" },
-    { "video/",                         "Video",         "file" }
+    { "text/",                          "kind.text_file",     "text_file" },
+    { "image/",                         "kind.image",         "file" },
+    { "audio/",                         "kind.audio",         "file" },
+    { "video/",                         "kind.video",         "file" }
 };
 #define NTYPES ((int)(sizeof kTypes / sizeof kTypes[0]))
 
@@ -117,7 +118,7 @@ tiku_trk_model_type_at(int i, const char **label)
         return NULL;
     }
     if (label != NULL) {
-        *label = kTypes[i].kind;
+        *label = tiku_trk_str(kTypes[i].kind);
     }
     return kTypes[i].type;
 }
@@ -245,23 +246,23 @@ tiku_trk_model_kind_string(const tiku_trk_model_t *m)
         int r = type_row(m->type);
 
         if (r >= 0 && m->kind == TIKU_TRK_KIND_FILE) {
-            return kTypes[r].kind;
+            return tiku_trk_str(kTypes[r].kind);
         }
     }
     switch (m->kind) {
-    case TIKU_TRK_KIND_FILE:        return "File";
-    case TIKU_TRK_KIND_DIRECTORY:   return "Folder";
+    case TIKU_TRK_KIND_FILE:        return tiku_trk_str("kind.file");
+    case TIKU_TRK_KIND_DIRECTORY:   return tiku_trk_str("kind.folder");
     case TIKU_TRK_KIND_SYMLINK:
         return m->facts.link_broken ? "Broken link" : "Symbolic link";
-    case TIKU_TRK_KIND_VOLUME:      return "Volume";
-    case TIKU_TRK_KIND_ROOT:        return "Disks";
-    case TIKU_TRK_KIND_VIRTUAL_DIR: return "Namespace folder";
-    case TIKU_TRK_KIND_DEVICE_NODE: return "Device node";
-    case TIKU_TRK_KIND_QUERY:       return "Query";
-    case TIKU_TRK_KIND_PRINTER:     return "Printer";
-    case TIKU_TRK_KIND_TRASH:       return "Trash";
-    case TIKU_TRK_KIND_DESKTOP:     return "Desktop";
-    default:                        return "Unknown";
+    case TIKU_TRK_KIND_VOLUME:      return tiku_trk_str("kind.volume");
+    case TIKU_TRK_KIND_ROOT:        return tiku_trk_str("kind.disks");
+    case TIKU_TRK_KIND_VIRTUAL_DIR: return tiku_trk_str("kind.namespace_folder");
+    case TIKU_TRK_KIND_DEVICE_NODE: return tiku_trk_str("kind.device_node");
+    case TIKU_TRK_KIND_QUERY:       return tiku_trk_str("kind.query");
+    case TIKU_TRK_KIND_PRINTER:     return tiku_trk_str("kind.printer");
+    case TIKU_TRK_KIND_TRASH:       return tiku_trk_str("kind.trash");
+    case TIKU_TRK_KIND_DESKTOP:     return tiku_trk_str("kind.desktop");
+    default:                        return tiku_trk_str("kind.unknown");
     }
 }
 

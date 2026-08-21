@@ -191,4 +191,24 @@
   <string name="alert.msg.broken_open">There is no file to open: the link's target cannot be found.</string>
   <string name="alert.msg.perms_not_yours">This item's permissions are not yours to set.</string>
 
+  <!-- File kinds -->
+  <string name="kind.folder">Folder</string>
+  <string name="kind.symlink">Symbolic link</string>
+  <string name="kind.volume">Volume</string>
+  <string name="kind.disks">Disks</string>
+  <string name="kind.query">Query</string>
+  <string name="kind.trash">Trash</string>
+  <string name="kind.application">Application</string>
+  <string name="kind.text_file">Text file</string>
+  <string name="kind.image">Image</string>
+  <string name="kind.audio">Audio</string>
+  <string name="kind.video">Video</string>
+  <string name="kind.file">File</string>
+  <string name="kind.broken_link">Broken link</string>
+  <string name="kind.namespace_folder">Namespace folder</string>
+  <string name="kind.device_node">Device node</string>
+  <string name="kind.printer">Printer</string>
+  <string name="kind.desktop">Desktop</string>
+  <string name="kind.unknown">Unknown</string>
+
 </strings>

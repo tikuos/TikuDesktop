@@ -173,4 +173,24 @@
   <string name="alert.msg.broken_open">Aucun fichier à ouvrir : la cible du lien est introuvable.</string>
   <string name="alert.msg.perms_not_yours">Les permissions de cet élément ne sont pas les vôtres à définir.</string>
 
+  <!-- Types de fichier -->
+  <string name="kind.folder">Dossier</string>
+  <string name="kind.symlink">Lien symbolique</string>
+  <string name="kind.volume">Volume</string>
+  <string name="kind.disks">Disques</string>
+  <string name="kind.query">Requête</string>
+  <string name="kind.trash">Corbeille</string>
+  <string name="kind.application">Application</string>
+  <string name="kind.text_file">Fichier texte</string>
+  <string name="kind.image">Image</string>
+  <string name="kind.audio">Audio</string>
+  <string name="kind.video">Vidéo</string>
+  <string name="kind.file">Fichier</string>
+  <string name="kind.broken_link">Lien brisé</string>
+  <string name="kind.namespace_folder">Dossier d'espace de noms</string>
+  <string name="kind.device_node">Nœud de périphérique</string>
+  <string name="kind.printer">Imprimante</string>
+  <string name="kind.desktop">Bureau</string>
+  <string name="kind.unknown">Inconnu</string>
+
 </strings>

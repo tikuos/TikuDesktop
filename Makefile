@@ -165,7 +165,7 @@ $(BUILD)/test_scroll: $(COMMON) tests/test_scroll.c | $(BUILD)
 $(BUILD)/test_launch: $(COMMON) tests/test_launch.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_launch.c $(DESK_LIBS) $(LDFLAGS)
 
-$(BUILD)/test_query: src/core/tiku_trk_query.c src/core/tiku_trk_attr.c \
+$(BUILD)/test_query: src/core/tiku_trk_query.c src/core/tiku_trk_attr.c src/core/tiku_trk_strings.c \
                      src/core/tiku_trk_model.c src/core/tiku_trk_state.c \
                      src/ui/tiku_trk_find.c src/core/tiku_trk_types.c \
                      src/ui/tiku_trk_menu.c tests/test_query.c | $(BUILD)
@@ -184,7 +184,7 @@ $(BUILD)/test_notify: src/backends/tiku_trk_notify.c src/ui/tiku_trk_poseview.c 
                      | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_attr: src/core/tiku_trk_attr.c src/core/tiku_trk_model.c \
+$(BUILD)/test_attr: src/core/tiku_trk_attr.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
                     tests/test_attr.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -251,7 +251,7 @@ $(BUILD)/test_nodeicon: $(COMMON) tests/test_nodeicon.c | $(BUILD)
 $(BUILD)/test_navmenu: $(COMMON) tests/test_navmenu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c src/core/tiku_trk_model.c \
+$(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
                          tests/test_navigator.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -312,11 +312,11 @@ $(BUILD)/test_thumb: src/media/tiku_trk_thumb.c src/media/tiku_trk_image.c \
                      tests/test_thumb.c | $(BUILD)
 	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_drag: src/core/tiku_trk_drag.c src/core/tiku_trk_model.c \
+$(BUILD)/test_drag: src/core/tiku_trk_drag.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
                     tests/test_drag.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_clip: src/core/tiku_trk_clip.c src/core/tiku_trk_model.c \
+$(BUILD)/test_clip: src/core/tiku_trk_clip.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
                     tests/test_clip.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
