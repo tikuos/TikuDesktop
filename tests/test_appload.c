@@ -51,7 +51,7 @@ build_so(const char *path, const char *body)
     (void)fprintf(f, "#include \"tiku_desk_app.h\"\n%s\n", body);
     (void)fclose(f);
     snprintf(command, sizeof command,
-             "cc -std=gnu11 -fPIC -shared -I../desktop/src -o %s %s "
+             "cc -std=gnu11 -fPIC -shared -I../kits/application -I../kits/interface -I../kits/support -o %s %s "
              "2>/dev/null", path, source);
     return system(command);
 }

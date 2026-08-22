@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit src/media/tiku_trk_icons.c from the HVIF blobs in tools/hvif/.
+"""Emit ../kits/translation/tiku_trk_icons.c from the HVIF blobs in tools/hvif/.
 
 Each .hex there is one #'VICN' resource body, concatenated and stripped of
 its $"..." wrapping, out of Haiku's src/kits/tracker/TrackerIcons.rdef or

@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 MENUS = ROOT / "src/ui/tiku_trk_cwmenu.c"
-ENABLE = ROOT / "src/core/tiku_trk_shortcuts.c"
+ENABLE = ROOT / "src/ui/tiku_trk_shortcuts.c"
 DISPATCH = [
     "src/shell/tiku_trk_desktop.c",
     "src/shell/tiku_trk_app.c",

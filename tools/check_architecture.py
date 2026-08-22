@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Reject new dependency leaks while the desktop runtime is extracted."""
+"""
+Reject new dependency leaks in Tracker itself.
+
+The KITS have their own guard -- applications/kits/tools/check_kits.py --
+which holds the table of what each kit may draw on.  This one is about
+the application above them: that no kit ever learns Tracker's name, and
+that the modules which must stay drawable-nowhere keep away from the
+Interface kit.
+"""
 
 from pathlib import Path
 import re
@@ -8,17 +16,19 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TRACKER_SRC = ROOT / "src"
-DESKTOP_SRC = ROOT.parent / "desktop" / "src"
+KITS = ROOT.parent / "kits"
 
 X11_LEGACY = set()
 
+# Tracker's own modules that must draw nothing.  The list is shorter than
+# it was because the ones that had no business drawing in the FIRST place
+# -- nodes, attributes, queries, volumes, decoders -- are kits now, and a
+# kit that reached the Interface kit is refused by check_kits.py before
+# this ever runs.
 HEADLESS = {
-    "alert", "attr", "backend_posix", "backend_tiku", "clip", "drag",
-    "edit", "frame", "fs", "ident", "image", "inflate", "info",
-    "jpeg", "launch", "match", "model", "navigator", "navmenu",
-    "nodeicon", "notify", "panel", "poseview", "prefs", "query",
-    "scroll", "select", "state", "switcher", "task", "thumb", "types",
-    "vdir", "volume",
+    "alert", "clip", "drag", "edit", "frame", "info", "launch", "match",
+    "navigator", "navmenu", "nodeicon", "panel", "poseview", "prefs",
+    "scroll", "select", "switcher", "task", "types",
 }
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
@@ -42,10 +52,15 @@ def main() -> int:
         if any(TRACKER_SRC.rglob(legacy)):
             errors.append(f"{legacy}: generic windows belong to desktop runtime")
 
-    for path in sorted(DESKTOP_SRC.glob("*.[ch]")):
+    # No kit may know the application standing on it.  Storage and
+    # Translation moved out of Tracker and kept their tiku_trk_ names for
+    # now, so the test is by PATH: a kit may include a kit header, never
+    # one that is still Tracker's.
+    kit_headers = {p.name for p in KITS.rglob("*.h")}
+    for path in sorted(KITS.rglob("*.[ch]")):
         for inc in INCLUDE.findall(path.read_text(errors="replace")):
-            if inc.startswith("tiku_trk_"):
-                errors.append(f"{path}: desktop runtime imports Tracker: {inc}")
+            if inc.startswith("tiku_trk_") and inc not in kit_headers:
+                errors.append(f"{path}: a kit imports Tracker: {inc}")
 
     for path in sorted(TRACKER_SRC.rglob("*.[ch]")):
         includes = INCLUDE.findall(path.read_text(errors="replace"))

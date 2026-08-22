@@ -6,13 +6,15 @@
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 
 CC      ?= cc
+KITS    := ../kits
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra \
-           -Isrc/core -Isrc/backends -Isrc/ui -Isrc/ui/commands \
+           -Isrc/core -Isrc/ui -Isrc/ui/commands \
            -Isrc/ui/windows \
-           -Isrc/ui/overlays -Isrc/ui/input -Isrc/media -Isrc/deskbar \
+           -Isrc/ui/overlays -Isrc/ui/input -Isrc/deskbar \
            -Isrc/shell -Isrc/shell/adapters -Isrc/shell/session \
-           -I../desktop/src
+           -I$(KITS)/support -I$(KITS)/device -I$(KITS)/storage \
+           -I$(KITS)/interface -I$(KITS)/translation -I$(KITS)/application
 LDFLAGS ?=
 
 BUILD     := build
@@ -36,18 +38,21 @@ SCRIPT_ENGINE_TRACKER := src/shell/tiku_trk_script.c
 SCRIPT_ENGINE_DESKTOP := src/shell/tiku_trk_script.c \
                          src/shell/adapters/tiku_trk_script_adapter.c
 SCRIPT_STUB   := src/shell/tiku_trk_script_stub.c
-DESK_ROOT := ../desktop
-DESK      := $(DESK_ROOT)/src
-DESK_TRANSPORT_LIB := $(DESK_ROOT)/build/libtiku_desk_transport.a
-DESK_UI_LIB        := $(DESK_ROOT)/build/libtiku_desk_ui.a
-DESK_RUNTIME_LIB   := $(DESK_ROOT)/build/libtiku_desk_runtime.a
-DESK_LIBS          := $(DESK_RUNTIME_LIB) $(DESK_UI_LIB) \
-                      $(DESK_TRANSPORT_LIB)
-DESK_SOURCES       := $(wildcard $(DESK)/*.[ch]) $(DESK_ROOT)/Makefile
+# The kits, in the order a linker wants them.  The name DESK_LIBS is kept
+# because every rule below is written in terms of it; what it points at is
+# now six archives built next door rather than three built here.
+KIT_BUILD := $(KITS)/build
+DESK_LIBS := $(KIT_BUILD)/libtiku_application.a \
+             $(KIT_BUILD)/libtiku_translation.a \
+             $(KIT_BUILD)/libtiku_interface.a \
+             $(KIT_BUILD)/libtiku_storage.a \
+             $(KIT_BUILD)/libtiku_device.a \
+             $(KIT_BUILD)/libtiku_support.a
+DESK_SOURCES := $(shell find $(KITS) -name '*.[ch]' 2>/dev/null) \
+                $(KITS)/Makefile
 DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/deskbar/tiku_trk_deskbar_prefs.c \
                        src/deskbar/tiku_trk_fontprefs.c \
-                       src/media/tiku_trk_fontdir.c \
                        src/deskbar/tiku_trk_desktop_view.c \
                        src/ui/commands/tiku_trk_drop_controller.c \
                        src/ui/commands/tiku_trk_folder_actions.c \
@@ -72,28 +77,21 @@ DESKTOP_CONTROLLERS := src/deskbar/tiku_trk_deskbar_roster.c \
                        src/ui/input/tiku_trk_drag_target.c \
                        src/ui/overlays/tiku_trk_status_overlay.c \
                        src/shell/session/tiku_trk_session_controller.c
-CORE := src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
-        src/core/tiku_trk_state.c src/core/tiku_trk_attr.c \
-        src/core/tiku_trk_query.c src/core/tiku_trk_match.c \
+# What is left of Tracker's own core, now that the nodes, attributes,
+# queries and volumes have gone down into the Storage kit and the words
+# into Support: this is the file manager's own model and nothing else.
+CORE := src/core/tiku_trk_task.c src/core/tiku_trk_match.c \
         src/core/tiku_trk_clip.c src/core/tiku_trk_drag.c \
         src/core/tiku_trk_alert.c src/core/tiku_trk_launch.c \
         src/core/tiku_trk_types.c src/core/tiku_trk_prefs.c \
         src/core/tiku_trk_switcher.c src/core/tiku_trk_frame.c \
-        src/core/tiku_trk_panel.c src/core/tiku_trk_deskprefs.c src/core/tiku_trk_info.c \
-        src/core/tiku_trk_model.c src/core/tiku_trk_repaint.c \
+        src/core/tiku_trk_panel.c src/core/tiku_trk_deskprefs.c \
+        src/core/tiku_trk_info.c src/core/tiku_trk_repaint.c \
         src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
-        src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c \
-        src/core/tiku_trk_strings.c
-BACKENDS := src/backends/tiku_trk_notify.c src/backends/tiku_trk_vdir.c \
-            src/backends/tiku_trk_volume.c \
-            src/backends/tiku_trk_backend_posix.c \
-            src/backends/tiku_trk_backend_tiku.c \
-            src/backends/tiku_trk_fs.c
+        src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c
 UI_SUPPORT := src/ui/tiku_trk_scroll.c src/ui/tiku_trk_navmenu.c \
               src/ui/tiku_trk_nodeicon.c src/ui/tiku_trk_springmenu.c
-MEDIA_SUPPORT := src/media/tiku_trk_image.c src/media/tiku_trk_thumb.c \
-                 src/media/tiku_trk_inflate.c src/media/tiku_trk_jpeg.c
-COMMON := $(CORE) $(BACKENDS) $(UI_SUPPORT) $(MEDIA_SUPPORT)
+COMMON := $(CORE) $(UI_SUPPORT)
 
 .PHONY: all test clean check-architecture
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
@@ -116,7 +114,7 @@ all: $(TESTBINS) $(BUILD)/icon-export $(BUILD)/tracker $(BUILD)/desktop \
      $(DEVBUILD)/trk-conduct
 
 $(DESK_LIBS) &: $(DESK_SOURCES)
-	$(MAKE) --no-print-directory -C $(DESK_ROOT) libs
+	$(MAKE) --no-print-directory -C $(KITS) libs pic
 
 $(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop \
 $(DEVBUILD)/tracker $(DEVBUILD)/desktop: $(DESK_LIBS)
@@ -136,11 +134,11 @@ $(BUILD)/test_springmenu: src/ui/tiku_trk_springmenu.c tests/test_springmenu.c |
 $(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_addon: src/core/tiku_trk_addon.c src/ui/tiku_trk_menu.c \
+$(BUILD)/test_addon: src/shell/tiku_trk_addon.c src/ui/tiku_trk_menu.c \
                      tests/test_addon.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
-$(BUILD)/test_state_pipeline: src/core/tiku_trk_state.c \
+$(BUILD)/test_state_pipeline: \
                               src/core/tiku_trk_state_pipeline.c \
                               tests/test_state_pipeline.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -151,11 +149,12 @@ $(BUILD)/test_model: $(COMMON) tests/test_model.c | $(BUILD)
 $(BUILD)/test_poseview: $(COMMON) src/ui/tiku_trk_poseview.c tests/test_poseview.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_fs: $(COMMON) src/backends/tiku_trk_fs.c tests/test_fs.c | $(BUILD)
+$(BUILD)/test_fs: $(COMMON) tests/test_fs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# The HVIF icon set.  Needs -lm: the rasteriser is float throughout.
-ICONS := src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c src/media/tiku_trk_iconpaint.c
+# The HVIF icon set went down into the Translation kit, where a picture
+# turning into pixels belongs; the archive carries it now.
+ICONS :=
 
 $(BUILD)/test_types: $(COMMON) tests/test_types.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_types.c $(DESK_LIBS) $(LDFLAGS)
@@ -166,26 +165,22 @@ $(BUILD)/test_scroll: $(COMMON) tests/test_scroll.c | $(BUILD)
 $(BUILD)/test_launch: $(COMMON) tests/test_launch.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_launch.c $(DESK_LIBS) $(LDFLAGS)
 
-$(BUILD)/test_query: src/core/tiku_trk_query.c src/core/tiku_trk_attr.c src/core/tiku_trk_strings.c \
-                     src/core/tiku_trk_model.c src/core/tiku_trk_state.c \
+$(BUILD)/test_query: \
                      src/ui/tiku_trk_find.c src/core/tiku_trk_types.c \
                      src/ui/tiku_trk_menu.c tests/test_query.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_notify: src/backends/tiku_trk_notify.c src/ui/tiku_trk_poseview.c src/core/tiku_trk_strings.c \
-                      src/core/tiku_trk_model.c src/core/tiku_trk_attr.c \
+$(BUILD)/test_notify: src/ui/tiku_trk_poseview.c \
                       src/core/tiku_trk_match.c src/core/tiku_trk_clip.c \
-                      src/core/tiku_trk_state.c src/backends/tiku_trk_backend_posix.c \
                       src/core/tiku_trk_task.c \
                       src/core/tiku_trk_repaint.c \
-                      src/ui/tiku_trk_nodeicon.c src/core/tiku_trk_types.c src/media/tiku_trk_thumb.c \
-                      src/media/tiku_trk_image.c src/media/tiku_trk_inflate.c \
-                      src/media/tiku_trk_jpeg.c \
-                      tests/test_notify.c src/backends/tiku_trk_volume.c \
+                      src/ui/tiku_trk_nodeicon.c src/core/tiku_trk_types.c \
+                      \
+                      tests/test_notify.c \
                      | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_attr: src/core/tiku_trk_attr.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
+$(BUILD)/test_attr: \
                     tests/test_attr.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -211,14 +206,13 @@ $(BUILD)/test_ttf: tests/test_ttf.c | $(BUILD)
 $(BUILD)/test_cff: tests/test_cff.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
-$(BUILD)/test_fontprefs: src/core/tiku_trk_state.c \
+$(BUILD)/test_fontprefs: \
                          src/deskbar/tiku_trk_deskbar_prefs.c \
                          src/deskbar/tiku_trk_fontprefs.c \
-                         src/media/tiku_trk_fontdir.c \
                          tests/test_fontprefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_deskbar_prefs: src/core/tiku_trk_state.c \
+$(BUILD)/test_deskbar_prefs: \
                               src/deskbar/tiku_trk_deskbar_prefs.c \
                               tests/test_deskbar_prefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -252,14 +246,14 @@ $(BUILD)/test_nodeicon: $(COMMON) tests/test_nodeicon.c | $(BUILD)
 $(BUILD)/test_navmenu: $(COMMON) tests/test_navmenu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
+$(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c \
                          tests/test_navigator.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/test_dbdrop: $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c \
                       src/deskbar/tiku_trk_deskbar_prefs.c \
-                      src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
-                      src/core/tiku_trk_attr.c tests/test_dbdrop.c | $(BUILD)
+                      src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+                      tests/test_dbdrop.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD)/test_switcher: src/core/tiku_trk_switcher.c tests/test_switcher.c \
@@ -276,11 +270,11 @@ $(BUILD)/test_scripting: $(COMMON) src/ui/tiku_trk_poseview.c \
                         | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_prefs: src/core/tiku_trk_prefs.c src/core/tiku_trk_state.c src/core/tiku_trk_strings.c \
+$(BUILD)/test_prefs: src/core/tiku_trk_prefs.c \
                      tests/test_prefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_strings: src/core/tiku_trk_strings.c tests/test_strings.c \
+$(BUILD)/test_strings: tests/test_strings.c \
                        | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -290,34 +284,29 @@ $(BUILD)/test_volume: $(COMMON) src/deskbar/tiku_trk_deskicons.c tests/test_volu
 $(BUILD)/test_vdir: $(COMMON) tests/test_vdir.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_alert: src/core/tiku_trk_alert.c src/core/tiku_trk_strings.c \
-                     src/backends/tiku_trk_fs.c \
-                     src/backends/tiku_trk_volume.c \
-                     src/core/tiku_trk_model.c src/core/tiku_trk_state.c \
-                     src/backends/tiku_trk_backend_posix.c src/backends/tiku_trk_backend_tiku.c \
-                     src/core/tiku_trk_attr.c src/core/tiku_trk_query.c \
-                     src/core/tiku_trk_match.c src/backends/tiku_trk_notify.c \
-                     src/core/tiku_trk_task.c src/core/tiku_trk_ident.c \
+$(BUILD)/test_alert: src/core/tiku_trk_alert.c \
+                     \
+                     \
+                     src/core/tiku_trk_match.c \
+                     src/core/tiku_trk_task.c \
                      src/core/tiku_trk_clip.c src/core/tiku_trk_drag.c \
-                     src/media/tiku_trk_image.c src/media/tiku_trk_thumb.c \
-                     src/media/tiku_trk_inflate.c src/media/tiku_trk_jpeg.c \
+                     \
                      tests/test_alert.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_inflate: src/media/tiku_trk_inflate.c tests/test_inflate.c | $(BUILD)
+$(BUILD)/test_inflate: tests/test_inflate.c | $(BUILD)
 	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_thumb: src/media/tiku_trk_thumb.c src/media/tiku_trk_image.c \
-                     src/media/tiku_trk_inflate.c src/media/tiku_trk_jpeg.c \
-                     src/core/tiku_trk_state.c \
+$(BUILD)/test_thumb: \
+                     \
                      tests/test_thumb.c | $(BUILD)
 	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_drag: src/core/tiku_trk_drag.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
+$(BUILD)/test_drag: src/core/tiku_trk_drag.c \
                     tests/test_drag.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_clip: src/core/tiku_trk_clip.c src/core/tiku_trk_model.c src/core/tiku_trk_strings.c \
+$(BUILD)/test_clip: src/core/tiku_trk_clip.c \
                     tests/test_clip.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -325,10 +314,9 @@ $(BUILD)/test_edit: src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
                     src/core/tiku_trk_match.c tests/test_edit.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
-                    src/ui/tiku_trk_cwmenu.c src/core/tiku_trk_model.c \
-                    src/core/tiku_trk_strings.c \
-                    src/backends/tiku_trk_volume.c \
+$(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+                    src/ui/tiku_trk_cwmenu.c \
+                    \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -350,40 +338,36 @@ $(BUILD)/test_appload: tests/test_appload.c $(DESK_LIBS) | $(BUILD)
 $(BUILD)/test_shm: tests/test_shm.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_shm.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm -lrt
 
-$(BUILD)/test_hvif: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
-                    src/media/tiku_trk_iconpaint.c \
+$(BUILD)/test_hvif: \
                     tests/test_hvif.c \
                     | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
-$(BUILD)/icon-export: src/media/tiku_trk_icons.c src/media/tiku_trk_hvif.c \
+$(BUILD)/icon-export: \
                       tools/tiku_trk_icon_export.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ src/media/tiku_trk_icons.c \
-	      src/media/tiku_trk_hvif.c tools/tiku_trk_icon_export.c \
+	$(CC) $(CFLAGS) -o $@ \
+	      tools/tiku_trk_icon_export.c \
 	      $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(BUILD)/test_deskprefs: src/core/tiku_trk_deskprefs.c \
                         src/core/tiku_trk_background.c \
-                        src/core/tiku_trk_state.c \
-                        src/media/tiku_trk_image.c \
-                        src/media/tiku_trk_inflate.c \
-                        src/media/tiku_trk_jpeg.c \
+                        \
+                        \
                         tests/test_deskprefs.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
-$(BUILD)/test_icondir: src/media/tiku_trk_hvif.c src/media/tiku_trk_icons.c \
-                       src/media/tiku_trk_iconpaint.c \
+$(BUILD)/test_icondir: \
                        tests/test_icondir.c \
                        | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 
-TRACKER_SRC := $(COMMON) src/core/tiku_trk_addon.c $(ICONS) \
+TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
                src/core/tiku_trk_edit.c src/ui/tiku_trk_titleview.c \
                src/ui/tiku_trk_navigator.c \
-               src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
+               src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                src/ui/tiku_trk_cwmenu.c \
                src/ui/commands/tiku_trk_folder_file_actions.c \
                src/ui/overlays/tiku_trk_status_overlay.c \
@@ -396,14 +380,14 @@ $(BUILD)/tracker: $(TRACKER_SRC) $(SCRIPT_STUB) | $(BUILD)
 $(DEVBUILD)/tracker: $(TRACKER_SRC) $(SCRIPT_ENGINE_TRACKER) | $(DEVBUILD)
 	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-DESKTOP_SRC := $(COMMON) src/core/tiku_trk_addon.c $(ICONS) \
+DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
                src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
                src/ui/tiku_trk_titleview.c \
                src/deskbar/tiku_trk_deskbar.c \
                $(DESKTOP_CONTROLLERS) \
-               src/ui/tiku_trk_menu.c src/core/tiku_trk_shortcuts.c \
+               src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                src/ui/tiku_trk_cwmenu.c src/ui/tiku_trk_find.c \
                src/shell/tiku_trk_desktop.c src/shell/tiku_trk_launcher.c
 
@@ -414,12 +398,18 @@ $(DEVBUILD)/desktop: $(DESKTOP_SRC) $(SCRIPT_ENGINE_DESKTOP) | $(DEVBUILD)
 	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 # The out-of-process driver: an ordinary program that speaks the conductor
-# channel.  It links the transport and NOTHING of Tracker -- which is the
-# whole claim being made, and the link line is where it is kept honest.
-$(DEVBUILD)/trk-conduct: tests/trk_conduct.c $(DESK_TRANSPORT_LIB) \
-                         $(DESK_RUNTIME_LIB) | $(DEVBUILD)
-	$(CC) $(CFLAGS) -o $@ tests/trk_conduct.c $(DESK_RUNTIME_LIB) \
-	      $(DESK_TRANSPORT_LIB) $(LDFLAGS) -lX11 -lm
+# channel.  It links FOUR KITS and nothing of Tracker -- not even Storage,
+# which it has no business knowing about -- and that is the whole claim
+# being made.  The link line is where it is kept honest, and naming the
+# kits one at a time is what makes it readable as a claim at all.
+CONDUCT_KITS := $(KIT_BUILD)/libtiku_application.a \
+                $(KIT_BUILD)/libtiku_interface.a \
+                $(KIT_BUILD)/libtiku_device.a \
+                $(KIT_BUILD)/libtiku_support.a
+
+$(DEVBUILD)/trk-conduct: tests/trk_conduct.c $(CONDUCT_KITS) | $(DEVBUILD)
+	$(CC) $(CFLAGS) -o $@ tests/trk_conduct.c $(CONDUCT_KITS) \
+	      $(LDFLAGS) -lX11 -lm
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -502,6 +492,10 @@ test: all
 
 check-architecture:
 	@python3 tools/check_architecture.py
+	@# And the kits' own table: which kit may draw on which.  Run from
+	@# here because this is the suite that gets run, and a boundary
+	@# nobody checks is a boundary that has already moved.
+	@python3 ../kits/tools/check_kits.py
 
 check-shipping:
 	@python3 tools/check_shipping.py
