@@ -5,9 +5,36 @@ key Tab ctrl
 wait 3
 expect-title Switcher
 shot /tmp/trk_script/switcher.png
+note its bottom edge is where a 12 px name row puts it
+expect-pixel 470 344 828282
 note Tab again moves on, and Escape takes it away
 key Tab
 wait 2
+key Escape
+wait 3
+note now raise the interface to 16 px and ask for the strip again: the
+note row that holds the picked window's NAME was written down as 22 px,
+note which is what a 12 px face needs and no more
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+click 652 300
+wait 12
+click 652 310
+wait 12
+expect-font Sans 16
+key w ctrl
+wait 8
+key Tab ctrl
+wait 6
+expect-title Switcher
+note and now the strip reaches two pixels further at each end: the icons
+note are a fixed size, so all of the growth is the name row under them
+expect-pixel 470 344 d8d8d8
 key Escape
 wait 3
 quit

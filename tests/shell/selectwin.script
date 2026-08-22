@@ -10,4 +10,35 @@ wait 5
 menu-pick Select…
 wait 8
 expect-title Select
+note its foot is where a 12 px face puts it
+expect-pixel 400 372 336698
+key w ctrl
+wait 6
+note now raise the interface to 16 px and ask for this window again:
+note its rows and its height were written down for a 12 px face, so this
+note is the only size at which a wrong number would show
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+click 652 300
+wait 12
+click 652 310
+wait 12
+expect-font Sans 16
+key w ctrl
+wait 8
+press 300 300 3
+wait 2
+release 300 300 3
+wait 5
+menu-pick Select…
+wait 10
+expect-title Select
+note and now its two fields and its tick row are each a line of text
+note taller, so the window is twenty pixels deeper
+expect-pixel 400 372 d8d8d8
 quit

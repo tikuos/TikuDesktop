@@ -14,6 +14,8 @@ wait 3
 menu-pick Open with…
 wait 8
 expect-windows 2
+note its foot is where a 12 px face puts it
+expect-pixel 350 419 336698
 note the best claim leads the list; Down takes it and Return opens
 key Down
 wait 2
@@ -58,4 +60,36 @@ expect-alert does not claim
 key o
 wait 25
 expect-file /tmp/trk_launched
+note now raise the interface to 16 px and ask for this window again:
+note its rows and its height were written down for a 12 px face, so this
+note is the only size at which a wrong number would show
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+click 652 300
+wait 12
+click 652 310
+wait 12
+expect-font Sans 16
+key w ctrl
+wait 8
+press-row 1 3
+wait 2
+release-row 1 3
+wait 5
+menu-pick Open with
+wait 3
+menu-pick Open with…
+wait 10
+expect-title Open with
+note and now it reaches past where it used to end: ten rows of application
+note names, each one taller than it was
+expect-pixel 350 419 d8d8d8
+note and the list still begins under the line of text above it, which moved
+note down with the face rather than staying at the 26 pixels it was written
+expect-pixel 350 183 d8d8d8
 quit
