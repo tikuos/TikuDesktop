@@ -309,6 +309,107 @@ main(void)
               "ops we DO know have the sizes we know they have");
     }
 
+    /*
+     * And the way an application will actually use it: draw ONCE, into a
+     * surface that happens to be recording, and get both.  This is the
+     * whole reason the recorder lives in the surface -- the two versions
+     * above are written out twice in this file and could drift; a real
+     * window has one painting path and cannot.
+     */
+    {
+        tiku_surface_t *once = surface_new();
+        tiku_surface_t *from_stream = surface_new();
+        tiku_dl_t *caught = tiku_dl_new();
+        int off = 0;
+
+        once->record = caught;
+        draw_direct(once);              /* the SAME function as at the top */
+        once->record = NULL;
+
+        check(tiku_dl_misses(caught) == 0,
+              "drawing a window into a recording surface records all of it");
+        check(tiku_dl_count(caught) == tiku_dl_count(dl),
+              "and writes down exactly the commands recording it by hand "
+              "did: no more, so a frame is not carried with the lines it "
+              "is made of");
+        (void)tiku_dl_play(caught, from_stream);
+        for (i = 0; i < W * H; i++) {
+            if (once->px[i] != from_stream->px[i]) {
+                off++;
+            }
+        }
+        check(off == 0,
+              "and replaying what was caught gives back the very surface "
+              "it was caught from");
+        tiku_dl_free(caught);
+        surface_free(once);
+        surface_free(from_stream);
+    }
+
+    /*
+     * A control with no command of its OWN.  It has no fewer for that:
+     * a scrollbar is fills and bevels all the way down, and those record.
+     * So it costs more bytes than a button does and is drawn exactly the
+     * same at the far end -- which is the answer to "what about the
+     * controls you did not give an op to".
+     */
+    {
+        tiku_surface_t *drawn = surface_new();
+        tiku_surface_t *replayed = surface_new();
+        tiku_dl_t *bar = tiku_dl_new();
+        int off = 0;
+
+        drawn->record = bar;
+        tiku_ui_scrollbar(drawn, (tiku_rect_t){ 4, 4, 12, 100 },
+                               0.25f, 0.5f, 0);
+        drawn->record = NULL;
+        check(tiku_dl_count(bar) > 1 && tiku_dl_misses(bar) == 0,
+              "a control with no command of its own records as the "
+              "primitives it is made of, and is not counted as missing");
+        (void)tiku_dl_play(bar, replayed);
+        for (i = 0; i < W * H; i++) {
+            if (drawn->px[i] != replayed->px[i]) {
+                off++;
+            }
+        }
+        check(off == 0, "and comes out the same scrollbar at the far end");
+        tiku_dl_free(bar);
+        surface_free(drawn);
+        surface_free(replayed);
+    }
+
+    /*
+     * A face off the four: the status line of a real application is set
+     * at eleven, and a stream that could not say so would deliver it in
+     * the body size and never mention it.
+     */
+    {
+        tiku_surface_t *a = surface_new();
+        tiku_surface_t *b = surface_new();
+        tiku_dl_t *odd = tiku_dl_new();
+        int off = 0;
+
+        a->record = odd;
+        tiku_text(a, tiku_font_at(11), 8, 40, "11 px status", TIKU_C_TEXT);
+        tiku_text(a, tiku_font_plain(), 8, 70, "the body size",
+                       TIKU_C_TEXT);
+        a->record = NULL;
+        check(tiku_dl_count(odd) == 2 && tiku_dl_misses(odd) == 0,
+              "a face off the four is named by its SIZE, not guessed at");
+        (void)tiku_dl_play(odd, b);
+        for (i = 0; i < W * H; i++) {
+            if (a->px[i] != b->px[i]) {
+                off++;
+            }
+        }
+        check(off == 0,
+              "and comes back in the letters it was set in, not the "
+              "body's");
+        tiku_dl_free(odd);
+        surface_free(a);
+        surface_free(b);
+    }
+
     free(wire);
     tiku_dl_free(dl);
     tiku_dl_free(back);
