@@ -18,12 +18,37 @@
 #include "tiku_attr.h"
 
 #define INFO_WIDTH    360
-#define INFO_HEIGHT   300
 #define INFO_PAD       10
 #define INFO_ICON      32
-#define INFO_TAB_H     20
-#define INFO_ROW_H     18
 #define CASCADE_STEP   22
+
+/*
+ * The rows, the tab strip and the height, from the face rather than
+ * written down.  Each answers what was written here at 12 px, which is
+ * what the interface has always defaulted to; a window whose rows stayed
+ * 18 pixels while its words grew is one whose words leave their rows.
+ *
+ * Note this window had a tab height of ITS OWN, a second copy of a number
+ * the toolkit already knew -- so it is asked for now, like the rest.
+ */
+static int row_h(void)   { return tiku_font_plain()->height + 3; }
+static int tab_h(void)   { return tiku_font_plain()->height + 5; }
+static int name_h(void)  { return tiku_font_plain()->height + 5; }
+
+/**
+ * @brief How tall the window has to be for the longest of its pages.
+ *
+ * 300, moved by what actually grew: the tab strip, the eight rows of the
+ * permissions page, and the window's own title bar.  Adding the parts up
+ * instead would come to 294 and quietly lose six pixels of margin that
+ * were chosen, not left over -- so the original number stays the origin
+ * and only the difference is computed.
+ */
+static int info_height(void)
+{
+    return 300 + (tab_h() - 20) + 8 * (row_h() - 18)
+               + (tiku_window_tab_h() - 21);
+}
 
 static void
 mark_dirty(tiku_trk_info_windows_t *controller)
@@ -45,13 +70,13 @@ layout(tiku_rect_t content, tiku_rect_t *icon,
                                 icon->y + 6,
                                 content.w - (icon->x + INFO_ICON + INFO_PAD
                                              - content.x) - INFO_PAD,
-                                20 };
+                                name_h() };
     *tabs = (tiku_rect_t){ content.x + INFO_PAD,
                                 icon->y + INFO_ICON + INFO_PAD,
-                                content.w - 2 * INFO_PAD, INFO_TAB_H };
-    *body = (tiku_rect_t){ tabs->x, tabs->y + INFO_TAB_H, tabs->w,
+                                content.w - 2 * INFO_PAD, tab_h() };
+    *body = (tiku_rect_t){ tabs->x, tabs->y + tab_h(), tabs->w,
                                 content.y + content.h - INFO_PAD
-                                    - (tabs->y + INFO_TAB_H) };
+                                    - (tabs->y + tab_h()) };
     if (body->h < 20) {
         body->h = 20;
     }
@@ -77,7 +102,31 @@ static tiku_rect_t
 permission_rect(tiku_rect_t body, int index)
 {
     return (tiku_rect_t){ body.x + 8,
-        body.y + 10 + index * (INFO_ROW_H + 4), 120, INFO_ROW_H };
+        body.y + 10 + index * (row_h() + 4),
+        tiku_ui_button_w("Read", 120), row_h() };
+}
+
+/**
+ * @brief Grow or shrink to what the face now needs.
+ *
+ * Nothing this window does changes the face; the Fonts window next door
+ * does, and this one has to notice on its own -- so the fit is taken on
+ * every draw rather than where a change could be seen.  The corner stays
+ * where it is: several of these cascade, and a window that re-placed
+ * itself would break the stack they were opened in.
+ */
+static void
+refit(tiku_window_t *window, int *dirty)
+{
+    int want = info_height();
+
+    if (window == NULL || !window->open || window->frame.h == want) {
+        return;
+    }
+    window->frame.h = want;
+    if (dirty != NULL) {
+        *dirty = 1;
+    }
 }
 
 static void
@@ -89,6 +138,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_trk_info_t *info = &controller->model[window_context->slot];
     const tiku_font_t *font = tiku_font_plain();
     tiku_rect_t icon, name, tabs, body;
+
+    refit(window, controller->dirty);
+    content = tiku_window_content(window);
     int i;
 
     (void)window;
@@ -124,7 +176,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         for (i = 0; i < TIKU_TRK_INFO_FIELDS; i++) {
             char value[TIKU_TRK_INFO_VAL_MAX];
             const char *label = "";
-            int y = body.y + 6 + i * INFO_ROW_H + font->height;
+            int y = body.y + 6 + i * row_h() + font->height;
 
             if (tiku_trk_info_field(info, controller->store, i, &label,
                                     value, sizeof value) ==
@@ -162,13 +214,13 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         }
         if (!info->perm_editable) {
             tiku_text(surface, font, body.x + 8,
-                body.y + 14 + 3 * (INFO_ROW_H + 4) + font->height,
+                body.y + 14 + 3 * (row_h() + 4) + font->height,
                 "This item's permissions are not yours to set.",
                 TIKU_C_TEXT);
         }
     } else {
         for (i = 0; i < info->nattr; i++) {
-            int y = body.y + 6 + i * INFO_ROW_H + font->height;
+            int y = body.y + 6 + i * row_h() + font->height;
 
             if (y > body.y + body.h) {
                 break;
@@ -298,7 +350,7 @@ tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
     (void)tiku_trk_info_attrs(&controller->model[slot], controller->store);
     frame = (tiku_rect_t){ 120 + slot * CASCADE_STEP,
                                 80 + slot * CASCADE_STEP,
-                                INFO_WIDTH, INFO_HEIGHT };
+                                INFO_WIDTH, info_height() };
     tiku_trk_info_title(&controller->model[slot], title, sizeof title);
     controller->window[slot] = tiku_workspace_open(controller->workspace,
         title, frame, draw, &controller->context[slot],
@@ -399,7 +451,7 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
         }
     }
     if (info->tab == TIKU_TRK_INFO_TAB_INFO && INSIDE(body)) {
-        i = (y - body.y - 6) / INFO_ROW_H;
+        i = (y - body.y - 6) / row_h();
         if (i >= 0 && i < TIKU_TRK_INFO_FIELDS) {
             if (which != NULL) { *which = i; }
             return TIKU_TRK_INFO_HIT_FIELD;
@@ -424,9 +476,9 @@ tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
     content = tiku_window_content(controller->window[slot]);
     layout(content, &icon, &name, &tabs, &body);
     if (x != NULL) { *x = body.x + 96; }
-    if (y != NULL) { *y = body.y + 6 + i * INFO_ROW_H; }
+    if (y != NULL) { *y = body.y + 6 + i * row_h(); }
     if (w != NULL) { *w = body.w - 96 - 12; }
-    if (h != NULL) { *h = INFO_ROW_H; }
+    if (h != NULL) { *h = row_h(); }
     return 1;
 }
 

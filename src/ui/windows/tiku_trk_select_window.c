@@ -15,7 +15,24 @@
 #include "tiku_trk_select_window.h"
 
 #define SELECT_WIDTH  360
-#define SELECT_HEIGHT 132
+
+/*
+ * A field, a tick and a button are each one line of text tall, so each is
+ * asked for.  Every one answers what was written here at 12 px, and the
+ * window's own height falls out of them rather than being a number the
+ * controls then have to fit inside.
+ */
+static int field_h(void) { return tiku_font_plain()->height + 5; }
+static int tick_h(void)  { return tiku_font_plain()->height + 1; }
+static int step(void)    { return field_h() + 8; }
+static int ticks_y(void) { return 2 * step() + step(); }
+
+/** @brief The whole window, title bar and all. */
+static int select_height(void)
+{
+    return ticks_y() + tick_h() + 1 +
+           tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
+}
 
 typedef enum {
     SELECT_HIT_NONE = 0,
@@ -31,14 +48,21 @@ layout(tiku_rect_t content, tiku_rect_t *expression,
        tiku_rect_t *rule, tiku_rect_t *ignore,
        tiku_rect_t *invert, tiku_rect_t *apply)
 {
-    *expression = (tiku_rect_t){ content.x + 10, content.y + 28,
-                                      content.w - 20, 20 };
-    *rule = (tiku_rect_t){ content.x + 10, content.y + 56,
-                                content.w - 20, 20 };
-    *ignore = (tiku_rect_t){ content.x + 10, content.y + 84, 110, 16 };
-    *invert = (tiku_rect_t){ content.x + 130, content.y + 84, 120, 16 };
-    *apply = (tiku_rect_t){ content.x + content.w - 80,
-                                 content.y + content.h - 28, 70, 22 };
+    int w = tiku_ui_button_w("Select", 70);
+
+    *expression = (tiku_rect_t){ content.x + 10, content.y + step(),
+                                      content.w - 20, field_h() };
+    *rule = (tiku_rect_t){ content.x + 10, content.y + 2 * step(),
+                                content.w - 20, field_h() };
+    *ignore = (tiku_rect_t){ content.x + 10, content.y + ticks_y(),
+                                  tiku_ui_button_w("Ignore case", 110),
+                                  tick_h() };
+    *invert = (tiku_rect_t){ content.x + 130, content.y + ticks_y(),
+                                  tiku_ui_button_w("Invert selection", 120),
+                                  tick_h() };
+    *apply = (tiku_rect_t){ content.x + content.w - w - 10,
+                                 content.y + content.h - tiku_ui_row_h() - 6,
+                                 w, tiku_ui_row_h() };
 }
 
 static void
@@ -53,7 +77,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
     layout(content, &expression, &rule, &ignore, &invert, &apply);
-    tiku_text(surface, font, content.x + 10, content.y + 18,
+    tiku_text(surface, font, content.x + 10, content.y + font->ascent + 6,
                    "Select items whose name", TIKU_C_TEXT);
     tiku_ui_textfield_sel(surface, expression,
         controller->model.expr.text,
@@ -194,10 +218,10 @@ tiku_trk_select_window_open(tiku_trk_select_window_t *controller,
     }
     controller->target = target;
     tiku_trk_select_show(&controller->model, x, y, SELECT_WIDTH,
-                         SELECT_HEIGHT, controller->screen_w,
+                         select_height(), controller->screen_w,
                          controller->screen_h);
     frame = (tiku_rect_t){ controller->model.x, controller->model.y,
-                                SELECT_WIDTH, SELECT_HEIGHT };
+                                SELECT_WIDTH, select_height() };
     if (controller->window != NULL && controller->window->open) {
         controller->window->frame = frame;
         tiku_workspace_activate(controller->workspace,

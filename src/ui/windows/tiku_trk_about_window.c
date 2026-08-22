@@ -23,7 +23,23 @@
 #include "tiku_font.h"
 
 #define ABOUT_W 430
-#define ABOUT_H 240
+
+/*
+ * The facts column already grew with the face -- every line of it steps
+ * by plain->height -- but the window it was written into did not, so at
+ * 16 px the last lines were drawn below their own frame.
+ *
+ * The column takes SIX steps of a line height between its first fact and
+ * its uptime, so the window moves by six times whatever the line height
+ * moved by.  Written this way rather than by adding the parts up: 240 was
+ * chosen for the margin it leaves as much as for the text it holds, and
+ * re-deriving it from the text alone would quietly throw that margin
+ * away.  At 12 px, the face it was chosen against, it is still 240.
+ */
+static int about_body_h(void)
+{
+    return 240 + 6 * (tiku_font_plain()->height - 15);
+}
 
 /** @brief First "model name" and the processor count, from /proc. */
 static void
@@ -225,7 +241,8 @@ tiku_trk_about_window_open(tiku_trk_about_window_t *controller)
     }
     read_cpu(controller->cpu, sizeof controller->cpu, &controller->ncpu);
     frame.w = ABOUT_W;
-    frame.h = ABOUT_H + tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
+    frame.h = about_body_h() + tiku_window_tab_h() +
+              2 * TIKU_WINDOW_BORDER;
     frame.x = (controller->screen_w - frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel that
      * announces something. */

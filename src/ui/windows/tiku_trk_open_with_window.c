@@ -16,10 +16,30 @@
 #include "tiku_trk_open_with_window.h"
 
 #define OW_WIDTH   420
-#define OW_HEIGHT  260
-#define OW_ROW_H   18
-#define OW_LIST_TOP 26
-#define OW_ROWS    ((OW_HEIGHT - OW_LIST_TOP - 40) / OW_ROW_H)
+#define OW_ROWS    10     /* what (260 - 26 - 40) / 18 came to */
+
+/*
+ * A row is as tall as the name in it, and the list starts under a line of
+ * text -- so both are asked for.  Each answers what was written here at
+ * 12 px; at 16 the rows used to be 18 pixels tall holding 19-pixel words,
+ * and a click landed a row away from the one it looked like.
+ */
+static int row_h(void)    { return tiku_font_plain()->height + 3; }
+static int list_top(void) { return tiku_font_plain()->height + 11; }
+
+/**
+ * @brief The window, grown by what its ten rows grew by.
+ *
+ * It used to be the other way about -- the height was written down and
+ * the row COUNT fell out of it -- so a larger face silently showed fewer
+ * applications rather than a window with room for them.  260 stays the
+ * origin, because the slack in it was chosen; only the difference the
+ * face makes is worked out.
+ */
+static int ow_height(void)
+{
+    return 260 + (list_top() - 26) + OW_ROWS * (row_h() - 18);
+}
 
 static void
 mark_dirty(tiku_trk_open_with_window_t *c)
@@ -80,8 +100,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     for (i = 0; i < OW_ROWS; i++) {
         int at = c->scroll + i;
         tiku_rect_t row = { content.x + 8,
-                                 content.y + OW_LIST_TOP + i * OW_ROW_H,
-                                 content.w - 16, OW_ROW_H };
+                                 content.y + list_top() + i * row_h(),
+                                 content.w - 16, row_h() };
         int selected;
 
         if (at >= c->count) {
@@ -206,9 +226,9 @@ event(tiku_window_t *window, const tiku_event_t *ev,
         return 1;
     }
 #undef INSIDE
-    if (ev->y >= content.y + OW_LIST_TOP) {
+    if (ev->y >= content.y + list_top()) {
         int at = c->scroll +
-                 (ev->y - content.y - OW_LIST_TOP) / OW_ROW_H;
+                 (ev->y - content.y - list_top()) / row_h();
 
         if (at >= 0 && at < c->count) {
             /* SINGLE selection: the window answers one question. */
@@ -315,8 +335,8 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
     }
     {
         tiku_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
-                                   (c->screen_h - OW_HEIGHT) / 3,
-                                   OW_WIDTH, OW_HEIGHT };
+                                   (c->screen_h - ow_height()) / 3,
+                                   OW_WIDTH, ow_height() };
 
         if (c->window != NULL && c->window->open) {
             tiku_workspace_activate(c->workspace, c->window);

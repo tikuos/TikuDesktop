@@ -7,6 +7,8 @@ click-row 1
 key i ctrl
 wait 10
 expect-title a.txt info
+note and its foot is where a 12 px face puts it
+expect-pixel 300 392 336698
 note asking twice brings the same one forward rather than opening a rival,
 note so ONE close is enough to be rid of it
 expect-windows 2

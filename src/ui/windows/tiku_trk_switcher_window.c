@@ -21,6 +21,17 @@
 #define SWITCHER_PAD   12
 #define SWITCHER_ARROW 14
 
+/*
+ * The strip below the icons, which holds the name of whatever is picked.
+ * The icons are a fixed size and stay one; the NAME is text, and the row
+ * reserved for it was 22 pixels -- what a 12 px face needs and no more,
+ * so at 16 the name was drawn through the bottom edge.
+ */
+static int title_h(void)
+{
+    return tiku_font_plain()->height + 7;        /* 22 at 12 px */
+}
+
 static tiku_rect_t
 frame(tiku_trk_switcher_window_t *controller)
 {
@@ -32,7 +43,7 @@ frame(tiku_trk_switcher_window_t *controller)
         slots = 1;
     }
     result.w = SWITCHER_PAD * 2 + slots * SWITCHER_SLOT + 2 * SWITCHER_ARROW;
-    result.h = SWITCHER_PAD * 2 + TIKU_TRK_SW_LARGE + 22;
+    result.h = SWITCHER_PAD * 2 + TIKU_TRK_SW_LARGE + title_h();
     tiku_trk_switcher_place(controller->screen_w, controller->screen_h,
                             result.w, result.h, &result.x, &result.y);
     return result;
@@ -98,7 +109,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_trk_switcher_title(&controller->model, controller->model.sel,
                             controller->model.selwin, title, sizeof title);
     tiku_text(surface, font, content.x + SWITCHER_PAD,
-                   content.y + content.h - 10, title, TIKU_C_TEXT);
+                   content.y + content.h - (title_h() - font->ascent),
+                   title, TIKU_C_TEXT);
 }
 
 void

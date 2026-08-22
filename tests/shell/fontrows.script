@@ -36,3 +36,25 @@ expect-visible-rows 8
 note the leaf reaches four pixels further down than it did: the strip is
 note drawn in the face it is now being asked to hold
 expect-pixel 990 28 ffcb00
+note and Get Info, whose height was written down as 300 for a 12 px face:
+note at this one its foot reaches forty pixels further, which is the eight
+note rows of the permissions page plus the two tab strips growing
+click-row 1
+key i ctrl
+wait 10
+expect-title a.txt info
+expect-pixel 300 392 d8d8d8
+note and it follows the face back DOWN without being reopened: the window
+note is never closed here, so what moves its foot is the refit, not the
+note size it happened to be given when it opened
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Fonts
+wait 12
+expect-title Fonts
+click 382 435
+wait 12
+expect-font Sans 12
+expect-pixel 300 392 336698
