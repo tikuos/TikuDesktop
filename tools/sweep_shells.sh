@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# The new Tracker for TikuOS.
+# TikuTracker.
 #
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 #
@@ -9,7 +9,7 @@
 #
 # Both front-ends are the product, and a behaviour proven in one is not
 # proven in the other.  This runs every desktop-only script against
-# build/tracker as well and reports how far each gets.  It is NOT part of
+# build/TikuTracker as well and reports how far each gets.  It is NOT part of
 # `make test`: most of these scripts are red there by construction -- what
 # it measures is HOW red, and which of them are red for a reason the
 # contract accepts (several windows, the Deskbar, the backdrop) rather than

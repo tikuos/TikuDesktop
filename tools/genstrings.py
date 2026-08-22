@@ -50,7 +50,8 @@ def main():
 
     out = sys.stdout
     out.write("/*\n"
-              " * The new Tracker for TikuOS.\n"
+              " * TikuOS kits -- the foundation TikuDesktop and TikuTracker\n"
+              " * both stand on.\n"
               " *\n"
               " * Authors: Ambuj Varshney <ambuj@tiku-os.org>\n"
               " *\n"

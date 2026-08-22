@@ -2,7 +2,7 @@
    Decision 2 in full. One type-string namespace with two registries behind one resolver: a string starting "tiku-" is answered by the compiled node-type table, everything else by the MIME database. Carries the six reserved supertypes, the manifest-facts struct, the classifier, the open-action vocabulary, the icon-source rungs, the per-type attribute record and the Open With handler table. Included by tiku_model.h, so every Model carries exactly one type field. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

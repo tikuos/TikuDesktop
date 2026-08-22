@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -2914,7 +2914,7 @@ tracker_run(int argc, char **argv)
             return 2;
         }
     } else {
-        a.host = tiku_host_open(WIN_W, WIN_H, "Tracker");
+        a.host = tiku_host_open(WIN_W, WIN_H, "TikuTracker");
         if (a.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
@@ -3945,6 +3945,6 @@ tracker_run(int argc, char **argv)
 
 const tiku_app_descriptor_t tiku_trk_application = {
     .id = "org.tikuos.tracker.browser",
-    .name = "Tracker",
+    .name = "TikuTracker",
     .run = tracker_run
 };

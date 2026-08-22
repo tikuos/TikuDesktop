@@ -2,7 +2,7 @@
    The Model, its kind and state enums, and the one refusal predicate (decisions 2, 4 and 5 meet here). Kind says what shape a thing is; a separate backend byte says who answers the read; a new state axis says how true the row still is, which is what a stallable link forces. Refusal is a typed verdict with two macros that encode the predict-to-disable / attempt-to-be-sure asymmetry. Also holds ref identity and the path-interning table that stands in for inodes. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

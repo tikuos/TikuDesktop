@@ -2,7 +2,7 @@
    The TaskLoop — ALREADY EXISTS in the repo and needs no change; reproduced here so the unified API is complete. It already provides everything the six decisions schedule against: run-later, run-periodic (the 1 Hz roster scan, the graded query polls), run-when-idle, and run-accumulating with the can-accumulate / accumulate pair, a max fold count and a max window, which is exactly the 200 ms / 5 s device event accumulator the event queue configures. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

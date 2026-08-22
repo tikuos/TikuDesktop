@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -438,12 +438,12 @@ main(void)
         int small_h, large_h;
 
         (void)tiku_trk_deskbar_add_team(ordered, "Zulu");
-        (void)tiku_trk_deskbar_add_team(ordered, "Tracker");
+        (void)tiku_trk_deskbar_add_team(ordered, "TikuTracker");
         (void)tiku_trk_deskbar_add_team(ordered, "Alpha");
         tiku_trk_deskbar_settings_default(&settings);
         settings.sort_apps = 1;
         tiku_trk_deskbar_apply_settings(ordered, &settings);
-        check(strcmp(tiku_trk_deskbar_team_name(ordered, 0), "Tracker") == 0 &&
+        check(strcmp(tiku_trk_deskbar_team_name(ordered, 0), "TikuTracker") == 0 &&
               strcmp(tiku_trk_deskbar_team_name(ordered, 1), "Alpha") == 0 &&
               strcmp(tiku_trk_deskbar_team_name(ordered, 2), "Zulu") == 0,
               "DB-016", "Tracker pins first and the remaining applications "

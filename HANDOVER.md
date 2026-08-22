@@ -9,7 +9,7 @@ code, and read `FEATURES.md` before you write any.
 ## 1. What this is
 
 A rewrite of Tracker and Deskbar for TikuOS, in C, against a drawing floor
-that lives in `applications/desktop/` (surface, font, R5 controls). Two
+that lives in `applications/TikuDesktop/` (surface, font, R5 controls). Two
 front-ends are built from one core:
 
 - **`build/desktop`** — the multi-window shell: a backdrop with a Desktop
@@ -89,7 +89,7 @@ eighteen rows back for exactly that.
 ## 2. Build and test
 
 ```sh
-cd applications/tracker-new
+cd applications/TikuTracker
 make                 # builds both shells and every test binary
 make test            # unit suites, the contract check, then the shell scripts
 python3 tools/check_contract.py    # 889 rows, no duplicates
@@ -280,7 +280,7 @@ src/deskbar/          Deskbar, Desktop view, and application-roster behavior
 src/shell/            application descriptors and front-end composition
 src/shell/adapters/   script-facing presentation adapters
 src/shell/session/    restore, persistence, and bounded shutdown services
-../desktop/src/       reusable runtime, windows, focus, graphics, native host
+../kits/       reusable runtime, windows, focus, graphics, native host
 ```
 
 Headers retain their `tiku_trk_*` names. The Makefile publishes the functional
@@ -298,7 +298,7 @@ Four places you will look for first:
   it: row points, tab points, icon positions, menu labels)
 - **pose geometry, columns, sorting and filtering** are all one file,
   `src/ui/tiku_trk_poseview.c` — it is the largest thing here by far
-- `../desktop/src/` is a separate library with its own `tiku_desk_*` prefix:
+- `../kits/` is a separate library with its own `tiku_desk_*` prefix:
   surface, font, windows, focus, X11 host. Cite it by that path
 
 Conventions: `tiku_trk_` prefix, K&R braces, 4 spaces, **80 columns**, no

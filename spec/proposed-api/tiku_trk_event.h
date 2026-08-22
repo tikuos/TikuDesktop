@@ -2,7 +2,7 @@
    Decision 3: the one notification vocabulary that carries liveness into the view. Opcodes (including the query and link-stall ones, so there is no second vocabulary), the explicit field mask that replaces the attr-name-present discriminator, the coalescing queue with the accumulator and the honest lost flag, the directory differ that synthesizes device events with its fixed REMOVED/CREATED/CHANGED order and the value-hash gate, the liveness report the count view renders, the pending cache, and the single pose-view door. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

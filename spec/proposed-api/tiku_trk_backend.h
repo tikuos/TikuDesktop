@@ -2,7 +2,7 @@
    The backend vtable both the POSIX and the TikuOS backends implement — the single seam between Tracker and a store. Capability bits that select fallbacks rather than signal failure; lifecycle, stepped listing, per-entry read/write/create/unlink/rename/bulk-transfer, the policy half of the refusal predicate plus capability generation, liveness arming and pumping, and the store's UI-state store. Also carries the AddPosesTask lister as a yielding state machine whose every cursor lives in the struct. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -31,7 +31,7 @@ main(void)
     int a, bq, c;
 
     tiku_trk_switcher_init(&s);
-    a  = tiku_trk_switcher_app(&s, "Tracker", 1);
+    a  = tiku_trk_switcher_app(&s, "TikuTracker", 1);
     bq = tiku_trk_switcher_app(&s, "Editor", 0);
     c  = tiku_trk_switcher_app(&s, "Terminal", 0);
     tiku_trk_switcher_window(&s, bq, "notes.txt");

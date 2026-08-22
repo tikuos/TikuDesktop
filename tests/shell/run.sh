@@ -12,7 +12,7 @@ fails=0
 
 # The scripted shells are the DEVELOPMENT flavour: the interpreter that
 # reads these files is test infrastructure and is not linked into what
-# ships (build/desktop, build/tracker).  Those refuse -script loudly, so
+# ships (build/TikuDesktop, build/TikuTracker).  Those refuse -script loudly, so
 # a harness pointed at the wrong one fails rather than passing quietly.
 devbin="$root/build/dev"
 
@@ -32,7 +32,7 @@ if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
     echo junk > "$rsthome/.local/share/tracker/devices/local.state"
     # The SHIPPING binary here on purpose: the rescue path is a product
     # feature, and this is the one check that proves what ships has it.
-    HOME="$rsthome" "$root/build/desktop" -reset-settings > /dev/null
+    HOME="$rsthome" "$root/build/TikuDesktop" -reset-settings > /dev/null
     if [ -e "$rsthome/.config/TrackerSettings" ] ||
        [ -e "$rsthome/.local/share/tracker/devices/local.state" ] ||
        [ ! -e "$rsthome/.config/TrackerSettings.factory-reset" ]; then
@@ -54,6 +54,13 @@ for s in "$here"/*.script; do
             both) ;;
             "$bin") ;;
             *) continue ;;
+        esac
+        # The header still names the LANE in one lower-case word, which is
+        # what a script selects on; the executable is the product, and the
+        # two stopped being the same string when it got its own name.
+        case $bin in
+            tracker) exe=TikuTracker ;;
+            desktop) exe=TikuDesktop ;;
         esac
         # Every script starts from a clean desktop: window frames and the
         # session persist now, so a script that inherited the last one's
@@ -140,8 +147,8 @@ for s in "$here"/*.script; do
         appsdir=/tmp/trk_apps
         rm -rf "$appsdir"
         mkdir -p "$appsdir"
-        cp -f "$root/../desktop/build/apps/terminal.so" \
-              "$root/../desktop/build/apps/editor.so" "$appsdir/" \
+        cp -f "$root/../TikuDesktop/build/apps/terminal.so" \
+              "$root/../TikuDesktop/build/apps/editor.so" "$appsdir/" \
             2>/dev/null || true
 
         mkdir -p $work/sub
@@ -247,8 +254,8 @@ PYDP
                 # Installed, not linked: a trusted copy for the desktop
                 # to load, and a plain one for the runner to start.
                 mkdir -p "$appsdir/trusted"
-                cp -f "$root/../desktop/build/apps/sketch.so" "$appsdir/"
-                cp -f "$root/../desktop/build/apps/clock.so" \
+                cp -f "$root/../TikuDesktop/build/apps/sketch.so" "$appsdir/"
+                cp -f "$root/../TikuDesktop/build/apps/clock.so" \
                       "$appsdir/trusted/" ;;
             terminal.script)
                 # A program that paints one row at an ABSOLUTE position:
@@ -257,12 +264,12 @@ PYDP
                 printf '#!/bin/sh\nprintf "\\033[12;1H\\033[7m%%80s\\033[0m" ""\n' \
                     > /tmp/trk_term_cup.sh
                 chmod +x /tmp/trk_term_cup.sh
-                ( HOME="$deskhome" "$root/../desktop/build/tiku-term" \
+                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-term" \
                       >/dev/null 2>&1 & ) ;;
             remoteapp.script)
                 # The out-of-process client: started BESIDE the desktop,
                 # its connect retry covers the launch order.
-                ( HOME="$deskhome" "$root/../desktop/build/tiku-about-app" \
+                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-about-app" \
                       >/dev/null 2>&1 & ) ;;
             safedefault.script)
                 mkdir -p "$deskhome/.Trash" "$deskhome/.config/tracker"
@@ -412,13 +419,13 @@ PYEOF
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
-                TIKU_APPS="$appsdir" "$devbin/$bin" \
+                TIKU_APPS="$appsdir" "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
-                TIKU_APPS="$appsdir" "$devbin/$bin" $work \
+                TIKU_APPS="$appsdir" "$devbin/$exe" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done
@@ -442,7 +449,7 @@ for s in $conducted; do
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
     ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
-        "$root/build/desktop" "$work" -conduct "$csock" \
+        "$root/build/TikuDesktop" "$work" -conduct "$csock" \
         > /dev/null 2>&1 & )
     "$root/build/dev/trk-conduct" -s "$csock" -n conducted "$cs" ||
         fails=$((fails+1))
@@ -465,7 +472,7 @@ for s in $conducted; do
     echo hi > "$work/c.txt"
     DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         "$root/build/dev/trk-conduct" \
-        -n "over a line" "$cs" -- "$root/build/desktop" "$work" ||
+        -n "over a line" "$cs" -- "$root/build/TikuDesktop" "$work" ||
         fails=$((fails+1))
     pkill -x desktop > /dev/null 2>&1
     rm -rf "$chome"

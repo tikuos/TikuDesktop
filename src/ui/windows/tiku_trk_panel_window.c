@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -619,7 +619,7 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
     controller->command = command;
     tiku_trk_panel_open(&controller->model, TIKU_TRK_PANEL_OPEN,
         TIKU_TRK_PANEL_DIR, initial_directory, controller->backend,
-        "Tracker");
+        "TikuTracker");
     controller->model.multiple = 0;
     if (!tiku_trk_panel_restore_frame(controller->store, &x, &y, &width,
                                       &height)) {

@@ -26,7 +26,7 @@ expect-windows 2
 expect-title Deskbar preferences
 click 630 576
 wait 6
-note Edit in Tracker opens the user's editable Deskbar folder
+note Edit in TikuTracker opens the user's editable Deskbar folder
 expect-windows 3
 expect-title deskbar
 quit

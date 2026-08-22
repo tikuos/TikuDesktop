@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# The new Tracker for TikuOS.
+# TikuTracker.
 #
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 #

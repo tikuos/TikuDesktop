@@ -2,7 +2,7 @@
    Decision 6: one bounded predicate AST for all three Find modes (so formula mode is the AST's own syntax), a three-valued cost-ordered evaluator with a pluggable per-entry attribute source, the saved query as a text record that is byte-identical on a local filesystem and in a device store, and a running query whose results ride the same event vocabulary as everything else. Liveness arming is graded by the descriptor: static costs nothing, cached subscribes, live polls at its own cost class. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

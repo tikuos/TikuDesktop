@@ -10,9 +10,9 @@ click 980 20
 wait 4
 menu-pick Settings
 wait 4
-menu-pick Desktop preferences
+menu-pick TikuDesktop preferences
 wait 12
-expect-title Desktop preferences
+expect-title TikuDesktop preferences
 note the picture on the Desktop is offered, and choosing it shows it
 expect-pixel 60 300 336698
 click 400 180

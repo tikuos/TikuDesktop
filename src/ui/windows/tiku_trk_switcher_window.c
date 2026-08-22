@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -151,7 +151,7 @@ tiku_trk_switcher_window_open(tiku_trk_switcher_window_t *controller,
 
             if (name != NULL) {
                 (void)tiku_trk_switcher_app(&controller->model, name,
-                                             strcmp(name, "Tracker") == 0);
+                                             strcmp(name, "TikuTracker") == 0);
             }
         }
     }

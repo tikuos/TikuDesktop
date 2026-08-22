@@ -18,8 +18,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SHIPPING = ["build/tracker", "build/desktop"]
-DEVELOPMENT = ["build/dev/tracker", "build/dev/desktop"]
+SHIPPING = ["build/TikuTracker", "build/TikuDesktop"]
+DEVELOPMENT = ["build/dev/TikuTracker", "build/dev/TikuDesktop"]
 
 # Words only the interpreter has any reason to hold.  Ordinary strings
 # ("click", "wait") would appear for a hundred innocent reasons; these are

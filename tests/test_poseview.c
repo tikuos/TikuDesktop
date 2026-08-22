@@ -1,5 +1,5 @@
 /*
- The new Tracker for TikuOS.
+ TikuTracker.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

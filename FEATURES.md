@@ -1,5 +1,8 @@
 # FEATURES.md — the Tracker fidelity contract
 
+("Tracker" throughout this file means the ORIGINAL, which is the thing
+being matched.  Ours is TikuTracker.)
+
 Extracted from the real source (`~/kintsugi/src/kits/tracker`, `src/apps/deskbar`) on 2026-08-11 by 12 readers, then adversarially verified by 3 agents that opened the cited files.
 
 ## Phase-1 rulings (2026-08-18)
@@ -8,7 +11,7 @@ The open rows and three recurring class premises were ruled on 2026-08-18.
 The user delegated the ruling in writing ("use your best judgement based on
 tracker being designed for TikuOS devices, not desktop") -- the waivers
 below are made under that authority, and this paragraph is the record of
-it.  The lens: the product is a Tracker for TikuOS devices; host-desktop
+it.  The lens: the product is TikuTracker, a file manager for TikuOS devices; host-desktop
 machinery Haiku handed Tracker for free (a locale layer, message archives,
 a second process to talk to, printers) is not commissioned by fidelity
 alone.
@@ -94,7 +97,7 @@ remaining 23 are still open because their required cross-process, image,
 locale, workspace, or richer-window subsystem is genuinely absent.
 
 1. **A row is a promise.** Every row describes a behavior the real Tracker
-   has. The new Tracker is not done until the row is closed.
+   has. TikuTracker is not done until the row is closed.
 2. **Rows are never deleted by the implementer.** If a behavior should not
    be built, only the user may waive it — by writing `WAIVED: <reason>` in
    the row's Status. Anything else is stripping, which is what this file
@@ -1003,7 +1006,7 @@ BContainerWindow::FrameResized (skipped for the Desktop) computes the negative o
 `ContainerWindow.cpp` → `BContainerWindow::FrameResized`  
 **PORT:** Both axes pull back now.  The vertical clamp always ran through the visible-rows report; the horizontal clamp is real too -- set_hscroll ends where the last column meets the window's edge, not at the content's whole width, and the viewport report re-clamps it, so ENLARGING a window past its scrolled-away content re-anchors the content instead of leaving a blank gulf.  The browser's resize path reports the viewport.  
 *src/ui/tiku_trk_poseview.c (set_hscroll clamp, set_viewport re-clamp); src/shell/tiku_trk_app.c (the resize report); tests/test_poseview.c PVL-058 block (mutation-tested)*
-*Audited 2026-08-12: `../desktop/src/tiku_window.c:275-278 (resize grip), src/shell/tiku_trk_desktop.c:2024-2034 (HIT_RESIZE -> begin_track)` `src/shell/tiku_trk_desktop.c:224 and src/shell/tiku_trk_app.c:486 (set_visible_rows per draw)` `src/ui/tiku_trk_poseview.c:2556-2576 (grow clamp: 'A window that grew ... corrected here')`*  
+*Audited 2026-08-12: `../kits/tiku_window.c:275-278 (resize grip), src/shell/tiku_trk_desktop.c:2024-2034 (HIT_RESIZE -> begin_track)` `src/shell/tiku_trk_desktop.c:224 and src/shell/tiku_trk_app.c:486 (set_visible_rows per draw)` `src/ui/tiku_trk_poseview.c:2556-2576 (grow clamp: 'A window that grew ... corrected here')`*  
 *Shell: desktop*  
 #### PVL-059 · polish · done
 **"Resize to fit" resizes the window to exactly hold the content and scrolls to the content's top-left.**  
@@ -1011,7 +1014,7 @@ ResizeToFit insets the screen frame by 5, adds the tab height, sizes the frame t
 `ContainerWindow.cpp` → `BContainerWindow::ResizeToFit`  
 **PORT:** Resize to fit sizes the window to its content AND scrolls it home: the command sets the list scroll to row 0 and the icon origin to 0,0, so a fitted window shows everything from the top -- ResizeToFit's scroll-to-extent-origin.  
 *src/ui/commands/tiku_trk_folder_actions.c (the RESIZE_TO_FIT case); tests/shell/resizefit.script (mutation-tested)*  
-*Audited 2026-08-12: `src/ui/tiku_trk_cwmenu.c:169 (menu item), src/shell/tiku_trk_desktop.c:1145-1147 (invoke)` `../desktop/src/tiku_window.c:364-416 (desk_zoom: chrome-measured fit, screen clamp, second-click restore)` `src/shell/tiku_trk_desktop.c:511-559 (folder_fit_w/folder_fit_h content measurement)`*  
+*Audited 2026-08-12: `src/ui/tiku_trk_cwmenu.c:169 (menu item), src/shell/tiku_trk_desktop.c:1145-1147 (invoke)` `../kits/tiku_window.c:364-416 (desk_zoom: chrome-measured fit, screen clamp, second-click restore)` `src/shell/tiku_trk_desktop.c:511-559 (folder_fit_w/folder_fit_h content measurement)`*  
 *Shell: desktop*  
 #### PVL-060 · important · done
 **Bulk re-layouts (mode switch, clean-up all, folder switch, clearing) detach the scrollbars so intermediate positions never feed back into the view.**  
@@ -2262,7 +2265,7 @@ Both AddPosesTask and EntryCreated call WatchNewNode(&itemNode, ...) with the co
 `PoseView.cpp` → `BPoseView::AddPosesTask / BPoseView::EntryCreated`  
 **TIKU:** Same ordering rule applies: tiku_vfs_watch() the node before reading its descriptor, or a descriptor change during the read is lost.  
 **PORT:** The guarantee is met by an always-on recorder plus a strict ordering rather than a per-node watch: the ring is drained before anything is re-read, and because the device records changes whether or not anyone is asking, a change landing during the listing read stays in the ring and is reported on the next drain, so no row goes stale.  
-*src/ui/tiku_trk_poseview.c:2827-2840 (changes consulted before any re-read); src/backends/tiku_backend_tiku.c:163-186 tk_changes; /home/ambuj/tikuOS/applications/desktop/../desktop/src/tiku_ns.c:242 tiku_ns_events (the read drains the device ring)*
+*src/ui/tiku_trk_poseview.c:2827-2840 (changes consulted before any re-read); src/backends/tiku_backend_tiku.c:163-186 tk_changes; /home/ambuj/tikuOS/applications/TikuDesktop/../kits/tiku_ns.c:242 tiku_ns_events (the read drains the device ring)*
 
 #### PVN-008 · core · differs
 **Beyond the folder watch, the view also subscribes to all volume mount/unmount events, to attribute changes on the folder itself, and to MIME database changes.**  
@@ -2286,7 +2289,7 @@ TTracker::WatchNode retries after NeedMoreNodeMonitors(), which bumps fNodeMonit
 `Tracker.cpp` → `TTracker::WatchNode / TTracker::NeedMoreNodeMonitors`  
 **TIKU:** No analogue: TikuOS's watch table is a fixed 8-slot static array. Exhaustion must either fail loudly or fall back to polling -- silently losing liveness is the failure mode to avoid.  
 **PORT:** The port has no watch table to exhaust, and the analogous delivery resource does fail loudly rather than silently: a moved drop counter clears `complete`, which forces a wholesale re-list, and an overflowed event batch triggers a full reload — the loud-or-poll answer the row's TIKU note demands.  
-*src/backends/tiku_backend_tiku.c:183-188 (dropped != last_dropped -> *complete = 0) with the local over-max drop count at desktop/../desktop/src/tiku_ns.c:285-295; src/ui/tiku_trk_poseview.c:2843 (relist = !complete) and :2979-2984 (evs.overflowed -> poseview_reload)*
+*src/backends/tiku_backend_tiku.c:183-188 (dropped != last_dropped -> *complete = 0) with the local over-max drop count at desktop/../kits/tiku_ns.c:285-295; src/ui/tiku_trk_poseview.c:2843 (relist = !complete) and :2979-2984 (evs.overflowed -> poseview_reload)*
 
 #### PVN-011 · core · done
 **A file created in some other folder does not add a row: creation notices for a directory other than the one on screen are ignored.**  
@@ -4223,7 +4226,7 @@ StartEdit calls textView->MakeEditable(false) and MakeSelectable(true) when view
 fMaxWidth is the column width in list mode, else StringWidth("M")*30. MakeResizable(!tooWide, tooWide ? NULL : scrollView) toggles between grow-with-text and fixed-width-with-scrolling; the key-down filter re-evaluates on every keystroke. TextViewPasteFilter computes the post-paste width (text width, minus the selected region being replaced, plus the clipboard text width) and, when too wide, resizes the scroll view to exactly maxWidth, shifting it left by half the delta for centered text and the full delta for right-aligned text.  
 `TextWidget.cpp` → `TextViewPasteFilter`  
 **PORT:** The editor GROWS with the text now, in both shells, and never past the name column's width; past the cap the box stays put and the text SLIDES so the caret stays visible -- never past the text's own end, and not at all while the caret sits at the head.  The arithmetic is one core function (`tiku_trk_edit_metrics`), unit-tested, drawn through the toolkit's new sliding text field.  The ~30-character icon-mode form has no referent: neither shell opens an inline editor in icon mode -- renames are the list's -- so the list cap is the only cap with a subject.  
-*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/desktop/src/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
+*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/TikuDesktop/src/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
 *src/shell/tiku_trk_app.c:533 (editor box = cols[0].width); src/shell/tiku_trk_desktop.c:299*
 
 #### MA-050 · core · done
@@ -5696,7 +5699,7 @@ Truncation is B_TRUNCATE_END against (width - kTitleColumnExtraMargin = 16). Lef
 Font = plain font size * 0.75 floored, minimum 8pt; height = max(13, ceil(fontSize * 1.4)). MinSize width is 16, MaxSize width unlimited, height fixed at that value in both.  
 `TitleView.cpp` → `BTitleView::BTitleView`  
 **PORT:** Both clauses hold now: the strip keeps its fixed height, and the titles draw in a SMALLER face -- the toolkit grew `tiku_font_at`, and both shells' strips render at three-quarters of the body size without touching the global choice, so the titles read as labels about the rows rather than as rows.  
-*applications/desktop/src/tiku_font.c:tiku_font_at; src/shell/tiku_trk_app.c and src/ui/windows/tiku_trk_folder_window.c (the strip draws)*
+*applications/TikuDesktop/src/tiku_font.c:tiku_font_at; src/shell/tiku_trk_app.c and src/ui/windows/tiku_trk_folder_window.c (the strip draws)*
 *src/shell/tiku_trk_app.c:40 (TITLE_H) and :141 (draw_title font)*
 
 #### TS-020 · important · done
@@ -5959,7 +5962,7 @@ Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0
 **The space-bar colour editor edits one of the three colours at a time, chosen from a pop-up above the colour control.**  
 Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up and the control is preloaded with the used colour. Switching the menu item reloads the control from the corresponding setting; every colour control change writes straight through to the setting and posts kSettingsContentsModified.  
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarSwitchColor)`
-**SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/desktop/../desktop/src/tiku_gfx.h:20), no colour-picker pop-up, no settings to write through to.  
+**SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/TikuDesktop/../kits/tiku_gfx.h:20), no colour-picker pop-up, no settings to write through to.  
 **PORT:** The editor differs by being flatter: the Volume icons page shows all THREE colours at once, each as its own swatch, and a click on a swatch walks it through the palette -- there is no one-at-a-time popup because nothing needs choosing before editing.  The source's popup exists to multiplex one BColorControl across three settings; with three controls the multiplexer has no job.  Every change still writes straight through, as the page's no-OK rule requires (TS-058).
 
 #### TS-056 · polish · done
@@ -6125,7 +6128,7 @@ gStatusWindow->AttemptToQuit() once up front, then 50 iterations of AttemptToQui
 kCloseAllWindows; BDeskWindow and BStatusWindow are skipped in both the WindowAt() pass and the fWindowList removal pass.  
 `Tracker.cpp` → `TTracker::CloseAllWindows`  
 **PORT:** The Deskbar's per-team window menu maps Close All to TIKU_TRK_DB_CLOSE_ALL, which closes every desk window in a loop and leaves app.running alone (only the separate leaf-menu Quit clears it), and the backdrop and Deskbar are not desk windows so there is nothing that needs skipping.  
-*src/shell/tiku_trk_desktop.c:1645-1655 (DB_CLOSE_ALL loop) vs :1609-1611 (DB_QUIT sets running = 0); src/deskbar/tiku_trk_deskbar.c:670-672 window-menu idx 3; ../desktop/src/tiku_window.c:181-199 desk_close*
+*src/shell/tiku_trk_desktop.c:1645-1655 (DB_CLOSE_ALL loop) vs :1609-1611 (DB_QUIT sets running = 0); src/deskbar/tiku_trk_deskbar.c:670-672 window-menu idx 3; ../kits/tiku_window.c:181-199 desk_close*
 
 #### AW-011 · polish · done
 **Close-all-in-workspace closes only windows present in the current workspace, again never the Desktop or the status window.**  
@@ -6188,9 +6191,9 @@ kDesktopWindowLook/kDesktopWindowFeel plus B_NOT_MOVABLE|B_WILL_ACCEPT_FIRST_CLI
 ShouldAddMenus/ShouldAddScrollBars/ShouldAddContainerView all return false; Init() resizes to BScreen().Frame() before the inherited Init so volume poses are not clipped.  
 `DeskWindow.cpp` → `BDeskWindow::ShouldAddMenus / ShouldAddScrollBars / ShouldAddContainerView / BDeskWindow::Init`  
 **CHECKED:** The backdrop is chrome-less only because it is not a Desktop window at all: desk_draw fills the surface and composites folder windows over it, there is no pose view, no volume poses and no screen-sized pose area, and root is opened in an ordinary cascaded window like any other folder.  
-*../desktop/src/tiku_window.c:493-510 tiku_trk_desk_draw (fill C_BACKDROP then draw_window per window); src/shell/tiku_trk_desktop.c:1073-1084 open_folder used for "/" and every other path*
+*../kits/tiku_window.c:493-510 tiku_trk_desk_draw (fill C_BACKDROP then draw_window per window); src/shell/tiku_trk_desktop.c:1073-1084 open_folder used for "/" and every other path*
 **PORT:** The backdrop IS the pose area now: it draws the Desktop's poses between the fill and the windows, and a click on it goes through the same branch a window's content does -- which is what makes its icons behave like a folder's. There is no chrome to leave out because there is no Desktop window: the pose area is the screen, less the strip the Deskbar reserves.  
-*src/shell/tiku_trk_desktop.c:desk_icons_draw/folder_content/desk_area; ../desktop/src/tiku_window.c:tiku_trk_desk_set_backdrop; tests/shell/desktop.script*  
+*src/shell/tiku_trk_desktop.c:desk_icons_draw/folder_content/desk_area; ../kits/tiku_window.c:tiku_trk_desk_set_backdrop; tests/shell/desktop.script*  
 
 #### AW-019 · important · done
 **Desktop icons never auto-scroll, are never remapped into a grid, and are always forced to stay on-screen.**  
@@ -7161,7 +7164,7 @@ FetchWindowIcon(local, minimized) indexes R_WindowShownIcon / R_WindowHiddenIcon
 feel must be B_NORMAL_WINDOW_FEEL or kWindowScreenFeel, and show_hide_level <= 0  
 `WindowMenu.cpp` → `TWindowMenu::WindowShouldBeListed`  
 **PORT:** The row's contract — only ordinary, non-hidden windows appear — holds under every state the port can reach: the port has exactly one window class with no feel/panel/floater field (win.h struct: title/frame/z/open/minimized/draw/ctx/tag), so every listed window is ordinary by construction; the only hidden state is !open, which publish_windows skips, and minimized windows are correctly listed with the MINIMIZED state icon. The feel-based exclusion clause is vacuously satisfied — there is no panel/floater class to write a filter against, so no implementable behaviour is missing.  
-*Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:1493-1506 (publish_windows skips w==NULL || !w->open, includes minimized with TIKU_TRK_DBW_MINIMIZED)` `../desktop/src/tiku_window.h:46-58 (single window class, no feel/hidden-level field)`*  
+*Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:1493-1506 (publish_windows skips w==NULL || !w->open, includes minimized with TIKU_TRK_DBW_MINIMIZED)` `../kits/tiku_window.h:46-58 (single window class, no feel/hidden-level field)`*  
 *Shell: desktop*  
 #### DB-028 · important · done
 **An application's window menu ends with Hide all / Show all / Close all; 'Hide all' is disabled when every window is already minimized and 'Show all' when none is**  
@@ -7473,7 +7476,7 @@ WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where
 retained screen bound and lets Deskbar derive its frame from the new surface,
 so the dock, width and hidden sliver re-lay on the correct physical edge.
 **PORT (continued):** The workspace-activation half differs by design: this desktop is a single workspace, so there is no activation event to re-lay on -- the screen-change half, which is the clause with a referent, is done.
-*applications/desktop/../desktop/src/tiku_x11.c; src/deskbar/tiku_trk_deskbar.c*
+*applications/TikuDesktop/../kits/tiku_x11.c; src/deskbar/tiku_trk_deskbar.c*
 
 #### DB-069 · important · differs ⟨found by verification⟩
 **The preloaded app/preferences icons stay live: the preloader node-monitors the directories and each preloaded file, re-icons on change and force-removes permanent entries when a file disappears.**  

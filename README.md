@@ -1,6 +1,6 @@
-# tracker-new — the new Tracker for TikuOS
+# TikuTracker — the file manager for TikuOS
 
-Tracker's real architecture and real decisions, rebuilt in a codebase we own,
+The real Tracker's architecture and decisions, rebuilt in a codebase we own,
 with the original source as the specification.  Full functionality; nothing
 stripped.  Plan: `../PLAN.md` (phases N0–N7).
 

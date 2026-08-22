@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -489,8 +489,8 @@ const char *tiku_trk_deskbar_team_name(const tiku_trk_deskbar_t *db, int i);
 /**
  * @brief Strip the owning application's name from a window title.
  *
- * "Tracker: /sys" and "/sys - Tracker" both become "/sys", which is why the
- * list reads as places rather than as the same word repeated.
+ * "TikuTracker: /sys" and "/sys - TikuTracker" both become "/sys", which
+ * is why the list reads as places rather than as the same word repeated.
  */
 void tiku_trk_deskbar_strip_title(const char *app, const char *title,
                                   char *out, size_t max);

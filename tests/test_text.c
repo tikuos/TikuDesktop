@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -202,7 +202,7 @@ main(void)
             snprintf(what, sizeof what,
                      "%s is drawn at real 2x detail, not blown up",
                      tiku_font_family_name(family));
-            check(ink_of("Tracker", 2) != 4 * ink_of("Tracker", 1),
+            check(ink_of("TikuTracker", 2) != 4 * ink_of("TikuTracker", 1),
                   "DEV-011", what);
         }
         (void)tiku_font_set_family(0);
@@ -238,7 +238,7 @@ main(void)
              * is Latin, so a face dropped in for one script must not
              * blank every other one.
              */
-            check(ink_of("Tracker", 1) > 0 && ink_of("A", 1) > 0, "DEV-011",
+            check(ink_of("TikuTracker", 1) > 0 && ink_of("A", 1) > 0, "DEV-011",
                   "while a letter it has NOT got falls back to a baked face");
         }
         if (plain_file != NULL) {

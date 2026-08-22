@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -121,7 +121,7 @@ tiku_trk_deskbar_publish_workspace(tiku_trk_deskbar_t *deskbar,
             continue;
         }
         memset(&windows[published], 0, sizeof windows[published]);
-        tiku_trk_deskbar_strip_title("Tracker", window->title,
+        tiku_trk_deskbar_strip_title("TikuTracker", window->title,
             windows[published].title, sizeof windows[published].title);
         windows[published].state = window->minimized
             ? TIKU_TRK_DBW_MINIMIZED : TIKU_TRK_DBW_SHOWN;

@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -798,8 +798,8 @@ static int
 team_before(const tiku_trk_deskbar_t *db, int a, int b)
 {
     if (db->settings.tracker_first) {
-        int at = strcmp(db->teams[a].name, "Tracker") == 0;
-        int bt = strcmp(db->teams[b].name, "Tracker") == 0;
+        int at = strcmp(db->teams[a].name, "TikuTracker") == 0;
+        int bt = strcmp(db->teams[b].name, "TikuTracker") == 0;
 
         if (at != bt) { return at; }
     }
@@ -895,7 +895,7 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
     snprintf(db->teams[i].name, sizeof db->teams[i].name, "%s", name);
     /* Tracker opens everything: it is the thing that would be asked to
      * open anything nothing else claims. */
-    db->teams[i].takes_anything = (strcmp(name, "Tracker") == 0);
+    db->teams[i].takes_anything = (strcmp(name, "TikuTracker") == 0);
     db->teams[i].expanded = db->settings.expand_new_apps;
     /* Added without a pid: the shell's own seed, never pruned away. */
     db->teams[i].shell = 1;
@@ -2418,7 +2418,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
             }
             draw_row_bg(s, b, t->active);
             (void)tiku_icon_paint(s,
-                strcmp(t->name, "Tracker") == 0 ? "folder" : "application",
+                strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application",
                 b.x + 3, b.y + (leaf_row() - 16) / 2, 16);
             fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
             tiku_text(s, f, b.x + 16 + 6,
@@ -2467,7 +2467,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
             /* DB-018: when even the generic icon is missing, the slot is
              * left as it is.  A coloured rectangle where an icon failed
              * looks like an application whose icon IS a blue square. */
-            (void)tiku_icon_paint(s, strcmp(t->name, "Tracker") == 0
+            (void)tiku_icon_paint(s, strcmp(t->name, "TikuTracker") == 0
                                          ? "folder" : "application",
                                       icon.x, icon.y, icon_size);
 

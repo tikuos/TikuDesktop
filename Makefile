@@ -1,4 +1,4 @@
-# The new Tracker for TikuOS -- host build.
+# TikuTracker -- host build.
 #
 # N1 builds the headless model layer and its tests; the view layer arrives in
 # N2.  Shares the proven session/namespace client with applications/desktop.
@@ -21,11 +21,11 @@ BUILD     := build
 # The scripted driver is TEST infrastructure and is NOT shipped.  Two
 # flavours of each shell are built from one source tree:
 #
-#   build/desktop       build/tracker       the product: the stub refuses
+#   build/TikuDesktop       build/TikuTracker       the product: the stub refuses
 #                                           -script, and neither the
 #                                           interpreter nor the
 #                                           presentation adapter is linked
-#   build/dev/desktop   build/dev/tracker   the harness's binaries, with
+#   build/dev/TikuDesktop   build/dev/TikuTracker   the harness's binaries, with
 #                                           the engine and TRK_SCRIPT_ENABLE
 #
 # Separate paths rather than one path built two ways: a flag that changes
@@ -109,15 +109,15 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
             $(BUILD)/test_state_pipeline
 
-all: $(TESTBINS) $(BUILD)/icon-export $(BUILD)/tracker $(BUILD)/desktop \
-     $(DEVBUILD)/tracker $(DEVBUILD)/desktop \
+all: $(TESTBINS) $(BUILD)/icon-export $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
+     $(DEVBUILD)/TikuTracker $(DEVBUILD)/TikuDesktop \
      $(DEVBUILD)/trk-conduct
 
 $(DESK_LIBS) &: $(DESK_SOURCES)
 	$(MAKE) --no-print-directory -C $(KITS) libs pic
 
-$(TESTBINS) $(BUILD)/tracker $(BUILD)/desktop \
-$(DEVBUILD)/tracker $(DEVBUILD)/desktop: $(DESK_LIBS)
+$(TESTBINS) $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
+$(DEVBUILD)/TikuTracker $(DEVBUILD)/TikuDesktop: $(DESK_LIBS)
 
 $(BUILD)/test_task: src/core/tiku_trk_task.c tests/test_task.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -377,10 +377,10 @@ TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/windows/tiku_trk_folder_window.c \
                src/shell/tiku_trk_app.c src/shell/tiku_trk_launcher.c
 
-$(BUILD)/tracker: $(TRACKER_SRC) $(SCRIPT_STUB) | $(BUILD)
+$(BUILD)/TikuTracker: $(TRACKER_SRC) $(SCRIPT_STUB) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-$(DEVBUILD)/tracker: $(TRACKER_SRC) $(SCRIPT_ENGINE_TRACKER) | $(DEVBUILD)
+$(DEVBUILD)/TikuTracker: $(TRACKER_SRC) $(SCRIPT_ENGINE_TRACKER) | $(DEVBUILD)
 	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
@@ -394,10 +394,10 @@ DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_cwmenu.c src/ui/tiku_trk_find.c \
                src/shell/tiku_trk_desktop.c src/shell/tiku_trk_launcher.c
 
-$(BUILD)/desktop: $(DESKTOP_SRC) $(SCRIPT_STUB) | $(BUILD)
+$(BUILD)/TikuDesktop: $(DESKTOP_SRC) $(SCRIPT_STUB) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-$(DEVBUILD)/desktop: $(DESKTOP_SRC) $(SCRIPT_ENGINE_DESKTOP) | $(DEVBUILD)
+$(DEVBUILD)/TikuDesktop: $(DESKTOP_SRC) $(SCRIPT_ENGINE_DESKTOP) | $(DEVBUILD)
 	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
 
 # The out-of-process driver: an ordinary program that speaks the conductor

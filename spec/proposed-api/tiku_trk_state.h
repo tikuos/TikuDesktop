@@ -2,7 +2,7 @@
    Decision 1: the per-node UI state store. The AttributeStreamNode seam ported to C — one vtable, three implementations (xattr, per-device sidecar, memory), two reserved node keys reproducing Tracker's three-slot split, the in-memory and the naturally-padded on-disk pose-info forms, the scored device-identity match with the uid veto, the sidecar file format with its gate-last torn-write discipline, and the explicit-only export/import/publish path. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -65,11 +65,11 @@ main(void)
 
     printf("where a panel opens (AW-050)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(strcmp(p.dir, work) == 0, "AW-050",
           "the folder that was asked for");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE,
-                        "/nowhere/at/all", b, "Tracker");
+                        "/nowhere/at/all", b, "TikuTracker");
     check(strcmp(p.dir, getenv("HOME")) == 0, "AW-050",
           "one that does not exist falls back to home");
     {
@@ -77,7 +77,7 @@ main(void)
 
         snprintf(file, sizeof file, "%s/a.txt", work);
         tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE,
-                            file, b, "Tracker");
+                            file, b, "TikuTracker");
         check(strcmp(p.dir, getenv("HOME")) == 0, "AW-050",
               "and so does a FILE -- existing is not enough, it has to be "
               "somewhere the panel can browse");
@@ -94,7 +94,7 @@ main(void)
 
     printf("\nthe default button (AW-053, AW-054)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(!tiku_trk_panel_button_enabled(&p, NULL, 0), "AW-053",
           "an open panel wanting a FILE has no answer with nothing picked");
     m = of(b, work);
@@ -111,7 +111,7 @@ main(void)
         check(tiku_trk_panel_button_enabled(&p, &fm, 1), "AW-053",
               "a file enables it in a panel that asked for files");
         tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_DIR,
-                            work, b, "Tracker");
+                            work, b, "TikuTracker");
         check(!tiku_trk_panel_button_enabled(&p, &fm, 1), "AW-053",
               "and does not in one that asked for a folder");
         check(tiku_trk_panel_button_enabled(&p, NULL, 0), "AW-053",
@@ -119,7 +119,7 @@ main(void)
               "shown rather than refusing");
 
         tiku_trk_panel_open(&p, TIKU_TRK_PANEL_SAVE, TIKU_TRK_PANEL_FILE,
-                            work, b, "Tracker");
+                            work, b, "TikuTracker");
         {
             tiku_model_t dm = of(b, work);
 
@@ -201,7 +201,7 @@ main(void)
     printf("\nentering versus choosing (AW-055)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN,
                         TIKU_TRK_PANEL_FILE | TIKU_TRK_PANEL_DIR, work, b,
-                        "Tracker");
+                        "TikuTracker");
     {
         char sub[512];
         tiku_model_t dm, fm;
@@ -217,7 +217,7 @@ main(void)
         check(tiku_trk_panel_activate(&p, &fm) == TIKU_TRK_PANEL_ACT_CHOOSE,
               "AW-055", "a file is the answer");
         tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_DIR,
-                            work, b, "Tracker");
+                            work, b, "TikuTracker");
         check(tiku_trk_panel_activate(&p, &fm) ==
               TIKU_TRK_PANEL_ACT_NOTHING, "AW-055",
               "and a file is nothing at all to a panel asking for folders");
@@ -225,7 +225,7 @@ main(void)
 
     printf("\nwhat a save refuses (AW-052)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_SAVE, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(tiku_trk_panel_save_check(&p, b, buf, sizeof buf) ==
           TIKU_TRK_SAVE_EMPTY, "AW-052", "nothing typed is nothing to save");
     snprintf(p.name, sizeof p.name, "..");
@@ -276,7 +276,7 @@ main(void)
 
     printf("\na drop points the panel (AW-059)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_SAVE, TIKU_TRK_PANEL_FILE,
-                        getenv("HOME"), b, "Tracker");
+                        getenv("HOME"), b, "TikuTracker");
     {
         char sub[512];
 
@@ -296,7 +296,7 @@ main(void)
 
     printf("\nthe folder being shown moves or goes (AW-060, PVN-029)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     {
         char sub[512], moved[512];
 
@@ -317,7 +317,7 @@ main(void)
 
     printf("\ngoing up, with and without Desktop as the root (AW-061)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(tiku_trk_panel_parent(&p, buf, sizeof buf) &&
           strcmp(buf, "/tmp") == 0, "AW-061", "up is the parent folder");
     snprintf(p.dir, sizeof p.dir, "/");
@@ -333,7 +333,7 @@ main(void)
 
     printf("\nthe panel's chords (AW-057, AW-058, PVK-022)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(tiku_trk_panel_key(&p, 27, 0u, 1, 0) ==
           TIKU_TRK_PANEL_KEY_CANCEL, "AW-057", "Escape cancels");
     check(tiku_trk_panel_key(&p, 'w', TIKU_TRK_MOD_CMD, 1, 0) ==
@@ -389,7 +389,7 @@ main(void)
         check(n == 0, "CW-058", "and a count of 0 shows none");
     }
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,
-                        b, "Tracker");
+                        b, "TikuTracker");
     check(tiku_trk_panel_add_favorite(&p, st), "AW-062",
           "the folder being shown can be made a favourite");
     check(!tiku_trk_panel_add_favorite(&p, st), "AW-062",

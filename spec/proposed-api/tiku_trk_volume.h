@@ -2,7 +2,7 @@
    Decision 4: a connected device is a volume — removable, non-boot, persistent, trash-less. Volume struct with its flags and the STALLED state that debounces unplug, the roster with its host-side scan and identity rebinding, the trash-less split that reuses Tracker's own partition, the device-path classifier that makes /sys and /dev virtual directories, the per-device worker with request priorities (the UI thread never touches a session), and the Desktop window and its iterator chain. */
 
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

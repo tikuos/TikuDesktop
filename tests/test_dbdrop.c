@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -35,7 +35,7 @@ main(void)
     int which = -99, tracker, editor;
 
     if (db == NULL) { return 1; }
-    tracker = tiku_trk_deskbar_add_team(db, "Tracker");
+    tracker = tiku_trk_deskbar_add_team(db, "TikuTracker");
     editor  = tiku_trk_deskbar_add_team(db, "Editor");
     (void)tiku_trk_deskbar_add_team(db, "Player");
     (void)tiku_trk_deskbar_team_type(db, editor, "text/plain");

@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -154,7 +154,7 @@ main(void)
         tiku_trk_app_t self;
 
         memset(&self, 0, sizeof self);
-        snprintf(self.name, sizeof self.name, "Tracker");
+        snprintf(self.name, sizeof self.name, "TikuTracker");
         snprintf(self.cmd, sizeof self.cmd, "/bin/true");
         self.is_tracker = 1;
         check(tiku_trk_launch_run(&self, NULL, 0) ==

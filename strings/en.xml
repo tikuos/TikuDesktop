@@ -25,7 +25,7 @@
 
   <!-- Window titles. -->
   <string name="title.deskbar_prefs">Deskbar preferences</string>
-  <string name="title.desktop_prefs">Desktop preferences</string>
+  <string name="title.desktop_prefs">TikuDesktop preferences</string>
   <string name="title.fonts">Fonts</string>
 
   <!-- The Deskbar's menu. -->
@@ -34,8 +34,8 @@
   <string name="menu.settings">Settings</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.deskbar_prefs">Deskbar preferences…</string>
-  <string name="menu.tracker_prefs">Tracker preferences…</string>
-  <string name="menu.desktop_prefs">Desktop preferences…</string>
+  <string name="menu.tracker_prefs">TikuTracker preferences…</string>
+  <string name="menu.desktop_prefs">TikuDesktop preferences…</string>
   <string name="menu.fonts">Fonts…</string>
   <string name="menu.show_replicants">Show replicants</string>
   <string name="menu.hide_replicants">Hide replicants</string>
@@ -56,7 +56,7 @@
 
   <!-- Deskbar preferences window. -->
   <string name="prefs.deskbar.sort_apps">Sort applications by name</string>
-  <string name="prefs.deskbar.tracker_first">Tracker always first</string>
+  <string name="prefs.deskbar.tracker_first">TikuTracker always first</string>
   <string name="prefs.deskbar.show_expander">Show application expander</string>
   <string name="prefs.deskbar.expand_new">Expand new applications</string>
   <string name="prefs.deskbar.hide_app_names">Hide application names</string>
@@ -66,7 +66,7 @@
   <string name="prefs.deskbar.auto_hide">Auto-hide</string>
   <string name="prefs.deskbar.dock_location">Dock location</string>
   <string name="prefs.deskbar.dock_n">Dock: %d</string>
-  <string name="prefs.deskbar.edit_in_tracker">Edit in Tracker…</string>
+  <string name="prefs.deskbar.edit_in_tracker">Edit in TikuTracker…</string>
 
   <!-- Desktop preferences window. -->
   <string name="prefs.desktop.picture">Picture</string>
@@ -81,7 +81,7 @@
   <!-- Fonts window. -->
   <string name="prefs.fonts.family">Family</string>
   <string name="prefs.fonts.size">Size</string>
-  <string name="prefs.fonts.sample_title">TikuOS Tracker</string>
+  <string name="prefs.fonts.sample_title">TikuTracker</string>
   <string name="prefs.fonts.sample_body">Handgloves 0123456789</string>
 
   <!-- File and view commands (from tiku_trk_sc_label). -->
@@ -255,7 +255,7 @@
   <string name="info.msg.repoint_failed">The link could not be re-pointed.</string>
 
   <!-- Tracker preferences window -->
-  <string name="title.tracker_prefs">Tracker preferences</string>
+  <string name="title.tracker_prefs">TikuTracker preferences</string>
   <string name="prefs.page.desktop">Desktop</string>
   <string name="prefs.page.windows">Windows</string>
   <string name="prefs.page.volumes">Volume icons</string>

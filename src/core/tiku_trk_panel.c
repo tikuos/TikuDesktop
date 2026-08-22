@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -65,7 +65,7 @@ tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
     p->focus = (mode == TIKU_TRK_PANEL_SAVE) ? TIKU_TRK_PANEL_FOCUS_NAME
                                              : TIKU_TRK_PANEL_FOCUS_LIST;
     snprintf(p->client, sizeof p->client, "%s",
-             (client != NULL) ? client : "Tracker");
+             (client != NULL) ? client : "TikuTracker");
     snprintf(p->home, sizeof p->home, "%s", home_dir());
     (void)tiku_desktop_dir(p->desktop, sizeof p->desktop);
     /* Three rungs, and the last cannot fail: a panel that opened nowhere

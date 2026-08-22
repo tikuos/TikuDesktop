@@ -1,5 +1,5 @@
 /*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -4074,7 +4074,7 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
 {
     static const char *const where[] = {
         "%s/%s",                        /* installed beside this shell   */
-        "%s/desktop/build/%s",          /* built in place                */
+        "%s/TikuDesktop/build/%s",      /* built in place                */
         "%s/libexec/tiku/%s"
     };
     char dir[TIKU_PATH_MAX];
@@ -4169,7 +4169,7 @@ find_apps_dir(const char *argv0, char *out, size_t max)
             }
             snprintf(step + used, sizeof step - used, "/..");
         }
-        snprintf(found, sizeof found, "%s/desktop/build/apps", step);
+        snprintf(found, sizeof found, "%s/TikuDesktop/build/apps", step);
         if (access(found, X_OK) == 0 && realpath(found, out) != NULL) {
             return 1;
         }
@@ -4676,7 +4676,7 @@ tracker_run(int argc, char **argv)
     app.row_h = tiku_font_plain()->height + 5;
     app.desk = tiku_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
-    app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
+    app.team = tiku_trk_deskbar_add_team(app.deskbar, "TikuTracker");
     /* The machine's own processes are not this desktop's business: what
      * belongs in the bar is what runs ON the device, which is this shell
      * and the applications it hosts. */
@@ -4782,7 +4782,7 @@ tracker_run(int argc, char **argv)
             /* This Tracker is in the list, so choosing it is answerable:
              * it opens folders here rather than starting a second desktop
              * (AW-035). */
-            int self = tiku_trk_launch_add(&app.apps, "Tracker", "",
+            int self = tiku_trk_launch_add(&app.apps, "TikuTracker", "",
                                            "inode/directory");
             if (self >= 0) {
                 app.apps.app[self].is_tracker = 1;
@@ -8164,6 +8164,6 @@ tracker_run(int argc, char **argv)
 
 const tiku_app_descriptor_t tiku_trk_application = {
     .id = "org.tikuos.tracker",
-    .name = "Tracker",
+    .name = "TikuTracker",
     .run = tracker_run
 };

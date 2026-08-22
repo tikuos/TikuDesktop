@@ -28,6 +28,6 @@ click 20 8
 wait 5
 menu-pick Preferences
 wait 12
-expect-title Tracker preferences
+expect-title TikuTracker preferences
 key w ctrl
 wait 6

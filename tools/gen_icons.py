@@ -58,7 +58,7 @@ NAMES = [
 ]
 
 HEAD = '''/*
- * The new Tracker for TikuOS.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *

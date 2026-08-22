@@ -17,7 +17,7 @@
   <string name="label.recent_applications">Applications récentes</string>
 
   <string name="title.deskbar_prefs">Préférences du Deskbar</string>
-  <string name="title.desktop_prefs">Préférences du bureau</string>
+  <string name="title.desktop_prefs">Préférences de TikuDesktop</string>
   <string name="title.fonts">Polices</string>
 
   <string name="menu.about">À propos de ce système</string>
@@ -25,8 +25,8 @@
   <string name="menu.settings">Réglages</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.deskbar_prefs">Préférences du Deskbar…</string>
-  <string name="menu.tracker_prefs">Préférences de Tracker…</string>
-  <string name="menu.desktop_prefs">Préférences du bureau…</string>
+  <string name="menu.tracker_prefs">Préférences de TikuTracker…</string>
+  <string name="menu.desktop_prefs">Préférences de TikuDesktop…</string>
   <string name="menu.fonts">Polices…</string>
   <string name="menu.show_replicants">Afficher les replicants</string>
   <string name="menu.hide_replicants">Masquer les replicants</string>
@@ -46,7 +46,7 @@
   <string name="menu.zone.hide">Masquer le fuseau horaire</string>
 
   <string name="prefs.deskbar.sort_apps">Trier les applications par nom</string>
-  <string name="prefs.deskbar.tracker_first">Tracker toujours en premier</string>
+  <string name="prefs.deskbar.tracker_first">TikuTracker toujours en premier</string>
   <string name="prefs.deskbar.show_expander">Afficher le déplieur</string>
   <string name="prefs.deskbar.expand_new">Déplier les nouvelles applications</string>
   <string name="prefs.deskbar.hide_app_names">Masquer les noms d'applications</string>
@@ -56,7 +56,7 @@
   <string name="prefs.deskbar.auto_hide">Masquage automatique</string>
   <string name="prefs.deskbar.dock_location">Emplacement du dock</string>
   <string name="prefs.deskbar.dock_n">Dock : %d</string>
-  <string name="prefs.deskbar.edit_in_tracker">Modifier dans Tracker…</string>
+  <string name="prefs.deskbar.edit_in_tracker">Modifier dans TikuTracker…</string>
 
   <string name="prefs.desktop.picture">Image</string>
   <string name="prefs.desktop.no_picture">Aucune image</string>
@@ -69,7 +69,7 @@
 
   <string name="prefs.fonts.family">Famille</string>
   <string name="prefs.fonts.size">Taille</string>
-  <string name="prefs.fonts.sample_title">TikuOS Tracker</string>
+  <string name="prefs.fonts.sample_title">TikuTracker</string>
   <string name="prefs.fonts.sample_body">Élégant café 0123456789</string>
 
   <!-- Commandes -->
@@ -236,8 +236,8 @@
   <string name="info.msg.not_a_link">Ce n'est pas un lien.</string>
   <string name="info.msg.repoint_failed">Le lien n'a pas pu être re-pointé.</string>
 
-  <!-- Préférences Tracker -->
-  <string name="title.tracker_prefs">Préférences de Tracker</string>
+  <!-- Préférences TikuTracker -->
+  <string name="title.tracker_prefs">Préférences de TikuTracker</string>
   <string name="prefs.page.desktop">Bureau</string>
   <string name="prefs.page.windows">Fenêtres</string>
   <string name="prefs.page.volumes">Icônes de volume</string>
