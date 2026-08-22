@@ -110,7 +110,19 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
             $(BUILD)/test_state_pipeline
 
-all: $(TESTBINS) $(BUILD)/icon-export $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
+# The shells were renamed, and `make` does not remove what it stopped
+# building.  A stale binary under a name somebody still types is worse
+# than no binary at all: it runs, it looks right, and it is however old
+# the rename is -- which is how an afternoon goes into wondering why a
+# fixed thing is not fixed.  Swept on every build.
+LEGACY := $(BUILD)/desktop $(BUILD)/tracker \
+          $(DEVBUILD)/desktop $(DEVBUILD)/tracker
+
+.PHONY: sweep-legacy
+sweep-legacy:
+	@rm -f $(LEGACY)
+
+all: sweep-legacy $(TESTBINS) $(BUILD)/icon-export $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
      $(DEVBUILD)/TikuTracker $(DEVBUILD)/TikuDesktop \
      $(DEVBUILD)/trk-conduct
 
