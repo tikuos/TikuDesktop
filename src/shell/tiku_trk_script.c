@@ -10,7 +10,7 @@
 
 #include "tiku_trk_script.h"
 
-#include "tiku_desk_font.h"
+#include "tiku_font.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,11 +132,11 @@ mods_of(char **w, int n, int from)
 
     for (i = from; i < n; i++) {
         if (strcmp(w[i], "ctrl") == 0) {
-            m |= TIKU_DESK_MOD_CMD;
+            m |= TIKU_MOD_CMD;
         } else if (strcmp(w[i], "shift") == 0) {
-            m |= TIKU_DESK_MOD_SHIFT;
+            m |= TIKU_MOD_SHIFT;
         } else if (strcmp(w[i], "alt") == 0) {
-            m |= TIKU_DESK_MOD_OPTION;
+            m |= TIKU_MOD_OPTION;
         }
     }
     return m;
@@ -150,22 +150,22 @@ key_of(const char *name)
         const char *name;
         unsigned key;
     } named[] = {
-        { "Up", TIKU_DESK_KEY_UP },
-        { "Down", TIKU_DESK_KEY_DOWN },
-        { "Left", TIKU_DESK_KEY_LEFT },
-        { "Right", TIKU_DESK_KEY_RIGHT },
-        { "Home", TIKU_DESK_KEY_HOME },
-        { "End", TIKU_DESK_KEY_END },
-        { "Prior", TIKU_DESK_KEY_PAGE_UP },
-        { "Next", TIKU_DESK_KEY_PAGE_DOWN },
-        { "BackSpace", TIKU_DESK_KEY_BACKSPACE },
-        { "Delete", TIKU_DESK_KEY_DELETE },
-        { "Escape", TIKU_DESK_KEY_ESCAPE },
-        { "Return", TIKU_DESK_KEY_RETURN },
-        { "KP_Enter", TIKU_DESK_KEY_RETURN },
-        { "Tab", TIKU_DESK_KEY_TAB },
-        { "Menu", TIKU_DESK_KEY_MENU },
-        { "F2", TIKU_DESK_KEY_F2 },
+        { "Up", TIKU_KEY_UP },
+        { "Down", TIKU_KEY_DOWN },
+        { "Left", TIKU_KEY_LEFT },
+        { "Right", TIKU_KEY_RIGHT },
+        { "Home", TIKU_KEY_HOME },
+        { "End", TIKU_KEY_END },
+        { "Prior", TIKU_KEY_PAGE_UP },
+        { "Next", TIKU_KEY_PAGE_DOWN },
+        { "BackSpace", TIKU_KEY_BACKSPACE },
+        { "Delete", TIKU_KEY_DELETE },
+        { "Escape", TIKU_KEY_ESCAPE },
+        { "Return", TIKU_KEY_RETURN },
+        { "KP_Enter", TIKU_KEY_RETURN },
+        { "Tab", TIKU_KEY_TAB },
+        { "Menu", TIKU_KEY_MENU },
+        { "F2", TIKU_KEY_F2 },
         { "space", ' ' },
         { "comma", ',' },
         { "plus", '+' },
@@ -923,12 +923,12 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         /* Asked of the TOOLKIT, which is where every label in the
          * interface gets its metrics: what it answers is what the whole
          * desktop is drawn in, not what one window believes. */
-        const char *name = tiku_desk_font_current_family();
+        const char *name = tiku_font_current_family();
         char got[64];
 
         snprintf(got, sizeof got, "%s %d px",
                  (name != NULL) ? name : "nothing",
-                 tiku_desk_font_size());
+                 tiku_font_size());
         verdict(s, strstr(got, cur->text) != NULL,
                 "the interface is drawn in", got);
         return 1;

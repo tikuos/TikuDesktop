@@ -15,7 +15,7 @@
 #define TIKU_TRK_DESKPREFS_H_
 
 #include "tiku_trk_background.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 /** @brief The icon sizes the Desktop offers, smallest first (PVL-003). */
 #define TIKU_TRK_DESK_ICON_STEPS 6
@@ -24,7 +24,7 @@
 #define TIKU_TRK_DESK_PICTURES 12
 
 typedef struct {
-    char picture[TIKU_TRK_DESK_PICTURES][TIKU_TRK_PATH_MAX];
+    char picture[TIKU_TRK_DESK_PICTURES][TIKU_PATH_MAX];
     int  count;
 } tiku_trk_deskprefs_pictures_t;
 
@@ -47,12 +47,12 @@ void tiku_trk_deskprefs_init(tiku_trk_deskprefs_t *prefs);
 
 /** @brief Read what @p node says about itself.  @return 1 when it said. */
 int tiku_trk_deskprefs_load(tiku_trk_deskprefs_t *prefs,
-                            tiku_trk_store_t *store, const char *node,
+                            tiku_store_t *store, const char *node,
                             int icon_size);
 
 /** @brief Write it back.  @return 1 when the record was written. */
 int tiku_trk_deskprefs_save(const tiku_trk_deskprefs_t *prefs,
-                            tiku_trk_store_t *store, const char *node);
+                            tiku_store_t *store, const char *node);
 
 void tiku_trk_deskprefs_mark_opened(tiku_trk_deskprefs_t *prefs);
 int tiku_trk_deskprefs_defaultable(const tiku_trk_deskprefs_t *prefs);

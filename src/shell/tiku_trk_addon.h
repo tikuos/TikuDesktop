@@ -3,7 +3,7 @@
 #define TIKU_TRK_ADDON_H_
 
 #include "tiku_trk_menu.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #define TIKU_TRK_ADDON_MAX 32
 #define TIKU_TRK_ADDON_COMMAND_BASE 1000
@@ -11,7 +11,7 @@
 typedef struct {
     char name[48];
     char command[128];
-    char type[TIKU_TRK_TYPE_MAX];
+    char type[TIKU_TYPE_MAX];
     char key;
     unsigned mods;
     int generic;

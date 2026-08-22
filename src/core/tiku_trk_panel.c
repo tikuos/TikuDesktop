@@ -10,7 +10,7 @@
  */
 
 #include "tiku_trk_panel.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 #include "tiku_trk_input.h"
 
 #include <stdio.h>
@@ -24,9 +24,9 @@
 
 /** @brief Whether @p path names a directory the backend can see. */
 static int
-is_dir(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
+is_dir(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
 
     if (b == NULL || b->ops == NULL || b->ops->stat == NULL ||
         path == NULL || path[0] == '\0') {
@@ -38,7 +38,7 @@ is_dir(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
     if (out != NULL) {
         *out = m;
     }
-    return tiku_trk_model_is_container(&m);
+    return tiku_model_is_container(&m);
 }
 
 /** @brief The user's home, or "" when the environment does not say. */
@@ -53,7 +53,7 @@ home_dir(void)
 void
 tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
                     unsigned flavors, const char *want,
-                    tiku_trk_backend_t *b, const char *client)
+                    tiku_backend_t *b, const char *client)
 {
     if (p == NULL) {
         return;
@@ -67,7 +67,7 @@ tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
     snprintf(p->client, sizeof p->client, "%s",
              (client != NULL) ? client : "Tracker");
     snprintf(p->home, sizeof p->home, "%s", home_dir());
-    (void)tiku_trk_desktop_dir(p->desktop, sizeof p->desktop);
+    (void)tiku_desktop_dir(p->desktop, sizeof p->desktop);
     /* Three rungs, and the last cannot fail: a panel that opened nowhere
      * would be a window with no folder in it (AW-050). */
     if (is_dir(b, want, NULL)) {
@@ -98,12 +98,12 @@ tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max)
 
 /** @brief Whether one model is a legal answer to what the panel asked. */
 static int
-acceptable(const tiku_trk_panel_t *p, const tiku_trk_model_t *m)
+acceptable(const tiku_trk_panel_t *p, const tiku_model_t *m)
 {
     if (m == NULL) {
         return 0;
     }
-    if (tiku_trk_model_is_container(m)) {
+    if (tiku_model_is_container(m)) {
         return (p->flavors & TIKU_TRK_PANEL_DIR) != 0u;
     }
     return (p->flavors & TIKU_TRK_PANEL_FILE) != 0u;
@@ -111,7 +111,7 @@ acceptable(const tiku_trk_panel_t *p, const tiku_trk_model_t *m)
 
 const char *
 tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
-                            const tiku_trk_model_t *sel, int n)
+                            const tiku_model_t *sel, int n)
 {
     if (p == NULL) {
         return "Open";
@@ -119,7 +119,7 @@ tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
     /* A lone folder relabels the button whatever the panel is for: the
      * thing in front of the user is a folder, and the only sense a button
      * can make of one is to go into it (AW-053). */
-    if (n == 1 && sel != NULL && tiku_trk_model_is_container(&sel[0])) {
+    if (n == 1 && sel != NULL && tiku_model_is_container(&sel[0])) {
         return "Open";
     }
     return (p->mode == TIKU_TRK_PANEL_SAVE) ? "Save" : "Open";
@@ -127,14 +127,14 @@ tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
 
 int
 tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
-                              const tiku_trk_model_t *sel, int n)
+                              const tiku_model_t *sel, int n)
 {
     int i;
 
     if (p == NULL) {
         return 0;
     }
-    if (n == 1 && sel != NULL && tiku_trk_model_is_container(&sel[0])) {
+    if (n == 1 && sel != NULL && tiku_model_is_container(&sel[0])) {
         return 1;               /* entering is always available */
     }
     if (p->mode == TIKU_TRK_PANEL_SAVE) {
@@ -160,11 +160,11 @@ tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
 }
 
 int
-tiku_trk_panel_pick_name(tiku_trk_panel_t *p, const tiku_trk_model_t *sel,
+tiku_trk_panel_pick_name(tiku_trk_panel_t *p, const tiku_model_t *sel,
                          int n)
 {
     if (p == NULL || p->mode != TIKU_TRK_PANEL_SAVE || n != 1 ||
-        sel == NULL || tiku_trk_model_is_container(&sel[0])) {
+        sel == NULL || tiku_model_is_container(&sel[0])) {
         return 0;
     }
     if (strcmp(p->name, sel[0].name) == 0) {
@@ -179,7 +179,7 @@ tiku_trk_panel_pick_name(tiku_trk_panel_t *p, const tiku_trk_model_t *sel,
 }
 
 tiku_trk_panel_act_t
-tiku_trk_panel_activate(const tiku_trk_panel_t *p, const tiku_trk_model_t *m)
+tiku_trk_panel_activate(const tiku_trk_panel_t *p, const tiku_model_t *m)
 {
     if (p == NULL || m == NULL) {
         return TIKU_TRK_PANEL_ACT_NOTHING;
@@ -188,7 +188,7 @@ tiku_trk_panel_activate(const tiku_trk_panel_t *p, const tiku_trk_model_t *m)
      * answer.  Choosing it is what the default button is for; a
      * double-click that answered the question would make the folder tree
      * unwalkable past its first level (AW-055). */
-    if (tiku_trk_model_is_container(m)) {
+    if (tiku_model_is_container(m)) {
         return TIKU_TRK_PANEL_ACT_ENTER;
     }
     return acceptable(p, m) ? TIKU_TRK_PANEL_ACT_CHOOSE
@@ -196,11 +196,11 @@ tiku_trk_panel_activate(const tiku_trk_panel_t *p, const tiku_trk_model_t *m)
 }
 
 tiku_trk_save_t
-tiku_trk_panel_save_check(const tiku_trk_panel_t *p, tiku_trk_backend_t *b,
+tiku_trk_panel_save_check(const tiku_trk_panel_t *p, tiku_backend_t *b,
                           char *out, size_t max)
 {
-    char full[TIKU_TRK_PATH_MAX];
-    tiku_trk_model_t m;
+    char full[TIKU_PATH_MAX];
+    tiku_model_t m;
 
     if (out != NULL && max > 0u) {
         out[0] = '\0';
@@ -219,7 +219,7 @@ tiku_trk_panel_save_check(const tiku_trk_panel_t *p, tiku_trk_backend_t *b,
     if (strcmp(p->dir, "/") == 0) {
         return TIKU_TRK_SAVE_ROOT;
     }
-    if (!is_dir(b, p->dir, &m) || !tiku_trk_model_is_mutable_container(&m)) {
+    if (!is_dir(b, p->dir, &m) || !tiku_model_is_mutable_container(&m)) {
         return TIKU_TRK_SAVE_UNWRITABLE;
     }
     if (strlen(p->dir) + strlen(p->name) + 2u > sizeof full) {
@@ -236,7 +236,7 @@ tiku_trk_panel_save_check(const tiku_trk_panel_t *p, tiku_trk_backend_t *b,
         b->ops->stat(b, full, &m) == 0) {
         /* A folder of that name is final; a file of that name is a
          * question, since replacing one is what saving often means. */
-        return tiku_trk_model_is_container(&m) ? TIKU_TRK_SAVE_IS_FOLDER
+        return tiku_model_is_container(&m) ? TIKU_TRK_SAVE_IS_FOLDER
                                                : TIKU_TRK_SAVE_REPLACE;
     }
     return TIKU_TRK_SAVE_OK;
@@ -264,10 +264,10 @@ tiku_trk_panel_save_text(tiku_trk_save_t why)
 }
 
 int
-tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_trk_backend_t *b,
+tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_backend_t *b,
                     const char *path, char *select, size_t max)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
     const char *slash;
 
     if (select != NULL && max > 0u) {
@@ -326,7 +326,7 @@ tiku_trk_panel_dir_moved(tiku_trk_panel_t *p, const char *from,
      * so "/a/b" does not claim "/a/bc". */
     n = strlen(from);
     if (n > 0u && strncmp(from, p->dir, n) == 0 && p->dir[n] == '/') {
-        char rebuilt[TIKU_TRK_PATH_MAX];
+        char rebuilt[TIKU_PATH_MAX];
 
         if ((int)snprintf(rebuilt, sizeof rebuilt, "%s%s", to,
                           p->dir + n) < (int)sizeof rebuilt) {
@@ -338,7 +338,7 @@ tiku_trk_panel_dir_moved(tiku_trk_panel_t *p, const char *from,
 }
 
 void
-tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_trk_backend_t *b)
+tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_backend_t *b)
 {
     if (p == NULL) {
         return;
@@ -456,17 +456,17 @@ recent_attr(tiku_trk_recent_t which)
 
 /** @brief Read a newline-separated list into @p out. */
 static int
-list_read(tiku_trk_store_t *s, const char *attr,
-          char out[][TIKU_TRK_PATH_MAX], int max)
+list_read(tiku_store_t *s, const char *attr,
+          char out[][TIKU_PATH_MAX], int max)
 {
-    char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_RECENT_MAX];
+    char buf[TIKU_PATH_MAX * TIKU_TRK_RECENT_MAX];
     int n = 0, len;
     char *line, *save;
 
     if (s == NULL || out == NULL || max <= 0) {
         return 0;
     }
-    len = tiku_trk_state_read(s, PANEL_SLOT, attr, buf, sizeof buf - 1u);
+    len = tiku_state_read(s, PANEL_SLOT, attr, buf, sizeof buf - 1u);
     if (len <= 0) {
         return 0;
     }
@@ -474,7 +474,7 @@ list_read(tiku_trk_store_t *s, const char *attr,
     for (line = strtok_r(buf, "\n", &save); line != NULL && n < max;
          line = strtok_r(NULL, "\n", &save)) {
         if (line[0] != '\0') {
-            snprintf(out[n++], TIKU_TRK_PATH_MAX, "%s", line);
+            snprintf(out[n++], TIKU_PATH_MAX, "%s", line);
         }
     }
     return n;
@@ -482,53 +482,53 @@ list_read(tiku_trk_store_t *s, const char *attr,
 
 /** @brief Write a list back. */
 static void
-list_write(tiku_trk_store_t *s, const char *attr,
-           char list[][TIKU_TRK_PATH_MAX], int n)
+list_write(tiku_store_t *s, const char *attr,
+           char list[][TIKU_PATH_MAX], int n)
 {
-    char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_RECENT_MAX];
+    char buf[TIKU_PATH_MAX * TIKU_TRK_RECENT_MAX];
     int i;
     size_t at = 0u;
 
     for (i = 0; i < n && at + 1u < sizeof buf; i++) {
         int w = snprintf(buf + at, sizeof buf - at, "%.*s\n",
-                         (int)(TIKU_TRK_PATH_MAX - 1), list[i]);
+                         (int)(TIKU_PATH_MAX - 1), list[i]);
 
         if (w <= 0 || (size_t)w >= sizeof buf - at) {
             break;
         }
         at += (size_t)w;
     }
-    (void)tiku_trk_state_write(s, PANEL_SLOT, attr, buf, at);
+    (void)tiku_state_write(s, PANEL_SLOT, attr, buf, at);
 }
 
 void
-tiku_trk_recent_add(tiku_trk_store_t *s, tiku_trk_recent_t which,
+tiku_trk_recent_add(tiku_store_t *s, tiku_trk_recent_t which,
                     const char *path)
 {
-    char list[TIKU_TRK_RECENT_MAX][TIKU_TRK_PATH_MAX];
-    char keep[TIKU_TRK_RECENT_MAX][TIKU_TRK_PATH_MAX];
+    char list[TIKU_TRK_RECENT_MAX][TIKU_PATH_MAX];
+    char keep[TIKU_TRK_RECENT_MAX][TIKU_PATH_MAX];
     int n, i, k = 0;
 
     if (s == NULL || path == NULL || path[0] == '\0') {
         return;
     }
     n = list_read(s, recent_attr(which), list, TIKU_TRK_RECENT_MAX);
-    snprintf(keep[k++], TIKU_TRK_PATH_MAX, "%.*s",
-             (int)(TIKU_TRK_PATH_MAX - 1), path);
+    snprintf(keep[k++], TIKU_PATH_MAX, "%.*s",
+             (int)(TIKU_PATH_MAX - 1), path);
     for (i = 0; i < n && k < TIKU_TRK_RECENT_MAX; i++) {
         /* Used again is not a second entry: it moves to the front, which
          * is what makes the list a history rather than a log. */
         if (strcmp(list[i], path) != 0) {
-            snprintf(keep[k++], TIKU_TRK_PATH_MAX, "%.*s",
-                     (int)(TIKU_TRK_PATH_MAX - 1), list[i]);
+            snprintf(keep[k++], TIKU_PATH_MAX, "%.*s",
+                     (int)(TIKU_PATH_MAX - 1), list[i]);
         }
     }
     list_write(s, recent_attr(which), keep, k);
 }
 
 int
-tiku_trk_recent_list(tiku_trk_store_t *s, tiku_trk_recent_t which, int cap,
-                     char out[][TIKU_TRK_PATH_MAX], int max)
+tiku_trk_recent_list(tiku_store_t *s, tiku_trk_recent_t which, int cap,
+                     char out[][TIKU_PATH_MAX], int max)
 {
     int n, shown;
 
@@ -544,9 +544,9 @@ tiku_trk_recent_list(tiku_trk_store_t *s, tiku_trk_recent_t which, int cap,
 }
 
 int
-tiku_trk_panel_add_favorite(const tiku_trk_panel_t *p, tiku_trk_store_t *s)
+tiku_trk_panel_add_favorite(const tiku_trk_panel_t *p, tiku_store_t *s)
 {
-    char list[TIKU_TRK_RECENT_MAX][TIKU_TRK_PATH_MAX];
+    char list[TIKU_TRK_RECENT_MAX][TIKU_PATH_MAX];
     int n, i;
 
     if (p == NULL || s == NULL || p->dir[0] == '\0') {
@@ -561,13 +561,13 @@ tiku_trk_panel_add_favorite(const tiku_trk_panel_t *p, tiku_trk_store_t *s)
     if (n >= TIKU_TRK_RECENT_MAX) {
         return 0;
     }
-    snprintf(list[n++], TIKU_TRK_PATH_MAX, "%s", p->dir);
+    snprintf(list[n++], TIKU_PATH_MAX, "%s", p->dir);
     list_write(s, ATTR_FAVORITES, list, n);
     return 1;
 }
 
 int
-tiku_trk_panel_favorites(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
+tiku_trk_panel_favorites(tiku_store_t *s, char out[][TIKU_PATH_MAX],
                          int max)
 {
     return list_read(s, ATTR_FAVORITES, out, max);
@@ -585,7 +585,7 @@ clamp(int v, int lo, int hi)
 }
 
 int
-tiku_trk_panel_restore_frame(tiku_trk_store_t *s, int *x, int *y, int *w,
+tiku_trk_panel_restore_frame(tiku_store_t *s, int *x, int *y, int *w,
                              int *h)
 {
     int32_t fr[4];
@@ -593,7 +593,7 @@ tiku_trk_panel_restore_frame(tiku_trk_store_t *s, int *x, int *y, int *w,
     if (s == NULL) {
         return 0;
     }
-    if (tiku_trk_state_read(s, PANEL_SLOT, ATTR_FRAME, fr, sizeof fr) !=
+    if (tiku_state_read(s, PANEL_SLOT, ATTR_FRAME, fr, sizeof fr) !=
             (int)sizeof fr) {
         return 0;
     }
@@ -612,7 +612,7 @@ tiku_trk_panel_restore_frame(tiku_trk_store_t *s, int *x, int *y, int *w,
 }
 
 void
-tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w, int h)
+tiku_trk_panel_save_frame(tiku_store_t *s, int x, int y, int w, int h)
 {
     int32_t fr[4];
 
@@ -623,19 +623,19 @@ tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w, int h)
     fr[1] = (int32_t)y;
     fr[2] = (int32_t)clamp(w, TIKU_TRK_PANEL_MIN_W, TIKU_TRK_PANEL_MAX_W);
     fr[3] = (int32_t)clamp(h, TIKU_TRK_PANEL_MIN_H, TIKU_TRK_PANEL_MAX_H);
-    (void)tiku_trk_state_write(s, PANEL_SLOT, ATTR_FRAME, fr, sizeof fr);
+    (void)tiku_state_write(s, PANEL_SLOT, ATTR_FRAME, fr, sizeof fr);
 }
 
 /** @brief Collects the longest common extension during the list walk. */
 struct complete_ctx {
     const char *prefix;
     size_t      plen;
-    char        best[TIKU_TRK_NAME_MAX];
+    char        best[TIKU_NAME_MAX];
     int         matches;
 };
 
 static int
-complete_one(const tiku_trk_model_t *m, void *ctx)
+complete_one(const tiku_model_t *m, void *ctx)
 {
     struct complete_ctx *c = ctx;
 
@@ -657,7 +657,7 @@ complete_one(const tiku_trk_model_t *m, void *ctx)
 }
 
 int
-tiku_trk_panel_complete(tiku_trk_backend_t *b, const char *dir,
+tiku_trk_panel_complete(tiku_backend_t *b, const char *dir,
                         const char *prefix, char *out, size_t max)
 {
     struct complete_ctx c;

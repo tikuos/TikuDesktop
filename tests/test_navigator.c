@@ -28,8 +28,8 @@ int
 main(void)
 {
     tiku_trk_navigator_t n;
-    tiku_trk_model_t dropped;
-    char path[TIKU_TRK_PATH_MAX];
+    tiku_model_t dropped;
+    char path[TIKU_PATH_MAX];
     int i, steps = 0;
 
     printf("browser history\n");
@@ -87,7 +87,7 @@ main(void)
     check(!tiku_trk_navigator_parent("/", path, sizeof path),
           "the root has no Up destination");
     {
-        char chain[8][TIKU_TRK_PATH_MAX];
+        char chain[8][TIKU_PATH_MAX];
         int nchain = tiku_trk_navigator_hierarchy("/a/b/c", chain, 8);
 
         check(nchain == 3 && strcmp(chain[0], "/a/b") == 0 &&
@@ -97,12 +97,12 @@ main(void)
 
     printf("\ndrop destinations\n");
     memset(&dropped, 0, sizeof dropped);
-    dropped.kind = TIKU_TRK_KIND_DIRECTORY;
+    dropped.kind = TIKU_KIND_DIRECTORY;
     snprintf(dropped.path, sizeof dropped.path, "/a/folder");
     check(tiku_trk_navigator_drop_path(&dropped, path, sizeof path) &&
           strcmp(path, "/a/folder") == 0,
           "dropping a folder navigates into that folder");
-    dropped.kind = TIKU_TRK_KIND_FILE;
+    dropped.kind = TIKU_KIND_FILE;
     snprintf(dropped.path, sizeof dropped.path, "/a/file");
     check(tiku_trk_navigator_drop_path(&dropped, path, sizeof path) &&
           strcmp(path, "/a") == 0,

@@ -9,8 +9,8 @@
  */
 
 #include "tiku_trk_prefs.h"
-#include "tiku_trk_strings.h"
-#include "tiku_trk_state.h"
+#include "tiku_strings.h"
+#include "tiku_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -277,7 +277,7 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
     if (p == NULL || path == NULL) {
         return -1;
     }
-    (void)tiku_trk_state_mkparents(path);
+    (void)tiku_state_mkparents(path);
     f = fopen(path, "w");
     if (f == NULL) {
         return -1;
@@ -449,10 +449,10 @@ const char *
 tiku_trk_prefs_page_name(tiku_trk_page_t page)
 {
     switch (page) {
-    case TIKU_TRK_PAGE_DESKTOP: return tiku_trk_str("prefs.page.desktop");
-    case TIKU_TRK_PAGE_WINDOWS: return tiku_trk_str("prefs.page.windows");
-    case TIKU_TRK_PAGE_VOLUMES: return tiku_trk_str("prefs.page.volumes");
-    case TIKU_TRK_PAGE_MOUNT:   return tiku_trk_str("prefs.page.mount");
+    case TIKU_TRK_PAGE_DESKTOP: return tiku_str("prefs.page.desktop");
+    case TIKU_TRK_PAGE_WINDOWS: return tiku_str("prefs.page.windows");
+    case TIKU_TRK_PAGE_VOLUMES: return tiku_str("prefs.page.volumes");
+    case TIKU_TRK_PAGE_MOUNT:   return tiku_str("prefs.page.mount");
     default:                    return "";
     }
 }

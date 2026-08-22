@@ -26,10 +26,10 @@ check(int cond, const char *row, const char *what)
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
     tiku_trk_deskbar_t *db = tiku_trk_deskbar_new(b);
-    tiku_desk_rect_t f;
-    tiku_trk_model_t m;
+    tiku_rect_t f;
+    tiku_model_t m;
     const char *txt[1] = { "text/plain" };
     const char *mix[2] = { "text/plain", "image/png" };
     int which = -99, tracker, editor;
@@ -42,11 +42,11 @@ main(void)
     {   /* The frame is settled by a draw, so the bar is laid out once
          * into a surface nobody looks at: hit-testing a bar that has never
          * been drawn would be testing a rectangle of zeroes. */
-        tiku_desk_surface_t *sfc =
-            tiku_desk_surface_new(1000, 700, TIKU_DESK_C_BACKDROP);
+        tiku_surface_t *sfc =
+            tiku_surface_new(1000, 700, TIKU_C_BACKDROP);
 
         tiku_trk_deskbar_draw(db, sfc);
-        tiku_desk_surface_free(sfc);
+        tiku_surface_free(sfc);
     }
     f = tiku_trk_deskbar_frame(db);
 
@@ -152,20 +152,20 @@ main(void)
 
     printf("\nwhat a drop launches (DB-066, DB-075)\n");
     memset(&m, 0, sizeof m);
-    m.kind = TIKU_TRK_KIND_FILE;
+    m.kind = TIKU_KIND_FILE;
     check(tiku_trk_deskbar_launchable(&m), "DB-066", "a file is launched");
-    m.kind = TIKU_TRK_KIND_DIRECTORY;
+    m.kind = TIKU_KIND_DIRECTORY;
     check(!tiku_trk_deskbar_launchable(&m), "DB-066",
           "a directory is SILENTLY ignored -- launching one has no meaning "
           "and complaining about an accident would be noise");
-    m.kind = TIKU_TRK_KIND_VOLUME;
+    m.kind = TIKU_KIND_VOLUME;
     check(!tiku_trk_deskbar_launchable(&m), "DB-075",
           "and neither is a volume, for the same reason");
 
     printf("\nwhat the leaf menu is made of (DB-002, DB-003, DB-004, "
            "DB-074)\n");
     {
-        char recent[3][TIKU_TRK_PATH_MAX];
+        char recent[3][TIKU_PATH_MAX];
         int i, dirs = 0, recents = 0, disabled = 0, count;
         const tiku_trk_db_item_t *it;
 
@@ -189,7 +189,7 @@ main(void)
               "an empty submenu is a promise of nothing");
         snprintf(recent[0], sizeof recent[0], "/tmp/trk_dbmenu");
         tiku_trk_deskbar_set_recent(db, TIKU_TRK_DB_RECENT_FOLDERS,
-                                    (const char (*)[TIKU_TRK_PATH_MAX])recent,
+                                    (const char (*)[TIKU_PATH_MAX])recent,
                                     1);
         tiku_trk_deskbar_open_menu(db);
         recents = 0;
@@ -219,7 +219,7 @@ main(void)
     }
 
     tiku_trk_deskbar_free(db);
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     printf("\n%s\n", fails ? "FAILURES" : "Deskbar drops hold");
     return fails ? 1 : 0;
 }

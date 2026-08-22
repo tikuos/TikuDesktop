@@ -21,10 +21,10 @@
 #define TIKU_TRK_FIND_H_
 
 #include "tiku_trk_menu.h"
-#include "tiku_trk_query.h"
+#include "tiku_query.h"
 #include "tiku_trk_types.h"
 
-struct tiku_trk_store;
+struct tiku_store;
 
 #define TIKU_TRK_FIND_ROWS_MAX   4
 #define TIKU_TRK_FIND_PLACES_MAX 8
@@ -57,10 +57,10 @@ typedef enum {
 } tiku_trk_find_hit_t;
 
 typedef struct {
-    tiku_trk_qfield_t field;
-    tiku_trk_qop_t    op;
+    tiku_qfield_t field;
+    tiku_qop_t    op;
     char              value[TIKU_TRK_FIND_TEXT_MAX];
-    tiku_trk_qjoin_t  join;        /* joins this row to the NEXT one       */
+    tiku_qjoin_t  join;        /* joins this row to the NEXT one       */
 } tiku_trk_find_row_t;
 
 /** @brief How many past runs the Queries menu offers (Q-032). */
@@ -72,21 +72,21 @@ typedef struct {
 #define TIKU_TRK_FIND_TYPE_SUPERS 8
 
 typedef struct {
-    tiku_trk_qmode_t      mode;
+    tiku_qmode_t      mode;
     /* The type every term is narrowed to, or "" for all.  Held as the type
      * STRING rather than as an index into the table, because it is what
      * goes into the query and what comes back out of a saved one. */
-    char                  type[TIKU_TRK_TYPE_MAX];
+    char                  type[TIKU_TYPE_MAX];
     char                  name_text[TIKU_TRK_FIND_TEXT_MAX];
     tiku_trk_find_row_t   row[TIKU_TRK_FIND_ROWS_MAX];
     int                   row_count;
-    char                  formula[TIKU_TRK_QUERY_PRED_MAX];
+    char                  formula[TIKU_QUERY_PRED_MAX];
     /* Scope.  "Everywhere" and a set of places are mutually exclusive the
      * way "All disks" and individual volumes are. */
-    char                  place[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+    char                  place[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
     uint64_t              place_dev[TIKU_TRK_FIND_PLACES_MAX];
     char                  place_volume[TIKU_TRK_FIND_PLACES_MAX]
-                                      [TIKU_TRK_NAME_MAX];
+                                      [TIKU_NAME_MAX];
     int                   place_count;
     unsigned              place_mask;
     /* Set when 'Select folders...' was chosen: the shell answers with
@@ -105,15 +105,15 @@ typedef struct {
     tiku_trk_menu_t       popup;
     tiku_trk_find_hit_t   popup_for;
     int                   popup_row;
-    tiku_desk_rect_t      popup_frame;
+    tiku_rect_t      popup_frame;
     /* Type submenus are owned by the panel: menu items intentionally keep
      * non-owned pointers, so stack-built children would dangle on return. */
     tiku_trk_menu_t       type_sub[TIKU_TRK_FIND_TYPE_SUPERS];
     int                   type_sub_count;
     tiku_trk_menu_t      *popup_sub;
-    tiku_desk_rect_t      popup_sub_frame;
+    tiku_rect_t      popup_sub_frame;
     char                  type_choice[TIKU_TRK_FIND_TYPE_CHOICES]
-                                     [TIKU_TRK_TYPE_MAX];
+                                     [TIKU_TYPE_MAX];
     int                   type_choice_count;
     /* What the last action through the Queries menu did, for the shell's
      * status line: a menu that loads a saved search without saying which
@@ -122,12 +122,12 @@ typedef struct {
     /* The record the panel came from.  Templates normally remain sources;
      * edit_template is set only by the explicit in-place edit action. */
     char                  loaded_name[128];
-    tiku_trk_qrec_t       loaded_kind;
+    tiku_qrec_t       loaded_kind;
     int                   edit_template;
     /* Where the most-used type list lives.  Held on the panel because the
      * menu is built where the click lands, and passing it through every
      * hit-testing call would put a store in the geometry's signature. */
-    struct tiku_trk_store *store;
+    struct tiku_store *store;
     const tiku_trk_types_t *types;
 } tiku_trk_find_t;
 
@@ -188,7 +188,7 @@ const char *tiku_trk_find_note(const tiku_trk_find_t *f);
 void tiku_trk_find_clear_note(tiku_trk_find_t *f);
 
 /** @brief Tell the panel where its most-used list lives (Q-016). */
-void tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s);
+void tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_store *s);
 
 /** @brief Supply the installed type declarations used by both type menus. */
 void tiku_trk_find_set_types(tiku_trk_find_t *f,
@@ -214,7 +214,7 @@ const char *tiku_trk_find_type_label(const tiku_trk_find_t *f);
  * @param store Where the list lives, or NULL not to keep one.
  */
 void tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
-                            struct tiku_trk_store *store);
+                            struct tiku_store *store);
 
 /**
  * @brief The types the menu offers, most-used first (Q-015).
@@ -224,7 +224,7 @@ void tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
  *
  * @return how many were written.
  */
-int tiku_trk_find_type_menu(struct tiku_trk_store *store,
+int tiku_trk_find_type_menu(struct tiku_store *store,
                             const char **out, int max);
 
 /** @brief Offer @p name as a place the search can be scoped to. */
@@ -246,7 +246,7 @@ int tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
  * Entering formula mode fills the field from the controls being left, so the
  * predicate is visible and editable rather than hidden.
  */
-void tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_trk_qmode_t mode);
+void tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_qmode_t mode);
 
 /** @brief Add a row.  @return 1 when one was added. */
 int tiku_trk_find_add_row(tiku_trk_find_t *f);
@@ -255,7 +255,7 @@ int tiku_trk_find_add_row(tiku_trk_find_t *f);
 int tiku_trk_find_remove_row(tiku_trk_find_t *f);
 
 /** @brief Build the query the panel is describing. */
-void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q);
+void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q);
 
 /**
  * @brief Fill the panel FROM a query, for Edit query (Q-026).
@@ -270,7 +270,7 @@ void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q);
  *
  * @return 1 when every scope in the query was recognised.
  */
-int tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q);
+int tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q);
 
 /**
  * @brief The name a saved query would get.
@@ -288,8 +288,8 @@ int tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out,
 /** @brief Natural height for @p width. */
 int tiku_trk_find_height(const tiku_trk_find_t *f);
 
-void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
-                        tiku_desk_rect_t frame);
+void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
+                        tiku_rect_t frame);
 
 /**
  * @brief Where the draggable query icon sits (Q-034), or an empty rect.
@@ -297,8 +297,8 @@ void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
  * Empty in template-edit mode, as Haiku omits the icon there: the window
  * is not a search to save, it is a record being edited in place.
  */
-tiku_desk_rect_t tiku_trk_find_icon_rect(const tiku_trk_find_t *f,
-                                         tiku_desk_rect_t frame);
+tiku_rect_t tiku_trk_find_icon_rect(const tiku_trk_find_t *f,
+                                         tiku_rect_t frame);
 
 /**
  * @brief What is under a point.
@@ -306,7 +306,7 @@ tiku_desk_rect_t tiku_trk_find_icon_rect(const tiku_trk_find_t *f,
  * @param row Receives the row index for row-owned parts.
  */
 tiku_trk_find_hit_t tiku_trk_find_hit(const tiku_trk_find_t *f,
-                                      tiku_desk_rect_t frame, int x, int y,
+                                      tiku_rect_t frame, int x, int y,
                                       int *row);
 
 /**
@@ -316,7 +316,7 @@ tiku_trk_find_hit_t tiku_trk_find_hit(const tiku_trk_find_t *f,
  *         is handled inside the panel.
  */
 tiku_trk_find_hit_t tiku_trk_find_click(tiku_trk_find_t *f,
-                                        tiku_desk_rect_t frame, int x, int y);
+                                        tiku_rect_t frame, int x, int y);
 
 /** @brief Feed a character to whichever field has the caret. */
 void tiku_trk_find_key(tiku_trk_find_t *f, char ch);

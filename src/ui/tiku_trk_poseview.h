@@ -17,12 +17,12 @@
 
 #include <stdint.h>
 
-#include "tiku_trk_attr.h"
+#include "tiku_attr.h"
 #include "tiku_trk_input.h"
 #include "tiku_trk_match.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 #include "tiku_trk_nodeicon.h"
-#include "tiku_trk_notify.h"
+#include "tiku_notify.h"
 #include "tiku_trk_view_defs.h"
 #include "tiku_trk_repaint.h"
 
@@ -59,11 +59,11 @@ typedef struct {
 
 /** @brief One entry on screen: a Model plus where it is and how it looks. */
 typedef struct {
-    tiku_trk_model_t model;
+    tiku_model_t model;
     /* The node's own typed descriptor, parsed once when the pose loads: it
      * is what turns a reading into "1.5 MiB" or "15h 57m" instead of a bare
      * integer, and what refuses a bad edit before it is sent. */
-    tiku_trk_desc_t  desc;
+    tiku_desc_t  desc;
     /* MA-033: the value shown for a node, cut at the first newline.  The
      * cap is a DISPLAY limit; 255 rather than the source's 1023 because
      * poses are a fixed array and a kilobyte each costs eight megabytes a
@@ -109,7 +109,7 @@ typedef struct {
 typedef struct tiku_trk_poseview tiku_trk_poseview_t;
 
 /** @brief Create a view over @p backend, showing @p path. */
-tiku_trk_poseview_t *tiku_trk_poseview_new(tiku_trk_backend_t *backend,
+tiku_trk_poseview_t *tiku_trk_poseview_new(tiku_backend_t *backend,
                                            const char *path);
 
 void tiku_trk_poseview_free(tiku_trk_poseview_t *v);
@@ -182,7 +182,7 @@ int tiku_trk_poseview_generation(const tiku_trk_poseview_t *v);
  * view stops reloading from a directory once it holds results.
  */
 int tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
-                                  const tiku_trk_model_t *m, int n);
+                                  const tiku_model_t *m, int n);
 
 /**
  * @brief Fill the view from a set the caller assembled (AW-018).
@@ -193,7 +193,7 @@ int tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
  * happen to have paths.
  */
 int tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
-                                 const tiku_trk_model_t *m, int n);
+                                 const tiku_model_t *m, int n);
 
 /**
  * @brief Add one pose that does not live in this view's directory.
@@ -206,7 +206,7 @@ int tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
  * @return 0 when it was added.
  */
 int tiku_trk_poseview_adopt(tiku_trk_poseview_t *v,
-                            const tiku_trk_model_t *m);
+                            const tiku_model_t *m);
 
 /** @brief Whether this view is showing query results. */
 int tiku_trk_poseview_is_query(const tiku_trk_poseview_t *v);
@@ -219,14 +219,14 @@ void tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v,
 
 /** @brief Supply the sidecar store used by synthetic query-layout keys. */
 void tiku_trk_poseview_set_layout_store(tiku_trk_poseview_t *v,
-                                        tiku_trk_store_t *store);
+                                        tiku_store_t *store);
 
 /** @brief State key for this view (folder path or per-query-type layout). */
 const char *tiku_trk_poseview_layout_path(const tiku_trk_poseview_t *v);
 
 /** @brief Install the four first-run query frame/column templates. */
-int tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
-                                             tiku_trk_store_t *store);
+int tiku_trk_poseview_install_query_defaults(tiku_backend_t *backend,
+                                             tiku_store_t *store);
 
 /** @brief Show @p path, keeping the same backend. */
 int tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path);
@@ -688,7 +688,7 @@ int tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v,
  *
  * @param px,py Offsets INSIDE the icon square.
  */
-typedef int (*tiku_trk_hit_fn)(const tiku_trk_model_t *m, int size, int px,
+typedef int (*tiku_trk_hit_fn)(const tiku_model_t *m, int size, int px,
                                int py, void *ctx);
 
 void tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v,
@@ -869,7 +869,7 @@ int tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v,
  * @return TIKU_TRK_NOTIFY_* flags for the owner to act on.
  */
 unsigned tiku_trk_poseview_notify(tiku_trk_poseview_t *v,
-                                  const tiku_trk_event_t *e);
+                                  const tiku_node_event_t *e);
 
 /**
  * @brief Update a query view from a new result set, through the handler.
@@ -879,12 +879,12 @@ unsigned tiku_trk_poseview_notify(tiku_trk_poseview_t *v,
  * updates by the same path a folder window does.
  */
 unsigned tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
-                                         const tiku_trk_model_t *set, int n,
+                                         const tiku_model_t *set, int n,
                                          int64_t now);
 
 /** @brief Apply a batch in arrival order.  @return the OR of the flags. */
 unsigned tiku_trk_poseview_notify_all(tiku_trk_poseview_t *v,
-                                      const tiku_trk_evlist_t *l);
+                                      const tiku_evlist_t *l);
 
 /**
  * @brief Re-list and apply what changed, without rebuilding the view.
@@ -907,7 +907,7 @@ unsigned tiku_trk_poseview_notify_all(tiku_trk_poseview_t *v,
  *                 re-reads instead of trusting it.
  */
 unsigned tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
-                                const tiku_trk_change_t *ch, int nch,
+                                const tiku_model_change_t *ch, int nch,
                                 int complete);
 
 /** @brief Notices held for rows that have not appeared yet. */

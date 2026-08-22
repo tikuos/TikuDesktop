@@ -15,25 +15,25 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_trk_icons.h"
+#include "tiku_icons.h"
 
 int
 main(int argc, char **argv)
 {
-    const tiku_trk_icon_t *icon;
+    const tiku_icon_t *icon;
     FILE *out;
 
     if (argc < 3) {
         int i;
 
         fprintf(stderr, "usage: icon-export <name> <file.hvif>\nnames:");
-        for (i = 0; i < tiku_trk_icons_count(); i++) {
-            fprintf(stderr, " %s", tiku_trk_icons_at(i)->name);
+        for (i = 0; i < tiku_icons_count(); i++) {
+            fprintf(stderr, " %s", tiku_icons_at(i)->name);
         }
         fprintf(stderr, "\n");
         return 2;
     }
-    icon = tiku_trk_icons_find(argv[1]);
+    icon = tiku_icons_find(argv[1]);
     if (icon == NULL) {
         fprintf(stderr, "icon-export: no icon called %s\n", argv[1]);
         return 2;

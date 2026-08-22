@@ -44,8 +44,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "tiku_desk_conduct.h"
-#include "tiku_desk_event.h"
+#include "tiku_conduct.h"
+#include "tiku_event.h"
 
 #define LINE_MAX_CHARS 512
 #define WORDS_MAX      16
@@ -86,9 +86,9 @@ mods_of(char **w, int n, int from)
     int i;
 
     for (i = from; i < n; i++) {
-        if (strcmp(w[i], "ctrl") == 0)       { m |= TIKU_DESK_MOD_CMD; }
-        else if (strcmp(w[i], "shift") == 0) { m |= TIKU_DESK_MOD_SHIFT; }
-        else if (strcmp(w[i], "alt") == 0)   { m |= TIKU_DESK_MOD_OPTION; }
+        if (strcmp(w[i], "ctrl") == 0)       { m |= TIKU_MOD_CMD; }
+        else if (strcmp(w[i], "shift") == 0) { m |= TIKU_MOD_SHIFT; }
+        else if (strcmp(w[i], "alt") == 0)   { m |= TIKU_MOD_OPTION; }
     }
     return m;
 }
@@ -99,21 +99,21 @@ static unsigned
 key_of(const char *name)
 {
     static const struct { const char *name; unsigned key; } named[] = {
-        { "Up", TIKU_DESK_KEY_UP },
-        { "Down", TIKU_DESK_KEY_DOWN },
-        { "Left", TIKU_DESK_KEY_LEFT },
-        { "Right", TIKU_DESK_KEY_RIGHT },
-        { "Home", TIKU_DESK_KEY_HOME },
-        { "End", TIKU_DESK_KEY_END },
-        { "Prior", TIKU_DESK_KEY_PAGE_UP },
-        { "Next", TIKU_DESK_KEY_PAGE_DOWN },
-        { "BackSpace", TIKU_DESK_KEY_BACKSPACE },
-        { "Delete", TIKU_DESK_KEY_DELETE },
-        { "Escape", TIKU_DESK_KEY_ESCAPE },
-        { "Return", TIKU_DESK_KEY_RETURN },
-        { "Tab", TIKU_DESK_KEY_TAB },
-        { "Menu", TIKU_DESK_KEY_MENU },
-        { "F2", TIKU_DESK_KEY_F2 },
+        { "Up", TIKU_KEY_UP },
+        { "Down", TIKU_KEY_DOWN },
+        { "Left", TIKU_KEY_LEFT },
+        { "Right", TIKU_KEY_RIGHT },
+        { "Home", TIKU_KEY_HOME },
+        { "End", TIKU_KEY_END },
+        { "Prior", TIKU_KEY_PAGE_UP },
+        { "Next", TIKU_KEY_PAGE_DOWN },
+        { "BackSpace", TIKU_KEY_BACKSPACE },
+        { "Delete", TIKU_KEY_DELETE },
+        { "Escape", TIKU_KEY_ESCAPE },
+        { "Return", TIKU_KEY_RETURN },
+        { "Tab", TIKU_KEY_TAB },
+        { "Menu", TIKU_KEY_MENU },
+        { "F2", TIKU_KEY_F2 },
         { "space", ' ' }
     };
     size_t i;
@@ -133,31 +133,31 @@ key_of(const char *name)
 }
 
 static void
-pointer(tiku_desk_conduct_client_t *c, int type, int x, int y,
+pointer(tiku_conduct_client_t *c, int type, int x, int y,
         unsigned button)
 {
-    tiku_desk_event_t ev;
+    tiku_event_t ev;
 
     memset(&ev, 0, sizeof ev);
-    ev.type = (tiku_desk_event_type_t)type;
+    ev.type = (tiku_event_type_t)type;
     ev.x = x;
     ev.y = y;
     ev.button = button;
-    (void)tiku_desk_conduct_inject(c, &ev);
+    (void)tiku_conduct_inject(c, &ev);
 }
 
 static void
-keypress(tiku_desk_conduct_client_t *c, unsigned key, unsigned mods)
+keypress(tiku_conduct_client_t *c, unsigned key, unsigned mods)
 {
-    tiku_desk_event_t ev;
+    tiku_event_t ev;
 
     memset(&ev, 0, sizeof ev);
-    ev.type = TIKU_DESK_EVENT_KEY_DOWN;
+    ev.type = TIKU_EVENT_KEY_DOWN;
     ev.key = key;
     ev.modifiers = mods;
-    (void)tiku_desk_conduct_inject(c, &ev);
-    ev.type = TIKU_DESK_EVENT_KEY_UP;
-    (void)tiku_desk_conduct_inject(c, &ev);
+    (void)tiku_conduct_inject(c, &ev);
+    ev.type = TIKU_EVENT_KEY_UP;
+    (void)tiku_conduct_inject(c, &ev);
 }
 
 /** @brief The rest of the line from word @p from, spaces preserved. */
@@ -176,7 +176,7 @@ rest(char **w, int n, int from, char *out, size_t max)
 }
 
 static int
-ask_text(tiku_desk_conduct_client_t *c, const char *name, char *out,
+ask_text(tiku_conduct_client_t *c, const char *name, char *out,
          size_t max)
 {
     /* Emptied first: a question the shell could not answer must read as
@@ -184,7 +184,7 @@ ask_text(tiku_desk_conduct_client_t *c, const char *name, char *out,
     if (max > 0u) {
         out[0] = '\0';
     }
-    return tiku_desk_conduct_query(c, TIKU_DESK_CQ_TEXT, 0, 0, name, NULL,
+    return tiku_conduct_query(c, TIKU_CQ_TEXT, 0, 0, name, NULL,
                                    out, max);
 }
 
@@ -192,7 +192,7 @@ ask_text(tiku_desk_conduct_client_t *c, const char *name, char *out,
  * @brief Put a line in the state a frame needs: raw, and nothing else.
  *
  * VMIN is left where cfmakeraw puts it -- see the note in
- * tiku_desk_conduct_open_tty.  A terminal set to poll answers a quiet
+ * tiku_conduct_open_tty.  A terminal set to poll answers a quiet
  * moment with zero bytes, and zero bytes from a socket means the far end
  * hung up; the two must not be made to look alike.
  */
@@ -271,7 +271,7 @@ spawn_on_line(char **cmd, pid_t *kid)
 int
 main(int argc, char **argv)
 {
-    tiku_desk_conduct_client_t client;
+    tiku_conduct_client_t client;
     const char *sock = NULL;
     const char *tty = NULL;
     const char *path = NULL;
@@ -306,22 +306,22 @@ main(int argc, char **argv)
         int master = spawn_on_line(spawn, &kid);
 
         if (master < 0 ||
-            tiku_desk_conduct_connect_fd(&client, master) != 0) {
+            tiku_conduct_connect_fd(&client, master) != 0) {
             fprintf(stderr, "trk-conduct: cannot start %s on a line\n",
                     spawn[0]);
             (void)fclose(f);
             return 2;
         }
     } else if (tty != NULL) {
-        int line_fd = tiku_desk_conduct_open_tty(tty, 0);
+        int line_fd = tiku_conduct_open_tty(tty, 0);
 
         if (line_fd < 0 ||
-            tiku_desk_conduct_connect_fd(&client, line_fd) != 0) {
+            tiku_conduct_connect_fd(&client, line_fd) != 0) {
             fprintf(stderr, "trk-conduct: cannot speak over %s\n", tty);
             (void)fclose(f);
             return 2;
         }
-    } else if (tiku_desk_conduct_connect(&client, sock, 8000) != 0) {
+    } else if (tiku_conduct_connect(&client, sock, 8000) != 0) {
         /* The shell may still be starting; the wait is what frees the
          * harness from sequencing two processes by hand. */
         fprintf(stderr, "trk-conduct: no shell answered on %s\n", sock);
@@ -333,7 +333,7 @@ main(int argc, char **argv)
         char *w[WORDS_MAX];
         char *save = NULL;
         char *tok;
-        char text[TIKU_DESK_CONDUCT_TEXT];
+        char text[TIKU_CONDUCT_TEXT];
         char arg[LINE_MAX_CHARS];
         int n = 0;
 
@@ -355,19 +355,19 @@ main(int argc, char **argv)
         } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
             turn(atoi(w[1]));
         } else if (strcmp(w[0], "click") == 0 && n >= 3) {
-            pointer(&client, TIKU_DESK_EVENT_POINTER_DOWN, atoi(w[1]),
+            pointer(&client, TIKU_EVENT_POINTER_DOWN, atoi(w[1]),
                     atoi(w[2]), 1u);
-            pointer(&client, TIKU_DESK_EVENT_POINTER_UP, atoi(w[1]),
+            pointer(&client, TIKU_EVENT_POINTER_UP, atoi(w[1]),
                     atoi(w[2]), 1u);
             turn(2);
         } else if (strcmp(w[0], "press") == 0 && n >= 3) {
-            pointer(&client, TIKU_DESK_EVENT_POINTER_DOWN, atoi(w[1]),
+            pointer(&client, TIKU_EVENT_POINTER_DOWN, atoi(w[1]),
                     atoi(w[2]), 1u);
         } else if (strcmp(w[0], "move") == 0 && n >= 3) {
-            pointer(&client, TIKU_DESK_EVENT_POINTER_MOVE, atoi(w[1]),
+            pointer(&client, TIKU_EVENT_POINTER_MOVE, atoi(w[1]),
                     atoi(w[2]), 0u);
         } else if (strcmp(w[0], "release") == 0 && n >= 3) {
-            pointer(&client, TIKU_DESK_EVENT_POINTER_UP, atoi(w[1]),
+            pointer(&client, TIKU_EVENT_POINTER_UP, atoi(w[1]),
                     atoi(w[2]), 1u);
         } else if (strcmp(w[0], "key") == 0 && n >= 2) {
             keypress(&client, key_of(w[1]), mods_of(w, n, 2));
@@ -377,7 +377,7 @@ main(int argc, char **argv)
             int got = 0;
             char saw[32];
 
-            if (!tiku_desk_conduct_query(&client, TIKU_DESK_CQ_PIXEL,
+            if (!tiku_conduct_query(&client, TIKU_CQ_PIXEL,
                                          atoi(w[1]), atoi(w[2]), "",
                                          &got, NULL, 0u)) {
                 verdict(0, "the shell answered no pixel at all", NULL);
@@ -445,7 +445,7 @@ main(int argc, char **argv)
         }
     }
     (void)fclose(f);
-    tiku_desk_conduct_disconnect(&client);
+    tiku_conduct_disconnect(&client);
     if (kid > 0) {
         /* A shell we started on a line is ours to end: the line is gone
          * the moment we are, and a shell left holding a dead cable would

@@ -12,13 +12,13 @@
 
 #include <stddef.h>
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #define TIKU_TRK_NAV_HISTORY_MAX 32
 
 typedef struct {
-    char back[TIKU_TRK_NAV_HISTORY_MAX][TIKU_TRK_PATH_MAX];
-    char forward[TIKU_TRK_NAV_HISTORY_MAX][TIKU_TRK_PATH_MAX];
+    char back[TIKU_TRK_NAV_HISTORY_MAX][TIKU_PATH_MAX];
+    char forward[TIKU_TRK_NAV_HISTORY_MAX][TIKU_PATH_MAX];
     int  nback;
     int  nforward;
 } tiku_trk_navigator_t;
@@ -46,10 +46,10 @@ int tiku_trk_navigator_parent(const char *path, char *out, size_t max);
 
 /** @brief Fill @p out with the current path's parent chain, nearest first. */
 int tiku_trk_navigator_hierarchy(const char *path,
-                                 char out[][TIKU_TRK_PATH_MAX], int max);
+                                 char out[][TIKU_PATH_MAX], int max);
 
 /** @brief Resolve a dropped container, or a dropped leaf's parent. */
-int tiku_trk_navigator_drop_path(const tiku_trk_model_t *model, char *out,
+int tiku_trk_navigator_drop_path(const tiku_model_t *model, char *out,
                                  size_t max);
 
 #endif /* TIKU_TRK_NAVIGATOR_H_ */

@@ -16,8 +16,8 @@
 
 #include <stddef.h>
 
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 /**
  * @brief The node a folder with no background of its own inherits from.
@@ -40,7 +40,7 @@ typedef enum {
 } tiku_trk_bg_mode_t;
 
 typedef struct {
-    char               path[TIKU_TRK_PATH_MAX];
+    char               path[TIKU_PATH_MAX];
     tiku_trk_bg_mode_t mode;
     int                x, y;     /* AT_OFFSET: where its corner sits     */
 } tiku_trk_bg_t;
@@ -56,14 +56,14 @@ int tiku_trk_bg_parse(const char *rec, tiku_trk_bg_t *out);
 int tiku_trk_bg_format(const tiku_trk_bg_t *bg, char *out, size_t max);
 
 /** @brief Whether @p node carries a background at all (AW-016's guard). */
-int tiku_trk_bg_have(tiku_trk_store_t *store, const char *node);
+int tiku_trk_bg_have(tiku_store_t *store, const char *node);
 
 /** @brief Read @p node's background.  @return 1 when there is one. */
-int tiku_trk_bg_load(tiku_trk_store_t *store, const char *node,
+int tiku_trk_bg_load(tiku_store_t *store, const char *node,
                      tiku_trk_bg_t *out);
 
 /** @brief Give @p node a background.  @return 1 when it was written. */
-int tiku_trk_bg_save(tiku_trk_store_t *store, const char *node,
+int tiku_trk_bg_save(tiku_store_t *store, const char *node,
                      const tiku_trk_bg_t *bg);
 
 /**
@@ -94,7 +94,7 @@ int tiku_trk_bg_place(const tiku_trk_bg_t *bg, int view_w, int view_h,
  *
  * @return 1 when one was installed.
  */
-int tiku_trk_bg_install_default(tiku_trk_store_t *store, const char *node,
+int tiku_trk_bg_install_default(tiku_store_t *store, const char *node,
                                 int screen_w, int screen_h);
 
 #endif /* TIKU_TRK_BACKGROUND_H_ */

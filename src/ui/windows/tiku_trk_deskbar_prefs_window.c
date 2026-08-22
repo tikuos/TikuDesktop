@@ -14,7 +14,7 @@
 
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_deskbar_prefs_window.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 
 enum {
     ROW_SORT = 0, ROW_TRACKER, ROW_EXPANDER, ROW_EXPAND_NEW,
@@ -35,18 +35,18 @@ static const char *const label_keys[ROW_COUNT] = {
 };
 
 static int
-inside(tiku_desk_rect_t r, int x, int y)
+inside(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
 static void
-button(tiku_desk_surface_t *surface, tiku_desk_rect_t rect,
+button(tiku_surface_t *surface, tiku_rect_t rect,
        const char *label, int enabled)
 {
     /* The R5 button, not a beveled slab (the toolkit knows the look). */
-    tiku_desk_ui_button(surface, rect, label,
-                        enabled ? 0u : TIKU_DESK_S_DISABLED);
+    tiku_ui_button(surface, rect, label,
+                        enabled ? 0u : TIKU_S_DISABLED);
 }
 
 static int
@@ -86,21 +86,21 @@ apply(tiku_trk_deskbar_prefs_window_t *controller)
                                     &controller->model.value);
     (void)tiku_trk_deskbar_prefs_save(&controller->model,
                                       controller->store);
-    (void)tiku_trk_store_flush(controller->store);
+    (void)tiku_store_flush(controller->store);
     if (controller->dirty != NULL) { *controller->dirty = 1; }
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_deskbar_prefs_window_t *controller = context;
     tiku_trk_deskbar_settings_t *s = &controller->model.value;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    const tiku_font_t *font = tiku_font_plain();
     int row;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     for (row = 0; row < ROW_COUNT; row++) {
         int y = content.y + 12 + row * 29;
         int enabled = row_enabled(controller, row);
@@ -108,32 +108,32 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         char number[24];
 
         if (value != NULL) {
-            tiku_desk_rect_t box = { content.x + 18, y, 13, 13 };
+            tiku_rect_t box = { content.x + 18, y, 13, 13 };
 
-            tiku_desk_fill(surface, box, TIKU_DESK_C_DOC);
-            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
+            tiku_fill(surface, box, TIKU_C_DOC);
+            tiku_frame(surface, box, TIKU_C_TEXT);
             if (*value) {
-                tiku_desk_text(surface, font, box.x + 2, box.y + 11, "x",
-                               TIKU_DESK_C_TEXT);
+                tiku_text(surface, font, box.x + 2, box.y + 11, "x",
+                               TIKU_C_TEXT);
             }
         }
-        tiku_desk_text(surface, font, content.x + 40, y + 12,
-            tiku_trk_str(label_keys[row]),
-            enabled ? TIKU_DESK_C_TEXT
-                    : tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+        tiku_text(surface, font, content.x + 40, y + 12,
+            tiku_str(label_keys[row]),
+            enabled ? TIKU_C_TEXT
+                    : tiku_tint(TIKU_C_PANEL, 1.45f));
         if (row == ROW_ICON) {
             snprintf(number, sizeof number, "-   %d px   +", s->icon_size);
         } else if (row == ROW_FONT) {
             snprintf(number, sizeof number, "-   %d px   +", s->font_size);
         } else if (row >= ROW_DOCS && row <= ROW_APPS) {
             int which = row - ROW_DOCS;
-            tiku_desk_rect_t box = { content.x + 18, y, 13, 13 };
+            tiku_rect_t box = { content.x + 18, y, 13, 13 };
 
-            tiku_desk_fill(surface, box, TIKU_DESK_C_DOC);
-            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
+            tiku_fill(surface, box, TIKU_C_DOC);
+            tiku_frame(surface, box, TIKU_C_TEXT);
             if (s->recent_enabled[which]) {
-                tiku_desk_text(surface, font, box.x + 2, box.y + 11, "x",
-                               TIKU_DESK_C_TEXT);
+                tiku_text(surface, font, box.x + 2, box.y + 11, "x",
+                               TIKU_C_TEXT);
             }
             snprintf(number, sizeof number, "-   %d   +",
                      s->recent_count[which]);
@@ -141,46 +141,46 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             number[0] = '\0';
         }
         if (number[0] != '\0') {
-            tiku_desk_text(surface, font, content.x + 330, y + 12, number,
-                           TIKU_DESK_C_TEXT);
+            tiku_text(surface, font, content.x + 330, y + 12, number,
+                           TIKU_C_TEXT);
         }
     }
     {
-        tiku_desk_rect_t monitor = { content.x + 292, content.y + 392,
+        tiku_rect_t monitor = { content.x + 292, content.y + 392,
                                      116, 82 };
         tiku_trk_db_dock_t dock = tiku_trk_deskbar_dock(controller->deskbar);
         char current[32];
 
-        tiku_desk_fill(surface, monitor, TIKU_DESK_C_DOC);
-        tiku_desk_frame(surface, monitor, TIKU_DESK_C_TEXT);
-        snprintf(current, sizeof current, tiku_trk_str("prefs.deskbar.dock_n"),
+        tiku_fill(surface, monitor, TIKU_C_DOC);
+        tiku_frame(surface, monitor, TIKU_C_TEXT);
+        snprintf(current, sizeof current, tiku_str("prefs.deskbar.dock_n"),
                  (int)dock);
-        tiku_desk_text(surface, font, monitor.x + 29, monitor.y + 45,
-                       current, TIKU_DESK_C_TEXT);
-        tiku_desk_text(surface, font, content.x + 18, content.y + 432,
-                       tiku_trk_str("prefs.deskbar.dock_location"),
-                       TIKU_DESK_C_TEXT);
+        tiku_text(surface, font, monitor.x + 29, monitor.y + 45,
+                       current, TIKU_C_TEXT);
+        tiku_text(surface, font, content.x + 18, content.y + 432,
+                       tiku_str("prefs.deskbar.dock_location"),
+                       TIKU_C_TEXT);
     }
-    button(surface, (tiku_desk_rect_t){ content.x + 18, content.y + 488,
-           112, 26 }, tiku_trk_str("button.defaults"),
+    button(surface, (tiku_rect_t){ content.x + 18, content.y + 488,
+           112, 26 }, tiku_str("button.defaults"),
            tiku_trk_deskbar_prefs_defaultable(&controller->model));
-    button(surface, (tiku_desk_rect_t){ content.x + 140, content.y + 488,
-           100, 26 }, tiku_trk_str("button.revert"),
+    button(surface, (tiku_rect_t){ content.x + 140, content.y + 488,
+           100, 26 }, tiku_str("button.revert"),
            tiku_trk_deskbar_prefs_revertable(&controller->model));
-    button(surface, (tiku_desk_rect_t){ content.x + 278, content.y + 488,
-           142, 26 }, tiku_trk_str("prefs.deskbar.edit_in_tracker"), 1);
+    button(surface, (tiku_rect_t){ content.x + 278, content.y + 488,
+           142, 26 }, tiku_str("prefs.deskbar.edit_in_tracker"), 1);
 }
 
 static int
-event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
+event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
 {
     tiku_trk_deskbar_prefs_window_t *controller = context;
-    tiku_desk_rect_t content = tiku_desk_window_content(window);
+    tiku_rect_t content = tiku_window_content(window);
     int x = event->x - content.x, y = event->y - content.y;
     int row = (y - 12) / 29;
 
-    if (event->type != TIKU_DESK_EVENT_POINTER_DOWN ||
+    if (event->type != TIKU_EVENT_POINTER_DOWN ||
         !inside(content, event->x, event->y)) {
         return 0;
     }
@@ -207,7 +207,7 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 292, 392, 116, 82 }, x, y)) {
+    if (inside((tiku_rect_t){ 292, 392, 116, 82 }, x, y)) {
         tiku_trk_db_dock_t dock = tiku_trk_deskbar_prefs_dock_at(
             x - 292, y - 392, 116, 82,
             tiku_trk_deskbar_dock(controller->deskbar));
@@ -216,19 +216,19 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
         if (controller->dirty != NULL) { *controller->dirty = 1; }
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 18, 488, 112, 26 }, x, y) &&
+    if (inside((tiku_rect_t){ 18, 488, 112, 26 }, x, y) &&
         tiku_trk_deskbar_prefs_defaultable(&controller->model)) {
         tiku_trk_deskbar_prefs_defaults(&controller->model);
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 140, 488, 100, 26 }, x, y) &&
+    if (inside((tiku_rect_t){ 140, 488, 100, 26 }, x, y) &&
         tiku_trk_deskbar_prefs_revertable(&controller->model)) {
         tiku_trk_deskbar_prefs_revert(&controller->model);
         apply(controller);
         return 1;
     }
-    if (inside((tiku_desk_rect_t){ 278, 488, 142, 26 }, x, y)) {
+    if (inside((tiku_rect_t){ 278, 488, 142, 26 }, x, y)) {
         if (controller->open_path != NULL && controller->menu_dir[0] != '\0') {
             controller->open_path(controller->open_context,
                                   controller->menu_dir);
@@ -238,14 +238,14 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
     return 0;
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 saved_frame(tiku_trk_deskbar_prefs_window_t *controller)
 {
     int32_t position[2];
     int found;
 
-    found = tiku_trk_state_read(controller->store, TIKU_TRK_KEY_SESSION,
-            TIKU_TRK_ATTR_DESKBAR_PREFS_FRAME, position, sizeof position) ==
+    found = tiku_state_read(controller->store, TIKU_KEY_SESSION,
+            TIKU_ATTR_DESKBAR_PREFS_FRAME, position, sizeof position) ==
             (int)sizeof position;
     return tiku_trk_deskbar_prefs_frame(found,
         found ? position[0] : 0, found ? position[1] : 0,
@@ -256,8 +256,8 @@ saved_frame(tiku_trk_deskbar_prefs_window_t *controller)
 void
 tiku_trk_deskbar_prefs_window_init(
     tiku_trk_deskbar_prefs_window_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
-    tiku_trk_store_t *store, int screen_w, int screen_h, const char *menu_dir,
+    tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
+    tiku_store_t *store, int screen_w, int screen_h, const char *menu_dir,
     int *dirty, tiku_trk_deskbar_prefs_open_fn open_path, void *open_context)
 {
     memset(controller, 0, sizeof *controller);
@@ -284,10 +284,10 @@ tiku_trk_deskbar_prefs_window_close(
         int32_t position[2] = { controller->window->frame.x,
                                 controller->window->frame.y };
 
-        (void)tiku_trk_state_write(controller->store, TIKU_TRK_KEY_SESSION,
-            TIKU_TRK_ATTR_DESKBAR_PREFS_FRAME, position, sizeof position);
-        (void)tiku_trk_store_flush(controller->store);
-        tiku_desk_workspace_close(controller->workspace, controller->window);
+        (void)tiku_state_write(controller->store, TIKU_KEY_SESSION,
+            TIKU_ATTR_DESKBAR_PREFS_FRAME, position, sizeof position);
+        (void)tiku_store_flush(controller->store);
+        tiku_workspace_close(controller->workspace, controller->window);
     }
     controller->window = NULL;
     if (controller->dirty != NULL) { *controller->dirty = 1; }
@@ -305,7 +305,7 @@ tiku_trk_deskbar_prefs_window_open(
     tiku_trk_deskbar_prefs_window_t *controller)
 {
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_activate(controller->workspace,
+        tiku_workspace_activate(controller->workspace,
                                      controller->window);
         return;
     }
@@ -315,18 +315,18 @@ tiku_trk_deskbar_prefs_window_open(
      * time anything here was touched. */
     (void)tiku_trk_deskbar_prefs_load(&controller->model, controller->store);
     tiku_trk_deskbar_prefs_mark_opened(&controller->model);
-    controller->window = tiku_desk_workspace_open(controller->workspace,
-        tiku_trk_str("title.deskbar_prefs"), saved_frame(controller), draw,
+    controller->window = tiku_workspace_open(controller->workspace,
+        tiku_str("title.deskbar_prefs"), saved_frame(controller), draw,
         controller,
         NULL);
     if (controller->window != NULL) {
-        tiku_desk_window_set_size_controls(controller->window, 0, 0);
-        tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);
+        tiku_window_set_size_controls(controller->window, 0, 0);
+        tiku_window_set_handlers(controller->window, event, NULL, NULL);
     }
     if (controller->dirty != NULL) { *controller->dirty = 1; }
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_deskbar_prefs_window_handle(
     tiku_trk_deskbar_prefs_window_t *controller)
 {

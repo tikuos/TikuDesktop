@@ -28,14 +28,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #define TIKU_TRK_EV_NAME_MAX 96
 
 typedef enum {
-    TIKU_TRK_EV_CREATED = 1,   /**< B_ENTRY_CREATED                       */
-    TIKU_TRK_EV_REMOVED,       /**< B_ENTRY_REMOVED                       */
-    TIKU_TRK_EV_MOVED,         /**< B_ENTRY_MOVED; local backend only     */
+    TIKU_EV_CREATED = 1,   /**< B_ENTRY_CREATED                       */
+    TIKU_EV_REMOVED,       /**< B_ENTRY_REMOVED                       */
+    TIKU_EV_MOVED,         /**< B_ENTRY_MOVED; local backend only     */
     TIKU_TRK_EV_STAT_CHANGED,  /**< B_STAT_CHANGED                        */
     TIKU_TRK_EV_ATTR_CHANGED,  /**< B_ATTR_CHANGED                        */
     TIKU_TRK_EV_VOL_MOUNTED,   /**< B_DEVICE_MOUNTED; a session attached  */
@@ -76,7 +76,7 @@ typedef struct {
     const char    *attr;       /**< xattr name, or NULL = re-read all     */
     char           name[TIKU_TRK_EV_NAME_MAX];
     char           from_name[TIKU_TRK_EV_NAME_MAX];
-} tiku_trk_event_t;
+} tiku_node_event_t;
 
 /* ---------------------------------------------------------------------- *
  * The queue: coalescing, accumulation, and honest overflow
@@ -97,7 +97,7 @@ void tiku_trk_evq_free(tiku_trk_evq_t *q);
  *
  * @return 1 inserted, 0 merged, -1 overflow (which sets the lost flag).
  */
-int tiku_trk_evq_post(tiku_trk_evq_t *q, const tiku_trk_event_t *ev);
+int tiku_trk_evq_post(tiku_trk_evq_t *q, const tiku_node_event_t *ev);
 
 /**
  * @brief Damp a backend's traffic: hold events @p delay_us after the last
@@ -112,7 +112,7 @@ void tiku_trk_evq_set_accum(tiku_trk_evq_t *q, uint8_t backend,
 
 /** @brief Take up to @p max events whose hold expired.  @return count. */
 int tiku_trk_evq_drain(tiku_trk_evq_t *q, int64_t now_us,
-                       tiku_trk_event_t *out, int max);
+                       tiku_node_event_t *out, int max);
 
 /** @brief Liveness is never silently lost: overflow raises this, and the
  *  view answers with a whole-folder Refresh, rate-limited per backend. */
@@ -204,13 +204,13 @@ void tiku_trk_pending_free(tiku_trk_pending_t *c);
 /** @brief Park an event for a node the view does not have yet.  The ref,
  *  the accumulated field mask and the name are kept -- not the payload, so
  *  replay re-reads current state rather than replaying a stale one. */
-void tiku_trk_pending_add(tiku_trk_pending_t *c, const tiku_trk_event_t *ev,
+void tiku_trk_pending_add(tiku_trk_pending_t *c, const tiku_node_event_t *ev,
                           int64_t now_us);
 
 /** @brief Replay everything parked for @p ref, in seq order. */
 int tiku_trk_pending_replay(tiku_trk_pending_t *c,
                             const tiku_trk_ref_t *ref,
-                            tiku_trk_event_t *out, int max);
+                            tiku_node_event_t *out, int max);
 
 /** @brief Expire parked entries.  Called on every accumulator flush as well
  *  as on pose creation, so an entry for a node that never arrives cannot
@@ -226,6 +226,6 @@ struct tiku_trk_poseview;
  *         is the caller's cue to hand it to the pending cache.
  */
 int tiku_trk_poseview_notify(struct tiku_trk_poseview *v,
-                             const tiku_trk_event_t *ev);
+                             const tiku_node_event_t *ev);
 
 #endif /* TIKU_TRK_EVENT_H_ */

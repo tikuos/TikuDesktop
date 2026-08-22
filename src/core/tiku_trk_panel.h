@@ -17,8 +17,8 @@
 #ifndef TIKU_TRK_PANEL_H_
 #define TIKU_TRK_PANEL_H_
 
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 /** @brief What the panel is asking. */
 typedef enum {
@@ -82,7 +82,7 @@ typedef struct {
     tiku_trk_panel_mode_t mode;
     unsigned              flavors;
     int                   multiple;       /* several may be chosen      */
-    char                  dir[TIKU_TRK_PATH_MAX];
+    char                  dir[TIKU_PATH_MAX];
     char                  name[TIKU_TRK_PANEL_NAME_MAX];
     int                   name_len;
     int                   focus;
@@ -90,8 +90,8 @@ typedef struct {
     /* With this on, the Desktop is the top of the tree and going up from
      * the root lands there rather than nowhere (AW-061). */
     int                   desktop_is_root;
-    char                  home[TIKU_TRK_PATH_MAX];
-    char                  desktop[TIKU_TRK_PATH_MAX];
+    char                  home[TIKU_PATH_MAX];
+    char                  desktop[TIKU_PATH_MAX];
 } tiku_trk_panel_t;
 
 /**
@@ -103,7 +103,7 @@ typedef struct {
  */
 void tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
                          unsigned flavors, const char *want,
-                         tiku_trk_backend_t *b, const char *client);
+                         tiku_backend_t *b, const char *client);
 
 /** @brief The window title: "<client>: Open" / "<client>: Save" (AW-064). */
 void tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max);
@@ -115,7 +115,7 @@ void tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max);
  * because entering is what a folder offers.
  */
 const char *tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
-                                        const tiku_trk_model_t *sel, int n);
+                                        const tiku_model_t *sel, int n);
 
 /**
  * @brief Whether the default button may be pressed (AW-053).
@@ -126,7 +126,7 @@ const char *tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
  * when a folder is a legal answer -- the folder being shown IS the answer.
  */
 int tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
-                                  const tiku_trk_model_t *sel, int n);
+                                  const tiku_model_t *sel, int n);
 
 /**
  * @brief Take a single selected file's name into the save field (AW-054).
@@ -138,11 +138,11 @@ int tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
  * @return 1 when the field changed.
  */
 int tiku_trk_panel_pick_name(tiku_trk_panel_t *p,
-                             const tiku_trk_model_t *sel, int n);
+                             const tiku_model_t *sel, int n);
 
 /** @brief What activating @p m does: enter it, or choose it (AW-055). */
 tiku_trk_panel_act_t tiku_trk_panel_activate(const tiku_trk_panel_t *p,
-                                             const tiku_trk_model_t *m);
+                                             const tiku_model_t *m);
 
 /**
  * @brief Check the save destination before anything is written (AW-052).
@@ -151,7 +151,7 @@ tiku_trk_panel_act_t tiku_trk_panel_activate(const tiku_trk_panel_t *p,
  * @return the refusal, or TIKU_TRK_SAVE_OK.
  */
 tiku_trk_save_t tiku_trk_panel_save_check(const tiku_trk_panel_t *p,
-                                          tiku_trk_backend_t *b, char *out,
+                                          tiku_backend_t *b, char *out,
                                           size_t max);
 
 /** @brief The words a refusal is shown with; NULL when there is none. */
@@ -166,7 +166,7 @@ const char *tiku_trk_panel_save_text(tiku_trk_save_t why);
  * @param select Receives the entry to select afterwards, or "".
  * @return 1 when the panel moved.
  */
-int tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_trk_backend_t *b,
+int tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_backend_t *b,
                         const char *path, char *select, size_t max);
 
 /**
@@ -186,7 +186,7 @@ int tiku_trk_panel_dir_moved(tiku_trk_panel_t *p, const char *from,
  * A folder WINDOW closes; a panel falls back instead, because it is in the
  * middle of a question and closing it would answer that question as cancel.
  */
-void tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_trk_backend_t *b);
+void tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_backend_t *b);
 
 /**
  * @brief The folder one level up (AW-061).
@@ -212,7 +212,7 @@ tiku_trk_panel_key_t tiku_trk_panel_key(const tiku_trk_panel_t *p, int key,
  *
  * Most recent first, no duplicates, oldest dropped past the cap.
  */
-void tiku_trk_recent_add(tiku_trk_store_t *s, tiku_trk_recent_t which,
+void tiku_trk_recent_add(tiku_store_t *s, tiku_trk_recent_t which,
                          const char *path);
 
 /**
@@ -223,16 +223,16 @@ void tiku_trk_recent_add(tiku_trk_store_t *s, tiku_trk_recent_t which,
  *            rather than an off-by-one (CW-058).
  * @return how many were written.
  */
-int tiku_trk_recent_list(tiku_trk_store_t *s, tiku_trk_recent_t which,
-                         int cap, char out[][TIKU_TRK_PATH_MAX], int max);
+int tiku_trk_recent_list(tiku_store_t *s, tiku_trk_recent_t which,
+                         int cap, char out[][TIKU_PATH_MAX], int max);
 
 /** @brief Add the folder being shown to the favourites (AW-062). */
 int tiku_trk_panel_add_favorite(const tiku_trk_panel_t *p,
-                                tiku_trk_store_t *s);
+                                tiku_store_t *s);
 
 /** @brief The favourites, in the order they were added. */
-int tiku_trk_panel_favorites(tiku_trk_store_t *s,
-                             char out[][TIKU_TRK_PATH_MAX], int max);
+int tiku_trk_panel_favorites(tiku_store_t *s,
+                             char out[][TIKU_PATH_MAX], int max);
 
 /*---------------------------------------------------------------------------*/
 /* Geometry (AW-063)                                                         */
@@ -253,11 +253,11 @@ int tiku_trk_panel_favorites(tiku_trk_store_t *s,
  *
  * @return 1 when a saved frame was found; @p out is left alone otherwise.
  */
-int tiku_trk_panel_restore_frame(tiku_trk_store_t *s, int *x, int *y,
+int tiku_trk_panel_restore_frame(tiku_store_t *s, int *x, int *y,
                                  int *w, int *h);
 
 /** @brief Save the shared panel frame. */
-void tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w,
+void tiku_trk_panel_save_frame(tiku_store_t *s, int x, int y, int w,
                                int h);
 
 /**
@@ -270,7 +270,7 @@ void tiku_trk_panel_save_frame(tiku_trk_store_t *s, int x, int y, int w,
  * @return how many entries matched: 0 leaves @p out alone, 1 means the
  *         completion is a whole name.
  */
-int tiku_trk_panel_complete(tiku_trk_backend_t *b, const char *dir,
+int tiku_trk_panel_complete(tiku_backend_t *b, const char *dir,
                             const char *prefix, char *out, size_t max);
 
 #endif /* TIKU_TRK_PANEL_H_ */

@@ -411,14 +411,14 @@ PYEOF
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
-                ${lang:+TIKU_DESK_LANG=$lang} ${langdir:+TIKU_DESK_STRINGS=$langdir} \
-                TIKU_DESK_APPS="$appsdir" "$devbin/$bin" \
+                ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" "$devbin/$bin" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} \
-                ${lang:+TIKU_DESK_LANG=$lang} ${langdir:+TIKU_DESK_STRINGS=$langdir} \
-                TIKU_DESK_APPS="$appsdir" "$devbin/$bin" $work \
+                ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" "$devbin/$bin" $work \
                 -script "$s" || fails=$((fails+1))
         fi
     done
@@ -441,7 +441,7 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
-    ( DISPLAY= HOME="$chome" TIKU_DESK_APPS=/tmp/trk_apps \
+    ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         "$root/build/desktop" "$work" -conduct "$csock" \
         > /dev/null 2>&1 & )
     "$root/build/dev/trk-conduct" -s "$csock" -n conducted "$cs" ||
@@ -463,7 +463,7 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
-    DISPLAY= HOME="$chome" TIKU_DESK_APPS=/tmp/trk_apps \
+    DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         "$root/build/dev/trk-conduct" \
         -n "over a line" "$cs" -- "$root/build/desktop" "$work" ||
         fails=$((fails+1))

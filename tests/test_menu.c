@@ -73,7 +73,7 @@ main(void)
     printf("\nhit-testing\n");
     {
         tiku_trk_menu_t m;
-        tiku_desk_rect_t f = { 100, 50, 0, 0 };
+        tiku_rect_t f = { 100, 50, 0, 0 };
         int seam_y;
 
         tiku_trk_menu_clear(&m);
@@ -300,8 +300,8 @@ main(void)
     printf("\nsubmenu placement\n");
     {
         tiku_trk_menu_t m, sub;
-        tiku_desk_rect_t screen = { 0, 0, 640, 480 };
-        tiku_desk_rect_t frame, r;
+        tiku_rect_t screen = { 0, 0, 640, 480 };
+        tiku_rect_t frame, r;
         tiku_trk_sc_ctx_t c = base_ctx();
 
         tiku_trk_menu_clear(&sub);
@@ -310,7 +310,7 @@ main(void)
         (void)tiku_trk_menu_add_submenu(&m, "Arrange by", &sub, 1);
         tiku_trk_menu_measure(&m);
 
-        frame = (tiku_desk_rect_t){ 40, 40, m.width, m.height };
+        frame = (tiku_rect_t){ 40, 40, m.width, m.height };
         r = tiku_trk_menu_place_sub(&m, 0, frame, screen);
         check(r.x >= frame.x + frame.w,
               "a submenu opens off its parent's right edge");
@@ -328,7 +328,7 @@ main(void)
     {
         tiku_trk_cwmenu_t cw;
         tiku_trk_sc_ctx_t c = base_ctx();
-        tiku_trk_model_t vol, file;
+        tiku_model_t vol, file;
         int i;
 
         tiku_trk_cwmenu_init(&cw);
@@ -437,9 +437,9 @@ main(void)
               "and a live menu refresh does not turn it back into Trash");
 
         memset(&vol, 0, sizeof vol);
-        vol.kind = TIKU_TRK_KIND_VOLUME;
+        vol.kind = TIKU_KIND_VOLUME;
         memset(&file, 0, sizeof file);
-        file.kind = TIKU_TRK_KIND_FILE;
+        file.kind = TIKU_KIND_FILE;
         c = base_ctx();
         check(tiku_trk_cwmenu_context(&cw, NULL, &c) == &cw.window_ctx,
               "right-clicking the background gets the window menu");

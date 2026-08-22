@@ -16,18 +16,18 @@
 #include "tiku_trk_drop_controller.h"
 
 #include "tiku_trk_launch.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 #include "tiku_trk_drop_protocol.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 void
 tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
-    tiku_trk_deskbar_t *deskbar, tiku_trk_backend_t *backend,
-    tiku_trk_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
+    tiku_trk_deskbar_t *deskbar, tiku_backend_t *backend,
+    tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
     tiku_trk_cwmenu_t *menus, tiku_trk_alert_t *alert,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_trk_menu_t **popup, tiku_trk_menu_t **popup_sub,
-    tiku_desk_rect_t *popup_frame, char *progress_destination,
+    tiku_rect_t *popup_frame, char *progress_destination,
     size_t progress_destination_size, char *status, size_t status_size,
     int *dirty, int screen_w, int screen_h,
     tiku_trk_drop_color_fn set_color, void *color_context)
@@ -73,7 +73,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
                 unsigned modifiers)
 {
     const char *paths[TIKU_TRK_DRAG_MAX];
-    char destination[TIKU_TRK_PATH_MAX];
+    char destination[TIKU_PATH_MAX];
     tiku_trk_db_drop_t drop;
     int team = -1;
     int count;
@@ -85,7 +85,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
             destination, sizeof destination) == TIKU_TRK_DB_DROP_MENU_DIR) {
         count = drop_paths(controller, paths);
         if (count > 0) {
-            (void)tiku_trk_fs_link(controller->fs, paths, count,
+            (void)tiku_fs_link(controller->fs, paths, count,
                                    destination, 0);
             snprintf(controller->status, controller->status_size,
                      "linking %d item%s into %.40s", count,
@@ -125,9 +125,9 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
             /* Its parents too: a home that has never run this has no
              * .config either, and a link into a folder that cannot be
              * made is a drop that quietly does nothing. */
-            (void)tiku_trk_state_mkparents(destination);
+            (void)tiku_state_mkparents(destination);
             (void)mkdir(destination, 0755);
-            (void)tiku_trk_fs_link(controller->fs, paths, count,
+            (void)tiku_fs_link(controller->fs, paths, count,
                                    destination, 0);
             snprintf(controller->status, controller->status_size,
                      "linking %d item%s into the Deskbar", count,
@@ -144,7 +144,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
         }
         if (!tiku_trk_deskbar_team_accepts(controller->deskbar, team,
                 types, type_count,
-                (modifiers & TIKU_DESK_MOD_CMD) != 0u)) {
+                (modifiers & TIKU_MOD_CMD) != 0u)) {
             snprintf(controller->status, controller->status_size,
                      "%.40s cannot open %s",
                      tiku_trk_deskbar_team_name(controller->deskbar, team),
@@ -159,7 +159,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
     }
     count = 0;
     for (i = 0; i < controller->drag->count; i++) {
-        tiku_trk_model_t model;
+        tiku_model_t model;
 
         if (controller->backend->ops->stat(controller->backend,
                 controller->drag->path[i], &model) == 0 &&
@@ -190,7 +190,7 @@ arrange_in_source(tiku_trk_drop_controller_t *controller, int x, int y,
     }
     dx = x - controller->drag->x0;
     dy = y - controller->drag->y0;
-    snap = (modifiers & TIKU_DESK_MOD_CMD) != 0u;
+    snap = (modifiers & TIKU_MOD_CMD) != 0u;
     count = tiku_trk_poseview_count(folder->view);
     for (i = 0; i < count; i++) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
@@ -236,7 +236,7 @@ static int
 drop_allowed(tiku_trk_drop_controller_t *controller,
              const char *destination, unsigned drag_modifiers)
 {
-    tiku_trk_model_t model;
+    tiku_model_t model;
     const char *reason = NULL;
     char refused[200];
 
@@ -259,18 +259,18 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
 
     if (controller->backend->ops->stat(controller->backend, destination,
                                        &model) != 0 ||
-        !tiku_trk_model_is_mutable_container(&model)) {
+        !tiku_model_is_mutable_container(&model)) {
         reason = "You can't move or copy items to read-only volumes.";
-    } else if (tiku_trk_fs_in_trash(controller->fs, destination)) {
+    } else if (tiku_fs_in_trash(controller->fs, destination)) {
         if ((drag_modifiers & TIKU_TRK_DRAG_MOD_LINK) != 0u) {
             reason = "Sorry, you can't create links in the Trash.";
         } else if ((drag_modifiers & TIKU_TRK_DRAG_MOD_COPY) != 0u) {
             reason = "Sorry, you can't copy items to the Trash.";
         }
     }
-    if (reason == NULL && tiku_trk_fs_check_move(controller->fs,
+    if (reason == NULL && tiku_fs_check_move(controller->fs,
             controller->drag->path[0], destination, refused,
-            sizeof refused) != TIKU_TRK_REFUSE_NONE) {
+            sizeof refused) != TIKU_REFUSE_NONE) {
         reason = refused;
     }
     if (reason != NULL) {
@@ -286,7 +286,7 @@ reserve_icon_landings(tiku_trk_drop_controller_t *controller,
                       const char **paths, int count, int x, int y)
 {
     tiku_trk_folder_window_t *folder = *controller->drop_folder;
-    tiku_desk_rect_t content;
+    tiku_rect_t content;
     int origin_x = 0;
     int origin_y = 0;
     int i;
@@ -360,19 +360,19 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
     const char *paths[TIKU_TRK_DRAG_MAX];
     const char *kept[TIKU_TRK_DRAG_MAX];
     const tiku_trk_app_t *application;
-    int force = (modifiers & TIKU_DESK_MOD_CMD) != 0u;
+    int force = (modifiers & TIKU_MOD_CMD) != 0u;
     int count;
     int n = 0;
     int i;
 
-    tiku_trk_model_t target;
+    tiku_model_t target;
 
     if (controller->launch == NULL) {
         return 0;
     }
     if (controller->backend->ops->stat(controller->backend, destination,
                                        &target) != 0 ||
-        tiku_trk_model_is_container(&target)) {
+        tiku_model_is_container(&target)) {
         return 0;
     }
     application = app_at_path(controller, destination);
@@ -386,7 +386,7 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
     }
     count = drop_paths(controller, paths);
     for (i = 0; i < count; i++) {
-        tiku_trk_model_t model;
+        tiku_model_t model;
 
         if (force) {
             kept[n++] = paths[i];
@@ -415,7 +415,7 @@ tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                  int x, int y, unsigned modifiers,
                                  unsigned button)
 {
-    char destination[TIKU_TRK_PATH_MAX];
+    char destination[TIKU_PATH_MAX];
 
     if (controller == NULL || drop_on_deskbar(controller, x, y, modifiers) ||
         *controller->drop_folder == NULL ||
@@ -434,7 +434,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
                                       unsigned button, int in_view)
 {
     const char *paths[TIKU_TRK_DRAG_MAX];
-    char destination[TIKU_TRK_PATH_MAX];
+    char destination[TIKU_PATH_MAX];
     unsigned drag_modifiers = 0;
     tiku_trk_drop_t action;
     int same_store;
@@ -466,18 +466,18 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
         }
         return;
     }
-    if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) {
+    if ((modifiers & TIKU_MOD_OPTION) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_COPY;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+    if ((modifiers & TIKU_MOD_CMD) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
-    if (tiku_trk_fs_in_trash(controller->fs, destination)) {
+    if (tiku_fs_in_trash(controller->fs, destination)) {
         /* FS-041: a whole volume dragged to the Trash means UNMOUNT, not
          * delete -- the boot volume refuses by name.  Volumes are taken
          * out of the drop here; anything else dragged alongside them
          * still goes to the Trash below. */
-        tiku_trk_volumes_t vols;
+        tiku_volumes_t vols;
         int scanned = 0, vols_dropped = 0, others = 0;
         int di;
 
@@ -486,25 +486,25 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
             char why[200];
 
             if (!scanned) {
-                scanned = (tiku_trk_volumes_scan(&vols) > 0) ? 1 : -1;
+                scanned = (tiku_volumes_scan(&vols) > 0) ? 1 : -1;
             }
-            if (scanned < 0 || !tiku_trk_volume_is_root(&vols, path)) {
+            if (scanned < 0 || !tiku_volume_is_root(&vols, path)) {
                 others++;
                 continue;
             }
             vols_dropped++;
             why[0] = '\0';
-            if (!tiku_trk_volume_may_unmount(&vols, path, why,
+            if (!tiku_volume_may_unmount(&vols, path, why,
                                              sizeof why)) {
                 if (why[0] != '\0') {
                     tiku_trk_alert_open(controller->alert,
                         TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
                         why, "Cancel");
                 }
-            } else if (tiku_trk_volume_unmount(&vols, path, NULL, NULL,
-                           why, sizeof why) == TIKU_TRK_UNMOUNT_OK) {
-                const tiku_trk_volume_t *vol =
-                    tiku_trk_volume_of(&vols, path);
+            } else if (tiku_volume_unmount(&vols, path, NULL, NULL,
+                           why, sizeof why) == TIKU_UNMOUNT_OK) {
+                const tiku_volume_t *vol =
+                    tiku_volume_of(&vols, path);
 
                 snprintf(controller->status, controller->status_size,
                          "unmounted \"%.60s\"",
@@ -523,8 +523,8 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     if (!drop_allowed(controller, destination, drag_modifiers)) {
         return;
     }
-    same_store = tiku_trk_fs_drop_action(controller->fs,
-        controller->drag->path[0], destination, 0) == TIKU_TRK_OP_MOVE;
+    same_store = tiku_fs_drop_action(controller->fs,
+        controller->drag->path[0], destination, 0) == TIKU_OP_MOVE;
     action = tiku_trk_drag_action(controller->drag, destination,
                                   drag_modifiers, same_store);
     count = drop_paths(controller, paths);
@@ -532,28 +532,28 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
         return;
     }
     if (in_view && button == 3u) {
-        tiku_trk_model_t model;
+        tiku_model_t model;
         int destination_read_only = 0;
         int source_read_only = 0;
 
         if (controller->backend->ops->stat(controller->backend,
                 destination, &model) == 0) {
             destination_read_only =
-                !tiku_trk_model_is_mutable_container(&model);
+                !tiku_model_is_mutable_container(&model);
         }
         if (controller->backend->ops->stat(controller->backend,
                 controller->drag->src_dir, &model) == 0) {
-            source_read_only = !tiku_trk_model_is_mutable_container(&model);
+            source_read_only = !tiku_model_is_mutable_container(&model);
         }
         snprintf(controller->destination, sizeof controller->destination,
                  "%s", destination);
         controller->pending = *controller->drag;
         *controller->popup = tiku_trk_cwmenu_drop(controller->menus,
             destination_read_only, source_read_only,
-            (modifiers & TIKU_DESK_MOD_SHIFT) ? TIKU_TRK_MOD_SHIFT : 0u);
+            (modifiers & TIKU_MOD_SHIFT) ? TIKU_TRK_MOD_SHIFT : 0u);
         *controller->popup_sub = NULL;
         *controller->popup_frame = tiku_trk_menu_place(*controller->popup,
-            x, y, (tiku_desk_rect_t){ 0, 0, controller->screen_w,
+            x, y, (tiku_rect_t){ 0, 0, controller->screen_w,
                                       controller->screen_h });
         return;
     }
@@ -564,15 +564,15 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
              controller->progress_destination_size, "%s", destination);
     switch (action) {
     case TIKU_TRK_DROP_COPY:
-        (void)tiku_trk_fs_copy(controller->fs, paths, count, destination,
-                               TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_fs_copy(controller->fs, paths, count, destination,
+                               TIKU_CONFLICT_ASK);
         snprintf(controller->status, controller->status_size,
                  "copying %d item%s", count, count == 1 ? "" : "s");
         break;
     case TIKU_TRK_DROP_LINK: {
-        int relative = (modifiers & TIKU_DESK_MOD_SHIFT) != 0u;
+        int relative = (modifiers & TIKU_MOD_SHIFT) != 0u;
 
-        (void)tiku_trk_fs_link(controller->fs, paths, count, destination,
+        (void)tiku_fs_link(controller->fs, paths, count, destination,
                                relative);
         snprintf(controller->status, controller->status_size,
                  "%s %d item%s", relative ? "linking (relative)" : "linking",
@@ -580,8 +580,8 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
         break;
     }
     default:
-        (void)tiku_trk_fs_move(controller->fs, paths, count, destination,
-                               TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_fs_move(controller->fs, paths, count, destination,
+                               TIKU_CONFLICT_ASK);
         snprintf(controller->status, controller->status_size,
                  "moving %d item%s", count, count == 1 ? "" : "s");
         break;

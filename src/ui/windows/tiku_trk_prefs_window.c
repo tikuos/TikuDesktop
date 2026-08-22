@@ -11,24 +11,24 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_desk_ui.h"
+#include "tiku_ui.h"
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 #include "tiku_trk_prefs_window.h"
 
 /** @brief Draw the preferences model owned by this controller. */
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_prefs_window_t *controller = context;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    const tiku_font_t *font = tiku_font_plain();
     int index[32], count, i, x, y, width, height;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     for (i = 0; i < TIKU_TRK_PAGES; i++) {
-        tiku_desk_rect_t rect;
+        tiku_rect_t rect;
         int selected = (i == (int)controller->page);
 
         tiku_trk_prefs_page_rect(i, &x, &y, &width, &height);
@@ -36,21 +36,21 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         rect.y = content.y + y;
         rect.w = width;
         rect.h = height;
-        tiku_desk_fill(surface, rect, selected ? TIKU_DESK_C_SELECT
-                                               : TIKU_DESK_C_PANEL);
+        tiku_fill(surface, rect, selected ? TIKU_C_SELECT
+                                               : TIKU_C_PANEL);
         {
             const char *name =
                 tiku_trk_prefs_page_name((tiku_trk_page_t)i);
-            unsigned ink = selected ? TIKU_DESK_C_SELTEXT
-                                    : TIKU_DESK_C_TEXT;
+            unsigned ink = selected ? TIKU_C_SELTEXT
+                                    : TIKU_C_TEXT;
 
-            tiku_desk_text(surface, font, rect.x + 6, rect.y + 15, name,
+            tiku_text(surface, font, rect.x + 6, rect.y + 15, name,
                            ink);
             if (tiku_trk_prefs_revertable(&controller->model,
                                           (tiku_trk_page_t)i)) {
                 /* Bold from one face: the same string one pixel over,
                  * the trick the label halo already uses (TS-060). */
-                tiku_desk_text(surface, font, rect.x + 7, rect.y + 15,
+                tiku_text(surface, font, rect.x + 7, rect.y + 15,
                                name, ink);
             }
         }
@@ -59,7 +59,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                                           controller->page, index, 32);
     for (i = 0; i < count; i++) {
         tiku_trk_pref_t *pref = &controller->model.pref[index[i]];
-        tiku_desk_rect_t box;
+        tiku_rect_t box;
 
         tiku_trk_prefs_control_rect(i, &x, &y, &width, &height);
         box.x = content.x + x;
@@ -67,30 +67,30 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         box.w = 12;
         box.h = 12;
         int on = tiku_trk_prefs_control_enabled(&controller->model, pref);
-        unsigned ink = on ? TIKU_DESK_C_TEXT
-                          : tiku_desk_tint(TIKU_DESK_C_TEXT,
-                                           TIKU_DESK_LIGHTEN_2);
+        unsigned ink = on ? TIKU_C_TEXT
+                          : tiku_tint(TIKU_C_TEXT,
+                                           TIKU_LIGHTEN_2);
 
         if (pref->type == TIKU_TRK_PREF_BOOL) {
-            tiku_desk_fill(surface, box,
-                           on ? TIKU_DESK_C_DOC : TIKU_DESK_C_PANEL);
-            tiku_desk_frame(surface, box, ink);
+            tiku_fill(surface, box,
+                           on ? TIKU_C_DOC : TIKU_C_PANEL);
+            tiku_frame(surface, box, ink);
             if (pref->value) {
-                tiku_desk_text(surface, font, box.x + 2, box.y + 11, "x",
+                tiku_text(surface, font, box.x + 2, box.y + 11, "x",
                                ink);
             }
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
             /* The swatch IS the control: it shows the colour and a click
              * walks to the next one. */
-            tiku_desk_fill(surface, box,
-                           (tiku_desk_rgb_t)pref->value & 0xffffffu);
-            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
+            tiku_fill(surface, box,
+                           (tiku_rgb_t)pref->value & 0xffffffu);
+            tiku_frame(surface, box, TIKU_C_TEXT);
         }
-        tiku_desk_text(surface, font, content.x + x + 18,
+        tiku_text(surface, font, content.x + x + 18,
                        content.y + y + 14, pref->name, ink);
     }
     for (i = 0; i < 2; i++) {
-        tiku_desk_rect_t button;
+        tiku_rect_t button;
         int enabled = i ? tiku_trk_prefs_any_revertable(&controller->model)
                         : tiku_trk_prefs_any_defaultable(&controller->model);
 
@@ -99,26 +99,26 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         button.y = content.y + y;
         button.w = width;
         button.h = height;
-        tiku_desk_ui_button(surface, button, i ? tiku_trk_str("button.revert") : tiku_trk_str("button.defaults"),
-                            enabled ? 0u : TIKU_DESK_S_DISABLED);
+        tiku_ui_button(surface, button, i ? tiku_str("button.revert") : tiku_str("button.defaults"),
+                            enabled ? 0u : TIKU_S_DISABLED);
     }
 }
 
 /** @brief Apply one pointer action and persist it immediately. */
 static int
-event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
+event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
 {
     tiku_trk_prefs_window_t *controller = context;
-    tiku_desk_rect_t content;
+    tiku_rect_t content;
     tiku_trk_pref_hit_t hit;
     int which = -1;
 
-    if (event->type != TIKU_DESK_EVENT_POINTER_DOWN ||
+    if (event->type != TIKU_EVENT_POINTER_DOWN ||
         (controller->blocked != NULL && *controller->blocked)) {
         return 0;
     }
-    content = tiku_desk_window_content(window);
+    content = tiku_window_content(window);
     hit = tiku_trk_prefs_hit(&controller->model, controller->page,
                              event->x - content.x, event->y - content.y,
                              &which);
@@ -163,7 +163,7 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
 
 void
 tiku_trk_prefs_window_init(tiku_trk_prefs_window_t *controller,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     const char *settings_path, int *dirty, const int *blocked)
 {
     memset(controller, 0, sizeof *controller);
@@ -185,7 +185,7 @@ void
 tiku_trk_prefs_window_destroy(tiku_trk_prefs_window_t *controller)
 {
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_close(controller->workspace, controller->window);
+        tiku_workspace_close(controller->workspace, controller->window);
     }
     controller->window = NULL;
     tiku_trk_prefs_free(&controller->model);
@@ -197,7 +197,7 @@ tiku_trk_prefs_window_model(tiku_trk_prefs_window_t *controller)
     return &controller->model;
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_prefs_window_handle(tiku_trk_prefs_window_t *controller)
 {
     return controller->window;
@@ -206,10 +206,10 @@ tiku_trk_prefs_window_handle(tiku_trk_prefs_window_t *controller)
 void
 tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller)
 {
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
 
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_activate(controller->workspace,
+        tiku_workspace_activate(controller->workspace,
                                      controller->window);
         return;
     }
@@ -218,10 +218,10 @@ tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller)
     frame.w = TIKU_TRK_PREF_W;
     frame.h = TIKU_TRK_PREF_H + 26;
     tiku_trk_prefs_mark_opened(&controller->model);
-    controller->window = tiku_desk_workspace_open(controller->workspace,
-        tiku_trk_str("title.tracker_prefs"), frame, draw, controller, NULL);
+    controller->window = tiku_workspace_open(controller->workspace,
+        tiku_str("title.tracker_prefs"), frame, draw, controller, NULL);
     if (controller->window != NULL) {
-        tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);
+        tiku_window_set_handlers(controller->window, event, NULL, NULL);
     }
 }
 
@@ -232,6 +232,6 @@ tiku_trk_prefs_window_close(tiku_trk_prefs_window_t *controller)
         !controller->window->open) {
         return;
     }
-    tiku_desk_workspace_close(controller->workspace, controller->window);
+    tiku_workspace_close(controller->workspace, controller->window);
     controller->window = NULL;
 }

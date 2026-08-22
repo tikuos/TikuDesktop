@@ -17,7 +17,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "tiku_desk_app.h"
+#include "tiku_app.h"
 
 static int fails;
 
@@ -48,7 +48,7 @@ build_so(const char *path, const char *body)
     if (f == NULL) {
         return -1;
     }
-    (void)fprintf(f, "#include \"tiku_desk_app.h\"\n%s\n", body);
+    (void)fprintf(f, "#include \"tiku_app.h\"\n%s\n", body);
     (void)fclose(f);
     snprintf(command, sizeof command,
              "cc -std=gnu11 -fPIC -shared -I../kits/application -I../kits/interface -I../kits/support -o %s %s "
@@ -59,60 +59,60 @@ build_so(const char *path, const char *body)
 int
 main(void)
 {
-    const tiku_desk_app_descriptor_t *app;
+    const tiku_app_descriptor_t *app;
     char why[256];
 
     printf("loading an application from a shared object (DEV-006)\n");
 
     if (build_so("/tmp/trk_load_good.so",
-                 "static int s(void **st, const tiku_desk_app_services_t *v)"
+                 "static int s(void **st, const tiku_app_services_t *v)"
                  "{ (void)st; (void)v; return 0; }\n"
-                 "static const tiku_desk_app_descriptor_t a = {\n"
+                 "static const tiku_app_descriptor_t a = {\n"
                  "  .id = \"org.tikuos.test.loaded\", .name = \"Loaded\",\n"
                  "  .start = s };\n"
-                 "const tiku_desk_app_export_t tiku_desk_app_v1 = {\n"
-                 "  TIKU_DESK_APP_ABI,\n"
-                 "  (uint32_t)sizeof(tiku_desk_app_descriptor_t), &a };\n")
+                 "const tiku_app_export_t tiku_app_v1 = {\n"
+                 "  TIKU_APP_ABI,\n"
+                 "  (uint32_t)sizeof(tiku_app_descriptor_t), &a };\n")
         != 0) {
         printf("  [FAIL] cannot build the fixture object\n");
         return 1;
     }
     why[0] = '\0';
-    app = tiku_desk_app_load("/tmp/trk_load_good.so", why, sizeof why);
+    app = tiku_app_load("/tmp/trk_load_good.so", why, sizeof why);
     check(app != NULL && strcmp(app->name, "Loaded") == 0,
           "a well-formed object hands over its application");
     check(app != NULL && app->start != NULL,
           "with its entry points intact across the boundary");
 
     (void)build_so("/tmp/trk_load_abi.so",
-                   "static const tiku_desk_app_descriptor_t a = {\n"
+                   "static const tiku_app_descriptor_t a = {\n"
                    "  .id = \"x\", .name = \"X\" };\n"
-                   "const tiku_desk_app_export_t tiku_desk_app_v1 = {\n"
-                   "  TIKU_DESK_APP_ABI + 1u,\n"
-                   "  (uint32_t)sizeof(tiku_desk_app_descriptor_t), &a };\n");
+                   "const tiku_app_export_t tiku_app_v1 = {\n"
+                   "  TIKU_APP_ABI + 1u,\n"
+                   "  (uint32_t)sizeof(tiku_app_descriptor_t), &a };\n");
     why[0] = '\0';
-    app = tiku_desk_app_load("/tmp/trk_load_abi.so", why, sizeof why);
+    app = tiku_app_load("/tmp/trk_load_abi.so", why, sizeof why);
     check(app == NULL && why[0] != '\0',
           "an object built for another interface is refused, and says so");
 
     (void)build_so("/tmp/trk_load_size.so",
-                   "static const tiku_desk_app_descriptor_t a = {\n"
+                   "static const tiku_app_descriptor_t a = {\n"
                    "  .id = \"x\", .name = \"X\" };\n"
-                   "const tiku_desk_app_export_t tiku_desk_app_v1 = {\n"
-                   "  TIKU_DESK_APP_ABI, 8u, &a };\n");
+                   "const tiku_app_export_t tiku_app_v1 = {\n"
+                   "  TIKU_APP_ABI, 8u, &a };\n");
     why[0] = '\0';
-    app = tiku_desk_app_load("/tmp/trk_load_size.so", why, sizeof why);
+    app = tiku_app_load("/tmp/trk_load_size.so", why, sizeof why);
     check(app == NULL && why[0] != '\0',
           "so is one whose descriptor is a different size here");
 
     (void)build_so("/tmp/trk_load_bare.so", "int nothing_useful = 1;\n");
     why[0] = '\0';
-    app = tiku_desk_app_load("/tmp/trk_load_bare.so", why, sizeof why);
+    app = tiku_app_load("/tmp/trk_load_bare.so", why, sizeof why);
     check(app == NULL && why[0] != '\0',
           "an object exporting no application is refused by name");
 
     why[0] = '\0';
-    app = tiku_desk_app_load("/tmp/trk_load_absent.so", why, sizeof why);
+    app = tiku_app_load("/tmp/trk_load_absent.so", why, sizeof why);
     check(app == NULL && why[0] != '\0',
           "and a file that is not there reports why, rather than crashing");
 

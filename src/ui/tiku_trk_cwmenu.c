@@ -9,8 +9,8 @@
  */
 
 #include "tiku_trk_cwmenu.h"
-#include "tiku_trk_strings.h"
-#include "tiku_trk_volume.h"
+#include "tiku_strings.h"
+#include "tiku_volume.h"
 #include "tiku_trk_view_defs.h"
 
 #include <stdio.h>
@@ -40,26 +40,26 @@ tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw)
     }
     tiku_trk_menubar_init(&cw->bar);
     snprintf(cw->file.title, sizeof cw->file.title, "%s",
-             tiku_trk_str("menu.file"));
+             tiku_str("menu.file"));
     snprintf(cw->new_menu.title, sizeof cw->new_menu.title, "%s",
-             tiku_trk_str("menu.new"));
+             tiku_str("menu.new"));
     snprintf(cw->templates.title, sizeof cw->templates.title, "%s",
-             tiku_trk_str("menu.templates"));
+             tiku_str("menu.templates"));
     snprintf(cw->window.title, sizeof cw->window.title, "%s",
-             tiku_trk_str("menu.window"));
+             tiku_str("menu.window"));
     snprintf(cw->attributes.title, sizeof cw->attributes.title, "%s",
-             tiku_trk_str("menu.attributes"));
+             tiku_str("menu.attributes"));
     snprintf(cw->addons.title, sizeof cw->addons.title, "%s",
-             tiku_trk_str("menu.add_ons"));
-    (void)tiku_trk_menu_add(&cw->addons, tiku_trk_str("menu.no_add_ons"), TIKU_TRK_CMD_NONE,
+             tiku_str("menu.add_ons"));
+    (void)tiku_trk_menu_add(&cw->addons, tiku_str("menu.no_add_ons"), TIKU_TRK_CMD_NONE,
                             0, 0u, 0);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->file);
     (void)tiku_trk_menubar_add(&cw->bar, &cw->window);
 }
 
 typedef struct {
-    char name[TIKU_TRK_NAME_MAX];
-    char path[TIKU_TRK_PATH_MAX];
+    char name[TIKU_NAME_MAX];
+    char path[TIKU_PATH_MAX];
     int is_dir;
 } template_child_t;
 
@@ -127,7 +127,7 @@ template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
     }
     while ((ent = readdir(dir)) != NULL && n < 128) {
         struct stat st;
-        char path[TIKU_TRK_PATH_MAX];
+        char path[TIKU_PATH_MAX];
 
         if (ent->d_name[0] == '.' || ent->d_name[0] == '\0') {
             continue;
@@ -196,7 +196,7 @@ template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
 
         if (command >= 0) {
             (void)tiku_trk_menu_add_separator(menu);
-            (void)tiku_trk_menu_add(menu, tiku_trk_str("menu.add_new_submenu"),
+            (void)tiku_trk_menu_add(menu, tiku_str("menu.add_new_submenu"),
                                     command,
                                     0, 0u, 1);
         }
@@ -380,7 +380,7 @@ add_open_with(tiku_trk_cwmenu_t *cw, tiku_trk_menu_t *m,
               const tiku_trk_sc_ctx_t *c)
 {
     if (cw->open_with.count > 0) {
-        (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.open_with"),
+        (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.open_with"),
                                         &cw->open_with,
                                         c->selection > 0);
     } else {
@@ -403,7 +403,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_FIND);
     if (!c->is_query) {
         if (cw->templates.count > 0) {
-            (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.new"),
+            (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.new"),
                                             &cw->new_menu,
                                             tiku_trk_sc_enabled(
                                                 TIKU_TRK_CMD_NEW_FOLDER, c));
@@ -420,7 +420,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
     if (c->selection_is_volume) {
-        (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.mount"),
+        (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.mount"),
                                         &cw->mount_menu, 1);
         ADD(m, TIKU_TRK_CMD_UNMOUNT);
     }
@@ -446,7 +446,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         SEP(m);
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 }
 
 /** @brief The New submenu combines the built-in folder and user templates. */
@@ -460,12 +460,12 @@ build_new(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_NEW_FOLDER);
     if (cw->templates.count > 0) {
         SEP(m);
-        (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.templates"),
+        (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.templates"),
                                         &cw->templates,
                                         writable);
     }
     SEP(m);
-    (void)tiku_trk_menu_add(m, tiku_trk_str("cmd.edit_templates"),
+    (void)tiku_trk_menu_add(m, tiku_str("cmd.edit_templates"),
                             TIKU_TRK_CMD_EDIT_TEMPLATES, 0, 0u,
                             cw->templates_root[0] != '\0');
 }
@@ -492,13 +492,13 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE);
         return;
     }
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.icon_view"),
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.icon_view"),
                                     &cw->icon_size, 1);
     ADD(m, TIKU_TRK_CMD_MINI_ICON_VIEW);
     ADD(m, TIKU_TRK_CMD_LIST_VIEW);
     SEP(m);
     ADD(m, TIKU_TRK_CMD_RESIZE_TO_FIT);
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.arrange_by"),
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.arrange_by"),
                                     &cw->arrange,
                                     tiku_trk_sc_enabled(
                                         TIKU_TRK_CMD_ARRANGE_BY, c));
@@ -617,7 +617,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_IDENTIFY);
     }
 
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 
     /* On empty window background. */
     m = &cw->window_ctx;
@@ -642,7 +642,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
             }
         }
         if (c->view_mode != TIKU_TRK_MODE_LIST) {
-            (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.arrange_by"),
+            (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.arrange_by"),
                                     &cw->arrange,
                                             1);
         }
@@ -659,10 +659,10 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         if (c->is_desktop || c->is_root) {
             /* After Select all, as the source inserts it there (CW-034). */
             SEP(m);
-            (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.mount"),
+            (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.mount"),
                                         &cw->mount_menu, 1);
         }
-        (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
+        (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
     }
 
     /* On a volume or the root: no clipboard, no trashing. */
@@ -677,9 +677,9 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     if (c->selection_is_volume) {
         ADD(m, TIKU_TRK_CMD_UNMOUNT);
     }
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("cmd.mount"),
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("cmd.mount"),
                                         &cw->mount_menu, 1);
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 
     /* On the Trash itself: three items, and Empty is the first. */
     m = &cw->trash_ctx;
@@ -690,16 +690,16 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
      * and the item is present only when there is one (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
-    (void)tiku_trk_menu_add_submenu(m, tiku_trk_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
+    (void)tiku_trk_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 }
 
 /** @brief Mount >: every partition, mounted ones marked (CW-034). */
 static void
 build_mount_menu(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
-    tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+    tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
     (void)c;
-    int n = tiku_trk_partitions_scan(part, TIKU_TRK_MOUNT_PART_MAX);
+    int n = tiku_partitions_scan(part, TIKU_TRK_MOUNT_PART_MAX);
     int i;
 
     tiku_trk_menu_clear(&cw->mount_menu);
@@ -759,7 +759,7 @@ tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 }
 
 tiku_trk_menu_t *
-tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw, const tiku_trk_model_t *m,
+tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw, const tiku_model_t *m,
                         const tiku_trk_sc_ctx_t *c)
 {
     if (cw == NULL) {
@@ -769,11 +769,11 @@ tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw, const tiku_trk_model_t *m,
     if (m == NULL) {
         return &cw->window_ctx;      /* empty background                    */
     }
-    if (m->kind == TIKU_TRK_KIND_TRASH) {
+    if (m->kind == TIKU_KIND_TRASH) {
         return &cw->trash_ctx;
     }
-    if (m->kind == TIKU_TRK_KIND_VOLUME ||
-        m->kind == TIKU_TRK_KIND_ROOT) {
+    if (m->kind == TIKU_KIND_VOLUME ||
+        m->kind == TIKU_KIND_ROOT) {
         return &cw->volume_ctx;
     }
     return &cw->pose_ctx;

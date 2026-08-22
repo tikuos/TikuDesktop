@@ -17,7 +17,7 @@
 #ifndef TIKU_TRK_ALERT_H_
 #define TIKU_TRK_ALERT_H_
 
-#include "tiku_trk_fs.h"
+#include "tiku_fs.h"
 
 /** @brief How many buttons an alert can carry. */
 #define TIKU_TRK_ALERT_BUTTONS 4
@@ -83,11 +83,11 @@ void tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind,
  * the shape the engine already worked out (FS-018, FS-019).
  */
 void tiku_trk_alert_for_conflict(tiku_trk_alert_t *a,
-                                 const tiku_trk_progress_t *pr);
+                                 const tiku_progress_t *pr);
 
 /** @brief Build the alert a failed item asks (FS-035). */
 void tiku_trk_alert_for_error(tiku_trk_alert_t *a,
-                              const tiku_trk_progress_t *pr);
+                              const tiku_progress_t *pr);
 
 /** @brief Which button a point is over, or -1. */
 int tiku_trk_alert_button_at(const tiku_trk_alert_t *a, int w, int h,
@@ -100,9 +100,9 @@ void tiku_trk_alert_button_rect(const tiku_trk_alert_t *a, int i, int w,
 /**
  * @brief Answer the collision alert; maps the chosen button to the engine.
  *
- * @return the conflict answer to hand to tiku_trk_fs_resolve().
+ * @return the conflict answer to hand to tiku_fs_resolve().
  */
-tiku_trk_conflict_t tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a);
+tiku_conflict_t tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a);
 
 /*---------------------------------------------------------------------------*/
 /* The progress window                                                        */
@@ -130,8 +130,8 @@ tiku_trk_conflict_t tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a);
 typedef struct {
     int   used;
     char  caption[48];              /* "Copying: ", "Moving: " ...        */
-    char  current[TIKU_TRK_PATH_MAX];
-    char  dest[TIKU_TRK_PATH_MAX];
+    char  current[TIKU_PATH_MAX];
+    char  dest[TIKU_PATH_MAX];
     int   done, total;
     int   paused;
     /* A rolling mean rather than the last sample: a copy that hits one
@@ -153,7 +153,7 @@ void tiku_trk_progress_reset(tiku_trk_progress_win_t *p);
 /**
  * @brief Whether a job of @p op over @p items should show a window at all.
  */
-int tiku_trk_progress_wanted(tiku_trk_op_t op, int items);
+int tiku_trk_progress_wanted(tiku_op_t op, int items);
 
 /** @brief Note that @p bytes have been transferred by row @p i, at @p now. */
 void tiku_trk_progress_sample(tiku_trk_progress_win_t *p, int i,
@@ -180,7 +180,7 @@ int64_t tiku_trk_progress_eta(const tiku_trk_progress_win_t *p, int i);
 int tiku_trk_progress_show_speed(int64_t since_open);
 
 /** @brief The caption a job of kind @p op shows. */
-const char *tiku_trk_progress_caption(tiku_trk_op_t op);
+const char *tiku_trk_progress_caption(tiku_op_t op);
 
 /** @brief What a click on a progress row landed on. */
 typedef enum {
@@ -210,7 +210,7 @@ const char *tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p,
  * is the first job and closing it when the last one ends (FS-072).
  */
 void tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
-                              const tiku_trk_progress_t *pr, int busy,
+                              const tiku_progress_t *pr, int busy,
                               const char *dest);
 
 #endif /* TIKU_TRK_ALERT_H_ */

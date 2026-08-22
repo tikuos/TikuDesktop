@@ -18,7 +18,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "tiku_desk_ttf.h"
+#include "tiku_ttf.h"
 
 static int fails;
 
@@ -55,7 +55,7 @@ pick(const char *const *paths, int n)
  * this is the check that notices.
  */
 static int
-has_hole(const tiku_desk_ttf_glyph_t *g)
+has_hole(const tiku_ttf_glyph_t *g)
 {
     int cx = g->w / 2, cy = g->h / 2;
 
@@ -71,7 +71,7 @@ has_hole(const tiku_desk_ttf_glyph_t *g)
 
 /** @brief How much ink a rasterised glyph carries. */
 static long
-ink_of(const tiku_desk_ttf_glyph_t *g)
+ink_of(const tiku_ttf_glyph_t *g)
 {
     long sum = 0;
     int i;
@@ -98,7 +98,7 @@ main(void)
         "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf"
     };
     const char *path = pick(sans, 3);
-    tiku_desk_ttf_t *ttf;
+    tiku_ttf_t *ttf;
 
     printf("reading a font somebody dropped in (DEV-012)\n");
     if (path == NULL) {
@@ -106,39 +106,39 @@ main(void)
         return 0;
     }
 
-    check(tiku_desk_ttf_is_font(path), "DEV-012",
+    check(tiku_ttf_is_font(path), "DEV-012",
           "a face is judged by what it holds, not what it is called");
-    check(!tiku_desk_ttf_is_font("/etc/hostname") &&
-          !tiku_desk_ttf_is_font("/no/such/file"), "DEV-012",
+    check(!tiku_ttf_is_font("/etc/hostname") &&
+          !tiku_ttf_is_font("/no/such/file"), "DEV-012",
           "so a file that is not one is turned away before it is read");
 
-    ttf = tiku_desk_ttf_open(path);
+    ttf = tiku_ttf_open(path);
     check(ttf != NULL, "DEV-012", "and one that is opens");
     if (ttf == NULL) {
         printf("\nFAILURES\n");
         return 1;
     }
-    check(tiku_desk_ttf_family(ttf) != NULL &&
-          strlen(tiku_desk_ttf_family(ttf)) > 0, "DEV-012",
+    check(tiku_ttf_family(ttf) != NULL &&
+          strlen(tiku_ttf_family(ttf)) > 0, "DEV-012",
           "the file says what family it belongs to, out of its own table");
     {
         int ascent = 0, height = 0;
 
-        tiku_desk_ttf_metrics(ttf, 12, &ascent, &height);
+        tiku_ttf_metrics(ttf, 12, &ascent, &height);
         check(height >= 10 && height <= 20 && ascent > 0 &&
               ascent < height, "DEV-012",
               "and how tall a line of it is at a size we would ask for");
     }
 
-    check(tiku_desk_ttf_has(ttf, 'A') && tiku_desk_ttf_has(ttf, 0xE9u),
+    check(tiku_ttf_has(ttf, 'A') && tiku_ttf_has(ttf, 0xE9u),
           "DEV-012", "the character map answers for a letter and an accent");
-    check(!tiku_desk_ttf_has(ttf, 0x10FFFDu), "DEV-012",
+    check(!tiku_ttf_has(ttf, 0x10FFFDu), "DEV-012",
           "and says no rather than something for one it has not got");
 
     {
-        tiku_desk_ttf_glyph_t a, space, acute;
+        tiku_ttf_glyph_t a, space, acute;
 
-        check(tiku_desk_ttf_render(ttf, 'A', 16, &a) && a.cover != NULL &&
+        check(tiku_ttf_render(ttf, 'A', 16, &a) && a.cover != NULL &&
               ink_of(&a) > 0, "DEV-012",
               "a letter rasterises to real coverage, not an empty box");
         /* The coverage box carries a pixel of margin each side, so it
@@ -152,43 +152,43 @@ main(void)
         /* An accented letter is a COMPOSITE: the e and the acute are two
          * glyphs placed by a third, and a parser that ignored that would
          * draw a bare e. */
-        check(tiku_desk_ttf_render(ttf, 0xE9u, 16, &acute) &&
+        check(tiku_ttf_render(ttf, 0xE9u, 16, &acute) &&
               acute.cover != NULL && ink_of(&acute) > 0, "DEV-012",
               "an accented letter rasterises too, though it is composite");
         check(acute.h > a.h - 4, "DEV-012",
               "and is taller than its bare letter: the accent is on it");
 
         {
-            tiku_desk_ttf_glyph_t ring;
+            tiku_ttf_glyph_t ring;
 
-            check(tiku_desk_ttf_render(ttf, 'O', 28, &ring) &&
+            check(tiku_ttf_render(ttf, 'O', 28, &ring) &&
                   has_hole(&ring), "DEV-012",
                   "a capital O is a ring here too, drawn from quadratics");
-            tiku_desk_ttf_free_glyph(&ring);
+            tiku_ttf_free_glyph(&ring);
         }
-        check(tiku_desk_ttf_render(ttf, ' ', 16, &space) &&
+        check(tiku_ttf_render(ttf, ' ', 16, &space) &&
               space.adv > 0 && (space.cover == NULL ||
                                 ink_of(&space) == 0), "DEV-012",
               "a space is an advance with no ink, and not a failure");
 
-        tiku_desk_ttf_free_glyph(&a);
-        tiku_desk_ttf_free_glyph(&acute);
-        tiku_desk_ttf_free_glyph(&space);
+        tiku_ttf_free_glyph(&a);
+        tiku_ttf_free_glyph(&acute);
+        tiku_ttf_free_glyph(&space);
     }
 
     /* Bigger is bigger: the outline is scaled, not a bitmap blown up. */
     {
-        tiku_desk_ttf_glyph_t small, big;
+        tiku_ttf_glyph_t small, big;
 
-        if (tiku_desk_ttf_render(ttf, 'H', 10, &small) &&
-            tiku_desk_ttf_render(ttf, 'H', 40, &big)) {
+        if (tiku_ttf_render(ttf, 'H', 10, &small) &&
+            tiku_ttf_render(ttf, 'H', 40, &big)) {
             check(big.h > small.h * 3 && big.adv > small.adv * 3,
                   "DEV-012", "and a size is a size: the outline is scaled");
-            tiku_desk_ttf_free_glyph(&small);
-            tiku_desk_ttf_free_glyph(&big);
+            tiku_ttf_free_glyph(&small);
+            tiku_ttf_free_glyph(&big);
         }
     }
-    tiku_desk_ttf_close(ttf);
+    tiku_ttf_close(ttf);
 
     /*
      * A VARIABLE font, whose outlines are CFF2 -- the same charstrings
@@ -205,19 +205,19 @@ main(void)
             "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf"
         };
         const char *path2 = pick(vf, 3);
-        tiku_desk_ttf_t *var = (path2 != NULL) ? tiku_desk_ttf_open(path2)
+        tiku_ttf_t *var = (path2 != NULL) ? tiku_ttf_open(path2)
                                                : NULL;
 
         check(path2 == NULL || var != NULL, "DEV-012",
               "a variable font opens: its default instance is a face");
         if (var != NULL) {
-            tiku_desk_ttf_glyph_t ring;
+            tiku_ttf_glyph_t ring;
 
-            check(tiku_desk_ttf_render(var, 'O', 28, &ring) &&
+            check(tiku_ttf_render(var, 'O', 28, &ring) &&
                   ring.cover != NULL && has_hole(&ring), "DEV-012",
                   "and draws a ring for an O");
-            tiku_desk_ttf_free_glyph(&ring);
-            tiku_desk_ttf_close(var);
+            tiku_ttf_free_glyph(&ring);
+            tiku_ttf_close(var);
         }
         /*
          * The proof it draws the DEFAULT instance right, and not just
@@ -236,15 +236,15 @@ main(void)
             struct stat sv, ss;
 
             if (stat(vpath, &sv) == 0 && stat(spath, &ss) == 0) {
-                tiku_desk_ttf_t *tv = tiku_desk_ttf_open(vpath);
-                tiku_desk_ttf_t *ts = tiku_desk_ttf_open(spath);
-                tiku_desk_ttf_glyph_t gv, gs;
+                tiku_ttf_t *tv = tiku_ttf_open(vpath);
+                tiku_ttf_t *ts = tiku_ttf_open(spath);
+                tiku_ttf_glyph_t gv, gs;
                 long iv = 0, is = 0;
                 int k;
 
                 if (tv != NULL && ts != NULL) {
-                    int drewv = tiku_desk_ttf_render(tv, 'g', 20, &gv);
-                    int drews = tiku_desk_ttf_render(ts, 'g', 20, &gs);
+                    int drewv = tiku_ttf_render(tv, 'g', 20, &gv);
+                    int drews = tiku_ttf_render(ts, 'g', 20, &gs);
 
                     /* The ink is counted OUTSIDE the guard: a broken
                      * blend renders a g with no cover at all, and the
@@ -259,11 +259,11 @@ main(void)
                           iv > is - is / 6 && iv < is + is / 6, "DEV-012",
                           "the default instance of a variable font draws "
                           "the same as the static font of its design");
-                    if (drewv) { tiku_desk_ttf_free_glyph(&gv); }
-                    if (drews) { tiku_desk_ttf_free_glyph(&gs); }
+                    if (drewv) { tiku_ttf_free_glyph(&gv); }
+                    if (drews) { tiku_ttf_free_glyph(&gs); }
                 }
-                if (tv != NULL) { tiku_desk_ttf_close(tv); }
-                if (ts != NULL) { tiku_desk_ttf_close(ts); }
+                if (tv != NULL) { tiku_ttf_close(tv); }
+                if (ts != NULL) { tiku_ttf_close(ts); }
             }
         }
         {
@@ -277,20 +277,20 @@ main(void)
                 "DroidSansFallbackFull.ttf"
             };
             const char *cpath = pick(cjk, 2);
-            tiku_desk_ttf_t *han = (cpath != NULL) ? tiku_desk_ttf_open(cpath)
+            tiku_ttf_t *han = (cpath != NULL) ? tiku_ttf_open(cpath)
                                                    : NULL;
 
-            if (han != NULL && tiku_desk_ttf_has(han, 0x65E5u)) {
-                tiku_desk_ttf_glyph_t sun;
+            if (han != NULL && tiku_ttf_has(han, 0x65E5u)) {
+                tiku_ttf_glyph_t sun;
 
-                check(tiku_desk_ttf_render(han, 0x65E5u, 28, &sun) &&
+                check(tiku_ttf_render(han, 0x65E5u, 28, &sun) &&
                       sun.cover != NULL && ink_of(&sun) > 0 &&
                       has_hole(&sun), "DEV-012",
                       "the ideograph for 'sun' draws, hole and all");
-                tiku_desk_ttf_free_glyph(&sun);
+                tiku_ttf_free_glyph(&sun);
             }
             if (han != NULL) {
-                tiku_desk_ttf_close(han);
+                tiku_ttf_close(han);
             }
         }
     }
@@ -302,43 +302,43 @@ main(void)
      */
     {
         const char *other = pick(cff, 2);
-        tiku_desk_ttf_t *ps = (other != NULL) ? tiku_desk_ttf_open(other)
+        tiku_ttf_t *ps = (other != NULL) ? tiku_ttf_open(other)
                                               : NULL;
 
         check(other == NULL || ps != NULL, "DEV-012",
               "a PostScript-outline face opens like any other");
         if (ps != NULL) {
-            tiku_desk_ttf_glyph_t a, acute;
+            tiku_ttf_glyph_t a, acute;
 
-            check(tiku_desk_ttf_family(ps) != NULL &&
-                  tiku_desk_ttf_family(ps)[0] != '\0' &&
-                  tiku_desk_ttf_has(ps, 'A'), "DEV-012",
+            check(tiku_ttf_family(ps) != NULL &&
+                  tiku_ttf_family(ps)[0] != '\0' &&
+                  tiku_ttf_has(ps, 'A'), "DEV-012",
                   "names itself and answers its character map the same way");
-            check(tiku_desk_ttf_render(ps, 'A', 16, &a) && a.cover != NULL &&
+            check(tiku_ttf_render(ps, 'A', 16, &a) && a.cover != NULL &&
                   ink_of(&a) > 0 && a.adv > 0, "DEV-012",
                   "and its charstrings draw: cubics, where the other had "
                   "quadratics");
             check(a.oy < 0 && a.h > 6 && a.h < 24, "DEV-012",
                   "to about the size and place a 16 px capital belongs");
-            check(tiku_desk_ttf_render(ps, 0xE9u, 16, &acute) &&
+            check(tiku_ttf_render(ps, 0xE9u, 16, &acute) &&
                   acute.cover != NULL && ink_of(&acute) > 0 &&
                   acute.h > a.h - 4, "DEV-012",
                   "accents too, which a charstring draws rather than places");
             {
-                tiku_desk_ttf_glyph_t ring;
+                tiku_ttf_glyph_t ring;
 
-                check(tiku_desk_ttf_render(ps, 'O', 28, &ring) &&
+                check(tiku_ttf_render(ps, 'O', 28, &ring) &&
                       has_hole(&ring), "DEV-012",
                       "and a capital O comes out a ring, not a blot: its "
                       "two contours are wound against each other");
-                tiku_desk_ttf_free_glyph(&ring);
+                tiku_ttf_free_glyph(&ring);
             }
-            tiku_desk_ttf_free_glyph(&a);
-            tiku_desk_ttf_free_glyph(&acute);
-            tiku_desk_ttf_close(ps);
+            tiku_ttf_free_glyph(&a);
+            tiku_ttf_free_glyph(&acute);
+            tiku_ttf_close(ps);
         }
     }
-    check(!tiku_desk_ttf_is_font("/etc/hostname"), "DEV-012",
+    check(!tiku_ttf_is_font("/etc/hostname"), "DEV-012",
           "while a file that is neither is still turned away unread");
 
     /*
@@ -434,19 +434,19 @@ truncations_of(const char *path)
                         (void)fwrite(copy, 1u, (size_t)keep, w);
                         (void)fclose(w);
                         {
-                            tiku_desk_ttf_t *hurt = tiku_desk_ttf_open(tmp);
+                            tiku_ttf_t *hurt = tiku_ttf_open(tmp);
 
                             if (hurt != NULL) {
-                                tiku_desk_ttf_glyph_t g;
+                                tiku_ttf_glyph_t g;
                                 unsigned cp;
 
                                 for (cp = 32u; cp < 0x180u; cp++) {
-                                    if (tiku_desk_ttf_render(hurt, cp, 14,
+                                    if (tiku_ttf_render(hurt, cp, 14,
                                                              &g)) {
-                                        tiku_desk_ttf_free_glyph(&g);
+                                        tiku_ttf_free_glyph(&g);
                                     }
                                 }
-                                tiku_desk_ttf_close(hurt);
+                                tiku_ttf_close(hurt);
                             }
                         }
                     }

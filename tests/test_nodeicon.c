@@ -25,10 +25,10 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
-static tiku_trk_model_t
-entry(const char *path, tiku_trk_kind_t k)
+static tiku_model_t
+entry(const char *path, tiku_kind_t k)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
     const char *slash;
 
     memset(&m, 0, sizeof m);
@@ -61,11 +61,11 @@ write_bmp(const char *path)
 int
 main(void)
 {
-    tiku_trk_store_t *store = tiku_trk_store_memory_open();
-    tiku_trk_thumb_q_t q;
+    tiku_store_t *store = tiku_store_memory_open();
+    tiku_thumb_q_t q;
     tiku_trk_nodeicon_t c;
-    tiku_trk_model_t file, dir, img;
-    char got[TIKU_TRK_NAME_MAX];
+    tiku_model_t file, dir, img;
+    char got[TIKU_NAME_MAX];
     char dirpath[256], imgpath[512];
 
     snprintf(dirpath, sizeof dirpath, "/tmp/trk-nodeicon-%d", (int)getpid());
@@ -78,37 +78,37 @@ main(void)
     snprintf(imgpath, sizeof imgpath, "%s/photo.bmp", dirpath);
     write_bmp(imgpath);
 
-    tiku_trk_thumb_init(&q);
-    file = entry("/tmp/x/report.txt", TIKU_TRK_KIND_FILE);
-    dir  = entry(dirpath, TIKU_TRK_KIND_DIRECTORY);
-    img  = entry(imgpath, TIKU_TRK_KIND_FILE);
+    tiku_thumb_init(&q);
+    file = entry("/tmp/x/report.txt", TIKU_KIND_FILE);
+    dir  = entry(dirpath, TIKU_KIND_DIRECTORY);
+    img  = entry(imgpath, TIKU_KIND_FILE);
 
     printf("the one probe, and what it finds (IV-005, IV-037)\n");
     check(tiku_trk_nodeicon_hint(store, &q, &file) ==
-          TIKU_TRK_ICONHINT_NONE, "IV-005",
+          TIKU_ICONHINT_NONE, "IV-005",
           "a file with nothing on it has no picture of its own");
     check(tiku_trk_nodeicon_hint(store, &q, &img) ==
-          TIKU_TRK_ICONHINT_THUMB, "IV-037",
+          TIKU_ICONHINT_THUMB, "IV-037",
           "an image is known to have one up front -- before the thumbnail "
           "exists, or the first draw of every image would take the type "
           "icon and nothing would ever ask again");
     check(tiku_trk_nodeicon_hint(store, NULL, &img) ==
-          TIKU_TRK_ICONHINT_THUMB, "IV-037",
+          TIKU_ICONHINT_THUMB, "IV-037",
           "and having been asked once it is not asked again");
     {
-        tiku_trk_model_t off = entry(imgpath, TIKU_TRK_KIND_FILE);
+        tiku_model_t off = entry(imgpath, TIKU_KIND_FILE);
 
         q.enabled = 0;
         check(tiku_trk_nodeicon_hint(store, &q, &off) ==
-              TIKU_TRK_ICONHINT_NONE, "IV-037",
+              TIKU_ICONHINT_NONE, "IV-037",
               "with thumbnails turned off it is just a file again");
         q.enabled = 1;
     }
-    (void)tiku_trk_state_write(store, file.path, TIKU_TRK_ATTR_ICON,
+    (void)tiku_state_write(store, file.path, TIKU_TRK_ATTR_ICON,
                                "special", 8);
     tiku_trk_nodeicon_unhint(&file);
     check(tiku_trk_nodeicon_hint(store, &q, &file) ==
-          TIKU_TRK_ICONHINT_ATTR, "IV-005",
+          TIKU_ICONHINT_ATTR, "IV-005",
           "one that carries an icon attribute says so");
     check(!tiku_trk_nodeicon_possible(&dir), "IV-005",
           "a model nobody has probed answers NO rather than probing from "
@@ -122,7 +122,7 @@ main(void)
           "a file that carries its own picture is drawn with it, not as a "
           "generic anything");
     {   /* The type must not win over the node. */
-        tiku_trk_model_t typed = file;
+        tiku_model_t typed = file;
 
         snprintf(typed.type, sizeof typed.type, "text/plain");
         tiku_trk_nodeicon_init(&c);
@@ -133,8 +133,8 @@ main(void)
               "always wins");
     }
     {
-        tiku_trk_model_t other = entry("/tmp/x/notes.md",
-                                       TIKU_TRK_KIND_FILE);
+        tiku_model_t other = entry("/tmp/x/notes.md",
+                                       TIKU_KIND_FILE);
 
         snprintf(other.type, sizeof other.type, "text/plain");
         (void)tiku_trk_nodeicon_hint(store, &q, &other);
@@ -178,7 +178,7 @@ main(void)
     printf("\nwhen the remembered answer is wrong (IV-038)\n");
     check(tiku_trk_nodeicon_attr_matters(TIKU_TRK_ATTR_ICON), "IV-038",
           "the icon attribute changes an icon");
-    check(tiku_trk_nodeicon_attr_matters(TIKU_TRK_ATTR_THUMB), "IV-038",
+    check(tiku_trk_nodeicon_attr_matters(TIKU_ATTR_THUMB), "IV-038",
           "so does the thumbnail, which IS an image's own icon");
     check(!tiku_trk_nodeicon_attr_matters("_trk/pinfo"), "IV-038",
           "while a pose position does not");
@@ -188,27 +188,27 @@ main(void)
     check(c.reads == 2, "IV-038",
           "so the next draw reads it again -- an icon edited on disk shows "
           "at once rather than after a restart");
-    (void)tiku_trk_state_forget(store, file.path);
+    (void)tiku_state_forget(store, file.path);
     tiku_trk_nodeicon_unhint(&file);
     (void)tiku_trk_nodeicon_changed(&c, file.path);
     check(tiku_trk_nodeicon_resolve(&c, store, &file, got, sizeof got) ==
               TIKU_TRK_ICON_FROM_GENERIC,
           "PVN-033", "deleting a custom icon falls back to the generic icon");
-    (void)tiku_trk_state_write(store, file.path, TIKU_TRK_ATTR_ICON,
+    (void)tiku_state_write(store, file.path, TIKU_TRK_ATTR_ICON,
                                "special", 8);
     tiku_trk_nodeicon_unhint(&file);
     {   /* The hint has to come back too. */
-        tiku_trk_model_t fresh = entry("/tmp/x/plain.txt",
-                                       TIKU_TRK_KIND_FILE);
+        tiku_model_t fresh = entry("/tmp/x/plain.txt",
+                                       TIKU_KIND_FILE);
 
         (void)tiku_trk_nodeicon_hint(store, &q, &fresh);
-        (void)tiku_trk_state_write(store, fresh.path, TIKU_TRK_ATTR_ICON,
+        (void)tiku_state_write(store, fresh.path, TIKU_TRK_ATTR_ICON,
                                    "given", 6);
         (void)tiku_trk_nodeicon_changed(&c, fresh.path);
         tiku_trk_nodeicon_unhint(&fresh);
         tiku_trk_nodeicon_init(&c);
         check(tiku_trk_nodeicon_hint(store, &q, &fresh) ==
-              TIKU_TRK_ICONHINT_ATTR &&
+              TIKU_ICONHINT_ATTR &&
               tiku_trk_nodeicon_resolve(&c, store, &fresh, got,
                                         sizeof got) ==
               TIKU_TRK_ICON_FROM_NODE, "IV-038",
@@ -227,7 +227,7 @@ main(void)
           "deleting an entry drops its cached icon");
     tiku_trk_nodeicon_preload(&c, "/apps/mail", "application");
     {
-        tiku_trk_model_t app = entry("/apps/mail", TIKU_TRK_KIND_FILE);
+        tiku_model_t app = entry("/apps/mail", TIKU_KIND_FILE);
 
         check(tiku_trk_nodeicon_resolve(&c, store, &app, got, sizeof got) ==
               TIKU_TRK_ICON_FROM_NODE &&
@@ -251,7 +251,7 @@ main(void)
           "and whoever preloaded it can say the file behind it has gone, "
           "which is the one removal a permanent entry does not survive");
 
-    tiku_trk_store_free(store);
+    tiku_store_free(store);
     {
         char cmd[512];
 
@@ -261,14 +261,14 @@ main(void)
     printf("\nthe art a TYPE wears (IV-011, AW-013)\n");
     {
         tiku_trk_types_t db;
-        tiku_trk_model_t m;
-        char art[TIKU_TRK_NAME_MAX];
+        tiku_model_t m;
+        char art[TIKU_NAME_MAX];
 
         tiku_trk_types_init(&db);
         (void)tiku_trk_types_add(&db, "text/", "Text file", "my_text_art",
                                  NULL);
         memset(&m, 0, sizeof m);
-        m.kind = TIKU_TRK_KIND_FILE;
+        m.kind = TIKU_KIND_FILE;
         snprintf(m.name, sizeof m.name, "notes.txt");
         snprintf(m.path, sizeof m.path, "/tmp/notes.txt");
         snprintf(m.type, sizeof m.type, "text/plain");

@@ -29,7 +29,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "tiku_desk_conduct.h"
+#include "tiku_conduct.h"
 
 static int fails;
 
@@ -44,10 +44,10 @@ check(int cond, const char *what)
 
 /* The shell's world: what it would have shown, and what it was told. */
 static int               injected;
-static tiku_desk_event_t last_event;
+static tiku_event_t last_event;
 
 static void
-fake_inject(void *ctx, const tiku_desk_event_t *event)
+fake_inject(void *ctx, const tiku_event_t *event)
 {
     (void)ctx;
     injected++;
@@ -85,7 +85,7 @@ raw(int fd)
         cfmakeraw(&tio);
         /* VMIN stays 1: with 0, a read of a quiet line returns zero, and
          * zero from a socket means the peer left.  See the note in
-         * tiku_desk_conduct_open_tty -- this is the bug this test found. */
+         * tiku_conduct_open_tty -- this is the bug this test found. */
         (void)tcsetattr(fd, TCSANOW, &tio);
     }
 }
@@ -94,24 +94,24 @@ raw(int fd)
 static int
 drive(int fd)
 {
-    tiku_desk_conduct_client_t driver;
-    tiku_desk_event_t ev;
-    char text[TIKU_DESK_CONDUCT_TEXT];
+    tiku_conduct_client_t driver;
+    tiku_event_t ev;
+    char text[TIKU_CONDUCT_TEXT];
     int num = 0;
     int bad = 0;
 
-    if (tiku_desk_conduct_connect_fd(&driver, fd) != 0) {
+    if (tiku_conduct_connect_fd(&driver, fd) != 0) {
         printf("  [FAIL] the driver cannot speak over the line\n");
         return 1;
     }
     memset(&ev, 0, sizeof ev);
-    ev.type = TIKU_DESK_EVENT_POINTER_DOWN;
+    ev.type = TIKU_EVENT_POINTER_DOWN;
     ev.x = 314;
     ev.y = 159;
     ev.button = 1u;
-    (void)tiku_desk_conduct_inject(&driver, &ev);
+    (void)tiku_conduct_inject(&driver, &ev);
 
-    if (!tiku_desk_conduct_query(&driver, TIKU_DESK_CQ_PIXEL, 7, 3, "",
+    if (!tiku_conduct_query(&driver, TIKU_CQ_PIXEL, 7, 3, "",
                                  &num, NULL, 0u) ||
         num != (int)(((7 << 8) ^ 3) & 0xffffff)) {
         printf("  [FAIL] a pixel asked for over the line comes back, and "
@@ -123,7 +123,7 @@ drive(int fd)
     }
 
     text[0] = '\0';
-    if (!tiku_desk_conduct_query(&driver, TIKU_DESK_CQ_TEXT, 0, 0, "title",
+    if (!tiku_conduct_query(&driver, TIKU_CQ_TEXT, 0, 0, "title",
                                  NULL, text, sizeof text) ||
         strcmp(text, "Over the cable") != 0) {
         printf("  [FAIL] so does a named string\n");
@@ -133,7 +133,7 @@ drive(int fd)
     }
 
     text[0] = '\0';
-    if (tiku_desk_conduct_query(&driver, TIKU_DESK_CQ_TEXT, 0, 0,
+    if (tiku_conduct_query(&driver, TIKU_CQ_TEXT, 0, 0,
                                 "no-such-name", NULL, text, sizeof text) ||
         text[0] != '\0') {
         printf("  [FAIL] a name the shell cannot say is REFUSED rather "
@@ -144,14 +144,14 @@ drive(int fd)
                "than answered with something\n");
     }
 
-    tiku_desk_conduct_disconnect(&driver);
+    tiku_conduct_disconnect(&driver);
     return bad;
 }
 
 int
 main(void)
 {
-    tiku_desk_conduct_t shell;
+    tiku_conduct_t shell;
     char slave_name[128];
     int master, slave;
     pid_t kid;
@@ -191,7 +191,7 @@ main(void)
     }
     (void)close(slave);
 
-    check(tiku_desk_conduct_adopt(&shell, master, NULL, fake_inject,
+    check(tiku_conduct_adopt(&shell, master, NULL, fake_inject,
                                   fake_pixel, fake_text) == 0,
           "the shell speaks the channel over a line it was handed -- no "
           "socket, no listening, just the cable");
@@ -199,7 +199,7 @@ main(void)
     for (turns = 0; turns < 600; turns++) {
         struct timespec ts;
 
-        (void)tiku_desk_conduct_poll(&shell);
+        (void)tiku_conduct_poll(&shell);
         if (waitpid(kid, &status, WNOHANG) == kid) {
             kid = -1;
             break;
@@ -216,13 +216,13 @@ main(void)
     }
 
     check(injected == 1 && last_event.x == 314 && last_event.y == 159 &&
-          last_event.type == TIKU_DESK_EVENT_POINTER_DOWN,
+          last_event.type == TIKU_EVENT_POINTER_DOWN,
           "an injected event arrives intact -- the same event, not a "
           "reasonable-looking one");
     check(WIFEXITED(status) && WEXITSTATUS(status) == 0,
           "and every question the driver asked was answered over the wire");
 
-    tiku_desk_conduct_shutdown(&shell);
+    tiku_conduct_shutdown(&shell);
 
     if (fails > 0) {
         printf("\nFAILURES\n");

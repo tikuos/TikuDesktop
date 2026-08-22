@@ -22,10 +22,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tiku_desk_gfx.h"
-#include "tiku_trk_hvif.h"
-#include "tiku_trk_iconpaint.h"
-#include "tiku_trk_icons.h"
+#include "tiku_gfx.h"
+#include "tiku_hvif.h"
+#include "tiku_iconpaint.h"
+#include "tiku_icons.h"
 
 /* An icon must put ink on at least this share of its square, and must not
  * flood it: the Tracker set measures 0.20 to 0.68 at 64 px. */
@@ -89,15 +89,15 @@ measure(const uint32_t *bmp, int size)
 
 /** @brief A light grey checker, so a transparent pixel is unmistakable. */
 static void
-checker(tiku_desk_surface_t *s)
+checker(tiku_surface_t *s)
 {
     int x, y;
 
     for (y = 0; y < s->h; y++) {
         for (x = 0; x < s->w; x++) {
             s->px[(size_t)y * (size_t)s->w + x] =
-                (((x >> 3) + (y >> 3)) & 1) ? TIKU_DESK_RGB(216, 216, 216)
-                                            : TIKU_DESK_RGB(200, 200, 200);
+                (((x >> 3) + (y >> 3)) & 1) ? TIKU_RGB(216, 216, 216)
+                                            : TIKU_RGB(200, 200, 200);
         }
     }
 }
@@ -105,9 +105,9 @@ checker(tiku_desk_surface_t *s)
 int
 main(void)
 {
-    tiku_desk_surface_t *sheet;
+    tiku_surface_t *sheet;
     uint32_t *bmp;
-    int n = tiku_trk_icons_count();
+    int n = tiku_icons_count();
     int parsed = 0, rendered = 0, rows, i, k;
     float ink_lo = 1.0f, ink_hi = 0.0f, ink_sum = 0.0f;
 
@@ -116,9 +116,9 @@ main(void)
            "ink64");
 
     rows = (n + SHEET_COLS - 1) / SHEET_COLS;
-    sheet = tiku_desk_surface_new(SHEET_COLS * SHEET_CELL + 2 * SHEET_PAD,
+    sheet = tiku_surface_new(SHEET_COLS * SHEET_CELL + 2 * SHEET_PAD,
                                   rows * SHEET_CELL + 2 * SHEET_PAD,
-                                  TIKU_DESK_C_PANEL);
+                                  TIKU_C_PANEL);
     if (sheet == NULL) {
         printf("no surface\n");
         return 1;
@@ -132,13 +132,13 @@ main(void)
     }
 
     for (i = 0; i < n; i++) {
-        const tiku_trk_icon_t *ic = tiku_trk_icons_at(i);
-        char err[TIKU_TRK_HVIF_ERRLEN];
-        tiku_trk_hvif_t *icon;
+        const tiku_icon_t *ic = tiku_icons_at(i);
+        char err[TIKU_HVIF_ERRLEN];
+        tiku_hvif_t *icon;
         float ink[3];
         char what[128];
 
-        icon = tiku_trk_hvif_parse(ic->data, ic->len, err, sizeof err);
+        icon = tiku_hvif_parse(ic->data, ic->len, err, sizeof err);
         snprintf(what, sizeof what, "%s parses (%s)", ic->name,
                  icon != NULL ? "ok" : err);
         check(icon != NULL, what);
@@ -151,7 +151,7 @@ main(void)
             int size = sizes[k];
             stat_t st;
 
-            check(tiku_trk_hvif_render(icon, bmp, size, size) == 0,
+            check(tiku_hvif_render(icon, bmp, size, size) == 0,
                   "render returns 0");
             st = measure(bmp, size);
             ink[k] = st.ink;
@@ -175,7 +175,7 @@ main(void)
                 int cy = SHEET_PAD + (i / SHEET_COLS) * SHEET_CELL +
                          (SHEET_CELL - 64) / 2;
 
-                tiku_trk_hvif_blit(sheet, cx, cy, bmp, 64, 64);
+                tiku_hvif_blit(sheet, cx, cy, bmp, 64, 64);
                 if (st.ink < ink_lo) { ink_lo = st.ink; }
                 if (st.ink > ink_hi) { ink_hi = st.ink; }
                 ink_sum += st.ink;
@@ -184,21 +184,21 @@ main(void)
         }
         printf("  %-18s %6zu %6.3f %6.3f %6.3f\n", ic->name, ic->len,
                (double)ink[0], (double)ink[1], (double)ink[2]);
-        tiku_trk_hvif_free(icon);
+        tiku_hvif_free(icon);
     }
 
     /* The cache has to hand back the same picture, and hand back the same
      * pointer the second time. */
     {
-        const uint32_t *a = tiku_trk_icons_bitmap("folder", 32);
-        const uint32_t *b = tiku_trk_icons_bitmap("folder", 32);
+        const uint32_t *a = tiku_icons_bitmap("folder", 32);
+        const uint32_t *b = tiku_icons_bitmap("folder", 32);
 
         check(a != NULL && a == b, "the cache renders once per size");
-        check(tiku_trk_icons_bitmap("no_such_icon", 32) == NULL,
+        check(tiku_icons_bitmap("no_such_icon", 32) == NULL,
               "an unknown name has no bitmap");
-        check(tiku_trk_icons_find("trash_full") != NULL,
+        check(tiku_icons_find("trash_full") != NULL,
               "find() reaches the whole table");
-        tiku_trk_icons_flush();
+        tiku_icons_flush();
     }
 
     /* A cache with a slot count and no byte budget is not bounded: one
@@ -209,39 +209,39 @@ main(void)
                                              "query", "volume" };
         size_t i;
 
-        tiku_trk_icons_flush();
-        check(tiku_trk_icons_cached_bytes() == 0,
+        tiku_icons_flush();
+        check(tiku_icons_cached_bytes() == 0,
               "a flushed cache holds nothing");
         for (i = 0; i < sizeof names / sizeof names[0]; i++) {
-            (void)tiku_trk_icons_bitmap(names[i], 256);
+            (void)tiku_icons_bitmap(names[i], 256);
         }
-        check(tiku_trk_icons_cached_bytes() <= TIKU_TRK_ICONS_BUDGET,
+        check(tiku_icons_cached_bytes() <= TIKU_ICONS_BUDGET,
               "five icons at 256 px is a megabyte and a quarter, and the "
               "cache gives up its oldest renders rather than growing to "
               "hold them all");
-        check(tiku_trk_icons_cached_bytes() > 0,
+        check(tiku_icons_cached_bytes() > 0,
               "it does not empty itself either: the newest renders are the "
               "ones a window is drawing");
-        check(!tiku_trk_icons_cached(names[0], 256) &&
-              tiku_trk_icons_cached(names[4], 256),
+        check(!tiku_icons_cached(names[0], 256) &&
+              tiku_icons_cached(names[4], 256),
               "and what it gave up is the OLDEST render, not the one just "
               "asked for: dropping the newest would throw away the art the "
               "window is drawing this frame");
-        check(tiku_trk_icons_bitmap("folder", 32) != NULL,
+        check(tiku_icons_bitmap("folder", 32) != NULL,
               "an eviction does not break the next render");
         {
             /* The pointer is borrowed until the next flush, so one render
              * larger than the whole budget still has to live somewhere. */
-            const uint32_t *huge = tiku_trk_icons_bitmap("folder", 1024);
+            const uint32_t *huge = tiku_icons_bitmap("folder", 1024);
 
             check(huge != NULL, "an icon larger than the budget renders");
-            check(tiku_trk_icons_cached_bytes() <=
-                  TIKU_TRK_ICONS_BUDGET + 1024u * 1024u * 4u,
+            check(tiku_icons_cached_bytes() <=
+                  TIKU_ICONS_BUDGET + 1024u * 1024u * 4u,
                   "and it is the only thing over the budget: everything "
                   "else was given up to make room for it");
         }
-        tiku_trk_icons_flush();
-        check(tiku_trk_icons_cached_bytes() == 0, "and a flush empties it");
+        tiku_icons_flush();
+        check(tiku_icons_cached_bytes() == 0, "and a flush empties it");
     }
 
     /* Nonzero winding, on hand-built geometry.  An inner subpath wound the
@@ -258,12 +258,12 @@ main(void)
             0x0A, 4, 48, 48, 48, 80, 80, 80, 80, 48,      /* inner, other   */
             1, 10, 0, 2, 0, 1, 0x00              /* one shape, both paths */
         };
-        tiku_trk_hvif_t *icon = tiku_trk_hvif_parse(holed, sizeof holed,
+        tiku_hvif_t *icon = tiku_hvif_parse(holed, sizeof holed,
                                                     NULL, 0);
 
         check(icon != NULL, "a hand-built blob parses");
         if (icon != NULL) {
-            check(tiku_trk_hvif_render(icon, bmp, 64, 64) == 0,
+            check(tiku_hvif_render(icon, bmp, 64, 64) == 0,
                   "the hand-built blob renders");
             check(((bmp[32 * 64 + 32] >> 24) & 0xFFu) == 0u,
                   "a counter-wound subpath cuts a hole");
@@ -273,18 +273,18 @@ main(void)
              * outer square is the whole square: the decode is checked too. */
             check(((bmp[0] >> 24) & 0xFFu) == 255u,
                   "coordinate 32 decodes to canvas 0");
-            tiku_trk_hvif_free(icon);
+            tiku_hvif_free(icon);
         }
     }
 
     /* A blob that is not HVIF must be refused, not half-drawn. */
     {
         static const uint8_t junk[8] = { 'n', 'c', 'i', 'f', 9, 9, 9, 9 };
-        char err[TIKU_TRK_HVIF_ERRLEN];
+        char err[TIKU_HVIF_ERRLEN];
 
-        check(tiku_trk_hvif_parse(junk, sizeof junk, err, sizeof err) == NULL,
+        check(tiku_hvif_parse(junk, sizeof junk, err, sizeof err) == NULL,
               "a truncated blob is refused");
-        check(tiku_trk_hvif_parse("xxxx", 4, err, sizeof err) == NULL,
+        check(tiku_hvif_parse("xxxx", 4, err, sizeof err) == NULL,
               "a bad magic is refused");
     }
 
@@ -296,15 +296,15 @@ main(void)
     {
         int bad_accepted = 0, prefixes = 0, i;
 
-        for (i = 0; i < tiku_trk_icons_count(); i++) {
-            const tiku_trk_icon_t *ic = tiku_trk_icons_at(i);
+        for (i = 0; i < tiku_icons_count(); i++) {
+            const tiku_icon_t *ic = tiku_icons_at(i);
             size_t cut;
 
             for (cut = 1; cut < ic->len; cut++) {
-                char err[TIKU_TRK_HVIF_ERRLEN];
-                struct tiku_trk_hvif *t;
+                char err[TIKU_HVIF_ERRLEN];
+                struct tiku_hvif *t;
 
-                t = tiku_trk_hvif_parse(ic->data, cut, err, sizeof err);
+                t = tiku_hvif_parse(ic->data, cut, err, sizeof err);
                 prefixes++;
                 if (t != NULL) {
                     if (bad_accepted == 0) {
@@ -312,7 +312,7 @@ main(void)
                                "%zu bytes\n", ic->name, cut, ic->len);
                     }
                     bad_accepted++;
-                    tiku_trk_hvif_free(t);
+                    tiku_hvif_free(t);
                 }
             }
         }
@@ -321,11 +321,11 @@ main(void)
         check(bad_accepted == 0, "no truncation of a real icon is accepted");
     }
 
-    if (tiku_desk_surface_png(sheet, "build/icons.png") != 0) {
+    if (tiku_surface_png(sheet, "build/icons.png") != 0) {
         printf("\ncould not write build/icons.png\n");
         fails++;
     }
-    tiku_desk_surface_free(sheet);
+    tiku_surface_free(sheet);
     free(bmp);
 
     printf("\n%d/%d parsed, %d renders, ink at 64px: min %.3f mean %.3f "
@@ -339,7 +339,7 @@ main(void)
 
         for (y = 0; y < 32; y++) {
             for (x = 0; x < 32; x++) {
-                if (tiku_trk_icon_hit("folder", 32, x, y)) {
+                if (tiku_icon_hit("folder", 32, x, y)) {
                     opaque++;
                 } else {
                     clear++;
@@ -356,14 +356,14 @@ main(void)
                    "transparent pixels (%d opaque, %d clear)\n", opaque,
                    clear);
         }
-        if (tiku_trk_icon_hit("folder", 32, 40, 40)) {
+        if (tiku_icon_hit("folder", 32, 40, 40)) {
             printf("  [FAIL] IV-057    a point outside the icon hits it\n");
             fails++;
         } else {
             printf("  [PASS] IV-057    a point outside the icon does not "
                    "hit it\n");
         }
-        if (!tiku_trk_icon_hit("no-such-icon", 32, 3, 3)) {
+        if (!tiku_icon_hit("no-such-icon", 32, 3, 3)) {
             printf("  [FAIL] IV-057    an icon with no art cannot be "
                    "picked up at all\n");
             fails++;
@@ -378,16 +378,16 @@ main(void)
         size_t before, after_one, after_two;
         const uint32_t *w1, *w2, *plain;
 
-        plain = tiku_trk_icons_bitmap("folder", 32);
+        plain = tiku_icons_bitmap("folder", 32);
         check(plain != NULL, "IV-019: the plain render exists");
-        before = tiku_trk_icons_cached_bytes();
-        w1 = tiku_trk_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
-        after_one = tiku_trk_icons_cached_bytes();
-        w2 = tiku_trk_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
-        after_two = tiku_trk_icons_cached_bytes();
+        before = tiku_icons_cached_bytes();
+        w1 = tiku_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
+        after_one = tiku_icons_cached_bytes();
+        w2 = tiku_icons_bitmap_washed("folder", 32, 0x336698u, 89u);
+        after_two = tiku_icons_cached_bytes();
         check(w1 != NULL && w1 == w2, "IV-019: the second ask is the same "
               "bitmap, not a second derivation");
-        check(tiku_trk_icons_washed_builds() == 1u,
+        check(tiku_icons_washed_builds() == 1u,
               "IV-019: derived ONCE -- the second ask cost nothing");
         check(after_one > before && after_two == after_one,
               "IV-019: it is stored once and accounted once");
@@ -412,7 +412,7 @@ main(void)
              * every channel at 66%% brightness (168/255), alpha intact.  A
              * black wash at 87/255 must therefore equal the multiply. */
             const uint32_t *sel =
-                tiku_trk_icons_bitmap_washed("folder", 32, 0x000000u, 87u);
+                tiku_icons_bitmap_washed("folder", 32, 0x000000u, 87u);
             size_t k, n = 32u * 32u;
             int held = (sel != NULL);
 
@@ -433,14 +433,14 @@ main(void)
         {   /* And THROUGH the selected paint itself, not just the wash
              * primitive: an opaque pixel painted selected must land at
              * exactly 66%% of the plain paint. */
-            tiku_desk_surface_t *ps = tiku_desk_surface_new(80, 40, TIKU_DESK_C_PANEL);
+            tiku_surface_t *ps = tiku_surface_new(80, 40, TIKU_C_PANEL);
             size_t k, n = 32u * 32u;
             int held = (ps != NULL);
             int probed = 0;
 
             if (ps != NULL) {
-                (void)tiku_trk_icon_paint(ps, "folder", 0, 0, 32);
-                (void)tiku_trk_icon_paint_selected(ps, "folder", 40, 0, 32);
+                (void)tiku_icon_paint(ps, "folder", 0, 0, 32);
+                (void)tiku_icon_paint_selected(ps, "folder", 40, 0, 32);
                 for (k = 0; k < n; k++) {
                     if (((plain[k] >> 24) & 0xffu) == 0xffu) {
                         int px = (int)(k % 32u), py = (int)(k / 32u);
@@ -459,7 +459,7 @@ main(void)
                         }
                     }
                 }
-                tiku_desk_surface_free(ps);
+                tiku_surface_free(ps);
             }
             check(held && probed, "IV-018: the selected PAINT is the 66%% "
                   "multiply of the plain paint, pixel for pixel");

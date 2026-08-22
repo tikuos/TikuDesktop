@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tiku_desk_ttf.h"
+#include "tiku_ttf.h"
 
 static int fails;
 
@@ -319,7 +319,7 @@ int
 main(void)
 {
     const char *path;
-    tiku_desk_ttf_t *ttf;
+    tiku_ttf_t *ttf;
 
     printf("a PostScript-outline face built byte by byte (DEV-013)\n");
 
@@ -329,14 +329,14 @@ main(void)
         printf("  [FAIL] DEV-013   nowhere to write the face\n");
         return 1;
     }
-    check(tiku_desk_ttf_is_font(path), "DEV-013",
+    check(tiku_ttf_is_font(path), "DEV-013",
           "what we built is taken for a face, as a bad one would be");
 
-    ttf = tiku_desk_ttf_open(path);
+    ttf = tiku_ttf_open(path);
     check(ttf != NULL, "DEV-013",
           "and opens: everything it says about itself is well formed");
     if (ttf != NULL) {
-        tiku_desk_ttf_glyph_t g;
+        tiku_ttf_glyph_t g;
 
         /*
          * THE ONE THAT MATTERS.  Glyph 1's charstring calls subroutine
@@ -345,17 +345,17 @@ main(void)
          * a read that FAILED will follow a pointer it never set.
          */
         memset(&g, 0, sizeof g);
-        (void)tiku_desk_ttf_render(ttf, 'A', 16, &g);
-        tiku_desk_ttf_free_glyph(&g);
+        (void)tiku_ttf_render(ttf, 'A', 16, &g);
+        tiku_ttf_free_glyph(&g);
         check(1, "DEV-013",
               "a subroutine index cut off two bytes short draws nothing, "
               "rather than following a pointer nobody set");
 
-        (void)tiku_desk_ttf_render(ttf, 'B', 16, &g);
-        tiku_desk_ttf_free_glyph(&g);
+        (void)tiku_ttf_render(ttf, 'B', 16, &g);
+        tiku_ttf_free_glyph(&g);
         check(1, "DEV-013",
               "and a letter the map has not got is simply not drawn");
-        tiku_desk_ttf_close(ttf);
+        tiku_ttf_close(ttf);
     }
     (void)remove(path);
 
@@ -364,15 +364,15 @@ main(void)
     build_font();
     path = plant();
     if (path != NULL) {
-        ttf = tiku_desk_ttf_open(path);
+        ttf = tiku_ttf_open(path);
         check(ttf != NULL, "DEV-013",
               "a second face, whose subroutine is nothing but an endchar");
         if (ttf != NULL) {
-            tiku_desk_ttf_glyph_t g;
+            tiku_ttf_glyph_t g;
             long ink = 0;
 
             memset(&g, 0, sizeof g);
-            if (tiku_desk_ttf_render(ttf, 'A', 40, &g) && g.cover != NULL) {
+            if (tiku_ttf_render(ttf, 'A', 40, &g) && g.cover != NULL) {
                 int k;
 
                 for (k = 0; k < g.w * g.h; k++) {
@@ -382,8 +382,8 @@ main(void)
             check(ink == 0, "DEV-013",
                   "ends the GLYPH: the triangle drawn after the call that "
                   "reached it never appears");
-            tiku_desk_ttf_free_glyph(&g);
-            tiku_desk_ttf_close(ttf);
+            tiku_ttf_free_glyph(&g);
+            tiku_ttf_close(ttf);
         }
         (void)remove(path);
     }
@@ -393,19 +393,19 @@ main(void)
     build_font();
     path = plant();
     if (path != NULL) {
-        ttf = tiku_desk_ttf_open(path);
+        ttf = tiku_ttf_open(path);
         check(ttf != NULL, "DEV-013",
               "a third face, claiming a thousand units to the pixel");
         if (ttf != NULL) {
-            tiku_desk_ttf_glyph_t g;
+            tiku_ttf_glyph_t g;
 
             memset(&g, 0, sizeof g);
-            (void)tiku_desk_ttf_render(ttf, 'A', 12, &g);
+            (void)tiku_ttf_render(ttf, 'A', 12, &g);
             check(g.w >= 0 && g.w < 64 && g.h >= 0 && g.h < 64, "DEV-013",
                   "is not believed: a 12 px letter stays the size of one, "
                   "rather than running past what an int can hold");
-            tiku_desk_ttf_free_glyph(&g);
-            tiku_desk_ttf_close(ttf);
+            tiku_ttf_free_glyph(&g);
+            tiku_ttf_close(ttf);
         }
         (void)remove(path);
     }

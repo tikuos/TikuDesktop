@@ -6,13 +6,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_state.h - where per-node UI state lives, for every kind of node.
+ * tiku_state.h - where per-node UI state lives, for every kind of node.
  *
  * Tracker already abstracts where attributes come from -- a file node and a
  * memory node behind one stream interface -- so that abstraction is the
  * seam, not a second one invented beside it.  Pose positions, view state,
  * column sets and window frames are read and written ONCE against
- * tiku_trk_store_t; three implementations sit behind it: xattrs on a local
+ * tiku_store_t; three implementations sit behind it: xattrs on a local
  * file, a host-side sidecar for a device, and memory when neither can
  * persist.
  *
@@ -23,13 +23,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef TIKU_TRK_STATE_H_
-#define TIKU_TRK_STATE_H_
+#ifndef TIKU_STATE_H_
+#define TIKU_STATE_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct tiku_trk_store tiku_trk_store_t;
+typedef struct tiku_store tiku_store_t;
 
 #define TIKU_TRK_STORE_WRITABLE   0x01u /**< writes can succeed            */
 #define TIKU_TRK_STORE_PERSISTENT 0x02u /**< survives app exit             */
@@ -40,24 +40,24 @@ typedef struct tiku_trk_store tiku_trk_store_t;
 typedef struct tiku_trk_store_ops {
     /** @brief Read one named record.  @p foreign_name is the byte-swapped
      *  twin tried on a miss; NULL where the store has one byte order. */
-    long (*read)(tiku_trk_store_t *st, const char *node_key,
+    long (*read)(tiku_store_t *st, const char *node_key,
                  const char *name, const char *foreign_name,
                  uint32_t type, void *buf, size_t len);
-    long (*write)(tiku_trk_store_t *st, const char *node_key,
+    long (*write)(tiku_store_t *st, const char *node_key,
                   const char *name, const char *foreign_name,
                   uint32_t type, const void *buf, size_t len);
     /** @brief Size of a record, or -1 when absent. */
-    long (*contains)(tiku_trk_store_t *st, const char *node_key,
+    long (*contains)(tiku_store_t *st, const char *node_key,
                      const char *name, uint32_t type);
-    int  (*remove)(tiku_trk_store_t *st, const char *node_key,
+    int  (*remove)(tiku_store_t *st, const char *node_key,
                    const char *name);
     /** @brief Make everything durable.  Called at the dirty-gate moments
      *  only -- never per drag frame. */
-    int  (*flush)(tiku_trk_store_t *st);
-    void (*close)(tiku_trk_store_t *st);
+    int  (*flush)(tiku_store_t *st);
+    void (*close)(tiku_store_t *st);
 } tiku_trk_store_ops_t;
 
-struct tiku_trk_store {
+struct tiku_store {
     const tiku_trk_store_ops_t *ops;
     uint32_t flags;
     void    *impl;
@@ -68,31 +68,31 @@ struct tiku_trk_store {
  * latter two onto the Desktop directory node; the sidecar reproduces them
  * as key prefixes instead.  The xattr store ignores the key: the file IS
  * the node. */
-#define TIKU_TRK_KEY_DEV_ROOT  "\x01root"
-#define TIKU_TRK_KEY_DESKTOP   "\x01desk"
+#define TIKU_KEY_DEV_ROOT  "\x01root"
+#define TIKU_KEY_DESKTOP   "\x01desk"
 
 /** @brief Local store: real extended attributes, full fidelity. */
-tiku_trk_store_t *tiku_trk_store_xattr_open(void);
+tiku_store_t *tiku_store_xattr_open(void);
 
 /** @brief Device store: one sidecar file per device, keyed by die uid. */
-tiku_trk_store_t *tiku_trk_store_sidecar_open(const char *devid);
+tiku_store_t *tiku_store_sidecar_open(const char *devid);
 
 /** @brief Nothing can persist here (portable mode, read-only home): the
  *  layout is live for the session and dropped on close, with no error.
  *  A third implementation, so no caller carries a special case. */
-tiku_trk_store_t *tiku_trk_store_memory_open(void);
+tiku_store_t *tiku_store_memory_open(void);
 
 /* The two wrappers every view and window actually call. */
-long tiku_trk_state_read(tiku_trk_store_t *st, const char *node_key,
+long tiku_state_read(tiku_store_t *st, const char *node_key,
                          const char *name, void *buf, size_t len);
-long tiku_trk_state_write(tiku_trk_store_t *st, const char *node_key,
+long tiku_state_write(tiku_store_t *st, const char *node_key,
                           const char *name, const void *buf, size_t len);
 
 /** @brief Non-zero when this store may hold state at all; the caller then
  *  skips the write silently, exactly as Tracker does on a read-only
  *  volume, rather than raising an error the user cannot act on. */
 static inline int
-tiku_trk_state_can_persist(const tiku_trk_store_t *st)
+tiku_trk_state_can_persist(const tiku_store_t *st)
 {
     return st != NULL
         && (st->flags & TIKU_TRK_STORE_PERSISTENT) != 0
@@ -133,9 +133,9 @@ typedef struct {
     float   x, y;
 } tiku_trk_poseinfo_disk_t;
 
-int tiku_trk_pose_read(tiku_trk_store_t *st, const char *node_key,
+int tiku_trk_pose_read(tiku_store_t *st, const char *node_key,
                        const char *parent_key, tiku_trk_poseinfo_t *out);
-int tiku_trk_pose_write(tiku_trk_store_t *st, const char *node_key,
+int tiku_trk_pose_write(tiku_store_t *st, const char *node_key,
                         const char *parent_key,
                         const tiku_trk_poseinfo_t *in);
 
@@ -171,7 +171,7 @@ int tiku_trk_ident_probe(void *ns, tiku_trk_ident_t *out);
  * one thing a die identifier buys, and without it a renamed board steals
  * another board's arrangement.
  */
-int tiku_trk_ident_score(const tiku_trk_ident_t *probed,
+int tiku_ident_score(const tiku_trk_ident_t *probed,
                          const tiku_trk_ident_t *stored);
 
 /**
@@ -183,7 +183,7 @@ int tiku_trk_ident_score(const tiku_trk_ident_t *probed,
  *                         ambiguous, and the UI must say so rather than
  *                         picking the best match and hiding the doubt.
  */
-int tiku_trk_ident_key(const tiku_trk_ident_t *id, char *buf, size_t max,
+int tiku_ident_key(const tiku_trk_ident_t *id, char *buf, size_t max,
                        int *provisional_out);
 
 /* ---------------------------------------------------------------------- *
@@ -226,7 +226,7 @@ typedef struct {
 } tiku_trk_sidecar_rec_t;
 
 /** @brief Fold duplicate records away: write a temp, sync, rename. */
-int tiku_trk_sidecar_compact(tiku_trk_store_t *st);
+int tiku_trk_sidecar_compact(tiku_store_t *st);
 
 /* Cross-host transfer is explicit, always.  Never on window close, never a
  * write per drag: a device's store is carved, shared with user data, and on
@@ -240,4 +240,4 @@ int tiku_trk_state_can_publish(void *ns);
 int tiku_trk_state_publish(void *ns, const char *devid);
 int tiku_trk_state_adopt(void *ns, const char *devid);
 
-#endif /* TIKU_TRK_STATE_H_ */
+#endif /* TIKU_STATE_H_ */

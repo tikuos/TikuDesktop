@@ -12,9 +12,9 @@
 
 #include <stddef.h>
 
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 #include "tiku_trk_find.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 /** @brief Execute the controller's query without exposing shell state. */
 typedef int (*tiku_trk_find_window_search_fn)(void *context,
@@ -22,9 +22,9 @@ typedef int (*tiku_trk_find_window_search_fn)(void *context,
 
 typedef struct {
     tiku_trk_find_t       model;
-    tiku_desk_workspace_t *workspace;
-    tiku_desk_window_t    *window;
-    tiku_trk_store_t      *store;
+    tiku_workspace_t *workspace;
+    tiku_window_t    *window;
+    tiku_store_t      *store;
     int                    screen_w;
     int                    screen_h;
     int                   *dirty;
@@ -41,17 +41,17 @@ typedef struct {
 } tiku_trk_find_window_t;
 
 void tiku_trk_find_window_init(tiku_trk_find_window_t *controller,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, char *status, size_t status_size,
     tiku_trk_find_window_search_fn search, void *search_context);
 void tiku_trk_find_window_set_store(tiku_trk_find_window_t *controller,
-                                    tiku_trk_store_t *store);
+                                    tiku_store_t *store);
 void tiku_trk_find_window_set_types(tiku_trk_find_window_t *controller,
                                     const tiku_trk_types_t *types);
 
 tiku_trk_find_t *tiku_trk_find_window_model(
     tiku_trk_find_window_t *controller);
-tiku_desk_window_t *tiku_trk_find_window_handle(
+tiku_window_t *tiku_trk_find_window_handle(
     tiku_trk_find_window_t *controller);
 
 void tiku_trk_find_window_open(tiku_trk_find_window_t *controller);

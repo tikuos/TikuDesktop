@@ -10,7 +10,7 @@
 
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_types.h"
-#include "tiku_trk_thumb.h"
+#include "tiku_thumb.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -24,35 +24,35 @@ tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c)
 }
 
 int
-tiku_trk_nodeicon_hint(tiku_trk_store_t *store, const tiku_trk_thumb_q_t *q,
-                       tiku_trk_model_t *m)
+tiku_trk_nodeicon_hint(tiku_store_t *store, const tiku_thumb_q_t *q,
+                       tiku_model_t *m)
 {
-    char art[TIKU_TRK_NAME_MAX];
+    char art[TIKU_NAME_MAX];
 
     if (m == NULL) {
-        return TIKU_TRK_ICONHINT_NONE;
+        return TIKU_ICONHINT_NONE;
     }
-    if (m->facts.icon_hint != TIKU_TRK_ICONHINT_UNASKED) {
+    if (m->facts.icon_hint != TIKU_ICONHINT_UNASKED) {
         return m->facts.icon_hint;
     }
     /* A thumbnail is a node icon, and it counts from the moment the file is
      * one we WOULD make a thumbnail of -- before it exists.  Waiting for the
      * attribute would mean the first draw of every image took the type icon
      * and nothing ever asked again (IV-037). */
-    if (q != NULL && tiku_trk_thumb_wanted(q, m->path)) {
-        m->facts.icon_hint = TIKU_TRK_ICONHINT_THUMB;
+    if (q != NULL && tiku_thumb_wanted(q, m->path)) {
+        m->facts.icon_hint = TIKU_ICONHINT_THUMB;
     } else if (store != NULL &&
-               tiku_trk_state_read(store, m->path, TIKU_TRK_ATTR_ICON, art,
+               tiku_state_read(store, m->path, TIKU_TRK_ATTR_ICON, art,
                                    sizeof art) > 0) {
-        m->facts.icon_hint = TIKU_TRK_ICONHINT_ATTR;
+        m->facts.icon_hint = TIKU_ICONHINT_ATTR;
     } else {
-        m->facts.icon_hint = TIKU_TRK_ICONHINT_NONE;
+        m->facts.icon_hint = TIKU_ICONHINT_NONE;
     }
     return m->facts.icon_hint;
 }
 
 int
-tiku_trk_nodeicon_possible(const tiku_trk_model_t *m)
+tiku_trk_nodeicon_possible(const tiku_model_t *m)
 {
     if (m == NULL) {
         return 0;
@@ -60,8 +60,8 @@ tiku_trk_nodeicon_possible(const tiku_trk_model_t *m)
     /* From the hint alone.  An entry that has not been asked yet answers no
      * rather than probing here: this is called from the draw path, and one
      * read hidden inside it is the read the whole tier exists to avoid. */
-    return (m->facts.icon_hint == TIKU_TRK_ICONHINT_ATTR ||
-            m->facts.icon_hint == TIKU_TRK_ICONHINT_THUMB);
+    return (m->facts.icon_hint == TIKU_ICONHINT_ATTR ||
+            m->facts.icon_hint == TIKU_ICONHINT_THUMB);
 }
 
 /** @brief The cache entry for @p path, or NULL. */
@@ -103,11 +103,11 @@ slot(tiku_trk_nodeicon_t *c)
 }
 
 tiku_trk_icon_from_t
-tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
-                          const tiku_trk_model_t *m, char *out, size_t max)
+tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
+                          const tiku_model_t *m, char *out, size_t max)
 {
     tiku_trk_nodeicon_ent_t *e;
-    char art[TIKU_TRK_NAME_MAX];
+    char art[TIKU_NAME_MAX];
 
     if (out != NULL && max > 0u) {
         out[0] = '\0';
@@ -115,13 +115,13 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
     if (c == NULL || m == NULL) {
         return TIKU_TRK_ICON_FROM_UNKNOWN;
     }
-    if (m->facts.icon_hint == TIKU_TRK_ICONHINT_THUMB) {
+    if (m->facts.icon_hint == TIKU_ICONHINT_THUMB) {
         /* Nothing to read: the caller loads the picture itself.  It is
          * still given a name, because a thumbnail that has not been made
          * yet has to draw as SOMETHING and the type icon is what the row
          * shows meanwhile (IV-031). */
         if (out != NULL) {
-            snprintf(out, max, "%s", tiku_trk_model_icon_name(m));
+            snprintf(out, max, "%s", tiku_model_icon_name(m));
         }
         return TIKU_TRK_ICON_FROM_THUMB;
     }
@@ -134,7 +134,7 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
     }
     if (tiku_trk_nodeicon_possible(m) && store != NULL) {
         c->reads++;
-        if (tiku_trk_state_read(store, m->path, TIKU_TRK_ATTR_ICON, art,
+        if (tiku_state_read(store, m->path, TIKU_TRK_ATTR_ICON, art,
                                 sizeof art) > 0) {
             /* The entry's OWN icon wins over anything its type would give
              * it: a file that carries its own picture must not be drawn as
@@ -162,7 +162,7 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
                  * database walk and the comparison that proved it the
                  * first time (IV-011). */
                 if (out != NULL) {
-                    snprintf(out, max, "%s", tiku_trk_model_icon_name(m));
+                    snprintf(out, max, "%s", tiku_model_icon_name(m));
                 }
                 return TIKU_TRK_ICON_FROM_GENERIC;
             }
@@ -182,7 +182,7 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
         }
     }
     if (out != NULL) {
-        snprintf(out, max, "%s", tiku_trk_model_icon_name(m));
+        snprintf(out, max, "%s", tiku_model_icon_name(m));
     }
     if (m->type[0] != '\0') {
         /* The type only counts as the SOURCE when it actually supplies
@@ -190,18 +190,18 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_trk_store_t *store,
          * document icon an untyped file gets, and calling that a type
          * answer would let a caller share one cached icon across every
          * unregistered type in the listing. */
-        tiku_trk_model_t bare = *m;
+        tiku_model_t bare = *m;
 
         bare.type[0] = '\0';
-        if (strcmp(tiku_trk_model_icon_name(m),
-                   tiku_trk_model_icon_name(&bare)) != 0) {
+        if (strcmp(tiku_model_icon_name(m),
+                   tiku_model_icon_name(&bare)) != 0) {
             return TIKU_TRK_ICON_FROM_TYPE;
         }
         if (c->miss_n < TIKU_TRK_NODEICON_MISS_MAX) {
             /* Nothing anywhere has art for this type.  Remembered so the
              * walk is paid once rather than per row of a folder full of
              * them (IV-011). */
-            snprintf(c->miss[c->miss_n], TIKU_TRK_TYPE_MAX, "%s", m->type);
+            snprintf(c->miss[c->miss_n], TIKU_TYPE_MAX, "%s", m->type);
             c->miss_n++;
         }
     }
@@ -315,10 +315,10 @@ tiku_trk_nodeicon_generation(const tiku_trk_nodeicon_t *c)
 }
 
 void
-tiku_trk_nodeicon_unhint(tiku_trk_model_t *m)
+tiku_trk_nodeicon_unhint(tiku_model_t *m)
 {
     if (m != NULL) {
-        m->facts.icon_hint = TIKU_TRK_ICONHINT_UNASKED;
+        m->facts.icon_hint = TIKU_ICONHINT_UNASKED;
     }
 }
 
@@ -332,6 +332,6 @@ tiku_trk_nodeicon_attr_matters(const char *attr)
      * icon for an image; the thumbnail's stamp too, because that is what
      * changes when one is regenerated. */
     return (strcmp(attr, TIKU_TRK_ATTR_ICON) == 0 ||
-            strcmp(attr, TIKU_TRK_ATTR_THUMB) == 0 ||
-            strcmp(attr, TIKU_TRK_ATTR_THUMB_TIME) == 0);
+            strcmp(attr, TIKU_ATTR_THUMB) == 0 ||
+            strcmp(attr, TIKU_ATTR_THUMB_TIME) == 0);
 }

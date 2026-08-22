@@ -16,9 +16,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_desk_font.h"
+#include "tiku_font.h"
 #include "tiku_trk_deskbar_prefs.h"
-#include "tiku_trk_fontdir.h"
+#include "tiku_fontdir.h"
 
 void
 tiku_trk_fontprefs_default(tiku_trk_fontprefs_values_t *values)
@@ -47,7 +47,7 @@ tiku_trk_fontprefs_init(tiku_trk_fontprefs_t *prefs)
 }
 
 int
-tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs, tiku_trk_store_t *store)
+tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs, tiku_store_t *store)
 {
     tiku_trk_deskbar_prefs_t record;
     int found;
@@ -69,8 +69,8 @@ tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs, tiku_trk_store_t *store)
         /* The dropped family is a name of its own, beside the record:
          * the record holds numbers, and a family is called something. */
         char name[64];
-        int n = tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
-                                    TIKU_TRK_ATTR_UI_FONT, name,
+        int n = tiku_state_read(store, TIKU_KEY_SESSION,
+                                    TIKU_ATTR_UI_FONT, name,
                                     sizeof name - 1u);
 
         if (n > 0) {
@@ -86,7 +86,7 @@ tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs, tiku_trk_store_t *store)
 
 int
 tiku_trk_fontprefs_save(const tiku_trk_fontprefs_t *prefs,
-                        tiku_trk_store_t *store)
+                        tiku_store_t *store)
 {
     tiku_trk_deskbar_prefs_t record;
 
@@ -100,8 +100,8 @@ tiku_trk_fontprefs_save(const tiku_trk_fontprefs_t *prefs,
     record.value.font_family = prefs->value.family;
     record.value.font_size = prefs->value.size;
     tiku_trk_deskbar_settings_normalize(&record.value);
-    (void)tiku_trk_state_write(store, TIKU_TRK_KEY_SESSION,
-                               TIKU_TRK_ATTR_UI_FONT, prefs->value.dropped,
+    (void)tiku_state_write(store, TIKU_KEY_SESSION,
+                               TIKU_ATTR_UI_FONT, prefs->value.dropped,
                                strlen(prefs->value.dropped));
     return tiku_trk_deskbar_prefs_save(&record, store) == 0;
 }
@@ -169,7 +169,7 @@ int
 tiku_trk_fontprefs_set_family(tiku_trk_fontprefs_t *prefs, int family)
 {
     if (prefs == NULL || family < 0 ||
-        family >= tiku_desk_font_family_count() ||
+        family >= tiku_font_family_count() ||
         (family == prefs->value.family && prefs->value.dropped[0] == '\0')) {
         return 0;
     }
@@ -197,38 +197,38 @@ tiku_trk_fontprefs_step_size(tiku_trk_fontprefs_t *prefs, int up)
 int
 tiku_trk_fontprefs_family_count(void)
 {
-    return tiku_desk_font_family_count();
+    return tiku_font_family_count();
 }
 
 const char *
 tiku_trk_fontprefs_family_name(int family)
 {
-    return tiku_desk_font_family_name(family);
+    return tiku_font_family_name(family);
 }
 
 /** @brief What is in the fonts folder right now. */
 static int
-folder(tiku_trk_fontdir_t *out)
+folder(tiku_fontdir_t *out)
 {
-    char dir[TIKU_TRK_PATH_MAX];
+    char dir[TIKU_PATH_MAX];
 
-    (void)tiku_trk_fonts_dir(dir, sizeof dir);
-    return tiku_trk_fontdir_scan(out, dir);
+    (void)tiku_fonts_dir(dir, sizeof dir);
+    return tiku_fontdir_scan(out, dir);
 }
 
 int
 tiku_trk_fontprefs_offer(tiku_trk_fontprefs_offer_t *out)
 {
-    tiku_trk_fontdir_t dropped;
+    tiku_fontdir_t dropped;
     int i;
 
     if (out == NULL) {
         return 0;
     }
     memset(out, 0, sizeof *out);
-    for (i = 0; i < tiku_desk_font_family_count() &&
+    for (i = 0; i < tiku_font_family_count() &&
                 out->count < TIKU_TRK_FONT_OFFER_MAX; i++) {
-        const char *name = tiku_desk_font_family_name(i);
+        const char *name = tiku_font_family_name(i);
 
         if (name == NULL) {
             break;
@@ -295,22 +295,22 @@ tiku_trk_fontprefs_apply(const tiku_trk_fontprefs_t *prefs)
         return;
     }
     if (prefs->value.dropped[0] != '\0') {
-        tiku_trk_fontdir_t dir;
-        const tiku_trk_fontdir_entry_t *e;
+        tiku_fontdir_t dir;
+        const tiku_fontdir_entry_t *e;
 
         (void)folder(&dir);
-        e = tiku_trk_fontdir_find(&dir, prefs->value.dropped);
+        e = tiku_fontdir_find(&dir, prefs->value.dropped);
         if (e != NULL &&
-            tiku_desk_font_set_files(e->regular,
+            tiku_font_set_files(e->regular,
                                      (e->bold[0] != '\0') ? e->bold
                                                           : NULL)) {
-            (void)tiku_desk_font_set_size(prefs->value.size);
+            (void)tiku_font_set_size(prefs->value.size);
             return;
         }
         /* Taken out of the folder since it was chosen: the interface
          * still has to be drawn in something. */
     }
-    tiku_desk_font_use_baked();
-    (void)tiku_desk_font_set_family(prefs->value.family);
-    (void)tiku_desk_font_set_size(prefs->value.size);
+    tiku_font_use_baked();
+    (void)tiku_font_set_family(prefs->value.family);
+    (void)tiku_font_set_size(prefs->value.size);
 }

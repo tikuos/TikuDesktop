@@ -9,9 +9,9 @@
  */
 
 #include "tiku_trk_find.h"
-#include "tiku_trk_strings.h"
-#include "tiku_trk_state.h"
-#include "tiku_desk_ui.h"
+#include "tiku_strings.h"
+#include "tiku_state.h"
+#include "tiku_ui.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -42,21 +42,21 @@
 #define OPS_DATE  0x60u       /* after, before                            */
 
 static const struct {
-    tiku_trk_qfield_t field;
+    tiku_qfield_t field;
     const char       *label;
-    unsigned          ops;          /* bit per tiku_trk_qop_t              */
-    tiku_trk_qop_t    first;
+    unsigned          ops;          /* bit per tiku_qop_t              */
+    tiku_qop_t    first;
 } kFields[] = {
-    { TIKU_TRK_QF_NAME,     "label.name",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
-    { TIKU_TRK_QF_PATH,     "find.path",       OPS_TEXT,  TIKU_TRK_OP_CONTAINS },
-    { TIKU_TRK_QF_KIND,     "label.kind",       OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_VALUE,    "label.value",      OPS_TEXT | OPS_NUM,
-                                                     TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_UNIT,     "find.unit",       OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_CAP,      "label.capability", OPS_TEXT,  TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_SIZE,     "label.size",       OPS_NUM,   TIKU_TRK_OP_IS },
-    { TIKU_TRK_QF_MODIFIED, "label.modified",   OPS_DATE,  TIKU_TRK_OP_LESS },
-    { TIKU_TRK_QF_WRITABLE, "find.writable",   OPS_EXACT, TIKU_TRK_OP_IS }
+    { TIKU_QF_NAME,     "label.name",       OPS_TEXT,  TIKU_OP_CONTAINS },
+    { TIKU_QF_PATH,     "find.path",       OPS_TEXT,  TIKU_OP_CONTAINS },
+    { TIKU_QF_KIND,     "label.kind",       OPS_TEXT,  TIKU_OP_IS },
+    { TIKU_QF_VALUE,    "label.value",      OPS_TEXT | OPS_NUM,
+                                                     TIKU_OP_IS },
+    { TIKU_QF_UNIT,     "find.unit",       OPS_TEXT,  TIKU_OP_IS },
+    { TIKU_QF_CAP,      "label.capability", OPS_TEXT,  TIKU_OP_IS },
+    { TIKU_QF_SIZE,     "label.size",       OPS_NUM,   TIKU_OP_IS },
+    { TIKU_QF_MODIFIED, "label.modified",   OPS_DATE,  TIKU_OP_LESS },
+    { TIKU_QF_WRITABLE, "find.writable",   OPS_EXACT, TIKU_OP_IS }
 };
 #define NFIELDS ((int)(sizeof kFields / sizeof kFields[0]))
 
@@ -67,31 +67,31 @@ static const char *kOps[] = {
 };
 
 static const char *
-op_label(tiku_trk_qfield_t field, tiku_trk_qop_t op)
+op_label(tiku_qfield_t field, tiku_qop_t op)
 {
-    if (field == TIKU_TRK_QF_MODIFIED) {
-        return (op == TIKU_TRK_OP_GREATER) ? tiku_trk_str("op.after")
-                                             : tiku_trk_str("op.before");
+    if (field == TIKU_QF_MODIFIED) {
+        return (op == TIKU_OP_GREATER) ? tiku_str("op.after")
+                                             : tiku_str("op.before");
     }
-    return tiku_trk_str(kOps[op]);
+    return tiku_str(kOps[op]);
 }
 
 static const char *
-field_label(tiku_trk_qfield_t f)
+field_label(tiku_qfield_t f)
 {
     int i;
 
     for (i = 0; i < NFIELDS; i++) {
         if (kFields[i].field == f) {
-            return tiku_trk_str(kFields[i].label);
+            return tiku_str(kFields[i].label);
         }
     }
-    return tiku_trk_str("label.name");
+    return tiku_str("label.name");
 }
 
 /** @brief The operators @p f offers, as a bit per operator. */
 static unsigned
-field_ops(tiku_trk_qfield_t f)
+field_ops(tiku_qfield_t f)
 {
     int i;
 
@@ -105,18 +105,18 @@ field_ops(tiku_trk_qfield_t f)
 
 /** @brief Whether one type record declares the model fact behind a field. */
 static int
-record_has_field(const tiku_trk_typerec_t *r, tiku_trk_qfield_t field)
+record_has_field(const tiku_trk_typerec_t *r, tiku_qfield_t field)
 {
     int want = -1, i;
 
     switch (field) {
-    case TIKU_TRK_QF_KIND:  want = TIKU_TRK_COL_KIND; break;
-    case TIKU_TRK_QF_VALUE: want = TIKU_TRK_COL_VALUE; break;
-    case TIKU_TRK_QF_CAP:   want = TIKU_TRK_COL_CAP; break;
-    case TIKU_TRK_QF_PATH:  want = TIKU_TRK_COL_PATH; break;
+    case TIKU_QF_KIND:  want = TIKU_TRK_COL_KIND; break;
+    case TIKU_QF_VALUE: want = TIKU_TRK_COL_VALUE; break;
+    case TIKU_QF_CAP:   want = TIKU_TRK_COL_CAP; break;
+    case TIKU_QF_PATH:  want = TIKU_TRK_COL_PATH; break;
     /* Unit describes a typed value, so a type declaring Value declares the
      * unit paired with it as searchable too. */
-    case TIKU_TRK_QF_UNIT:  want = TIKU_TRK_COL_VALUE; break;
+    case TIKU_QF_UNIT:  want = TIKU_TRK_COL_VALUE; break;
     default: break;
     }
     for (i = 0; r != NULL && want >= 0 && i < r->ncol; i++) {
@@ -129,12 +129,12 @@ record_has_field(const tiku_trk_typerec_t *r, tiku_trk_qfield_t field)
 
 /** @brief The original's three built-ins plus what the selected type adds. */
 static int
-field_in_menu(const tiku_trk_find_t *f, tiku_trk_qfield_t field)
+field_in_menu(const tiku_trk_find_t *f, tiku_qfield_t field)
 {
     const tiku_trk_typerec_t *super, *exact;
 
-    if (field == TIKU_TRK_QF_NAME || field == TIKU_TRK_QF_SIZE ||
-        field == TIKU_TRK_QF_MODIFIED) {
+    if (field == TIKU_QF_NAME || field == TIKU_QF_SIZE ||
+        field == TIKU_QF_MODIFIED) {
         return 1;
     }
     if (f == NULL || f->types == NULL || f->type[0] == '\0') {
@@ -152,12 +152,12 @@ tiku_trk_find_init(tiku_trk_find_t *f)
         return;
     }
     memset(f, 0, sizeof *f);
-    f->mode = TIKU_TRK_QMODE_NAME;
+    f->mode = TIKU_QMODE_NAME;
     f->everywhere = 1;
     f->row_count = 1;
-    f->row[0].field = TIKU_TRK_QF_NAME;
-    f->row[0].op = TIKU_TRK_OP_CONTAINS;
-    f->row[0].join = TIKU_TRK_JOIN_AND;
+    f->row[0].field = TIKU_QF_NAME;
+    f->row[0].op = TIKU_OP_CONTAINS;
+    f->row[0].join = TIKU_JOIN_AND;
     f->focus = TIKU_TRK_FIND_FOCUS_NAME;
     f->popup_for = TIKU_TRK_FIND_HIT_NONE;
 }
@@ -176,7 +176,7 @@ tiku_trk_find_add_place(tiku_trk_find_t *f, const char *name)
             return 0;
         }
     }
-    snprintf(f->place[f->place_count], TIKU_TRK_NAME_MAX, "%s", name);
+    snprintf(f->place[f->place_count], TIKU_NAME_MAX, "%s", name);
     f->place_count++;
     return 1;
 }
@@ -238,29 +238,29 @@ tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
 }
 
 void
-tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_trk_qmode_t mode)
+tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_qmode_t mode)
 {
     if (f == NULL || f->mode == mode) {
         return;
     }
-    if (mode == TIKU_TRK_QMODE_FORMULA) {
+    if (mode == TIKU_QMODE_FORMULA) {
         /* Entering formula mode shows what the controls were asking, which
          * is how the predicate language gets learned. */
-        tiku_trk_query_t q;
+        tiku_query_t q;
 
         tiku_trk_find_build(f, &q);
-        (void)tiku_trk_query_predicate(&q, f->formula, sizeof f->formula);
+        (void)tiku_query_predicate(&q, f->formula, sizeof f->formula);
         f->focus = TIKU_TRK_FIND_FOCUS_FORMULA;
     } else {
         /* Leaving formula mode, the original silently discards both the
          * formula and the attribute rows.  The rows are kept here instead:
          * losing a half-built query to a mis-click is a defect, not a
          * behaviour worth reproducing. */
-        f->focus = (mode == TIKU_TRK_QMODE_NAME)
+        f->focus = (mode == TIKU_QMODE_NAME)
                        ? TIKU_TRK_FIND_FOCUS_NAME
                        : TIKU_TRK_FIND_FOCUS_ROW;
         /* The last row, not the first: it is the one still being filled in. */
-        f->focus_row = (mode == TIKU_TRK_QMODE_ATTRIBUTE)
+        f->focus_row = (mode == TIKU_QMODE_ATTRIBUTE)
                            ? f->row_count - 1 : 0;
     }
     f->mode = mode;
@@ -279,7 +279,7 @@ tiku_trk_find_add_row(tiku_trk_find_t *f)
     memset(r, 0, sizeof *r);
     r->field = kFields[0].field;
     r->op = kFields[0].first;
-    r->join = TIKU_TRK_JOIN_AND;
+    r->join = TIKU_JOIN_AND;
     f->focus = TIKU_TRK_FIND_FOCUS_ROW;
     f->focus_row = f->row_count;
     f->row_count++;
@@ -301,7 +301,7 @@ tiku_trk_find_remove_row(tiku_trk_find_t *f)
 }
 
 int
-tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
+tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
 {
     int i, k, all = 1;
 
@@ -313,28 +313,28 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
          * supplied by the shell from what is mounted -- not part of the
          * query being restored, and a restore that wiped them would leave
          * a panel that can no longer name where to search. */
-        char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+        char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
         uint64_t kept_dev[TIKU_TRK_FIND_PLACES_MAX];
-        char kept_volume[TIKU_TRK_FIND_PLACES_MAX][TIKU_TRK_NAME_MAX];
+        char kept_volume[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
         int nkept = f->place_count, k;
         /* The STORE survives too, for the same reason: it is where this
          * panel keeps its most-used types and reads its saved searches
          * from, not part of the query being restored.  A restore that
          * dropped it left a panel that could no longer find anything it
          * had itself saved. */
-        struct tiku_trk_store *store = f->store;
+        struct tiku_store *store = f->store;
         const tiku_trk_types_t *types = f->types;
 
         for (k = 0; k < nkept; k++) {
-            memcpy(kept[k], f->place[k], TIKU_TRK_NAME_MAX);
+            memcpy(kept[k], f->place[k], TIKU_NAME_MAX);
             kept_dev[k] = f->place_dev[k];
-            memcpy(kept_volume[k], f->place_volume[k], TIKU_TRK_NAME_MAX);
+            memcpy(kept_volume[k], f->place_volume[k], TIKU_NAME_MAX);
         }
         tiku_trk_find_init(f);
         for (k = 0; k < nkept; k++) {
-            memcpy(f->place[k], kept[k], TIKU_TRK_NAME_MAX);
+            memcpy(f->place[k], kept[k], TIKU_NAME_MAX);
             f->place_dev[k] = kept_dev[k];
-            memcpy(f->place_volume[k], kept_volume[k], TIKU_TRK_NAME_MAX);
+            memcpy(f->place_volume[k], kept_volume[k], TIKU_NAME_MAX);
         }
         f->place_count = nkept;
         f->store = store;
@@ -364,22 +364,22 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
          * a condition they never typed and duplicate it on the next run. */
         int last = f->row_count - 1;
 
-        if (f->row[last].field == TIKU_TRK_QF_TYPE) {
+        if (f->row[last].field == TIKU_QF_TYPE) {
             f->row_count = (last > 0) ? last : 1;
             if (last == 0) {
                 memset(&f->row[0], 0, sizeof f->row[0]);
-                f->row[0].field = TIKU_TRK_QF_NAME;
-                f->row[0].op = TIKU_TRK_OP_CONTAINS;
+                f->row[0].field = TIKU_QF_NAME;
+                f->row[0].op = TIKU_OP_CONTAINS;
             }
         }
     }
-    if (q->mode == TIKU_TRK_QMODE_NAME && q->term_count > 0) {
+    if (q->mode == TIKU_QMODE_NAME && q->term_count > 0) {
         /* A by-name query is one term over the name; the panel shows what
          * was TYPED, which is that term's value. */
         snprintf(f->name_text, sizeof f->name_text, "%s", q->term[0].value);
     }
-    if (q->mode == TIKU_TRK_QMODE_FORMULA) {
-        (void)tiku_trk_query_predicate(q, f->formula, sizeof f->formula);
+    if (q->mode == TIKU_QMODE_FORMULA) {
+        (void)tiku_query_predicate(q, f->formula, sizeof f->formula);
     }
     f->include_trash = q->include_trash;
     f->everywhere = (q->scope_count == 0);
@@ -388,7 +388,7 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
         int found = 0;
 
         for (k = 0; k < f->place_count; k++) {
-            char path[TIKU_TRK_PATH_MAX];
+            char path[TIKU_PATH_MAX];
 
             /* With the separator the scope list keeps: a scope is stored
              * normalised so its prefix test cannot admit a sibling, and
@@ -418,26 +418,26 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_trk_query_t *q)
 }
 
 void
-tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
+tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q)
 {
     int i;
 
     if (f == NULL || q == NULL) {
         return;
     }
-    tiku_trk_query_init(q);
+    tiku_query_init(q);
     q->mode = f->mode;
     switch (f->mode) {
-    case TIKU_TRK_QMODE_NAME:
-        tiku_trk_query_set_name(q, f->name_text);
+    case TIKU_QMODE_NAME:
+        tiku_query_set_name(q, f->name_text);
         break;
-    case TIKU_TRK_QMODE_ATTRIBUTE:
+    case TIKU_QMODE_ATTRIBUTE:
         for (i = 0; i < f->row_count; i++) {
             /* The join that reaches a row is the one recorded on the row
              * BEFORE it, which is where the control sits. */
-            (void)tiku_trk_query_add_term(q, f->row[i].field, f->row[i].op,
+            (void)tiku_query_add_term(q, f->row[i].field, f->row[i].op,
                                           f->row[i].value,
-                                          (i == 0) ? TIKU_TRK_JOIN_AND
+                                          (i == 0) ? TIKU_JOIN_AND
                                                    : f->row[i - 1].join);
         }
         break;
@@ -445,25 +445,25 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_trk_query_t *q)
         /* Formula mode runs what the field says, not the rows it started
          * from.  A malformed predicate remains an empty query so the shell
          * can refuse it rather than silently running something else. */
-        (void)tiku_trk_query_set_formula(q, f->formula);
+        (void)tiku_query_set_formula(q, f->formula);
         break;
     }
     q->include_trash = f->include_trash;
-    if (f->type[0] != '\0' && f->mode != TIKU_TRK_QMODE_FORMULA) {
+    if (f->type[0] != '\0' && f->mode != TIKU_QMODE_FORMULA) {
         /* ANDed onto everything the rows ask, which is what "of type" means
          * -- and recorded on the query so a saved one comes back with its
          * narrowing intact (Q-004). */
         snprintf(q->type, sizeof q->type, "%s", f->type);
-        (void)tiku_trk_query_add_term(q, TIKU_TRK_QF_TYPE, TIKU_TRK_OP_IS,
-                                      f->type, TIKU_TRK_JOIN_AND);
+        (void)tiku_query_add_term(q, TIKU_QF_TYPE, TIKU_OP_IS,
+                                      f->type, TIKU_JOIN_AND);
     }
     if (!f->everywhere) {
         for (i = 0; i < f->place_count; i++) {
             if (f->place_mask & (1u << i)) {
-                char path[TIKU_TRK_PATH_MAX];
+                char path[TIKU_PATH_MAX];
 
                 snprintf(path, sizeof path, "/%s", f->place[i]);
-                if (tiku_trk_query_add_scope(q, path)) {
+                if (tiku_query_add_scope(q, path)) {
                     int at = q->scope_count - 1;
 
                     q->scope_was[at].dev = f->place_dev[i];
@@ -487,7 +487,7 @@ tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out, size_t max)
         return 0;
     }
     if (f == NULL || f->everywhere) {
-        snprintf(out, max, "%s", tiku_trk_str("find.everywhere"));
+        snprintf(out, max, "%s", tiku_str("find.everywhere"));
         return (int)strlen(out);
     }
     for (i = 0; i < f->place_count; i++) {
@@ -499,7 +499,7 @@ tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out, size_t max)
     /* One place is named; several are counted.  Listing them would not fit
      * and would not be read. */
     if (n == 0) {
-        snprintf(out, max, "%s", tiku_trk_str("find.everywhere"));
+        snprintf(out, max, "%s", tiku_str("find.everywhere"));
     } else if (n == 1) {
         snprintf(out, max, "/%.*s", (int)max - 2, f->place[last]);
     } else {
@@ -521,11 +521,11 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
     if (out == NULL || max == 0u) {
         return 0;
     }
-    switch (f != NULL ? f->mode : TIKU_TRK_QMODE_NAME) {
-    case TIKU_TRK_QMODE_NAME:
+    switch (f != NULL ? f->mode : TIKU_QMODE_NAME) {
+    case TIKU_QMODE_NAME:
         snprintf(desc, sizeof desc, "name contains %.40s", f->name_text);
         break;
-    case TIKU_TRK_QMODE_ATTRIBUTE: {
+    case TIKU_QMODE_ATTRIBUTE: {
         /* Every row is described, joined by the join that reaches it, so two
          * saved queries differing only in their second row do not end up
          * with the same name. */
@@ -536,7 +536,7 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
         for (k = 0; k < f->row_count && o + 1u < sizeof desc; k++) {
             o += (size_t)snprintf(desc + o, sizeof desc - o, "%s%s %s %.20s",
                                   (k == 0) ? ""
-                                  : (f->row[k - 1].join == TIKU_TRK_JOIN_OR)
+                                  : (f->row[k - 1].join == TIKU_JOIN_OR)
                                       ? " or " : " and ",
                                   field_label(f->row[k].field),
                                   op_label(f->row[k].field, f->row[k].op),
@@ -574,7 +574,7 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
 #define TYPE_ATTR "_trk/types_used"
 
 void
-tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_trk_store *s)
+tiku_trk_find_set_store(tiku_trk_find_t *f, struct tiku_store *s)
 {
     if (f != NULL) {
         f->store = s;
@@ -595,7 +595,7 @@ tiku_trk_find_type_shown(const tiku_trk_find_t *f)
     /* Not in formula mode: the formula IS the question there, and a control
      * quietly ANDing a type onto it would make the text on screen a lie
      * about what is being asked (Q-012). */
-    return (f != NULL && f->mode != TIKU_TRK_QMODE_FORMULA);
+    return (f != NULL && f->mode != TIKU_QMODE_FORMULA);
 }
 
 const char *
@@ -606,13 +606,13 @@ tiku_trk_find_type_label(const tiku_trk_find_t *f)
     const char *t, *label;
 
     if (f == NULL || f->type[0] == '\0') {
-        return tiku_trk_str("find.all_files");
+        return tiku_str("find.all_files");
     }
     record = tiku_trk_types_exact(f->types, f->type);
     if (record != NULL && record->desc[0] != '\0') {
         return record->desc;
     }
-    for (i = 0; (t = tiku_trk_model_type_at(i, &label)) != NULL; i++) {
+    for (i = 0; (t = tiku_model_type_at(i, &label)) != NULL; i++) {
         if (strcmp(t, f->type) == 0) {
             return label;
         }
@@ -622,17 +622,17 @@ tiku_trk_find_type_label(const tiku_trk_find_t *f)
 
 /** @brief Read the most-used list, newest first. */
 static int
-used_read(struct tiku_trk_store *store, char out[][TIKU_TRK_TYPE_MAX],
+used_read(struct tiku_store *store, char out[][TIKU_TYPE_MAX],
           int max)
 {
-    char buf[TIKU_TRK_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
+    char buf[TIKU_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
     int n = 0, len;
     char *line, *save;
 
     if (store == NULL || max <= 0) {
         return 0;
     }
-    len = tiku_trk_state_read(store, TYPE_SLOT, TYPE_ATTR, buf,
+    len = tiku_state_read(store, TYPE_SLOT, TYPE_ATTR, buf,
                               sizeof buf - 1u);
     if (len <= 0) {
         return 0;
@@ -641,8 +641,8 @@ used_read(struct tiku_trk_store *store, char out[][TIKU_TRK_TYPE_MAX],
     for (line = strtok_r(buf, "\n", &save); line != NULL && n < max;
          line = strtok_r(NULL, "\n", &save)) {
         if (line[0] != '\0') {
-            snprintf(out[n++], TIKU_TRK_TYPE_MAX, "%.*s",
-                     (int)(TIKU_TRK_TYPE_MAX - 1), line);
+            snprintf(out[n++], TIKU_TYPE_MAX, "%.*s",
+                     (int)(TIKU_TYPE_MAX - 1), line);
         }
     }
     return n;
@@ -650,10 +650,10 @@ used_read(struct tiku_trk_store *store, char out[][TIKU_TRK_TYPE_MAX],
 
 void
 tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
-                       struct tiku_trk_store *store)
+                       struct tiku_store *store)
 {
-    char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
-    char keep[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+    char used[TIKU_TRK_FIND_MOST_USED][TIKU_TYPE_MAX];
+    char keep[TIKU_TRK_FIND_MOST_USED][TIKU_TYPE_MAX];
     int n, i, k = 0;
 
     if (f == NULL) {
@@ -668,17 +668,17 @@ tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
         return;
     }
     n = used_read(store, used, TIKU_TRK_FIND_MOST_USED);
-    snprintf(keep[k++], TIKU_TRK_TYPE_MAX, "%.*s",
-             (int)(TIKU_TRK_TYPE_MAX - 1), f->type);
+    snprintf(keep[k++], TIKU_TYPE_MAX, "%.*s",
+             (int)(TIKU_TYPE_MAX - 1), f->type);
     for (i = 0; i < n && k < TIKU_TRK_FIND_MOST_USED; i++) {
         /* Promoted, not appended: picking one again moves it up, which is
          * what makes the head of the menu the types this user works in. */
         if (strcmp(used[i], f->type) != 0) {
-            memcpy(keep[k++], used[i], TIKU_TRK_TYPE_MAX);
+            memcpy(keep[k++], used[i], TIKU_TYPE_MAX);
         }
     }
     {
-        char buf[TIKU_TRK_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
+        char buf[TIKU_TYPE_MAX * TIKU_TRK_FIND_MOST_USED * 2];
         size_t at = 0u;
 
         for (i = 0; i < k && at + 1u < sizeof buf; i++) {
@@ -689,15 +689,15 @@ tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
             }
             at += (size_t)w;
         }
-        (void)tiku_trk_state_write(store, TYPE_SLOT, TYPE_ATTR, buf, at);
+        (void)tiku_state_write(store, TYPE_SLOT, TYPE_ATTR, buf, at);
     }
 }
 
 int
-tiku_trk_find_type_menu(struct tiku_trk_store *store, const char **out,
+tiku_trk_find_type_menu(struct tiku_store *store, const char **out,
                         int max)
 {
-    static char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+    static char used[TIKU_TRK_FIND_MOST_USED][TIKU_TYPE_MAX];
     int n = 0, nu, i, k;
     const char *t;
 
@@ -711,7 +711,7 @@ tiku_trk_find_type_menu(struct tiku_trk_store *store, const char **out,
     /* Then every type the port knows, minus the ones already at the top:
      * the table IS the type database here, so a menu offering more would
      * offer types nothing can recognise. */
-    for (i = 0; (t = tiku_trk_model_type_at(i, NULL)) != NULL && n < max;
+    for (i = 0; (t = tiku_model_type_at(i, NULL)) != NULL && n < max;
          i++) {
         int seen = 0;
 
@@ -740,7 +740,7 @@ type_label(const tiku_trk_find_t *f, const char *type)
     if (r != NULL && r->desc[0] != '\0') {
         return r->desc;
     }
-    for (i = 0; (known = tiku_trk_model_type_at(i, &label)) != NULL; i++) {
+    for (i = 0; (known = tiku_model_type_at(i, &label)) != NULL; i++) {
         if (strcmp(known, type) == 0) {
             return label;
         }
@@ -768,7 +768,7 @@ type_command(tiku_trk_find_t *f, const char *type)
 }
 
 static int
-type_is_used(char used[][TIKU_TRK_TYPE_MAX], int n, const char *type)
+type_is_used(char used[][TIKU_TYPE_MAX], int n, const char *type)
 {
     int i;
 
@@ -804,7 +804,7 @@ control_rows(const tiku_trk_find_t *f)
     int n;
 
     switch (f->mode) {
-    case TIKU_TRK_QMODE_ATTRIBUTE: n = f->row_count; break;
+    case TIKU_QMODE_ATTRIBUTE: n = f->row_count; break;
     default:                       n = 1; break;
     }
     /* The type control is a row of its own when it is shown, so the panel
@@ -824,19 +824,19 @@ tiku_trk_find_height(const tiku_trk_find_t *f)
 }
 
 /** @brief Rectangle of the mode selector. */
-static tiku_desk_rect_t
-mode_rect(tiku_desk_rect_t f)
+static tiku_rect_t
+mode_rect(tiku_rect_t f)
 {
-    tiku_desk_rect_t r = { f.x + PAD + LABEL_W, f.y + PAD, FIELD_W, ROW_H };
+    tiku_rect_t r = { f.x + PAD + LABEL_W, f.y + PAD, FIELD_W, ROW_H };
 
     return r;
 }
 
 /** @brief Rectangle of control row @p i. */
-static tiku_desk_rect_t
-row_rect(tiku_desk_rect_t f, int i)
+static tiku_rect_t
+row_rect(tiku_rect_t f, int i)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
     r.x = f.x + PAD;
     r.y = f.y + PAD + ROW_H + GAP + i * (ROW_H + GAP);
@@ -846,10 +846,10 @@ row_rect(tiku_desk_rect_t f, int i)
 }
 
 /** @brief Rectangle of the type control, the row above the scope. */
-static tiku_desk_rect_t
-type_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
+static tiku_rect_t
+type_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
     int rows = control_rows(f) - 1;     /* its own row is the last one */
 
     r.x = fr.x + PAD + LABEL_W;
@@ -859,10 +859,10 @@ type_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
     return r;
 }
 
-static tiku_desk_rect_t
-scope_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
+static tiku_rect_t
+scope_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
     r.x = fr.x + PAD + LABEL_W;
     r.y = fr.y + PAD + ROW_H + GAP + control_rows(f) * (ROW_H + GAP);
@@ -872,20 +872,20 @@ scope_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
 }
 
 /** @brief The Include Trash option shares the scope row. */
-static tiku_desk_rect_t
-trash_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr)
+static tiku_rect_t
+trash_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
 {
-    tiku_desk_rect_t r = scope_rect(f, fr);
+    tiku_rect_t r = scope_rect(f, fr);
 
     r.x = fr.x + fr.w - PAD - 116;
     r.w = 116;
     return r;
 }
 
-static tiku_desk_rect_t
-button_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr, int which)
+static tiku_rect_t
+button_rect(const tiku_trk_find_t *f, tiku_rect_t fr, int which)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
     /* The default button's ring lives INSIDE its rectangle (the face is
      * inset by 4), so it needs the extra room rather than overlapping its
      * neighbour. */
@@ -914,45 +914,45 @@ button_rect(const tiku_trk_find_t *f, tiku_desk_rect_t fr, int which)
 
 /** @brief A menu field, from the shared control look. */
 static void
-draw_popup_button(tiku_desk_surface_t *s, tiku_desk_rect_t r,
+draw_popup_button(tiku_surface_t *s, tiku_rect_t r,
                   const char *label)
 {
-    tiku_desk_ui_menufield(s, r, label, TIKU_DESK_S_NORMAL);
+    tiku_ui_menufield(s, r, label, TIKU_S_NORMAL);
 }
 
 static void
-draw_field(tiku_desk_surface_t *s, tiku_desk_rect_t r, const char *text,
+draw_field(tiku_surface_t *s, tiku_rect_t r, const char *text,
            int focused)
 {
     /* The shared text control owns the caret, so it blinks and sits where
      * every other field's does. */
-    tiku_desk_ui_textfield(s, r, (text != NULL) ? text : "",
+    tiku_ui_textfield(s, r, (text != NULL) ? text : "",
                            focused ? (int)strlen((text != NULL) ? text : "")
                                    : -1,
-                           focused ? TIKU_DESK_S_FOCUS : TIKU_DESK_S_NORMAL);
+                           focused ? TIKU_S_FOCUS : TIKU_S_NORMAL);
 }
 
 static void
-draw_button(tiku_desk_surface_t *s, tiku_desk_rect_t r, const char *label,
+draw_button(tiku_surface_t *s, tiku_rect_t r, const char *label,
             unsigned state)
 {
-    tiku_desk_ui_button(s, r, label, state);
+    tiku_ui_button(s, r, label, state);
 }
 
 static void
-label_at(tiku_desk_surface_t *s, int x, tiku_desk_rect_t r, const char *text)
+label_at(tiku_surface_t *s, int x, tiku_rect_t r, const char *text)
 {
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    const tiku_font_t *font = tiku_font_plain();
 
-    tiku_desk_text(s, font, x, r.y + (r.h - font->height) / 2 + font->ascent,
-                   text, TIKU_DESK_C_TEXT);
+    tiku_text(s, font, x, r.y + (r.h - font->height) / 2 + font->ascent,
+                   text, TIKU_C_TEXT);
 }
 
-tiku_desk_rect_t
-tiku_trk_find_icon_rect(const tiku_trk_find_t *f, tiku_desk_rect_t frame)
+tiku_rect_t
+tiku_trk_find_icon_rect(const tiku_trk_find_t *f, tiku_rect_t frame)
 {
-    tiku_desk_rect_t none = { 0, 0, 0, 0 };
-    tiku_desk_rect_t r = { frame.x + frame.w - PAD - 32, frame.y + PAD,
+    tiku_rect_t none = { 0, 0, 0, 0 };
+    tiku_rect_t r = { frame.x + frame.w - PAD - 32, frame.y + PAD,
                            32, 32 };
 
     if (f == NULL || f->edit_template) {
@@ -962,35 +962,35 @@ tiku_trk_find_icon_rect(const tiku_trk_find_t *f, tiku_desk_rect_t frame)
 }
 
 void
-tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
-                   tiku_desk_rect_t frame)
+tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
+                   tiku_rect_t frame)
 {
     static const char *kModes[] = { "by name", "by attribute", "by formula" };
-    tiku_desk_rect_t r;
-    char buf[TIKU_TRK_PATH_MAX];
+    tiku_rect_t r;
+    char buf[TIKU_PATH_MAX];
     int i;
 
     if (f == NULL || s == NULL) {
         return;
     }
-    tiku_desk_fill(s, frame, TIKU_DESK_C_PANEL);
+    tiku_fill(s, frame, TIKU_C_PANEL);
 
     r = mode_rect(frame);
-    label_at(s, frame.x + PAD, r, tiku_trk_str("find.find"));
+    label_at(s, frame.x + PAD, r, tiku_str("find.find"));
     draw_popup_button(s, r, kModes[f->mode]);
 
-    if (f->mode == TIKU_TRK_QMODE_NAME) {
+    if (f->mode == TIKU_QMODE_NAME) {
         r = row_rect(frame, 0);
-        label_at(s, r.x, r, tiku_trk_str("find.name_contains"));
+        label_at(s, r.x, r, tiku_str("find.name_contains"));
         r.x += LABEL_W + 40;
         r.w = VALUE_W + OP_W;
         r.y += (ROW_H - TEXT_H) / 2;
         r.h = TEXT_H;
         draw_field(s, r, f->name_text,
                    f->focus == TIKU_TRK_FIND_FOCUS_NAME);
-    } else if (f->mode == TIKU_TRK_QMODE_FORMULA) {
+    } else if (f->mode == TIKU_QMODE_FORMULA) {
         r = row_rect(frame, 0);
-        label_at(s, r.x, r, tiku_trk_str("find.formula"));
+        label_at(s, r.x, r, tiku_str("find.formula"));
         r.x += LABEL_W;
         r.w = frame.w - 2 * PAD - LABEL_W;
         r.y += (ROW_H - TEXT_H) / 2;
@@ -999,8 +999,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                    f->focus == TIKU_TRK_FIND_FOCUS_FORMULA);
     } else {
         for (i = 0; i < f->row_count; i++) {
-            tiku_desk_rect_t rr = row_rect(frame, i);
-            tiku_desk_rect_t c = rr;
+            tiku_rect_t rr = row_rect(frame, i);
+            tiku_rect_t c = rr;
 
             c.w = FIELD_W;
             draw_popup_button(s, c, field_label(f->row[i].field));
@@ -1023,7 +1023,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
                 c.y = rr.y;
                 c.h = ROW_H;
                 draw_popup_button(s, c,
-                                  (f->row[i].join == TIKU_TRK_JOIN_OR)
+                                  (f->row[i].join == TIKU_JOIN_OR)
                                       ? "or" : "and");
             }
         }
@@ -1031,43 +1031,43 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 
     if (tiku_trk_find_type_shown(f)) {
         r = type_rect(f, frame);
-        label_at(s, frame.x + PAD, r, tiku_trk_str("find.of_type"));
+        label_at(s, frame.x + PAD, r, tiku_str("find.of_type"));
         draw_popup_button(s, r, tiku_trk_find_type_label(f));
     }
     r = scope_rect(f, frame);
-    label_at(s, frame.x + PAD, r, tiku_trk_str("find.search_in"));
+    label_at(s, frame.x + PAD, r, tiku_str("find.search_in"));
     (void)tiku_trk_find_scope_label(f, buf, sizeof buf);
     draw_popup_button(s, r, buf);
-    tiku_desk_ui_checkbox(s, trash_rect(f, frame), tiku_trk_str("find.include_trash"),
-                          f->include_trash ? TIKU_DESK_S_ON : 0u);
+    tiku_ui_checkbox(s, trash_rect(f, frame), tiku_str("find.include_trash"),
+                          f->include_trash ? TIKU_S_ON : 0u);
 
-    if (f->mode == TIKU_TRK_QMODE_ATTRIBUTE) {
-        tiku_desk_rect_t a = scope_rect(f, frame);
+    if (f->mode == TIKU_QMODE_ATTRIBUTE) {
+        tiku_rect_t a = scope_rect(f, frame);
 
         a.x += a.w + GAP * 2;
         a.w = 26;
         a.h = ROW_H;
         draw_button(s, a, "+",
                     (f->row_count >= TIKU_TRK_FIND_ROWS_MAX)
-                        ? TIKU_DESK_S_DISABLED : TIKU_DESK_S_NORMAL);
+                        ? TIKU_S_DISABLED : TIKU_S_NORMAL);
         a.x += a.w + GAP;
         /* Remove is disabled, not absent, while one row remains: the
          * control's place should not move as rows come and go.  Disabled is
          * the control look's own state, not a wash painted over it. */
         draw_button(s, a, "-",
-                    (f->row_count <= 1) ? TIKU_DESK_S_DISABLED
-                                        : TIKU_DESK_S_NORMAL);
+                    (f->row_count <= 1) ? TIKU_S_DISABLED
+                                        : TIKU_S_NORMAL);
     }
 
     draw_button(s, button_rect(f, frame, 0),
-                tiku_trk_find_primary_is_save(f) ? tiku_trk_str("find.save")
-                                                 : tiku_trk_str("find.search"),
-                f->has_keyboard ? TIKU_DESK_S_DEFAULT
-                                : TIKU_DESK_S_NORMAL);
+                tiku_trk_find_primary_is_save(f) ? tiku_str("find.save")
+                                                 : tiku_str("find.search"),
+                f->has_keyboard ? TIKU_S_DEFAULT
+                                : TIKU_S_NORMAL);
     /* Always live: with something attached it saves back, and with
      * nothing attached it asks WHERE -- the save panel (AW-052). */
-    draw_button(s, button_rect(f, frame, 1), "Save", TIKU_DESK_S_NORMAL);
-    draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_DESK_S_NORMAL);
+    draw_button(s, button_rect(f, frame, 1), "Save", TIKU_S_NORMAL);
+    draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_S_NORMAL);
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
         tiku_trk_menu_draw(&f->popup, s, f->popup_frame);
@@ -1082,16 +1082,16 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_desk_surface_t *s,
 /*---------------------------------------------------------------------------*/
 
 static int
-in(tiku_desk_rect_t r, int x, int y)
+in(tiku_rect_t r, int x, int y)
 {
     return (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
 }
 
 tiku_trk_find_hit_t
-tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
+tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_rect_t frame, int x,
                   int y, int *row)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
     int i;
 
     if (row != NULL) {
@@ -1123,8 +1123,8 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
     if (in(r, x, y)) {
         return TIKU_TRK_FIND_HIT_SCOPE;
     }
-    if (f->mode == TIKU_TRK_QMODE_ATTRIBUTE) {
-        tiku_desk_rect_t a = r;
+    if (f->mode == TIKU_QMODE_ATTRIBUTE) {
+        tiku_rect_t a = r;
 
         a.x += a.w + GAP * 2;
         a.w = 26;
@@ -1136,23 +1136,23 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
             return TIKU_TRK_FIND_HIT_REMOVE;
         }
     }
-    if (f->mode == TIKU_TRK_QMODE_NAME) {
-        tiku_desk_rect_t v = row_rect(frame, 0);
+    if (f->mode == TIKU_QMODE_NAME) {
+        tiku_rect_t v = row_rect(frame, 0);
 
         v.x += LABEL_W + 40;
         v.w = VALUE_W + OP_W;
         return in(v, x, y) ? TIKU_TRK_FIND_HIT_VALUE : TIKU_TRK_FIND_HIT_NONE;
     }
-    if (f->mode == TIKU_TRK_QMODE_FORMULA) {
-        tiku_desk_rect_t v = row_rect(frame, 0);
+    if (f->mode == TIKU_QMODE_FORMULA) {
+        tiku_rect_t v = row_rect(frame, 0);
 
         v.x += LABEL_W;
         v.w = frame.w - 2 * PAD - LABEL_W;
         return in(v, x, y) ? TIKU_TRK_FIND_HIT_VALUE : TIKU_TRK_FIND_HIT_NONE;
     }
     for (i = 0; i < f->row_count; i++) {
-        tiku_desk_rect_t rr = row_rect(frame, i);
-        tiku_desk_rect_t c = rr;
+        tiku_rect_t rr = row_rect(frame, i);
+        tiku_rect_t c = rr;
 
         c.w = FIELD_W;
         if (in(c, x, y)) {
@@ -1186,7 +1186,7 @@ tiku_trk_find_hit(const tiku_trk_find_t *f, tiku_desk_rect_t frame, int x,
 /** @brief Build the popup a control owns and place it under that control. */
 static void
 open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
-           tiku_desk_rect_t under, tiku_desk_rect_t screen)
+           tiku_rect_t under, tiku_rect_t screen)
 {
     tiku_trk_menu_t *m = &f->popup;
     int i;
@@ -1209,7 +1209,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             if (!field_in_menu(f, kFields[i].field)) {
                 continue;
             }
-            at = tiku_trk_menu_add(m, tiku_trk_str(kFields[i].label), i, 0,
+            at = tiku_trk_menu_add(m, tiku_str(kFields[i].label), i, 0,
                                    0u, 1);
             if (kFields[i].field == f->row[row].field) {
                 m->item[at].marked = 1;
@@ -1228,9 +1228,9 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             }
             (void)tiku_trk_menu_add(m,
                                     op_label(f->row[row].field,
-                                             (tiku_trk_qop_t)i),
+                                             (tiku_qop_t)i),
                                     i, 0, 0u, 1);
-            if ((tiku_trk_qop_t)i == f->row[row].op) {
+            if ((tiku_qop_t)i == f->row[row].op) {
                 m->item[m->count - 1].marked = 1;
             }
         }
@@ -1242,23 +1242,23 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         m->item[f->row[row].join].marked = 1;
         break;
     case TIKU_TRK_FIND_HIT_QUERIES: {
-        char names[TIKU_TRK_QUERY_LIST_MAX][128];
+        char names[TIKU_QUERY_LIST_MAX][128];
         int n;
 
-        (void)tiku_trk_menu_add(m, tiku_trk_str("find.save_as_template"), 0, 0,
+        (void)tiku_trk_menu_add(m, tiku_str("find.save_as_template"), 0, 0,
                                 0u, 1);
         /* Templates ABOVE the queries that were run, which is the order
          * the original's menu has them in: a template is a thing you keep,
          * a run is a thing that happened (Q-032). */
-        n = tiku_trk_query_list_kind(f->store, TIKU_TRK_QREC_TEMPLATE,
-                                     names, TIKU_TRK_QUERY_LIST_MAX);
+        n = tiku_query_list_kind(f->store, TIKU_QREC_TEMPLATE,
+                                     names, TIKU_QUERY_LIST_MAX);
         if (n > 0) {
             (void)tiku_trk_menu_add_separator(m);
             for (i = 0; i < n; i++) {
                 (void)tiku_trk_menu_add(m, names[i], 100 + i, 0, 0u, 1);
             }
         }
-        n = tiku_trk_query_list_kind(f->store, TIKU_TRK_QREC_QUERY, names,
+        n = tiku_query_list_kind(f->store, TIKU_QREC_QUERY, names,
                                      TIKU_TRK_FIND_RECENT_MAX);
         if (n > 0) {
             (void)tiku_trk_menu_add_separator(m);
@@ -1268,10 +1268,10 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         }
         /* Kept at the end so attaching a loaded template does not move the
          * template and recent-query entries the user was already using. */
-        if (f->loaded_kind == TIKU_TRK_QREC_TEMPLATE &&
+        if (f->loaded_kind == TIKU_QREC_TEMPLATE &&
             f->loaded_name[0] != '\0' && !f->edit_template) {
             (void)tiku_trk_menu_add_separator(m);
-            (void)tiku_trk_menu_add(m, tiku_trk_str("find.edit_loaded_template"), 1,
+            (void)tiku_trk_menu_add(m, tiku_str("find.edit_loaded_template"), 1,
                                     0, 0u,
                                     1);
         }
@@ -1282,7 +1282,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         m->item[0].marked = f->everywhere;
         (void)tiku_trk_menu_add_separator(m);
         for (i = 0; i < f->place_count; i++) {
-            char lbl[TIKU_TRK_NAME_MAX + 2];
+            char lbl[TIKU_NAME_MAX + 2];
 
             snprintf(lbl, sizeof lbl, "/%s", f->place[i]);
             (void)tiku_trk_menu_add(m, lbl, 100 + i, 0, 0u, 1);
@@ -1293,14 +1293,14 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         (void)tiku_trk_menu_add_separator(m);
         /* Any folder at all, not only the roots the startup scan found:
          * the chooser is the file panel (Q-019). */
-        (void)tiku_trk_menu_add(m, tiku_trk_str("find.select_folders"), 99, 0,
+        (void)tiku_trk_menu_add(m, tiku_str("find.select_folders"), 99, 0,
                                 0u, 1);
         break;
     case TIKU_TRK_FIND_HIT_TYPE: {
-        char used[TIKU_TRK_FIND_MOST_USED][TIKU_TRK_TYPE_MAX];
+        char used[TIKU_TRK_FIND_MOST_USED][TIKU_TYPE_MAX];
         int nu = used_read(f->store, used, TIKU_TRK_FIND_MOST_USED);
 
-        (void)tiku_trk_menu_add(m, tiku_trk_str("find.all_files"), 0, 0, 0u, 1);
+        (void)tiku_trk_menu_add(m, tiku_str("find.all_files"), 0, 0, 0u, 1);
         m->item[0].marked = (f->type[0] == '\0');
         (void)tiku_trk_menu_add_separator(m);
         for (i = 0; i < nu; i++) {
@@ -1394,8 +1394,8 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             /* The model also owns structural types such as Folder and
              * Volume.  They remain selectable even when the editable type
              * database has no column declaration for them. */
-            for (i = 0; tiku_trk_model_type_at(i, NULL) != NULL; i++) {
-                const char *type = tiku_trk_model_type_at(i, NULL);
+            for (i = 0; tiku_model_type_at(i, NULL) != NULL; i++) {
+                const char *type = tiku_model_type_at(i, NULL);
                 int cmd, at;
 
                 if (tiku_trk_types_exact(f->types, type) != NULL ||
@@ -1437,13 +1437,13 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
 int
 tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name)
 {
-    tiku_trk_query_t q;
+    tiku_query_t q;
     int whole;
 
     if (f == NULL || f->store == NULL || name == NULL) {
         return -1;
     }
-    if (tiku_trk_query_load(&q, name, f->store) != 0) {
+    if (tiku_query_load(&q, name, f->store) != 0) {
         snprintf(f->note, sizeof f->note, "no query called %.40s", name);
         return -1;
     }
@@ -1452,7 +1452,7 @@ tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name)
     f->loaded_kind = q.kind;
     f->edit_template = 0;
     snprintf(f->note, sizeof f->note, "%s %.30s%s",
-             (q.kind == TIKU_TRK_QREC_TEMPLATE) ? "template" : "query",
+             (q.kind == TIKU_QREC_TEMPLATE) ? "template" : "query",
              name, whole ? "" : " -- a place is no longer here");
     return whole ? 1 : 0;
 }
@@ -1461,18 +1461,18 @@ int
 tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
                             int64_t now)
 {
-    tiku_trk_query_t q;
+    tiku_query_t q;
 
     if (f == NULL || f->store == NULL || name == NULL || name[0] == '\0') {
         return -1;
     }
     tiku_trk_find_build(f, &q);
-    q.kind = TIKU_TRK_QREC_TEMPLATE;
+    q.kind = TIKU_QREC_TEMPLATE;
     /* Never a by-product: a template is saved deliberately, and the sweep
      * that reaps unnamed searches must not reach it (AW-090). */
     q.temporary = 0;
     q.saved_at = now;
-    if (tiku_trk_query_save(&q, name, f->store) != 0) {
+    if (tiku_query_save(&q, name, f->store) != 0) {
         snprintf(f->note, sizeof f->note, "that template cannot be saved");
         return -1;
     }
@@ -1483,13 +1483,13 @@ tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
 int
 tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name)
 {
-    tiku_trk_query_t q;
+    tiku_query_t q;
     char attached[128];
     int whole;
 
     if (f == NULL || f->store == NULL || name == NULL ||
-        tiku_trk_query_load(&q, name, f->store) != 0 ||
-        q.kind != TIKU_TRK_QREC_TEMPLATE) {
+        tiku_query_load(&q, name, f->store) != 0 ||
+        q.kind != TIKU_QREC_TEMPLATE) {
         return -1;
     }
     /* The menu passes f->loaded_name itself.  _from_query reinitialises the
@@ -1506,17 +1506,17 @@ tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name)
 int
 tiku_trk_find_save_current(tiku_trk_find_t *f, int64_t now)
 {
-    tiku_trk_query_t q;
+    tiku_query_t q;
 
     if (f == NULL || f->store == NULL || f->loaded_name[0] == '\0' ||
-        (f->loaded_kind == TIKU_TRK_QREC_TEMPLATE && !f->edit_template)) {
+        (f->loaded_kind == TIKU_QREC_TEMPLATE && !f->edit_template)) {
         return -1;
     }
     tiku_trk_find_build(f, &q);
     q.kind = f->loaded_kind;
     q.temporary = 0;
     q.saved_at = now;
-    if (tiku_trk_query_save(&q, f->loaded_name, f->store) != 0) {
+    if (tiku_query_save(&q, f->loaded_name, f->store) != 0) {
         snprintf(f->note, sizeof f->note, "that record cannot be saved");
         return -1;
     }
@@ -1533,18 +1533,18 @@ tiku_trk_find_editing_template(const tiku_trk_find_t *f)
 int
 tiku_trk_find_open_default(tiku_trk_find_t *f, int64_t now)
 {
-    tiku_trk_query_t q;
+    tiku_query_t q;
     int whole;
 
     if (f == NULL || f->store == NULL) {
         return -1;
     }
-    if (tiku_trk_query_load(&q, "default", f->store) != 0) {
+    if (tiku_query_load(&q, "default", f->store) != 0) {
         tiku_trk_find_build(f, &q);
-        q.kind = TIKU_TRK_QREC_TEMPLATE;
+        q.kind = TIKU_QREC_TEMPLATE;
         q.temporary = 0;
         q.saved_at = now;
-        if (tiku_trk_query_save(&q, "default", f->store) != 0) {
+        if (tiku_query_save(&q, "default", f->store) != 0) {
             return -1;
         }
     }
@@ -1552,7 +1552,7 @@ tiku_trk_find_open_default(tiku_trk_find_t *f, int64_t now)
     /* The default is a starting shape, not an explicitly opened record.
      * Save must stay disabled until the user chooses something to attach. */
     f->loaded_name[0] = '\0';
-    f->loaded_kind = TIKU_TRK_QREC_QUERY;
+    f->loaded_kind = TIKU_QREC_QUERY;
     f->edit_template = 0;
     snprintf(f->note, sizeof f->note, "default template%s",
              whole ? "" : " -- a place is no longer here");
@@ -1592,9 +1592,9 @@ tiku_trk_find_clear_note(tiku_trk_find_t *f)
 }
 
 tiku_trk_find_hit_t
-tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
+tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
 {
-    tiku_desk_rect_t screen = { 0, 0, 4096, 4096 };
+    tiku_rect_t screen = { 0, 0, 4096, 4096 };
     tiku_trk_find_hit_t what;
     int row = -1;
 
@@ -1632,7 +1632,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
 
             switch (f->popup_for) {
             case TIKU_TRK_FIND_HIT_MODE:
-                tiku_trk_find_set_mode(f, (tiku_trk_qmode_t)cmd);
+                tiku_trk_find_set_mode(f, (tiku_qmode_t)cmd);
                 break;
             case TIKU_TRK_FIND_HIT_FIELD:
                 f->row[f->popup_row].field = kFields[cmd].field;
@@ -1645,10 +1645,10 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                 }
                 break;
             case TIKU_TRK_FIND_HIT_OP:
-                f->row[f->popup_row].op = (tiku_trk_qop_t)cmd;
+                f->row[f->popup_row].op = (tiku_qop_t)cmd;
                 break;
             case TIKU_TRK_FIND_HIT_JOIN:
-                f->row[f->popup_row].join = (tiku_trk_qjoin_t)cmd;
+                f->row[f->popup_row].join = (tiku_qjoin_t)cmd;
                 break;
             case TIKU_TRK_FIND_HIT_SCOPE:
                 if (cmd == 99) {
@@ -1669,7 +1669,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                 }
                 break;
             case TIKU_TRK_FIND_HIT_QUERIES: {
-                char names[TIKU_TRK_QUERY_LIST_MAX][128];
+                char names[TIKU_QUERY_LIST_MAX][128];
 
                 if (cmd == 0) {
                     char nm[128];
@@ -1679,20 +1679,20 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
                     (void)tiku_trk_find_save_template(f, nm,
                                                       (int64_t)time(NULL));
                 } else if (cmd == 1 &&
-                           f->loaded_kind == TIKU_TRK_QREC_TEMPLATE) {
+                           f->loaded_kind == TIKU_QREC_TEMPLATE) {
                     (void)tiku_trk_find_edit_template(f, f->loaded_name);
                 } else if (cmd >= 200) {
-                    int n = tiku_trk_query_list_kind(f->store,
-                                TIKU_TRK_QREC_QUERY, names,
-                                TIKU_TRK_QUERY_LIST_MAX);
+                    int n = tiku_query_list_kind(f->store,
+                                TIKU_QREC_QUERY, names,
+                                TIKU_QUERY_LIST_MAX);
 
                     if (cmd - 200 < n) {
                         (void)tiku_trk_find_load_named(f, names[cmd - 200]);
                     }
                 } else if (cmd >= 100) {
-                    int n = tiku_trk_query_list_kind(f->store,
-                                TIKU_TRK_QREC_TEMPLATE, names,
-                                TIKU_TRK_QUERY_LIST_MAX);
+                    int n = tiku_query_list_kind(f->store,
+                                TIKU_QREC_TEMPLATE, names,
+                                TIKU_QUERY_LIST_MAX);
 
                     if (cmd - 100 < n) {
                         (void)tiku_trk_find_load_named(f, names[cmd - 100]);
@@ -1736,14 +1736,14 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
         open_popup(f, what, 0, type_rect(f, frame), screen);
         break;
     case TIKU_TRK_FIND_HIT_FIELD: {
-        tiku_desk_rect_t c = row_rect(frame, row);
+        tiku_rect_t c = row_rect(frame, row);
 
         c.w = FIELD_W;
         open_popup(f, what, row, c, screen);
         break;
     }
     case TIKU_TRK_FIND_HIT_OP: {
-        tiku_desk_rect_t c = row_rect(frame, row);
+        tiku_rect_t c = row_rect(frame, row);
 
         c.x += FIELD_W + GAP;
         c.w = OP_W;
@@ -1751,7 +1751,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
         break;
     }
     case TIKU_TRK_FIND_HIT_JOIN: {
-        tiku_desk_rect_t c = row_rect(frame, row);
+        tiku_rect_t c = row_rect(frame, row);
 
         c.x += FIELD_W + GAP + OP_W + GAP + VALUE_W + GAP;
         c.w = JOIN_W;
@@ -1759,9 +1759,9 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_desk_rect_t frame, int x, int y)
         break;
     }
     case TIKU_TRK_FIND_HIT_VALUE:
-        if (f->mode == TIKU_TRK_QMODE_NAME) {
+        if (f->mode == TIKU_QMODE_NAME) {
             f->focus = TIKU_TRK_FIND_FOCUS_NAME;
-        } else if (f->mode == TIKU_TRK_QMODE_FORMULA) {
+        } else if (f->mode == TIKU_QMODE_FORMULA) {
             f->focus = TIKU_TRK_FIND_FOCUS_FORMULA;
         } else {
             f->focus = TIKU_TRK_FIND_FOCUS_ROW;

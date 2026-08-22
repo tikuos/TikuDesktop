@@ -20,7 +20,7 @@
 
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_titleview.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 #include "tiku_trk_task.h"
 
 static int fails;
@@ -134,13 +134,13 @@ int
 main(void)
 {
     const char *dir = "/tmp/trk_title_test";
-    tiku_trk_backend_t *b;
+    tiku_backend_t *b;
     tiku_trk_poseview_t *v;
     tiku_trk_titleview_t t;
     int64_t now = tiku_trk_now();
 
     make_tree(dir);
-    b = tiku_trk_backend_posix_open();
+    b = tiku_backend_posix_open();
     v = tiku_trk_poseview_new(b, dir);
     if (v == NULL) { printf("cannot open view\n"); return 1; }
     tiku_trk_poseview_set_measure(v, fixed_measure, NULL);
@@ -713,7 +713,7 @@ main(void)
          * nonsense. */
         struct { int32_t k, ver, field, off, w, align;
                  char attr[TIKU_TRK_ATTR_NAME_MAX]; } rec[2];
-        tiku_trk_store_t *store = b->ops->state_store(b);
+        tiku_store_t *store = b->ops->state_store(b);
         int was_w = width_of(v, TIKU_TRK_COL_KIND);
 
         memset(rec, 0, sizeof rec);
@@ -725,8 +725,8 @@ main(void)
         rec[1] = rec[0];
         rec[1].field = TIKU_TRK_COL_KIND; rec[1].off = 138;
         rec[1].w = 99999;                       /* absurd */
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec, sizeof rec);
         check(tiku_trk_poseview_restore_columns(v) == 0 &&
               width_of(v, TIKU_TRK_COL_KIND) == was_w, "TS-032",
               "an out-of-range width is rejected, not clamped -- a layout "
@@ -734,14 +734,14 @@ main(void)
 
         rec[1].w = 100;
         rec[1].align = 7;                       /* not an alignment */
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec, sizeof rec);
         check(tiku_trk_poseview_restore_columns(v) == 0, "TS-032",
               "and so is an alignment that is not one of the three");
 
         rec[1].align = 0;
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec,
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec,
                                    sizeof rec - 3u);
         check(tiku_trk_poseview_restore_columns(v) == 0, "TS-032",
               "a truncated record is not a layout at all");
@@ -751,8 +751,8 @@ main(void)
          * like that could never be undone. */
         rec[1].field = TIKU_TRK_COL_NAME;
         rec[1].w = 100;
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec, sizeof rec);
         check(tiku_trk_poseview_restore_columns(v) == 0, "TS-032",
               "two records for one column are refused");
         rec[1].field = TIKU_TRK_COL_KIND;
@@ -760,8 +760,8 @@ main(void)
         /* A width that is legal as stored and absurd once scaled: the bound
          * belongs to the number that becomes a column. */
         rec[1].w = 9000;
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec, sizeof rec);
         tiku_trk_poseview_set_font_size(v, 24);
         check(tiku_trk_poseview_restore_columns(v) == 0, "TS-032",
               "a width inside the bound as stored but outside it once "
@@ -774,8 +774,8 @@ main(void)
         rec[0].field = TIKU_TRK_COL_KIND; rec[0].off = 500; rec[0].w = 90;
         rec[1].field = TIKU_TRK_COL_NAME; rec[1].off = 22;  rec[1].w = 100;
         rec[1].align = 0;
-        (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                   TIKU_TRK_ATTR_COLUMNS, rec, sizeof rec);
+        (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                   TIKU_ATTR_COLUMNS, rec, sizeof rec);
         check(tiku_trk_poseview_restore_columns(v) == 2 &&
               index_of(v, TIKU_TRK_COL_NAME) == 0, "PVL-033",
               "the saved offsets decide the order even when the records "
@@ -808,8 +808,8 @@ main(void)
                     p[at + 3] = a;
                 }
             }
-            (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                       TIKU_TRK_ATTR_COLUMNS, sw, sizeof sw);
+            (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                       TIKU_ATTR_COLUMNS, sw, sizeof sw);
             check(tiku_trk_poseview_restore_columns(v) == 2 &&
                   width_of(v, TIKU_TRK_COL_KIND) == 77, "TS-030",
                   "a layout written by the other byte order is read, not "
@@ -817,8 +817,8 @@ main(void)
                   "it is");
             /* One record each way is not a layout any host wrote. */
             memcpy(sw, rec, sizeof rec[0]);
-            (void)tiku_trk_state_write(store, tiku_trk_poseview_path(v),
-                                       TIKU_TRK_ATTR_COLUMNS, sw, sizeof sw);
+            (void)tiku_state_write(store, tiku_trk_poseview_path(v),
+                                       TIKU_ATTR_COLUMNS, sw, sizeof sw);
             check(tiku_trk_poseview_restore_columns(v) == 0, "TS-030",
                   "and a blob whose records disagree about their own byte "
                   "order is refused rather than half-read");
@@ -826,7 +826,7 @@ main(void)
     }
 
     tiku_trk_poseview_free(v);
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     rm_tree(dir);
 
     printf("\n%s\n", fails ? "FAILURES" : "column rules match the source");

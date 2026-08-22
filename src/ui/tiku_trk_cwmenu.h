@@ -17,7 +17,7 @@
 #define TIKU_TRK_CWMENU_H_
 
 #include "tiku_trk_menu.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 #include "tiku_trk_shortcuts.h"
 
 /* One command per partition in the Mount submenu (CW-034). */
@@ -69,26 +69,26 @@ typedef struct {
      * folder, Recent folders, Desktop, Home, volumes -- built by the
      * shell, which knows the recents and the mounts (CW-035, CW-058). */
     tiku_trk_menu_t    picker[3];
-    char               picker_path[3][TIKU_TRK_CMD_DEST_MAX][TIKU_TRK_PATH_MAX];
+    char               picker_path[3][TIKU_TRK_CMD_DEST_MAX][TIKU_PATH_MAX];
     int                picker_paths[3];
     /* One submenu per type the folder actually holds, each offering the
      * columns that type has to show (CW-026).  Filled by the shell, which
      * is what can see the listing. */
     tiku_trk_menu_t    per_type[4];
     char               per_type_icon[4][32]; /* the type's art (IV-056)   */
-    char               per_type_name[4][TIKU_TRK_TYPE_MAX];
+    char               per_type_name[4][TIKU_TYPE_MAX];
     int                per_type_count;
     int                attributes_shown;
-    char               templates_root[TIKU_TRK_PATH_MAX];
+    char               templates_root[TIKU_PATH_MAX];
     struct {
         tiku_trk_menu_t menu;
-        char            path[TIKU_TRK_PATH_MAX];
+        char            path[TIKU_PATH_MAX];
     } template_node[64];
     int                template_node_count;
     struct {
         int  command;
         int  add_submenu;
-        char path[TIKU_TRK_PATH_MAX];
+        char path[TIKU_PATH_MAX];
     } template_entry[128];
     int                template_entry_count;
 } tiku_trk_cwmenu_t;
@@ -130,7 +130,7 @@ void tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw,
  * @param m NULL when the click was on empty window background.
  */
 tiku_trk_menu_t *tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw,
-                                         const tiku_trk_model_t *m,
+                                         const tiku_model_t *m,
                                          const tiku_trk_sc_ctx_t *c);
 
 /** @brief The menu offered when items are dropped with the second button. */

@@ -18,7 +18,7 @@
 
 void
 tiku_trk_launch_controller_init(tiku_trk_launch_controller_t *controller,
-    tiku_trk_apps_t *apps, tiku_trk_store_t *store, char *status,
+    tiku_trk_apps_t *apps, tiku_store_t *store, char *status,
     size_t status_size, tiku_trk_launch_open_path_fn open_path,
     void *open_context)
 {
@@ -71,7 +71,7 @@ tiku_trk_launch_controller_run(tiku_trk_launch_controller_t *controller,
 
 const tiku_trk_app_t *
 tiku_trk_launch_controller_handler(tiku_trk_launch_controller_t *controller,
-                                   const tiku_trk_model_t *model)
+                                   const tiku_model_t *model)
 {
     tiku_trk_cand_t candidates[TIKU_TRK_APP_MAX];
     const char *types[1];
@@ -101,7 +101,7 @@ collect_selection(tiku_trk_folder_window_t *folder, const char **types,
         int k, seen = 0;
 
         if (pose == NULL || !pose->selected ||
-            tiku_trk_model_is_container(&pose->model)) {
+            tiku_model_is_container(&pose->model)) {
             continue;
         }
         if (paths != NULL && *path_count < TIKU_TRK_DRAG_MAX) {

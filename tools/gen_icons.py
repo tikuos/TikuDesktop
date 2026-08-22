@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit ../kits/translation/tiku_trk_icons.c from the HVIF blobs in tools/hvif/.
+"""Emit ../kits/translation/tiku_icons.c from the HVIF blobs in tools/hvif/.
 
 Each .hex there is one #'VICN' resource body, concatenated and stripped of
 its $"..." wrapping, out of Haiku's src/kits/tracker/TrackerIcons.rdef or
@@ -16,7 +16,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(HERE, "hvif")
 OUT = os.path.join(HERE, os.pardir, "src", "media",
-                   "tiku_trk_icons.c")
+                   "tiku_icons.c")
 
 # Inventory order: the general kinds first, then the volumes and places,
 # then the specialised folders and the odds and ends.
@@ -62,7 +62,7 @@ HEAD = '''/*
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_icons.c - the embedded HVIF icon set, and a render cache.
+ * tiku_icons.c - the embedded HVIF icon set, and a render cache.
  *
  * GENERATED from the blobs in Haiku's src/kits/tracker/TrackerIcons.rdef and
  * src/data/mime_db/.  Edit the generator, not this file.
@@ -77,38 +77,38 @@ HEAD = '''/*
 #include <stdlib.h>
 #include <string.h>
 
-#include "tiku_trk_hvif.h"
-#include "tiku_trk_icons.h"
+#include "tiku_hvif.h"
+#include "tiku_icons.h"
 
 '''
 
 TAIL = '''
 int
-tiku_trk_icons_count(void)
+tiku_icons_count(void)
 {
-    return (int)(sizeof tiku_trk_icon_table / sizeof tiku_trk_icon_table[0]);
+    return (int)(sizeof tiku_icon_table / sizeof tiku_icon_table[0]);
 }
 
-const tiku_trk_icon_t *
-tiku_trk_icons_at(int i)
+const tiku_icon_t *
+tiku_icons_at(int i)
 {
-    if (i < 0 || i >= tiku_trk_icons_count()) {
+    if (i < 0 || i >= tiku_icons_count()) {
         return NULL;
     }
-    return &tiku_trk_icon_table[i];
+    return &tiku_icon_table[i];
 }
 
-const tiku_trk_icon_t *
-tiku_trk_icons_find(const char *name)
+const tiku_icon_t *
+tiku_icons_find(const char *name)
 {
-    int i, n = tiku_trk_icons_count();
+    int i, n = tiku_icons_count();
 
     if (name == NULL) {
         return NULL;
     }
     for (i = 0; i < n; i++) {
-        if (strcmp(tiku_trk_icon_table[i].name, name) == 0) {
-            return &tiku_trk_icon_table[i];
+        if (strcmp(tiku_icon_table[i].name, name) == 0) {
+            return &tiku_icon_table[i];
         }
     }
     return NULL;
@@ -117,57 +117,57 @@ tiku_trk_icons_find(const char *name)
 /* One rendered bitmap per icon per size.  A pose view asks for the same two
  * or three sizes for the whole window, so the slot count is generous; the
  * oldest slot goes when a fourth size shows up. */
-#define TIKU_TRK_ICONS_SLOTS 4
+#define TIKU_ICONS_SLOTS 4
 
 typedef struct {
     int       size;
     uint32_t *bmp;
-} tiku_trk_icon_slot_t;
+} tiku_icon_slot_t;
 
-static tiku_trk_icon_slot_t
-tiku_trk_icon_cache[TIKU_TRK_ICON_COUNT][TIKU_TRK_ICONS_SLOTS];
+static tiku_icon_slot_t
+tiku_icon_cache[TIKU_ICON_COUNT][TIKU_ICONS_SLOTS];
 
 const uint32_t *
-tiku_trk_icons_bitmap(const char *name, int size)
+tiku_icons_bitmap(const char *name, int size)
 {
-    const tiku_trk_icon_t *ic = tiku_trk_icons_find(name);
-    tiku_trk_icon_slot_t *row;
-    tiku_trk_hvif_t *parsed;
+    const tiku_icon_t *ic = tiku_icons_find(name);
+    tiku_icon_slot_t *row;
+    tiku_hvif_t *parsed;
     uint32_t *bmp;
     int idx, i;
 
     if (ic == NULL || size <= 0 || size > 1024) {
         return NULL;
     }
-    idx = (int)(ic - tiku_trk_icon_table);
-    row = tiku_trk_icon_cache[idx];
-    for (i = 0; i < TIKU_TRK_ICONS_SLOTS; i++) {
+    idx = (int)(ic - tiku_icon_table);
+    row = tiku_icon_cache[idx];
+    for (i = 0; i < TIKU_ICONS_SLOTS; i++) {
         if (row[i].bmp != NULL && row[i].size == size) {
             return row[i].bmp;
         }
     }
-    parsed = tiku_trk_hvif_parse(ic->data, ic->len, NULL, 0);
+    parsed = tiku_hvif_parse(ic->data, ic->len, NULL, 0);
     if (parsed == NULL) {
         return NULL;
     }
     bmp = malloc((size_t)size * (size_t)size * sizeof *bmp);
-    if (bmp == NULL || tiku_trk_hvif_render(parsed, bmp, size, size) != 0) {
+    if (bmp == NULL || tiku_hvif_render(parsed, bmp, size, size) != 0) {
         free(bmp);
-        tiku_trk_hvif_free(parsed);
+        tiku_hvif_free(parsed);
         return NULL;
     }
-    tiku_trk_hvif_free(parsed);
-    for (i = 0; i < TIKU_TRK_ICONS_SLOTS; i++) {
+    tiku_hvif_free(parsed);
+    for (i = 0; i < TIKU_ICONS_SLOTS; i++) {
         if (row[i].bmp == NULL) {
             break;
         }
     }
-    if (i == TIKU_TRK_ICONS_SLOTS) {
+    if (i == TIKU_ICONS_SLOTS) {
         i = 0;
         free(row[0].bmp);
         memmove(&row[0], &row[1],
-                (TIKU_TRK_ICONS_SLOTS - 1) * sizeof row[0]);
-        i = TIKU_TRK_ICONS_SLOTS - 1;
+                (TIKU_ICONS_SLOTS - 1) * sizeof row[0]);
+        i = TIKU_ICONS_SLOTS - 1;
     }
     row[i].size = size;
     row[i].bmp = bmp;
@@ -175,15 +175,15 @@ tiku_trk_icons_bitmap(const char *name, int size)
 }
 
 void
-tiku_trk_icons_flush(void)
+tiku_icons_flush(void)
 {
     int i, k;
 
-    for (i = 0; i < TIKU_TRK_ICON_COUNT; i++) {
-        for (k = 0; k < TIKU_TRK_ICONS_SLOTS; k++) {
-            free(tiku_trk_icon_cache[i][k].bmp);
-            tiku_trk_icon_cache[i][k].bmp = NULL;
-            tiku_trk_icon_cache[i][k].size = 0;
+    for (i = 0; i < TIKU_ICON_COUNT; i++) {
+        for (k = 0; k < TIKU_ICONS_SLOTS; k++) {
+            free(tiku_icon_cache[i][k].bmp);
+            tiku_icon_cache[i][k].bmp = NULL;
+            tiku_icon_cache[i][k].size = 0;
         }
     }
 }
@@ -206,8 +206,8 @@ def main():
             out.append("    " + " ".join("0x%02X," % b for b in chunk) + "\n")
         out.append("};\n\n")
 
-    out.append("static const tiku_trk_icon_t "
-               "tiku_trk_icon_table[TIKU_TRK_ICON_COUNT] = {\n")
+    out.append("static const tiku_icon_t "
+               "tiku_icon_table[TIKU_ICON_COUNT] = {\n")
     for name, _ in NAMES:
         out.append('    { "%s",%s tiku_trk_icon_%s,\n'
                    '      sizeof tiku_trk_icon_%s },\n'

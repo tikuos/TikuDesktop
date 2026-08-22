@@ -199,7 +199,7 @@ tiku_trk_drag_carries(const tiku_trk_drag_t *d, const char *path)
 }
 
 int
-tiku_trk_drag_can_drop(const tiku_trk_drag_t *d, const tiku_trk_model_t *over)
+tiku_trk_drag_can_drop(const tiku_trk_drag_t *d, const tiku_model_t *over)
 {
     if (d == NULL || over == NULL || !d->active) {
         return 0;
@@ -210,24 +210,24 @@ tiku_trk_drag_can_drop(const tiku_trk_drag_t *d, const tiku_trk_model_t *over)
     if (tiku_trk_drag_carries(d, over->path)) {
         return 0;
     }
-    if (!tiku_trk_model_is_container(over)) {
+    if (!tiku_model_is_container(over)) {
         /* An executable is a target too: dropping documents on an
          * application launches it with them (PVS-044), the same
          * IsDropTarget the source's Model answered. */
-        return (over->facts.perm & TIKU_TRK_P_EXEC) != 0u &&
-               over->kind == TIKU_TRK_KIND_FILE;
+        return (over->facts.perm & TIKU_P_EXEC) != 0u &&
+               over->kind == TIKU_KIND_FILE;
     }
     /* A container that will not accept new entries -- a read-only store, a
      * device node's virtual directory -- is not a target either, and saying
      * so during the hover is better than refusing after the drop. */
-    return tiku_trk_model_is_mutable_container(over);
+    return tiku_model_is_mutable_container(over);
 }
 
 tiku_trk_drop_t
 tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
                      unsigned mods, int same_volume)
 {
-    char from[TIKU_TRK_PATH_MAX];
+    char from[TIKU_PATH_MAX];
 
     if (d == NULL || dst_dir == NULL || d->count == 0) {
         return TIKU_TRK_DROP_NOTHING;

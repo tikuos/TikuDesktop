@@ -17,9 +17,9 @@
 #ifndef TIKU_TRK_LAUNCH_H_
 #define TIKU_TRK_LAUNCH_H_
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
-struct tiku_trk_store;
+struct tiku_store;
 
 /** @brief How many applications the registry holds, and types each claims. */
 #define TIKU_TRK_APP_MAX        16
@@ -46,13 +46,13 @@ typedef enum {
 typedef struct tiku_trk_app {
     char name[TIKU_TRK_APP_NAME_MAX];
     char cmd[TIKU_TRK_APP_CMD_MAX];      /* argv[0], run with the paths   */
-    char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TRK_TYPE_MAX];
+    char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX];
     int  ntype;
     int  takes_anything;                 /* a superhandler                */
     /* Where the application itself lives, when it is a file in the
      * namespace.  Its own path is dropped from the documents handed to it,
      * so an application never opens itself (AW-038). */
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
     int  is_tracker;                     /* this Tracker, not a launch    */
 } tiku_trk_app_t;
 
@@ -115,7 +115,7 @@ tiku_trk_relation_t tiku_trk_launch_relation(const tiku_trk_app_t *app,
  */
 int tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
                                const char *const *types, int ntypes,
-                               struct tiku_trk_store *store,
+                               struct tiku_store *store,
                                tiku_trk_cand_t *out, int max);
 
 /**
@@ -130,14 +130,14 @@ int tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
 const tiku_trk_app_t *tiku_trk_launch_agreed(const tiku_trk_apps_t *r,
                                              const char *const *types,
                                              int ntypes,
-                                             struct tiku_trk_store *store);
+                                             struct tiku_store *store);
 
 /** @brief Remember @p app as the handler for @p type (AW-044). */
-int tiku_trk_launch_set_preferred(struct tiku_trk_store *store,
+int tiku_trk_launch_set_preferred(struct tiku_store *store,
                                   const char *type, const char *app_name);
 
 /** @brief The remembered handler for @p type, or "" . */
-const char *tiku_trk_launch_preferred(struct tiku_trk_store *store,
+const char *tiku_trk_launch_preferred(struct tiku_store *store,
                                       const char *type, char *buf,
                                       size_t max);
 

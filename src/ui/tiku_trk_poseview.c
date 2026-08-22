@@ -13,9 +13,9 @@
  */
 
 #include "tiku_trk_poseview.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 #include "tiku_trk_frame.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 #include "tiku_trk_task.h"
 
 #include <stdio.h>
@@ -26,8 +26,8 @@
 #define POSES_MAX 4096
 
 struct tiku_trk_poseview {
-    tiku_trk_backend_t *backend;
-    char                path[TIKU_TRK_PATH_MAX];
+    tiku_backend_t *backend;
+    char                path[TIKU_PATH_MAX];
 
     tiku_trk_pose_t    *poses;          /* fPoseList                        */
     int                 count;
@@ -84,7 +84,7 @@ struct tiku_trk_poseview {
      * before the entries exist here, and an arrangement that is applied
      * after they appear is one the user watches assemble itself. */
     struct {
-        char            name[TIKU_TRK_NAME_MAX];
+        char            name[TIKU_NAME_MAX];
         int             x, y;
     }                   land[TIKU_TRK_LAND_MAX];
     int                 land_count;
@@ -106,9 +106,9 @@ struct tiku_trk_poseview {
      * re-sorted does not rewrite the layout record (TS-036). */
     int                 columns_dirty;    /* fStateNeedsSaving                */
     int                 is_query;       /* results, not a directory         */
-    char                query_layout[TIKU_TRK_PATH_MAX];
-    char                query_type[TIKU_TRK_TYPE_MAX];
-    tiku_trk_store_t    *layout_store;  /* synthetic query layout records   */
+    char                query_layout[TIKU_PATH_MAX];
+    char                query_type[TIKU_TYPE_MAX];
+    tiku_store_t    *layout_store;  /* synthetic query layout records   */
     int                 visible_rows;   /* what the window can show         */
     int                 view_w, view_h; /* the window, in PIXELS            */
     /* The font the labels are drawn in.  Zero until the owner says, and
@@ -140,8 +140,8 @@ struct tiku_trk_poseview {
     /* Notices that arrived before the row they concern, and entries seen but
      * not readable -- neither is dropped, because a change lost is a row
      * that lies and an unreadable entry is not an absent one. */
-    tiku_trk_park_t     park;
-    tiku_trk_model_t    zombie[16];
+    tiku_park_t     park;
+    tiku_model_t    zombie[16];
     int                 zombie_count;
 
     tiku_trk_column_t   columns[TIKU_TRK_COLUMNS_MAX];
@@ -154,7 +154,7 @@ struct tiku_trk_poseview {
     /* The batched load.  The read is synchronous; what is staged here is
      * PUBLISHED a batch at a time, so the window is never blank and never
      * blocked (PVL-088, PVN-047). */
-    tiku_trk_model_t   *stage;
+    tiku_model_t   *stage;
     int                 stage_count;
     int                 stage_at;
     int                 loading;
@@ -277,8 +277,8 @@ static int
 original_path_text(tiku_trk_poseview_t *v, const char *path, char *out,
                    size_t max)
 {
-    tiku_trk_store_t *store;
-    char probe[TIKU_TRK_PATH_MAX];
+    tiku_store_t *store;
+    char probe[TIKU_PATH_MAX];
 
     if (out == NULL || max == 0u) {
         return 0;
@@ -294,7 +294,7 @@ original_path_text(tiku_trk_poseview_t *v, const char *path, char *out,
     }
     snprintf(probe, sizeof probe, "%s", path);
     for (;;) {
-        int n = tiku_trk_state_read(store, probe, TIKU_TRK_ATTR_ORIGINAL,
+        int n = tiku_state_read(store, probe, TIKU_ATTR_ORIGINAL,
                                     out, max - 1u);
 
         if (n > 0) {
@@ -344,18 +344,18 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
             for (k = 0; k < v->count; k++) {
                 others[k] = v->poses[k].model.path;
             }
-            (void)tiku_trk_attr_disambiguate(p->model.path, others,
+            (void)tiku_attr_disambiguate(p->model.path, others,
                                              v->count, buf, max);
             return buf;
         }
-        return tiku_trk_model_display_name(&p->model);
+        return tiku_model_display_name(&p->model);
     case TIKU_TRK_COL_KIND:
-        return tiku_trk_model_kind_string(&p->model);
+        return tiku_model_kind_string(&p->model);
     case TIKU_TRK_COL_VALUE:
-        if (tiku_trk_model_is_container(&p->model)) {
+        if (tiku_model_is_container(&p->model)) {
             return "";
         }
-        (void)tiku_trk_attr_format(&p->desc, p->value_valid ? p->value : "",
+        (void)tiku_attr_format(&p->desc, p->value_valid ? p->value : "",
                                    buf, max);
         return buf;
     case TIKU_TRK_COL_CAP:
@@ -366,22 +366,22 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
          * other container has none of its own, and neither does a link --
          * a link's own bytes are not what anyone reading the column is
          * asking about.  -1 is the unknown that reads as "-" (MA-024). */
-        if (p->model.kind == TIKU_TRK_KIND_VOLUME ||
-            p->model.kind == TIKU_TRK_KIND_ROOT) {
-            (void)tiku_trk_attr_size_fit(
+        if (p->model.kind == TIKU_KIND_VOLUME ||
+            p->model.kind == TIKU_KIND_ROOT) {
+            (void)tiku_attr_size_fit(
                 (p->model.facts.total > 0u)
                     ? (int64_t)p->model.facts.total : -1,
                 width, v->measure, v->measure_ctx, buf, max);
             return buf;
         }
-        (void)tiku_trk_attr_size_fit(
-            (tiku_trk_model_is_container(&p->model) ||
-             p->model.kind == TIKU_TRK_KIND_SYMLINK) ? -1
+        (void)tiku_attr_size_fit(
+            (tiku_model_is_container(&p->model) ||
+             p->model.kind == TIKU_KIND_SYMLINK) ? -1
                                                      : p->model.facts.size,
             width, v->measure, v->measure_ctx, buf, max);
         return buf;
     case TIKU_TRK_COL_DATE:
-        (void)tiku_trk_attr_time_fit(p->model.facts.mtime, width, v->measure,
+        (void)tiku_attr_time_fit(p->model.facts.mtime, width, v->measure,
                                      v->measure_ctx, buf, max);
         return buf;
     case TIKU_TRK_COL_PATH: {
@@ -404,7 +404,7 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
     default:
         if (field >= TIKU_TRK_COL_ATTR_BASE) {
             int at = field - TIKU_TRK_COL_ATTR_BASE;
-            tiku_trk_store_t *store = NULL;
+            tiku_store_t *store = NULL;
             int n = -1;
 
             if (at < 0 || at >= v->attrcol_count ||
@@ -413,7 +413,7 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
             }
             store = v->backend->ops->state_store(v->backend);
             if (store != NULL) {
-                n = tiku_trk_state_read(store, p->model.path,
+                n = tiku_state_read(store, p->model.path,
                                         v->attrcol[at].name, buf, max - 1u);
             }
             if (n <= 0) {
@@ -439,8 +439,8 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
             unsigned mask = 0400u;
             int i;
 
-            buf[0] = (p->model.kind == TIKU_TRK_KIND_SYMLINK) ? 'l'
-                   : tiku_trk_model_is_container(&p->model) ? 'd'
+            buf[0] = (p->model.kind == TIKU_KIND_SYMLINK) ? 'l'
+                   : tiku_model_is_container(&p->model) ? 'd'
                    : ((mode & 0170000u) == 0060000u) ? 'b'
                    : ((mode & 0170000u) == 0020000u) ? 'c' : '-';
             for (i = 0; i < 9; i++, mask >>= 1) {
@@ -452,9 +452,9 @@ cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         /* No mode word in this store: what THIS user may do, which is
          * what the access fact carries. */
         snprintf(buf, max, "%c%c%c",
-                 (perm & TIKU_TRK_P_READ) ? 'r' : '-',
-                 (perm & TIKU_TRK_P_WRITE) ? 'w' : '-',
-                 (perm & TIKU_TRK_P_EXEC) ? 'x' : '-');
+                 (perm & TIKU_P_READ) ? 'r' : '-',
+                 (perm & TIKU_P_WRITE) ? 'w' : '-',
+                 (perm & TIKU_P_EXEC) ? 'x' : '-');
         return buf;
     }
     }
@@ -558,7 +558,7 @@ tiku_trk_poseview_cell_cache_stats(const tiku_trk_poseview_t *v,
 /*---------------------------------------------------------------------------*/
 
 static int
-collect(const tiku_trk_model_t *m, void *ctx)
+collect(const tiku_model_t *m, void *ctx)
 {
     tiku_trk_poseview_t *v = ctx;
 
@@ -568,7 +568,7 @@ collect(const tiku_trk_model_t *m, void *ctx)
     if (v->count >= POSES_MAX) {
         return 1;
     }
-    if (m->kind == TIKU_TRK_KIND_UNKNOWN) {
+    if (m->kind == TIKU_KIND_UNKNOWN) {
         /*
          * The backend could not describe it -- busy, mid-write, a transient
          * error.  It is HELD rather than shown: a row that says "unknown"
@@ -608,7 +608,7 @@ collect(const tiku_trk_model_t *m, void *ctx)
     v->poses[v->count].model = *m;
     /* Resolve the type once here rather than on every draw: it is a property
      * of the node, and it decides formatting, editability and sort order. */
-    (void)tiku_trk_desc_parse(m->facts.meta, &v->poses[v->count].desc);
+    (void)tiku_desc_parse(m->facts.meta, &v->poses[v->count].desc);
     v->poses[v->count].index = v->count;
     v->count++;
     return 0;
@@ -689,23 +689,23 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
 {
     switch (field) {
     case TIKU_TRK_COL_KIND:
-        return strcmp(tiku_trk_model_kind_string(&a->model),
-                      tiku_trk_model_kind_string(&b->model));
+        return strcmp(tiku_model_kind_string(&a->model),
+                      tiku_model_kind_string(&b->model));
     case TIKU_TRK_COL_SIZE:
         return (a->model.facts.size < b->model.facts.size) ? -1
                : (a->model.facts.size > b->model.facts.size) ? 1 : 0;
     case TIKU_TRK_COL_VALUE:
         /* Through the descriptor, so a byte column orders 9 B before 10 KiB
          * rather than ordering the text it happens to be shown as. */
-        return tiku_trk_attr_compare(&a->desc, a->value, b->value);
+        return tiku_attr_compare(&a->desc, a->value, b->value);
     case TIKU_TRK_COL_CAP:
         return strcmp(a->model.facts.req_cap, b->model.facts.req_cap);
     case TIKU_TRK_COL_DATE:
         return (a->model.facts.mtime < b->model.facts.mtime) ? -1
                : (a->model.facts.mtime > b->model.facts.mtime) ? 1 : 0;
     case TIKU_TRK_COL_NAME:
-        return natural_cmp(tiku_trk_model_display_name(&a->model),
-                           tiku_trk_model_display_name(&b->model));
+        return natural_cmp(tiku_model_display_name(&a->model),
+                           tiku_model_display_name(&b->model));
     default:
         return 0;
     }
@@ -727,14 +727,14 @@ pose_cmp(const void *pa, const void *pb)
          * whose capacity reads zero is DEMOTED to the folder bucket, the
          * way the source sorts a volume that cannot say its size
          * (MA-009). */
-        int ba = (a->model.kind == TIKU_TRK_KIND_ROOT) ? 3
-               : (a->model.kind == TIKU_TRK_KIND_VOLUME &&
+        int ba = (a->model.kind == TIKU_KIND_ROOT) ? 3
+               : (a->model.kind == TIKU_KIND_VOLUME &&
                   a->model.facts.total > 0u)           ? 2
-               : tiku_trk_model_is_container(&a->model) ? 1 : 0;
-        int bb = (b->model.kind == TIKU_TRK_KIND_ROOT) ? 3
-               : (b->model.kind == TIKU_TRK_KIND_VOLUME &&
+               : tiku_model_is_container(&a->model) ? 1 : 0;
+        int bb = (b->model.kind == TIKU_KIND_ROOT) ? 3
+               : (b->model.kind == TIKU_KIND_VOLUME &&
                   b->model.facts.total > 0u)           ? 2
-               : tiku_trk_model_is_container(&b->model) ? 1 : 0;
+               : tiku_model_is_container(&b->model) ? 1 : 0;
 
         if (ba != bb) {
             return bb - ba;
@@ -757,8 +757,8 @@ pose_cmp(const void *pa, const void *pb)
         r = field_cmp(a, b, g_sorting->sort2_field);
     }
     if (r == 0) {
-        r = natural_cmp(tiku_trk_model_display_name(&a->model),
-                        tiku_trk_model_display_name(&b->model));
+        r = natural_cmp(tiku_model_display_name(&a->model),
+                        tiku_model_display_name(&b->model));
     }
     return g_sorting->sort_reverse ? -r : r;
 }
@@ -788,7 +788,7 @@ resort(tiku_trk_poseview_t *v)
  * contract and the opposite of what a "did it work" return would read as.
  */
 static int
-stage_one(const tiku_trk_model_t *m, void *ctx)
+stage_one(const tiku_model_t *m, void *ctx)
 {
     tiku_trk_poseview_t *v = ctx;
 
@@ -892,7 +892,7 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
         return 0;
     }
     while (v->stage_at < v->stage_count) {
-        tiku_trk_model_t *m = &v->stage[v->stage_at];
+        tiku_model_t *m = &v->stage[v->stage_at];
 
         /* By identity where the store has one, and by path where it does
          * not: a backend without node ids still must not list a row twice. */
@@ -1017,28 +1017,28 @@ query_default_columns(tiku_trk_poseview_t *v)
     person = strcasecmp(v->query_type, "application/x-person") == 0;
     mail = strcasecmp(v->query_type, "text/x-email") == 0 ||
            strcasecmp(v->query_type, "application/x-vnd.Be-mail") == 0;
-    v->columns[0] = (tiku_trk_column_t){ tiku_trk_str("label.name"), 145,
+    v->columns[0] = (tiku_trk_column_t){ tiku_str("label.name"), 145,
         TIKU_TRK_COL_NAME, 0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[1] = (tiku_trk_column_t){ tiku_trk_str("label.location"), 225,
+    v->columns[1] = (tiku_trk_column_t){ tiku_str("label.location"), 225,
         TIKU_TRK_COL_PATH, 0, TIKU_TRK_ALIGN_LEFT };
     v->column_count = 2;
     if (bookmark) {
-        query_attr_column(v, "META:title", tiku_trk_str("col.title"), 180);
-        query_attr_column(v, "META:url", tiku_trk_str("col.url"), 260);
+        query_attr_column(v, "META:title", tiku_str("col.title"), 180);
+        query_attr_column(v, "META:url", tiku_str("col.url"), 260);
     } else if (person) {
-        query_attr_column(v, "META:name", tiku_trk_str("label.name"), 160);
-        query_attr_column(v, "META:nickname", tiku_trk_str("col.nickname"), 110);
-        query_attr_column(v, "META:email", tiku_trk_str("col.email"), 190);
-        query_attr_column(v, "META:phone", tiku_trk_str("col.phone"), 120);
+        query_attr_column(v, "META:name", tiku_str("label.name"), 160);
+        query_attr_column(v, "META:nickname", tiku_str("col.nickname"), 110);
+        query_attr_column(v, "META:email", tiku_str("col.email"), 190);
+        query_attr_column(v, "META:phone", tiku_str("col.phone"), 120);
     } else if (mail) {
-        query_attr_column(v, "MAIL:subject", tiku_trk_str("col.subject"), 220);
-        query_attr_column(v, "MAIL:from", tiku_trk_str("col.from"), 170);
-        query_attr_column(v, "MAIL:when", tiku_trk_str("col.when"), 135);
-        query_attr_column(v, "MAIL:status", tiku_trk_str("col.status"), 90);
+        query_attr_column(v, "MAIL:subject", tiku_str("col.subject"), 220);
+        query_attr_column(v, "MAIL:from", tiku_str("col.from"), 170);
+        query_attr_column(v, "MAIL:when", tiku_str("col.when"), 135);
+        query_attr_column(v, "MAIL:status", tiku_str("col.status"), 90);
     } else {
-        v->columns[2] = (tiku_trk_column_t){ tiku_trk_str("label.size"), 80,
+        v->columns[2] = (tiku_trk_column_t){ tiku_str("label.size"), 80,
             TIKU_TRK_COL_SIZE, 0, TIKU_TRK_ALIGN_RIGHT };
-        v->columns[3] = (tiku_trk_column_t){ tiku_trk_str("label.modified"), 150,
+        v->columns[3] = (tiku_trk_column_t){ tiku_str("label.modified"), 150,
             TIKU_TRK_COL_DATE, 0, TIKU_TRK_ALIGN_LEFT };
         v->column_count = 4;
     }
@@ -1046,7 +1046,7 @@ query_default_columns(tiku_trk_poseview_t *v)
 }
 
 static int
-fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
+fill_from(tiku_trk_poseview_t *v, const tiku_model_t *m, int n,
           int as_query)
 {
     int first_query;
@@ -1075,7 +1075,7 @@ fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
     for (i = 0; i < n && v->count < POSES_MAX; i++) {
         memset(&v->poses[v->count], 0, sizeof v->poses[0]);
         v->poses[v->count].model = m[i];
-        (void)tiku_trk_desc_parse(m[i].facts.meta, &v->poses[v->count].desc);
+        (void)tiku_desc_parse(m[i].facts.meta, &v->poses[v->count].desc);
         v->poses[v->count].index = v->count;
         v->count++;
     }
@@ -1091,20 +1091,20 @@ fill_from(tiku_trk_poseview_t *v, const tiku_trk_model_t *m, int n,
 
 int
 tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
-                              const tiku_trk_model_t *m, int n)
+                              const tiku_model_t *m, int n)
 {
     return fill_from(v, m, n, 1);
 }
 
 int
 tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
-                             const tiku_trk_model_t *m, int n)
+                             const tiku_model_t *m, int n)
 {
     return fill_from(v, m, n, 0);
 }
 
 int
-tiku_trk_poseview_adopt(tiku_trk_poseview_t *v, const tiku_trk_model_t *m)
+tiku_trk_poseview_adopt(tiku_trk_poseview_t *v, const tiku_model_t *m)
 {
     tiku_trk_pose_t p;
 
@@ -1116,7 +1116,7 @@ tiku_trk_poseview_adopt(tiku_trk_poseview_t *v, const tiku_trk_model_t *m)
     }
     memset(&p, 0, sizeof p);
     p.model = *m;
-    (void)tiku_trk_desc_parse(m->facts.meta, &p.desc);
+    (void)tiku_desc_parse(m->facts.meta, &p.desc);
     p.adopted = 1;
     if (insert_sorted(v, &p) < 0) {
         return -1;
@@ -1153,7 +1153,7 @@ tiku_trk_poseview_set_query_type(tiku_trk_poseview_t *v, const char *type)
 
 void
 tiku_trk_poseview_set_layout_store(tiku_trk_poseview_t *v,
-                                   tiku_trk_store_t *store)
+                                   tiku_store_t *store)
 {
     if (v != NULL) {
         v->layout_store = store;
@@ -1170,7 +1170,7 @@ tiku_trk_poseview_layout_path(const tiku_trk_poseview_t *v)
 }
 
 tiku_trk_poseview_t *
-tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
+tiku_trk_poseview_new(tiku_backend_t *backend, const char *path)
 {
     tiku_trk_poseview_t *v = calloc(1, sizeof *v);
 
@@ -1211,13 +1211,13 @@ tiku_trk_poseview_new(tiku_trk_backend_t *backend, const char *path)
     v->font_px = TIKU_TRK_FONT_REF;
     tiku_trk_repaint_init(&v->repaint);
 
-    v->columns[0] = (tiku_trk_column_t){ tiku_trk_str("label.name"),  240, TIKU_TRK_COL_NAME,
+    v->columns[0] = (tiku_trk_column_t){ tiku_str("label.name"),  240, TIKU_TRK_COL_NAME,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[1] = (tiku_trk_column_t){ tiku_trk_str("label.kind"),  140, TIKU_TRK_COL_KIND,
+    v->columns[1] = (tiku_trk_column_t){ tiku_str("label.kind"),  140, TIKU_TRK_COL_KIND,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[2] = (tiku_trk_column_t){ tiku_trk_str("label.value"), 190, TIKU_TRK_COL_VALUE,
+    v->columns[2] = (tiku_trk_column_t){ tiku_str("label.value"), 190, TIKU_TRK_COL_VALUE,
                                          0, TIKU_TRK_ALIGN_LEFT };
-    v->columns[3] = (tiku_trk_column_t){ tiku_trk_str("label.cap"),    60, TIKU_TRK_COL_CAP,
+    v->columns[3] = (tiku_trk_column_t){ tiku_str("label.cap"),    60, TIKU_TRK_COL_CAP,
                                          0, TIKU_TRK_ALIGN_LEFT };
     v->column_count = 4;
     tiku_trk_poseview_reflow_columns(v);
@@ -1251,7 +1251,7 @@ tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path)
      * parked for a node in the folder just left would otherwise be replayed
      * into this one if a name happened to match, and would sit in the park
      * until it aged out either way. */
-    tiku_trk_park_clear(&v->park);
+    tiku_park_clear(&v->park);
     v->zombie_count = 0;
     snprintf(v->path, sizeof v->path, "%s", path);
     v->scroll = 0;
@@ -1261,7 +1261,7 @@ tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path)
 int
 tiku_trk_poseview_go_up(tiku_trk_poseview_t *v)
 {
-    char parent[TIKU_TRK_PATH_MAX];
+    char parent[TIKU_PATH_MAX];
     char *slash;
 
     if (v == NULL || strcmp(v->path, "/") == 0) {
@@ -3348,14 +3348,14 @@ tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     if (v == NULL || p == NULL || out == NULL || max == 0u) {
         return 0;
     }
-    name = tiku_trk_model_display_name(&p->model);
+    name = tiku_model_display_name(&p->model);
     if (v->measure == NULL) {
         snprintf(out, max, "%s", name);
         return (int)strlen(out);
     }
-    return tiku_trk_text_fit(name, TIKU_TRK_LABEL_CHARS * v->measure("M",
+    return tiku_text_fit(name, TIKU_TRK_LABEL_CHARS * v->measure("M",
                                  v->measure_ctx),
-                             TIKU_TRK_TRUNC_MIDDLE, v->measure,
+                             TIKU_TRUNC_MIDDLE, v->measure,
                              v->measure_ctx, out, max);
 }
 
@@ -3377,13 +3377,13 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
         /* Measured from the label as it will be DRAWN, elided and all: the
          * width taken from the whole name is a box that runs off across
          * the icons beside it (IV-047). */
-        char fit[TIKU_TRK_NAME_MAX * 2];
+        char fit[TIKU_NAME_MAX * 2];
 
         if (v->mode != TIKU_TRK_MODE_LIST &&
             tiku_trk_poseview_fit_label(v, p, fit, sizeof fit) > 0) {
             tw = v->measure(fit, v->measure_ctx);
         } else {
-            tw = v->measure(tiku_trk_model_display_name(&p->model),
+            tw = v->measure(tiku_model_display_name(&p->model),
                             v->measure_ctx);
         }
     }
@@ -3832,7 +3832,7 @@ static const char *
 state_node(const tiku_trk_poseview_t *v, char *buf, size_t max)
 {
     if (v->state_key[0] == '\0' && strcmp(v->path, "/") == 0) {
-        return tiku_trk_desktop_dir(buf, max);
+        return tiku_desktop_dir(buf, max);
     }
     return v->path;
 }
@@ -3841,12 +3841,12 @@ static const char *
 state_attr(const tiku_trk_poseview_t *v)
 {
     if (v->state_key[0] != '\0') {
-        return TIKU_TRK_ATTR_DESK_VIEW_STATE;
+        return TIKU_ATTR_DESK_VIEW_STATE;
     }
     if (strcmp(v->path, "/") == 0) {
-        return TIKU_TRK_ATTR_DISKS_VIEW_STATE;
+        return TIKU_ATTR_DISKS_VIEW_STATE;
     }
-    return TIKU_TRK_ATTR_VIEW_STATE;
+    return TIKU_ATTR_VIEW_STATE;
 }
 
 void
@@ -3875,7 +3875,7 @@ tiku_trk_poseview_last_icon_mode(const tiku_trk_poseview_t *v)
 int
 tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
 {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     int i, n = 0;
 
     if (v == NULL || v->backend->ops->state_store == NULL) {
@@ -3888,8 +3888,8 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
     /* View state belongs to the FOLDER; pose info to each ENTRY. */
     {
         char rec[96];
-        char node[TIKU_TRK_PATH_MAX];
-        int len = tiku_trk_state_read(store,
+        char node[TIKU_PATH_MAX];
+        int len = tiku_state_read(store,
                                       state_node(v, node, sizeof node),
                                       state_attr(v), rec, sizeof rec - 1);
         if (len > 0) {
@@ -3961,8 +3961,8 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
         int got;
 
         memset(&info, 0, sizeof info);
-        got = tiku_trk_state_read(store, v->poses[i].model.path,
-                                  TIKU_TRK_ATTR_POSE_INFO, raw, sizeof raw);
+        got = tiku_state_read(store, v->poses[i].model.path,
+                                  TIKU_ATTR_POSE_INFO, raw, sizeof raw);
         if (got == (int)sizeof info) {
             memcpy(&info, raw, sizeof info);
         } else if (got == (int)sizeof(pose_info_v1_t)) {
@@ -4002,7 +4002,7 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
 int
 tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
 {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     int i, n = 0;
 
     if (v == NULL || v->is_query || !v->state_dirty ||
@@ -4010,7 +4010,7 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
         return 0;               /* the dirty gate: no write, no wear */
     }
     store = v->backend->ops->state_store(v->backend);
-    if (store == NULL || !tiku_trk_store_writable(store)) {
+    if (store == NULL || !tiku_store_writable(store)) {
         return 0;               /* read-only: degrade, do not fail */
     }
     {
@@ -4032,9 +4032,9 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
                  v->mini_y, v->sort_field, v->sort2_field,
                  v->sort_reverse,
                  (v->last_icon == TIKU_TRK_MODE_MINI) ? 1 : 0);
-        char node[TIKU_TRK_PATH_MAX];
+        char node[TIKU_PATH_MAX];
 
-        (void)tiku_trk_state_write(store,
+        (void)tiku_state_write(store,
                                    state_node(v, node, sizeof node),
                                    state_attr(v), rec, strlen(rec));
     }
@@ -4053,13 +4053,13 @@ tiku_trk_poseview_save_state(tiku_trk_poseview_t *v)
         if (v->poses[i].invisible) {
             info.flags |= POSE_INFO_INVISIBLE;
         }
-        if (tiku_trk_state_write(store, v->poses[i].model.path,
-                                 TIKU_TRK_ATTR_POSE_INFO, &info,
+        if (tiku_state_write(store, v->poses[i].model.path,
+                                 TIKU_ATTR_POSE_INFO, &info,
                                  sizeof info) == 0) {
             n++;
         }
     }
-    (void)tiku_trk_store_flush(store);
+    (void)tiku_store_flush(store);
     v->state_dirty = 0;
     return n;
 }
@@ -4370,7 +4370,7 @@ tiku_trk_poseview_visible_rows(const tiku_trk_poseview_t *v)
 int
 tiku_trk_poseview_parked(const tiku_trk_poseview_t *v)
 {
-    return (v != NULL) ? tiku_trk_park_count(&v->park) : 0;
+    return (v != NULL) ? tiku_park_count(&v->park) : 0;
 }
 
 int
@@ -4383,7 +4383,7 @@ tiku_trk_poseview_zombies(const tiku_trk_poseview_t *v)
 static int
 pose_is_hidden(tiku_trk_poseview_t *v, const char *path)
 {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     char raw[sizeof(pose_info_t) + 4];
     pose_info_t info;
 
@@ -4394,7 +4394,7 @@ pose_is_hidden(tiku_trk_poseview_t *v, const char *path)
     if (store == NULL) {
         return 0;
     }
-    if (tiku_trk_state_read(store, path, TIKU_TRK_ATTR_POSE_INFO, raw,
+    if (tiku_state_read(store, path, TIKU_ATTR_POSE_INFO, raw,
                             sizeof raw) != (int)sizeof info) {
         return 0;
     }
@@ -4615,21 +4615,21 @@ static unsigned
 column_fields(int field)
 {
     switch (field) {
-    case TIKU_TRK_COL_SIZE:  return TIKU_TRK_EVF_SIZE;
-    case TIKU_TRK_COL_DATE:  return TIKU_TRK_EVF_DATE;
-    case TIKU_TRK_COL_KIND:  return TIKU_TRK_EVF_KIND;
-    case TIKU_TRK_COL_VALUE: return TIKU_TRK_EVF_VALUE;
-    case TIKU_TRK_COL_CAP:   return TIKU_TRK_EVF_CAP;
-    case TIKU_TRK_COL_PERM:  return TIKU_TRK_EVF_PERM;
+    case TIKU_TRK_COL_SIZE:  return TIKU_EVF_SIZE;
+    case TIKU_TRK_COL_DATE:  return TIKU_EVF_DATE;
+    case TIKU_TRK_COL_KIND:  return TIKU_EVF_KIND;
+    case TIKU_TRK_COL_VALUE: return TIKU_EVF_VALUE;
+    case TIKU_TRK_COL_CAP:   return TIKU_EVF_CAP;
+    case TIKU_TRK_COL_PERM:  return TIKU_EVF_PERM;
     default:
         /* The name changes only through MOVED; a named attribute column
          * reads the meta the VALUE bit stands for. */
-        return (field >= TIKU_TRK_COL_ATTR_BASE) ? TIKU_TRK_EVF_VALUE : 0u;
+        return (field >= TIKU_TRK_COL_ATTR_BASE) ? TIKU_EVF_VALUE : 0u;
     }
 }
 
 unsigned
-tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
+tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_node_event_t *e)
 {
     unsigned flags = TIKU_TRK_NOTIFY_NOTHING;
     int at;
@@ -4644,11 +4644,11 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
          * showing.  The MODEL's own hint needs no clearing here -- every
          * branch below overwrites it with the freshly listed one, which has
          * not been asked yet. */
-        if (e->op == TIKU_TRK_EV_REMOVED) {
+        if (e->op == TIKU_EV_REMOVED) {
             (void)tiku_trk_nodeicon_deleted(v->icons, e->path);
         } else {
             (void)tiku_trk_nodeicon_changed(v->icons, e->path);
-            if (e->op == TIKU_TRK_EV_MOVED && e->from[0] != '\0') {
+            if (e->op == TIKU_EV_MOVED && e->from[0] != '\0') {
                 /* Keyed by path, so the name it USED to have is a key that
                  * now describes nothing. */
                 (void)tiku_trk_nodeicon_changed(v->icons, e->from);
@@ -4660,15 +4660,15 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
      * gone -- so matching only e->path would miss exactly the case the
      * retitle rule is about. */
     if (strcmp(e->path, v->path) == 0 ||
-        (e->op == TIKU_TRK_EV_MOVED && e->from[0] != '\0' &&
+        (e->op == TIKU_EV_MOVED && e->from[0] != '\0' &&
          strcmp(e->from, v->path) == 0)) {
-        if (e->op == TIKU_TRK_EV_REMOVED) {
+        if (e->op == TIKU_EV_REMOVED) {
             /* The root is exempt: it has nowhere to go, and closing it would
              * leave nothing to browse. */
             return (strcmp(v->path, "/") == 0)
                        ? TIKU_TRK_NOTIFY_NOTHING : TIKU_TRK_NOTIFY_GONE;
         }
-        if (e->op == TIKU_TRK_EV_MOVED) {
+        if (e->op == TIKU_EV_MOVED) {
             snprintf(v->path, sizeof v->path, "%s", e->path);
             return TIKU_TRK_NOTIFY_RETITLE | TIKU_TRK_NOTIFY_REDRAW;
         }
@@ -4678,14 +4678,14 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
     /* PVN-057: an ANCESTOR moving takes this folder with it.  Nothing about
      * the contents changed and no row moved -- but the window is showing a
      * path that no longer exists, so the title has to follow. */
-    if (e->op == TIKU_TRK_EV_MOVED && e->from[0] != '\0') {
+    if (e->op == TIKU_EV_MOVED && e->from[0] != '\0') {
         size_t n = strlen(e->from);
 
         /* At a component boundary, or "/a/b" would claim "/a/bc" as its
          * own child and rewrite an unrelated window's path. */
         if (n > 0u && strncmp(e->from, v->path, n) == 0 &&
             v->path[n] == '/') {
-            char rebuilt[TIKU_TRK_PATH_MAX];
+            char rebuilt[TIKU_PATH_MAX];
 
             /* Built into a scratch buffer and only then adopted: a path
              * that would not fit leaves the window pointing at the old one
@@ -4699,7 +4699,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
     }
 
     switch (e->op) {
-    case TIKU_TRK_EV_CREATED:
+    case TIKU_EV_CREATED:
         v->menu_generation++;
         /* A file made in some other folder is not this folder's business,
          * and a duplicate notice must not produce a second row. */
@@ -4732,12 +4732,12 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         }
         {
             tiku_trk_pose_t p;
-            tiku_trk_event_t held[8];
+            tiku_node_event_t held[8];
             int n, k;
 
             memset(&p, 0, sizeof p);
             p.model = e->model;
-            (void)tiku_trk_desc_parse(e->model.facts.meta, &p.desc);
+            (void)tiku_desc_parse(e->model.facts.meta, &p.desc);
             {
                 int lx, ly;
 
@@ -4788,7 +4788,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
              * would strand the NEWEST notices, which are the ones that say
              * what the row looks like now. */
             do {
-                n = tiku_trk_park_take(&v->park, e->path, held,
+                n = tiku_park_take(&v->park, e->path, held,
                                        (int)(sizeof held / sizeof held[0]));
                 for (k = 0; k < n; k++) {
                     flags |= tiku_trk_poseview_notify(v, &held[k]);
@@ -4797,7 +4797,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         }
         break;
 
-    case TIKU_TRK_EV_REMOVED:
+    case TIKU_EV_REMOVED:
         v->menu_generation++;
         at = pose_index(v, e->path);
         if (at < 0) {
@@ -4822,7 +4822,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         flags |= TIKU_TRK_NOTIFY_REDRAW;
         break;
 
-    case TIKU_TRK_EV_MOVED:
+    case TIKU_EV_MOVED:
         v->menu_generation++;
         at = (e->from[0] != '\0') ? pose_index(v, e->from) : -1;
         if (at < 0) {
@@ -4830,9 +4830,9 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         }
         if (at < 0) {
             /* Moved IN from elsewhere: that is a creation here. */
-            tiku_trk_event_t as_new = *e;
+            tiku_node_event_t as_new = *e;
 
-            as_new.op = TIKU_TRK_EV_CREATED;
+            as_new.op = TIKU_EV_CREATED;
             return tiku_trk_poseview_notify(v, &as_new);
         }
         /* Moved OUT of this folder is a removal -- unless this is a query or
@@ -4859,7 +4859,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
             int scroll_was = v->scroll;
 
             moved.model = e->model;
-            (void)tiku_trk_desc_parse(e->model.facts.meta, &moved.desc);
+            (void)tiku_desc_parse(e->model.facts.meta, &moved.desc);
             moved.value_valid = 0;
             remove_pose(v, at);
             /* remove+insert is an implementation of RENAME, and a rename
@@ -4891,11 +4891,11 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
                  * taken -- something changed it while it was called
                  * something else -- so a rename into place replays as a
                  * creation does. */
-                tiku_trk_event_t held[8];
+                tiku_node_event_t held[8];
                 int n, k;
 
                 do {
-                    n = tiku_trk_park_take(&v->park, e->path, held,
+                    n = tiku_park_take(&v->park, e->path, held,
                                            (int)(sizeof held /
                                                  sizeof held[0]));
                     for (k = 0; k < n; k++) {
@@ -4906,8 +4906,8 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
         }
         break;
 
-    case TIKU_TRK_EV_CHANGED:
-    case TIKU_TRK_EV_ATTR:
+    case TIKU_EV_CHANGED:
+    case TIKU_EV_ATTR:
         /* The shells rebuild Open With/Add-ons from the focused view on
          * every menu open; this serial makes a MIME/type notice observable
          * even when the row remains in place. */
@@ -4917,7 +4917,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
             /* The row is not here yet.  Park it rather than lose it: a file
              * altered the instant after it was created would otherwise show
              * the state it was born with. */
-            (void)tiku_trk_park_add(&v->park, e);
+            (void)tiku_park_add(&v->park, e);
             break;
         }
         {
@@ -4927,13 +4927,13 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
              * is owed -- while one that cannot say re-reads everything,
              * which is what every notice meant before the mask. */
             unsigned f = e->fields;
-            int repaint = (f == 0u) || (f & TIKU_TRK_EVF_KIND) != 0u;
+            int repaint = (f == 0u) || (f & TIKU_EVF_KIND) != 0u;
             tiku_trk_pose_t before = v->poses[at];
 
             v->poses[at].model = e->model;
-            (void)tiku_trk_desc_parse(e->model.facts.meta,
+            (void)tiku_desc_parse(e->model.facts.meta,
                                       &v->poses[at].desc);
-            if (f == 0u || (f & TIKU_TRK_EVF_VALUE) != 0u) {
+            if (f == 0u || (f & TIKU_EVF_VALUE) != 0u) {
                 v->poses[at].value_valid = 0;
             }
             if (!repaint) {
@@ -5012,11 +5012,11 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_trk_event_t *e)
 
 unsigned
 tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
-                                const tiku_trk_model_t *set, int n,
+                                const tiku_model_t *set, int n,
                                 int64_t now)
 {
-    tiku_trk_model_t *was;
-    tiku_trk_evlist_t evs;
+    tiku_model_t *was;
+    tiku_evlist_t evs;
     unsigned flags;
     int i, nwas;
 
@@ -5037,8 +5037,8 @@ tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
             was[nwas++] = v->poses[i].model;
         }
     }
-    tiku_trk_evlist_clear(&evs);
-    (void)tiku_trk_notify_diff(was, nwas, set, n, now, &evs);
+    tiku_evlist_clear(&evs);
+    (void)tiku_notify_diff(was, nwas, set, n, now, &evs);
     flags = tiku_trk_poseview_notify_all(v, &evs);
     free(was);
     return flags;
@@ -5046,7 +5046,7 @@ tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
 
 unsigned
 tiku_trk_poseview_notify_all(tiku_trk_poseview_t *v,
-                             const tiku_trk_evlist_t *l)
+                             const tiku_evlist_t *l)
 {
     unsigned flags = TIKU_TRK_NOTIFY_NOTHING;
     int i;
@@ -5062,21 +5062,21 @@ tiku_trk_poseview_notify_all(tiku_trk_poseview_t *v,
 
 /** @brief Collects a re-listing for the differ. */
 struct relist {
-    tiku_trk_model_t    *set;
+    tiku_model_t    *set;
     int                  n;
     int                  max;
     tiku_trk_poseview_t *view;   /* for the zombie hold                   */
 };
 
 static int
-relist_one(const tiku_trk_model_t *m, void *ctx)
+relist_one(const tiku_model_t *m, void *ctx)
 {
     struct relist *r = ctx;
 
     if (r->n >= r->max) {
         return 1;
     }
-    if (m->kind == TIKU_TRK_KIND_UNKNOWN) {
+    if (m->kind == TIKU_KIND_UNKNOWN) {
         /* The same hold the first listing applies.  Without it the live path
          * puts an entry the backend could not describe straight into the
          * diff, and it appears as a visible UNKNOWN row -- while still being
@@ -5127,11 +5127,11 @@ tiku_trk_poseview_path_of_id(tiku_trk_poseview_t *v, uint64_t id, char *out,
 
 unsigned
 tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
-                       const tiku_trk_change_t *ch, int nch, int complete)
+                       const tiku_model_change_t *ch, int nch, int complete)
 {
-    tiku_trk_model_t *was, *is;
+    tiku_model_t *was, *is;
     struct relist r;
-    tiku_trk_evlist_t evs;
+    tiku_evlist_t evs;
     unsigned flags = TIKU_TRK_NOTIFY_NOTHING;
     int i, nwas;
 
@@ -5141,7 +5141,7 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
     /* The sweep runs before the query short-circuit: a parked notice ages on
      * the clock, not on what kind of view is holding it, and one parked in a
      * query view would otherwise sit for ever. */
-    if (tiku_trk_park_expire(&v->park, now) > 0) {
+    if (tiku_park_expire(&v->park, now) > 0) {
         flags |= TIKU_TRK_NOTIFY_REDRAW;
     }
     if (v->is_query) {
@@ -5175,17 +5175,17 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
                     if (v->poses[k].model.node_id != 0 &&
                         v->poses[k].model.node_id == ch[i].id) {
                         held = 1;
-                        if (ch[i].op == TIKU_TRK_CH_CHANGED) {
+                        if (ch[i].op == TIKU_CH_CHANGED) {
                             /* Through the SAME handler everything else uses:
                              * an inline poke here was a second update path,
                              * and a second path is how a query view and a
                              * folder view drift apart.  The model is
                              * re-stat'ed so the descriptor and facts move
                              * with the value. */
-                            tiku_trk_event_t ev;
+                            tiku_node_event_t ev;
 
                             memset(&ev, 0, sizeof ev);
-                            ev.op = TIKU_TRK_EV_ATTR;
+                            ev.op = TIKU_EV_ATTR;
                             ev.at = now;
                             snprintf(ev.path, sizeof ev.path, "%s",
                                      v->poses[k].model.path);
@@ -5217,10 +5217,10 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
                      * test: a diff of two listings can only ever describe
                      * nodes the view already has.
                      */
-                    if (ch[i].op == TIKU_TRK_CH_CHANGED &&
+                    if (ch[i].op == TIKU_CH_CHANGED &&
                         v->backend->ops->stat != NULL) {
-                        tiku_trk_model_t m;
-                        char idpath[TIKU_TRK_PATH_MAX];
+                        tiku_model_t m;
+                        char idpath[TIKU_PATH_MAX];
 
                         /* The record names an identity, not a path.  Only
                          * the backend can turn one into the other. */
@@ -5228,10 +5228,10 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
                                                          sizeof idpath) == 0 &&
                             v->backend->ops->stat(v->backend, idpath,
                                                   &m) == 0) {
-                            tiku_trk_event_t ev;
+                            tiku_node_event_t ev;
 
                             memset(&ev, 0, sizeof ev);
-                            ev.op = TIKU_TRK_EV_ATTR;
+                            ev.op = TIKU_EV_ATTR;
                             ev.model = m;
                             ev.at = now;
                             snprintf(ev.path, sizeof ev.path, "%s", idpath);
@@ -5292,7 +5292,7 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
     if (v->backend->ops->list(v->backend, v->path, relist_one, &r) < 0) {
         /* The listing failed: the folder may be gone.  Ask about the folder
          * rather than concluding it from a failed read. */
-        tiku_trk_model_t self;
+        tiku_model_t self;
 
         if (v->backend->ops->stat != NULL &&
             v->backend->ops->stat(v->backend, v->path, &self) != 0 &&
@@ -5303,8 +5303,8 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
         free(is);
         return flags;
     }
-    tiku_trk_evlist_clear(&evs);
-    (void)tiku_trk_notify_diff(was, nwas, is, r.n, now, &evs);
+    tiku_evlist_clear(&evs);
+    (void)tiku_notify_diff(was, nwas, is, r.n, now, &evs);
     flags |= tiku_trk_poseview_notify_all(v, &evs);
     if (evs.overflowed) {
         /* More happened than the batch could carry.  Re-reading wholesale is
@@ -5417,10 +5417,10 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
         char buf[256];
         int len;
 
-        if (p == NULL || tiku_trk_model_is_container(&p->model)) {
+        if (p == NULL || tiku_model_is_container(&p->model)) {
             continue;
         }
-        if (!(p->model.facts.perm & TIKU_TRK_P_READ)) {
+        if (!(p->model.facts.perm & TIKU_P_READ)) {
             continue;
         }
         len = v->backend->ops->read(v->backend, p->model.path, buf,
@@ -5538,7 +5538,7 @@ tiku_trk_poseview_types_present(const tiku_trk_poseview_t *v,
         const char *ty = v->poses[i].model.type;
         int k, seen = 0;
 
-        if (ty[0] == '\0' || tiku_trk_model_is_container(&v->poses[i].model)) {
+        if (ty[0] == '\0' || tiku_model_is_container(&v->poses[i].model)) {
             /* A folder's type is the folder type, which says nothing about
              * what the listing HOLDS. */
             continue;
@@ -5838,7 +5838,7 @@ scale_out(const tiku_trk_poseview_t *v, int px)
 int
 tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
 {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     column_rec_t rec[TIKU_TRK_COLUMNS_MAX];
     int i;
 
@@ -5855,7 +5855,7 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
           ? v->layout_store
           : ((v->backend->ops->state_store != NULL)
              ? v->backend->ops->state_store(v->backend) : NULL);
-    if (store == NULL || !tiku_trk_store_writable(store)) {
+    if (store == NULL || !tiku_store_writable(store)) {
         return 0;
     }
     for (i = 0; i < v->column_count; i++) {
@@ -5876,16 +5876,16 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
         }
     }
     {
-        char node[TIKU_TRK_PATH_MAX];
+        char node[TIKU_PATH_MAX];
         const char *at = (v->query_layout[0] == '\0' &&
                           strcmp(v->path, "/") == 0)
-                             ? TIKU_TRK_ATTR_DISKS_COLUMNS
-                             : TIKU_TRK_ATTR_COLUMNS;
+                             ? TIKU_ATTR_DISKS_COLUMNS
+                             : TIKU_ATTR_COLUMNS;
         const char *nd = (v->query_layout[0] != '\0')
                              ? v->query_layout
                              : state_node(v, node, sizeof node);
 
-        if (tiku_trk_state_write(store, nd, at, rec,
+        if (tiku_state_write(store, nd, at, rec,
                 sizeof rec[0] * (size_t)v->column_count) != 0) {
             return 0;
         }
@@ -5922,7 +5922,7 @@ tiku_trk_poseview_copy_columns(tiku_trk_poseview_t *v,
 int
 tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
 {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     column_rec_t rec[TIKU_TRK_COLUMNS_MAX];
     int n, kept = 0, i, j, order = -1;
     size_t got = 0;
@@ -5938,15 +5938,15 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         return 0;
     }
     {
-        char node[TIKU_TRK_PATH_MAX];
+        char node[TIKU_PATH_MAX];
         const char *at = (v->query_layout[0] == '\0' &&
                           strcmp(v->path, "/") == 0)
-                             ? TIKU_TRK_ATTR_DISKS_COLUMNS
-                             : TIKU_TRK_ATTR_COLUMNS;
+                             ? TIKU_ATTR_DISKS_COLUMNS
+                             : TIKU_ATTR_COLUMNS;
         const char *nd = (v->query_layout[0] != '\0')
                              ? v->query_layout
                              : state_node(v, node, sizeof node);
-        int r = tiku_trk_state_read(store, nd, at, rec, sizeof rec);
+        int r = tiku_state_read(store, nd, at, rec, sizeof rec);
         if (r <= 0) {
             return 0;
         }
@@ -6077,8 +6077,8 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
 }
 
 int
-tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
-                                          tiku_trk_store_t *store)
+tiku_trk_poseview_install_query_defaults(tiku_backend_t *backend,
+                                          tiku_store_t *store)
 {
     static const char *const kType[] = {
         "", "application/x-vnd.Be-bookmark", "application/x-person",
@@ -6087,7 +6087,7 @@ tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
     tiku_trk_frame_t def = { 40, 40, 695, 350 };
     int i, installed = 0;
 
-    if (backend == NULL || store == NULL || !tiku_trk_store_writable(store)) {
+    if (backend == NULL || store == NULL || !tiku_store_writable(store)) {
         return 0;
     }
     for (i = 0; i < (int)(sizeof kType / sizeof kType[0]); i++) {
@@ -6102,12 +6102,12 @@ tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
         }
         tiku_trk_poseview_set_layout_store(v, store);
         tiku_trk_poseview_set_query_type(v, kType[i]);
-        has_columns = tiku_trk_state_read(store,
+        has_columns = tiku_state_read(store,
                             tiku_trk_poseview_layout_path(v),
-                            TIKU_TRK_ATTR_COLUMNS, &byte, sizeof byte) > 0;
-        has_frame = tiku_trk_state_read(store,
+                            TIKU_ATTR_COLUMNS, &byte, sizeof byte) > 0;
+        has_frame = tiku_state_read(store,
                           tiku_trk_poseview_layout_path(v),
-                          TIKU_TRK_ATTR_FRAME, &frame, sizeof frame) ==
+                          TIKU_ATTR_FRAME, &frame, sizeof frame) ==
                     (int)sizeof frame &&
                     frame.w >= TIKU_TRK_FRAME_MIN_W &&
                     frame.h >= TIKU_TRK_FRAME_MIN_H;
@@ -6119,9 +6119,9 @@ tiku_trk_poseview_install_query_defaults(tiku_trk_backend_t *backend,
             (void)tiku_trk_poseview_save_columns(v);
         }
         if (!has_frame) {
-            (void)tiku_trk_state_write(store,
+            (void)tiku_state_write(store,
                                        tiku_trk_poseview_layout_path(v),
-                                       TIKU_TRK_ATTR_FRAME, &def,
+                                       TIKU_ATTR_FRAME, &def,
                                        sizeof def);
         }
         if (!has_columns || !has_frame) {

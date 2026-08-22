@@ -18,7 +18,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "tiku_desk_font.h"
+#include "tiku_font.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_trk_fontprefs.h"
 
@@ -50,7 +50,7 @@ int
 main(void)
 {
     tiku_trk_fontprefs_t prefs;
-    tiku_trk_store_t *store = tiku_trk_store_memory_open();
+    tiku_store_t *store = tiku_store_memory_open();
 
     printf("the letters the interface is drawn in (DEV-010)\n");
 
@@ -152,7 +152,7 @@ main(void)
             }
         }
         (void)system("rm -rf /tmp/trk_fontdir && mkdir -p /tmp/trk_fontdir");
-        setenv("TIKU_DESK_FONTS", "/tmp/trk_fontdir", 1);
+        setenv("TIKU_FONTS", "/tmp/trk_fontdir", 1);
 
         baked = tiku_trk_fontprefs_offer(&offer);
         check(baked == tiku_trk_fontprefs_family_count(), "DEV-010",
@@ -190,7 +190,7 @@ main(void)
                              prefs.value.dropped) == 0, "DEV-010",
                       "the dropped family is remembered by name");
                 tiku_trk_fontprefs_apply(&again);
-                check(strcmp(tiku_desk_font_current_family(),
+                check(strcmp(tiku_font_current_family(),
                              prefs.value.dropped) == 0, "DEV-010",
                       "and applying it draws the interface in that file");
             }
@@ -199,7 +199,7 @@ main(void)
              * be drawn in something. */
             (void)system("rm -f /tmp/trk_fontdir/*.ttf");
             tiku_trk_fontprefs_apply(&prefs);
-            check(strcmp(tiku_desk_font_current_family(),
+            check(strcmp(tiku_font_current_family(),
                          tiku_trk_fontprefs_family_name(
                              prefs.value.family)) == 0, "DEV-010",
                   "a family taken out of the folder falls back to a baked one");
@@ -207,7 +207,7 @@ main(void)
                   "DEV-010", "though the choice is remembered, not thrown away");
         }
         (void)system("rm -rf /tmp/trk_fontdir");
-        unsetenv("TIKU_DESK_FONTS");
+        unsetenv("TIKU_FONTS");
         tiku_trk_fontprefs_init(&prefs);
     }
 
@@ -215,7 +215,7 @@ main(void)
           !tiku_trk_fontprefs_load(&prefs, NULL), "DEV-010",
           "with nowhere to keep them, the defaults stand and nothing dies");
 
-    tiku_trk_store_free(store);
+    tiku_store_free(store);
     if (fails > 0) {
         printf("\nFAILURES\n");
         return 1;

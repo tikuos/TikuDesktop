@@ -9,7 +9,7 @@
  */
 
 #include "tiku_trk_alert.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -89,7 +89,7 @@ tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind, int tag,
 }
 
 void
-tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
+tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_progress_t *pr)
 {
     char text[512];
     const char *leaf;
@@ -100,23 +100,23 @@ tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
     leaf = strrchr(pr->conflict_path, '/');
     leaf = (leaf != NULL) ? leaf + 1 : pr->conflict_path;
     snprintf(text, sizeof text,
-             tiku_trk_str("alert.msg.exists_here"), leaf);
+             tiku_str("alert.msg.exists_here"), leaf);
     /* The four-way form when a folder is involved or more than one
      * collision is pending; otherwise the short one.  The engine already
      * decided which -- this only renders it (FS-018, FS-019). */
     if (pr->conflict_many) {
         tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
-                            tiku_trk_str("alert.btn.conflict"));
+                            tiku_str("alert.btn.conflict"));
     } else {
         tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
-                            tiku_trk_str("alert.btn.replace"));
+                            tiku_str("alert.btn.replace"));
     }
 }
 
 void
-tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
+tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_progress_t *pr)
 {
     if (a == NULL || pr == NULL) {
         return;
@@ -126,8 +126,8 @@ tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_trk_progress_t *pr)
      * guessing from the message. */
     tiku_trk_alert_open(a, TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_ERROR,
                         pr->error,
-                        pr->error_can_continue ? tiku_trk_str("alert.btn.ok")
-                                               : tiku_trk_str("button.cancel"));
+                        pr->error_can_continue ? tiku_str("alert.btn.ok")
+                                               : tiku_str("button.cancel"));
 }
 
 void
@@ -177,23 +177,23 @@ tiku_trk_alert_button_at(const tiku_trk_alert_t *a, int w, int h, int x,
     return -1;
 }
 
-tiku_trk_conflict_t
+tiku_conflict_t
 tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a)
 {
     if (a == NULL || a->chosen < 0) {
-        return TIKU_TRK_CONFLICT_ASK;
+        return TIKU_CONFLICT_ASK;
     }
     if (a->nbutton == 2) {
         /* Cancel | Replace */
-        return (a->chosen == 1) ? TIKU_TRK_CONFLICT_REPLACE
-                                : TIKU_TRK_CONFLICT_SKIP;
+        return (a->chosen == 1) ? TIKU_CONFLICT_REPLACE
+                                : TIKU_CONFLICT_SKIP;
     }
     /* Cancel | Skip | Skip all | Replace all */
     switch (a->chosen) {
-    case 1:  return TIKU_TRK_CONFLICT_SKIP;
-    case 2:  return TIKU_TRK_CONFLICT_SKIP_ALL;
-    case 3:  return TIKU_TRK_CONFLICT_REPLACE_ALL;
-    default: return TIKU_TRK_CONFLICT_SKIP;
+    case 1:  return TIKU_CONFLICT_SKIP;
+    case 2:  return TIKU_CONFLICT_SKIP_ALL;
+    case 3:  return TIKU_CONFLICT_REPLACE_ALL;
+    default: return TIKU_CONFLICT_SKIP;
     }
 }
 
@@ -208,22 +208,22 @@ tiku_trk_progress_reset(tiku_trk_progress_win_t *p)
 }
 
 const char *
-tiku_trk_progress_caption(tiku_trk_op_t op)
+tiku_trk_progress_caption(tiku_op_t op)
 {
     switch (op) {
-    case TIKU_TRK_OP_COPY:      return "Copying: ";
-    case TIKU_TRK_OP_MOVE:      return "Moving: ";
-    case TIKU_TRK_OP_DUPLICATE: return "Duplicating: ";
-    case TIKU_TRK_OP_TRASH:     return "Emptying Trash... ";
-    case TIKU_TRK_OP_DELETE:    return "Deleting: ";
-    case TIKU_TRK_OP_LINK:      return "Creating links: ";
+    case TIKU_OP_COPY:      return "Copying: ";
+    case TIKU_OP_MOVE:      return "Moving: ";
+    case TIKU_OP_DUPLICATE: return "Duplicating: ";
+    case TIKU_OP_TRASH:     return "Emptying Trash... ";
+    case TIKU_OP_DELETE:    return "Deleting: ";
+    case TIKU_OP_LINK:      return "Creating links: ";
     default:                    return "";
     }
 }
 
 void
 tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
-                         const tiku_trk_progress_t *pr, int busy,
+                         const tiku_progress_t *pr, int busy,
                          const char *dest)
 {
     int k, any = 0;
@@ -323,9 +323,9 @@ tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p, int i)
 }
 
 int
-tiku_trk_progress_wanted(tiku_trk_op_t op, int items)
+tiku_trk_progress_wanted(tiku_op_t op, int items)
 {
-    if (op == TIKU_TRK_OP_LINK) {
+    if (op == TIKU_OP_LINK) {
         /* Links are instantaneous; a window that appeared and vanished
          * would be a flash nobody can read (FS-070). */
         return (items > TIKU_TRK_PROGRESS_LINK_MIN);

@@ -21,7 +21,7 @@ typedef void (*tiku_trk_drag_open_fn)(void *context, const char *path);
 
 /** @brief Dependencies and state for resolving the target under a drag. */
 typedef struct {
-    tiku_desk_workspace_t *workspace;
+    tiku_workspace_t *workspace;
     tiku_trk_deskbar_t *deskbar;
     tiku_trk_desktop_view_t *desktop_view;
     tiku_trk_drag_t *drag;
@@ -48,7 +48,7 @@ void tiku_trk_drag_target_set_script_delay(
     tiku_trk_drag_target_t *controller, int pulses);
 
 void tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
+    tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
     tiku_trk_desktop_view_t *desktop_view, tiku_trk_drag_t *drag,
     tiku_trk_folder_window_t *folders, int *folder_count, int row_h,
     int *dirty, tiku_trk_drag_open_fn open, void *open_context);

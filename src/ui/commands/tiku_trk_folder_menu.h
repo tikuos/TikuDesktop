@@ -14,7 +14,7 @@
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_folder_window.h"
 #include "tiku_trk_folder_edit.h"
-#include "tiku_trk_fs.h"
+#include "tiku_fs.h"
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_types.h"
 
@@ -22,8 +22,8 @@
 typedef struct {
     tiku_trk_cwmenu_t             *menus;
     tiku_trk_clip_t               *clip;
-    tiku_trk_backend_t            *backend;
-    tiku_trk_fs_t                 *fs;
+    tiku_backend_t            *backend;
+    tiku_fs_t                 *fs;
     tiku_trk_types_t              *types;
     tiku_trk_launch_controller_t  *launcher;
     tiku_trk_folder_window_t     **bar_folder;
@@ -34,7 +34,7 @@ typedef struct {
 /** @brief Bind live folder-menu models and their supporting services. */
 void tiku_trk_folder_menu_init(tiku_trk_folder_menu_t *controller,
     tiku_trk_cwmenu_t *menus, tiku_trk_clip_t *clip,
-    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs,
+    tiku_backend_t *backend, tiku_fs_t *fs,
     tiku_trk_types_t *types, tiku_trk_launch_controller_t *launcher,
     tiku_trk_folder_window_t **bar_folder, int *bar_open);
 

@@ -158,7 +158,7 @@ tiku_trk_addons_discover(tiku_trk_addons_t *addons, const char *dir)
     }
     while ((e = readdir(d)) != NULL &&
            addons->count < TIKU_TRK_ADDON_MAX) {
-        char path[256], types_path[280], type[TIKU_TRK_TYPE_MAX] = "";
+        char path[256], types_path[280], type[TIKU_TYPE_MAX] = "";
         char keyline[8] = "";
         struct stat st;
         FILE *tf;

@@ -87,7 +87,7 @@ main(void)
 {
     tiku_trk_deskprefs_t prefs;
     tiku_trk_deskprefs_pictures_t found;
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     const char *dir = "/tmp/trk_deskprefs";
     const char *dirs[1];
 
@@ -119,7 +119,7 @@ main(void)
           "and the same at the foot");
 
     /* A record on a node, read back as the window would read it. */
-    store = tiku_trk_store_memory_open();
+    store = tiku_store_memory_open();
     tiku_trk_deskprefs_set_picture(&prefs, "/tmp/whatever.bmp");
     tiku_trk_deskprefs_set_mode(&prefs, TIKU_TRK_BG_TILED);
     check(tiku_trk_deskprefs_save(&prefs, store, "/desk"), "DEV-009",
@@ -155,7 +155,7 @@ main(void)
     check(tiku_trk_deskprefs_pictures(&found, dirs, 0) == 0, "DEV-009",
           "and a chooser given nowhere to look offers nothing");
 
-    tiku_trk_store_free(store);
+    tiku_store_free(store);
     (void)system("rm -rf /tmp/trk_deskprefs");
     if (fails > 0) {
         printf("\nFAILURES\n");

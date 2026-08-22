@@ -9,7 +9,7 @@
  */
 
 #include "tiku_trk_launch.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,7 +59,7 @@ tiku_trk_launch_add(tiku_trk_apps_t *r, const char *name, const char *cmd,
         if (len == 1u && p[0] == '*') {
             a->takes_anything = 1;
         } else if (len > 0u && a->ntype < TIKU_TRK_APP_TYPES_MAX) {
-            snprintf(a->type[a->ntype], TIKU_TRK_TYPE_MAX, "%.*s", (int)len,
+            snprintf(a->type[a->ntype], TIKU_TYPE_MAX, "%.*s", (int)len,
                      p);
             a->ntype++;
         }
@@ -158,7 +158,7 @@ tiku_trk_launch_relation(const tiku_trk_app_t *app, const char *type)
 }
 
 const char *
-tiku_trk_launch_preferred(struct tiku_trk_store *store, const char *type,
+tiku_trk_launch_preferred(struct tiku_store *store, const char *type,
                           char *buf, size_t max)
 {
     int n;
@@ -170,7 +170,7 @@ tiku_trk_launch_preferred(struct tiku_trk_store *store, const char *type,
     if (store == NULL || type == NULL || type[0] == '\0') {
         return buf;
     }
-    n = tiku_trk_state_read(store, PREF_NODE, type, buf, max - 1u);
+    n = tiku_state_read(store, PREF_NODE, type, buf, max - 1u);
     if (n < 0) {
         n = 0;
     }
@@ -179,13 +179,13 @@ tiku_trk_launch_preferred(struct tiku_trk_store *store, const char *type,
 }
 
 int
-tiku_trk_launch_set_preferred(struct tiku_trk_store *store, const char *type,
+tiku_trk_launch_set_preferred(struct tiku_store *store, const char *type,
                               const char *app_name)
 {
     if (store == NULL || type == NULL || type[0] == '\0') {
         return -1;
     }
-    return tiku_trk_state_write(store, PREF_NODE, type,
+    return tiku_state_write(store, PREF_NODE, type,
                                 (app_name != NULL) ? app_name : "",
                                 (app_name != NULL) ? strlen(app_name) : 0u);
 }
@@ -206,7 +206,7 @@ cand_before(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
 int
 tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
                            const char *const *types, int ntypes,
-                           struct tiku_trk_store *store,
+                           struct tiku_store *store,
                            tiku_trk_cand_t *out, int max)
 {
     int i, t, n = 0;
@@ -260,7 +260,7 @@ tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
 
 const tiku_trk_app_t *
 tiku_trk_launch_agreed(const tiku_trk_apps_t *r, const char *const *types,
-                       int ntypes, struct tiku_trk_store *store)
+                       int ntypes, struct tiku_store *store)
 {
     char first[TIKU_TRK_APP_NAME_MAX];
     int t, i;

@@ -1,5 +1,5 @@
 /* PROPOSED by the N1 reconciler — reference, not yet adopted.
-   Decision 2 in full. One type-string namespace with two registries behind one resolver: a string starting "tiku-" is answered by the compiled node-type table, everything else by the MIME database. Carries the six reserved supertypes, the manifest-facts struct, the classifier, the open-action vocabulary, the icon-source rungs, the per-type attribute record and the Open With handler table. Included by tiku_trk_model.h, so every Model carries exactly one type field. */
+   Decision 2 in full. One type-string namespace with two registries behind one resolver: a string starting "tiku-" is answered by the compiled node-type table, everything else by the MIME database. Carries the six reserved supertypes, the manifest-facts struct, the classifier, the open-action vocabulary, the icon-source rungs, the per-type attribute record and the Open With handler table. Included by tiku_model.h, so every Model carries exactly one type field. */
 
 /*
  * The new Tracker for TikuOS.
@@ -84,8 +84,8 @@ int tiku_trk_type_matches(const char *node_type, const char *sel);
  * ---------------------------------------------------------------------- */
 
 /** @brief Descriptor vocabulary, mirroring the kernel's enums by value. */
-typedef enum { TIKU_TRK_FRESH_STATIC = 0, TIKU_TRK_FRESH_CACHED,
-               TIKU_TRK_FRESH_LIVE } tiku_trk_fresh_t;
+typedef enum { TIKU_FRESH_STATIC = 0, TIKU_FRESH_CACHED,
+               TIKU_FRESH_LIVE } tiku_fresh_t;
 
 typedef enum { TIKU_TRK_E_FREE = 0, TIKU_TRK_E_CHEAP, TIKU_TRK_E_PERIPH,
                TIKU_TRK_E_BUS } tiku_trk_ecost_t;
@@ -102,12 +102,12 @@ typedef struct {
     unsigned secret    : 1;  /**< DF_SECRET -- never render the value      */
     uint8_t  vtype;
     uint8_t  unit;
-    uint8_t  fresh;          /**< tiku_trk_fresh_t: the liveness policy    */
+    uint8_t  fresh;          /**< tiku_fresh_t: the liveness policy    */
     uint8_t  ecost;          /**< tiku_trk_ecost_t: the poll interval      */
     uint8_t  req_cap;
     int16_t  scale;          /**< decimal exponent for FIXED               */
     int32_t  vmin, vmax;
-} tiku_trk_facts_t;
+} tiku_facts_t;
 
 /**
  * @brief Parse the manifest's packed meta field.
@@ -117,7 +117,7 @@ typedef struct {
  * absent scale is 0, absent flags none.  @return 0, or -1 on a malformed
  * field.
  */
-int tiku_trk_meta_parse(const char *meta, tiku_trk_facts_t *out);
+int tiku_trk_meta_parse(const char *meta, tiku_facts_t *out);
 
 /**
  * @brief The device's FinishSettingUpType.
@@ -126,7 +126,7 @@ int tiku_trk_meta_parse(const char *meta, tiku_trk_facts_t *out);
  * string; never fails and never leaves the type empty, which is the
  * invariant the Kind column depends on.
  */
-void tiku_trk_type_classify(const tiku_trk_facts_t *f,
+void tiku_trk_type_classify(const tiku_facts_t *f,
                             char out[TIKU_TRK_TYPE_LEN]);
 
 /* ---------------------------------------------------------------------- *
@@ -205,7 +205,7 @@ tiku_trk_open_t tiku_trk_type_open_action(const char *type);
  * Handlers -- the Open With table
  * ---------------------------------------------------------------------- */
 
-struct tiku_trk_model;
+struct tiku_model;
 
 typedef struct tiku_trk_handler {
     const char *id;        /**< "plot"                                    */
@@ -213,7 +213,7 @@ typedef struct tiku_trk_handler {
     const char *supports;  /**< supertype, exact type, or the superhandler */
     uint16_t    icon_id;
     unsigned    background : 1;
-    int       (*open)(struct tiku_trk_model *const *sel, int n, void *ctx);
+    int       (*open)(struct tiku_model *const *sel, int n, void *ctx);
 } tiku_trk_handler_t;
 
 /** @brief The superhandler test grows one token; the ranking above it is

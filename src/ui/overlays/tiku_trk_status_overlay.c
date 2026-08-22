@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_desk_ui.h"
+#include "tiku_ui.h"
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_task.h"
 
@@ -30,22 +30,22 @@ mark_dirty(tiku_trk_status_overlay_t *controller)
     }
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 alert_frame(const tiku_trk_status_overlay_t *controller)
 {
-    return (tiku_desk_rect_t){
+    return (tiku_rect_t){
         (controller->screen_w - ALERT_WIDTH) / 2,
         (controller->screen_h - ALERT_HEIGHT) / 3,
         ALERT_WIDTH, ALERT_HEIGHT
     };
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 progress_frame(const tiku_trk_status_overlay_t *controller)
 {
     int height = PROGRESS_TOP + TIKU_TRK_PROGRESS_ROWS * PROGRESS_ROW_H;
 
-    return (tiku_desk_rect_t){
+    return (tiku_rect_t){
         controller->screen_w - PROGRESS_WIDTH - PROGRESS_MARGIN,
         controller->screen_h - height - PROGRESS_MARGIN,
         PROGRESS_WIDTH, height
@@ -54,8 +54,8 @@ progress_frame(const tiku_trk_status_overlay_t *controller)
 
 /** @brief A filled disc, span by span: the primitives have no circle. */
 static void
-draw_disc(tiku_desk_surface_t *surface, int cx, int cy, int r,
-          tiku_desk_rgb_t color)
+draw_disc(tiku_surface_t *surface, int cx, int cy, int r,
+          tiku_rgb_t color)
 {
     int dy;
 
@@ -65,7 +65,7 @@ draw_disc(tiku_desk_surface_t *surface, int cx, int cy, int r,
         while ((half + 1) * (half + 1) + dy * dy <= r * r) {
             half++;
         }
-        tiku_desk_hline(surface, cx - half, cy + dy, 2 * half + 1, color);
+        tiku_hline(surface, cx - half, cy + dy, 2 * half + 1, color);
     }
 }
 
@@ -77,39 +77,39 @@ draw_disc(tiku_desk_surface_t *surface, int cx, int cy, int r,
  * carries it.
  */
 static void
-draw_alert_icon(tiku_desk_surface_t *surface, int cx, int cy,
+draw_alert_icon(tiku_surface_t *surface, int cx, int cy,
                 tiku_trk_alert_kind_t kind)
 {
-    tiku_desk_rgb_t body = (kind == TIKU_TRK_ALERT_STOP)
-                               ? TIKU_DESK_C_DANGER
+    tiku_rgb_t body = (kind == TIKU_TRK_ALERT_STOP)
+                               ? TIKU_C_DANGER
                          : (kind == TIKU_TRK_ALERT_WARN)
-                               ? TIKU_DESK_C_TAB
-                               : TIKU_DESK_C_SELECT;
-    tiku_desk_rgb_t ink = (kind == TIKU_TRK_ALERT_WARN)
-                              ? TIKU_DESK_C_TEXT : TIKU_DESK_C_DOC;
+                               ? TIKU_C_TAB
+                               : TIKU_C_SELECT;
+    tiku_rgb_t ink = (kind == TIKU_TRK_ALERT_WARN)
+                              ? TIKU_C_TEXT : TIKU_C_DOC;
     int k;
 
-    draw_disc(surface, cx, cy, 16, tiku_desk_tint(body, 1.45f));
+    draw_disc(surface, cx, cy, 16, tiku_tint(body, 1.45f));
     draw_disc(surface, cx, cy, 14, body);
     if (kind == TIKU_TRK_ALERT_STOP) {
         /* The cross: this far and no further. */
         for (k = -6; k <= 6; k++) {
-            tiku_desk_fill(surface, (tiku_desk_rect_t){ cx + k - 1,
+            tiku_fill(surface, (tiku_rect_t){ cx + k - 1,
                            cy + k - 1, 3, 3 }, ink);
-            tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - k - 1,
+            tiku_fill(surface, (tiku_rect_t){ cx - k - 1,
                            cy + k - 1, 3, 3 }, ink);
         }
     } else if (kind == TIKU_TRK_ALERT_WARN) {
         /* The exclamation: a bar and its dot. */
-        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 9, 4, 11 },
+        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 9, 4, 11 },
                        ink);
-        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy + 5, 4, 4 },
+        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy + 5, 4, 4 },
                        ink);
     } else {
         /* The i: a dot and its bar. */
-        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 9, 4, 4 },
+        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 9, 4, 4 },
                        ink);
-        tiku_desk_fill(surface, (tiku_desk_rect_t){ cx - 2, cy - 2, 4, 11 },
+        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 2, 4, 11 },
                        ink);
     }
 }
@@ -117,8 +117,8 @@ draw_alert_icon(tiku_desk_surface_t *surface, int cx, int cy,
 static void
 draw_alert(tiku_trk_status_overlay_t *controller)
 {
-    tiku_desk_rect_t frame = alert_frame(controller);
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    tiku_rect_t frame = alert_frame(controller);
+    const tiku_font_t *font = tiku_font_plain();
     int i, text_y;
 
     if (!controller->alert.open) {
@@ -127,24 +127,24 @@ draw_alert(tiku_trk_status_overlay_t *controller)
     /* A modal window, not a floating slab: the same dark frame and
      * bevel every window body wears -- BeOS had no borderless windows,
      * and neither does this one. */
-    tiku_desk_fill(controller->surface, frame, TIKU_DESK_C_PANEL);
-    tiku_desk_frame(controller->surface, frame,
-        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
-    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 1),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_MAX),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 2),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_1),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_1));
+    tiku_fill(controller->surface, frame, TIKU_C_PANEL);
+    tiku_frame(controller->surface, frame,
+        tiku_tint(TIKU_C_PANEL, 1.40f));
+    tiku_bevel(controller->surface, tiku_inset(frame, 1),
+        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
+        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_bevel(controller->surface, tiku_inset(frame, 2),
+        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_1),
+        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
     {
         /* The icon on its grey stripe, as BAlert lays it: the KIND of
          * thing being said, visible before a word is read. */
-        tiku_desk_rect_t stripe = { frame.x + 3, frame.y + 3, 52,
+        tiku_rect_t stripe = { frame.x + 3, frame.y + 3, 52,
                                     frame.h - 6 };
 
-        tiku_desk_fill(controller->surface, stripe,
-                       tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                      TIKU_DESK_DARKEN_1));
+        tiku_fill(controller->surface, stripe,
+                       tiku_tint(TIKU_C_PANEL,
+                                      TIKU_DARKEN_1));
         draw_alert_icon(controller->surface, stripe.x + 26, frame.y + 36,
                         controller->alert.kind);
     }
@@ -154,7 +154,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
          * wears the bold face; whatever follows is the detail, in the
          * plain face below it.  One text block in, two voices out -- no
          * caller changes. */
-        const tiku_desk_font_t *bold = tiku_desk_font_bold();
+        const tiku_font_t *bold = tiku_font_bold();
         const char *text = controller->alert.text;
         const char *split = NULL;
         const char *at;
@@ -169,7 +169,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
             }
         }
         for (tier = 0; tier < 2; tier++) {
-            const tiku_desk_font_t *face = (tier == 0 && split != NULL)
+            const tiku_font_t *face = (tier == 0 && split != NULL)
                                                ? bold : font;
             const char *end = (tier == 0) ? split : NULL;
             char line[80] = "";
@@ -197,7 +197,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                     }
                     line[length] = text[length];
                     line[length + 1u] = '\0';
-                    if (tiku_desk_text_width(face, line) > frame.w - 88) {
+                    if (tiku_text_width(face, line) > frame.w - 88) {
                         break;
                     }
                     length++;
@@ -208,8 +208,8 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                     length = (size_t)(space - text);
                     line[length] = '\0';
                 }
-                tiku_desk_text(controller->surface, face, frame.x + 66,
-                               text_y, line, TIKU_DESK_C_TEXT);
+                tiku_text(controller->surface, face, frame.x + 66,
+                               text_y, line, TIKU_C_TEXT);
                 text_y += face->height + 4;
                 text += length;
                 while (*text == ' ') {
@@ -231,7 +231,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
         int widest = 0;
 
         for (i = 0; i < controller->alert.nbutton; i++) {
-            int lw = tiku_desk_text_width(font,
+            int lw = tiku_text_width(font,
                                           controller->alert.button[i]);
 
             if (lw > widest) {
@@ -244,46 +244,46 @@ draw_alert(tiku_trk_status_overlay_t *controller)
         controller->alert.btn_w = widest;
     }
     for (i = 0; i < controller->alert.nbutton; i++) {
-        tiku_desk_rect_t button;
+        tiku_rect_t button;
         int x, y, width, height;
 
         tiku_trk_alert_button_rect(&controller->alert, i, frame.w, frame.h,
                                    &x, &y, &width, &height);
-        button = (tiku_desk_rect_t){ frame.x + x, frame.y + y,
+        button = (tiku_rect_t){ frame.x + x, frame.y + y,
                                      width, height };
         /* The R5 button, ring and all: the rightmost is the default,
          * which is where the pointer already is after reading. */
-        tiku_desk_ui_button(controller->surface, button,
+        tiku_ui_button(controller->surface, button,
                             controller->alert.button[i],
                             (i == controller->alert.dflt)
-                                ? TIKU_DESK_S_DEFAULT : 0u);
+                                ? TIKU_S_DEFAULT : 0u);
     }
 }
 
 static void
 draw_progress(tiku_trk_status_overlay_t *controller)
 {
-    tiku_desk_rect_t frame = progress_frame(controller);
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    tiku_rect_t frame = progress_frame(controller);
+    const tiku_font_t *font = tiku_font_plain();
     int i, visible_row = 0;
 
     if (!controller->progress.open) {
         return;
     }
-    tiku_desk_fill(controller->surface, frame, TIKU_DESK_C_PANEL);
-    tiku_desk_frame(controller->surface, frame,
-        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
-    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 1),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_MAX),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
-    tiku_desk_bevel(controller->surface, tiku_desk_inset(frame, 2),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_1),
-        tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_1));
+    tiku_fill(controller->surface, frame, TIKU_C_PANEL);
+    tiku_frame(controller->surface, frame,
+        tiku_tint(TIKU_C_PANEL, 1.40f));
+    tiku_bevel(controller->surface, tiku_inset(frame, 1),
+        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
+        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_bevel(controller->surface, tiku_inset(frame, 2),
+        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_1),
+        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
     for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
         tiku_trk_progress_row_t *progress = &controller->progress.row[i];
         char line[160];
         const char *leaf;
-        tiku_desk_rect_t bar;
+        tiku_rect_t bar;
         int y;
 
         if (!progress->used) {
@@ -297,8 +297,8 @@ draw_progress(tiku_trk_status_overlay_t *controller)
                                   &controller->progress, i);
         snprintf(line, sizeof line, "%s%.40s",
                  progress->paused ? "" : progress->caption, leaf);
-        tiku_desk_text(controller->surface, font, frame.x + 10, y, line,
-                       TIKU_DESK_C_TEXT);
+        tiku_text(controller->surface, font, frame.x + 10, y, line,
+                       TIKU_C_TEXT);
         if (tiku_trk_progress_show_speed(
                 tiku_trk_now() - controller->progress_opened)) {
             int64_t speed = tiku_trk_progress_speed(&controller->progress, i);
@@ -320,8 +320,8 @@ draw_progress(tiku_trk_status_overlay_t *controller)
                          progress->total);
             }
         }
-        tiku_desk_text(controller->surface, font, frame.x + frame.w - 70,
-                       y, line, TIKU_DESK_C_TEXT);
+        tiku_text(controller->surface, font, frame.x + frame.w - 70,
+                       y, line, TIKU_C_TEXT);
         /* Where it is going, under the name: a file name alone does not
          * say whether this is the copy the user meant (FS-069). */
         if (progress->dest[0] != '\0') {
@@ -330,17 +330,17 @@ draw_progress(tiku_trk_status_overlay_t *controller)
             snprintf(line, sizeof line, "To: %.60s",
                      (to != NULL && to[1] != '\0') ? to + 1
                                                    : progress->dest);
-            tiku_desk_text(controller->surface, font, frame.x + 10, y + 16,
-                           line, TIKU_DESK_C_TEXT);
+            tiku_text(controller->surface, font, frame.x + 10, y + 16,
+                           line, TIKU_C_TEXT);
         }
-        bar = (tiku_desk_rect_t){ frame.x + 10, y + 34,
+        bar = (tiku_rect_t){ frame.x + 10, y + 34,
                                   frame.w - 20, 8 };
-        tiku_desk_fill(controller->surface, bar, TIKU_DESK_C_DOC);
+        tiku_fill(controller->surface, bar, TIKU_C_DOC);
         if (progress->total > 0) {
             bar.w = (frame.w - 20) * progress->done / progress->total;
             if (bar.w > 0) {
-                tiku_desk_fill(controller->surface, bar,
-                               TIKU_DESK_C_SELECT);
+                tiku_fill(controller->surface, bar,
+                               TIKU_C_SELECT);
             }
         }
         {
@@ -348,25 +348,25 @@ draw_progress(tiku_trk_status_overlay_t *controller)
 
             for (action = TIKU_TRK_PROGRESS_HIT_PAUSE;
                  action <= TIKU_TRK_PROGRESS_HIT_STOP; action++) {
-                tiku_desk_rect_t button;
+                tiku_rect_t button;
                 int x, by, width, height;
 
                 tiku_trk_progress_button_rect(visible_row, action, frame.w,
                                                &x, &by, &width, &height);
-                button = (tiku_desk_rect_t){ frame.x + x, frame.y + by,
+                button = (tiku_rect_t){ frame.x + x, frame.y + by,
                                              width, height };
-                tiku_desk_fill(controller->surface, button,
-                               TIKU_DESK_C_PANEL);
-                tiku_desk_bevel(controller->surface, button,
-                    tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                   TIKU_DESK_LIGHTEN_2),
-                    tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                   TIKU_DESK_DARKEN_2));
-                tiku_desk_text(controller->surface, font, button.x + 6,
+                tiku_fill(controller->surface, button,
+                               TIKU_C_PANEL);
+                tiku_bevel(controller->surface, button,
+                    tiku_tint(TIKU_C_PANEL,
+                                   TIKU_LIGHTEN_2),
+                    tiku_tint(TIKU_C_PANEL,
+                                   TIKU_DARKEN_2));
+                tiku_text(controller->surface, font, button.x + 6,
                     button.y + 13,
                     action == TIKU_TRK_PROGRESS_HIT_STOP ? "x"
                         : (progress->paused ? ">" : "|"),
-                    TIKU_DESK_C_TEXT);
+                    TIKU_C_TEXT);
             }
         }
         visible_row++;
@@ -387,7 +387,7 @@ answer(tiku_trk_status_overlay_t *controller, int chosen)
 
 void
 tiku_trk_status_overlay_init(tiku_trk_status_overlay_t *controller,
-    tiku_desk_surface_t *surface, int screen_w, int screen_h, int *dirty,
+    tiku_surface_t *surface, int screen_w, int screen_h, int *dirty,
     tiku_trk_status_alert_fn answer_callback,
     tiku_trk_status_stop_fn stop_callback, void *callback_context)
 {
@@ -450,7 +450,7 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
                                 int x, int y)
 {
     if (controller->alert.open) {
-        tiku_desk_rect_t frame = alert_frame(controller);
+        tiku_rect_t frame = alert_frame(controller);
         int picked = tiku_trk_alert_button_at(&controller->alert,
             frame.w, frame.h, x - frame.x, y - frame.y);
 
@@ -461,7 +461,7 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
         return 1;
     }
     if (controller->progress.open) {
-        tiku_desk_rect_t frame = progress_frame(controller);
+        tiku_rect_t frame = progress_frame(controller);
         int row = 0;
         tiku_trk_progress_hit_t hit = tiku_trk_progress_hit(
             &controller->progress, frame.w, x - frame.x, y - frame.y, &row);
@@ -490,9 +490,9 @@ tiku_trk_status_overlay_key(tiku_trk_status_overlay_t *controller,
     if (!controller->alert.open) {
         return 0;
     }
-    if (key == TIKU_DESK_KEY_ESCAPE && controller->alert.cancel >= 0) {
+    if (key == TIKU_KEY_ESCAPE && controller->alert.cancel >= 0) {
         answer(controller, controller->alert.cancel);
-    } else if (key == TIKU_DESK_KEY_RETURN &&
+    } else if (key == TIKU_KEY_RETURN &&
                controller->alert.nbutton > 0) {
         answer(controller, controller->alert.dflt >= 0
                                ? controller->alert.dflt

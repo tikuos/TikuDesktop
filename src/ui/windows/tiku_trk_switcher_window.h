@@ -13,14 +13,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_switcher.h"
 
 typedef struct {
     tiku_trk_switcher_t    model;
-    tiku_desk_workspace_t *workspace;
-    tiku_desk_window_t    *window;
+    tiku_workspace_t *workspace;
+    tiku_window_t    *window;
     tiku_trk_deskbar_t    *deskbar;
     int                   *dirty;
     char                  *status;
@@ -30,7 +30,7 @@ typedef struct {
 } tiku_trk_switcher_window_t;
 
 void tiku_trk_switcher_window_init(tiku_trk_switcher_window_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
+    tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
     int screen_w, int screen_h, int *dirty, char *status,
     size_t status_size);
 

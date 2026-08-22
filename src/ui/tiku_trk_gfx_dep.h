@@ -14,8 +14,8 @@
 #ifndef TIKU_TRK_GFX_DEP_H_
 #define TIKU_TRK_GFX_DEP_H_
 
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_font.h"
-#include "tiku_desk_ui.h"
+#include "tiku_gfx.h"
+#include "tiku_font.h"
+#include "tiku_ui.h"
 
 #endif /* TIKU_TRK_GFX_DEP_H_ */

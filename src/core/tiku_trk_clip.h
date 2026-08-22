@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #define TIKU_TRK_CLIP_MAX 256
 
@@ -31,7 +31,7 @@ typedef enum {
 
 typedef struct {
     uint64_t             id;     /* the node's identity, and the key      */
-    char                 path[TIKU_TRK_PATH_MAX];
+    char                 path[TIKU_PATH_MAX];
     tiku_trk_clip_mode_t mode;
 } tiku_trk_clip_entry_t;
 
@@ -53,7 +53,7 @@ void tiku_trk_clip_init(tiku_trk_clip_t *c);
  * @param mode    COPY or MOVE.
  * @return How many entries the clipboard holds afterwards.
  */
-int tiku_trk_clip_add(tiku_trk_clip_t *c, const tiku_trk_model_t *models,
+int tiku_trk_clip_add(tiku_trk_clip_t *c, const tiku_model_t *models,
                       int n, tiku_trk_clip_mode_t mode, int replace);
 
 /** @brief What a Paste of the node @p id would do, or NONE. */
@@ -104,7 +104,7 @@ int tiku_trk_clip_spend_cuts(tiku_trk_clip_t *c);
 void tiku_trk_clip_clear(tiku_trk_clip_t *c);
 
 /** @brief Remove just these entries, leaving the rest (Shift+Escape). */
-int tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_trk_model_t *models,
+int tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_model_t *models,
                          int n);
 
 int tiku_trk_clip_count(const tiku_trk_clip_t *c);

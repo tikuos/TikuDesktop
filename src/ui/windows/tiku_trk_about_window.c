@@ -19,8 +19,8 @@
 #include <sys/utsname.h>
 
 #include "tiku_trk_about_window.h"
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_font.h"
+#include "tiku_gfx.h"
+#include "tiku_font.h"
 
 #define ABOUT_W 430
 #define ABOUT_H 240
@@ -114,50 +114,50 @@ read_uptime(void)
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_about_window_t *controller = context;
-    const tiku_desk_font_t *plain = tiku_desk_font_plain();
-    const tiku_desk_font_t *big = tiku_desk_font_at(28);
-    const tiku_desk_font_t *bold = tiku_desk_font_bold();
+    const tiku_font_t *plain = tiku_font_plain();
+    const tiku_font_t *big = tiku_font_at(28);
+    const tiku_font_t *bold = tiku_font_bold();
     int left = content.x + 18;
     int facts_x = content.x + 150;
     int y;
     char line[160];
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     {   /* The identity column: wordmark over its accent rule, the way
          * the original wore its logo. */
         int base = content.y + 24 + big->ascent;
 
-        tiku_desk_text(surface, big, left, base, "Tiku", TIKU_DESK_C_TEXT);
-        tiku_desk_fill(surface, (tiku_desk_rect_t){ left,
-                       base + 6, 96, 3 }, TIKU_DESK_C_TAB);
-        tiku_desk_text(surface, bold, left,
+        tiku_text(surface, big, left, base, "Tiku", TIKU_C_TEXT);
+        tiku_fill(surface, (tiku_rect_t){ left,
+                       base + 6, 96, 3 }, TIKU_C_TAB);
+        tiku_text(surface, bold, left,
                        base + 14 + plain->ascent, "OS desktop",
-                       TIKU_DESK_C_TEXT);
+                       TIKU_C_TEXT);
     }
     y = content.y + 22;
     snprintf(line, sizeof line, "Tracker, built %s", __DATE__);
-    tiku_desk_text(surface, bold, facts_x, y + plain->ascent, line,
-                   TIKU_DESK_C_TEXT);
+    tiku_text(surface, bold, facts_x, y + plain->ascent, line,
+                   TIKU_C_TEXT);
     y += plain->height + 10;
-    tiku_desk_text(surface, plain, facts_x, y + plain->ascent,
-                   controller->kernel, TIKU_DESK_C_TEXT);
+    tiku_text(surface, plain, facts_x, y + plain->ascent,
+                   controller->kernel, TIKU_C_TEXT);
     y += plain->height + 10;
     snprintf(line, sizeof line, "%d processor%s:", controller->ncpu,
              controller->ncpu == 1 ? "" : "s");
-    tiku_desk_text(surface, plain, facts_x, y + plain->ascent, line,
-                   TIKU_DESK_C_TEXT);
+    tiku_text(surface, plain, facts_x, y + plain->ascent, line,
+                   TIKU_C_TEXT);
     y += plain->height + 2;
-    tiku_desk_text(surface, plain, facts_x + 12, y + plain->ascent,
-                   controller->cpu, TIKU_DESK_C_TEXT);
+    tiku_text(surface, plain, facts_x + 12, y + plain->ascent,
+                   controller->cpu, TIKU_C_TEXT);
     y += plain->height + 10;
     {   /* Memory, with its gauge: what is in use, over what there is. */
         long total = 0, avail = 0;
-        tiku_desk_rect_t gauge = { facts_x, y + plain->height + 4,
+        tiku_rect_t gauge = { facts_x, y + plain->height + 4,
                                    ABOUT_W - 150 - 36, 10 };
         long used;
 
@@ -165,16 +165,16 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         used = (total > avail) ? total - avail : 0;
         snprintf(line, sizeof line, "%ld MB of %ld MB in use",
                  used / 1024, total / 1024);
-        tiku_desk_text(surface, plain, facts_x, y + plain->ascent, line,
-                       TIKU_DESK_C_TEXT);
-        tiku_desk_fill(surface, gauge, TIKU_DESK_C_DOC);
-        tiku_desk_frame(surface, gauge,
-                        tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+        tiku_text(surface, plain, facts_x, y + plain->ascent, line,
+                       TIKU_C_TEXT);
+        tiku_fill(surface, gauge, TIKU_C_DOC);
+        tiku_frame(surface, gauge,
+                        tiku_tint(TIKU_C_PANEL, 1.40f));
         if (total > 0) {
-            tiku_desk_rect_t fillr = { gauge.x + 1, gauge.y + 1,
+            tiku_rect_t fillr = { gauge.x + 1, gauge.y + 1,
                 (int)((long)(gauge.w - 2) * used / total), gauge.h - 2 };
 
-            tiku_desk_fill(surface, fillr, TIKU_DESK_C_SELECT);
+            tiku_fill(surface, fillr, TIKU_C_SELECT);
         }
         y = gauge.y + gauge.h + 12;
     }
@@ -184,17 +184,17 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         snprintf(line, sizeof line, "up %ld day%s, %ld:%02ld",
                  up / 86400, (up / 86400) == 1 ? "" : "s",
                  (up % 86400) / 3600, (up % 3600) / 60);
-        tiku_desk_text(surface, plain, facts_x, y + plain->ascent, line,
-                       TIKU_DESK_C_TEXT);
+        tiku_text(surface, plain, facts_x, y + plain->ascent, line,
+                       TIKU_C_TEXT);
     }
-    tiku_desk_text(surface, plain, left,
+    tiku_text(surface, plain, left,
                    content.y + content.h - 14,
-                   "(c) 2026 the TikuOS project", TIKU_DESK_C_TEXT);
+                   "(c) 2026 the TikuOS project", TIKU_C_TEXT);
 }
 
 void
 tiku_trk_about_window_init(tiku_trk_about_window_t *controller,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty)
 {
     memset(controller, 0, sizeof *controller);
@@ -207,11 +207,11 @@ tiku_trk_about_window_init(tiku_trk_about_window_t *controller,
 void
 tiku_trk_about_window_open(tiku_trk_about_window_t *controller)
 {
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
     struct utsname un;
 
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_activate(controller->workspace,
+        tiku_workspace_activate(controller->workspace,
                                      controller->window);
         *controller->dirty = 1;
         return;
@@ -225,15 +225,15 @@ tiku_trk_about_window_open(tiku_trk_about_window_t *controller)
     }
     read_cpu(controller->cpu, sizeof controller->cpu, &controller->ncpu);
     frame.w = ABOUT_W;
-    frame.h = ABOUT_H + tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.h = ABOUT_H + tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
     frame.x = (controller->screen_w - frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel that
      * announces something. */
     frame.y = (controller->screen_h - frame.h) / 3;
-    controller->window = tiku_desk_workspace_open(controller->workspace,
+    controller->window = tiku_workspace_open(controller->workspace,
         "About this system", frame, draw, controller, controller);
     if (controller->window != NULL) {
-        tiku_desk_window_set_size_controls(controller->window, 0, 0);
+        tiku_window_set_size_controls(controller->window, 0, 0);
     }
     *controller->dirty = 1;
 }
@@ -242,14 +242,14 @@ void
 tiku_trk_about_window_close(tiku_trk_about_window_t *controller)
 {
     if (controller->window != NULL) {
-        tiku_desk_workspace_close(controller->workspace,
+        tiku_workspace_close(controller->workspace,
                                   controller->window);
         controller->window = NULL;
         *controller->dirty = 1;
     }
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_about_window_handle(tiku_trk_about_window_t *controller)
 {
     return (controller != NULL && controller->window != NULL &&
@@ -261,11 +261,11 @@ tiku_trk_about_window_key(tiku_trk_about_window_t *controller,
                           unsigned key)
 {
     if (tiku_trk_about_window_handle(controller) == NULL ||
-        tiku_desk_workspace_focused(controller->workspace) !=
+        tiku_workspace_focused(controller->workspace) !=
             controller->window) {
         return 0;
     }
-    if (key == TIKU_DESK_KEY_ESCAPE) {
+    if (key == TIKU_KEY_ESCAPE) {
         tiku_trk_about_window_close(controller);
         return 1;
     }

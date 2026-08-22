@@ -12,13 +12,13 @@
 
 #include <stdint.h>
 
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_edit.h"
-#include "tiku_trk_fs.h"
+#include "tiku_fs.h"
 #include "tiku_trk_info.h"
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 #define TIKU_TRK_INFO_WINDOW_MAX 8
 
@@ -40,12 +40,12 @@ typedef struct {
 
 struct tiku_trk_info_windows {
     tiku_trk_info_t                model[TIKU_TRK_INFO_WINDOW_MAX];
-    tiku_desk_window_t            *window[TIKU_TRK_INFO_WINDOW_MAX];
+    tiku_window_t            *window[TIKU_TRK_INFO_WINDOW_MAX];
     tiku_trk_info_window_context_t context[TIKU_TRK_INFO_WINDOW_MAX];
-    tiku_desk_workspace_t         *workspace;
-    tiku_trk_backend_t            *backend;
-    tiku_trk_store_t              *store;
-    tiku_trk_fs_t                 *fs;
+    tiku_workspace_t         *workspace;
+    tiku_backend_t            *backend;
+    tiku_store_t              *store;
+    tiku_fs_t                 *fs;
     tiku_trk_alert_t              *alert;
     tiku_trk_edit_t                name;
     int                            renaming;
@@ -61,18 +61,18 @@ struct tiku_trk_info_windows {
 };
 
 void tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_backend_t *backend,
-    tiku_trk_store_t *store, tiku_trk_fs_t *fs, tiku_trk_alert_t *alert,
+    tiku_workspace_t *workspace, tiku_backend_t *backend,
+    tiku_store_t *store, tiku_fs_t *fs, tiku_trk_alert_t *alert,
     int *dirty);
 int tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
                                const char *path);
 void tiku_trk_info_windows_close(tiku_trk_info_windows_t *controller,
                                  int slot);
 int tiku_trk_info_windows_slot(const tiku_trk_info_windows_t *controller,
-                               const tiku_desk_window_t *window);
+                               const tiku_window_t *window);
 tiku_trk_info_t *tiku_trk_info_windows_model(
     tiku_trk_info_windows_t *controller, int slot);
-tiku_desk_window_t *tiku_trk_info_windows_handle(
+tiku_window_t *tiku_trk_info_windows_handle(
     tiku_trk_info_windows_t *controller, int slot);
 
 tiku_trk_info_hit_t tiku_trk_info_windows_hit(

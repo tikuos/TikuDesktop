@@ -19,8 +19,8 @@
 #ifndef TIKU_TRK_FRAME_H_
 #define TIKU_TRK_FRAME_H_
 
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 /** @brief A window's rectangle, as it is stored. */
 typedef struct {
@@ -34,7 +34,7 @@ typedef struct {
  * flag is deliberately beside it rather than in the folder's frame, since a
  * minimized window is a session choice, not a property of that folder. */
 typedef struct {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
     int  minimized;
 } tiku_trk_session_entry_t;
 
@@ -52,7 +52,7 @@ typedef struct {
  * @return 1 when one was found; @p out is untouched otherwise, so a caller
  *         can seed it with a cascade position and let this overwrite it.
  */
-int tiku_trk_frame_load(tiku_trk_store_t *s, const char *path,
+int tiku_trk_frame_load(tiku_store_t *s, const char *path,
                         tiku_trk_frame_t *out);
 
 /**
@@ -65,7 +65,7 @@ int tiku_trk_frame_load(tiku_trk_store_t *s, const char *path,
  * @param was The frame the window opened with, or NULL when it had none.
  * @return 1 when something was written.
  */
-int tiku_trk_frame_save(tiku_trk_store_t *s, const char *path,
+int tiku_trk_frame_save(tiku_store_t *s, const char *path,
                         const tiku_trk_frame_t *now,
                         const tiku_trk_frame_t *was);
 
@@ -89,12 +89,12 @@ void tiku_trk_frame_clamp(tiku_trk_frame_t *f, int sw, int sh);
  *
  * @return 1 when a frame was found.
  */
-int tiku_trk_frame_inherit(tiku_trk_store_t *s, const char *path,
+int tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
                            tiku_trk_frame_t *out);
 
 /** @brief Read and write the fallback every unvisited folder starts from. */
-int tiku_trk_frame_default(tiku_trk_store_t *s, tiku_trk_frame_t *out);
-void tiku_trk_frame_set_default(tiku_trk_store_t *s,
+int tiku_trk_frame_default(tiku_store_t *s, tiku_trk_frame_t *out);
+void tiku_trk_frame_set_default(tiku_store_t *s,
                                 const tiku_trk_frame_t *f);
 
 /*---------------------------------------------------------------------------*/
@@ -107,29 +107,29 @@ void tiku_trk_frame_set_default(tiku_trk_store_t *s,
  * Order matters: it is the order they will be reopened in, which decides
  * which ends up in front.
  */
-int tiku_trk_session_save(tiku_trk_store_t *s,
-                          const char paths[][TIKU_TRK_PATH_MAX], int n);
+int tiku_trk_session_save(tiku_store_t *s,
+                          const char paths[][TIKU_PATH_MAX], int n);
 
 /**
  * @brief Read it back.
  *
  * @return how many paths were written to @p out.
  */
-int tiku_trk_session_load(tiku_trk_store_t *s,
-                          char out[][TIKU_TRK_PATH_MAX], int max);
+int tiku_trk_session_load(tiku_store_t *s,
+                          char out[][TIKU_PATH_MAX], int max);
 
 /**
  * Read and write the full session record.  The older path-only helpers are
  * retained for callers that do not have window state to preserve, and their
  * records remain readable here as non-minimized entries.
  */
-int tiku_trk_session_save_entries(tiku_trk_store_t *s,
+int tiku_trk_session_save_entries(tiku_store_t *s,
                                   const tiku_trk_session_entry_t *entries,
                                   int n);
-int tiku_trk_session_load_entries(tiku_trk_store_t *s,
+int tiku_trk_session_load_entries(tiku_store_t *s,
                                   tiku_trk_session_entry_t *out, int max);
 
 /** @brief Forget it, so the next start opens the default instead. */
-void tiku_trk_session_clear(tiku_trk_store_t *s);
+void tiku_trk_session_clear(tiku_store_t *s);
 
 #endif /* TIKU_TRK_FRAME_H_ */

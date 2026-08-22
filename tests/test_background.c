@@ -9,8 +9,8 @@
  */
 #include <stdio.h>
 #include <string.h>
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_font.h"
+#include "tiku_gfx.h"
+#include "tiku_font.h"
 
 #include "tiku_trk_background.h"
 
@@ -102,33 +102,33 @@ main(void)
         /* The Appearance Manager lesson: swap the table and every
          * semantic colour follows; hand back NULL and the R5 default
          * returns.  Layout is untouched throughout -- only the ink. */
-        tiku_desk_theme_t inverted = *tiku_desk_theme();
-        tiku_desk_surface_t *s2 = tiku_desk_surface_new(8, 8,
-                                                        TIKU_DESK_C_PANEL);
+        tiku_theme_t inverted = *tiku_theme();
+        tiku_surface_t *s2 = tiku_surface_new(8, 8,
+                                                        TIKU_C_PANEL);
 
-        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(216, 216, 216),
+        check(TIKU_C_PANEL == TIKU_RGB(216, 216, 216),
               "THEME", "the default table IS the R5 look");
-        inverted.panel = TIKU_DESK_RGB(20, 20, 20);
-        tiku_desk_theme_set(&inverted);
-        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(20, 20, 20),
+        inverted.panel = TIKU_RGB(20, 20, 20);
+        tiku_theme_set(&inverted);
+        check(TIKU_C_PANEL == TIKU_RGB(20, 20, 20),
               "THEME", "a swapped table recolours the semantic names");
         if (s2 != NULL) {
-            tiku_desk_fill(s2, (tiku_desk_rect_t){ 0, 0, 8, 8 },
-                           TIKU_DESK_C_PANEL);
-            check(s2->px[0] == TIKU_DESK_RGB(20, 20, 20), "THEME",
+            tiku_fill(s2, (tiku_rect_t){ 0, 0, 8, 8 },
+                           TIKU_C_PANEL);
+            check(s2->px[0] == TIKU_RGB(20, 20, 20), "THEME",
                   "and what is painted through them follows the table");
-            tiku_desk_surface_free(s2);
+            tiku_surface_free(s2);
         }
-        tiku_desk_theme_set(NULL);
-        check(TIKU_DESK_C_PANEL == TIKU_DESK_RGB(216, 216, 216),
+        tiku_theme_set(NULL);
+        check(TIKU_C_PANEL == TIKU_RGB(216, 216, 216),
               "THEME", "NULL restores the default rather than crashing");
     }
     {
         /* The metric-reference rule (Mac HIG ch1): every face the toolkit
          * offers must fit the plain face's metrics, so layout computed
          * against the reference survives any display face. */
-        const tiku_desk_font_t *plain = tiku_desk_font_plain();
-        const tiku_desk_font_t *bold = tiku_desk_font_bold();
+        const tiku_font_t *plain = tiku_font_plain();
+        const tiku_font_t *bold = tiku_font_bold();
 
         check(bold->height <= plain->height + 2 &&
               bold->height >= plain->height - 2, "METRIC",
@@ -140,38 +140,38 @@ main(void)
          * baked at the same sizes and inside the same two pixels. */
         int family, px, worst = 0;
 
-        check(tiku_desk_font_family_count() >= 2 &&
-              tiku_desk_font_family_name(0) != NULL &&
-              tiku_desk_font_family_name(tiku_desk_font_family_count())
+        check(tiku_font_family_count() >= 2 &&
+              tiku_font_family_name(0) != NULL &&
+              tiku_font_family_name(tiku_font_family_count())
                   == NULL, "METRIC",
               "the toolkit offers named families, and says where they end");
         for (px = 10; px <= 16; px += 2) {
             int reference, d;
 
-            (void)tiku_desk_font_set_family(0);
-            (void)tiku_desk_font_set_size(px);
-            reference = tiku_desk_font_plain()->height;
-            for (family = 0; family < tiku_desk_font_family_count();
+            (void)tiku_font_set_family(0);
+            (void)tiku_font_set_size(px);
+            reference = tiku_font_plain()->height;
+            for (family = 0; family < tiku_font_family_count();
                  family++) {
-                (void)tiku_desk_font_set_family(family);
-                d = tiku_desk_font_plain()->height - reference;
+                (void)tiku_font_set_family(family);
+                d = tiku_font_plain()->height - reference;
                 worst = (d < 0 ? -d : d) > worst ? (d < 0 ? -d : d) : worst;
-                d = tiku_desk_font_bold()->height - reference;
+                d = tiku_font_bold()->height - reference;
                 worst = (d < 0 ? -d : d) > worst ? (d < 0 ? -d : d) : worst;
             }
         }
         check(worst <= 2, "METRIC",
               "every family, both weights, all four sizes, within them too");
 
-        (void)tiku_desk_font_set_family(1);
-        check(tiku_desk_font_set_size(16) == 16 &&
-              tiku_desk_font_family() == 1, "METRIC",
+        (void)tiku_font_set_family(1);
+        check(tiku_font_set_size(16) == 16 &&
+              tiku_font_family() == 1, "METRIC",
               "and a chosen family outlives a change of size");
-        check(tiku_desk_font_set_family(tiku_desk_font_family_count()) == 1 &&
-              tiku_desk_font_set_family(-1) == 1, "METRIC",
+        check(tiku_font_set_family(tiku_font_family_count()) == 1 &&
+              tiku_font_set_family(-1) == 1, "METRIC",
               "asking for a family that is not there keeps the one in force");
-        (void)tiku_desk_font_set_family(0);
-        (void)tiku_desk_font_set_size(12);
+        (void)tiku_font_set_family(0);
+        (void)tiku_font_set_size(12);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the background holds");

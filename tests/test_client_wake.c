@@ -24,10 +24,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "tiku_desk_app.h"
-#include "tiku_desk_client.h"
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_remote.h"
+#include "tiku_app.h"
+#include "tiku_client.h"
+#include "tiku_gfx.h"
+#include "tiku_remote.h"
 
 static int fails;
 
@@ -51,13 +51,13 @@ now_ms(void)
 
 /* The application under test: it answers a keystroke with a frame. */
 typedef struct {
-    const tiku_desk_app_services_t *services;
-    tiku_desk_surface_t            *surface;
+    const tiku_app_services_t *services;
+    tiku_surface_t            *surface;
     uint32_t                        id;
 } echo_state_t;
 
 static int
-echo_start(void **state, const tiku_desk_app_services_t *services)
+echo_start(void **state, const tiku_app_services_t *services)
 {
     echo_state_t *st = calloc(1, sizeof *st);
 
@@ -65,7 +65,7 @@ echo_start(void **state, const tiku_desk_app_services_t *services)
         return -1;
     }
     st->services = services;
-    st->surface = tiku_desk_surface_new(8, 8, TIKU_DESK_C_PANEL);
+    st->surface = tiku_surface_new(8, 8, TIKU_C_PANEL);
     if (st->surface == NULL) {
         free(st);
         return -1;
@@ -81,17 +81,17 @@ echo_stop(void *state)
     echo_state_t *st = state;
 
     if (st != NULL) {
-        tiku_desk_surface_free(st->surface);
+        tiku_surface_free(st->surface);
         free(st);
     }
 }
 
 static int
-echo_event(void *state, const tiku_desk_event_t *event)
+echo_event(void *state, const tiku_event_t *event)
 {
     echo_state_t *st = state;
 
-    if (event->type == TIKU_DESK_EVENT_KEY_DOWN) {
+    if (event->type == TIKU_EVENT_KEY_DOWN) {
         (void)st->services->frame(st->services->ctx, st->id,
                                   st->surface->px, 8, 8);
         if (event->key == 'q') {
@@ -101,7 +101,7 @@ echo_event(void *state, const tiku_desk_event_t *event)
     return 0;
 }
 
-static const tiku_desk_app_descriptor_t echo_app = {
+static const tiku_app_descriptor_t echo_app = {
     .id = "org.tikuos.test.echo",
     .name = "Echo",
     .start = echo_start,
@@ -117,14 +117,14 @@ static const tiku_desk_app_descriptor_t echo_app = {
  * is not this test's business.
  */
 static int64_t
-await_frame(tiku_desk_remote_listener_t *listener, int budget_ms)
+await_frame(tiku_remote_listener_t *listener, int budget_ms)
 {
     int64_t start = now_ms();
 
     while (now_ms() - start < budget_ms) {
         struct timespec nap;
 
-        if (tiku_desk_remote_poll(listener)) {
+        if (tiku_remote_poll(listener)) {
             return now_ms() - start;
         }
         nap.tv_sec = 0;
@@ -137,9 +137,9 @@ await_frame(tiku_desk_remote_listener_t *listener, int budget_ms)
 int
 main(void)
 {
-    tiku_desk_remote_listener_t listener;
-    struct tiku_desk_window fake;
-    tiku_desk_event_t key;
+    tiku_remote_listener_t listener;
+    struct tiku_window fake;
+    tiku_event_t key;
     int pair[2];
     pid_t kid;
     int i;
@@ -160,7 +160,7 @@ main(void)
     }
     if (kid == 0) {
         (void)close(pair[0]);
-        (void)tiku_desk_client_run_fd(&echo_app, pair[1]);
+        (void)tiku_client_run_fd(&echo_app, pair[1]);
         (void)close(pair[1]);
         _exit(0);
     }
@@ -168,10 +168,10 @@ main(void)
 
     memset(&listener, 0, sizeof listener);
     listener.fd = -1;
-    for (i = 0; i < TIKU_DESK_REMOTE_SESSIONS; i++) {
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         listener.session[i].fd = -1;
     }
-    check(tiku_desk_remote_adopt(&listener, pair[0]) == 0,
+    check(tiku_remote_adopt(&listener, pair[0]) == 0,
           "the desktop takes the application's end of the pair");
 
     /* Wait for the window before timing anything: the open is the
@@ -179,7 +179,7 @@ main(void)
     for (i = 0; i < 400 && !listener.session[0].opened; i++) {
         struct timespec nap;
 
-        (void)tiku_desk_remote_poll(&listener);
+        (void)tiku_remote_poll(&listener);
         nap.tv_sec = 0;
         nap.tv_nsec = 5 * 1000 * 1000;
         (void)nanosleep(&nap, NULL);
@@ -187,7 +187,7 @@ main(void)
     check(listener.session[0].opened, "and it asks for a window");
 
     memset(&key, 0, sizeof key);
-    key.type = TIKU_DESK_EVENT_KEY_DOWN;
+    key.type = TIKU_EVENT_KEY_DOWN;
     key.key = 'x';
     /* Events are addressed to a WINDOW; a bare listener has none, so a
      * fake one is bound to the session and the public path used. */
@@ -196,7 +196,7 @@ main(void)
     for (i = 0; i < 5; i++) {
         int64_t took;
 
-        tiku_desk_remote_event(&listener, &fake, &key);
+        tiku_remote_event(&listener, &fake, &key);
         took = await_frame(&listener, 500);
         if (took < 0) {
             worst = 500;
@@ -213,11 +213,11 @@ main(void)
           "an event is answered without waiting out a nap");
 
     key.key = 'q';
-    tiku_desk_remote_event(&listener, &fake, &key);
+    tiku_remote_event(&listener, &fake, &key);
     for (i = 0; i < 100; i++) {
         struct timespec nap;
 
-        (void)tiku_desk_remote_poll(&listener);
+        (void)tiku_remote_poll(&listener);
         if (waitpid(kid, NULL, WNOHANG) == kid) {
             kid = -1;
             break;
@@ -230,7 +230,7 @@ main(void)
         (void)kill(kid, SIGKILL);
         (void)waitpid(kid, NULL, 0);
     }
-    tiku_desk_remote_shutdown(&listener);
+    tiku_remote_shutdown(&listener);
 
     if (fails > 0) {
         printf("\nFAILURES\n");

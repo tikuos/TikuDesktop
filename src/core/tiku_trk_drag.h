@@ -9,14 +9,14 @@
  * gesture existed to reach it, so what lives here is only the part between
  * the press and the drop: when a press becomes a drag, what the drag is
  * carrying, and whether the thing under the pointer will take it.  Where the
- * bytes then go is tiku_trk_fs's business.
+ * bytes then go is tiku_fs's business.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef TIKU_TRK_DRAG_H_
 #define TIKU_TRK_DRAG_H_
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -101,8 +101,8 @@ typedef struct {
     unsigned buttons;               /* what was held at the press        */
     unsigned mods;
     int      count;
-    char     path[TIKU_TRK_DRAG_MAX][TIKU_TRK_PATH_MAX];
-    char     src_dir[TIKU_TRK_PATH_MAX];
+    char     path[TIKU_TRK_DRAG_MAX][TIKU_PATH_MAX];
+    char     src_dir[TIKU_PATH_MAX];
     int      src_virtual;          /* source is a merged/namespace view */
     void    *src_win;               /* opaque owner token                */
     /* Where each item sat when the drag began, so a drop can put them
@@ -110,14 +110,14 @@ typedef struct {
     int      ox[TIKU_TRK_DRAG_MAX], oy[TIKU_TRK_DRAG_MAX];
     int      from_list;             /* the source view was a list        */
     int      foreign_refs;          /* payload arrived from another app  */
-    char     payload_type[TIKU_TRK_TYPE_MAX];
+    char     payload_type[TIKU_TYPE_MAX];
     unsigned char payload[TIKU_TRK_DRAG_PAYLOAD_MAX];
     size_t   payload_size;
     /* The distinct types the drag carries, worked out ONCE.  Re-entering
      * a view with the same drag must not rebuild them: the drag has not
      * changed, and rebuilding is how a hover becomes expensive
      * (PVS-053). */
-    char     type[TIKU_TRK_DRAG_TYPES][TIKU_TRK_TYPE_MAX];
+    char     type[TIKU_TRK_DRAG_TYPES][TIKU_TYPE_MAX];
     int      ntype;
     int      types_built;
 } tiku_trk_drag_t;
@@ -196,7 +196,7 @@ int tiku_trk_drag_carries(const tiku_trk_drag_t *d, const char *path);
  * selection behave as a drop on the window behind it.
  */
 int tiku_trk_drag_can_drop(const tiku_trk_drag_t *d,
-                           const tiku_trk_model_t *over);
+                           const tiku_model_t *over);
 
 /**
  * @brief What a drop on @p dst_dir means.

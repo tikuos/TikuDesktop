@@ -31,10 +31,10 @@ check(int cond, const char *row, const char *what)
 }
 
 /** @brief A model standing for a real file, with an identity. */
-static tiku_trk_model_t
-node(const char *path, uint64_t id, tiku_trk_kind_t kind)
+static tiku_model_t
+node(const char *path, uint64_t id, tiku_kind_t kind)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
     const char *slash = strrchr(path, '/');
 
     memset(&m, 0, sizeof m);
@@ -49,7 +49,7 @@ int
 main(void)
 {
     tiku_trk_clip_t c;
-    tiku_trk_model_t set[3];
+    tiku_model_t set[3];
     const char *dir = "/tmp/trk_clip_test";
     char a[256], b[256];
 
@@ -63,8 +63,8 @@ main(void)
     tiku_trk_clip_init(&c);
     check(tiku_trk_clip_count(&c) == 0, "FS-051", "it starts empty");
 
-    set[0] = node(a, 101u, TIKU_TRK_KIND_FILE);
-    set[1] = node(b, 102u, TIKU_TRK_KIND_FILE);
+    set[0] = node(a, 101u, TIKU_KIND_FILE);
+    set[1] = node(b, 102u, TIKU_KIND_FILE);
     check(tiku_trk_clip_add(&c, set, 2, TIKU_TRK_CLIP_COPY, 1) == 2,
           "FS-051", "Copy puts the selection on it");
     check(tiku_trk_clip_mode_of(&c, 101u) == TIKU_TRK_CLIP_COPY, "FS-051",
@@ -82,7 +82,7 @@ main(void)
           "while the other entry keeps its own");
 
     /* Cut replaces the whole clipboard; Cut more appends (FS-051). */
-    set[2] = node("/tmp/trk_clip_test/three.txt", 103u, TIKU_TRK_KIND_FILE);
+    set[2] = node("/tmp/trk_clip_test/three.txt", 103u, TIKU_KIND_FILE);
     check(tiku_trk_clip_add(&c, &set[2], 1, TIKU_TRK_CLIP_MOVE, 1) == 1,
           "FS-051", "a plain Cut clears what was there");
     check(tiku_trk_clip_add(&c, set, 2, TIKU_TRK_CLIP_MOVE, 0) == 3,
@@ -90,13 +90,13 @@ main(void)
 
     /* The places cannot be cut (FS-052). */
     {
-        tiku_trk_model_t places[3];
+        tiku_model_t places[3];
 
         /* A volume that is NOT the root, so the exclusion has to be about
          * the kind rather than about the path. */
-        places[0] = node("/mnt/stick", 200u, TIKU_TRK_KIND_VOLUME);
-        places[1] = node("/tmp/.Trash", 201u, TIKU_TRK_KIND_TRASH);
-        places[2] = node("/tmp/Desktop", 202u, TIKU_TRK_KIND_DESKTOP);
+        places[0] = node("/mnt/stick", 200u, TIKU_KIND_VOLUME);
+        places[1] = node("/tmp/.Trash", 201u, TIKU_KIND_TRASH);
+        places[2] = node("/tmp/Desktop", 202u, TIKU_KIND_DESKTOP);
         check(tiku_trk_clip_add(&c, places, 3, TIKU_TRK_CLIP_MOVE, 1) == 0,
               "FS-052",
               "a volume, the Trash and the Desktop are silently excluded -- "
@@ -124,7 +124,7 @@ main(void)
      * (FS-060). */
     {
         char there[256], back[256], inside[300], landed[256];
-        tiku_trk_model_t tree[1];
+        tiku_model_t tree[1];
 
         snprintf(there, sizeof there, "%s/away.txt", dir);
         snprintf(back, sizeof back, "%s/renamed.txt", dir);
@@ -146,7 +146,7 @@ main(void)
 
         snprintf(inside, sizeof inside, "%s/box/held.txt", dir);
         snprintf(landed, sizeof landed, "%s/moved-box", dir);
-        tree[0] = node(inside, 777u, TIKU_TRK_KIND_FILE);
+        tree[0] = node(inside, 777u, TIKU_KIND_FILE);
         (void)tiku_trk_clip_add(&c, tree, 1, TIKU_TRK_CLIP_MOVE, 1);
         {
             char folder[256], want[300];
@@ -179,7 +179,7 @@ main(void)
 
     /* Escape clears it; Shift+Escape removes only the selection (FS-062). */
     {
-        tiku_trk_model_t two[1];
+        tiku_model_t two[1];
 
         { FILE *f = fopen(a, "w"); if (f != NULL) { (void)fputc('x', f); (void)fclose(f); } }
         (void)tiku_trk_clip_add(&c, set, 2, TIKU_TRK_CLIP_COPY, 1);

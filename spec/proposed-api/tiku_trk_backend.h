@@ -6,7 +6,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_backend.h - the one seam between Tracker and a store.
+ * tiku_backend.h - the one seam between Tracker and a store.
  *
  * Two implementations and no third caller-visible distinction: a POSIX
  * backend over a real filesystem, and a TikuOS backend over a shell session.
@@ -28,8 +28,8 @@
 #include <stdint.h>
 
 #include "tiku_trk_event.h"
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 /* What a backend can do.  Absent bits are not failures: they select the
  * fallback the design already specifies. */
@@ -42,103 +42,103 @@
 #define TIKU_TRK_BK_QUERY_IDX 0x0040u /**< holds a complete typed index   */
 #define TIKU_TRK_BK_BLOCKING  0x0080u /**< worker ops really do block     */
 
-typedef struct tiku_trk_backend tiku_trk_backend_t;
+typedef struct tiku_backend tiku_backend_t;
 
 /** @brief One entry as a listing hands it over. */
 typedef struct {
-    char     name[TIKU_TRK_NAME_MAX];
-    uint8_t  kind;      /**< tiku_trk_kind_t                             */
+    char     name[TIKU_NAME_MAX];
+    uint8_t  kind;      /**< tiku_kind_t                             */
     uint32_t valhash;   /**< rendered value hash, or 0                   */
     uint8_t  truncated; /**< the value read was cut; treat as changed    */
 } tiku_trk_dirent_t;
 
-struct tiku_trk_volume;
+struct tiku_volume;
 
 typedef struct tiku_trk_backend_ops {
     const char *name;
 
     /* -- lifecycle ------------------------------------------------- */
     /** @brief Learn what this store can do; sets caps.  /@ worker @/ */
-    int  (*probe)(tiku_trk_backend_t *b);
-    void (*close)(tiku_trk_backend_t *b);
+    int  (*probe)(tiku_backend_t *b);
+    void (*close)(tiku_backend_t *b);
 
     /** @brief Fill the roster entry: label, identity, capacity, flags.
      *  /@ worker @/ */
-    int  (*volume_info)(tiku_trk_backend_t *b, struct tiku_trk_volume *out);
+    int  (*volume_info)(tiku_backend_t *b, struct tiku_volume *out);
 
     /* -- listing, always stepped so a window never blocks ----------- */
-    int  (*list_begin)(tiku_trk_backend_t *b, const char *dir, uint32_t gen);
+    int  (*list_begin)(tiku_backend_t *b, const char *dir, uint32_t gen);
     /** @brief Deliver up to @p max entries.  @return count, 0 at the end,
      *  -1 on error.  /@ worker @/ */
-    int  (*list_step)(tiku_trk_backend_t *b, tiku_trk_dirent_t *out,
+    int  (*list_step)(tiku_backend_t *b, tiku_trk_dirent_t *out,
                       int max);
-    void (*list_end)(tiku_trk_backend_t *b);
+    void (*list_end)(tiku_backend_t *b);
 
     /* -- one entry -------------------------------------------------- */
     /** @brief Fill kind, size, times, perms, type facts.  /@ worker @/ */
-    int  (*stat)(tiku_trk_backend_t *b, const char *path,
-                 tiku_trk_model_t *m);
+    int  (*stat)(tiku_backend_t *b, const char *path,
+                 tiku_model_t *m);
     /** @brief Read the object's rendered value.  /@ worker @/ */
-    int  (*read_value)(tiku_trk_backend_t *b, tiku_trk_model_t *m,
+    int  (*read_value)(tiku_backend_t *b, tiku_model_t *m,
                        char *err, size_t errmax);
     /** @brief Write it.  0 on success; -1 fills @p err with the store's
      *  own refusal text, reproduced verbatim in the alert.  /@ worker @/ */
-    int  (*write_value)(tiku_trk_backend_t *b, const tiku_trk_model_t *m,
+    int  (*write_value)(tiku_backend_t *b, const tiku_model_t *m,
                         const char *val, size_t len,
                         char *err, size_t errmax);
-    int  (*create)(tiku_trk_backend_t *b, const char *dir, const char *name,
+    int  (*create)(tiku_backend_t *b, const char *dir, const char *name,
                    int is_dir, char *err, size_t errmax);
-    int  (*unlink)(tiku_trk_backend_t *b, const tiku_trk_model_t *m,
+    int  (*unlink)(tiku_backend_t *b, const tiku_model_t *m,
                    char *err, size_t errmax);
-    int  (*rename)(tiku_trk_backend_t *b, const tiku_trk_model_t *m,
+    int  (*rename)(tiku_backend_t *b, const tiku_model_t *m,
                    const char *newname, char *err, size_t errmax);
     /** @brief Bulk transfer in and out of this store.  @p progress is
      *  called per chunk and returns non-zero to cancel.  /@ worker @/ */
-    int  (*copy_in)(tiku_trk_backend_t *b, const char *host_path,
+    int  (*copy_in)(tiku_backend_t *b, const char *host_path,
                     const char *dst_path,
                     int (*progress)(void *ctx, uint64_t done, uint64_t all),
                     void *ctx, char *err, size_t errmax);
-    int  (*copy_out)(tiku_trk_backend_t *b, const tiku_trk_model_t *m,
+    int  (*copy_out)(tiku_backend_t *b, const tiku_model_t *m,
                      const char *host_path,
                      int (*progress)(void *ctx, uint64_t done, uint64_t all),
                      void *ctx, char *err, size_t errmax);
 
     /* -- policy ----------------------------------------------------- */
     /** @brief The single refusal predicate's backend half.  /@ instant @/ */
-    tiku_trk_verdict_t (*permit)(tiku_trk_backend_t *b,
-                                 const tiku_trk_model_t *m,
+    tiku_trk_verdict_t (*permit)(tiku_backend_t *b,
+                                 const tiku_model_t *m,
                                  tiku_trk_action_t a, uint8_t *missing_cap);
     /** @brief Capability this channel holds.  /@ instant @/ */
-    unsigned (*caps_held)(tiku_trk_backend_t *b);
+    unsigned (*caps_held)(tiku_backend_t *b);
     /** @brief Bumps whenever caps_held() changes, so every cached verdict
      *  can be invalidated wholesale rather than one at a time. */
-    unsigned (*cap_generation)(tiku_trk_backend_t *b);
-    const char *(*cap_name)(tiku_trk_backend_t *b, uint8_t bit);
+    unsigned (*cap_generation)(tiku_backend_t *b);
+    const char *(*cap_name)(tiku_backend_t *b, uint8_t bit);
     /** @brief Re-read the channel's capability now.  Called at connect, on
      *  a capability notification, and after any refusal that named one, so
      *  a mirror that went stale heals in one round trip.  /@ worker @/ */
-    int  (*refresh_caps)(tiku_trk_backend_t *b);
+    int  (*refresh_caps)(tiku_backend_t *b);
 
     /* -- liveness --------------------------------------------------- */
-    int  (*watch_dir)(tiku_trk_backend_t *b, const char *dir);
+    int  (*watch_dir)(tiku_backend_t *b, const char *dir);
     /** @brief Ask for per-entry liveness.  Returns tiku_trk_watch_t: a
      *  full watch table demotes to polling, it never fails. */
-    int  (*watch_node)(tiku_trk_backend_t *b, const char *path, int prio);
-    void (*unwatch_all)(tiku_trk_backend_t *b);
+    int  (*watch_node)(tiku_backend_t *b, const char *path, int prio);
+    void (*unwatch_all)(tiku_backend_t *b);
     /** @brief Service the link, translate or synthesize events into the
      *  queue.  @return events posted, -1 on link loss.  /@ worker @/ */
-    int  (*pump)(tiku_trk_backend_t *b, int64_t now_us, int timeout_ms);
-    int  (*liveness)(tiku_trk_backend_t *b, tiku_trk_liveness_t *out);
+    int  (*pump)(tiku_backend_t *b, int64_t now_us, int timeout_ms);
+    int  (*liveness)(tiku_backend_t *b, tiku_trk_liveness_t *out);
 
     /* -- where UI state for this store's objects lives -------------- */
     /** @brief The store's state store: xattrs on a POSIX volume, a
      *  host-side sidecar for a device, memory when neither can persist. */
-    tiku_trk_store_t *(*state_store)(tiku_trk_backend_t *b);
-} tiku_trk_backend_ops_t;
+    tiku_store_t *(*state_store)(tiku_backend_t *b);
+} tiku_backend_ops_t;
 
-struct tiku_trk_backend {
-    const tiku_trk_backend_ops_t *ops;
-    void            *ctx;        /**< tiku_desk_ns_t * for a device      */
+struct tiku_backend {
+    const tiku_backend_ops_t *ops;
+    void            *ctx;        /**< tiku_ns_t * for a device      */
     tiku_trk_dev_t   dev;
     uint8_t          kind;       /**< tiku_trk_backend_kind_t            */
     uint32_t         caps;       /**< TIKU_TRK_BK_*, set by probe()      */
@@ -147,21 +147,21 @@ struct tiku_trk_backend {
 };
 
 /** @brief A backend over the host filesystem, rooted at @p mount. */
-tiku_trk_backend_t *tiku_trk_backend_posix_new(const char *mount,
+tiku_backend_t *tiku_trk_backend_posix_new(const char *mount,
                                                tiku_trk_dev_t dev,
                                                tiku_trk_evq_t *q);
 
 /**
  * @brief A backend over an established device session.
  *
- * @param ns  A tiku_desk_ns_t mirror; the backend does not own it.  Every
+ * @param ns  A tiku_ns_t mirror; the backend does not own it.  Every
  *            blocking op runs on this backend's worker, because the session
  *            is not reentrant and the UI thread must never touch it.
  */
-tiku_trk_backend_t *tiku_trk_backend_tiku_new(void *ns, tiku_trk_dev_t dev,
+tiku_backend_t *tiku_trk_backend_tiku_new(void *ns, tiku_trk_dev_t dev,
                                               tiku_trk_evq_t *q);
 
-void tiku_trk_backend_free(tiku_trk_backend_t *b);
+void tiku_trk_backend_free(tiku_backend_t *b);
 
 /* ---------------------------------------------------------------------- *
  * The lister -- Tracker's AddPosesTask, as a yielding state machine
@@ -177,9 +177,9 @@ void tiku_trk_backend_free(tiku_trk_backend_t *b);
  * looks exactly like a folder that legitimately has fewer entries.
  */
 typedef struct {
-    tiku_trk_backend_t *b;
+    tiku_backend_t *b;
     uint32_t            gen;         /**< abandoned listings drop         */
-    char                dir[TIKU_TRK_PATH_MAX];
+    char                dir[TIKU_PATH_MAX];
     uint32_t            cursor;
     int                 done;
     int64_t             chunk_started_us;
@@ -193,12 +193,12 @@ typedef struct {
  * so a change during the load is queued rather than lost.  Events are not
  * suppressed while loading; single insertion is the view's business.
  */
-int tiku_trk_lister_start(tiku_trk_lister_t *l, tiku_trk_backend_t *b,
+int tiku_trk_lister_start(tiku_trk_lister_t *l, tiku_backend_t *b,
                           const char *dir, uint32_t gen);
 
 /** @brief Deliver one chunk.  @return models produced, 0 when finished. */
 int tiku_trk_lister_step(tiku_trk_lister_t *l, int64_t now_us,
-                         tiku_trk_model_t **out, int max);
+                         tiku_model_t **out, int max);
 
 /** @brief Whether this listing still belongs to the view's generation. */
 int tiku_trk_lister_valid(const tiku_trk_lister_t *l, uint32_t view_gen);

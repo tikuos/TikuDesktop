@@ -14,7 +14,7 @@
 #ifndef TIKU_TRK_FONTPREFS_H_
 #define TIKU_TRK_FONTPREFS_H_
 
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 /** @brief The sizes the interface is baked at, smallest first. */
 #define TIKU_TRK_FONT_MIN  10
@@ -50,7 +50,7 @@ void tiku_trk_fontprefs_init(tiku_trk_fontprefs_t *prefs);
  * @return 1 when the record said, 0 when the defaults stand.
  */
 int tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs,
-                            tiku_trk_store_t *store);
+                            tiku_store_t *store);
 
 /**
  * @brief Write them back, leaving every other setting in the record.
@@ -61,7 +61,7 @@ int tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs,
  * @return 1 when the record was written.
  */
 int tiku_trk_fontprefs_save(const tiku_trk_fontprefs_t *prefs,
-                            tiku_trk_store_t *store);
+                            tiku_store_t *store);
 
 void tiku_trk_fontprefs_mark_opened(tiku_trk_fontprefs_t *prefs);
 int tiku_trk_fontprefs_defaultable(const tiku_trk_fontprefs_t *prefs);

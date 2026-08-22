@@ -16,17 +16,17 @@
 
 #include "tiku_trk_desktop_view.h"
 
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 #include "tiku_trk_deskicons.h"
-#include "tiku_trk_volume.h"
+#include "tiku_volume.h"
 
 static void
-draw(tiku_desk_surface_t *surface, void *context)
+draw(tiku_surface_t *surface, void *context)
 {
     tiku_trk_desktop_view_t *controller = context;
 
     if (controller != NULL && controller->folder.view != NULL) {
-        tiku_desk_rect_t content =
+        tiku_rect_t content =
             tiku_trk_folder_window_content(&controller->folder);
 
         controller->folder.bg_drawn =
@@ -51,15 +51,15 @@ tiku_trk_desktop_view_shows_disks(
 }
 
 /** @brief Project the current Deskbar frame onto a resized screen. */
-static tiku_desk_rect_t
+static tiku_rect_t
 deskbar_frame_at(const tiku_trk_desktop_view_t *controller,
                  int screen_w, int screen_h)
 {
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
     tiku_trk_db_dock_t dock;
 
     if (controller == NULL || controller->deskbar == NULL) {
-        return (tiku_desk_rect_t){ 0, 0, 0, 0 };
+        return (tiku_rect_t){ 0, 0, 0, 0 };
     }
     frame = tiku_trk_deskbar_frame(controller->deskbar);
     dock = tiku_trk_deskbar_dock(controller->deskbar);
@@ -81,7 +81,7 @@ static tiku_trk_rect_t
 desktop_area_at(const tiku_trk_desktop_view_t *controller,
                 int screen_w, int screen_h)
 {
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
     tiku_trk_rect_t area;
     tiku_trk_db_dock_t dock;
 
@@ -126,7 +126,7 @@ tiku_trk_desktop_view_area(const tiku_trk_desktop_view_t *controller)
 static void
 add_pose(tiku_trk_desktop_view_t *controller, const char *path)
 {
-    tiku_trk_model_t model;
+    tiku_model_t model;
 
     if (path == NULL || path[0] == '\0' ||
         controller->backend->ops->stat(controller->backend, path,
@@ -143,7 +143,7 @@ tiku_trk_desktop_view_ensure_visible(tiku_trk_desktop_view_t *controller)
 {
     tiku_trk_rect_t screen;
     tiku_trk_rect_t area;
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
     tiku_trk_rect_t bar;
     int i, count, moved = 0;
 
@@ -282,20 +282,20 @@ tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
 void
 tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
 {
-    tiku_trk_volumes_t volumes;
-    tiku_trk_model_t models[64];
-    char trash[TIKU_TRK_PATH_MAX];
+    tiku_volumes_t volumes;
+    tiku_model_t models[64];
+    char trash[TIKU_PATH_MAX];
     int count = 0, have_volumes;
 
     if (controller == NULL || controller->folder.view == NULL) {
         return;
     }
-    have_volumes = tiku_trk_volumes_scan(&volumes) >= 0;
+    have_volumes = tiku_volumes_scan(&volumes) >= 0;
     if (have_volumes) {
         tiku_trk_deskicons_sources(&volumes, controller->backend,
             controller->folder.path, &controller->sources);
     }
-    count = tiku_trk_vdir_list(&controller->sources, controller->backend,
+    count = tiku_vdir_list(&controller->sources, controller->backend,
         models, (int)(sizeof models / sizeof models[0]));
     if (count < 0) {
         count = 0;
@@ -314,7 +314,7 @@ tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
     if (controller->disks_shown) {
         add_pose(controller, "/");
     }
-    if (tiku_trk_fs_trash_dir(controller->fs, controller->folder.path,
+    if (tiku_fs_trash_dir(controller->fs, controller->folder.path,
                               trash, sizeof trash) == 0) {
         add_pose(controller, trash);
     }
@@ -340,7 +340,7 @@ tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
 
 int
 tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
-    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs,
+    tiku_backend_t *backend, tiku_fs_t *fs,
     tiku_trk_prefs_t *prefs, tiku_trk_deskbar_t *deskbar,
     tiku_trk_folder_render_t *render, int screen_w, int screen_h)
 {
@@ -359,7 +359,7 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     controller->screen_h = screen_h;
     home = getenv("HOME");
     (void)home;
-    (void)tiku_trk_desktop_dir(controller->folder.path,
+    (void)tiku_desktop_dir(controller->folder.path,
                                sizeof controller->folder.path);
     controller->folder.view = tiku_trk_poseview_new(
         backend, controller->folder.path);
@@ -369,7 +369,7 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     /* The Desktop's own slot: rearranging the backdrop must not disturb
      * a folder window opened on the same directory (MA-064). */
     tiku_trk_poseview_set_state_slot(controller->folder.view,
-                                     TIKU_TRK_KEY_DESKTOP);
+                                     TIKU_KEY_DESKTOP);
     tiku_trk_poseview_set_no_autoscroll(controller->folder.view, 1);
     tiku_trk_folder_window_configure(&controller->folder, render);
     tiku_trk_poseview_set_viewport(controller->folder.view,
@@ -384,8 +384,8 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
                                           screen_h);
     }
     tiku_trk_desktop_view_rebuild(controller);
-    tiku_trk_vdir_watch_init(&controller->watch, &controller->sources);
-    tiku_desk_workspace_set_backdrop(render->workspace, draw, controller);
+    tiku_vdir_watch_init(&controller->watch, &controller->sources);
+    tiku_workspace_set_backdrop(render->workspace, draw, controller);
     return 0;
 }
 
@@ -446,14 +446,14 @@ tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller)
     n = tiku_trk_poseview_count(v);
     for (i = 0; i < n; i++) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(v, i);
-        char dirs[TIKU_TRK_VOLUME_MAX][TIKU_TRK_PATH_MAX];
+        char dirs[TIKU_VOLUME_MAX][TIKU_PATH_MAX];
         int k, nd, full = 0;
 
-        if (pose == NULL || pose->model.kind != TIKU_TRK_KIND_TRASH) {
+        if (pose == NULL || pose->model.kind != TIKU_KIND_TRASH) {
             continue;
         }
-        nd = tiku_trk_fs_trash_dirs(controller->fs, dirs,
-                                    TIKU_TRK_VOLUME_MAX);
+        nd = tiku_fs_trash_dirs(controller->fs, dirs,
+                                    TIKU_VOLUME_MAX);
         for (k = 0; k < nd && !full; k++) {
             full = dv_dir_has_entries(dirs[k]);
         }
@@ -468,7 +468,7 @@ tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller)
 
 int
 tiku_trk_desktop_view_poll(tiku_trk_desktop_view_t *controller,
-    int64_t now, const tiku_trk_change_t *changes, int change_count,
+    int64_t now, const tiku_model_change_t *changes, int change_count,
     int complete)
 {
     unsigned flags;
@@ -494,8 +494,8 @@ tiku_trk_desktop_view_poll(tiku_trk_desktop_view_t *controller,
         tiku_trk_desktop_view_rebuild(controller);
         changed++;
     }
-    if (tiku_trk_vdir_poll(&controller->sources, &controller->watch,
-                           &gone) != TIKU_TRK_VDIR_CH_NONE) {
+    if (tiku_vdir_poll(&controller->sources, &controller->watch,
+                           &gone) != TIKU_VDIR_CH_NONE) {
         tiku_trk_desktop_view_rebuild(controller);
         changed++;
     }

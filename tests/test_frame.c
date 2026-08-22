@@ -25,7 +25,7 @@ check(int cond, const char *row, const char *what)
 int
 main(void)
 {
-    tiku_trk_store_t *st = tiku_trk_store_memory_open();
+    tiku_store_t *st = tiku_store_memory_open();
     tiku_trk_frame_t f, got;
 
     printf("a folder remembers its own window (CW-001)\n");
@@ -120,7 +120,7 @@ main(void)
         tiku_trk_frame_t tiny;
 
         tiny.x = 0; tiny.y = 0; tiny.w = 4; tiny.h = 4;
-        (void)tiku_trk_state_write(st, "/tiny", TIKU_TRK_ATTR_FRAME, &tiny,
+        (void)tiku_state_write(st, "/tiny", TIKU_ATTR_FRAME, &tiny,
                                    sizeof tiny);
         check(!tiku_trk_frame_load(st, "/tiny", &got), "CW-001",
               "a stored record too small to be a window is not treated as "
@@ -129,13 +129,13 @@ main(void)
 
     printf("\nthe set of windows that were open (AW-004)\n");
     {
-        char paths[3][TIKU_TRK_PATH_MAX];
-        char back[TIKU_TRK_SESSION_MAX][TIKU_TRK_PATH_MAX];
+        char paths[3][TIKU_PATH_MAX];
+        char back[TIKU_TRK_SESSION_MAX][TIKU_PATH_MAX];
         int n;
 
-        snprintf(paths[0], TIKU_TRK_PATH_MAX, "/one");
-        snprintf(paths[1], TIKU_TRK_PATH_MAX, "/two");
-        snprintf(paths[2], TIKU_TRK_PATH_MAX, "/three");
+        snprintf(paths[0], TIKU_PATH_MAX, "/one");
+        snprintf(paths[1], TIKU_PATH_MAX, "/two");
+        snprintf(paths[2], TIKU_PATH_MAX, "/three");
         check(tiku_trk_session_save(st, paths, 3) == 3, "AW-004",
               "the open set is written");
         n = tiku_trk_session_load(st, back, TIKU_TRK_SESSION_MAX);
@@ -175,8 +175,8 @@ main(void)
               !back[0].minimized && strcmp(back[1].path, "/hidden") == 0 &&
               back[1].minimized, "AW-006",
               "the state comes back with the same window, in order");
-        (void)tiku_trk_state_write(st, TIKU_TRK_KEY_SESSION,
-                                   TIKU_TRK_ATTR_SESSION,
+        (void)tiku_state_write(st, TIKU_KEY_SESSION,
+                                   TIKU_ATTR_SESSION,
                                    "/old-format\n", 12);
         check(tiku_trk_session_load_entries(st, back,
                                             TIKU_TRK_SESSION_MAX) == 1 &&
@@ -185,7 +185,7 @@ main(void)
               "path-only sessions from older builds remain shown windows");
     }
 
-    tiku_trk_store_free(st);
+    tiku_store_free(st);
     printf("\n%s\n", fails ? "FAILURES" : "windows come back where they were");
     return fails ? 1 : 0;
 }

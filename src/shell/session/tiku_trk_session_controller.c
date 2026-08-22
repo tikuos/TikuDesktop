@@ -16,19 +16,19 @@
 
 #include "tiku_trk_session_controller.h"
 
-tiku_trk_store_t *
-tiku_trk_session_open_store(tiku_trk_backend_t *backend)
+tiku_store_t *
+tiku_trk_session_open_store(tiku_backend_t *backend)
 {
-    tiku_trk_store_t *store = tiku_trk_store_sidecar_open(
+    tiku_store_t *store = tiku_store_sidecar_open(
         backend != NULL && backend->devid[0] != '\0' ? backend->devid
                                                       : "local");
 
-    return store != NULL ? store : tiku_trk_store_memory_open();
+    return store != NULL ? store : tiku_store_memory_open();
 }
 
 void
 tiku_trk_session_controller_init(
-    tiku_trk_session_controller_t *controller, tiku_trk_store_t *store,
+    tiku_trk_session_controller_t *controller, tiku_store_t *store,
     tiku_trk_deskbar_t *deskbar, tiku_trk_desktop_view_t *desktop_view,
     tiku_trk_folder_lifecycle_t *folders)
 {
@@ -45,8 +45,8 @@ tiku_trk_session_restore_deskbar(tiku_trk_session_controller_t *controller)
 {
     int32_t record[2];
 
-    if (tiku_trk_state_read(controller->store, TIKU_TRK_KEY_SESSION,
-            TIKU_TRK_ATTR_DOCK, record, sizeof record) ==
+    if (tiku_state_read(controller->store, TIKU_KEY_SESSION,
+            TIKU_ATTR_DOCK, record, sizeof record) ==
             (int)sizeof record) {
         tiku_trk_deskbar_set_dock(controller->deskbar,
                                   (tiku_trk_db_dock_t)record[0]);
@@ -128,7 +128,7 @@ tiku_trk_session_controller_save(tiku_trk_session_controller_t *controller)
         if (folder->win != NULL && folder->win->open && !folder->gone &&
             !tiku_trk_poseview_is_query(folder->view) &&
             entry_count < TIKU_TRK_SESSION_MAX) {
-            snprintf(entries[entry_count].path, TIKU_TRK_PATH_MAX, "%s",
+            snprintf(entries[entry_count].path, TIKU_PATH_MAX, "%s",
                      folder->path);
             entries[entry_count].minimized = folder->win->minimized;
             entry_count++;
@@ -144,28 +144,28 @@ tiku_trk_session_controller_save(tiku_trk_session_controller_t *controller)
                                          entry_count);
     dock[0] = (int32_t)tiku_trk_deskbar_dock(controller->deskbar);
     dock[1] = (int32_t)tiku_trk_deskbar_width(controller->deskbar);
-    (void)tiku_trk_state_write(controller->store, TIKU_TRK_KEY_SESSION,
-                               TIKU_TRK_ATTR_DOCK, dock, sizeof dock);
-    (void)tiku_trk_store_flush(controller->store);
+    (void)tiku_state_write(controller->store, TIKU_KEY_SESSION,
+                               TIKU_ATTR_DOCK, dock, sizeof dock);
+    (void)tiku_store_flush(controller->store);
 }
 
 void
-tiku_trk_session_drain_filesystem(tiku_trk_fs_t *filesystem)
+tiku_trk_session_drain_filesystem(tiku_fs_t *filesystem)
 {
     int guard = 0;
 
     if (filesystem == NULL) {
         return;
     }
-    while (tiku_trk_fs_busy(filesystem) && guard++ < 50) {
-        if (tiku_trk_fs_step(filesystem, 16) == 0) {
-            const tiku_trk_progress_t *progress =
-                tiku_trk_fs_progress(filesystem);
+    while (tiku_fs_busy(filesystem) && guard++ < 50) {
+        if (tiku_fs_step(filesystem, 16) == 0) {
+            const tiku_progress_t *progress =
+                tiku_fs_progress(filesystem);
 
             if (progress->conflict) {
-                tiku_trk_fs_resolve(filesystem, TIKU_TRK_CONFLICT_RENAME);
+                tiku_fs_resolve(filesystem, TIKU_CONFLICT_RENAME);
             } else if (progress->error_ask) {
-                tiku_trk_fs_resolve_error(filesystem, 1);
+                tiku_fs_resolve_error(filesystem, 1);
             } else {
                 break;
             }

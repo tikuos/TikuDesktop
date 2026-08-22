@@ -8,16 +8,16 @@ Built and green on all three boards (51 checks on ra8p1):
                       single refresh; the deadline slides while the storm
                       lasts; max_count stops a continuous storm deferring
                       the work forever).  17 checks.
-- `tiku_trk_ident`    scored device identity, uid=8/id=4/mcu=2/name=1,
+- `tiku_ident`    scored device identity, uid=8/id=4/mcu=2/name=1,
                       bind at 7, and a uid mismatch is an ABSOLUTE VETO so a
                       renamed board cannot adopt another's arrangement.
-- `tiku_trk_state`    Tracker's AttributeStreamNode seam: xattr (local, the
+- `tiku_state`    Tracker's AttributeStreamNode seam: xattr (local, the
                       object owns its state), sidecar (per-device file keyed
                       by devid), memory.  Survives close/reopen.  The
                       no-removal-on-teardown invariant is in the header
                       because the obvious implementation loses the user's
                       arrangement on unplug.
-- `tiku_trk_model`    Model + facts + the backend vtable.  The view asks
+- `tiku_model`    Model + facts + the backend vtable.  The view asks
                       questions (is_container / is_mutable_container /
                       is_writable), never "which backend is this".
 - two backends        POSIX (real perms, inodes, xattrs) and TikuOS (the
@@ -119,8 +119,8 @@ scaling, band, hit-testing and the save/restore round trip).
 
 ## N4 (2026-08-11): file operations
 
-`tiku_trk_fs` — copy, move, duplicate, trash, rename, undo, run as a STEPPED
-queue (tiku_trk_fs_step) rather than a blocking call, so the window keeps
+`tiku_fs` — copy, move, duplicate, trash, rename, undo, run as a STEPPED
+queue (tiku_fs_step) rather than a blocking call, so the window keeps
 drawing while an operation runs and a collision can stop the queue and wait
 for an answer instead of guessing.
 
@@ -336,7 +336,7 @@ about "today".
 Two separate causes, both mine.
 
 **The Find panel hand-rolled its controls.** There is a shared R5 control
-library (`tiku_desk_ui_button` / `_checkbox` / `_radio` / `_textfield`) with a
+library (`tiku_ui_button` / `_checkbox` / `_radio` / `_textfield`) with a
 measured spec, and the panel drew its own buttons and fields instead of
 calling it -- flat fills with a single bevel, 20 px where the spec says 24,
 and an invented "three descending lines" popup marker.  A panel whose
@@ -353,7 +353,7 @@ DIAGONAL gradient from white at the top-left to the tab colour at the
 bottom-right, inside a single B_DARKEN_2 outline.  And the zoom widget is TWO
 such squares -- a small one at the top-left, a larger one offset down and
 right by a quarter of the width -- not a square inside a square.  That is now
-`tiku_desk_ui_tab_widget` in the shared library.
+`tiku_ui_tab_widget` in the shared library.
 
 Worth recording: R5-SPEC.md says of itself that the marked values and "the
 exact tab geometry: inference, to be checked against an R5 screenshot before

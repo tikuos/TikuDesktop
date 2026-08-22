@@ -40,10 +40,10 @@ sh(const char *fmt, ...)
     if (system(cmd) != 0) { /* the caller checks the effect, not the shell */ }
 }
 
-static tiku_trk_model_t
-of(tiku_trk_backend_t *b, const char *path)
+static tiku_model_t
+of(tiku_backend_t *b, const char *path)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
 
     memset(&m, 0, sizeof m);
     (void)b->ops->stat(b, path, &m);
@@ -53,11 +53,11 @@ of(tiku_trk_backend_t *b, const char *path)
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
-    tiku_trk_store_t *st = tiku_trk_store_memory_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
+    tiku_store_t *st = tiku_store_memory_open();
     tiku_trk_panel_t p;
-    char buf[TIKU_TRK_PATH_MAX], sel[TIKU_TRK_NAME_MAX];
-    tiku_trk_model_t m;
+    char buf[TIKU_PATH_MAX], sel[TIKU_NAME_MAX];
+    tiku_model_t m;
 
     snprintf(work, sizeof work, "/tmp/trk-panel-%d", (int)getpid());
     sh("rm -rf %s && mkdir -p %s/sub/deep && touch %s/a.txt %s/sub/b.txt",
@@ -104,7 +104,7 @@ main(void)
           "in is the only sense a button can make of a folder");
     {
         char file[512];
-        tiku_trk_model_t fm;
+        tiku_model_t fm;
 
         snprintf(file, sizeof file, "%s/a.txt", work);
         fm = of(b, file);
@@ -121,7 +121,7 @@ main(void)
         tiku_trk_panel_open(&p, TIKU_TRK_PANEL_SAVE, TIKU_TRK_PANEL_FILE,
                             work, b, "Tracker");
         {
-            tiku_trk_model_t dm = of(b, work);
+            tiku_model_t dm = of(b, work);
 
             check(strcmp(tiku_trk_panel_button_label(&p, &dm, 1),
                          "Open") == 0, "AW-053",
@@ -142,7 +142,7 @@ main(void)
         check(tiku_trk_panel_button_enabled(&p, &fm, 1), "AW-053",
               "which is what enables the button");
         {
-            tiku_trk_model_t dm = of(b, work);
+            tiku_model_t dm = of(b, work);
             char was[TIKU_TRK_PANEL_NAME_MAX];
 
             snprintf(was, sizeof was, "%s", p.name);
@@ -204,7 +204,7 @@ main(void)
                         "Tracker");
     {
         char sub[512];
-        tiku_trk_model_t dm, fm;
+        tiku_model_t dm, fm;
 
         snprintf(sub, sizeof sub, "%s/sub", work);
         dm = of(b, sub);
@@ -367,7 +367,7 @@ main(void)
     tiku_trk_recent_add(st, TIKU_TRK_RECENT_DOCS, "/two");
     tiku_trk_recent_add(st, TIKU_TRK_RECENT_DOCS, "/one");
     {
-        char got[TIKU_TRK_RECENT_MAX][TIKU_TRK_PATH_MAX];
+        char got[TIKU_TRK_RECENT_MAX][TIKU_PATH_MAX];
         int n = tiku_trk_recent_list(st, TIKU_TRK_RECENT_DOCS, 10, got,
                                      TIKU_TRK_RECENT_MAX);
 
@@ -395,7 +395,7 @@ main(void)
     check(!tiku_trk_panel_add_favorite(&p, st), "AW-062",
           "twice over is still one favourite");
     {
-        char got[TIKU_TRK_RECENT_MAX][TIKU_TRK_PATH_MAX];
+        char got[TIKU_TRK_RECENT_MAX][TIKU_PATH_MAX];
 
         check(tiku_trk_panel_favorites(st, got, TIKU_TRK_RECENT_MAX) == 1 &&
               strcmp(got[0], work) == 0, "AW-062", "and it is the one added");
@@ -416,7 +416,7 @@ main(void)
              * way in, so going through it could not test this. */
             int32_t wild[4] = { 40, 50, 20, 8000 };
 
-            (void)tiku_trk_state_write(st, "\x01panel", "_trk/panel_frame",
+            (void)tiku_state_write(st, "\x01panel", "_trk/panel_frame",
                                        wild, sizeof wild);
         }
         (void)tiku_trk_panel_restore_frame(st, &x, &y, &w, &h);
@@ -428,8 +428,8 @@ main(void)
               "the bottom");
     }
 
-    tiku_trk_store_free(st);
-    tiku_trk_backend_close(b);
+    tiku_store_free(st);
+    tiku_backend_close(b);
     sh("rm -rf %s", work);
     printf("\n%s\n", fails ? "FAILURES" : "the panel holds its terms");
     return fails ? 1 : 0;

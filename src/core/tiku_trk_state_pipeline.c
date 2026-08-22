@@ -3,7 +3,7 @@
 #include <string.h>
 
 typedef struct {
-    tiku_trk_store_t *store;
+    tiku_store_t *store;
     const char *dest;
     tiku_trk_state_accept_fn accept;
     tiku_trk_state_transform_fn transform;
@@ -32,7 +32,7 @@ copy_one(const char *attr, const void *value, size_t len, void *opaque)
         }
         src = transformed;
     }
-    if (tiku_trk_state_write(p->store, p->dest, attr, src, out_len) != 0) {
+    if (tiku_state_write(p->store, p->dest, attr, src, out_len) != 0) {
         p->failed = 1;
         return 1;
     }
@@ -41,7 +41,7 @@ copy_one(const char *attr, const void *value, size_t len, void *opaque)
 }
 
 int
-tiku_trk_state_pipeline_copy(tiku_trk_store_t *store, const char *source,
+tiku_trk_state_pipeline_copy(tiku_store_t *store, const char *source,
                              const char *dest, tiku_trk_state_accept_fn accept,
                              tiku_trk_state_transform_fn transform, void *ctx)
 {
@@ -52,7 +52,7 @@ tiku_trk_state_pipeline_copy(tiku_trk_store_t *store, const char *source,
         return -1;
     }
     p = (pipeline_t){ store, dest, accept, transform, ctx, 0, 0 };
-    visited = tiku_trk_state_each(store, source, copy_one, &p);
+    visited = tiku_state_each(store, source, copy_one, &p);
     if (visited < 0 || p.failed) {
         return -1;
     }

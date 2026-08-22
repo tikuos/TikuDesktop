@@ -11,9 +11,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_trk_attr.h"
+#include "tiku_attr.h"
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_iconpaint.h"
+#include "tiku_iconpaint.h"
 #include "tiku_trk_switcher_window.h"
 #include "tiku_trk_task.h"
 
@@ -21,10 +21,10 @@
 #define SWITCHER_PAD   12
 #define SWITCHER_ARROW 14
 
-static tiku_desk_rect_t
+static tiku_rect_t
 frame(tiku_trk_switcher_window_t *controller)
 {
-    tiku_desk_rect_t result;
+    tiku_rect_t result;
     int slots = controller->model.n < TIKU_TRK_SW_SLOTS
               ? controller->model.n : TIKU_TRK_SW_SLOTS;
 
@@ -39,17 +39,17 @@ frame(tiku_trk_switcher_window_t *controller)
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_switcher_window_t *controller = context;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
+    const tiku_font_t *font = tiku_font_plain();
     int64_t now = tiku_trk_now();
     char title[160];
     int i, slots;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     slots = controller->model.n < TIKU_TRK_SW_SLOTS
           ? controller->model.n : TIKU_TRK_SW_SLOTS;
     {
@@ -63,7 +63,7 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     for (i = -1; i <= slots; i++) {
         int which = controller->model.scroll + i;
         int size, center_x, center_y;
-        tiku_desk_rect_t box;
+        tiku_rect_t box;
 
         if (which < 0) {
             continue;
@@ -80,30 +80,30 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         box.w = size;
         box.h = size;
         if (which == controller->model.sel) {
-            tiku_desk_fill(surface, box, TIKU_DESK_C_SELECT);
+            tiku_fill(surface, box, TIKU_C_SELECT);
         }
-        if (!tiku_trk_icon_paint(surface, "app", box.x, box.y, size)) {
-            tiku_desk_frame(surface, box, TIKU_DESK_C_TEXT);
+        if (!tiku_icon_paint(surface, "app", box.x, box.y, size)) {
+            tiku_frame(surface, box, TIKU_C_TEXT);
         }
     }
     }
     if (tiku_trk_switcher_scroller(&controller->model, 0)) {
-        tiku_desk_text(surface, font, content.x + 4,
-                       content.y + SWITCHER_PAD + 28, "<", TIKU_DESK_C_TEXT);
+        tiku_text(surface, font, content.x + 4,
+                       content.y + SWITCHER_PAD + 28, "<", TIKU_C_TEXT);
     }
     if (tiku_trk_switcher_scroller(&controller->model, 1)) {
-        tiku_desk_text(surface, font, content.x + content.w - 12,
-                       content.y + SWITCHER_PAD + 28, ">", TIKU_DESK_C_TEXT);
+        tiku_text(surface, font, content.x + content.w - 12,
+                       content.y + SWITCHER_PAD + 28, ">", TIKU_C_TEXT);
     }
     tiku_trk_switcher_title(&controller->model, controller->model.sel,
                             controller->model.selwin, title, sizeof title);
-    tiku_desk_text(surface, font, content.x + SWITCHER_PAD,
-                   content.y + content.h - 10, title, TIKU_DESK_C_TEXT);
+    tiku_text(surface, font, content.x + SWITCHER_PAD,
+                   content.y + content.h - 10, title, TIKU_C_TEXT);
 }
 
 void
 tiku_trk_switcher_window_init(tiku_trk_switcher_window_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
+    tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
     int screen_w, int screen_h, int *dirty, char *status,
     size_t status_size)
 {
@@ -145,7 +145,7 @@ tiku_trk_switcher_window_open(tiku_trk_switcher_window_t *controller,
     }
     tiku_trk_switcher_open(&controller->model, tiku_trk_now(), backwards);
     if (controller->window == NULL || !controller->window->open) {
-        controller->window = tiku_desk_workspace_open(controller->workspace,
+        controller->window = tiku_workspace_open(controller->workspace,
             "Switcher", frame(controller), draw, controller, NULL);
     }
 }
@@ -169,7 +169,7 @@ tiku_trk_switcher_window_close(tiku_trk_switcher_window_t *controller,
                                int commit)
 {
     if (controller->window != NULL) {
-        tiku_desk_workspace_close(controller->workspace, controller->window);
+        tiku_workspace_close(controller->workspace, controller->window);
         controller->window = NULL;
     }
     if (commit && controller->model.sel >= 0 &&

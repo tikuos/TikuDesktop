@@ -20,16 +20,16 @@
 #include <unistd.h>
 
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_strings.h"
-#include "tiku_desk_host.h"
+#include "tiku_strings.h"
+#include "tiku_host.h"
 #include "tiku_trk_application.h"
-#include "tiku_trk_attr.h"
+#include "tiku_attr.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_edit.h"
-#include "tiku_trk_model.h"
-#include "tiku_trk_fs.h"
-#include "tiku_trk_iconpaint.h"
+#include "tiku_model.h"
+#include "tiku_fs.h"
+#include "tiku_iconpaint.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -39,7 +39,7 @@
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_scroll.h"
 #include "tiku_trk_titleview.h"
-#include "tiku_trk_volume.h"
+#include "tiku_volume.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_task.h"
 
@@ -58,10 +58,10 @@
 /* Tracker's own list row: ceilf(plain font size * 1.65) = 20 at 12 px. */
 
 typedef struct {
-    tiku_desk_host_t    *host;
-    tiku_desk_surface_t *surf;
+    tiku_host_t    *host;
+    tiku_surface_t *surf;
     tiku_trk_poseview_t *view;
-    tiku_trk_backend_t  *backend;
+    tiku_backend_t  *backend;
     char                 title[160];
     int                  row_h;
     int                  running;
@@ -72,12 +72,12 @@ typedef struct {
     int                  drag_active;
     int                  drag_x, drag_y;
     /* file operations */
-    tiku_trk_fs_t       *fs;
+    tiku_fs_t       *fs;
     char                 status[220];
     /* inline rename: the editor is a mode, as Tracker's TextWidget is */
     int                  editing;
     tiku_trk_edit_t      ed;
-    char                 edit_path[TIKU_TRK_PATH_MAX];
+    char                 edit_path[TIKU_PATH_MAX];
     int                  edit_row;
     /* The window's own activation state, which decides whether a selection
      * is PAINTED; and where the last press landed, for the long press. */
@@ -97,15 +97,15 @@ typedef struct {
      * (PVL-051, PVL-052, PVL-060). */
     tiku_trk_scroll_t    sb;
     tiku_trk_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
-    tiku_desk_rect_t     hsb_rect;
-    tiku_desk_rect_t     sb_rect;
+    tiku_rect_t     hsb_rect;
+    tiku_rect_t     sb_rect;
     /* The same container-window menus the desktop shell presents. */
     tiku_trk_cwmenu_t    menus;
     tiku_trk_menu_t     *popup;
     tiku_trk_menu_t     *popup_sub;
-    tiku_desk_rect_t     popup_frame;
-    tiku_desk_rect_t     popup_sub_frame;
-    tiku_desk_rect_t     viewbtn_rect;  /* the gutter's view popup    */
+    tiku_rect_t     popup_frame;
+    tiku_rect_t     popup_sub_frame;
+    tiku_rect_t     viewbtn_rect;  /* the gutter's view popup    */
     int                  theme_dark;    /* -1 until first applied     */
     int                  bar_open;
     /* Browser chrome owns its history and location editor per window. */
@@ -113,7 +113,7 @@ typedef struct {
     tiku_trk_edit_t      nav_edit;
     int                  nav_editing;
     int                  show_nav;
-    char                 prefs_path[TIKU_TRK_PATH_MAX];
+    char                 prefs_path[TIKU_PATH_MAX];
     int                  prefs_present;
     /* TS-052: the preference that swaps type-to-select for type-to-filter,
      * applied live when the settings file changes and re-applied when the
@@ -143,13 +143,13 @@ static void menu_invoke(app_t *a, int command);
 
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
 static int
-paint_menu_icon(tiku_desk_surface_t *s, const char *icon, int x, int y,
+paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
                 int size, int dimmed)
 {
     return dimmed
-        ? tiku_trk_icon_paint_dim(s, icon, x, y, size, 0.55f,
-                                  TIKU_DESK_C_PANEL)
-        : tiku_trk_icon_paint(s, icon, x, y, size);
+        ? tiku_icon_paint_dim(s, icon, x, y, size, 0.55f,
+                                  TIKU_C_PANEL)
+        : tiku_icon_paint(s, icon, x, y, size);
 }
 
 /** @brief Hand a modal filesystem answer back to the operation engine. */
@@ -160,13 +160,13 @@ app_alert_answer(void *context, const tiku_trk_alert_t *alert)
 
     if (alert->tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
         if (alert->chosen == alert->cancel) {
-            tiku_trk_fs_cancel(a->fs);
+            tiku_fs_cancel(a->fs);
         } else {
-            tiku_trk_fs_resolve(a->fs,
+            tiku_fs_resolve(a->fs,
                                 tiku_trk_alert_conflict_answer(alert));
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
-        tiku_trk_fs_resolve_error(a->fs, alert->chosen != alert->cancel);
+        tiku_fs_resolve_error(a->fs, alert->chosen != alert->cancel);
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_EMPTY_TRASH) {
         if (alert->chosen != alert->cancel) {
             tiku_trk_folder_file_actions_answer_empty(&a->file_actions);
@@ -203,7 +203,7 @@ app_alert_stop(void *context)
 {
     app_t *a = context;
 
-    tiku_trk_fs_cancel(a->fs);
+    tiku_fs_cancel(a->fs);
 }
 
 /** @brief Index of the first selected row, or -1. */
@@ -248,8 +248,8 @@ next_edit_row(app_t *a, int row, int backwards)
 
         if (at < 0) { at += n; }
         p = tiku_trk_poseview_at(a->view, at);
-        if (p != NULL && p->model.kind != TIKU_TRK_KIND_DEVICE_NODE &&
-            p->model.kind != TIKU_TRK_KIND_VIRTUAL_DIR) {
+        if (p != NULL && p->model.kind != TIKU_KIND_DEVICE_NODE &&
+            p->model.kind != TIKU_KIND_VIRTUAL_DIR) {
             return at;
         }
     }
@@ -283,11 +283,11 @@ measure_prefix_px(const char *text, int n, void *ctx)
     if (n >= (int)sizeof tmp) { n = (int)sizeof tmp - 1; }
     memcpy(tmp, text, (size_t)n);
     tmp[n] = '\0';
-    return tiku_desk_text_width(tiku_desk_font_plain(), tmp);
+    return tiku_text_width(tiku_font_plain(), tmp);
 }
 
 static void blit(app_t *a);
-static tiku_desk_rect_t menubar_rect(const app_t *a);
+static tiku_rect_t menubar_rect(const app_t *a);
 
 /** @brief The navigator takes no layout space while globally hidden. */
 static int
@@ -297,10 +297,10 @@ navigator_height(const app_t *a)
 }
 
 /** @brief Geometry of the row area, derived once per draw. */
-static tiku_desk_rect_t
+static tiku_rect_t
 list_rect(const app_t *a)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
     int titled = (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST);
 
@@ -315,11 +315,11 @@ list_rect(const app_t *a)
 }
 
 /** @brief Browser controls directly below the menu bar. */
-static tiku_desk_rect_t
+static tiku_rect_t
 navigator_rect(const app_t *a)
 {
-    tiku_desk_rect_t bar = menubar_rect(a);
-    tiku_desk_rect_t r = { BORDER, bar.y + bar.h,
+    tiku_rect_t bar = menubar_rect(a);
+    tiku_rect_t r = { BORDER, bar.y + bar.h,
                            a->surf->w - 2 * BORDER,
                            navigator_height(a) };
 
@@ -328,27 +328,27 @@ navigator_rect(const app_t *a)
 
 /** @brief Split the navigator into its three buttons and location field. */
 static void
-navigator_layout(const app_t *a, tiku_desk_rect_t *back,
-                 tiku_desk_rect_t *forward, tiku_desk_rect_t *up,
-                 tiku_desk_rect_t *field)
+navigator_layout(const app_t *a, tiku_rect_t *back,
+                 tiku_rect_t *forward, tiku_rect_t *up,
+                 tiku_rect_t *field)
 {
-    tiku_desk_rect_t r = navigator_rect(a);
+    tiku_rect_t r = navigator_rect(a);
 
-    *back = (tiku_desk_rect_t){ r.x + 2, r.y + 2, 30, r.h - 4 };
-    *forward = (tiku_desk_rect_t){ back->x + back->w + 2, r.y + 2,
+    *back = (tiku_rect_t){ r.x + 2, r.y + 2, 30, r.h - 4 };
+    *forward = (tiku_rect_t){ back->x + back->w + 2, r.y + 2,
                                    30, r.h - 4 };
-    *up = (tiku_desk_rect_t){ forward->x + forward->w + 2, r.y + 2,
+    *up = (tiku_rect_t){ forward->x + forward->w + 2, r.y + 2,
                               34, r.h - 4 };
-    *field = (tiku_desk_rect_t){ up->x + up->w + 4, r.y + 2,
+    *field = (tiku_rect_t){ up->x + up->w + 4, r.y + 2,
                                  r.x + r.w - (up->x + up->w + 6),
                                  r.h - 4 };
 }
 
 /** @brief The menu bar inside this window's content area. */
-static tiku_desk_rect_t
+static tiku_rect_t
 menubar_rect(const app_t *a)
 {
-    tiku_desk_rect_t r = { BORDER, TAB_H + BORDER,
+    tiku_rect_t r = { BORDER, TAB_H + BORDER,
                            a->surf->w - 2 * BORDER,
                            a->menus.bar.height };
 
@@ -356,10 +356,10 @@ menubar_rect(const app_t *a)
 }
 
 static void
-draw_folder_icon(app_t *a, tiku_desk_rect_t bar)
+draw_folder_icon(app_t *a, tiku_rect_t bar)
 {
-    tiku_trk_model_t model;
-    tiku_desk_rect_t icon;
+    tiku_model_t model;
+    tiku_rect_t icon;
     int size = bar.h - 4;
 
     if (a->backend == NULL || a->backend->ops == NULL ||
@@ -369,9 +369,9 @@ draw_folder_icon(app_t *a, tiku_desk_rect_t bar)
     }
     if (size > 24) { size = 24; }
     if (size < 12) { size = 12; }
-    icon = (tiku_desk_rect_t){ bar.x + bar.w - size - 3, bar.y + 2,
+    icon = (tiku_rect_t){ bar.x + bar.w - size - 3, bar.y + 2,
                                size, size };
-    (void)tiku_trk_icon_paint(a->surf, tiku_trk_model_icon_name(&model),
+    (void)tiku_icon_paint(a->surf, tiku_model_icon_name(&model),
                               icon.x, icon.y, icon.w);
 }
 
@@ -411,15 +411,15 @@ menu_ctx(app_t *a, unsigned mods)
     c.is_root = !c.can_open_parent;
     c.is_query = tiku_trk_poseview_is_query(a->view);
     {
-        char trash[TIKU_TRK_PATH_MAX];
+        char trash[TIKU_PATH_MAX];
 
-        if (a->fs != NULL && tiku_trk_fs_trash_dir(
+        if (a->fs != NULL && tiku_fs_trash_dir(
                 a->fs, tiku_trk_poseview_path(a->view), trash,
                 sizeof trash) == 0) {
-            tiku_trk_model_t tm;
+            tiku_model_t tm;
 
             c.is_trash = strcmp(tiku_trk_poseview_path(a->view), trash) == 0;
-            c.in_trash = !c.is_trash && tiku_trk_fs_in_trash(
+            c.in_trash = !c.is_trash && tiku_fs_in_trash(
                 a->fs, tiku_trk_poseview_path(a->view));
             if (a->backend->ops->stat(a->backend, trash, &tm) == 0) {
                 c.trash_full = tm.facts.trash_full;
@@ -427,21 +427,21 @@ menu_ctx(app_t *a, unsigned mods)
         }
     }
     if (p != NULL) {
-        c.is_virtual = (p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
-        c.selection_is_volume = p->model.kind == TIKU_TRK_KIND_VOLUME ||
-                                p->model.kind == TIKU_TRK_KIND_ROOT;
+        c.is_virtual = (p->model.kind == TIKU_KIND_VIRTUAL_DIR);
+        c.selection_is_volume = p->model.kind == TIKU_KIND_VOLUME ||
+                                p->model.kind == TIKU_KIND_ROOT;
         if (c.selection_is_volume) {
             /* Scanned only when a volume is the selection: menus are
              * rebuilt per draw, and the mount table is a file. */
-            tiku_trk_volumes_t vols;
-            const tiku_trk_volume_t *vol;
+            tiku_volumes_t vols;
+            const tiku_volume_t *vol;
 
-            if (tiku_trk_volumes_scan(&vols) > 0 &&
-                (vol = tiku_trk_volume_of(&vols, p->model.path)) != NULL) {
+            if (tiku_volumes_scan(&vols) > 0 &&
+                (vol = tiku_volume_of(&vols, p->model.path)) != NULL) {
                 c.selection_is_boot = vol->is_boot;
             }
         }
-        c.selection_ro = !tiku_trk_model_is_writable(&p->model);
+        c.selection_ro = !tiku_model_is_writable(&p->model);
     }
     c.can_trash_or_dup = c.selection > 0 && !c.selection_ro;
     return c;
@@ -450,7 +450,7 @@ menu_ctx(app_t *a, unsigned mods)
 static int
 visible_rows(const app_t *a)
 {
-    tiku_desk_rect_t r = list_rect(a);
+    tiku_rect_t r = list_rect(a);
 
     return (a->row_h > 0) ? (r.h - 4) / a->row_h : 0;
 }
@@ -459,7 +459,7 @@ visible_rows(const app_t *a)
 static int
 measure_text(const char *s, void *ctx)
 {
-    return tiku_desk_text_width(ctx, s);
+    return tiku_text_width(ctx, s);
 }
 
 /** @brief Where a column's data starts on screen, allowing for the scroll. */
@@ -477,15 +477,15 @@ col_x(const app_t *a, const tiku_trk_column_t *c)
  * the DATA rather than inside the rectangle.
  */
 static void
-draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
+draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
            int pressed, int drag_dx)
 {
-    tiku_desk_surface_t *s = a->surf;
+    tiku_surface_t *s = a->surf;
     /* Three-quarters of the body text, the source's own strip proportion
      * (TS-019): the titles are labels ABOUT the rows, not rows. */
-    const tiku_desk_font_t *f =
-        tiku_desk_font_at(tiku_desk_font_size() * 3 / 4);
-    tiku_desk_rect_t r;
+    const tiku_font_t *f =
+        tiku_font_at(tiku_font_size() * 3 / 4);
+    tiku_rect_t r;
     char fit[64];
     int tw, tx, data_x = col_x(a, c) + drag_dx;
 
@@ -493,16 +493,16 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
     r.y = strip.y;
     r.w = c->width + TIKU_TRK_COL_MARGIN;
     r.h = strip.h;
-    tiku_desk_fill(s, r, pressed ? tiku_desk_tint(TIKU_DESK_C_PANEL, 1.15f)
-                                 : TIKU_DESK_C_PANEL);
-    tiku_desk_bevel(s, r, tiku_desk_tint(TIKU_DESK_C_PANEL, 0.0f),
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, 1.06f));
+    tiku_fill(s, r, pressed ? tiku_tint(TIKU_C_PANEL, 1.15f)
+                                 : TIKU_C_PANEL);
+    tiku_bevel(s, r, tiku_tint(TIKU_C_PANEL, 0.0f),
+                    tiku_tint(TIKU_C_PANEL, 1.06f));
     /* Truncated against the column's own width -- the margins are not
      * text space -- and losing its END, because the head of a column name
      * is what identifies it. */
-    (void)tiku_trk_text_fit(c->title, c->width, TIKU_TRK_TRUNC_END,
+    (void)tiku_text_fit(c->title, c->width, TIKU_TRUNC_END,
                             measure_text, (void *)f, fit, sizeof fit);
-    tw = tiku_desk_text_width(f, fit);
+    tw = tiku_text_width(f, fit);
     switch (c->alignment) {
     case TIKU_TRK_ALIGN_RIGHT:
         tx = data_x + c->width - tw;
@@ -516,14 +516,14 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
         tx = data_x + 1;
         break;
     }
-    tiku_desk_text(s, f, tx, r.y + (r.h - f->height) / 2 + f->ascent, fit,
-                   pressed ? tiku_desk_tint(TIKU_DESK_C_TEXT, 1.20f)
-                           : TIKU_DESK_C_TEXT);
+    tiku_text(s, f, tx, r.y + (r.h - f->height) / 2 + f->ascent, fit,
+                   pressed ? tiku_tint(TIKU_C_TEXT, 1.20f)
+                           : TIKU_C_TEXT);
     if (pressed && drag_dx != 0) {
         /* A dragged title is outlined where it will LAND, which is the only
          * thing on screen that says the drag is going to move a column
          * rather than sort it. */
-        tiku_desk_frame(s, r, TIKU_DESK_C_FOCUS);
+        tiku_frame(s, r, TIKU_C_FOCUS);
     }
     {
         /* The sort mark sits in the left margin, six pixels before the text
@@ -535,8 +535,8 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
                          tiku_trk_poseview_sort_secondary(a->view));
         int cx = tx - 6, cy = r.y + r.h / 2, k;
         int up = tiku_trk_poseview_sort_reverse(a->view);
-        tiku_desk_rgb_t ink =
-            tiku_desk_tint(TIKU_DESK_C_PANEL, primary ? 1.60f : 1.30f);
+        tiku_rgb_t ink =
+            tiku_tint(TIKU_C_PANEL, primary ? 1.60f : 1.30f);
 
         if (primary || secondary) {
             /* Ascending points DOWN and reverse points UP, which is the way
@@ -545,7 +545,7 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
             for (k = 0; k < 3; k++) {
                 int wgt = up ? k : 2 - k;
 
-                tiku_desk_hline(s, cx - wgt, cy - 1 + k, 2 * wgt + 1, ink);
+                tiku_hline(s, cx - wgt, cy - 1 + k, 2 * wgt + 1, ink);
             }
         }
     }
@@ -561,10 +561,10 @@ draw_title(app_t *a, tiku_desk_rect_t strip, const tiku_trk_column_t *c,
  * advances at the same rate whatever the draw rate happens to be.
  */
 static void
-draw_pole(app_t *a, tiku_desk_rect_t count)
+draw_pole(app_t *a, tiku_rect_t count)
 {
-    tiku_desk_surface_t *s = a->surf;
-    tiku_desk_rect_t r;
+    tiku_surface_t *s = a->surf;
+    tiku_rect_t r;
     int phase = (int)((tiku_trk_now() / 60000) % 6);
     int i;
 
@@ -572,16 +572,16 @@ draw_pole(app_t *a, tiku_desk_rect_t count)
     r.h = 7;
     r.x = count.x + count.w - r.w - 3;
     r.y = count.y + (COUNT_H - r.h) / 2;
-    tiku_desk_fill(s, r, TIKU_DESK_C_DOC);
-    tiku_desk_frame(s, r, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.30f));
+    tiku_fill(s, r, TIKU_C_DOC);
+    tiku_frame(s, r, tiku_tint(TIKU_C_PANEL, 1.30f));
     for (i = -6; i < r.h + 6; i += 3) {
         int y = r.y + i + phase;
         int k;
 
         for (k = 0; k < 2; k++) {
             if (y + k >= r.y + 1 && y + k < r.y + r.h - 1) {
-                tiku_desk_hline(s, r.x + 1, y + k, r.w - 2,
-                                tiku_desk_tint(TIKU_DESK_C_PANEL, 1.45f));
+                tiku_hline(s, r.x + 1, y + k, r.w - 2,
+                                tiku_tint(TIKU_C_PANEL, 1.45f));
             }
         }
     }
@@ -591,7 +591,7 @@ draw_pole(app_t *a, tiku_desk_rect_t count)
 static void
 count_label(app_t *a, int width, char *label, size_t max)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const tiku_font_t *f = tiku_font_plain();
     const char *typed = tiku_trk_poseview_type_string(a->view);
     int total = tiku_trk_poseview_count(a->view);
 
@@ -606,7 +606,7 @@ count_label(app_t *a, int width, char *label, size_t max)
         char fit[200];
         int sel = tiku_trk_poseview_selection_count(a->view);
 
-        if (tiku_trk_text_fit(typed, width - 70, TIKU_TRK_TRUNC_MIDDLE,
+        if (tiku_text_fit(typed, width - 70, TIKU_TRUNC_MIDDLE,
                               measure_text, (void *)f, fit,
                               sizeof fit) < 0) {
             snprintf(fit, sizeof fit, "%s", typed);
@@ -619,7 +619,7 @@ count_label(app_t *a, int width, char *label, size_t max)
     } else if (typed[0] != '\0') {
         /* TS-041: truncated from the BEGINNING, so the newest characters
          * -- the ones being typed -- stay visible. */
-        if (tiku_trk_text_fit(typed, width - 12, TIKU_TRK_TRUNC_BEGIN,
+        if (tiku_text_fit(typed, width - 12, TIKU_TRUNC_BEGIN,
                               measure_text, (void *)f, label,
                               max > 240u ? 240u : max) < 0) {
             snprintf(label, max, "%s", typed);
@@ -627,41 +627,41 @@ count_label(app_t *a, int width, char *label, size_t max)
     } else if (tiku_trk_poseview_pole(a->view, tiku_trk_now())) {
         /* TS-038: a load long enough to notice says so.  The count is not
          * final yet, so it is not shown as though it were. */
-        snprintf(label, max, tiku_trk_str("status.items_so_far"), total,
+        snprintf(label, max, tiku_str("status.items_so_far"), total,
                  (total == 1) ? "" : "s");
     } else if (total == 0) {
         /* TS-037: an empty folder says so in words.  "0 items" reads like
          * a count that failed rather than a folder with nothing in it. */
         snprintf(label, max, "%s",
                  tiku_trk_poseview_is_filtering(a->view)
-                     ? tiku_trk_str("status.nothing_matches")
-                     : tiku_trk_str("status.empty_folder"));
+                     ? tiku_str("status.nothing_matches")
+                     : tiku_str("status.empty_folder"));
     } else if (tiku_trk_poseview_selection_count(a->view) > 0) {
         /* What is picked out is the thing being worked on, so the count
          * says how much of the folder that is (TS-037). */
-        snprintf(label, max, tiku_trk_str("status.selected"),
+        snprintf(label, max, tiku_str("status.selected"),
                  tiku_trk_poseview_selection_count(a->view), total);
     } else {
-        snprintf(label, max, tiku_trk_str("status.items_n"), total,
+        snprintf(label, max, tiku_str("status.items_n"), total,
                  (total == 1) ? "" : "s",
                  tiku_trk_poseview_is_filtering(a->view)
-                     ? tiku_trk_str("status.filtered") : "");
+                     ? tiku_str("status.filtered") : "");
     }
 }
 
 static void
-draw_count(app_t *a, tiku_desk_rect_t list)
+draw_count(app_t *a, tiku_rect_t list)
 {
-    tiku_desk_surface_t *s = a->surf;
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    tiku_desk_rect_t count = { list.x, list.y + list.h, list.w, COUNT_H };
+    tiku_surface_t *s = a->surf;
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rect_t count = { list.x, list.y + list.h, list.w, COUNT_H };
     const char *typed = tiku_trk_poseview_type_string(a->view);
     char label[240];
 
     /* The view-mode popup lives IN the scroller gutter, the one kind of
      * control that may (NeXT UIG ch7: only controls that decide how the
      * document is viewed belong beside the scrollers). */
-    a->viewbtn_rect = (tiku_desk_rect_t){ list.x + 110, count.y + 1, 18,
+    a->viewbtn_rect = (tiku_rect_t){ list.x + 110, count.y + 1, 18,
                                           COUNT_H - 2 };
 
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST &&
@@ -673,7 +673,7 @@ draw_count(app_t *a, tiku_desk_rect_t list)
         int tpos = 0, tlen = 0;
 
         count.w = 130;
-        a->hsb_rect = (tiku_desk_rect_t){ list.x + count.w,
+        a->hsb_rect = (tiku_rect_t){ list.x + count.w,
                                           count.y, list.w - count.w,
                                           COUNT_H };
         (void)tiku_trk_scroll_set_range(&a->hsb, content, list.w);
@@ -689,51 +689,51 @@ draw_count(app_t *a, tiku_desk_rect_t list)
             frac = 1.0f;
             pos = 0.0f;
         }
-        tiku_desk_ui_scrollbar(s, a->hsb_rect, pos, frac, 1);
+        tiku_ui_scrollbar(s, a->hsb_rect, pos, frac, 1);
         if (a->active && !tiku_trk_poseview_is_query(a->view)) {
-            tiku_desk_frame(s, a->hsb_rect, TIKU_DESK_C_FOCUS);
+            tiku_frame(s, a->hsb_rect, TIKU_C_FOCUS);
         }
     } else {
-        a->hsb_rect = (tiku_desk_rect_t){ 0, 0, 0, 0 };
+        a->hsb_rect = (tiku_rect_t){ 0, 0, 0, 0 };
     }
 
     /* While typing, the string replaces the count on a document ground --
      * the user needs to see what they have typed, not how many items. */
     if (a->status[0] == '\0' && typed[0] != '\0') {
-        tiku_desk_ui_sunken(s, count, TIKU_DESK_C_DOC);
+        tiku_ui_sunken(s, count, TIKU_C_DOC);
     } else {
-        tiku_desk_fill(s, count, TIKU_DESK_C_PANEL);
+        tiku_fill(s, count, TIKU_C_PANEL);
     }
     count_label(a, count.w, label, sizeof label);
     {   /* TS-039: while the pole is up the text gives up the strip it
          * occupies, so the two never overlap. */
         int pole = tiku_trk_poseview_pole(a->view, tiku_trk_now());
-        tiku_desk_rect_t clip = count;
+        tiku_rect_t clip = count;
 
         if (pole) {
             clip.w -= POLE_W;
         }
-        tiku_desk_clip_set(s, clip);
-        tiku_desk_text(s, f, count.x + 5,
+        tiku_clip_set(s, clip);
+        tiku_text(s, f, count.x + 5,
                        count.y + (COUNT_H - f->height) / 2 + f->ascent,
-                       label, TIKU_DESK_C_TEXT);
-        tiku_desk_clip_reset(s);
+                       label, TIKU_C_TEXT);
+        tiku_clip_reset(s);
         if (pole) {
             draw_pole(a, count);
         }
     }
     {   /* The popup itself: a small raised button wearing the popup
          * triangle, beside the count. */
-        tiku_desk_rect_t b = a->viewbtn_rect;
+        tiku_rect_t b = a->viewbtn_rect;
         int cx = b.x + b.w / 2, cy = b.y + b.h / 2, i;
 
-        tiku_desk_fill(s, b, TIKU_DESK_C_PANEL);
-        tiku_desk_bevel(s, b, TIKU_DESK_RGB(255, 255, 255),
-                        tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                       TIKU_DESK_DARKEN_2));
+        tiku_fill(s, b, TIKU_C_PANEL);
+        tiku_bevel(s, b, TIKU_RGB(255, 255, 255),
+                        tiku_tint(TIKU_C_PANEL,
+                                       TIKU_DARKEN_2));
         for (i = 0; i < 4; i++) {
-            tiku_desk_hline(s, cx - 3 + i, cy - 2 + i, 7 - 2 * i,
-                            TIKU_DESK_RGB(60, 60, 60));
+            tiku_hline(s, cx - 3 + i, cy - 2 + i, 7 - 2 * i,
+                            TIKU_RGB(60, 60, 60));
         }
     }
 }
@@ -742,9 +742,9 @@ draw_count(app_t *a, tiku_desk_rect_t list)
 static void
 draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
 {
-    tiku_desk_surface_t *s = a->surf;
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    tiku_desk_rect_t box;
+    tiku_surface_t *s = a->surf;
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rect_t box;
     char label[64];
     int tw, lx, art = tiku_trk_poseview_art_size(a->view);
 
@@ -767,17 +767,17 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
     if (!((tiku_trk_clip_mode_of(&a->clip, p->model.node_id) ==
                TIKU_TRK_CLIP_MOVE)
             /* IV-023: cut poses are drawn faded in icon modes too. */
-            ? tiku_trk_icon_paint_dim(s, tiku_trk_model_icon_name(&p->model),
-                  box.x, box.y, art, 0.55f, TIKU_DESK_C_DOC)
+            ? tiku_icon_paint_dim(s, tiku_model_icon_name(&p->model),
+                  box.x, box.y, art, 0.55f, TIKU_C_DOC)
             : drawn_sel
-            ? tiku_trk_icon_paint_selected(s,
-                  tiku_trk_model_icon_name(&p->model), box.x, box.y, art)
-            : tiku_trk_icon_paint(s, tiku_trk_model_icon_name(&p->model),
+            ? tiku_icon_paint_selected(s,
+                  tiku_model_icon_name(&p->model), box.x, box.y, art)
+            : tiku_icon_paint(s, tiku_model_icon_name(&p->model),
                                   box.x, box.y, art))) {
         /* An icon the set does not carry still gets a cell of the right size,
          * so a gap in the art never disturbs the layout. */
-        tiku_desk_fill(s, box, TIKU_DESK_RGB(250, 250, 250));
-        tiku_desk_frame(s, box, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+        tiku_fill(s, box, TIKU_RGB(250, 250, 250));
+        tiku_frame(s, box, tiku_tint(TIKU_C_PANEL, 1.40f));
     }
 
     /* A name wider than its cell loses its MIDDLE, not its tail: icons sit on
@@ -786,7 +786,7 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
      * the box that selects a label and the text drawn in it are measured
      * from the same string in both shells (IV-047). */
     (void)tiku_trk_poseview_fit_label(a->view, p, label, sizeof label);
-    tw = tiku_desk_text_width(f, label);
+    tw = tiku_text_width(f, label);
     if (mini) {
         /* PVL-064/IV-048: in mini-icon mode the label sits to the RIGHT of
          * the icon, which is what the hit rect already assumes -- drawn
@@ -801,41 +801,41 @@ draw_pose_icon(app_t *a, const tiku_trk_pose_t *p, int x, int y, int size)
                       : box.y + box.h + 2;
 
         if (drawn_sel) {
-            tiku_desk_rect_t hl = { lx - 2, ly, tw + 4, f->height + 1 };
+            tiku_rect_t hl = { lx - 2, ly, tw + 4, f->height + 1 };
 
-            tiku_desk_fill(s, hl, TIKU_DESK_C_SELECT);
+            tiku_fill(s, hl, TIKU_C_SELECT);
         }
-        tiku_desk_text(s, f, lx, ly + f->ascent, label,
-                       drawn_sel ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
-        if (p->model.kind == TIKU_TRK_KIND_SYMLINK) {
+        tiku_text(s, f, lx, ly + f->ascent, label,
+                       drawn_sel ? TIKU_C_SELTEXT : TIKU_C_TEXT);
+        if (p->model.kind == TIKU_KIND_SYMLINK) {
             /* MA-075: a link's name is underlined, and only its name -- the
              * one marker in this Tracker that says what an entry IS without
              * a second column. */
-            tiku_desk_hline(s, lx, ly + f->ascent + 2, tw,
-                            drawn_sel ? TIKU_DESK_C_SELTEXT
-                                      : TIKU_DESK_C_TEXT);
+            tiku_hline(s, lx, ly + f->ascent + 2, tw,
+                            drawn_sel ? TIKU_C_SELTEXT
+                                      : TIKU_C_TEXT);
         }
     }
 }
 
 /** @brief Icon mode: poses at their own positions, plus the rubber band. */
 static void
-draw_icons(app_t *a, tiku_desk_rect_t list)
+draw_icons(app_t *a, tiku_rect_t list)
 {
-    tiku_desk_surface_t *s = a->surf;
+    tiku_surface_t *s = a->surf;
     int n = tiku_trk_poseview_count(a->view);
     /* The cell comes from the layout and the ART from the mode: in
      * mini-icon mode the two differ, which is the whole point of it. */
     int size = tiku_trk_poseview_art_size(a->view);
     int i;
 
-    tiku_desk_ui_sunken(s, list, a->read_only
-                                 ? tiku_desk_tint(TIKU_DESK_C_DOC, 0.94f)
-                                 : TIKU_DESK_C_DOC);
+    tiku_ui_sunken(s, list, a->read_only
+                                 ? tiku_tint(TIKU_C_DOC, 0.94f)
+                                 : TIKU_C_DOC);
     if (a->active) {
-        tiku_desk_frame(s, list, TIKU_DESK_C_FOCUS);
+        tiku_frame(s, list, TIKU_C_FOCUS);
     }
-    tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
+    tiku_clip_set(s, tiku_inset(list, 2));
     for (i = 0; i < n; i++) {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
         int px, py;
@@ -850,7 +850,7 @@ draw_icons(app_t *a, tiku_desk_rect_t list)
         /* Tinted, the way Tracker draws it when the setting is left alone:
          * this shell carries no settings of its own, so it gets the
          * default rather than a third style nobody asked for. */
-        tiku_desk_rect_t r;
+        tiku_rect_t r;
         int lox = (a->band_x0 < a->band_x1) ? a->band_x0 : a->band_x1;
         int loy = (a->band_y0 < a->band_y1) ? a->band_y0 : a->band_y1;
 
@@ -860,9 +860,9 @@ draw_icons(app_t *a, tiku_desk_rect_t list)
                                        : a->band_x1 - a->band_x0);
         r.h = (a->band_y0 > a->band_y1 ? a->band_y0 - a->band_y1
                                        : a->band_y1 - a->band_y0);
-        tiku_trk_paint_band(s, r, 1);
+        tiku_paint_band(s, r, 1);
     }
-    tiku_desk_clip_reset(s);
+    tiku_clip_reset(s);
 }
 
 /** @brief Menus sit above every other part of the window. */
@@ -889,28 +889,28 @@ draw_popup(app_t *a)
 static void
 draw_navigator(app_t *a)
 {
-    tiku_desk_rect_t back, forward, up, field;
+    tiku_rect_t back, forward, up, field;
     unsigned back_state = tiku_trk_navigator_can_back(&a->nav)
-                              ? 0u : TIKU_DESK_S_DISABLED;
+                              ? 0u : TIKU_S_DISABLED;
     unsigned forward_state = tiku_trk_navigator_can_forward(&a->nav)
-                                 ? 0u : TIKU_DESK_S_DISABLED;
+                                 ? 0u : TIKU_S_DISABLED;
     unsigned up_state = strcmp(tiku_trk_navigator_current(&a->nav), "/")
-                            ? 0u : TIKU_DESK_S_DISABLED;
+                            ? 0u : TIKU_S_DISABLED;
 
     if (!a->show_nav) {
         return;
     }
     navigator_layout(a, &back, &forward, &up, &field);
-    tiku_desk_ui_panel(a->surf, navigator_rect(a));
-    tiku_desk_ui_button(a->surf, back, "<", back_state);
-    tiku_desk_ui_button(a->surf, forward, ">", forward_state);
-    tiku_desk_ui_button(a->surf, up, "Up", up_state);
+    tiku_ui_panel(a->surf, navigator_rect(a));
+    tiku_ui_button(a->surf, back, "<", back_state);
+    tiku_ui_button(a->surf, forward, ">", forward_state);
+    tiku_ui_button(a->surf, up, "Up", up_state);
     if (a->nav_editing) {
-        tiku_desk_ui_textfield_sel(a->surf, field, a->nav_edit.text,
+        tiku_ui_textfield_sel(a->surf, field, a->nav_edit.text,
                                    a->nav_edit.caret, a->nav_edit.sel_a,
-                                   a->nav_edit.sel_b, TIKU_DESK_S_FOCUS);
+                                   a->nav_edit.sel_b, TIKU_S_FOCUS);
     } else {
-        tiku_desk_ui_textfield(a->surf, field,
+        tiku_ui_textfield(a->surf, field,
                                tiku_trk_navigator_current(&a->nav), -1, 0u);
     }
 }
@@ -918,11 +918,11 @@ draw_navigator(app_t *a)
 static void
 draw(app_t *a)
 {
-    tiku_desk_surface_t *s = a->surf;
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    tiku_surface_t *s = a->surf;
+    const tiku_font_t *f = tiku_font_plain();
     const tiku_trk_column_t *cols;
-    tiku_desk_rect_t win = { 0, 0, s->w, s->h };
-    tiku_desk_rect_t list, title, bar, count;
+    tiku_rect_t win = { 0, 0, s->w, s->h };
+    tiku_rect_t list, title, bar, count;
     tiku_trk_sc_ctx_t mc;
     int ncol = tiku_trk_poseview_columns(a->view, &cols);
     int rows = visible_rows(a);
@@ -930,7 +930,7 @@ draw(app_t *a)
     int total = tiku_trk_poseview_count(a->view);
     int i;
 
-    (void)tiku_desk_ui_window(s, win, a->title, 1);
+    (void)tiku_ui_window(s, win, a->title, 1);
     mc = menu_ctx(a, 0u);
     tiku_trk_cwmenu_rebuild(&a->menus, &mc);
     a->menus.bar.open = a->bar_open;
@@ -946,12 +946,12 @@ draw(app_t *a)
 
     /* The title strip.  Every title is placed from its column's OFFSET, so
      * a title and the cells beneath it cannot drift apart. */
-    title = (tiku_desk_rect_t){ list.x,
+    title = (tiku_rect_t){ list.x,
                                 bar.y + bar.h + navigator_height(a),
                                 list.w, TITLE_H };
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
-        tiku_desk_fill(s, title, TIKU_DESK_C_PANEL);
-        tiku_desk_clip_set(s, title);
+        tiku_fill(s, title, TIKU_C_PANEL);
+        tiku_clip_set(s, title);
         {
         int dragged, drag_dx = 0;
 
@@ -970,7 +970,7 @@ draw(app_t *a)
             }
         }
         }
-        tiku_desk_clip_reset(s);
+        tiku_clip_reset(s);
     }
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
@@ -984,18 +984,18 @@ draw(app_t *a)
 
     /* Rows.  A store that cannot be written to is tinted, so a window that
      * will refuse every edit says so before one is attempted (PVL-076). */
-    tiku_desk_ui_sunken(s, list, a->read_only
-                                 ? tiku_desk_tint(TIKU_DESK_C_DOC, 0.94f)
-                                 : TIKU_DESK_C_DOC);
+    tiku_ui_sunken(s, list, a->read_only
+                                 ? tiku_tint(TIKU_C_DOC, 0.94f)
+                                 : TIKU_C_DOC);
     if (a->active) {
         /* CW-019: the focus border says which view the keyboard is aimed
          * at, which matters the moment there is more than one. */
-        tiku_desk_frame(s, list, TIKU_DESK_C_FOCUS);
+        tiku_frame(s, list, TIKU_C_FOCUS);
     }
-    tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
+    tiku_clip_set(s, tiku_inset(list, 2));
     for (i = 0; i < rows && scroll + i < total; i++) {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, scroll + i);
-        tiku_desk_rect_t row = { list.x + 2, list.y + 2 + i * a->row_h,
+        tiku_rect_t row = { list.x + 2, list.y + 2 + i * a->row_h,
                                  list.w - 4, a->row_h };
         int j;
 
@@ -1008,14 +1008,14 @@ draw(app_t *a)
          * PAINTED depends on the window -- except during a band, which
          * paints its sweep whatever the window is doing. */
         drawn_sel = tiku_trk_poseview_draws_selected(a->view, p);
-        tiku_desk_fill(s, row, TIKU_DESK_C_DOC);
+        tiku_fill(s, row, TIKU_C_DOC);
         if (drawn_sel && ncol > 0) {
             /* IV-024: selection belongs to the Name cell.  Keep the icon
              * selected, but leave Kind/Value/Location cells on document
              * ground instead of turning the whole row into one banner. */
-            tiku_desk_rect_t name = { col_x(a, &cols[0]), row.y,
+            tiku_rect_t name = { col_x(a, &cols[0]), row.y,
                                       cols[0].width, row.h };
-            tiku_desk_rect_t inner = tiku_desk_inset(list, 2);
+            tiku_rect_t inner = tiku_inset(list, 2);
             int x0 = (name.x > inner.x) ? name.x : inner.x;
             int x1 = (name.x + name.w < inner.x + inner.w)
                          ? name.x + name.w : inner.x + inner.w;
@@ -1023,7 +1023,7 @@ draw(app_t *a)
             name.x = x0;
             name.w = (x1 > x0) ? x1 - x0 : 0;
             if (name.w > 0) {
-                tiku_desk_fill(s, name, TIKU_DESK_C_SELECT);
+                tiku_fill(s, name, TIKU_C_SELECT);
             }
         }
         {   /* The icon owns the strip LEFT of the first column, which is
@@ -1039,16 +1039,16 @@ draw(app_t *a)
                         TIKU_TRK_CLIP_MOVE)
                    /* IV-023: a pose cut to the clipboard is drawn faded,
                     * the same dim the other shell draws it with. */
-                   ? tiku_trk_icon_paint_dim(s,
-                         tiku_trk_model_icon_name(&p->model), ix,
+                   ? tiku_icon_paint_dim(s,
+                         tiku_model_icon_name(&p->model), ix,
                          row.y + (a->row_h - mini) / 2, mini, 0.55f,
-                         TIKU_DESK_C_DOC)
+                         TIKU_C_DOC)
                    : drawn_sel
-                   ? tiku_trk_icon_paint_selected(s,
-                         tiku_trk_model_icon_name(&p->model), ix,
+                   ? tiku_icon_paint_selected(s,
+                         tiku_model_icon_name(&p->model), ix,
                          row.y + (a->row_h - mini) / 2, mini)
-                   : tiku_trk_icon_paint(s,
-                         tiku_trk_model_icon_name(&p->model), ix,
+                   : tiku_icon_paint(s,
+                         tiku_model_icon_name(&p->model), ix,
                          row.y + (a->row_h - mini) / 2, mini));
         }
         for (j = 0; j < ncol; j++) {
@@ -1060,7 +1060,7 @@ draw(app_t *a)
                                                           cols[j].field, tmp,
                                                           sizeof tmp);
             int text_x = col_x(a, &cols[j]);
-            tiku_desk_rect_t cell = { text_x, row.y, cols[j].width,
+            tiku_rect_t cell = { text_x, row.y, cols[j].width,
                                       a->row_h };
             char fitted[80];
             int tw;
@@ -1069,51 +1069,51 @@ draw(app_t *a)
                  * clip is a replacement, so a cell scrolled left of the
                  * view would otherwise paint over the border and the
                  * window frame. */
-                tiku_desk_rect_t inner = tiku_desk_inset(list, 2);
+                tiku_rect_t inner = tiku_inset(list, 2);
                 int x0 = (cell.x > inner.x) ? cell.x : inner.x;
                 int x1 = (cell.x + cell.w < inner.x + inner.w)
                          ? cell.x + cell.w : inner.x + inner.w;
 
                 cell.x = x0;
                 cell.w = (x1 > x0) ? x1 - x0 : 0;
-                tiku_desk_clip_set(s, cell);
+                tiku_clip_set(s, cell);
             }
-            (void)tiku_trk_text_fit(txt, cols[j].width,
+            (void)tiku_text_fit(txt, cols[j].width,
                                     tiku_trk_col_trunc_end(cols[j].field)
-                                        ? TIKU_TRK_TRUNC_END
-                                        : TIKU_TRK_TRUNC_MIDDLE,
+                                        ? TIKU_TRUNC_END
+                                        : TIKU_TRUNC_MIDDLE,
                                     measure_text, (void *)f, fitted,
                                     sizeof fitted);
-            tw = tiku_desk_text_width(f, fitted);
+            tw = tiku_text_width(f, fitted);
             if (cols[j].alignment == TIKU_TRK_ALIGN_RIGHT) {
                 text_x += cols[j].width - tw;
             }
-            tiku_desk_text(s, f, text_x,
+            tiku_text(s, f, text_x,
                            row.y + (a->row_h - f->height) / 2 + f->ascent,
                            fitted, (drawn_sel && j == 0)
-                                      ? TIKU_DESK_C_SELTEXT
-                                      : TIKU_DESK_C_TEXT);
+                                      ? TIKU_C_SELTEXT
+                                      : TIKU_C_TEXT);
             if (cols[j].field == TIKU_TRK_COL_NAME &&
-                p->model.kind == TIKU_TRK_KIND_SYMLINK) {
+                p->model.kind == TIKU_KIND_SYMLINK) {
                 /* MA-076/IV-043: under the TEXT only, and only in the first
                  * column -- a rule that underlined the whole cell would
                  * read as a divider rather than as a property of the name. */
-                tiku_desk_hline(s, text_x,
+                tiku_hline(s, text_x,
                                 row.y + (a->row_h - f->height) / 2 +
                                 f->ascent + 2, tw,
-                                (drawn_sel && j == 0) ? TIKU_DESK_C_SELTEXT
-                                                      : TIKU_DESK_C_TEXT);
+                                (drawn_sel && j == 0) ? TIKU_C_SELTEXT
+                                                      : TIKU_C_TEXT);
             }
-            tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
+            tiku_clip_set(s, tiku_inset(list, 2));
         }
     }
-    tiku_desk_clip_reset(s);
+    tiku_clip_reset(s);
 
     /* Scrollbar.  Drawn FROM the bar rather than from the view: it is a
      * thing that can be held, and while it is held the range it shows is
      * the one it was holding (PVL-051, PVL-052). */
     {
-        tiku_desk_rect_t sb = { list.x + list.w, list.y, SCROLL_W, list.h };
+        tiku_rect_t sb = { list.x + list.w, list.y, SCROLL_W, list.h };
         int tpos = 0, tlen = 0;
         float frac, pos;
 
@@ -1130,11 +1130,11 @@ draw(app_t *a)
             pos = 0.0f;
         }
         a->sb_rect = sb;
-        tiku_desk_ui_scrollbar(s, sb, pos, frac, 0);
+        tiku_ui_scrollbar(s, sb, pos, frac, 0);
         /* CW-019: the bar highlights with the focus border -- except in a
          * query window, where Haiku keeps the highlight off. */
         if (a->active && !tiku_trk_poseview_is_query(a->view)) {
-            tiku_desk_frame(s, sb, TIKU_DESK_C_FOCUS);
+            tiku_frame(s, sb, TIKU_C_FOCUS);
         }
     }
 
@@ -1142,12 +1142,12 @@ draw(app_t *a)
         /* TS-011: a full-height line down the LIST, not a mark on the
          * strip -- what the user is judging is where the column will fall
          * against the rows, and the strip cannot show that. */
-        tiku_desk_clip_set(s, tiku_desk_inset(list, 2));
-        tiku_desk_vline(s, list.x + a->tv.line_x -
+        tiku_clip_set(s, tiku_inset(list, 2));
+        tiku_vline(s, list.x + a->tv.line_x -
                         tiku_trk_poseview_hscroll(a->view), list.y + 2,
                         list.h - 4,
-                        tiku_desk_tint(TIKU_DESK_C_DOC, 1.40f));
-        tiku_desk_clip_reset(s);
+                        tiku_tint(TIKU_C_DOC, 1.40f));
+        tiku_clip_reset(s);
     }
     if (a->editing) {
         /* The editor sits where the name is, as an editable field: the row
@@ -1157,7 +1157,7 @@ draw(app_t *a)
 
         for (i = 0; i < n; i++) {
             tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
-            tiku_desk_rect_t box;
+            tiku_rect_t box;
 
             if (p == NULL || strcmp(p->model.path, a->edit_path) != 0) {
                 continue;
@@ -1174,10 +1174,10 @@ draw(app_t *a)
                 box.y = list.y + 2 + (i - scroll) * a->row_h;
                 box.w = bw;
                 box.h = a->row_h;
-                tiku_desk_ui_textfield_scroll(s, box, a->ed.text,
+                tiku_ui_textfield_scroll(s, box, a->ed.text,
                                               a->ed.caret, a->ed.sel_a,
                                               a->ed.sel_b,
-                                              TIKU_DESK_S_FOCUS, bs);
+                                              TIKU_S_FOCUS, bs);
             }
             break;
         }
@@ -1196,7 +1196,7 @@ blit(app_t *a)
         return;                     /* displayless: the surface IS the
                                      * output, and -shot writes it */
     }
-    (void)tiku_desk_host_present(a->host, a->surf);
+    (void)tiku_host_present(a->host, a->surf);
 }
 
 static void
@@ -1210,7 +1210,7 @@ retitle(app_t *a)
         snprintf(a->title, sizeof a->title, "%s",
                  tiku_trk_poseview_path(a->view));
     }
-    tiku_desk_host_set_title(a->host, a->title);
+    tiku_host_set_title(a->host, a->title);
 }
 
 /**
@@ -1223,7 +1223,7 @@ retitle(app_t *a)
 static void
 settle_layout(app_t *a)
 {
-    tiku_desk_rect_t lr;
+    tiku_rect_t lr;
 
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
         return;
@@ -1271,7 +1271,7 @@ sync_navigator_preference(app_t *a, int force)
             /* The theme swap, live (settings semantics): the browser
              * repaints whole frames, so a flip costs one redraw. */
             a->theme_dark = dark;
-            tiku_desk_theme_set(dark ? tiku_desk_theme_dark() : NULL);
+            tiku_theme_set(dark ? tiku_theme_dark() : NULL);
             a->dirty = 1;
         }
         tiku_trk_prefs_free(&prefs);
@@ -1305,7 +1305,7 @@ sync_navigator_preference(app_t *a, int force)
  * @return Count written.
  */
 static int
-selection_paths(app_t *a, char paths[][TIKU_TRK_PATH_MAX],
+selection_paths(app_t *a, char paths[][TIKU_PATH_MAX],
                 const char *out[], int max)
 {
     int i, n = tiku_trk_poseview_count(a->view), k = 0;
@@ -1315,7 +1315,7 @@ selection_paths(app_t *a, char paths[][TIKU_TRK_PATH_MAX],
         if (p == NULL || !p->selected) {
             continue;
         }
-        snprintf(paths[k], TIKU_TRK_PATH_MAX, "%s", p->model.path);
+        snprintf(paths[k], TIKU_PATH_MAX, "%s", p->model.path);
         out[k] = paths[k];
         k++;
     }
@@ -1332,7 +1332,7 @@ selection_paths(app_t *a, char paths[][TIKU_TRK_PATH_MAX],
 static void
 settle_writability(app_t *a)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
 
     a->read_only = 0;
     if (a->backend == NULL || a->backend->ops->stat == NULL) {
@@ -1340,7 +1340,7 @@ settle_writability(app_t *a)
     }
     if (a->backend->ops->stat(a->backend, tiku_trk_poseview_path(a->view),
                               &m) == 0) {
-        a->read_only = ((m.facts.perm & TIKU_TRK_P_WRITE) == 0u);
+        a->read_only = ((m.facts.perm & TIKU_P_WRITE) == 0u);
     }
 }
 
@@ -1354,7 +1354,7 @@ settle_writability(app_t *a)
  * transaction above one item.
  */
 static void
-drain_fs(tiku_trk_fs_t *fs)
+drain_fs(tiku_fs_t *fs)
 {
     int guard = 0;
 
@@ -1362,17 +1362,17 @@ drain_fs(tiku_trk_fs_t *fs)
         return;
     }
     /* 50 turns of 100 ms, the original's own budget. */
-    while (tiku_trk_fs_busy(fs) && guard++ < 50) {
-        if (tiku_trk_fs_step(fs, 16) == 0) {
-            const tiku_trk_progress_t *pr = tiku_trk_fs_progress(fs);
+    while (tiku_fs_busy(fs) && guard++ < 50) {
+        if (tiku_fs_step(fs, 16) == 0) {
+            const tiku_progress_t *pr = tiku_fs_progress(fs);
 
             /* A question stops the queue and there is nobody left to
              * answer it, so answer it the way the running shell would and
              * keep going rather than spinning out the whole budget. */
             if (pr->conflict) {
-                tiku_trk_fs_resolve(fs, TIKU_TRK_CONFLICT_RENAME);
+                tiku_fs_resolve(fs, TIKU_CONFLICT_RENAME);
             } else if (pr->error_ask) {
-                tiku_trk_fs_resolve_error(fs, 1);
+                tiku_fs_resolve_error(fs, 1);
             } else {
                 break;
             }
@@ -1407,8 +1407,8 @@ begin_rename(app_t *a)
     }
     /* A namespace node has no name of its own to change; refuse up front
      * rather than letting the device say no after the fact. */
-    if (p->model.kind == TIKU_TRK_KIND_DEVICE_NODE ||
-        p->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR) {
+    if (p->model.kind == TIKU_KIND_DEVICE_NODE ||
+        p->model.kind == TIKU_KIND_VIRTUAL_DIR) {
         snprintf(a->status, sizeof a->status,
                  "'%s' is part of the device namespace and cannot be renamed",
                  p->model.name);
@@ -1419,7 +1419,7 @@ begin_rename(app_t *a)
     a->edit_row = pose_index(a, p);
     tiku_trk_edit_start(&a->ed, p->model.name);
     /* A character the store will refuse must never reach the field. */
-    tiku_trk_edit_deny(&a->ed, tiku_trk_fs_name_deny());
+    tiku_trk_edit_deny(&a->ed, tiku_fs_name_deny());
     snprintf(a->edit_path, sizeof a->edit_path, "%s", p->model.path);
     a->status[0] = '\0';
     a->dirty = 1;
@@ -1460,7 +1460,7 @@ end_rename(app_t *a, int commit)
         }
     }
     if (commit && a->ed.len > 0 &&
-        tiku_trk_fs_rename(a->fs, a->edit_path, a->ed.text, err,
+        tiku_fs_rename(a->fs, a->edit_path, a->ed.text, err,
                            sizeof err) != 0) {
         /* A rejected name keeps the EDITOR, not just the reason: the text
          * stays, selected whole, so the user retypes immediately instead
@@ -1475,8 +1475,8 @@ end_rename(app_t *a, int commit)
         return;
     }
     if (commit && a->ed.len > 0) {
-        char renamed[TIKU_TRK_PATH_MAX];
-        char parent[TIKU_TRK_PATH_MAX];
+        char renamed[TIKU_PATH_MAX];
+        char parent[TIKU_PATH_MAX];
         char *slash;
         int row;
 
@@ -1511,21 +1511,21 @@ end_rename(app_t *a, int commit)
  * grow out of.
  */
 static void
-open_animation(app_t *a, tiku_desk_rect_t from)
+open_animation(app_t *a, tiku_rect_t from)
 {
     int k;
 
     for (k = 0; k < 7; k++) {
-        tiku_desk_rect_t r = from;
+        tiku_rect_t r = from;
 
         r.x -= 2 * k;
         r.y -= 2 * k;
         r.w += 4 * k;
         r.h += 4 * k;
-        tiku_desk_invert_frame(a->surf, r);
+        tiku_invert_frame(a->surf, r);
         blit(a);
         usleep(10000);
-        tiku_desk_invert_frame(a->surf, r);   /* inversion undoes itself */
+        tiku_invert_frame(a->surf, r);   /* inversion undoes itself */
     }
     blit(a);
 }
@@ -1534,13 +1534,13 @@ open_animation(app_t *a, tiku_desk_rect_t from)
 static int
 navigate_to(app_t *a, const char *path, int record)
 {
-    char dest[TIKU_TRK_PATH_MAX];
-    tiku_trk_model_t m;
+    char dest[TIKU_PATH_MAX];
+    tiku_model_t m;
 
     if (path == NULL || path[0] == '\0' ||
         (a->backend->ops->stat != NULL &&
          (a->backend->ops->stat(a->backend, path, &m) != 0 ||
-          !tiku_trk_model_is_container(&m)))) {
+          !tiku_model_is_container(&m)))) {
         return 0;
     }
     /* Opening a pose passes storage owned by the view.  Switching folders
@@ -1577,7 +1577,7 @@ navigate_to(app_t *a, const char *path, int record)
 static void
 navigate_back(app_t *a)
 {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
 
     if (tiku_trk_navigator_back(&a->nav, path, sizeof path) &&
         !navigate_to(a, path, 0)) {
@@ -1589,7 +1589,7 @@ navigate_back(app_t *a)
 static void
 navigate_forward(app_t *a)
 {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
 
     if (tiku_trk_navigator_forward(&a->nav, path, sizeof path) &&
         !navigate_to(a, path, 0)) {
@@ -1601,7 +1601,7 @@ navigate_forward(app_t *a)
 static void
 navigate_up(app_t *a)
 {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
 
     if (tiku_trk_navigator_parent(tiku_trk_poseview_path(a->view), path,
                                   sizeof path)) {
@@ -1624,7 +1624,7 @@ begin_location(app_t *a)
 static void
 end_location(app_t *a, int apply)
 {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
 
     if (!a->nav_editing) {
         return;
@@ -1648,7 +1648,7 @@ open_selection(app_t *a)
     if (p == NULL) {
         return;
     }
-    if (tiku_trk_model_is_container(&p->model)) {
+    if (tiku_model_is_container(&p->model)) {
         (void)navigate_to(a, p->model.path, 1);
     }
     a->dirty = 1;
@@ -1661,7 +1661,7 @@ open_selection(app_t *a)
  * stands for itself -- which is all a script needs in order to type.
  */
 static char
-key_char(const tiku_desk_event_t *event)
+key_char(const tiku_event_t *event)
 {
     return (event != NULL) ? event->text[0] : (char)0;
 }
@@ -1670,7 +1670,7 @@ key_char(const tiku_desk_event_t *event)
 static int
 row_at(app_t *a, int px, int py)
 {
-    tiku_desk_rect_t list = list_rect(a);
+    tiku_rect_t list = list_rect(a);
     int rows, idx;
 
     if (py < list.y + 2 || py > list.y + list.h ||
@@ -1686,7 +1686,7 @@ row_at(app_t *a, int px, int py)
 static int
 count_at(app_t *a, int px, int py)
 {
-    tiku_desk_rect_t list = list_rect(a);
+    tiku_rect_t list = list_rect(a);
 
     return a != NULL && px >= list.x && px <= list.x + list.w &&
            py >= list.y + list.h && py <= list.y + list.h + COUNT_H;
@@ -1697,7 +1697,7 @@ static int
 script_row_point(void *ctx, int row, int *x, int *y)
 {
     app_t *a = (app_t *)ctx;
-    tiku_desk_rect_t list;
+    tiku_rect_t list;
     int rel;
 
     if (a == NULL || x == NULL || y == NULL || row < 0 ||
@@ -1748,7 +1748,7 @@ script_pixel_at(void *ctx, int x, int y)
         x >= a->surf->w || y >= a->surf->h) {
         return 0u;
     }
-    return (unsigned)tiku_desk_peek(a->surf, x, y) & 0xffffffu;
+    return (unsigned)tiku_peek(a->surf, x, y) & 0xffffffu;
 }
 
 /** @brief Resolve a named icon to the screen point it is drawn at. */
@@ -1756,7 +1756,7 @@ static int
 script_pose_screen(void *ctx, const char *name, int *x, int *y)
 {
     app_t *a = (app_t *)ctx;
-    tiku_desk_rect_t lr;
+    tiku_rect_t lr;
 
     if (!script_pose_at(ctx, name, x, y)) {
         return 0;
@@ -1773,7 +1773,7 @@ script_pose_screen(void *ctx, const char *name, int *x, int *y)
 static int
 title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
-    tiku_desk_rect_t list = list_rect(a);
+    tiku_rect_t list = list_rect(a);
     int top = TAB_H + BORDER + a->menus.bar.height + navigator_height(a);
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
@@ -1789,7 +1789,7 @@ title_hit(app_t *a, int px, int py, int *cx, int *cy)
 }
 
 static void
-handle_key(app_t *a, const tiku_desk_event_t *event)
+handle_key(app_t *a, const tiku_event_t *event)
 {
     unsigned key = event->key;
     unsigned modifiers = event->modifiers;
@@ -1805,19 +1805,19 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
     if (a->nav_editing) {
         tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
         tiku_trk_edit_result_t result;
-        int shift = (modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
+        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
-        if (key == ' ' && (modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+        if (key == ' ' && (modifiers & TIKU_MOD_CMD) != 0u) {
             /* Cmd-Space completes the last path component against the
              * folder the rest of the path names (NeXT UIG ch3). */
-            char dir[TIKU_TRK_PATH_MAX], full[TIKU_TRK_PATH_MAX];
+            char dir[TIKU_PATH_MAX], full[TIKU_PATH_MAX];
             char *slash;
 
             snprintf(dir, sizeof dir, "%s", a->nav_edit.text);
             slash = strrchr(dir, '/');
             if (slash != NULL) {
-                char leaf[TIKU_TRK_NAME_MAX];
+                char leaf[TIKU_NAME_MAX];
 
                 snprintf(leaf, sizeof leaf, "%s", slash + 1);
                 slash[(slash == dir) ? 1 : 0] = '\0';
@@ -1835,16 +1835,16 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
             return;
         }
         switch (key) {
-        case TIKU_DESK_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;     break;
-        case TIKU_DESK_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;     break;
-        case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-        case TIKU_DESK_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;     break;
-        case TIKU_DESK_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;       break;
-        case TIKU_DESK_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;      break;
-        case TIKU_DESK_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;       break;
-        case TIKU_DESK_KEY_END:    k = TIKU_TRK_EDIT_END;        break;
+        case TIKU_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;     break;
+        case TIKU_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;     break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;     break;
+        case TIKU_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;       break;
+        case TIKU_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;      break;
+        case TIKU_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;       break;
+        case TIKU_KEY_END:    k = TIKU_TRK_EDIT_END;        break;
         case 'a':
-            if (modifiers & TIKU_DESK_MOD_CMD) {
+            if (modifiers & TIKU_MOD_CMD) {
                 k = TIKU_TRK_EDIT_SELECT_ALL;
             }
             break;
@@ -1870,10 +1870,10 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
          * the caret's row selection nowhere, and 'd' must type a letter,
          * not duplicate the file. */
         tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-        int shift = (modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0;
+        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
-        if ((modifiers & TIKU_DESK_MOD_CMD) &&
+        if ((modifiers & TIKU_MOD_CMD) &&
             (key == 'x' || key == 'c' || key == 'v')) {
             tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
                                       : (key == 'c') ? TIKU_TRK_EDIT_COPY
@@ -1882,13 +1882,13 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
             a->dirty = 1;
             return;
         }
-        if ((modifiers & TIKU_DESK_MOD_CMD) && key == 'n') {
+        if ((modifiers & TIKU_MOD_CMD) && key == 'n') {
             end_rename(a, 1);
             goto not_editing;
         }
-        if (key == TIKU_DESK_KEY_TAB) {
+        if (key == TIKU_KEY_TAB) {
             int row = next_edit_row(a, a->edit_row,
-                                    (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+                                    (modifiers & TIKU_MOD_SHIFT) != 0u);
 
             end_rename(a, 1);
             if (row >= 0) {
@@ -1899,16 +1899,16 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
             return;
         }
         switch (key) {
-        case TIKU_DESK_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;    break;
-        case TIKU_DESK_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;    break;
-        case TIKU_DESK_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-        case TIKU_DESK_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;    break;
-        case TIKU_DESK_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;      break;
-        case TIKU_DESK_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;     break;
-        case TIKU_DESK_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;      break;
-        case TIKU_DESK_KEY_END:    k = TIKU_TRK_EDIT_END;       break;
+        case TIKU_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;    break;
+        case TIKU_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;    break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;    break;
+        case TIKU_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;      break;
+        case TIKU_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;     break;
+        case TIKU_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;      break;
+        case TIKU_KEY_END:    k = TIKU_TRK_EDIT_END;       break;
         case 'a':
-            if (modifiers & TIKU_DESK_MOD_CMD) {
+            if (modifiers & TIKU_MOD_CMD) {
                 k = TIKU_TRK_EDIT_SELECT_ALL;
             }
             break;
@@ -1930,14 +1930,14 @@ handle_key(app_t *a, const tiku_desk_event_t *event)
     }
 
 not_editing:
-    if (modifiers & TIKU_DESK_MOD_SHIFT) { mods |= TIKU_TRK_MOD_SHIFT; }
-    if (modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+    if (modifiers & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MOD_SHIFT; }
+    if (modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
 
-    if ((modifiers & TIKU_DESK_MOD_CMD) && key == 'l') {
+    if ((modifiers & TIKU_MOD_CMD) && key == 'l') {
         begin_location(a);
         return;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) &&
+    if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
         /* The clipboard verbs, through the shared command layer: this
          * shell had none at all, so Cut, Copy and Paste were three keys
@@ -1948,25 +1948,25 @@ not_editing:
         menu_invoke(a, tiku_trk_sc_command(base, mods));
         return;
     }
-    if (modifiers & TIKU_DESK_MOD_CMD) {
-        if (key == TIKU_DESK_KEY_DOWN || key == TIKU_DESK_KEY_RETURN) {
+    if (modifiers & TIKU_MOD_CMD) {
+        if (key == TIKU_KEY_DOWN || key == TIKU_KEY_RETURN) {
             open_selection(a);
             return;
         }
-        if (key == TIKU_DESK_KEY_LEFT) {
+        if (key == TIKU_KEY_LEFT) {
             navigate_back(a);
             return;
         }
-        if (key == TIKU_DESK_KEY_RIGHT) {
+        if (key == TIKU_KEY_RIGHT) {
             navigate_forward(a);
             return;
         }
-        if (key == TIKU_DESK_KEY_UP) {
+        if (key == TIKU_KEY_UP) {
             navigate_up(a);
             return;
         }
     }
-    if ((modifiers & TIKU_DESK_MOD_OPTION) && key == TIKU_DESK_KEY_RETURN) {
+    if ((modifiers & TIKU_MOD_OPTION) && key == TIKU_KEY_RETURN) {
         open_selection(a);
         return;
     }
@@ -1986,14 +1986,14 @@ not_editing:
             return;
         }
         break;
-    case TIKU_DESK_KEY_UP:        nav = TIKU_TRK_KEY_UP;    break;
-    case TIKU_DESK_KEY_DOWN:      nav = TIKU_TRK_KEY_DOWN;  break;
-    case TIKU_DESK_KEY_LEFT:      nav = TIKU_TRK_KEY_LEFT;  break;
-    case TIKU_DESK_KEY_RIGHT:     nav = TIKU_TRK_KEY_RIGHT; break;
-    case TIKU_DESK_KEY_HOME:      nav = TIKU_TRK_KEY_HOME;  break;
-    case TIKU_DESK_KEY_END:       nav = TIKU_TRK_KEY_END;   break;
-    case TIKU_DESK_KEY_PAGE_UP:   nav = TIKU_TRK_KEY_PGUP;  break;
-    case TIKU_DESK_KEY_PAGE_DOWN: nav = TIKU_TRK_KEY_PGDN;  break;
+    case TIKU_KEY_UP:        nav = TIKU_TRK_KEY_UP;    break;
+    case TIKU_KEY_DOWN:      nav = TIKU_TRK_KEY_DOWN;  break;
+    case TIKU_KEY_LEFT:      nav = TIKU_TRK_KEY_LEFT;  break;
+    case TIKU_KEY_RIGHT:     nav = TIKU_TRK_KEY_RIGHT; break;
+    case TIKU_KEY_HOME:      nav = TIKU_TRK_KEY_HOME;  break;
+    case TIKU_KEY_END:       nav = TIKU_TRK_KEY_END;   break;
+    case TIKU_KEY_PAGE_UP:   nav = TIKU_TRK_KEY_PGUP;  break;
+    case TIKU_KEY_PAGE_DOWN: nav = TIKU_TRK_KEY_PGDN;  break;
     default: break;
     }
     if (nav != 0) {
@@ -2015,7 +2015,7 @@ not_editing:
         return;
     }
     switch (key) {
-    case TIKU_DESK_KEY_RETURN:
+    case TIKU_KEY_RETURN:
         /* PVK-015/016: a filter that has already narrowed the listing to
          * what the user wants should not also demand an arrow key first. */
         if (tiku_trk_poseview_return_pressed(a->view,
@@ -2043,7 +2043,7 @@ not_editing:
             }
         }
         break;
-    case TIKU_DESK_KEY_BACKSPACE:
+    case TIKU_KEY_BACKSPACE:
         if (tiku_trk_poseview_type_string(a->view)[0] != '\0') {
             tiku_trk_poseview_type_backspace(a->view);
         } else {
@@ -2051,7 +2051,7 @@ not_editing:
         }
         a->dirty = 1;
         return;
-    case TIKU_DESK_KEY_ESCAPE:
+    case TIKU_KEY_ESCAPE:
         if (mods & TIKU_TRK_MOD_SHIFT) {
             /* Shift+Escape removes the selection from the clipboard, or
              * every pose in the folder when nothing is selected
@@ -2076,32 +2076,32 @@ not_editing:
         }
         a->dirty = 1;
         return;
-    case TIKU_DESK_KEY_TAB:
+    case TIKU_KEY_TAB:
         if (!tiku_trk_poseview_is_filtering(a->view)) {
             (void)tiku_trk_poseview_tab_next(a->view,
-                (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+                (modifiers & TIKU_MOD_SHIFT) != 0u);
         }
         a->dirty = 1;
         return;
     case 'q':
-        if (modifiers & TIKU_DESK_MOD_CMD) { a->running = 0; return; }
+        if (modifiers & TIKU_MOD_CMD) { a->running = 0; return; }
         break;
     case 'u':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             /* Cmd+U, which the volume menus advertise (CW-034). */
             menu_invoke(a, TIKU_TRK_CMD_UNMOUNT);
             return;
         }
         break;
     case 'a':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             tiku_trk_poseview_select_all(a->view);
             a->dirty = 1;
             return;
         }
         break;
     case 's':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             /* PVK-046: invert, which is the only way to say "everything
              * except these" without clicking each of the rest. */
             tiku_trk_poseview_invert_selection(a->view);
@@ -2111,7 +2111,7 @@ not_editing:
         break;
     case '+':
     case '=':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             (void)tiku_trk_poseview_step_icon_size(a->view, 1);
             settle_layout(a);
             a->dirty = 1;
@@ -2119,7 +2119,7 @@ not_editing:
         }
         break;
     case '-':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             (void)tiku_trk_poseview_step_icon_size(a->view, 0);
             settle_layout(a);
             a->dirty = 1;
@@ -2127,7 +2127,7 @@ not_editing:
         }
         break;
     case 'r':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             (void)tiku_trk_poseview_reload(a->view);
             (void)tiku_trk_poseview_restore_state(a->view);
             settle_layout(a);
@@ -2138,8 +2138,8 @@ not_editing:
     case '1':
     case '2':
     case '3':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
-            tiku_desk_rect_t lr = list_rect(a);
+        if (modifiers & TIKU_MOD_CMD) {
+            tiku_rect_t lr = list_rect(a);
             tiku_trk_poseview_set_mode(a->view,
                 (key == '1') ? TIKU_TRK_MODE_ICON :
                 (key == '2') ? TIKU_TRK_MODE_MINI : TIKU_TRK_MODE_LIST);
@@ -2156,16 +2156,16 @@ not_editing:
             return;
         }
         break;
-    case TIKU_DESK_KEY_F2:
+    case TIKU_KEY_F2:
         begin_rename(a);
         return;
     case 'e':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             begin_rename(a);
             return;
         }
         break;
-    case TIKU_DESK_KEY_DELETE: {
+    case TIKU_KEY_DELETE: {
         /* What the key MEANS depends on where the items are: a move that
          * can be undone where there is a Trash to move them to, and a
          * deletion inside it or when Shift says the user has already
@@ -2175,20 +2175,20 @@ not_editing:
         /* Noted BEFORE the listing changes: afterwards the index is
          * the only thing left pointing at where the item was (FS-050). */
         a->select_next = first_selected_index(a);
-        menu_invoke(a, (modifiers & TIKU_DESK_MOD_SHIFT)
+        menu_invoke(a, (modifiers & TIKU_MOD_SHIFT)
                            ? TIKU_TRK_CMD_DELETE
                            : TIKU_TRK_CMD_MOVE_TO_TRASH);
         a->dirty = 1;
         return;
     }
     case 'd':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
-            char paths[64][TIKU_TRK_PATH_MAX];
+        if (modifiers & TIKU_MOD_CMD) {
+            char paths[64][TIKU_PATH_MAX];
             const char *sel[64];
             int n = selection_paths(a, paths, sel, 64);
 
             if (n > 0 && a->fs != NULL) {
-                (void)tiku_trk_fs_duplicate(a->fs, sel, n);
+                (void)tiku_fs_duplicate(a->fs, sel, n);
                 snprintf(a->status, sizeof a->status, "duplicating %d item%s",
                          n, (n == 1) ? "" : "s");
             }
@@ -2197,13 +2197,13 @@ not_editing:
         }
         break;
     case 'z':
-        if ((modifiers & TIKU_DESK_MOD_CMD) &&
-            (modifiers & TIKU_DESK_MOD_SHIFT)) {
+        if ((modifiers & TIKU_MOD_CMD) &&
+            (modifiers & TIKU_MOD_SHIFT)) {
             char what[64], err[200];
 
-            if (a->fs != NULL && tiku_trk_fs_can_redo(a->fs, what,
+            if (a->fs != NULL && tiku_fs_can_redo(a->fs, what,
                                                       sizeof what)) {
-                int n = tiku_trk_fs_redo(a->fs, err, sizeof err);
+                int n = tiku_fs_redo(a->fs, err, sizeof err);
 
                 snprintf(a->status, sizeof a->status, "redid %s (%d item%s)",
                          what, n, (n == 1) ? "" : "s");
@@ -2214,12 +2214,12 @@ not_editing:
             a->dirty = 1;
             return;
         }
-        if (modifiers & TIKU_DESK_MOD_CMD) {
+        if (modifiers & TIKU_MOD_CMD) {
             char what[64], err[200];
 
-            if (a->fs != NULL && tiku_trk_fs_can_undo(a->fs, what,
+            if (a->fs != NULL && tiku_fs_can_undo(a->fs, what,
                                                       sizeof what)) {
-                int n = tiku_trk_fs_undo(a->fs, err, sizeof err);
+                int n = tiku_fs_undo(a->fs, err, sizeof err);
                 snprintf(a->status, sizeof a->status, "undid %s (%d item%s)",
                          what, n, (n == 1) ? "" : "s");
                 after_op(a);
@@ -2231,11 +2231,11 @@ not_editing:
         }
         break;
     case 'n':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
-            char made[TIKU_TRK_PATH_MAX], err[200];
+        if (modifiers & TIKU_MOD_CMD) {
+            char made[TIKU_PATH_MAX], err[200];
 
             if (a->fs != NULL &&
-                tiku_trk_fs_new_folder(a->fs, tiku_trk_poseview_path(a->view), made, sizeof made, err,
+                tiku_fs_new_folder(a->fs, tiku_trk_poseview_path(a->view), made, sizeof made, err,
                                        sizeof err) == 0) {
                 const char *slash = strrchr(made, '/');
 
@@ -2265,14 +2265,14 @@ not_editing:
         }
         break;
     case 'k':
-        if (modifiers & TIKU_DESK_MOD_CMD) {
-            tiku_desk_rect_t lr = list_rect(a);
+        if (modifiers & TIKU_MOD_CMD) {
+            tiku_rect_t lr = list_rect(a);
 
             /* Cmd+K snaps what is there; Shift re-lays it out in sort
              * order.  Straightening an arrangement and replacing it are
              * two different commands (PVL-021). */
             tiku_trk_scroll_detach(&a->sb);
-            if (modifiers & TIKU_DESK_MOD_SHIFT) {
+            if (modifiers & TIKU_MOD_SHIFT) {
                 tiku_trk_poseview_cleanup(a->view, lr.w - 4);
             } else {
                 (void)tiku_trk_poseview_snap_to_grid(a->view);
@@ -2286,7 +2286,7 @@ not_editing:
     default:
         break;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+    if ((modifiers & TIKU_MOD_CMD) != 0u) {
         /* The standard set's tail, from the same table the menus read:
          * a chord the menu advertises must answer here too (PVK-042). */
         int fcmd = tiku_trk_sc_command_for_key(key, modifiers);
@@ -2311,10 +2311,10 @@ not_editing:
 static void
 menu_key(app_t *a, unsigned key, unsigned modifiers)
 {
-    tiku_desk_event_t event;
+    tiku_event_t event;
 
     memset(&event, 0, sizeof event);
-    event.type = TIKU_DESK_EVENT_KEY_DOWN;
+    event.type = TIKU_EVENT_KEY_DOWN;
     event.key = key;
     event.modifiers = modifiers;
     if (key >= 0x20u && key < 0x7fu) {
@@ -2345,7 +2345,7 @@ save_before_unmount(dev_t dev, void *context)
 static int
 seed_new_entry(app_t *a, int *vx, int *vy)
 {
-    tiku_desk_rect_t lr = list_rect(a);
+    tiku_rect_t lr = list_rect(a);
     int x, y;
 
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
@@ -2415,8 +2415,8 @@ menu_invoke(app_t *a, int command)
 
         why[0] = '\0';
         if (command == TIKU_TRK_CMD_MOUNT_ALL) {
-            tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
-            int pn = tiku_trk_partitions_scan(part,
+            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_partitions_scan(part,
                                               TIKU_TRK_MOUNT_PART_MAX);
             int k;
 
@@ -2425,7 +2425,7 @@ menu_invoke(app_t *a, int command)
                     continue;
                 }
                 tried++;
-                if (tiku_trk_volume_mount(part[k].name, why,
+                if (tiku_volume_mount(part[k].name, why,
                                           sizeof why) != 0) {
                     failed++;
                     break;
@@ -2436,7 +2436,7 @@ menu_invoke(app_t *a, int command)
 
             if (idx < a->menus.mount_parts) {
                 tried++;
-                failed = tiku_trk_volume_mount(a->menus.mount_part[idx],
+                failed = tiku_volume_mount(a->menus.mount_part[idx],
                                                why, sizeof why) != 0;
             }
         }
@@ -2457,21 +2457,21 @@ menu_invoke(app_t *a, int command)
          * shown is the one the gesture means (CW-034).  Everything open on
          * it saves itself first, while there is still somewhere to save
          * to, and a refusal or failure is said out loud (AW-096). */
-        char paths[1][TIKU_TRK_PATH_MAX];
+        char paths[1][TIKU_PATH_MAX];
         const char *sel[1];
         const char *path = (selection_paths(a, paths, sel, 1) > 0)
                                ? sel[0] : tiku_trk_poseview_path(a->view);
-        tiku_trk_volumes_t vols;
+        tiku_volumes_t vols;
         char why[200];
 
         why[0] = '\0';
-        if (tiku_trk_volumes_scan(&vols) > 0 &&
-            tiku_trk_volume_is_root(&vols, path)) {
-            const tiku_trk_volume_t *vol = tiku_trk_volume_of(&vols, path);
+        if (tiku_volumes_scan(&vols) > 0 &&
+            tiku_volume_is_root(&vols, path)) {
+            const tiku_volume_t *vol = tiku_volume_of(&vols, path);
 
-            if (tiku_trk_volume_unmount(&vols, path, save_before_unmount,
+            if (tiku_volume_unmount(&vols, path, save_before_unmount,
                                         a, why, sizeof why) ==
-                    TIKU_TRK_UNMOUNT_OK) {
+                    TIKU_UNMOUNT_OK) {
                 snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
                          (vol != NULL) ? vol->name : path);
             } else if (why[0] != '\0') {
@@ -2493,13 +2493,13 @@ menu_invoke(app_t *a, int command)
         /* Made HERE rather than in the shared controller: only the shell
          * knows where the asking click landed, and the folder must appear
          * there rather than in the next free slot (PVL-025, PVL-098). */
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
         int seeded, sx = 0, sy = 0, row;
         const char *slash;
 
         error[0] = '\0';
         seeded = seed_new_entry(a, &sx, &sy);
-        if (a->fs != NULL && tiku_trk_fs_new_folder(a->fs,
+        if (a->fs != NULL && tiku_fs_new_folder(a->fs,
                 tiku_trk_poseview_path(a->view), made, sizeof made,
                 error, sizeof error) == 0) {
             slash = strrchr(made, '/');
@@ -2546,11 +2546,11 @@ menu_invoke(app_t *a, int command)
 
     template_path = tiku_trk_cwmenu_template_path(&a->menus, command);
     if (template_path != NULL) {
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
         const char *slash;
         int row;
 
-        if (tiku_trk_fs_new_from_template(
+        if (tiku_fs_new_from_template(
                 a->fs, template_path, tiku_trk_poseview_path(a->view),
                 made, sizeof made, error, sizeof error) == 0) {
             slash = strrchr(made, '/');
@@ -2571,9 +2571,9 @@ menu_invoke(app_t *a, int command)
     }
     template_parent = tiku_trk_cwmenu_template_add_path(&a->menus, command);
     if (template_parent != NULL) {
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
 
-        if (tiku_trk_fs_new_folder(a->fs, template_parent, made,
+        if (tiku_fs_new_folder(a->fs, template_parent, made,
                                    sizeof made, error, sizeof error) == 0) {
             const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
 
@@ -2617,33 +2617,33 @@ menu_invoke(app_t *a, int command)
         a->dirty = 1;
         return;
     case TIKU_TRK_CMD_NEW_FOLDER:
-        menu_key(a, 'n', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, 'n', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_OPEN:
-        menu_key(a, TIKU_DESK_KEY_RETURN, 0u); return;
+        menu_key(a, TIKU_KEY_RETURN, 0u); return;
     case TIKU_TRK_CMD_EDIT_NAME:
-        menu_key(a, TIKU_DESK_KEY_F2, 0u); return;
+        menu_key(a, TIKU_KEY_F2, 0u); return;
     case TIKU_TRK_CMD_DUPLICATE:
-        menu_key(a, 'd', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, 'd', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
-        menu_key(a, TIKU_DESK_KEY_DELETE, 0u); return;
+        menu_key(a, TIKU_KEY_DELETE, 0u); return;
     case TIKU_TRK_CMD_DELETE:
-        menu_key(a, TIKU_DESK_KEY_DELETE, TIKU_DESK_MOD_SHIFT); return;
+        menu_key(a, TIKU_KEY_DELETE, TIKU_MOD_SHIFT); return;
     case TIKU_TRK_CMD_SELECT_ALL:
-        menu_key(a, 'a', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, 'a', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_INVERT_SELECTION:
-        menu_key(a, 's', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, 's', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_OPEN_PARENT:
-        menu_key(a, TIKU_DESK_KEY_UP, TIKU_DESK_MOD_CMD); return;
+        menu_key(a, TIKU_KEY_UP, TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_ICON_VIEW:
-        menu_key(a, '1', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, '1', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_MINI_ICON_VIEW:
-        menu_key(a, '2', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, '2', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_LIST_VIEW:
-        menu_key(a, '3', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, '3', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_CLEANUP:
-        menu_key(a, 'k', TIKU_DESK_MOD_CMD); return;
+        menu_key(a, 'k', TIKU_MOD_CMD); return;
     case TIKU_TRK_CMD_CLEANUP_ALL:
-        menu_key(a, 'k', TIKU_DESK_MOD_CMD | TIKU_DESK_MOD_SHIFT); return;
+        menu_key(a, 'k', TIKU_MOD_CMD | TIKU_MOD_SHIFT); return;
     case TIKU_TRK_CMD_CLOSE:
     case TIKU_TRK_CMD_CLOSE_ALL:
     case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE:
@@ -2706,7 +2706,7 @@ icon_size:
 static int
 menubar_press(app_t *a, int x, int y, unsigned state)
 {
-    tiku_desk_rect_t bar = menubar_rect(a);
+    tiku_rect_t bar = menubar_rect(a);
     tiku_trk_sc_ctx_t c;
     unsigned mods = 0u;
     int which;
@@ -2715,8 +2715,8 @@ menubar_press(app_t *a, int x, int y, unsigned state)
     if (which < 0) {
         return 0;
     }
-    if (state & TIKU_DESK_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
-    if (state & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
+    if (state & TIKU_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
     c = menu_ctx(a, mods);
     tiku_trk_cwmenu_rebuild(&a->menus, &c);
     a->bar_open = which;
@@ -2724,7 +2724,7 @@ menubar_press(app_t *a, int x, int y, unsigned state)
     a->popup = a->menus.bar.menu[which];
     a->popup_sub = NULL;
     a->popup_frame = tiku_trk_menubar_panel(&a->menus.bar, bar,
-                         (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+                         (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
     a->dirty = 1;
     return 1;
 }
@@ -2734,7 +2734,7 @@ static int
 popup_press(app_t *a, int x, int y)
 {
     tiku_trk_menu_t *m;
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
     int item;
 
     if (a->popup == NULL) {
@@ -2749,7 +2749,7 @@ popup_press(app_t *a, int x, int y)
             a->popup_sub = m->item[item].submenu;
             a->popup_sub_frame = tiku_trk_menu_place_sub(
                 m, item, frame,
-                (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+                (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
             a->dirty = 1;
             return 1;
         }
@@ -2772,8 +2772,8 @@ open_context_menu(app_t *a, int row, int x, int y, unsigned state)
     unsigned mods = 0u;
     tiku_trk_sc_ctx_t c;
 
-    if (state & TIKU_DESK_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
-    if (state & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
+    if (state & TIKU_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
     c = menu_ctx(a, mods);
     tiku_trk_cwmenu_rebuild(&a->menus, &c);
     a->popup = tiku_trk_cwmenu_context(&a->menus,
@@ -2782,7 +2782,7 @@ open_context_menu(app_t *a, int row, int x, int y, unsigned state)
     a->bar_open = -1;
     a->menus.bar.open = -1;
     a->popup_frame = tiku_trk_menu_place(a->popup, x, y,
-        (tiku_desk_rect_t){ 0, 0, a->surf->w, a->surf->h });
+        (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
     a->dirty = 1;
 }
 
@@ -2790,8 +2790,8 @@ open_context_menu(app_t *a, int row, int x, int y, unsigned state)
 static int
 navigator_press(app_t *a, int x, int y)
 {
-    tiku_desk_rect_t nav = navigator_rect(a);
-    tiku_desk_rect_t back, forward, up, field;
+    tiku_rect_t nav = navigator_rect(a);
+    tiku_rect_t back, forward, up, field;
 
 #define INSIDE(r) (x >= (r).x && x < (r).x + (r).w && \
                    y >= (r).y && y < (r).y + (r).h)
@@ -2833,7 +2833,7 @@ tracker_run(int argc, char **argv)
     int64_t shot_at_us = 0;
 
     memset(&a, 0, sizeof a);
-    (void)tiku_trk_strings_init(NULL, NULL);
+    (void)tiku_strings_init(NULL, NULL);
     tiku_trk_cwmenu_init(&a.menus);
     a.bar_open = -1;
     a.show_nav = 1;
@@ -2852,14 +2852,14 @@ tracker_run(int argc, char **argv)
     }
 
     if (use_device) {
-        a.backend = tiku_trk_backend_tiku_open(port, baud);
+        a.backend = tiku_backend_tiku_open(port, baud);
         if (a.backend == NULL) {
             fprintf(stderr, "tracker: no device answered\n");
             return 1;
         }
         if (start == NULL) { start = "/"; }
     } else {
-        a.backend = tiku_trk_backend_posix_open();
+        a.backend = tiku_backend_posix_open();
         if (start == NULL) { start = getenv("HOME"); }
         if (start == NULL) { start = "/"; }
     }
@@ -2877,10 +2877,10 @@ tracker_run(int argc, char **argv)
         return 1;
     }
     tiku_trk_navigator_init(&a.nav, tiku_trk_poseview_path(a.view));
-    a.fs = tiku_trk_fs_new(a.backend);
-    (void)tiku_trk_fs_prepare_trash(a.fs);
+    a.fs = tiku_fs_new(a.backend);
+    (void)tiku_fs_prepare_trash(a.fs);
     tiku_trk_clip_init(&a.clip);
-    a.surf = tiku_desk_surface_new(WIN_W, WIN_H, TIKU_DESK_C_PANEL);
+    a.surf = tiku_surface_new(WIN_W, WIN_H, TIKU_C_PANEL);
     tiku_trk_status_overlay_init(&a.status_overlay, a.surf, WIN_W, WIN_H,
                                  &a.dirty, app_alert_answer, app_alert_stop,
                                  &a);
@@ -2894,7 +2894,7 @@ tracker_run(int argc, char **argv)
         a.status, sizeof a.status, NULL, NULL);
     /* Derived from the live face, not a constant: the row grows with
      * the UI font the way the original's font metric did (IV-013). */
-    a.row_h = tiku_desk_font_plain()->height + 5;
+    a.row_h = tiku_font_plain()->height + 5;
     {
         const char *home = getenv("HOME");
 
@@ -2914,27 +2914,27 @@ tracker_run(int argc, char **argv)
             return 2;
         }
     } else {
-        a.host = tiku_desk_host_open(WIN_W, WIN_H, "Tracker");
+        a.host = tiku_host_open(WIN_W, WIN_H, "Tracker");
         if (a.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
         }
-        if (tiku_desk_host_scale(a.host) > 1) {
-            (void)tiku_desk_surface_rescale(a.surf,
-                tiku_desk_host_scale(a.host), TIKU_DESK_C_PANEL);
+        if (tiku_host_scale(a.host) > 1) {
+            (void)tiku_surface_rescale(a.surf,
+                tiku_host_scale(a.host), TIKU_C_PANEL);
         }
     }
     /* The window measures its own labels, which is what lets a pose's rect
      * grow to fit a long name instead of staying icon-sized (PVL-065), and
      * what "fit this column to its widest value" is measured with. */
     tiku_trk_poseview_set_measure(a.view, measure_text,
-                                  (void *)tiku_desk_font_plain());
+                                  (void *)tiku_font_plain());
     tiku_trk_poseview_set_font_size(a.view,
-                                    tiku_desk_font_plain()->height);
+                                    tiku_font_plain()->height);
     /* And the metrics the icon-mode CELLS are derived from, which is a
      * different question from the width columns are scaled against. */
-    tiku_trk_poseview_set_font_metrics(a.view, tiku_desk_font_plain()->height,
-                                       tiku_desk_font_plain()->ascent);
+    tiku_trk_poseview_set_font_metrics(a.view, tiku_font_plain()->height,
+                                       tiku_font_plain()->ascent);
     (void)tiku_trk_poseview_restore_columns(a.view);
     tiku_trk_titleview_init(&a.tv, a.view, TITLE_H);
     settle_layout(&a);
@@ -2943,21 +2943,21 @@ tracker_run(int argc, char **argv)
     if (getenv("TRK_DEMO_OPS") != NULL) {
         /* Scripted: select everything and duplicate, so the capture shows a
          * real operation and its result. */
-        char paths[64][TIKU_TRK_PATH_MAX];
+        char paths[64][TIKU_PATH_MAX];
         const char *sel[64];
         int n;
 
         tiku_trk_poseview_select_all(a.view);
         n = selection_paths(&a, paths, sel, 64);
         if (n > 0) {
-            (void)tiku_trk_fs_duplicate(a.fs, sel, n);
+            (void)tiku_fs_duplicate(a.fs, sel, n);
             snprintf(a.status, sizeof a.status, "duplicating %d items", n);
         }
     }
     if (getenv("TRK_DEMO_ICON") != NULL) {
         /* Scripted: icon mode, auto-place, then move two icons the way a
          * user would drag them, so the capture shows real spatial state. */
-        tiku_desk_rect_t lr = list_rect(&a);
+        tiku_rect_t lr = list_rect(&a);
         tiku_trk_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_ICON);
         tiku_trk_scroll_attach(&a.sb);
@@ -2971,7 +2971,7 @@ tracker_run(int argc, char **argv)
         (void)tiku_trk_poseview_save_state(a.view);
     }
     if (getenv("TRK_DEMO_MINI") != NULL) {
-        tiku_desk_rect_t lr = list_rect(&a);
+        tiku_rect_t lr = list_rect(&a);
 
         tiku_trk_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_MINI);
@@ -3026,7 +3026,7 @@ tracker_run(int argc, char **argv)
          * slow link is being read, which is the whole point of pumping here
          * rather than blocking on either one. */
         for (;;) {
-            tiku_desk_event_t ev;
+            tiku_event_t ev;
             int have = 0;
 
             memset(&ev, 0, sizeof ev);
@@ -3108,12 +3108,12 @@ tracker_run(int argc, char **argv)
                 }
                 switch (sp.what) {
                 case TIKU_TRK_SC_KEY:
-                    ev.type = TIKU_DESK_EVENT_KEY_DOWN;
+                    ev.type = TIKU_EVENT_KEY_DOWN;
                     ev.key = sp.key;
                     ev.modifiers = sp.modifiers;
                     if (sp.key >= 0x20u && sp.key < 0x7fu) {
                         ev.text[0] = (char)sp.key;
-                        if ((sp.modifiers & TIKU_DESK_MOD_SHIFT) != 0u &&
+                        if ((sp.modifiers & TIKU_MOD_SHIFT) != 0u &&
                             ev.text[0] >= 'a' && ev.text[0] <= 'z') {
                             ev.text[0] = (char)(ev.text[0] - 'a' + 'A');
                         }
@@ -3121,7 +3121,7 @@ tracker_run(int argc, char **argv)
                     have = 1;
                     break;
                 case TIKU_TRK_SC_MOVE:
-                    ev.type = TIKU_DESK_EVENT_POINTER_MOVE;
+                    ev.type = TIKU_EVENT_POINTER_MOVE;
                     ev.x = sp.x;
                     ev.y = sp.y;
                     ev.modifiers = sp.modifiers;
@@ -3130,8 +3130,8 @@ tracker_run(int argc, char **argv)
                 case TIKU_TRK_SC_PRESS:
                 case TIKU_TRK_SC_RELEASE:
                     ev.type = (sp.what == TIKU_TRK_SC_PRESS)
-                                  ? TIKU_DESK_EVENT_POINTER_DOWN
-                                  : TIKU_DESK_EVENT_POINTER_UP;
+                                  ? TIKU_EVENT_POINTER_DOWN
+                                  : TIKU_EVENT_POINTER_UP;
                     ev.x = sp.x;
                     ev.y = sp.y;
                     ev.modifiers = sp.modifiers;
@@ -3141,12 +3141,12 @@ tracker_run(int argc, char **argv)
                     break;
                 case TIKU_TRK_SC_SHOT:
                     draw(&a);
-                    (void)tiku_desk_surface_png(a.surf, sp.path);
+                    (void)tiku_surface_png(a.surf, sp.path);
                     break;
                 case TIKU_TRK_SC_MENU_PICK: {
                     tiku_trk_menu_t *m = (a.popup_sub != NULL)
                                              ? a.popup_sub : a.popup;
-                    tiku_desk_rect_t fr = (a.popup_sub != NULL)
+                    tiku_rect_t fr = (a.popup_sub != NULL)
                                               ? a.popup_sub_frame
                                               : a.popup_frame;
                     int k;
@@ -3159,7 +3159,7 @@ tracker_run(int argc, char **argv)
                     for (k = 0; k < m->count; k++) {
                         if (!m->item[k].separator &&
                             strstr(m->item[k].label, sp.path) != NULL) {
-                            ev.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                            ev.type = TIKU_EVENT_POINTER_DOWN;
                             ev.x = fr.x + 8;
                             ev.y = fr.y +
                                 tiku_trk_menu_item_top(m, k) +
@@ -3178,7 +3178,7 @@ tracker_run(int argc, char **argv)
                 default:
                     break;
                 }
-            } else if (tiku_desk_host_poll(a.host, &ev)) {
+            } else if (tiku_host_poll(a.host, &ev)) {
                 have = 1;
             }
             if (!have) {
@@ -3186,12 +3186,12 @@ tracker_run(int argc, char **argv)
             }
 
             switch (ev.type) {
-            case TIKU_DESK_EVENT_RESIZE:
+            case TIKU_EVENT_RESIZE:
                 if (ev.width > 0 && ev.height > 0 &&
                     (ev.width != a.surf->w || ev.height != a.surf->h)) {
-                    (void)tiku_desk_surface_resize(a.surf, ev.width,
+                    (void)tiku_surface_resize(a.surf, ev.width,
                                                    ev.height,
-                                                   TIKU_DESK_C_PANEL);
+                                                   TIKU_C_PANEL);
                     /* The overlay centres its alert on these; stale ones
                      * would put the question off a shrunken window. */
                     a.status_overlay.screen_w = ev.width;
@@ -3200,7 +3200,7 @@ tracker_run(int argc, char **argv)
                         /* Both axes re-anchor to the new window: the
                          * vertical clamp always ran through visible_rows,
                          * and the horizontal one runs here (PVL-058). */
-                        tiku_desk_rect_t lr = list_rect(&a);
+                        tiku_rect_t lr = list_rect(&a);
 
                         tiku_trk_poseview_set_viewport(a.view, lr.w - 4,
                                                        lr.h - 4);
@@ -3210,14 +3210,14 @@ tracker_run(int argc, char **argv)
                 }
                 a.dirty = 1;
                 break;
-            case TIKU_DESK_EVENT_EXPOSE:
+            case TIKU_EVENT_EXPOSE:
                 a.dirty = 1;
                 break;
-            case TIKU_DESK_EVENT_KEY_DOWN:
+            case TIKU_EVENT_KEY_DOWN:
                 tiku_trk_loop_note_activity(a.loop);
                 handle_key(&a, &ev);
                 break;
-            case TIKU_DESK_EVENT_POINTER_DOWN: {
+            case TIKU_EVENT_POINTER_DOWN: {
                 tiku_trk_loop_note_activity(a.loop);
                 if (tiku_trk_status_overlay_pointer(&a.status_overlay,
                                                     ev.x, ev.y)) {
@@ -3239,7 +3239,7 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (ev.button == 4 || ev.button == 5) {
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         /* TS-020: one value moves the titles and the rows
                          * together, because they read the same one. */
                         tiku_trk_poseview_set_hscroll(a.view,
@@ -3293,7 +3293,7 @@ tracker_run(int argc, char **argv)
                     a.popup_sub = NULL;
                     a.popup_frame = tiku_trk_menu_place(a.popup,
                         a.viewbtn_rect.x, a.viewbtn_rect.y,
-                        (tiku_desk_rect_t){ 0, 0, a.surf->w, a.surf->h });
+                        (tiku_rect_t){ 0, 0, a.surf->w, a.surf->h });
                     a.dirty = 1;
                     break;
                 }
@@ -3352,7 +3352,7 @@ tracker_run(int argc, char **argv)
                                 a.popup = &a.menus.attributes;
                                 a.popup_frame = tiku_trk_menu_place(
                                     a.popup, ev.x, ev.y,
-                                    (tiku_desk_rect_t){ 0, 0, a.surf->w,
+                                    (tiku_rect_t){ 0, 0, a.surf->w,
                                                         a.surf->h });
                             }
                         }
@@ -3361,7 +3361,7 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 if (tiku_trk_poseview_mode(a.view) != TIKU_TRK_MODE_LIST) {
-                    tiku_desk_rect_t lr = list_rect(&a);
+                    tiku_rect_t lr = list_rect(&a);
                     int lx = ev.x - lr.x, ly = ev.y - lr.y;
                     tiku_trk_pose_t *hit =
                         tiku_trk_poseview_pose_at(a.view, lx, ly);
@@ -3369,12 +3369,12 @@ tracker_run(int argc, char **argv)
                     unsigned click_flags = 0;
                     int64_t now = tiku_trk_now();
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                    if (ev.modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         click_flags |= TIKU_TRK_CLICK_EXTEND;
                     }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                    if (ev.modifiers & TIKU_MOD_CMD) {
                         click_flags |= TIKU_TRK_CLICK_EXTEND |
                                        TIKU_TRK_CLICK_CONTROL;
                     }
@@ -3478,12 +3478,12 @@ tracker_run(int argc, char **argv)
                         ? tiku_trk_poseview_at(a.view, row) : NULL;
                     int twice;
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                    if (ev.modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         click_flags |= TIKU_TRK_CLICK_EXTEND;
                     }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                    if (ev.modifiers & TIKU_MOD_CMD) {
                         click_flags |= TIKU_TRK_CLICK_EXTEND |
                                        TIKU_TRK_CLICK_CONTROL;
                     }
@@ -3522,7 +3522,7 @@ tracker_run(int argc, char **argv)
                         }
                     }
                     {
-                        tiku_desk_rect_t lr = list_rect(&a);
+                        tiku_rect_t lr = list_rect(&a);
                         int ox = 0, oy = 0;
 
                         tiku_trk_poseview_origin(a.view, &ox, &oy);
@@ -3533,8 +3533,8 @@ tracker_run(int argc, char **argv)
                     /* PVS-010: a strict second click on this same pose
                      * opens it. */
                     if (twice) {
-                        tiku_desk_rect_t lr = list_rect(&a);
-                        tiku_desk_rect_t from;
+                        tiku_rect_t lr = list_rect(&a);
+                        tiku_rect_t from;
 
                         {
                             int ax = 0, ay = 0, aw = 0, ah = 0;
@@ -3569,7 +3569,7 @@ tracker_run(int argc, char **argv)
                                 }
                             }
                             if (in_path && pose != NULL) {
-                                char parent[TIKU_TRK_PATH_MAX];
+                                char parent[TIKU_PATH_MAX];
                                 char *slash;
 
                                 snprintf(parent, sizeof parent, "%s",
@@ -3605,7 +3605,7 @@ tracker_run(int argc, char **argv)
                 }
                 break;
             }
-            case TIKU_DESK_EVENT_POINTER_MOVE: {
+            case TIKU_EVENT_POINTER_MOVE: {
                 a.ptr_x = ev.x;
                 a.ptr_y = ev.y;
                 if (a.popup != NULL) {
@@ -3662,7 +3662,7 @@ tracker_run(int argc, char **argv)
 
                         if (want != a.cursor_ew) {
                             a.cursor_ew = want;
-                            tiku_desk_host_set_resize_cursor(a.host, want);
+                            tiku_host_set_resize_cursor(a.host, want);
                         }
                     }
                     if ((tf & TIKU_TRK_TT_REDRAW) != 0u) {
@@ -3684,10 +3684,10 @@ tracker_run(int argc, char **argv)
                 }
                 if (a.band_active) {
                     unsigned mods = 0;
-                    tiku_desk_rect_t lr = list_rect(&a);
+                    tiku_rect_t lr = list_rect(&a);
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                    if (ev.modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                    if (ev.modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
                     a.band_x1 = ev.x;
                     a.band_y1 = ev.y;
                     (void)tiku_trk_poseview_select_rect(a.view,
@@ -3695,11 +3695,11 @@ tracker_run(int argc, char **argv)
                         a.band_x1 - lr.x, a.band_y1 - lr.y, mods);
                     a.dirty = 1;
                 } else if (a.drag_active) {
-                    tiku_desk_rect_t lr = list_rect(&a);
+                    tiku_rect_t lr = list_rect(&a);
                     int lx = ev.x - lr.x, ly = ev.y - lr.y;
                     int dx = lx - a.drag_x, dy = ly - a.drag_y;
                     int i, n = tiku_trk_poseview_count(a.view);
-                    int snap = (ev.modifiers & TIKU_DESK_MOD_CMD) ? 1 : 0;
+                    int snap = (ev.modifiers & TIKU_MOD_CMD) ? 1 : 0;
 
                     if (dx != 0 || dy != 0) {
                         /* Every selected pose moves by the same delta from
@@ -3718,7 +3718,7 @@ tracker_run(int argc, char **argv)
                 }
                 break;
             }
-            case TIKU_DESK_EVENT_POINTER_UP:
+            case TIKU_EVENT_POINTER_UP:
                 /* Letting go applies whatever range arrived while the bar
                  * was held (PVL-052). */
                 tiku_trk_scroll_release(&a.sb);
@@ -3730,7 +3730,7 @@ tracker_run(int argc, char **argv)
                     (void)title_hit(&a, ev.x, ev.y, &cx,
                                     &cy);
                     (void)tiku_trk_titleview_mouse_up(&a.tv, cx, cy,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0,
+                        (ev.modifiers & TIKU_MOD_SHIFT) ? 1 : 0,
                         tiku_trk_now());
                     (void)tiku_trk_poseview_save_columns(a.view);
                     a.dirty = 1;
@@ -3742,7 +3742,7 @@ tracker_run(int argc, char **argv)
                 }
                 a.press_down = 0;
                 if (a.drag_active) {
-                    tiku_desk_rect_t nr = navigator_rect(&a);
+                    tiku_rect_t nr = navigator_rect(&a);
 
                     if (ev.x >= nr.x &&
                         ev.x < nr.x + nr.w &&
@@ -3750,7 +3750,7 @@ tracker_run(int argc, char **argv)
                         ev.y < nr.y + nr.h) {
                         tiku_trk_pose_t *p =
                             tiku_trk_poseview_active(a.view);
-                        char dest[TIKU_TRK_PATH_MAX];
+                        char dest[TIKU_PATH_MAX];
 
                         a.drag_active = 0;
                         if (p != NULL && tiku_trk_navigator_drop_path(
@@ -3762,7 +3762,7 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 if (a.drag_active &&
-                    (ev.modifiers & TIKU_DESK_MOD_OPTION) != 0u) {
+                    (ev.modifiers & TIKU_MOD_OPTION) != 0u) {
                     /* Option makes the same-folder drag a DUPLICATE, not a
                      * reposition (FS-004): the poses go back where they
                      * were picked up and the copies are made instead. */
@@ -3778,7 +3778,7 @@ tracker_run(int argc, char **argv)
                         }
                     }
                     a.drag_active = 0;
-                    menu_key(&a, 'd', TIKU_DESK_MOD_CMD);
+                    menu_key(&a, 'd', TIKU_MOD_CMD);
                 }
                 if (a.band_active || a.drag_active) {
                     a.band_active = 0;
@@ -3790,13 +3790,13 @@ tracker_run(int argc, char **argv)
                     a.dirty = 1;
                 }
                 break;
-            case TIKU_DESK_EVENT_ACTIVATED:
-            case TIKU_DESK_EVENT_DEACTIVATED:
+            case TIKU_EVENT_ACTIVATED:
+            case TIKU_EVENT_DEACTIVATED:
                 /* PVS-023: the selection stops being PAINTED while the
                  * window is inactive, and the pivot is parked so a
                  * shift-click on return still extends from where the user
                  * left off.  A pending rename does not survive the trip. */
-                a.active = (ev.type == TIKU_DESK_EVENT_ACTIVATED);
+                a.active = (ev.type == TIKU_EVENT_ACTIVATED);
                 tiku_trk_poseview_window_activated(a.view, a.active);
                 if (!a.active) {
                     tiku_trk_poseview_cancel_edit_wait(a.view);
@@ -3806,7 +3806,7 @@ tracker_run(int argc, char **argv)
                 }
                 a.dirty = 1;
                 break;
-            case TIKU_DESK_EVENT_CLOSE:
+            case TIKU_EVENT_CLOSE:
                 a.running = 0;
                 break;
             default:
@@ -3816,16 +3816,16 @@ tracker_run(int argc, char **argv)
                 break;              /* one instruction per turn */
             }
         }
-        if (a.fs != NULL && tiku_trk_fs_busy(a.fs)) {
-            const tiku_trk_progress_t *pr;
+        if (a.fs != NULL && tiku_fs_busy(a.fs)) {
+            const tiku_progress_t *pr;
 
             /* Stepped, not blocking: the window keeps drawing while a copy
              * runs, which is the whole reason the engine has a cursor. */
-            (void)tiku_trk_fs_step(a.fs, 4);
+            (void)tiku_fs_step(a.fs, 4);
             /* A mixed paste left its second half waiting for the engine to
              * go idle; this is where it gets to start (FS-055). */
             (void)tiku_trk_folder_file_actions_pump(&a.file_actions);
-            pr = tiku_trk_fs_progress(a.fs);
+            pr = tiku_fs_progress(a.fs);
             if (pr->conflict) {
                 /* Asked, not assumed.  The engine worked out which form
                  * the question takes; this puts it up and waits. */
@@ -3844,7 +3844,7 @@ tracker_run(int argc, char **argv)
                          pr->skipped ? " (some skipped)" : "",
                          pr->failed ? " -- some failed" : "");
             }
-            if (!tiku_trk_fs_busy(a.fs)) {
+            if (!tiku_fs_busy(a.fs)) {
                 after_op(&a);
             }
             a.dirty = 1;
@@ -3879,7 +3879,7 @@ tracker_run(int argc, char **argv)
                 tiku_trk_now() >= shot_at_us) {
                 /* Dump what was just drawn: the window is the deliverable,
                  * so it must be reviewable without someone watching it. */
-                (void)tiku_desk_surface_png(a.surf, shot);
+                (void)tiku_surface_png(a.surf, shot);
                 printf("wrote %s\n", shot);
                 fflush(stdout);
                 shot_at_us = 0;
@@ -3927,8 +3927,8 @@ tracker_run(int argc, char **argv)
         }
     }
 
-    tiku_desk_host_close(a.host);
-    tiku_desk_surface_free(a.surf);
+    tiku_host_close(a.host);
+    tiku_surface_free(a.surf);
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
@@ -3937,13 +3937,13 @@ tracker_run(int argc, char **argv)
         rc = tiku_trk_script_report(sc, "tracker");
         tiku_trk_script_free(sc);
     }
-    tiku_trk_fs_free(a.fs);
+    tiku_fs_free(a.fs);
     tiku_trk_poseview_free(a.view);
-    tiku_trk_backend_close(a.backend);
+    tiku_backend_close(a.backend);
     return rc;
 }
 
-const tiku_desk_app_descriptor_t tiku_trk_application = {
+const tiku_app_descriptor_t tiku_trk_application = {
     .id = "org.tikuos.tracker.browser",
     .name = "Tracker",
     .run = tracker_run

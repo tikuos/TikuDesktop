@@ -27,7 +27,7 @@ int
 main(void)
 {
     tiku_trk_deskbar_prefs_t prefs;
-    tiku_trk_store_t *store = tiku_trk_store_memory_open();
+    tiku_store_t *store = tiku_store_memory_open();
     tiku_trk_db_dock_t dock;
 
     tiku_trk_deskbar_prefs_init(&prefs);
@@ -98,8 +98,8 @@ main(void)
         older[0] = 4;               /* the version before this one */
         older[6] = 24;              /* icon size */
         older[20] = 16;             /* font size, the last field it had */
-        (void)tiku_trk_state_write(store, TIKU_TRK_KEY_SESSION,
-                                   TIKU_TRK_ATTR_DESKBAR_PREFS, older,
+        (void)tiku_state_write(store, TIKU_KEY_SESSION,
+                                   TIKU_ATTR_DESKBAR_PREFS, older,
                                    sizeof older);
         tiku_trk_deskbar_prefs_init(&saved);
         check(tiku_trk_deskbar_prefs_load(&saved, store) == 0, "DB-062",
@@ -179,9 +179,9 @@ main(void)
           dock == TIKU_TRK_DB_RIGHT_MINI, "DB-063",
           "numpad and navigation keys select the same six locations");
     {
-        tiku_desk_rect_t kept = tiku_trk_deskbar_prefs_frame(
+        tiku_rect_t kept = tiku_trk_deskbar_prefs_frame(
             1, 120, 80, 1000, 680, 470, 548);
-        tiku_desk_rect_t repaired = tiku_trk_deskbar_prefs_frame(
+        tiku_rect_t repaired = tiku_trk_deskbar_prefs_frame(
             1, 900, 600, 1000, 680, 470, 548);
 
         check(kept.x == 120 && kept.y == 80 && repaired.x == 265 &&
@@ -190,7 +190,7 @@ main(void)
               "is refused and centered");
     }
 
-    tiku_trk_store_free(store);
+    tiku_store_free(store);
     printf("\n%s\n", fails ? "FAILURES" : "Deskbar preferences hold");
     return fails ? 1 : 0;
 }

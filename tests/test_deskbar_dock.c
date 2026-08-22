@@ -24,7 +24,7 @@ static int fails;
 static char fake_moved_to[512];
 
 static int
-fake_path_of_id(tiku_trk_backend_t *b, uint64_t nid, char *out, size_t max)
+fake_path_of_id(tiku_backend_t *b, uint64_t nid, char *out, size_t max)
 {
     (void)b;
     (void)nid;
@@ -46,16 +46,16 @@ int
 main(void)
 {
     tiku_trk_deskbar_t *db = tiku_trk_deskbar_new(NULL);
-    tiku_desk_surface_t *s = tiku_desk_surface_new(1000, 680,
-                                                   TIKU_DESK_C_BACKDROP);
-    tiku_desk_rect_t f;
+    tiku_surface_t *s = tiku_surface_new(1000, 680,
+                                                   TIKU_C_BACKDROP);
+    tiku_rect_t f;
 
     printf("replicant persistence and removal (DB-039, DB-040)\n");
     {
         const char *path = "/tmp/trk_deskbar_replicant";
         FILE *out = fopen(path, "w");
-        tiku_trk_backend_t *backend = tiku_trk_backend_posix_open();
-        tiku_trk_store_t *store = tiku_trk_store_memory_open();
+        tiku_backend_t *backend = tiku_backend_posix_open();
+        tiku_store_t *store = tiku_store_memory_open();
         tiku_trk_deskbar_t *first = tiku_trk_deskbar_new(backend);
         tiku_trk_deskbar_t *second = tiku_trk_deskbar_new(backend);
 
@@ -72,15 +72,15 @@ main(void)
               "the removal is persisted so it stays gone after reload");
         tiku_trk_deskbar_free(first);
         tiku_trk_deskbar_free(second);
-        tiku_trk_store_free(store);
-        tiku_trk_backend_close(backend);
+        tiku_store_free(store);
+        tiku_backend_close(backend);
         (void)unlink(path);
     }
 
     printf("the theme switch on the tray (DEV-002)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t sw;
+        tiku_rect_t sw;
         uint32_t track_light, track_dark;
 
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
@@ -124,7 +124,7 @@ main(void)
     printf("the global bar owns the top of the screen (DEV-003)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t sw;
+        tiku_rect_t sw;
 
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
         tiku_trk_deskbar_set_top_inset(db, 20);
@@ -286,7 +286,7 @@ main(void)
     {
         tiku_trk_dbwin_t wins[2];
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t bar;
+        tiku_rect_t bar;
         int y, row_y = -1;
 
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
@@ -314,7 +314,7 @@ main(void)
 
         memset(&pick, 0, sizeof pick);
         (void)tiku_trk_deskbar_click(db, bar.x + 20, row_y,
-                                     TIKU_TRK_MOD_CMD | TIKU_DESK_MOD_OPTION,
+                                     TIKU_TRK_MOD_CMD | TIKU_MOD_OPTION,
                                      1, 1, &pick);
         check(pick.what == TIKU_TRK_DB_HIDE_ALL, "CW-014",
               "and Option on that same gesture takes the whole application "
@@ -332,8 +332,8 @@ main(void)
     {
         /* A SHORT screen rather than more applications: the roster is
          * bounded, and what makes a list overflow is the room it has. */
-        tiku_desk_surface_t *small = tiku_desk_surface_new(400, 150,
-                                              TIKU_DESK_C_BACKDROP);
+        tiku_surface_t *small = tiku_surface_new(400, 150,
+                                              TIKU_C_BACKDROP);
         int i;
         char name[16];
 
@@ -359,7 +359,7 @@ main(void)
                   "at the top only the down arrow remains");
             {
                 tiku_trk_db_pick_t apick;
-                tiku_desk_rect_t af = tiku_trk_deskbar_frame(db);
+                tiku_rect_t af = tiku_trk_deskbar_frame(db);
                 int ay;
 
                 /* The bottom edge of the list steps it -- three at a
@@ -388,7 +388,7 @@ main(void)
         check(!tiku_trk_deskbar_scrollable(db), "DB-034",
               "back on a screen with room, there is nothing to scroll "
               "again -- overflow is about the room, not the count");
-        tiku_desk_surface_free(small);
+        tiku_surface_free(small);
     }
 
     printf("\nhiding, and coming back (DB-051)\n");
@@ -519,7 +519,7 @@ main(void)
     printf("\nwhat a click on an application asks for (DB-019/020/021)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t bar;
+        tiku_rect_t bar;
         int y, team_y = -1, changed = 0;
 
         (void)tiku_trk_deskbar_add_team_pid(db, "editor", 300, "/bin/ed",
@@ -562,7 +562,7 @@ main(void)
         memset(&pick, 0, sizeof pick);
         (void)tiku_trk_deskbar_click(db, bar.x + 20, team_y,
                                      TIKU_TRK_MOD_CMD | TIKU_TRK_MOD_SHIFT |
-                                     TIKU_DESK_MOD_OPTION, 1, 1, &pick);
+                                     TIKU_MOD_OPTION, 1, 1, &pick);
         check(pick.what == TIKU_TRK_DB_KILL_TEAM && pick.team >= 0,
               "DB-020", "and the full grip asks for the kill, naming "
               "the row");
@@ -572,7 +572,7 @@ main(void)
     printf("\nthe expander commits on release (DB-022/DB-023)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t bar;
+        tiku_rect_t bar;
         int y, team_y = -1, team_at = -1, was;
 
         tiku_trk_deskbar_draw(db, s);
@@ -619,8 +619,8 @@ main(void)
     {
         tiku_trk_dbwin_t wins[2];
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t bar;
-        const tiku_desk_font_t *font = tiku_desk_font_plain();
+        tiku_rect_t bar;
+        const tiku_font_t *font = tiku_font_plain();
         int rowh = font->height + 6;
         int y, team_y = -1, team_at = -1, menu_y;
 
@@ -691,7 +691,7 @@ main(void)
     printf("\na name too long for its row is said whole (DB-032)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t bar;
+        tiku_rect_t bar;
         int y, team_y = -1, changed = 0, tlong;
 
         while (tiku_trk_deskbar_team_count(db) > 1) {
@@ -722,11 +722,11 @@ main(void)
 
     printf("\nthe horizontal strip breathes (DB-033)\n");
     {
-        const tiku_desk_font_t *font = tiku_desk_font_plain();
-        int min_w = 24 + tiku_desk_text_width(font, "abcdefgh");
+        const tiku_font_t *font = tiku_font_plain();
+        int min_w = 24 + tiku_text_width(font, "abcdefgh");
         int max_w = min_w + min_w / 4;
-        tiku_desk_surface_t *narrow = tiku_desk_surface_new(400, 150,
-                                              TIKU_DESK_C_BACKDROP);
+        tiku_surface_t *narrow = tiku_surface_new(400, 150,
+                                              TIKU_C_BACKDROP);
         tiku_trk_db_pick_t pick;
         int i, changed = 0;
         char name[16];
@@ -755,19 +755,19 @@ main(void)
             /* 36 px wider than it used to be: the strip's far end now
              * belongs to the theme switch, and the breathing room this
              * row measures excludes it. */
-            tiku_desk_surface_t *mid = tiku_desk_surface_new(836, 150,
-                                              TIKU_DESK_C_BACKDROP);
+            tiku_surface_t *mid = tiku_surface_new(836, 150,
+                                              TIKU_C_BACKDROP);
 
             tiku_trk_deskbar_draw(db, mid);
             check(tiku_trk_deskbar_hbutton_width(db) > min_w &&
                   tiku_trk_deskbar_hbutton_width(db) < max_w &&
                   !tiku_trk_deskbar_scrollable(db), "DB-033",
                   "with room again they grow back between the two bounds");
-            tiku_desk_surface_free(mid);
+            tiku_surface_free(mid);
         }
         tiku_trk_deskbar_draw(db, s);
         {
-            tiku_desk_rect_t hf = tiku_trk_deskbar_frame(db);
+            tiku_rect_t hf = tiku_trk_deskbar_frame(db);
 
             memset(&pick, 0, sizeof pick);
             (void)tiku_trk_deskbar_click(db, 130 + 10, hf.y + 10,
@@ -777,7 +777,7 @@ main(void)
                   "rows do");
         }
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
-        tiku_desk_surface_free(narrow);
+        tiku_surface_free(narrow);
     }
 
 
@@ -832,7 +832,7 @@ main(void)
         tiku_trk_deskbar_open_menu(db);
         (void)tiku_trk_deskbar_menu_point(db, "Shut down", &sx, &sy);
         {
-            tiku_desk_rect_t bar2 = tiku_trk_deskbar_frame(db);
+            tiku_rect_t bar2 = tiku_trk_deskbar_frame(db);
 
             /* The arrow zone expands instead of choosing. */
             memset(&pick, 0, sizeof pick);
@@ -851,7 +851,7 @@ main(void)
         tiku_trk_deskbar_open_menu(db);
         (void)tiku_trk_deskbar_menu_point(db, "Shut down", &sx, &sy);
         {
-            tiku_desk_rect_t bar2 = tiku_trk_deskbar_frame(db);
+            tiku_rect_t bar2 = tiku_trk_deskbar_frame(db);
 
             memset(&pick, 0, sizeof pick);
             (void)tiku_trk_deskbar_click(db, bar2.x - 2 - 20 + 12, sy, 0u,
@@ -871,8 +871,8 @@ main(void)
     printf("\nmini mode folds the list into one popping icon (DB-037)\n");
     {
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t mf;
-        const tiku_desk_font_t *font = tiku_desk_font_plain();
+        tiku_rect_t mf;
+        const tiku_font_t *font = tiku_font_plain();
         int rowh = font->height + 6;
 
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_MINI);
@@ -893,9 +893,9 @@ main(void)
             /* And with nothing running, the one row is said, not
              * chosen. */
             tiku_trk_deskbar_t *bare = tiku_trk_deskbar_new(NULL);
-            tiku_desk_surface_t *bs = tiku_desk_surface_new(400, 300,
-                                              TIKU_DESK_C_BACKDROP);
-            tiku_desk_rect_t bf2;
+            tiku_surface_t *bs = tiku_surface_new(400, 300,
+                                              TIKU_C_BACKDROP);
+            tiku_rect_t bf2;
 
             tiku_trk_deskbar_set_dock(bare, TIKU_TRK_DB_RIGHT_MINI);
             tiku_trk_deskbar_draw(bare, bs);
@@ -913,7 +913,7 @@ main(void)
             check(pick.what == TIKU_TRK_DB_NONE, "DB-037",
                   "its 'no application running' row is said, not chosen");
             tiku_trk_deskbar_free(bare);
-            tiku_desk_surface_free(bs);
+            tiku_surface_free(bs);
         }
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
     }
@@ -923,10 +923,10 @@ main(void)
     {
         /* A backend that CAN answer by node identity: posix stat plus a
          * path_of_id the test controls -- the VFS-watch shape. */
-        static char moved_to[TIKU_TRK_PATH_MAX];
-        tiku_trk_backend_t *pb = tiku_trk_backend_posix_open();
-        tiku_trk_backend_t fake = *pb;
-        tiku_trk_backend_ops_t ops = *pb->ops;
+        static char moved_to[TIKU_PATH_MAX];
+        tiku_backend_t *pb = tiku_backend_posix_open();
+        tiku_backend_t fake = *pb;
+        tiku_backend_ops_t ops = *pb->ops;
         tiku_trk_deskbar_t *tdb;
         FILE *out;
         int id1, id2;
@@ -969,16 +969,16 @@ main(void)
         (void)unlink("/tmp/trk_r_moved");
         (void)unlink("/tmp/trk_r_moved2");
         tiku_trk_deskbar_free(tdb);
-        tiku_trk_backend_close(pb);
+        tiku_backend_close(pb);
     }
 
 
     printf("\nthe calendar flips above when below runs out (DB-070)\n");
     {
-        tiku_desk_surface_t *low = tiku_desk_surface_new(400, 260,
-                                              TIKU_DESK_C_BACKDROP);
+        tiku_surface_t *low = tiku_surface_new(400, 260,
+                                              TIKU_C_BACKDROP);
         tiku_trk_db_pick_t pick;
-        tiku_desk_rect_t lf;
+        tiku_rect_t lf;
         int old_month, month;
 
         tiku_trk_deskbar_draw(db, low);
@@ -1000,12 +1000,12 @@ main(void)
         check(month == (old_month == 12 ? 1 : old_month + 1), "DB-070",
               "and its steppers answer at the flipped place");
         tiku_trk_deskbar_close_calendar(db);
-        tiku_desk_surface_free(low);
+        tiku_surface_free(low);
         tiku_trk_deskbar_draw(db, s);
     }
 
     tiku_trk_deskbar_free(db);
-    tiku_desk_surface_free(s);
+    tiku_surface_free(s);
     printf("\n%s\n", fails ? "FAILURES" : "the bar sits where it is put");
     return fails ? 1 : 0;
 }

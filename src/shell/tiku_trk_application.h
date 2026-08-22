@@ -10,8 +10,8 @@
 #ifndef TIKU_TRK_APPLICATION_H_
 #define TIKU_TRK_APPLICATION_H_
 
-#include "tiku_desk_app.h"
+#include "tiku_app.h"
 
-extern const tiku_desk_app_descriptor_t tiku_trk_application;
+extern const tiku_app_descriptor_t tiku_trk_application;
 
 #endif /* TIKU_TRK_APPLICATION_H_ */

@@ -18,7 +18,7 @@
 #include "tiku_trk_desktop_view.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_folder_window.h"
-#include "tiku_trk_fs.h"
+#include "tiku_fs.h"
 #include "tiku_trk_color.h"
 
 typedef void (*tiku_trk_drop_color_fn)(void *context,
@@ -33,8 +33,8 @@ typedef int (*tiku_trk_drop_launch_fn)(void *context,
 /** @brief Dependencies and retained decision state for a pointer drop. */
 typedef struct {
     tiku_trk_deskbar_t *deskbar;
-    tiku_trk_backend_t *backend;
-    tiku_trk_fs_t *fs;
+    tiku_backend_t *backend;
+    tiku_fs_t *fs;
     tiku_trk_desktop_view_t *desktop_view;
     tiku_trk_cwmenu_t *menus;
     tiku_trk_alert_t *alert;
@@ -42,10 +42,10 @@ typedef struct {
     tiku_trk_folder_window_t **drop_folder;
     int *drop_row;
     tiku_trk_drag_t pending;
-    char destination[TIKU_TRK_PATH_MAX];
+    char destination[TIKU_PATH_MAX];
     tiku_trk_menu_t **popup;
     tiku_trk_menu_t **popup_sub;
-    tiku_desk_rect_t *popup_frame;
+    tiku_rect_t *popup_frame;
     char *progress_destination;
     size_t progress_destination_size;
     char *status;
@@ -64,12 +64,12 @@ typedef struct {
 } tiku_trk_drop_controller_t;
 
 void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
-    tiku_trk_deskbar_t *deskbar, tiku_trk_backend_t *backend,
-    tiku_trk_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
+    tiku_trk_deskbar_t *deskbar, tiku_backend_t *backend,
+    tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
     tiku_trk_cwmenu_t *menus, tiku_trk_alert_t *alert,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_trk_menu_t **popup, tiku_trk_menu_t **popup_sub,
-    tiku_desk_rect_t *popup_frame, char *progress_destination,
+    tiku_rect_t *popup_frame, char *progress_destination,
     size_t progress_destination_size, char *status, size_t status_size,
     int *dirty, int screen_w, int screen_h,
     tiku_trk_drop_color_fn set_color, void *color_context);

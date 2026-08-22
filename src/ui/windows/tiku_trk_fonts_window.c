@@ -17,11 +17,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_desk_font.h"
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_ui.h"
+#include "tiku_font.h"
+#include "tiku_gfx.h"
+#include "tiku_ui.h"
 #include "tiku_trk_deskbar_prefs.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 
 #define PAD 16
 
@@ -49,14 +49,14 @@ rows_of(const tiku_trk_fonts_window_t *controller)
 static int
 row_h(void)
 {
-    return tiku_desk_ui_row_h();                        /* 22 at 12 px */
+    return tiku_ui_row_h();                        /* 22 at 12 px */
 }
 
 /** @brief Where the list starts, under the word above it. */
 static int
 list_y(void)
 {
-    return tiku_desk_font_bold()->height + 27;          /* 42 at 12 px */
+    return tiku_font_bold()->height + 27;          /* 42 at 12 px */
 }
 
 /** @brief Where the size stepper sits, under however many families. */
@@ -70,15 +70,15 @@ size_y(const tiku_trk_fonts_window_t *controller)
 static int
 paper_h(void)
 {
-    return tiku_desk_font_bold()->height +
-           tiku_desk_font_plain()->height + 22;          /* 52 at 12 px */
+    return tiku_font_bold()->height +
+           tiku_font_plain()->height + 22;          /* 52 at 12 px */
 }
 
 /** @brief Where the specimen sits, under the stepper. */
 static int
 sample_y(const tiku_trk_fonts_window_t *controller)
 {
-    return size_y(controller) + tiku_desk_ui_button_h() + 8;
+    return size_y(controller) + tiku_ui_button_h() + 8;
 }
 
 /** @brief And the buttons, under that. */
@@ -103,14 +103,14 @@ button_y(const tiku_trk_fonts_window_t *controller)
  * what keeps the two buttons within a few pixels of the same place at
  * every size, so a hand going back for a second press finds them there.
  */
-static tiku_desk_rect_t
+static tiku_rect_t
 plus_rect(const tiku_trk_fonts_window_t *controller,
-          tiku_desk_rect_t content)
+          tiku_rect_t content)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
-    r.w = tiku_desk_ui_step_w();
-    r.h = tiku_desk_ui_button_h();
+    r.w = tiku_ui_step_w();
+    r.h = tiku_ui_button_h();
     r.x = content.x + content.w - PAD - r.w;
     r.y = content.y + size_y(controller);
     return r;
@@ -120,14 +120,14 @@ plus_rect(const tiku_trk_fonts_window_t *controller,
 static int
 number_w(void)
 {
-    return tiku_desk_text_width(tiku_desk_font_plain(), "00 px") + 20;
+    return tiku_text_width(tiku_font_plain(), "00 px") + 20;
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 minus_rect(const tiku_trk_fonts_window_t *controller,
-           tiku_desk_rect_t content)
+           tiku_rect_t content)
 {
-    tiku_desk_rect_t r = plus_rect(controller, content);
+    tiku_rect_t r = plus_rect(controller, content);
 
     r.x -= number_w() + 8 + r.w;
     return r;
@@ -140,28 +140,28 @@ minus_rect(const tiku_trk_fonts_window_t *controller,
  * The old numbers stay as floors, so at 12 px in English they are exactly
  * the buttons they were.
  */
-static tiku_desk_rect_t
+static tiku_rect_t
 defaults_rect(const tiku_trk_fonts_window_t *controller,
-              tiku_desk_rect_t content)
+              tiku_rect_t content)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
     r.x = content.x + PAD;
     r.y = content.y + button_y(controller);
-    r.w = tiku_desk_ui_button_w(tiku_trk_str("button.defaults"), 112);
-    r.h = tiku_desk_ui_button_h();
+    r.w = tiku_ui_button_w(tiku_str("button.defaults"), 112);
+    r.h = tiku_ui_button_h();
     return r;
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 revert_rect(const tiku_trk_fonts_window_t *controller,
-            tiku_desk_rect_t content)
+            tiku_rect_t content)
 {
-    tiku_desk_rect_t d = defaults_rect(controller, content);
-    tiku_desk_rect_t r = d;
+    tiku_rect_t d = defaults_rect(controller, content);
+    tiku_rect_t r = d;
 
     r.x = d.x + d.w + 10;
-    r.w = tiku_desk_ui_button_w(tiku_trk_str("button.revert"), 100);
+    r.w = tiku_ui_button_w(tiku_str("button.revert"), 100);
     return r;
 }
 
@@ -169,8 +169,8 @@ revert_rect(const tiku_trk_fonts_window_t *controller,
 static int
 window_height(const tiku_trk_fonts_window_t *controller)
 {
-    return button_y(controller) + tiku_desk_ui_button_h() + PAD +
-           tiku_desk_window_tab_h() + TIKU_DESK_WINDOW_BORDER;
+    return button_y(controller) + tiku_ui_button_h() + PAD +
+           tiku_window_tab_h() + TIKU_WINDOW_BORDER;
 }
 
 /**
@@ -203,7 +203,7 @@ refit(tiku_trk_fonts_window_t *controller)
 }
 
 static int
-inside(tiku_desk_rect_t r, int x, int y)
+inside(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
@@ -215,7 +215,7 @@ apply(tiku_trk_fonts_window_t *controller)
     tiku_trk_deskbar_prefs_t record;
 
     (void)tiku_trk_fontprefs_save(&controller->model, controller->store);
-    (void)tiku_trk_store_flush(controller->store);
+    (void)tiku_store_flush(controller->store);
     /* Through the Deskbar rather than straight at the toolkit: it holds
      * the settings everything else is applied from, and a copy of them
      * left saying the old face would put it back on the next change. */
@@ -237,13 +237,13 @@ apply(tiku_trk_fonts_window_t *controller)
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_fonts_window_t *controller = context;
     const tiku_trk_fontprefs_values_t *v = &controller->model.value;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
-    const tiku_desk_font_t *bold = tiku_desk_font_bold();
+    const tiku_font_t *font = tiku_font_plain();
+    const tiku_font_t *bold = tiku_font_bold();
     char number[32];
     int rows = rows_of(controller);
     int chosen_row = tiku_trk_fontprefs_chosen(&controller->model,
@@ -252,20 +252,20 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
     (void)window;
     refit(controller);
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
-    tiku_desk_text(surface, bold, content.x + PAD,
+    tiku_fill(surface, content, TIKU_C_PANEL);
+    tiku_text(surface, bold, content.x + PAD,
                    content.y + bold->ascent + 10,
-                   tiku_trk_str("prefs.fonts.family"), TIKU_DESK_C_TEXT);
+                   tiku_str("prefs.fonts.family"), TIKU_C_TEXT);
     {
-        tiku_desk_rect_t list = { content.x + PAD, content.y + list_y(),
+        tiku_rect_t list = { content.x + PAD, content.y + list_y(),
                                   content.w - 2 * PAD, rows * row_h() };
 
-        tiku_desk_fill(surface, list, TIKU_DESK_C_DOC);
-        tiku_desk_frame(surface, list,
-                        tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                       TIKU_DESK_DARKEN_2));
+        tiku_fill(surface, list, TIKU_C_DOC);
+        tiku_frame(surface, list,
+                        tiku_tint(TIKU_C_PANEL,
+                                       TIKU_DARKEN_2));
         for (i = 0; i < rows; i++) {
-            tiku_desk_rect_t row = { list.x + 1, list.y + 1 + i * row_h(),
+            tiku_rect_t row = { list.x + 1, list.y + 1 + i * row_h(),
                                      list.w - 2, row_h() };
             const char *name = (i < controller->offer.count)
                                    ? controller->offer.name[i] : NULL;
@@ -275,81 +275,81 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                 continue;
             }
             if (chosen) {
-                tiku_desk_fill(surface, row, TIKU_DESK_C_SELECT);
+                tiku_fill(surface, row, TIKU_C_SELECT);
             }
-            tiku_desk_text(surface, font, row.x + 8,
+            tiku_text(surface, font, row.x + 8,
                            row.y + (row_h() - font->height) / 2 +
                                font->ascent,
-                           name, chosen ? TIKU_DESK_C_SELTEXT
-                                        : TIKU_DESK_C_TEXT);
+                           name, chosen ? TIKU_C_SELTEXT
+                                        : TIKU_C_TEXT);
         }
     }
 
     {
-        tiku_desk_rect_t minus = minus_rect(controller, content);
-        tiku_desk_rect_t plus = plus_rect(controller, content);
-        tiku_desk_rect_t shown = { minus.x + minus.w + 4, minus.y,
+        tiku_rect_t minus = minus_rect(controller, content);
+        tiku_rect_t plus = plus_rect(controller, content);
+        tiku_rect_t shown = { minus.x + minus.w + 4, minus.y,
                                    number_w(), minus.h };
 
-        tiku_desk_text(surface, bold, content.x + PAD,
+        tiku_text(surface, bold, content.x + PAD,
                        minus.y + (minus.h - bold->height) / 2 + bold->ascent,
-                       tiku_trk_str("prefs.fonts.size"), TIKU_DESK_C_TEXT);
-        tiku_desk_ui_button(surface, minus, "-",
+                       tiku_str("prefs.fonts.size"), TIKU_C_TEXT);
+        tiku_ui_button(surface, minus, "-",
                             (v->size > TIKU_TRK_FONT_MIN)
-                                ? 0u : TIKU_DESK_S_DISABLED);
-        tiku_desk_ui_button(surface, plus, "+",
+                                ? 0u : TIKU_S_DISABLED);
+        tiku_ui_button(surface, plus, "+",
                             (v->size < TIKU_TRK_FONT_MAX)
-                                ? 0u : TIKU_DESK_S_DISABLED);
+                                ? 0u : TIKU_S_DISABLED);
         snprintf(number, sizeof number, "%d px", v->size);
-        (void)tiku_desk_text_centered(surface, font, shown, number,
-                                      TIKU_DESK_C_TEXT);
+        (void)tiku_text_centered(surface, font, shown, number,
+                                      TIKU_C_TEXT);
     }
 
     /* The specimen: the face itself, at the size itself, drawn on paper
      * rather than on the panel so the ink is judged against what a
      * document will show it against. */
     {
-        tiku_desk_rect_t paper = { content.x + PAD,
+        tiku_rect_t paper = { content.x + PAD,
                                    content.y + sample_y(controller),
                                    content.w - 2 * PAD, paper_h() };
 
-        tiku_desk_fill(surface, paper, TIKU_DESK_C_DOC);
-        tiku_desk_frame(surface, paper,
-                        tiku_desk_tint(TIKU_DESK_C_PANEL,
-                                       TIKU_DESK_DARKEN_2));
-        tiku_desk_text(surface, bold, paper.x + 10,
+        tiku_fill(surface, paper, TIKU_C_DOC);
+        tiku_frame(surface, paper,
+                        tiku_tint(TIKU_C_PANEL,
+                                       TIKU_DARKEN_2));
+        tiku_text(surface, bold, paper.x + 10,
                        paper.y + 6 + bold->ascent,
-                       tiku_trk_str("prefs.fonts.sample_title"),
-                       TIKU_DESK_C_TEXT);
-        tiku_desk_text(surface, font, paper.x + 10,
+                       tiku_str("prefs.fonts.sample_title"),
+                       TIKU_C_TEXT);
+        tiku_text(surface, font, paper.x + 10,
                        paper.y + 10 + bold->height + font->ascent,
-                       tiku_trk_str("prefs.fonts.sample_body"),
-                       TIKU_DESK_C_TEXT);
+                       tiku_str("prefs.fonts.sample_body"),
+                       TIKU_C_TEXT);
     }
 
     {
-        tiku_desk_rect_t d = defaults_rect(controller, content);
-        tiku_desk_rect_t r = revert_rect(controller, content);
+        tiku_rect_t d = defaults_rect(controller, content);
+        tiku_rect_t r = revert_rect(controller, content);
 
-        tiku_desk_ui_button(surface, d, tiku_trk_str("button.defaults"),
+        tiku_ui_button(surface, d, tiku_str("button.defaults"),
                             tiku_trk_fontprefs_defaultable(&controller->model)
-                                ? 0u : TIKU_DESK_S_DISABLED);
-        tiku_desk_ui_button(surface, r, tiku_trk_str("button.revert"),
+                                ? 0u : TIKU_S_DISABLED);
+        tiku_ui_button(surface, r, tiku_str("button.revert"),
                             tiku_trk_fontprefs_revertable(&controller->model)
-                                ? 0u : TIKU_DESK_S_DISABLED);
+                                ? 0u : TIKU_S_DISABLED);
     }
 }
 
 static int
-event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
+event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
 {
     tiku_trk_fonts_window_t *controller = context;
-    tiku_desk_rect_t content = tiku_desk_window_content(window);
+    tiku_rect_t content = tiku_window_content(window);
     int x = event->x - content.x, y = event->y - content.y;
     int rows = rows_of(controller);
 
-    if (event->type != TIKU_DESK_EVENT_POINTER_DOWN ||
+    if (event->type != TIKU_EVENT_POINTER_DOWN ||
         !inside(content, event->x, event->y)) {
         return 0;
     }
@@ -392,9 +392,9 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *event,
 
 void
 tiku_trk_fonts_window_init(tiku_trk_fonts_window_t *controller,
-                           tiku_desk_workspace_t *workspace,
+                           tiku_workspace_t *workspace,
                            tiku_trk_deskbar_t *deskbar,
-                           tiku_trk_store_t *store, int screen_w,
+                           tiku_store_t *store, int screen_w,
                            int screen_h, int *dirty)
 {
     memset(controller, 0, sizeof *controller);
@@ -411,7 +411,7 @@ void
 tiku_trk_fonts_window_close(tiku_trk_fonts_window_t *controller)
 {
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_close(controller->workspace, controller->window);
+        tiku_workspace_close(controller->workspace, controller->window);
     }
     controller->window = NULL;
     if (controller->dirty != NULL) {
@@ -428,10 +428,10 @@ tiku_trk_fonts_window_destroy(tiku_trk_fonts_window_t *controller)
 void
 tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
 {
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
 
     if (controller->window != NULL && controller->window->open) {
-        tiku_desk_workspace_activate(controller->workspace,
+        tiku_workspace_activate(controller->workspace,
                                      controller->window);
         return;
     }
@@ -447,18 +447,18 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
     frame.h = window_height(controller);
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 3;
-    controller->window = tiku_desk_workspace_open(controller->workspace,
-        tiku_trk_str("title.fonts"), frame, draw, controller, NULL);
+    controller->window = tiku_workspace_open(controller->workspace,
+        tiku_str("title.fonts"), frame, draw, controller, NULL);
     if (controller->window != NULL) {
-        tiku_desk_window_set_size_controls(controller->window, 0, 0);
-        tiku_desk_window_set_handlers(controller->window, event, NULL, NULL);
+        tiku_window_set_size_controls(controller->window, 0, 0);
+        tiku_window_set_handlers(controller->window, event, NULL, NULL);
     }
     if (controller->dirty != NULL) {
         *controller->dirty = 1;
     }
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_fonts_window_handle(tiku_trk_fonts_window_t *controller)
 {
     return controller->window;

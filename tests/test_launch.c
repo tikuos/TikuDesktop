@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 
 #include "tiku_trk_launch.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 static int fails;
 
@@ -30,7 +30,7 @@ int
 main(void)
 {
     tiku_trk_apps_t r;
-    tiku_trk_store_t *st = tiku_trk_store_memory_open();
+    tiku_store_t *st = tiku_store_memory_open();
     tiku_trk_cand_t cand[TIKU_TRK_APP_MAX];
     const char *one[1];
     const char *two[2];
@@ -223,7 +223,7 @@ main(void)
         (void)unlink(path);
     }
 
-    tiku_trk_store_free(st);
+    tiku_store_free(st);
     printf("\n%s\n", fails ? "FAILURES" : "the launch rules hold");
     return fails ? 1 : 0;
 }

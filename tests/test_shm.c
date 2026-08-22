@@ -25,7 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "tiku_desk_remote.h"
+#include "tiku_remote.h"
 
 static int fails;
 
@@ -39,26 +39,26 @@ check(int cond, const char *what)
 }
 
 static void
-settle(tiku_desk_remote_listener_t *listener, int turns)
+settle(tiku_remote_listener_t *listener, int turns)
 {
     struct timespec nap;
 
     nap.tv_sec = 0;
     nap.tv_nsec = 2 * 1000 * 1000;
     while (turns-- > 0) {
-        (void)tiku_desk_remote_poll(listener);
+        (void)tiku_remote_poll(listener);
         (void)nanosleep(&nap, NULL);
     }
 }
 
 static void
-listener_init(tiku_desk_remote_listener_t *listener)
+listener_init(tiku_remote_listener_t *listener)
 {
     int i;
 
     memset(listener, 0, sizeof *listener);
     listener->fd = -1;
-    for (i = 0; i < TIKU_DESK_REMOTE_SESSIONS; i++) {
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         listener->session[i].fd = -1;
     }
 }
@@ -66,9 +66,9 @@ listener_init(tiku_desk_remote_listener_t *listener)
 int
 main(void)
 {
-    tiku_desk_remote_listener_t listener;
-    tiku_desk_remote_client_t client;
-    tiku_desk_remote_session_t *s;
+    tiku_remote_listener_t listener;
+    tiku_remote_client_t client;
+    tiku_remote_session_t *s;
     uint32_t pixels[64];
     uint32_t id;
     int pair[2];
@@ -82,42 +82,42 @@ main(void)
         return 1;
     }
     listener_init(&listener);
-    (void)tiku_desk_remote_adopt(&listener, pair[0]);
-    (void)tiku_desk_remote_connect_fd(&client, "shm", pair[1]);
+    (void)tiku_remote_adopt(&listener, pair[0]);
+    (void)tiku_remote_connect_fd(&client, "shm", pair[1]);
     s = &listener.session[0];
 
-    id = tiku_desk_remote_open(&client, "Shared", 8, 8);
+    id = tiku_remote_open(&client, "Shared", 8, 8);
     settle(&listener, 40);
     check(s->opened, "the window is asked for over the socket");
-    check((s->features & TIKU_DESK_FEAT_SHARED_SURFACE) != 0u,
+    check((s->features & TIKU_FEAT_SHARED_SURFACE) != 0u,
           "and the peer says it can share a surface, being on this "
           "machine");
 
     memset(pixels, 0, sizeof pixels);
     pixels[0] = 0x00112233u;
-    (void)tiku_desk_remote_frame(&client, id, pixels, 8, 8);
+    (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
     check(s->shared != NULL, "a surface arrives that both ends can see");
     check(s->frame == NULL,
           "and no copy of the pixels was ever sent -- that is the point");
-    shown = tiku_desk_remote_pixels(s);
+    shown = tiku_remote_pixels(s);
     check(shown != NULL && shown[0] == 0x00112233u,
           "what the window draws is the application's own memory");
 
     pixels[0] = 0x00445566u;
-    (void)tiku_desk_remote_frame(&client, id, pixels, 8, 8);
+    (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
-    shown = tiku_desk_remote_pixels(s);
+    shown = tiku_remote_pixels(s);
     check(s->shown == 1, "the next frame lands in the OTHER buffer");
     check(shown != NULL && shown[0] == 0x00445566u,
           "and that is the one shown, so nothing is half drawn");
 
-    check(tiku_desk_remote_mapped(&listener) == 1,
+    check(tiku_remote_mapped(&listener) == 1,
           "the surface is held while the session is alive");
-    tiku_desk_remote_disconnect(&client);
+    tiku_remote_disconnect(&client);
     settle(&listener, 20);
-    tiku_desk_remote_shutdown(&listener);
-    check(tiku_desk_remote_mapped(&listener) == 0,
+    tiku_remote_shutdown(&listener);
+    check(tiku_remote_mapped(&listener) == 0,
           "and given back when it ends -- a freed session hides a leak, "
           "so the mapping is counted rather than looked for");
 
@@ -143,23 +143,23 @@ main(void)
             (void)tcsetattr(slave, TCSANOW, &tio);
         }
         listener_init(&listener);
-        (void)tiku_desk_remote_adopt(&listener, master);
-        (void)tiku_desk_remote_connect_fd(&client, "line", slave);
+        (void)tiku_remote_adopt(&listener, master);
+        (void)tiku_remote_connect_fd(&client, "line", slave);
         s = &listener.session[0];
 
-        id = tiku_desk_remote_open(&client, "Over a line", 8, 8);
+        id = tiku_remote_open(&client, "Over a line", 8, 8);
         pixels[0] = 0x00778899u;
-        (void)tiku_desk_remote_frame(&client, id, pixels, 8, 8);
+        (void)tiku_remote_frame(&client, id, pixels, 8, 8);
         settle(&listener, 60);
-        check((s->features & TIKU_DESK_FEAT_SHARED_SURFACE) == 0u,
+        check((s->features & TIKU_FEAT_SHARED_SURFACE) == 0u,
               "a peer on a line does not claim to share memory");
         check(s->shared == NULL && s->frame != NULL,
               "so its pixels are sent, as they always were");
-        shown = tiku_desk_remote_pixels(s);
+        shown = tiku_remote_pixels(s);
         check(shown != NULL && shown[0] == 0x00778899u,
               "and the window draws them the same way");
-        tiku_desk_remote_disconnect(&client);
-        tiku_desk_remote_shutdown(&listener);
+        tiku_remote_disconnect(&client);
+        tiku_remote_shutdown(&listener);
         (void)close(slave);
     }
 

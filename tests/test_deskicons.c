@@ -154,9 +154,9 @@ main(void)
 
     printf("\nthe union the Desktop shows (PVN-051, PVN-058)\n");
     {
-        tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
-        tiku_trk_volumes_t vs;
-        tiku_trk_vdir_t src;
+        tiku_backend_t *b = tiku_backend_posix_open();
+        tiku_volumes_t vs;
+        tiku_vdir_t src;
 
         memset(&vs, 0, sizeof vs);
         vs.n = 2;
@@ -178,8 +178,8 @@ main(void)
         {
             /* The home Desktop contributes ahead of the mount points, so a
              * name it holds is the one that shows. */
-            tiku_trk_vdir_t withhome;
-            char resolved[TIKU_TRK_PATH_MAX];
+            tiku_vdir_t withhome;
+            char resolved[TIKU_PATH_MAX];
 
             (void)mkdir("/tmp/trk_di_home", 0755);
             (void)system("touch /tmp/trk_di_a/Desktop/shared "
@@ -189,7 +189,7 @@ main(void)
             check(withhome.nsrc == 3, "PVN-051",
                   "the user's own Desktop folder contributes as well as "
                   "the volumes'");
-            check(tiku_trk_vdir_resolve(&withhome, b, "shared", resolved,
+            check(tiku_vdir_resolve(&withhome, b, "shared", resolved,
                                         sizeof resolved) == 0 &&
                   strcmp(resolved, "/tmp/trk_di_home/shared") == 0,
                   "PVN-051",
@@ -205,7 +205,7 @@ main(void)
               "and with neither, it is not there");
 
         (void)system("rm -rf /tmp/trk_di_a /tmp/trk_di_b");
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the Desktop's own rules hold");

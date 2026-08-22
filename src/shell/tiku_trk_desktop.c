@@ -25,8 +25,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "tiku_trk_attr.h"
-#include "tiku_desk_host.h"
+#include "tiku_attr.h"
+#include "tiku_host.h"
 #include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
@@ -37,20 +37,20 @@
 #include "tiku_trk_open_with_window.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_panel_window.h"
-#include "tiku_trk_thumb.h"
+#include "tiku_thumb.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_trk_prefs_window.h"
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
-#include "tiku_trk_strings.h"
-#include "tiku_trk_volume.h"
+#include "tiku_strings.h"
+#include "tiku_volume.h"
 #include "tiku_trk_switcher.h"
 #include "tiku_trk_switcher_window.h"
 #include "tiku_trk_navmenu.h"
 #include "tiku_trk_titleview.h"
-#include "tiku_desk_conduct.h"
+#include "tiku_conduct.h"
 #include "tiku_trk_script.h"
 #include "tiku_trk_script_api.h"
 #include "tiku_trk_cwmenu.h"
@@ -59,11 +59,11 @@
 #include "tiku_trk_desktop_view.h"
 #include "tiku_trk_launch.h"
 #include "tiku_trk_types.h"
-#include "tiku_trk_iconpaint.h"
-#include "tiku_trk_icons.h"
-#include "tiku_trk_fs.h"
+#include "tiku_iconpaint.h"
+#include "tiku_icons.h"
+#include "tiku_fs.h"
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_select.h"
@@ -71,8 +71,8 @@
 #include "tiku_trk_find.h"
 #include "tiku_trk_find_window.h"
 #include "tiku_trk_about_window.h"
-#include "tiku_desk_remote.h"
-#include "tiku_desk_about_app.h"
+#include "tiku_remote.h"
+#include "tiku_about_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -85,12 +85,12 @@
 #include "tiku_trk_drag_target.h"
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_status_overlay.h"
-#include "tiku_trk_state.h"
-#include "tiku_trk_query.h"
+#include "tiku_state.h"
+#include "tiku_query.h"
 #include "tiku_trk_task.h"
 #include "tiku_trk_session_controller.h"
 #include "tiku_trk_script_adapter.h"
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 
 /* How many applications this desktop hosts in its own process. */
 #define TIKU_TRK_EMBED_MAX 8
@@ -113,13 +113,13 @@
 typedef tiku_trk_folder_window_t folder_t;
 
 typedef struct desktop {
-    tiku_desk_host_t    *host;
-    tiku_desk_surface_t *surf;
-    tiku_desk_workspace_t     *desk;
+    tiku_host_t    *host;
+    tiku_surface_t *surf;
+    tiku_workspace_t     *desk;
     tiku_trk_deskbar_t  *deskbar;
-    tiku_trk_backend_t  *backend;
-    tiku_trk_fs_t       *fs;
-    folder_t             folders[TIKU_DESK_WINDOW_MAX];
+    tiku_backend_t  *backend;
+    tiku_fs_t       *fs;
+    folder_t             folders[TIKU_WINDOW_MAX];
     tiku_trk_folder_render_t folder_render;
     tiku_trk_folder_lifecycle_t folder_lifecycle;
     int                  folder_count;
@@ -140,9 +140,9 @@ typedef struct desktop {
     tiku_trk_script_adapter_t script_adapter;
     tiku_trk_folder_menu_t folder_menu;
     tiku_trk_menu_t     *popup;          /* the menu showing, or NULL       */
-    tiku_desk_rect_t     popup_frame;
+    tiku_rect_t     popup_frame;
     tiku_trk_menu_t     *popup_sub;      /* its open submenu, or NULL       */
-    tiku_desk_rect_t     popup_sub_frame;
+    tiku_rect_t     popup_sub_frame;
     folder_t            *bar_fl;         /* window whose bar opened popup   */
     int                  bar_open;       /* title in that window, or -1     */
     char                 status[200];
@@ -156,24 +156,24 @@ typedef struct desktop {
     int                  find_serial;
     tiku_trk_find_window_t find_window;
     tiku_trk_about_window_t about_window;
-    tiku_desk_remote_listener_t remote;
+    tiku_remote_listener_t remote;
     /* The conductor channel: an outside driver's events and questions.
      * Off unless -conduct asked for it.  Injected events queue here and
      * are drained by the same loop that drains the display's, so a
      * driven shell and a used one take exactly the same path. */
-    tiku_desk_conduct_t         conduct;
+    tiku_conduct_t         conduct;
     int                         conduct_on;
-    tiku_desk_event_t           cq[64];
+    tiku_event_t           cq[64];
     int                         cq_head, cq_tail;
     /* One EMBEDDED descriptor slot: the same application code the client
      * runner takes out of process, hosted here with workspace-backed
      * services -- the both-ways proof. */
     struct desktop_embed {
         struct desktop      *app;       /* the slot's way back      */
-        const tiku_desk_app_descriptor_t *descriptor;
-        tiku_desk_app_services_t services;
+        const tiku_app_descriptor_t *descriptor;
+        tiku_app_services_t services;
         void                *state;
-        tiku_desk_window_t  *window;
+        tiku_window_t  *window;
         uint32_t            *frame;
         int                  fw, fh;
         uint32_t             next_id;
@@ -181,13 +181,13 @@ typedef struct desktop {
     } embeds[TIKU_TRK_EMBED_MAX];
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
-    tiku_desk_window_t  *remote_press;
+    tiku_window_t  *remote_press;
     struct desktop_embed *embed_press;  /* the slot holding a press */
     /* Where the runner is, for starting an installed application in a
      * process of its own. */
-    char                 runner[TIKU_TRK_PATH_MAX];
+    char                 runner[TIKU_PATH_MAX];
     /* The query the save panel is asking a destination for. */
-    tiku_trk_query_t     pending_query;
+    tiku_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
     int                  theme_dark;
     /* The global menu bar (phase one): one strip at the top of the
@@ -197,14 +197,14 @@ typedef struct desktop {
      * reaches into a window's widgets. */
     int                  gbar_on;       /* -1 until the first sync      */
     tiku_trk_menu_t      sysmenu;
-    tiku_trk_menu_t      gmenu[TIKU_DESK_MENUSET_MENUS];
-    tiku_trk_menu_t      gsub[TIKU_DESK_MENUSET_MENUS][4];
+    tiku_trk_menu_t      gmenu[TIKU_MENUSET_MENUS];
+    tiku_trk_menu_t      gsub[TIKU_MENUSET_MENUS][4];
     tiku_trk_menubar_t   gbar;
-    tiku_desk_window_t  *gbar_from;     /* whose menus the strip shows  */
+    tiku_window_t  *gbar_from;     /* whose menus the strip shows  */
     int                  gbar_open;     /* open strip menu, or -1       */
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
     int                  qdrag_on;
-    char                 qdrop_dest[TIKU_TRK_PATH_MAX];
+    char                 qdrop_dest[TIKU_PATH_MAX];
     /* The Deskbar's own double-click memory (DB-019). */
     int64_t              db_click_at;
     int                  db_click_x, db_click_y;
@@ -212,7 +212,7 @@ typedef struct desktop {
      * names, alive for a few frames after a Deskbar window action
      * (DB-030). */
     int64_t              zoom_t0;
-    tiku_desk_rect_t     zoom_from, zoom_to;
+    tiku_rect_t     zoom_from, zoom_to;
     /* A CMD press on the bar, still ambiguous: moved it re-docks, held
      * still it is a chord the rows answer (DB-049 vs DB-021). */
     int                  dock_armed;
@@ -228,7 +228,7 @@ typedef struct desktop {
      * the screen -- not a modulo, which would silently stack the sixth
      * window on the first. */
     int                  cascade_x, cascade_y;
-    struct tiku_trk_store *store;
+    struct tiku_store *store;
     /* The backdrop pose view owns its union source and watcher. */
     tiku_trk_desktop_view_t desktop_view;
     int                  desk_row;      /* pose under the pointer, or -1 */
@@ -259,7 +259,7 @@ typedef struct desktop {
     folder_t            *sbar_fl;   /* whose bar holds the pointer      */
     int                  strip_ptr_x;
     int                  strip_ptr_y;
-    tiku_trk_thumb_q_t   thumbs;    /* image previews, made off-tick  */
+    tiku_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     /* ONE node-icon cache for the desktop: the same file shown in two
      * windows is one entry, and an icon edited on disk is dropped once
      * rather than per window (IV-038). */
@@ -272,8 +272,8 @@ typedef struct desktop {
     /* The add-ons directory and the user shortcut file, both watched by
      * modification time so an install or a rebind lands without a restart
      * (AW-022, AW-023). */
-    char                 addons_dir[TIKU_TRK_PATH_MAX];
-    char                 addons_keys[TIKU_TRK_PATH_MAX];
+    char                 addons_dir[TIKU_PATH_MAX];
+    char                 addons_keys[TIKU_PATH_MAX];
     time_t               addons_mtime;
     time_t               keys_mtime;
     int64_t              addons_checked;
@@ -285,19 +285,19 @@ typedef struct desktop {
     char                 count_text[TIKU_TRK_COUNT_TEXT_MAX];
     /* The folder the running job is writing into, for the progress
      * window's "To:" line (FS-069). */
-    char                 prog_dest[TIKU_TRK_PATH_MAX];
+    char                 prog_dest[TIKU_PATH_MAX];
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was last time we looked: the port's
      * only source of mount and unmount notices (PVN-008). */
-    tiku_trk_volwatch_t  volwatch;
+    tiku_volwatch_t  volwatch;
     /* The record the last search wrote, so Edit query has something to
      * reopen when the window it came from is the one asking. */
-    char                 last_query[TIKU_TRK_NAME_MAX];
+    char                 last_query[TIKU_NAME_MAX];
     tiku_trk_panel_window_t file_panel;
     tiku_trk_info_windows_t info_windows;
     /* The broken link an open offered Get Info for (AW-031). */
-    char                 broken_open_path[TIKU_TRK_PATH_MAX];
+    char                 broken_open_path[TIKU_PATH_MAX];
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
     tiku_trk_status_overlay_t status_overlay;
@@ -316,19 +316,19 @@ typedef struct desktop {
     int                  spring_nav_on;
     int                  spring_nav_x;
     int                  spring_nav_y;
-    tiku_desk_window_t      *prog_was_active;  /* focus to give back */
+    tiku_window_t      *prog_was_active;  /* focus to give back */
     int                  press_down;
     int                  ptr_x, ptr_y;  /* where the pointer last was      */
     /* A context menu raised on one named thing -- the info window's icon --
      * rather than on a window's selection (AW-076). */
-    char                 popup_path[TIKU_TRK_PATH_MAX];
+    char                 popup_path[TIKU_PATH_MAX];
     /* And which FOLDER: the menu model is one shared thing that every
      * drawing folder rebuilds for itself, so an open popup has to be put
      * back for the folder it was raised on -- and the choice carried out
      * there, not on whatever window has focus. */
     folder_t            *popup_fl;
-    tiku_desk_window_t  *press_window; /* deferred content raise (PVS-022) */
-    tiku_desk_window_t  *press_focus;  /* who was in front when it began   */
+    tiku_window_t  *press_window; /* deferred content raise (PVS-022) */
+    tiku_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;
     int                  press_menu;    /* the long press already fired    */
@@ -337,13 +337,13 @@ typedef struct desktop {
 
 static folder_t *open_folder(desktop_t *app, const char *path);
 static void close_windows_under(desktop_t *app, const char *path);
-static int list_children(tiku_trk_backend_t *b, const char *path,
-                         tiku_trk_model_t *out, int max);
+static int list_children(tiku_backend_t *b, const char *path,
+                         tiku_model_t *out, int max);
 static void info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info);
 static void info_opens_with_next(desktop_t *app, tiku_trk_info_t *info);
-static folder_t *folder_of(desktop_t *app, tiku_desk_window_t *w);
+static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
 static folder_t *desktop_folder(desktop_t *app);
-static void close_window(desktop_t *app, tiku_desk_window_t *w);
+static void close_window(desktop_t *app, tiku_window_t *w);
 static int select_named(desktop_t *app, folder_t *fl, const char *name);
 
 static void
@@ -352,7 +352,7 @@ set_backdrop_color(void *context, const tiku_trk_color_t *color)
     desktop_t *app = context;
 
     if (app != NULL && color != NULL) {
-        app->backdrop_color = TIKU_DESK_RGB(color->r, color->g, color->b);
+        app->backdrop_color = TIKU_RGB(color->r, color->g, color->b);
     }
 }
 
@@ -389,7 +389,7 @@ deskbar_edit_path(void *context, const char *path)
 
     if (app->backend != NULL && app->backend->ops != NULL &&
         strcmp(app->backend->ops->name, "posix") == 0) {
-        char parent[TIKU_TRK_PATH_MAX];
+        char parent[TIKU_PATH_MAX];
         char *slash;
 
         snprintf(parent, sizeof parent, "%s", path);
@@ -466,7 +466,7 @@ sync_folder_preferences(desktop_t *app)
                 tiku_trk_desktop_view_folder(&app->desktop_view);
 
             app->theme_dark = dark;
-            tiku_desk_theme_set(dark ? tiku_desk_theme_dark() : NULL);
+            tiku_theme_set(dark ? tiku_theme_dark() : NULL);
             for (i = 0; i < app->folder_count; i++) {
                 tiku_trk_folder_window_forget(&app->folders[i]);
             }
@@ -602,14 +602,14 @@ offer_broken_link(desktop_t *app, const char *path)
              path);
     tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                         TIKU_TRK_ALERT_TAG_BROKEN_OPEN,
-                        tiku_trk_str("alert.msg.broken_open"),
-                        tiku_trk_str("alert.btn.get_info"));
+                        tiku_str("alert.msg.broken_open"),
+                        tiku_str("alert.btn.get_info"));
 }
 
 
 /** @brief Real art for the Deskbar's own menu rows (DB-002). */
 static int
-deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
+deskbar_menu_icon(void *context, tiku_surface_t *s,
                   const tiku_trk_db_item_t *item, int x, int y, int size)
 {
     const char *art = NULL;
@@ -660,18 +660,18 @@ deskbar_menu_icon(void *context, tiku_desk_surface_t *s,
     default:
         return 0;               /* a command row carries no art */
     }
-    return tiku_trk_icon_paint(s, art, x, y, size);
+    return tiku_icon_paint(s, art, x, y, size);
 }
 
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
 static int
-paint_menu_icon(tiku_desk_surface_t *s, const char *icon, int x, int y,
+paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
                 int size, int dimmed)
 {
     return dimmed
-        ? tiku_trk_icon_paint_dim(s, icon, x, y, size, 0.55f,
-                                  TIKU_DESK_C_PANEL)
-        : tiku_trk_icon_paint(s, icon, x, y, size);
+        ? tiku_icon_paint_dim(s, icon, x, y, size, 0.55f,
+                                  TIKU_C_PANEL)
+        : tiku_icon_paint(s, icon, x, y, size);
 }
 
 /** @brief Hand a modal filesystem answer back to the operation engine. */
@@ -682,13 +682,13 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
 
     if (alert->tag == TIKU_TRK_ALERT_TAG_CONFLICT) {
         if (alert->chosen == alert->cancel) {
-            tiku_trk_fs_cancel(app->fs);
+            tiku_fs_cancel(app->fs);
         } else {
-            tiku_trk_fs_resolve(app->fs,
+            tiku_fs_resolve(app->fs,
                                 tiku_trk_alert_conflict_answer(alert));
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_ERROR) {
-        tiku_trk_fs_resolve_error(app->fs,
+        tiku_fs_resolve_error(app->fs,
                                   alert->chosen != alert->cancel);
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_SHUTDOWN) {
         if (alert->chosen != alert->cancel) {
@@ -722,7 +722,7 @@ status_answer(void *context, const tiku_trk_alert_t *alert)
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
         /* Cancel, Move to Trash, Delete, in the order the buttons are
          * offered (FS-046). */
-        folder_t *fl = folder_of(app, tiku_desk_workspace_focused(app->desk));
+        folder_t *fl = folder_of(app, tiku_workspace_focused(app->desk));
 
         if (fl == NULL) {
             fl = desktop_folder(app);
@@ -751,7 +751,7 @@ status_stop(void *context)
 {
     desktop_t *app = context;
 
-    tiku_trk_fs_cancel(app->fs);
+    tiku_fs_cancel(app->fs);
 }
 
 /** @brief The clock's own pulse: a minute must not go stale (DB-044). */
@@ -802,7 +802,7 @@ refresh_after_mount(void *ctx)
 /** @brief One created entry waiting to be selected where it lives. */
 typedef struct {
     desktop_t *app;
-    char       path[TIKU_TRK_PATH_MAX];
+    char       path[TIKU_PATH_MAX];
 } select_created_t;
 
 /**
@@ -815,7 +815,7 @@ static int
 select_created(void *ctx)
 {
     select_created_t *sc = ctx;
-    char parent[TIKU_TRK_PATH_MAX];
+    char parent[TIKU_PATH_MAX];
     char *slash;
     int i;
 
@@ -863,7 +863,7 @@ save_before_unmount(dev_t dev, void *context)
             continue;
         }
         if (tiku_trk_poseview_is_query(fl->view) &&
-            tiku_trk_query_targets_device(fl->run, (uint64_t)dev)) {
+            tiku_query_targets_device(fl->run, (uint64_t)dev)) {
             close_window(app, fl->win);
             continue;
         }
@@ -952,7 +952,7 @@ picker_add(desktop_t *app, int k, const char *label, const char *path,
     if (tiku_trk_menu_add(&cw->picker[k], label,
             TIKU_TRK_CMD_DEST_BASE + k * TIKU_TRK_CMD_DEST_MAX + n,
             0, 0u, 1) >= 0) {
-        snprintf(cw->picker_path[k][n], TIKU_TRK_PATH_MAX, "%s", path);
+        snprintf(cw->picker_path[k][n], TIKU_PATH_MAX, "%s", path);
         cw->picker_paths[k] = n + 1;
     }
 }
@@ -969,10 +969,10 @@ build_pickers(desktop_t *app, folder_t *fl)
 {
     static const char *title[3] = { "Move to", "Copy to", "Create link" };
     const char *home = getenv("HOME");
-    char recent[8][TIKU_TRK_PATH_MAX];
-    char desk[TIKU_TRK_PATH_MAX];
+    char recent[8][TIKU_PATH_MAX];
+    char desk[TIKU_PATH_MAX];
     struct stat here;
-    tiku_trk_volumes_t vs;
+    tiku_volumes_t vs;
     int have_here;
     int nrecent;
     int nvol;
@@ -984,8 +984,8 @@ build_pickers(desktop_t *app, folder_t *fl)
     have_here = stat(fl->path, &here) == 0;
     nrecent = tiku_trk_recent_list(app->store, TIKU_TRK_RECENT_FOLDERS, 6,
                                    recent, 8);
-    nvol = (tiku_trk_volumes_scan(&vs) > 0) ? vs.n : 0;
-    (void)tiku_trk_desktop_dir(desk, sizeof desk);
+    nvol = (tiku_volumes_scan(&vs) > 0) ? vs.n : 0;
+    (void)tiku_desktop_dir(desk, sizeof desk);
     for (k = 0; k < 3; k++) {
         tiku_trk_menu_clear(&app->menus.picker[k]);
         snprintf(app->menus.picker[k].title,
@@ -996,7 +996,7 @@ build_pickers(desktop_t *app, folder_t *fl)
             struct stat rst;
             const char *leaf = strrchr(recent[i], '/');
             const char *rows[8];
-            char label[TIKU_TRK_PATH_MAX];
+            char label[TIKU_PATH_MAX];
             int r;
 
             if (stat(recent[i], &rst) != 0) {
@@ -1007,7 +1007,7 @@ build_pickers(desktop_t *app, folder_t *fl)
             for (r = 0; r < nrecent; r++) {
                 rows[r] = recent[r];
             }
-            (void)tiku_trk_attr_disambiguate(recent[i], rows, nrecent,
+            (void)tiku_attr_disambiguate(recent[i], rows, nrecent,
                                              label, sizeof label);
             if (strcmp(recent[i], desk) == 0 ||
                 (home != NULL && strcmp(recent[i], home) == 0)) {
@@ -1034,7 +1034,7 @@ build_pickers(desktop_t *app, folder_t *fl)
         for (i = 0; i < nvol; i++) {
             struct stat vst;
 
-            if (!tiku_trk_volume_shows_icon(&vs, &vs.v[i]) ||
+            if (!tiku_volume_shows_icon(&vs, &vs.v[i]) ||
                 stat(vs.v[i].mount, &vst) != 0) {
                 continue;
             }
@@ -1070,14 +1070,14 @@ static void open_panel(desktop_t *app);
 
 /** @brief An in-process application's window shows its latest frame. */
 static void
-embed_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-                  tiku_desk_rect_t content, void *context)
+embed_window_draw(tiku_window_t *window, tiku_surface_t *surface,
+                  tiku_rect_t content, void *context)
 {
     struct desktop_embed *slot = context;
     int x, y, w, h;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     if (slot == NULL || slot->frame == NULL) {
         return;
     }
@@ -1085,7 +1085,7 @@ embed_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     h = (slot->fh < content.h) ? slot->fh : content.h;
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
-            tiku_desk_pixel(surface, content.x + x, content.y + y,
+            tiku_pixel(surface, content.x + x, content.y + y,
                             slot->frame[(size_t)y * (size_t)slot->fw + x]);
         }
     }
@@ -1093,7 +1093,7 @@ embed_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
 /** @brief The hosted application owning @p w, or NULL. */
 static struct desktop_embed *
-embed_of_window(desktop_t *app, const tiku_desk_window_t *w)
+embed_of_window(desktop_t *app, const tiku_window_t *w)
 {
     int i;
 
@@ -1115,20 +1115,20 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
 {
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
-    tiku_desk_rect_t frame;
+    tiku_rect_t frame;
 
-    frame.w = w + 2 * TIKU_DESK_WINDOW_BORDER;
-    frame.h = h + tiku_desk_window_tab_h() + 2 * TIKU_DESK_WINDOW_BORDER;
+    frame.w = w + 2 * TIKU_WINDOW_BORDER;
+    frame.h = h + tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
     frame.x = (app->surf->w - frame.w) / 2;
     frame.y = (app->surf->h - frame.h) / 3;
     /* Stepped down and across per slot, so a second application does not
      * open exactly on top of the first. */
     frame.x += (int)(slot - app->embeds) * 24;
     frame.y += (int)(slot - app->embeds) * 20;
-    slot->window = tiku_desk_workspace_open(app->desk, title, frame,
+    slot->window = tiku_workspace_open(app->desk, title, frame,
                                             embed_window_draw, slot, slot);
     if (slot->window != NULL) {
-        tiku_desk_window_set_size_controls(slot->window, 0, 0);
+        tiku_window_set_size_controls(slot->window, 0, 0);
     }
     app->dirty = 1;
     return slot->next_id++;
@@ -1157,7 +1157,7 @@ embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 }
 
 static void
-embed_menu_pick(tiku_desk_window_t *window, int command, void *context)
+embed_menu_pick(tiku_window_t *window, int command, void *context)
 {
     struct desktop_embed *slot = context;
 
@@ -1169,13 +1169,13 @@ embed_menu_pick(tiku_desk_window_t *window, int command, void *context)
 }
 
 static int
-embed_svc_menus(void *ctx, uint32_t id, const tiku_desk_menuset_t *set)
+embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
     struct desktop_embed *slot = ctx;
 
     (void)id;
     if (slot->window != NULL) {
-        tiku_desk_window_publish_menus(slot->window, set, embed_menu_pick,
+        tiku_window_publish_menus(slot->window, set, embed_menu_pick,
                                        slot);
     }
     return 0;
@@ -1202,7 +1202,7 @@ embed_stop(struct desktop_embed *slot)
     }
     slot->state = NULL;
     if (slot->window != NULL) {
-        tiku_desk_workspace_close(app->desk, slot->window);
+        tiku_workspace_close(app->desk, slot->window);
         slot->window = NULL;
     }
     free(slot->frame);
@@ -1219,7 +1219,7 @@ embed_stop(struct desktop_embed *slot)
  * @return nonzero when it started and took a slot.
  */
 static int
-embed_start(desktop_t *app, const tiku_desk_app_descriptor_t *descriptor)
+embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
 {
     struct desktop_embed *slot = NULL;
     int i;
@@ -1258,21 +1258,21 @@ embed_start(desktop_t *app, const tiku_desk_app_descriptor_t *descriptor)
 
 /** @brief A remote window's pixels are whatever its session last sent. */
 static void
-remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-                   tiku_desk_rect_t content, void *context)
+remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
+                   tiku_rect_t content, void *context)
 {
-    tiku_desk_remote_session_t *s = context;
+    tiku_remote_session_t *s = context;
     const uint32_t *px;
     int y, w, h;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
+    tiku_fill(surface, content, TIKU_C_PANEL);
     if (s == NULL) {
         return;
     }
     /* A shared surface is drawn out of the application's own pixels; a
      * copied frame out of the copy.  Nothing else differs. */
-    px = tiku_desk_remote_pixels(s);
+    px = tiku_remote_pixels(s);
     if (px == NULL) {
         return;
     }
@@ -1282,7 +1282,7 @@ remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         int x;
 
         for (x = 0; x < w; x++) {
-            tiku_desk_pixel(surface, content.x + x, content.y + y,
+            tiku_pixel(surface, content.x + x, content.y + y,
                             px[(size_t)y * (size_t)s->fw + x]);
         }
     }
@@ -1290,11 +1290,11 @@ remote_window_draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
 /** @brief A pick in a remote window's published menu rides the wire back. */
 static void
-remote_menu_pick(tiku_desk_window_t *window, int command, void *context)
+remote_menu_pick(tiku_window_t *window, int command, void *context)
 {
     desktop_t *app = context;
 
-    tiku_desk_remote_pick(&app->remote, window, command);
+    tiku_remote_pick(&app->remote, window, command);
 }
 
 /**
@@ -1307,35 +1307,35 @@ remote_reconcile(desktop_t *app)
 {
     int i;
 
-    for (i = 0; i < TIKU_DESK_REMOTE_SESSIONS; i++) {
-        tiku_desk_remote_session_t *s = &app->remote.session[i];
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        tiku_remote_session_t *s = &app->remote.session[i];
 
         if (!s->used) {
             continue;
         }
         if (s->opened && s->window == NULL) {
-            tiku_desk_rect_t frame;
+            tiku_rect_t frame;
 
-            frame.w = s->open_w + 2 * TIKU_DESK_WINDOW_BORDER;
-            frame.h = s->open_h + tiku_desk_window_tab_h() +
-                      2 * TIKU_DESK_WINDOW_BORDER;
+            frame.w = s->open_w + 2 * TIKU_WINDOW_BORDER;
+            frame.h = s->open_h + tiku_window_tab_h() +
+                      2 * TIKU_WINDOW_BORDER;
             frame.x = (app->surf->w - frame.w) / 2;
             frame.y = (app->surf->h - frame.h) / 3;
-            s->window = tiku_desk_workspace_open(app->desk, s->title,
+            s->window = tiku_workspace_open(app->desk, s->title,
                 frame, remote_window_draw, s, s);
             if (s->window != NULL) {
-                tiku_desk_window_set_size_controls(s->window, 0, 0);
+                tiku_window_set_size_controls(s->window, 0, 0);
             }
             app->dirty = 1;
         }
         if (s->window != NULL && s->menus_fresh) {
-            tiku_desk_window_publish_menus(s->window, &s->menus,
+            tiku_window_publish_menus(s->window, &s->menus,
                                            remote_menu_pick, app);
             s->menus_fresh = 0;
             app->dirty = 1;
         }
         if (!s->used && s->window != NULL) {
-            tiku_desk_workspace_close(app->desk, s->window);
+            tiku_workspace_close(app->desk, s->window);
             s->window = NULL;
         }
     }
@@ -1347,17 +1347,17 @@ remote_sweep(desktop_t *app)
 {
     /* A window whose session vanished is swept by tag: the workspace
      * still holds it, but no session claims it. */
-    tiku_desk_window_t *w;
+    tiku_window_t *w;
     int i;
 
     for (i = 0; ; i++) {
-        w = tiku_desk_workspace_at(app->desk, i);
+        w = tiku_workspace_at(app->desk, i);
         if (w == NULL) {
             break;
         }
         if (w->open && w->draw == remote_window_draw &&
-            tiku_desk_remote_owner(&app->remote, w) == NULL) {
-            tiku_desk_workspace_close(app->desk, w);
+            tiku_remote_owner(&app->remote, w) == NULL) {
+            tiku_workspace_close(app->desk, w);
             app->dirty = 1;
         }
     }
@@ -1368,19 +1368,19 @@ remote_sweep(desktop_t *app)
 /*---------------------------------------------------------------------------*/
 
 /** @brief The strip's rectangle, empty when the bar is off. */
-static tiku_desk_rect_t
+static tiku_rect_t
 global_bar_rect(desktop_t *app)
 {
     if (app->gbar_on != 1) {
-        return (tiku_desk_rect_t){ 0, 0, 0, 0 };
+        return (tiku_rect_t){ 0, 0, 0, 0 };
     }
-    return (tiku_desk_rect_t){ 0, 0, app->surf->w,
+    return (tiku_rect_t){ 0, 0, app->surf->w,
                                app->menus.bar.height };
 }
 
 /** @brief A published pick lands back in the shell's one command path. */
 static void
-folder_menu_pick(tiku_desk_window_t *window, int command, void *context)
+folder_menu_pick(tiku_window_t *window, int command, void *context)
 {
     desktop_t *app = context;
     folder_t *fl = folder_of(app, window);
@@ -1394,7 +1394,7 @@ folder_menu_pick(tiku_desk_window_t *window, int command, void *context)
 static void
 publish_folder_menus(desktop_t *app, folder_t *fl)
 {
-    tiku_desk_menuset_t set;
+    tiku_menuset_t set;
     int m;
 
     if (fl == NULL || fl->win == NULL) {
@@ -1402,17 +1402,17 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
     }
     memset(&set, 0, sizeof set);
     for (m = 0; m < app->menus.bar.count &&
-                set.nmenu < TIKU_DESK_MENUSET_MENUS; m++) {
+                set.nmenu < TIKU_MENUSET_MENUS; m++) {
         const tiku_trk_menu_t *from = app->menus.bar.menu[m];
-        tiku_desk_menu_list_t *to = &set.menu[set.nmenu];
+        tiku_menu_list_t *to = &set.menu[set.nmenu];
         int i;
 
         snprintf(to->title, sizeof to->title, "%s", from->title);
         for (i = 0; i < from->count; i++) {
             const tiku_trk_mitem_t *fi = &from->item[i];
-            tiku_desk_menu_entry_t *ti;
+            tiku_menu_entry_t *ti;
 
-            if (to->nitem >= TIKU_DESK_MENUSET_ITEMS) {
+            if (to->nitem >= TIKU_MENUSET_ITEMS) {
                 break;
             }
             ti = &to->item[to->nitem++];
@@ -1431,9 +1431,9 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
                 int k;
 
                 for (k = 0; k < sub->count &&
-                            to->nitem < TIKU_DESK_MENUSET_ITEMS; k++) {
+                            to->nitem < TIKU_MENUSET_ITEMS; k++) {
                     const tiku_trk_mitem_t *si = &sub->item[k];
-                    tiku_desk_menu_entry_t *st = &to->item[to->nitem++];
+                    tiku_menu_entry_t *st = &to->item[to->nitem++];
 
                     snprintf(st->label, sizeof st->label, "%s", si->label);
                     st->command = si->command;
@@ -1448,16 +1448,16 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
         }
         set.nmenu++;
     }
-    tiku_desk_window_publish_menus(fl->win, &set, folder_menu_pick, app);
+    tiku_window_publish_menus(fl->win, &set, folder_menu_pick, app);
 }
 
 /** @brief Rebuild the strip's scratch menus from the PUBLISHED data. */
 static void
 rebuild_global_bar(desktop_t *app)
 {
-    tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
-    const tiku_desk_menuset_t *set =
-        (fw != NULL) ? tiku_desk_window_menus(fw) : NULL;
+    tiku_window_t *fw = tiku_workspace_focused(app->desk);
+    const tiku_menuset_t *set =
+        (fw != NULL) ? tiku_window_menus(fw) : NULL;
     int was_open = app->gbar_open;
     int m;
 
@@ -1465,28 +1465,28 @@ rebuild_global_bar(desktop_t *app)
     /* The system menu first, where the corner ritual lives. */
     tiku_trk_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.about"),
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.about"),
                             TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
     (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.find"),
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.find"),
                             TIKU_TRK_CMD_FIND,
                             'f', TIKU_TRK_MOD_CMD, 1);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.preferences"),
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.preferences"),
                             TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
     (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_trk_str("cmd.shutdown"),
+    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
                             TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
     (void)tiku_trk_menubar_add(&app->gbar, &app->sysmenu);
     app->gbar_from = (set != NULL) ? fw : NULL;
     for (m = 0; set != NULL && m < set->nmenu; m++) {
-        const tiku_desk_menu_list_t *from = &set->menu[m];
+        const tiku_menu_list_t *from = &set->menu[m];
         tiku_trk_menu_t *to = &app->gmenu[m];
         int i, nsub = 0;
 
         tiku_trk_menu_clear(to);
         snprintf(to->title, sizeof to->title, "%s", from->title);
         for (i = 0; i < from->nitem; i++) {
-            const tiku_desk_menu_entry_t *fi = &from->item[i];
+            const tiku_menu_entry_t *fi = &from->item[i];
 
             if (fi->level == 1) {
                 continue;           /* consumed with its holder below */
@@ -1501,7 +1501,7 @@ rebuild_global_bar(desktop_t *app)
                 tiku_trk_menu_clear(sub);
                 snprintf(sub->title, sizeof sub->title, "%s", fi->label);
                 for (; k < from->nitem && from->item[k].level == 1; k++) {
-                    const tiku_desk_menu_entry_t *si = &from->item[k];
+                    const tiku_menu_entry_t *si = &from->item[k];
 
                     if (si->separator) {
                         (void)tiku_trk_menu_add_separator(sub);
@@ -1559,7 +1559,7 @@ system_invoke(desktop_t *app, int command)
          * taken down (DB-006), the same question the leaf asks. */
         tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                            tiku_trk_str("alert.msg.shut_down"), tiku_trk_str("alert.btn.shut_down"));
+                            tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
         return 1;
     default:
         break;
@@ -1625,7 +1625,7 @@ launch_paths(desktop_t *app, const tiku_trk_app_t *application,
 
 /** @brief The application a document should open in, or NULL (AW-030). */
 static const tiku_trk_app_t *
-handler_for(desktop_t *app, const tiku_trk_model_t *model)
+handler_for(desktop_t *app, const tiku_model_t *model)
 {
     return tiku_trk_launch_controller_handler(&app->launcher, model);
 }
@@ -1642,8 +1642,8 @@ info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info)
     const char *pref;
 
     info->opens_with[0] = '\0';
-    if (info == NULL || tiku_trk_model_is_container(&info->model) ||
-        (info->model.facts.perm & TIKU_TRK_P_EXEC) != 0u) {
+    if (info == NULL || tiku_model_is_container(&info->model) ||
+        (info->model.facts.perm & TIKU_P_EXEC) != 0u) {
         return;
     }
     char prefbuf[48];
@@ -1698,7 +1698,7 @@ info_opens_with_next(desktop_t *app, tiku_trk_info_t *info)
                  "%s opens with the default application",
                  info->model.name);
     }
-    (void)tiku_trk_store_flush(app->store);
+    (void)tiku_store_flush(app->store);
     info_opens_with_fill(app, info);
 }
 
@@ -1724,14 +1724,14 @@ open_with_window_launch(void *context, const tiku_trk_app_t *application,
 static void
 script_command_line(desktop_t *app, const char *line, FILE *reply)
 {
-    char store[8][TIKU_TRK_PATH_MAX];
+    char store[8][TIKU_PATH_MAX];
     tiku_trk_req_t req;
     tiku_trk_rep_t rep;
     folder_t *fl = NULL;
     int i;
 
     {
-        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
+        tiku_window_t *fw = tiku_workspace_focused(app->desk);
 
         fl = folder_of(app, fw);
         if (fl == NULL && app->folder_count > 0) {
@@ -1755,13 +1755,13 @@ script_command_line(desktop_t *app, const char *line, FILE *reply)
     }
     if (req.verb == TIKU_TRK_VERB_EXECUTE) {
         for (i = 0; i < rep.nresult; i++) {
-            tiku_trk_model_t m;
+            tiku_model_t m;
 
             if (app->backend->ops->stat(app->backend, rep.result[i],
                                         &m) != 0) {
                 continue;
             }
-            if (tiku_trk_model_is_container(&m)) {
+            if (tiku_model_is_container(&m)) {
                 (void)open_folder(app, rep.result[i]);
             } else {
                 const char *one[1];
@@ -1778,7 +1778,7 @@ script_command_line(desktop_t *app, const char *line, FILE *reply)
             sel[n++] = rep.result[i];
         }
         if (n > 0) {
-            (void)tiku_trk_fs_trash(app->fs, sel, n);
+            (void)tiku_fs_trash(app->fs, sel, n);
         }
     }
     if (reply != NULL) {
@@ -1796,7 +1796,7 @@ script_command_file(desktop_t *app, const char *path)
 {
     FILE *f = fopen(path, "r");
     FILE *reply = NULL;
-    char rpath[TIKU_TRK_PATH_MAX];
+    char rpath[TIKU_PATH_MAX];
     char line[512];
 
     if (f == NULL) {
@@ -1828,10 +1828,10 @@ script_command_file(desktop_t *app, const char *path)
  * volume keeps it.
  */
 static int
-trash_union_models(desktop_t *app, tiku_trk_model_t *out, int max)
+trash_union_models(desktop_t *app, tiku_model_t *out, int max)
 {
-    char dirs[8][TIKU_TRK_PATH_MAX];
-    int ndirs = tiku_trk_fs_trash_dirs(app->fs, dirs, 8);
+    char dirs[8][TIKU_PATH_MAX];
+    int ndirs = tiku_fs_trash_dirs(app->fs, dirs, 8);
     int i, n = 0;
 
     for (i = 0; i < ndirs; i++) {
@@ -1844,7 +1844,7 @@ trash_union_models(desktop_t *app, tiku_trk_model_t *out, int max)
 static int
 trash_union_refresh(desktop_t *app, folder_t *fl)
 {
-    tiku_trk_model_t *models;
+    tiku_model_t *models;
     unsigned nf;
     int n;
 
@@ -1908,12 +1908,12 @@ spring_nav_close(desktop_t *app)
 /**
  * @brief The frame of spring level @p k, chained the way the draw chains.
  */
-static tiku_desk_rect_t
+static tiku_rect_t
 spring_nav_frame(desktop_t *app, int k)
 {
     int px = app->spring_nav_x;
     int py = app->spring_nav_y;
-    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    tiku_rect_t r = { 0, 0, 0, 0 };
     int j;
 
     for (j = 0; j <= k && j < app->nav.depth; j++) {
@@ -1943,7 +1943,7 @@ spring_nav_track(desktop_t *app, int x, int y)
     int k;
 
     for (k = 0; k < app->nav.depth; k++) {
-        tiku_desk_rect_t r = spring_nav_frame(app, k);
+        tiku_rect_t r = spring_nav_frame(app, k);
         int at;
 
         if (x >= r.x - TIKU_TRK_SPRING_MARGIN &&
@@ -1995,7 +1995,7 @@ spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max)
     int k;
 
     for (k = app->nav.depth - 1; k >= 0; k--) {
-        tiku_desk_rect_t r = spring_nav_frame(app, k);
+        tiku_rect_t r = spring_nav_frame(app, k);
         int at = tiku_trk_nav_item_at(&app->nav, k, r.x, r.y, x, y);
 
         if (at >= 0) {
@@ -2077,7 +2077,7 @@ commit_edit(desktop_t *app, folder_t *fl)
  * arrangement: there is nothing left for the position to be the position of.
  */
 static void
-close_window(desktop_t *app, tiku_desk_window_t *w)
+close_window(desktop_t *app, tiku_window_t *w)
 {
     folder_t *fl;
     int info_slot;
@@ -2097,9 +2097,9 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
             return;
         }
     }
-    if (tiku_desk_remote_owner(&app->remote, w) != NULL) {
-        tiku_desk_remote_window_closed(&app->remote, w);
-        tiku_desk_workspace_close(app->desk, w);
+    if (tiku_remote_owner(&app->remote, w) != NULL) {
+        tiku_remote_window_closed(&app->remote, w);
+        tiku_workspace_close(app->desk, w);
         return;
     }
     if (w == tiku_trk_about_window_handle(&app->about_window)) {
@@ -2141,7 +2141,7 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
         tiku_trk_folder_lifecycle_close(&app->folder_lifecycle, fl);
         return;
     }
-    tiku_desk_workspace_close(app->desk, w);
+    tiku_workspace_close(app->desk, w);
     app->dirty = 1;
 }
 
@@ -2167,24 +2167,24 @@ close_window(desktop_t *app, tiku_desk_window_t *w)
  * stands for itself -- which is all a script needs in order to type.
  */
 static char
-key_char(const tiku_desk_event_t *event)
+key_char(const tiku_event_t *event)
 {
     return (event != NULL) ? event->text[0] : (char)0;
 }
 
 /** @brief Name a portable key for controllers whose API uses key labels. */
 static const char *
-key_name(const tiku_desk_event_t *event, char printable[2])
+key_name(const tiku_event_t *event, char printable[2])
 {
     if (event == NULL) { return ""; }
     switch (event->key) {
-    case TIKU_DESK_KEY_UP:     return "Up";
-    case TIKU_DESK_KEY_DOWN:   return "Down";
-    case TIKU_DESK_KEY_LEFT:   return "Left";
-    case TIKU_DESK_KEY_RIGHT:  return "Right";
-    case TIKU_DESK_KEY_ESCAPE: return "Escape";
-    case TIKU_DESK_KEY_RETURN: return "Return";
-    case TIKU_DESK_KEY_TAB:    return "Tab";
+    case TIKU_KEY_UP:     return "Up";
+    case TIKU_KEY_DOWN:   return "Down";
+    case TIKU_KEY_LEFT:   return "Left";
+    case TIKU_KEY_RIGHT:  return "Right";
+    case TIKU_KEY_ESCAPE: return "Escape";
+    case TIKU_KEY_RETURN: return "Return";
+    case TIKU_KEY_TAB:    return "Tab";
     default:
         if (event->key == ' ') { return "space"; }
         if (event->key >= 0x20u && event->key < 0x7fu) {
@@ -2206,9 +2206,9 @@ key_name(const tiku_desk_event_t *event, char printable[2])
 static int
 drop_on_panel(desktop_t *app, int x, int y)
 {
-    tiku_desk_window_t *w = NULL;
+    tiku_window_t *w = NULL;
 
-    (void)tiku_desk_workspace_hit(app->desk, x, y, &w);
+    (void)tiku_workspace_hit(app->desk, x, y, &w);
     if (w == NULL || w != tiku_trk_panel_window_handle(&app->file_panel)) {
         return 0;
     }
@@ -2229,12 +2229,12 @@ drop_on_panel(desktop_t *app, int x, int y)
 static int
 info_icon_drop_slot(desktop_t *app, int x, int y)
 {
-    tiku_desk_window_t *w = NULL;
+    tiku_window_t *w = NULL;
     tiku_trk_info_t *info;
-    tiku_trk_model_t m;
+    tiku_model_t m;
     int slot;
 
-    (void)tiku_desk_workspace_hit(app->desk, x, y, &w);
+    (void)tiku_workspace_hit(app->desk, x, y, &w);
     slot = tiku_trk_info_windows_slot(&app->info_windows, w);
     if (slot < 0 ||
         tiku_trk_info_windows_hit(&app->info_windows, slot, x, y, NULL) !=
@@ -2243,7 +2243,7 @@ info_icon_drop_slot(desktop_t *app, int x, int y)
     }
     info = tiku_trk_info_windows_model(&app->info_windows, slot);
     if (app->backend->ops->stat(app->backend, info->path, &m) != 0 ||
-        !tiku_trk_model_is_mutable_container(&m)) {
+        !tiku_model_is_mutable_container(&m)) {
         return -1;
     }
     return slot;
@@ -2264,14 +2264,14 @@ drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers)
         return 0;
     }
     info = tiku_trk_info_windows_model(&app->info_windows, slot);
-    if ((modifiers & TIKU_DESK_MOD_OPTION) != 0u) {
+    if ((modifiers & TIKU_MOD_OPTION) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_COPY;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+    if ((modifiers & TIKU_MOD_CMD) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
-    same_store = tiku_trk_fs_drop_action(app->fs, app->drag.path[0],
-                                         info->path, 0) == TIKU_TRK_OP_MOVE;
+    same_store = tiku_fs_drop_action(app->fs, app->drag.path[0],
+                                         info->path, 0) == TIKU_OP_MOVE;
     action = tiku_trk_drag_action(&app->drag, info->path, drag_modifiers,
                                   same_store);
     if (action == TIKU_TRK_DROP_NOTHING) {
@@ -2283,16 +2283,16 @@ drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers)
     snprintf(app->prog_dest, sizeof app->prog_dest, "%s", info->path);
     switch (action) {
     case TIKU_TRK_DROP_COPY:
-        (void)tiku_trk_fs_copy(app->fs, paths, count, info->path,
-                               TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_fs_copy(app->fs, paths, count, info->path,
+                               TIKU_CONFLICT_ASK);
         break;
     case TIKU_TRK_DROP_LINK:
-        (void)tiku_trk_fs_link(app->fs, paths, count, info->path,
-                               (modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+        (void)tiku_fs_link(app->fs, paths, count, info->path,
+                               (modifiers & TIKU_MOD_SHIFT) != 0u);
         break;
     default:
-        (void)tiku_trk_fs_move(app->fs, paths, count, info->path,
-                               TIKU_TRK_CONFLICT_ASK);
+        (void)tiku_fs_move(app->fs, paths, count, info->path,
+                               TIKU_CONFLICT_ASK);
         break;
     }
     snprintf(app->status, sizeof app->status,
@@ -2338,10 +2338,10 @@ close_windows_under(desktop_t *app, const char *path)
 }
 
 /** @brief Collect a directory's entries into @p out.  @return how many. */
-struct collect_ctx { tiku_trk_model_t *out; int n, max; };
+struct collect_ctx { tiku_model_t *out; int n, max; };
 
 static int
-collect_one(const tiku_trk_model_t *m, void *ctx)
+collect_one(const tiku_model_t *m, void *ctx)
 {
     struct collect_ctx *c = ctx;
 
@@ -2353,7 +2353,7 @@ collect_one(const tiku_trk_model_t *m, void *ctx)
 }
 
 static int
-list_children(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out,
+list_children(tiku_backend_t *b, const char *path, tiku_model_t *out,
               int max)
 {
     struct collect_ctx c = { out, 0, max };
@@ -2372,7 +2372,7 @@ list_children(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out,
  * the subscription's lifetime.
  */
 static folder_t *
-open_results(desktop_t *app, const char *title, tiku_trk_qrun_t *run)
+open_results(desktop_t *app, const char *title, tiku_qrun_t *run)
 {
     return tiku_trk_folder_lifecycle_open_results(&app->folder_lifecycle,
                                                    title, run);
@@ -2408,7 +2408,7 @@ commit_rename(desktop_t *app, int commit)
 }
 
 /** @brief Apply a Select controller expression to its originating folder. */
-static tiku_desk_window_t *
+static tiku_window_t *
 apply_select_model(void *context, void *target,
                    const tiku_trk_select_t *selection)
 {
@@ -2449,11 +2449,11 @@ static int
 panel_search(void *context, tiku_trk_find_t *panel)
 {
     desktop_t *app = context;
-    tiku_trk_query_t q;
-    tiku_trk_qrun_t *run;
-    char title[TIKU_TRK_PATH_MAX];
+    tiku_query_t q;
+    tiku_qrun_t *run;
+    char title[TIKU_PATH_MAX];
     char scope[64];
-    char record_name[TIKU_TRK_NAME_MAX];
+    char record_name[TIKU_NAME_MAX];
     int replacing;
 
     tiku_trk_find_build(panel, &q);
@@ -2466,21 +2466,21 @@ panel_search(void *context, tiku_trk_find_t *panel)
     /* The checkbox stores the choice; the actual Trash path is resolved at
      * run time because it belongs to this machine and this volume, not to a
      * portable saved-query record (Q-036). */
-    (void)tiku_trk_fs_trash_dir(app->fs, desktop_folder(app)->path,
+    (void)tiku_fs_trash_dir(app->fs, desktop_folder(app)->path,
                                 q.trash_path,
                                 sizeof q.trash_path);
-    tiku_trk_query_bind_scopes(&q, app->backend);
-    run = tiku_trk_query_start(app->backend, &q);
+    tiku_query_bind_scopes(&q, app->backend);
+    run = tiku_query_start(app->backend, &q);
     if (run == NULL) {
         return 0;
     }
-    while (!tiku_trk_query_done(run)) {
-        if (tiku_trk_query_step(run, 16) < 0) {
+    while (!tiku_query_done(run)) {
+        if (tiku_query_step(run, 16) < 0) {
             break;
         }
     }
     (void)tiku_trk_find_scope_label(panel, scope, sizeof scope);
-    replacing = panel->loaded_kind == TIKU_TRK_QREC_QUERY &&
+    replacing = panel->loaded_kind == TIKU_QREC_QUERY &&
                 panel->loaded_name[0] != '\0';
     record_name[0] = '\0';
     {
@@ -2488,14 +2488,14 @@ panel_search(void *context, tiku_trk_find_t *panel)
          * that can be re-opened and edited, not only a window that appears
          * -- and one the user never named is swept up later rather than
          * accumulating for ever (Q-023, MA-053). */
-        tiku_trk_query_t previous;
+        tiku_query_t previous;
         int i;
 
         q.temporary = 1;
         if (replacing) {
             snprintf(record_name, sizeof record_name, "%s",
                      panel->loaded_name);
-            if (tiku_trk_query_load(&previous, record_name, app->store) ==
+            if (tiku_query_load(&previous, record_name, app->store) ==
                     0) {
                 q.temporary = previous.temporary;
             }
@@ -2518,7 +2518,7 @@ panel_search(void *context, tiku_trk_find_t *panel)
             tiku_trk_find_default_name(panel, (long)q.saved_at,
                                        record_name,
                                        sizeof record_name) > 0) {
-            (void)tiku_trk_query_save(&q, record_name, app->store);
+            (void)tiku_query_save(&q, record_name, app->store);
             snprintf(app->last_query, sizeof app->last_query, "%s",
                      record_name);
         }
@@ -2531,8 +2531,8 @@ panel_search(void *context, tiku_trk_find_t *panel)
             snprintf(fl->qname, sizeof fl->qname, "%s", app->last_query);
             snprintf(app->status, sizeof app->status,
                      "%d result%s in %.30s -- live",
-                     tiku_trk_query_count(fl->run),
-                     (tiku_trk_query_count(fl->run) == 1) ? "" : "s", scope);
+                     tiku_query_count(fl->run),
+                     (tiku_query_count(fl->run) == 1) ? "" : "s", scope);
         } else {
             return 0;
         }
@@ -2550,26 +2550,26 @@ panel_search(void *context, tiku_trk_find_t *panel)
 static void
 run_find(desktop_t *app, folder_t *from)
 {
-    tiku_trk_query_t q;
-    tiku_trk_qrun_t *run;
-    char title[TIKU_TRK_PATH_MAX];
+    tiku_query_t q;
+    tiku_qrun_t *run;
+    char title[TIKU_PATH_MAX];
     folder_t *fl;
 
-    tiku_trk_query_init(&q);
-    tiku_trk_query_set_name(&q, app->find_buf);
+    tiku_query_init(&q);
+    tiku_query_set_name(&q, app->find_buf);
     if (from != NULL) {
-        (void)tiku_trk_query_add_scope(&q, from->path);
+        (void)tiku_query_add_scope(&q, from->path);
     }
-    (void)tiku_trk_fs_trash_dir(app->fs,
+    (void)tiku_fs_trash_dir(app->fs,
                                 (from != NULL) ? from->path
                                                : desktop_folder(app)->path,
                                 q.trash_path, sizeof q.trash_path);
-    run = tiku_trk_query_start(app->backend, &q);
+    run = tiku_query_start(app->backend, &q);
     if (run == NULL) {
         return;
     }
-    while (!tiku_trk_query_done(run)) {
-        if (tiku_trk_query_step(run, 8) < 0) {
+    while (!tiku_query_done(run)) {
+        if (tiku_query_step(run, 8) < 0) {
             break;
         }
     }
@@ -2579,12 +2579,12 @@ run_find(desktop_t *app, folder_t *from)
              ++app->find_serial);
     fl = open_folder(app, title);
     if (fl != NULL) {
-        int i, n = tiku_trk_query_count(run);
-        tiku_trk_model_t *set = calloc((size_t)(n > 0 ? n : 1), sizeof *set);
+        int i, n = tiku_query_count(run);
+        tiku_model_t *set = calloc((size_t)(n > 0 ? n : 1), sizeof *set);
 
         if (set != NULL) {
             for (i = 0; i < n; i++) {
-                set[i] = *tiku_trk_query_at(run, i);
+                set[i] = *tiku_query_at(run, i);
             }
             (void)tiku_trk_poseview_set_results(fl->view, set, n);
             free(set);
@@ -2593,7 +2593,7 @@ run_find(desktop_t *app, folder_t *from)
                  "%d result%s for \"%.30s\" in %.40s", n, (n == 1) ? "" : "s",
                  app->find_buf, (from != NULL) ? from->path : "/");
     }
-    tiku_trk_query_stop(run);
+    tiku_query_stop(run);
     app->dirty = 1;
 }
 
@@ -2611,7 +2611,7 @@ begin_edit(desktop_t *app, folder_t *fl)
  */
 static int
 folder_selection(desktop_t *app, folder_t *fl,
-                 char paths[][TIKU_TRK_PATH_MAX], const char **out, int max)
+                 char paths[][TIKU_PATH_MAX], const char **out, int max)
 {
     (void)app;
     return tiku_trk_folder_file_actions_selection(fl, paths, out, max);
@@ -2628,7 +2628,7 @@ fpanel_commit(void *context, void *target, int command,
 {
     desktop_t *app = context;
     folder_t *folder = target;
-    char paths[16][TIKU_TRK_PATH_MAX];
+    char paths[16][TIKU_PATH_MAX];
     const char *selection[16];
     int count;
 
@@ -2647,10 +2647,10 @@ fpanel_commit(void *context, void *target, int command,
          * left is the writing: the query's saved text as a real file,
          * and the same record under the file's name so the Queries menu
          * knows it too. */
-        char text[TIKU_TRK_QUERY_PRED_MAX * 2];
+        char text[TIKU_QUERY_PRED_MAX * 2];
         char err[160];
         const char *base = strrchr(destination, '/');
-        int n = tiku_trk_query_serialise(&app->pending_query, text,
+        int n = tiku_query_serialise(&app->pending_query, text,
                                          sizeof text);
 
         if (n < 0 || app->backend->ops->write == NULL ||
@@ -2660,10 +2660,10 @@ fpanel_commit(void *context, void *target, int command,
                      "could not save the query");
             return;
         }
-        (void)tiku_trk_query_save(&app->pending_query,
+        (void)tiku_query_save(&app->pending_query,
                                   base != NULL ? base + 1 : destination,
                                   app->store);
-        (void)tiku_trk_store_flush(app->store);
+        (void)tiku_store_flush(app->store);
         snprintf(app->status, sizeof app->status, "query saved");
         return;
     }
@@ -2673,13 +2673,13 @@ fpanel_commit(void *context, void *target, int command,
     count = folder_selection(app, folder, paths, selection, 16);
     if (count > 0) {
         if (command == TIKU_TRK_CMD_COPY_TO) {
-            (void)tiku_trk_fs_copy(app->fs, selection, count, destination,
-                                   TIKU_TRK_CONFLICT_ASK);
+            (void)tiku_fs_copy(app->fs, selection, count, destination,
+                                   TIKU_CONFLICT_ASK);
             snprintf(app->status, sizeof app->status,
                      "copying %d item%s", count, count == 1 ? "" : "s");
         } else {
-            (void)tiku_trk_fs_move(app->fs, selection, count, destination,
-                                   TIKU_TRK_CONFLICT_ASK);
+            (void)tiku_fs_move(app->fs, selection, count, destination,
+                                   TIKU_CONFLICT_ASK);
             snprintf(app->status, sizeof app->status,
                      "moving %d item%s", count, count == 1 ? "" : "s");
         }
@@ -2726,7 +2726,7 @@ static char **restart_argv;
 static void
 deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 {
-    tiku_desk_window_t *t;
+    tiku_window_t *t;
 
     switch (pick->what) {
     case TIKU_TRK_DB_FIND:
@@ -2798,7 +2798,7 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
             TIKU_TRK_ALERT_WARN,
             TIKU_TRK_ALERT_TAG_SHUTDOWN,
             "Shut down the desktop?",
-            tiku_trk_str("alert.btn.shut_down"));
+            tiku_str("alert.btn.shut_down"));
         break;
     case TIKU_TRK_DB_OPEN_PATH:
         (void)open_folder(app, pick->path);
@@ -2811,54 +2811,54 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         if (tiku_trk_drag_active(&app->drag)) {
             break;
         }
-        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
             /* The zoom animates only when the state
              * really changes (DB-030). */
             if (t->minimized) {
                 app->zoom_t0 = tiku_trk_now();
-                app->zoom_from = (tiku_desk_rect_t){
+                app->zoom_from = (tiku_rect_t){
                     x - 8, y - 8, 16, 16 };
                 app->zoom_to = t->frame;
             }
             t->minimized = 0;
-            tiku_desk_workspace_activate(app->desk, t);
+            tiku_workspace_activate(app->desk, t);
         }
         break;
     case TIKU_TRK_DB_MINIMIZE_WINDOW:
         if (tiku_trk_drag_active(&app->drag)) {
             break;
         }
-        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
             if (!t->minimized) {
                 app->zoom_t0 = tiku_trk_now();
                 app->zoom_from = t->frame;
-                app->zoom_to = (tiku_desk_rect_t){
+                app->zoom_to = (tiku_rect_t){
                     x - 8, y - 8, 16, 16 };
             }
             t->minimized = 1;
         }
         break;
     case TIKU_TRK_DB_CLOSE_WINDOW:
-        t = tiku_desk_workspace_find(app->desk, pick->tag);
+        t = tiku_workspace_find(app->desk, pick->tag);
         close_window(app, t);
         break;
     case TIKU_TRK_DB_ACTIVATE_TEAM: {
         /* Activating the application: its windows to
          * the front, the top one focused (DB-019). */
-        int k, m = tiku_desk_workspace_count(app->desk);
+        int k, m = tiku_workspace_count(app->desk);
 
         for (k = 0; k < m; k++) {
-            tiku_desk_window_t *ww =
-                tiku_desk_workspace_at(app->desk, k);
+            tiku_window_t *ww =
+                tiku_workspace_at(app->desk, k);
             if (ww != NULL) {
                 ww->minimized = 0;
             }
         }
         if (m > 0) {
-            tiku_desk_workspace_activate(app->desk,
-                tiku_desk_workspace_at(app->desk,
+            tiku_workspace_activate(app->desk,
+                tiku_workspace_at(app->desk,
                                        m - 1));
         }
         break;
@@ -2923,10 +2923,10 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     }
     case TIKU_TRK_DB_HIDE_ALL:
     case TIKU_TRK_DB_SHOW_ALL: {
-        int k, m = tiku_desk_workspace_count(app->desk);
+        int k, m = tiku_workspace_count(app->desk);
         for (k = 0; k < m; k++) {
-            tiku_desk_window_t *ww =
-                tiku_desk_workspace_at(app->desk, k);
+            tiku_window_t *ww =
+                tiku_workspace_at(app->desk, k);
             if (ww != NULL) {
                 ww->minimized =
                     (pick->what == TIKU_TRK_DB_HIDE_ALL);
@@ -2939,9 +2939,9 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
          * request to close its WINDOWS, never to quit
          * it -- the original makes the same
          * distinction. */
-        while (tiku_desk_workspace_count(app->desk) > 0) {
-            tiku_desk_workspace_close(app->desk,
-                tiku_desk_workspace_at(app->desk, 0));
+        while (tiku_workspace_count(app->desk) > 0) {
+            tiku_workspace_close(app->desk,
+                tiku_workspace_at(app->desk, 0));
         }
         break;
     }
@@ -3035,10 +3035,10 @@ invoke_addon(const tiku_trk_addon_t *addon, void *context)
     if (addon->external) {
         /* Run against the selection, in a process of its own -- the
          * port's separate thread (CW-038). */
-        char paths[64][TIKU_TRK_PATH_MAX];
+        char paths[64][TIKU_PATH_MAX];
         const char *sel[64];
         folder_t *fl = folder_of(app,
-                                 tiku_desk_workspace_focused(app->desk));
+                                 tiku_workspace_focused(app->desk));
         int n;
 
         if (fl == NULL) {
@@ -3070,7 +3070,7 @@ invoke_addon(const tiku_trk_addon_t *addon, void *context)
 static int
 seed_new_entry(desktop_t *app, folder_t *fl, int *vx, int *vy)
 {
-    tiku_desk_rect_t c;
+    tiku_rect_t c;
     int ox = 0, oy = 0, x, y;
 
     if (fl == NULL || fl->view == NULL ||
@@ -3152,7 +3152,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * Deskbar asks (DB-006). */
         tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                            tiku_trk_str("alert.msg.shut_down"), tiku_trk_str("alert.btn.shut_down"));
+                            tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
         return;
     }
     if (command == TIKU_TRK_CMD_CREATE_QUERY ||
@@ -3160,8 +3160,8 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         /* The Find icon's drop chose (Q-034): the current search becomes
          * a record in the folder it was dropped on, under the first free
          * "New Query" name, as a query or as a template. */
-        char dest[TIKU_TRK_PATH_MAX];
-        tiku_trk_model_t probe;
+        char dest[TIKU_PATH_MAX];
+        tiku_model_t probe;
         int k;
 
         if (app->qdrop_dest[0] == '\0') {
@@ -3170,7 +3170,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         tiku_trk_find_build(&app->find_window.model, &app->pending_query);
         app->pending_query.kind =
             (command == TIKU_TRK_CMD_CREATE_QUERY_TPL)
-                ? TIKU_TRK_QREC_TEMPLATE : TIKU_TRK_QREC_QUERY;
+                ? TIKU_QREC_TEMPLATE : TIKU_QREC_QUERY;
         for (k = 0; k < 100; k++) {
             if (k == 0) {
                 snprintf(dest, sizeof dest, "%s/New Query",
@@ -3199,12 +3199,12 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             return;
         }
         if (k == 2) {
-            char paths[16][TIKU_TRK_PATH_MAX];
+            char paths[16][TIKU_PATH_MAX];
             const char *selection[16];
             int count = folder_selection(app, fl, paths, selection, 16);
 
             if (count > 0) {
-                (void)tiku_trk_fs_link(app->fs, selection, count, dest, 0);
+                (void)tiku_fs_link(app->fs, selection, count, dest, 0);
                 snprintf(app->status, sizeof app->status,
                          "linking %d item%s", count, count == 1 ? "" : "s");
                 tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
@@ -3224,11 +3224,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         seeded = seed_new_entry(app, fl, &seed_x, &seed_y);
     }
     if (template_path != NULL) {
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
         const char *slash;
         int row;
 
-        if (tiku_trk_fs_new_from_template(app->fs, template_path, fl->path,
+        if (tiku_fs_new_from_template(app->fs, template_path, fl->path,
                                           made, sizeof made, error,
                                           sizeof error) == 0) {
             slash = strrchr(made, '/');
@@ -3250,9 +3250,9 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     }
     template_parent = tiku_trk_cwmenu_template_add_path(&app->menus, command);
     if (template_parent != NULL) {
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
 
-        if (tiku_trk_fs_new_folder(app->fs, template_parent, made,
+        if (tiku_fs_new_folder(app->fs, template_parent, made,
                                    sizeof made, error, sizeof error) == 0) {
             const char *root = tiku_trk_cwmenu_templates_root(&app->menus);
 
@@ -3322,8 +3322,8 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 
         why[0] = '\0';
         if (command == TIKU_TRK_CMD_MOUNT_ALL) {
-            tiku_trk_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
-            int pn = tiku_trk_partitions_scan(part,
+            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_partitions_scan(part,
                                               TIKU_TRK_MOUNT_PART_MAX);
             int k;
 
@@ -3332,7 +3332,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                     continue;
                 }
                 tried++;
-                if (tiku_trk_volume_mount(part[k].name, why,
+                if (tiku_volume_mount(part[k].name, why,
                                           sizeof why) != 0) {
                     failed++;
                     break;
@@ -3343,7 +3343,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 
             if (idx < app->menus.mount_parts) {
                 tried++;
-                failed = tiku_trk_volume_mount(app->menus.mount_part[idx],
+                failed = tiku_volume_mount(app->menus.mount_part[idx],
                                                why, sizeof why) != 0;
             }
         }
@@ -3358,7 +3358,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         return;
     }
     if (command == TIKU_TRK_CMD_OPEN_WITH_WINDOW) {
-        char wpaths[TIKU_TRK_OW_PATHS][TIKU_TRK_PATH_MAX];
+        char wpaths[TIKU_TRK_OW_PATHS][TIKU_PATH_MAX];
         const char *wsel[TIKU_TRK_OW_PATHS];
         const char *wtypes[TIKU_TRK_APP_TYPES_MAX];
         int wn, wt = 0, wi, wk, wcount;
@@ -3393,23 +3393,23 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * window is showing is the one the gesture means (CW-034).
          * Everything open on it saves itself first (AW-096), and a
          * refusal or failure is said out loud. */
-        char upaths[1][TIKU_TRK_PATH_MAX];
+        char upaths[1][TIKU_PATH_MAX];
         const char *usel[1];
         const char *upath =
             (tiku_trk_folder_file_actions_selection(fl, upaths, usel, 1) > 0)
                 ? usel[0] : fl->path;
-        tiku_trk_volumes_t uvols;
+        tiku_volumes_t uvols;
         char uwhy[200];
 
         uwhy[0] = '\0';
-        if (tiku_trk_volumes_scan(&uvols) > 0 &&
-            tiku_trk_volume_is_root(&uvols, upath)) {
-            const tiku_trk_volume_t *uvol =
-                tiku_trk_volume_of(&uvols, upath);
+        if (tiku_volumes_scan(&uvols) > 0 &&
+            tiku_volume_is_root(&uvols, upath)) {
+            const tiku_volume_t *uvol =
+                tiku_volume_of(&uvols, upath);
 
-            if (tiku_trk_volume_unmount(&uvols, upath, save_before_unmount,
+            if (tiku_volume_unmount(&uvols, upath, save_before_unmount,
                                         app, uwhy, sizeof uwhy) ==
-                    TIKU_TRK_UNMOUNT_OK) {
+                    TIKU_UNMOUNT_OK) {
                 snprintf(app->status, sizeof app->status,
                          "unmounted \"%.60s\"",
                          (uvol != NULL) ? uvol->name : upath);
@@ -3428,12 +3428,12 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         return;
     }
     if (command == TIKU_TRK_CMD_NEW_FOLDER) {
-        char made[TIKU_TRK_PATH_MAX], error[200];
+        char made[TIKU_PATH_MAX], error[200];
         const char *slash;
         int row;
 
         error[0] = '\0';
-        if (app->fs != NULL && tiku_trk_fs_new_folder(
+        if (app->fs != NULL && tiku_fs_new_folder(
                 app->fs, fl->path, made, sizeof made, error,
                 sizeof error) == 0) {
             slash = strrchr(made, '/');
@@ -3473,13 +3473,13 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
 
         if (p != NULL && p->model.facts.link_broken) {
             offer_broken_link(app, p->model.path);
-        } else if (p != NULL && tiku_trk_model_is_container(&p->model)) {
+        } else if (p != NULL && tiku_model_is_container(&p->model)) {
             (void)open_folder(app, p->model.path);
         }
         break;
     }
     case TIKU_TRK_CMD_OPEN_PARENT: {
-        char parent[TIKU_TRK_PATH_MAX];
+        char parent[TIKU_PATH_MAX];
         char *slash;
 
         snprintf(parent, sizeof parent, "%s", fl->path);
@@ -3581,17 +3581,17 @@ open_folder(desktop_t *app, const char *path)
                                                   path);
 
     if (fl != NULL && fl->view != NULL && !fl->trash_union &&
-        path != NULL && tiku_trk_fs_in_trash(app->fs, path)) {
+        path != NULL && tiku_fs_in_trash(app->fs, path)) {
         /* A Trash window shows the UNION of every volume's trash
          * (PVN-027): the view becomes a result set over the
          * contributors, refreshed on the query beat, each entry keeping
          * its real path so restore and delete land on the right
          * volume. */
-        tiku_trk_model_t m;
+        tiku_model_t m;
 
         if (app->backend->ops->stat(app->backend, path, &m) == 0 &&
-            m.kind == TIKU_TRK_KIND_TRASH) {
-            tiku_trk_model_t *models = calloc(256, sizeof *models);
+            m.kind == TIKU_KIND_TRASH) {
+            tiku_model_t *models = calloc(256, sizeof *models);
 
             if (models != NULL) {
                 int n = trash_union_models(app, models, 256);
@@ -3606,7 +3606,7 @@ open_folder(desktop_t *app, const char *path)
 
 /** @brief The folder behind a window, or NULL. */
 static folder_t *
-folder_of(desktop_t *app, tiku_desk_window_t *w)
+folder_of(desktop_t *app, tiku_window_t *w)
 {
     return tiku_trk_folder_lifecycle_find(&app->folder_lifecycle, w);
 }
@@ -3619,7 +3619,7 @@ blit(desktop_t *app)
         return;                     /* displayless: the surface IS the
                                      * output, and -shot writes it */
     }
-    (void)tiku_desk_host_present(app->host, app->surf);
+    (void)tiku_host_present(app->host, app->surf);
 }
 
 /** @brief Adopt a native host frame throughout the desktop controllers. */
@@ -3630,7 +3630,7 @@ resize_desktop(desktop_t *app, int width, int height)
         (width == app->surf->w && height == app->surf->h)) {
         return 0;
     }
-    if (tiku_desk_surface_resize(app->surf, width, height,
+    if (tiku_surface_resize(app->surf, width, height,
                                  app->backdrop_color) != 0) {
         return -1;
     }
@@ -3678,7 +3678,7 @@ static void draw_nav_levels(desktop_t *app, int px, int py);
 static void
 follow_font(desktop_t *app)
 {
-    int want = tiku_desk_font_plain()->height + 5;
+    int want = tiku_font_plain()->height + 5;
 
     if (want == app->row_h) {
         return;
@@ -3708,8 +3708,8 @@ draw_all(desktop_t *app)
         (tiku_trk_titleview_tracking(&app->tstrip) != TIKU_TRK_TRACK_NONE)
             ? app->tstrip_fl : NULL;
 
-    tiku_desk_fill(app->surf,
-                   (tiku_desk_rect_t){ 0, 0, app->surf->w, app->surf->h },
+    tiku_fill(app->surf,
+                   (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                    app->backdrop_color);
     tiku_trk_deskbar_publish_workspace(app->deskbar, app->team, app->desk);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
@@ -3717,9 +3717,9 @@ draw_all(desktop_t *app)
          * bar until the user reaches for it.  Draw order IS the z-order
          * here -- there is no window server to ask (DB-052). */
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
-        tiku_desk_workspace_draw(app->desk);
+        tiku_workspace_draw(app->desk);
     } else {
-        tiku_desk_workspace_draw(app->desk);
+        tiku_workspace_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
     if (app->zoom_t0 != 0) {
@@ -3732,7 +3732,7 @@ draw_all(desktop_t *app)
             app->zoom_t0 = 0;
         } else {
             int num = (int)(age / 30000) + 1;   /* 1..4 */
-            tiku_desk_rect_t z;
+            tiku_rect_t z;
 
             z.x = app->zoom_from.x +
                   (app->zoom_to.x - app->zoom_from.x) * num / 4;
@@ -3742,7 +3742,7 @@ draw_all(desktop_t *app)
                   (app->zoom_to.w - app->zoom_from.w) * num / 4;
             z.h = app->zoom_from.h +
                   (app->zoom_to.h - app->zoom_from.h) * num / 4;
-            tiku_desk_invert_frame(app->surf, z);
+            tiku_invert_frame(app->surf, z);
             app->dirty = 1;     /* the next frame moves it again */
         }
     }
@@ -3763,11 +3763,11 @@ draw_all(desktop_t *app)
                 sizeof value) != TIKU_TRK_INFO_F_NONE &&
             tiku_trk_info_windows_field_rect(&app->info_windows, slot,
                 app->info_windows.hover_field, &fx, &fy, &fw, &fh)) {
-            const tiku_desk_font_t *font = tiku_desk_font_plain();
-            int tw = tiku_desk_text_width(font, value);
+            const tiku_font_t *font = tiku_font_plain();
+            int tw = tiku_text_width(font, value);
 
             if (tw > fw) {
-                tiku_desk_rect_t box = { fx - 4, fy - 2, tw + 12,
+                tiku_rect_t box = { fx - 4, fy - 2, tw + 12,
                                          font->height + 6 };
 
                 if (box.x + box.w > app->surf->w) {
@@ -3776,11 +3776,11 @@ draw_all(desktop_t *app)
                 if (box.x < 0) {
                     box.x = 0;
                 }
-                tiku_desk_fill(app->surf, box, TIKU_DESK_C_NOTE);
-                tiku_desk_frame(app->surf, box, TIKU_DESK_C_TEXT);
-                tiku_desk_text(app->surf, font, box.x + 5,
+                tiku_fill(app->surf, box, TIKU_C_NOTE);
+                tiku_frame(app->surf, box, TIKU_C_TEXT);
+                tiku_text(app->surf, font, box.x + 5,
                                box.y + 2 + font->ascent, value,
-                               TIKU_DESK_C_TEXT);
+                               TIKU_C_TEXT);
             }
         }
     }
@@ -3795,18 +3795,18 @@ draw_all(desktop_t *app)
         int d;
 
         for (d = 0; d < wds; d += 4) {
-            tiku_desk_rect_t dash = { x0 + d, y0, 2, 1 };
+            tiku_rect_t dash = { x0 + d, y0, 2, 1 };
 
-            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
             dash.y = y0 + 20 /* TITLE_HEIGHT */ - 1;
-            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
         }
         for (d = 0; d < 20 /* TITLE_HEIGHT */; d += 4) {
-            tiku_desk_rect_t dash = { x0, y0 + d, 1, 2 };
+            tiku_rect_t dash = { x0, y0 + d, 1, 2 };
 
-            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
             dash.x = x0 + wds - 1;
-            tiku_desk_fill(app->surf, dash, TIKU_DESK_RGB(0, 0, 0));
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
         }
     }
     if (tiku_trk_drag_active(&app->drag)) {
@@ -3818,9 +3818,9 @@ draw_all(desktop_t *app)
         int alpha = (app->drag.count > 3) ? 120 : 168;
 
         for (i = 0; i < shown; i++) {
-            tiku_desk_rect_t box;
-            char art[TIKU_TRK_NAME_MAX];
-            tiku_trk_model_t dm;
+            tiku_rect_t box;
+            char art[TIKU_NAME_MAX];
+            tiku_model_t dm;
 
             if (app->backend->ops->stat(app->backend, app->drag.path[i],
                                         &dm) != 0) {
@@ -3832,11 +3832,11 @@ draw_all(desktop_t *app)
             box.y = app->drag.y - 16 + i * 6;
             box.w = 32;
             box.h = 32;
-            (void)tiku_trk_icon_paint(app->surf, art, box.x, box.y, 32);
+            (void)tiku_icon_paint(app->surf, art, box.x, box.y, 32);
             /* Tinted over its own pixels rather than composited in an
              * offscreen: the picture is what the pointer carries, and it
              * has to sit over whatever is under it. */
-            tiku_trk_paint_tint(app->surf, box, app->backdrop_color,
+            tiku_paint_tint(app->surf, box, app->backdrop_color,
                                 255 - alpha);
             if (app->drag.count > 3) {
                 /* Large selections get a short fade at the edge of the
@@ -3844,16 +3844,16 @@ draw_all(desktop_t *app)
                  * expressed as progressively stronger backdrop tinting over
                  * the four edge bands rather than an off-screen alpha
                  * bitmap (PVS-034). */
-                tiku_desk_rect_t edge = box;
+                tiku_rect_t edge = box;
                 edge.w = 4;
-                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge.x = box.x + box.w - 4;
-                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge = box;
                 edge.h = 4;
-                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
                 edge.y = box.y + box.h - 4;
-                tiku_trk_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
             }
         }
         /* The copy cursor's spelling here: when the drop in front of the
@@ -3862,7 +3862,7 @@ draw_all(desktop_t *app)
          * told before the release which of the two acts this is
          * (PVS-036). */
         if (app->drag_target.folder != NULL) {
-            char dest[TIKU_TRK_PATH_MAX];
+            char dest[TIKU_PATH_MAX];
             unsigned dmods = 0u;
             int same;
 
@@ -3876,31 +3876,31 @@ draw_all(desktop_t *app)
                 snprintf(dest, sizeof dest, "%s",
                          app->drag_target.folder->path);
             }
-            if ((app->drag_live_mods & TIKU_DESK_MOD_OPTION) != 0u) {
+            if ((app->drag_live_mods & TIKU_MOD_OPTION) != 0u) {
                 dmods |= TIKU_TRK_DRAG_MOD_COPY;
             }
-            if ((app->drag_live_mods & TIKU_DESK_MOD_CMD) != 0u) {
+            if ((app->drag_live_mods & TIKU_MOD_CMD) != 0u) {
                 dmods |= TIKU_TRK_DRAG_MOD_LINK;
             }
             same = dest[0] != '\0' &&
-                   tiku_trk_fs_drop_action(app->fs, app->drag.path[0],
-                                           dest, 0) == TIKU_TRK_OP_MOVE;
+                   tiku_fs_drop_action(app->fs, app->drag.path[0],
+                                           dest, 0) == TIKU_OP_MOVE;
             if (dest[0] != '\0' &&
                 tiku_trk_drag_action(&app->drag, dest, dmods, same) ==
                     TIKU_TRK_DROP_COPY) {
-                tiku_desk_rect_t badge = { app->drag.x + 10,
+                tiku_rect_t badge = { app->drag.x + 10,
                                            app->drag.y + 10, 13, 13 };
-                tiku_desk_rect_t stroke;
+                tiku_rect_t stroke;
 
-                tiku_desk_fill(app->surf, badge,
-                               TIKU_DESK_RGB(255, 255, 190));
-                tiku_desk_frame(app->surf, badge, TIKU_DESK_C_TEXT);
-                stroke = (tiku_desk_rect_t){ badge.x + 3, badge.y + 6,
+                tiku_fill(app->surf, badge,
+                               TIKU_RGB(255, 255, 190));
+                tiku_frame(app->surf, badge, TIKU_C_TEXT);
+                stroke = (tiku_rect_t){ badge.x + 3, badge.y + 6,
                                              7, 1 };
-                tiku_desk_fill(app->surf, stroke, TIKU_DESK_C_TEXT);
-                stroke = (tiku_desk_rect_t){ badge.x + 6, badge.y + 3,
+                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
+                stroke = (tiku_rect_t){ badge.x + 6, badge.y + 3,
                                              1, 7 };
-                tiku_desk_fill(app->surf, stroke, TIKU_DESK_C_TEXT);
+                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
             }
         }
     }
@@ -3932,8 +3932,8 @@ draw_all(desktop_t *app)
         /* The global bar: the focused folder's menus are REBUILT and
          * PUBLISHED, and the strip renders only what was published --
          * the same data a foreign window would hand in. */
-        tiku_desk_rect_t strip;
-        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app->desk);
+        tiku_rect_t strip;
+        tiku_window_t *fw = tiku_workspace_focused(app->desk);
         folder_t *ffl = folder_of(app, fw);
 
         if (ffl != NULL) {
@@ -3947,14 +3947,14 @@ draw_all(desktop_t *app)
         }
         rebuild_global_bar(app);
         strip = global_bar_rect(app);
-        tiku_desk_fill(app->surf, strip, TIKU_DESK_C_PANEL);
-        tiku_desk_hline(app->surf, strip.x, strip.y + strip.h - 1,
-                        strip.w, tiku_desk_tint(TIKU_DESK_C_PANEL, 1.40f));
+        tiku_fill(app->surf, strip, TIKU_C_PANEL);
+        tiku_hline(app->surf, strip.x, strip.y + strip.h - 1,
+                        strip.w, tiku_tint(TIKU_C_PANEL, 1.40f));
         tiku_trk_menubar_draw(&app->gbar, app->surf, strip);
         if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
             app->popup = app->gbar.menu[app->gbar_open];
             app->popup_frame = tiku_trk_menubar_panel(&app->gbar, strip,
-                (tiku_desk_rect_t){ 0, 0, app->surf->w, app->surf->h });
+                (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
         }
     }
     /* A menu is drawn last because it is above everything, including the
@@ -3975,7 +3975,7 @@ draw_all(desktop_t *app)
     }
     if (app->qdrag_on) {
         /* The query icon in flight (Q-034), riding under the pointer. */
-        (void)tiku_trk_icon_paint(app->surf, "query", app->ptr_x - 16,
+        (void)tiku_icon_paint(app->surf, "query", app->ptr_x - 16,
                                   app->ptr_y - 16, 32);
     }
     if (app->nav_on && app->popup != NULL) {
@@ -3997,49 +3997,49 @@ static void
 draw_nav_levels(desktop_t *app, int px, int py)
 {
     {
-        const tiku_desk_font_t *nf = tiku_desk_font_plain();
+        const tiku_font_t *nf = tiku_font_plain();
         int k;
 
         for (k = 0; k < app->nav.depth; k++) {
             tiku_trk_nav_level_t *lv = &app->nav.level[k];
-            tiku_desk_rect_t r;
+            tiku_rect_t r;
             int i;
 
             tiku_trk_nav_place(&app->nav, k, px, py, app->surf->w,
                                app->surf->h,
                                &r.x, &r.y, &r.w, &r.h);
-            tiku_desk_fill(app->surf, r, TIKU_DESK_C_PANEL);
-            tiku_desk_bevel(app->surf, r,
-                tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-                tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+            tiku_fill(app->surf, r, TIKU_C_PANEL);
+            tiku_bevel(app->surf, r,
+                tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_2),
+                tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
             if (lv->n == 0) {
-                tiku_desk_text(app->surf, nf, r.x + 8,
+                tiku_text(app->surf, nf, r.x + 8,
                                r.y + 2 + nf->ascent, TIKU_TRK_NAV_EMPTY,
-                               tiku_desk_tint(TIKU_DESK_C_TEXT,
-                                              TIKU_DESK_LIGHTEN_2));
+                               tiku_tint(TIKU_C_TEXT,
+                                              TIKU_LIGHTEN_2));
             }
             for (i = 0; i < lv->n; i++) {
                 int ty = r.y + 2 + i * TIKU_TRK_NAV_ROW;
-                tiku_desk_rect_t row2;
+                tiku_rect_t row2;
 
                 row2.x = r.x + 1; row2.y = ty; row2.w = r.w - 2;
                 row2.h = TIKU_TRK_NAV_ROW;
                 if (i == lv->sel) {
-                    tiku_desk_fill(app->surf, row2, TIKU_DESK_C_SELECT);
+                    tiku_fill(app->surf, row2, TIKU_C_SELECT);
                 }
-                tiku_desk_text(app->surf, nf, r.x + 8, ty + nf->ascent + 2,
+                tiku_text(app->surf, nf, r.x + 8, ty + nf->ascent + 2,
                                lv->item[i].name,
-                               (i == lv->sel) ? TIKU_DESK_C_SELTEXT
-                               : (lv->item[i].enabled ? TIKU_DESK_C_TEXT
-                                  : tiku_desk_tint(TIKU_DESK_C_TEXT,
-                                                   TIKU_DESK_LIGHTEN_2)));
+                               (i == lv->sel) ? TIKU_C_SELTEXT
+                               : (lv->item[i].enabled ? TIKU_C_TEXT
+                                  : tiku_tint(TIKU_C_TEXT,
+                                                   TIKU_LIGHTEN_2)));
                 if (lv->item[i].is_container) {
                     /* The arrow says a row goes further, which is the one
                      * thing a nested menu must announce. */
-                    tiku_desk_text(app->surf, nf, r.x + r.w - 12,
+                    tiku_text(app->surf, nf, r.x + r.w - 12,
                                    ty + nf->ascent + 2, ">",
-                                   (i == lv->sel) ? TIKU_DESK_C_SELTEXT
-                                                  : TIKU_DESK_C_TEXT);
+                                   (i == lv->sel) ? TIKU_C_SELTEXT
+                                                  : TIKU_C_TEXT);
                 }
             }
             /* The next level hangs off this level's chosen row. */
@@ -4077,12 +4077,12 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
         "%s/desktop/build/%s",          /* built in place                */
         "%s/libexec/tiku/%s"
     };
-    char dir[TIKU_TRK_PATH_MAX];
+    char dir[TIKU_PATH_MAX];
     char *slash;
     size_t i;
     int up;
 
-    /* TIKU_DESK_APPS says where APPLICATIONS are installed, which is not
+    /* TIKU_APPS says where APPLICATIONS are installed, which is not
      * where this desktop's own companion programs live; a runner looked
      * for there would be missing on every install that separates the
      * two. */
@@ -4099,7 +4099,7 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
      * APPENDING "/.." rather than trimming keeps a relative argv[0]
      * working, which one trimmed down to "." cannot. */
     for (up = 0; up < 5; up++) {
-        char step[TIKU_TRK_PATH_MAX];
+        char step[TIKU_PATH_MAX];
         int k;
 
         snprintf(step, sizeof step, "%s", dir);
@@ -4112,7 +4112,7 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
             snprintf(step + used, sizeof step - used, "/..");
         }
         for (i = 0; i < sizeof where / sizeof where[0]; i++) {
-            char found[TIKU_TRK_PATH_MAX];
+            char found[TIKU_PATH_MAX];
 
             snprintf(found, sizeof found, where[i], step, name);
             if (access(found, X_OK) != 0) {
@@ -4140,12 +4140,12 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
 static int
 find_apps_dir(const char *argv0, char *out, size_t max)
 {
-    char dir[TIKU_TRK_PATH_MAX];
+    char dir[TIKU_PATH_MAX];
     char *slash;
     int up;
 
-    if (getenv("TIKU_DESK_APPS") != NULL) {
-        snprintf(out, max, "%s", getenv("TIKU_DESK_APPS"));
+    if (getenv("TIKU_APPS") != NULL) {
+        snprintf(out, max, "%s", getenv("TIKU_APPS"));
         return access(out, X_OK) == 0;
     }
     snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
@@ -4156,8 +4156,8 @@ find_apps_dir(const char *argv0, char *out, size_t max)
         snprintf(dir, sizeof dir, ".");
     }
     for (up = 0; up < 5; up++) {
-        char step[TIKU_TRK_PATH_MAX];
-        char found[TIKU_TRK_PATH_MAX];
+        char step[TIKU_PATH_MAX];
+        char found[TIKU_PATH_MAX];
         int k;
 
         snprintf(step, sizeof step, "%s", dir);
@@ -4215,8 +4215,8 @@ static void
 prepare_places(desktop_t *app)
 {
     const char *home = getenv("HOME");
-    char path[TIKU_TRK_PATH_MAX];
-    const char *icons = getenv("TIKU_DESK_ICONS");
+    char path[TIKU_PATH_MAX];
+    const char *icons = getenv("TIKU_ICONS");
 
     (void)app;
     if (icons == NULL || icons[0] == '\0') {
@@ -4226,20 +4226,20 @@ prepare_places(desktop_t *app)
         snprintf(path, sizeof path, "%s/.config/tracker/icons", home);
         icons = path;
     }
-    (void)tiku_trk_state_mkparents(icons);
+    (void)tiku_state_mkparents(icons);
     (void)mkdir(icons, 0755);
     /* Whatever is in there wins over what was baked in, by name, so a
      * device can say what its own folders and programs look like. */
-    (void)tiku_trk_icons_load_dir(icons);
+    (void)tiku_icons_load_dir(icons);
 
     {
         /* This Tracker's own Desktop, not the login session's: what a
          * device shows is the device's, and a host desktop full of
          * somebody's work is not it. */
-        char desktop[TIKU_TRK_PATH_MAX];
+        char desktop[TIKU_PATH_MAX];
 
-        (void)tiku_trk_desktop_dir(desktop, sizeof desktop);
-        (void)tiku_trk_state_mkparents(desktop);
+        (void)tiku_desktop_dir(desktop, sizeof desktop);
+        (void)tiku_state_mkparents(desktop);
         (void)mkdir(desktop, 0755);
     }
 }
@@ -4270,9 +4270,9 @@ app_icon(const char *file)
 static void
 offer_installed(desktop_t *app, const char *argv0)
 {
-    char root[TIKU_TRK_PATH_MAX];
-    char runner[TIKU_TRK_PATH_MAX];
-    char trusted[TIKU_TRK_PATH_MAX];
+    char root[TIKU_PATH_MAX];
+    char runner[TIKU_PATH_MAX];
+    char trusted[TIKU_PATH_MAX];
     struct dirent *entry;
     DIR *dir;
     int have_runner;
@@ -4290,16 +4290,16 @@ offer_installed(desktop_t *app, const char *argv0)
     snprintf(trusted, sizeof trusted, "%s/trusted", root);
     dir = opendir(trusted);
     while (dir != NULL && (entry = readdir(dir)) != NULL) {
-        char path[TIKU_TRK_PATH_MAX];
+        char path[TIKU_PATH_MAX];
         char why[192];
-        const tiku_desk_app_descriptor_t *loaded;
+        const tiku_app_descriptor_t *loaded;
         size_t n = strlen(entry->d_name);
 
         if (n < 4u || strcmp(entry->d_name + n - 3, ".so") != 0) {
             continue;
         }
         snprintf(path, sizeof path, "%s/%s", trusted, entry->d_name);
-        loaded = tiku_desk_app_load(path, why, sizeof why);
+        loaded = tiku_app_load(path, why, sizeof why);
         if (loaded == NULL || !embed_start(app, loaded)) {
             /* Said, not swallowed: an application that was installed and
              * did not appear is a fault the user has to be told about. */
@@ -4344,7 +4344,7 @@ offer_installed(desktop_t *app, const char *argv0)
             snprintf(name[j], sizeof name[0], "%s", hold);
         }
         for (i = 0; i < count; i++) {
-            char path[TIKU_TRK_PATH_MAX];
+            char path[TIKU_PATH_MAX];
             char label[TIKU_TRK_DB_LABEL_MAX];
 
             snprintf(path, sizeof path, "%s/%s", root, name[i]);
@@ -4407,7 +4407,7 @@ conduct_menu_labels(desktop_t *app)
 
 /** @brief Queue an injected event for the loop that drains the display's. */
 static void
-conduct_inject(void *context, const tiku_desk_event_t *event)
+conduct_inject(void *context, const tiku_event_t *event)
 {
     desktop_t *app = context;
     int next = (app->cq_tail + 1) % (int)(sizeof app->cq / sizeof app->cq[0]);
@@ -4464,7 +4464,7 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         return 0;
     }
     if (strcmp(name, "title") == 0) {
-        tiku_desk_window_t *w = tiku_desk_workspace_focused(app->desk);
+        tiku_window_t *w = tiku_workspace_focused(app->desk);
 
         snprintf(out, max, "%s", (w != NULL) ? w->title : "");
         return 1;
@@ -4476,8 +4476,8 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         size_t used = 0u;
 
         out[0] = '\0';
-        for (i = 0; i < TIKU_DESK_WINDOW_MAX; i++) {
-            tiku_desk_window_t *w = tiku_desk_workspace_at(app->desk, i);
+        for (i = 0; i < TIKU_WINDOW_MAX; i++) {
+            tiku_window_t *w = tiku_workspace_at(app->desk, i);
 
             if (w == NULL || !w->open) {
                 continue;
@@ -4511,7 +4511,7 @@ static long
 script_redraw_diff(void *ctx)
 {
     desktop_t *app = ctx;
-    tiku_desk_rgb_t *was;
+    tiku_rgb_t *was;
     size_t n, i;
     long differ = 0;
 
@@ -4559,7 +4559,7 @@ tracker_run(int argc, char **argv)
     /* The words the interface is made of, before anything is drawn with
      * them: the language comes from the environment, the English is baked
      * in as the floor. */
-    (void)tiku_trk_strings_init(NULL, NULL);
+    (void)tiku_strings_init(NULL, NULL);
     tiku_trk_script_t *sc = NULL;
     int rc = 0;
     int baud = 115200, use_device = 0, i;
@@ -4570,7 +4570,7 @@ tracker_run(int argc, char **argv)
     int shot_panel = 0, shot_live = 0, shot_shift = 0, shot_zoom = 0;
     int shot_cascade = 0, shot_notify = 0, shot_select = 0;
     tiku_trk_click_t click = { 0 };
-    const char *openme[TIKU_DESK_WINDOW_MAX];
+    const char *openme[TIKU_WINDOW_MAX];
     int nopen = 0;
     /* Safe mode starts deliberately plain: it restores no session.  The
      * row's other clauses -- replicants and add-ons -- have nothing here to
@@ -4591,7 +4591,7 @@ tracker_run(int argc, char **argv)
              * pixel, for the day a setting makes the screen unreadable.
              * The files are moved aside rather than destroyed. */
             const char *home = getenv("HOME");
-            char from[TIKU_TRK_PATH_MAX], to[TIKU_TRK_PATH_MAX];
+            char from[TIKU_PATH_MAX], to[TIKU_PATH_MAX];
 
             if (home == NULL || home[0] == '\0') {
                 fprintf(stderr, "reset-settings: no HOME\n");
@@ -4603,7 +4603,7 @@ tracker_run(int argc, char **argv)
                 printf("moved %s -> %s\n", from, to);
             }
             {
-                char dir[TIKU_TRK_PATH_MAX];
+                char dir[TIKU_PATH_MAX];
                 DIR *d;
                 struct dirent *e;
 
@@ -4663,18 +4663,18 @@ tracker_run(int argc, char **argv)
             deadline = tiku_trk_now() + (int64_t)atoi(argv[++i]) * 1000000;
         }
     }
-    app.backend = use_device ? tiku_trk_backend_tiku_open(port, baud)
-                             : tiku_trk_backend_posix_open();
+    app.backend = use_device ? tiku_backend_tiku_open(port, baud)
+                             : tiku_backend_posix_open();
     if (app.backend == NULL) {
         fprintf(stderr, "tracker: no backend\n");
         return 1;
     }
-    app.fs = tiku_trk_fs_new(app.backend);
-    (void)tiku_trk_fs_prepare_trash(app.fs);
-    app.backdrop_color = TIKU_DESK_C_BACKDROP;
-    app.surf = tiku_desk_surface_new(DESK_W, DESK_H, app.backdrop_color);
-    app.row_h = tiku_desk_font_plain()->height + 5;
-    app.desk = tiku_desk_workspace_new(app.surf);
+    app.fs = tiku_fs_new(app.backend);
+    (void)tiku_fs_prepare_trash(app.fs);
+    app.backdrop_color = TIKU_C_BACKDROP;
+    app.surf = tiku_surface_new(DESK_W, DESK_H, app.backdrop_color);
+    app.row_h = tiku_font_plain()->height + 5;
+    app.desk = tiku_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "Tracker");
     /* The machine's own processes are not this desktop's business: what
@@ -4689,14 +4689,14 @@ tracker_run(int argc, char **argv)
                                DESK_H, &app.dirty);
     prepare_places(&app);
     offer_installed(&app, argv[0]);
-    if (tiku_desk_remote_listen(&app.remote) != 0) {
+    if (tiku_remote_listen(&app.remote) != 0) {
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;
     }
     if (getenv("TIKU_EMBED_ABOUT") != NULL) {
         /* The both-ways proof: the SAME descriptor the client runner
          * takes out of process, hosted here linked-in. */
-        (void)embed_start(&app, &tiku_desk_about_app);
+        (void)embed_start(&app, &tiku_about_app);
     }
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
@@ -4728,7 +4728,7 @@ tracker_run(int argc, char **argv)
          * ones the Open panel keeps, and a second copy would disagree
          * (DB-002, DB-003). */
         const char *home = getenv("HOME");
-        char user[TIKU_TRK_PATH_MAX];
+        char user[TIKU_PATH_MAX];
 
         snprintf(user, sizeof user, "%s/.config/deskbar",
                  (home != NULL && home[0] != '\0') ? home : "");
@@ -4764,10 +4764,10 @@ tracker_run(int argc, char **argv)
          * what the rows are about is the ANSWERS -- which application
          * opens what, and how well -- not where the list is kept. */
         const char *home = getenv("HOME");
-        char reg[TIKU_TRK_PATH_MAX];
+        char reg[TIKU_PATH_MAX];
 
         {
-            char tdb[TIKU_TRK_PATH_MAX];
+            char tdb[TIKU_PATH_MAX];
 
             snprintf(tdb, sizeof tdb, "%s/.config/tracker/types",
                      (home != NULL && home[0] != '\0') ? home : "");
@@ -4820,9 +4820,9 @@ tracker_run(int argc, char **argv)
         }
         sync_addons(&app, 1);
     }
-    tiku_trk_thumb_init(&app.thumbs);
+    tiku_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
-    tiku_trk_volwatch_init(&app.volwatch);
+    tiku_volwatch_init(&app.volwatch);
     app.info_relink = -1;
     tiku_trk_info_windows_init(&app.info_windows, app.desk, app.backend,
         app.store, app.fs, alert_model(&app), &app.dirty);
@@ -4835,7 +4835,7 @@ tracker_run(int argc, char **argv)
     app.find_window.select_folder = find_select_folder;
     {
         const char *home = getenv("HOME");
-        char path[TIKU_TRK_PATH_MAX] = "";
+        char path[TIKU_PATH_MAX] = "";
 
         if (home != NULL && home[0] != '\0') {
             snprintf(path, sizeof path, "%s/.config/TrackerSettings", home);
@@ -4894,7 +4894,7 @@ tracker_run(int argc, char **argv)
         .prepare_context = &app.folder_menu
     };
     tiku_trk_folder_lifecycle_init(&app.folder_lifecycle, app.folders,
-        TIKU_DESK_WINDOW_MAX, &app.folder_count, &app.cascade_x,
+        TIKU_WINDOW_MAX, &app.folder_count, &app.cascade_x,
         &app.cascade_y, app.desk, app.backend, app.store,
         prefs_model(&app), &app.folder_render, app.status,
         sizeof app.status, &app.dirty, DESK_W, DESK_H);
@@ -4935,13 +4935,13 @@ tracker_run(int argc, char **argv)
         /* The panel offers the namespace's own top level as its scopes,
          * read from the device rather than assumed. */
         {
-            tiku_trk_model_t roots[TIKU_TRK_FIND_PLACES_MAX];
+            tiku_model_t roots[TIKU_TRK_FIND_PLACES_MAX];
             int nr = 0, k;
 
             nr = list_children(app.backend, "/", roots,
                                TIKU_TRK_FIND_PLACES_MAX);
             for (k = 0; k < nr; k++) {
-                if (tiku_trk_model_is_container(&roots[k])) {
+                if (tiku_model_is_container(&roots[k])) {
                     (void)tiku_trk_find_add_place_identity(
                         find_model(&app), roots[k].name, roots[k].facts.dev,
                         app.backend->devid[0] != '\0' ? app.backend->devid
@@ -4956,10 +4956,10 @@ tracker_run(int argc, char **argv)
     (void)tiku_trk_find_open_default(find_model(&app), (int64_t)time(NULL));
 
     if (conduct_tty != NULL) {
-        int line = tiku_desk_conduct_open_tty(conduct_tty, 0);
+        int line = tiku_conduct_open_tty(conduct_tty, 0);
 
         if (line < 0 ||
-            tiku_desk_conduct_adopt(&app.conduct, line, &app,
+            tiku_conduct_adopt(&app.conduct, line, &app,
                                     conduct_inject, conduct_pixel,
                                     conduct_text) != 0) {
             fprintf(stderr, "tracker: cannot speak the conductor channel "
@@ -4969,7 +4969,7 @@ tracker_run(int argc, char **argv)
         app.conduct_on = 1;
     }
     if (conduct_path != NULL) {
-        if (tiku_desk_conduct_listen(&app.conduct, conduct_path, &app,
+        if (tiku_conduct_listen(&app.conduct, conduct_path, &app,
                                      conduct_inject, conduct_pixel,
                                      conduct_text) != 0) {
             fprintf(stderr, "tracker: cannot offer the conductor channel "
@@ -5027,14 +5027,14 @@ tracker_run(int argc, char **argv)
          * driver reads it through the channel. */
         app.host = NULL;
     } else {
-        app.host = tiku_desk_host_open(DESK_W, DESK_H, "TikuOS Desktop");
+        app.host = tiku_host_open(DESK_W, DESK_H, "TikuOS Desktop");
         if (app.host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
         }
-        if (tiku_desk_host_scale(app.host) > 1) {
-            (void)tiku_desk_surface_rescale(app.surf,
-                tiku_desk_host_scale(app.host), app.backdrop_color);
+        if (tiku_host_scale(app.host) > 1) {
+            (void)tiku_surface_rescale(app.surf,
+                tiku_host_scale(app.host), app.backdrop_color);
         }
     }
     if (shot != NULL) {
@@ -5044,7 +5044,7 @@ tracker_run(int argc, char **argv)
         /* Scripted: the Select window over the front folder, with an
          * expression already in it, so a capture shows the whole control
          * set the way it comes up. */
-        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
+        tiku_window_t *fw = tiku_workspace_focused(app.desk);
         folder_t *ffl = folder_of(&app, fw);
 
         tiku_trk_select_window_open(&app.select_window, ffl, 520, 300);
@@ -5063,9 +5063,9 @@ tracker_run(int argc, char **argv)
         char err[128];
 
         open_panel(&app);
-        tiku_trk_find_set_mode(find_model(&app), TIKU_TRK_QMODE_ATTRIBUTE);
-        find_model(&app)->row[0].field = TIKU_TRK_QF_VALUE;
-        find_model(&app)->row[0].op = TIKU_TRK_OP_IS;
+        tiku_trk_find_set_mode(find_model(&app), TIKU_QMODE_ATTRIBUTE);
+        find_model(&app)->row[0].field = TIKU_QF_VALUE;
+        find_model(&app)->row[0].op = TIKU_OP_IS;
         snprintf(find_model(&app)->row[0].value, sizeof find_model(&app)->row[0].value, "1");
         find_model(&app)->everywhere = 0;
         {
@@ -5093,15 +5093,15 @@ tracker_run(int argc, char **argv)
         /* Drive the panel the way a user would: open it, choose attribute
          * mode, fill two rows joined by or, scope it, and search. */
         open_panel(&app);
-        tiku_trk_find_set_mode(find_model(&app), TIKU_TRK_QMODE_ATTRIBUTE);
+        tiku_trk_find_set_mode(find_model(&app), TIKU_QMODE_ATTRIBUTE);
         (void)tiku_trk_find_add_row(find_model(&app));
-        find_model(&app)->row[0].field = TIKU_TRK_QF_UNIT;
-        find_model(&app)->row[0].op = TIKU_TRK_OP_IS;
+        find_model(&app)->row[0].field = TIKU_QF_UNIT;
+        find_model(&app)->row[0].op = TIKU_OP_IS;
         snprintf(find_model(&app)->row[0].value, sizeof find_model(&app)->row[0].value,
                  "bytes");
-        find_model(&app)->row[0].join = TIKU_TRK_JOIN_OR;
-        find_model(&app)->row[1].field = TIKU_TRK_QF_UNIT;
-        find_model(&app)->row[1].op = TIKU_TRK_OP_IS;
+        find_model(&app)->row[0].join = TIKU_JOIN_OR;
+        find_model(&app)->row[1].field = TIKU_QF_UNIT;
+        find_model(&app)->row[1].op = TIKU_OP_IS;
         snprintf(find_model(&app)->row[1].value, sizeof find_model(&app)->row[1].value, "s");
         find_model(&app)->everywhere = 0;
         find_model(&app)->place_mask = 1u;
@@ -5148,7 +5148,7 @@ tracker_run(int argc, char **argv)
         (void)app.backend->ops->write(app.backend, "/dev/led0", "1", 1, err,
                                       sizeof err);
         {
-            tiku_trk_change_t ch[32];
+            tiku_model_change_t ch[32];
             int nch = -1, complete = 1;
 
             if (app.backend->ops->changes != NULL) {
@@ -5182,7 +5182,7 @@ tracker_run(int argc, char **argv)
         int wide = 0, k;
 
         for (k = 0; k < nc; k++) { wide += cols[k].width; }
-        (void)tiku_desk_workspace_zoom(app.desk, fl->win, wide + 8,
+        (void)tiku_workspace_zoom(app.desk, fl->win, wide + 8,
             tiku_trk_poseview_count(fl->view) * app.row_h + COUNT_H + 6);
     }
     if (shot_shift) {
@@ -5201,7 +5201,7 @@ tracker_run(int argc, char **argv)
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
         app.popup_frame = tiku_trk_menu_place(app.popup, 250, 150,
-                              (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                              (tiku_rect_t){ 0, 0, app.surf->w,
                                                   app.surf->h });
         c = menu_ctx(&app, fl, TIKU_TRK_MOD_SHIFT);
         tiku_trk_sc_update(app.popup, &c);
@@ -5223,7 +5223,7 @@ tracker_run(int argc, char **argv)
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
         app.popup_frame = tiku_trk_menu_place(app.popup, 250, 160,
-                              (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                              (tiku_rect_t){ 0, 0, app.surf->w,
                                                   app.surf->h });
     }
     app.running = 1;
@@ -5257,7 +5257,7 @@ tracker_run(int argc, char **argv)
              * this running shell. */
             static int64_t command_stamp;
             struct stat cst;
-            char cpath[TIKU_TRK_PATH_MAX];
+            char cpath[TIKU_PATH_MAX];
             const char *chome = getenv("HOME");
 
             snprintf(cpath, sizeof cpath, "%s/.config/tracker/command",
@@ -5274,11 +5274,11 @@ tracker_run(int argc, char **argv)
                 }
             }
         }
-        if (tiku_desk_remote_poll(&app.remote)) {
+        if (tiku_remote_poll(&app.remote)) {
             app.dirty = 1;
         }
         if (app.conduct_on) {
-            (void)tiku_desk_conduct_poll(&app.conduct);
+            (void)tiku_conduct_poll(&app.conduct);
         }
         remote_reconcile(&app);
         remote_sweep(&app);
@@ -5296,7 +5296,7 @@ tracker_run(int argc, char **argv)
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
         for (;;) {
-            tiku_desk_event_t ev;
+            tiku_event_t ev;
             int have = 0;
 
             memset(&ev, 0, sizeof ev);
@@ -5311,7 +5311,7 @@ tracker_run(int argc, char **argv)
                 }
                 if (script_result == TIKU_TRK_SCRIPT_ADAPTER_SHOT) {
                     draw_all(&app);
-                    (void)tiku_desk_surface_png(
+                    (void)tiku_surface_png(
                         app.surf, app.script_adapter.shot_path);
                 }
                 have = script_result == TIKU_TRK_SCRIPT_ADAPTER_EVENT;
@@ -5323,7 +5323,7 @@ tracker_run(int argc, char **argv)
                 app.cq_head = (app.cq_head + 1) %
                               (int)(sizeof app.cq / sizeof app.cq[0]);
                 have = 1;
-            } else if (app.host != NULL && tiku_desk_host_poll(app.host,
+            } else if (app.host != NULL && tiku_host_poll(app.host,
                                                                &ev)) {
                 have = 1;
             }
@@ -5331,19 +5331,19 @@ tracker_run(int argc, char **argv)
                 break;
             }
             switch (ev.type) {
-            case TIKU_DESK_EVENT_RESIZE:
+            case TIKU_EVENT_RESIZE:
                 (void)resize_desktop(&app, ev.width, ev.height);
                 app.dirty = 1;
                 break;
-            case TIKU_DESK_EVENT_EXPOSE:
+            case TIKU_EVENT_EXPOSE:
                 app.dirty = 1;
                 break;
-            case TIKU_DESK_EVENT_POINTER_DOWN: {
+            case TIKU_EVENT_POINTER_DOWN: {
                 if (ev.button == 1u && ev.modifiers == 0u) {
                     /* The resize strip: four pixels along the bar's
                      * inner edge, and the drag sets the short axis by
                      * hand (DB-050). */
-                    tiku_desk_rect_t bf =
+                    tiku_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
                     tiku_trk_db_dock_t dk =
                         tiku_trk_deskbar_dock(app.deskbar);
@@ -5366,12 +5366,12 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 if (ev.button == 1u &&
-                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                    (ev.modifiers & TIKU_MOD_CMD)) {
                     /* Before anything else -- but ARMED, not decided: a
                      * CMD press that then moves re-docks the bar
                      * (DB-049); one that lets go where it landed is a
                      * chord the rows answer (DB-019/021). */
-                    tiku_desk_rect_t bf =
+                    tiku_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
 
                     if (ev.x >= bf.x &&
@@ -5387,7 +5387,7 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 {   /* An info window takes its own clicks first. */
-                    tiku_desk_window_t *iw = tiku_desk_workspace_focused(app.desk);
+                    tiku_window_t *iw = tiku_workspace_focused(app.desk);
                     int islot = tiku_trk_info_windows_slot(&app.info_windows,
                                                            iw);
                     /* An open menu owns the next click wherever it lands,
@@ -5440,7 +5440,7 @@ tracker_run(int argc, char **argv)
                                  * the MODEL, and carried out against its
                                  * path because there is no selection here
                                  * to read (AW-076). */
-                                tiku_trk_model_t m;
+                                tiku_model_t m;
                                 tiku_trk_sc_ctx_t c =
                                     menu_ctx(&app, desktop_folder(&app), 0u);
 
@@ -5454,13 +5454,13 @@ tracker_run(int argc, char **argv)
                                  * selection happens to be (AW-076). */
                                 c.selection = 1;
                                 c.selection_is_volume =
-                                    m.kind == TIKU_TRK_KIND_VOLUME;
+                                    m.kind == TIKU_KIND_VOLUME;
                                 c.selection_ro =
-                                    !tiku_trk_model_is_writable(&m);
+                                    !tiku_model_is_writable(&m);
                                 c.can_trash_or_dup = !c.selection_ro;
                                 c.can_edit_name =
-                                    m.kind != TIKU_TRK_KIND_TRASH &&
-                                    m.kind != TIKU_TRK_KIND_DESKTOP &&
+                                    m.kind != TIKU_KIND_TRASH &&
+                                    m.kind != TIKU_KIND_DESKTOP &&
                                     !c.selection_ro;
                                 snprintf(app.popup_path,
                                          sizeof app.popup_path, "%s",
@@ -5475,15 +5475,15 @@ tracker_run(int argc, char **argv)
                                 /* The items the source adds for THIS menu
                                  * alone (AW-076): a folder recounts, a
                                  * link re-points. */
-                                if (tiku_trk_model_is_container(&m) &&
-                                    m.kind != TIKU_TRK_KIND_VOLUME &&
-                                    m.kind != TIKU_TRK_KIND_ROOT) {
+                                if (tiku_model_is_container(&m) &&
+                                    m.kind != TIKU_KIND_VOLUME &&
+                                    m.kind != TIKU_KIND_ROOT) {
                                     (void)tiku_trk_menu_add(app.popup,
                                         "Recalculate folder size",
                                         TIKU_TRK_CMD_RECALC_SIZE, 0, 0u,
                                         1);
                                 }
-                                if (m.kind == TIKU_TRK_KIND_SYMLINK) {
+                                if (m.kind == TIKU_KIND_SYMLINK) {
                                     (void)tiku_trk_menu_add(app.popup,
                                         "Set new link target",
                                         TIKU_TRK_CMD_SET_LINK_TARGET, 0,
@@ -5492,7 +5492,7 @@ tracker_run(int argc, char **argv)
                                 app.popup_sub = NULL;
                                 app.popup_frame = tiku_trk_menu_place(
                                     app.popup, ev.x, ev.y,
-                                    (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                    (tiku_rect_t){ 0, 0, app.surf->w,
                                                         app.surf->h });
                                 app.dirty = 1;
                                 break;
@@ -5509,9 +5509,9 @@ tracker_run(int argc, char **argv)
                              * itself -- except the Trash, which can only
                              * ever be opened (AW-075). */
                             if (ev.button == 1u &&
-                                info->model.kind != TIKU_TRK_KIND_TRASH) {
-                                char iparent[TIKU_TRK_PATH_MAX];
-                                tiku_trk_model_t im;
+                                info->model.kind != TIKU_KIND_TRASH) {
+                                char iparent[TIKU_PATH_MAX];
+                                tiku_model_t im;
 
                                 if (app.backend->ops->stat(app.backend,
                                         info->path, &im) == 0) {
@@ -5535,8 +5535,8 @@ tracker_run(int argc, char **argv)
                                 tiku_trk_info_field(info,
                                     app.store, which, &label, value,
                                     sizeof value);
-                            char dir[TIKU_TRK_PATH_MAX];
-                            char sel[TIKU_TRK_NAME_MAX];
+                            char dir[TIKU_PATH_MAX];
+                            char sel[TIKU_NAME_MAX];
 
                             if (fk == TIKU_TRK_INFO_F_OPENS_WITH) {
                                 /* The pop-up as a walk: each click moves
@@ -5548,7 +5548,7 @@ tracker_run(int argc, char **argv)
                                 break;
                             }
                             if (fk == TIKU_TRK_INFO_F_SIZE &&
-                                tiku_trk_model_is_container(
+                                tiku_model_is_container(
                                     &info->model)) {
                                 /* Clicking the size asks again: a folder
                                  * counted an hour ago is a guess (AW-068). */
@@ -5575,7 +5575,7 @@ tracker_run(int argc, char **argv)
                                      * a picker rather than an error, which
                                      * is the whole of AW-074's flow. */
                                     folder_t *ffl = folder_of(&app,
-                                        tiku_desk_workspace_focused(app.desk));
+                                        tiku_workspace_focused(app.desk));
 
                                     app.info_relink = islot;
                                     fpanel_open(&app, (ffl != NULL) ? ffl
@@ -5589,20 +5589,20 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 {
-                    tiku_desk_window_t *dbprefs =
+                    tiku_window_t *dbprefs =
                         tiku_trk_deskbar_prefs_window_handle(
                             &app.deskbar_prefs_window);
 
                     if (dbprefs != NULL && dbprefs->open &&
                         !alert_model(&app)->open) {
-                        tiku_desk_event_t window_event = { 0 };
+                        tiku_event_t window_event = { 0 };
 
-                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.type = TIKU_EVENT_POINTER_DOWN;
                         window_event.time_us = tiku_trk_now();
                         window_event.x = ev.x;
                         window_event.y = ev.y;
                         window_event.button = ev.button;
-                        if (tiku_desk_window_send(dbprefs, &window_event)) {
+                        if (tiku_window_send(dbprefs, &window_event)) {
                             break;
                         }
                     }
@@ -5611,56 +5611,56 @@ tracker_run(int argc, char **argv)
                     /* The same offer to the Desktop's own preferences:
                      * a window with controls hears the pointer, and says
                      * whether the click was one of its own. */
-                    tiku_desk_window_t *dkprefs =
+                    tiku_window_t *dkprefs =
                         tiku_trk_desktop_prefs_window_handle(
                             &app.desktop_prefs_window);
 
                     if (dkprefs != NULL && dkprefs->open &&
                         !alert_model(&app)->open) {
-                        tiku_desk_event_t window_event = { 0 };
+                        tiku_event_t window_event = { 0 };
 
-                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.type = TIKU_EVENT_POINTER_DOWN;
                         window_event.time_us = tiku_trk_now();
                         window_event.x = ev.x;
                         window_event.y = ev.y;
                         window_event.button = ev.button;
-                        if (tiku_desk_window_send(dkprefs, &window_event)) {
+                        if (tiku_window_send(dkprefs, &window_event)) {
                             break;
                         }
                     }
                 }
                 {
-                    tiku_desk_window_t *fonts =
+                    tiku_window_t *fonts =
                         tiku_trk_fonts_window_handle(&app.fonts_window);
 
                     if (fonts != NULL && fonts->open &&
                         !alert_model(&app)->open) {
-                        tiku_desk_event_t window_event = { 0 };
+                        tiku_event_t window_event = { 0 };
 
-                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.type = TIKU_EVENT_POINTER_DOWN;
                         window_event.time_us = tiku_trk_now();
                         window_event.x = ev.x;
                         window_event.y = ev.y;
                         window_event.button = ev.button;
-                        if (tiku_desk_window_send(fonts, &window_event)) {
+                        if (tiku_window_send(fonts, &window_event)) {
                             break;
                         }
                     }
                 }
                 {
-                    tiku_desk_window_t *prefs_window =
+                    tiku_window_t *prefs_window =
                         tiku_trk_prefs_window_handle(&app.prefs_window);
 
                     if (prefs_window != NULL && prefs_window->open &&
                         !alert_model(&app)->open) {
-                        tiku_desk_event_t window_event = { 0 };
+                        tiku_event_t window_event = { 0 };
 
-                        window_event.type = TIKU_DESK_EVENT_POINTER_DOWN;
+                        window_event.type = TIKU_EVENT_POINTER_DOWN;
                         window_event.time_us = tiku_trk_now();
                         window_event.x = ev.x;
                         window_event.y = ev.y;
                         window_event.button = ev.button;
-                        if (tiku_desk_window_send(prefs_window,
+                        if (tiku_window_send(prefs_window,
                                                   &window_event)) {
                             break;
                         }
@@ -5670,8 +5670,8 @@ tracker_run(int argc, char **argv)
                                                     ev.x, ev.y)) {
                     break;
                 }
-                tiku_desk_window_t *w = NULL;
-                tiku_desk_hit_t hit;
+                tiku_window_t *w = NULL;
+                tiku_hit_t hit;
                 tiku_trk_db_pick_t pick;
 
                 /* A menu that is showing eats the next click wherever it
@@ -5680,14 +5680,14 @@ tracker_run(int argc, char **argv)
                     /* A click inside a level chooses: a folder walks in,
                      * and anything else is not choosable, so the click is
                      * simply consumed (CW-056). */
-                    const tiku_desk_font_t *nf = tiku_desk_font_plain();
+                    const tiku_font_t *nf = tiku_font_plain();
                     int px2 = app.popup_frame.x + app.popup_frame.w - 4;
                     int py2 = app.popup_frame.y + 4;
                     int k, took = 0;
 
                     (void)nf;
                     for (k = 0; k < app.nav.depth && !took; k++) {
-                        tiku_desk_rect_t r;
+                        tiku_rect_t r;
                         int at;
 
                         tiku_trk_nav_place(&app.nav, k, px2, py2,
@@ -5721,7 +5721,7 @@ tracker_run(int argc, char **argv)
                     }
                 }
                 if (app.popup != NULL) {
-                    tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
+                    tiku_window_t *fw = tiku_workspace_focused(app.desk);
                     folder_t *ffl = (app.bar_fl != NULL) ? app.bar_fl
                                   : (app.popup_fl != NULL) ? app.popup_fl
                                                            : folder_of(&app, fw);
@@ -5757,7 +5757,7 @@ tracker_run(int argc, char **argv)
                                 app.popup_sub_frame =
                                     tiku_trk_menu_place_sub(app.popup, pick,
                                         app.popup_frame,
-                                        (tiku_desk_rect_t){ 0, 0,
+                                        (tiku_rect_t){ 0, 0,
                                             app.surf->w, app.surf->h });
                                 app.dirty = 1;
                                 break;
@@ -5793,7 +5793,7 @@ tracker_run(int argc, char **argv)
                                     /* The same picker AW-074's broken-
                                      * link flow raises. */
                                     folder_t *ffl2 = folder_of(&app,
-                                        tiku_desk_workspace_focused(
+                                        tiku_workspace_focused(
                                             app.desk));
 
                                     app.info_relink = islot;
@@ -5830,7 +5830,7 @@ tracker_run(int argc, char **argv)
                     ev.y < app.menus.bar.height && ev.button == 1u) {
                     /* The strip: a press on a title opens its menu, from
                      * the published description alone. */
-                    tiku_desk_rect_t strip = global_bar_rect(&app);
+                    tiku_rect_t strip = global_bar_rect(&app);
                     int bi = tiku_trk_menubar_title_at(&app.gbar, strip,
                                                        ev.x, ev.y);
 
@@ -5841,7 +5841,7 @@ tracker_run(int argc, char **argv)
                         app.popup = app.gbar.menu[bi];
                         app.popup_sub = NULL;
                         app.popup_frame = tiku_trk_menubar_panel(&app.gbar,
-                            strip, (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                            strip, (tiku_rect_t){ 0, 0, app.surf->w,
                                                        app.surf->h });
                         app.nav_on = 0;
                         app.dirty = 1;
@@ -5893,9 +5893,9 @@ tracker_run(int argc, char **argv)
                     /* The wheel.  In an icon mode it moves the pixel
                      * origin; in a list it steps rows, which is what it
                      * has always done. */
-                    tiku_desk_window_t *ww = NULL;
+                    tiku_window_t *ww = NULL;
                     folder_t *wfl;
-                    tiku_desk_rect_t bf =
+                    tiku_rect_t bf =
                         tiku_trk_deskbar_frame(app.deskbar);
 
                     if (ev.x >= bf.x &&
@@ -5906,9 +5906,9 @@ tracker_run(int argc, char **argv)
                          * whatever window happens to be under it
                          * (DB-034). */
                         int wstep = ((ev.modifiers &
-                                      (TIKU_DESK_MOD_SHIFT |
-                                       TIKU_DESK_MOD_CMD |
-                                       TIKU_DESK_MOD_OPTION)) != 0u)
+                                      (TIKU_MOD_SHIFT |
+                                       TIKU_MOD_CMD |
+                                       TIKU_MOD_OPTION)) != 0u)
                                         ? 3 : 1;
 
                         /* A modifier scrolls three times as fast, the
@@ -5919,7 +5919,7 @@ tracker_run(int argc, char **argv)
                         }
                         break;
                     }
-                    (void)tiku_desk_workspace_hit(app.desk, ev.x,
+                    (void)tiku_workspace_hit(app.desk, ev.x,
                                             ev.y, &ww);
                     wfl = folder_of(&app, ww);
                     if (wfl != NULL) {
@@ -5941,7 +5941,7 @@ tracker_run(int argc, char **argv)
                     }
                     break;
                 }
-                hit = tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
+                hit = tiku_workspace_hit(app.desk, ev.x, ev.y,
                                         &w);
                 if (tiku_trk_find_window_popup_open(&app.find_window)) {
                     /* Its menus hang below the panel's window and over
@@ -5949,29 +5949,29 @@ tracker_run(int argc, char **argv)
                      * panel wherever it lands -- the panel eats it either
                      * way, which is what closes a menu clicked off. */
                     w = tiku_trk_find_window_handle(&app.find_window);
-                    hit = TIKU_DESK_HIT_CONTENT;
+                    hit = TIKU_HIT_CONTENT;
                 }
                 if (w == NULL && desktop_folder(&app)->view != NULL) {
                     /* The backdrop is a pose area, so a click on it is a
                      * click in a view -- the same branch every window's
                      * content goes through, which is what keeps the
                      * Desktop's icons behaving like a folder's (AW-018). */
-                    hit = TIKU_DESK_HIT_CONTENT;
+                    hit = TIKU_HIT_CONTENT;
                 }
                 if (w != NULL && ev.button == 1u) {
                     folder_t *bfl = folder_of(&app, w);
 
                     if (bfl != NULL) {
-                        tiku_desk_rect_t bf = tiku_trk_folder_window_bar(bfl);
-                        tiku_desk_rect_t fi =
+                        tiku_rect_t bf = tiku_trk_folder_window_bar(bfl);
+                        tiku_rect_t fi =
                             tiku_trk_folder_window_icon(bfl);
                         int bi;
 
                         if (ev.x >= fi.x && ev.x < fi.x + fi.w &&
                             ev.y >= fi.y && ev.y < fi.y + fi.h) {
-                            tiku_trk_model_t model;
-                            char parent[TIKU_TRK_PATH_MAX];
-                            char art[TIKU_TRK_NAME_MAX];
+                            tiku_model_t model;
+                            char parent[TIKU_PATH_MAX];
+                            char art[TIKU_NAME_MAX];
 
                             art[0] = '\0';
 
@@ -5985,10 +5985,10 @@ tracker_run(int argc, char **argv)
                                     app.store, &model, art, sizeof art);
                             }
                             if (art[0] != '\0' &&
-                                tiku_trk_icon_hit(art, fi.w, ev.x - fi.x,
+                                tiku_icon_hit(art, fi.w, ev.x - fi.x,
                                                   ev.y - fi.y)) {
                                 parent_path(bfl->path, parent, sizeof parent);
-                                tiku_desk_workspace_activate(app.desk, w);
+                                tiku_workspace_activate(app.desk, w);
                                 app.press_at = tiku_trk_now();
                                 app.press_x = ev.x;
                                 app.press_y = ev.y;
@@ -6019,7 +6019,7 @@ tracker_run(int argc, char **argv)
                                 ev.x, ev.y);
                         if (bi >= 0) {
                             commit_rename(&app, 1);
-                            tiku_desk_workspace_activate(app.desk, w);
+                            tiku_workspace_activate(app.desk, w);
                             app.bar_fl = bfl;
                             app.bar_open = bi;
                             app.menus.bar.open = bi;
@@ -6027,7 +6027,7 @@ tracker_run(int argc, char **argv)
                             app.popup_sub = NULL;
                             app.popup_frame = tiku_trk_menubar_panel(
                                 &app.menus.bar, bf,
-                                (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                                (tiku_rect_t){ 0, 0, app.surf->w,
                                                     app.surf->h });
                             app.nav_on = 0;
                             app.dirty = 1;
@@ -6039,9 +6039,9 @@ tracker_run(int argc, char **argv)
                     /* The window's own scroll bar (PVL-051): arrows step,
                      * the track pages, the thumb is held. */
                     folder_t *sfl = folder_of(&app, w);
-                    tiku_desk_rect_t sb = (sfl != NULL)
+                    tiku_rect_t sb = (sfl != NULL)
                         ? tiku_trk_folder_window_scrollbar(sfl)
-                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+                        : (tiku_rect_t){ 0, 0, 0, 0 };
 
                     if (sfl != NULL && sb.w > 0 && ev.x >= sb.x &&
                         ev.x < sb.x + sb.w && ev.y >= sb.y &&
@@ -6076,9 +6076,9 @@ tracker_run(int argc, char **argv)
                      * title slides to reorder, and out of the strip tears
                      * the column off (TS-063). */
                     folder_t *tfl = folder_of(&app, w);
-                    tiku_desk_rect_t title = (tfl != NULL)
+                    tiku_rect_t title = (tfl != NULL)
                         ? tiku_trk_folder_window_title(tfl)
-                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+                        : (tiku_rect_t){ 0, 0, 0, 0 };
 
                     if (tfl != NULL && title.w > 0 && ev.x >= title.x &&
                         ev.x < title.x + title.w && ev.y >= title.y &&
@@ -6094,10 +6094,10 @@ tracker_run(int argc, char **argv)
                         }
                         tf = tiku_trk_titleview_mouse_down(&app.tstrip,
                             ev.x - title.x, ev.y - title.y, 1,
-                            w == tiku_desk_workspace_focused(app.desk),
+                            w == tiku_workspace_focused(app.desk),
                             tiku_trk_now());
                         if ((tf & TIKU_TRK_TT_ACTIVATE) != 0u) {
-                            tiku_desk_workspace_activate(app.desk, w);
+                            tiku_workspace_activate(app.desk, w);
                         }
                         if (tiku_trk_titleview_tracking(&app.tstrip) !=
                                 TIKU_TRK_TRACK_NONE) {
@@ -6114,9 +6114,9 @@ tracker_run(int argc, char **argv)
                 }
                 if (w != NULL && ev.button == 3u) {
                     folder_t *tfl = folder_of(&app, w);
-                    tiku_desk_rect_t title = (tfl != NULL)
+                    tiku_rect_t title = (tfl != NULL)
                         ? tiku_trk_folder_window_title(tfl)
-                        : (tiku_desk_rect_t){ 0, 0, 0, 0 };
+                        : (tiku_rect_t){ 0, 0, 0, 0 };
 
                     if (tfl != NULL && ev.x >= title.x &&
                         ev.x < title.x + title.w && ev.y >= title.y &&
@@ -6127,7 +6127,7 @@ tracker_run(int argc, char **argv)
                         build_open_with(&app, tfl);
                         build_per_type(&app, tfl);
                         tiku_trk_cwmenu_rebuild(&app.menus, &tc);
-                        tiku_desk_workspace_activate(app.desk, w);
+                        tiku_workspace_activate(app.desk, w);
                         app.bar_fl = NULL;
                         app.bar_open = -1;
                         app.menus.bar.open = -1;
@@ -6135,41 +6135,41 @@ tracker_run(int argc, char **argv)
                         app.popup_sub = NULL;
                         app.popup_frame = tiku_trk_menu_place(app.popup,
                             ev.x, ev.y,
-                            (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                            (tiku_rect_t){ 0, 0, app.surf->w,
                                                 app.surf->h });
                         app.press_down = 0;
                         app.dirty = 1;
                         break;
                     }
                 }
-                if (w != NULL && hit != TIKU_DESK_HIT_CONTENT) {
+                if (w != NULL && hit != TIKU_HIT_CONTENT) {
                     /* The CHROME activates a window; the content does not.
                      * That is what lets a click reach a list in a window
                      * behind another without the raise eating it -- the
                      * click-through a spatial desktop depends on. */
-                    tiku_desk_workspace_activate(app.desk, w);
+                    tiku_workspace_activate(app.desk, w);
                 }
-                if (hit == TIKU_DESK_HIT_ZOOM) {
+                if (hit == TIKU_HIT_ZOOM) {
                     folder_t *fl = folder_of(&app, w);
 
                     if (fl != NULL) {
-                        (void)tiku_desk_workspace_zoom(app.desk, w,
+                        (void)tiku_workspace_zoom(app.desk, w,
                                                  tiku_trk_folder_window_fit_width(fl),
                                                  tiku_trk_folder_window_fit_height(fl));
                     }
                     app.dirty = 1;
                     break;
                 }
-                if (hit == TIKU_DESK_HIT_CLOSE) {
+                if (hit == TIKU_HIT_CLOSE) {
                     /* Control+close closes every window rather than this
                      * one, which is the only way to clear a spatial desktop
                      * without visiting each window. */
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                    if (ev.modifiers & TIKU_MOD_CMD) {
                         int k;
 
                         for (k = 0; k < app.folder_count; k++) {
                             if (app.folders[k].win != NULL) {
-                                tiku_desk_workspace_close(app.desk,
+                                tiku_workspace_close(app.desk,
                                                     app.folders[k].win);
                             }
                         }
@@ -6184,7 +6184,7 @@ tracker_run(int argc, char **argv)
                      * it: the windows a descent through a deep folder left
                      * behind are exactly the ones nobody wants to close one
                      * at a time (AW-012). */
-                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) {
+                    if (ev.modifiers & TIKU_MOD_OPTION) {
                         folder_t *cf = folder_of(&app, w);
 
                         if (cf != NULL) {
@@ -6194,27 +6194,27 @@ tracker_run(int argc, char **argv)
                         }
                     }
                 }
-                if (hit == TIKU_DESK_HIT_CLOSE) {
+                if (hit == TIKU_HIT_CLOSE) {
                     close_window(&app, w);
-                } else if (hit == TIKU_DESK_HIT_TAB ||
-                           hit == TIKU_DESK_HIT_RESIZE) {
-                    tiku_desk_workspace_begin_track(app.desk, w, hit, ev.x,
+                } else if (hit == TIKU_HIT_TAB ||
+                           hit == TIKU_HIT_RESIZE) {
+                    tiku_workspace_begin_track(app.desk, w, hit, ev.x,
                                               ev.y);
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_select_window_handle(
                                     &app.select_window)) {
-                    (void)tiku_desk_window_send(w, &ev);
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                    (void)tiku_window_send(w, &ev);
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_panel_window_handle(
                                     &app.file_panel)) {
-                    (void)tiku_desk_window_send(w, &ev);
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                    (void)tiku_window_send(w, &ev);
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            embed_of_window(&app, w) != NULL) {
                     struct desktop_embed *slot = embed_of_window(&app, w);
-                    tiku_desk_event_t rev = ev;
-                    tiku_desk_rect_t rc = tiku_desk_window_content(w);
+                    tiku_event_t rev = ev;
+                    tiku_rect_t rc = tiku_window_content(w);
 
-                    tiku_desk_workspace_activate(app.desk, w);
+                    tiku_workspace_activate(app.desk, w);
                     rev.x -= rc.x;
                     rev.y -= rc.y;
                     if (slot->descriptor->event != NULL &&
@@ -6224,20 +6224,20 @@ tracker_run(int argc, char **argv)
                         app.embed_press = slot;
                     }
                     app.dirty = 1;
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
-                           tiku_desk_remote_owner(&app.remote, w) != NULL) {
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
+                           tiku_remote_owner(&app.remote, w) != NULL) {
                     /* A remote window's content belongs to its session:
                      * the event rides the wire in window coordinates. */
-                    tiku_desk_event_t rev = ev;
-                    tiku_desk_rect_t rc = tiku_desk_window_content(w);
+                    tiku_event_t rev = ev;
+                    tiku_rect_t rc = tiku_window_content(w);
 
-                    tiku_desk_workspace_activate(app.desk, w);
+                    tiku_workspace_activate(app.desk, w);
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    tiku_desk_remote_event(&app.remote, w, &rev);
+                    tiku_remote_event(&app.remote, w, &rev);
                     app.remote_press = w;
                     app.dirty = 1;
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_find_window_handle(
                                     &app.find_window) &&
                            ev.button == 1u &&
@@ -6247,11 +6247,11 @@ tracker_run(int argc, char **argv)
                      * travels with the pointer until it is dropped. */
                     app.qdrag_on = 1;
                     app.dirty = 1;
-                } else if (hit == TIKU_DESK_HIT_CONTENT && w != NULL &&
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_find_window_handle(
                                     &app.find_window)) {
-                    (void)tiku_desk_window_send(w, &ev);
-                } else if (hit == TIKU_DESK_HIT_CONTENT) {
+                    (void)tiku_window_send(w, &ev);
+                } else if (hit == TIKU_HIT_CONTENT) {
                     folder_t *fl = (w != NULL) ? folder_of(&app, w)
                                                : desktop_folder(&app);
                     if (fl != NULL && fl->view != NULL) {
@@ -6271,12 +6271,12 @@ tracker_run(int argc, char **argv)
                         unsigned click_flags = 0;
                         int64_t now = tiku_trk_now();
 
-                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                        if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                        if (ev.modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                        if (ev.modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                        if (ev.modifiers & TIKU_MOD_SHIFT) {
                             click_flags |= TIKU_TRK_CLICK_EXTEND;
                         }
-                        if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                        if (ev.modifiers & TIKU_MOD_CMD) {
                             click_flags |= TIKU_TRK_CLICK_EXTEND |
                                            TIKU_TRK_CLICK_CONTROL;
                         }
@@ -6292,7 +6292,7 @@ tracker_run(int argc, char **argv)
                             commit_rename(&app, 1);
                             (void)tiku_trk_poseview_context_click(fl->view,
                                                                   row);
-                            tiku_desk_workspace_activate(app.desk, w);
+                            tiku_workspace_activate(app.desk, w);
                             app.press_at = now;
                             app.press_x = ev.x;
                             app.press_y = ev.y;
@@ -6300,18 +6300,18 @@ tracker_run(int argc, char **argv)
                             app.press_fl = fl;
                             app.press_window = w;
                             app.press_focus =
-                                tiku_desk_workspace_focused(app.desk);
+                                tiku_workspace_focused(app.desk);
                             app.press_down = 1;
                             app.press_menu = 0;
                             tiku_trk_drag_arm(&app.drag, ev.x,
                                               ev.y, 3u, mods, 1,
                                               w, fl->path);
                             {
-                                tiku_trk_model_t source;
+                                tiku_model_t source;
                                 tiku_trk_drag_set_source_virtual(&app.drag,
                                     app.backend->ops->stat(app.backend,
                                         fl->path, &source) == 0 &&
-                                    source.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+                                    source.kind == TIKU_KIND_VIRTUAL_DIR);
                             }
                             kn = tiku_trk_poseview_count(fl->view);
                             for (k = 0; k < kn; k++) {
@@ -6345,7 +6345,7 @@ tracker_run(int argc, char **argv)
                                 ev.button, click_flags, now);
 
                             {
-                                tiku_desk_rect_t c = tiku_trk_folder_window_content(fl);
+                                tiku_rect_t c = tiku_trk_folder_window_content(fl);
                                 int ox = 0, oy = 0;
 
                                 tiku_trk_poseview_origin(fl->view, &ox, &oy);
@@ -6360,7 +6360,7 @@ tracker_run(int argc, char **argv)
                             app.press_fl = fl;
                             app.press_window = w;
                             app.press_focus =
-                                tiku_desk_workspace_focused(app.desk);
+                                tiku_workspace_focused(app.desk);
                             app.press_down = 1;
                             app.press_menu = 0;
                             /* Armed on a pose, started only if the pointer
@@ -6373,11 +6373,11 @@ tracker_run(int argc, char **argv)
                                               twice ? 2 : 1,
                                               w, fl->path);
                             {
-                                tiku_trk_model_t source;
+                                tiku_model_t source;
                                 tiku_trk_drag_set_source_virtual(&app.drag,
                                     app.backend->ops->stat(app.backend,
                                         fl->path, &source) == 0 &&
-                                    source.kind == TIKU_TRK_KIND_VIRTUAL_DIR);
+                                    source.kind == TIKU_KIND_VIRTUAL_DIR);
                             }
                             if (row < 0 && ev.button == 1u) {
                                 /* Empty space: a sweep, not a click.  In
@@ -6388,10 +6388,10 @@ tracker_run(int argc, char **argv)
                                  * a time (PVS-024). */
                                 unsigned bm = 0u;
 
-                                if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                                if (ev.modifiers & TIKU_MOD_SHIFT) {
                                     bm |= TIKU_TRK_MOD_SHIFT;
                                 }
-                                if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                                if (ev.modifiers & TIKU_MOD_CMD) {
                                     bm |= TIKU_TRK_MOD_CMD;
                                 }
                                 if (bm == 0u) {
@@ -6465,7 +6465,7 @@ tracker_run(int argc, char **argv)
                                      * Location column opens the folder the
                                      * path names -- the column's answer,
                                      * not the row's. */
-                                    char parent[TIKU_TRK_PATH_MAX];
+                                    char parent[TIKU_PATH_MAX];
                                     char *slash;
 
                                     snprintf(parent, sizeof parent, "%s",
@@ -6480,12 +6480,12 @@ tracker_run(int argc, char **argv)
                                         (void)open_folder(&app, parent);
                                     }
                                 } else if (p != NULL &&
-                                    tiku_trk_model_is_container(&p->model)) {
+                                    tiku_model_is_container(&p->model)) {
                                     /* A folder opens its OWN window, which
                                      * is what makes this spatial rather
                                      * than a single browser. */
                                     (void)open_folder(&app, p->model.path);
-                                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) {
+                                    if (ev.modifiers & TIKU_MOD_OPTION) {
                                         /* PVK-018: Option-open closes the
                                          * window it came from, which is how
                                          * a spatial desktop is walked
@@ -6500,7 +6500,7 @@ tracker_run(int argc, char **argv)
                                      * with a path is open what holds it --
                                      * the result itself is a value, not a
                                      * place. */
-                                    char parent[TIKU_TRK_PATH_MAX];
+                                    char parent[TIKU_PATH_MAX];
                                     char *slash;
 
                                     snprintf(parent, sizeof parent, "%s",
@@ -6531,7 +6531,7 @@ tracker_run(int argc, char **argv)
                                     went = launch_paths(&app,
                                               handler_for(&app, &p->model),
                                               one, 1);
-                                    if ((ev.modifiers & TIKU_DESK_MOD_OPTION) &&
+                                    if ((ev.modifiers & TIKU_MOD_OPTION) &&
                                         went) {
                                         /* Option-open closes the window it
                                          * came from, once the launch has
@@ -6546,15 +6546,15 @@ tracker_run(int argc, char **argv)
                 app.dirty = 1;
                 break;
             }
-            case TIKU_DESK_EVENT_POINTER_MOVE:
+            case TIKU_EVENT_POINTER_MOVE:
                 app.ptr_x = ev.x;
                 app.ptr_y = ev.y;
                 if (app.embed_press != NULL &&
                     app.embed_press->window != NULL) {
                     struct desktop_embed *slot = app.embed_press;
-                    tiku_desk_event_t rev = ev;
-                    tiku_desk_rect_t rc =
-                        tiku_desk_window_content(slot->window);
+                    tiku_event_t rev = ev;
+                    tiku_rect_t rc =
+                        tiku_window_content(slot->window);
 
                     rev.x -= rc.x;
                     rev.y -= rc.y;
@@ -6566,15 +6566,15 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (app.remote_press != NULL &&
-                    tiku_desk_remote_owner(&app.remote,
+                    tiku_remote_owner(&app.remote,
                                            app.remote_press) != NULL) {
-                    tiku_desk_event_t rev = ev;
-                    tiku_desk_rect_t rc =
-                        tiku_desk_window_content(app.remote_press);
+                    tiku_event_t rev = ev;
+                    tiku_rect_t rc =
+                        tiku_window_content(app.remote_press);
 
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    tiku_desk_remote_event(&app.remote, app.remote_press,
+                    tiku_remote_event(&app.remote, app.remote_press,
                                            &rev);
                     app.dirty = 1;
                     break;
@@ -6622,7 +6622,7 @@ tracker_run(int argc, char **argv)
                     app.press_down = 0;
                 }
                 if (app.sbar_fl != NULL && app.sbar_fl->sbar.tracking) {
-                    tiku_desk_rect_t sb =
+                    tiku_rect_t sb =
                         tiku_trk_folder_window_scrollbar(app.sbar_fl);
 
                     tiku_trk_poseview_scroll_to(app.sbar_fl->view,
@@ -6633,7 +6633,7 @@ tracker_run(int argc, char **argv)
                 }
                 if (tiku_trk_titleview_tracking(&app.tstrip) !=
                         TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
-                    tiku_desk_rect_t st =
+                    tiku_rect_t st =
                         tiku_trk_folder_window_title(app.tstrip_fl);
                     unsigned tf = tiku_trk_titleview_mouse_moved(
                         &app.tstrip, ev.x - st.x, ev.y - st.y,
@@ -6678,16 +6678,16 @@ tracker_run(int argc, char **argv)
                     /* The pointer resting on a truncated Info field opens
                      * the expanding pop-up; leaving takes it away
                      * (AW-073). */
-                    tiku_desk_window_t *hw = NULL;
+                    tiku_window_t *hw = NULL;
                     int hslot = -1, hfield = -1, hwhich = -1;
 
                     if (!tiku_trk_drag_active(&app.drag)) {
-                        (void)tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
+                        (void)tiku_workspace_hit(app.desk, ev.x, ev.y,
                                                       &hw);
                         hslot = tiku_trk_info_windows_slot(
                             &app.info_windows, hw);
                         if (hslot >= 0 &&
-                            hw == tiku_desk_workspace_focused(app.desk) &&
+                            hw == tiku_workspace_focused(app.desk) &&
                             tiku_trk_info_windows_hit(&app.info_windows,
                                 hslot, ev.x, ev.y, &hwhich) ==
                                 TIKU_TRK_INFO_HIT_FIELD) {
@@ -6706,10 +6706,10 @@ tracker_run(int argc, char **argv)
                 {
                     unsigned bm = 0u;
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         bm |= TIKU_TRK_MOD_SHIFT;
                     }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                    if (ev.modifiers & TIKU_MOD_CMD) {
                         bm |= TIKU_TRK_MOD_CMD;
                     }
                     (void)tiku_trk_band_controller_motion(
@@ -6755,14 +6755,14 @@ tracker_run(int argc, char **argv)
                      * DB-052). */
                     app.dirty = 1;
                 }
-                if (tiku_desk_workspace_tracking(app.desk)) {
-                    if (tiku_desk_workspace_track(app.desk, ev.x,
+                if (tiku_workspace_tracking(app.desk)) {
+                    if (tiku_workspace_track(app.desk, ev.x,
                                             ev.y)) {
                         app.dirty = 1;
                     }
                 }
                 break;
-            case TIKU_DESK_EVENT_POINTER_UP: {
+            case TIKU_EVENT_POINTER_UP: {
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 if (app.embed_press != NULL) {
@@ -6770,9 +6770,9 @@ tracker_run(int argc, char **argv)
 
                     app.embed_press = NULL;
                     if (slot->running && slot->window != NULL) {
-                        tiku_desk_event_t rev = ev;
-                        tiku_desk_rect_t rc =
-                            tiku_desk_window_content(slot->window);
+                        tiku_event_t rev = ev;
+                        tiku_rect_t rc =
+                            tiku_window_content(slot->window);
 
                         rev.x -= rc.x;
                         rev.y -= rc.y;
@@ -6785,15 +6785,15 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (app.remote_press != NULL) {
-                    if (tiku_desk_remote_owner(&app.remote,
+                    if (tiku_remote_owner(&app.remote,
                                                app.remote_press) != NULL) {
-                        tiku_desk_event_t rev = ev;
-                        tiku_desk_rect_t rc =
-                            tiku_desk_window_content(app.remote_press);
+                        tiku_event_t rev = ev;
+                        tiku_rect_t rc =
+                            tiku_window_content(app.remote_press);
 
                         rev.x -= rc.x;
                         rev.y -= rc.y;
-                        tiku_desk_remote_event(&app.remote,
+                        tiku_remote_event(&app.remote,
                                                app.remote_press, &rev);
                     }
                     app.remote_press = NULL;
@@ -6805,10 +6805,10 @@ tracker_run(int argc, char **argv)
                     /* The query icon lands (Q-034): over a folder window
                      * or the desktop, the drop menu asks what to make of
                      * it; back on the Find window it is just put down. */
-                    tiku_desk_window_t *tw = NULL;
+                    tiku_window_t *tw = NULL;
                     folder_t *tfl;
 
-                    (void)tiku_desk_workspace_hit(app.desk, ev.x, ev.y,
+                    (void)tiku_workspace_hit(app.desk, ev.x, ev.y,
                                                   &tw);
                     tfl = (tw != NULL) ? folder_of(&app, tw)
                                        : desktop_folder(&app);
@@ -6817,12 +6817,12 @@ tracker_run(int argc, char **argv)
                         (tw == NULL ||
                          tw != tiku_trk_find_window_handle(
                                    &app.find_window))) {
-                        tiku_trk_model_t dm;
+                        tiku_model_t dm;
                         int ro = 1;
 
                         if (app.backend->ops->stat(app.backend, tfl->path,
                                                    &dm) == 0) {
-                            ro = !tiku_trk_model_is_mutable_container(&dm);
+                            ro = !tiku_model_is_mutable_container(&dm);
                         }
                         snprintf(app.qdrop_dest, sizeof app.qdrop_dest,
                                  "%s", tfl->path);
@@ -6832,7 +6832,7 @@ tracker_run(int argc, char **argv)
                         app.popup_sub = NULL;
                         app.popup_frame = tiku_trk_menu_place(app.popup,
                             ev.x, ev.y,
-                            (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                            (tiku_rect_t){ 0, 0, app.surf->w,
                                                 app.surf->h });
                     }
                     app.dirty = 1;
@@ -6841,11 +6841,11 @@ tracker_run(int argc, char **argv)
 
                 if (tiku_trk_titleview_tracking(&app.tstrip) !=
                         TIKU_TRK_TRACK_NONE && app.tstrip_fl != NULL) {
-                    tiku_desk_rect_t st =
+                    tiku_rect_t st =
                         tiku_trk_folder_window_title(app.tstrip_fl);
                     unsigned tf = tiku_trk_titleview_mouse_up(&app.tstrip,
                         ev.x - st.x, ev.y - st.y,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT) != 0,
+                        (ev.modifiers & TIKU_MOD_SHIFT) != 0,
                         tiku_trk_now());
 
                     (void)tf;
@@ -6880,7 +6880,7 @@ tracker_run(int argc, char **argv)
                      * chosen row is where the items land, a disabled row
                      * swallows the release, and a release outside the
                      * menu falls back to the drop under the pointer. */
-                    char sdest[TIKU_TRK_PATH_MAX];
+                    char sdest[TIKU_PATH_MAX];
                     int got = spring_nav_hit(&app, ev.x, ev.y, sdest,
                                              sizeof sdest);
 
@@ -6910,10 +6910,10 @@ tracker_run(int argc, char **argv)
                     unsigned cmods = 0u;
                     tiku_trk_sc_ctx_t c;
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         cmods |= TIKU_TRK_MENU_MOD_SHIFT;
                     }
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) {
+                    if (ev.modifiers & TIKU_MOD_CMD) {
                         cmods |= TIKU_TRK_MENU_MOD_CMD;
                     }
                     c = menu_ctx(&app, pfl, cmods);
@@ -6939,20 +6939,20 @@ tracker_run(int argc, char **argv)
                     app.popup_sub = NULL;
                     app.popup_frame = tiku_trk_menu_place(app.popup,
                         ev.x, ev.y,
-                        (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                        (tiku_rect_t){ 0, 0, app.surf->w,
                                             app.surf->h });
                     app.dirty = 1;
                 }
                 if (!dropped && app.press_down && !app.press_menu &&
                     app.press_window != NULL &&
-                    tiku_desk_workspace_focused(app.desk) ==
+                    tiku_workspace_focused(app.desk) ==
                         app.press_focus) {
                     /* Content clicks raise on release, while movement has
                      * already cleared press_down, leaving drag-out from a
                      * background window click-through.  A click that opened
                      * something is exempt: the raise would put the window
                      * clicked in back over the window it just opened. */
-                    tiku_desk_workspace_activate(app.desk,
+                    tiku_workspace_activate(app.desk,
                                                   app.press_window);
                 }
                 if (app.sbar_fl != NULL) {
@@ -6976,19 +6976,19 @@ tracker_run(int argc, char **argv)
                 app.press_menu = 0;
                 app.press_window = NULL;
                 app.press_focus = NULL;
-                tiku_desk_workspace_end_track(app.desk);
+                tiku_workspace_end_track(app.desk);
                 break;
             }
-            case TIKU_DESK_EVENT_KEY_UP:
-                if (ev.type == TIKU_DESK_EVENT_KEY_DOWN ||
-                    ev.type == TIKU_DESK_EVENT_POINTER_DOWN ||
-                    ev.type == TIKU_DESK_EVENT_POINTER_MOVE) {
+            case TIKU_EVENT_KEY_UP:
+                if (ev.type == TIKU_EVENT_KEY_DOWN ||
+                    ev.type == TIKU_EVENT_POINTER_DOWN ||
+                    ev.type == TIKU_EVENT_POINTER_MOVE) {
                     /* The user did something: idle-only work starts its
                      * wait again (AW-085). */
                     tiku_trk_loop_note_activity(app.loop);
                 }
                 if (tiku_trk_switcher_window_shown(&app.switcher_window) &&
-                    ev.key == TIKU_DESK_KEY_CMD) {
+                    ev.key == TIKU_KEY_CMD) {
                     /* Released inside the hair trigger the user meant the
                      * previous application; held longer they meant the
                      * list, and letting go now is the choice (DB-054). */
@@ -6998,7 +6998,7 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 /* fall through */
-            case TIKU_DESK_EVENT_KEY_DOWN: {
+            case TIKU_EVENT_KEY_DOWN: {
                 /* A menu that is open rewrites itself as modifiers move:
                  * nine of its items change label AND command together while
                  * Shift is held.  The table already knows how; this is the
@@ -7007,25 +7007,25 @@ tracker_run(int argc, char **argv)
                 if (app.popup != NULL) {
                     unsigned mk = ev.key;
 
-                    if (mk == TIKU_DESK_KEY_SHIFT ||
-                        mk == TIKU_DESK_KEY_CMD) {
-                        tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
+                    if (mk == TIKU_KEY_SHIFT ||
+                        mk == TIKU_KEY_CMD) {
+                        tiku_window_t *fw = tiku_workspace_focused(app.desk);
                         folder_t *ffl = folder_of(&app, fw);
                         unsigned m2 = 0;
                         tiku_trk_sc_ctx_t c2;
 
-                        /* TIKU_DESK_EVENT_KEY_UP reports the state BEFORE the release,
+                        /* TIKU_EVENT_KEY_UP reports the state BEFORE the release,
                          * so the bit has to be taken out by hand or the menu
                          * stays in its shifted face. */
-                        if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                        if (ev.modifiers & TIKU_MOD_SHIFT) {
                             m2 |= TIKU_TRK_MOD_SHIFT;
                         }
-                        if (ev.type == TIKU_DESK_EVENT_KEY_UP &&
-                            mk == TIKU_DESK_KEY_SHIFT) {
+                        if (ev.type == TIKU_EVENT_KEY_UP &&
+                            mk == TIKU_KEY_SHIFT) {
                             m2 &= ~(unsigned)TIKU_TRK_MOD_SHIFT;
                         }
-                        if (ev.type == TIKU_DESK_EVENT_KEY_DOWN &&
-                            mk == TIKU_DESK_KEY_SHIFT) {
+                        if (ev.type == TIKU_EVENT_KEY_DOWN &&
+                            mk == TIKU_KEY_SHIFT) {
                             m2 |= TIKU_TRK_MOD_SHIFT;
                         }
                         c2 = menu_ctx(&app, ffl, m2);
@@ -7037,18 +7037,18 @@ tracker_run(int argc, char **argv)
                     }
                     break;
                 }
-                if (ev.type == TIKU_DESK_EVENT_KEY_UP) {
+                if (ev.type == TIKU_EVENT_KEY_UP) {
                     break;
                 }
                 {
                 unsigned key = ev.key;
-                tiku_desk_window_t *w = tiku_desk_workspace_focused(app.desk);
+                tiku_window_t *w = tiku_workspace_focused(app.desk);
                 folder_t *fl = folder_of(&app, w);
                 unsigned mods = 0;
 
-                if (ev.modifiers & TIKU_DESK_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
-                if (ev.modifiers & TIKU_DESK_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-                if (key == TIKU_DESK_KEY_ESCAPE &&
+                if (ev.modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
+                if (ev.modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
+                if (key == TIKU_KEY_ESCAPE &&
                     tiku_trk_deskbar_calendar_open(app.deskbar)) {
                     /* Escape is a focus-loss equivalent for the small clock
                      * popups; it must not close a folder or edit behind it. */
@@ -7067,17 +7067,17 @@ tracker_run(int argc, char **argv)
                                               key_char(&ev))) {
                     break;
                 }
-                if (tiku_desk_workspace_focused(app.desk) ==
+                if (tiku_workspace_focused(app.desk) ==
                         tiku_trk_find_window_handle(&app.find_window) &&
                     app.find_window.model.focus ==
                         TIKU_TRK_FIND_FOCUS_NAME &&
-                    key == ' ' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                    key == ' ' && (ev.modifiers & TIKU_MOD_CMD)) {
                     /* Cmd-Space completes the name against the first
                      * scoped place, or home when the search is everywhere
                      * (NeXT UIG ch3). */
                     tiku_trk_find_t *fm = &app.find_window.model;
-                    char dir[TIKU_TRK_PATH_MAX];
-                    char full[TIKU_TRK_NAME_MAX];
+                    char dir[TIKU_PATH_MAX];
+                    char full[TIKU_NAME_MAX];
                     const char *home = getenv("HOME");
                     int pi, chosen = -1;
 
@@ -7103,13 +7103,13 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 {
-                    tiku_desk_window_t *rfw =
-                        tiku_desk_workspace_focused(app.desk);
+                    tiku_window_t *rfw =
+                        tiku_workspace_focused(app.desk);
 
                     if (embed_of_window(&app, rfw) != NULL) {
                         struct desktop_embed *slot =
                             embed_of_window(&app, rfw);
-                        tiku_desk_event_t rev = ev;
+                        tiku_event_t rev = ev;
 
                         if (slot->descriptor->event != NULL &&
                             slot->descriptor->event(slot->state, &rev)) {
@@ -7118,10 +7118,10 @@ tracker_run(int argc, char **argv)
                         app.dirty = 1;
                         break;
                     }
-                    if (tiku_desk_remote_owner(&app.remote, rfw) != NULL) {
-                        tiku_desk_event_t rev = ev;
+                    if (tiku_remote_owner(&app.remote, rfw) != NULL) {
+                        tiku_event_t rev = ev;
 
-                        tiku_desk_remote_event(&app.remote, rfw, &rev);
+                        tiku_remote_event(&app.remote, rfw, &rev);
                         app.dirty = 1;
                         break;
                     }
@@ -7134,14 +7134,14 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (app.finding) {
-                    if (key == TIKU_DESK_KEY_RETURN) {
+                    if (key == TIKU_KEY_RETURN) {
                         app.finding = 0;
                         run_find(&app, fl);
-                    } else if (key == TIKU_DESK_KEY_ESCAPE) {
+                    } else if (key == TIKU_KEY_ESCAPE) {
                         app.finding = 0;
                         app.status[0] = '\0';
                         app.dirty = 1;
-                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
+                    } else if (key == TIKU_KEY_BACKSPACE) {
                         if (app.find_len > 0) {
                             app.find_buf[--app.find_len] = '\0';
                         }
@@ -7172,15 +7172,15 @@ tracker_run(int argc, char **argv)
                         ev.modifiers, key_char(&ev))) {
                     break;
                 }
-                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
-                    tiku_desk_workspace_focused(app.desk) ==
+                if (key == 'q' && (ev.modifiers & TIKU_MOD_CMD) &&
+                    tiku_workspace_focused(app.desk) ==
                         tiku_trk_prefs_window_handle(&app.prefs_window)) {
                     tiku_trk_prefs_window_close(&app.prefs_window);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
-                    tiku_desk_workspace_focused(app.desk) ==
+                if (key == 'q' && (ev.modifiers & TIKU_MOD_CMD) &&
+                    tiku_workspace_focused(app.desk) ==
                         tiku_trk_deskbar_prefs_window_handle(
                             &app.deskbar_prefs_window)) {
                     /* Deskbar preferences close; the desktop stays: quit
@@ -7191,7 +7191,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'q' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == 'q' && (ev.modifiers & TIKU_MOD_CMD)) {
                     app.running = 0;
                     break;
                 }
@@ -7199,8 +7199,8 @@ tracker_run(int argc, char **argv)
                     unsigned addon_mods = 0u;
                     int addon_command;
 
-                    if (ev.modifiers & TIKU_DESK_MOD_OPTION) addon_mods |= 0x1u;
-                    if (ev.modifiers & TIKU_DESK_MOD_CMD) addon_mods |= 0x2u;
+                    if (ev.modifiers & TIKU_MOD_OPTION) addon_mods |= 0x1u;
+                    if (ev.modifiers & TIKU_MOD_CMD) addon_mods |= 0x2u;
                     addon_command = tiku_trk_addons_shortcut(
                         &app.addons, key_char(&ev), addon_mods,
                         TIKU_TRK_ADDON_COMMAND_BASE);
@@ -7210,17 +7210,17 @@ tracker_run(int argc, char **argv)
                         break;
                     }
                 }
-                if (key == 'f' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == 'f' && (ev.modifiers & TIKU_MOD_CMD)) {
                     open_panel(&app);
                     break;
                 }
-                if (key == 'a' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
-                    (ev.modifiers & TIKU_DESK_MOD_SHIFT)) {
+                if (key == 'a' && (ev.modifiers & TIKU_MOD_CMD) &&
+                    (ev.modifiers & TIKU_MOD_SHIFT)) {
                     /* PVK-047: Select by pattern, on the window it was
                      * invoked from, opened near the pointer. */
                     int wx, wy;
 
-                    if (!tiku_desk_host_pointer(app.host, &wx, &wy, NULL)) {
+                    if (!tiku_host_pointer(app.host, &wx, &wy, NULL)) {
                         wx = app.surf->w / 2;
                         wy = app.surf->h / 2;
                     }
@@ -7228,25 +7228,25 @@ tracker_run(int argc, char **argv)
                                                 wx, wy);
                     break;
                 }
-                if (key == 'a' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'a' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     tiku_trk_poseview_select_all(fl->view);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'u' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'u' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     /* Cmd+U, which the volume menus advertise (CW-034). */
                     menu_invoke(&app, fl, TIKU_TRK_CMD_UNMOUNT);
                     app.dirty = 1;
                     break;
                 }
-                if (key == TIKU_DESK_KEY_ESCAPE && fl != NULL &&
+                if (key == TIKU_KEY_ESCAPE && fl != NULL &&
                     !alert_model(&app)->open) {
                     /* The alert's own Escape lives in the overlay, later
                      * in this chain; this one is the clipboard's
                      * (PVK-034). */
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
                         /* Shift+Escape removes the selection from the
                          * clipboard, or every pose in the folder when
                          * nothing is selected. */
@@ -7276,12 +7276,12 @@ tracker_run(int argc, char **argv)
                     /* Nothing pending: fall through for whoever else
                      * answers to Escape. */
                 }
-                if (key == TIKU_DESK_KEY_DELETE && fl == NULL) {
+                if (key == TIKU_KEY_DELETE && fl == NULL) {
                     /* No window focused: the key speaks to the Desktop's
                      * own selection, as it does in Tracker. */
                     fl = desktop_folder(&app);
                 }
-                if (key == TIKU_DESK_KEY_DELETE && fl != NULL) {
+                if (key == TIKU_KEY_DELETE && fl != NULL) {
                     /* What the key MEANS depends on where the items are: a
                      * move that can be undone where there is a Trash to
                      * move them to, and a deletion inside it or when Shift
@@ -7290,20 +7290,20 @@ tracker_run(int argc, char **argv)
                      * the question a delete puts up is one rule and not
                      * one per way of reaching it (FS-046). */
                     menu_invoke(&app, fl,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT)
+                        (ev.modifiers & TIKU_MOD_SHIFT)
                             ? TIKU_TRK_CMD_DELETE
                             : TIKU_TRK_CMD_MOVE_TO_TRASH);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'g' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'g' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     /* Cmd+G, which the menus now advertise (CW-033). */
                     menu_invoke(&app, fl, TIKU_TRK_CMD_EDIT_QUERY);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'i' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'i' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     /* The chord the menus have always advertised; until
                      * now nothing was listening for it (AW-065). */
@@ -7311,12 +7311,12 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'o' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'o' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
 
                     if (p != NULL &&
-                        tiku_trk_model_is_container(&p->model)) {
+                        tiku_model_is_container(&p->model)) {
                         (void)open_folder(&app, p->model.path);
                     } else if (p != NULL) {
                         begin_edit(&app, fl);
@@ -7329,7 +7329,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'e' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'e' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     begin_rename(&app, fl,
                         tiku_trk_poseview_active(fl->view) != NULL
@@ -7337,27 +7337,27 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'd' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'd' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     menu_invoke(&app, fl, TIKU_TRK_CMD_DUPLICATE);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'k' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'k' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     menu_invoke(&app, fl,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT)
+                        (ev.modifiers & TIKU_MOD_SHIFT)
                             ? TIKU_TRK_CMD_CLEANUP_ALL
                             : TIKU_TRK_CMD_CLEANUP);
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                if ((ev.modifiers & TIKU_MOD_CMD) && fl != NULL &&
                     (key == 'x' || key == 'c' || key == 'v')) {
                     /* The clipboard chords, which until now only the menu
                      * could reach here; Shift turns each into its "more"
                      * or "links" variant, as the menu labels do. */
-                    unsigned m = (ev.modifiers & TIKU_DESK_MOD_SHIFT)
+                    unsigned m = (ev.modifiers & TIKU_MOD_SHIFT)
                                      ? TIKU_TRK_MOD_SHIFT : 0u;
                     int base = (key == 'x') ? TIKU_TRK_CMD_CUT
                              : (key == 'c') ? TIKU_TRK_CMD_COPY
@@ -7367,17 +7367,17 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && key == 'z') {
+                if ((ev.modifiers & TIKU_MOD_CMD) && key == 'z') {
                     /* Cmd+Z / Shift+Cmd+Z: the file operations' undo and
                      * redo, in this shell too (CW-061).  The inline editor
                      * kept the key above, so a focused text field never
                      * loses it. */
                     char what[64], err[200];
 
-                    if (ev.modifiers & TIKU_DESK_MOD_SHIFT) {
-                        if (tiku_trk_fs_can_redo(app.fs, what,
+                    if (ev.modifiers & TIKU_MOD_SHIFT) {
+                        if (tiku_fs_can_redo(app.fs, what,
                                                  sizeof what)) {
-                            int n = tiku_trk_fs_redo(app.fs, err,
+                            int n = tiku_fs_redo(app.fs, err,
                                                      sizeof err);
 
                             snprintf(app.status, sizeof app.status,
@@ -7387,9 +7387,9 @@ tracker_run(int argc, char **argv)
                             snprintf(app.status, sizeof app.status,
                                      "nothing to redo");
                         }
-                    } else if (tiku_trk_fs_can_undo(app.fs, what,
+                    } else if (tiku_fs_can_undo(app.fs, what,
                                                     sizeof what)) {
-                        int n = tiku_trk_fs_undo(app.fs, err, sizeof err);
+                        int n = tiku_fs_undo(app.fs, err, sizeof err);
 
                         snprintf(app.status, sizeof app.status,
                                  "undid %s (%d item%s)", what, n,
@@ -7401,7 +7401,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                if ((ev.modifiers & TIKU_MOD_CMD) && fl != NULL &&
                     tiku_trk_sc_command_for_key(key, ev.modifiers) != 0) {
                     /* The rest of the standard set, resolved from the one
                      * table the menus draw their shortcuts from -- a
@@ -7411,7 +7411,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                if ((ev.modifiers & TIKU_MOD_CMD) && fl != NULL &&
                     (key == '1' || key == '2' || key == '3')) {
                     /* AW-025/CW-065: the same chords the single-window app
                      * binds.  The menu offers these modes; a shortcut that
@@ -7424,7 +7424,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if ((ev.modifiers & TIKU_DESK_MOD_CMD) && fl != NULL &&
+                if ((ev.modifiers & TIKU_MOD_CMD) && fl != NULL &&
                     (key == '+' || key == '=' || key == '-')) {
                     (void)tiku_trk_poseview_step_icon_size(fl->view,
                         (key == '-') ? 0 : 1);
@@ -7439,7 +7439,7 @@ tracker_run(int argc, char **argv)
                 {
                     char printable[2];
 
-                    if (tiku_desk_workspace_focused(app.desk) ==
+                    if (tiku_workspace_focused(app.desk) ==
                             tiku_trk_deskbar_prefs_window_handle(
                                 &app.deskbar_prefs_window) &&
                         tiku_trk_deskbar_prefs_window_key(
@@ -7456,7 +7456,7 @@ tracker_run(int argc, char **argv)
                     const char *nm = key_name(&ev, printable);
                     tiku_trk_sw_act_t act = tiku_trk_switcher_window_key(
                         &app.switcher_window, nm,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0);
+                        (ev.modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
 
                     if (act == TIKU_TRK_SW_COMMIT) {
                         tiku_trk_switcher_window_close(&app.switcher_window,
@@ -7475,36 +7475,36 @@ tracker_run(int argc, char **argv)
                                                                : "hiding",
                                  (selected != NULL) ? selected : "");
                     }
-                    if (key == TIKU_DESK_KEY_TAB) {
+                    if (key == TIKU_KEY_TAB) {
                         /* Tab while it is up moves on, which is the same
                          * gesture that opened it. */
                         tiku_trk_switcher_window_open(&app.switcher_window,
-                            (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0);
+                            (ev.modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
                     }
                     app.dirty = 1;
                     break;
                 }
-                if (key == TIKU_DESK_KEY_TAB && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == TIKU_KEY_TAB && (ev.modifiers & TIKU_MOD_CMD)) {
                     tiku_trk_switcher_window_open(&app.switcher_window,
-                        (ev.modifiers & TIKU_DESK_MOD_SHIFT) ? 1 : 0);
+                        (ev.modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
                     app.dirty = 1;
                     break;
                 }
-                if (key == ',' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == ',' && (ev.modifiers & TIKU_MOD_CMD)) {
                     /* The settings are the application's, not a window's,
                      * so this works with no folder focused. */
                     tiku_trk_prefs_window_open(&app.prefs_window);
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'n' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 'n' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     menu_invoke(&app, fl, TIKU_TRK_CMD_NEW_FOLDER);
                     app.dirty = 1;
                     break;
                 }
-                if (key == TIKU_DESK_KEY_MENU && (ev.modifiers &
-                        (TIKU_DESK_MOD_CMD | TIKU_DESK_MOD_SHIFT | TIKU_DESK_MOD_OPTION)) == 0) {
+                if (key == TIKU_KEY_MENU && (ev.modifiers &
+                        (TIKU_MOD_CMD | TIKU_MOD_SHIFT | TIKU_MOD_OPTION)) == 0) {
                     /* The Menu key alone opens the leaf menu -- the one
                      * gesture that reaches the Deskbar without the
                      * pointer (DB-011). */
@@ -7516,7 +7516,7 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == 's' && (ev.modifiers & TIKU_DESK_MOD_CMD) &&
+                if (key == 's' && (ev.modifiers & TIKU_MOD_CMD) &&
                     fl != NULL) {
                     /* PVK-046: invert -- the only way to say "everything
                      * except these" without clicking the rest. */
@@ -7524,30 +7524,30 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (key == TIKU_DESK_KEY_TAB && fl != NULL) {
+                if (key == TIKU_KEY_TAB && fl != NULL) {
                     /* Tab is a name-order walk over poses.  While filtering
                      * is active it is deliberately swallowed. */
                     if (!tiku_trk_poseview_is_filtering(fl->view)) {
                         (void)tiku_trk_poseview_tab_next(fl->view,
-                            (ev.modifiers & TIKU_DESK_MOD_SHIFT) != 0u);
+                            (ev.modifiers & TIKU_MOD_SHIFT) != 0u);
                     }
                     app.dirty = 1;
                     break;
                 }
-                if (key == 'w' && (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (key == 'w' && (ev.modifiers & TIKU_MOD_CMD)) {
                     close_window(&app, w);
                     app.dirty = 1;
                     break;
                 }
-                if (fl != NULL && key == TIKU_DESK_KEY_DOWN &&
-                    (ev.modifiers & TIKU_DESK_MOD_CMD) &&
-                    (ev.modifiers & TIKU_DESK_MOD_OPTION)) {
+                if (fl != NULL && key == TIKU_KEY_DOWN &&
+                    (ev.modifiers & TIKU_MOD_CMD) &&
+                    (ev.modifiers & TIKU_MOD_OPTION)) {
                     tiku_trk_pose_t *p =
                         tiku_trk_poseview_active(fl->view);
 
                     if (p != NULL &&
-                        tiku_trk_model_is_container(&p->model)) {
-                        tiku_desk_window_t *from = fl->win;
+                        tiku_model_is_container(&p->model)) {
+                        tiku_window_t *from = fl->win;
 
                         if (open_folder(&app, p->model.path) != NULL) {
                             close_window(&app, from);
@@ -7556,13 +7556,13 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (fl != NULL && key == TIKU_DESK_KEY_DOWN &&
-                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (fl != NULL && key == TIKU_KEY_DOWN &&
+                    (ev.modifiers & TIKU_MOD_CMD)) {
                     tiku_trk_pose_t *p =
                         tiku_trk_poseview_active(fl->view);
 
                     if (p != NULL &&
-                        tiku_trk_model_is_container(&p->model)) {
+                        tiku_model_is_container(&p->model)) {
                         (void)open_folder(&app, p->model.path);
                     } else if (p != NULL) {
                         begin_edit(&app, fl);
@@ -7570,14 +7570,14 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
-                if (fl != NULL && key == TIKU_DESK_KEY_UP &&
-                    (ev.modifiers & TIKU_DESK_MOD_CMD)) {
+                if (fl != NULL && key == TIKU_KEY_UP &&
+                    (ev.modifiers & TIKU_MOD_CMD)) {
                     /* PVK-040/CW-051: Cmd+Up opens the parent; Option
                      * additionally takes the spatial window we left. */
                     if (strcmp(fl->path, "/") != 0) {
-                        char parent[TIKU_TRK_PATH_MAX];
+                        char parent[TIKU_PATH_MAX];
                         char *slash;
-                        tiku_desk_window_t *from = fl->win;
+                        tiku_window_t *from = fl->win;
 
                         snprintf(parent, sizeof parent, "%s", fl->path);
                         slash = strrchr(parent, '/');
@@ -7588,7 +7588,7 @@ tracker_run(int argc, char **argv)
                         }
                         if (slash != NULL &&
                             open_folder(&app, parent) != NULL &&
-                            (ev.modifiers & TIKU_DESK_MOD_OPTION)) {
+                            (ev.modifiers & TIKU_MOD_OPTION)) {
                             close_window(&app, from);
                         }
                     }
@@ -7600,26 +7600,26 @@ tracker_run(int argc, char **argv)
                      * arrangement is two-dimensional; the pages matter in
                      * both and were bound in neither shell's multi-window
                      * half (PVK-007, PVK-011). */
-                    int nav = (key == TIKU_DESK_KEY_UP)    ? TIKU_TRK_KEY_UP
-                            : (key == TIKU_DESK_KEY_DOWN)  ? TIKU_TRK_KEY_DOWN
-                            : (key == TIKU_DESK_KEY_LEFT)  ? TIKU_TRK_KEY_LEFT
-                            : (key == TIKU_DESK_KEY_RIGHT) ? TIKU_TRK_KEY_RIGHT
-                            : (key == TIKU_DESK_KEY_PAGE_UP) ? TIKU_TRK_KEY_PGUP
-                            : (key == TIKU_DESK_KEY_PAGE_DOWN)  ? TIKU_TRK_KEY_PGDN
-                            : (key == TIKU_DESK_KEY_HOME)  ? TIKU_TRK_KEY_HOME
-                            : (key == TIKU_DESK_KEY_END)   ? TIKU_TRK_KEY_END : 0;
+                    int nav = (key == TIKU_KEY_UP)    ? TIKU_TRK_KEY_UP
+                            : (key == TIKU_KEY_DOWN)  ? TIKU_TRK_KEY_DOWN
+                            : (key == TIKU_KEY_LEFT)  ? TIKU_TRK_KEY_LEFT
+                            : (key == TIKU_KEY_RIGHT) ? TIKU_TRK_KEY_RIGHT
+                            : (key == TIKU_KEY_PAGE_UP) ? TIKU_TRK_KEY_PGUP
+                            : (key == TIKU_KEY_PAGE_DOWN)  ? TIKU_TRK_KEY_PGDN
+                            : (key == TIKU_KEY_HOME)  ? TIKU_TRK_KEY_HOME
+                            : (key == TIKU_KEY_END)   ? TIKU_TRK_KEY_END : 0;
                     if (nav != 0) {
                         (void)tiku_trk_poseview_key_nav(fl->view, nav, mods);
-                    } else if (key == TIKU_DESK_KEY_RETURN) {
+                    } else if (key == TIKU_KEY_RETURN) {
                         tiku_trk_pose_t *p =
                             tiku_trk_poseview_active(fl->view);
                         if (p != NULL &&
-                            tiku_trk_model_is_container(&p->model)) {
+                            tiku_model_is_container(&p->model)) {
                             /* Option+Return opens and takes the window it
                              * came from with it, the keyboard's version of
                              * an Option double-click (PVK-017). */
-                            int chase = (ev.modifiers & TIKU_DESK_MOD_OPTION) != 0;
-                            tiku_desk_window_t *from = fl->win;
+                            int chase = (ev.modifiers & TIKU_MOD_OPTION) != 0;
+                            tiku_window_t *from = fl->win;
 
                             if (open_folder(&app, p->model.path) != NULL &&
                                 chase) {
@@ -7630,8 +7630,8 @@ tracker_run(int argc, char **argv)
                              * is no other window for it to open. */
                             begin_edit(&app, fl);
                         }
-                    } else if (key == TIKU_DESK_KEY_BACKSPACE) {
-                        char parent[TIKU_TRK_PATH_MAX];
+                    } else if (key == TIKU_KEY_BACKSPACE) {
+                        char parent[TIKU_PATH_MAX];
                         char *slash;
                         snprintf(parent, sizeof parent, "%s", fl->path);
                         slash = strrchr(parent, '/');
@@ -7646,7 +7646,7 @@ tracker_run(int argc, char **argv)
                 break;
             }
             }
-            case TIKU_DESK_EVENT_CLOSE:
+            case TIKU_EVENT_CLOSE:
                 app.running = 0;
                 break;
             default:
@@ -7690,7 +7690,7 @@ tracker_run(int argc, char **argv)
                     tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, k);
 
                     if (p == NULL || p->model.facts.icon_hint !=
-                                         TIKU_TRK_ICONHINT_UNASKED) {
+                                         TIKU_ICONHINT_UNASKED) {
                         continue;
                     }
                     (void)tiku_trk_nodeicon_hint(app.store, &app.thumbs,
@@ -7708,7 +7708,7 @@ tracker_run(int argc, char **argv)
         /* One directory of one folder-size walk per turn, so a Get Info
          * window on a deep tree fills in while the desktop keeps answering. */
         (void)tiku_trk_info_windows_calc_step(&app.info_windows);
-        if (tiku_trk_thumb_step(&app.thumbs, app.store)) {
+        if (tiku_thumb_step(&app.thumbs, app.store)) {
             /* One picture per turn, on the idle tick: the window keeps
              * answering while a folder of images fills in (IV-031). */
             app.dirty = 1;
@@ -7751,7 +7751,7 @@ tracker_run(int argc, char **argv)
                             (p != NULL) ? &p->model : NULL, &c);
             app.popup_sub = NULL;
             app.popup_frame = tiku_trk_menu_place(app.popup, app.press_x,
-                app.press_y, (tiku_desk_rect_t){ 0, 0, app.surf->w,
+                app.press_y, (tiku_rect_t){ 0, 0, app.surf->w,
                                                  app.surf->h });
             app.press_menu = 1;
             app.press_down = 0;
@@ -7777,7 +7777,7 @@ tracker_run(int argc, char **argv)
          * path that changes focus is covered rather than each one
          * remembering to. */
         {
-            tiku_desk_window_t *fw = tiku_desk_workspace_focused(app.desk);
+            tiku_window_t *fw = tiku_workspace_focused(app.desk);
 
             for (i = 0; i < app.folder_count; i++) {
                 folder_t *fl = &app.folders[i];
@@ -7806,7 +7806,7 @@ tracker_run(int argc, char **argv)
             /* The reaping of searches nobody named.  On a slow tick of its
              * own and skipped for the first half hour, because it is the
              * least urgent work there is (Q-037, AW-090). */
-            const char *open[TIKU_DESK_WINDOW_MAX];
+            const char *open[TIKU_WINDOW_MAX];
             int nopen = 0;
 
             for (i = 0; i < app.folder_count; i++) {
@@ -7819,7 +7819,7 @@ tracker_run(int argc, char **argv)
                 /* Deleting user data is idle-only work twice over: the
                  * half-hour hold-off AND the machine's own load gate
                  * (AW-090). */
-                (void)tiku_trk_query_sweep(app.store, (int64_t)time(NULL),
+                (void)tiku_query_sweep(app.store, (int64_t)time(NULL),
                                            (tiku_trk_now() - started_at) /
                                                1000000, open, nopen);
             }
@@ -7835,7 +7835,7 @@ tracker_run(int argc, char **argv)
                     TIKU_TRK_RECENT_DOCS, TIKU_TRK_RECENT_FOLDERS,
                     TIKU_TRK_RECENT_APPS
                 };
-                char paths[TIKU_TRK_DB_RECENT_MAX][TIKU_TRK_PATH_MAX];
+                char paths[TIKU_TRK_DB_RECENT_MAX][TIKU_PATH_MAX];
                 int k;
 
                 for (k = 0; k < 3; k++) {
@@ -7853,7 +7853,7 @@ tracker_run(int argc, char **argv)
              * the first window consume everyone else's and leave them told
              * that nothing happened.
              */
-            tiku_trk_change_t ch[32];
+            tiku_model_change_t ch[32];
             int nch = -1, complete = 1;
 
             if (app.backend->ops->changes != NULL) {
@@ -7880,7 +7880,7 @@ tracker_run(int argc, char **argv)
                      * left for it to be the position of, and the teardown
                      * sweep must not write one either. */
                     fl->gone = 1;
-                    tiku_desk_workspace_close(app.desk, fl->win);
+                    tiku_workspace_close(app.desk, fl->win);
                     changed++;
                 } else if (nf != TIKU_TRK_NOTIFY_NOTHING) {
                     if ((nf & TIKU_TRK_NOTIFY_RETITLE) != 0u) {
@@ -7900,9 +7900,9 @@ tracker_run(int argc, char **argv)
             {   /* What has been mounted or unmounted since the last look.
                  * Polled with everything else rather than on a timer of its
                  * own: a volume arriving is a change like any other. */
-                tiku_trk_volchange_t vc[TIKU_TRK_VOLWATCH_MAX];
-                int nv = tiku_trk_volwatch_poll(&app.volwatch, vc,
-                                                TIKU_TRK_VOLWATCH_MAX);
+                tiku_volchange_t vc[TIKU_VOLWATCH_MAX];
+                int nv = tiku_volwatch_poll(&app.volwatch, vc,
+                                                TIKU_VOLWATCH_MAX);
                 int k;
 
                 for (k = 0; k < nv; k++) {
@@ -7942,21 +7942,21 @@ tracker_run(int argc, char **argv)
                             continue;
                         }
                         if (tiku_trk_poseview_is_query(fl->view) &&
-                            tiku_trk_query_targets_device(
+                            tiku_query_targets_device(
                                 fl->run, (uint64_t)vc[k].v.dev)) {
                             /* The run is the query's subscription.  Stop it
                              * with the window so no watch survives a target
                              * volume disappearing (Q-046). */
-                            tiku_trk_query_stop(fl->run);
+                            tiku_query_stop(fl->run);
                             fl->run = NULL;
                             fl->live = 0;
                             fl->gone = 1;
-                            tiku_desk_workspace_close(app.desk, fl->win);
+                            tiku_workspace_close(app.desk, fl->win);
                             changed++;
                         } else if (strncmp(fl->path, vc[k].v.mount,
                                     strlen(vc[k].v.mount)) == 0) {
                             fl->gone = 1;
-                            tiku_desk_workspace_close(app.desk, fl->win);
+                            tiku_workspace_close(app.desk, fl->win);
                             changed++;
                         } else if (tiku_trk_poseview_device_gone(fl->view,
                                        (uint64_t)vc[k].v.dev) > 0) {
@@ -8006,26 +8006,26 @@ tracker_run(int argc, char **argv)
             draw_all(&app);
             blit(&app);
             if (shot != NULL && shot_at > 0 && tiku_trk_now() >= shot_at) {
-                (void)tiku_desk_surface_png(app.surf, shot);
+                (void)tiku_surface_png(app.surf, shot);
                 printf("wrote %s\n", shot);
                 fflush(stdout);
                 shot_at = 0;
             }
         }
-        if (app.fs != NULL && tiku_trk_fs_busy(app.fs) &&
+        if (app.fs != NULL && tiku_fs_busy(app.fs) &&
             !progress_model(&app)->row[0].paused) {
-            const tiku_trk_progress_t *pr;
+            const tiku_progress_t *pr;
 
             /* Stepped here, not inside the command: start() only builds the
              * queue, so a shell that never steps reports work it has not
              * done.  Membership changes reach the windows through the
              * notice poll above, which is why nothing is reloaded here. */
-            (void)tiku_trk_fs_step(app.fs, 4);
-            if (!tiku_trk_fs_busy(app.fs)) {
+            (void)tiku_fs_step(app.fs, 4);
+            if (!tiku_fs_busy(app.fs)) {
                 /* The operation just finished: what it MADE gets selected
                  * where it lives, once it shows up (AW-033). */
-                char made[8][TIKU_TRK_PATH_MAX];
-                int nmade = tiku_trk_fs_last_created(app.fs, made, 8);
+                char made[8][TIKU_PATH_MAX];
+                int nmade = tiku_fs_last_created(app.fs, made, 8);
                 int mi;
 
                 for (mi = 0; mi < nmade; mi++) {
@@ -8044,7 +8044,7 @@ tracker_run(int argc, char **argv)
             /* A mixed paste left its second half waiting for the engine to
              * go idle; this is where it gets to start (FS-055). */
             (void)tiku_trk_folder_file_actions_pump(&app.file_actions);
-            pr = tiku_trk_fs_progress(app.fs);
+            pr = tiku_fs_progress(app.fs);
             if (pr->conflict) {
                 /* Asked, not assumed.  The engine worked out which form
                  * the question takes; this puts it up and waits. */
@@ -8080,14 +8080,14 @@ tracker_run(int argc, char **argv)
                 /* Whoever was in front when the job began gets the focus
                  * back when it ends: an operation is not a reason to be
                  * left looking at something else (FS-073). */
-                app.prog_was_active = tiku_desk_workspace_focused(app.desk);
+                app.prog_was_active = tiku_workspace_focused(app.desk);
             }
         } else if (progress_model(&app)->open) {
             tiku_trk_progress_update(progress_model(&app), 0, NULL, 0, NULL);
             tiku_trk_status_overlay_progress_finish(&app.status_overlay);
             if (app.prog_was_active != NULL &&
                 app.prog_was_active->open) {
-                tiku_desk_workspace_activate(app.desk, app.prog_was_active);
+                tiku_workspace_activate(app.desk, app.prog_was_active);
             }
             app.prog_was_active = NULL;
             app.dirty = 1;
@@ -8142,8 +8142,8 @@ tracker_run(int argc, char **argv)
     tiku_trk_fonts_window_destroy(&app.fonts_window);
     tiku_trk_prefs_window_destroy(&app.prefs_window);
     tiku_trk_deskbar_free(app.deskbar);
-    tiku_desk_remote_shutdown(&app.remote);
-    tiku_desk_workspace_free(app.desk);
+    tiku_remote_shutdown(&app.remote);
+    tiku_workspace_free(app.desk);
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
      * nothing to say so. */
@@ -8152,17 +8152,17 @@ tracker_run(int argc, char **argv)
         rc = tiku_trk_script_report(sc, "desktop");
         tiku_trk_script_free(sc);
     }
-    tiku_trk_fs_free(app.fs);
-    tiku_trk_backend_close(app.backend);
+    tiku_fs_free(app.fs);
+    tiku_backend_close(app.backend);
     if (app.conduct_on) {
-        tiku_desk_conduct_shutdown(&app.conduct);
+        tiku_conduct_shutdown(&app.conduct);
     }
-    tiku_desk_host_close(app.host);
-    tiku_desk_surface_free(app.surf);
+    tiku_host_close(app.host);
+    tiku_surface_free(app.surf);
     return rc;
 }
 
-const tiku_desk_app_descriptor_t tiku_trk_application = {
+const tiku_app_descriptor_t tiku_trk_application = {
     .id = "org.tikuos.tracker",
     .name = "Tracker",
     .run = tracker_run

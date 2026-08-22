@@ -17,7 +17,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "tiku_trk_icons.h"
+#include "tiku_icons.h"
 
 static int fails;
 
@@ -34,7 +34,7 @@ check(int cond, const char *what)
 static void
 plant(const char *dir, const char *as, const char *from)
 {
-    const tiku_trk_icon_t *ic = tiku_trk_icons_find(from);
+    const tiku_icon_t *ic = tiku_icons_find(from);
     char path[512];
     FILE *f;
 
@@ -53,35 +53,35 @@ int
 main(void)
 {
     const char *dir = "/tmp/trk_icondir";
-    const tiku_trk_icon_t *before;
-    const tiku_trk_icon_t *after;
+    const tiku_icon_t *before;
+    const tiku_icon_t *after;
     size_t folder_len;
 
     printf("art a directory supplies (DEV-008)\n");
     (void)system("rm -rf /tmp/trk_icondir && mkdir -p /tmp/trk_icondir");
 
-    before = tiku_trk_icons_find("folder");
+    before = tiku_icons_find("folder");
     check(before != NULL, "the baked set has the art it was built with");
     folder_len = (before != NULL) ? before->len : 0u;
 
-    check(tiku_trk_icons_find("thermostat") == NULL,
+    check(tiku_icons_find("thermostat") == NULL,
           "and nothing by a name it never heard of");
 
     /* One file replaces art that exists, another names art that does
      * not: the two things a device needs to be able to say. */
     plant(dir, "folder", "printer");
     plant(dir, "thermostat", "query");
-    check(tiku_trk_icons_load_dir(dir) == 2, "both files are taken");
+    check(tiku_icons_load_dir(dir) == 2, "both files are taken");
 
-    after = tiku_trk_icons_find("folder");
+    after = tiku_icons_find("folder");
     check(after != NULL && after->len != folder_len,
           "the folder is drawn from the file now, not from the binary");
-    check(tiku_trk_icons_find("thermostat") != NULL,
+    check(tiku_icons_find("thermostat") != NULL,
           "and a name only the directory knows resolves");
-    check(tiku_trk_icons_bitmap("thermostat", 16) != NULL,
+    check(tiku_icons_bitmap("thermostat", 16) != NULL,
           "with art that actually renders at a size");
 
-    check(tiku_trk_icons_load_dir("/tmp/trk_icondir_absent") == 0,
+    check(tiku_icons_load_dir("/tmp/trk_icondir_absent") == 0,
           "a directory that is not there takes nothing, and says so");
 
     (void)system("rm -rf /tmp/trk_icondir");

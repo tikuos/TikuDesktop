@@ -15,12 +15,12 @@
 #ifndef TIKU_TRK_ABOUT_WINDOW_H_
 #define TIKU_TRK_ABOUT_WINDOW_H_
 
-#include "tiku_desk_window.h"
-#include "tiku_desk_ns.h"
+#include "tiku_window.h"
+#include "tiku_ns.h"
 
 typedef struct {
-    tiku_desk_workspace_t *workspace;
-    tiku_desk_window_t    *window;
+    tiku_workspace_t *workspace;
+    tiku_window_t    *window;
     int                    screen_w;
     int                    screen_h;
     int                   *dirty;
@@ -31,13 +31,13 @@ typedef struct {
 } tiku_trk_about_window_t;
 
 void tiku_trk_about_window_init(tiku_trk_about_window_t *controller,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty);
 
 void tiku_trk_about_window_open(tiku_trk_about_window_t *controller);
 void tiku_trk_about_window_close(tiku_trk_about_window_t *controller);
 
-tiku_desk_window_t *tiku_trk_about_window_handle(
+tiku_window_t *tiku_trk_about_window_handle(
     tiku_trk_about_window_t *controller);
 
 /** @return Nonzero when the focused About window consumed the key. */

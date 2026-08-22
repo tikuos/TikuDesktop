@@ -12,7 +12,7 @@
 #include <string.h>
 
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 #include "tiku_trk_open_with_window.h"
 
 #define OW_WIDTH   420
@@ -43,12 +43,12 @@ better(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
 }
 
 static void
-buttons(tiku_trk_open_with_window_t *c, tiku_desk_rect_t content,
-        tiku_desk_rect_t *open_b, tiku_desk_rect_t *prefer_b)
+buttons(tiku_trk_open_with_window_t *c, tiku_rect_t content,
+        tiku_rect_t *open_b, tiku_rect_t *prefer_b)
 {
-    *open_b = (tiku_desk_rect_t){ content.x + content.w - 70,
+    *open_b = (tiku_rect_t){ content.x + content.w - 70,
                                   content.y + content.h - 30, 60, 22 };
-    *prefer_b = (tiku_desk_rect_t){ content.x + content.w - 260,
+    *prefer_b = (tiku_rect_t){ content.x + content.w - 260,
                                     content.y + content.h - 30, 182, 22 };
 }
 
@@ -65,21 +65,21 @@ enables(const tiku_trk_open_with_window_t *c, int *can_open,
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_open_with_window_t *c = context;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
-    tiku_desk_rect_t open_b, prefer_b;
+    const tiku_font_t *font = tiku_font_plain();
+    tiku_rect_t open_b, prefer_b;
     int can_open, can_prefer, i;
 
     (void)window;
-    tiku_desk_fill(surface, content, TIKU_DESK_C_PANEL);
-    tiku_desk_text(surface, font, content.x + 10, content.y + 16,
-                   "Open with:", TIKU_DESK_C_TEXT);
+    tiku_fill(surface, content, TIKU_C_PANEL);
+    tiku_text(surface, font, content.x + 10, content.y + 16,
+                   "Open with:", TIKU_C_TEXT);
     for (i = 0; i < OW_ROWS; i++) {
         int at = c->scroll + i;
-        tiku_desk_rect_t row = { content.x + 8,
+        tiku_rect_t row = { content.x + 8,
                                  content.y + OW_LIST_TOP + i * OW_ROW_H,
                                  content.w - 16, OW_ROW_H };
         int selected;
@@ -88,16 +88,16 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             break;
         }
         selected = (at == c->sel);
-        tiku_desk_fill(surface, row, selected ? TIKU_DESK_C_SELECT
-                                              : TIKU_DESK_C_DOC);
+        tiku_fill(surface, row, selected ? TIKU_C_SELECT
+                                              : TIKU_C_DOC);
         {
             char name[80];
 
             snprintf(name, sizeof name, "%s%s", c->cand[at].app->name,
                      c->cand[at].preferred ? "  (preferred)" : "");
-            tiku_desk_text(surface, font, row.x + 6, row.y + 13, name,
-                           selected ? TIKU_DESK_C_SELTEXT
-                                    : TIKU_DESK_C_TEXT);
+            tiku_text(surface, font, row.x + 6, row.y + 13, name,
+                           selected ? TIKU_C_SELTEXT
+                                    : TIKU_C_TEXT);
         }
         {
             /* The relation, said in words and truncated at the END: the
@@ -107,25 +107,25 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
 
             snprintf(rel, sizeof rel, "%.30s",
                      tiku_trk_launch_relation_label(c->cand[at].rel));
-            tiku_desk_text(surface, font, row.x + row.w - 176, row.y + 13,
-                           rel, selected ? TIKU_DESK_C_SELTEXT
-                                         : tiku_desk_tint(TIKU_DESK_C_TEXT,
+            tiku_text(surface, font, row.x + row.w - 176, row.y + 13,
+                           rel, selected ? TIKU_C_SELTEXT
+                                         : tiku_tint(TIKU_C_TEXT,
                                                           0.45f));
         }
     }
     buttons(c, content, &open_b, &prefer_b);
     enables(c, &can_open, &can_prefer);
-    tiku_desk_ui_button(surface, prefer_b, "Open and make preferred",
-                        can_prefer ? 0u : TIKU_DESK_S_DISABLED);
-    tiku_desk_ui_button(surface, open_b, "Open",
-                        can_open ? 0u : TIKU_DESK_S_DISABLED);
+    tiku_ui_button(surface, prefer_b, "Open and make preferred",
+                        can_prefer ? 0u : TIKU_S_DISABLED);
+    tiku_ui_button(surface, open_b, "Open",
+                        can_open ? 0u : TIKU_S_DISABLED);
 }
 
 static void
 close_window(tiku_trk_open_with_window_t *c)
 {
     if (c->window != NULL) {
-        tiku_desk_workspace_close(c->workspace, c->window);
+        tiku_workspace_close(c->workspace, c->window);
         c->window = NULL;
     }
     mark_dirty(c);
@@ -163,7 +163,7 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
                  "anyway?", pick->app->name);
         tiku_trk_alert_open(c->alert, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_OPEN_ANYWAY, text,
-                            tiku_trk_str("alert.btn.open"));
+                            tiku_str("alert.btn.open"));
         return;                     /* the answer re-enters via confirmed */
     }
     if (c->open != NULL) {
@@ -183,17 +183,17 @@ tiku_trk_open_with_window_confirmed(tiku_trk_open_with_window_t *c)
 }
 
 static int
-event(tiku_desk_window_t *window, const tiku_desk_event_t *ev,
+event(tiku_window_t *window, const tiku_event_t *ev,
       void *context)
 {
     tiku_trk_open_with_window_t *c = context;
-    tiku_desk_rect_t content, open_b, prefer_b;
+    tiku_rect_t content, open_b, prefer_b;
 
     (void)window;
-    if (ev->type != TIKU_DESK_EVENT_POINTER_DOWN || c->window == NULL) {
+    if (ev->type != TIKU_EVENT_POINTER_DOWN || c->window == NULL) {
         return 0;
     }
-    content = tiku_desk_window_content(c->window);
+    content = tiku_window_content(c->window);
     buttons(c, content, &open_b, &prefer_b);
 #define INSIDE(r) (ev->x >= (r).x && ev->x < (r).x + (r).w && \
                    ev->y >= (r).y && ev->y < (r).y + (r).h)
@@ -222,9 +222,9 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *ev,
 
 void
 tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *c,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
-    tiku_trk_alert_t *alert, struct tiku_trk_store *store)
+    tiku_trk_alert_t *alert, struct tiku_store *store)
 {
     memset(c, 0, sizeof *c);
     c->workspace = workspace;
@@ -314,24 +314,24 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
         }
     }
     {
-        tiku_desk_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
+        tiku_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
                                    (c->screen_h - OW_HEIGHT) / 3,
                                    OW_WIDTH, OW_HEIGHT };
 
         if (c->window != NULL && c->window->open) {
-            tiku_desk_workspace_activate(c->workspace, c->window);
+            tiku_workspace_activate(c->workspace, c->window);
         } else {
-            c->window = tiku_desk_workspace_open(c->workspace, "Open with",
+            c->window = tiku_workspace_open(c->workspace, "Open with",
                 frame, draw, c, NULL);
             if (c->window != NULL) {
-                tiku_desk_window_set_handlers(c->window, event, NULL, NULL);
+                tiku_window_set_handlers(c->window, event, NULL, NULL);
             }
         }
     }
     mark_dirty(c);
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_open_with_window_handle(tiku_trk_open_with_window_t *c)
 {
     return c->window;
@@ -343,7 +343,7 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
 {
     (void)modifiers;
     if (c->window == NULL || !c->window->open ||
-        tiku_desk_workspace_focused(c->workspace) != c->window) {
+        tiku_workspace_focused(c->workspace) != c->window) {
         return 0;
     }
     if (c->alert != NULL && c->alert->open) {
@@ -352,12 +352,12 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         return 0;
     }
     switch (key) {
-    case TIKU_DESK_KEY_ESCAPE:
+    case TIKU_KEY_ESCAPE:
         /* Escape cancels the window, which is the whole of its keyboard
          * contract beyond the list walk (AW-047). */
         close_window(c);
         return 1;
-    case TIKU_DESK_KEY_UP:
+    case TIKU_KEY_UP:
         if (c->sel > 0) {
             c->sel--;
         } else if (c->sel < 0 && c->count > 0) {
@@ -368,7 +368,7 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         }
         mark_dirty(c);
         return 1;
-    case TIKU_DESK_KEY_DOWN:
+    case TIKU_KEY_DOWN:
         if (c->sel < c->count - 1) {
             c->sel++;
         }
@@ -377,7 +377,7 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         }
         mark_dirty(c);
         return 1;
-    case TIKU_DESK_KEY_RETURN:
+    case TIKU_KEY_RETURN:
         do_open(c, 0);
         return 1;
     default:

@@ -17,9 +17,9 @@
 
 #include <time.h>
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_attr.h"
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_attr.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 #define TIKU_TRK_DB_TEAMS_MAX   8
 #define TIKU_TRK_DB_WINS_MAX   16
@@ -64,7 +64,7 @@ typedef struct {
     int              win_count;
     /* The types this application can open.  A drop on one that cannot
      * read the file would appear to work and do nothing (DB-035). */
-    char             type[8][TIKU_TRK_TYPE_MAX];
+    char             type[8][TIKU_TYPE_MAX];
     int              ntype;
     int              takes_anything;
     /* The processes behind the entry: one row however many there are,
@@ -80,9 +80,9 @@ typedef struct {
     int             id;             /* addressable afterwards (DB-038)    */
     uint64_t        node_id;        /* the node's identity, for moves     */
     char            label[16];
-    char            path[TIKU_TRK_PATH_MAX];
+    char            path[TIKU_PATH_MAX];
     char            value[24];      /* raw, as the node reports it        */
-    tiku_trk_desc_t desc;           /* resolved once, at subscribe time   */
+    tiku_desc_t desc;           /* resolved once, at subscribe time   */
     int             desc_known;
     int             valid;
     int             height;
@@ -127,7 +127,7 @@ typedef enum {
 
 typedef struct {
     char                    label[TIKU_TRK_DB_LABEL_MAX];
-    char                    path[TIKU_TRK_PATH_MAX];
+    char                    path[TIKU_PATH_MAX];
     tiku_trk_db_item_kind_t kind;
     int                     which;   /* RECENT: which list              */
     /* The art this row wears, named by whoever offered it.  The bar
@@ -153,7 +153,7 @@ void tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
  * The Deskbar knows what each row IS; the shell knows what that looks
  * like.  @return nonzero when something was painted.
  */
-typedef int (*tiku_trk_db_icon_fn)(void *context, tiku_desk_surface_t *s,
+typedef int (*tiku_trk_db_icon_fn)(void *context, tiku_surface_t *s,
                                    const tiku_trk_db_item_t *item,
                                    int x, int y, int size);
 void tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
@@ -174,7 +174,7 @@ const char *tiku_trk_deskbar_user_menu_dir(const tiku_trk_deskbar_t *db);
  */
 void tiku_trk_deskbar_set_recent(tiku_trk_deskbar_t *db,
                                  tiku_trk_db_recent_t which,
-                                 const char paths[][TIKU_TRK_PATH_MAX],
+                                 const char paths[][TIKU_PATH_MAX],
                                  int n);
 
 /** @brief How many rows the leaf menu has, and what row @p i is. */
@@ -330,10 +330,10 @@ typedef struct {
     tiku_trk_db_action_t what;
     void                *tag;
     int                  team;          /* the row the action names */
-    char                 path[TIKU_TRK_PATH_MAX];
+    char                 path[TIKU_PATH_MAX];
 } tiku_trk_db_pick_t;
 
-tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_trk_backend_t *backend);
+tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_backend_t *backend);
 
 /**
  * @brief Freeze the clock at @p at; 0 returns it to the wall.
@@ -374,7 +374,7 @@ int tiku_trk_deskbar_team_expanded(const tiku_trk_deskbar_t *db, int team);
 
 /** @brief Attach the durable store used for tray subscriptions. */
 void tiku_trk_deskbar_set_store(tiku_trk_deskbar_t *db,
-                                tiku_trk_store_t *store);
+                                tiku_store_t *store);
 /** @brief Load saved tray paths, pruning entries that no longer resolve. */
 int tiku_trk_deskbar_load_replicants(tiku_trk_deskbar_t *db);
 /** @brief Remove a tray subscription whose source disappeared. */
@@ -496,9 +496,9 @@ void tiku_trk_deskbar_strip_title(const char *app, const char *title,
                                   char *out, size_t max);
 
 /** @brief The strip the bar occupies; windows keep out of it. */
-tiku_desk_rect_t tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db);
+tiku_rect_t tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db);
 
-void tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_desk_surface_t *s);
+void tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s);
 
 int tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y);
 
@@ -594,7 +594,7 @@ int tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i,
  * refusing out loud for something the user very likely did by accident
  * would be noise.
  */
-int tiku_trk_deskbar_launchable(const tiku_trk_model_t *m);
+int tiku_trk_deskbar_launchable(const tiku_model_t *m);
 
 int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
 /** @brief Open the leaf menu, as the Menu key does (DB-011). */
@@ -629,7 +629,7 @@ int tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
                              const char *command, const char *icon);
 
 /** @brief Where the theme switch sits, so a test can put a finger on it. */
-tiku_desk_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);
+tiku_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);
 
 /** @brief Whether the clock's calendar is showing. */
 int tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db);

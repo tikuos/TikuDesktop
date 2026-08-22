@@ -18,7 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "tiku_trk_notify.h"
+#include "tiku_notify.h"
 #include "tiku_trk_poseview.h"
 
 static int fails;
@@ -30,19 +30,19 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
-static tiku_trk_model_t
+static tiku_model_t
 node(const char *path, const char *name, uint64_t id, int64_t size)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
 
     memset(&m, 0, sizeof m);
     snprintf(m.path, sizeof m.path, "%s", path);
     snprintf(m.name, sizeof m.name, "%s", name);
     snprintf(m.facts.meta, sizeof m.facts.meta, "-");
-    m.kind = TIKU_TRK_KIND_FILE;
+    m.kind = TIKU_KIND_FILE;
     m.node_id = id;
     m.facts.size = size;
-    m.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+    m.facts.perm = TIKU_P_READ | TIKU_P_WRITE;
     return m;
 }
 
@@ -83,27 +83,27 @@ main(void)
 
     printf("deriving notices from two listings\n");
     {
-        tiku_trk_model_t was[3], now[3];
-        tiku_trk_evlist_t l;
+        tiku_model_t was[3], now[3];
+        tiku_evlist_t l;
 
         was[0] = node("/d/a", "a", 1, 10);
         was[1] = node("/d/b", "b", 2, 20);
         now[0] = was[0];
         now[1] = was[1];
 
-        tiku_trk_evlist_clear(&l);
-        check(tiku_trk_notify_diff(was, 2, now, 2, 0, &l) == 0, "PVN-001",
+        tiku_evlist_clear(&l);
+        check(tiku_notify_diff(was, 2, now, 2, 0, &l) == 0, "PVN-001",
               "an unchanged listing produces no notices at all");
 
         now[2] = node("/d/c", "c", 3, 30);
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 3, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CREATED, "PVN-001",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 3, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_CREATED, "PVN-001",
               "a new entry is one creation");
 
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(now, 3, was, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_REMOVED, "PVN-001",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(now, 3, was, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_REMOVED, "PVN-001",
               "a vanished entry is one removal");
 
         /* Same node under a new name is a MOVE, not a remove plus a create:
@@ -111,18 +111,18 @@ main(void)
          * selection and its place. */
         now[0] = node("/d/renamed", "renamed", 1, 10);
         now[1] = was[1];
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_MOVED &&
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_MOVED &&
               strcmp(l.ev[0].from, "/d/a") == 0, "PVN-001",
               "the same node under a new name is ONE move, carrying its old path");
 
         now[0] = was[0];
         now[0].facts.size = 99;
         now[1] = was[1];
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "PVN-001",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_CHANGED, "PVN-001",
               "a changed size is one change");
 
         /* The three facts that move on their OWN, with nothing else about
@@ -131,9 +131,9 @@ main(void)
         now[0] = was[0];
         now[0].facts.trash_full = 1;
         now[1] = was[1];
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-029",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_CHANGED, "AW-029",
               "a Trash filling is a change, though nothing else about the "
               "folder moved -- without this the icon shows the state it "
               "had when the window opened");
@@ -141,34 +141,34 @@ main(void)
         now[0] = was[0];
         now[0].facts.avail = 4096;
         now[1] = was[1];
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-097",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_CHANGED, "AW-097",
               "and so is free space moving, which is the whole of what a "
               "space bar shows");
 
         now[0] = was[0];
         now[0].facts.total = 8192;
         now[1] = was[1];
-        tiku_trk_evlist_clear(&l);
-        (void)tiku_trk_notify_diff(was, 2, now, 2, 0, &l);
-        check(l.count == 1 && l.ev[0].op == TIKU_TRK_EV_CHANGED, "AW-097",
+        tiku_evlist_clear(&l);
+        (void)tiku_notify_diff(was, 2, now, 2, 0, &l);
+        check(l.count == 1 && l.ev[0].op == TIKU_EV_CHANGED, "AW-097",
               "as is a capacity, which changes when a volume is replaced "
               "under a mount point that kept its name");
 
         {
-            tiku_trk_evlist_t burst, folded;
-            tiku_trk_model_t latest = was[0];
+            tiku_evlist_t burst, folded;
+            tiku_model_t latest = was[0];
 
-            tiku_trk_evlist_clear(&burst);
-            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_CHANGED,
+            tiku_evlist_clear(&burst);
+            (void)tiku_evlist_add(&burst, TIKU_EV_CHANGED,
                                       &was[0], NULL, 1);
             latest.facts.size = 101;
-            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_ATTR,
+            (void)tiku_evlist_add(&burst, TIKU_EV_ATTR,
                                       &latest, NULL, 2);
-            (void)tiku_trk_evlist_add(&burst, TIKU_TRK_EV_CHANGED,
+            (void)tiku_evlist_add(&burst, TIKU_EV_CHANGED,
                                       &was[1], NULL, 3);
-            (void)tiku_trk_evlist_coalesce(&burst, &folded);
+            (void)tiku_evlist_coalesce(&burst, &folded);
             check(folded.count == 2 && folded.ev[0].model.facts.size == 101,
                   "PVL-094", "a notice burst visits each node once with its final facts");
             check(folded.ev[0].at == 2 && folded.ev[1].at == 3,
@@ -178,28 +178,28 @@ main(void)
 
     printf("\nparking a notice that arrives before its row\n");
     {
-        tiku_trk_park_t park;
-        tiku_trk_event_t e, out[4];
-        tiku_trk_model_t m = node("/d/late", "late", 9, 1);
+        tiku_park_t park;
+        tiku_node_event_t e, out[4];
+        tiku_model_t m = node("/d/late", "late", 9, 1);
         int n;
 
-        tiku_trk_park_clear(&park);
+        tiku_park_clear(&park);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CHANGED;
+        e.op = TIKU_EV_CHANGED;
         e.model = m;
         snprintf(e.path, sizeof e.path, "%s", m.path);
         e.at = 1000;
-        (void)tiku_trk_park_add(&park, &e);
+        (void)tiku_park_add(&park, &e);
         e.at = 2000;
         e.model.facts.size = 2;
-        (void)tiku_trk_park_add(&park, &e);
-        check(tiku_trk_park_count(&park) == 2, "PVN-002",
+        (void)tiku_park_add(&park, &e);
+        check(tiku_park_count(&park) == 2, "PVN-002",
               "a notice for an unknown row is held, not dropped");
 
-        n = tiku_trk_park_take(&park, "/d/late", out, 4);
+        n = tiku_park_take(&park, "/d/late", out, 4);
         check(n == 2 && out[0].at == 1000 && out[1].at == 2000, "PVN-004",
               "and comes back in arrival order, oldest first");
-        check(tiku_trk_park_count(&park) == 0, "PVN-004",
+        check(tiku_park_count(&park) == 0, "PVN-004",
               "taking them empties the park");
 
         /* Taking fewer than are held must not destroy the rest: the caller
@@ -207,35 +207,35 @@ main(void)
         {
             int k;
 
-            tiku_trk_park_clear(&park);
+            tiku_park_clear(&park);
             for (k = 0; k < 10; k++) {
                 e.at = 100 + k;
-                (void)tiku_trk_park_add(&park, &e);
+                (void)tiku_park_add(&park, &e);
             }
-            n = tiku_trk_park_take(&park, "/d/late", out, 4);
+            n = tiku_park_take(&park, "/d/late", out, 4);
             check(n == 4, "PVN-004", "a bounded take returns what fits");
-            check(tiku_trk_park_count(&park) == 6, "PVN-004",
+            check(tiku_park_count(&park) == 6, "PVN-004",
                   "and leaves the rest held, not destroyed");
-            n = tiku_trk_park_take(&park, "/d/late", out, 4);
+            n = tiku_park_take(&park, "/d/late", out, 4);
             check(n == 4 && out[0].at == 104, "PVN-004",
                   "the next take continues where it left off");
         }
-        tiku_trk_park_clear(&park);
+        tiku_park_clear(&park);
 
         /* A row that never appears must not hold its notice for ever. */
         e.at = 0;
-        (void)tiku_trk_park_add(&park, &e);
-        check(tiku_trk_park_expire(&park, TIKU_TRK_PARK_LIFETIME_US - 1) == 0,
+        (void)tiku_park_add(&park, &e);
+        check(tiku_park_expire(&park, TIKU_PARK_LIFETIME_US - 1) == 0,
               "PVN-003", "a notice survives just under the lifetime");
-        check(tiku_trk_park_expire(&park, TIKU_TRK_PARK_LIFETIME_US) == 1,
+        check(tiku_park_expire(&park, TIKU_PARK_LIFETIME_US) == 1,
               "PVN-003", "and is discarded at it");
     }
 
     printf("\nwhat a view does with a notice\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         unsigned f;
         int before;
 
@@ -244,7 +244,7 @@ main(void)
         touch(dir, "alpha.txt");
         touch(dir, "beta.txt");
         touch(dir, "gamma.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         before = tiku_trk_poseview_count(v);
@@ -253,7 +253,7 @@ main(void)
             uint64_t menu_before = tiku_trk_poseview_menu_generation(v);
 
             memset(&e, 0, sizeof e);
-            e.op = TIKU_TRK_EV_ATTR;
+            e.op = TIKU_EV_ATTR;
             snprintf(e.path, sizeof e.path, "%s/alpha.txt", dir);
             e.model = tiku_trk_poseview_at(v, 0)->model;
             e.model.facts.size++;
@@ -264,7 +264,7 @@ main(void)
 
         /* A creation in some OTHER folder is not this folder's business. */
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = node("/elsewhere/x", "x", 40, 1);
         snprintf(e.path, sizeof e.path, "/elsewhere/x");
         snprintf(e.dir, sizeof e.dir, "/elsewhere");
@@ -321,7 +321,7 @@ main(void)
             check(tiku_trk_poseview_selection_count(v) == 1, "-",
                   "the row is selected");
             snprintf(e.path, sizeof e.path, "%s", p->model.path);
-            e.op = TIKU_TRK_EV_REMOVED;
+            e.op = TIKU_EV_REMOVED;
             e.model = p->model;
             (void)tiku_trk_poseview_notify(v, &e);
             check(tiku_trk_poseview_count(v) == before, "PVN-030",
@@ -340,7 +340,7 @@ main(void)
 
             snprintf(p, sizeof p, "%s/later.txt", dir);
             memset(&e, 0, sizeof e);
-            e.op = TIKU_TRK_EV_CHANGED;
+            e.op = TIKU_EV_CHANGED;
             e.model = node(p, "later.txt", 55, 4242);
             snprintf(e.path, sizeof e.path, "%s", p);
             snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -349,7 +349,7 @@ main(void)
             check(tiku_trk_poseview_parked(v) == 1, "PVN-002",
                   "a change for an unknown row is parked");
 
-            e.op = TIKU_TRK_EV_CREATED;
+            e.op = TIKU_EV_CREATED;
             e.model.facts.size = 1;
             (void)tiku_trk_poseview_notify(v, &e);
             check(tiku_trk_poseview_parked(v) == 0, "PVN-004",
@@ -385,7 +385,7 @@ main(void)
             tiku_trk_poseview_click(v, at, 0u);
             snprintf(np, sizeof np, "%s/zulu.txt", dir);
             memset(&e, 0, sizeof e);
-            e.op = TIKU_TRK_EV_MOVED;
+            e.op = TIKU_EV_MOVED;
             e.model = node(np, "zulu.txt", 1, 1);
             snprintf(e.path, sizeof e.path, "%s", np);
             snprintf(e.from, sizeof e.from, "%s/alpha.txt", dir);
@@ -416,7 +416,7 @@ main(void)
 
                 snprintf(renamed, sizeof renamed, "%.400s_renamed", dir);
                 memset(&e, 0, sizeof e);
-                e.op = TIKU_TRK_EV_MOVED;
+                e.op = TIKU_EV_MOVED;
                 snprintf(e.path, sizeof e.path, "%.500s", renamed);
                 snprintf(e.from, sizeof e.from, "%s", dir);
                 e.model = node(renamed, "renamed", 77, 0);
@@ -429,7 +429,7 @@ main(void)
                 e.from[0] = '\0';
             }
 
-            e.op = TIKU_TRK_EV_REMOVED;
+            e.op = TIKU_EV_REMOVED;
             f = tiku_trk_poseview_notify(v, &e);
             check((f & TIKU_TRK_NOTIFY_GONE) != 0, "PVN-024",
                   "deleting the folder on screen closes the window");
@@ -441,19 +441,19 @@ main(void)
             tiku_trk_poseview_t *rv = tiku_trk_poseview_new(b, "/");
 
             memset(&e, 0, sizeof e);
-            e.op = TIKU_TRK_EV_REMOVED;
+            e.op = TIKU_EV_REMOVED;
             snprintf(e.path, sizeof e.path, "/");
             f = tiku_trk_poseview_notify(rv, &e);
             check((f & TIKU_TRK_NOTIFY_GONE) == 0, "PVN-025",
                   "the root window stays open when told its node is gone");
             tiku_trk_poseview_free(rv);
         }
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
     }
 
     printf("\npolling derives the notices from the folder itself\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
         unsigned f;
         char p[512];
@@ -462,7 +462,7 @@ main(void)
         (void)mkdir(dir, 0755);
         touch(dir, "one.txt");
         touch(dir, "two.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         tiku_trk_poseview_click(v, 0, 0u);
@@ -488,15 +488,15 @@ main(void)
               "and a quiet folder reports nothing at all");
 
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\na query window updates by the same path as a folder\n");
     {
-        tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+        tiku_backend_t *b = tiku_backend_posix_open();
         tiku_trk_poseview_t *v = tiku_trk_poseview_new(b, "/");
-        tiku_trk_model_t set[3];
+        tiku_model_t set[3];
         unsigned f;
         int i;
 
@@ -523,28 +523,28 @@ main(void)
         check(tiku_trk_poseview_selection_count(v) == 1, "PVN-001",
               "while the surviving selection survives");
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
     }
 
     printf("\na rename replays what was waiting under the new name\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char np[512];
         int i, at = -1;
 
         rm_tree(dir);
         (void)mkdir(dir, 0755);
         touch(dir, "old.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
 
         /* A change arrives for the name the row is ABOUT to take. */
         snprintf(np, sizeof np, "%s/new.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CHANGED;
+        e.op = TIKU_EV_CHANGED;
         e.model = node(np, "new.txt", 7, 8888);
         snprintf(e.path, sizeof e.path, "%s", np);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -552,7 +552,7 @@ main(void)
         check(tiku_trk_poseview_parked(v) == 1, "PVN-004",
               "the notice is parked under a name no row has yet");
 
-        e.op = TIKU_TRK_EV_MOVED;
+        e.op = TIKU_EV_MOVED;
         e.model.facts.size = 1;
         snprintf(e.from, sizeof e.from, "%s/old.txt", dir);
         (void)tiku_trk_poseview_notify(v, &e);
@@ -569,15 +569,15 @@ main(void)
               "PVN-004",
               "so the renamed row shows the change, not the rename's model");
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nswitching folder takes the old one's state with it\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char other[300];
 
         rm_tree(dir);
@@ -588,12 +588,12 @@ main(void)
         (void)mkdir(other, 0755);
         touch(other, "b.txt");
 
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
 
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CHANGED;
+        e.op = TIKU_EV_CHANGED;
         e.model = node("/nowhere/ghost", "ghost", 900, 1);
         snprintf(e.path, sizeof e.path, "/nowhere/ghost");
         (void)tiku_trk_poseview_notify(v, &e);
@@ -605,16 +605,16 @@ main(void)
               "and is dropped on the way out, not carried into the next");
 
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(other);
         rm_tree(dir);
     }
 
     printf("\nthe op decides the work, and one drain serves every view\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v1, *v2;
-        tiku_trk_change_t ch[4];
+        tiku_model_change_t ch[4];
         char p[512];
         unsigned f1, f2;
 
@@ -622,7 +622,7 @@ main(void)
         (void)mkdir(dir, 0755);
         touch(dir, "one.txt");
         touch(dir, "two.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v1 = tiku_trk_poseview_new(b, dir);
         v2 = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v1);
@@ -634,7 +634,7 @@ main(void)
         snprintf(p, sizeof p, "%s/two.txt", dir);
         (void)remove(p);
         ch[0].id = tiku_trk_poseview_at(v1, 1)->model.node_id;
-        ch[0].op = TIKU_TRK_CH_REMOVED;
+        ch[0].op = TIKU_CH_REMOVED;
 
         f1 = tiku_trk_poseview_poll(v1, 1000, ch, 1, 1);
         check(tiku_trk_poseview_count(v1) == 1 &&
@@ -651,7 +651,7 @@ main(void)
 
         /* A value move is served in place -- no re-listing could see it. */
         ch[0].id = tiku_trk_poseview_at(v1, 0)->model.node_id;
-        ch[0].op = TIKU_TRK_CH_CHANGED;
+        ch[0].op = TIKU_CH_CHANGED;
         tiku_trk_poseview_at(v1, 0)->value_valid = 1;
         f1 = tiku_trk_poseview_poll(v1, 2000, ch, 1, 1);
         check(!tiku_trk_poseview_at(v1, 0)->value_valid, "PVN-001",
@@ -664,15 +664,15 @@ main(void)
 
         tiku_trk_poseview_free(v1);
         tiku_trk_poseview_free(v2);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nan entry that cannot be described is held, not shown\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char gone[512];
 
         rm_tree(dir);
@@ -682,7 +682,7 @@ main(void)
         snprintf(gone, sizeof gone, "%s/dangling", dir);
         if (symlink("/nonexistent/target", gone) != 0) { /* fine */ }
 
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         {
@@ -696,7 +696,7 @@ main(void)
             check(broken >= 0, "PVN-027",
                   "a link whose target is gone keeps its row");
             check(broken >= 0 &&
-                  strcmp(tiku_trk_model_kind_string(
+                  strcmp(tiku_model_kind_string(
                              &tiku_trk_poseview_at(v, broken)->model),
                          "Broken link") == 0, "PVN-027",
                   "and says so rather than looking like a live one");
@@ -723,9 +723,9 @@ main(void)
 
         /* An UNKNOWN entry is held back rather than shown. */
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = node("/x/busy", "busy", 77, 0);
-        e.model.kind = TIKU_TRK_KIND_UNKNOWN;
+        e.model.kind = TIKU_KIND_UNKNOWN;
         snprintf(e.path, sizeof e.path, "%s/busy", dir);
         snprintf(e.model.path, sizeof e.model.path, "%s/busy", dir);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -739,13 +739,13 @@ main(void)
                   "a describable entry becomes a row");
         }
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nan entry marked invisible is not shown\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
         int before, after;
 
@@ -753,7 +753,7 @@ main(void)
         (void)mkdir(dir, 0755);
         touch(dir, "seen.txt");
         touch(dir, "hidden.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         before = tiku_trk_poseview_count(v);
@@ -789,15 +789,15 @@ main(void)
             check(!still, "PVN-013", "and it really is the marked one");
         }
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nlosing the last visible row scrolls up by one\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char nm[32], p[512];
         int i;
 
@@ -807,7 +807,7 @@ main(void)
             snprintf(nm, sizeof nm, "f%02d.txt", i);
             touch(dir, nm);
         }
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         /* A window showing four rows, scrolled to the end. */
@@ -817,7 +817,7 @@ main(void)
 
         snprintf(p, sizeof p, "%s/f09.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_REMOVED;
+        e.op = TIKU_EV_REMOVED;
         e.model = node(p, "f09.txt", 9, 0);
         snprintf(e.path, sizeof e.path, "%s", p);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -825,15 +825,15 @@ main(void)
         check(tiku_trk_poseview_scroll(v) == 5, "PVN-031",
               "losing the last visible row scrolls up by one, not to the end");
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nthe anchors survive a filtered view losing a row\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char p[512];
         int i, kept = -1;
 
@@ -843,7 +843,7 @@ main(void)
         touch(dir, "aa2.txt");
         touch(dir, "bb1.txt");
         touch(dir, "aa3.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
 
@@ -869,7 +869,7 @@ main(void)
          */
         snprintf(p, sizeof p, "%s/bb1.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_REMOVED;
+        e.op = TIKU_EV_REMOVED;
         e.model = node(p, "bb1.txt", 99, 0);
         snprintf(e.path, sizeof e.path, "%s", p);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -888,22 +888,22 @@ main(void)
         tiku_trk_poseview_type_clear(v);
         tiku_trk_poseview_set_filtering(v, 0);
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nmoving a row OUT leaves by the same door as removing it\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char p[512];
 
         rm_tree(dir);
         (void)mkdir(dir, 0755);
         touch(dir, "aa1.txt");
         touch(dir, "aa2.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         tiku_trk_poseview_set_filtering(v, 1);
@@ -912,7 +912,7 @@ main(void)
 
         snprintf(p, sizeof p, "%s/aa1.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_MOVED;
+        e.op = TIKU_EV_MOVED;
         e.model = node("/elsewhere/aa1.txt", "aa1.txt", 1, 0);
         snprintf(e.path, sizeof e.path, "/elsewhere/aa1.txt");
         snprintf(e.from, sizeof e.from, "%s", p);
@@ -932,13 +932,13 @@ main(void)
         tiku_trk_poseview_type_clear(v);
         tiku_trk_poseview_set_filtering(v, 0);
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\na hidden row stays hidden through a bare reload\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
         int i;
 
@@ -946,7 +946,7 @@ main(void)
         (void)mkdir(dir, 0755);
         touch(dir, "seen.txt");
         touch(dir, "hid.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         for (i = 0; i < tiku_trk_poseview_count(v); i++) {
@@ -972,15 +972,15 @@ main(void)
                   "a bare reload does not resurrect a hidden row");
         }
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\na rename does not move the scroll\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char nm[32], p[512], np[512];
         int i;
 
@@ -990,7 +990,7 @@ main(void)
             snprintf(nm, sizeof nm, "g%02d.txt", i);
             touch(dir, nm);
         }
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         tiku_trk_poseview_set_visible_rows(v, 4);
@@ -1002,7 +1002,7 @@ main(void)
         snprintf(p, sizeof p, "%s/g02.txt", dir);
         snprintf(np, sizeof np, "%s/g02x.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_MOVED;
+        e.op = TIKU_EV_MOVED;
         e.model = node(np, "g02x.txt", 2, 0);
         snprintf(e.path, sizeof e.path, "%s", np);
         snprintf(e.from, sizeof e.from, "%s", p);
@@ -1011,22 +1011,22 @@ main(void)
         check(tiku_trk_poseview_scroll(v) == 6, "PVN-022",
               "an in-place rename leaves the scroll where it was");
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\na second sighting of the same node is not a second row\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char p[512], p2[512];
         int before;
 
         rm_tree(dir);
         (void)mkdir(dir, 0755);
         touch(dir, "one.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         before = tiku_trk_poseview_count(v);
@@ -1035,7 +1035,7 @@ main(void)
          * the path is a name, the node is the thing. */
         snprintf(p2, sizeof p2, "%s/alias.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = node(p2, "alias.txt",
                        tiku_trk_poseview_at(v, 0)->model.node_id, 1);
         snprintf(e.path, sizeof e.path, "%s", p2);
@@ -1045,22 +1045,22 @@ main(void)
               "the same identity under another name adds no second row");
         (void)p;
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\na position asked for before the entry exists (PVL-025)\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char np[512];
         int x = 0, y = 0;
 
         rm_tree(dir);
         (void)mkdir(dir, 0755);
         touch(dir, "one.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, dir);
         (void)tiku_trk_poseview_reload(v);
         tiku_trk_poseview_set_mode(v, TIKU_TRK_MODE_ICON);
@@ -1068,7 +1068,7 @@ main(void)
         snprintf(np, sizeof np, "%s/made.txt", dir);
         tiku_trk_poseview_set_drop_point(v, 140, 90);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = node(np, "made.txt", 4242u, 1);
         snprintf(e.path, sizeof e.path, "%s", np);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -1090,7 +1090,7 @@ main(void)
         /* And the seed is spent: the NEXT entry is not put there too. */
         snprintf(np, sizeof np, "%s/second.txt", dir);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = node(np, "second.txt", 4243u, 1);
         snprintf(e.path, sizeof e.path, "%s", np);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -1110,15 +1110,15 @@ main(void)
                   "as well");
         }
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         rm_tree(dir);
     }
 
     printf("\nan ancestor moving takes the window with it (PVN-057)\n");
     {
-        tiku_trk_backend_t *b;
+        tiku_backend_t *b;
         tiku_trk_poseview_t *v;
-        tiku_trk_event_t e;
+        tiku_node_event_t e;
         char sub[512];
         unsigned f;
 
@@ -1127,12 +1127,12 @@ main(void)
         snprintf(sub, sizeof sub, "%s/inner", dir);
         (void)mkdir(sub, 0755);
         touch(sub, "one.txt");
-        b = tiku_trk_backend_posix_open();
+        b = tiku_backend_posix_open();
         v = tiku_trk_poseview_new(b, sub);
 
         /* The PARENT is renamed.  Nothing in this folder moved. */
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_MOVED;
+        e.op = TIKU_EV_MOVED;
         e.model = node("/tmp/trk_notify_moved", "trk_notify_moved", 991u, 0);
         snprintf(e.path, sizeof e.path, "/tmp/trk_notify_moved");
         snprintf(e.from, sizeof e.from, "%s", dir);
@@ -1146,7 +1146,7 @@ main(void)
 
         /* A sibling whose name merely STARTS with ours is not an ancestor. */
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_MOVED;
+        e.op = TIKU_EV_MOVED;
         e.model = node("/tmp/elsewhere", "elsewhere", 992u, 0);
         snprintf(e.path, sizeof e.path, "/tmp/elsewhere");
         snprintf(e.from, sizeof e.from, "/tmp/trk_notify_moved/inn");
@@ -1159,7 +1159,7 @@ main(void)
               "so \"inn\" moving leaves \"inner\" alone");
 
         tiku_trk_poseview_free(v);
-        tiku_trk_backend_close(b);
+        tiku_backend_close(b);
         /* Nothing was renamed on DISK -- the notice was synthetic -- so the
          * cleanup is of the paths that really exist.  Left behind, the
          * extra entry breaks this suite's earlier cases on the next run. */

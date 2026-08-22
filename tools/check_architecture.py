@@ -69,8 +69,8 @@ def main() -> int:
             errors.append(f"{path}: new direct X11 dependency: {', '.join(x11)}")
         if tracker_stem(path) in HEADLESS:
             ui = [inc for inc in includes
-                  if inc in {"tiku_desk_gfx.h", "tiku_desk_font.h",
-                             "tiku_desk_ui.h", "tiku_desk_x11.h",
+                  if inc in {"tiku_gfx.h", "tiku_font.h",
+                             "tiku_ui.h", "tiku_x11.h",
                              "tiku_trk_gfx_dep.h"}]
             if ui:
                 errors.append(f"{path}: headless module imports UI: {', '.join(ui)}")

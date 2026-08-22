@@ -12,13 +12,13 @@
 #include <string.h>
 
 #include "tiku_trk_folder_menu.h"
-#include "tiku_trk_volume.h"
+#include "tiku_volume.h"
 #include "tiku_trk_shortcuts.h"
 
 void
 tiku_trk_folder_menu_init(tiku_trk_folder_menu_t *controller,
     tiku_trk_cwmenu_t *menus, tiku_trk_clip_t *clip,
-    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs,
+    tiku_backend_t *backend, tiku_fs_t *fs,
     tiku_trk_types_t *types, tiku_trk_launch_controller_t *launcher,
     tiku_trk_folder_window_t **bar_folder, int *bar_open)
 {
@@ -87,16 +87,16 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
     context.can_open_parent = !tiku_trk_poseview_is_query(folder->view) &&
                               strcmp(folder->path, "/") != 0;
     {
-        char trash[TIKU_TRK_PATH_MAX];
+        char trash[TIKU_PATH_MAX];
 
         if (controller->fs != NULL &&
-            tiku_trk_fs_trash_dir(controller->fs, folder->path, trash,
+            tiku_fs_trash_dir(controller->fs, folder->path, trash,
                                   sizeof trash) == 0) {
-            tiku_trk_model_t model;
+            tiku_model_t model;
 
             context.is_trash = strcmp(folder->path, trash) == 0;
             context.in_trash = !context.is_trash &&
-                tiku_trk_fs_in_trash(controller->fs, folder->path);
+                tiku_fs_in_trash(controller->fs, folder->path);
             if (controller->backend->ops->stat(controller->backend, trash,
                                                &model) == 0) {
                 context.trash_full = model.facts.trash_full;
@@ -108,20 +108,20 @@ tiku_trk_folder_menu_context(tiku_trk_folder_menu_t *controller,
 
         if (pose != NULL) {
             context.is_virtual =
-                pose->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR;
-            context.selection_ro = !tiku_trk_model_is_writable(&pose->model);
+                pose->model.kind == TIKU_KIND_VIRTUAL_DIR;
+            context.selection_ro = !tiku_model_is_writable(&pose->model);
             context.can_trash_or_dup = context.selection > 0 &&
                                        !context.selection_ro;
             context.selection_is_volume = pose->model.kind ==
-                TIKU_TRK_KIND_VOLUME || pose->model.kind == TIKU_TRK_KIND_ROOT;
+                TIKU_KIND_VOLUME || pose->model.kind == TIKU_KIND_ROOT;
             if (context.selection_is_volume) {
                 /* Scanned only when a volume is the selection: menus are
                  * rebuilt per draw, and the mount table is a file. */
-                tiku_trk_volumes_t vols;
-                const tiku_trk_volume_t *vol;
+                tiku_volumes_t vols;
+                const tiku_volume_t *vol;
 
-                if (tiku_trk_volumes_scan(&vols) > 0 &&
-                    (vol = tiku_trk_volume_of(&vols,
+                if (tiku_volumes_scan(&vols) > 0 &&
+                    (vol = tiku_volume_of(&vols,
                                               pose->model.path)) != NULL) {
                     context.selection_is_boot = vol->is_boot;
                 }

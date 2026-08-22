@@ -12,8 +12,8 @@
 #include <string.h>
 
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_strings.h"
-#include "tiku_trk_iconpaint.h"
+#include "tiku_strings.h"
+#include "tiku_iconpaint.h"
 #include "tiku_trk_panel_window.h"
 #include "tiku_trk_task.h"
 
@@ -41,12 +41,12 @@ panel_at_least(int want, int least)
 
 static int button_h(void)
 {
-    return panel_at_least(tiku_desk_ui_row_h(), PANEL_BUTTON_MIN_H);
+    return panel_at_least(tiku_ui_row_h(), PANEL_BUTTON_MIN_H);
 }
 
 static int field_h(void)
 {
-    return panel_at_least(tiku_desk_ui_row_h(), PANEL_FIELD_MIN_H);
+    return panel_at_least(tiku_ui_row_h(), PANEL_FIELD_MIN_H);
 }
 
 
@@ -64,7 +64,7 @@ typedef enum {
 
 static int fav_row_h(void)
 {
-    return panel_at_least(tiku_desk_font_plain()->height + 3,
+    return panel_at_least(tiku_font_plain()->height + 3,
                           PANEL_FAV_MIN_H);
 }
 
@@ -77,25 +77,25 @@ mark_dirty(tiku_trk_panel_window_t *controller)
 }
 
 static void
-layout(const tiku_trk_panel_window_t *controller, tiku_desk_rect_t content,
-       tiku_desk_rect_t *list, tiku_desk_rect_t *name,
-       tiku_desk_rect_t *default_button, tiku_desk_rect_t *cancel)
+layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
+       tiku_rect_t *list, tiku_rect_t *name,
+       tiku_rect_t *default_button, tiku_rect_t *cancel)
 {
     int bottom = content.y + content.h - PANEL_PADDING - button_h();
     int field = controller->model.mode == TIKU_TRK_PANEL_SAVE
                     ? field_h() + PANEL_PADDING : 0;
 
-    *list = (tiku_desk_rect_t){ content.x + PANEL_PADDING,
+    *list = (tiku_rect_t){ content.x + PANEL_PADDING,
                                 content.y + PANEL_PADDING,
                                 content.w - 2 * PANEL_PADDING, 0 };
     list->h = bottom - list->y - PANEL_PADDING - field;
     if (list->h < 40) {
         list->h = 40;
     }
-    *name = (tiku_desk_rect_t){ list->x,
+    *name = (tiku_rect_t){ list->x,
                                 list->y + list->h + PANEL_PADDING,
                                 list->w, field_h() };
-    *default_button = (tiku_desk_rect_t){
+    *default_button = (tiku_rect_t){
         content.x + content.w - PANEL_PADDING - PANEL_BUTTON_W,
         bottom, PANEL_BUTTON_W, button_h() };
     *cancel = *default_button;
@@ -103,23 +103,23 @@ layout(const tiku_trk_panel_window_t *controller, tiku_desk_rect_t content,
 }
 
 /** @brief The Favorites button, bottom-left, and its open list. */
-static tiku_desk_rect_t
+static tiku_rect_t
 favorites_button(const tiku_trk_panel_window_t *controller)
 {
-    tiku_desk_rect_t content = tiku_desk_window_content(controller->window);
+    tiku_rect_t content = tiku_window_content(controller->window);
 
-    return (tiku_desk_rect_t){ content.x + PANEL_PADDING,
+    return (tiku_rect_t){ content.x + PANEL_PADDING,
                                content.y + content.h - PANEL_PADDING -
                                    button_h(),
                                PANEL_BUTTON_W, button_h() };
 }
 
-static tiku_desk_rect_t
+static tiku_rect_t
 favorites_list_rect(const tiku_trk_panel_window_t *controller)
 {
-    tiku_desk_rect_t button = favorites_button(controller);
+    tiku_rect_t button = favorites_button(controller);
     int rows = (controller->fav_count > 0 ? controller->fav_count : 1) + 1;
-    tiku_desk_rect_t r = { button.x, 0, 200,
+    tiku_rect_t r = { button.x, 0, 200,
                            rows * fav_row_h() + 4 };
 
     r.y = button.y - r.h;
@@ -130,7 +130,7 @@ favorites_list_rect(const tiku_trk_panel_window_t *controller)
 static void
 favorites_fill(tiku_trk_panel_window_t *controller)
 {
-    char rows[12][TIKU_TRK_PATH_MAX];
+    char rows[12][TIKU_PATH_MAX];
     int n, i;
 
     controller->fav_count = 0;
@@ -148,7 +148,7 @@ favorites_fill(tiku_trk_panel_window_t *controller)
             continue;
         }
         k = controller->fav_count;
-        snprintf(controller->fav_path[k], TIKU_TRK_PATH_MAX, "%s", rows[i]);
+        snprintf(controller->fav_path[k], TIKU_PATH_MAX, "%s", rows[i]);
         snprintf(controller->fav_label[k], sizeof controller->fav_label[k],
                  "%s", (leaf != NULL && leaf[1] != '\0') ? leaf + 1
                                                           : rows[i]);
@@ -157,7 +157,7 @@ favorites_fill(tiku_trk_panel_window_t *controller)
 }
 
 static int
-selection(const tiku_trk_panel_window_t *controller, tiku_trk_model_t *out,
+selection(const tiku_trk_panel_window_t *controller, tiku_model_t *out,
           int max)
 {
     int i, count, selected = 0;
@@ -177,20 +177,20 @@ selection(const tiku_trk_panel_window_t *controller, tiku_trk_model_t *out,
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_panel_window_t *controller = context;
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
-    tiku_desk_rect_t list, name, default_button, cancel;
-    tiku_trk_model_t selected[8];
+    const tiku_font_t *font = tiku_font_plain();
+    tiku_rect_t list, name, default_button, cancel;
+    tiku_model_t selected[8];
     int selected_count = selection(controller, selected, 8);
     int rows, scroll, total, i;
 
     (void)window;
-    tiku_desk_ui_panel(surface, content);
+    tiku_ui_panel(surface, content);
     layout(controller, content, &list, &name, &default_button, &cancel);
-    tiku_desk_ui_sunken(surface, list, TIKU_DESK_C_DOC);
+    tiku_ui_sunken(surface, list, TIKU_C_DOC);
     if (controller->view == NULL) {
         return;
     }
@@ -198,74 +198,74 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
     tiku_trk_poseview_set_visible_rows(controller->view, rows);
     scroll = tiku_trk_poseview_scroll(controller->view);
     total = tiku_trk_poseview_count(controller->view);
-    tiku_desk_clip_set(surface, tiku_desk_inset(list, 2));
+    tiku_clip_set(surface, tiku_inset(list, 2));
     for (i = 0; i < rows && scroll + i < total; i++) {
         tiku_trk_pose_t *pose =
             tiku_trk_poseview_at(controller->view, scroll + i);
-        tiku_desk_rect_t row;
+        tiku_rect_t row;
         int mini = controller->row_h - 4;
 
         if (pose == NULL) {
             continue;
         }
-        row = (tiku_desk_rect_t){ list.x + 2,
+        row = (tiku_rect_t){ list.x + 2,
                                   list.y + 2 + i * controller->row_h,
                                   list.w - 4, controller->row_h };
         if (mini > PANEL_MINI_ICON) {
             mini = PANEL_MINI_ICON;
         }
         if (pose->selected) {
-            tiku_desk_fill(surface, row, TIKU_DESK_C_SELECT);
+            tiku_fill(surface, row, TIKU_C_SELECT);
         }
-        (void)tiku_trk_icon_paint(surface,
-            tiku_trk_model_icon_name(&pose->model), row.x + 2,
+        (void)tiku_icon_paint(surface,
+            tiku_model_icon_name(&pose->model), row.x + 2,
             row.y + (controller->row_h - mini) / 2, mini);
-        tiku_desk_text(surface, font, row.x + 2 + mini + 4,
+        tiku_text(surface, font, row.x + 2 + mini + 4,
             row.y + (controller->row_h + font->height) / 2 - 2,
             pose->model.name,
-            pose->selected ? TIKU_DESK_C_SELTEXT : TIKU_DESK_C_TEXT);
+            pose->selected ? TIKU_C_SELTEXT : TIKU_C_TEXT);
     }
-    tiku_desk_clip_reset(surface);
+    tiku_clip_reset(surface);
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
-        tiku_desk_ui_textfield_sel(surface, name, controller->name.text,
+        tiku_ui_textfield_sel(surface, name, controller->name.text,
             controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME
                 ? controller->name.caret : -1,
             controller->name.sel_a, controller->name.sel_b,
             controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME
-                ? TIKU_DESK_S_FOCUS : 0u);
+                ? TIKU_S_FOCUS : 0u);
     }
-    tiku_desk_ui_button(surface, cancel, "Cancel", 0u);
-    tiku_desk_ui_button(surface, default_button,
+    tiku_ui_button(surface, cancel, "Cancel", 0u);
+    tiku_ui_button(surface, default_button,
         tiku_trk_panel_button_label(&controller->model, selected,
                                     selected_count),
         !tiku_trk_panel_button_enabled(&controller->model, selected,
                                        selected_count)
-            ? TIKU_DESK_S_DISABLED
+            ? TIKU_S_DISABLED
         /* The ring is drawn only while the panel owns the keyboard, so
          * it never promises a Return the window would not receive
          * (NeXT UIG ch7). */
         : (controller->window != NULL &&
            controller->window ==
-               tiku_desk_workspace_focused(controller->workspace))
-            ? TIKU_DESK_S_DEFAULT : TIKU_DESK_S_NORMAL);
-    tiku_desk_ui_button(surface, favorites_button(controller), "Favorites",
+               tiku_workspace_focused(controller->workspace))
+            ? TIKU_S_DEFAULT : TIKU_S_NORMAL);
+    tiku_ui_button(surface, favorites_button(controller), "Favorites",
                         0u);
     if (controller->fav_open) {
         /* Favourites first, then recent folders, and "Add current folder"
          * as the last row (AW-062, CW-058). */
-        tiku_desk_rect_t fr = favorites_list_rect(controller);
+        tiku_rect_t fr = favorites_list_rect(controller);
         int i;
 
-        tiku_desk_fill(surface, fr, TIKU_DESK_C_PANEL);
-        tiku_desk_bevel(surface, fr,
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_LIGHTEN_2),
-            tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+        tiku_fill(surface, fr, TIKU_C_PANEL);
+        tiku_bevel(surface, fr,
+            tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_2),
+            tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
         if (controller->fav_count == 0) {
             /* An empty list says so, disabled, rather than showing
              * nothing (CW-058). */
-            tiku_desk_text(surface, font, fr.x + 8,
+            tiku_text(surface, font, fr.x + 8,
                 fr.y + 2 + font->ascent + 1, "<No recent items>",
-                tiku_desk_tint(TIKU_DESK_C_TEXT, TIKU_DESK_LIGHTEN_2));
+                tiku_tint(TIKU_C_TEXT, TIKU_LIGHTEN_2));
         }
         for (i = 0; i <= controller->fav_count; i++) {
             const char *text = (i == controller->fav_count)
@@ -274,9 +274,9 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             int at = (controller->fav_count == 0 &&
                       i == controller->fav_count) ? 1 : i;
 
-            tiku_desk_text(surface, font, fr.x + 8,
+            tiku_text(surface, font, fr.x + 8,
                 fr.y + 2 + at * fav_row_h() + font->ascent + 1, text,
-                TIKU_DESK_C_TEXT);
+                TIKU_C_TEXT);
         }
     }
 }
@@ -340,8 +340,8 @@ sync_name(tiku_trk_panel_window_t *controller)
 static void
 commit(tiku_trk_panel_window_t *controller)
 {
-    tiku_trk_model_t selected[8];
-    char destination[TIKU_TRK_PATH_MAX];
+    tiku_model_t selected[8];
+    char destination[TIKU_PATH_MAX];
     int count;
 
     if (controller->target == NULL) {
@@ -367,11 +367,11 @@ commit(tiku_trk_panel_window_t *controller)
             char ask[160];
 
             snprintf(ask, sizeof ask,
-                     tiku_trk_str("alert.msg.exists_replace"),
+                     tiku_str("alert.msg.exists_replace"),
                      controller->model.name);
             tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_SAVE_REPLACE, ask,
-                                tiku_trk_str("alert.btn.replace"));
+                                tiku_str("alert.btn.replace"));
         } else if (controller->alert != NULL) {
             tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_ERROR,
@@ -383,7 +383,7 @@ commit(tiku_trk_panel_window_t *controller)
         return;
     }
     count = selection(controller, selected, 8);
-    if (count == 1 && tiku_trk_model_is_container(&selected[0])) {
+    if (count == 1 && tiku_model_is_container(&selected[0])) {
         snprintf(destination, sizeof destination, "%s", selected[0].path);
     } else {
         snprintf(destination, sizeof destination, "%s",
@@ -422,7 +422,7 @@ void
 tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
                            const char *path)
 {
-    char select[TIKU_TRK_NAME_MAX];
+    char select[TIKU_NAME_MAX];
 
     if (controller == NULL || controller->window == NULL ||
         !controller->window->open || path == NULL) {
@@ -441,13 +441,13 @@ tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
 static void
 activate_default(tiku_trk_panel_window_t *controller)
 {
-    tiku_trk_model_t selected[8];
+    tiku_model_t selected[8];
     int count = selection(controller, selected, 8);
 
     if (!tiku_trk_panel_button_enabled(&controller->model, selected, count)) {
         return;
     }
-    if (count == 1 && tiku_trk_model_is_container(&selected[0])) {
+    if (count == 1 && tiku_model_is_container(&selected[0])) {
         go(controller, selected[0].path);
         return;
     }
@@ -457,7 +457,7 @@ activate_default(tiku_trk_panel_window_t *controller)
 static panel_hit_t
 hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 {
-    tiku_desk_rect_t content, list, name, default_button, cancel;
+    tiku_rect_t content, list, name, default_button, cancel;
 
     if (row != NULL) {
         *row = -1;
@@ -465,15 +465,15 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
     if (controller->window == NULL || !controller->window->open) {
         return PANEL_HIT_NONE;
     }
-    content = tiku_desk_window_content(controller->window);
+    content = tiku_window_content(controller->window);
     layout(controller, content, &list, &name, &default_button, &cancel);
 #define INSIDE(rect) (x >= (rect).x && x < (rect).x + (rect).w && \
                       y >= (rect).y && y < (rect).y + (rect).h)
     {
-        tiku_desk_rect_t fav = favorites_button(controller);
+        tiku_rect_t fav = favorites_button(controller);
 
         if (controller->fav_open) {
-            tiku_desk_rect_t fr = favorites_list_rect(controller);
+            tiku_rect_t fr = favorites_list_rect(controller);
 
             if (INSIDE(fr)) {
                 if (row != NULL) {
@@ -505,7 +505,7 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 }
 
 static int
-event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
+event(tiku_window_t *window, const tiku_event_t *input,
       void *context)
 {
     tiku_trk_panel_window_t *controller = context;
@@ -513,7 +513,7 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
     int64_t now;
 
     (void)window;
-    if (input->type != TIKU_DESK_EVENT_POINTER_DOWN) {
+    if (input->type != TIKU_EVENT_POINTER_DOWN) {
         return 0;
     }
     switch (hit(controller, input->x, input->y, &row)) {
@@ -553,7 +553,7 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
         {
             /* A lone file lends its name to the save field, focus left
              * where it is (AW-054). */
-            tiku_trk_model_t picked[8];
+            tiku_model_t picked[8];
             int n = selection(controller, picked, 8);
 
             if (tiku_trk_panel_pick_name(&controller->model, picked, n)) {
@@ -585,8 +585,8 @@ event(tiku_desk_window_t *window, const tiku_desk_event_t *input,
 
 void
 tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_backend_t *backend,
-    tiku_trk_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
+    tiku_workspace_t *workspace, tiku_backend_t *backend,
+    tiku_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
     int screen_w, int screen_h, int *dirty,
     tiku_trk_panel_window_commit_fn commit_callback, void *commit_context)
 {
@@ -608,8 +608,8 @@ void
 tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
                            int command, const char *initial_directory)
 {
-    tiku_desk_rect_t frame;
-    char title[TIKU_DESK_WINDOW_TITLE_MAX];
+    tiku_rect_t frame;
+    char title[TIKU_WINDOW_TITLE_MAX];
     int x = 0, y = 0, width = PANEL_WIDTH, height = PANEL_HEIGHT;
 
     if (target == NULL) {
@@ -626,18 +626,18 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
         x = (controller->screen_w - width) / 2;
         y = (controller->screen_h - height) / 3;
     }
-    frame = (tiku_desk_rect_t){ x, y, width, height };
+    frame = (tiku_rect_t){ x, y, width, height };
     tiku_trk_edit_start(&controller->name, "");
     if (controller->window != NULL && controller->window->open) {
         controller->window->frame = frame;
-        tiku_desk_workspace_activate(controller->workspace,
+        tiku_workspace_activate(controller->workspace,
                                      controller->window);
     } else {
         tiku_trk_panel_title(&controller->model, title, sizeof title);
-        controller->window = tiku_desk_workspace_open(controller->workspace,
+        controller->window = tiku_workspace_open(controller->workspace,
             title, frame, draw, controller, &controller->model);
         if (controller->window != NULL) {
-            tiku_desk_window_set_handlers(controller->window, event,
+            tiku_window_set_handlers(controller->window, event,
                                            NULL, NULL);
         }
     }
@@ -676,7 +676,7 @@ tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller)
         tiku_trk_panel_save_frame(controller->store,
             controller->window->frame.x, controller->window->frame.y,
             controller->window->frame.w, controller->window->frame.h);
-        tiku_desk_workspace_close(controller->workspace,
+        tiku_workspace_close(controller->workspace,
                                   controller->window);
         controller->window = NULL;
     }
@@ -696,7 +696,7 @@ tiku_trk_panel_window_destroy(tiku_trk_panel_window_t *controller)
     tiku_trk_panel_window_close(controller);
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_panel_window_handle(tiku_trk_panel_window_t *controller)
 {
     return controller->window;
@@ -715,28 +715,28 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
     if (controller->alert != NULL && controller->alert->open) {
         return 0;               /* the question owns the keys (AW-052) */
     }
-    tiku_trk_model_t selected[8];
+    tiku_model_t selected[8];
     tiku_trk_panel_key_t action;
     unsigned tracker_mods = 0;
     int selected_count, panel_key = 0;
 
     if (controller->window == NULL || !controller->window->open ||
-        tiku_desk_workspace_focused(controller->workspace) !=
+        tiku_workspace_focused(controller->workspace) !=
             controller->window) {
         return 0;
     }
-    if ((modifiers & TIKU_DESK_MOD_SHIFT) != 0u) {
+    if ((modifiers & TIKU_MOD_SHIFT) != 0u) {
         tracker_mods |= TIKU_TRK_MOD_SHIFT;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+    if ((modifiers & TIKU_MOD_CMD) != 0u) {
         tracker_mods |= TIKU_TRK_MOD_CMD;
     }
     selected_count = selection(controller, selected, 8);
-    if (key == TIKU_DESK_KEY_ESCAPE)      { panel_key = 27; }
-    else if (key == TIKU_DESK_KEY_RETURN) { panel_key = '\n'; }
-    else if (key == TIKU_DESK_KEY_TAB)    { panel_key = '\t'; }
-    else if (key == TIKU_DESK_KEY_UP)     { panel_key = TIKU_TRK_KEY_UP; }
-    else if (key == TIKU_DESK_KEY_DOWN)   { panel_key = TIKU_TRK_KEY_DOWN; }
+    if (key == TIKU_KEY_ESCAPE)      { panel_key = 27; }
+    else if (key == TIKU_KEY_RETURN) { panel_key = '\n'; }
+    else if (key == TIKU_KEY_TAB)    { panel_key = '\t'; }
+    else if (key == TIKU_KEY_UP)     { panel_key = TIKU_TRK_KEY_UP; }
+    else if (key == TIKU_KEY_DOWN)   { panel_key = TIKU_TRK_KEY_DOWN; }
     else if (key >= 'a' && key <= 'z')    { panel_key = (int)key; }
     action = tiku_trk_panel_key(&controller->model, panel_key, tracker_mods,
         controller->model.focus == TIKU_TRK_PANEL_FOCUS_LIST,
@@ -749,7 +749,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
         activate_default(controller);
         break;
     case TIKU_TRK_PANEL_KEY_PARENT: {
-        char parent[TIKU_TRK_PATH_MAX];
+        char parent[TIKU_PATH_MAX];
 
         if (tiku_trk_panel_parent(&controller->model, parent,
                                   sizeof parent)) {
@@ -759,7 +759,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
     }
     case TIKU_TRK_PANEL_KEY_ENTER:
         if (selected_count == 1 &&
-            tiku_trk_model_is_container(&selected[0])) {
+            tiku_model_is_container(&selected[0])) {
             go(controller, selected[0].path);
         }
         break;
@@ -779,12 +779,12 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
         break;
     default:
         if (controller->model.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
-            (key == TIKU_DESK_KEY_UP || key == TIKU_DESK_KEY_DOWN)) {
-            tiku_trk_model_t picked[8];
+            (key == TIKU_KEY_UP || key == TIKU_KEY_DOWN)) {
+            tiku_model_t picked[8];
             int n;
 
             (void)tiku_trk_poseview_key_nav(controller->view,
-                key == TIKU_DESK_KEY_UP ? TIKU_TRK_KEY_UP
+                key == TIKU_KEY_UP ? TIKU_TRK_KEY_UP
                                         : TIKU_TRK_KEY_DOWN,
                 tracker_mods);
             n = selection(controller, picked, 8);
@@ -793,11 +793,11 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             }
         } else if (controller->model.mode == TIKU_TRK_PANEL_SAVE &&
                    controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME) {
-            if (key == ' ' && (modifiers & TIKU_DESK_MOD_CMD) != 0u) {
+            if (key == ' ' && (modifiers & TIKU_MOD_CMD) != 0u) {
                 /* Cmd-Space completes the name against the folder shown
                  * (NeXT UIG ch3: file-name completion wherever a file
                  * name may be typed). */
-                char full[TIKU_TRK_NAME_MAX];
+                char full[TIKU_NAME_MAX];
 
                 if (tiku_trk_panel_complete(controller->backend,
                         controller->model.dir, controller->name.text,
@@ -806,7 +806,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                     controller->name.sel_a = controller->name.sel_b =
                         controller->name.caret = controller->name.len;
                 }
-            } else if (key == TIKU_DESK_KEY_BACKSPACE) {
+            } else if (key == TIKU_KEY_BACKSPACE) {
                 (void)tiku_trk_edit_key(&controller->name,
                     TIKU_TRK_EDIT_BACKSPACE, tracker_mods, '\0');
             } else if (character != '\0') {
@@ -826,7 +826,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
 
 int
 tiku_trk_panel_window_poll(tiku_trk_panel_window_t *controller, int64_t now,
-    const tiku_trk_change_t *changes, int count, int complete)
+    const tiku_model_change_t *changes, int count, int complete)
 {
     unsigned result;
 

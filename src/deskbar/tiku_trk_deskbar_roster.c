@@ -33,7 +33,7 @@ tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
         return 0;
     }
     while ((entry = readdir(directory)) != NULL) {
-        char path[TIKU_TRK_PATH_MAX], name[64], argv0[160];
+        char path[TIKU_PATH_MAX], name[64], argv0[160];
         FILE *file;
         size_t length;
         struct stat process;
@@ -103,19 +103,19 @@ tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
 
 void
 tiku_trk_deskbar_publish_workspace(tiku_trk_deskbar_t *deskbar,
-    int team, tiku_desk_workspace_t *workspace)
+    int team, tiku_workspace_t *workspace)
 {
     tiku_trk_dbwin_t windows[TIKU_TRK_DB_WINS_MAX];
-    tiku_desk_window_t *focused;
+    tiku_window_t *focused;
     int i, count, published = 0;
 
     if (deskbar == NULL || workspace == NULL) {
         return;
     }
-    focused = tiku_desk_workspace_focused(workspace);
-    count = tiku_desk_workspace_count(workspace);
+    focused = tiku_workspace_focused(workspace);
+    count = tiku_workspace_count(workspace);
     for (i = 0; i < count && published < TIKU_TRK_DB_WINS_MAX; i++) {
-        tiku_desk_window_t *window = tiku_desk_workspace_at(workspace, i);
+        tiku_window_t *window = tiku_workspace_at(workspace, i);
 
         if (window == NULL || !window->open) {
             continue;

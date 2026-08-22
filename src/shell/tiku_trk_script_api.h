@@ -72,13 +72,13 @@ typedef struct {
     int   error;                                /* TIKU_TRK_ERR_*        */
     int   count;                                /* COUNT, or how many
                                                  * results were filled  */
-    char  result[64][TIKU_TRK_PATH_MAX];
+    char  result[64][TIKU_PATH_MAX];
     int   nresult;
 } tiku_trk_rep_t;
 
 /** @brief Parse "get Entry 3" and the like.  @return 0 on success. */
 int tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
-                          char (*store)[TIKU_TRK_PATH_MAX]);
+                          char (*store)[TIKU_PATH_MAX]);
 
 /** @brief Run one request against @p v. */
 void tiku_trk_script_run(tiku_trk_poseview_t *v, const tiku_trk_req_t *req,

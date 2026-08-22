@@ -4,12 +4,12 @@ Find the words still written in the code.
 
 A DEVELOPMENT tool.  The interface's words are moving into strings/en.xml,
 a key at a time; this counts the UI-looking string literals not yet behind
-a tiku_trk_str() key, so what is left to move is a number rather than a
+a tiku_str() key, so what is left to move is a number rather than a
 guess.
 
 It is a HEURISTIC, deliberately broad: a literal that begins with a
 capital or holds a space, is not a path, a format string, an all-caps
-identifier or a key, and is not already an argument to tiku_trk_str().  It
+identifier or a key, and is not already an argument to tiku_str().  It
 over-counts (some are log lines or internal) and under-counts (lower-case
 labels), so read it as a direction of travel, not a total.
 
@@ -44,7 +44,7 @@ def scan(path):
     for i, line in enumerate(open(path, encoding='utf-8',
                                   errors='replace').read().splitlines(), 1):
         # a line already routed through the catalogue is done
-        routed = 'tiku_trk_str(' in line
+        routed = 'tiku_str(' in line
         for m in LITERAL.finditer(line):
             s = m.group(1)
             if routed and ('"%s"' == '"' + s + '"' or s == '%s'):

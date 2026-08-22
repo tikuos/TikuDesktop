@@ -12,13 +12,13 @@
 
 #include "tiku_trk_launch.h"
 #include "tiku_trk_springmenu.h"
-#include "tiku_trk_volume.h"
+#include "tiku_volume.h"
 
 #include <stdio.h>
 #include <string.h>
 
 void
-tiku_trk_nav_open(tiku_trk_nav_t *nav, tiku_trk_backend_t *b,
+tiku_trk_nav_open(tiku_trk_nav_t *nav, tiku_backend_t *b,
                   const char *path)
 {
     if (nav == NULL) {
@@ -61,7 +61,7 @@ tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
 
         for (i = 0; i < lv->n; i++) {
             tiku_trk_nav_item_t *it = &lv->item[i];
-            tiku_trk_model_t m;
+            tiku_model_t m;
             int broken = 0;
             int accepts = 0;
 
@@ -100,11 +100,11 @@ tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
 }
 
 int
-tiku_trk_nav_wanted(const tiku_trk_model_t *m)
+tiku_trk_nav_wanted(const tiku_model_t *m)
 {
     /* A file has nothing to navigate into, and an empty submenu hanging
      * off every row is worse than none at all (CW-045). */
-    return (m != NULL && tiku_trk_model_is_container(m));
+    return (m != NULL && tiku_model_is_container(m));
 }
 
 /** @brief What one level's fill is carrying between calls. */
@@ -118,21 +118,21 @@ struct fill_ctx {
 
 /** @brief Whether a menu shows @p m at all (CW-057). */
 static int
-visible(const tiku_trk_nav_t *nav, const tiku_trk_model_t *m)
+visible(const tiku_trk_nav_t *nav, const tiku_model_t *m)
 {
     /* Exactly what the window hides: a menu that showed a dot file the
      * window does not would be a second, disagreeing view of one folder. */
     if (nav->hide_dotfiles && m->name[0] == '.') {
         return 0;
     }
-    if (m->kind == TIKU_TRK_KIND_TRASH) {
+    if (m->kind == TIKU_KIND_TRASH) {
         return 0;
     }
     return 1;
 }
 
 static int
-fill_one(const tiku_trk_model_t *m, void *ctx)
+fill_one(const tiku_model_t *m, void *ctx)
 {
     struct fill_ctx *c = ctx;
     tiku_trk_nav_item_t *it;
@@ -152,7 +152,7 @@ fill_one(const tiku_trk_model_t *m, void *ctx)
     memset(it, 0, sizeof *it);
     snprintf(it->name, sizeof it->name, "%s", m->name);
     snprintf(it->path, sizeof it->path, "%s", m->path);
-    it->is_container = tiku_trk_model_is_container(m);
+    it->is_container = tiku_model_is_container(m);
     /* A file is listed but not choosable from a NAVIGATION menu: the menu
      * exists to reach a folder, and a live file row would make it a second
      * way to open things that behaves differently (CW-056). */
@@ -208,14 +208,14 @@ tiku_trk_nav_fill(tiku_trk_nav_t *nav, int level)
         /* A menu on the root lists VOLUMES, as the root window does: the
          * root is the Disks surface, not a folder of system directories
          * (CW-057). */
-        tiku_trk_volumes_t vs;
+        tiku_volumes_t vs;
         int k;
 
-        if (tiku_trk_volumes_scan(&vs) > 0) {
+        if (tiku_volumes_scan(&vs) > 0) {
             for (k = 0; k < vs.n && lv->n < TIKU_TRK_NAV_MAX; k++) {
                 tiku_trk_nav_item_t *it;
 
-                if (!tiku_trk_volume_shows_icon(&vs, &vs.v[k])) {
+                if (!tiku_volume_shows_icon(&vs, &vs.v[k])) {
                     continue;
                 }
                 it = &lv->item[lv->n];
@@ -277,7 +277,7 @@ tiku_trk_nav_enter(tiku_trk_nav_t *nav, int i)
      * (CW-055). */
     {   /* Copied out first: `to` and `lv->item[i]` live in the same
          * array, and clearing the destination would erase the source. */
-        char into[TIKU_TRK_PATH_MAX];
+        char into[TIKU_PATH_MAX];
 
         snprintf(into, sizeof into, "%s", lv->item[i].path);
         memset(to, 0, sizeof *to);

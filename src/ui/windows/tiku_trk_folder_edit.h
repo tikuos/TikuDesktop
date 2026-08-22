@@ -12,31 +12,31 @@
 
 #include <stddef.h>
 
-#include "tiku_trk_attr.h"
+#include "tiku_attr.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_folder_window.h"
-#include "tiku_trk_fs.h"
+#include "tiku_fs.h"
 
 /** @brief State and dependencies for both kinds of inline folder editing. */
 typedef struct {
-    tiku_trk_backend_t *backend;
-    tiku_trk_fs_t *fs;
+    tiku_backend_t *backend;
+    tiku_fs_t *fs;
     char *status;
     size_t status_size;
     int *dirty;
     int editing;
     tiku_trk_edit_t value_edit;
-    char edit_path[TIKU_TRK_PATH_MAX];
-    tiku_trk_desc_t edit_desc;
+    char edit_path[TIKU_PATH_MAX];
+    tiku_desc_t edit_desc;
     int renaming;
     tiku_trk_edit_t rename_edit;
-    char rename_path[TIKU_TRK_PATH_MAX];
+    char rename_path[TIKU_PATH_MAX];
     tiku_trk_folder_window_t *rename_folder;
     int rename_row;
 } tiku_trk_folder_edit_t;
 
 void tiku_trk_folder_edit_init(tiku_trk_folder_edit_t *controller,
-    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs, char *status,
+    tiku_backend_t *backend, tiku_fs_t *fs, char *status,
     size_t status_size, int *dirty);
 void tiku_trk_folder_edit_begin_value(tiku_trk_folder_edit_t *controller,
     tiku_trk_folder_window_t *folder);

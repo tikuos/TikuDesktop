@@ -423,7 +423,7 @@ reads.
   claims in the type database and the application registry.
 - **Nothing creates its own directories for you.** Settings, the thumbnail
   cache and the Deskbar folder each make their parents through
-  `tiku_trk_state_mkparents`; a write that skips it silently does nothing on
+  `tiku_state_mkparents`; a write that skips it silently does nothing on
   a home that has never run this before.
 - **An icon view's scroll extent always contains the window's own corner.**
   Without that the extent starts at the first icon, and dropping icons low in

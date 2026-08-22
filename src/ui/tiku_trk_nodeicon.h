@@ -21,9 +21,9 @@
 #ifndef TIKU_TRK_NODEICON_H_
 #define TIKU_TRK_NODEICON_H_
 
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
-#include "tiku_trk_thumb.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
+#include "tiku_thumb.h"
 
 /** @brief Where the icon being drawn came from. */
 typedef enum {
@@ -49,8 +49,8 @@ typedef enum {
 struct tiku_trk_types;
 
 typedef struct {
-    char     path[TIKU_TRK_PATH_MAX];
-    char     name[TIKU_TRK_NAME_MAX];   /* the art it resolved to         */
+    char     path[TIKU_PATH_MAX];
+    char     name[TIKU_NAME_MAX];   /* the art it resolved to         */
     int      permanent;                 /* preloaded; survives a delete   */
     int      used;
 } tiku_trk_nodeicon_ent_t;
@@ -67,7 +67,7 @@ typedef struct {
      * walk and a comparison against the bare model; remembered, it costs
      * a string compare, which is the whole of IV-011. */
     char                    miss[TIKU_TRK_NODEICON_MISS_MAX]
-                                [TIKU_TRK_TYPE_MAX];
+                                [TIKU_TYPE_MAX];
     int                     miss_n;
 } tiku_trk_nodeicon_t;
 
@@ -88,8 +88,8 @@ void tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c);
  *           NULL means no thumbnails, and only the attribute is looked for.
  * @return the resulting TIKU_TRK_ICONHINT_*.
  */
-int tiku_trk_nodeicon_hint(tiku_trk_store_t *store,
-                           const tiku_trk_thumb_q_t *q, tiku_trk_model_t *m);
+int tiku_trk_nodeicon_hint(tiku_store_t *store,
+                           const tiku_thumb_q_t *q, tiku_model_t *m);
 
 /**
  * @brief Whether @p m could have an icon of its own at all (IV-005).
@@ -97,7 +97,7 @@ int tiku_trk_nodeicon_hint(tiku_trk_store_t *store,
  * Answered from the hint the model already carries, never by probing, which
  * is what lets the draw path ask it per row per frame.
  */
-int tiku_trk_nodeicon_possible(const tiku_trk_model_t *m);
+int tiku_trk_nodeicon_possible(const tiku_model_t *m);
 
 /**
  * @brief The icon to draw for @p m, and where it came from.
@@ -107,8 +107,8 @@ int tiku_trk_nodeicon_possible(const tiku_trk_model_t *m);
  * @return the source, so a caller can tell a node icon from a fallback.
  */
 tiku_trk_icon_from_t tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c,
-                                               tiku_trk_store_t *store,
-                                               const tiku_trk_model_t *m,
+                                               tiku_store_t *store,
+                                               const tiku_model_t *m,
                                                char *out, size_t max);
 
 /**
@@ -166,6 +166,6 @@ int tiku_trk_nodeicon_attr_matters(const char *attr);
  * picture still believing it, so a newly given icon would never be looked
  * for.
  */
-void tiku_trk_nodeicon_unhint(tiku_trk_model_t *m);
+void tiku_trk_nodeicon_unhint(tiku_model_t *m);
 
 #endif /* TIKU_TRK_NODEICON_H_ */

@@ -17,16 +17,16 @@ static int prefix(const char *attr, const void *in, size_t len, void *out,
 
 int main(void)
 {
-    tiku_trk_store_t *s = tiku_trk_store_memory_open();
+    tiku_store_t *s = tiku_store_memory_open();
     char out[32] = "";
     if (s == NULL) return 1;
-    if (tiku_trk_state_write(s, "/source", "_trk/columns", "abc", 3) != 0 ||
-        tiku_trk_state_write(s, "/source", "_trk/frame", "xyz", 3) != 0 ||
+    if (tiku_state_write(s, "/source", "_trk/columns", "abc", 3) != 0 ||
+        tiku_state_write(s, "/source", "_trk/frame", "xyz", 3) != 0 ||
         tiku_trk_state_pipeline_copy(s, "/source", "/dest", accept_layout,
                                       prefix, "v:") != 1 ||
-        tiku_trk_state_read(s, "/dest", "_trk/columns", out, sizeof out) != 5 ||
+        tiku_state_read(s, "/dest", "_trk/columns", out, sizeof out) != 5 ||
         memcmp(out, "v:abc", 5) != 0) return 1;
-    tiku_trk_store_free(s);
+    tiku_store_free(s);
     puts("[PASS] state pipeline filters, transforms and reports writes");
     return 0;
 }

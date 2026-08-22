@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tiku_trk_image.h"
+#include "tiku_image.h"
 
 static const int kSteps[TIKU_TRK_DESK_ICON_STEPS] = {
     32, 40, 48, 64, 96, 128
@@ -57,7 +57,7 @@ tiku_trk_deskprefs_init(tiku_trk_deskprefs_t *prefs)
 
 int
 tiku_trk_deskprefs_load(tiku_trk_deskprefs_t *prefs,
-                        tiku_trk_store_t *store, const char *node,
+                        tiku_store_t *store, const char *node,
                         int icon_size)
 {
     int found;
@@ -83,7 +83,7 @@ tiku_trk_deskprefs_load(tiku_trk_deskprefs_t *prefs,
 
 int
 tiku_trk_deskprefs_save(const tiku_trk_deskprefs_t *prefs,
-                        tiku_trk_store_t *store, const char *node)
+                        tiku_store_t *store, const char *node)
 {
     tiku_trk_bg_t out;
 
@@ -235,7 +235,7 @@ tiku_trk_deskprefs_pictures(tiku_trk_deskprefs_pictures_t *out,
         }
         while ((entry = readdir(dir)) != NULL &&
                out->count < TIKU_TRK_DESK_PICTURES) {
-            char path[TIKU_TRK_PATH_MAX];
+            char path[TIKU_PATH_MAX];
 
             if (entry->d_name[0] == '.') {
                 continue;
@@ -244,10 +244,10 @@ tiku_trk_deskprefs_pictures(tiku_trk_deskprefs_pictures_t *out,
                                  entry->d_name) >= sizeof path) {
                 continue;
             }
-            if (!tiku_trk_image_is_image(path)) {
+            if (!tiku_image_is_image(path)) {
                 continue;
             }
-            snprintf(out->picture[out->count], TIKU_TRK_PATH_MAX, "%s",
+            snprintf(out->picture[out->count], TIKU_PATH_MAX, "%s",
                      path);
             out->count++;
         }
@@ -259,15 +259,15 @@ tiku_trk_deskprefs_pictures(tiku_trk_deskprefs_pictures_t *out,
         int i, j;
 
         for (i = 1; i < out->count; i++) {
-            char hold[TIKU_TRK_PATH_MAX];
+            char hold[TIKU_PATH_MAX];
 
             snprintf(hold, sizeof hold, "%s", out->picture[i]);
             for (j = i; j > 0 &&
                         strcmp(out->picture[j - 1], hold) > 0; j--) {
-                snprintf(out->picture[j], TIKU_TRK_PATH_MAX, "%s",
+                snprintf(out->picture[j], TIKU_PATH_MAX, "%s",
                          out->picture[j - 1]);
             }
-            snprintf(out->picture[j], TIKU_TRK_PATH_MAX, "%s", hold);
+            snprintf(out->picture[j], TIKU_PATH_MAX, "%s", hold);
         }
     }
     return out->count;

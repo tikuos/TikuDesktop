@@ -31,8 +31,8 @@
 
 /** @brief A stroked line with a square pen, for the check and the arrow. */
 static void
-pen_line(tiku_desk_surface_t *s, int x0, int y0, int x1, int y1, int pen,
-         tiku_desk_rgb_t c)
+pen_line(tiku_surface_t *s, int x0, int y0, int x1, int y1, int pen,
+         tiku_rgb_t c)
 {
     int dx = (x1 > x0) ? x1 - x0 : x0 - x1;
     int dy = (y1 > y0) ? y1 - y0 : y0 - y1;
@@ -45,7 +45,7 @@ pen_line(tiku_desk_surface_t *s, int x0, int y0, int x1, int y1, int pen,
 
         for (a = 0; a < pen; a++) {
             for (b = 0; b < pen; b++) {
-                tiku_desk_pixel(s, x0 + a, y0 + b, c);
+                tiku_pixel(s, x0 + a, y0 + b, c);
             }
         }
         if (x0 == x1 && y0 == y1) {
@@ -236,7 +236,7 @@ tiku_trk_menu_relabel(tiku_trk_menu_t *m, int at, const char *label,
 int
 tiku_trk_menu_item_height(const tiku_trk_menu_t *m, int i)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const tiku_font_t *f = tiku_font_plain();
 
     if (m == NULL || i < 0 || i >= m->count) {
         return 0;
@@ -244,7 +244,7 @@ tiku_trk_menu_item_height(const tiku_trk_menu_t *m, int i)
     if (m->item[i].separator) {
         return SEP_H;
     }
-    return tiku_desk_text_height(f) + PAD_TOP + PAD_BOTTOM;
+    return tiku_text_height(f) + PAD_TOP + PAD_BOTTOM;
 }
 
 int
@@ -261,20 +261,20 @@ tiku_trk_menu_item_top(const tiku_trk_menu_t *m, int i)
 void
 tiku_trk_menu_measure(tiku_trk_menu_t *m)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const tiku_font_t *f = tiku_font_plain();
     int i, w = 0, any_sub = 0, any_mod = 0, item_h;
 
     if (m == NULL) {
         return;
     }
-    item_h = tiku_desk_text_height(f) + PAD_TOP + PAD_BOTTOM;
+    item_h = tiku_text_height(f) + PAD_TOP + PAD_BOTTOM;
     for (i = 0; i < m->count; i++) {
         int iw;
 
         if (m->item[i].separator) {
             continue;
         }
-        iw = tiku_desk_text_width(f, m->item[i].label) + PAD_LEFT + PAD_RIGHT;
+        iw = tiku_text_width(f, m->item[i].label) + PAD_LEFT + PAD_RIGHT;
         if (m->item[i].icon[0] != '\0') iw += 18;
         /* A shortcut costs an em only when it is shown WITH modifiers; the
          * modifier badges themselves are added once for the whole menu. */
@@ -307,7 +307,7 @@ tiku_trk_menu_measure(tiku_trk_menu_t *m)
 }
 
 int
-tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
+tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_rect_t frame,
                       int x, int y)
 {
     int i;
@@ -328,10 +328,10 @@ tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
     return -1;
 }
 
-tiku_desk_rect_t
-tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y, tiku_desk_rect_t screen)
+tiku_rect_t
+tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y, tiku_rect_t screen)
 {
-    tiku_desk_rect_t r;
+    tiku_rect_t r;
 
     tiku_trk_menu_measure(m);
     r.x = x;
@@ -349,11 +349,11 @@ tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y, tiku_desk_rect_t screen)
     return r;
 }
 
-tiku_desk_rect_t
-tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i, tiku_desk_rect_t frame,
-                        tiku_desk_rect_t screen)
+tiku_rect_t
+tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i, tiku_rect_t frame,
+                        tiku_rect_t screen)
 {
-    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    tiku_rect_t r = { 0, 0, 0, 0 };
     tiku_trk_menu_t *sub;
 
     if (m == NULL || i < 0 || i >= m->count ||
@@ -381,7 +381,7 @@ tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i, tiku_desk_rect_t frame,
 
 /** @brief The check: a three-point stroked polyline in the left gutter. */
 static void
-draw_mark(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
+draw_mark(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
 {
     int gap = PAD_LEFT / 4;
     int left = item.x + gap / 3;
@@ -400,7 +400,7 @@ draw_mark(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
 
 /** @brief The submenu arrow: stroked, two thirds of the item's height. */
 static void
-draw_arrow(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
+draw_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
 {
     int size = (item.h * 2) / 3;
     int x = item.x + item.w - size;
@@ -418,25 +418,25 @@ draw_arrow(tiku_desk_surface_t *s, tiku_desk_rect_t item, tiku_desk_rgb_t c)
 }
 
 void
-tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
-                   tiku_desk_rect_t frame)
+tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_surface_t *s,
+                   tiku_rect_t frame)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
-    tiku_desk_rgb_t base = TIKU_DESK_C_PANEL;
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rgb_t base = TIKU_C_PANEL;
     int i;
 
     if (m == NULL) {
         return;
     }
     tiku_trk_menu_measure(m);
-    tiku_desk_fill(s, frame, base);
-    tiku_desk_bevel(s, frame, tiku_desk_tint(base, TIKU_DESK_LIGHTEN_MAX),
-                    tiku_desk_tint(base, TIKU_DESK_DARKEN_2));
+    tiku_fill(s, frame, base);
+    tiku_bevel(s, frame, tiku_tint(base, TIKU_LIGHTEN_MAX),
+                    tiku_tint(base, TIKU_DARKEN_2));
 
     for (i = 0; i < m->count; i++) {
         tiku_trk_mitem_t *it = &m->item[i];
-        tiku_desk_rect_t r;
-        tiku_desk_rgb_t ink;
+        tiku_rect_t r;
+        tiku_rgb_t ink;
         int base_y;
 
         r.x = frame.x + 1;
@@ -448,26 +448,26 @@ tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
             /* Two hairlines, dark over light, inset one pixel at each end. */
             int mid = r.y + r.h / 2;
 
-            tiku_desk_hline(s, r.x + 1, mid, r.w - 2,
-                            tiku_desk_tint(base, TIKU_DESK_DARKEN_1));
-            tiku_desk_hline(s, r.x + 1, mid + 1, r.w - 2,
-                            tiku_desk_tint(base, TIKU_DESK_LIGHTEN_MAX));
+            tiku_hline(s, r.x + 1, mid, r.w - 2,
+                            tiku_tint(base, TIKU_DARKEN_1));
+            tiku_hline(s, r.x + 1, mid + 1, r.w - 2,
+                            tiku_tint(base, TIKU_LIGHTEN_MAX));
             continue;
         }
         if (i == m->hot && it->enabled) {
-            tiku_desk_fill(s, r, TIKU_DESK_C_SELECT);
-            ink = TIKU_DESK_C_SELTEXT;
+            tiku_fill(s, r, TIKU_C_SELECT);
+            ink = TIKU_C_SELTEXT;
         } else {
-            ink = it->enabled ? TIKU_DESK_C_TEXT
-                              : tiku_desk_tint(base, TIKU_DESK_DARKEN_MAX);
+            ink = it->enabled ? TIKU_C_TEXT
+                              : tiku_tint(base, TIKU_DARKEN_MAX);
             if (!it->enabled) {
                 /* Disabled text is the panel darkened, not grey-on-grey. */
-                ink = tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f);
+                ink = tiku_tint(TIKU_C_TEXT, 0.55f);
             }
         }
         base_y = r.y + PAD_TOP + f->ascent;
         if (it->marked) {
-            draw_mark(s, r, tiku_desk_tint(ink, MARK_TINT));
+            draw_mark(s, r, tiku_tint(ink, MARK_TINT));
         }
         if (it->icon[0] != '\0') {
             /* The named art itself, dimmed when the item is disabled;
@@ -476,16 +476,16 @@ tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
             if (icon_painter == NULL ||
                 !icon_painter(s, it->icon, r.x + PAD_LEFT, r.y + 2, 14,
                               !it->enabled)) {
-                tiku_desk_fill(s, (tiku_desk_rect_t){r.x + PAD_LEFT,
-                    r.y + 2, 14, 14}, it->enabled ? TIKU_DESK_C_SELECT :
-                    tiku_desk_tint(TIKU_DESK_C_TEXT, 0.55f));
+                tiku_fill(s, (tiku_rect_t){r.x + PAD_LEFT,
+                    r.y + 2, 14, 14}, it->enabled ? TIKU_C_SELECT :
+                    tiku_tint(TIKU_C_TEXT, 0.55f));
             }
         }
-        tiku_desk_text(s, f, r.x + PAD_LEFT + (it->icon[0] != '\0' ? 18 : 0),
+        tiku_text(s, f, r.x + PAD_LEFT + (it->icon[0] != '\0' ? 18 : 0),
                        base_y, it->label, ink);
 
         if (it->submenu != NULL) {
-            draw_arrow(s, r, tiku_desk_tint(ink, MARK_TINT));
+            draw_arrow(s, r, tiku_tint(ink, MARK_TINT));
         } else if (it->shortcut != 0) {
             char sc[8];
             int n = 0;
@@ -495,8 +495,8 @@ tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
             if (it->mods & TIKU_TRK_MENU_MOD_SHIFT) { sc[n++] = '^'; }
             sc[n++] = it->shortcut;
             sc[n] = '\0';
-            tiku_desk_text(s, f,
-                           r.x + r.w - tiku_desk_text_width(f, sc) - 6,
+            tiku_text(s, f,
+                           r.x + r.w - tiku_text_width(f, sc) - 6,
                            base_y, sc, ink);
         }
     }
@@ -512,7 +512,7 @@ tiku_trk_menubar_init(tiku_trk_menubar_t *b)
     if (b != NULL) {
         memset(b, 0, sizeof *b);
         b->open = -1;
-        b->height = tiku_desk_text_height(tiku_desk_font_plain()) + 6;
+        b->height = tiku_text_height(tiku_font_plain()) + 6;
     }
 }
 
@@ -566,13 +566,13 @@ tiku_trk_menubar_remove(tiku_trk_menubar_t *b, tiku_trk_menu_t *m)
 static int
 title_width(const tiku_trk_menu_t *m)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const tiku_font_t *f = tiku_font_plain();
 
-    return tiku_desk_text_width(f, m->title) + 2 * LABEL_SPACING + 4;
+    return tiku_text_width(f, m->title) + 2 * LABEL_SPACING + 4;
 }
 
 int
-tiku_trk_menubar_title_at(const tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
+tiku_trk_menubar_title_at(const tiku_trk_menubar_t *b, tiku_rect_t frame,
                           int x, int y)
 {
     int i, tx = frame.x + 2;
@@ -591,11 +591,11 @@ tiku_trk_menubar_title_at(const tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
     return -1;
 }
 
-tiku_desk_rect_t
-tiku_trk_menubar_panel(tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
-                       tiku_desk_rect_t screen)
+tiku_rect_t
+tiku_trk_menubar_panel(tiku_trk_menubar_t *b, tiku_rect_t frame,
+                       tiku_rect_t screen)
 {
-    tiku_desk_rect_t r = { 0, 0, 0, 0 };
+    tiku_rect_t r = { 0, 0, 0, 0 };
     int i, tx = frame.x + 2;
 
     if (b == NULL || b->open < 0 || b->open >= b->count) {
@@ -612,28 +612,28 @@ tiku_trk_menubar_panel(tiku_trk_menubar_t *b, tiku_desk_rect_t frame,
 }
 
 void
-tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_desk_surface_t *s,
-                      tiku_desk_rect_t frame)
+tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_surface_t *s,
+                      tiku_rect_t frame)
 {
-    const tiku_desk_font_t *f = tiku_desk_font_plain();
+    const tiku_font_t *f = tiku_font_plain();
     int i, tx = frame.x + 2;
 
     if (b == NULL) {
         return;
     }
-    tiku_desk_fill(s, frame, TIKU_DESK_C_PANEL);
-    tiku_desk_hline(s, frame.x, frame.y + frame.h - 1, frame.w,
-                    tiku_desk_tint(TIKU_DESK_C_PANEL, TIKU_DESK_DARKEN_2));
+    tiku_fill(s, frame, TIKU_C_PANEL);
+    tiku_hline(s, frame.x, frame.y + frame.h - 1, frame.w,
+                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     for (i = 0; i < b->count; i++) {
         int w = title_width(b->menu[i]);
-        tiku_desk_rect_t t = { tx, frame.y, w, frame.h - 1 };
-        tiku_desk_rgb_t ink = TIKU_DESK_C_TEXT;
+        tiku_rect_t t = { tx, frame.y, w, frame.h - 1 };
+        tiku_rgb_t ink = TIKU_C_TEXT;
 
         if (i == b->open) {
-            tiku_desk_fill(s, t, TIKU_DESK_C_SELECT);
-            ink = TIKU_DESK_C_SELTEXT;
+            tiku_fill(s, t, TIKU_C_SELECT);
+            ink = TIKU_C_SELTEXT;
         }
-        tiku_desk_text(s, f, tx + LABEL_SPACING + 2,
+        tiku_text(s, f, tx + LABEL_SPACING + 2,
                        frame.y + (frame.h - f->height) / 2 + f->ascent,
                        b->menu[i]->title, ink);
         tx += w;
@@ -641,7 +641,7 @@ tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_desk_surface_t *s,
 }
 
 int
-tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_desk_rect_t frame, int x,
+tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_rect_t frame, int x,
                     int y)
 {
     int at;

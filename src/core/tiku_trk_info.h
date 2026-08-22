@@ -20,8 +20,8 @@
 #ifndef TIKU_TRK_INFO_H_
 #define TIKU_TRK_INFO_H_
 
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 
 /** @brief The three tabs, in the order they are shown. */
 typedef enum {
@@ -73,14 +73,14 @@ typedef struct {
 /** @brief One info window's state. */
 typedef struct {
     int                  used;
-    char                 path[TIKU_TRK_PATH_MAX];
-    tiku_trk_model_t     model;
+    char                 path[TIKU_PATH_MAX];
+    tiku_model_t     model;
     tiku_trk_info_tab_t  tab;
     /* The size walk.  A queue of directories rather than recursion, so a
      * step can return to the caller between any two of them -- a walk that
      * could not be left half-done could not be stopped either. */
     tiku_trk_info_calc_t calc;
-    char                 queue[TIKU_TRK_INFO_CALC_QUEUE][TIKU_TRK_PATH_MAX];
+    char                 queue[TIKU_TRK_INFO_CALC_QUEUE][TIKU_PATH_MAX];
     int                  nqueue;
     int64_t              calc_bytes;
     int                  calc_files, calc_dirs;
@@ -107,7 +107,7 @@ typedef struct {
  * existing one by path rather than opening a second on the same entry
  * (AW-065).
  */
-int tiku_trk_info_open(tiku_trk_info_t *in, tiku_trk_backend_t *b,
+int tiku_trk_info_open(tiku_trk_info_t *in, tiku_backend_t *b,
                        const char *path);
 
 /** @brief The window's title: the entry's name and what this window is. */
@@ -128,7 +128,7 @@ const char *tiku_trk_info_tab_name(tiku_trk_info_tab_t tab);
  * @param value Receives its text, formatted as the columns format it.
  */
 tiku_trk_info_field_t tiku_trk_info_field(const tiku_trk_info_t *in,
-                                          tiku_trk_store_t *store, int i,
+                                          tiku_store_t *store, int i,
                                           const char **label, char *value,
                                           size_t max);
 
@@ -146,7 +146,7 @@ void tiku_trk_info_calc_start(tiku_trk_info_t *in);
  *         tick and keep answering the mouse (the same discipline the
  *         thumbnail queue uses).
  */
-int tiku_trk_info_calc_step(tiku_trk_info_t *in, tiku_trk_backend_t *b);
+int tiku_trk_info_calc_step(tiku_trk_info_t *in, tiku_backend_t *b);
 
 /** @brief Abandon the walk; what it had counted so far is discarded. */
 void tiku_trk_info_calc_stop(tiku_trk_info_t *in);
@@ -167,11 +167,11 @@ void tiku_trk_info_calc_stop(tiku_trk_info_t *in);
  *
  * @return 1 when something changed.
  */
-int tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_trk_backend_t *b,
+int tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_backend_t *b,
                           int64_t now);
 
 /** @brief The entry was renamed or moved; the window follows it (AW-077). */
-int tiku_trk_info_moved(tiku_trk_info_t *in, tiku_trk_backend_t *b,
+int tiku_trk_info_moved(tiku_trk_info_t *in, tiku_backend_t *b,
                         const char *from, const char *to);
 
 /**
@@ -184,7 +184,7 @@ int tiku_trk_info_moved(tiku_trk_info_t *in, tiku_trk_backend_t *b,
  *
  * @return 1 when it was found and the window re-pointed.
  */
-int tiku_trk_info_refind(tiku_trk_info_t *in, tiku_trk_backend_t *b);
+int tiku_trk_info_refind(tiku_trk_info_t *in, tiku_backend_t *b);
 
 /** @brief Whether the entry has gone, so the window must close (AW-077). */
 int tiku_trk_info_gone(const tiku_trk_info_t *in, const char *removed);
@@ -208,7 +208,7 @@ int tiku_trk_info_gone(const tiku_trk_info_t *in, const char *removed);
  *
  * @return 0 when applied.
  */
-int tiku_trk_info_perm_toggle(tiku_trk_info_t *in, tiku_trk_backend_t *b,
+int tiku_trk_info_perm_toggle(tiku_trk_info_t *in, tiku_backend_t *b,
                               int which, char *err, size_t errmax);
 
 /** @brief Whether the box for @p which is ticked. */
@@ -223,7 +223,7 @@ int tiku_trk_info_perm(const tiku_trk_info_t *in, int which);
  *
  * @return how many rows the tab will show.
  */
-int tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_trk_store_t *store);
+int tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_store_t *store);
 
 /*---------------------------------------------------------------------------*/
 /* Where the clickable fields lead (AW-072, AW-074)                          */
@@ -244,7 +244,7 @@ int tiku_trk_info_location(const tiku_trk_info_t *in, char *dir, size_t dmax,
  *         the caller's cue to offer a picker rather than an error.
  */
 int tiku_trk_info_link_target(const tiku_trk_info_t *in,
-                              tiku_trk_backend_t *b, char *dir, size_t dmax,
+                              tiku_backend_t *b, char *dir, size_t dmax,
                               char *select, size_t smax);
 
 /**
@@ -256,8 +256,8 @@ int tiku_trk_info_link_target(const tiku_trk_info_t *in,
  *
  * @return 0, or -1 with @p err filled.
  */
-int tiku_trk_info_relink(tiku_trk_info_t *in, tiku_trk_backend_t *b,
-                         tiku_trk_store_t *store, const char *target,
+int tiku_trk_info_relink(tiku_trk_info_t *in, tiku_backend_t *b,
+                         tiku_store_t *store, const char *target,
                          char *err, size_t errmax);
 
 #endif /* TIKU_TRK_INFO_H_ */

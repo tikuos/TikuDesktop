@@ -15,7 +15,7 @@
 
 void
 tiku_trk_folder_edit_init(tiku_trk_folder_edit_t *controller,
-    tiku_trk_backend_t *backend, tiku_trk_fs_t *fs, char *status,
+    tiku_backend_t *backend, tiku_fs_t *fs, char *status,
     size_t status_size, int *dirty)
 {
     *controller = (tiku_trk_folder_edit_t){
@@ -41,7 +41,7 @@ tiku_trk_folder_edit_begin_value(tiku_trk_folder_edit_t *controller,
     if (pose == NULL) {
         return;
     }
-    if (!tiku_trk_attr_editable(&pose->model, &pose->desc)) {
+    if (!tiku_attr_editable(&pose->model, &pose->desc)) {
         snprintf(controller->status, controller->status_size,
                  "%.40s cannot be written", pose->model.name);
         *controller->dirty = 1;
@@ -70,14 +70,14 @@ tiku_trk_folder_edit_commit_value(tiku_trk_folder_edit_t *controller,
     }
     controller->editing = 0;
     tiku_trk_edit_stop(&controller->value_edit);
-    if (!tiku_trk_attr_validate(&controller->edit_desc,
+    if (!tiku_attr_validate(&controller->edit_desc,
                                 controller->value_edit.text, error,
                                 sizeof error)) {
         snprintf(controller->status, controller->status_size, "%s", error);
         *controller->dirty = 1;
         return;
     }
-    (void)tiku_trk_attr_canonical(&controller->edit_desc,
+    (void)tiku_attr_canonical(&controller->edit_desc,
         controller->value_edit.text, canonical, sizeof canonical);
     if (controller->backend->ops->write(controller->backend,
             controller->edit_path, canonical, strlen(canonical), error,
@@ -121,8 +121,8 @@ tiku_trk_folder_edit_begin_rename(tiku_trk_folder_edit_t *controller,
     if (pose == NULL) {
         return;
     }
-    if (pose->model.kind == TIKU_TRK_KIND_DEVICE_NODE ||
-        pose->model.kind == TIKU_TRK_KIND_VIRTUAL_DIR) {
+    if (pose->model.kind == TIKU_KIND_DEVICE_NODE ||
+        pose->model.kind == TIKU_KIND_VIRTUAL_DIR) {
         snprintf(controller->status, controller->status_size,
                  "'%.40s' is part of the device namespace and cannot be "
                  "renamed", pose->model.name);
@@ -133,12 +133,12 @@ tiku_trk_folder_edit_begin_rename(tiku_trk_folder_edit_t *controller,
     controller->rename_folder = folder;
     controller->rename_row = row;
     tiku_trk_edit_start(&controller->rename_edit, pose->model.name);
-    tiku_trk_edit_deny(&controller->rename_edit, tiku_trk_fs_name_deny());
+    tiku_trk_edit_deny(&controller->rename_edit, tiku_fs_name_deny());
     /* A read-only volume still offers the name as selectable text.  This
      * keeps the usual rename affordance useful for copying a name without
      * exposing a write path that the volume cannot satisfy (MA-048). */
     tiku_trk_edit_set_editable(&controller->rename_edit,
-        (pose->model.facts.vol_flags & TIKU_TRK_VOL_READ_ONLY) == 0u);
+        (pose->model.facts.vol_flags & TIKU_VOL_READ_ONLY) == 0u);
     snprintf(controller->rename_path, sizeof controller->rename_path, "%s",
              pose->model.path);
     controller->status[0] = '\0';
@@ -162,7 +162,7 @@ tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
         commit = 0;
     }
     if (commit && controller->rename_edit.len > 0 &&
-        tiku_trk_fs_rename(controller->fs, controller->rename_path,
+        tiku_fs_rename(controller->fs, controller->rename_path,
             controller->rename_edit.text, error, sizeof error) != 0) {
         /* A rejected name keeps the EDITOR, not just the reason: the text
          * stays, selected whole, so the user retypes immediately instead
@@ -188,14 +188,14 @@ static tiku_trk_edit_key_t
 edit_key(unsigned key)
 {
     switch (key) {
-    case TIKU_DESK_KEY_RETURN:    return TIKU_TRK_EDIT_COMMIT;
-    case TIKU_DESK_KEY_ESCAPE:    return TIKU_TRK_EDIT_CANCEL;
-    case TIKU_DESK_KEY_BACKSPACE: return TIKU_TRK_EDIT_BACKSPACE;
-    case TIKU_DESK_KEY_DELETE:    return TIKU_TRK_EDIT_DELETE;
-    case TIKU_DESK_KEY_LEFT:      return TIKU_TRK_EDIT_LEFT;
-    case TIKU_DESK_KEY_RIGHT:     return TIKU_TRK_EDIT_RIGHT;
-    case TIKU_DESK_KEY_HOME:      return TIKU_TRK_EDIT_HOME;
-    case TIKU_DESK_KEY_END:       return TIKU_TRK_EDIT_END;
+    case TIKU_KEY_RETURN:    return TIKU_TRK_EDIT_COMMIT;
+    case TIKU_KEY_ESCAPE:    return TIKU_TRK_EDIT_CANCEL;
+    case TIKU_KEY_BACKSPACE: return TIKU_TRK_EDIT_BACKSPACE;
+    case TIKU_KEY_DELETE:    return TIKU_TRK_EDIT_DELETE;
+    case TIKU_KEY_LEFT:      return TIKU_TRK_EDIT_LEFT;
+    case TIKU_KEY_RIGHT:     return TIKU_TRK_EDIT_RIGHT;
+    case TIKU_KEY_HOME:      return TIKU_TRK_EDIT_HOME;
+    case TIKU_KEY_END:       return TIKU_TRK_EDIT_END;
     default:                      return TIKU_TRK_EDIT_CHAR;
     }
 }
@@ -218,8 +218,8 @@ next_rename_row(tiku_trk_folder_window_t *folder, int row, int backwards)
             at += n;
         }
         pose = tiku_trk_poseview_at(folder->view, at);
-        if (pose != NULL && pose->model.kind != TIKU_TRK_KIND_DEVICE_NODE &&
-            pose->model.kind != TIKU_TRK_KIND_VIRTUAL_DIR) {
+        if (pose != NULL && pose->model.kind != TIKU_KIND_DEVICE_NODE &&
+            pose->model.kind != TIKU_KIND_VIRTUAL_DIR) {
             return at;
         }
     }
@@ -240,7 +240,7 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         (!controller->renaming && !controller->editing)) {
         return 0;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) &&
+    if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
         tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
                                   : (key == 'c') ? TIKU_TRK_EDIT_COPY
@@ -251,7 +251,7 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         *controller->dirty = 1;
         return 1;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) && key == 'n') {
+    if ((modifiers & TIKU_MOD_CMD) && key == 'n') {
         /* A command invoked while the editor is up first commits the current
          * name, then reaches the shell's command dispatcher. */
         if (controller->renaming) {
@@ -261,8 +261,8 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         }
         return 0;
     }
-    if (controller->renaming && key == TIKU_DESK_KEY_TAB) {
-        int backwards = (modifiers & TIKU_DESK_MOD_SHIFT) != 0u;
+    if (controller->renaming && key == TIKU_KEY_TAB) {
+        int backwards = (modifiers & TIKU_MOD_SHIFT) != 0u;
         int row = controller->rename_row;
 
         tiku_trk_folder_edit_finish_rename(controller, 1);
@@ -277,7 +277,7 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
             tiku_trk_poseview_click(folder->view, row, 0u);
             pose = tiku_trk_poseview_active(folder->view);
             if (pose != NULL &&
-                tiku_trk_attr_editable(&pose->model, &pose->desc)) {
+                tiku_attr_editable(&pose->model, &pose->desc)) {
                 tiku_trk_folder_edit_begin_value(controller, folder);
                 *controller->dirty = 1;
                 return 1;
@@ -294,8 +294,8 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         return 1;
     }
     if (controller->editing && !controller->renaming &&
-        key == TIKU_DESK_KEY_TAB && folder != NULL) {
-        int backwards = (modifiers & TIKU_DESK_MOD_SHIFT) != 0u;
+        key == TIKU_KEY_TAB && folder != NULL) {
+        int backwards = (modifiers & TIKU_MOD_SHIFT) != 0u;
         tiku_trk_pose_t *pose = tiku_trk_poseview_active(folder->view);
         int row = (pose != NULL) ? pose->index : -1;
 
@@ -322,7 +322,7 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         return 1;
     }
     result = tiku_trk_edit_key(editor, action,
-        (modifiers & TIKU_DESK_MOD_SHIFT) != 0u, character);
+        (modifiers & TIKU_MOD_SHIFT) != 0u, character);
     if (result == TIKU_TRK_EDIT_COMMITTED) {
         if (renaming) {
             tiku_trk_folder_edit_finish_rename(controller, 1);

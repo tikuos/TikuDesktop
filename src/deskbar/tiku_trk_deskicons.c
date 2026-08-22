@@ -212,37 +212,37 @@ tiku_trk_deskicons_recall(const tiku_trk_deskpos_set_t *s, int sw, int sh,
 }
 
 void
-tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
-                           tiku_trk_backend_t *b, const char *home,
-                           tiku_trk_vdir_t *out)
+tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
+                           tiku_backend_t *b, const char *home,
+                           tiku_vdir_t *out)
 {
     int i;
 
     if (out == NULL) {
         return;
     }
-    tiku_trk_vdir_init(out);
+    tiku_vdir_init(out);
     if (vs == NULL || b == NULL) {
         return;
     }
     if (home != NULL && home[0] != '\0') {
-        tiku_trk_model_t hm;
+        tiku_model_t hm;
 
         /* First, so what the user put on their own Desktop is what shows
          * when another volume happens to hold the same name. */
         if (b->ops->stat(b, home, &hm) == 0 &&
-            tiku_trk_model_is_container(&hm)) {
-            (void)tiku_trk_vdir_add(out, home);
+            tiku_model_is_container(&hm)) {
+            (void)tiku_vdir_add(out, home);
         }
     }
     for (i = 0; i < vs->n; i++) {
-        char path[TIKU_TRK_PATH_MAX];
-        tiku_trk_model_t m;
+        char path[TIKU_PATH_MAX];
+        tiku_model_t m;
 
         /* Only volumes that show an icon contribute: one mounted inside
          * another is a detail of it, and its Desktop folder is the same
          * folder seen twice (PVN-041, PVN-051). */
-        if (!tiku_trk_volume_shows_icon(vs, &vs->v[i])) {
+        if (!tiku_volume_shows_icon(vs, &vs->v[i])) {
             continue;
         }
         if (snprintf(path, sizeof path, "%s%sDesktop", vs->v[i].mount,
@@ -251,15 +251,15 @@ tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
             continue;
         }
         if (b->ops->stat(b, path, &m) == 0 &&
-            tiku_trk_model_is_container(&m)) {
-            (void)tiku_trk_vdir_add(out, path);
+            tiku_model_is_container(&m)) {
+            (void)tiku_vdir_add(out, path);
         }
     }
 }
 
 int
-tiku_trk_deskicons_volume_pose(const tiku_trk_volumes_t *vs,
-                               const tiku_trk_volume_t *v,
+tiku_trk_deskicons_volume_pose(const tiku_volumes_t *vs,
+                               const tiku_volume_t *v,
                                int volumes_on_desktop, int shared_too)
 {
     if (vs == NULL || v == NULL || !volumes_on_desktop) {
@@ -274,7 +274,7 @@ tiku_trk_deskicons_volume_pose(const tiku_trk_volumes_t *vs,
     if (v->shared && !shared_too) {
         return 0;
     }
-    return tiku_trk_volume_shows_icon(vs, v);
+    return tiku_volume_shows_icon(vs, v);
 }
 
 int

@@ -17,7 +17,7 @@
 #ifndef TIKU_TRK_TYPES_H_
 #define TIKU_TRK_TYPES_H_
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 #include "tiku_trk_view_defs.h"
 
 #define TIKU_TRK_TYPES_MAX       24
@@ -26,9 +26,9 @@
 
 /** @brief One type, as the database describes it. */
 typedef struct {
-    char type[TIKU_TRK_TYPE_MAX];
+    char type[TIKU_TYPE_MAX];
     char desc[TIKU_TRK_TYPE_DESC_MAX];   /* what a Kind column says      */
-    char icon[TIKU_TRK_NAME_MAX];        /* the art it wears             */
+    char icon[TIKU_NAME_MAX];        /* the art it wears             */
     /* The columns this type is worth showing, by TIKU_TRK_COL_*.  A type
      * that offers none is not a type without columns -- it is one whose
      * columns are the generic ones every listing has. */

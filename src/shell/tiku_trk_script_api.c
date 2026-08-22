@@ -55,9 +55,9 @@ word_is(const char *w, const char *name)
 
 int
 tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
-                      char (*store)[TIKU_TRK_PATH_MAX])
+                      char (*store)[TIKU_PATH_MAX])
 {
-    char buf[TIKU_TRK_PATH_MAX * 2];
+    char buf[TIKU_PATH_MAX * 2];
     char *w[8];
     int n = 0, i;
     char *p;
@@ -100,7 +100,7 @@ tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
             /* Both name a path to walk FROM, and dropping it would make
              * every walk start at nothing. */
             if (n >= 4 && store != NULL) {
-                snprintf(store[0], TIKU_TRK_PATH_MAX, "%s", w[3]);
+                snprintf(store[0], TIKU_PATH_MAX, "%s", w[3]);
                 req->path = store[0];
                 req->npath = 1;
             }
@@ -116,7 +116,7 @@ tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
             req->path = NULL;
             if (store != NULL) {
                 for (i = 2; i < n && i - 2 < 8; i++) {
-                    snprintf(store[i - 2], TIKU_TRK_PATH_MAX, "%s", w[i]);
+                    snprintf(store[i - 2], TIKU_PATH_MAX, "%s", w[i]);
                 }
                 req->npath = n - 2;
                 req->path = store[0];
@@ -131,7 +131,7 @@ static void
 add(tiku_trk_rep_t *rep, const char *path)
 {
     if (rep->nresult < (int)(sizeof rep->result / sizeof rep->result[0])) {
-        snprintf(rep->result[rep->nresult], TIKU_TRK_PATH_MAX, "%s", path);
+        snprintf(rep->result[rep->nresult], TIKU_PATH_MAX, "%s", path);
         rep->nresult++;
     }
 }

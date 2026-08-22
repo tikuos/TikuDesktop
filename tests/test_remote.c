@@ -24,7 +24,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "tiku_desk_remote.h"
+#include "tiku_remote.h"
 
 static int fails;
 
@@ -40,8 +40,8 @@ check(int cond, const char *what)
 int
 main(void)
 {
-    tiku_desk_remote_listener_t listener;
-    tiku_desk_remote_client_t client;
+    tiku_remote_listener_t listener;
+    tiku_remote_client_t client;
     int master, slave;
     char *slave_path;
 
@@ -75,21 +75,21 @@ main(void)
     }
     memset(&listener, 0, sizeof listener);
     listener.fd = -1;
-    check(tiku_desk_remote_adopt(&listener, master) == 0,
+    check(tiku_remote_adopt(&listener, master) == 0,
           "the listener adopts the line as a session");
-    check(tiku_desk_remote_connect_fd(&client, "serial-app", slave) == 0,
+    check(tiku_remote_connect_fd(&client, "serial-app", slave) == 0,
           "the client speaks HELLO down it");
     {
-        uint32_t id = tiku_desk_remote_open(&client, "Over the wire",
+        uint32_t id = tiku_remote_open(&client, "Over the wire",
                                             40, 20);
         uint32_t px[40 * 20];
-        tiku_desk_menuset_t menus;
+        tiku_menuset_t menus;
         int i, spins;
 
         for (i = 0; i < 40 * 20; i++) {
             px[i] = 0x00ffcb00u;
         }
-        (void)tiku_desk_remote_frame(&client, id, px, 40, 20);
+        (void)tiku_remote_frame(&client, id, px, 40, 20);
         memset(&menus, 0, sizeof menus);
         menus.nmenu = 1;
         snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "Wire");
@@ -98,9 +98,9 @@ main(void)
                  sizeof menus.menu[0].item[0].label, "Ping");
         menus.menu[0].item[0].command = 7;
         menus.menu[0].item[0].enabled = 1;
-        (void)tiku_desk_remote_menus(&client, id, &menus);
+        (void)tiku_remote_menus(&client, id, &menus);
         for (spins = 0; spins < 200; spins++) {
-            (void)tiku_desk_remote_poll(&listener);
+            (void)tiku_remote_poll(&listener);
             if (listener.session[0].used && listener.session[0].opened &&
                 listener.session[0].frame != NULL &&
                 listener.session[0].has_menus) {
@@ -126,24 +126,24 @@ main(void)
              * window; on an adopted line there is none yet, so speak to
              * the session's fd the way the desktop would after binding
              * a window -- bind a fake and use the public path. */
-            tiku_desk_event_t event;
-            struct tiku_desk_window fake;
+            tiku_event_t event;
+            struct tiku_window fake;
             uint32_t evid = 0;
             int command = 0;
             int type = 0;
 
             memset(&fake, 0, sizeof fake);
             listener.session[0].window = &fake;
-            tiku_desk_remote_pick(&listener, &fake, 7);
+            tiku_remote_pick(&listener, &fake, 7);
             for (spins = 0; spins < 200; spins++) {
-                type = tiku_desk_remote_read(&client, &evid, &event,
+                type = tiku_remote_read(&client, &evid, &event,
                                              &command);
                 if (type != 0) {
                     break;
                 }
                 usleep(10000);
             }
-            check(type == TIKU_DESK_RMSG_PICK && command == 7,
+            check(type == TIKU_RMSG_PICK && command == 7,
                   "PICK crossed back: the answer rode the same line");
         }
         /*
@@ -153,55 +153,55 @@ main(void)
          * the end of a cable running another build has to send.
          */
         {
-            tiku_desk_msg_t *m = tiku_desk_msg_new(0x44524147u);   /* DRAG */
-            tiku_desk_msg_t *item = tiku_desk_msg_new(0x4954454Du);/* ITEM */
-            tiku_desk_msg_t *up = NULL;
+            tiku_msg_t *m = tiku_msg_new(0x44524147u);   /* DRAG */
+            tiku_msg_t *item = tiku_msg_new(0x4954454Du);/* ITEM */
+            tiku_msg_t *up = NULL;
             int i;
 
-            (void)tiku_desk_msg_add_string(m, "action", "drop");
-            (void)tiku_desk_msg_add_ref(m, "refs", "/Desktop/a.txt");
-            (void)tiku_desk_msg_add_ref(m, "refs", "/Desktop/caf\xc3\xa9.txt");
-            (void)tiku_desk_msg_add_ref(m, "refs", "/Desktop/c.txt");
-            (void)tiku_desk_msg_add_point(m, "where", 120.5f, 64.25f);
-            (void)tiku_desk_msg_add_int32(item, "size", 4242);
-            (void)tiku_desk_msg_add_message(m, "item", item);
-            tiku_desk_msg_free(item);
+            (void)tiku_msg_add_string(m, "action", "drop");
+            (void)tiku_msg_add_ref(m, "refs", "/Desktop/a.txt");
+            (void)tiku_msg_add_ref(m, "refs", "/Desktop/caf\xc3\xa9.txt");
+            (void)tiku_msg_add_ref(m, "refs", "/Desktop/c.txt");
+            (void)tiku_msg_add_point(m, "where", 120.5f, 64.25f);
+            (void)tiku_msg_add_int32(item, "size", 4242);
+            (void)tiku_msg_add_message(m, "item", item);
+            tiku_msg_free(item);
 
-            check(tiku_desk_remote_say(&client, m) == 1,
+            check(tiku_remote_say(&client, m) == 1,
                   "a message that describes itself goes up the same line");
-            tiku_desk_msg_free(m);
+            tiku_msg_free(m);
 
             for (spins = 0; spins < 200; spins++) {
-                (void)tiku_desk_remote_poll(&listener);
-                up = tiku_desk_remote_said(&listener, 0);
+                (void)tiku_remote_poll(&listener);
+                up = tiku_remote_said(&listener, 0);
                 if (up != NULL) {
                     break;
                 }
                 usleep(10000);
             }
-            check(up != NULL && tiku_desk_msg_what(up) == 0x44524147u,
+            check(up != NULL && tiku_msg_what(up) == 0x44524147u,
                   "and arrives knowing what it is");
-            check(up != NULL && tiku_desk_msg_count(up, "refs") == 3 &&
-                  strcmp(tiku_desk_msg_find_ref(up, "refs", 1),
+            check(up != NULL && tiku_msg_count(up, "refs") == 3 &&
+                  strcmp(tiku_msg_find_ref(up, "refs", 1),
                          "/Desktop/caf\xc3\xa9.txt") == 0,
                   "with its three refs in order, accents and all");
             {
                 float x = 0.0f, y = 0.0f;
-                tiku_desk_msg_t *inner = (up != NULL)
-                    ? tiku_desk_msg_find_message(up, "item", 0) : NULL;
+                tiku_msg_t *inner = (up != NULL)
+                    ? tiku_msg_find_message(up, "item", 0) : NULL;
                 int32_t size = 0;
 
                 check(up != NULL &&
-                      tiku_desk_msg_find_point(up, "where", 0, &x, &y) &&
+                      tiku_msg_find_point(up, "where", 0, &x, &y) &&
                       x == 120.5f && y == 64.25f,
                       "and the point it was dropped at");
                 check(inner != NULL &&
-                      tiku_desk_msg_find_int32(inner, "size", 0, &size) &&
+                      tiku_msg_find_int32(inner, "size", 0, &size) &&
                       size == 4242,
                       "and a whole message nested inside it");
-                tiku_desk_msg_free(inner);
+                tiku_msg_free(inner);
             }
-            tiku_desk_msg_free(up);
+            tiku_msg_free(up);
 
             /*
              * A burst nobody drains.  The queue holds eight and says how
@@ -209,38 +209,38 @@ main(void)
              * kind of thing found much later, in something else.
              */
             for (i = 0; i < 12; i++) {
-                tiku_desk_msg_t *b = tiku_desk_msg_new(0x42555253u);
+                tiku_msg_t *b = tiku_msg_new(0x42555253u);
 
-                (void)tiku_desk_msg_add_int32(b, "n", i);
-                (void)tiku_desk_remote_say(&client, b);
-                tiku_desk_msg_free(b);
+                (void)tiku_msg_add_int32(b, "n", i);
+                (void)tiku_remote_say(&client, b);
+                tiku_msg_free(b);
             }
             for (spins = 0; spins < 200; spins++) {
-                (void)tiku_desk_remote_poll(&listener);
-                if (tiku_desk_remote_lost(&listener, 0) >= 4) {
+                (void)tiku_remote_poll(&listener);
+                if (tiku_remote_lost(&listener, 0) >= 4) {
                     break;
                 }
                 usleep(10000);
             }
-            check(tiku_desk_remote_lost(&listener, 0) == 4,
+            check(tiku_remote_lost(&listener, 0) == 4,
                   "twelve said and eight held: the four that did not fit"
                   " are counted, not forgotten");
             {
                 int held = 0, in_order = 1;
 
                 for (;;) {
-                    tiku_desk_msg_t *b = tiku_desk_remote_said(&listener, 0);
+                    tiku_msg_t *b = tiku_remote_said(&listener, 0);
                     int32_t got_n = -1;
 
                     if (b == NULL) {
                         break;
                     }
-                    if (!tiku_desk_msg_find_int32(b, "n", 0, &got_n) ||
+                    if (!tiku_msg_find_int32(b, "n", 0, &got_n) ||
                         got_n != held) {
                         in_order = 0;
                     }
                     held++;
-                    tiku_desk_msg_free(b);
+                    tiku_msg_free(b);
                 }
                 check(held == 8 && in_order,
                       "and the eight that were held come back in the order"
@@ -249,43 +249,43 @@ main(void)
 
             /* And back down, the same way. */
             {
-                tiku_desk_msg_t *down = tiku_desk_msg_new(0x4F50454Eu);
-                tiku_desk_msg_t *heard = NULL;
-                tiku_desk_event_t event;
+                tiku_msg_t *down = tiku_msg_new(0x4F50454Eu);
+                tiku_msg_t *heard = NULL;
+                tiku_event_t event;
                 uint32_t evid = 0;
                 int command = 0, type = 0;
 
-                (void)tiku_desk_msg_add_string(down, "open",
+                (void)tiku_msg_add_string(down, "open",
                                                "/Desktop/notes.txt");
-                (void)tiku_desk_msg_add_bool(down, "read-only", 1);
-                check(tiku_desk_remote_tell(&listener, 0, down) == 1,
+                (void)tiku_msg_add_bool(down, "read-only", 1);
+                check(tiku_remote_tell(&listener, 0, down) == 1,
                       "the desktop can say one back down");
-                tiku_desk_msg_free(down);
+                tiku_msg_free(down);
 
                 for (spins = 0; spins < 200; spins++) {
-                    type = tiku_desk_remote_read(&client, &evid, &event,
+                    type = tiku_remote_read(&client, &evid, &event,
                                                  &command);
                     if (type != 0) {
                         break;
                     }
                     usleep(10000);
                 }
-                heard = tiku_desk_remote_heard(&client);
-                check(type == TIKU_DESK_RMSG_TELL && heard != NULL &&
-                      tiku_desk_msg_what(heard) == 0x4F50454Eu,
+                heard = tiku_remote_heard(&client);
+                check(type == TIKU_RMSG_TELL && heard != NULL &&
+                      tiku_msg_what(heard) == 0x4F50454Eu,
                       "and the application hears it");
                 {
                     int ro = 0;
 
                     check(heard != NULL &&
-                          strcmp(tiku_desk_msg_find_string(heard, "open", 0),
+                          strcmp(tiku_msg_find_string(heard, "open", 0),
                                  "/Desktop/notes.txt") == 0 &&
-                          tiku_desk_msg_find_bool(heard, "read-only", 0,
+                          tiku_msg_find_bool(heard, "read-only", 0,
                                                   &ro) && ro == 1,
                           "with every field it was given, by name");
                 }
-                tiku_desk_msg_free(heard);
-                check(tiku_desk_remote_heard(&client) == NULL,
+                tiku_msg_free(heard);
+                check(tiku_remote_heard(&client) == NULL,
                       "and taking it leaves nothing behind to take twice");
             }
 
@@ -300,26 +300,26 @@ main(void)
              * and a test that hangs when it is wrong does not say so.
              */
             {
-                size_t ceiling = 12u + 4u * (size_t)TIKU_DESK_REMOTE_MAX_DIM
-                                         * (size_t)TIKU_DESK_REMOTE_MAX_DIM;
+                size_t ceiling = 12u + 4u * (size_t)TIKU_REMOTE_MAX_DIM
+                                         * (size_t)TIKU_REMOTE_MAX_DIM;
                 unsigned char *big = (unsigned char *)calloc(ceiling, 1u);
-                tiku_desk_msg_t *fat = tiku_desk_msg_new(0x42494721u);
-                tiku_desk_msg_t *thin = tiku_desk_msg_new(0x4F4B4159u);
-                tiku_desk_remote_client_t sink;
+                tiku_msg_t *fat = tiku_msg_new(0x42494721u);
+                tiku_msg_t *thin = tiku_msg_new(0x4F4B4159u);
+                tiku_remote_client_t sink;
                 int null_fd = open("/dev/null", O_WRONLY);
 
                 memset(&sink, 0xA5, sizeof sink);
-                (void)tiku_desk_remote_connect_fd(&sink, "sink", null_fd);
-                (void)tiku_desk_msg_add_int32(thin, "after", 1);
+                (void)tiku_remote_connect_fd(&sink, "sink", null_fd);
+                (void)tiku_msg_add_int32(thin, "after", 1);
                 check(big != NULL && null_fd >= 0 &&
-                      tiku_desk_msg_add_blob(fat, "payload", big, ceiling) &&
-                      tiku_desk_remote_say(&sink, fat) == 0,
+                      tiku_msg_add_blob(fat, "payload", big, ceiling) &&
+                      tiku_remote_say(&sink, fat) == 0,
                       "a message too big for the wire is refused, not sent");
-                check(tiku_desk_remote_say(&sink, thin) == 1,
+                check(tiku_remote_say(&sink, thin) == 1,
                       "while one that fits still goes");
-                tiku_desk_remote_disconnect(&sink);
-                tiku_desk_msg_free(fat);
-                tiku_desk_msg_free(thin);
+                tiku_remote_disconnect(&sink);
+                tiku_msg_free(fat);
+                tiku_msg_free(thin);
                 free(big);
             }
 
@@ -331,18 +331,18 @@ main(void)
              * queue whose emptying is never tested.
              */
             {
-                tiku_desk_msg_t *stray = tiku_desk_msg_new(0x4C454654u);
-                tiku_desk_event_t event;
+                tiku_msg_t *stray = tiku_msg_new(0x4C454654u);
+                tiku_event_t event;
                 uint32_t evid = 0;
                 int command = 0, arrived = 0;
 
-                (void)tiku_desk_msg_add_string(stray, "note", "nobody asks");
-                (void)tiku_desk_remote_say(&client, stray);
-                (void)tiku_desk_remote_tell(&listener, 0, stray);
-                tiku_desk_msg_free(stray);
+                (void)tiku_msg_add_string(stray, "note", "nobody asks");
+                (void)tiku_remote_say(&client, stray);
+                (void)tiku_remote_tell(&listener, 0, stray);
+                tiku_msg_free(stray);
 
                 for (spins = 0; spins < 200; spins++) {
-                    if (tiku_desk_remote_poll(&listener)) {
+                    if (tiku_remote_poll(&listener)) {
                         arrived = 1;
                         break;
                     }
@@ -350,9 +350,9 @@ main(void)
                 }
                 check(arrived, "one more is said, and left where it lands");
                 for (spins = 0; spins < 200; spins++) {
-                    if (tiku_desk_remote_read(&client, &evid, &event,
+                    if (tiku_remote_read(&client, &evid, &event,
                                               &command)
-                        == TIKU_DESK_RMSG_TELL) {
+                        == TIKU_RMSG_TELL) {
                         break;
                     }
                     usleep(10000);
@@ -361,8 +361,8 @@ main(void)
             }
         }
     }
-    tiku_desk_remote_disconnect(&client);
-    tiku_desk_remote_shutdown(&listener);
+    tiku_remote_disconnect(&client);
+    tiku_remote_shutdown(&listener);
     printf("\n%s\n", fails ? "FAILURES" : "the wire does not care what "
            "carries it");
     return fails ? 1 : 0;

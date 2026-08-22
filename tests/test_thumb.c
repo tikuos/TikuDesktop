@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "tiku_trk_thumb.h"
+#include "tiku_thumb.h"
 
 /* A real zlib-compressed PNG, 8x6, Sub-filtered: this project has no
  * compressor, so the fixture is checked in rather than generated. */
@@ -81,9 +81,9 @@ put_bmp(const char *path, int w, int h, unsigned char r, unsigned char g,
 int
 main(void)
 {
-    tiku_trk_thumb_q_t q;
-    tiku_trk_store_t *store = tiku_trk_store_memory_open();
-    tiku_trk_image_t im, th;
+    tiku_thumb_q_t q;
+    tiku_store_t *store = tiku_store_memory_open();
+    tiku_image_t im, th;
     char wide[128], tall[128], big[128], txt[128];
 
     printf("reading an image\n");
@@ -96,14 +96,14 @@ main(void)
     put_bmp(big, 300, 300, 0, 0, 255);
     { FILE *f = fopen(txt, "w"); if (f) { fputs("no", f); fclose(f); } }
 
-    check(tiku_trk_image_load(wide, &im) == TIKU_TRK_IMG_OK &&
+    check(tiku_image_load(wide, &im) == TIKU_IMG_OK &&
           im.w == 40 && im.h == 10, "IV-028",
           "a BMP reads back at its own size");
     check((im.px[0] >> 16 & 0xff) == 255 && (im.px[0] & 0xff) == 0,
           "IV-028", "and with its own colours, blue and red not swapped");
 
     printf("\nthe shape survives (IV-034)\n");
-    check(tiku_trk_image_thumb(&im, 128, &th) == 0 &&
+    check(tiku_image_thumb(&im, 128, &th) == 0 &&
           th.w == 128 && th.h == 128, "IV-030",
           "a thumbnail is a 128 square whatever went in");
     check((th.px[0] >> 24) == 0, "IV-034",
@@ -120,11 +120,11 @@ main(void)
               "a 4:1 image fills a quarter of the height -- the aspect "
               "ratio is kept rather than stretched");
     }
-    tiku_trk_image_free(&th);
-    tiku_trk_image_free(&im);
+    tiku_image_free(&th);
+    tiku_image_free(&im);
 
-    (void)tiku_trk_image_load(tall, &im);
-    (void)tiku_trk_image_thumb(&im, 128, &th);
+    (void)tiku_image_load(tall, &im);
+    (void)tiku_image_thumb(&im, 128, &th);
     {
         int cols = 0, x;
 
@@ -134,8 +134,8 @@ main(void)
         check(cols > 28 && cols < 36, "IV-034",
               "and a tall image is narrow, not squashed wide");
     }
-    tiku_trk_image_free(&th);
-    tiku_trk_image_free(&im);
+    tiku_image_free(&th);
+    tiku_image_free(&im);
 
 
 
@@ -150,7 +150,7 @@ main(void)
             (void)fwrite(jpeg_420, 1, sizeof jpeg_420, f);
             (void)fclose(f);
         }
-        check(tiku_trk_image_load(pth, &im) == TIKU_TRK_IMG_OK &&
+        check(tiku_image_load(pth, &im) == TIKU_IMG_OK &&
               im.w == 16 && im.h == 16, "IV-028",
               "a baseline JPEG decodes -- most pictures on a disk are one");
         if (im.px != NULL) {
@@ -189,7 +189,7 @@ main(void)
                 check(worst <= 10, "IV-028",
                       "and six sampled pixels match a reference decoder");
             }
-            tiku_trk_image_free(&im);
+            tiku_image_free(&im);
         }
         (void)remove(pth);
 
@@ -199,7 +199,7 @@ main(void)
             (void)fwrite(png_palette, 1, sizeof png_palette, f);
             (void)fclose(f);
         }
-        check(tiku_trk_image_load(pth, &im) == TIKU_TRK_IMG_OK &&
+        check(tiku_image_load(pth, &im) == TIKU_IMG_OK &&
               im.w == 8 && im.h == 4, "IV-028",
               "a 2-bit palette PNG decodes");
         if (im.px != NULL) {
@@ -208,7 +208,7 @@ main(void)
                   "a cut-out, not a square");
             check((im.px[1] >> 24) == 255, "IV-028",
                   "while an opaque entry stays opaque");
-            tiku_trk_image_free(&im);
+            tiku_image_free(&im);
         }
         (void)remove(pth);
     }
@@ -223,7 +223,7 @@ main(void)
             (void)fwrite(png_compressed, 1, sizeof png_compressed, f);
             (void)fclose(f);
         }
-        check(tiku_trk_image_load(pn, &im) == TIKU_TRK_IMG_OK &&
+        check(tiku_image_load(pn, &im) == TIKU_IMG_OK &&
               im.w == 8 && im.h == 6, "IV-028",
               "a zlib-compressed PNG decodes -- the deflate stream is "
               "inflated, not refused");
@@ -233,15 +233,15 @@ main(void)
             check(im.px[1] == 0xff1e000eu, "IV-028",
                   "and the Sub filter undone: the second pixel is the "
                   "first plus its own delta, not the raw byte");
-            tiku_trk_image_free(&im);
+            tiku_image_free(&im);
         }
         (void)remove(pn);
     }
     printf("\nwhat earns a thumbnail (IV-028, TS-053)\n");
-    tiku_trk_thumb_init(&q);
+    tiku_thumb_init(&q);
     check(q.enabled, "TS-053", "the setting is on by default");
-    check(tiku_trk_thumb_wanted(&q, wide), "IV-028", "an image earns one");
-    check(!tiku_trk_thumb_wanted(&q, txt), "IV-028",
+    check(tiku_thumb_wanted(&q, wide), "IV-028", "an image earns one");
+    check(!tiku_thumb_wanted(&q, txt), "IV-028",
           "a text file does not");
     {   /* Recognition is by CONTENT: the name is a hint its author may
          * not have meant. */
@@ -254,42 +254,42 @@ main(void)
             (void)fwrite(png_compressed, 1, sizeof png_compressed, lf);
             (void)fclose(lf);
         }
-        check(tiku_trk_thumb_wanted(&q, liar), "IV-028",
+        check(tiku_thumb_wanted(&q, liar), "IV-028",
               "a PNG called .txt is still a PNG");
         (void)remove(liar);
         snprintf(liar, sizeof liar, "/tmp/trk_thumb_liar.png");
         lf = fopen(liar, "w");
         if (lf != NULL) { fputs("not a picture", lf); (void)fclose(lf); }
-        check(!tiku_trk_thumb_wanted(&q, liar), "IV-028",
+        check(!tiku_thumb_wanted(&q, liar), "IV-028",
               "and a text file called .png is not one");
         (void)remove(liar);
     }
     q.enabled = 0;
-    check(!tiku_trk_thumb_wanted(&q, wide), "TS-053",
+    check(!tiku_thumb_wanted(&q, wide), "TS-053",
           "and with the setting off, nothing does");
     q.enabled = 1;
 
     printf("\nthe queues (IV-032, IV-033)\n");
-    check(tiku_trk_thumb_queue(&q, wide, 400, 128) == 1, "IV-031",
+    check(tiku_thumb_queue(&q, wide, 400, 128) == 1, "IV-031",
           "a small image queues");
-    check(tiku_trk_thumb_queue(&q, wide, 400, 128) == 0, "IV-033",
+    check(tiku_thumb_queue(&q, wide, 400, 128) == 0, "IV-033",
           "the same file never queues twice -- two windows on one folder "
           "would otherwise both ask");
     check(q.nsmall == 1 && q.nbig == 0, "IV-032",
           "and it went on the small queue");
-    check(tiku_trk_thumb_queue(&q, big, 200000, 128) == 1 && q.nbig == 1,
+    check(tiku_thumb_queue(&q, big, 200000, 128) == 1 && q.nbig == 1,
           "IV-032", "a file past 128 KB goes on the big one instead");
 
     printf("\nmaking them (IV-031, IV-036, IV-060)\n");
-    check(tiku_trk_thumb_step(&q, store) == 1 && q.made == 1, "IV-031",
+    check(tiku_thumb_step(&q, store) == 1 && q.made == 1, "IV-031",
           "a step does ONE job, so the window is never held");
     check(q.nsmall == 0 && q.nbig == 1, "IV-032",
           "and it took the small one first: a big file cannot stall the "
           "small ones behind it");
-    check(tiku_trk_thumb_load(store, wide, &th) == 0 && th.w == 128,
+    check(tiku_thumb_load(store, wide, &th) == 0 && th.w == 128,
           "IV-030", "the thumbnail is stored on the file and reads back");
-    tiku_trk_image_free(&th);
-    check(tiku_trk_thumb_step(&q, NULL) == 1, "IV-036",
+    tiku_image_free(&th);
+    check(tiku_thumb_step(&q, NULL) == 1, "IV-036",
           "a store that will not take it does not stop the job running");
 
     printf("\ntrusting a cached one (IV-029)\n");
@@ -297,18 +297,18 @@ main(void)
         struct stat st;
 
         (void)stat(wide, &st);
-        check(tiku_trk_thumb_fresh(store, wide, (int64_t)st.st_mtime),
+        check(tiku_thumb_fresh(store, wide, (int64_t)st.st_mtime),
               "IV-029", "a thumbnail newer than the file is trusted");
-        check(!tiku_trk_thumb_fresh(store, wide,
+        check(!tiku_thumb_fresh(store, wide,
                                     (int64_t)st.st_mtime + 1000),
               "IV-029", "one older than the file is not");
-        check(!tiku_trk_thumb_fresh(store, txt, 0), "IV-029",
+        check(!tiku_thumb_fresh(store, txt, 0), "IV-029",
               "and a file with none at all is not fresh");
     }
 
     (void)remove(wide); (void)remove(tall); (void)remove(big);
     (void)remove(txt);
-    tiku_trk_store_free(store);
+    tiku_store_free(store);
     printf("\n%s\n", fails ? "FAILURES" : "thumbnails hold");
     return fails ? 1 : 0;
 }

@@ -54,10 +54,10 @@ find(tiku_trk_nav_level_t *lv, const char *name)
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
     tiku_trk_nav_t nav;
     tiku_trk_nav_level_t *lv;
-    tiku_trk_model_t m;
+    tiku_model_t m;
     char root[] = "/tmp/trk_nav";
     char deep[600], deeper[700];
     int i;
@@ -81,10 +81,10 @@ main(void)
 
     printf("who gets a navigation menu (CW-045)\n");
     memset(&m, 0, sizeof m);
-    m.kind = TIKU_TRK_KIND_DIRECTORY;
-    m.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+    m.kind = TIKU_KIND_DIRECTORY;
+    m.facts.perm = TIKU_P_READ | TIKU_P_WRITE;
     check(tiku_trk_nav_wanted(&m), "CW-045", "a folder does");
-    m.kind = TIKU_TRK_KIND_FILE;
+    m.kind = TIKU_KIND_FILE;
     check(!tiku_trk_nav_wanted(&m), "CW-045",
           "a file does not -- an empty submenu on every row is worse than "
           "none at all");
@@ -277,7 +277,7 @@ main(void)
     }
 
     (void)system("rm -rf /tmp/trk_nav /tmp/trk_nav_big");
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     printf("\n%s\n", fails ? "FAILURES" : "the navigation menu holds");
     return fails ? 1 : 0;
 }

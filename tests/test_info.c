@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_info.h"
-#include "tiku_trk_thumb.h"
+#include "tiku_thumb.h"
 
 static int fails;
 
@@ -31,16 +31,16 @@ static char work[256];
 /* A backend that can look but not touch, so the window's "can these be
  * changed" question has a second answer to give.  A real one is a device
  * whose capability bits are its own to declare. */
-static tiku_trk_backend_t *lookalike;
+static tiku_backend_t *lookalike;
 
 static int
-ro_stat(tiku_trk_backend_t *b, const char *path, tiku_trk_model_t *out)
+ro_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
     (void)b;
     return lookalike->ops->stat(lookalike, path, out);
 }
 
-static const tiku_trk_backend_ops_t RO_OPS = {
+static const tiku_backend_ops_t RO_OPS = {
     "readonly", ro_stat, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
     NULL
 };
@@ -59,7 +59,7 @@ sh(const char *fmt, ...)
 
 /** @brief The value of the first field of kind @p want, or "". */
 static const char *
-field_of(tiku_trk_info_t *in, tiku_trk_store_t *st, tiku_trk_info_field_t want,
+field_of(tiku_trk_info_t *in, tiku_store_t *st, tiku_trk_info_field_t want,
          const char **label)
 {
     static char value[TIKU_TRK_INFO_VAL_MAX];
@@ -78,10 +78,10 @@ field_of(tiku_trk_info_t *in, tiku_trk_store_t *st, tiku_trk_info_field_t want,
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
-    tiku_trk_store_t *st = tiku_trk_store_memory_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
+    tiku_store_t *st = tiku_store_memory_open();
     tiku_trk_info_t in;
-    char path[512], err[160], buf[TIKU_TRK_PATH_MAX], sel[TIKU_TRK_NAME_MAX];
+    char path[512], err[160], buf[TIKU_PATH_MAX], sel[TIKU_NAME_MAX];
     const char *label = NULL;
 
     lookalike = b;
@@ -121,7 +121,7 @@ main(void)
           "-- the same formatter, so the two cannot word one fact "
           "differently");
     check(strcmp(field_of(&in, st, TIKU_TRK_INFO_F_KIND, &label),
-                 tiku_trk_model_kind_string(&in.model)) == 0, "AW-067",
+                 tiku_model_kind_string(&in.model)) == 0, "AW-067",
           "Kind is the same string the Kind column shows");
     check(strcmp(field_of(&in, st, TIKU_TRK_INFO_F_LOCATION, &label),
                  work) == 0, "AW-067", "Location is the folder it is in");
@@ -142,7 +142,7 @@ main(void)
     {
         uint32_t dim[2] = { 640u, 480u };
 
-        (void)tiku_trk_state_write(st, path, TIKU_TRK_ATTR_THUMB_DIM, dim,
+        (void)tiku_state_write(st, path, TIKU_ATTR_THUMB_DIM, dim,
                                    sizeof dim);
         check(strcmp(field_of(&in, st, TIKU_TRK_INFO_F_DIMENSIONS, &label),
                      "640 x 480") == 0 &&
@@ -318,7 +318,7 @@ main(void)
     (void)tiku_trk_info_perm_toggle(&in, b, TIKU_TRK_INFO_PERM_WRITE, err,
                                     sizeof err);
     {   /* A backend that cannot set them says so up front. */
-        tiku_trk_backend_t nope;
+        tiku_backend_t nope;
         tiku_trk_info_t ro;
 
         memset(&nope, 0, sizeof nope);
@@ -352,14 +352,14 @@ main(void)
     }
 
     printf("\nthe Attributes tab (AW-079)\n");
-    (void)tiku_trk_state_write(st, path, "_trk/note", "hello", 5);
+    (void)tiku_state_write(st, path, "_trk/note", "hello", 5);
     {
         uint32_t n = 42u;
         unsigned char blob[64];
 
-        (void)tiku_trk_state_write(st, path, "_trk/count", &n, sizeof n);
+        (void)tiku_state_write(st, path, "_trk/count", &n, sizeof n);
         memset(blob, 0xab, sizeof blob);
-        (void)tiku_trk_state_write(st, path, "_trk/blob", blob, sizeof blob);
+        (void)tiku_state_write(st, path, "_trk/blob", blob, sizeof blob);
     }
     check(tiku_trk_info_attrs(&in, st) == 4, "AW-079",
           "every attribute the entry carries is listed -- the three just "
@@ -438,11 +438,11 @@ main(void)
          * follow.  So the carry-across code below is right but cannot be
          * falsified here -- what this proves is that the state is intact
          * afterwards, not that the code is what kept it. */
-        (void)tiku_trk_state_write(st, link, "_trk/note", "kept", 4);
+        (void)tiku_state_write(st, link, "_trk/note", "kept", 4);
         {
             uint32_t n = 7u;
 
-            (void)tiku_trk_state_write(st, link, "_trk/count", &n,
+            (void)tiku_state_write(st, link, "_trk/count", &n,
                                        sizeof n);
         }
         check(tiku_trk_info_relink(&li, b, st, target, err,
@@ -483,8 +483,8 @@ main(void)
         }
     }
 
-    tiku_trk_store_free(st);
-    tiku_trk_backend_close(b);
+    tiku_store_free(st);
+    tiku_backend_close(b);
     sh("rm -rf %s", work);
     printf("\n%s\n", fails ? "FAILURES" : "the info window tells the truth");
     return fails ? 1 : 0;

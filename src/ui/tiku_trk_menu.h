@@ -19,8 +19,8 @@
 #ifndef TIKU_TRK_MENU_H_
 #define TIKU_TRK_MENU_H_
 
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_font.h"
+#include "tiku_gfx.h"
+#include "tiku_font.h"
 
 #define TIKU_TRK_MENU_ITEMS_MAX  40
 #define TIKU_TRK_MENU_LABEL_MAX  48
@@ -103,7 +103,7 @@ void tiku_trk_menu_set_icon(tiku_trk_menu_t *m, int command, const char *icon);
  *
  * @return Nonzero when the art was painted.
  */
-typedef int (*tiku_trk_menu_icon_fn)(tiku_desk_surface_t *s,
+typedef int (*tiku_trk_menu_icon_fn)(tiku_surface_t *s,
     const char *icon, int x, int y, int size, int dimmed);
 void tiku_trk_menu_set_icon_painter(tiku_trk_menu_icon_fn fn);
 
@@ -126,7 +126,7 @@ int tiku_trk_menu_item_top(const tiku_trk_menu_t *m, int i);
  * Separators and the one-pixel seams between items are misses, exactly as
  * they are in the original.
  */
-int tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
+int tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_rect_t frame,
                           int x, int y);
 
 /**
@@ -138,23 +138,23 @@ int tiku_trk_menu_item_at(const tiku_trk_menu_t *m, tiku_desk_rect_t frame,
  *
  * @return Nonzero when the hot row CHANGED, so the caller knows to paint.
  */
-int tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_desk_rect_t frame,
+int tiku_trk_menu_track(tiku_trk_menu_t *m, tiku_rect_t frame,
                         int x, int y);
 
 /** @brief Where the menu should sit so it stays on @p screen. */
-tiku_desk_rect_t tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y,
-                                     tiku_desk_rect_t screen);
+tiku_rect_t tiku_trk_menu_place(tiku_trk_menu_t *m, int x, int y,
+                                     tiku_rect_t screen);
 
 /**
  * @brief Where a submenu of item @p i sits: off the item's right edge, or
  *        flipped to the left when it would leave @p screen.
  */
-tiku_desk_rect_t tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i,
-                                         tiku_desk_rect_t frame,
-                                         tiku_desk_rect_t screen);
+tiku_rect_t tiku_trk_menu_place_sub(tiku_trk_menu_t *m, int i,
+                                         tiku_rect_t frame,
+                                         tiku_rect_t screen);
 
-void tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_desk_surface_t *s,
-                        tiku_desk_rect_t frame);
+void tiku_trk_menu_draw(tiku_trk_menu_t *m, tiku_surface_t *s,
+                        tiku_rect_t frame);
 
 /*---------------------------------------------------------------------------*/
 /* The menu bar                                                              */
@@ -181,14 +181,14 @@ void tiku_trk_menubar_remove(tiku_trk_menubar_t *b, tiku_trk_menu_t *m);
 
 /** @brief Title index at a point on the bar, or -1. */
 int tiku_trk_menubar_title_at(const tiku_trk_menubar_t *b,
-                              tiku_desk_rect_t frame, int x, int y);
+                              tiku_rect_t frame, int x, int y);
 
 /** @brief Where the open menu's panel sits, under its title. */
-tiku_desk_rect_t tiku_trk_menubar_panel(tiku_trk_menubar_t *b,
-                                        tiku_desk_rect_t frame,
-                                        tiku_desk_rect_t screen);
+tiku_rect_t tiku_trk_menubar_panel(tiku_trk_menubar_t *b,
+                                        tiku_rect_t frame,
+                                        tiku_rect_t screen);
 
-void tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_desk_surface_t *s,
-                           tiku_desk_rect_t frame);
+void tiku_trk_menubar_draw(tiku_trk_menubar_t *b, tiku_surface_t *s,
+                           tiku_rect_t frame);
 
 #endif /* TIKU_TRK_MENU_H_ */

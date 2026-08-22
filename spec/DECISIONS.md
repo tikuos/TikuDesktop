@@ -18,13 +18,13 @@ where it contradicts an individual decision.
 
 **Problem.** Four spellings of one key. D1: `devid` = "uid-<32 hex>" or "prov-<16 hex>", produced by a scored match (uid=8/id=4/mcu=2/name=1, accept >=7, uid mismatch = absolute veto). D4: `tk_volume_t.identity[64]` holds the RAW `/sys/device/uid`, and state keys are "<uid>:<path>". D6: `tiku_trk_ref_t.store[40]` and `tiku_trk_scope_t.dev_uid[40]` hold the raw uid, with a DIFFERENT fallback algorithm (name+mcu+version, no id, no veto). D2: preferred-handler map keyed on an undefined `device_id`. Buffers disagree (64 vs 40) and the two matching algorithms can bind the same board to different records — the sidecar says device A, the saved query scope says device B.
 
-**Verdict.** D1 WINS on both the algorithm and the string form; it is the only one that handled the ambiguous case (provisional flag + veto). One function `tiku_trk_ident_key()` emits one canonical devid; `tk_volume_t.identity`, `tiku_trk_ref_t.store`, `tiku_trk_scope_t.dev_uid` and D2's `device_id` all hold THAT string. Single width `TIKU_TRK_DEVID_MAX 40` ('uid-' + 32 hex + NUL = 37). D6's name+mcu+version scoring is DELETED. D4's synthetic `tk_dev_t` survives but is runtime-only and must never be persisted or matched against — enforce it, D4 already flagged the stale-clipboard-ref failure in its own risks.
+**Verdict.** D1 WINS on both the algorithm and the string form; it is the only one that handled the ambiguous case (provisional flag + veto). One function `tiku_ident_key()` emits one canonical devid; `tk_volume_t.identity`, `tiku_trk_ref_t.store`, `tiku_trk_scope_t.dev_uid` and D2's `device_id` all hold THAT string. Single width `TIKU_DEVID_MAX 40` ('uid-' + 32 hex + NUL = 37). D6's name+mcu+version scoring is DELETED. D4's synthetic `tk_dev_t` survives but is runtime-only and must never be persisted or matched against — enforce it, D4 already flagged the stale-clipboard-ref failure in its own risks.
 
 ### C3. D1 (state) vs D4 (volumes) — who owns device window/pose state
 
 **Problem.** Both decisions implement device UI-state storage, differently. D1: per-device sidecar file keyed by devid, with three reserved node keys (TRK_KEY_DEV_ROOT, TRK_KEY_DESKTOP, ordinary paths), and the Desktop slot deliberately held OUTSIDE any device sidecar so wiping device B cannot disturb where device A's icon sits. D4: `tk_state_key()` producing a flat "<uid>:<path>" in a shared store on the local Desktop directory, with no reserved keys and no per-device partition. D4's scheme cannot express D1's structural guarantee — the arrangement of ALL device icons ends up in one keyspace, and 'forget this device' becomes a prefix grep over shared state.
 
-**Verdict.** D1 WINS entirely. `tk_state_key()` is deleted. D4 calls `tiku_trk_state_read/write(store, node_key, name, ...)` against `trk_store_sidecar_open(devid)` using D1's three-slot key scheme. D4 retains only its (correct, and agreeing) observation that a device volume is permanently in the AW-005 condition. This is pure duplicated implementation and must collapse to one before either is coded — two stores writing overlapping state is the worst possible outcome.
+**Verdict.** D1 WINS entirely. `tk_state_key()` is deleted. D4 calls `tiku_state_read/write(store, node_key, name, ...)` against `trk_store_sidecar_open(devid)` using D1's three-slot key scheme. D4 retains only its (correct, and agreeing) observation that a device volume is permanently in the AW-005 condition. This is pure duplicated implementation and must collapse to one before either is coded — two stores writing overlapping state is the worst possible outcome.
 
 ### C4. D2 (type) vs D4 (volumes) — what the device root IS
 
@@ -46,9 +46,9 @@ where it contradicts an individual decision.
 
 ### C7. D2 (type) vs D5 (capabilities) — the firmware manifest format, edited twice with two version stories
 
-**Problem.** Both decisions rewrite `manifest_line()` in kernel/vfs/tiku_vfs.c. D2 appends named tokens (`,scale=N`, `,f=hex`, `,f=secret`) to the meta field, widens `meta[48]->[72]`, and argues NO rev bump is needed because named tokens are forward-compatible. D5 changes the cap column from single-token to comma-joined multi-token via `tiku_vfs_cap_str()`, fixes the header row, and bumps TIKU_VFS_MANIFEST_REV 2->3. D5's change is positionally identical and SILENTLY REINTERPRETED by an old parser, so D2's no-bump argument does not cover it. Concrete bug neither noticed: multi-token caps overflow the existing, proven host buffer `tiku_desk_node_t.cap[8]` — "hw,sys,fs,net" is 13 chars. D2's meta widening is genuinely required, not cosmetic: "i32,celsius,live,periph,-40..125" is already 32 of 48, and ",scale=-3,f=secret" pushes it to 50.
+**Problem.** Both decisions rewrite `manifest_line()` in kernel/vfs/tiku_vfs.c. D2 appends named tokens (`,scale=N`, `,f=hex`, `,f=secret`) to the meta field, widens `meta[48]->[72]`, and argues NO rev bump is needed because named tokens are forward-compatible. D5 changes the cap column from single-token to comma-joined multi-token via `tiku_vfs_cap_str()`, fixes the header row, and bumps TIKU_VFS_MANIFEST_REV 2->3. D5's change is positionally identical and SILENTLY REINTERPRETED by an old parser, so D2's no-bump argument does not cover it. Concrete bug neither noticed: multi-token caps overflow the existing, proven host buffer `tiku_node_t.cap[8]` — "hw,sys,fs,net" is 13 chars. D2's meta widening is genuinely required, not cosmetic: "i32,celsius,live,periph,-40..125" is already 32 of 48, and ",scale=-3,f=secret" pushes it to 50.
 
-**Verdict.** ONE manifest change, ONE rev bump to 3, covering both, in a single commit. Host side must widen BOTH: `TIKU_DESK_META_MAX 56->72` (D2 caught it) AND `cap[8]->cap[24]` (nobody caught it). Keep D5's header-row fix — the header names four columns while every line carries five, which is a real defect. D2's named-token argument still buys forward compatibility for FUTURE meta additions and should be kept as a rule; it just does not exempt this change.
+**Verdict.** ONE manifest change, ONE rev bump to 3, covering both, in a single commit. Host side must widen BOTH: `TIKU_NS_META_MAX 56->72` (D2 caught it) AND `cap[8]->cap[24]` (nobody caught it). Keep D5's header-row fix — the header names four columns while every line carries five, which is a real defect. D2's named-token argument still buys forward compatibility for FUTURE meta additions and should be kept as a rule; it just does not exempt this change.
 
 ### C8. D2 (type) vs D4 (volumes) — how a dynamic store is recognised
 
@@ -70,7 +70,7 @@ where it contradicts an individual decision.
 
 ### C11. D4 (volumes) vs D3 (watch) vs D1 (state) — who declares a device unmounted, and when
 
-**Problem.** Three timeouts for one event. D4: debounce through TK_VOLST_STALLED, up to 3 reconnects x 3 s ~ 9 s worst case, then post TK_VOL_UNMOUNTED. D3's PVN-043 differ: detection is 'bounded by the pump timeout (default 6 s)'. D1: flush on link loss or a failed `tiku_desk_session_reconnect()`. Under D3 the monitor posts DEVICE_UNMOUNTED at 6 s while D4's roster is still on reconnect attempt 2 — the window closes and the poses are dropped mid-recovery, which is exactly the destructive outcome D4's debounce exists to prevent.
+**Problem.** Three timeouts for one event. D4: debounce through TK_VOLST_STALLED, up to 3 reconnects x 3 s ~ 9 s worst case, then post TK_VOL_UNMOUNTED. D3's PVN-043 differ: detection is 'bounded by the pump timeout (default 6 s)'. D1: flush on link loss or a failed `tiku_session_reconnect()`. Under D3 the monitor posts DEVICE_UNMOUNTED at 6 s while D4's roster is still on reconnect attempt 2 — the window closes and the poses are dropped mid-recovery, which is exactly the destructive outcome D4's debounce exists to prevent.
 
 **Verdict.** D4 OWNS THE LIFECYCLE; D3 consumes it. The roster is the only component that decides mounted/unmounted — D4 is also right to overrule PVN-008's suggested mapping, because a device cannot report its own unplug and mount is a HOST fact. D3's monitor never synthesizes DEVICE_MOUNTED/UNMOUNTED; it reports link failure UP to the roster and receives the verdict back. D1's flush hooks the roster's TK_VOL_UNMOUNTED, after the debounce — which works only because D1 chose host-side storage; had state lived on the device the flush would be impossible by then.
 
@@ -88,17 +88,17 @@ where it contradicts an individual decision.
 
 ### C14. D5 (capabilities) vs D2 (type) — duplicate copies of the same manifest columns on the Model
 
-**Problem.** D2 adds `tiku_trk_facts_t fFacts` to the Model, which already carries `readable`/`writable` bits and `req_cap`. D5 independently adds `unsigned perm`, `uint8_t req_cap`, `uint8_t cap_known` to the same struct. Two copies of the same three manifest columns, refreshed on DIFFERENT triggers (D2 on manifest reload, D5's cached verdicts on cap_gen). They will drift, and the failure is silent: a menu item enabled off a stale `req_cap` while the icon and Kind reflect the fresh one.
+**Problem.** D2 adds `tiku_facts_t fFacts` to the Model, which already carries `readable`/`writable` bits and `req_cap`. D5 independently adds `unsigned perm`, `uint8_t req_cap`, `uint8_t cap_known` to the same struct. Two copies of the same three manifest columns, refreshed on DIFFERENT triggers (D2 on manifest reload, D5's cached verdicts on cap_gen). They will drift, and the failure is silent: a menu item enabled off a stale `req_cap` while the icon and Kind reflect the fresh one.
 
 **Verdict.** `fFacts` is the SINGLE copy. D5's `perm`/`req_cap` are deleted and `tiku_trk_permit_of()` reads `m->fFacts`. `cap_known` moves INTO `fFacts` (it is a manifest-provenance fact, not a permission fact). D5's `permit_gen` + `cached[TK_ACT_COUNT]` stay — that is a genuine memo of a derived verdict, not a second copy of an input. Likewise D2's `fBackend` byte is deleted in favour of D5's `backend` vtable pointer, which is the thing that actually dispatches; D2's `strncmp(type,"tiku-",5)` type-registry seam is untouched because it keys on the type string, not the model.
 
 ## Gaps owned by no decision (must be assigned before coding them)
 
-- NOBODY OWNS THE MANIFEST RELOAD, and it is a use-after-free. D2 depends on 'manifest reload' for re-classification, D5 for req_cap, D3 for listing generations, D6's mirror IS the index, D4 loads it at mount. But `tiku_desk_ns_load()` documents that it replaces any previous structure — every `tiku_desk_node_t*` held by a model, pose or facts struct is invalidated. Nobody names the trigger, the protocol, or what happens to open windows mid-reload. Required rule: models hold interned ids or owned path strings, NEVER `tiku_desk_node_t*`; D2's `tiku_trk_facts_t.path` is a `const char *` and must be owned or interned. Needs an explicit reload protocol with a generation counter before any of the five consumers is written.
+- NOBODY OWNS THE MANIFEST RELOAD, and it is a use-after-free. D2 depends on 'manifest reload' for re-classification, D5 for req_cap, D3 for listing generations, D6's mirror IS the index, D4 loads it at mount. But `tiku_ns_load()` documents that it replaces any previous structure — every `tiku_node_t*` held by a model, pose or facts struct is invalidated. Nobody names the trigger, the protocol, or what happens to open windows mid-reload. Required rule: models hold interned ids or owned path strings, NEVER `tiku_node_t*`; D2's `tiku_facts_t.path` is a `const char *` and must be owned or interned. Needs an explicit reload protocol with a generation counter before any of the five consumers is written.
 
 - NOBODY OWNS THE TRUNCATED MANIFEST, and D6 is the one that breaks. D2 lists it as its top-severity risk ('this cluster depends on it more than any other'), D5 builds TK_DENY_UNKNOWN around it, D6 has an `index_partial` flag, D4 defers the firmware fix as 'optional (a)', D3 ignores it entirely. Since D6's index IS the manifest, a truncated manifest yields an INCOMPLETE query result presented as complete — the one place TikuOS was supposed to beat BFS. `index_partial` is the only honest instrument and it is not wired to any refusal. Either the paged-manifest firmware fix becomes a prerequisite for D6, or a partial index must refuse to answer a query rather than answer it wrongly.
 
-- NOBODY OWNS CONCURRENCY OVER THE NON-REENTRANT SESSION. `tiku_desk_session` explicitly forbids re-entry from its notify callback. D4 introduces one worker thread per device and one request token protocol; but D3's monitor pump, D5's `refresh_caps()`, D6's `qdev_run()`, D1's `state_flush()` and D2's classifier reads ALL issue device I/O. Five callers, one non-reentrant session, one worker, no defined queue, no priority classes. D4 names it in risks ('a slow df or a large recv will stall an unrelated window') and does not resolve it. This must be a real component, not a convention.
+- NOBODY OWNS CONCURRENCY OVER THE NON-REENTRANT SESSION. `tiku_session` explicitly forbids re-entry from its notify callback. D4 introduces one worker thread per device and one request token protocol; but D3's monitor pump, D5's `refresh_caps()`, D6's `qdev_run()`, D1's `state_flush()` and D2's classifier reads ALL issue device I/O. Five callers, one non-reentrant session, one worker, no defined queue, no priority classes. D4 names it in risks ('a slow df or a large recv will stall an unrelated window') and does not resolve it. This must be a real component, not a convention.
 
 - NOBODY OWNS THE VALUE RENDERER, and four decisions consume it. D2 owns `display_as` and `scale` (a FIXED value rendered without its exponent is a wrong number on screen). D3's differ HASHES 'the rendered value text' and its own risk notes that a truncated read must be treated as always-changed rather than hashed. D5's editor commits a string. D6's predicate evaluates `value` terms as typed. One shared function must render, report truncation, and expose both the typed and the rendered form — and it must exist before D3's differ, which is the earliest consumer.
 
@@ -128,11 +128,11 @@ called done.
 
 - The device root's icon, Kind string and window-state slot (CW-004, PVL-103, MA-064, CW-069) — WRONG because D2's unscoped path table types it as tiku-dir/root and leaves tiku-dir/device dead. Revisit conflict 4.
 
-- Every device pose in every open window (PVN-001, PVN-049, PVL-088, PVL-090) — USE-AFTER-FREE on manifest reload if any model, pose or facts struct holds a tiku_desk_node_t*, which tiku_desk_ns_load() invalidates wholesale. Revisit gap 1.
+- Every device pose in every open window (PVN-001, PVN-049, PVL-088, PVL-090) — USE-AFTER-FREE on manifest reload if any model, pose or facts struct holds a tiku_node_t*, which tiku_ns_load() invalidates wholesale. Revisit gap 1.
 
 - Query completeness and the 'TikuOS is better than BFS here' claim (Q-017, Q-021, Q-038) — a truncated manifest yields an incomplete result set PRESENTED AS COMPLETE; index_partial is set and wired to nothing. Revisit gap 2.
 
-- Existing, proven, hardware-validated host code — tiku_desk_node_t.cap[8] overflows on the first multi-token capability string ('hw,sys,fs,net' = 13 chars). Revisit conflict 7.
+- Existing, proven, hardware-validated host code — tiku_node_t.cap[8] overflows on the first multi-token capability string ('hw,sys,fs,net' = 13 chars). Revisit conflict 7.
 
 - 'Double-click never actuates hardware on a guess' — D2's TOGGLE fires on nodes carrying D5's TK_DENY_UNKNOWN verdict, i.e. exactly the nodes whose capability metadata was lost to manifest truncation. Revisit conflict 9.
 
@@ -146,9 +146,9 @@ called done.
 
 2. 1. ONE firmware commit, manifest rev 2->3, everything the host will parse: header row names all five columns; `'D'` type char for dynamic dirs (`n->dyn ? 'D' : 'd'`, one line — unblocks D2's store/file types and kills D4's /data whitelist); `meta[48]->[72]` plus D2's named `scale=` / `f=hex|secret` tokens; D5's multi-token cap column via `tiku_vfs_cap_str()`; `/sys/vfs/{epoch,nsgen,cap,cap_gen}` with TIKU_VFS_TREE_VFS_NCHILD 5->9 in ONE edit (the `_Static_assert` breaks if D3's and D5's nodes land separately); the 1-line `tiku_vfs_watch()` DIR fix (tiku_vfs.c:842 — the kernel already notifies parents at :221/:237 and nobody can subscribe); `vfs_cap_gen` bump + notify inside `tiku_vfs_caller_cap_set()`. Splitting this forks the version story and breaks the build.
 
-3. 2. Host mirror catch-up in applications/desktop/src/tiku_desk_ns.{h,c}: `TIKU_DESK_META_MAX 56->72` AND `cap[8]->cap[24]` (the second is an overflow in proven code that no decision caught), parse `'D'`, parse multi-token caps, parse named meta tokens. Define and document the manifest-reload protocol here (gap 1) — generation counter, and the rule that no consumer may hold a `tiku_desk_node_t*` across a reload.
+3. 2. Host mirror catch-up in applications/desktop/src/tiku_ns.{h,c}: `TIKU_NS_META_MAX 56->72` AND `cap[8]->cap[24]` (the second is an overflow in proven code that no decision caught), parse `'D'`, parse multi-token caps, parse named meta tokens. Define and document the manifest-reload protocol here (gap 1) — generation counter, and the rule that no consumer may hold a `tiku_node_t*` across a reload.
 
-4. 3. `tiku_trk_ident` — the single devid function (conflict 2). Everything that persists anything keys on its output, so it precedes every store.
+4. 3. `tiku_ident` — the single devid function (conflict 2). Everything that persists anything keys on its output, so it precedes every store.
 
 5. 4. `tiku_trk_state_store` — D1's AttributeStreamNode seam plus the three-slot key scheme, xattr / sidecar / memory implementations, and the no-removal-from-pose-teardown INVARIANT (conflict 10). D2's preferred-handler map, D4's window state and D6's query index all persist through it, so it cannot come later.
 
@@ -186,11 +186,11 @@ Five parts.
 
 **(3) Sidecar location and lifetime.** `$XDG_DATA_HOME/tracker/devices/<devid>.state`, ONE file per device, plus a shared `devices/index`. Wiping, reflashing, losing or discarding a device touches exactly one file. Crucially, **the desktop arrangement of device icons is NOT in any device's sidecar** — it lives in the host Desktop's own store under `"\x01desk"`, so a wiped device cannot disturb where the user put every other device. And because `/sys/device/uid` is a die identifier that a wipe cannot change, even the wiped device's own arrangement survives its own wipe; we exceed the requirement rather than merely meeting it.
 
-**(4) Device identity is a scored match, copied from `MatchArchivedVolume` (`Q-027`).** Probe `/sys/device/uid`, `/sys/device/id`, `/sys/device/mcu`, `/sys/device/name` — four existing `cat`s through `tiku_desk_ns_read()`. Weights uid=8, id=4, mcu=2, name=1, accept best >= 7 (so uid alone binds; without a uid, id+mcu+name = 7 binds). **A uid mismatch is an absolute veto**, whatever else scores — that is the one thing the die ID buys, and without it a renamed board would steal another board's arrangement. Parts with no unique ID get a `prov-` devid derived from FNV1a64(id|mcu|name) and the header's `provisional` flag set; the UI must label that binding, because two identical boards with the same name genuinely are ambiguous and we say so rather than guessing silently.
+**(4) Device identity is a scored match, copied from `MatchArchivedVolume` (`Q-027`).** Probe `/sys/device/uid`, `/sys/device/id`, `/sys/device/mcu`, `/sys/device/name` — four existing `cat`s through `tiku_ns_read()`. Weights uid=8, id=4, mcu=2, name=1, accept best >= 7 (so uid alone binds; without a uid, id+mcu+name = 7 binds). **A uid mismatch is an absolute veto**, whatever else scores — that is the one thing the die ID buys, and without it a renamed board would steal another board's arrangement. Parts with no unique ID get a `prov-` devid derived from FNV1a64(id|mcu|name) and the header's `provisional` flag set; the UI must label that binding, because two identical boards with the same name genuinely are ambiguous and we say so rather than guessing silently.
 
 **(5) Two hosts: each keeps its own arrangement; neither can corrupt the other's.** This is not a concession, it is what the source already does. Tracker relocates state to the *viewer's* storage whenever the object cannot hold it — root and Trash pose info go to the Desktop directory (`PVL-029`, `CW-004`), and `AW-005` has Tracker embed window state centrally for any volume without writable attributes. A device namespace is permanently in the `AW-005` condition, so Tracker's own fallback becomes the default instead of the exception. Sharing is therefore explicit, never implicit: `trk_dev_state_export/import`, and — only when the manifest shows a writable dynamic `/data` — a user-invoked "Publish arrangement to device" / "Adopt arrangement from device" that moves the same sidecar bytes, capped at 4096 and refused above it. Never automatic, never on window close, never a write per drag: `/data` is optional (compiled only with the file store), its capacity is carved and shared with user data, and on Ambiq `.persistent` is SRAM mirrored to MRAM where a chatty writer causes flush amplification.
 
-**Writing discipline.** Keep Tracker's dirty gate verbatim (`PVL-084`, `MA-071`, `TS-036`): `fStateNeedsSaving` OR a field-by-field `BViewState` diff against the shadow copy. The sidecar is only touched at `ClearPoses`/`SwitchDir`/window-close/link-loss, batched into one compaction per flush. Link loss and failed `tiku_desk_session_reconnect()` are the device analogue of unmount (`AW-096`): flush before tearing views down.
+**Writing discipline.** Keep Tracker's dirty gate verbatim (`PVL-084`, `MA-071`, `TS-036`): `fStateNeedsSaving` OR a field-by-field `BViewState` diff against the shadow copy. The sidecar is only touched at `ClearPoses`/`SwitchDir`/window-close/link-loss, batched into one compaction per flush. Link loss and failed `tiku_session_reconnect()` are the device analogue of unmount (`AW-096`): flush before tearing views down.
 
 **Wipe detection with no firmware.** On rebind, read `/sys/persist/primed` and `/sys/boot/cold_boots`; a nonzero `primed` on an established binding means cells were re-primed (layout change or NVM corruption), so the host re-validates paths against the fresh manifest and warns instead of silently applying stale positions. Records for paths that vanished are RETAINED and inert, so reflashing back restores the arrangement.
 
@@ -219,7 +219,7 @@ One firmware addition was considered and rejected as redundant: a `/sys/device/e
 | Volume identity for reopening state after a remount (EmbedUniqueVolumeInfo / MatchArchivedVolume, 5/4/3/2/1 scored, accept >= 9) | unchanged — creationDate/capacity/deviceName/volumeName/fshName | trk_dev_ident_t scored uid=8 id=4 mcu=2 name=1, accept >= 7, with a uid mismatch as an absolute veto; probes are four cats on existing /sys/device/* nodes |
 | Volumes without writable attributes: state embedded centrally, SetSaveStateEnabled(false) | unchanged — the rare case (read-only mounts, FAT) | the normal case, promoted from exception to default: the sidecar IS the central store |
 | SavePoseLocations skipped on read-only / no-attr volumes; layout stays in memory, no error | unchanged | trk_store_memory_open() when the sidecar directory is unwritable (portable mode, read-only home); TRK_STORE_PERSISTENT clear, layout live for the session, dropped silently on close |
-| Unmount saves every window's pose locations before the volume vanishes (SaveAllPoseLocations) | unchanged | link loss or a failed tiku_desk_session_reconnect() triggers trk_state_flush() on that device's sidecar before views are torn down |
+| Unmount saves every window's pose locations before the volume vanishes (SaveAllPoseLocations) | unchanged | link loss or a failed tiku_session_reconnect() triggers trk_state_flush() on that device's sidecar before views are torn down |
 | StateNeedsSaving dirty gate: fStateNeedsSaving OR a field-by-field BViewState diff against a shadow copy | unchanged | unchanged and mandatory — the sidecar is appended only at ClearPoses/SwitchDir/close/disconnect, batched into one compaction per flush |
 | Wipe / re-enumeration detection (there is no Tracker equivalent) | n/a | on rebind, read /sys/persist/primed and /sys/boot/cold_boots; nonzero primed on an established binding means cells were re-primed, so paths are re-validated against a fresh manifest and the user warned |
 
@@ -273,7 +273,7 @@ One firmware addition was considered and rejected as redundant: a `/sys/device/e
 <details><summary>Proposed C</summary>
 
 ```c
-/* ---- tiku_trk_state.h : the AttributeStreamNode seam, in C -------------- */
+/* ---- tiku_state.h : the AttributeStreamNode seam, in C -------------- */
 
 typedef struct trk_state_store trk_state_store_t;
 
@@ -364,7 +364,7 @@ typedef struct {
 #define TRK_IDENT_ACCEPT  7
 #define TRK_IDENT_VETO   (-1)   /* both uids present and different         */
 
-int  trk_dev_ident_probe(tiku_desk_ns_t *ns, trk_dev_ident_t *out);
+int  trk_dev_ident_probe(tiku_ns_t *ns, trk_dev_ident_t *out);
 int  trk_dev_ident_score(const trk_dev_ident_t *probed,
                          const trk_sidecar_hdr_t *stored);
 /* devid: "uid-<32 hex>" when uid is present, else "prov-<16 hex>". */
@@ -457,7 +457,7 @@ Reserved-prefix disjointness rather than a domain tag byte: a tag byte forces `i
 
 Six supertypes rather than one (`tiku/*`) because IV-002's TIKU note explicitly demands the supertype rung survive, and a single bucket makes it a synonym for the generic rung. Splitting on the axis the descriptor already encodes — writable vs live-read vs cheap-read — is free: it needs no new firmware field, and it produces the three groupings a user actually wants to select ("all sensors", "all controls") in the Find panel and the Attributes menu.
 
-Deriving the class from (writable, fresh, ecost, unit, dynops, path) rather than adding a `class=` field to the manifest respects rule 4: everything needed is already in the five manifest columns that `tiku_desk_ns` already parses and three boards already answer. The only firmware I ask for is `scale` and `flags`, and I ask for those because DF_SECRET is a safety property (a page that renders a secret node's value is a real leak) and `scale` is a correctness property (a FIXED value rendered without its exponent is simply a wrong number on screen) — neither is derivable.
+Deriving the class from (writable, fresh, ecost, unit, dynops, path) rather than adding a `class=` field to the manifest respects rule 4: everything needed is already in the five manifest columns that `tiku_ns` already parses and three boards already answer. The only firmware I ask for is `scale` and `flags`, and I ask for those because DF_SECRET is a safety property (a page that renders a secret node's value is a real leak) and `scale` is a correctness property (a FIXED value rendered without its exponent is simply a wrong number on screen) — neither is derivable.
 
 Making the switch's open action TOGGLE rather than "open an inspector" is the fidelity-preserving choice, not the reckless one. Tracker's contract is that opening a thing does the thing; double-clicking an executable runs it, with no confirmation. A device switch is the closest honest equivalent, and the existing capability check already provides the refusal path that a POSIX permission bit provides for the executable. Inventing a confirmation dialog here would be inventing behavior the source does not have.
 
@@ -495,13 +495,13 @@ kernel/vfs/tiku_vfs.c, manifest_line() (~15 lines): after the existing four posi
 
 kernel/vfs/tiku_vfs.c, tiku_vfs_desc_str() (~8 lines): mirror the same two tokens so `cat`-ing a single descriptor and reading the manifest agree.
 
-Host-side (not firmware): TIKU_DESK_META_MAX 56 -> 72 in applications/desktop/src/tiku_desk_ns.h.
+Host-side (not firmware): TIKU_NS_META_MAX 56 -> 72 in applications/desktop/src/tiku_ns.h.
 
 Why it cannot be derived: DF_SECRET is a safety property — without it the Tracker will render a secret node's value in the Value column and in Get Info, which is a real disclosure, and no combination of vtype/unit/fresh/cost implies it. desc.scale is a correctness property — a FIXED value shown without its exponent is a wrong number on screen (a 23.5 C reading displayed as 235), and scale is likewise underivable. DF_HEX is cosmetic and rides along for free.
 
 Named rather than positional tokens specifically so that firmware predating this change parses cleanly: tiku_trk_meta_parse() treats a missing scale as 0 and missing flags as none, so the three already-proven boards keep working with no reflash and simply never show a masked or scaled value.
 
-Everything else in this decision — the six supertypes, the classifier, icons, Kind text, open actions, Open With, per-type columns, query-by-type — is derived entirely from the five manifest columns that firmware already emits and that tiku_desk_ns.c already parses. No new node, no new shell verb, no new event.
+Everything else in this decision — the six supertypes, the classifier, icons, Kind text, open actions, Open With, per-type columns, query-by-type — is derived entirely from the five manifest columns that firmware already emits and that tiku_ns.c already parses. No new node, no new shell verb, no new event.
 
 **Rows governed** (65): MA-001, MA-002, MA-003, MA-012, MA-014, MA-016, MA-017, MA-018, MA-022, MA-024, MA-028, MA-080, MA-081, IV-001, IV-002, IV-003, IV-004, IV-005, IV-007, IV-008, IV-010, IV-011, IV-028, IV-037, IV-038, IV-039, IV-056, PVL-034, PVL-075, PVL-080, PVL-095, PVS-035, PVS-044, PVS-052, PVN-035, CW-025, CW-026, CW-032, CW-038, TS-014, TS-025, Q-004, Q-007, Q-012, Q-013, Q-015, Q-016, AW-013, AW-030, AW-035, AW-037, AW-040, AW-041, AW-042, AW-043, AW-044, AW-045, AW-046, AW-047, AW-048 …
 
@@ -545,7 +545,7 @@ Everything else in this decision — the six supertypes, the classifier, icons, 
 - Untyped nodes (desc == NULL) are still the majority of the tree today, and they all land on tiku-node/opaque: one icon, one Kind string ("Node"), INSPECT for everything. A first screenshot of /sys will look far more uniform than a folder of local files does. The fix is descriptor coverage in firmware, not more Tracker cleverness, and the decision should not be judged on how a mostly-untyped namespace renders.
 - Classification is refreshed only on manifest reload, so a firmware that changes a node's type or capability at runtime shows a stale Kind and a stale icon until the next reload. TikuOS's static node table makes this rare, but the dynamic /data store and any future runtime-attached subtree can hit it. The mitigation is that the reload is cheap (one `cat`) and can be re-run on a watch event for the namespace root's children.
 - The compiled node-type table is a second registry the project now maintains by hand. It will drift from the descriptor vocabulary in kernel/vfs/tiku_vfs.h (units especially — a new unit added to vfs_unit_names lands on the tiku-meter/value default silently). A _Static_assert cannot span the two repos; the honest guard is a small test that parses the firmware's vfs_unit_names table and fails when the Tracker's unit map lacks an entry.
-- The manifest is truncated by the device's shell read buffer on any sizeable tree (tiku_desk_ns already handles this by ls-walking the tail). Nodes recovered that way carry no descriptor and no capability, so they all classify as tiku-node/opaque or tiku-node/unknown — meaning on a big namespace the type quality degrades exactly where there is most to see. Paging the manifest is a separate decision, but this cluster depends on it more than any other.
+- The manifest is truncated by the device's shell read buffer on any sizeable tree (tiku_ns already handles this by ls-walking the tail). Nodes recovered that way carry no descriptor and no capability, so they all classify as tiku-node/opaque or tiku-node/unknown — meaning on a big namespace the type quality degrades exactly where there is most to see. Paging the manifest is a separate decision, but this cluster depends on it more than any other.
 
 
 <details><summary>Proposed C</summary>
@@ -614,22 +614,22 @@ typedef struct {
     uint8_t     req_cap;          /* tiku_vfs_cap_t                      */
     int16_t     scale;            /* decimal exponent for FIXED          */
     int32_t     vmin, vmax;
-} tiku_trk_facts_t;
+} tiku_facts_t;
 
 /* Parse the manifest's packed meta field:
  *   "-"  |  "vtype,unit,fresh,cost[,lo..hi][,scale=N][,f=hex|secret|…]"
  * Tokens are NAMED after the 4 positional ones, so firmware that predates
  * scale/flags parses cleanly (scale=0, flags=0).  Returns 0 / -1. */
-int tiku_trk_meta_parse(const char *meta, tiku_trk_facts_t *out);
+int tiku_trk_meta_parse(const char *meta, tiku_facts_t *out);
 
-/* Build facts from a mirrored node (tiku_desk_node_t + parent context). */
-int tiku_trk_facts_from_node(const tiku_desk_ns_t *ns,
-                             const tiku_desk_node_t *n,
-                             tiku_trk_facts_t *out);
+/* Build facts from a mirrored node (tiku_node_t + parent context). */
+int tiku_trk_facts_from_node(const tiku_ns_t *ns,
+                             const tiku_node_t *n,
+                             tiku_facts_t *out);
 
 /* THE DEVICE'S FinishSettingUpType.  Pure; never touches the link.
  * Writes a NUL-terminated `tiku-*` string; never fails, never empty. */
-void tiku_trk_type_classify(const tiku_trk_facts_t *f,
+void tiku_trk_type_classify(const tiku_facts_t *f,
                             char out[TIKU_TRK_TYPE_LEN]);
 
 /* --------------------------------------------------------------------
@@ -711,7 +711,7 @@ REFRESH COST, the number that decides the tiers. MSP430 @ 9600 baud = 960 B/s. `
 
 (c) The chosen split: firmware stays a dumb "touched" bus; the backend owns synthesis. This works because the differ is required ANYWAY for the legacy-firmware tier, and once you have a differ that emits typed opcodes, the push tier is just a cheaper trigger for the same differ. One code path serves all three tiers and both firmware ages, which is why the tier ladder does not multiply the behavior surface.
 
-Two facts in the existing code forced the shape and made it cheap. First, `tiku_vfs.c:221,237` ALREADY calls `tiku_vfs_notify(parent_dir)` on every dynamic-child create and unlink — directory liveness for /data is fully implemented in the kernel and blocked solely by one line in `tiku_vfs_watch()` rejecting `node->type != TIKU_VFS_FILE`. That is a 1-line fix that unlocks PVN-005/011/026/040 for the only device subtree where entries actually appear and vanish. Second, `tiku_desk_session.h` already routes `~<path>` lines to a notify callback and `tiku_desk_ns_subscribe()` already probes for `sub` and falls back to polling — the host half of the push tier is written and proven on three boards. The remaining firmware is a shell verb, not an architecture.
+Two facts in the existing code forced the shape and made it cheap. First, `tiku_vfs.c:221,237` ALREADY calls `tiku_vfs_notify(parent_dir)` on every dynamic-child create and unlink — directory liveness for /data is fully implemented in the kernel and blocked solely by one line in `tiku_vfs_watch()` rejecting `node->type != TIKU_VFS_FILE`. That is a 1-line fix that unlocks PVN-005/011/026/040 for the only device subtree where entries actually appear and vanish. Second, `tiku_session.h` already routes `~<path>` lines to a notify callback and `tiku_ns_subscribe()` already probes for `sub` and falls back to polling — the host half of the push tier is written and proven on three boards. The remaining firmware is a shell verb, not an architecture.
 
 Coalescing at queue insert rather than at the view is deliberate: Tracker's only accumulator (PVN-054) sits in the view because BeOS's kernel monitor already coalesced. TikuOS explicitly does not, so the missing tier has to be reintroduced somewhere, and the queue is the only place that sees every backend and can also apply the value-hash gate before a single byte of re-read is spent.
 
@@ -756,8 +756,8 @@ Ordering REMOVED→CREATED→CHANGED was chosen over arrival order for the diffe
    <path>` keeps a TIKU_VFS_WATCH_MAX-sized path table and re-subscribes
    idempotently each tick, exactly as tiku_shell_cmd_watch_tick() already
    does, because rules_rearm() drops everything wholesale. The HOST half is
-   already written and proven on three boards: tiku_desk_session.h routes
-   `~<path>` lines to a callback and tiku_desk_ns_subscribe() already probes
+   already written and proven on three boards: tiku_session.h routes
+   `~<path>` lines to a callback and tiku_ns_subscribe() already probes
    for `sub` and falls back to polling.
 
 3. `/sys/vfs/epoch` and `/sys/vfs/nsgen` - ~40 lines (two uint32 counters plus
@@ -935,7 +935,7 @@ enum { TK_WATCH_PUSHED = 0, TK_WATCH_POLLED = 1, TK_WATCH_ERR = -1 };
 
 typedef struct tk_dev_monitor tk_dev_monitor_t;
 
-tk_dev_monitor_t *tk_dev_monitor_new(tiku_desk_ns_t *ns, uint8_t backend,
+tk_dev_monitor_t *tk_dev_monitor_new(tiku_ns_t *ns, uint8_t backend,
                                      tk_fsq_t *q);
 int  tk_dev_monitor_probe(tk_dev_monitor_t *m);        /* sets tier + caps  */
 int  tk_dev_monitor_tier(const tk_dev_monitor_t *m);
@@ -958,7 +958,7 @@ void tk_dev_monitor_set_viewport(tk_dev_monitor_t
 
 (2) SUBTREE CLASSIFICATION — the move that closes ~10 rows for free. At mount, a device volume's root children are classified: `/data` is a real directory (create/write/unlink/send/recv); `/sys`, `/dev`, `/proc` and anything else are VIRTUAL DIRECTORIES. `BPoseView::TargetVolumeIsReadOnly()` already returns true for `IsVirtualDirectory()` BEFORE it consults the volume, so New folder, Cut, Paste, the read-only tint, and drag-out-creates-a-link (FS-078) all fall out of existing code. Writability inside a virtual directory is then per-node, from the manifest's rw column plus `req_cap` — which is exactly what PVL-102's TIKU note demands.
 
-(3) DESKTOP. The Desktop is real and always exists (AW-001/AW-017/AW-018): one full-screen, undecorated, bottom-of-stack X11 window (`_NET_WM_WINDOW_TYPE_DESKTOP`, override-redirect fallback), created before ReadyToRun; on wasm it is the canvas backdrop layer. Its iterator chain is Tracker's own: the local Desktop directory, then one volume pose per roster volume (or the single Disks root pose), then the Trash pose created last. A device appears on the Desktop when plugged and vanishes when unplugged, announced by SYNTHESIZED `TK_VOL_MOUNTED`/`TK_VOL_UNMOUNTED` messages shaped exactly like `B_DEVICE_MOUNTED`/`B_DEVICE_UNMOUNTED` — the idiom AW-026 already uses for the "/" icon. The by-id scan runs on the TaskLoop at 1 Hz; "mounted" is a HOST fact (does the endpoint answer a prompt), so it is the roster's observer list, NOT a watch on the device namespace root — I am rejecting PVN-008's suggested mapping, because a device cannot tell you it was unplugged. Unplug is debounced: link-open-but-no-prompt is STALLED (poses get a stale veil, reconnect is attempted up to 3 times using the proven `tiku_desk_session_reconnect`); only endpoint-gone or reconnect-exhausted posts UNMOUNTED, at which point PVN-043 runs unchanged. Device volume poses subscribe to NOTHING — no device watch slot is spent on a Desktop icon (PVN-006); name and capacity refresh on mount, on any write under /data, and otherwise at most once per 10 s.
+(3) DESKTOP. The Desktop is real and always exists (AW-001/AW-017/AW-018): one full-screen, undecorated, bottom-of-stack X11 window (`_NET_WM_WINDOW_TYPE_DESKTOP`, override-redirect fallback), created before ReadyToRun; on wasm it is the canvas backdrop layer. Its iterator chain is Tracker's own: the local Desktop directory, then one volume pose per roster volume (or the single Disks root pose), then the Trash pose created last. A device appears on the Desktop when plugged and vanishes when unplugged, announced by SYNTHESIZED `TK_VOL_MOUNTED`/`TK_VOL_UNMOUNTED` messages shaped exactly like `B_DEVICE_MOUNTED`/`B_DEVICE_UNMOUNTED` — the idiom AW-026 already uses for the "/" icon. The by-id scan runs on the TaskLoop at 1 Hz; "mounted" is a HOST fact (does the endpoint answer a prompt), so it is the roster's observer list, NOT a watch on the device namespace root — I am rejecting PVN-008's suggested mapping, because a device cannot tell you it was unplugged. Unplug is debounced: link-open-but-no-prompt is STALLED (poses get a stale veil, reconnect is attempted up to 3 times using the proven `tiku_session_reconnect`); only endpoint-gone or reconnect-exhausted posts UNMOUNTED, at which point PVN-043 runs unchanged. Device volume poses subscribe to NOTHING — no device watch slot is spent on a Desktop icon (PVN-006); name and capacity refresh on mount, on any write under /data, and otherwise at most once per 10 s.
 
 (4) TRASH — refuse the trash, offer the delete, through Tracker's own path. A device volume reports no Trash directory, so `MoveSelectionOrEntryToTrash()` splits the selection into `entriesToTrash` and `entriesToDeleteOnTheSpot` and runs two jobs, exactly as it already does for removable media without a Trash (FS-044). The alert is Tracker's own string: "Some of the selected items cannot be moved to the Trash. Would you like to delete them instead? (This operation cannot be reverted.)" No invented trash convention on /data, and no blanket refusal. Deletion reaches `rm` only where `tiku_vfs_unlink` reaches — i.e. /data; every node under a virtual directory has no `TK_CAP_DELETE`, so Delete is disabled, not attempted. Dragging a device volume itself to the Trash EJECTS it (closes the session, drops it from the roster) — FS-041's rule verbatim, with "the boot volume refuses" becoming "the local root volume refuses". The host Trash is completely untouched: real per-volume Trash directories, `_trk/original_path` restore-to-origin, the union Trash window, Empty Trash across local volumes — full fidelity, because local files have xattrs and a real filesystem.
 
@@ -981,7 +981,7 @@ Making the Desktop a real full-screen window rather than a metaphor is the only 
 
 | Tracker concept | Local files | TikuOS nodes |
 |---|---|---|
-| BVolume / the volume roster | one entry per mountinfo mount, real st_dev, flags from statfs + ST_RDONLY | one entry per answering endpoint (by-id serial link or configured TCP), synthetic dev id from TK_DEV_DEVICE_BASE, one tiku_desk_session_t + tiku_desk_ns_t each |
+| BVolume / the volume roster | one entry per mountinfo mount, real st_dev, flags from statfs + ST_RDONLY | one entry per answering endpoint (by-id serial link or configured TCP), synthetic dev id from TK_DEV_DEVICE_BASE, one tiku_session_t + tiku_ns_t each |
 | Volume identity (Q-027: remembered across remount) | filesystem UUID, else the mount path | cat /sys/device/uid |
 | BVolume::GetName / SetName (MA-006, MA-052, FS-066) | volume label; BVolume::SetName analogue via the fs | cat /sys/device/name; write /sys/device/name <new> |
 | BVolume::Capacity / FreeBytes (PVL-072, TS-054, MA-024, AW-069) | statfs, polled at 1 Hz by Pulse | df -> tiku_data_df_t {cap_bytes, used_files*slot_bytes, backing} |
@@ -1092,8 +1092,8 @@ typedef struct tk_volume {
     uint64_t        free_bytes;
     const char     *fs_kind;            /* df backing: "MRAM"/"FRAM"/... */
     uint32_t        cap_polled_ms;      /* rate-limits the space bar     */
-    tiku_desk_session_t *session;       /* NULL when TK_VOL_LOCAL        */
-    tiku_desk_ns_t      *ns;
+    tiku_session_t *session;       /* NULL when TK_VOL_LOCAL        */
+    tiku_ns_t      *ns;
     struct tk_devio     *io;
     uint8_t         reconnect_tries;
 } tk_volume_t;
@@ -1205,13 +1205,13 @@ int  tk_de
 
 8. **Concrete device answers to the operation questions.** Device FILE nodes are drop targets for a single text value only, never for files; device DIR nodes are not drop targets at all except a dynamic store (`/data`, which has `dynops.write`/`unlink`) gated on `CAP_FS`. New folder is structurally disabled everywhere in the device namespace except `/data`. Device nodes are never trashable and never renamable: Delete on a device selection reuses Tracker's OWN existing alert "…cannot be moved to the Trash. Would you like to delete it instead?" (the `entriesToDeleteOnTheSpot` path already in `MoveSelectionOrEntryToTrash`), which then unlinks only under `/data`; `CanEditName()` returns false for device nodes so F2/Cmd+E do nothing, matching how Tracker excludes root/Trash/Desktop from editing entirely rather than opening a dead editor. MA-048's selectable-not-editable editor is preserved for the VALUE column of an unwritable device node. Cut/Move-to out of the device namespace degrades to Copy for non-`/data` sources — which is precisely FS-013's existing `sourceIsReadOnly → kMoveSelectionTo becomes kCopySelectionTo` rule, reached honestly.
 
-**Rationale.** **Why predict at all, rather than attempt-and-report everywhere.** Because the transports the desktop actually uses confer `TIKU_VFS_CAP_NONE`. A pure attempt-and-report UI over TCP would present every hardware node as writable and refuse every single click. Prediction is what makes the window truthful. Conversely, **why not predict-only**: the ambient caller cap is one global word swapped by `tiku_shell_io_set_backend()`, changeable at any moment by something the desktop did not initiate, and the manifest arrives truncated on real boards (`tiku_desk_ns_truncated()` already exists precisely because of this) — so a mirror is a cache, and a cache must never be the last word on a refusal. The asymmetry in rule 4 is the whole design: prediction may be MORE permissive than truth (harmless, produces an alert) and may never be LESS permissive on the policy axis (would forbid a legitimate action from stale data).
+**Rationale.** **Why predict at all, rather than attempt-and-report everywhere.** Because the transports the desktop actually uses confer `TIKU_VFS_CAP_NONE`. A pure attempt-and-report UI over TCP would present every hardware node as writable and refuse every single click. Prediction is what makes the window truthful. Conversely, **why not predict-only**: the ambient caller cap is one global word swapped by `tiku_shell_io_set_backend()`, changeable at any moment by something the desktop did not initiate, and the manifest arrives truncated on real boards (`tiku_ns_truncated()` already exists precisely because of this) — so a mirror is a cache, and a cache must never be the last word on a refusal. The asymmetry in rule 4 is the whole design: prediction may be MORE permissive than truth (harmless, produces an alert) and may never be LESS permissive on the policy axis (would forbid a legitimate action from stale data).
 
 **Why one predicate instead of keeping Tracker's two.** `TargetVolumeIsReadOnly` and `SelectedVolumeIsReadOnly` are two different questions (container vs. objects) and both survive — but their *implementation* must not be two independent read-only tests, which is how FS-012 ended up with a paste that fails silently while a drop alerts. PVL-102 is the row that proves the shape is already per-node in Tracker itself: a query on a writable disk is a read-only destination. TikuOS just makes that the normal case rather than the exception.
 
-**Why verbatim device text.** The firmware already has a stable, greppable error vocabulary (`tiku_vfs_strerror`: ENOENT/EACCES/EPERM/EINVAL/ERANGE) and the shell already prints `write: cannot write '<path>' (<code>)`, which `tiku_desk_ns_write()` already captures into an `err` buffer. Rewriting that into prose on the host would fork the vocabulary and make firmware-side error changes invisible. The Tracker-shaped sentence gives the user the familiar register; the verbatim line gives them (and the log) the fact.
+**Why verbatim device text.** The firmware already has a stable, greppable error vocabulary (`tiku_vfs_strerror`: ENOENT/EACCES/EPERM/EINVAL/ERANGE) and the shell already prints `write: cannot write '<path>' (<code>)`, which `tiku_ns_write()` already captures into an `err` buffer. Rewriting that into prose on the host would fork the vocabulary and make firmware-side error changes invisible. The Tracker-shaped sentence gives the user the familiar register; the verbatim line gives them (and the log) the fact.
 
-**Why `TK_DENY_UNKNOWN` is a distinct value and not folded into ALLOW or DENY.** Folding into DENY would disable menu items for nodes discovered by `tiku_desk_ns_complete()`'s ls-walk, which carry no capability metadata — the truncated-manifest tail would become silently unusable. Folding into ALLOW would lose the ability to render "we don't know" differently (no lock badge, no tint) from "we know it's fine". It stays separate and it enables.
+**Why `TK_DENY_UNKNOWN` is a distinct value and not folded into ALLOW or DENY.** Folding into DENY would disable menu items for nodes discovered by `tiku_ns_complete()`'s ls-walk, which carry no capability metadata — the truncated-manifest tail would become silently unusable. Folding into ALLOW would lose the ability to render "we don't know" differently (no lock badge, no tint) from "we know it's fine". It stays separate and it enables.
 
 **Alternatives rejected.** (a) *Per-node capability probes* (a trial write to each node at load): actuates hardware, costs energy, and is exactly what the manifest exists to avoid. (b) *A host-side capability policy file* mirroring firmware policy: two policies drift; the manifest is already self-describing and is the mechanism TikuOS has. (c) *Reusing POSIX mode bits for device nodes* by synthesising `0444`/`0644`: throws away which capability is missing, which is the one piece of information the user needs to fix the problem (reconnect over console rather than TCP). (d) *Refusing whole mixed selections* (Tracker's literal FS-045 behavior): defensible for a homogeneous volume, wrong when half the selection is local files that would have succeeded.
 
@@ -1240,7 +1240,7 @@ int  tk_de
 | AW-005/MA-071 view state written beside the object, skipped on read-only | unchanged BFS-attribute-equivalent sidecar + diff-before-write gate | TK_ACT_SAVE_VIEWSTATE is always TK_DENY_STRUCTURAL for the device namespace; state goes to the host-side session store instead, silently |
 
 
-**Firmware needed.** ~60 lines, all in kernel/vfs. (1) `tiku_vfs_cap_str()` replacing the single-token `vfs_cap_name()` so a combined mask renders "hw,sys" instead of the lossy "cap" — ~18 lines in tiku_vfs.c. (2) `vfs_cap_gen` counter + bump inside `tiku_vfs_caller_cap_set()` plus a `tiku_vfs_notify(tiku_vfs_resolve("/sys/vfs/cap_gen"))` on change, and the `tiku_vfs_caller_cap_gen()` accessor — ~12 lines in tiku_vfs.c (resolve-on-change needs no new registration API; capability changes happen once per backend swap, so the walk cost is irrelevant). (3) Two read handlers and two table entries for `/sys/vfs/cap` and `/sys/vfs/cap_gen` — ~28 lines in kernel/vfs/tree/tiku_vfs_tree_watch.c, plus bumping `TIKU_VFS_TREE_VFS_NCHILD`. (4) One-line fix to the manifest header row, which currently names four columns while every data line carries five, and `TIKU_VFS_MANIFEST_REV` 2 -> 3. Everything else — prediction, enablement, badges, tint, alerts, bulk pruning, self-healing on refusal — is host-side and uses mechanisms that already exist (`/sys/vfs/manifest`, `sub add`, `tiku_vfs_strerror`, `tiku_desk_ns_write()`'s captured error text). Older firmware without the two new nodes is handled without a special case: `tiku_desk_ns_refresh_caps()` returns 1, every device node evaluates `TK_DENY_UNKNOWN`, and the UI degrades to attempt-and-report.
+**Firmware needed.** ~60 lines, all in kernel/vfs. (1) `tiku_vfs_cap_str()` replacing the single-token `vfs_cap_name()` so a combined mask renders "hw,sys" instead of the lossy "cap" — ~18 lines in tiku_vfs.c. (2) `vfs_cap_gen` counter + bump inside `tiku_vfs_caller_cap_set()` plus a `tiku_vfs_notify(tiku_vfs_resolve("/sys/vfs/cap_gen"))` on change, and the `tiku_vfs_caller_cap_gen()` accessor — ~12 lines in tiku_vfs.c (resolve-on-change needs no new registration API; capability changes happen once per backend swap, so the walk cost is irrelevant). (3) Two read handlers and two table entries for `/sys/vfs/cap` and `/sys/vfs/cap_gen` — ~28 lines in kernel/vfs/tree/tiku_vfs_tree_watch.c, plus bumping `TIKU_VFS_TREE_VFS_NCHILD`. (4) One-line fix to the manifest header row, which currently names four columns while every data line carries five, and `TIKU_VFS_MANIFEST_REV` 2 -> 3. Everything else — prediction, enablement, badges, tint, alerts, bulk pruning, self-healing on refusal — is host-side and uses mechanisms that already exist (`/sys/vfs/manifest`, `sub add`, `tiku_vfs_strerror`, `tiku_ns_write()`'s captured error text). Older firmware without the two new nodes is handled without a special case: `tiku_desk_ns_refresh_caps()` returns 1, every device node evaluates `TK_DENY_UNKNOWN`, and the UI degrades to attempt-and-report.
 
 **Rows governed** (49): PVL-076, PVL-085, PVL-102, PVS-035, PVS-039, PVS-043, PVS-052, PVK-036, PVK-038, PVK-042, PVK-044, PVN-071, CW-022, CW-031, CW-037, CW-040, CW-043, FS-011, FS-012, FS-013, FS-014, FS-026, FS-036, FS-038, FS-045, FS-059, FS-080, MA-010, MA-016, MA-019, MA-031, MA-044, MA-048, MA-051, MA-052, MA-054, MA-056, MA-062, MA-071, MA-078, MA-079, Q-044, Q-059, AW-005, AW-070, AW-078, TS-022, IV-043, DB-020
 
@@ -1272,7 +1272,7 @@ int  tk_de
 
 **Risks.**
 
-- Manifest truncation is real and already handled by tiku_desk_ns_truncated()/_complete(): the ls-walked tail carries no capability metadata, so those nodes evaluate TK_DENY_UNKNOWN and stay enabled. The user sees alerts on nodes that a complete manifest would have greyed. Mitigation is honest, not silent, but a large namespace over a small read buffer will feel noisier than a local folder.
+- Manifest truncation is real and already handled by tiku_ns_truncated()/_complete(): the ls-walked tail carries no capability metadata, so those nodes evaluate TK_DENY_UNKNOWN and stay enabled. The user sees alerts on nodes that a complete manifest would have greyed. Mitigation is honest, not silent, but a large namespace over a small read buffer will feel noisier than a local folder.
 - The caller capability is one ambient global word for the whole device (tiku_shell_io.c syncs it to the active backend). Two Tracker windows on one session necessarily share it, which is correct — but a second, differently-trusted session to the same board will legitimately show different enablement for the same node, and that will look like a bug to a user with both windows open. The Get Info capability grid is the only place that explains it.
 - Over TCP and BLE the shell backends confer TIKU_VFS_CAP_NONE, so on the transport the desktop actually uses, every node with a non-zero req_cap is refused. The correct-and-honest UI is therefore a device window where most of /dev is greyed with a lock badge. That is the truth, but it will be read as "the app is broken" until there is a way to raise a remote channel's capability (authentication), which this decision deliberately does not invent.
 - cap_gen notification depends on tiku_vfs_notify() reaching a subscriber through the existing `sub` path. If the desktop's watch slot is dropped by rules_rearm()'s unwatch_all() (a documented hazard for subsystems sharing the shell process as subscriber), the push silently stops. The EPERM-triggers-cap-re-read rule is the backstop, but between a silent cap drop and the next refused write the UI is optimistic.
@@ -1371,8 +1371,8 @@ extern const tk_backend_t tk_backend_tiku;   /* manifest + /sys/vfs/cap      */
 struct tk_model {
     /* … existing Tracker fields … */
     const tk_backend_t *backend;
-    void               *backend_ctx;   /* tiku_desk_ns_t* for device nodes   */
-    unsigned            perm;          /* TIKU_DESK_P_READ | _P_WRITE        */
+    void               *backend_ctx;   /* tiku_ns_t* for device nodes   */
+    unsigned            perm;          /* TIKU_NS_P_READ | _P_WRITE        */
     uint8_t             req_cap;       /* device only; 0 = open to anyone    */
     uint8_t             cap_known;     /* 0 when the manifest was truncated  */
     unsigned            permit_gen;    /* cap_generation() at last evaluation*/
@@ -1384,14 +1384,14 @@ struct tk_model {
 void tk_access_string(const tk_model_t *m, char out[11]);
 
 /* ─────────────────────────────────────────────────────────────────────────
- * applications/desktop/src/tiku_desk_ns.h — additions (host side)
+ * applications/desktop/src/tiku_ns.h — additions (host side)
  * ───────────────────────────────────────────────────────────────────────── */
 
-/* tiku_desk_node_t gains: */
+/* tiku_node_t gains: */
 unsigned req_cap;    /* cap column parsed to TIKU_VFS_CAP_* bits            */
 int      cap_known;  /* 0 for ls-discovered nodes (truncated manifest tail) */
 
-unsigned tiku_desk_ns_caps_held     (const tiku_desk_ns_t *ns);
+unsigned tiku_desk_ns_caps_held     (const tiku_ns_t *ns);
 unsigned tiku_desk_ns_cap_gene
 ```
 </details>
@@ -1403,7 +1403,7 @@ unsigned tiku_desk_ns_cap_gene
 
 1. PREDICATE. All three Find modes (Q-002) compile to one bounded AST, `tiku_trk_pred_t`. By-name compiles to `name contains <t>`, or `name glob <t>` when the text contains '*' (Q-003's exact rule, only '*' triggers pattern mode). By-attribute compiles rows to terms combined by the per-row And/Or (Q-005) with Tracker's typed value parse kept verbatim, K/M/G suffixes and the `value %= 2` bool quirk included (Q-008). By-formula is the AST's own concrete syntax — so Q-011's "prefill the formula from the rows" is literally `tiku_trk_pred_print()`, and the conversion stays one-way as the source has it. The grammar is ours, not BFS's: `name contains log and (value > 30 or unit is celsius) and cap is-not hw`.
 
-2. THE INDEX. Device: `/sys/vfs/manifest` IS the attribute index — one read gives path, kind, perms, descriptor (vtype/unit/fresh/cost/range) and capability for every node. Mirrored by `tiku_desk_ns_t`, this is a complete, in-memory, queryable index of the whole namespace — the thing BFS has and Linux lacks. Structural predicates (name, path, kind, vtype, unit, cap, perm, range) are answered from the mirror with zero device traffic. Only `value` terms cost a `cat`, and they are evaluated LAST, cost-ordered by `desc.ecost`, against only the candidates that survived the free terms, under a per-pass `value_budget`. Local: no index, so a streamed recursive walk (Tracker's TQueryWalker shape) on the task loop, 64 entries per slice; identical predicate, identical results, worse latency — degradation is latency and liveness, never semantics.
+2. THE INDEX. Device: `/sys/vfs/manifest` IS the attribute index — one read gives path, kind, perms, descriptor (vtype/unit/fresh/cost/range) and capability for every node. Mirrored by `tiku_ns_t`, this is a complete, in-memory, queryable index of the whole namespace — the thing BFS has and Linux lacks. Structural predicates (name, path, kind, vtype, unit, cap, perm, range) are answered from the mirror with zero device traffic. Only `value` terms cost a `cat`, and they are evaluated LAST, cost-ordered by `desc.ecost`, against only the candidates that survived the free terms, under a per-pass `value_budget`. Local: no index, so a streamed recursive walk (Tracker's TQueryWalker shape) on the task loop, 64 entries per slice; identical predicate, identical results, worse latency — degradation is latency and liveness, never semantics.
 
 3. LIVENESS — the crown jewel. TikuOS watch says only "touched, re-read" with no opcode and 8 slots, so the HOST manufactures the missing match/unmatch events: on any change notice, `tiku_trk_query_on_change(q, path)` re-runs the predicate for that one node and emits ENTER / LEAVE / UPDATE. Which nodes get watched is decided by the descriptor, and this is the part that is better than BFS:
    - `fresh=static` → evaluated once, never re-checked (a whole class of nodes costs nothing to keep live);
@@ -1424,7 +1424,7 @@ unsigned tiku_desk_ns_cap_gene
 | Tracker concept | Local files | TikuOS nodes |
 |---|---|---|
 | BQuery predicate built by PushAttr/PushString/PushOp | tiku_trk_pred_t AST compiled from the panel; evaluated per entry | the same AST, same evaluator |
-| BFS attribute index (what makes a query instant) | NONE — streamed recursive walk, 64 entries per task slice | /sys/vfs/manifest mirrored into tiku_desk_ns_t = a full typed index |
+| BFS attribute index (what makes a query instant) | NONE — streamed recursive walk, 64 entries per task slice | /sys/vfs/manifest mirrored into tiku_ns_t = a full typed index |
 | MIME attribute registry (BMimeType::GetAttrInfo) feeding the attribute menu | stat fields (name/size/last_modified) + xattr user.* enumeration | manifest columns + descriptor fields: name path kind value vtype unit fresh cost cap perm min max |
 | MIME type ANDed onto every query; supertype widened with "/*" | MIME kept (xdg/extension); "image" -> "image/*" unchanged | node class token kind[/vtype][:unit]; '*' widening is a mask test |
 | B_QUERY_WATCH_ALL — kernel pushes match/unmatch | inotify on scope dirs; host re-runs predicate for the changed entry | sub (watch) for fresh=cached, ecost-derived interval poll for fresh=live, nothing for fresh=static |
@@ -1439,7 +1439,7 @@ unsigned tiku_desk_ns_cap_gene
 | Delete-the-file-to-close-the-window + 5000x1ms spin | delete kept; the spin becomes an event wait on the window registry | same, plus the /data unlink path for device-stored queries |
 
 
-**Firmware needed.** One optional new shell command, `sub` — ~220 lines total. It is NOT required for correctness: every part of this design runs today over `cat /sys/vfs/manifest`, `cat`, `ls`, `tree`, with the poll fallback `tiku_desk_ns` already implements and ships. What `sub` buys is push liveness for `fresh=cached` nodes (sub-second query updates instead of a 1 s poll floor, and far fewer link round-trips on an idle device).
+**Firmware needed.** One optional new shell command, `sub` — ~220 lines total. It is NOT required for correctness: every part of this design runs today over `cat /sys/vfs/manifest`, `cat`, `ls`, `tree`, with the poll fallback `tiku_ns` already implements and ships. What `sub` buys is push liveness for `fresh=cached` nodes (sub-second query updates instead of a 1 s poll floor, and far fewer link round-trips on an idle device).
 
 Breakdown: `kernel/shell/commands/tiku_shell_cmd_sub.c` ~150 lines — `sub add <path>` / `sub del <path>` / `sub list` wrapping `tiku_vfs_watch()`/`tiku_vfs_unwatch()` with the shell process as subscriber, plus its own 8-entry node-pointer array (~32 B SRAM) so `sub`'s subscriptions are distinguishable from those the `watch` mode and the rules engine make on the same process; `tiku_shell_cmd_sub_on_vfs(node)` prints `~<path>\r\n` via `tiku_vfs_path_of()` when a rung node is in that array. Header ~40 lines. Wiring ~25 lines: command-table entry in `tiku_shell.c`, `TIKU_SHELL_CMD_SUB` flag in `tiku_shell_config.h`, the `.c` in the Makefile shell block, and one call added beside the existing `tiku_shell_cmd_watch_on_vfs()` / `tiku_shell_rules_on_vfs()` dispatch on `TIKU_EVENT_VFS`. It must also survive `rules_rearm()`'s wholesale `tiku_vfs_unwatch_all()` by re-subscribing idempotently, the same self-heal the `watch` mode already does.
 
@@ -1500,12 +1500,12 @@ Explicitly NOT built in firmware: any predicate parser, matcher, or result chann
 #define TIKU_TRK_PRED_POOL      512     /* attr + literal text pool */
 
 typedef enum {                       /* Q-005/Q-006/Q-047 operator set */
-    TIKU_TRK_OP_CONTAINS = 0, TIKU_TRK_OP_IS, TIKU_TRK_OP_IS_NOT,
-    TIKU_TRK_OP_STARTS_WITH, TIKU_TRK_OP_ENDS_WITH,
+    TIKU_OP_CONTAINS = 0, TIKU_OP_IS, TIKU_OP_IS_NOT,
+    TIKU_TRK_OP_STARTS_WITH, TIKU_OP_ENDS_WITH,
     TIKU_TRK_OP_GT, TIKU_TRK_OP_LT, TIKU_TRK_OP_GE, TIKU_TRK_OP_LE,
     TIKU_TRK_OP_BEFORE, TIKU_TRK_OP_AFTER,
     TIKU_TRK_OP_GLOB, TIKU_TRK_OP_REGEX
-} tiku_trk_op_t;
+} tiku_op_t;
 
 typedef enum { TIKU_TRK_PN_TERM = 0, TIKU_TRK_PN_AND,
                TIKU_TRK_PN_OR,       TIKU_TRK_PN_NOT } tiku_trk_pnkind_t;
@@ -1518,7 +1518,7 @@ typedef enum { TIKU_TRK_COST_META = 0, TIKU_TRK_COST_STAT, TIKU_TRK_COST_FREE,
 
 typedef struct {
     uint8_t  kind;                 /* tiku_trk_pnkind_t                  */
-    uint8_t  op;                   /* tiku_trk_op_t (terms only)         */
+    uint8_t  op;                   /* tiku_op_t (terms only)         */
     uint8_t  vtype;                /* RHS type: TIKU_TRK_V_*             */
     uint8_t  cost;                 /* tiku_trk_cost_t of the LHS attr    */
     int16_t  lhs, rhs;             /* child indices; -1 on a term        */
@@ -1576,7 +1576,7 @@ tiku_trk_match_t tiku_trk_pred_eval(const tiku_trk_pred_t *p,
 int tiku_trk_glob_match (const char *name, const char *pat, int icase);
 int tiku_trk_regex_match(const char *name, const void *prog, int icase);
 
-/* ---- tiku_trk_query.h : the saved query and the live session ---- */
+/* ---- tiku_query.h : the saved query and the live session ---- */
 #define TIKU_TRK_QUERY_SCOPE_MAX 8
 
 typedef enum { TIKU_TRK_SCOPE_EVERYWHERE = 0, TIKU_TRK_SCOPE_LOCAL_TREE,

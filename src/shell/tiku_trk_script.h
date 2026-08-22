@@ -16,7 +16,7 @@
 #ifndef TIKU_TRK_SCRIPT_H_
 #define TIKU_TRK_SCRIPT_H_
 
-#include "tiku_desk_event.h"
+#include "tiku_event.h"
 
 /** @brief What the driver should do for one step. */
 typedef enum {

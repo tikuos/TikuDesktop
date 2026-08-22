@@ -15,14 +15,14 @@
 
 /** @brief Append while retaining the newest 32 entries. */
 static void
-append(char stack[][TIKU_TRK_PATH_MAX], int *count, const char *path)
+append(char stack[][TIKU_PATH_MAX], int *count, const char *path)
 {
     if (*count >= TIKU_TRK_NAV_HISTORY_MAX) {
         memmove(stack[0], stack[1],
                 (TIKU_TRK_NAV_HISTORY_MAX - 1u) * sizeof stack[0]);
         *count = TIKU_TRK_NAV_HISTORY_MAX - 1;
     }
-    snprintf(stack[*count], TIKU_TRK_PATH_MAX, "%s", path);
+    snprintf(stack[*count], TIKU_PATH_MAX, "%s", path);
     (*count)++;
 }
 
@@ -84,7 +84,7 @@ tiku_trk_navigator_back(tiku_trk_navigator_t *n, char *out, size_t max)
 int
 tiku_trk_navigator_forward(tiku_trk_navigator_t *n, char *out, size_t max)
 {
-    char path[TIKU_TRK_PATH_MAX];
+    char path[TIKU_PATH_MAX];
 
     if (out == NULL || max == 0u || !tiku_trk_navigator_can_forward(n)) {
         return 0;
@@ -99,7 +99,7 @@ tiku_trk_navigator_forward(tiku_trk_navigator_t *n, char *out, size_t max)
 int
 tiku_trk_navigator_parent(const char *path, char *out, size_t max)
 {
-    char work[TIKU_TRK_PATH_MAX];
+    char work[TIKU_PATH_MAX];
     char *slash;
     size_t len;
 
@@ -126,9 +126,9 @@ tiku_trk_navigator_parent(const char *path, char *out, size_t max)
 
 int
 tiku_trk_navigator_hierarchy(const char *path,
-                             char out[][TIKU_TRK_PATH_MAX], int max)
+                             char out[][TIKU_PATH_MAX], int max)
 {
-    char current[TIKU_TRK_PATH_MAX];
+    char current[TIKU_PATH_MAX];
     int n = 0;
 
     if (path == NULL || out == NULL || max <= 0) {
@@ -136,7 +136,7 @@ tiku_trk_navigator_hierarchy(const char *path,
     }
     snprintf(current, sizeof current, "%s", path[0] != '\0' ? path : "/");
     while (n < max && tiku_trk_navigator_parent(current,
-                                                 out[n], TIKU_TRK_PATH_MAX)) {
+                                                 out[n], TIKU_PATH_MAX)) {
         snprintf(current, sizeof current, "%s", out[n]);
         n++;
     }
@@ -144,14 +144,14 @@ tiku_trk_navigator_hierarchy(const char *path,
 }
 
 int
-tiku_trk_navigator_drop_path(const tiku_trk_model_t *model, char *out,
+tiku_trk_navigator_drop_path(const tiku_model_t *model, char *out,
                              size_t max)
 {
     if (model == NULL || out == NULL || max == 0u ||
         model->path[0] == '\0') {
         return 0;
     }
-    if (tiku_trk_model_is_container(model)) {
+    if (tiku_model_is_container(model)) {
         snprintf(out, max, "%s", model->path);
         return 1;
     }

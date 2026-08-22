@@ -24,24 +24,24 @@ check(int cond, const char *row, const char *what)
 }
 
 /** @brief A model standing in for a pose under the pointer. */
-static tiku_trk_model_t
+static tiku_model_t
 folder(const char *path, int mutable_)
 {
-    tiku_trk_model_t m;
+    tiku_model_t m;
 
     memset(&m, 0, sizeof m);
     snprintf(m.path, sizeof m.path, "%s", path);
-    m.kind = TIKU_TRK_KIND_DIRECTORY;
-    m.facts.perm = TIKU_TRK_P_READ | (mutable_ ? TIKU_TRK_P_WRITE : 0u);
+    m.kind = TIKU_KIND_DIRECTORY;
+    m.facts.perm = TIKU_P_READ | (mutable_ ? TIKU_P_WRITE : 0u);
     return m;
 }
 
-static tiku_trk_model_t
+static tiku_model_t
 plain(const char *path)
 {
-    tiku_trk_model_t m = folder(path, 1);
+    tiku_model_t m = folder(path, 1);
 
-    m.kind = TIKU_TRK_KIND_FILE;
+    m.kind = TIKU_KIND_FILE;
     return m;
 }
 
@@ -141,10 +141,10 @@ main(void)
 
     printf("\nwhat will take it (MA-016, PVS-042)\n");
     {
-        tiku_trk_model_t dir = folder("/dst", 1);
-        tiku_trk_model_t ro  = folder("/ro", 0);
-        tiku_trk_model_t f   = plain("/dst/file.txt");
-        tiku_trk_model_t self = folder("/src/one.txt", 1);
+        tiku_model_t dir = folder("/dst", 1);
+        tiku_model_t ro  = folder("/ro", 0);
+        tiku_model_t f   = plain("/dst/file.txt");
+        tiku_model_t self = folder("/src/one.txt", 1);
 
         check(tiku_trk_drag_can_drop(&d, &dir), "MA-016",
               "a writable folder is a drop target");
@@ -158,13 +158,13 @@ main(void)
               "the selection means the window behind it");
     }
     {
-        tiku_trk_model_t ln;
+        tiku_model_t ln;
 
         memset(&ln, 0, sizeof ln);
         snprintf(ln.path, sizeof ln.path, "/dst/alias");
-        ln.kind = TIKU_TRK_KIND_SYMLINK;
+        ln.kind = TIKU_KIND_SYMLINK;
         snprintf(ln.type, sizeof ln.type, "application/x-vnd.Be-directory");
-        ln.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+        ln.facts.perm = TIKU_P_READ | TIKU_P_WRITE;
         check(tiku_trk_drag_can_drop(&d, &ln), "MA-016",
               "a symlink defers to its target: a link to a writable "
               "folder takes the drop");

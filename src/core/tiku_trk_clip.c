@@ -41,21 +41,21 @@ find_id(const tiku_trk_clip_t *c, uint64_t id)
 
 /** @brief Whether the model may go on the clipboard at all (FS-052). */
 static int
-clippable(const tiku_trk_model_t *m)
+clippable(const tiku_model_t *m)
 {
     /* The places, not the things in them: a volume, the root, the Trash and
      * the desktop are excluded because none of them can be pasted anywhere
      * and offering to would be a promise nothing can keep. */
     return m != NULL && m->node_id != 0 &&
-           m->kind != TIKU_TRK_KIND_VOLUME &&
-           m->kind != TIKU_TRK_KIND_ROOT &&
-           m->kind != TIKU_TRK_KIND_TRASH &&
-           m->kind != TIKU_TRK_KIND_DESKTOP &&
+           m->kind != TIKU_KIND_VOLUME &&
+           m->kind != TIKU_KIND_ROOT &&
+           m->kind != TIKU_KIND_TRASH &&
+           m->kind != TIKU_KIND_DESKTOP &&
            strcmp(m->path, "/") != 0;
 }
 
 int
-tiku_trk_clip_add(tiku_trk_clip_t *c, const tiku_trk_model_t *models, int n,
+tiku_trk_clip_add(tiku_trk_clip_t *c, const tiku_model_t *models, int n,
                   tiku_trk_clip_mode_t mode, int replace)
 {
     int i;
@@ -137,7 +137,7 @@ tiku_trk_clip_moved_path(tiku_trk_clip_t *c, const char *from, const char *to,
     }
     n = strlen(from);
     for (i = 0; i < c->count; i++) {
-        char rest[TIKU_TRK_PATH_MAX];
+        char rest[TIKU_PATH_MAX];
 
         if (strcmp(c->item[i].path, from) == 0) {
             if (!tiku_trk_clip_moved(c, c->item[i].id, to)) {
@@ -239,7 +239,7 @@ tiku_trk_clip_clear(tiku_trk_clip_t *c)
 }
 
 int
-tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_trk_model_t *models,
+tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_model_t *models,
                      int n)
 {
     int i, gone = 0;

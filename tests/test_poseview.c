@@ -19,7 +19,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
-#include "tiku_desk_gfx.h"
+#include "tiku_gfx.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_task.h"
 
@@ -96,11 +96,11 @@ int
 main(void)
 {
     const char *dir = "/tmp/trk_pv_test";
-    tiku_trk_backend_t *b;
+    tiku_backend_t *b;
     tiku_trk_poseview_t *v;
 
     make_tree(dir);
-    b = tiku_trk_backend_posix_open();
+    b = tiku_backend_posix_open();
     v = tiku_trk_poseview_new(b, dir);
     if (v == NULL) { printf("cannot open view\n"); return 1; }
 
@@ -378,10 +378,10 @@ main(void)
         check(rx == ox && ry == oy, "PVL-053",
               "a saved scroll origin comes back with the folder");
         {
-            tiku_trk_store_t *store = b->ops->state_store(b);
+            tiku_store_t *store = b->ops->state_store(b);
             const char bad[] = "icon 32 999999 999999 999999 999999 0 0 -1 0";
 
-            (void)tiku_trk_state_write(store, dir, TIKU_TRK_ATTR_VIEW_STATE,
+            (void)tiku_state_write(store, dir, TIKU_ATTR_VIEW_STATE,
                                        bad, sizeof bad - 1u);
             (void)tiku_trk_poseview_restore_state(v);
             tiku_trk_poseview_origin(v, &rx, &ry);
@@ -651,8 +651,8 @@ main(void)
 
     /* --- PVL-090: the loader and a notice are two mouths, one listing --- */
     {
-        tiku_trk_event_t e;
-        tiku_trk_model_t late;
+        tiku_node_event_t e;
+        tiku_model_t late;
 
         /* Take a real entry, then start a load and let a CREATION notice
          * for that same entry arrive while it is still STAGED -- the race
@@ -661,7 +661,7 @@ main(void)
         late = tiku_trk_poseview_at(v, 5)->model;
         (void)tiku_trk_poseview_load_begin(v, 0);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = late;
         snprintf(e.path, sizeof e.path, "%s", late.path);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
@@ -680,7 +680,7 @@ main(void)
          * the node id can tell they are the same entry. */
         (void)tiku_trk_poseview_load_begin(v, 0);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CREATED;
+        e.op = TIKU_EV_CREATED;
         e.model = late;
         snprintf(e.model.name, sizeof e.model.name, "renamed.txt");
         snprintf(e.model.path, sizeof e.model.path, "%s/renamed.txt", dir);
@@ -696,28 +696,28 @@ main(void)
 
     /* --- MA-072/PVL-047: a notice that names its field ------------------ */
     {
-        tiku_trk_event_t e;
-        tiku_trk_model_t m;
+        tiku_node_event_t e;
+        tiku_model_t m;
         unsigned flags;
-        char held[TIKU_TRK_NAME_MAX];
+        char held[TIKU_NAME_MAX];
 
         (void)tiku_trk_poseview_reload(v);
         tiku_trk_poseview_sort_by(v, TIKU_TRK_COL_SIZE);
         m = tiku_trk_poseview_at(v, 1)->model;
         snprintf(held, sizeof held, "%s", m.name);
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CHANGED;
+        e.op = TIKU_EV_CHANGED;
         e.model = m;
         e.model.facts.size += 1000000;      /* would re-slot under Size */
         e.model.facts.mtime += 1;
-        e.fields = TIKU_TRK_EVF_DATE;       /* but the notice says DATE  */
+        e.fields = TIKU_EVF_DATE;       /* but the notice says DATE  */
         snprintf(e.path, sizeof e.path, "%s", m.path);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
         (void)tiku_trk_poseview_notify(v, &e);
         check(strcmp(tiku_trk_poseview_at(v, 1)->model.name, held) == 0,
               "PVL-047", "a change whose FIELD is not the sort key leaves "
               "the row in its slot, whatever else the model says");
-        e.fields = TIKU_TRK_EVF_SIZE;       /* now the notice says SIZE  */
+        e.fields = TIKU_EVF_SIZE;       /* now the notice says SIZE  */
         e.model.facts.mtime += 1;
         (void)tiku_trk_poseview_notify(v, &e);
         check(strcmp(tiku_trk_poseview_at(v, 1)->model.name, held) != 0,
@@ -727,10 +727,10 @@ main(void)
         (void)tiku_trk_poseview_reload(v);
         m = tiku_trk_poseview_at(v, 2)->model;
         memset(&e, 0, sizeof e);
-        e.op = TIKU_TRK_EV_CHANGED;
+        e.op = TIKU_EV_CHANGED;
         e.model = m;
         e.model.facts.size += 1;            /* a fact no named column moved */
-        e.fields = TIKU_TRK_EVF_DATE;       /* date claimed, date text same */
+        e.fields = TIKU_EVF_DATE;       /* date claimed, date text same */
         snprintf(e.path, sizeof e.path, "%s", m.path);
         snprintf(e.dir, sizeof e.dir, "%s", dir);
         flags = tiku_trk_poseview_notify(v, &e);
@@ -742,7 +742,7 @@ main(void)
         /* The Date column is not SHOWN, so even a real date change owes
          * no paint -- visibility is part of the gate.  A capability
          * change lands in a column that is: that one paints. */
-        e.fields = TIKU_TRK_EVF_CAP;
+        e.fields = TIKU_EVF_CAP;
         snprintf(e.model.facts.req_cap, sizeof e.model.facts.req_cap,
                  "cap.changed");
         flags = tiku_trk_poseview_notify(v, &e);
@@ -1215,9 +1215,9 @@ main(void)
                 tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, i);
 
                 if (p == NULL) { continue; }
-                if (tiku_trk_model_is_container(&p->model) &&
+                if (tiku_model_is_container(&p->model) &&
                     folder_at < 0) { folder_at = i; }
-                if (!tiku_trk_model_is_container(&p->model) &&
+                if (!tiku_model_is_container(&p->model) &&
                     file_at < 0) { file_at = i; }
             }
             check(folder_at >= 0 && file_at >= 0 && folder_at < file_at,
@@ -1230,9 +1230,9 @@ main(void)
                 tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, i);
 
                 if (p == NULL) { continue; }
-                if (tiku_trk_model_is_container(&p->model) &&
+                if (tiku_model_is_container(&p->model) &&
                     folder_at < 0) { folder_at = i; }
-                if (!tiku_trk_model_is_container(&p->model) &&
+                if (!tiku_model_is_container(&p->model) &&
                     file_at < 0) { file_at = i; }
             }
             check(file_at >= 0 && folder_at >= 0 && file_at < folder_at,
@@ -1242,13 +1242,13 @@ main(void)
             {
                 tiku_trk_pose_t *p = tiku_trk_poseview_at(v2, 0);
                 char buf[64];
-                tiku_trk_model_t vol;
+                tiku_model_t vol;
 
                 /* A volume reports its capacity where a file reports its
                  * size; a plain folder reports neither. */
                 if (p != NULL) {
                     vol = p->model;
-                    p->model.kind = TIKU_TRK_KIND_VOLUME;
+                    p->model.kind = TIKU_KIND_VOLUME;
                     p->model.facts.total = 4096u * 1024u;
                     check(strcmp(tiku_trk_poseview_cell_text(v2, p,
                               TIKU_TRK_COL_SIZE, buf, sizeof buf), "-") != 0,
@@ -1256,7 +1256,7 @@ main(void)
                           "a volume's Size is its CAPACITY, not a dash -- "
                           "the fact is carried and nothing was reading it");
                     p->model = vol;
-                    p->model.kind = TIKU_TRK_KIND_SYMLINK;
+                    p->model.kind = TIKU_KIND_SYMLINK;
                     p->model.facts.size = 12;
                     check(strcmp(tiku_trk_poseview_cell_text(v2, p,
                               TIKU_TRK_COL_SIZE, buf, sizeof buf), "-") == 0,
@@ -1300,29 +1300,29 @@ main(void)
             tiku_trk_pose_t fake;
 
             memset(&fake, 0, sizeof fake);
-            fake.model.kind = TIKU_TRK_KIND_FILE;
+            fake.model.kind = TIKU_KIND_FILE;
             fake.model.facts.mode_known = 1;
             fake.model.facts.mode = 0754;
             check(strcmp(tiku_trk_poseview_cell_text(v, &fake,
                              TIKU_TRK_COL_PERM, buf, sizeof buf),
                          "-rwxr-xr--") == 0, "MA-031",
                   "0754 reads -rwxr-xr--, the 00400-downward walk");
-            fake.model.kind = TIKU_TRK_KIND_DIRECTORY;
+            fake.model.kind = TIKU_KIND_DIRECTORY;
             check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
                                               buf, sizeof buf)[0] == 'd',
                   "MA-031", "a directory leads with d");
-            fake.model.kind = TIKU_TRK_KIND_SYMLINK;
+            fake.model.kind = TIKU_KIND_SYMLINK;
             check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
                                               buf, sizeof buf)[0] == 'l',
                   "MA-031", "a symlink leads with l");
-            fake.model.kind = TIKU_TRK_KIND_FILE;
+            fake.model.kind = TIKU_KIND_FILE;
             fake.model.facts.mode = 0060644;
             fake.model.node_id = 999u;    /* a fresh cell, not the cache */
             check(tiku_trk_poseview_cell_text(v, &fake, TIKU_TRK_COL_PERM,
                                               buf, sizeof buf)[0] == 'b',
                   "MA-031", "a block device leads with b");
             fake.model.facts.mode_known = 0;
-            fake.model.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+            fake.model.facts.perm = TIKU_P_READ | TIKU_P_WRITE;
             check(strcmp(tiku_trk_poseview_cell_text(v, &fake,
                              TIKU_TRK_COL_PERM, buf, sizeof buf),
                          "rw-") == 0, "MA-031",
@@ -1386,12 +1386,12 @@ main(void)
 
     printf("\noriginal paths in Trash (MA-030)\n");
     {
-        tiku_trk_store_t *st = (b->ops->state_store != NULL)
+        tiku_store_t *st = (b->ops->state_store != NULL)
                                    ? b->ops->state_store(b) : NULL;
-        tiku_trk_model_t trashed;
+        tiku_model_t trashed;
         tiku_trk_pose_t *tp = NULL;
-        char trash[TIKU_TRK_PATH_MAX];
-        char path[TIKU_TRK_PATH_MAX];
+        char trash[TIKU_PATH_MAX];
+        char path[TIKU_PATH_MAX];
         char buf[128];
 
         snprintf(trash, sizeof trash, "%s/.Trash", dir);
@@ -1405,11 +1405,11 @@ main(void)
         memset(&trashed, 0, sizeof trashed);
         snprintf(trashed.path, sizeof trashed.path, "%s", path);
         snprintf(trashed.name, sizeof trashed.name, "gone.txt");
-        trashed.kind = TIKU_TRK_KIND_FILE;
-        trashed.facts.perm = TIKU_TRK_P_READ | TIKU_TRK_P_WRITE;
+        trashed.kind = TIKU_KIND_FILE;
+        trashed.facts.perm = TIKU_P_READ | TIKU_P_WRITE;
         (void)tiku_trk_poseview_adopt(v, &trashed);
         if (st != NULL) {
-            (void)tiku_trk_state_write(st, trash, TIKU_TRK_ATTR_ORIGINAL,
+            (void)tiku_state_write(st, trash, TIKU_ATTR_ORIGINAL,
                                        "/tmp/original/gone.txt", 22);
         }
         {
@@ -1435,7 +1435,7 @@ main(void)
 
     printf("\ncolumns that show an ATTRIBUTE (CW-026)\n");
     {
-        tiku_trk_store_t *st = (b->ops->state_store != NULL)
+        tiku_store_t *st = (b->ops->state_store != NULL)
                                    ? b->ops->state_store(b) : NULL;
         tiku_trk_pose_t *p0 = tiku_trk_poseview_at(v, 0);
         char buf[128];
@@ -1455,7 +1455,7 @@ main(void)
               "it is added and removed by the same toggle as every other "
               "column");
         if (st != NULL && p0 != NULL) {
-            (void)tiku_trk_state_write(st, p0->model.path,
+            (void)tiku_state_write(st, p0->model.path,
                                        "user.trk.author", "Ada", 3);
             check(strcmp(tiku_trk_poseview_cell_text(v, p0, f, buf,
                                                      sizeof buf),
@@ -1665,23 +1665,23 @@ main(void)
     /* --- the folders-first ladder has four rungs (MA-009) --------------- */
     printf("\nthe folders-first ladder (MA-009)\n");
     {
-        tiku_trk_model_t rows[4];
+        tiku_model_t rows[4];
         tiku_trk_poseview_t *lv = tiku_trk_poseview_new(b, dir);
 
         memset(rows, 0, sizeof rows);
         snprintf(rows[0].name, sizeof rows[0].name, "afile");
         snprintf(rows[0].path, sizeof rows[0].path, "/x/afile");
-        rows[0].kind = TIKU_TRK_KIND_FILE;
+        rows[0].kind = TIKU_KIND_FILE;
         snprintf(rows[1].name, sizeof rows[1].name, "bfolder");
         snprintf(rows[1].path, sizeof rows[1].path, "/x/bfolder");
-        rows[1].kind = TIKU_TRK_KIND_DIRECTORY;
+        rows[1].kind = TIKU_KIND_DIRECTORY;
         snprintf(rows[2].name, sizeof rows[2].name, "cvol");
         snprintf(rows[2].path, sizeof rows[2].path, "/x/cvol");
-        rows[2].kind = TIKU_TRK_KIND_VOLUME;
+        rows[2].kind = TIKU_KIND_VOLUME;
         rows[2].facts.total = 1000u;
         snprintf(rows[3].name, sizeof rows[3].name, "droot");
         snprintf(rows[3].path, sizeof rows[3].path, "/");
-        rows[3].kind = TIKU_TRK_KIND_ROOT;
+        rows[3].kind = TIKU_KIND_ROOT;
         (void)tiku_trk_poseview_set_models(lv, rows, 4);
         check(strcmp(tiku_trk_poseview_at(lv, 0)->model.name, "droot") == 0 &&
               strcmp(tiku_trk_poseview_at(lv, 1)->model.name, "cvol") == 0 &&
@@ -1719,10 +1719,10 @@ main(void)
 
     printf("\nquery windows stay lists (Q-041)\n");
     {
-        tiku_trk_model_t result[2];
+        tiku_model_t result[2];
         const tiku_trk_column_t *cols = NULL;
         tiku_trk_poseview_t *same, *other;
-        tiku_trk_store_t *layouts = tiku_trk_store_memory_open();
+        tiku_store_t *layouts = tiku_store_memory_open();
         int nc, i, path_width = 0;
 
         result[0] = tiku_trk_poseview_at(v, 0)->model;
@@ -1775,12 +1775,12 @@ main(void)
               "a different searched type keeps its own default layout");
         tiku_trk_poseview_free(same);
         tiku_trk_poseview_free(other);
-        tiku_trk_store_free(layouts);
+        tiku_store_free(layouts);
     }
 
     printf("\ndefault query layouts (Q-042, AW-015)\n");
     {
-        tiku_trk_store_t *layouts = tiku_trk_store_memory_open();
+        tiku_store_t *layouts = tiku_store_memory_open();
         tiku_trk_poseview_t *mail;
         tiku_trk_frame_t frame;
         const tiku_trk_column_t *cols = NULL;
@@ -1811,11 +1811,11 @@ main(void)
               "AW-015", "installing defaults again preserves the layouts "
               "already present");
         tiku_trk_poseview_free(mail);
-        tiku_trk_store_free(layouts);
+        tiku_store_free(layouts);
     }
 
     tiku_trk_poseview_free(v);
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     rm_tree(dir);
 
 

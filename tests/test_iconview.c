@@ -16,7 +16,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
-#include "tiku_trk_state.h"
+#include "tiku_state.h"
 
 static int fails;
 
@@ -51,7 +51,7 @@ measure(const char *text, void *ctx)
 
 /** @brief An icon mask with a transparent left half, so sides differ. */
 static int
-half_mask(const tiku_trk_model_t *m, int size, int px, int py, void *ctx)
+half_mask(const tiku_model_t *m, int size, int px, int py, void *ctx)
 {
     (void)m;
     (void)py;
@@ -62,7 +62,7 @@ half_mask(const tiku_trk_model_t *m, int size, int px, int py, void *ctx)
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
     tiku_trk_poseview_t *v;
     int gx, gy, ox, oy, x, y, w, h;
 
@@ -577,7 +577,7 @@ main(void)
 
     printf("\nthree state slots that never collide (MA-064)\n");
     {
-        struct tiku_trk_store *store = b->ops->state_store(b);
+        struct tiku_store *store = b->ops->state_store(b);
         tiku_trk_poseview_t *desk, *folder, *desk2, *root;
         char buf[96];
 
@@ -585,14 +585,14 @@ main(void)
          * directory are different records: rearranging one must not
          * disturb the other. */
         desk = tiku_trk_poseview_new(b, work);
-        tiku_trk_poseview_set_state_slot(desk, TIKU_TRK_KEY_DESKTOP);
+        tiku_trk_poseview_set_state_slot(desk, TIKU_KEY_DESKTOP);
         tiku_trk_poseview_set_mode(desk, TIKU_TRK_MODE_ICON);
         (void)tiku_trk_poseview_save_state(desk);
         folder = tiku_trk_poseview_new(b, work);
         tiku_trk_poseview_set_mode(folder, TIKU_TRK_MODE_MINI);
         (void)tiku_trk_poseview_save_state(folder);
         desk2 = tiku_trk_poseview_new(b, work);
-        tiku_trk_poseview_set_state_slot(desk2, TIKU_TRK_KEY_DESKTOP);
+        tiku_trk_poseview_set_state_slot(desk2, TIKU_KEY_DESKTOP);
         (void)tiku_trk_poseview_restore_state(desk2);
         check(tiku_trk_poseview_mode(desk2) == TIKU_TRK_MODE_ICON,
               "MA-064", "the Desktop slot survives a folder window "
@@ -602,18 +602,18 @@ main(void)
          * original redirects it -- the root itself is nowhere the store
          * can write. */
         {
-            char deskdir[TIKU_TRK_PATH_MAX];
+            char deskdir[TIKU_PATH_MAX];
 
             (void)setenv("HOME", work, 1);
             /* Wherever this Tracker's Desktop is; the root's state is
              * redirected onto it, not onto the login session's. */
-            (void)tiku_trk_desktop_dir(deskdir, sizeof deskdir);
+            (void)tiku_desktop_dir(deskdir, sizeof deskdir);
             sh("mkdir -p '%s'", deskdir);
             root = tiku_trk_poseview_new(b, "/");
             tiku_trk_poseview_set_mode(root, TIKU_TRK_MODE_MINI);
             (void)tiku_trk_poseview_save_state(root);
-            check(tiku_trk_state_read(store, deskdir,
-                                      TIKU_TRK_ATTR_DISKS_VIEW_STATE, buf,
+            check(tiku_state_read(store, deskdir,
+                                      TIKU_ATTR_DISKS_VIEW_STATE, buf,
                                       sizeof buf) > 0,
                   "MA-064", "the root window writes the Disks slot on the "
                   "Desktop directory, colliding with no folder's own");
@@ -626,12 +626,12 @@ main(void)
 
     printf("\nsaved state that is out of range (MA-063)\n");
     {
-        struct tiku_trk_store *store = b->ops->state_store(b);
+        struct tiku_store *store = b->ops->state_store(b);
         const char *bad;
         tiku_trk_poseview_t *again;
 
         bad = "icon 999 0 0 0 0 0 0 -1 0";
-        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+        (void)tiku_state_write(store, work, TIKU_ATTR_VIEW_STATE,
                                    bad, strlen(bad));
         again = tiku_trk_poseview_new(b, work);
         (void)tiku_trk_poseview_restore_state(again);
@@ -642,7 +642,7 @@ main(void)
         tiku_trk_poseview_free(again);
 
         bad = "icon 4 0 0 0 0 0 0 -1 0";
-        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+        (void)tiku_state_write(store, work, TIKU_ATTR_VIEW_STATE,
                                    bad, strlen(bad));
         again = tiku_trk_poseview_new(b, work);
         (void)tiku_trk_poseview_restore_state(again);
@@ -650,7 +650,7 @@ main(void)
               "and one below the bottom comes up to the smallest");
 
         bad = "list -7 0 0 0 0 0 0 -1 0";
-        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+        (void)tiku_state_write(store, work, TIKU_ATTR_VIEW_STATE,
                                    bad, strlen(bad));
         tiku_trk_poseview_free(again);
         again = tiku_trk_poseview_new(b, work);
@@ -661,7 +661,7 @@ main(void)
         tiku_trk_poseview_free(again);
 
         bad = "sideways 64 9 0 0 0 0 3 -1 1";
-        (void)tiku_trk_state_write(store, work, TIKU_TRK_ATTR_VIEW_STATE,
+        (void)tiku_state_write(store, work, TIKU_ATTR_VIEW_STATE,
                                    bad, strlen(bad));
         again = tiku_trk_poseview_new(b, work);
         (void)tiku_trk_poseview_reload(again);
@@ -677,7 +677,7 @@ main(void)
               "from a record that garbled are not more trustworthy than "
               "the name was");
         tiku_trk_poseview_free(again);
-        (void)tiku_trk_state_forget(store, work);
+        (void)tiku_state_forget(store, work);
     }
 
     printf("\nwhat a sweep leaves behind (PVS-029)\n");
@@ -810,7 +810,7 @@ main(void)
     }
 
     tiku_trk_poseview_free(v);
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     sh("rm -rf %s", work);
     printf("\n%s\n", fails ? "FAILURES" : "the icon viewport holds");
     return fails ? 1 : 0;

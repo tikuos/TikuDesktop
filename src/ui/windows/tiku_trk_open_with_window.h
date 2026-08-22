@@ -17,10 +17,10 @@
 #ifndef TIKU_TRK_OPEN_WITH_WINDOW_H_
 #define TIKU_TRK_OPEN_WITH_WINDOW_H_
 
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_launch.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 #define TIKU_TRK_OW_PATHS 16
 
@@ -28,22 +28,22 @@ typedef void (*tiku_trk_ow_open_fn)(void *context,
     const tiku_trk_app_t *app, const char *const *paths, int count);
 
 typedef struct {
-    tiku_desk_workspace_t *workspace;
-    tiku_desk_window_t    *window;
+    tiku_workspace_t *workspace;
+    tiku_window_t    *window;
     int                    screen_w;
     int                    screen_h;
     int                   *dirty;
     tiku_trk_ow_open_fn    open;
     void                  *open_context;
     tiku_trk_alert_t      *alert;       /* the shell's, for the confirm  */
-    struct tiku_trk_store *store;       /* where preferred lives         */
+    struct tiku_store *store;       /* where preferred lives         */
     /* The question being asked. */
     tiku_trk_cand_t        cand[TIKU_TRK_APP_MAX];
     int                    count;
-    char                   paths[TIKU_TRK_OW_PATHS][TIKU_TRK_PATH_MAX];
+    char                   paths[TIKU_TRK_OW_PATHS][TIKU_PATH_MAX];
     const char            *path_ptr[TIKU_TRK_OW_PATHS];
     int                    path_count;
-    char                   types[TIKU_TRK_APP_TYPES_MAX][TIKU_TRK_TYPE_MAX];
+    char                   types[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX];
     int                    type_count;
     int                    generic_only; /* every document is untyped     */
     int                    sel;          /* single selection, or -1       */
@@ -51,16 +51,16 @@ typedef struct {
 } tiku_trk_open_with_window_t;
 
 void tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *controller,
-    tiku_desk_workspace_t *workspace, int screen_w, int screen_h,
+    tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
-    tiku_trk_alert_t *alert, struct tiku_trk_store *store);
+    tiku_trk_alert_t *alert, struct tiku_store *store);
 
 /** @brief Ask which application, for @p paths of @p types. */
 void tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *controller,
     const tiku_trk_apps_t *apps, const char *const *types, int ntypes,
     const char *const *paths, int npaths);
 
-tiku_desk_window_t *tiku_trk_open_with_window_handle(
+tiku_window_t *tiku_trk_open_with_window_handle(
     tiku_trk_open_with_window_t *controller);
 
 /** @return Nonzero when the focused window consumed the key. */

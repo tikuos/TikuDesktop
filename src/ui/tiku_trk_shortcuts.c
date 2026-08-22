@@ -9,7 +9,7 @@
  */
 
 #include "tiku_trk_shortcuts.h"
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 #include "tiku_trk_input.h"
 #include "tiku_trk_view_defs.h"
 
@@ -52,151 +52,151 @@ tiku_trk_sc_label(int command, unsigned mods)
     /* Delete is also the shifted form of Move to Trash, but a Trash menu
      * asks for Delete directly and must not need Shift to say what it does. */
     if (command == TIKU_TRK_CMD_DELETE) {
-        return tiku_trk_str("cmd.delete");
+        return tiku_str("cmd.delete");
     }
     switch (canonical(command)) {
     /* The nine that rename themselves.  Capitalisation is the original's:
      * "Move to Trash" and "Empty Trash" capitalise Trash, the rest do not
      * capitalise their second word. */
     case TIKU_TRK_CMD_CLEANUP:
-        return tiku_trk_str(sh ? "cmd.cleanup_shift" : "cmd.cleanup");
+        return tiku_str(sh ? "cmd.cleanup_shift" : "cmd.cleanup");
     case TIKU_TRK_CMD_CLOSE:
-        return tiku_trk_str(sh ? "cmd.close_shift" : "cmd.close");
+        return tiku_str(sh ? "cmd.close_shift" : "cmd.close");
     case TIKU_TRK_CMD_COPY:
-        return tiku_trk_str(sh ? "cmd.copy_shift" : "cmd.copy");
+        return tiku_str(sh ? "cmd.copy_shift" : "cmd.copy");
     case TIKU_TRK_CMD_CUT:
-        return tiku_trk_str(sh ? "cmd.cut_shift" : "cmd.cut");
+        return tiku_str(sh ? "cmd.cut_shift" : "cmd.cut");
     case TIKU_TRK_CMD_PASTE:
-        return tiku_trk_str(sh ? "cmd.paste_shift" : "cmd.paste");
+        return tiku_str(sh ? "cmd.paste_shift" : "cmd.paste");
     case TIKU_TRK_CMD_COPY_LAYOUT:
-        return tiku_trk_str("cmd.copy_layout");
+        return tiku_str("cmd.copy_layout");
     case TIKU_TRK_CMD_PASTE_LAYOUT:
-        return tiku_trk_str("cmd.paste_layout");
+        return tiku_str("cmd.paste_layout");
     case TIKU_TRK_CMD_CREATE_LINK:
-        return tiku_trk_str(sh ? "cmd.create_link_shift" : "cmd.create_link");
+        return tiku_str(sh ? "cmd.create_link_shift" : "cmd.create_link");
     case TIKU_TRK_CMD_LINK_HERE:
-        return tiku_trk_str(sh ? "cmd.link_here_shift" : "cmd.link_here");
+        return tiku_str(sh ? "cmd.link_here_shift" : "cmd.link_here");
     case TIKU_TRK_CMD_IDENTIFY:
-        return tiku_trk_str(sh ? "cmd.identify_shift" : "cmd.identify");
+        return tiku_str(sh ? "cmd.identify_shift" : "cmd.identify");
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
-        return tiku_trk_str(sh ? "cmd.move_to_trash_shift" : "cmd.move_to_trash");
+        return tiku_str(sh ? "cmd.move_to_trash_shift" : "cmd.move_to_trash");
 
     case TIKU_TRK_CMD_FIND:
-        return tiku_trk_str("cmd.find");
+        return tiku_str("cmd.find");
     case TIKU_TRK_CMD_NEW_FOLDER:
-        return tiku_trk_str("cmd.new_folder");
+        return tiku_str("cmd.new_folder");
     case TIKU_TRK_CMD_OPEN:
-        return tiku_trk_str("cmd.open");
+        return tiku_str("cmd.open");
     case TIKU_TRK_CMD_EDIT_QUERY:
-        return tiku_trk_str("cmd.edit_query");
+        return tiku_str("cmd.edit_query");
     case TIKU_TRK_CMD_OPEN_WITH:
-        return tiku_trk_str("cmd.open_with");
+        return tiku_str("cmd.open_with");
     case TIKU_TRK_CMD_GET_INFO:
-        return tiku_trk_str("cmd.get_info");
+        return tiku_str("cmd.get_info");
     case TIKU_TRK_CMD_EDIT_NAME:
-        return tiku_trk_str("cmd.edit_name");
+        return tiku_str("cmd.edit_name");
     case TIKU_TRK_CMD_DUPLICATE:
-        return tiku_trk_str("cmd.duplicate");
+        return tiku_str("cmd.duplicate");
     case TIKU_TRK_CMD_RESTORE:
-        return tiku_trk_str("cmd.restore");
+        return tiku_str("cmd.restore");
     case TIKU_TRK_CMD_EMPTY_TRASH:
-        return tiku_trk_str("cmd.empty_trash");
+        return tiku_str("cmd.empty_trash");
     case TIKU_TRK_CMD_MOVE_TO:
-        return tiku_trk_str("cmd.move_to");
+        return tiku_str("cmd.move_to");
     case TIKU_TRK_CMD_COPY_TO:
-        return tiku_trk_str("cmd.copy_to");
+        return tiku_str("cmd.copy_to");
     case TIKU_TRK_CMD_ICON_VIEW:
-        return tiku_trk_str("cmd.icon_view");
+        return tiku_str("cmd.icon_view");
     case TIKU_TRK_CMD_MINI_ICON_VIEW:
-        return tiku_trk_str("cmd.mini_icon_view");
+        return tiku_str("cmd.mini_icon_view");
     case TIKU_TRK_CMD_LIST_VIEW:
-        return tiku_trk_str("cmd.list_view");
+        return tiku_str("cmd.list_view");
     case TIKU_TRK_CMD_RESIZE_TO_FIT:
-        return tiku_trk_str("cmd.resize_to_fit");
+        return tiku_str("cmd.resize_to_fit");
     case TIKU_TRK_CMD_ARRANGE_BY:
-        return tiku_trk_str("cmd.arrange_by");
+        return tiku_str("cmd.arrange_by");
     case TIKU_TRK_CMD_REVERSE_ORDER:
-        return tiku_trk_str("cmd.reverse_order");
+        return tiku_str("cmd.reverse_order");
     case TIKU_TRK_CMD_SELECT_MATCHING:
-        return tiku_trk_str("cmd.select_matching");
+        return tiku_str("cmd.select_matching");
     case TIKU_TRK_CMD_SELECT_ALL:
-        return tiku_trk_str("cmd.select_all");
+        return tiku_str("cmd.select_all");
     case TIKU_TRK_CMD_INVERT_SELECTION:
-        return tiku_trk_str("cmd.invert_selection");
+        return tiku_str("cmd.invert_selection");
     case TIKU_TRK_CMD_OPEN_PARENT:
-        return tiku_trk_str("cmd.open_parent");
+        return tiku_str("cmd.open_parent");
     case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE:
-        return tiku_trk_str("cmd.close_all_workspace");
+        return tiku_str("cmd.close_all_workspace");
     case TIKU_TRK_CMD_PREFERENCES:
-        return tiku_trk_str("cmd.preferences");
+        return tiku_str("cmd.preferences");
     case TIKU_TRK_CMD_EDIT_TEMPLATES:
-        return tiku_trk_str("cmd.edit_templates");
+        return tiku_str("cmd.edit_templates");
     case TIKU_TRK_CMD_SORT_BY_NAME:
-        return tiku_trk_str("label.name");
+        return tiku_str("label.name");
     case TIKU_TRK_CMD_SORT_BY_KIND:
-        return tiku_trk_str("label.kind");
+        return tiku_str("label.kind");
     case TIKU_TRK_CMD_SORT_BY_SIZE:
-        return tiku_trk_str("label.size");
+        return tiku_str("label.size");
     case TIKU_TRK_CMD_SORT_BY_VALUE:
-        return tiku_trk_str("label.value");
+        return tiku_str("label.value");
     case TIKU_TRK_CMD_ICON_SIZE_32:
-        return tiku_trk_str("cmd.icon_size_32");
+        return tiku_str("cmd.icon_size_32");
     case TIKU_TRK_CMD_ICON_SIZE_40:
-        return tiku_trk_str("cmd.icon_size_40");
+        return tiku_str("cmd.icon_size_40");
     case TIKU_TRK_CMD_ICON_SIZE_48:
-        return tiku_trk_str("cmd.icon_size_48");
+        return tiku_str("cmd.icon_size_48");
     case TIKU_TRK_CMD_ICON_SIZE_64:
-        return tiku_trk_str("cmd.icon_size_64");
+        return tiku_str("cmd.icon_size_64");
     case TIKU_TRK_CMD_ICON_SIZE_96:
-        return tiku_trk_str("cmd.icon_size_96");
+        return tiku_str("cmd.icon_size_96");
     case TIKU_TRK_CMD_ICON_SIZE_128:
-        return tiku_trk_str("cmd.icon_size_128");
+        return tiku_str("cmd.icon_size_128");
     case TIKU_TRK_CMD_SORT_BY_CAP:
-        return tiku_trk_str("label.capability");
+        return tiku_str("label.capability");
     case TIKU_TRK_CMD_COL_NAME:
-        return tiku_trk_str("label.name");
+        return tiku_str("label.name");
     case TIKU_TRK_CMD_COL_KIND:
-        return tiku_trk_str("label.kind");
+        return tiku_str("label.kind");
     case TIKU_TRK_CMD_COL_SIZE:
-        return tiku_trk_str("label.size");
+        return tiku_str("label.size");
     case TIKU_TRK_CMD_COL_VALUE:
-        return tiku_trk_str("label.value");
+        return tiku_str("label.value");
     case TIKU_TRK_CMD_COL_DATE:
-        return tiku_trk_str("cmd.col_date");
+        return tiku_str("cmd.col_date");
     case TIKU_TRK_CMD_COL_PATH:
-        return tiku_trk_str("cmd.col_path");
+        return tiku_str("cmd.col_path");
     case TIKU_TRK_CMD_COL_PERM:
-        return tiku_trk_str("cmd.col_perm");
+        return tiku_str("cmd.col_perm");
     case TIKU_TRK_CMD_COL_ORIGINAL:
-        return tiku_trk_str("cmd.col_original");
+        return tiku_str("cmd.col_original");
     case TIKU_TRK_CMD_COL_CAP:
-        return tiku_trk_str("label.capability");
+        return tiku_str("label.capability");
     case TIKU_TRK_CMD_ADD_ONS:
-        return tiku_trk_str("cmd.add_ons");
+        return tiku_str("cmd.add_ons");
     case TIKU_TRK_CMD_MOUNT:
-        return tiku_trk_str("cmd.mount");
+        return tiku_str("cmd.mount");
     case TIKU_TRK_CMD_UNMOUNT:
-        return tiku_trk_str("cmd.unmount");
+        return tiku_str("cmd.unmount");
     case TIKU_TRK_CMD_MOUNT_ALL:
-        return tiku_trk_str("cmd.mount_all");
+        return tiku_str("cmd.mount_all");
     case TIKU_TRK_CMD_MOUNT_SETTINGS:
-        return tiku_trk_str("cmd.mount_settings");
+        return tiku_str("cmd.mount_settings");
     case TIKU_TRK_CMD_OPEN_WITH_WINDOW:
-        return tiku_trk_str("cmd.open_with_window");
+        return tiku_str("cmd.open_with_window");
     case TIKU_TRK_CMD_MOVE_HERE:
-        return tiku_trk_str("cmd.move_here");
+        return tiku_str("cmd.move_here");
     case TIKU_TRK_CMD_COPY_HERE:
-        return tiku_trk_str("cmd.copy_here");
+        return tiku_str("cmd.copy_here");
     case TIKU_TRK_CMD_ABOUT:
-        return tiku_trk_str("cmd.about");
+        return tiku_str("cmd.about");
     case TIKU_TRK_CMD_SHUTDOWN:
-        return tiku_trk_str("cmd.shutdown");
+        return tiku_str("cmd.shutdown");
     case TIKU_TRK_CMD_CREATE_QUERY:
-        return tiku_trk_str("cmd.create_query");
+        return tiku_str("cmd.create_query");
     case TIKU_TRK_CMD_CREATE_QUERY_TPL:
-        return tiku_trk_str("cmd.create_query_tpl");
+        return tiku_str("cmd.create_query_tpl");
     case TIKU_TRK_CMD_CANCEL:
-        return tiku_trk_str("button.cancel");
+        return tiku_str("button.cancel");
     default:                             return "";
     }
 }
@@ -238,8 +238,8 @@ tiku_trk_sc_command(int command, unsigned mods)
 int
 tiku_trk_sc_command_for_key(unsigned key, unsigned mods)
 {
-    int shift = (mods & 0x01u) != 0;    /* TIKU_DESK_MOD_SHIFT  */
-    int option = (mods & 0x04u) != 0;   /* TIKU_DESK_MOD_OPTION */
+    int shift = (mods & 0x01u) != 0;    /* TIKU_MOD_SHIFT  */
+    int option = (mods & 0x04u) != 0;   /* TIKU_MOD_OPTION */
 
     switch (key) {
     case 'o': return option ? TIKU_TRK_CMD_OPEN_WITH : TIKU_TRK_CMD_OPEN;

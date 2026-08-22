@@ -27,7 +27,7 @@ set_icon_size(tiku_trk_folder_window_t *folder, int size)
 }
 
 int
-tiku_trk_folder_actions_invoke(tiku_desk_workspace_t *workspace,
+tiku_trk_folder_actions_invoke(tiku_workspace_t *workspace,
     tiku_trk_folder_window_t *folder, int command)
 {
     if (folder == NULL || folder->view == NULL) {
@@ -124,7 +124,7 @@ tiku_trk_folder_actions_invoke(tiku_desk_workspace_t *workspace,
         return 1;
     case TIKU_TRK_CMD_RESIZE_TO_FIT:
         if (workspace != NULL && folder->win != NULL) {
-            (void)tiku_desk_workspace_zoom(workspace, folder->win,
+            (void)tiku_workspace_zoom(workspace, folder->win,
                 tiku_trk_folder_window_fit_width(folder),
                 tiku_trk_folder_window_fit_height(folder));
             /* And to the content's TOP-LEFT: a fit that leaves the view

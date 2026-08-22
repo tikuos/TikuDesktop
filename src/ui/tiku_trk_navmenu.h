@@ -17,7 +17,7 @@
 #ifndef TIKU_TRK_NAVMENU_H_
 #define TIKU_TRK_NAVMENU_H_
 
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 
 /** @brief How many entries one level holds. */
 #define TIKU_TRK_NAV_MAX 256
@@ -36,15 +36,15 @@
 
 /** @brief One entry in a level. */
 typedef struct {
-    char name[TIKU_TRK_NAME_MAX];
-    char path[TIKU_TRK_PATH_MAX];
+    char name[TIKU_NAME_MAX];
+    char path[TIKU_PATH_MAX];
     int  is_container;              /* opens a submenu of its own        */
     int  enabled;
 } tiku_trk_nav_item_t;
 
 /** @brief One open level of the walk. */
 typedef struct {
-    char                path[TIKU_TRK_PATH_MAX];
+    char                path[TIKU_PATH_MAX];
     tiku_trk_nav_item_t item[TIKU_TRK_NAV_MAX];
     int                 n;
     int                 sel;        /* highlighted row, or -1            */
@@ -56,13 +56,13 @@ typedef struct {
 typedef struct {
     tiku_trk_nav_level_t level[TIKU_TRK_NAV_DEPTH];
     int                  depth;
-    tiku_trk_backend_t  *backend;
+    tiku_backend_t  *backend;
     int                  hide_dotfiles;
     int                  folders_first;
 } tiku_trk_nav_t;
 
 /** @brief Begin a walk at @p path.  Nothing is listed yet. */
-void tiku_trk_nav_open(tiku_trk_nav_t *nav, tiku_trk_backend_t *b,
+void tiku_trk_nav_open(tiku_trk_nav_t *nav, tiku_backend_t *b,
                        const char *path);
 
 /**
@@ -112,7 +112,7 @@ const char *tiku_trk_nav_chosen(tiku_trk_nav_t *nav);
  * Only containers get one; a file has nothing to navigate into, and
  * offering an empty submenu is worse than offering none (CW-045).
  */
-int tiku_trk_nav_wanted(const tiku_trk_model_t *m);
+int tiku_trk_nav_wanted(const tiku_model_t *m);
 
 /**
  * @brief Where a level sits, given where its parent item is.

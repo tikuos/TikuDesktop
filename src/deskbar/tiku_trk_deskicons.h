@@ -15,8 +15,8 @@
 #ifndef TIKU_TRK_DESKICONS_H_
 #define TIKU_TRK_DESKICONS_H_
 
-#include "tiku_trk_vdir.h"
-#include "tiku_trk_volume.h"
+#include "tiku_vdir.h"
+#include "tiku_volume.h"
 
 /** @brief A rectangle, in screen coordinates. */
 typedef struct {
@@ -102,9 +102,9 @@ int tiku_trk_deskicons_recall(const tiku_trk_deskpos_set_t *s, int sw,
  *             mount point.  It contributes FIRST, so a name it holds is
  *             the one that shows.  NULL or "" leaves it out.
  */
-void tiku_trk_deskicons_sources(const tiku_trk_volumes_t *vs,
-                                tiku_trk_backend_t *b, const char *home,
-                                tiku_trk_vdir_t *out);
+void tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
+                                tiku_backend_t *b, const char *home,
+                                tiku_vdir_t *out);
 
 /**
  * @brief Whether the "/" icon should be shown, given the two settings.
@@ -121,8 +121,8 @@ int tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop);
  * own setting; and only a persistent volume shows at all -- an icon for a
  * RAM filesystem would be an icon for a thing that forgets.
  */
-int tiku_trk_deskicons_volume_pose(const tiku_trk_volumes_t *vs,
-                                   const tiku_trk_volume_t *v,
+int tiku_trk_deskicons_volume_pose(const tiku_volumes_t *vs,
+                                   const tiku_volume_t *v,
                                    int volumes_on_desktop, int shared_too);
 
 #endif /* TIKU_TRK_DESKICONS_H_ */

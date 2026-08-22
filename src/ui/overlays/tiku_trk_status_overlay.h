@@ -12,8 +12,8 @@
 
 #include <stdint.h>
 
-#include "tiku_desk_gfx.h"
-#include "tiku_desk_event.h"
+#include "tiku_gfx.h"
+#include "tiku_event.h"
 #include "tiku_trk_alert.h"
 
 typedef void (*tiku_trk_status_alert_fn)(void *context,
@@ -23,7 +23,7 @@ typedef void (*tiku_trk_status_stop_fn)(void *context);
 typedef struct {
     tiku_trk_alert_t          alert;
     tiku_trk_progress_win_t   progress;
-    tiku_desk_surface_t      *surface;
+    tiku_surface_t      *surface;
     int                       screen_w;
     int                       screen_h;
     int                      *dirty;
@@ -34,7 +34,7 @@ typedef struct {
 } tiku_trk_status_overlay_t;
 
 void tiku_trk_status_overlay_init(tiku_trk_status_overlay_t *controller,
-    tiku_desk_surface_t *surface, int screen_w, int screen_h, int *dirty,
+    tiku_surface_t *surface, int screen_w, int screen_h, int *dirty,
     tiku_trk_status_alert_fn answer, tiku_trk_status_stop_fn stop,
     void *callback_context);
 

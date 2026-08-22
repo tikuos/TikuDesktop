@@ -67,7 +67,7 @@ typedef struct {
  * be the distinguishing part.  Formatted values (sizes, capabilities,
  * dates, permission strings) elide at the end: their head is the value.
  *
- * @return 0 for middle (TIKU_TRK_TRUNC_MIDDLE), 1 for end.
+ * @return 0 for middle (TIKU_TRUNC_MIDDLE), 1 for end.
  */
 static inline int
 tiku_trk_col_trunc_end(int field)

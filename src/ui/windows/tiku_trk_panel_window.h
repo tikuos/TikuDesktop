@@ -12,7 +12,7 @@
 
 #include <stddef.h>
 
-#include "tiku_desk_window.h"
+#include "tiku_window.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_edit.h"
 #include "tiku_trk_panel.h"
@@ -26,11 +26,11 @@ typedef void (*tiku_trk_panel_window_commit_fn)(void *context, void *target,
 typedef struct {
     tiku_trk_panel_t       model;
     tiku_trk_edit_t        name;
-    tiku_desk_workspace_t *workspace;
-    tiku_desk_window_t    *window;
+    tiku_workspace_t *workspace;
+    tiku_window_t    *window;
     tiku_trk_poseview_t   *view;
-    tiku_trk_backend_t    *backend;
-    tiku_trk_store_t      *store;
+    tiku_backend_t    *backend;
+    tiku_store_t      *store;
     tiku_trk_nodeicon_t   *icons;
     void                  *target;
     int                    command;
@@ -45,18 +45,18 @@ typedef struct {
     /* The shell's alert, for a save's refusals and its Replace question;
      * the checked path waits here while the question is on screen. */
     tiku_trk_alert_t      *alert;
-    char                   pending_save[TIKU_TRK_PATH_MAX];
+    char                   pending_save[TIKU_PATH_MAX];
     /* The Favorites menu: favourites, then recent folders, dropped up
      * from the bottom-left button (AW-062, CW-058). */
     int                    fav_open;
     int                    fav_count;
-    char                   fav_path[12][TIKU_TRK_PATH_MAX];
+    char                   fav_path[12][TIKU_PATH_MAX];
     char                   fav_label[12][48];
 } tiku_trk_panel_window_t;
 
 void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_backend_t *backend,
-    tiku_trk_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
+    tiku_workspace_t *workspace, tiku_backend_t *backend,
+    tiku_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
     int screen_w, int screen_h, int *dirty,
     tiku_trk_panel_window_commit_fn commit, void *commit_context);
 
@@ -86,7 +86,7 @@ void tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
 void tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller);
 void tiku_trk_panel_window_destroy(tiku_trk_panel_window_t *controller);
 
-tiku_desk_window_t *tiku_trk_panel_window_handle(
+tiku_window_t *tiku_trk_panel_window_handle(
     tiku_trk_panel_window_t *controller);
 tiku_trk_panel_t *tiku_trk_panel_window_model(
     tiku_trk_panel_window_t *controller);
@@ -97,7 +97,7 @@ int tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller,
 
 /** @return Nonzero when the panel view changed. */
 int tiku_trk_panel_window_poll(tiku_trk_panel_window_t *controller,
-    int64_t now, const tiku_trk_change_t *changes, int count, int complete);
+    int64_t now, const tiku_model_change_t *changes, int count, int complete);
 
 /** @return Nonzero when the panel moved away from the removed mount. */
 int tiku_trk_panel_window_device_gone(tiku_trk_panel_window_t *controller,

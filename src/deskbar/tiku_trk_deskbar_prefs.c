@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "tiku_desk_font.h"
+#include "tiku_font.h"
 #include "tiku_trk_deskbar_prefs.h"
 
 #define PREF_VERSION 5
@@ -112,7 +112,7 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     /* The toolkit is the authority on how many families it carries: a
      * record naming one that is not there falls back to the first. */
     if (settings->font_family < 0 ||
-        settings->font_family >= tiku_desk_font_family_count()) {
+        settings->font_family >= tiku_font_family_count()) {
         settings->font_family = 0;
     }
 }
@@ -235,7 +235,7 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
 
 int
 tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
-                            tiku_trk_store_t *store)
+                            tiku_store_t *store)
 {
     int32_t record[PREF_FIELDS];
     int n;
@@ -243,12 +243,12 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
     if (prefs == NULL || store == NULL) {
         return -1;
     }
-    n = tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
-                            TIKU_TRK_ATTR_DESKBAR_PREFS, record,
+    n = tiku_state_read(store, TIKU_KEY_SESSION,
+                            TIKU_ATTR_DESKBAR_PREFS, record,
                             sizeof record);
     if (n != (int)sizeof record) {
-        n = tiku_trk_state_read(store, TIKU_TRK_KEY_SESSION,
-                                TIKU_TRK_ATTR_DESKBAR_PREFS, record,
+        n = tiku_state_read(store, TIKU_KEY_SESSION,
+                                TIKU_ATTR_DESKBAR_PREFS, record,
                                 PREF_FIELDS_V1 * sizeof *record);
     }
     if (n != (int)sizeof record &&
@@ -268,14 +268,14 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
 
 int
 tiku_trk_deskbar_prefs_save(const tiku_trk_deskbar_prefs_t *prefs,
-                            tiku_trk_store_t *store)
+                            tiku_store_t *store)
 {
     int32_t record[PREF_FIELDS];
 
     if (prefs == NULL || store == NULL) { return -1; }
     pack(&prefs->value, record);
-    return tiku_trk_state_write(store, TIKU_TRK_KEY_SESSION,
-                                TIKU_TRK_ATTR_DESKBAR_PREFS,
+    return tiku_state_write(store, TIKU_KEY_SESSION,
+                                TIKU_ATTR_DESKBAR_PREFS,
                                 record, sizeof record);
 }
 
@@ -320,11 +320,11 @@ tiku_trk_deskbar_prefs_dock_key(const char *key, tiku_trk_db_dock_t *dock)
     return 1;
 }
 
-tiku_desk_rect_t
+tiku_rect_t
 tiku_trk_deskbar_prefs_frame(int saved, int x, int y, int screen_w,
                              int screen_h, int width, int height)
 {
-    tiku_desk_rect_t frame = { (screen_w - width) / 2,
+    tiku_rect_t frame = { (screen_w - width) / 2,
                                (screen_h - height) / 2, width, height };
 
     if (saved && x >= 0 && y >= 0 && x + width <= screen_w &&

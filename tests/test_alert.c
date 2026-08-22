@@ -26,7 +26,7 @@ int
 main(void)
 {
     tiku_trk_alert_t a;
-    tiku_trk_progress_t pr;
+    tiku_progress_t pr;
     tiku_trk_progress_win_t w;
 
     printf("the shape of the question (FS-018, FS-019)\n");
@@ -52,19 +52,19 @@ main(void)
 
     printf("\nwhat the answer means to the engine\n");
     a.chosen = 3;
-    check(tiku_trk_alert_conflict_answer(&a) == TIKU_TRK_CONFLICT_REPLACE_ALL,
+    check(tiku_trk_alert_conflict_answer(&a) == TIKU_CONFLICT_REPLACE_ALL,
           "FS-017", "the rightmost of four is Replace all");
     a.chosen = 2;
-    check(tiku_trk_alert_conflict_answer(&a) == TIKU_TRK_CONFLICT_SKIP_ALL,
+    check(tiku_trk_alert_conflict_answer(&a) == TIKU_CONFLICT_SKIP_ALL,
           "FS-017", "and the one before it Skip all");
     a.chosen = 0;
-    check(tiku_trk_alert_conflict_answer(&a) == TIKU_TRK_CONFLICT_SKIP,
+    check(tiku_trk_alert_conflict_answer(&a) == TIKU_CONFLICT_SKIP,
           "FS-019", "Cancel skips rather than replacing: the answer that "
           "destroys nothing");
     pr.conflict_many = 0;
     tiku_trk_alert_for_conflict(&a, &pr);
     a.chosen = 1;
-    check(tiku_trk_alert_conflict_answer(&a) == TIKU_TRK_CONFLICT_REPLACE,
+    check(tiku_trk_alert_conflict_answer(&a) == TIKU_CONFLICT_REPLACE,
           "FS-018", "and in the short form the second button replaces");
 
     printf("\nan error that cannot be continued (FS-035)\n");
@@ -100,7 +100,7 @@ main(void)
     tiku_trk_progress_reset(&w);
     check(!w.open, "FS-072", "with no job running there is no window");
     memset(&pr, 0, sizeof pr);
-    pr.op = TIKU_TRK_OP_COPY;
+    pr.op = TIKU_OP_COPY;
     pr.total = 9;
     pr.done = 3;
     snprintf(pr.current, sizeof pr.current, "/src/big.bin");
@@ -121,10 +121,10 @@ main(void)
           "the one field a throttled update must not lose");
 
     {   /* A second concurrent job is a second row in the same window. */
-        tiku_trk_progress_t pr2;
+        tiku_progress_t pr2;
 
         memset(&pr2, 0, sizeof pr2);
-        pr2.op = TIKU_TRK_OP_TRASH;
+        pr2.op = TIKU_OP_TRASH;
         pr2.total = 2;
         tiku_trk_progress_update(&w, 1, &pr2, 1, NULL);
         check(w.open && w.row[0].used && w.row[1].used, "FS-072",
@@ -140,11 +140,11 @@ main(void)
 
     printf("\npause and stop (FS-074)\n");
     {
-        tiku_trk_progress_t p2;
+        tiku_progress_t p2;
         int bx, by, bw, bh, sx, r = -1;
 
         memset(&p2, 0, sizeof p2);
-        p2.op = TIKU_TRK_OP_COPY;
+        p2.op = TIKU_OP_COPY;
         p2.total = 5;
         snprintf(p2.current, sizeof p2.current, "/src/x");
         tiku_trk_progress_reset(&w);
@@ -177,25 +177,25 @@ main(void)
 
 
     printf("\nwhen a window is worth showing (FS-070)\n");
-    check(tiku_trk_progress_wanted(TIKU_TRK_OP_COPY, 1), "FS-070",
+    check(tiku_trk_progress_wanted(TIKU_OP_COPY, 1), "FS-070",
           "a copy of one file still shows progress");
-    check(!tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 3), "FS-070",
+    check(!tiku_trk_progress_wanted(TIKU_OP_LINK, 3), "FS-070",
           "three links do not -- a window that appeared and vanished would "
           "be a flash nobody can read");
-    check(!tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 10), "FS-070",
+    check(!tiku_trk_progress_wanted(TIKU_OP_LINK, 10), "FS-070",
           "nor do exactly ten: the rule is MORE than ten");
-    check(tiku_trk_progress_wanted(TIKU_TRK_OP_LINK, 11), "FS-070",
+    check(tiku_trk_progress_wanted(TIKU_OP_LINK, 11), "FS-070",
           "but eleven do, which is where the original draws it");
 
     printf("\nspeed and the estimate (FS-071)\n");
     {
         tiku_trk_progress_win_t q;
-        tiku_trk_progress_t pr2;
+        tiku_progress_t pr2;
         int64_t t0 = 1000000;
 
         tiku_trk_progress_reset(&q);
         memset(&pr2, 0, sizeof pr2);
-        pr2.op = TIKU_TRK_OP_COPY;
+        pr2.op = TIKU_OP_COPY;
         pr2.total = 10;
         pr2.done = 2;
         tiku_trk_progress_update(&q, 0, &pr2, 1, NULL);

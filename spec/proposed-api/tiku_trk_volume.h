@@ -6,7 +6,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_volume.h - a connected device is a volume, and nothing new.
+ * tiku_volume.h - a connected device is a volume, and nothing new.
  *
  * Specifically: a removable, non-boot, persistent, trash-less volume.  It
  * joins the same roster as a local mount, appears on the Desktop through the
@@ -23,15 +23,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef TIKU_TRK_VOLUME_H_
-#define TIKU_TRK_VOLUME_H_
+#ifndef TIKU_VOLUME_H_
+#define TIKU_VOLUME_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tiku_trk_backend.h"
-#include "tiku_trk_model.h"
-#include "tiku_trk_state.h"
+#include "tiku_backend.h"
+#include "tiku_model.h"
+#include "tiku_state.h"
 #include "tiku_trk_task.h"
 
 typedef enum {
@@ -68,7 +68,7 @@ typedef enum {
     (TIKU_TRK_VF_PERSISTENT | TIKU_TRK_VF_KNOWS_QUERY                       \
                             | TIKU_TRK_VF_REMOVABLE)
 
-typedef struct tiku_trk_volume {
+typedef struct tiku_volume {
     tiku_trk_dev_t      dev;
     uint8_t             kind;      /**< tiku_trk_vol_kind_t               */
     uint8_t             state;     /**< tiku_trk_vol_state_t              */
@@ -82,9 +82,9 @@ typedef struct tiku_trk_volume {
     uint64_t            free_bytes;
     const char         *fs_kind;   /**< the store's backing medium        */
     int64_t             cap_polled_us;
-    tiku_trk_backend_t *backend;
+    tiku_backend_t *backend;
     struct tiku_trk_worker *worker;
-} tiku_trk_volume_t;
+} tiku_volume_t;
 
 #define TIKU_TRK_ROSTER_SCAN_US    1000000LL
 #define TIKU_TRK_ROSTER_STALL_US   3000000LL
@@ -92,14 +92,14 @@ typedef struct tiku_trk_volume {
 
 void tiku_trk_roster_init(tiku_trk_loop_t *loop, tiku_trk_evq_t *q);
 int  tiku_trk_roster_count(void);
-tiku_trk_volume_t *tiku_trk_roster_at(int i);
-tiku_trk_volume_t *tiku_trk_roster_find(tiku_trk_dev_t dev);
+tiku_volume_t *tiku_trk_roster_at(int i);
+tiku_volume_t *tiku_trk_roster_find(tiku_trk_dev_t dev);
 
 /** @brief Find by identity, which is how a saved window or query rebinds
  *  after a replug on a different port.  Never match on the volume id. */
-tiku_trk_volume_t *tiku_trk_roster_find_identity(const char *identity);
+tiku_volume_t *tiku_trk_roster_find_identity(const char *identity);
 
-tiku_trk_volume_t *tiku_trk_roster_boot(void);
+tiku_volume_t *tiku_trk_roster_boot(void);
 
 /**
  * @brief Scan for endpoints; posts mounted and unmounted events.
@@ -130,7 +130,7 @@ int tiku_trk_roster_unmount(tiku_trk_dev_t dev, int eject);
 int tiku_trk_vol_trash_dir(tiku_trk_dev_t dev, char *out, size_t max);
 
 static inline int
-tiku_trk_vol_has_trash(const tiku_trk_volume_t *v)
+tiku_trk_vol_has_trash(const tiku_volume_t *v)
 {
     return v != NULL && (v->flags & TIKU_TRK_VF_HAS_TRASH) != 0;
 }
@@ -142,13 +142,13 @@ tiku_trk_vol_has_trash(const tiku_trk_volume_t *v)
  * the existing "cannot be moved to the Trash, delete instead?" alert runs.
  * Deletion then reaches only what the store can actually unlink.
  */
-void tiku_trk_split_trashable(tiku_trk_model_t *const *sel, int n,
-                              tiku_trk_model_t **to_trash, int *n_trash,
-                              tiku_trk_model_t **to_delete, int *n_delete);
+void tiku_trk_split_trashable(tiku_model_t *const *sel, int n,
+                              tiku_model_t **to_trash, int *n_trash,
+                              tiku_model_t **to_delete, int *n_delete);
 
 /** @brief Classify a device path: the writable store is a real directory,
  *  every other root child is a virtual directory. */
-tiku_trk_kind_t tiku_trk_classify_device_path(const tiku_trk_volume_t *v,
+tiku_kind_t tiku_trk_classify_device_path(const tiku_volume_t *v,
                                               const char *path);
 
 /* ---------------------------------------------------------------------- *
@@ -179,7 +179,7 @@ typedef struct tiku_trk_worker tiku_trk_worker_t;
 typedef void (*tiku_trk_done_fn)(void *ctx, int32_t token, int status,
                                  const char *err);
 
-tiku_trk_worker_t *tiku_trk_worker_start(tiku_trk_backend_t *b,
+tiku_trk_worker_t *tiku_trk_worker_start(tiku_backend_t *b,
                                          tiku_trk_loop_t *loop);
 void tiku_trk_worker_stop(tiku_trk_worker_t *w);
 
@@ -222,6 +222,6 @@ struct tiku_trk_entry_iter *tiku_trk_desk_iter_new(
  * The Desktop's own arrangement is NEVER inside a device sidecar, so
  * wiping one board cannot disturb where the user put every other board.
  */
-int tiku_trk_state_key(const tiku_trk_model_t *m, char *out, size_t max);
+int tiku_trk_state_key(const tiku_model_t *m, char *out, size_t max);
 
-#endif /* TIKU_TRK_VOLUME_H_ */
+#endif /* TIKU_VOLUME_H_ */

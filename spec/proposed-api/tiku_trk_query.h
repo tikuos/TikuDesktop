@@ -6,7 +6,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_query.h - one predicate, two indexes, and a query that is a file.
+ * tiku_query.h - one predicate, two indexes, and a query that is a file.
  *
  * All three Find modes compile to one bounded AST, so formula mode is
  * literally the AST's own syntax and "prefill the formula from the rows" is
@@ -28,14 +28,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef TIKU_TRK_QUERY_H_
-#define TIKU_TRK_QUERY_H_
+#ifndef TIKU_QUERY_H_
+#define TIKU_QUERY_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "tiku_trk_event.h"
-#include "tiku_trk_model.h"
+#include "tiku_model.h"
 #include "tiku_trk_task.h"
 
 #define TIKU_TRK_PRED_MAX_NODES 64
@@ -44,12 +44,12 @@
 #define TIKU_TRK_QUERY_ROWS      8
 
 typedef enum {
-    TIKU_TRK_OP_CONTAINS = 0, TIKU_TRK_OP_IS, TIKU_TRK_OP_IS_NOT,
-    TIKU_TRK_OP_STARTS_WITH, TIKU_TRK_OP_ENDS_WITH,
+    TIKU_OP_CONTAINS = 0, TIKU_OP_IS, TIKU_OP_IS_NOT,
+    TIKU_TRK_OP_STARTS_WITH, TIKU_OP_ENDS_WITH,
     TIKU_TRK_OP_GT, TIKU_TRK_OP_LT, TIKU_TRK_OP_GE, TIKU_TRK_OP_LE,
     TIKU_TRK_OP_BEFORE, TIKU_TRK_OP_AFTER,
     TIKU_TRK_OP_GLOB, TIKU_TRK_OP_REGEX
-} tiku_trk_op_t;
+} tiku_op_t;
 
 typedef enum {
     TIKU_TRK_PN_TERM = 0, TIKU_TRK_PN_AND, TIKU_TRK_PN_OR, TIKU_TRK_PN_NOT
@@ -73,7 +73,7 @@ typedef enum {
 
 typedef struct {
     uint8_t  kind;      /**< tiku_trk_pnkind_t                           */
-    uint8_t  op;        /**< tiku_trk_op_t, on terms                     */
+    uint8_t  op;        /**< tiku_op_t, on terms                     */
     uint8_t  vtype;
     uint8_t  cost;      /**< tiku_trk_cost_t of the attribute            */
     int16_t  lhs, rhs;  /**< child indices; -1 on a term                 */
@@ -153,7 +153,7 @@ typedef enum {
 
 typedef struct {
     uint8_t kind;
-    char    path[TIKU_TRK_PATH_MAX];
+    char    path[TIKU_PATH_MAX];
     char    identity[64];  /**< the device's die uid; the binding key    */
     char    label[64];     /**< last known name, for display and scoring */
 } tiku_trk_scope_t;
@@ -168,7 +168,7 @@ typedef struct {
  * the panel fields that let the query be edited again.
  */
 typedef struct {
-    char            file[TIKU_TRK_PATH_MAX];
+    char            file[TIKU_PATH_MAX];
     uint8_t         is_template;
     uint8_t         temporary;    /**< collected when its window closes  */
     uint8_t         mode;         /**< by name / by attribute / formula  */
@@ -182,7 +182,7 @@ typedef struct {
     uint8_t         nrows;
     tiku_trk_scope_t scope[TIKU_TRK_QUERY_SCOPES];
     uint8_t         nscope;
-    char            exclude[TIKU_TRK_QUERY_SCOPES][TIKU_TRK_PATH_MAX];
+    char            exclude[TIKU_TRK_QUERY_SCOPES][TIKU_PATH_MAX];
     uint8_t         nexclude;
 } tiku_trk_qfile_t;
 
@@ -200,7 +200,7 @@ const char *tiku_trk_queries_dir(void);
  * A running query
  * ---------------------------------------------------------------------- */
 
-typedef struct tiku_trk_query tiku_trk_query_t;
+typedef struct tiku_query tiku_query_t;
 
 /**
  * @brief Open a query and start producing results.
@@ -210,17 +210,17 @@ typedef struct tiku_trk_query tiku_trk_query_t;
  * scope disconnecting is an UNMOUNTED.  There is no second vocabulary, so
  * the pose view's single notification door still holds.
  */
-tiku_trk_query_t *tiku_trk_query_open(const tiku_trk_qfile_t *qf,
+tiku_query_t *tiku_trk_query_open(const tiku_trk_qfile_t *qf,
                                       tiku_trk_loop_t *loop,
                                       tiku_trk_evq_t *q);
 
 /** @brief Close it and release every watch slot it holds -- a query window
  *  that leaks slots starves the eight the whole device shares. */
-void tiku_trk_query_close(tiku_trk_query_t *qq);
+void tiku_trk_query_close(tiku_query_t *qq);
 
 /** @brief Re-evaluate wholesale (a dynamic date rolled over, or the view
  *  lost events and asked for a refresh). */
-int tiku_trk_query_refresh(tiku_trk_query_t *qq);
+int tiku_query_refresh(tiku_query_t *qq);
 
 /**
  * @brief The seam: something touched @p ref.
@@ -230,12 +230,12 @@ int tiku_trk_query_refresh(tiku_trk_query_t *qq);
  * poll tier.  A row leaving never closes the window; only the query file
  * being deleted does that.
  */
-void tiku_trk_query_on_change(tiku_trk_query_t *qq,
+void tiku_trk_query_on_change(tiku_query_t *qq,
                               const tiku_trk_ref_t *ref);
 
 /** @brief What the count view renders, including how much of the result is
  *  pushed, polled or free, and how many reads have been spent. */
-int tiku_trk_query_liveness(const tiku_trk_query_t *qq,
+int tiku_trk_query_liveness(const tiku_query_t *qq,
                             tiku_trk_liveness_t *out);
 
 /**
@@ -248,7 +248,7 @@ int tiku_trk_query_liveness(const tiku_trk_query_t *qq,
  *
  * @return Slots armed.
  */
-int tiku_trk_query_arm(tiku_trk_query_t *qq, tiku_trk_dev_t dev,
+int tiku_trk_query_arm(tiku_query_t *qq, tiku_trk_dev_t dev,
                        int slot_budget, unsigned value_budget);
 
-#endif /* TIKU_TRK_QUERY_H_ */
+#endif /* TIKU_QUERY_H_ */

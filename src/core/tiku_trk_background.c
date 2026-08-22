@@ -56,28 +56,28 @@ tiku_trk_bg_format(const tiku_trk_bg_t *bg, char *out, size_t max)
 }
 
 int
-tiku_trk_bg_have(tiku_trk_store_t *store, const char *node)
+tiku_trk_bg_have(tiku_store_t *store, const char *node)
 {
-    char rec[TIKU_TRK_PATH_MAX + 64];
+    char rec[TIKU_PATH_MAX + 64];
 
     if (store == NULL || node == NULL) {
         return 0;
     }
-    return tiku_trk_state_read(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
+    return tiku_state_read(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
                                sizeof rec - 1) > 0;
 }
 
 int
-tiku_trk_bg_load(tiku_trk_store_t *store, const char *node,
+tiku_trk_bg_load(tiku_store_t *store, const char *node,
                  tiku_trk_bg_t *out)
 {
-    char rec[TIKU_TRK_PATH_MAX + 64];
+    char rec[TIKU_PATH_MAX + 64];
     int n;
 
     if (store == NULL || node == NULL || out == NULL) {
         return 0;
     }
-    n = tiku_trk_state_read(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
+    n = tiku_state_read(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
                             sizeof rec - 1);
     if (n <= 0) {
         return 0;
@@ -87,10 +87,10 @@ tiku_trk_bg_load(tiku_trk_store_t *store, const char *node,
 }
 
 int
-tiku_trk_bg_save(tiku_trk_store_t *store, const char *node,
+tiku_trk_bg_save(tiku_store_t *store, const char *node,
                  const tiku_trk_bg_t *bg)
 {
-    char rec[TIKU_TRK_PATH_MAX + 64];
+    char rec[TIKU_PATH_MAX + 64];
     int n;
 
     if (store == NULL || node == NULL || bg == NULL) {
@@ -100,7 +100,7 @@ tiku_trk_bg_save(tiku_trk_store_t *store, const char *node,
     if (n <= 0) {
         return 0;
     }
-    return tiku_trk_state_write(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
+    return tiku_state_write(store, node, TIKU_TRK_ATTR_BACKGROUND, rec,
                                 (size_t)n) == 0;
 }
 
@@ -164,7 +164,7 @@ tiku_trk_bg_place(const tiku_trk_bg_t *bg, int view_w, int view_h,
 }
 
 int
-tiku_trk_bg_install_default(tiku_trk_store_t *store, const char *node,
+tiku_trk_bg_install_default(tiku_store_t *store, const char *node,
                             int screen_w, int screen_h)
 {
     const char *home = getenv("HOME");

@@ -14,7 +14,7 @@
 #include <string.h>
 
 int
-tiku_trk_frame_load(tiku_trk_store_t *s, const char *path,
+tiku_trk_frame_load(tiku_store_t *s, const char *path,
                     tiku_trk_frame_t *out)
 {
     tiku_trk_frame_t f;
@@ -22,7 +22,7 @@ tiku_trk_frame_load(tiku_trk_store_t *s, const char *path,
     if (s == NULL || path == NULL || out == NULL) {
         return 0;
     }
-    if (tiku_trk_state_read(s, path, TIKU_TRK_ATTR_FRAME, &f, sizeof f) !=
+    if (tiku_state_read(s, path, TIKU_ATTR_FRAME, &f, sizeof f) !=
             (int)sizeof f) {
         return 0;
     }
@@ -36,7 +36,7 @@ tiku_trk_frame_load(tiku_trk_store_t *s, const char *path,
 }
 
 int
-tiku_trk_frame_save(tiku_trk_store_t *s, const char *path,
+tiku_trk_frame_save(tiku_store_t *s, const char *path,
                     const tiku_trk_frame_t *now, const tiku_trk_frame_t *was)
 {
     if (s == NULL || path == NULL || now == NULL) {
@@ -49,7 +49,7 @@ tiku_trk_frame_save(tiku_trk_store_t *s, const char *path,
          * store write per window per session (CW-002). */
         return 0;
     }
-    return (tiku_trk_state_write(s, path, TIKU_TRK_ATTR_FRAME, now,
+    return (tiku_state_write(s, path, TIKU_ATTR_FRAME, now,
                                  sizeof *now) == 0) ? 1 : 0;
 }
 
@@ -83,14 +83,14 @@ tiku_trk_frame_clamp(tiku_trk_frame_t *f, int sw, int sh)
 }
 
 int
-tiku_trk_frame_default(tiku_trk_store_t *s, tiku_trk_frame_t *out)
+tiku_trk_frame_default(tiku_store_t *s, tiku_trk_frame_t *out)
 {
     tiku_trk_frame_t f;
 
     if (s == NULL || out == NULL) {
         return 0;
     }
-    if (tiku_trk_state_read(s, TIKU_TRK_KEY_SESSION, TIKU_TRK_ATTR_DEFAULTS,
+    if (tiku_state_read(s, TIKU_KEY_SESSION, TIKU_ATTR_DEFAULTS,
                             &f, sizeof f) != (int)sizeof f) {
         return 0;
     }
@@ -102,13 +102,13 @@ tiku_trk_frame_default(tiku_trk_store_t *s, tiku_trk_frame_t *out)
 }
 
 void
-tiku_trk_frame_set_default(tiku_trk_store_t *s, const tiku_trk_frame_t *f)
+tiku_trk_frame_set_default(tiku_store_t *s, const tiku_trk_frame_t *f)
 {
     if (s == NULL || f == NULL) {
         return;
     }
-    (void)tiku_trk_state_write(s, TIKU_TRK_KEY_SESSION,
-                               TIKU_TRK_ATTR_DEFAULTS, f, sizeof *f);
+    (void)tiku_state_write(s, TIKU_KEY_SESSION,
+                               TIKU_ATTR_DEFAULTS, f, sizeof *f);
 }
 
 /** @brief The folder @p path is in, or "" for the root. */
@@ -141,10 +141,10 @@ parent_of(const char *path, char *out, size_t max)
 }
 
 int
-tiku_trk_frame_inherit(tiku_trk_store_t *s, const char *path,
+tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
                        tiku_trk_frame_t *out)
 {
-    char parent[TIKU_TRK_PATH_MAX];
+    char parent[TIKU_PATH_MAX];
 
     if (s == NULL || path == NULL || out == NULL) {
         return 0;
@@ -172,8 +172,8 @@ tiku_trk_frame_inherit(tiku_trk_store_t *s, const char *path,
 /*---------------------------------------------------------------------------*/
 
 int
-tiku_trk_session_save(tiku_trk_store_t *s,
-                      const char paths[][TIKU_TRK_PATH_MAX], int n)
+tiku_trk_session_save(tiku_store_t *s,
+                      const char paths[][TIKU_PATH_MAX], int n)
 {
     tiku_trk_session_entry_t entries[TIKU_TRK_SESSION_MAX];
     int i;
@@ -189,7 +189,7 @@ tiku_trk_session_save(tiku_trk_store_t *s,
 }
 
 int
-tiku_trk_session_load(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
+tiku_trk_session_load(tiku_store_t *s, char out[][TIKU_PATH_MAX],
                       int max)
 {
     tiku_trk_session_entry_t entries[TIKU_TRK_SESSION_MAX];
@@ -201,18 +201,18 @@ tiku_trk_session_load(tiku_trk_store_t *s, char out[][TIKU_TRK_PATH_MAX],
     n = tiku_trk_session_load_entries(s, entries,
         (max < TIKU_TRK_SESSION_MAX) ? max : TIKU_TRK_SESSION_MAX);
     for (i = 0; i < n; i++) {
-        snprintf(out[i], TIKU_TRK_PATH_MAX, "%.*s",
-                 (int)(TIKU_TRK_PATH_MAX - 1), entries[i].path);
+        snprintf(out[i], TIKU_PATH_MAX, "%.*s",
+                 (int)(TIKU_PATH_MAX - 1), entries[i].path);
     }
     return n;
 }
 
 int
-tiku_trk_session_save_entries(tiku_trk_store_t *s,
+tiku_trk_session_save_entries(tiku_store_t *s,
                               const tiku_trk_session_entry_t *entries,
                               int n)
 {
-    char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_SESSION_MAX];
+    char buf[TIKU_PATH_MAX * TIKU_TRK_SESSION_MAX];
     size_t at = 0u;
     int i;
 
@@ -227,30 +227,30 @@ tiku_trk_session_save_entries(tiku_trk_store_t *s,
          i++) {
         int w = snprintf(buf + at, sizeof buf - at, "%c %.*s\n",
                          entries[i].minimized ? 'M' : 'O',
-                         (int)(TIKU_TRK_PATH_MAX - 1), entries[i].path);
+                         (int)(TIKU_PATH_MAX - 1), entries[i].path);
 
         if (w <= 0 || (size_t)w >= sizeof buf - at) {
             break;
         }
         at += (size_t)w;
     }
-    return (tiku_trk_state_write(s, TIKU_TRK_KEY_SESSION,
-                                 TIKU_TRK_ATTR_SESSION, buf, at) == 0)
+    return (tiku_state_write(s, TIKU_KEY_SESSION,
+                                 TIKU_ATTR_SESSION, buf, at) == 0)
                ? i : 0;
 }
 
 int
-tiku_trk_session_load_entries(tiku_trk_store_t *s,
+tiku_trk_session_load_entries(tiku_store_t *s,
                               tiku_trk_session_entry_t *out, int max)
 {
-    char buf[TIKU_TRK_PATH_MAX * TIKU_TRK_SESSION_MAX];
+    char buf[TIKU_PATH_MAX * TIKU_TRK_SESSION_MAX];
     int n = 0, len;
     char *line, *save;
 
     if (s == NULL || out == NULL || max <= 0) {
         return 0;
     }
-    len = tiku_trk_state_read(s, TIKU_TRK_KEY_SESSION, TIKU_TRK_ATTR_SESSION,
+    len = tiku_state_read(s, TIKU_KEY_SESSION, TIKU_ATTR_SESSION,
                               buf, sizeof buf - 1u);
     if (len <= 0) {
         return 0;
@@ -274,7 +274,7 @@ tiku_trk_session_load_entries(tiku_trk_store_t *s,
         }
         if (path[0] != '\0') {
             snprintf(entry->path, sizeof entry->path, "%.*s",
-                     (int)(TIKU_TRK_PATH_MAX - 1), path);
+                     (int)(TIKU_PATH_MAX - 1), path);
             n++;
         }
     }
@@ -282,10 +282,10 @@ tiku_trk_session_load_entries(tiku_trk_store_t *s,
 }
 
 void
-tiku_trk_session_clear(tiku_trk_store_t *s)
+tiku_trk_session_clear(tiku_store_t *s)
 {
     if (s != NULL) {
-        (void)tiku_trk_state_write(s, TIKU_TRK_KEY_SESSION,
-                                   TIKU_TRK_ATTR_SESSION, "", 0);
+        (void)tiku_state_write(s, TIKU_KEY_SESSION,
+                                   TIKU_ATTR_SESSION, "", 0);
     }
 }

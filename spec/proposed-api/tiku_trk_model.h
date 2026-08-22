@@ -6,7 +6,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_model.h - what a Tracker row is, whichever store answers for it.
+ * tiku_model.h - what a Tracker row is, whichever store answers for it.
  *
  * One Model serves a local file and a device namespace node.  Kind says what
  * SHAPE a thing is -- Tracker asks a kind exactly four questions (icon, sort
@@ -20,20 +20,20 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef TIKU_TRK_MODEL_H_
-#define TIKU_TRK_MODEL_H_
+#ifndef TIKU_MODEL_H_
+#define TIKU_MODEL_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "tiku_trk_type.h"
 
-#define TIKU_TRK_PATH_MAX   512
-#define TIKU_TRK_NAME_MAX    96
+#define TIKU_PATH_MAX   512
+#define TIKU_NAME_MAX    96
 #define TIKU_TRK_VALUE_MAX  512
 #define TIKU_TRK_ERR_MAX    160
 
-struct tiku_trk_backend;
+struct tiku_backend;
 
 /* ---------------------------------------------------------------------- *
  * Identity
@@ -107,7 +107,7 @@ typedef enum {
     TIKU_TRK_K_VIRTUAL_DIR,     /**< /sys, /dev, /proc on a device        */
     TIKU_TRK_K_DEVICE_NODE,     /**< value-bearing leaf                   */
     TIKU_TRK_K_UNKNOWN
-} tiku_trk_kind_t;
+} tiku_kind_t;
 
 /**
  * @brief How true the row is right now.
@@ -196,13 +196,13 @@ typedef struct {
  * The Model
  * ---------------------------------------------------------------------- */
 
-typedef struct tiku_trk_model {
+typedef struct tiku_model {
     tiku_trk_ref_t  ref;
     tiku_trk_ref_t  parent;
-    char            path[TIKU_TRK_PATH_MAX];
-    char            name[TIKU_TRK_NAME_MAX];
+    char            path[TIKU_PATH_MAX];
+    char            name[TIKU_NAME_MAX];
 
-    uint8_t         kind;        /**< tiku_trk_kind_t                     */
+    uint8_t         kind;        /**< tiku_kind_t                     */
     uint8_t         state;       /**< tiku_trk_state_t                    */
     uint8_t         backend_kind;/**< tiku_trk_backend_kind_t             */
     uint8_t         icon_from;   /**< tiku_trk_icon_src_t                 */
@@ -212,13 +212,13 @@ typedef struct tiku_trk_model {
      * answered by the node-type table; anything else by the MIME database.
      * That strncmp is the only place two type systems are visible. */
     char            type[TIKU_TRK_TYPE_LEN];
-    tiku_trk_facts_t facts;      /**< device nodes only; from the manifest */
+    tiku_facts_t facts;      /**< device nodes only; from the manifest */
 
     uint64_t        size;
     int64_t         mtime_us;
 
     /* Access, as the two backends express it. */
-    unsigned        perm;        /**< TIKU_TRK_P_READ | TIKU_TRK_P_WRITE  */
+    unsigned        perm;        /**< TIKU_P_READ | TIKU_P_WRITE  */
     uint8_t         req_cap;     /**< device: capability a writer needs   */
     uint8_t         cap_known;   /**< 0 when the manifest was truncated   */
 
@@ -236,30 +236,30 @@ typedef struct tiku_trk_model {
     uint8_t         cached[TIKU_TRK_ACT_COUNT];
     unsigned        permit_gen;
 
-    struct tiku_trk_backend *backend;
-    struct tiku_trk_model   *link_to;  /**< resolved symlink target       */
+    struct tiku_backend *backend;
+    struct tiku_model   *link_to;  /**< resolved symlink target       */
     char            err[TIKU_TRK_ERR_MAX];
     int             refs;
-} tiku_trk_model_t;
+} tiku_model_t;
 
-#define TIKU_TRK_P_READ   0x1u
-#define TIKU_TRK_P_WRITE  0x2u
+#define TIKU_P_READ   0x1u
+#define TIKU_P_WRITE  0x2u
 
 /** @brief Allocate a model owned by @p b, for @p path.  NULL on failure. */
-tiku_trk_model_t *tiku_trk_model_new(struct tiku_trk_backend *b,
+tiku_model_t *tiku_trk_model_new(struct tiku_backend *b,
                                      const char *path);
 
-tiku_trk_model_t *tiku_trk_model_acquire(tiku_trk_model_t *m);
+tiku_model_t *tiku_trk_model_acquire(tiku_model_t *m);
 
 /** @brief Drop a reference; frees at zero. */
-void tiku_trk_model_release(tiku_trk_model_t *m);
+void tiku_trk_model_release(tiku_model_t *m);
 
 /* The four questions a kind exists to answer, plus the one a device adds. */
-int tiku_trk_model_is_container(const tiku_trk_model_t *m);
-int tiku_trk_model_is_directory(const tiku_trk_model_t *m);
-int tiku_trk_model_is_file(const tiku_trk_model_t *m); /**< true for a node */
-int tiku_trk_model_is_device(const tiku_trk_model_t *m);
-int tiku_trk_model_is_volume_root(const tiku_trk_model_t *m);
+int tiku_model_is_container(const tiku_model_t *m);
+int tiku_trk_model_is_directory(const tiku_model_t *m);
+int tiku_trk_model_is_file(const tiku_model_t *m); /**< true for a node */
+int tiku_trk_model_is_device(const tiku_model_t *m);
+int tiku_trk_model_is_volume_root(const tiku_model_t *m);
 
 /**
  * @brief Re-derive the type string from freshly loaded manifest facts.
@@ -269,11 +269,11 @@ int tiku_trk_model_is_volume_root(const tiku_trk_model_t *m);
  *
  * @return Non-zero when the type changed and the caller must re-icon.
  */
-int tiku_trk_model_reclassify(tiku_trk_model_t *m,
-                              const tiku_trk_facts_t *f);
+int tiku_trk_model_reclassify(tiku_model_t *m,
+                              const tiku_facts_t *f);
 
 /** @brief Note a newly rendered value.  @return non-zero if it changed. */
-int tiku_trk_model_set_value(tiku_trk_model_t *m, const char *text,
+int tiku_trk_model_set_value(tiku_model_t *m, const char *text,
                              int truncated);
 
 /* ---------------------------------------------------------------------- *
@@ -281,11 +281,11 @@ int tiku_trk_model_set_value(tiku_trk_model_t *m, const char *text,
  * ---------------------------------------------------------------------- */
 
 /** @brief Predict a verdict for @p m.  Cheap; cached per capability gen. */
-void tiku_trk_permit_of(const tiku_trk_model_t *m, tiku_trk_action_t a,
+void tiku_trk_permit_of(const tiku_model_t *m, tiku_trk_action_t a,
                         tiku_trk_permit_t *out);
 
 /** @brief As above for a destination container (New folder, Paste, drop). */
-void tiku_trk_permit_of_target(const tiku_trk_model_t *dir,
+void tiku_trk_permit_of_target(const tiku_model_t *dir,
                                tiku_trk_action_t a, tiku_trk_permit_t *out);
 
 /**
@@ -297,9 +297,9 @@ void tiku_trk_permit_of_target(const tiku_trk_model_t *dir,
  *
  * @return Count that may proceed; @p refused receives the pruned models.
  */
-int tiku_trk_permit_selection(tiku_trk_model_t *const *sel, int n,
+int tiku_trk_permit_selection(tiku_model_t *const *sel, int n,
                               tiku_trk_action_t a,
-                              const tiku_trk_model_t **refused,
+                              const tiku_model_t **refused,
                               int max_refused, int *n_refused);
 
 /**
@@ -309,10 +309,10 @@ int tiku_trk_permit_selection(tiku_trk_model_t *const *sel, int n,
  * same points.  STRUCTURAL, READONLY and KIND abort here; CAP and UNKNOWN
  * are attempted anyway, because the device is the authority on policy.
  */
-int tiku_trk_permit_check(const tiku_trk_model_t *m, tiku_trk_action_t a);
+int tiku_trk_permit_check(const tiku_model_t *m, tiku_trk_action_t a);
 
 /** @brief Ten-character access string for the Permissions column: a Unix
  *  mode for local files, kind/rw/gate/cap for a device node. */
-void tiku_trk_access_string(const tiku_trk_model_t *m, char out[11]);
+void tiku_trk_access_string(const tiku_model_t *m, char out[11]);
 
-#endif /* TIKU_TRK_MODEL_H_ */
+#endif /* TIKU_MODEL_H_ */

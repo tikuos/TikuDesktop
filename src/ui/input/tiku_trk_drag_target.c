@@ -18,7 +18,7 @@
 
 void
 tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
+    tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
     tiku_trk_desktop_view_t *desktop_view, tiku_trk_drag_t *drag,
     tiku_trk_folder_window_t *folders, int *folder_count, int row_h,
     int *dirty, tiku_trk_drag_open_fn open, void *open_context)
@@ -41,7 +41,7 @@ tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
 
 static tiku_trk_folder_window_t *
 folder_for_window(tiku_trk_drag_target_t *controller,
-                  tiku_desk_window_t *window)
+                  tiku_window_t *window)
 {
     int i;
 
@@ -57,14 +57,14 @@ int
 tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
                             int x, int y, int64_t now)
 {
-    tiku_desk_window_t *window = NULL;
+    tiku_window_t *window = NULL;
     tiku_trk_folder_window_t *folder;
     int row = -1;
     int team = -1;
     int changed = 0;
     int inside_spring = tiku_trk_springmenu_inside(&controller->spring, x, y);
 
-    (void)tiku_desk_workspace_hit(controller->workspace, x, y, &window);
+    (void)tiku_workspace_hit(controller->workspace, x, y, &window);
     folder = window != NULL ? folder_for_window(controller, window)
         : tiku_trk_desktop_view_folder(controller->desktop_view);
     if (folder != NULL && folder->view == NULL) {
@@ -104,7 +104,7 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
         if (folder != NULL && row >= 0) {
             tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, row);
             int px = 0, py = 0, pw = 1, ph = 1;
-            tiku_desk_rect_t content =
+            tiku_rect_t content =
                 tiku_trk_folder_window_content(folder);
 
             if (pose != NULL) {
@@ -117,8 +117,8 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
         changed = 1;
     }
     if (folder != NULL && row < 0 &&
-        window != tiku_desk_workspace_focused(controller->workspace)) {
-        tiku_desk_workspace_activate(controller->workspace, window);
+        window != tiku_workspace_focused(controller->workspace)) {
+        tiku_workspace_activate(controller->workspace, window);
         changed = 1;
     }
     if (changed) {
@@ -130,7 +130,7 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
 static int
 auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
 {
-    tiku_desk_rect_t content;
+    tiku_rect_t content;
     int top;
     int bottom;
     int left;

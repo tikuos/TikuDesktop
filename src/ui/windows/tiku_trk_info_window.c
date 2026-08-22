@@ -12,10 +12,10 @@
 #include <string.h>
 
 #include "tiku_trk_gfx_dep.h"
-#include "tiku_trk_iconpaint.h"
+#include "tiku_iconpaint.h"
 #include "tiku_trk_info_window.h"
 
-#include "tiku_trk_attr.h"
+#include "tiku_attr.h"
 
 #define INFO_WIDTH    360
 #define INFO_HEIGHT   300
@@ -34,22 +34,22 @@ mark_dirty(tiku_trk_info_windows_t *controller)
 }
 
 static void
-layout(tiku_desk_rect_t content, tiku_desk_rect_t *icon,
-       tiku_desk_rect_t *name, tiku_desk_rect_t *tabs,
-       tiku_desk_rect_t *body)
+layout(tiku_rect_t content, tiku_rect_t *icon,
+       tiku_rect_t *name, tiku_rect_t *tabs,
+       tiku_rect_t *body)
 {
-    *icon = (tiku_desk_rect_t){ content.x + INFO_PAD,
+    *icon = (tiku_rect_t){ content.x + INFO_PAD,
                                 content.y + INFO_PAD,
                                 INFO_ICON, INFO_ICON };
-    *name = (tiku_desk_rect_t){ icon->x + INFO_ICON + INFO_PAD,
+    *name = (tiku_rect_t){ icon->x + INFO_ICON + INFO_PAD,
                                 icon->y + 6,
                                 content.w - (icon->x + INFO_ICON + INFO_PAD
                                              - content.x) - INFO_PAD,
                                 20 };
-    *tabs = (tiku_desk_rect_t){ content.x + INFO_PAD,
+    *tabs = (tiku_rect_t){ content.x + INFO_PAD,
                                 icon->y + INFO_ICON + INFO_PAD,
                                 content.w - 2 * INFO_PAD, INFO_TAB_H };
-    *body = (tiku_desk_rect_t){ tabs->x, tabs->y + INFO_TAB_H, tabs->w,
+    *body = (tiku_rect_t){ tabs->x, tabs->y + INFO_TAB_H, tabs->w,
                                 content.y + content.h - INFO_PAD
                                     - (tabs->y + INFO_TAB_H) };
     if (body->h < 20) {
@@ -60,66 +60,66 @@ layout(tiku_desk_rect_t content, tiku_desk_rect_t *icon,
 static int
 measure_info_text(const char *text, void *ctx)
 {
-    return tiku_desk_text_width((const tiku_desk_font_t *)ctx, text);
+    return tiku_text_width((const tiku_font_t *)ctx, text);
 }
 
-static tiku_desk_rect_t
-tab_rect(tiku_desk_rect_t tabs, int index)
+static tiku_rect_t
+tab_rect(tiku_rect_t tabs, int index)
 {
-    tiku_desk_rect_t result = tabs;
+    tiku_rect_t result = tabs;
 
     result.w = tabs.w / TIKU_TRK_INFO_TABS;
     result.x = tabs.x + index * result.w;
     return result;
 }
 
-static tiku_desk_rect_t
-permission_rect(tiku_desk_rect_t body, int index)
+static tiku_rect_t
+permission_rect(tiku_rect_t body, int index)
 {
-    return (tiku_desk_rect_t){ body.x + 8,
+    return (tiku_rect_t){ body.x + 8,
         body.y + 10 + index * (INFO_ROW_H + 4), 120, INFO_ROW_H };
 }
 
 static void
-draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
-     tiku_desk_rect_t content, void *context)
+draw(tiku_window_t *window, tiku_surface_t *surface,
+     tiku_rect_t content, void *context)
 {
     tiku_trk_info_window_context_t *window_context = context;
     tiku_trk_info_windows_t *controller = window_context->owner;
     tiku_trk_info_t *info = &controller->model[window_context->slot];
-    const tiku_desk_font_t *font = tiku_desk_font_plain();
-    tiku_desk_rect_t icon, name, tabs, body;
+    const tiku_font_t *font = tiku_font_plain();
+    tiku_rect_t icon, name, tabs, body;
     int i;
 
     (void)window;
-    tiku_desk_ui_panel(surface, content);
+    tiku_ui_panel(surface, content);
     layout(content, &icon, &name, &tabs, &body);
     if (controller->drop_hot == window_context->slot) {
-        (void)tiku_trk_icon_paint_selected(surface,
-            tiku_trk_model_icon_name(&info->model), icon.x, icon.y,
+        (void)tiku_icon_paint_selected(surface,
+            tiku_model_icon_name(&info->model), icon.x, icon.y,
             INFO_ICON);
     } else {
-        (void)tiku_trk_icon_paint(surface,
-            tiku_trk_model_icon_name(&info->model), icon.x, icon.y,
+        (void)tiku_icon_paint(surface,
+            tiku_model_icon_name(&info->model), icon.x, icon.y,
             INFO_ICON);
     }
     if (controller->renaming == window_context->slot) {
-        tiku_desk_ui_textfield_sel(surface, name, controller->name.text,
+        tiku_ui_textfield_sel(surface, name, controller->name.text,
             controller->name.caret, controller->name.sel_a,
-            controller->name.sel_b, TIKU_DESK_S_FOCUS);
+            controller->name.sel_b, TIKU_S_FOCUS);
     } else {
-        tiku_desk_text(surface, font, name.x, name.y + font->height,
-                       info->model.name, TIKU_DESK_C_TEXT);
+        tiku_text(surface, font, name.x, name.y + font->height,
+                       info->model.name, TIKU_C_TEXT);
     }
     for (i = 0; i < TIKU_TRK_INFO_TABS; i++) {
-        tiku_desk_rect_t rect = tab_rect(tabs, i);
+        tiku_rect_t rect = tab_rect(tabs, i);
 
-        tiku_desk_ui_button(surface, rect,
+        tiku_ui_button(surface, rect,
                             tiku_trk_info_tab_name((tiku_trk_info_tab_t)i),
                             info->tab == (tiku_trk_info_tab_t)i
-                                ? TIKU_DESK_S_DEFAULT : 0u);
+                                ? TIKU_S_DEFAULT : 0u);
     }
-    tiku_desk_ui_sunken(surface, body, TIKU_DESK_C_PANEL);
+    tiku_ui_sunken(surface, body, TIKU_C_PANEL);
     if (info->tab == TIKU_TRK_INFO_TAB_INFO) {
         for (i = 0; i < TIKU_TRK_INFO_FIELDS; i++) {
             char value[TIKU_TRK_INFO_VAL_MAX];
@@ -131,23 +131,23 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
                     TIKU_TRK_INFO_F_NONE) {
                 break;
             }
-            tiku_desk_text(surface, font, body.x + 8, y, label,
-                           TIKU_DESK_C_TEXT);
+            tiku_text(surface, font, body.x + 8, y, label,
+                           TIKU_C_TEXT);
             {
                 /* Truncated to the row, so a long path has something for
                  * the hover pop-up to expand (AW-073). */
                 char fitted[TIKU_TRK_INFO_VAL_MAX];
                 int room = body.w - 96 - 12;
 
-                if (tiku_desk_text_width(font, value) > room &&
-                    tiku_trk_text_fit(value, room, TIKU_TRK_TRUNC_MIDDLE,
+                if (tiku_text_width(font, value) > room &&
+                    tiku_text_fit(value, room, TIKU_TRUNC_MIDDLE,
                                       measure_info_text, (void *)font,
                                       fitted, sizeof fitted) >= 0) {
-                    tiku_desk_text(surface, font, body.x + 96, y, fitted,
-                                   TIKU_DESK_C_TEXT);
+                    tiku_text(surface, font, body.x + 96, y, fitted,
+                                   TIKU_C_TEXT);
                 } else {
-                    tiku_desk_text(surface, font, body.x + 96, y, value,
-                                   TIKU_DESK_C_TEXT);
+                    tiku_text(surface, font, body.x + 96, y, value,
+                                   TIKU_C_TEXT);
                 }
             }
         }
@@ -155,16 +155,16 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
         static const char *const labels[] = { "Read", "Write", "Execute" };
 
         for (i = 0; i < 3; i++) {
-            tiku_desk_ui_checkbox(surface, permission_rect(body, i), labels[i],
-                (unsigned)(tiku_trk_info_perm(info, i) ? TIKU_DESK_S_ON : 0u)
+            tiku_ui_checkbox(surface, permission_rect(body, i), labels[i],
+                (unsigned)(tiku_trk_info_perm(info, i) ? TIKU_S_ON : 0u)
                 | (unsigned)(info->perm_editable ? 0u
-                                                 : TIKU_DESK_S_DISABLED));
+                                                 : TIKU_S_DISABLED));
         }
         if (!info->perm_editable) {
-            tiku_desk_text(surface, font, body.x + 8,
+            tiku_text(surface, font, body.x + 8,
                 body.y + 14 + 3 * (INFO_ROW_H + 4) + font->height,
                 "This item's permissions are not yours to set.",
-                TIKU_DESK_C_TEXT);
+                TIKU_C_TEXT);
         }
     } else {
         for (i = 0; i < info->nattr; i++) {
@@ -173,17 +173,17 @@ draw(tiku_desk_window_t *window, tiku_desk_surface_t *surface,
             if (y > body.y + body.h) {
                 break;
             }
-            tiku_desk_text(surface, font, body.x + 8, y,
-                           info->attr[i].name, TIKU_DESK_C_TEXT);
-            tiku_desk_text(surface, font, body.x + 150, y,
-                           info->attr[i].type, TIKU_DESK_C_TEXT);
-            tiku_desk_text(surface, font, body.x + 210, y,
-                           info->attr[i].value, TIKU_DESK_C_TEXT);
+            tiku_text(surface, font, body.x + 8, y,
+                           info->attr[i].name, TIKU_C_TEXT);
+            tiku_text(surface, font, body.x + 150, y,
+                           info->attr[i].type, TIKU_C_TEXT);
+            tiku_text(surface, font, body.x + 210, y,
+                           info->attr[i].value, TIKU_C_TEXT);
         }
         if (info->nattr == 0) {
-            tiku_desk_text(surface, font, body.x + 8,
+            tiku_text(surface, font, body.x + 8,
                            body.y + 6 + font->height, "No attributes.",
-                           TIKU_DESK_C_TEXT);
+                           TIKU_C_TEXT);
         }
     }
 }
@@ -218,12 +218,12 @@ finish_rename(tiku_trk_info_windows_t *controller, int apply)
         mark_dirty(controller);
         return;
     }
-    if (tiku_trk_fs_rename(controller->fs, controller->model[slot].path,
+    if (tiku_fs_rename(controller->fs, controller->model[slot].path,
                            controller->name.text, error, sizeof error) != 0) {
         tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_ERROR, error, "Cancel");
     } else {
-        char parent[TIKU_TRK_PATH_MAX], destination[TIKU_TRK_PATH_MAX];
+        char parent[TIKU_PATH_MAX], destination[TIKU_PATH_MAX];
 
         if (tiku_trk_info_location(&controller->model[slot], parent,
                                    sizeof parent, NULL, 0)) {
@@ -247,8 +247,8 @@ finish_rename(tiku_trk_info_windows_t *controller, int apply)
 
 void
 tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
-    tiku_desk_workspace_t *workspace, tiku_trk_backend_t *backend,
-    tiku_trk_store_t *store, tiku_trk_fs_t *fs, tiku_trk_alert_t *alert,
+    tiku_workspace_t *workspace, tiku_backend_t *backend,
+    tiku_store_t *store, tiku_fs_t *fs, tiku_trk_alert_t *alert,
     int *dirty)
 {
     int i;
@@ -274,13 +274,13 @@ int
 tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
                            const char *path)
 {
-    tiku_desk_rect_t frame;
-    char title[TIKU_DESK_WINDOW_TITLE_MAX];
+    tiku_rect_t frame;
+    char title[TIKU_WINDOW_TITLE_MAX];
     int slot = slot_for_path(controller, path);
 
     if (slot >= 0) {
         if (controller->window[slot] != NULL) {
-            tiku_desk_workspace_activate(controller->workspace,
+            tiku_workspace_activate(controller->workspace,
                                           controller->window[slot]);
         }
         return slot;
@@ -296,11 +296,11 @@ tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
         return -1;
     }
     (void)tiku_trk_info_attrs(&controller->model[slot], controller->store);
-    frame = (tiku_desk_rect_t){ 120 + slot * CASCADE_STEP,
+    frame = (tiku_rect_t){ 120 + slot * CASCADE_STEP,
                                 80 + slot * CASCADE_STEP,
                                 INFO_WIDTH, INFO_HEIGHT };
     tiku_trk_info_title(&controller->model[slot], title, sizeof title);
-    controller->window[slot] = tiku_desk_workspace_open(controller->workspace,
+    controller->window[slot] = tiku_workspace_open(controller->workspace,
         title, frame, draw, &controller->context[slot],
         &controller->model[slot]);
     mark_dirty(controller);
@@ -314,7 +314,7 @@ tiku_trk_info_windows_close(tiku_trk_info_windows_t *controller, int slot)
         return;
     }
     if (controller->window[slot] != NULL) {
-        tiku_desk_workspace_close(controller->workspace,
+        tiku_workspace_close(controller->workspace,
                                   controller->window[slot]);
         controller->window[slot] = NULL;
     }
@@ -327,7 +327,7 @@ tiku_trk_info_windows_close(tiku_trk_info_windows_t *controller, int slot)
 
 int
 tiku_trk_info_windows_slot(const tiku_trk_info_windows_t *controller,
-                           const tiku_desk_window_t *window)
+                           const tiku_window_t *window)
 {
     int i;
 
@@ -349,7 +349,7 @@ tiku_trk_info_windows_model(tiku_trk_info_windows_t *controller, int slot)
     return &controller->model[slot];
 }
 
-tiku_desk_window_t *
+tiku_window_t *
 tiku_trk_info_windows_handle(tiku_trk_info_windows_t *controller, int slot)
 {
     if (slot < 0 || slot >= TIKU_TRK_INFO_WINDOW_MAX) {
@@ -362,7 +362,7 @@ tiku_trk_info_hit_t
 tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
                           int x, int y, int *which)
 {
-    tiku_desk_rect_t content, icon, name, tabs, body;
+    tiku_rect_t content, icon, name, tabs, body;
     tiku_trk_info_t *info;
     int i;
 
@@ -374,14 +374,14 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
         return TIKU_TRK_INFO_HIT_NONE;
     }
     info = &controller->model[slot];
-    content = tiku_desk_window_content(controller->window[slot]);
+    content = tiku_window_content(controller->window[slot]);
     layout(content, &icon, &name, &tabs, &body);
 #define INSIDE(rect) (x >= (rect).x && x < (rect).x + (rect).w && \
                       y >= (rect).y && y < (rect).y + (rect).h)
     if (INSIDE(icon)) { return TIKU_TRK_INFO_HIT_ICON; }
     if (INSIDE(name)) { return TIKU_TRK_INFO_HIT_NAME; }
     for (i = 0; i < TIKU_TRK_INFO_TABS; i++) {
-        tiku_desk_rect_t rect = tab_rect(tabs, i);
+        tiku_rect_t rect = tab_rect(tabs, i);
 
         if (INSIDE(rect)) {
             if (which != NULL) { *which = i; }
@@ -390,7 +390,7 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
     }
     if (info->tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
         for (i = 0; i < 3; i++) {
-            tiku_desk_rect_t rect = permission_rect(body, i);
+            tiku_rect_t rect = permission_rect(body, i);
 
             if (INSIDE(rect)) {
                 if (which != NULL) { *which = i; }
@@ -414,14 +414,14 @@ tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
                                  int slot, int i, int *x, int *y, int *w,
                                  int *h)
 {
-    tiku_desk_rect_t content, icon, name, tabs, body;
+    tiku_rect_t content, icon, name, tabs, body;
 
     if (slot < 0 || slot >= TIKU_TRK_INFO_WINDOW_MAX ||
         controller->window[slot] == NULL ||
         !controller->window[slot]->open) {
         return 0;
     }
-    content = tiku_desk_window_content(controller->window[slot]);
+    content = tiku_window_content(controller->window[slot]);
     layout(content, &icon, &name, &tabs, &body);
     if (x != NULL) { *x = body.x + 96; }
     if (y != NULL) { *y = body.y + 6 + i * INFO_ROW_H; }
@@ -441,7 +441,7 @@ tiku_trk_info_windows_begin_rename(tiku_trk_info_windows_t *controller,
     controller->renaming = slot;
     tiku_trk_edit_start(&controller->name,
                         controller->model[slot].model.name);
-    tiku_trk_edit_deny(&controller->name, tiku_trk_fs_name_deny());
+    tiku_trk_edit_deny(&controller->name, tiku_fs_name_deny());
     mark_dirty(controller);
 }
 
@@ -450,17 +450,17 @@ tiku_trk_info_windows_key(tiku_trk_info_windows_t *controller,
     int key, unsigned modifiers, char character)
 {
     int slot = tiku_trk_info_windows_slot(controller,
-        tiku_desk_workspace_focused(controller->workspace));
+        tiku_workspace_focused(controller->workspace));
 
     if (slot < 0) {
         return 0;
     }
     if (controller->renaming == slot) {
-        if (key == TIKU_DESK_KEY_RETURN) {
+        if (key == TIKU_KEY_RETURN) {
             finish_rename(controller, 1);
-        } else if (key == TIKU_DESK_KEY_ESCAPE) {
+        } else if (key == TIKU_KEY_ESCAPE) {
             finish_rename(controller, 0);
-        } else if (key == TIKU_DESK_KEY_BACKSPACE) {
+        } else if (key == TIKU_KEY_BACKSPACE) {
             (void)tiku_trk_edit_key(&controller->name,
                                     TIKU_TRK_EDIT_BACKSPACE, 0, '\0');
         } else if (character != '\0') {
@@ -470,12 +470,12 @@ tiku_trk_info_windows_key(tiku_trk_info_windows_t *controller,
         mark_dirty(controller);
         return 1;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u &&
+    if ((modifiers & TIKU_MOD_CMD) != 0u &&
         (key == 'e' || key == 'E')) {
         tiku_trk_info_windows_begin_rename(controller, slot);
         return 1;
     }
-    if ((modifiers & TIKU_DESK_MOD_CMD) != 0u &&
+    if ((modifiers & TIKU_MOD_CMD) != 0u &&
         (key == 'w' || key == 'W')) {
         tiku_trk_info_windows_close(controller, slot);
         return 1;
@@ -522,7 +522,7 @@ tiku_trk_info_windows_refresh(tiku_trk_info_windows_t *controller,
     int changed = 0, i;
 
     for (i = 0; i < TIKU_TRK_INFO_WINDOW_MAX; i++) {
-        tiku_trk_model_t model;
+        tiku_model_t model;
 
         if (!controller->model[i].used) {
             continue;

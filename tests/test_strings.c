@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tiku_trk_strings.h"
+#include "tiku_strings.h"
 
 static int fails;
 
@@ -61,33 +61,33 @@ main(void)
     printf("the words the interface is made of (TS-STR)\n");
 
     /* The baked English is there with no file loaded at all. */
-    check(tiku_trk_strings_builtin_count() > 20, "the English is baked in");
-    check(strcmp(tiku_trk_str("button.defaults"), "Defaults") == 0,
+    check(tiku_strings_builtin_count() > 20, "the English is baked in");
+    check(strcmp(tiku_str("button.defaults"), "Defaults") == 0,
           "a key finds its baked line");
-    check(strstr(tiku_trk_str("menu.find"), "Find") != NULL &&
-          (unsigned char)tiku_trk_str("menu.find")[
-              strlen(tiku_trk_str("menu.find")) - 1] == 0xA6u,
+    check(strstr(tiku_str("menu.find"), "Find") != NULL &&
+          (unsigned char)tiku_str("menu.find")[
+              strlen(tiku_str("menu.find")) - 1] == 0xA6u,
           "and keeps its UTF-8: Find… ends in an ellipsis, three bytes");
-    check(strcmp(tiku_trk_str("no.such.key.at.all"), "no.such.key.at.all")
+    check(strcmp(tiku_str("no.such.key.at.all"), "no.such.key.at.all")
           == 0, "a line nobody has is its own name, never a blank");
-    check(strcmp(tiku_trk_str(NULL), "") == 0, "and NULL is the empty line");
+    check(strcmp(tiku_str(NULL), "") == 0, "and NULL is the empty line");
 
     /* A translation read over the top: its lines win, the rest stay. */
     p = plant("<?xml version=\"1.0\"?>\n<strings lang=\"fr\">\n"
               "  <string name=\"button.defaults\">Par d\xc3\xa9""faut</string>\n"
               "  <string name=\"button.revert\">R\xc3\xa9tablir</string>\n"
               "</strings>\n");
-    check(p != NULL && tiku_trk_strings_load_file(p) == 2,
+    check(p != NULL && tiku_strings_load_file(p) == 2,
           "a translation loads the lines it carries");
-    check(strcmp(tiku_trk_str("button.defaults"), "Par d\xc3\xa9""faut") == 0,
+    check(strcmp(tiku_str("button.defaults"), "Par d\xc3\xa9""faut") == 0,
           "and they win over the baked English");
-    check(strstr(tiku_trk_str("menu.about"), "About") != NULL,
+    check(strstr(tiku_str("menu.about"), "About") != NULL,
           "while a line it did NOT carry is still the English");
     if (p != NULL) {
         (void)remove(p);
     }
-    tiku_trk_strings_reset();
-    check(strcmp(tiku_trk_str("button.defaults"), "Defaults") == 0,
+    tiku_strings_reset();
+    check(strcmp(tiku_str("button.defaults"), "Defaults") == 0,
           "and reset puts the English back");
 
     /* Entities: a translator writes an ampersand, an accent, a code point. */
@@ -97,19 +97,19 @@ main(void)
               "  <string name=\"c\">&#x3b1;&#x3b2;</string>\n"
               "  <string name=\"d\">&lt;tag&gt; &quot;q&quot;</string>\n"
               "</strings>\n");
-    (void)(p != NULL && tiku_trk_strings_load_file(p));
-    check(strcmp(tiku_trk_str("a"), "Fichiers & dossiers") == 0,
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("a"), "Fichiers & dossiers") == 0,
           "&amp; becomes an ampersand");
-    check(strcmp(tiku_trk_str("b"), "caf\xc3\xa9") == 0,
+    check(strcmp(tiku_str("b"), "caf\xc3\xa9") == 0,
           "&#233; becomes the letter, as UTF-8");
-    check(strcmp(tiku_trk_str("c"), "\xce\xb1\xce\xb2") == 0,
+    check(strcmp(tiku_str("c"), "\xce\xb1\xce\xb2") == 0,
           "&#x3b1; becomes Greek, which the device can now draw");
-    check(strcmp(tiku_trk_str("d"), "<tag> \"q\"") == 0,
+    check(strcmp(tiku_str("d"), "<tag> \"q\"") == 0,
           "and the angle brackets and quotes come back as themselves");
     if (p != NULL) {
         (void)remove(p);
     }
-    tiku_trk_strings_reset();
+    tiku_strings_reset();
 
     /*
      * The name attribute, found among others.  A reader that matched the
@@ -121,31 +121,31 @@ main(void)
               "  <string other=\"name='trap'\" name=\"real\">Yes</string>\n"
               "  <string namely=\"trap\" name=\"right\">Yes</string>\n  <string name=\"open\">Close</string>\n"
               "</strings>\n");
-    (void)(p != NULL && tiku_trk_strings_load_file(p));
-    check(strcmp(tiku_trk_str("greet"), "Hi") == 0,
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("greet"), "Hi") == 0,
           "the name= attribute is found past a decoy in another value");
-    check(strcmp(tiku_trk_str("real"), "Yes") == 0 &&
-          strcmp(tiku_trk_str("trap"), "trap") == 0,
+    check(strcmp(tiku_str("real"), "Yes") == 0 &&
+          strcmp(tiku_str("trap"), "trap") == 0,
           "and a name='...' inside another value is not taken for the key");
-    check(strcmp(tiku_trk_str("open"), "Close") == 0,
+    check(strcmp(tiku_str("open"), "Close") == 0,
           "a plain entry beside the decoys still reads");
-    check(strcmp(tiku_trk_str("right"), "Yes") == 0 &&
-          strcmp(tiku_trk_str("namely"), "namely") == 0,
+    check(strcmp(tiku_str("right"), "Yes") == 0 &&
+          strcmp(tiku_str("namely"), "namely") == 0,
           "and an attribute merely BEGINNING with name is not it either");
     if (p != NULL) {
         (void)remove(p);
     }
-    tiku_trk_strings_reset();
+    tiku_strings_reset();
     {
         const char *bad = plant("<string name=\"ab>text</string>");
 
-        (void)(bad != NULL && tiku_trk_strings_load_file(bad));
-        check(strcmp(tiku_trk_str("ab"), "ab") == 0,
+        (void)(bad != NULL && tiku_strings_load_file(bad));
+        check(strcmp(tiku_str("ab"), "ab") == 0,
               "an attribute quote that never closes is refused, not stored");
         if (bad != NULL) {
             (void)remove(bad);
         }
-        tiku_trk_strings_reset();
+        tiku_strings_reset();
     }
 
     /*
@@ -157,15 +157,15 @@ main(void)
               "  <string name=\"prefs.deskbar.dock_n\">Quai : %s %s</string>\n"
               "  <string name=\"button.defaults\">D\xc3\xa9""fauts</string>\n"
               "</strings>\n");
-    (void)(p != NULL && tiku_trk_strings_load_file(p));
-    check(strcmp(tiku_trk_str("prefs.deskbar.dock_n"), "Dock: %d") == 0,
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("prefs.deskbar.dock_n"), "Dock: %d") == 0,
           "a translation whose format does not match is refused");
-    check(strcmp(tiku_trk_str("button.defaults"), "D\xc3\xa9""fauts") == 0,
+    check(strcmp(tiku_str("button.defaults"), "D\xc3\xa9""fauts") == 0,
           "while a plain translation beside it is still taken");
     if (p != NULL) {
         (void)remove(p);
     }
-    tiku_trk_strings_reset();
+    tiku_strings_reset();
 
     /*
      * A catalogue built to hurt.  These files arrive by being dropped in
@@ -194,12 +194,12 @@ main(void)
             const char *bad = plant(nasty[i]);
 
             if (bad != NULL) {
-                (void)tiku_trk_strings_load_file(bad);
+                (void)tiku_strings_load_file(bad);
                 (void)remove(bad);
             }
-            tiku_trk_strings_reset();
+            tiku_strings_reset();
         }
-        check(survived && strcmp(tiku_trk_str("button.revert"), "Revert")
+        check(survived && strcmp(tiku_str("button.revert"), "Revert")
               == 0, "a catalogue built to hurt is read without harm");
     }
 

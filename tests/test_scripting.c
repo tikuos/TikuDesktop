@@ -40,7 +40,7 @@ put(const char *dir, const char *name)
 static tiku_trk_rep_t
 run(tiku_trk_poseview_t *v, const char *line)
 {
-    char store[8][TIKU_TRK_PATH_MAX];
+    char store[8][TIKU_PATH_MAX];
     tiku_trk_req_t req;
     tiku_trk_rep_t rep;
 
@@ -56,7 +56,7 @@ run(tiku_trk_poseview_t *v, const char *line)
 int
 main(void)
 {
-    tiku_trk_backend_t *b = tiku_trk_backend_posix_open();
+    tiku_backend_t *b = tiku_backend_posix_open();
     tiku_trk_poseview_t *v;
     char dir[] = "/tmp/trk_scr";
     tiku_trk_rep_t r;
@@ -179,7 +179,7 @@ main(void)
           "and every failure comes back in the reply rather than thrown");
 
     tiku_trk_poseview_free(v);
-    tiku_trk_backend_close(b);
+    tiku_backend_close(b);
     (void)system("rm -rf /tmp/trk_scr");
     printf("\n%s\n", fails ? "FAILURES" : "the scripting suite holds");
     return fails ? 1 : 0;

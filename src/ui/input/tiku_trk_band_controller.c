@@ -29,7 +29,7 @@ tiku_trk_band_controller_init(tiku_trk_band_controller_t *controller,
 static void
 select_band(tiku_trk_band_controller_t *controller)
 {
-    tiku_desk_rect_t content;
+    tiku_rect_t content;
     int origin_x = 0;
     int origin_y = 0;
 
@@ -111,7 +111,7 @@ int
 tiku_trk_band_controller_pulse(tiku_trk_band_controller_t *controller,
                                int64_t now)
 {
-    tiku_desk_rect_t content;
+    tiku_rect_t content;
     int top;
     int bottom;
     int overshoot = 0;
