@@ -91,15 +91,36 @@ main(void)
               sw.y >= f.y && sw.y + sw.h <= f.y + f.h, "DEV-002",
               "the switch sits inside the expanded dock's frame");
         track_light = s->px[(sw.y + sw.h / 2) * s->w + (sw.x + sw.w - 3)];
-        tiku_trk_deskbar_set_dark(db, 1);
+        tiku_trk_deskbar_set_theme(db, 1);
         tiku_trk_deskbar_draw(db, s);
         track_dark = s->px[(sw.y + sw.h / 2) * s->w + (sw.x + 3)];
         check(track_light != track_dark ||
               s->px[(sw.y + sw.h / 2) * s->w + (sw.x + sw.w - 3)] !=
               track_light, "DEV-002",
-              "flipping the state moves the knob: the two ends of the "
+              "moving the switch moves the knob: the two ends of the "
               "track do not paint the same before and after");
-        tiku_trk_deskbar_set_dark(db, 0);
+        /*
+         * Three seats, so the middle one has to be somewhere the other
+         * two are not.  Read at the exact centre of the track: the knob
+         * covers it only when the switch is in the middle.
+         */
+        {
+            int mid = (sw.y + sw.h / 2) * s->w + (sw.x + sw.w / 2);
+            tiku_rgb_t centre_dark = s->px[mid];
+            tiku_rgb_t centre_mono, centre_light;
+
+            tiku_trk_deskbar_set_theme(db, 2);
+            tiku_trk_deskbar_draw(db, s);
+            centre_mono = s->px[mid];
+            tiku_trk_deskbar_set_theme(db, 0);
+            tiku_trk_deskbar_draw(db, s);
+            centre_light = s->px[mid];
+            check(centre_mono != centre_dark && centre_mono != centre_light,
+                  "DEV-002",
+                  "and the third seat is the middle of the track, which "
+                  "neither end paints the same way");
+        }
+        tiku_trk_deskbar_set_theme(db, 0);
         check(tiku_trk_deskbar_click(db, sw.x + sw.w / 2,
                                      sw.y + sw.h / 2, 0u, 1, 1, &pick) &&
               pick.what == TIKU_TRK_DB_TOGGLE_DARK, "DEV-002",

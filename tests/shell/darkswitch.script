@@ -1,16 +1,28 @@
 # shell: desktop
 # home: fixture
-# The little switch on the Deskbar's tray: one click flips the whole
-# desktop between light and dark, writes the DarkMode setting down, and
-# a second click flips it back.  The switch IS the setting: the same
-# sync path the Preferences checkbox uses answers here.
+# The little switch on the Deskbar's tray, which has THREE seats: light,
+# without hue, and dark.  A press walks to the next one and round, writes
+# the DarkMode setting down, and the whole desktop is repainted out of
+# whichever table that names.  The switch IS the setting: the same sync
+# path the Preferences control uses answers here.
 wait 12
+note the backdrop is the Be blue while the switch sits at the left
 expect-pixel 300 500 336698
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings DarkMode
+note one press: dark, and the setting is written as a NUMBER now, since
+note the switch stopped being a flag the moment it grew a third seat
 click 933 82
 wait 25
 expect-pixel 300 500 1c2a3a
-expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode on
+expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode 1
+note a second press: no hue anywhere, and the backdrop is a plain grey
+click 933 82
+wait 25
+expect-pixel 300 500 707070
+expect-file-has /tmp/trk_home/.config/TrackerSettings DarkMode 2
+note and a third comes back round to where it started, which is why the
+note press walks rather than toggling: three seats and one button
 click 933 82
 wait 25
 expect-pixel 300 500 336698
-expect-file-lacks /tmp/trk_home/.config/TrackerSettings DarkMode on
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings DarkMode

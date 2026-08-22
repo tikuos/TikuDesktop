@@ -106,7 +106,7 @@ typedef struct {
     tiku_rect_t     popup_frame;
     tiku_rect_t     popup_sub_frame;
     tiku_rect_t     viewbtn_rect;  /* the gutter's view popup    */
-    int                  theme_dark;    /* -1 until first applied     */
+    int                  theme_mode;    /* -1 until first applied     */
     int                  bar_open;
     /* Browser chrome owns its history and location editor per window. */
     tiku_trk_navigator_t nav;
@@ -1266,12 +1266,16 @@ sync_navigator_preference(app_t *a, int force)
         hide_dotfiles = tiku_trk_prefs_get(&prefs, "HideDotFiles") != 0;
         folders_first = tiku_trk_prefs_get(&prefs, "SortFolderNamesFirst") != 0;
         filter = tiku_trk_prefs_get(&prefs, "TypeAheadFiltering") != 0;
-        dark = tiku_trk_prefs_get(&prefs, "DarkMode") != 0;
-        if (dark != a->theme_dark) {
-            /* The theme swap, live (settings semantics): the browser
-             * repaints whole frames, so a flip costs one redraw. */
-            a->theme_dark = dark;
-            tiku_theme_set(dark ? tiku_theme_dark() : NULL);
+        dark = tiku_trk_prefs_get(&prefs, "DarkMode");
+        if (dark < 0 || dark > 2) {
+            dark = 0;
+        }
+        if (dark != a->theme_mode) {
+            /* The table swap, live (settings semantics): the browser
+             * repaints whole frames, so a change costs one redraw. */
+            a->theme_mode = dark;
+            tiku_theme_set(dark == 1 ? tiku_theme_dark()
+                         : dark == 2 ? tiku_theme_mono() : NULL);
             a->dirty = 1;
         }
         tiku_trk_prefs_free(&prefs);

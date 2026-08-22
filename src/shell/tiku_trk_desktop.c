@@ -189,7 +189,7 @@ typedef struct desktop {
     /* The query the save panel is asking a destination for. */
     tiku_query_t     pending_query;
     /* Which theme the desktop is wearing; -1 until first applied. */
-    int                  theme_dark;
+    int                  theme_mode;
     /* The global menu bar (phase one): one strip at the top of the
      * screen, fed by whatever the focused window PUBLISHED (phase two's
      * protocol) plus the system menu at its left.  The scratch menus are
@@ -452,21 +452,25 @@ sync_folder_preferences(desktop_t *app)
         }
     }
     {
-        /* Dark mode is a THEME SWAP, applied the moment the setting says
-         * so (settings semantics: immediate, no OK button).  A flip
-         * forgets every window's pixels -- they were painted in the other
-         * palette -- and repaints the world once. */
-        int dark = tiku_trk_prefs_get(prefs, "DarkMode") != 0;
+        /* The theme is a TABLE SWAP, applied the moment the setting says
+         * so (settings semantics: immediate, no OK button).  A change
+         * forgets every window's pixels -- they were painted out of the
+         * other table -- and repaints the world once. */
+        int mode = tiku_trk_prefs_get(prefs, "DarkMode");
 
+        if (mode < 0 || mode > 2) {
+            mode = 0;               /* a file from elsewhere says anything */
+        }
         /* The Deskbar's switch shows the same state, wherever it was
-         * flipped from. */
-        tiku_trk_deskbar_set_dark(app->deskbar, dark);
-        if (dark != app->theme_dark) {
+         * moved from. */
+        tiku_trk_deskbar_set_theme(app->deskbar, mode);
+        if (mode != app->theme_mode) {
             tiku_trk_folder_window_t *desk =
                 tiku_trk_desktop_view_folder(&app->desktop_view);
 
-            app->theme_dark = dark;
-            tiku_theme_set(dark ? tiku_theme_dark() : NULL);
+            app->theme_mode = mode;
+            tiku_theme_set(mode == 1 ? tiku_theme_dark()
+                         : mode == 2 ? tiku_theme_mono() : NULL);
             for (i = 0; i < app->folder_count; i++) {
                 tiku_trk_folder_window_forget(&app->folders[i]);
             }
@@ -2781,8 +2785,11 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
          * the checkbox and the settings file can never disagree. */
         tiku_trk_prefs_t *prefs = prefs_model(app);
 
+        /* Three seats, so a press walks to the next one and round: the
+         * switch is the only control most people will ever touch, and a
+         * slider you cannot get back to the start of is a trap. */
         tiku_trk_prefs_set(prefs, "DarkMode",
-                           tiku_trk_prefs_get(prefs, "DarkMode") == 0);
+                           (tiku_trk_prefs_get(prefs, "DarkMode") + 1) % 3);
         (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
         sync_folder_preferences(app);
         app->dirty = 1;
@@ -4578,7 +4585,7 @@ tracker_run(int argc, char **argv)
     int safe_mode = 0;
 
     memset(&app, 0, sizeof app);
-    app.theme_dark = -1;      /* unapplied: the first sync decides */
+    app.theme_mode = -1;      /* unapplied: the first sync decides */
     app.gbar_on = -1;
     app.gbar_open = -1;
     tiku_trk_menubar_init(&app.gbar);

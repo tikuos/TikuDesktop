@@ -44,8 +44,14 @@ static const tiku_trk_pref_t table[] = {
     { "TypeAheadFiltering",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
     { "GenerateImageThumbnails", B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
     /* Not a Haiku setting: the theme swap the toolkit's table makes
-     * possible.  Appended so every row above keeps its place. */
-    { "DarkMode",                B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
+     * possible.  Appended so every row above keeps its place.
+     *
+     * THREE-valued, not a flag: 0 light, 1 dark, 2 without hue.  It kept
+     * its name when the third arrived, because the name is what is
+     * written in everybody's settings file and 0 and 1 still mean what
+     * they meant -- see the read path, which also still answers to the
+     * word "on" that a file written by an older build says. */
+    { "DarkMode",                I, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
     /* Not a Haiku setting either: one menu bar at the top of the screen,
      * fed by whatever the focused window publishes. */
     { "GlobalMenuBar",           B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
@@ -261,7 +267,20 @@ tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path)
         } else if (pr->type == TIKU_TRK_PREF_COLOUR) {
             pr->value = (int32_t)strtoul(val, NULL, 0);
         } else {
-            pr->value = (int32_t)strtol(val, NULL, 10);
+            /*
+             * An older build wrote this one as a flag, so a settings file
+             * in the wild says "DarkMode on".  strtol would read that as
+             * nought and turn somebody's dark desktop back to white on
+             * the first launch after an update, silently, which is the
+             * kind of thing nobody reports and everybody notices.
+             */
+            if (strcmp(val, "on") == 0) {
+                pr->value = 1;
+            } else if (strcmp(val, "off") == 0) {
+                pr->value = 0;
+            } else {
+                pr->value = (int32_t)strtol(val, NULL, 10);
+            }
         }
     }
     (void)fclose(f);
@@ -321,6 +340,15 @@ tiku_trk_prefs_mark_opened(tiku_trk_prefs_t *p)
     for (i = 0; i < p->n; i++) {
         p->pref[i].opened = p->pref[i].value;
     }
+}
+
+int
+tiku_trk_prefs_seats(const char *name)
+{
+    if (name != NULL && strcmp(name, "DarkMode") == 0) {
+        return 3;               /* light, dark, and without hue */
+    }
+    return 0;
 }
 
 int32_t

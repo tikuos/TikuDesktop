@@ -606,12 +606,15 @@ void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
  * @brief Tell the bar which way the theme currently leans.
  *
  * The tray carries a small slide switch drawn like the physical thing: a
- * recessed track and a raised knob that sits left for light, right for
- * dark.  The bar only DRAWS the state; flipping it is a pick
- * (TIKU_TRK_DB_TOGGLE_DARK) the shell answers by rewriting the DarkMode
- * setting, so the switch and the Preferences checkbox can never disagree.
+ * recessed track and a raised knob with THREE seats -- left for light,
+ * middle for no hue, right for dark.  The bar only DRAWS the state;
+ * moving it is a pick (TIKU_TRK_DB_TOGGLE_DARK) the shell answers by
+ * rewriting the DarkMode setting, so the switch and the Preferences
+ * control can never disagree.
+ *
+ * @param which 0 light, 1 dark, 2 without hue.  Anything else reads as 0.
  */
-void tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on);
+void tiku_trk_deskbar_set_theme(tiku_trk_deskbar_t *db, int which);
 
 /** @brief Reserve the top @p px of the screen (the global menu bar). */
 void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);

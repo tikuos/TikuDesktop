@@ -98,7 +98,9 @@ struct tiku_trk_deskbar {
     int                  tray_count;
     int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
-    int                  dark;      /* which way the theme leans       */
+    /* Which of the three tables is in force: 0 light, 1 dark, 2 no hue.
+     * The bar only DRAWS it; the shell owns the setting. */
+    int                  theme;
     struct {
         char label[TIKU_TRK_DB_LABEL_MAX];
         char command[TIKU_PATH_MAX];
@@ -1479,17 +1481,24 @@ tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
 /**
  * The theme switch, drawn like the physical part: a recessed track the
  * knob slides in, lit with the accent colour while the dark side is on --
- * a pilot lamp, not a torch.  The knob is a raised cap with grip lines,
- * left for light, right for dark.
+ * a pilot lamp, not a torch.  The knob is a raised cap with grip lines.
+ *
+ * THREE detents, not two: light at the left, dark at the right, and no
+ * hue in the middle.  The middle is where it is because the switch is
+ * read as a slider and the third mode is not a further step INTO the
+ * dark -- it is a different axis, and the centre is the only position
+ * that does not claim otherwise.
  */
 static void
 draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
 {
     tiku_rect_t t = tiku_trk_deskbar_switch_rect(db);
-    tiku_rgb_t well = db->dark
+    tiku_rgb_t well = (db->theme == 1)
         ? TIKU_C_TAB
-        : tiku_tint(TIKU_C_PANEL, 1.10f);
+        : tiku_tint(TIKU_C_PANEL,
+                         (db->theme == 2) ? 1.28f : 1.10f);
     tiku_rect_t knob;
+    int slot;
     int k;
 
     /* The well: filled, framed, and shadowed along the top edge the way
@@ -1502,10 +1511,12 @@ draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
                     tiku_tint(TIKU_C_PANEL,
                                    TIKU_LIGHTEN_MAX));
 
-    /* The knob rides a shade proud of the track, top and bottom. */
-    knob = (tiku_rect_t){ db->dark ? t.x + t.w - SWITCH_H - 1
-                                        : t.x + 1,
-                               t.y - 1, SWITCH_H, t.h + 2 };
+    /* The knob rides a shade proud of the track, top and bottom.  Its
+     * three seats are the two ends and the exact middle. */
+    slot = (db->theme == 1) ? t.x + t.w - SWITCH_H - 1
+         : (db->theme == 2) ? t.x + (t.w - SWITCH_H) / 2
+                            : t.x + 1;
+    knob = (tiku_rect_t){ slot, t.y - 1, SWITCH_H, t.h + 2 };
     tiku_fill(s, knob, TIKU_C_PANEL);
     tiku_frame(s, knob, tiku_tint(TIKU_C_PANEL, 1.45f));
     tiku_bevel(s, tiku_inset(knob, 1),
@@ -1520,10 +1531,10 @@ draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
 }
 
 void
-tiku_trk_deskbar_set_dark(tiku_trk_deskbar_t *db, int on)
+tiku_trk_deskbar_set_theme(tiku_trk_deskbar_t *db, int which)
 {
     if (db != NULL) {
-        db->dark = !!on;
+        db->theme = (which >= 0 && which <= 2) ? which : 0;
     }
 }
 

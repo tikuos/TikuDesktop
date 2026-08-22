@@ -85,6 +85,27 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_fill(surface, box,
                            (tiku_rgb_t)pref->value & 0xffffffu);
             tiku_frame(surface, box, TIKU_C_TEXT);
+        } else {
+            /*
+             * A number, shown the way the Deskbar's switch shows the same
+             * one: a track with the knob in the seat the value names.  A
+             * click walks to the next seat, as the swatch above walks to
+             * the next colour -- one idiom for "this control has a small
+             * set of positions", wherever it is drawn.
+             */
+            int seats = tiku_trk_prefs_seats(pref->name);
+            int at = (seats > 1) ? (int)pref->value % seats : 0;
+            tiku_rect_t knob = box;
+
+            if (at < 0) {
+                at = 0;
+            }
+            tiku_fill(surface, box, tiku_tint(TIKU_C_PANEL, 1.10f));
+            tiku_frame(surface, box, ink);
+            knob.w = (seats > 1) ? box.w / seats : box.w;
+            knob.x = box.x + at * knob.w;
+            tiku_fill(surface, knob, TIKU_C_PANEL);
+            tiku_frame(surface, knob, ink);
         }
         tiku_text(surface, font, content.x + x + 18,
                        content.y + y + 14, pref->name, ink);
@@ -138,6 +159,13 @@ event(tiku_window_t *window, const tiku_event_t *event,
                                !pref->value);
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
             pref->value = tiku_trk_prefs_colour_next(pref->value);
+        } else {
+            int seats = tiku_trk_prefs_seats(pref->name);
+
+            tiku_trk_prefs_set(&controller->model, pref->name,
+                               (seats > 1)
+                                   ? (pref->value + 1) % seats
+                                   : pref->value);
         }
     } else {
         int page;

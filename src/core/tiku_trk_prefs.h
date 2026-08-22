@@ -83,6 +83,18 @@ void tiku_trk_prefs_mark_opened(tiku_trk_prefs_t *p);
 /** @brief The next colour a clicked swatch walks to (alpha preserved). */
 int32_t tiku_trk_prefs_colour_next(int32_t value);
 
+/**
+ * @brief How many positions a numbered setting has.
+ *
+ * The table holds a name, a type and three values and no room for a
+ * range, and widening it would move every row in a file nobody asked to
+ * have rewritten.  Asked by name instead, which is honest about there
+ * being exactly one such setting so far.
+ *
+ * @return the count, or 0 for a setting that is not one of these.
+ */
+int tiku_trk_prefs_seats(const char *name);
+
 /** @brief Whether @p page has anything differing from its defaults. */
 int tiku_trk_prefs_defaultable(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 
