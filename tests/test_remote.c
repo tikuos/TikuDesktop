@@ -24,7 +24,9 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "tiku_dl.h"
 #include "tiku_remote.h"
+#include "tiku_ui.h"
 
 static int fails;
 
@@ -146,6 +148,136 @@ main(void)
             check(type == TIKU_RMSG_PICK && command == 7,
                   "PICK crossed back: the answer rode the same line");
         }
+        /*
+         * And the third way to hand a window over: not the pixels but
+         * what was DRAWN.  The claim is that nothing downstream can tell
+         * -- so the pixels the session ends up holding must be the ones
+         * drawing it here would have produced, and the bytes that
+         * crossed must be a fraction of them.
+         */
+        {
+            tiku_dl_t *dl = tiku_dl_new();
+            tiku_surface_t here;
+            uint32_t *mine = calloc(64u * 32u, sizeof *mine);
+            size_t stream;
+            const uint32_t *theirs;
+            int differing = 0, k;
+
+            memset(&here, 0, sizeof here);
+            here.px = mine;
+            here.w = 64; here.h = 32; here.scale = 1;
+            here.clip.w = 64; here.clip.h = 32;
+
+            (void)tiku_dl_panel(dl, (tiku_rect_t){ 0, 0, 64, 32 });
+            (void)tiku_dl_button(dl, (tiku_rect_t){ 4, 4, 56, 20 },
+                                 "Go", 0u);
+            tiku_ui_panel(&here, (tiku_rect_t){ 0, 0, 64, 32 });
+            tiku_ui_button(&here, (tiku_rect_t){ 4, 4, 56, 20 },
+                                "Go", 0u);
+            stream = tiku_dl_flat_size(dl);
+
+            check(tiku_remote_draw(&client, 1u, dl, 64, 32) == 1,
+                  "a window goes over as what was drawn, not as pixels");
+            for (spins = 0; spins < 200; spins++) {
+                (void)tiku_remote_poll(&listener);
+                if (listener.session[0].fw == 64 &&
+                    listener.session[0].fh == 32) {
+                    break;
+                }
+                usleep(10000);
+            }
+            theirs = tiku_remote_pixels(&listener.session[0]);
+            for (k = 0; theirs != NULL && k < 64 * 32; k++) {
+                if (theirs[k] != mine[k]) {
+                    differing++;
+                }
+            }
+            check(theirs != NULL && differing == 0,
+                  "and the far end holds the pixels drawing it here "
+                  "would have made -- every one of 2048");
+            check(stream * 20u < 64u * 32u * 4u,
+                  "for a twentieth of the bytes, which is the whole "
+                  "reason a device on a serial line can be drawn to");
+            /*
+             * A DRAW is a WHOLE window, as a frame is.  So a second one
+             * that covers less than the first must not leave the first
+             * showing through the gap -- which is what happens if the
+             * surface it plays into is not cleared before it plays.
+             */
+            {
+                tiku_dl_t *small = tiku_dl_new();
+                int lingering = 0;
+
+                (void)tiku_dl_fill(small, (tiku_rect_t){ 0, 0, 8, 8 },
+                                   TIKU_C_DOC);
+                (void)tiku_remote_draw(&client, 1u, small, 64, 32);
+                for (spins = 0; spins < 200; spins++) {
+                    (void)tiku_remote_poll(&listener);
+                    theirs = tiku_remote_pixels(&listener.session[0]);
+                    if (theirs != NULL && theirs[63] != mine[63]) {
+                        break;
+                    }
+                    usleep(10000);
+                }
+                /*
+                 * Everything the small one does NOT cover has to be
+                 * clear.  Asked that way rather than "differs from the
+                 * old", because a pixel may honestly share a colour with
+                 * what was there before -- the button's highlight is
+                 * white and so is the new fill.
+                 */
+                theirs = tiku_remote_pixels(&listener.session[0]);
+                for (k = 0; theirs != NULL && k < 64 * 32; k++) {
+                    int row = k / 64, col = k % 64;
+
+                    if ((row >= 8 || col >= 8) && theirs[k] != 0u) {
+                        lingering++;
+                    }
+                }
+                check(theirs != NULL && lingering == 0,
+                      "and a smaller one after it leaves nothing of the "
+                      "first showing through: a stream is a whole window");
+                tiku_dl_free(small);
+            }
+
+            /*
+             * And a DRAW built by hand to lie about its size.  The client
+             * end refuses these before sending, so it is written straight
+             * onto the wire -- which is the only way the far end will
+             * ever meet one, and the reason it checks at all.
+             */
+            {
+                unsigned char msg[32];
+                uint32_t type = TIKU_RMSG_DRAW, len = 12u;
+                /*
+                 * Big enough to be absurd, small enough that the machine
+                 * would happily give it: 4096 x 4096 is sixty-four
+                 * megabytes taken on the word of a twenty-byte message.
+                 * A size chosen so large that malloc refuses would test
+                 * malloc, not the check.
+                 */
+                int32_t huge = 4096;
+                uint32_t one = 1u;
+
+                memcpy(msg, &type, 4);
+                memcpy(msg + 4, &len, 4);
+                memcpy(msg + 8, &one, 4);
+                memcpy(msg + 12, &huge, 4);
+                memcpy(msg + 16, &huge, 4);
+                (void)!write(client.fd, msg, 20u);
+                for (spins = 0; spins < 40; spins++) {
+                    (void)tiku_remote_poll(&listener);
+                    usleep(5000);
+                }
+                check(listener.session[0].fw == 64 &&
+                      listener.session[0].fh == 32,
+                      "a stream claiming a sixty-four megabyte window is "
+                      "refused, and the window it had is untouched");
+            }
+            tiku_dl_free(dl);
+            free(mine);
+        }
+
         /*
          * And the one message class that is not a struct.  Everything
          * above is a layout both ends were compiled against; this is a
