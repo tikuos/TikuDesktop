@@ -18,6 +18,16 @@
 #include "tiku_attr.h"
 
 #define INFO_WIDTH    360
+
+/*
+ * The width stays written down, deliberately.  It was tried the other
+ * way -- measured over the values, so a date would not be truncated at a
+ * larger face -- and the measurement will not hold still: one of those
+ * values is a modification time WITH SECONDS in it, so the width changed
+ * as the clock ticked and the window never settled.  A value too long for
+ * its row is middle-truncated with the whole of it on hover (AW-073),
+ * which is the answer this window already had.
+ */
 #define INFO_PAD       10
 #define INFO_ICON      32
 #define CASCADE_STEP   22
@@ -106,6 +116,73 @@ permission_rect(tiku_rect_t body, int index)
         tiku_ui_button_w("Read", 120), row_h() };
 }
 
+
+/**
+ * @brief Where the values start: past the widest label there is.
+ *
+ * It was 96 pixels, which held the English labels at a 12 px face and
+ * nothing else.  At 16 "Opens with" ran straight into its own value --
+ * and worse, the room left for the value was measured from that same 96,
+ * so a date was truncated to make space that was already there.  Two
+ * faults from one written-down number, which is what written-down
+ * numbers do.
+ *
+ * Measured now, over the labels the catalogue actually returns, so a
+ * translation gets the column it needs as well.  Floored at 96, so the
+ * default face still draws the column it always drew.
+ */
+static int
+value_column(tiku_trk_info_t *info, tiku_store_t *store)
+{
+    const tiku_font_t *font = tiku_font_plain();
+    int widest = 0;
+    int i;
+
+    for (i = 0; i < TIKU_TRK_INFO_FIELDS; i++) {
+        char value[TIKU_TRK_INFO_VAL_MAX];
+        const char *label = "";
+        int w;
+
+        if (tiku_trk_info_field(info, store, i, &label, value,
+                                sizeof value) == TIKU_TRK_INFO_F_NONE) {
+            break;
+        }
+        w = tiku_text_width(font, label);
+        if (w > widest) {
+            widest = w;
+        }
+    }
+    widest += 8 + 16;                   /* the indent, and a gutter */
+    return (widest > 96) ? widest : 96;
+}
+
+/** @brief The three columns of the attributes page, likewise measured. */
+static int
+attr_column(const tiku_trk_info_t *info, int which)
+{
+    const tiku_font_t *font = tiku_font_plain();
+    int name_w = 0, type_w = 0, i;
+
+    for (i = 0; i < info->nattr; i++) {
+        int w = tiku_text_width(font, info->attr[i].name);
+
+        if (w > name_w) {
+            name_w = w;
+        }
+        w = tiku_text_width(font, info->attr[i].type);
+        if (w > type_w) {
+            type_w = w;
+        }
+    }
+    if (name_w + 24 < 142) {
+        name_w = 142 - 24;              /* what 150 came to at 12 px */
+    }
+    if (type_w + 16 < 60) {
+        type_w = 60 - 16;
+    }
+    return (which == 0) ? 8 + name_w + 16 : 8 + name_w + 16 + type_w + 16;
+}
+
 /**
  * @brief Grow or shrink to what the face now needs.
  *
@@ -118,12 +195,12 @@ permission_rect(tiku_rect_t body, int index)
 static void
 refit(tiku_window_t *window, int *dirty)
 {
-    int want = info_height();
+    int want_h = info_height();
 
-    if (window == NULL || !window->open || window->frame.h == want) {
+    if (window == NULL || !window->open || window->frame.h == want_h) {
         return;
     }
-    window->frame.h = want;
+    window->frame.h = want_h;
     if (dirty != NULL) {
         *dirty = 1;
     }
@@ -189,16 +266,17 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                 /* Truncated to the row, so a long path has something for
                  * the hover pop-up to expand (AW-073). */
                 char fitted[TIKU_TRK_INFO_VAL_MAX];
-                int room = body.w - 96 - 12;
+                int at = value_column(info, controller->store);
+                int room = body.w - at - 12;
 
                 if (tiku_text_width(font, value) > room &&
                     tiku_text_fit(value, room, TIKU_TRUNC_MIDDLE,
                                       measure_info_text, (void *)font,
                                       fitted, sizeof fitted) >= 0) {
-                    tiku_text(surface, font, body.x + 96, y, fitted,
+                    tiku_text(surface, font, body.x + at, y, fitted,
                                    TIKU_C_TEXT);
                 } else {
-                    tiku_text(surface, font, body.x + 96, y, value,
+                    tiku_text(surface, font, body.x + at, y, value,
                                    TIKU_C_TEXT);
                 }
             }
@@ -227,9 +305,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             }
             tiku_text(surface, font, body.x + 8, y,
                            info->attr[i].name, TIKU_C_TEXT);
-            tiku_text(surface, font, body.x + 150, y,
+            tiku_text(surface, font, body.x + attr_column(info, 0), y,
                            info->attr[i].type, TIKU_C_TEXT);
-            tiku_text(surface, font, body.x + 210, y,
+            tiku_text(surface, font, body.x + attr_column(info, 1), y,
                            info->attr[i].value, TIKU_C_TEXT);
         }
         if (info->nattr == 0) {
