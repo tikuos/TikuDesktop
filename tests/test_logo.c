@@ -130,7 +130,10 @@ has_amber(void)
 int
 main(void)
 {
-    static const int sizes[] = { 16, 20, 24, 32, 64, 80 };
+    /* 14 is what a menu row asks for -- the Deskbar's leaf menu and the
+     * strip's system menu both put the mark beside About at that size,
+     * so it is a size the spill check has to cover. */
+    static const int sizes[] = { 14, 16, 20, 24, 32, 64, 80 };
     size_t i;
     int rising = 1, last = 0;
 

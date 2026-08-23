@@ -22,6 +22,9 @@ wait 20
 click 20 8
 wait 4
 expect-menu About this system
+note and the strip's About row wears the same mark the leaf's does, from
+note the same geometry -- so the two ways in to the box look like one thing
+expect-pixel 22 31 f7e689
 menu-pick About this system
 wait 6
 expect-title About this system

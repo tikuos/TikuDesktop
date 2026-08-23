@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include "tiku_attr.h"
+#include "tiku_logo.h"
 #include "tiku_host.h"
 #include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
@@ -612,6 +613,12 @@ offer_broken_link(desktop_t *app, const char *path)
 
 
 /** @brief Real art for the Deskbar's own menu rows (DB-002). */
+/*
+ * The system's own face, asked for by name so both menus can want it
+ * without either of them knowing it is drawn rather than looked up.
+ */
+#define MARK_ICON "tikuos"
+
 static int
 deskbar_menu_icon(void *context, tiku_surface_t *s,
                   const tiku_trk_db_item_t *item, int x, int y, int size)
@@ -656,6 +663,12 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";
         break;
+    case TIKU_TRK_DB_ITEM_ABOUT:
+        /* The row that opens the box about the system wears the system's
+         * own mark -- drawn from its geometry, so it is the same mark at
+         * fourteen pixels here as at eighty in the box it opens. */
+        tiku_logo_paint(s, (tiku_rect_t){ x, y, size, size }, 0u);
+        return 1;
     case TIKU_TRK_DB_ITEM_APP:
         /* Whatever the shell named when it offered the row; a program
          * that said nothing is drawn as what it is. */
@@ -672,6 +685,12 @@ static int
 paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
                 int size, int dimmed)
 {
+    if (icon != NULL && strcmp(icon, MARK_ICON) == 0) {
+        /* Not a name in the icon set: the mark is drawn.  Dimming is
+         * moot -- the row it marks is never offered disabled. */
+        tiku_logo_paint(s, (tiku_rect_t){ x, y, size, size }, 0u);
+        return 1;
+    }
     return dimmed
         ? tiku_icon_paint_dim(s, icon, x, y, size, 0.55f,
                                   TIKU_C_PANEL)
@@ -1492,6 +1511,7 @@ rebuild_global_bar(desktop_t *app)
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
     (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.about"),
                             TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
+    tiku_trk_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT, MARK_ICON);
     (void)tiku_trk_menu_add_separator(&app->sysmenu);
     (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.find"),
                             TIKU_TRK_CMD_FIND,
@@ -4064,10 +4084,9 @@ draw_nav_levels(desktop_t *app, int px, int py)
                 if (lv->item[i].is_container) {
                     /* The arrow says a row goes further, which is the one
                      * thing a nested menu must announce. */
-                    tiku_text(app->surf, nf, r.x + r.w - 12,
-                                   ty + nf->ascent + 2, ">",
-                                   (i == lv->sel) ? TIKU_C_SELTEXT
-                                                  : TIKU_C_TEXT);
+                    tiku_ui_submenu_arrow(app->surf,
+                        (tiku_rect_t){ r.x, row2.y, r.w, row2.h },
+                        (i == lv->sel) ? TIKU_C_SELTEXT : TIKU_C_TEXT);
                 }
             }
             /* The next level hangs off this level's chosen row. */

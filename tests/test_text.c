@@ -50,6 +50,52 @@ inked(const tiku_surface_t *s)
     return count;
 }
 
+/**
+ * @brief How far the ink of @p text reaches across, at @p scale.
+ *
+ * The count of inked pixels says whether a letter was rasterised again
+ * or blown up; it says nothing about WHERE the result landed.  A 2x
+ * glyph whose bearings were read as logical pixels would still be real
+ * detail, drawn in the wrong place.  The span catches that: at twice the
+ * scale the same string must occupy twice the width, because the pen is
+ * stepped by the logical advance either way.
+ */
+static int
+ink_span(const char *text, int scale)
+{
+    tiku_surface_t *s = tiku_surface_new(160, 40,
+                                                   TIKU_RGB(255, 255,
+                                                                 255));
+    int sc, lo = 1 << 30, hi = -1, x, y, span;
+    long stride;
+
+    if (s == NULL) {
+        return -1;
+    }
+    if (scale > 1) {
+        (void)tiku_surface_rescale(s, scale,
+                                        TIKU_RGB(255, 255, 255));
+    }
+    s->clip.x = 0;
+    s->clip.y = 0;
+    s->clip.w = s->w;
+    s->clip.h = s->h;
+    tiku_text(s, tiku_font_plain(), 2, 24, text, TIKU_RGB(0, 0, 0));
+    sc = (s->scale > 1) ? s->scale : 1;
+    stride = (long)s->w * sc;
+    for (y = 0; y < s->h * sc; y++) {
+        for (x = 0; x < s->w * sc; x++) {
+            if (s->px[(long)y * stride + x] != TIKU_RGB(255, 255, 255)) {
+                if (x < lo) { lo = x; }
+                if (x > hi) { hi = x; }
+            }
+        }
+    }
+    span = (hi < lo) ? 0 : hi - lo + 1;
+    tiku_surface_free(s);
+    return span;
+}
+
 /** @brief Ink left by @p text on a fresh surface at @p scale. */
 static int
 ink_of(const char *text, int scale)
@@ -319,6 +365,35 @@ main(void)
                       ink_of("Handgloves", 1) > 0, "DEV-011",
                       "and a seventh face does not take out the pair in "
                       "force to make room for itself");
+                /*
+                 * A DROPPED face at a doubled screen.  The baked faces
+                 * have carried a 2x companion all along; a face read
+                 * from a file had none, so choosing a real font was a
+                 * choice to have blown-up text on the one kind of screen
+                 * that could have shown it properly.  Same measure as
+                 * the baked check above: replicated ink is EXACTLY four
+                 * times the 1x ink, because every pixel became a 2x2
+                 * block, and a face rasterised again at twice the size
+                 * lands somewhere else.
+                 */
+                (void)tiku_font_set_size(12);
+                check(tiku_font_plain()->hi != NULL, "DEV-011",
+                      "a face read from a file carries a 2x companion, "
+                      "as a baked one does");
+                check(ink_of("Handgloves", 2) !=
+                      4 * ink_of("Handgloves", 1), "DEV-011",
+                      "and a doubled screen draws it at real 2x detail "
+                      "rather than blowing the 1x glyphs up");
+                {
+                    int one = ink_span("Handgloves", 1);
+                    int two = ink_span("Handgloves", 2);
+
+                    check(one > 0 && two >= 2 * one - 4 &&
+                          two <= 2 * one + 4, "DEV-011",
+                          "and lands in the layout the 1x metrics "
+                          "promised: twice the scale, twice the width, "
+                          "to within a bearing either end");
+                }
             }
         }
         /*
