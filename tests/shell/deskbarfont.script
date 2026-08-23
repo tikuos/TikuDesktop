@@ -5,18 +5,19 @@
 wait 12
 click 980 20
 wait 2
+note at 12 px the leaf menu ends at 290, above the point below
+expect-pixel 850 304 336698
 menu-pick Settings
 wait 3
 menu-pick Deskbar preferences
 wait 5
-note at 12 px the leaf menu ends above this point
 click 668 270
 wait 3
 key w ctrl
 wait 3
 click 980 20
 wait 3
-note at 14 px the same rows reach past it: the menu ended at 324,
-note and now runs to 352
-expect-pixel 750 340 d8d8d8
+note at 14 px the same rows reach past it: the menu ran to 290,
+note and now runs to 316 -- taller rows, the same number of them
+expect-pixel 850 304 d8d8d8
 quit

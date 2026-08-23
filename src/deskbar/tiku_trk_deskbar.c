@@ -366,23 +366,37 @@ build_leaf(tiku_trk_deskbar_t *db)
             }
         }
     }
-    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
-    dir = menu_dir_of(db);
-    if (dir[0] != '\0' && db->backend->ops->list != NULL) {
-        struct menu_walk w;
+    {
+        /*
+         * The Deskbar folder's own items, under a rule that is only put
+         * in if something follows it.
+         *
+         * An empty folder used to get a row saying it was empty -- an
+         * entry whose whole content is that there is no entry, and one
+         * that cannot be chosen at that.  Nothing is the better answer,
+         * and it is the one an empty recents list already got (DB-074).
+         *
+         * The rule has to go in before the folder is walked, because the
+         * walk is what adds the items; so it is taken out again if the
+         * walk added none.  Rolling the count back is the whole of it --
+         * what is past leaf_count is not in the menu.
+         */
+        int before = db->leaf_count;
 
-        w.db = db;
-        w.n = 0;
-        w.into = NULL;
-        w.max = TIKU_TRK_DB_LEAF_MAX;
-        (void)db->backend->ops->list(db->backend, dir, menu_entry, &w);
-        if (w.n == 0) {
-            add_item(db, TIKU_TRK_DB_ITEM_DISABLED,
-                     "<Deskbar folder is empty>", NULL, 0);
+        add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+        dir = menu_dir_of(db);
+        if (dir[0] != '\0' && db->backend->ops->list != NULL) {
+            struct menu_walk w;
+
+            w.db = db;
+            w.n = 0;
+            w.into = NULL;
+            w.max = TIKU_TRK_DB_LEAF_MAX;
+            (void)db->backend->ops->list(db->backend, dir, menu_entry, &w);
         }
-    } else {
-        add_item(db, TIKU_TRK_DB_ITEM_DISABLED, "<Deskbar folder is empty>",
-                 NULL, 0);
+        if (db->leaf_count == before + 1) {
+            db->leaf_count = before;
+        }
     }
     add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_QUIT, tiku_str("menu.shut_down"), NULL,

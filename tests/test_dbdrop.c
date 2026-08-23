@@ -205,16 +205,29 @@ main(void)
         disabled = 0;
         dirs = 0;
         count = tiku_trk_deskbar_leaf_count(db);
-        for (i = 0; i < count; i++) {
-            it = tiku_trk_deskbar_leaf_item(db, i);
-            if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
-            if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
+        {
+            int seams = 0, prev_sep = 0;
+
+            for (i = 0; i < count; i++) {
+                it = tiku_trk_deskbar_leaf_item(db, i);
+                if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
+                if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
+                if (it->kind == TIKU_TRK_DB_ITEM_SEP) {
+                    if (prev_sep) { seams++; }
+                    prev_sep = 1;
+                } else {
+                    prev_sep = 0;
+                }
+            }
+            check(disabled == 0 && dirs == 0, "DB-004",
+                  "an empty Deskbar folder puts NOTHING in the menu -- and "
+                  "the folder is read again on every open, so emptying it "
+                  "took effect without a restart (DB-005)");
+            check(seams == 0, "DB-004",
+                  "and the rule that would have set those items off goes "
+                  "with them: the menu does not close on two lines in a "
+                  "row where the folder's items would have been");
         }
-        check(disabled == 1 && dirs == 0, "DB-004",
-              "an empty Deskbar folder says so in one item that cannot be "
-              "chosen, rather than showing an empty menu -- and it is read "
-              "again on every open, so emptying it took effect without a "
-              "restart (DB-005)");
         (void)system("rm -rf /tmp/trk_dbmenu");
     }
 

@@ -7,7 +7,7 @@ key w ctrl
 wait 5
 click 980 20
 wait 6
-expect-menu À propos de ce système|Rechercher…|Réglages|Applications|-|/sys|/dev|/data|-|Dossiers récents|-|<Deskbar folder is empty>|-|Arrêter…|
+expect-menu À propos de ce système|Rechercher…|Réglages|Applications|-|/sys|/dev|/data|-|Dossiers récents|-|Arrêter…|
 menu-pick Réglages
 wait 5
 menu-pick Polices
