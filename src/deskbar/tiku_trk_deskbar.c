@@ -2687,11 +2687,12 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_SETTINGS ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
                 /* What expands says so, the way every hierarchical menu
-                 * marks the rows that go somewhere (DB-002). */
-                tiku_text(s, f, m.x + m.w - 12,
-                               m.y + 2 + i * rowh +
-                                   (rowh - f->height) / 2 + f->ascent,
-                               ">", TIKU_C_TEXT);
+                 * marks the rows that go somewhere (DB-002) -- with the
+                 * drawn mark the rest of the menus use, rather than a
+                 * greater-than typed in the body face. */
+                tiku_ui_submenu_arrow(s,
+                    (tiku_rect_t){ m.x, m.y + 2 + i * rowh, m.w, rowh },
+                    TIKU_C_TEXT);
             }
         }
         if (db->sub_of >= 0 && db->sub_count > 0) {

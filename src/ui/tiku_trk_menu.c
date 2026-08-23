@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "tiku_trk_menu.h"
+#include "tiku_ui.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -398,23 +399,17 @@ draw_mark(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
              2, c);
 }
 
-/** @brief The submenu arrow: stroked, two thirds of the item's height. */
+/*
+ * The submenu arrow used to be stroked here with a two-pixel pen.  It is
+ * the kit's now, and drawn as horizontal runs, for two reasons: an open
+ * chevron loses its point at a twelve-pixel row, and a plotted pixel is
+ * not something the display list can carry, so a menu sent down a line
+ * arrived with its arrows missing.  One arrow, in all three menus.
+ */
 static void
 draw_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
 {
-    int size = (item.h * 2) / 3;
-    int x = item.x + item.w - size;
-    int y = item.y + (item.h - size) / 2;
-    int hin = size / 3, vin = size / 3;
-    int l = x + hin, t = y + vin, b = y + size - vin;
-    int pen = (hin / 2 > 0) ? hin / 2 : 1;
-
-    /* Open three-point polyline, never filled: a solid triangle reads much
-     * heavier than the original's arrow. */
-    pen_line(s, l, t, l + (int)((float)(size - 2 * hin) / 1.33f), (t + b) / 2,
-             pen, c);
-    pen_line(s, l + (int)((float)(size - 2 * hin) / 1.33f), (t + b) / 2, l, b,
-             pen, c);
+    tiku_ui_submenu_arrow(s, item, c);
 }
 
 void
