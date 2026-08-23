@@ -28,6 +28,16 @@ typedef struct {
     char                   kernel[96];
     char                   cpu[96];
     int                    ncpu;
+    /*
+     * When it opened, and which step of the colour cycle was last drawn.
+     * The mark is kept as geometry, so its colours are arguments rather
+     * than pixels -- which is what makes a cycle cost the same as a
+     * still.  The step is remembered so the pulse below can say whether
+     * anything a person could see has actually changed: the Deskbar's
+     * clock keeps the same discipline, and for the same reason.
+     */
+    int64_t                opened_us;
+    int                    step;
 } tiku_trk_about_window_t;
 
 void tiku_trk_about_window_init(tiku_trk_about_window_t *controller,
@@ -35,6 +45,17 @@ void tiku_trk_about_window_init(tiku_trk_about_window_t *controller,
     int *dirty);
 
 void tiku_trk_about_window_open(tiku_trk_about_window_t *controller);
+
+/**
+ * @brief Move the colour cycle on, if it is time.
+ *
+ * @return nonzero when the window would now draw differently and a
+ *         repaint is owed.  Zero for the three seconds out of four that
+ *         it is holding a colour, so a window standing open does not
+ *         cost a repaint of the desktop every tick.
+ */
+int tiku_trk_about_window_pulse(tiku_trk_about_window_t *controller,
+                                int64_t now_us);
 void tiku_trk_about_window_close(tiku_trk_about_window_t *controller);
 
 tiku_window_t *tiku_trk_about_window_handle(

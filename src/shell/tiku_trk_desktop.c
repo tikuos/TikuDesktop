@@ -781,6 +781,27 @@ tick_clock(void *ctx)
 }
 
 /**
+ * @brief The About box's colour cycle, which only sometimes has news.
+ *
+ * Runs whether or not the window is open, because a task that has to be
+ * registered and unregistered as windows come and go is a task that will
+ * one day be left registered.  It costs a compare when there is nothing
+ * to say, and it says nothing for the three seconds in four that the
+ * mark is holding a colour -- the same discipline the clock keeps, and
+ * for the same reason: a blind dirty on a timer repaints the world.
+ */
+static int
+tick_about_logo(void *ctx)
+{
+    desktop_t *app = ctx;
+
+    if (tiku_trk_about_window_pulse(&app->about_window, tiku_trk_now())) {
+        app->dirty = 1;
+    }
+    return 0;                       /* periodic: never done */
+}
+
+/**
  * @brief Re-resolve what a mount may have fixed, half a second on (PVN-042).
  *
  * Deliberately deferred so a link to the arriving volume resolves as a
@@ -4710,6 +4731,11 @@ tracker_run(int argc, char **argv)
      * nothing else dirties the surface (DB-044). */
     (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
                                 0);
+    /* Fast enough that a fade of sixteen steps reads as continuous, and
+     * cheap because the pulse answers "nothing changed" most of the
+     * time.  75 ms: the fade is 1.2 seconds. */
+    (void)tiku_trk_run_periodic(app.loop, tick_about_logo, &app, NULL,
+                                75000, 0);
     if (script_path == NULL && conduct_path == NULL &&
         conduct_tty == NULL) {
         /* Nothing to rescan: the bar lists this shell and what it

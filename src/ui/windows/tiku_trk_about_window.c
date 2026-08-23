@@ -19,6 +19,7 @@
 #include <sys/utsname.h>
 
 #include "tiku_logo.h"
+#include "tiku_trk_task.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
 #include "tiku_font.h"
@@ -37,6 +38,70 @@
  * re-deriving it from the text alone would quietly throw that margin
  * away.  At 12 px, the face it was chosen against, it is still 240.
  */
+/*
+ * The colour cycle.  A set is held, then carried into the next over a
+ * little over a second, and the whole thing comes back round to the
+ * amber it started on.  Held far longer than it fades, because the point
+ * is a mark that is quietly alive, not one that is busy.
+ *
+ * FADE_STEPS is how many distinct pictures the fade is made of.  It is
+ * NOT how smooth the fade can be -- the colours are interpolated, so it
+ * could be any number -- it is how many repaints of the desktop the
+ * flourish is allowed to cost.  Sixteen over 1.2 seconds is about
+ * thirteen a second, which reads as continuous.
+ */
+#define HOLD_US     3000000
+#define FADE_US     1200000
+#define CYCLE_US    (HOLD_US + FADE_US)
+#define FADE_STEPS  16
+
+/** @brief Which set, and how far into the fade, at @p now. */
+static void
+cycle_at(const tiku_trk_about_window_t *c, int64_t now, int *set,
+         float *toward)
+{
+    int64_t span = now - c->opened_us;
+    int64_t into;
+
+    if (span < 0) {
+        span = 0;
+    }
+    into = span % CYCLE_US;
+    *set = (int)(span / CYCLE_US);
+    *toward = (into < HOLD_US)
+                  ? 0.0f
+                  : (float)(into - HOLD_US) / (float)FADE_US;
+}
+
+/** @brief The whole visible state of the cycle, as one number. */
+static int
+cycle_step(const tiku_trk_about_window_t *c, int64_t now)
+{
+    int set;
+    float t;
+
+    cycle_at(c, now, &set, &t);
+    return set * (FADE_STEPS + 1) + (int)(t * (float)FADE_STEPS);
+}
+
+int
+tiku_trk_about_window_pulse(tiku_trk_about_window_t *controller,
+                            int64_t now_us)
+{
+    int step;
+
+    if (controller == NULL || controller->window == NULL ||
+        !controller->window->open) {
+        return 0;
+    }
+    step = cycle_step(controller, now_us);
+    if (step == controller->step) {
+        return 0;               /* holding: nothing a person could see */
+    }
+    controller->step = step;
+    return 1;
+}
+
 static int about_body_h(void)
 {
     int facts = 240 + 6 * (tiku_font_plain()->height - 15);
@@ -159,9 +224,15 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         int mark = 80;
         int base;
 
-        tiku_logo_paint(surface, (tiku_rect_t){ left, content.y + 16,
-                                                mark, mark },
-                        TIKU_LOGO_GROUND);
+        tiku_logo_palette_t p;
+        int set;
+        float toward;
+
+        cycle_at(controller, tiku_trk_now(), &set, &toward);
+        tiku_logo_palette(set, toward, &p);
+        tiku_logo_paint_with(surface, (tiku_rect_t){ left, content.y + 16,
+                                                     mark, mark },
+                             TIKU_LOGO_GROUND, &p, 1.0f);
         base = content.y + 16 + mark + 14 + big->ascent;
 
         tiku_text(surface, big, left, base, "Tiku", TIKU_C_TEXT);
@@ -256,6 +327,8 @@ tiku_trk_about_window_open(tiku_trk_about_window_t *controller)
                  "unknown kernel");
     }
     read_cpu(controller->cpu, sizeof controller->cpu, &controller->ncpu);
+    controller->opened_us = tiku_trk_now();
+    controller->step = -1;
     frame.w = ABOUT_W;
     frame.h = about_body_h() + tiku_window_tab_h() +
               2 * TIKU_WINDOW_BORDER;

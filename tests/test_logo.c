@@ -69,6 +69,23 @@ inked(tiku_rect_t r)
     return n;
 }
 
+/** @brief The mean brightness of what was drawn in @p r. */
+static int
+luminance_of(tiku_rect_t r)
+{
+    long sum = 0;
+    int x, y;
+
+    for (y = r.y; y < r.y + r.h; y++) {
+        for (x = r.x; x < r.x + r.w; x++) {
+            tiku_rgb_t c = surf->px[(size_t)y * S + x];
+
+            sum += (long)tiku_grey(c) & 0xFFl;
+        }
+    }
+    return (int)(sum / (r.w * r.h));
+}
+
 /** @brief Whether any pixel is recognisably the mark's amber. */
 static int
 has_amber(void)
@@ -152,6 +169,56 @@ main(void)
     tiku_logo_paint(surf, (tiku_rect_t){ 20, 20, 3, 3 }, TIKU_LOGO_GROUND);
     check(inked((tiku_rect_t){ 0, 0, S, S }) == 0,
           "and asked for three pixels it draws nothing at all");
+
+    /*---------------------------------------------------------------*/
+    /* Colour, at the time of drawing                                  */
+    /*---------------------------------------------------------------*/
+    {
+        tiku_logo_palette_t a, b, half;
+        int n = tiku_logo_palette_count();
+
+        check(n >= 3, "there are three or more sets to cycle between");
+        tiku_logo_palette(0, 0.0f, &a);
+        tiku_logo_palette(1, 0.0f, &b);
+        check(a.accent != b.accent && a.ground != b.ground,
+              "and they are different sets, not the same one twice");
+
+        /* The ends of a fade are the sets themselves, or the cycle would
+         * jump on every wrap. */
+        tiku_logo_palette(0, 1.0f, &half);
+        check(half.accent == b.accent && half.tint == b.tint,
+              "carried all the way, a set becomes the next one exactly");
+        tiku_logo_palette(n - 1, 1.0f, &half);
+        check(half.accent == a.accent,
+              "and the last carries round to the first, so it can run "
+              "for ever without a seam");
+
+        tiku_logo_palette(0, 0.5f, &half);
+        check(half.accent != a.accent && half.accent != b.accent,
+              "and halfway is neither end: the COLOURS are interpolated, "
+              "which is why a fade costs what a still costs");
+    }
+
+    /* Shade: what puts one mark legibly on three different grounds. */
+    {
+        tiku_rect_t box = { 20, 20, 48, 48 };
+        int plain, lighter, darker;
+
+        GROUND = TIKU_RGB(0x6E, 0x58, 0x0C);
+        (void)fresh();
+        tiku_logo_paint_with(surf, box, 0u, NULL, 1.0f);
+        plain = luminance_of(box);
+        (void)fresh();
+        tiku_logo_paint_with(surf, box, 0u, NULL, 0.35f);
+        lighter = luminance_of(box);
+        (void)fresh();
+        tiku_logo_paint_with(surf, box, 0u, NULL, 1.15f);
+        darker = luminance_of(box);
+        check(lighter > plain && darker < plain,
+              "under one lightens the mark and over one darkens it, which "
+              "is what lets the Deskbar's leaf carry it in all three modes");
+        GROUND = TIKU_C_PANEL;
+    }
 
     if (fails > 0) {
         printf("\nFAILURES\n");

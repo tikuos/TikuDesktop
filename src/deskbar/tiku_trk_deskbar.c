@@ -2353,10 +2353,22 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
          */
         int mark = leaf_row() - 8;
         tiku_rect_t label = leaf;
+        /*
+         * Shaded to the ground it is standing on, which is the leaf and
+         * so is a different colour in each of the three modes.  Light:
+         * as drawn -- near-black edges on amber.  Dark: lifted well up,
+         * because the deepened amber under it is dark enough that the
+         * mark's own edges would sink into the button and leave a smudge.
+         * Without hue: a touch down, so it sits on the mid-grey tab
+         * rather than floating over it.
+         */
+        float shade = (db->theme == 1) ? 0.35f
+                    : (db->theme == 2) ? 1.15f : 1.0f;
 
-        tiku_logo_paint(s, (tiku_rect_t){ leaf.x + 4,
-                                          leaf.y + (leaf.h - mark) / 2,
-                                          mark, mark }, 0u);
+        tiku_logo_paint_with(s, (tiku_rect_t){ leaf.x + 4,
+                                               leaf.y + (leaf.h - mark) / 2,
+                                               mark, mark }, 0u, NULL,
+                             shade);
         label.x += mark + 8;
         label.w -= mark + 8;
         (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);

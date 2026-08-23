@@ -26,8 +26,9 @@ menu-pick About this system
 wait 6
 expect-title About this system
 note the identity column wears the wordmark over its amber rule
-note the accent rule sits under the wordmark, which sits under the MARK
+note the accent rule sits under the wordmark, which sits under the MARK,
+note and is eighty pixels lower than it was for exactly that reason -- so
+note this pins the mark's presence without pinning its COLOUR, which
+note cycles: a pixel of the logo itself would pass or fail by the clock
 expect-pixel 330 294 ffcb00
-note and the mark itself is above it, on the ground the artwork carries
-expect-pixel 330 208 f2f1ec
 quit
