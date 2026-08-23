@@ -86,6 +86,29 @@ luminance_of(tiku_rect_t r)
     return (int)(sum / (r.w * r.h));
 }
 
+/** @brief The bounding box of everything drawn on the surface. */
+static tiku_rect_t
+ink_bounds(void)
+{
+    int x, y, x0 = S, y0 = S, x1 = -1, y1 = -1;
+    tiku_rect_t r;
+
+    for (y = 0; y < S; y++) {
+        for (x = 0; x < S; x++) {
+            if (surf->px[(size_t)y * S + x] != GROUND) {
+                if (x < x0) { x0 = x; }
+                if (y < y0) { y0 = y; }
+                if (x > x1) { x1 = x; }
+                if (y > y1) { y1 = y; }
+            }
+        }
+    }
+    r.x = x0; r.y = y0;
+    r.w = (x1 < x0) ? 0 : x1 - x0 + 1;
+    r.h = (y1 < y0) ? 0 : y1 - y0 + 1;
+    return r;
+}
+
 /** @brief Whether any pixel is recognisably the mark's amber. */
 static int
 has_amber(void)
@@ -161,6 +184,43 @@ main(void)
           "and on a palette without hue it is drawn and has none: a "
           "desktop asked for grey does not get an amber logo in it");
     tiku_theme_set(NULL);
+
+    /*
+     * The near cube alone fills the square it was given.
+     *
+     * The artwork is laid out for BOTH cubes across the unit square, and
+     * the near one occupies half its width and three fifths of its
+     * height.  Drawn on its own -- which is every size below thirty-two,
+     * and so every size the Deskbar leaf ever asks for -- a fit made to
+     * the whole unit square would put a two-thirds-size mark in the
+     * corner of the room and leave the rest empty.  So the near-only
+     * rendition is fitted to its OWN bounds, and a caller asking for
+     * twenty-six pixels of mark gets twenty-six pixels of mark.
+     */
+    {
+        static const int only_near[] = { 22, 24, 26, 30 };
+        size_t j;
+
+        for (j = 0; j < sizeof only_near / sizeof only_near[0]; j++) {
+            int n = only_near[j];
+            tiku_rect_t b;
+            char what[96];
+
+            GROUND = TIKU_C_PANEL;
+            (void)fresh();
+            tiku_logo_paint(surf, (tiku_rect_t){ 20, 20, n, n }, 0u);
+            b = ink_bounds();
+
+            snprintf(what, sizeof what,
+                     "at %2d px the cube alone still stands its full "
+                     "height", n);
+            check(b.h >= n - 2, what);
+            snprintf(what, sizeof what,
+                     "and is wider than half the square it was handed, "
+                     "which fitting it to the whole unit box is not");
+            check(b.w > n * 3 / 5, what);
+        }
+    }
 
     /* A rect too small to say anything in is left alone rather than
      * filled with a smear. */

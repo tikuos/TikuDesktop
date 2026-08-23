@@ -31,7 +31,15 @@
  * not tile: each is drawn one pixel short and the seam between them is left
  * unpainted, so the pitch is the row plus SEAM. */
 #define BAR_W        134     /* gMinimumWindowWidth at the 12 px face      */
-#define LEAF_MIN      26     /* what a 12 px face needed  */
+/*
+ * The leaf is the one control on the strip that is not a list item, and
+ * it is the way in to the whole system -- so it is given the room to
+ * look like it, rather than the twenty-six pixels a row of text happens
+ * to need.  The mark inside it grows with it, and past twenty-two it
+ * stops being drawn as a filled silhouette and becomes the wireframe
+ * cube, which is the rendition worth having when there is room for it.
+ */
+#define LEAF_MIN      34
 #define HLEAF_W 120     /* the leaf button, horizontal (DB-033) */
 #define TEAM_MIN      20     /* kMinTeamItemHeight; pitch 21               */
 #define WIN_MIN       19     /* pitch 20                                   */
@@ -68,7 +76,7 @@ at_least(int want, int least)
 
 static int leaf_row(void)
 {
-    return at_least(tiku_font_plain()->height + 11, LEAF_MIN);
+    return at_least(tiku_font_plain()->height + 19, LEAF_MIN);
 }
 
 static int clock_row(void)
@@ -2351,7 +2359,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
          * ground: the leaf already has a surface of its own and a pale
          * square on the amber would read as a sticker stuck to it.
          */
-        int mark = leaf_row() - 8;
+        int mark = leaf_row() - 10;  /* 24 at the default face */
         tiku_rect_t label = leaf;
         /*
          * Shaded to the ground it is standing on, which is the leaf and

@@ -54,18 +54,18 @@ main(void)
     check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 4, &which) ==
           TIKU_TRK_DB_DROP_LEAF, "DB-009",
           "the logo takes a drop: links go in the Deskbar folder");
-    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 34, &which) ==
+    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 42, &which) ==
           TIKU_TRK_DB_DROP_TEAM && which == 0, "DB-035",
           "the first application row is a target, and says which app");
-    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 55, &which) ==
+    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 63, &which) ==
           TIKU_TRK_DB_DROP_TEAM && which == 1, "DB-035",
           "and so is the second");
     /* The unpainted gutter between two rows belongs to neither of them,
      * the same way a menu's seam does: a drop there is a drop on the bar. */
-    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 50, &which) !=
+    check(tiku_trk_deskbar_drop_at(db, f.x + 10, f.y + 58, &which) !=
           TIKU_TRK_DB_DROP_TEAM, "DB-035",
           "the seam between two application rows is not either of them");
-    check(tiku_trk_deskbar_drop_at(db, f.x - 40, f.y + 34, &which) ==
+    check(tiku_trk_deskbar_drop_at(db, f.x - 40, f.y + 42, &which) ==
           TIKU_TRK_DB_DROP_NONE, "DB-035",
           "while beside the bar is not a Deskbar drop at all");
 

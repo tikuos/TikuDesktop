@@ -13,7 +13,7 @@
 wait 15
 expect-visible-rows 10
 note and the Deskbar's own leaf, which is a row of the strip like any other
-expect-pixel 990 28 d8d8d8
+expect-pixel 990 36 d8d8d8
 note put the interface up to 16 px from the window that chooses it
 click 980 20
 wait 4
@@ -35,7 +35,7 @@ wait 8
 expect-visible-rows 8
 note the leaf reaches four pixels further down than it did: the strip is
 note drawn in the face it is now being asked to hold
-expect-pixel 990 28 ffcb00
+expect-pixel 990 36 ffcb00
 note and Get Info, whose height was written down as 300 for a 12 px face:
 note at this one its foot reaches forty pixels further, which is the eight
 note rows of the permissions page plus the two tab strips growing

@@ -265,7 +265,7 @@ main(void)
     tiku_trk_deskbar_draw(db, s);
     f = tiku_trk_deskbar_frame(db);
     tiku_trk_deskbar_open_menu(db);
-    check(tiku_trk_deskbar_menu_keeps_open(db, f.x - 10, f.y + 10), "DB-036",
+    check(tiku_trk_deskbar_menu_keeps_open(db, f.x - 10, f.y + 18), "DB-036",
           "the open menu keeps tracking through its 20px pointer margin");
     check(tiku_trk_deskbar_quit_policy(1, 1) == 1 &&
           tiku_trk_deskbar_quit_policy(0, 1) == 0 &&
