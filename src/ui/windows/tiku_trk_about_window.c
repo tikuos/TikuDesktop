@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/utsname.h>
 
+#include "tiku_logo.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
 #include "tiku_font.h"
@@ -38,7 +39,14 @@
  */
 static int about_body_h(void)
 {
-    return 240 + 6 * (tiku_font_plain()->height - 15);
+    int facts = 240 + 6 * (tiku_font_plain()->height - 15);
+    /* The identity column has the mark in it now: sixteen above, eighty
+     * of mark, then the wordmark and its rule and the second line.  The
+     * taller of the two columns is what the window has to be. */
+    int identity = 16 + 80 + 14 + tiku_font_at(28)->height + 6 + 3 + 14 +
+                   tiku_font_plain()->height + 20;
+
+    return (identity > facts) ? identity : facts;
 }
 
 /** @brief First "model name" and the processor count, from /proc. */
@@ -144,9 +152,17 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
-    {   /* The identity column: wordmark over its accent rule, the way
-         * the original wore its logo. */
-        int base = content.y + 24 + big->ascent;
+    {   /* The identity column: the MARK, then the wordmark under it over
+         * its accent rule, the way the original wore its logo.  The mark
+         * is drawn rather than stamped, so it is as sharp here at eighty
+         * pixels as it is at sixteen on the Deskbar. */
+        int mark = 80;
+        int base;
+
+        tiku_logo_paint(surface, (tiku_rect_t){ left, content.y + 16,
+                                                mark, mark },
+                        TIKU_LOGO_GROUND);
+        base = content.y + 16 + mark + 14 + big->ascent;
 
         tiku_text(surface, big, left, base, "Tiku", TIKU_C_TEXT);
         tiku_fill(surface, (tiku_rect_t){ left,
@@ -156,7 +172,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                        TIKU_C_TEXT);
     }
     y = content.y + 22;
-    snprintf(line, sizeof line, "Tracker, built %s", __DATE__);
+    snprintf(line, sizeof line, "TikuTracker, built %s", __DATE__);
     tiku_text(surface, bold, facts_x, y + plain->ascent, line,
                    TIKU_C_TEXT);
     y += plain->height + 10;

@@ -26,5 +26,8 @@ menu-pick About this system
 wait 6
 expect-title About this system
 note the identity column wears the wordmark over its amber rule
-expect-pixel 330 208 ffcb00
+note the accent rule sits under the wordmark, which sits under the MARK
+expect-pixel 330 294 ffcb00
+note and the mark itself is above it, on the ground the artwork carries
+expect-pixel 330 208 f2f1ec
 quit

@@ -102,7 +102,7 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff $(BUILD)/test_strings \
             $(BUILD)/test_msg $(BUILD)/test_metrics $(BUILD)/test_theme \
-            $(BUILD)/test_dl \
+            $(BUILD)/test_dl $(BUILD)/test_logo \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
@@ -333,6 +333,9 @@ $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+$(BUILD)/test_logo: tests/test_logo.c $(DESK_LIBS) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_logo.c $(DESK_LIBS) $(LDFLAGS) -lm
+
 $(BUILD)/test_dl: tests/test_dl.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_dl.c $(DESK_LIBS) $(LDFLAGS) -lm
 
@@ -497,6 +500,7 @@ test: all
 	@$(BUILD)/test_metrics
 	@$(BUILD)/test_theme
 	@$(BUILD)/test_dl
+	@$(BUILD)/test_logo
 	@$(BUILD)/test_text
 	@$(BUILD)/test_ttf
 	@$(BUILD)/test_cff

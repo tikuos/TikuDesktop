@@ -13,6 +13,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "tiku_logo.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_iconpaint.h"
@@ -2344,7 +2345,22 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     tiku_bevel(s, tiku_inset(leaf, 1),
                     tiku_tint(TIKU_C_TAB, TIKU_LIGHTEN_1),
                     tiku_tint(TIKU_C_TAB, TIKU_DARKEN_2));
-    (void)tiku_text_centered(s, fb, leaf, "TikuOS", TIKU_C_TEXT);
+    {
+        /*
+         * The mark, then the name beside it.  Drawn without its own
+         * ground: the leaf already has a surface of its own and a pale
+         * square on the amber would read as a sticker stuck to it.
+         */
+        int mark = leaf_row() - 8;
+        tiku_rect_t label = leaf;
+
+        tiku_logo_paint(s, (tiku_rect_t){ leaf.x + 4,
+                                          leaf.y + (leaf.h - mark) / 2,
+                                          mark, mark }, 0u);
+        label.x += mark + 8;
+        label.w -= mark + 8;
+        (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);
+    }
 
     if (tiku_trk_deskbar_mini(db->dock)) {
         /* The collapsed dock's second icon: the application list folded
