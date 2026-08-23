@@ -75,8 +75,16 @@ for s in "$here"/*.script; do
         deskhome="/tmp/trk_home"
         deskfill=""
         embed=""
+        splash=""
         if grep -q '^# home: fixture' "$s"; then
             deskfill=yes
+        fi
+        # The boot screen is off in a scripted run unless the script says
+        # otherwise: its stages are held long enough to be READ, and every
+        # other script here would pay that dwell to watch a screen it is
+        # not looking at.
+        if grep -q '^# splash:' "$s"; then
+            splash=1
         fi
         # EVERY script's desktop is a fixture's: the host's own volumes
         # must not land icons on it, or arrangement and repaint checks are
@@ -417,13 +425,13 @@ PYEOF
         fi
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} \
+                env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} \
+                env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" "$devbin/$exe" $work \
                 -script "$s" || fails=$((fails+1))

@@ -53,6 +53,7 @@
 #include "tiku_trk_titleview.h"
 #include "tiku_conduct.h"
 #include "tiku_trk_script.h"
+#include "tiku_trk_splash.h"
 #include "tiku_trk_script_api.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_deskbar.h"
@@ -116,6 +117,7 @@ typedef tiku_trk_folder_window_t folder_t;
 typedef struct desktop {
     tiku_host_t    *host;
     tiku_surface_t *surf;
+    tiku_trk_splash_t     splash;
     tiku_workspace_t     *desk;
     tiku_trk_deskbar_t  *deskbar;
     tiku_backend_t  *backend;
@@ -678,6 +680,40 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
         return 0;               /* a command row carries no art */
     }
     return tiku_icon_paint(s, art, x, y, size);
+}
+
+/**
+ * @brief Say what has just come up, and hold it long enough to be read.
+ *
+ * The dwell is paid at the START of the next call rather than at the end
+ * of this one, so the work a stage names counts toward its own dwell: a
+ * piece that takes 300ms is shown for 300ms and topped up by nothing,
+ * and one that takes 2ms is topped up to the minimum.  What is being
+ * paced is the reading, not the loading.
+ */
+static void
+splash_stage(desktop_t *app, const char *what)
+{
+    int64_t owed;
+
+    if (!app->splash.live) {
+        return;
+    }
+    owed = tiku_trk_splash_owed(&app->splash, tiku_trk_now());
+    if (owed > 0) {
+        struct timespec ts;
+
+        ts.tv_sec = (time_t)(owed / 1000000);
+        ts.tv_nsec = (long)(owed % 1000000) * 1000L;
+        (void)nanosleep(&ts, NULL);
+    }
+    tiku_trk_splash_say(&app->splash, what, tiku_trk_now());
+    tiku_trk_splash_draw(&app->splash, app->surf,
+                         (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
+                         tiku_trk_now());
+    if (app->host != NULL) {
+        (void)tiku_host_present(app->host, app->surf);
+    }
 }
 
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
@@ -4035,6 +4071,18 @@ draw_all(desktop_t *app)
     }
     tiku_trk_status_overlay_draw(&app->status_overlay);
     app->dirty = 0;
+    /*
+     * Last of all, over everything: the boot screen on its way out.  The
+     * desktop underneath is fully drawn by now -- the fade is the black
+     * being lifted off a finished picture, not a picture being built up
+     * behind one.
+     */
+    if (tiku_trk_splash_visible(&app->splash, tiku_trk_now())) {
+        tiku_trk_splash_draw(&app->splash, app->surf,
+                             (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
+                             tiku_trk_now());
+        app->dirty = 1;         /* not finished going: come back */
+    }
 }
 
 /**
@@ -4720,10 +4768,39 @@ tracker_run(int argc, char **argv)
     (void)tiku_fs_prepare_trash(app.fs);
     app.backdrop_color = TIKU_C_BACKDROP;
     app.surf = tiku_surface_new(DESK_W, DESK_H, app.backdrop_color);
+    /*
+     * The window goes up BEFORE the work does.  It used to be opened
+     * after everything was built, which is fine for a shell that appears
+     * all at once and useless for one that wants to say what it is
+     * doing: a boot screen that arrives after the boot has nothing left
+     * to report.  The displayless runs -- scripted, and driven over the
+     * conductor channel -- still take no window at all.
+     */
+    if (script_path == NULL && conduct_path == NULL && conduct_tty == NULL) {
+        app.host = tiku_host_open(DESK_W, DESK_H, "TikuOS Desktop");
+        if (app.host == NULL) {
+            fprintf(stderr, "tracker: no display\n");
+            return 1;
+        }
+        if (tiku_host_scale(app.host) > 1) {
+            (void)tiku_surface_rescale(app.surf,
+                tiku_host_scale(app.host), app.backdrop_color);
+        }
+    }
+    /*
+     * A scripted run gets no splash unless it asks: the dwell is a
+     * second and a half, and 164 scripts would each pay it to watch a
+     * screen they are not looking at.  The one script that IS looking
+     * sets TIKU_SPLASH.
+     */
+    tiku_trk_splash_begin(&app.splash,
+        app.host != NULL || getenv("TIKU_SPLASH") != NULL, tiku_trk_now());
+    splash_stage(&app, "storage");
     app.row_h = tiku_font_plain()->height + 5;
     app.desk = tiku_workspace_new(app.surf);
     app.deskbar = tiku_trk_deskbar_new(app.backend);
     app.team = tiku_trk_deskbar_add_team(app.deskbar, "TikuTracker");
+    splash_stage(&app, "the Deskbar");
     /* The machine's own processes are not this desktop's business: what
      * belongs in the bar is what runs ON the device, which is this shell
      * and the applications it hosts. */
@@ -4767,6 +4844,7 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, apply_select_model, &app);
     tiku_trk_clip_init(&app.clip);
     app.store = tiku_trk_session_open_store(app.backend);
+    splash_stage(&app, "settings");
     tiku_trk_deskbar_set_store(app.deskbar, app.store);
     (void)tiku_trk_deskbar_load_replicants(app.deskbar);
     tiku_trk_session_controller_init(&app.session, app.store, app.deskbar,
@@ -4811,6 +4889,7 @@ tracker_run(int argc, char **argv)
         (void)tiku_trk_fontprefs_load(&chosen, app.store);
         tiku_trk_fontprefs_apply(&chosen);
     }
+    splash_stage(&app, "fonts");
     {
         /* Which applications there are.  A file rather than a database:
          * what the rows are about is the ANSWERS -- which application
@@ -4847,6 +4926,7 @@ tracker_run(int argc, char **argv)
                                        "/usr/share/tiku-tracker/apps");
         }
     }
+    splash_stage(&app, "applications");
     tiku_trk_launch_controller_init(&app.launcher, &app.apps, app.store,
         app.status, sizeof app.status, launch_open_path, &app);
     tiku_trk_folder_menu_init(&app.folder_menu, &app.menus, &app.clip,
@@ -4874,6 +4954,7 @@ tracker_run(int argc, char **argv)
     }
     tiku_thumb_init(&app.thumbs);
     tiku_trk_nodeicon_init(&app.nicons);
+    splash_stage(&app, "icons");
     tiku_volwatch_init(&app.volwatch);
     app.info_relink = -1;
     tiku_trk_info_windows_init(&app.info_windows, app.desk, app.backend,
@@ -5078,17 +5159,9 @@ tracker_run(int argc, char **argv)
         /* Driven and displayless: the surface IS the output, and the
          * driver reads it through the channel. */
         app.host = NULL;
-    } else {
-        app.host = tiku_host_open(DESK_W, DESK_H, "TikuOS Desktop");
-        if (app.host == NULL) {
-            fprintf(stderr, "tracker: no display\n");
-            return 1;
-        }
-        if (tiku_host_scale(app.host) > 1) {
-            (void)tiku_surface_rescale(app.surf,
-                tiku_host_scale(app.host), app.backdrop_color);
-        }
     }
+    /* Otherwise the window is already up: it was opened before any of
+     * this was built, so the splash had somewhere to be. */
     if (shot != NULL) {
         shot_at = tiku_trk_now() + 2000000;
     }
@@ -5283,6 +5356,14 @@ tracker_run(int argc, char **argv)
     app.applied_full_path = -1;
     app.applied_folders_first = -1;
     app.dirty = 1;
+    /*
+     * Everything is built.  The last line names the thing the rest of it
+     * was for, and then the screen is told to let go: from here the
+     * desktop is drawn underneath every frame and the black comes off
+     * it, so nothing below is waiting on anything.
+     */
+    splash_stage(&app, "the desktop");
+    tiku_trk_splash_done(&app.splash, tiku_trk_now());
 
     while (app.running) {
         {   /* The settings FILE is a doorway too: a change written by

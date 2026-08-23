@@ -1,0 +1,31 @@
+# shell: desktop
+# home: fixture
+# splash: on
+# The screen the desktop comes up behind.
+#
+# Black over everything, the mark in the middle of it, and one line under
+# the mark naming the part of the system that has just been built.  The
+# stages are held during startup, before this script's loop begins, so
+# what a script can see is the LAST of them and the way out; the
+# arithmetic that paces the rest is test_splash's to hold.
+#
+# The three probes below come first and together, because everything they
+# look at is on its way out: spending script turns on notes between them
+# is spending the hold they are inside of.
+wait 1
+expect-pixel 5 5 000000
+expect-pixel 507 307 f7e689
+expect-pixel 466 398 dcdcdc
+note black to the corner, so it covers the screen rather than a panel in
+note the middle of one; the mark on it in its own colours, pinned on the
+note filled face, which is the largest steady area it has; and the line
+note naming the stage under it -- on a stroke of the text rather than
+note with expect-ink, which asks only that a pixel is not WHITE and so
+note would pass on a black screen without looking at anything
+wait 150
+expect-pixel 5 5 336698
+expect-pixel 500 315 d8d8d8
+note and then the black is LIFTED off the desktop rather than replaced by
+note it: the backdrop at that same corner, and the panel of a window
+note where the mark was standing
+quit
