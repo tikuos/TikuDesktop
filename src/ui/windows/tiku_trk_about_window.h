@@ -6,9 +6,8 @@
  * tiku_trk_about_window.h - the About box, in the R5 manner.
  *
  * One modeless window that says what this system IS: the wordmark, the
- * build, the kernel underneath, the processors, the memory with its
- * gauge, and the uptime ticking while the window stands.  Closed by its
- * own close box or Escape; nothing in it is a control.
+ * release, how many processors, and the memory with its gauge.  Closed by
+ * its own close box or Escape; nothing in it is a control.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,9 +23,7 @@ typedef struct {
     int                    screen_w;
     int                    screen_h;
     int                   *dirty;
-    /* Gathered once at open; the uptime and memory re-read per draw. */
-    char                   kernel[96];
-    char                   cpu[96];
+    /* Counted once at open; the memory is re-read per draw. */
     int                    ncpu;
     /*
      * When it opened, and which step of the colour cycle was last drawn.

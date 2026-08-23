@@ -30,5 +30,27 @@ note the accent rule sits under the wordmark, which sits under the MARK,
 note and is eighty pixels lower than it was for exactly that reason -- so
 note this pins the mark's presence without pinning its COLOUR, which
 note cycles: a pixel of the logo itself would pass or fail by the clock
-expect-pixel 330 294 ffcb00
+expect-pixel 330 305 ffcb00
+note the wordmark over that rule is the product's name, not the first
+note four letters of it -- pinned on the upright of the O, which is ten
+note pixels further right than "Tiku" ever reached
+expect-pixel 351 291 000000
+note the facts beside it are the release and then only what the machine
+note can answer for itself.  The release line is pinned on a stroke of
+note "TikuDesktop" rather than on the number, so a version can be raised
+note without editing a test
+expect-pixel 496 201 000000
+note and the memory gauge is pinned on the top edge of its frame, which
+note is where it is only because the column has exactly the lines it has:
+note put a build date or a kernel string back above it and the gauge
+note moves down and this fails, which is the point of pinning a RULE and
+note not a glyph -- the bar's fill depends on the host, its frame does not
+expect-pixel 670 264 828282
+note and the footer says three things now: whose it is, where the project
+note lives, and on what terms.  A script cannot read a string, so the page
+note and the licence are each pinned on a stroke of their own text -- the
+note crossbars of "http" for one, an upright of the licence line for the
+note other -- which also pins that the box grew the line to put them on
+expect-pixel 499 339 000000
+expect-pixel 419 360 000000
 quit
