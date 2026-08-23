@@ -122,6 +122,14 @@ LEGACY := $(BUILD)/desktop $(BUILD)/tracker \
 sweep-legacy:
 	@rm -f $(LEGACY)
 
+# Said outright rather than left to fall out of the order of the file.
+# The default goal is the first target with a recipe, so putting a small
+# housekeeping rule above `all` -- which is how sweep-legacy arrived --
+# quietly makes IT what a bare `make` builds, and a bare `make` then
+# succeeds having compiled nothing.  Which is the same class of lie the
+# sweep was added to stop.
+.DEFAULT_GOAL := all
+
 all: sweep-legacy $(TESTBINS) $(BUILD)/icon-export $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
      $(DEVBUILD)/TikuTracker $(DEVBUILD)/TikuDesktop \
      $(DEVBUILD)/trk-conduct
