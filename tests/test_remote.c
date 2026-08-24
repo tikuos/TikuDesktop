@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "tiku_dl.h"
+#include "tiku_iconpaint.h"
 #include "tiku_remote.h"
 #include "tiku_ui.h"
 
@@ -154,6 +155,11 @@ main(void)
                    TIKU_FEAT_COMMAND_STREAM) != 0u,
                   "and says it can play a stream, which is the thing a "
                   "client has to know before it sends one");
+            check((tiku_remote_peer_features(&client) &
+                   TIKU_FEAT_ICON_STREAM) != 0u,
+                  "and that its streams may carry icons, claimed apart "
+                  "from the stream itself: an end could play one without "
+                  "the other");
         }
         {
             /* And back down: a pick.  The listener addresses sessions by
@@ -230,6 +236,62 @@ main(void)
             check(stream * 20u < 64u * 32u * 4u,
                   "for a twentieth of the bytes, which is the whole "
                   "reason a device on a serial line can be drawn to");
+
+            /*
+             * And a window WITH AN ICON, which until the icon op was
+             * the one thing that forced every such window back to the
+             * pixel path.  Recorded by drawing -- the same road a real
+             * window takes -- sent as commands, and the far end's
+             * pixels are the ones drawing it here made.
+             */
+            {
+                tiku_dl_t *idl = tiku_dl_new();
+                tiku_surface_t mine2;
+                uint32_t *px2 = calloc(64u * 32u, sizeof *px2);
+                const uint32_t *theirs2;
+                int diff2 = 0, k2;
+
+                tiku_dl_set_icon_painter(tiku_icon_stream_play);
+                memset(&mine2, 0, sizeof mine2);
+                mine2.px = px2;
+                mine2.w = 64; mine2.h = 32; mine2.scale = 1;
+                mine2.clip.w = 64; mine2.clip.h = 32;
+                mine2.record = idl;
+                tiku_fill(&mine2, (tiku_rect_t){ 0, 0, 64, 32 },
+                          TIKU_RGB(216, 216, 216));
+                (void)tiku_icon_paint(&mine2, "folder", 4, 4, 24);
+                mine2.record = NULL;
+                check(tiku_dl_misses(idl) == 0 &&
+                      tiku_dl_icons(idl) == 1,
+                      "an icon window records whole now, where it used "
+                      "to be the picture that spoiled the list");
+                check(tiku_remote_draw(&client, 1u, idl, 64, 32) == 1,
+                      "and goes over as commands, art and all");
+                for (spins = 0; spins < 200; spins++) {
+                    (void)tiku_remote_poll(&listener);
+                    theirs2 = tiku_remote_pixels(&listener.session[0]);
+                    if (theirs2 != NULL &&
+                        theirs2[4 * 64 + 4] != mine[4 * 64 + 4]) {
+                        /* the icon frame replaced the old window */
+                    }
+                    diff2 = 0;
+                    for (k2 = 0; k2 < 64 * 32; k2++) {
+                        if (theirs2 != NULL && theirs2[k2] != px2[k2]) {
+                            diff2++;
+                        }
+                    }
+                    if (theirs2 != NULL && diff2 == 0) {
+                        break;
+                    }
+                    usleep(10000);
+                }
+                check(diff2 == 0,
+                      "and the far end holds every pixel drawing it here "
+                      "made: the art crossed once as its definition and "
+                      "was rasterised again over there");
+                tiku_dl_free(idl);
+                free(px2);
+            }
             /*
              * A DRAW is a WHOLE window, as a frame is.  So a second one
              * that covers less than the first must not leave the first

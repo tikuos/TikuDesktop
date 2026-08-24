@@ -4994,6 +4994,12 @@ tracker_run(int argc, char **argv)
                                DESK_H, &app.dirty);
     prepare_places(&app);
     offer_installed(&app, argv[0]);
+    /*
+     * The stream's icon player, injected below the kit boundary: the
+     * Interface kit carries icon commands without knowing what HVIF is,
+     * and this is the one line that teaches this end to draw them.
+     */
+    tiku_dl_set_icon_painter(tiku_icon_stream_play);
     if (tiku_remote_listen(&app.remote) != 0) {
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;

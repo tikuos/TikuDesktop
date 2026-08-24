@@ -369,7 +369,7 @@ $(BUILD)/test_msg: tests/test_msg.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_msg.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_remote: tests/test_remote.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_remote.c $(DESK_LIBS) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ tests/test_remote.c $(DESK_LIBS) $(LDFLAGS) -lm
 
 $(BUILD)/test_conduct: tests/test_conduct.c $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_conduct.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm

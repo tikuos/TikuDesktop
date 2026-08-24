@@ -26,6 +26,7 @@
 #include "tiku_ui.h"
 #include "tiku_font.h"
 #include "tiku_iconpaint.h"
+#include "tiku_icons.h"
 
 static int fails;
 
@@ -427,13 +428,11 @@ main(void)
          * to mark the list not-whole -- or a window goes down the wire
          * looking finished, missing whatever it drew.
          *
-         * Six of these did not, and the fault was invisible because a
-         * folder window also has a plain icon in it, and THAT one said
-         * so: the list was refused for the right reason by accident.
-         * Take the icon away -- a window whose only picture is a
-         * selected row, or a drag under a wash -- and it went.
-         *
-         * Every public painter of pictures, one at a time, on its own.
+         * An ICON is no longer one of those.  It is the one picture with
+         * a DEFINITION -- the HVIF blob, which both ends carry the
+         * rasteriser for -- so it records as a command: the art once,
+         * every placement by reference.  The pictures without a
+         * definition still say so, painter by painter below.
          */
         tiku_surface_t *p = surface_new();
         tiku_surface_t *tiny = surface_new();
@@ -444,18 +443,30 @@ main(void)
 
         tiku_dl_clear(m);
         (void)tiku_icon_paint(p, "folder", 2, 2, 16);
-        check(tiku_dl_misses(m) > 0, "an icon says the list is not whole");
+        check(tiku_dl_misses(m) == 0 && tiku_dl_icons(m) == 1 &&
+              tiku_dl_count(m) == 2,
+              "an icon is CARRIED now, not missed: its art and its "
+              "placement, two commands");
+        (void)tiku_icon_paint(p, "folder", 40, 2, 16);
+        check(tiku_dl_count(m) == 3 && tiku_dl_icons(m) == 2,
+              "and the same art again is one command more, not two: the "
+              "definition went once");
+        (void)tiku_icon_paint(p, "trash_full", 60, 2, 16);
+        check(tiku_dl_count(m) == 5,
+              "while different art brings its own definition");
 
         tiku_dl_clear(m);
         (void)tiku_icon_paint_selected(p, "folder", 2, 2, 16);
-        check(tiku_dl_misses(m) > 0,
-              "and a SELECTED one does too -- it takes a fast path that "
-              "never reached the place the saying was done");
-        tiku_dl_clear(m);
         (void)tiku_icon_paint_selected(p, "folder", 2, 2, 16);
-        check(tiku_dl_misses(m) > 0,
-              "including the second time, when the washed art is cached "
-              "and less of the work happens");
+        check(tiku_dl_misses(m) == 0 && tiku_dl_icons(m) == 2,
+              "a SELECTED icon records too, both times -- the cached "
+              "fast path used to reach the surface without reaching the "
+              "list at all");
+        tiku_dl_clear(m);
+        (void)tiku_icon_paint_dim(p, "folder", 2, 2, 16, 0.55f,
+                                  TIKU_RGB(216, 216, 216));
+        check(tiku_dl_misses(m) == 0 && tiku_dl_icons(m) == 1,
+              "and a dim one carries its wash as parameters");
 
         tiku_dl_clear(m);
         tiku_paint_tint(p, r, TIKU_RGB(0, 0, 255), 0.5f);
@@ -496,6 +507,177 @@ main(void)
         tiku_dl_free(m);
         tiku_surface_free(p);
         tiku_surface_free(tiny);
+    }
+
+    printf("\nan icon crosses as its definition, and lands as itself\n");
+    {
+        /*
+         * The whole claim, end to end: a window with icons in it is
+         * recorded, flattened, unflattened -- the wire round trip -- and
+         * played onto a fresh surface, and every pixel is what drawing
+         * it here made.  Plain and dim go through the same composite
+         * arithmetic on both ends, so the equality is exact.
+         *
+         * (A SELECTED icon is recorded as its wash parameters, and the
+         * near end draws it from a source-washed cache -- two orders of
+         * the same blend that differ only on anti-aliased edge pixels.
+         * It is proven to record and to darken, not to be bit-equal.)
+         */
+        tiku_surface_t *near = surface_new();
+        tiku_surface_t *far = surface_new();
+        tiku_dl_t *rec = tiku_dl_new();
+        unsigned char flat[16384];
+        size_t wrote = 0;
+        tiku_dl_t *back;
+        int k, differ = 0;
+
+        tiku_dl_set_icon_painter(tiku_icon_stream_play);
+        near->record = rec;
+        tiku_fill(near, (tiku_rect_t){ 0, 0, W, H }, TIKU_RGB(216, 216, 216));
+        (void)tiku_icon_paint(near, "folder", 8, 8, 32);
+        (void)tiku_icon_paint(near, "folder", 48, 8, 32);
+        (void)tiku_icon_paint_dim(near, "trash_full", 8, 48, 32, 0.55f,
+                                  TIKU_RGB(216, 216, 216));
+        near->record = NULL;
+
+        check(tiku_dl_misses(rec) == 0 && tiku_dl_icons(rec) == 3,
+              "three placements recorded whole, two of one art");
+        check(tiku_dl_flatten(rec, flat, sizeof flat, &wrote) && wrote > 0u,
+              "and the list flattens: art, placements and all");
+        back = tiku_dl_unflatten(flat, wrote, NULL);
+        check(back != NULL && tiku_dl_icons(back) == 3,
+              "the bytes come back a list, and it still knows how many "
+              "icons it carries");
+        (void)tiku_dl_play(back, far);
+        for (k = 0; k < W * H; k++) {
+            if (near->px[k] != far->px[k]) {
+                differ++;
+            }
+        }
+        check(differ == 0,
+              "and played on the far side it is the SAME picture, every "
+              "pixel: the art crossed as its definition and was drawn "
+              "again, not shipped as what it came out as");
+        check(wrote < 4096u,
+              "in under four kilobytes where the frame is a hundred and "
+              "twenty: the win the icon op exists for");
+
+        /* An id nothing defined is stepped over, not guessed at. */
+        {
+            tiku_surface_t *hole = surface_new();
+            tiku_dl_t *ref = tiku_dl_new();
+            unsigned char one[24];
+            size_t at = 0;
+            tiku_dl_t *lone;
+
+            (void)ref;
+            /* Hand-build one OP_ICON (op 24) with an id no ART defined. */
+            one[0] = 24; one[1] = 0; one[2] = 16; one[3] = 0;
+            memset(one + 4, 0, 16);
+            one[4] = 0x99;      /* an id from nowhere */
+            one[12] = 16;       /* size */
+            lone = tiku_dl_unflatten(one, 20u, &at);
+            check(lone != NULL && tiku_dl_play(lone, hole) == 0,
+                  "a placement whose definition never came is stepped "
+                  "over: nothing drawn, nothing guessed, nothing carried");
+            tiku_dl_free(lone);
+            tiku_dl_free(ref);
+            tiku_surface_free(hole);
+        }
+
+        /* And with no rasteriser injected, icons are skipped whole. */
+        {
+            tiku_surface_t *bare = surface_new();
+            int played;
+
+            tiku_dl_set_icon_painter(NULL);
+            played = tiku_dl_play(back, bare);
+            tiku_dl_set_icon_painter(tiku_icon_stream_play);
+            check(played == tiku_dl_count(back) - 3,
+                  "an end with no rasteriser plays everything else and "
+                  "steps over the placements, which is the format's "
+                  "ordinary answer to what an end cannot do");
+            tiku_surface_free(bare);
+        }
+
+        /* A definition whose inner length disagrees with its outer is
+         * refused at the door: these bytes arrive from a wire. */
+        {
+            unsigned char bad[32];
+
+            bad[0] = 23; bad[1] = 0;    /* OP_ICON_ART */
+            bad[2] = 10; bad[3] = 0;    /* outer: 10 bytes of payload */
+            memset(bad + 4, 0, 10);
+            bad[8] = 99;                /* inner: claims 99 blob bytes */
+            check(tiku_dl_unflatten(bad, 14u, NULL) == NULL,
+                  "art whose inner length is not its outer is not a "
+                  "list: the blob is not the bytes it claims");
+        }
+
+        /* The selected wash crosses as parameters and lands darker. */
+        {
+            tiku_surface_t *a = surface_new();
+            tiku_surface_t *b = surface_new();
+            tiku_dl_t *sel = tiku_dl_new();
+            long plain_sum = 0, washed_sum = 0;
+
+            a->record = sel;
+            tiku_fill(a, (tiku_rect_t){ 0, 0, W, H },
+                      TIKU_RGB(216, 216, 216));
+            (void)tiku_icon_paint_selected(a, "folder", 8, 8, 32);
+            a->record = NULL;
+            (void)tiku_dl_play(sel, b);
+            /* Over the icon's own rect only: the two surfaces differ
+             * everywhere else by construction (far has more art on it),
+             * and a whole-surface sum compares the WINDOWS, not the
+             * wash.  Both have "folder" at 8,8,32 -- one plain, one
+             * selected -- and selected is the darker of the two. */
+            for (k = 0; k < 32; k++) {
+                int k2;
+
+                for (k2 = 0; k2 < 32; k2++) {
+                    washed_sum +=
+                        (long)tiku_grey(b->px[(8 + k) * W + 8 + k2]) & 0xFFl;
+                    plain_sum +=
+                        (long)tiku_grey(far->px[(8 + k) * W + 8 + k2]) & 0xFFl;
+                }
+            }
+            check(tiku_dl_icons(sel) == 1 && washed_sum < plain_sum,
+                  "a selected icon crosses as its wash and lands darker "
+                  "than the same art played plain");
+            tiku_dl_free(sel);
+            tiku_surface_free(a);
+            tiku_surface_free(b);
+        }
+
+        /* Past the art the table holds, the list says it is not whole
+         * rather than quietly dropping definitions. */
+        {
+            tiku_dl_t *full = tiku_dl_new();
+            unsigned char blob[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+            int i2, ok = 1;
+
+            for (i2 = 0; i2 < TIKU_DL_ART_MAX; i2++) {
+                blob[0] = (unsigned char)i2;
+                if (!tiku_dl_icon(full, blob, sizeof blob, 0, 0, 16,
+                                  0u, 0u)) {
+                    ok = 0;
+                }
+            }
+            blob[0] = 255;
+            check(ok && tiku_dl_misses(full) == 0 &&
+                  tiku_dl_icon(full, blob, sizeof blob, 0, 0, 16, 0u,
+                               0u) == 0 &&
+                  tiku_dl_misses(full) > 0,
+                  "the thirty-third distinct art is refused AND marks "
+                  "the list not-whole: record-or-miss, never neither");
+            tiku_dl_free(full);
+        }
+
+        tiku_dl_free(back);
+        tiku_dl_free(rec);
+        tiku_surface_free(near);
+        tiku_surface_free(far);
     }
 
     printf("\nthe stream is the same picture, and a fraction of it\n");
