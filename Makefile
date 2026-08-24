@@ -32,6 +32,12 @@ BUILD     := build
 #   build/dev/TikuDesktop   build/dev/TikuTracker   the harness's binaries, with
 #                                           the engine and TRK_SCRIPT_ENABLE
 #
+# build/TikuDesktop is also the answer to a question this directory's name
+# does not suggest: the desktop SHELL is built here, from the same core the
+# file manager uses, and applications/TikuDesktop -- the app framework next
+# door -- copies it into its own build/ with `make shell` so it can be
+# found under the name it wears.  Nothing here reaches back the other way.
+#
 # Separate paths rather than one path built two ways: a flag that changes
 # no timestamp would leave an instrumented binary sitting under the
 # shipping name, which is the exact accident this split exists to stop.
