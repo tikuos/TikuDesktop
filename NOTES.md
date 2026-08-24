@@ -1,4 +1,4 @@
-# tracker-new — build notes
+# TikuTracker — build notes
 
 ## N1 (2026-08-11): model layer, headless, hardware-proven
 
@@ -44,10 +44,11 @@ roster, type db, query runner.  N2 needs only what exists.
 
 ## N2 (2026-08-11): the first real window
 
-`build/tracker` — one X11 window drawn entirely by us over the pose engine.
-Runs against a local directory (`tracker /path`) or a live device
-(`tracker -p /dev/ttyACM0 /sys`); `-shot FILE -seconds N` captures what it
-drew, so the deliverable is reviewable without someone watching it.
+`build/TikuTracker` — one X11 window drawn entirely by us over the pose
+engine.  Runs against a local directory (`TikuTracker /path`) or a live
+device (`TikuTracker -p /dev/ttyACM0 /sys`); `-shot FILE -seconds N`
+captures what it drew, so the deliverable is reviewable without someone
+watching it.
 
 Working, on hardware: folders sort first; the title bar sorts on click and
 reverses on re-click with the marker following; rows select with Tracker's
@@ -155,7 +156,7 @@ own to change) rather than letting the device answer EACCES after the fact.
 
 ## N5 (2026-08-11): the desktop and the Deskbar
 
-`build/desktop` — one host window holding a whole little desktop:
+`build/TikuDesktop` — one host window holding a whole little desktop:
 
 - `tiku_trk_win`: the window system. Windows in one array ordered back to
   front; drawing walks it forward, hit-testing walks it backward, which is

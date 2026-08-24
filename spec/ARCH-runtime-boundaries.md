@@ -27,8 +27,11 @@ the nonblocking start, event, tick, and stop lifecycle.
 
 ## Dependency rules
 
-1. `applications/desktop` never includes a `tiku_trk_*` header.
-2. Tracker core never includes X11 or `tiku_desk_*` drawing headers.
+1. No kit in `applications/kits` includes a `tiku_trk_*` header; a kit
+   that knows the application above it has stopped being a kit.
+2. Tracker core never includes X11 or the Interface kit's drawing headers,
+   `tiku_gfx.h`, `tiku_font.h`, and `tiku_ui.h`; the kit's `tiku_event.h`
+   is shared input vocabulary rather than a surface, so core may take it.
 3. Platform headers and native event types do not cross the runtime adapter.
 4. Shared input, view-mode, and column vocabulary lives in small definition
    headers rather than in the PoseView API.
@@ -41,33 +44,50 @@ the nonblocking start, event, tick, and stop lifecycle.
 
 ## Library shape
 
-`applications/desktop` will publish:
+The kits publish that split, one archive per kit:
 
-- `libtiku_desk_ui`: surface, font, colors, icons, and controls;
-- `libtiku_desk_runtime`: events, windows, focus, timers, app registry, and
-  platform adapters.
+- `kits/interface` -> `libtiku_interface.a`: surface, fonts, the colour
+  table, controls, windows, focus, and the X11 adapter -- the whole
+  drawing floor in one archive, because everything in it reaches for the
+  same pixels;
+- `kits/application` -> `libtiku_application.a`: the application object,
+  its lifecycle, and the registry that starts and addresses applications;
+- `kits/translation` -> `libtiku_translation.a`: icons and images, one
+  kit further out because a picture becomes a bitmap before the interface
+  kit ever draws it.
+
+- `libtiku_interface`: the surface, fonts, the color table, the R5 control
+  set, windows and focus, and the platform adapter behind the portable
+  event boundary;
+- `libtiku_translation`: icons and images, which decode into pixels rather
+  than belonging to the control set;
+- `libtiku_application`: embedded application descriptors, the registry
+  they are selected from, and the client, conductor, and remote channels.
 
 Tracker will publish:
 
-- `libtiku_tracker_core`: model, backends, filesystem work, query, state,
-  type, launch, and task rules;
-- `libtiku_tracker_ui`: pose engine and Tracker-specific controllers;
-- `tracker_app`: lifecycle and composition only.
+Tracker publishes no libraries: it compiles its own sources directly into
+`build/TikuTracker` and `build/TikuDesktop` and links the six kit archives.
+Model, filesystem work, query and state now belong to the Storage kit.
 
 The source tree mirrors those boundaries: `core/` contains portable models,
-`backends/` owns namespace and file-operation adapters, `ui/` owns Tracker
-views and controllers, `ui/windows/` owns feature-window lifetimes,
-`ui/input/` owns retained pointer gestures, and `ui/overlays/` owns modal and
-operation-status presentation. `media/` owns icon and image handling,
-`deskbar/` owns the bar and Desktop-icon behavior, and `shell/` contains
-front-end composition and application entry descriptors. Its `adapters/`
-and `session/` children isolate script observations and persisted lifecycle.
+`ui/` owns Tracker views and controllers, `ui/windows/` owns feature-window
+lifetimes, `ui/input/` owns retained pointer gestures, and `ui/overlays/`
+owns modal and operation-status presentation. `deskbar/` owns the bar and
+Desktop-icon behavior, and `shell/` contains front-end composition and
+application entry descriptors. Its `adapters/` and `session/` children
+isolate script observations and persisted lifecycle. Namespace and
+file-operation adapters now live in `applications/kits/storage`, and icon
+and image handling in `applications/kits/translation`; Tracker links
+against those kits rather than carrying adapter or media directories of
+its own.
 
 ## Extraction order
 
 1. Move shared vocabulary out of implementation headers and enforce the
    dependency rules in the build.
-2. Add a platform-neutral event and host interface to `applications/desktop`.
+2. Add a platform-neutral event and host interface to the interface kit
+   at `applications/kits/interface`.
 3. Move the generic window manager out of the Tracker namespace and give
    windows event/lifecycle callbacks.
 4. Register Tracker through an embedded application descriptor.

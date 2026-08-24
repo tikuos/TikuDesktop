@@ -1,7 +1,11 @@
 # TikuTracker -- host build.
 #
-# N1 builds the headless model layer and its tests; the view layer arrives in
-# N2.  Shares the proven session/namespace client with applications/desktop.
+# One source tree yields two binaries: build/TikuTracker, the file
+# manager, and build/TikuDesktop, the shell that owns the Deskbar, the
+# desk icons and the root window.  They are built side by side because
+# they share a core, and `all` builds that core's tests alongside them.
+# The session and namespace client underneath both is not kept here; it
+# lives in the kits next door, reached through $(KITS).
 #
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 

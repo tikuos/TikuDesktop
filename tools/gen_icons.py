@@ -9,13 +9,15 @@ one blob in the Haiku tree that does not parse (its stroke transformers
 carry a fourth payload byte from before the `shorten` field was dropped, so
 a strict reader runs off the end -- Haiku cannot import it either).
 
-Run from the tracker-new directory: python3 tools/gen_icons.py
+Run from the TikuTracker directory: python3 tools/gen_icons.py
 """
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(HERE, "hvif")
-OUT = os.path.join(HERE, os.pardir, "src", "media",
+# The Translation kit is a sibling of TikuTracker under applications/,
+# not part of it, so the generated icon set climbs two levels out.
+OUT = os.path.join(HERE, os.pardir, os.pardir, "kits", "translation",
                    "tiku_icons.c")
 
 # Inventory order: the general kinds first, then the volumes and places,

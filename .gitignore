@@ -8,3 +8,8 @@ build/
 
 # HIG reference documents, kept beside the code but not in it.
 temp/
+
+# Python's bytecode cache.  The generators under tools/ are run by hand,
+# and each run leaves one of these beside them.
+__pycache__/
+*.pyc

@@ -50,7 +50,7 @@ def main() -> int:
 
     for legacy in ("tiku_trk_win.c", "tiku_trk_win.h"):
         if any(TRACKER_SRC.rglob(legacy)):
-            errors.append(f"{legacy}: generic windows belong to desktop runtime")
+            errors.append(f"{legacy}: generic windows belong to the Interface kit")
 
     # No kit may know the application standing on it.  Storage and
     # Translation moved out of Tracker and kept their tiku_trk_ names for
@@ -70,7 +70,7 @@ def main() -> int:
         if tracker_stem(path) in HEADLESS:
             ui = [inc for inc in includes
                   if inc in {"tiku_gfx.h", "tiku_font.h",
-                             "tiku_ui.h", "tiku_x11.h",
+                             "tiku_ui.h", "tiku_host.h",
                              "tiku_trk_gfx_dep.h"}]
             if ui:
                 errors.append(f"{path}: headless module imports UI: {', '.join(ui)}")

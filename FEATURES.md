@@ -119,22 +119,22 @@ locale, workspace, or richer-window subsystem is genuinely absent.
    verdict that reads as "handled" collected 292 rows of which only 48
    actually were.
 5. **Both front-ends are the product** (decided 2026-08-12 by the user).
-   `build/tracker` (single window) and `build/desktop` (multi-window plus
-   the Deskbar) are both shipped, so a row describing a behaviour BOTH can
-   express is not `done` until it works in both, and the row says which
-   shell each half was proven in.  Rows that are inherently about several
-   windows, or about the Deskbar, bind only on `desktop`; rows about the
-   pointer cursor bind only where a cursor API exists, and porting that
-   API across is itself a row-closing task.  The cost of this decision is
-   real -- shell work is doubled -- which is why the scripted shell
-   harness is a prerequisite rather than a nicety: proving every shell row
-   twice by hand is not affordable.
+   `build/TikuTracker` (single window) and `build/TikuDesktop`
+   (multi-window plus the Deskbar) are both shipped, so a row describing
+   a behaviour BOTH can express is not `done` until it works in both,
+   and the row says which shell each half was proven in.  Rows that are
+   inherently about several windows, or about the Deskbar, bind only on
+   `TikuDesktop`; rows about the pointer cursor bind only where a cursor
+   API exists, and porting that API across is itself a row-closing task.
+   The cost of this decision is real -- shell work is doubled -- which
+   is why the scripted shell harness is a prerequisite rather than a
+   nicety: proving every shell row twice by hand is not affordable.
 6. **The command layer is now shared; the DROP layer is not** (2026-08-15).
    Both shells go through `tiku_trk_folder_file_actions_*`, so Delete,
    Duplicate, Create link, Identify, Cut/Copy/Paste and the mixed-clipboard
-   paste are one implementation -- `build/tracker` had its own inline
+   paste are one implementation -- `build/TikuTracker` had its own inline
    delete and no file clipboard at all.  What it still lacks is an alert
-   layer (so FS-046's three-way question is `build/desktop`'s, and the
+   layer (so FS-046's three-way question is `build/TikuDesktop`'s, and the
    engine's answer stands here instead), a Select window, and any
    drop-onto-a-folder handling: its drag ends by saving positions, so every
    drop row is the multi-window shell's.  `tools/sweep_shells.sh` measures
@@ -1006,7 +1006,7 @@ BContainerWindow::FrameResized (skipped for the Desktop) computes the negative o
 `ContainerWindow.cpp` → `BContainerWindow::FrameResized`  
 **PORT:** Both axes pull back now.  The vertical clamp always ran through the visible-rows report; the horizontal clamp is real too -- set_hscroll ends where the last column meets the window's edge, not at the content's whole width, and the viewport report re-clamps it, so ENLARGING a window past its scrolled-away content re-anchors the content instead of leaving a blank gulf.  The browser's resize path reports the viewport.  
 *src/ui/tiku_trk_poseview.c (set_hscroll clamp, set_viewport re-clamp); src/shell/tiku_trk_app.c (the resize report); tests/test_poseview.c PVL-058 block (mutation-tested)*
-*Audited 2026-08-12: `../kits/tiku_window.c:275-278 (resize grip), src/shell/tiku_trk_desktop.c:2024-2034 (HIT_RESIZE -> begin_track)` `src/shell/tiku_trk_desktop.c:224 and src/shell/tiku_trk_app.c:486 (set_visible_rows per draw)` `src/ui/tiku_trk_poseview.c:2556-2576 (grow clamp: 'A window that grew ... corrected here')`*  
+*Audited 2026-08-12: `../kits/interface/tiku_window.c:275-278 (resize grip), src/shell/tiku_trk_desktop.c:2024-2034 (HIT_RESIZE -> begin_track)` `src/shell/tiku_trk_desktop.c:224 and src/shell/tiku_trk_app.c:486 (set_visible_rows per draw)` `src/ui/tiku_trk_poseview.c:2556-2576 (grow clamp: 'A window that grew ... corrected here')`*  
 *Shell: desktop*  
 #### PVL-059 · polish · done
 **"Resize to fit" resizes the window to exactly hold the content and scrolls to the content's top-left.**  
@@ -1093,7 +1093,7 @@ fClipboardMode == kMoveSelectionTo switches the draw view to B_OP_ALPHA with con
 Transparent: DrawAfterChildren strokes B_NAVIGATION_BASE_COLOR at alpha 128 and fills the interior with B_CONTROL_HIGHLIGHT_COLOR at alpha 90 (degenerate rects draw a single line). Non-transparent: _BeginSelectionRect/_UpdateSelectionRect/_EndSelectionRect stroke and re-stroke with B_OP_INVERT and B_MIXED_COLORS. The setting arrives via kTransparentSelectionChanged.  
 `PoseView.cpp` → `BPoseView::DrawAfterChildren / BPoseView::_UpdateSelectionRect / BPoseView::_EndSelectionRect`  
 **PORT:** Both styles exist and the setting picks between them on every frame, so it is live by construction rather than by a change notice. Transparent tints the edge harder than the interior -- four strips, since a fill of the whole rect would put the edge colour under the middle -- and the alternative inverts the outline, which is visible over whatever it lands on and needs nothing saved underneath. The blend is the port's own: the drawing floor has no per-rect alpha, so it lives in the module that owns alpha and both shells call it. The degenerate zero-width rect is skipped rather than drawn as a line.  
-*src/media/tiku_iconpaint.c:tiku_paint_band/tiku_paint_tint; src/shell/tiku_trk_desktop.c (band block reads TransparentSelection); tests/shell/bandstyle.script*
+*../kits/translation/tiku_iconpaint.c:tiku_paint_band/tiku_paint_tint; src/ui/windows/tiku_trk_folder_window.c:912-913 (band block reads TransparentSelection); tests/shell/bandstyle.script*
 
 #### PVL-070 · polish · differs
 **Growing or shrinking the rubber band only repaints the sliver of difference, not the whole band.**  
@@ -1108,7 +1108,7 @@ When fWidgetTextOutline is set (turned on by BackgroundImage), BTextWidget::Draw
 `TextWidget.cpp` → `BTextWidget::Draw / BPoseView::SetWidgetTextOutline`  
 **VERIFIER CORRECTION:** The halo is NOT skipped for cut items. The guard is `if (!selected && direct && view->WidgetTextOutline())` — only selection and non-direct (offscreen) drawing suppress it. clipboardMode == kMoveSelectionTo only suppresses the B_OP_ALPHA/B_ALPHA_OVERLAY mode switch around the halo passes (TextWidget.cpp:690-745). Alpha values are right: dark text 30 then 65 at false-bold 2.0/1.0; light text black 30 at 1.0 and 200 at +(1,1).
 **PORT:** A label over a picture is drawn with a halo of the opposite shade -- white under dark ink, black under light -- and a selected label, which has its own filled box, keeps the plain draw. The floor's text has no alpha, so the halo is the same string at the eight neighbouring pixels rather than the source's two low-alpha false-bold passes; what it delivers is the same, a label that stays readable wherever the picture matches its ink.  
-*src/media/tiku_iconpaint.c:tiku_paint_text_halo; src/ui/windows/tiku_trk_folder_window.c; tests/shell/background.script*
+*../kits/translation/tiku_iconpaint.c:tiku_paint_text_halo; src/ui/windows/tiku_trk_folder_window.c; tests/shell/background.script*
 
 #### PVL-072 · polish · done
 **Volume icons carry a free-space bar drawn over the icon, which turns a warning colour below 5% free.**  
@@ -1221,7 +1221,7 @@ fStateNeedsSaving is set by AddColumn, RemoveColumn, MoveColumnTo, ResizeColumn 
 ExcludeTrashFromSelection() runs at the top of both DoDelete() and DoMoveToTrash(); it scans the selection for a pose satisfying CanTrashForeignDrag (i.e. the Trash itself) and RemovePoseFromSelection()s it (which also clears the pivots), then breaks out after the first hit.  
 `PoseView.cpp` → `BPoseView::ExcludeTrashFromSelection / BPoseView::DoDelete / BPoseView::DoMoveToTrash`  
 **TIKU:** The general shape — a destructive verb silently pruning nodes it must never act on — maps to capability-bit refusals on device nodes; note Tracker prunes rather than refusing the whole command.  
-*src/backends/tiku_fs.c:332-338 (start(): `if (strstr(paths[i], "/.Trash") != NULL) continue;`), reached from tiku_fs_trash at 372-376; src/shell/tiku_trk_app.c:979-991 (Delete passes the whole selection, unpruned)*
+*../kits/storage/tiku_fs.c:565-571 (start(): the queue builder drops any path containing "/.Trash", and by contains_trash() any parent that holds one), reached from tiku_fs_trash at 729-734; src/ui/commands/tiku_trk_folder_file_actions.c:265-282 (prune_trash_pose(), called at :348 and :423 so the Trash leaves the selection before either verb counts anything)*
 **PORT:** Both layers hold now: the pose leaves the SELECTION silently before a trash or delete counts anything, so the status line and the highlight agree with what the queue will do -- and the queue builder still drops the Trash independently, so the guarantee survives a path that never went through a selection (tests/shell/trashtrash.script).
 **PORT:** The port really does make the Trash untrashable, by an actual alternative implementation one layer down — every destructive/queued op drops paths containing "/.Trash" as the queue is built — though the pose selection itself is never pruned so the Trash stays selected and the status line still counts it.  
 
@@ -2126,7 +2126,7 @@ BWindow::AddShortcut implies B_COMMAND_KEY unless B_NO_COMMAND_KEY is passed. Th
 **TIKU:** Shortcut vocabulary is fine to keep, but any command touching a device node must be gated on the node's capability bits, not just on selection emptiness.  
 **VERIFIER CORRECTION:** Plain Cmd+X / Cmd+C / Cmd+V are not AddShortcut entries at all — they are menu-item shortcuts created in Shortcuts.cpp (CutItem 'X', CopyItem 'C', PasteItem 'V') and targeted at the container window. AddShortcuts() (the menuless Desktop path) registers only Shift+X and Shift+C, plus F/N/O/I/E/D/K/A/S/Shift+A/G/U/Cmd+Up/Ctrl+O/'+'/'-' and Delete. The rest of the row (Shift+K, Cmd+Down, Cmd+Opt+Shift+Ctrl+Q, Cmd+Z/Shift+Z, keymap scan for an extra zoom-in key) is correct.  
 **PORT:** The whole standard set answers now, resolved through ONE reverse map beside the table the menus draw their shortcuts from (`tiku_trk_sc_command_for_key`): both shells fall back to it for any Cmd chord their dedicated arms do not take, so O / Option+O / I / E / G / U / N / X/C/V with their Shift variants / K and Shift+K all dispatch -- and a command a shell cannot honour says so in the status line rather than dying silently.  No keymap scan for an extra zoom-in key: the port has no keymap service to scan, and Cmd+'+' is bound directly.  
-*src/core/tiku_trk_shortcuts.c:tiku_trk_sc_command_for_key; src/shell/tiku_trk_app.c and src/shell/tiku_trk_desktop.c (the fallback arms); tests/shell/keychords.script, keychords2.script (mutation-tested)*
+*src/ui/tiku_trk_shortcuts.c:tiku_trk_sc_command_for_key; src/shell/tiku_trk_app.c and src/shell/tiku_trk_desktop.c (the fallback arms); tests/shell/keychords.script, keychords2.script (mutation-tested)*
 
 #### PVK-043 · important · done
 **Menu items relabel themselves live while Shift is held and fire a different command: Copy/Cut -> Copy more/Cut more, Paste -> Paste links, Close -> Close all, Clean up -> Clean up all, Create link -> Create relative link, Move to Trash -> Delete, Identify -> Force identify.**  
@@ -2265,7 +2265,7 @@ Both AddPosesTask and EntryCreated call WatchNewNode(&itemNode, ...) with the co
 `PoseView.cpp` → `BPoseView::AddPosesTask / BPoseView::EntryCreated`  
 **TIKU:** Same ordering rule applies: tiku_vfs_watch() the node before reading its descriptor, or a descriptor change during the read is lost.  
 **PORT:** The guarantee is met by an always-on recorder plus a strict ordering rather than a per-node watch: the ring is drained before anything is re-read, and because the device records changes whether or not anyone is asking, a change landing during the listing read stays in the ring and is reported on the next drain, so no row goes stale.  
-*src/ui/tiku_trk_poseview.c:2827-2840 (changes consulted before any re-read); src/backends/tiku_backend_tiku.c:163-186 tk_changes; /home/ambuj/tikuOS/applications/TikuDesktop/../kits/tiku_ns.c:242 tiku_ns_events (the read drains the device ring)*
+*src/ui/tiku_trk_poseview.c:5168-5175 tiku_trk_poseview_poll (changes consulted before any re-read); ../kits/storage/tiku_backend_tiku.c:163-186 tk_changes; ../kits/device/tiku_ns.c:242 tiku_ns_events (the read drains the device ring)*
 
 #### PVN-008 · core · differs
 **Beyond the folder watch, the view also subscribes to all volume mount/unmount events, to attribute changes on the folder itself, and to MIME database changes.**  
@@ -2289,7 +2289,7 @@ TTracker::WatchNode retries after NeedMoreNodeMonitors(), which bumps fNodeMonit
 `Tracker.cpp` → `TTracker::WatchNode / TTracker::NeedMoreNodeMonitors`  
 **TIKU:** No analogue: TikuOS's watch table is a fixed 8-slot static array. Exhaustion must either fail loudly or fall back to polling -- silently losing liveness is the failure mode to avoid.  
 **PORT:** The port has no watch table to exhaust, and the analogous delivery resource does fail loudly rather than silently: a moved drop counter clears `complete`, which forces a wholesale re-list, and an overflowed event batch triggers a full reload — the loud-or-poll answer the row's TIKU note demands.  
-*src/backends/tiku_backend_tiku.c:183-188 (dropped != last_dropped -> *complete = 0) with the local over-max drop count at desktop/../kits/tiku_ns.c:285-295; src/ui/tiku_trk_poseview.c:2843 (relist = !complete) and :2979-2984 (evs.overflowed -> poseview_reload)*
+*src/backends/tiku_backend_tiku.c:183-188 (dropped != last_dropped -> *complete = 0) with the local over-max drop count at ../kits/device/tiku_ns.c:285-295; src/ui/tiku_trk_poseview.c:2843 (relist = !complete) and :2979-2984 (evs.overflowed -> poseview_reload)*
 
 #### PVN-011 · core · done
 **A file created in some other folder does not add a row: creation notices for a directory other than the one on screen are ignored.**  
@@ -2376,7 +2376,7 @@ EntryMoved: if thisDirNode == itemNode, targetModel->UpdateEntryRef(&dirNode, na
 **Renaming a mounted volume is handled specially: the notification's device is the parent's, so the volume's real device and inode are recovered by stat()ing the new name under /.**  
 EntryMoved stats '/' and, if the notice's dirNode matches it, stats "/" + name and overwrites itemNode.node/.device from that stat.  
 `PoseView.cpp` → `BPoseView::EntryMoved`
-**PORT:** Stable node IDs and full paths make the parent-device recovery unnecessary: rename pairing preserves identity without a second stat (`src/backends/tiku_notify.c`; `src/ui/tiku_trk_poseview.c`).
+**PORT:** Stable node IDs and full paths make the parent-device recovery unnecessary: rename pairing preserves identity without a second stat (`../kits/storage/tiku_notify.c`; `src/ui/tiku_trk_poseview.c`).
 
 #### PVN-026 · core · done
 **Moving a file out of the displayed folder removes its row; moving one in adds a row.**  
@@ -2688,7 +2688,7 @@ VirtualDirectoryManager::DirectoryRemoved -> _RemoveDirectory recurses over chil
 TNodeWalker::GetNextEntry returns the entry, then PushDirCommon(&ref) if fTopDir->Contains(ref.name, B_DIRECTORY_NODE); the stack is popped by PopDirCommon on exhaustion, giving depth-first order with no snapshotting.  
 `NodeWalker.cpp` → `TNodeWalker::GetNextEntry / TNodeWalker::PushDirCommon / TNodeWalker::PopDirCommon`  
 **PORT:** The no-snapshot, visit-after-returning semantics were always implemented; the order now matches too -- the pending-directory ring is popped from the tail, a STACK, so the walk descends into the newest directory before moving on, the source's depth-first order.  And as the source pushes only B_DIRECTORY_NODE entries, only REAL directories are descended: a symlink is an entry, not a place, which is also what keeps a depth-first walk out of /proc's link cycles (tests/test_query.c).
-*src/core/tiku_query.c:452-462 (visit enqueues containers) with :439-449 (enqueue ring, full queue cuts a subtree) and :552-575 (step lists on pop)*
+*../kits/storage/tiku_query.c:452-462 (visit enqueues containers) with :439-449 (enqueue ring, full queue cuts a subtree) and :552-575 (step lists on pop)*
 
 #### PVN-070 · polish · done
 **Pointing a walker at a plain file instead of a directory yields exactly that one file rather than failing.**  
@@ -3073,7 +3073,7 @@ History is per window: fBackHistory/fForwHistory, capped at kMaxHistory = 32 (ol
 **Holding Option while clicking Back/Forward/Up (or pressing the equivalent shortcut) opens the destination in a NEW window instead of navigating this one, and selects the folder you came from inside it.**  
 SendNavigationMessage: with option the message becomes B_REFS_RECEIVED to be_app carrying "nodeRefToSelect" (the current folder's node ref); without option it is kSwitchDirectory to this window plus TTracker::SelectChildInParentSoon so the child folder is selected after the switch.  
 `Navigator.cpp` → `BNavigator::SendNavigationMessage`
-**WAIVER CANDIDATE:** The premise — a browser-mode shell that can alternatively open the destination in a NEW window — cannot exist in this port's architecture: browser mode is build/tracker, a single-window binary with exactly one pose view and no window system (src/shell/tiku_trk_app.c never references tiku_trk_win/tiku_trk_desk — grep returns nothing), so there is no second window to spawn; and the multi-window shell has no navigator or Back/Forward/Up to Option-click (grep navigator over src/: nothing). Waiver candidate unless the two shells are ever merged.  
+**WAIVER CANDIDATE:** The premise — a browser-mode shell that can alternatively open the destination in a NEW window — cannot exist in this port's architecture: browser mode is build/TikuTracker, a single-window binary with exactly one pose view and no window system (src/shell/tiku_trk_app.c never references tiku_trk_win/tiku_trk_desk — grep returns nothing), so there is no second window to spawn; and the multi-window shell has no navigator or Back/Forward/Up to Option-click (grep navigator over src/: nothing). Waiver candidate unless the two shells are ever merged.  
 **PORT:** Navigation is implemented in the single-window shell; the Option-new-window branch remains intentionally unavailable until a shared window/navigation service exists.
 **PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Back/Forward/Up live in the browser; Option-open's new-window inversion belongs to the mode switch that the two-binaries design replaces.
 
@@ -3244,7 +3244,7 @@ windows go through the same close path)*
 MessageReceived case B_TRACKER_ADDON_MESSAGE -> _PassMessageToAddOn -> LaunchInNewThread("Add-on-Pass-Message", RunAddOnMessageThread), which load_add_on()s the ref in "addon_ref", looks up "message_received", calls it, unloads, and on any failure shows "Error %error loading add-On %name.". AddOnMenuGenerate similarly loads each add-on to call its optional populate_menu and caches the lookup result in info->has_populate_menu.  
 `ContainerWindow.cpp` → `BContainerWindow::_PassMessageToAddOn / RunAddOnMessageThread / AddOnMenuGenerate`  
 **TIKU:** No dynamic loading on-device; the equivalent is a registered shell verb answering messages, and the has_populate_menu caching becomes capability discovery done once.
-**SUBSYSTEM:** Dynamic loading.  An add-on is a compiled-in callback invoked synchronously (`src/core/tiku_trk_addon.c`), so there is no loaded image to re-enter and no thread for it to message the window from.  
+**SUBSYSTEM:** Dynamic loading.  An add-on is a compiled-in callback invoked synchronously (`src/shell/tiku_trk_addon.c`), so there is no loaded image to re-enter and no thread for it to message the window from.  
 **PORT:** Static add-ons are registered with MIME capability metadata and invoked through a typed callback from their menu command; this is an in-process command boundary rather than a dynamically loaded worker thread with `message_received`.
 
 #### CW-069 · polish · done ⟨found by verification⟩
@@ -3836,7 +3836,7 @@ From st_mode alone: S_IFDIR -> kDirectoryNode, S_IFREG -> kExecutableNode if S_I
 `Model.cpp` → `Model::SetupBaseType`  
 **TIKU:** TikuOS VFS nodes are typed descriptors already; the kind should come from the descriptor type + capability bits rather than being re-derived from a stat mode. Device nodes need at least one new kind (e.g. kDeviceNode) that is neither file nor directory.  
 **PORT:** The port classifies every entry into a kind enum and that kind really does decide the icon, container-ness (hence what window opens), the sort bucket and rename refusal; only its derivation moves — from the backend descriptor (is_dir + path + manifest) instead of st_mode, with DEVICE_NODE/VIRTUAL_DIR standing in for the Be-specific kinds, which is the TIKU note's adaptation.  
-*src/core/tiku_model.h:36-45 (kinds); src/backends/tiku_backend_tiku.c:73-85 (kind_of); src/core/tiku_model.c:19-33 (is_container), :176-210 (icon_name); src/ui/tiku_trk_poseview.c:355-360 (containers-first sort); src/shell/tiku_trk_app.c:655-663 (rename refusal by kind)*
+*../kits/storage/tiku_model.h:38-53 (kinds); ../kits/storage/tiku_backend_tiku.c:74-87 (kind_of); ../kits/storage/tiku_model.c:20-44 (is_container), :279-377 (icon_name); src/ui/tiku_trk_poseview.c:726-748 (containers-first sort); src/shell/tiku_trk_app.c:1412-1421 (rename refusal by kind)*
 
 #### MA-002 · important · differs
 **Opening a node upgrades its kind and fills in MIME type and preferred application; a file whose BEOS:TYPE says query / query-template / virtual-directory is treated as that kind, not as a plain file.**  
@@ -4226,7 +4226,7 @@ StartEdit calls textView->MakeEditable(false) and MakeSelectable(true) when view
 fMaxWidth is the column width in list mode, else StringWidth("M")*30. MakeResizable(!tooWide, tooWide ? NULL : scrollView) toggles between grow-with-text and fixed-width-with-scrolling; the key-down filter re-evaluates on every keystroke. TextViewPasteFilter computes the post-paste width (text width, minus the selected region being replaced, plus the clipboard text width) and, when too wide, resizes the scroll view to exactly maxWidth, shifting it left by half the delta for centered text and the full delta for right-aligned text.  
 `TextWidget.cpp` → `TextViewPasteFilter`  
 **PORT:** The editor GROWS with the text now, in both shells, and never past the name column's width; past the cap the box stays put and the text SLIDES so the caret stays visible -- never past the text's own end, and not at all while the caret sits at the head.  The arithmetic is one core function (`tiku_trk_edit_metrics`), unit-tested, drawn through the toolkit's new sliding text field.  The ~30-character icon-mode form has no referent: neither shell opens an inline editor in icon mode -- renames are the list's -- so the list cap is the only cap with a subject.  
-*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/TikuDesktop/src/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
+*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/kits/interface/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
 *src/shell/tiku_trk_app.c:533 (editor box = cols[0].width); src/shell/tiku_trk_desktop.c:299*
 
 #### MA-050 · core · done
@@ -5699,7 +5699,7 @@ Truncation is B_TRUNCATE_END against (width - kTitleColumnExtraMargin = 16). Lef
 Font = plain font size * 0.75 floored, minimum 8pt; height = max(13, ceil(fontSize * 1.4)). MinSize width is 16, MaxSize width unlimited, height fixed at that value in both.  
 `TitleView.cpp` → `BTitleView::BTitleView`  
 **PORT:** Both clauses hold now: the strip keeps its fixed height, and the titles draw in a SMALLER face -- the toolkit grew `tiku_font_at`, and both shells' strips render at three-quarters of the body size without touching the global choice, so the titles read as labels about the rows rather than as rows.  
-*applications/TikuDesktop/src/tiku_font.c:tiku_font_at; src/shell/tiku_trk_app.c and src/ui/windows/tiku_trk_folder_window.c (the strip draws)*
+*applications/kits/interface/tiku_font.c:tiku_font_at; src/shell/tiku_trk_app.c and src/ui/windows/tiku_trk_folder_window.c (the strip draws)*
 *src/shell/tiku_trk_app.c:40 (TITLE_H) and :141 (draw_title font)*
 
 #### TS-020 · important · done
@@ -5962,7 +5962,7 @@ Default on; colours default to used 0,203,0 / free 255,255,255 / warning 203,0,0
 **The space-bar colour editor edits one of the three colours at a time, chosen from a pop-up above the colour control.**  
 Menu items Used/Free/Warning space color; index 0 (Used) is marked at start-up and the control is preloaded with the used colour. Switching the menu item reloads the control from the corresponding setting; every colour control change writes straight through to the setting and posts kSettingsContentsModified.  
 `SettingsViews.cpp` → `SpaceBarSettingsView::MessageReceived (kSpaceBarSwitchColor)`
-**SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/TikuDesktop/../kits/tiku_gfx.h:20), no colour-picker pop-up, no settings to write through to.  
+**SUBSYSTEM:** Preferences window (Volume icons page). Entirely absent along with its parent page and the space bars themselves (TS-054): no colour control widget exists in the drawing floor (the gfx layer is a fixed palette with the alpha byte unused, applications/kits/interface/tiku_gfx.h:21), no colour-picker pop-up, no settings to write through to.  
 **PORT:** The editor differs by being flatter: the Volume icons page shows all THREE colours at once, each as its own swatch, and a click on a swatch walks it through the palette -- there is no one-at-a-time popup because nothing needs choosing before editing.  The source's popup exists to multiplex one BColorControl across three settings; with three controls the multiplexer has no job.  Every change still writes straight through, as the page's no-OK rule requires (TS-058).
 
 #### TS-056 · polish · done
@@ -7164,7 +7164,7 @@ FetchWindowIcon(local, minimized) indexes R_WindowShownIcon / R_WindowHiddenIcon
 feel must be B_NORMAL_WINDOW_FEEL or kWindowScreenFeel, and show_hide_level <= 0  
 `WindowMenu.cpp` → `TWindowMenu::WindowShouldBeListed`  
 **PORT:** The row's contract — only ordinary, non-hidden windows appear — holds under every state the port can reach: the port has exactly one window class with no feel/panel/floater field (win.h struct: title/frame/z/open/minimized/draw/ctx/tag), so every listed window is ordinary by construction; the only hidden state is !open, which publish_windows skips, and minimized windows are correctly listed with the MINIMIZED state icon. The feel-based exclusion clause is vacuously satisfied — there is no panel/floater class to write a filter against, so no implementable behaviour is missing.  
-*Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:1493-1506 (publish_windows skips w==NULL || !w->open, includes minimized with TIKU_TRK_DBW_MINIMIZED)` `../kits/tiku_window.h:46-58 (single window class, no feel/hidden-level field)`*  
+*Audited 2026-08-12: `src/shell/tiku_trk_desktop.c:1493-1506 (publish_windows skips w==NULL || !w->open, includes minimized with TIKU_TRK_DBW_MINIMIZED)` `../kits/interface/tiku_window.h:46-58 (single window class, no feel/hidden-level field)`*  
 *Shell: desktop*  
 #### DB-028 · important · done
 **An application's window menu ends with Hide all / Show all / Close all; 'Hide all' is disabled when every window is already minimized and 'Show all' when none is**  
@@ -7476,7 +7476,7 @@ WorkspaceActivated calls UpdatePlacement unless in vertical expanded mode (where
 retained screen bound and lets Deskbar derive its frame from the new surface,
 so the dock, width and hidden sliver re-lay on the correct physical edge.
 **PORT (continued):** The workspace-activation half differs by design: this desktop is a single workspace, so there is no activation event to re-lay on -- the screen-change half, which is the clause with a referent, is done.
-*applications/TikuDesktop/../kits/tiku_x11.c; src/deskbar/tiku_trk_deskbar.c*
+*../kits/interface/tiku_x11.c; src/deskbar/tiku_trk_deskbar.c*
 
 #### DB-069 · important · differs ⟨found by verification⟩
 **The preloaded app/preferences icons stay live: the preloader node-monitors the directories and each preloaded file, re-icons on change and force-removes permanent entries when a file disappears.**  

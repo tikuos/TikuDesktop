@@ -9,20 +9,21 @@ code, and read `FEATURES.md` before you write any.
 ## 1. What this is
 
 A rewrite of Tracker and Deskbar for TikuOS, in C, against a drawing floor
-that lives in `applications/TikuDesktop/` (surface, font, R5 controls). Two
+that lives in `applications/kits/interface/` (surface, font, R5 controls). Two
 front-ends are built from one core:
 
-- **`build/desktop`** — the multi-window shell: a backdrop with a Desktop
+- **`build/TikuDesktop`** — the multi-window shell: a backdrop with a Desktop
   pose view, folder windows, the Deskbar, the Find panel, Get Info, the
   Open/Save panel, alerts, a progress window.
-- **`build/tracker`** — the single-window shell, with the column strip, the
-  scrollbar and the status view.
+- **`build/TikuTracker`** — the single-window shell, with the column strip,
+  the scrollbar and the status view.
 
-Each is built in **two flavours from one source tree**. `build/desktop` and
-`build/tracker` are the product: they link a stub that refuses `-script`, and
-carry neither the script interpreter nor the presentation adapter that reads
-rows, menus and pixels back out of a running shell. `build/dev/desktop` and
-`build/dev/tracker` link that engine and are what `tests/shell/run.sh` drives.
+Each is built in **two flavours from one source tree**. `build/TikuDesktop`
+and `build/TikuTracker` are the product: they link a stub that refuses
+`-script`, and carry neither the script interpreter nor the presentation
+adapter that reads rows, menus and pixels back out of a running shell.
+`build/dev/TikuDesktop` and `build/dev/TikuTracker` link that engine and are
+what `tests/shell/run.sh` drives.
 The test infrastructure is a developer tool, not something a device image
 should carry; `tools/check_shipping.py` (run inside `make test`) proves the
 script vocabulary is absent from what ships and present in what the harness
@@ -268,19 +269,24 @@ is not wiped between them.
 
 ```
 src/core/             UI-independent models, commands, queries, and state
-src/backends/         host/device namespace access, notices, file operations
+../kits/storage/      host/device namespace access, notices, file operations
 src/ui/               pose views, menus, navigation, and visual controllers
 src/ui/commands/      folder/file commands, drops, menus, launch presentation
 src/ui/windows/       feature windows: folders, Find, Info, file panels,
                       preferences, Select, switcher
 src/ui/input/         drag targets and rubber-band gesture controllers
 src/ui/overlays/      modal alerts and shared operation-status presentation
-src/media/            HVIF icons, image decoding, thumbnails, icon painting
+../kits/translation/  HVIF icons, image decoding, thumbnails, icon painting
 src/deskbar/          Deskbar, Desktop view, and application-roster behavior
 src/shell/            application descriptors and front-end composition
 src/shell/adapters/   script-facing presentation adapters
 src/shell/session/    restore, persistence, and bounded shutdown services
-../kits/       reusable runtime, windows, focus, graphics, native host
+../kits/support/      messages and the interface's string table
+../kits/device/       transport, session, and the device namespace client
+../kits/storage/      nodes, attributes, queries, volumes, change notices
+../kits/interface/    surface, fonts, R5 controls, windows, focus, X11 host
+../kits/translation/  HVIF and image decoding, thumbnails, icon painting
+../kits/application/  app descriptors, client/remote wire, the conductor
 ```
 
 Headers retain their `tiku_trk_*` names. The Makefile publishes the functional
@@ -298,16 +304,25 @@ Four places you will look for first:
   it: row points, tab points, icon positions, menu labels)
 - **pose geometry, columns, sorting and filtering** are all one file,
   `src/ui/tiku_trk_poseview.c` — it is the largest thing here by far
-- `../kits/` is a separate library with its own `tiku_desk_*` prefix:
-  surface, font, windows, focus, X11 host. Cite it by that path
+- `../kits/` is six libraries, one per kit directory, sharing the plain
+  `tiku_` prefix rather than a per-kit one: the drawing floor you will
+  want — surface, font, theme, the R5 control set, windows and focus, the
+  X11 host — is all `interface/`, with the device session in `device/`,
+  models and backends in `storage/`, icons and images in `translation/`.
+  Cite a kit file by the path that carries its kit directory,
+  `../kits/interface/tiku_window.c`: plain `../kits/tiku_window.c` names
+  no file and every citation written that way has to be chased by hand
 
 Conventions: `tiku_trk_` prefix, K&R braces, 4 spaces, **80 columns**, no
 dynamic allocation in the hot paths, Doxygen on anything public.
 
 ### Comments
 
-`hygiene/commentstyle.md` in the tikuOS root governs both comments and
-commit messages, and `make lint` does **not** check most of it. The rule that
+`hygiene/commentstyle.md` at the tikuOS root governs both comments and commit
+messages, but `hygiene/` is gitignored (`.gitignore:107`): a clone of this
+tree does not carry it, and there is no `make lint` target here, so nothing
+checks these rules for you. The last tracked checker is recoverable with
+`git -C /home/ambujv/Tiku/tikuOS show a2ef818^:tools/check_comment_style.py`. The rule that
 matters: a comment states the **live hazard or the reason**, never the route
 you took to find it. No "used to", no "turned out", no milestone markers.
 
@@ -349,11 +364,16 @@ waiver candidates the user alone may strike:
 
 ### The single-window shell shares the engine, not the commands
 
-`build/tracker` has **no reference to the file-action controllers**: its own
-inline delete, no file clipboard, no alert layer.  So the delete question,
-the mixed-clipboard paste, Duplicate, Create link and Identify are
-`build/desktop` behaviours, and a file-command row reading `done` means done
-there.  `tools/sweep_shells.sh` measures it -- every desktop script run
+`build/TikuTracker` shares the command layer as well as the engine: both
+shells go through `tiku_trk_folder_file_actions_*`, so Delete, Duplicate,
+Create link, Identify and the clipboard verbs -- the mixed-clipboard paste
+included -- are one implementation, and each shell now has somewhere to
+ask, so FS-046's three-way delete question goes up here on the status
+overlay's alert exactly as the desktop puts it up.  What is still
+**`build/TikuDesktop` alone** is the Select window and drop-onto-a-folder
+handling: only that shell holds a `tiku_trk_drop_controller`, and here a
+drag ends by saving positions.  So a Select-window or drop row reading
+`done` means done there.  `tools/sweep_shells.sh` measures it -- every desktop script run
 against the other shell, 49 of 49 failing at least one check as of
 2026-08-15.  Wiring `tiku_trk_folder_file_actions_*` into the app shell is
 the piece of work that closes the whole class; the harness ops to prove it

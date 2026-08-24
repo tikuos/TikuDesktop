@@ -3,7 +3,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_launcher.c - select Tracker from the desktop app registry.
+ * tiku_trk_launcher.c - enter whichever shell this build linked.
+ *
+ * This file holds the only main(), and the Makefile links it into both
+ * build/TikuTracker and build/TikuDesktop, so tiku_trk_application resolves
+ * to tiku_trk_app.c's descriptor in one binary and tiku_trk_desktop.c's in
+ * the other.  Both enter through the Application kit's registry, from
+ * kits/application/tiku_app.h, so a linked-in shell is looked up by id the
+ * same way a loaded application would be.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

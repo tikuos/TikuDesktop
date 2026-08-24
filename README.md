@@ -2,7 +2,9 @@
 
 The real Tracker's architecture and decisions, rebuilt in a codebase we own,
 with the original source as the specification.  Full functionality; nothing
-stripped.  Plan: `../PLAN.md` (phases N0–N7).
+stripped.  `HANDOVER.md` is where to start: it carries the working method
+and the current state of the 889-row contract.  `NOTES.md` is the build log
+for the numbered phases from N1 on; N0 is the section below.
 
 ## N0 is complete (2026-08-11)
 
