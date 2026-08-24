@@ -343,10 +343,6 @@ build_leaf(tiku_trk_deskbar_t *db)
         add_item(db, TIKU_TRK_DB_ITEM_APPS, tiku_str("menu.applications"),
                  NULL, 0);
     }
-    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/sys", "/sys", 0);
-    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/dev", "/dev", 0);
-    add_item(db, TIKU_TRK_DB_ITEM_PATH, "/data", "/data", 0);
     {
         int any = 0;
 

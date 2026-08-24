@@ -106,6 +106,20 @@ main(void)
         char into[256], seen[8][256];
         int y2, nseen = 0, lo = -1, k, all_paths = 1;
 
+        /*
+         * The rows that take a drop are the ones the Deskbar FOLDER put
+         * there.  It used to be enough to open the menu and count, back
+         * when /sys, /dev and /data were written into every menu whether
+         * the machine had them or not -- so the count was of three rows
+         * nobody had chosen.  Now the folder has to have something in it
+         * for there to be anything to drop on, which is the honest
+         * arrangement and needs saying out loud here.
+         */
+        (void)system("rm -rf /tmp/trk_dbdrop && mkdir -p "
+                     "/tmp/trk_dbdrop/one /tmp/trk_dbdrop/two && "
+                     "touch /tmp/trk_dbdrop/a.txt");
+        tiku_trk_deskbar_set_menu_dir(db, "/tmp/trk_dbdrop_missing",
+                                      "/tmp/trk_dbdrop");
         tiku_trk_deskbar_open_menu(db);
         for (y2 = 0; y2 < 400; y2++) {
             if (tiku_trk_deskbar_menu_drop_at(db, f.x - 20, y2, into,
@@ -124,10 +138,11 @@ main(void)
                 }
             }
         }
-        check(nseen == 3 && all_paths, "DB-009",
-              "exactly the three folder entries take a drop, and only "
+        check(nseen == 2 && all_paths, "DB-009",
+              "exactly the folder's own directories take a drop, and only "
               "entries that name a path -- About and Shut down are not "
-              "places to put a file");
+              "places to put a file, and neither is the plain file beside "
+              "them");
         tiku_trk_deskbar_close_menu(db);
         check(lo >= 0 &&
               tiku_trk_deskbar_menu_drop_at(db, f.x - 20, lo, into,
@@ -135,6 +150,7 @@ main(void)
                   TIKU_TRK_DB_DROP_NONE, "DB-009",
               "and with the menu closed the same point takes nothing: a "
               "menu that is not there is not a target");
+        (void)system("rm -rf /tmp/trk_dbdrop");
     }
 
     printf("\nthe highlight under a hovering drag (DB-035)\n");

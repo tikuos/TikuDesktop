@@ -18,7 +18,7 @@ expect-windows 0
 click 980 20
 wait 3
 note the recents row EXPANDS rather than choosing: the menu stays up
-expect-menu About this system|Find…|Settings|Applications|-|/sys|/dev|/data|-|Recent folders|-|Shut down…|
+expect-menu About this system|Find…|Settings|Applications|-|Recent folders|-|Shut down…|
 note the About row wears the system's own mark, drawn from its geometry
 note rather than looked up in the icon set -- pinned on the pale interior
 note of the near cube, which is the largest steady area it has at the
@@ -35,7 +35,7 @@ wait 3
 expect-windows 0
 note and its entry opens the folder it names
 note the row expanded: the folders just opened are BESIDE the leaf menu
-expect-menu About this system|Find…|Settings|Applications|-|/sys|/dev|/data|-|Recent folders|-|Shut down…|sub|trk_script|
+expect-menu About this system|Find…|Settings|Applications|-|Recent folders|-|Shut down…|sub|trk_script|
 menu-pick sub
 wait 8
 expect-windows 1
