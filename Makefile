@@ -129,6 +129,14 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
 LEGACY := $(BUILD)/desktop $(BUILD)/tracker \
           $(DEVBUILD)/desktop $(DEVBUILD)/tracker
 
+# The ownership question, answered by make itself rather than by anything
+# that re-parses this file: check_architecture.py runs this and compares.
+.PHONY: print-ownership
+print-ownership:
+	@echo "TRACKER:$(filter src/%.c,$(TRACKER_SRC))"
+	@echo "DESKTOP:$(filter src/%.c,$(DESKTOP_SRC))"
+	@echo "ENGINE:$(SCRIPT_ENGINE_TRACKER) $(SCRIPT_ENGINE_DESKTOP) $(SCRIPT_STUB)"
+
 .PHONY: sweep-legacy
 sweep-legacy:
 	@rm -f $(LEGACY)
@@ -417,6 +425,11 @@ $(BUILD)/test_icondir: \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 
+# Who links what is a FACT with a checker, not a convention: the two
+# front-ends share nearly everything, and tools/check_architecture.py
+# holds the exact remainder -- which files are TikuTracker's alone --
+# so a file quietly joining one binary and not the other is caught the
+# build after it happens.  print-ownership below is how it asks.
 TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \

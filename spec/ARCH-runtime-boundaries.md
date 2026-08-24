@@ -44,27 +44,19 @@ the nonblocking start, event, tick, and stop lifecycle.
 
 ## Library shape
 
-The kits publish that split, one archive per kit:
+The kits publish that split, one archive per kit -- six in all, of which
+three carry this document's boundaries:
 
-- `kits/interface` -> `libtiku_interface.a`: surface, fonts, the colour
-  table, controls, windows, focus, and the X11 adapter -- the whole
-  drawing floor in one archive, because everything in it reaches for the
-  same pixels;
-- `kits/application` -> `libtiku_application.a`: the application object,
-  its lifecycle, and the registry that starts and addresses applications;
+- `kits/interface` -> `libtiku_interface.a`: the surface, fonts, the
+  colour table, the R5 control set, windows and focus, and the platform
+  adapter behind the portable event boundary -- the whole drawing floor
+  in one archive, because everything in it reaches for the same pixels;
+- `kits/application` -> `libtiku_application.a`: embedded application
+  descriptors, the registry they are selected from, their lifecycle, and
+  the client, conductor, and remote channels;
 - `kits/translation` -> `libtiku_translation.a`: icons and images, one
   kit further out because a picture becomes a bitmap before the interface
   kit ever draws it.
-
-- `libtiku_interface`: the surface, fonts, the color table, the R5 control
-  set, windows and focus, and the platform adapter behind the portable
-  event boundary;
-- `libtiku_translation`: icons and images, which decode into pixels rather
-  than belonging to the control set;
-- `libtiku_application`: embedded application descriptors, the registry
-  they are selected from, and the client, conductor, and remote channels.
-
-Tracker will publish:
 
 Tracker publishes no libraries: it compiles its own sources directly into
 `build/TikuTracker` and `build/TikuDesktop` and links the six kit archives.
@@ -120,6 +112,42 @@ restore/save and script presentation observations no longer reach through
 the desktop composition function.
 The status overlay owns alert and progress rendering plus modal input, while
 filesystem answers remain a shell callback.
+
+## Two front-ends, one tree
+
+The directories above are the real structure, and binary ownership
+deliberately is not: the two shells are one product built two ways, and
+the tree is organised by LAYER because that is where the boundaries are.
+Measured from the link lists (2026-08-25), of the sixty-nine sources
+under `src/`:
+
+- thirty-five are linked into BOTH binaries -- the models, the pose
+  engine, the menus, the deskbar's icon layer: the product itself;
+- twenty-nine are the desktop's alone: its composition and splash, the
+  Deskbar proper, the session controller, and nearly every feature
+  window and command controller -- the single-window shell answers
+  those with its own inline forms instead;
+- exactly TWO are TikuTracker's alone: `shell/tiku_trk_app.c`, its
+  composition, and `ui/tiku_trk_navigator.c`, its Back/Forward/Up --
+  navigation the spatial shell deliberately has no counterpart for;
+- the script engine (`shell/tiku_trk_script.c`, its adapter, and the
+  stub) belongs to the build FLAVOURS, not to either front-end: the
+  engine links into `build/dev/*`, the refusing stub into the product.
+
+That remainder is a checked fact, not prose: `make print-ownership`
+answers from the link lists themselves, and
+`tools/check_architecture.py` compares the answer against the declared
+`TRACKER_ONLY` set on every `make test`.  A file that quietly leaves one
+binary's link line turns the suite red the same run.
+
+A reader looking for "the desktop's source" should also know the
+delivery arrangement: the desktop shell is COMPILED here, from this
+tree, and `applications/TikuDesktop` -- the app framework beside this
+repository, whose own documents are `R5-SPEC.md` and
+`PLAN-hybrid-apps.md` -- fetches the built binary into its `build/` with
+`make shell`, so it is also found under the name it wears.  The agent
+surface this tree exposes is specified in `AGENT-SURFACE.md` beside this
+file.
 
 ## Temporary exceptions
 

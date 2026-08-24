@@ -11,6 +11,7 @@ Interface kit.
 
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
@@ -32,6 +33,55 @@ HEADLESS = {
 }
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
+
+# The one structural fact the tree cannot show: which sources belong to
+# ONE front-end.  Nearly everything is linked into both binaries -- the
+# two shells are one product built two ways -- and the whole remainder
+# is listed here.  app is the single-window composition; the navigator
+# is its Back/Forward/Up, which the spatial shell deliberately has no
+# counterpart for (FEATURES.md holds the waiver).  Growing this set is
+# allowed but must be MEANT: a file that joins it by accident has been
+# dropped from one binary's link line, which is precisely the quiet
+# breakage this check exists to catch.
+TRACKER_ONLY = {
+    "src/shell/tiku_trk_app.c",
+    "src/ui/tiku_trk_navigator.c",
+}
+
+
+def ownership() -> list[str]:
+    """The link lists as MAKE resolves them, not as a regex reads them."""
+    out = subprocess.run(
+        ["make", "-s", "-C", str(ROOT), "print-ownership"],
+        capture_output=True, text=True, check=True).stdout
+    sets: dict[str, set[str]] = {}
+    for line in out.splitlines():
+        label, _, rest = line.partition(":")
+        sets[label] = set(rest.split())
+    errors: list[str] = []
+
+    tracker_only = sets["TRACKER"] - sets["DESKTOP"]
+    if tracker_only != TRACKER_ONLY:
+        gained = sorted(tracker_only - TRACKER_ONLY)
+        lost = sorted(TRACKER_ONLY - tracker_only)
+        for f in gained:
+            errors.append(
+                f"{f}: linked into TikuTracker alone -- dropped from the "
+                "desktop, or meant to be declared in TRACKER_ONLY?")
+        for f in lost:
+            errors.append(
+                f"{f}: declared TikuTracker-only but no longer is")
+
+    # Every source is somebody's: linked into a front-end, part of the
+    # script engine, or named by a test rule.  A .c file nothing names is
+    # how code keeps compiling in nobody's binary.
+    named = sets["TRACKER"] | sets["DESKTOP"] | sets["ENGINE"]
+    makefile = (ROOT / "Makefile").read_text()
+    for path in sorted(TRACKER_SRC.rglob("*.c")):
+        rel = str(path.relative_to(ROOT))
+        if rel not in named and rel not in makefile:
+            errors.append(f"{rel}: no binary, engine, or test names it")
+    return errors
 
 
 def tracker_stem(path: Path) -> str:
@@ -74,6 +124,8 @@ def main() -> int:
                              "tiku_trk_gfx_dep.h"}]
             if ui:
                 errors.append(f"{path}: headless module imports UI: {', '.join(ui)}")
+
+    errors.extend(ownership())
 
     if errors:
         print("architecture boundary violations:")
