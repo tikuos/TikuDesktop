@@ -477,16 +477,17 @@ $(DEVBUILD):
 # legs skip rather than fail.
 # EVERY suite runs here.  One left out is one that goes on passing from a
 # binary nobody rebuilt.
-# The conducted lane borrows from next door: run.sh starts tiku-about-app
+# The conducted lane borrows from next door: run.sh starts tiku-demo-app
 # and tiku-term beside the shell and drops the loadable descriptors into
 # the apps directory.  Asked for BY NAME, never through that Makefile's
 # `all` -- its all delegates back here for the shell, and the two trees
 # calling each other's all is a loop.  Without this the suite kept testing
 # whatever stale binaries were on disk, which is how a wordmark change
-# went unnoticed until the About app was next rebuilt by hand.
+# went unnoticed until the demo app -- then themed as About -- was
+# next rebuilt by hand.
 desk-apps:
 	@$(MAKE) --no-print-directory -C ../TikuDesktop \
-	    build/tiku-about-app build/tiku-term \
+	    build/tiku-demo-app build/tiku-term \
 	    build/apps/terminal.so build/apps/editor.so \
 	    build/apps/sketch.so build/apps/clock.so
 

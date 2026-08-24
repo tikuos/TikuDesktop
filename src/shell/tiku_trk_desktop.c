@@ -76,7 +76,7 @@
 #include "tiku_trk_find_window.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_remote.h"
-#include "tiku_about_app.h"
+#include "tiku_demo_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -5004,10 +5004,10 @@ tracker_run(int argc, char **argv)
         /* No socket, no sessions: the desktop still stands alone. */
         app.remote.fd = -1;
     }
-    if (getenv("TIKU_EMBED_ABOUT") != NULL) {
+    if (getenv("TIKU_EMBED_DEMO") != NULL) {
         /* The both-ways proof: the SAME descriptor the client runner
          * takes out of process, hosted here linked-in. */
-        (void)embed_start(&app, &tiku_about_app);
+        (void)embed_start(&app, &tiku_demo_app);
     }
     app.loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while

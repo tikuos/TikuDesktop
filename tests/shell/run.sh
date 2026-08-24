@@ -294,7 +294,7 @@ PYDP
             remoteapp.script)
                 # The out-of-process client: started BESIDE the desktop,
                 # its connect retry covers the launch order.
-                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-about-app" \
+                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-demo-app" \
                       >/dev/null 2>&1 & ) ;;
             safedefault.script)
                 mkdir -p "$deskhome/.Trash" "$deskhome/.config/tracker"
@@ -442,14 +442,14 @@ PYEOF
         fi
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
+                env ${embed:+TIKU_EMBED_DEMO=1} ${splash:+TIKU_SPLASH=1} \
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
-                env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
+                env ${embed:+TIKU_EMBED_DEMO=1} ${splash:+TIKU_SPLASH=1} \
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" "$devbin/$exe" ${openat:-$work} \
