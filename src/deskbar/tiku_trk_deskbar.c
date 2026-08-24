@@ -15,6 +15,7 @@
 
 #include "tiku_logo.h"
 #include "tiku_trk_deskbar.h"
+#include "tiku_mount.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_iconpaint.h"
 #include "tiku_strings.h"
@@ -342,6 +343,41 @@ build_leaf(tiku_trk_deskbar_t *db)
          * inside it rather than across it. */
         add_item(db, TIKU_TRK_DB_ITEM_APPS, tiku_str("menu.applications"),
                  NULL, 0);
+    }
+    {
+        /*
+         * The stores that are ATTACHED, one row each, opening the place
+         * they are mounted at.
+         *
+         * This is the row /sys, /dev and /data used to occupy -- written
+         * into every menu whether the machine had them or not.  The
+         * difference is the whole point: a device that is not there does
+         * not get a row, so what is in the menu is what a person can
+         * actually reach.  The rule the recents already keep, applied to
+         * places instead of history.
+         *
+         * The namespace is asked directly rather than told, so a mount
+         * that came or went is in the next menu opened; a list published
+         * to the bar would be a second copy to keep agreeing.
+         */
+        int slots = tiku_mount_slots(db->backend), any = 0;
+
+        for (i = 0; i < slots; i++) {
+            const char *prefix = tiku_mount_prefix_at(db->backend, i);
+            const char *leaf;
+
+            if (prefix == NULL ||
+                (prefix[0] == '/' && prefix[1] == '\0')) {
+                continue;       /* the root is where the menu already is */
+            }
+            leaf = strrchr(prefix, '/');
+            leaf = (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : prefix;
+            if (!any) {
+                add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+                any = 1;
+            }
+            add_item(db, TIKU_TRK_DB_ITEM_PATH, leaf, prefix, 0);
+        }
     }
     {
         int any = 0;

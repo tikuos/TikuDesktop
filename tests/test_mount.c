@@ -174,7 +174,13 @@ fake_init(fake_t *f, uint64_t id, const char *kid, const char *a,
 {
     memset(f, 0, sizeof *f);
     f->base.ops = &fake_ops;
-    f->base.impl = NULL;
+    /*
+     * Its own state, as every real backend's impl is.  Left NULL, this
+     * fake would be safe to mistake for a namespace by accident -- and
+     * the check below that a plain store is NOT one would pass however
+     * the router decided it, which is no check at all.
+     */
+    f->base.impl = f;
     f->id = id;
     f->kid = kid;
     f->knows[0] = "/";
@@ -394,6 +400,35 @@ main(void)
         if (empty != NULL) {
             empty->ops->close(empty);
         }
+    }
+
+    printf("\nand a plain backend is not one of these (TS-MOUNT)\n");
+    {
+        /*
+         * EVERY backend has an impl pointer and it is its own private
+         * state, so "impl is not null" tells a namespace from a store
+         * not at all -- it would hand a POSIX store's struct back as a
+         * mount table and read whatever lay at those offsets.  The test
+         * is the ops table, and these are the calls that would have gone
+         * wandering without it.
+         */
+        char l[TIKU_PATH_MAX];
+
+        check(!tiku_mount_is(&root.base) &&
+              tiku_mount_slots(&root.base) == 0 &&
+              tiku_mount_count(&root.base) == 0 &&
+              tiku_mount_prefix_at(&root.base, 0) == NULL &&
+              tiku_mount_at(&root.base, 0) == NULL &&
+              tiku_mount_route(&root.base, "/x", l, sizeof l) == NULL,
+              "TS-MOUNT",
+              "asked the questions a namespace answers, a plain store "
+              "says it is not one rather than reading its own state as "
+              "a mount table");
+        check(tiku_backend_serving(&root.base, "/x", l, sizeof l) ==
+              &root.base && strcmp(l, "/x") == 0, "TS-MOUNT",
+              "and it answers for itself, by the name it was given -- "
+              "which is what lets a caller ask without knowing whether "
+              "there is a namespace in the way at all");
     }
 
     r->ops->close(r);

@@ -1,0 +1,19 @@
+# shell: desktop
+# home: fixture
+# mount: /devices/board1
+# A store that is attached gets a row; one that is not gets nothing.
+#
+# This is the row /sys, /dev and /data used to occupy, written into every
+# menu whether the machine had them or not.  What is in the menu now is
+# what a person can actually reach.
+wait 15
+click 980 20
+wait 4
+expect-menu About this system|Find…|Settings|Applications|-|board1|-|Recent folders|-|Shut down…|
+note and the row opens the store it names, by the name the namespace
+note knows it by rather than by whatever the store calls its own root
+menu-pick board1
+wait 14
+expect-title board1
+expect-rows-at-least 2
+quit
