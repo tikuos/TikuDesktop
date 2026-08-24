@@ -53,6 +53,7 @@
 #include "tiku_trk_titleview.h"
 #include "tiku_conduct.h"
 #include "tiku_trk_script.h"
+#include "tiku_mount.h"
 #include "tiku_trk_splash.h"
 #include "tiku_trk_script_api.h"
 #include "tiku_trk_cwmenu.h"
@@ -390,18 +391,32 @@ deskbar_edit_path(void *context, const char *path)
 {
     desktop_t *app = context;
 
-    if (app->backend != NULL && app->backend->ops != NULL &&
-        strcmp(app->backend->ops->name, "posix") == 0) {
-        char parent[TIKU_PATH_MAX];
-        char *slash;
+    {
+        /*
+         * Making the folder is reaching PAST the backend to the local
+         * filesystem, so the question is whether local files are what
+         * answers for this path -- not what the shell's backend happens
+         * to be called.  With a namespace in the way that outer name is
+         * "mount" for everything, and asking it here meant the folder
+         * was never made and the window opened on nothing.
+         */
+        char local[TIKU_PATH_MAX];
+        tiku_backend_t *serving =
+            tiku_backend_serving(app->backend, path, local, sizeof local);
 
-        snprintf(parent, sizeof parent, "%s", path);
-        slash = strrchr(parent, '/');
-        if (slash != NULL && slash != parent) {
-            *slash = '\0';
-            (void)mkdir(parent, 0700);
+        if (serving != NULL && serving->ops != NULL &&
+            strcmp(serving->ops->name, "posix") == 0) {
+            char parent[TIKU_PATH_MAX];
+            char *slash;
+
+            snprintf(parent, sizeof parent, "%s", local);
+            slash = strrchr(parent, '/');
+            if (slash != NULL && slash != parent) {
+                *slash = '\0';
+                (void)mkdir(parent, 0700);
+            }
+            (void)mkdir(local, 0700);
         }
-        (void)mkdir(path, 0700);
     }
     (void)open_folder(app, path);
 }
@@ -4758,11 +4773,30 @@ tracker_run(int argc, char **argv)
             deadline = tiku_trk_now() + (int64_t)atoi(argv[++i]) * 1000000;
         }
     }
-    app.backend = use_device ? tiku_backend_tiku_open(port, baud)
-                             : tiku_backend_posix_open();
-    if (app.backend == NULL) {
-        fprintf(stderr, "tracker: no backend\n");
-        return 1;
+    {
+        /*
+         * The shell holds a NAMESPACE, never a backend directly -- even
+         * with one thing in it.  A single backend at the root routes to
+         * itself and behaves exactly as it did; what it buys is that a
+         * device arriving later is an entry in a table rather than a
+         * second desktop, and that every view above already asks its
+         * questions of something that can answer for more than one
+         * store.
+         */
+        tiku_backend_t *root = use_device
+                                   ? tiku_backend_tiku_open(port, baud)
+                                   : tiku_backend_posix_open();
+
+        if (root == NULL) {
+            fprintf(stderr, "tracker: no backend\n");
+            return 1;
+        }
+        app.backend = tiku_mount_open();
+        if (app.backend == NULL ||
+            tiku_mount_add(app.backend, "/", root, 1) != 0) {
+            fprintf(stderr, "tracker: no namespace\n");
+            return 1;
+        }
     }
     app.fs = tiku_fs_new(app.backend);
     (void)tiku_fs_prepare_trash(app.fs);

@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_info.h"
+#include "tiku_mount.h"
 #include "tiku_strings.h"
 #include "tiku_attr.h"
 #include "tiku_thumb.h"
@@ -229,10 +230,20 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
     }
     case TIKU_TRK_INFO_F_FILESYSTEM:
         if (label != NULL) { *label = tiku_str("info.filesystem"); }
-        snprintf(value, max, "%s",
-                 (in->model.backend != NULL &&
-                  in->model.backend->ops != NULL)
-                     ? in->model.backend->ops->name : "-");
+        {
+            /*
+             * The store the entry is really ON.  Every model belongs to
+             * the namespace now, so asking the model's own backend for
+             * its name answers "mount" for a local file and for a device
+             * alike -- which is the one thing this row exists not to say.
+             */
+            tiku_backend_t *on =
+                tiku_backend_serving(in->model.backend, in->model.path,
+                                     NULL, 0);
+
+            snprintf(value, max, "%s",
+                     (on != NULL && on->ops != NULL) ? on->ops->name : "-");
+        }
         break;
     default:
         break;

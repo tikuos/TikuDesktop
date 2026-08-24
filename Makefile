@@ -108,7 +108,8 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
             $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
             $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
-            $(BUILD)/test_state_pipeline $(BUILD)/test_splash
+            $(BUILD)/test_state_pipeline $(BUILD)/test_splash \
+            $(BUILD)/test_mount
 
 # The shells were renamed, and `make` does not remove what it stopped
 # building.  A stale binary under a name somebody still types is worse
@@ -341,6 +342,9 @@ $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+$(BUILD)/test_mount: tests/test_mount.c $(DESK_LIBS) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_mount.c $(DESK_LIBS) $(LDFLAGS) -lm
+
 $(BUILD)/test_splash: tests/test_splash.c src/shell/tiku_trk_splash.c \
                      $(DESK_LIBS) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_splash.c src/shell/tiku_trk_splash.c \
@@ -516,6 +520,7 @@ test: all
 	@$(BUILD)/test_dl
 	@$(BUILD)/test_logo
 	@$(BUILD)/test_splash
+	@$(BUILD)/test_mount
 # Built by `all` and, until now, run by nothing.  A test that is
 # compiled on every build and executed on none is worse than no test:
 # it keeps passing review by existing.  The list is kept in two

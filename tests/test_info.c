@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_info.h"
+#include "tiku_mount.h"
 #include "tiku_thumb.h"
 
 static int fails;
@@ -480,6 +481,38 @@ main(void)
             check(tiku_trk_info_relink(&nf, b, st, target, err,
                                        sizeof err) != 0, "AW-074",
                   "and a plain file is not a link to re-point");
+        }
+    }
+
+    printf("\nand the same entry reached through a namespace (AW-066)\n");
+    {
+        /*
+         * Every model a shell handles belongs to the NAMESPACE now, not
+         * to the store it came from -- so a row that asked the model's
+         * own backend what it was called answered "mount", for a local
+         * file and for a device alike, which is the one distinction this
+         * row exists to draw.  Opened on a plain backend the fault is
+         * invisible; that is why it is opened on a mounted one here.
+         */
+        tiku_backend_t *ns = tiku_mount_open();
+        tiku_trk_info_t through;
+        const char *got = NULL;
+
+        /*
+         * A VOLUME, because the Filesystem row is only offered for one:
+         * a plain file has no such row and the check would pass on an
+         * empty string without ever reaching the code it is about.
+         */
+        if (ns != NULL && tiku_mount_add(ns, "/", b, 0) == 0 &&
+            tiku_trk_info_open(&through, ns, "/tmp") == 0) {
+            got = field_of(&through, st, TIKU_TRK_INFO_F_FILESYSTEM,
+                           &label);
+        }
+        check(got != NULL && strcmp(got, "posix") == 0, "AW-066",
+              "the Filesystem row names the store the entry is really ON "
+              "rather than the namespace it was reached through");
+        if (ns != NULL) {
+            ns->ops->close(ns);
         }
     }
 
