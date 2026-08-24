@@ -94,6 +94,15 @@ there(const char *path)
     return stat(path, &st) == 0;
 }
 
+/** @brief A scratch buffer for answers nobody keeps. */
+static char *
+buf_of(void)
+{
+    static char b[512];
+
+    return b;
+}
+
 static long
 size_of(const char *path)
 {
@@ -186,6 +195,117 @@ main(void)
         check(there(inside) && !there(from), "FS-XM",
               "and is still a rename rather than a copy: the crossing "
               "test must not have caught the ordinary case");
+    }
+
+    printf("\nand a device path does not take the local road (FS-XM)\n");
+    {
+        /*
+         * Nearly everything in tiku_fs is about a LOCAL filesystem --
+         * rename(2), unlink, opendir, statvfs, the Trash -- and each of
+         * those gates used to ask the shell's backend, as a whole,
+         * whether it was a device.
+         *
+         * A namespace has no whole answer.  The router carries its
+         * ROOT's identity, so with local files at the root every path
+         * under a mounted board looked local and the gates opened on
+         * paths no local filesystem has.
+         *
+         * A store with a devid, mounted beside the disk, is what shows
+         * it: the questions must come back different for the two.
+         */
+        tiku_backend_t *board = tiku_backend_posix_open();
+        tiku_backend_t *ns2 = tiku_mount_open();
+        tiku_fs_t *fs2;
+        char local[512], node[512];
+
+        snprintf(board->devid, sizeof board->devid, "%s", "uid-test");
+        if (board == NULL || ns2 == NULL ||
+            tiku_mount_add(ns2, "/", tiku_backend_posix_open(), 1) != 0 ||
+            tiku_mount_add(ns2, "/board", board, 1) != 0 ||
+            (fs2 = tiku_fs_new(ns2)) == NULL) {
+            check(0, "FS-XM", "the two-store namespace would not build");
+        } else {
+            snprintf(local, sizeof local, "%s/here", work);
+            snprintf(node, sizeof node, "/board%s/away/small.txt", work);
+
+            check(tiku_fs_has_trash(fs2), "FS-XM",
+                  "the namespace has a Trash, because its ROOT is a disk "
+                  "-- a question with no path can only be about the whole");
+            check(tiku_fs_trash_dir(fs2, local, buf_of(), 512) == 0,
+                  "FS-XM", "and a local item resolves one");
+            /*
+             * The board's item does not, and it is worth being exact
+             * about WHY this assertion is weaker than it looks: a device
+             * path is refused here for the device reason now, but it
+             * would also have failed before the change, because stat()
+             * cannot see /board/... either.  Both roads end in -1.  What
+             * this pins is the ROOT question being answered by the root
+             * -- the half that IS observable -- and the device branch
+             * becomes visible in its own right when the backend
+             * contract grows a remove.
+             */
+            check(tiku_fs_trash_dir(fs2, node, buf_of(), 512) != 0,
+                  "FS-XM", "and an item on the board does not");
+            {
+                /* A namespace whose ROOT is a device has no Trash at
+                 * all, and that is the whole-namespace answer changing
+                 * with the root rather than with the shell. */
+                tiku_backend_t *dev_root = tiku_backend_posix_open();
+                tiku_backend_t *ns3 = tiku_mount_open();
+                tiku_fs_t *fs3;
+
+                snprintf(dev_root->devid, sizeof dev_root->devid, "%s",
+                         "uid-only");
+                if (ns3 != NULL &&
+                    tiku_mount_add(ns3, "/", dev_root, 1) == 0 &&
+                    (fs3 = tiku_fs_new(ns3)) != NULL) {
+                    check(!tiku_fs_has_trash(fs3), "FS-XM",
+                          "and with a DEVICE at the root there is no "
+                          "Trash in the namespace at all: nowhere to put "
+                          "anything, so the caller offers an honest "
+                          "delete instead (FS-044)");
+                    tiku_fs_free(fs3);
+                }
+                if (ns3 != NULL) {
+                    ns3->ops->close(ns3);
+                }
+            }
+            printf("\n");
+            {
+                /*
+                 * And a delete of a device node is refused BY NAME.
+                 *
+                 * This is the half of the per-path question that can be
+                 * seen from outside.  The road it used to take called
+                 * unlink() with the path only the namespace knows, so
+                 * the kernel answered ENOENT and the user was told "no
+                 * such file" about an item sitting in front of them.
+                 */
+                const char *one[1];
+                const tiku_progress_t *pr;
+
+                one[0] = node;
+                check(tiku_fs_delete(fs2, one, 1) == 0, "FS-XM",
+                      "a delete of a device node starts");
+                run_to_end(fs2);
+                pr = tiku_fs_progress(fs2);
+                check(pr->error_ask && strstr(pr->error, "device") != NULL,
+                      "FS-XM",
+                      "and stops to say the store cannot remove things, "
+                      "rather than reporting the kernel's ENOENT for a "
+                      "path no local filesystem has");
+                check(there(strchr(node, '/') != NULL ? node + 6 : node),
+                      "FS-XM",
+                      "and nothing local was touched on the way past");
+                if (pr->error_ask) {
+                    tiku_fs_resolve_error(fs2, 0);
+                }
+            }
+            tiku_fs_free(fs2);
+        }
+        if (ns2 != NULL) {
+            ns2->ops->close(ns2);
+        }
     }
 
     tiku_fs_free(fs);
