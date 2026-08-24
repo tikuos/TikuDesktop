@@ -103,7 +103,7 @@ UI_SUPPORT := src/ui/tiku_trk_scroll.c src/ui/tiku_trk_navmenu.c \
               src/ui/tiku_trk_nodeicon.c src/ui/tiku_trk_springmenu.c
 COMMON := $(CORE) $(UI_SUPPORT)
 
-.PHONY: all test clean check-architecture
+.PHONY: all test clean check-architecture desk-apps
 # Every test belongs here.  A suite left out of `all` is a suite that keeps
 # running from whatever binary happened to survive, which is how a stale
 # build reports a pass it did not earn.
@@ -477,7 +477,20 @@ $(DEVBUILD):
 # legs skip rather than fail.
 # EVERY suite runs here.  One left out is one that goes on passing from a
 # binary nobody rebuilt.
-test: all
+# The conducted lane borrows from next door: run.sh starts tiku-about-app
+# and tiku-term beside the shell and drops the loadable descriptors into
+# the apps directory.  Asked for BY NAME, never through that Makefile's
+# `all` -- its all delegates back here for the shell, and the two trees
+# calling each other's all is a loop.  Without this the suite kept testing
+# whatever stale binaries were on disk, which is how a wordmark change
+# went unnoticed until the About app was next rebuilt by hand.
+desk-apps:
+	@$(MAKE) --no-print-directory -C ../TikuDesktop \
+	    build/tiku-about-app build/tiku-term \
+	    build/apps/terminal.so build/apps/editor.so \
+	    build/apps/sketch.so build/apps/clock.so
+
+test: all desk-apps
 	@$(MAKE) --no-print-directory check-architecture
 	@$(BUILD)/test_task
 	@$(BUILD)/test_model $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD))

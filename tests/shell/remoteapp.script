@@ -6,8 +6,10 @@
 # cannot tell the difference.
 wait 40
 expect-title About (remote)
-note the frame's pixels came over the wire: the wordmark's amber rule
-expect-pixel 330 216 ffcb00
+note the frame's pixels came over the wire: the centre of the wordmark's
+note 96x3 amber rule, which crossed the process boundary as part of the
+note frame rather than being painted by anything in this shell
+expect-pixel 365 294 ffcb00
 note a drag crosses the process boundary and leaves footprints: MOVE
 note paints amber, RELEASE stamps ink -- each round-tripping the wire
 press 400 300
