@@ -332,6 +332,28 @@ main(void)
         check(tiku_trk_info_perm_toggle(&ro, &nope, TIKU_TRK_INFO_PERM_READ,
                                         err, sizeof err) != 0 &&
               err[0] != '\0', "AW-078", "and a click on it refuses aloud");
+        {
+            /*
+             * And still says so through a NAMESPACE, which is where it
+             * stopped saying it: a namespace always carries a setperm --
+             * it has to, in order to route one -- so asking the outer
+             * table made the grid editable over a store that cannot be
+             * told, which is the after-the-fact failure AW-078 exists to
+             * prevent.
+             */
+            tiku_backend_t *ns = tiku_mount_open();
+            tiku_trk_info_t through;
+
+            check(ns != NULL && tiku_mount_add(ns, "/", &nope, 0) == 0 &&
+                  tiku_trk_info_open(&through, ns, path) == 0 &&
+                  !through.perm_editable, "AW-078",
+                  "reached through a namespace it is STILL not editable: "
+                  "the question is what serves this node, not what the "
+                  "shell happens to hold");
+            if (ns != NULL) {
+                ns->ops->close(ns);
+            }
+        }
     }
     {   /* A toggle the store REFUSES must not move the box. */
         tiku_trk_info_t doomed;

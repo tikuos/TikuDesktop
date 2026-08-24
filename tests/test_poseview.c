@@ -12,6 +12,8 @@
  */
 
 #include <stdio.h>
+#include <time.h>
+#include "tiku_trk_task.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -92,6 +94,76 @@ rm_tree(const char *dir)
     (void)rmdir(dir);
 }
 
+/*---------------------------------------------------------------------------*/
+/* A store that answers, but slowly -- a board on a serial line             */
+/*---------------------------------------------------------------------------*/
+
+static tiku_backend_t *real_backend;
+static int slow_reads;
+
+/** @brief Ten milliseconds a read, which is a FAST device. */
+static int
+slow_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
+{
+    struct timespec ts;
+
+    (void)b;
+    slow_reads++;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 10L * 1000000L;
+    (void)nanosleep(&ts, NULL);
+    return real_backend->ops->read(real_backend, path, buf, max);
+}
+
+static int
+slow_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
+{
+    int rc = real_backend->ops->stat(real_backend, path, out);
+
+    if (rc == 0) {
+        out->backend = b;
+    }
+    return rc;
+}
+
+struct slow_relay { tiku_entry_fn fn; void *ctx; tiku_backend_t *as; };
+
+static int
+slow_entry(const tiku_model_t *m, void *ctx)
+{
+    struct slow_relay *r = ctx;
+    tiku_model_t copy = *m;
+
+    copy.backend = r->as;
+    return r->fn(&copy, r->ctx);
+}
+
+static int
+slow_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
+{
+    struct slow_relay r;
+
+    r.fn = fn;
+    r.ctx = ctx;
+    r.as = b;
+    return real_backend->ops->list(real_backend, path, slow_entry, &r);
+}
+
+static int
+slow_pump(tiku_backend_t *b, int timeout_ms)
+{
+    (void)b;
+    (void)timeout_ms;
+    return 0;
+}
+
+static const tiku_backend_ops_t SLOW_OPS = {
+    "slow", slow_stat, slow_list, slow_read, NULL, slow_pump,
+    NULL, NULL, NULL, NULL, NULL
+};
+
+static tiku_backend_t slow_backend;
+
 int
 main(void)
 {
@@ -101,6 +173,10 @@ main(void)
 
     make_tree(dir);
     b = tiku_backend_posix_open();
+    real_backend = b;
+    memset(&slow_backend, 0, sizeof slow_backend);
+    slow_backend.ops = &SLOW_OPS;
+    slow_backend.impl = &slow_backend;
     v = tiku_trk_poseview_new(b, dir);
     if (v == NULL) { printf("cannot open view\n"); return 1; }
 
@@ -1812,6 +1888,83 @@ main(void)
               "already present");
         tiku_trk_poseview_free(mail);
         tiku_store_free(layouts);
+    }
+
+    printf("\na tick costs what it was given, whatever the store does\n");
+    {
+        /*
+         * The value sweep used to read forty rows unconditionally, once
+         * per tick, each one a backend read.  A store on the far end of a
+         * serial line answers in SECONDS, so a window of device rows
+         * asked for minutes of work inside a frame that had
+         * milliseconds -- and the whole desktop waited for it.
+         *
+         * Now the sweep carries a cursor and a deadline: it reads what
+         * there is time for and leaves the rest for the next tick.  The
+         * cursor advances BEFORE the read, so a row that overruns cannot
+         * be retried for ever while the rows behind it are never
+         * reached.
+         *
+         * Proven against a store that is deliberately slow, because a
+         * local filesystem is far too quick to show the difference.
+         */
+        /*
+         * Its OWN directory, with more rows than a sweep will look at.
+         * The six-entry fixture the rest of this file uses cannot show
+         * the difference: six reads fit any budget, so the check would
+         * pass against the unbudgeted code it exists to rule out.
+         */
+        const char *many = "/tmp/trk_pv_many";
+        tiku_trk_poseview_t *slow_v;
+        char cmd[256];
+        int f;
+
+        snprintf(cmd, sizeof cmd, "rm -rf %s && mkdir -p %s", many, many);
+        if (system(cmd) != 0) { /* checked by the count below */ }
+        for (f = 0; f < 60; f++) {
+            snprintf(cmd, sizeof cmd, "printf '%d' > %s/n%02d", f, many, f);
+            if (system(cmd) != 0) { /* ditto */ }
+        }
+        slow_v = tiku_trk_poseview_new(&slow_backend, many);
+
+        if (slow_v == NULL) {
+            check(0, "PVL", "the slow view would not open");
+        } else {
+            int64_t t0, spent;
+            int first_round;
+            int slow_rows = tiku_trk_poseview_count(slow_v);
+
+            slow_reads = 0;
+            t0 = tiku_trk_now();
+            (void)tiku_trk_poseview_pump(slow_v, 30);
+            spent = tiku_trk_now() - t0;
+            first_round = slow_reads;
+
+            check(spent < 300000, "PVL",
+                  "one tick of a thirty-millisecond budget takes well "
+                  "under a third of a second, though every read on this "
+                  "store costs ten");
+            check(slow_rows >= 40, "PVL",
+                  "the view has more rows than a sweep looks at, so an "
+                  "unbudgeted sweep would have to overrun");
+            check(first_round > 0 && first_round < 40, "PVL",
+                  "and it did SOME of the screen rather than all of it "
+                  "or none");
+            {
+                /* And the next tick carries on rather than starting
+                 * over, or the rows past the budget are never read. */
+                int before = slow_reads;
+
+                (void)tiku_trk_poseview_pump(slow_v, 30);
+                check(slow_reads > before, "PVL",
+                      "the tick after it reads on from where that one "
+                      "stopped, so a row behind a slow one is still "
+                      "reached");
+            }
+            tiku_trk_poseview_free(slow_v);
+        }
+        snprintf(cmd, sizeof cmd, "rm -rf %s", many);
+        if (system(cmd) != 0) { /* nothing left to check */ }
     }
 
     tiku_trk_poseview_free(v);

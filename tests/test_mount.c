@@ -168,6 +168,14 @@ static const tiku_backend_ops_t fake_ops = {
     fake_changes, fake_path_of_id, NULL, NULL, NULL
 };
 
+/* A store with no change ring, which is what a local filesystem is: the
+ * NULL is not an omission, it is the answer "ask me again, I cannot
+ * tell you". */
+static const tiku_backend_ops_t mute_ops = {
+    "mute", fake_stat, fake_list, fake_read, fake_write, NULL,
+    NULL, NULL, NULL, NULL, NULL
+};
+
 static void
 fake_init(fake_t *f, uint64_t id, const char *kid, const char *a,
           const char *b)
@@ -399,6 +407,46 @@ main(void)
               "through a null backend");
         if (empty != NULL) {
             empty->ops->close(empty);
+        }
+    }
+
+    printf("\none store that cannot tell silences the whole namespace\n");
+    {
+        /*
+         * A local filesystem has no change ring and says so with a NULL
+         * op; a device has one and answers.  Put them in one namespace
+         * and the router must report "cannot tell" for BOTH -- because a
+         * caller cannot poll one mount and trust notices from another.
+         *
+         * This was a live regression: the router SKIPPED a store with no
+         * ring instead of taking its silence as the answer, so with a
+         * POSIX root beside one board it said "nothing changed, and that
+         * is complete" -- and every local window stopped relisting the
+         * moment a device was mounted.
+         */
+        tiku_backend_t *ns2 = tiku_mount_open();
+        fake_t local, board;
+        tiku_model_change_t ch2[8];
+        int complete2 = 1;
+
+        fake_init(&local, 500, "home", "/home", NULL);
+        fake_init(&board, 600, "mem", "/sys", NULL);
+        local.base.ops = &mute_ops;          /* no ring, like a disk */
+
+        check(ns2 != NULL &&
+              tiku_mount_add(ns2, "/", &local.base, 0) == 0 &&
+              ns2->ops->changes(ns2, ch2, 8, &complete2) == -1,
+              "TS-MOUNT",
+              "a namespace holding only a store that cannot tell says it "
+              "cannot tell");
+        check(tiku_mount_add(ns2, "/devices/b", &board.base, 0) == 0 &&
+              ns2->ops->changes(ns2, ch2, 8, &complete2) == -1,
+              "TS-MOUNT",
+              "and mounting one that CAN does not change that: the "
+              "silence of the first is an answer about the whole "
+              "namespace, not a mount to step over");
+        if (ns2 != NULL) {
+            ns2->ops->close(ns2);
         }
     }
 

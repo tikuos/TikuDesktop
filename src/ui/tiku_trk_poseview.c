@@ -25,6 +25,9 @@
 
 #define POSES_MAX 4096
 
+/** @brief How many on-screen rows a value sweep will ever look at. */
+#define REFRESH_WINDOW 40
+
 struct tiku_trk_poseview {
     tiku_backend_t *backend;
     char                path[TIKU_PATH_MAX];
@@ -58,6 +61,9 @@ struct tiku_trk_poseview {
     int                 sort2_field;    /* the tie-break, or -1             */
     int                 sort_reverse;
     int                 scroll;
+    /* Where the value sweep got to.  It survives the tick, because a
+     * tick may not finish the screen: see refresh_until(). */
+    int                 refresh_at;
 
     /* Selection MEMBERSHIP is the pose flag; whether it is PAINTED is this.
      * Tracker keeps two structures and clears the flag on deactivation; one
@@ -5403,30 +5409,32 @@ tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at)
     return now_at;
 }
 
-int
-tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
+/**
+ * @brief Re-read the value of ONE row.  @return 1 when what it says moved.
+ *
+ * Lifted out of the sweep so the sweep can be given a deadline: the whole
+ * cost of a refresh is in here, one backend read, and a store on the far
+ * end of a wire can take seconds over it.
+ */
+static int
+refresh_one(tiku_trk_poseview_t *v, int i)
 {
-    int i, n, changed = 0;
-
-    if (v == NULL) {
-        return 0;
-    }
-    n = tiku_trk_poseview_count(v);
-    for (i = first; i < first + count && i < n; i++) {
+    int changed = 0;
+    {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
         char buf[256];
         int len;
 
         if (p == NULL || tiku_model_is_container(&p->model)) {
-            continue;
+            return 0;
         }
         if (!(p->model.facts.perm & TIKU_P_READ)) {
-            continue;
+            return 0;
         }
         len = v->backend->ops->read(v->backend, p->model.path, buf,
                                     sizeof buf - 1);
         if (len < 0) {
-            continue;
+            return 0;
         }
         buf[len] = '\0';
         {
@@ -5451,7 +5459,7 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
                  * is re-read on the next tick anyway. */
                 (void)tiku_trk_poseview_recheck_order(v, p->index);
             }
-            continue;
+            return changed;
         }
         if (!p->value_valid) {
             /* The reading is the same one as before, but the row has been
@@ -5467,15 +5475,86 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
 }
 
 int
+tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
+{
+    int i, n, changed = 0;
+
+    if (v == NULL) {
+        return 0;
+    }
+    n = tiku_trk_poseview_count(v);
+    for (i = first; i < first + count && i < n; i++) {
+        changed += refresh_one(v, i);
+    }
+    return changed;
+}
+
+/**
+ * @brief Re-read what is on screen, for as long as @p deadline allows.
+ *
+ * The sweep used to read forty rows unconditionally, once per tick.  Every
+ * one of those is a backend read, and a store on the far end of a serial
+ * line answers in seconds, not microseconds -- so a window of forty device
+ * rows asked for minutes of work inside a frame that had milliseconds, and
+ * the whole desktop waited for it.  A device that had stopped answering
+ * altogether cost the full timeout PER ROW.
+ *
+ * So: a cursor that survives the tick, and a deadline.  Each tick reads
+ * what it has time for and leaves the rest for the next one; the cursor
+ * ADVANCES BEFORE the read, so a row that overruns is not retried for ever
+ * while the rows behind it are never reached.  Nothing waits for the whole
+ * screen to be current -- a row that has not been re-read yet goes on
+ * showing its last reading, which is what it does between ticks anyway.
+ */
+static int
+refresh_until(tiku_trk_poseview_t *v, int64_t deadline)
+{
+    int n = tiku_trk_poseview_count(v);
+    int window = (n < REFRESH_WINDOW) ? n : REFRESH_WINDOW;
+    int changed = 0, done = 0;
+
+    if (window <= 0) {
+        return 0;
+    }
+    /* Outside the rows on screen -- the view scrolled, or the listing
+     * changed under it -- start again at the top of what is visible. */
+    if (v->refresh_at < v->scroll || v->refresh_at >= v->scroll + window ||
+        v->refresh_at >= n) {
+        v->refresh_at = v->scroll;
+    }
+    while (done < window) {
+        int i = v->refresh_at;
+
+        v->refresh_at++;
+        if (v->refresh_at >= v->scroll + window || v->refresh_at >= n) {
+            v->refresh_at = v->scroll;
+        }
+        changed += refresh_one(v, i);
+        done++;
+        if (tiku_trk_now() >= deadline) {
+            break;
+        }
+    }
+    return changed;
+}
+
+int
 tiku_trk_poseview_pump(tiku_trk_poseview_t *v, int timeout_ms)
 {
+    int64_t deadline;
+
     if (v == NULL || v->backend->ops->pump == NULL) {
         return 0;
     }
+    /* One budget for the whole tick, not one per thing done in it: the
+     * pump spends what it needs and the value sweep gets what is left,
+     * which may be nothing.  That is the point -- a tick costs about what
+     * it was given, whatever the store on the other end is doing. */
+    deadline = tiku_trk_now() + (int64_t)timeout_ms * 1000;
     (void)v->backend->ops->pump(v->backend, timeout_ms);
     /* Values are re-read for the rows on screen; a folder of thousands does
      * not pay for what nobody is looking at. */
-    return tiku_trk_poseview_refresh_values(v, v->scroll, 40);
+    return refresh_until(v, deadline);
 }
 
 /** @brief Title and default width for a field. */

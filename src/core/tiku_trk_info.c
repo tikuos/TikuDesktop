@@ -35,8 +35,17 @@ tiku_trk_info_open(tiku_trk_info_t *in, tiku_backend_t *b,
     in->perm = in->model.facts.perm;
     /* Editable only where the store can be told.  A backend with no way to
      * set permissions shows the grid as it is rather than offering an edit
-     * that fails after the fact (AW-078). */
-    in->perm_editable = (b->ops->setperm != NULL);
+     * that fails after the fact (AW-078).
+     *
+     * Asked of whatever serves THIS node, not of the shell's backend: a
+     * namespace always has a setperm -- it has to, to route one -- so
+     * asking the outer table made the grid editable over a device, which
+     * is the exact after-the-fact failure AW-078 exists to prevent. */
+    {
+        tiku_backend_t *on = tiku_backend_serving(b, path, NULL, 0);
+
+        in->perm_editable = (on != NULL && on->ops->setperm != NULL);
+    }
     if (tiku_model_is_container(&in->model)) {
         tiku_trk_info_calc_start(in);
     }
