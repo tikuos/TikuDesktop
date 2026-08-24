@@ -86,6 +86,23 @@ for s in "$here"/*.script; do
         if grep -q '^# splash:' "$s"; then
             splash=1
         fi
+        # A second mount in the namespace.  There is no board on the host
+        # that runs these, so the only way to put the routing under a real
+        # window is to offer the local files again under another name --
+        # which is the same shape, as far as everything above the backend
+        # seam can tell.
+        mountat=""
+        if grep -q '^# mount: ' "$s"; then
+            mountat=$(sed -n 's/^# mount: //p' "$s" | head -1)
+        fi
+        # Which path the shell is started on.  The engine has no verb for
+        # opening one, so the window a script wants is the one it was
+        # given on the command line -- and a script about the namespace
+        # wants a window on a mounted name, not on the fixture.
+        openat=""
+        if grep -q '^# open: ' "$s"; then
+            openat=$(sed -n 's/^# open: //p' "$s" | head -1)
+        fi
         # EVERY script's desktop is a fixture's: the host's own volumes
         # must not land icons on it, or arrangement and repaint checks are
         # at the mercy of whatever this machine mounts and of when its
@@ -426,14 +443,16 @@ PYEOF
         if grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
+                ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_ABOUT=1} ${splash:+TIKU_SPLASH=1} \
+                ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
-                TIKU_APPS="$appsdir" "$devbin/$exe" $work \
+                TIKU_APPS="$appsdir" "$devbin/$exe" ${openat:-$work} \
                 -script "$s" || fails=$((fails+1))
         fi
     done

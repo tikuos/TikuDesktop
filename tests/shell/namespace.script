@@ -1,0 +1,41 @@
+# shell: desktop
+# home: fixture
+# mount: /devices/bus/board1
+# open: /devices
+# The namespace, under a real window.
+#
+# test_mount proves the routing against fakes; what this proves is that
+# everything ABOVE the backend seam kept working when a namespace was put
+# under it -- a folder window opens on a directory that NOTHING serves,
+# lists a store mounted beneath it, and walks into it.
+#
+# /devices is the case worth having: no filesystem on this host has one,
+# so a row appearing in it can only have come from the mount table.
+wait 18
+note a directory that exists because something is mounted under it
+expect-title devices
+note holding one row, and that row is synthetic too -- nothing serves
+note /devices/bus either, so a listing of /devices can only have got it
+note by STATTING a path no store has heard of and being told it is a
+note directory because a mount lies below it
+expect-rows 1
+click-row 0
+wait 4
+expect-selected-name bus
+key Return
+wait 12
+note and inside it the mount itself, named by the mount rather than by
+note whatever the store calls its own root
+expect-title bus
+expect-rows 1
+click-row 0
+wait 4
+expect-selected-name board1
+note and walking into it opens a window on the MOUNTED name, listing what
+note the store beneath answers for -- the graft survives a navigation,
+note which is the half a unit test of the router cannot reach
+key Return
+wait 14
+expect-title board1
+expect-rows-at-least 2
+quit
