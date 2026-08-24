@@ -1,0 +1,185 @@
+# The agent surface — plan, objective, and goalpost
+
+Status: adopted 2026-08-24.  This document states an OBJECTIVE the
+architecture has been converging on without saying so, and turns it into
+staged, testable work.  It sits beside ARCHITECTURE.md and DECISIONS.md;
+where they describe what is, this describes what TikuDesktop is FOR, one
+level up.
+
+## The objective, in one sentence
+
+TikuDesktop is operable by programs on the same terms as people: every
+gesture can be injected, every visible fact can be asked for by name,
+over one small, stated, gated surface — and that surface is the same one
+the tests, the tools, and the assistive software use, because a surface
+each of them had privately would be three surfaces that drift.
+
+## Why this is the goalpost and not a feature
+
+The thesis of the whole project is that the desktop IS the device's
+interface — applications project into it, people reach the device
+through it.  An agent is simply another party at that interface, and it
+arrives with the same needs a test has: address the thing, not the
+pixels it occupied on one machine; ask for facts, not screenshots to
+interpret; a small surface whose whole contract can be read.
+
+The evidence that this works is not hypothetical.  The product is driven
+through this surface thousands of times per suite run, and it was built
+and debugged BY an agent operating it: injecting gestures, querying
+titles and menus, reading screenshots only where a pixel was the actual
+claim.  Every honesty discipline the harness learned — name-addressed
+targets over coordinates, semantic queries over pixel-reading, mutation
+tests over trust — is exactly the discipline that makes an agent
+interface robust.  Tests and agents fail for the same reasons.
+
+## Principles
+
+These bind every stage below.  A change that violates one is wrong even
+if it works.
+
+1. **Two verbs, growing nouns.**  The conductor surface stays INJECT
+   (one event, as the display would have delivered it) and QUERY (one
+   named fact).  Capability grows by adding NOUNS the shell can already
+   answer, never by adding verbs; everything else — waits, retries,
+   expectations, plans — is composed by the driver, outside the product.
+
+2. **Semantic before pixels.**  A fact the shell knows is answered as a
+   fact: a title, a menu's rows, a selection's name.  A pixel is
+   answerable too, but an agent that needs pixels to learn a fact the
+   shell knew is evidence of a missing noun, and the fix is the noun.
+
+3. **One surface.**  Tests, agents, accessibility readers and remote
+   tooling share it.  The moment one of them gets a private door, the
+   doors disagree; the suite is the proof the surface works, so the
+   surface the suite uses must be the surface everything uses.
+
+4. **Off by default; identity before reach.**  A device that can be
+   puppeted by anything that reaches its socket is a device with a hole
+   in it.  The channel is opt-in today and stays so; before it is ever
+   reachable over a non-local transport it carries a named principal,
+   and QUERY-only is a different grant from INJECT.
+
+5. **The shipping binary carries no test vocabulary.**  Already true and
+   enforced (tools/check_shipping.py); stays true.  The interpreter,
+   the planner, the agent — all of it lives on the far end of the
+   stream.
+
+6. **Every noun lands proven.**  A new answerable fact arrives with a
+   script that uses it and a mutation that shows the script would notice
+   it lying.  An agent surface that can drift from the truth is worse
+   than none, for the same reason a silent miss was worse than a frame.
+
+## Where it stands (stage 0 — done)
+
+- The conductor channel: INJECT + QUERY over the session framing, local
+  socket or serial line, off unless asked for (-conduct / -conduct-tty),
+  driving the SHIPPING binary from outside.
+- QUERY nouns today: pixel, title, titles, status, count, menu.
+- The script engine (dev builds): pointer at three levels of address
+  (raw x/y, row, name), keyboard with modifiers, menu-pick, ~40
+  expect- verbs; run.sh proves every script in both front-ends.
+- The capability handshake: HELLO answered by WELCOME, features claimed
+  before they are used, unknown types stepped over in both directions.
+- The command stream: windows travel as what was DRAWN, icons as their
+  definitions — the structured screen exists on the wire already.
+
+## The stages
+
+Each stage is a set of claims that can be written as spec rows and
+proven the way everything else here is proven.  Order matters: nothing
+in a later stage may be started to avoid the hard part of an earlier
+one.
+
+### Stage 1 — Nouns: the desktop answers what it knows
+
+The poseview, the workspace and the menus already know everything an
+agent asks pixels for.  Expose it:
+
+- rows: names, count, which is selected, which columns say what;
+- controls: "the control labelled X in window Y is at rect R, enabled
+  or not" — the shell lays these out, it can say them;
+- windows: the list, their titles, their frames, which is focused;
+- alerts and errors as facts: an agent must never learn about a dialog
+  by staring at pixels.
+
+Done when: a canonical set of tasks (open a folder, select a named
+entry, copy it elsewhere, change a setting, read a device value) can be
+scripted with ZERO expect-pixel lines, and the scripts hold.
+
+### Stage 2 — Events out: from polling to being told
+
+The driver polls today.  The device session already has the idiom for
+the other direction — the `~<path>` subscription line.  Carry it up:
+a driver may subscribe to desktop facts (a window opened, an operation
+finished, an alert appeared, a mount arrived) and is told, on the same
+stream, when they change.
+
+Done when: a script/agent can wait on "the copy finished" without a
+wait-loop, and a mutation that drops the notice is caught by a test
+that would otherwise hang (bounded, so it FAILS rather than hangs —
+the harness's own rule).
+
+### Stage 3 — Identity and grants
+
+Prerequisite for any non-local reach, and for calling this an interface
+rather than a harness:
+
+- a named principal per conductor session (SO_PEERCRED locally, a token
+  in the HELLO for serial/remote — the protocol slot exists);
+- QUERY-only versus INJECT grants; per-session quotas beside the
+  session's existing counters;
+- the audit's session-identity work lands here, once, for both the
+  window session and the conductor — they share the framing and should
+  share the principal.
+
+Done when: a QUERY-only credential provably cannot inject (a test that
+tries), and an unnamed peer gets exactly what an unanswered HELLO gets:
+nothing beyond version 1.
+
+### Stage 4 — The structured screen as a feed
+
+The display list is already a semantic description of a window — "a
+button, here, labelled this; this art, there".  Let a permitted reader
+subscribe to it as a UI TREE rather than replaying it as pixels.  This
+is the accessibility story and the agent story converging on one
+mechanism, which is the point of principle 3: a screen reader and an
+agent want the same feed, and the wire already carries it.
+
+Done when: an assistive reader (or an agent in reader mode) can narrate
+a window it has never seen pixels of, from the stream alone.
+
+### Stage 5 — Fleet: one agent, many devices
+
+The namespace made devices places (/devices/board1); the conductor
+makes the desktop drivable; non-blocking sessions (already the stated
+next step in the storage plan) make many devices safe in one loop.
+Compose them: an agent addresses a board's UI and files through one
+desktop, or drives N desktops through one plan — provisioning,
+diagnostics, field debugging, with the UI as the protocol and no
+separate management plane to build or secure.
+
+Done when: the canonical tasks of stage 1 run against a device mount,
+unchanged, and a board that stops answering costs its own mount only.
+
+## Non-goals, so they do not creep
+
+- No general RPC.  If a capability wants to exist that the UI cannot
+  express, the question is why the UI cannot express it.
+- No pixel-first automation API.  Pixels remain answerable and remain
+  last resort.
+- No in-process scripting in shipping binaries, ever.
+- This is the DESKTOP's surface.  Application-level scripting (the
+  BMessage suite, PVK-052) stays what it is; the two meet only in that
+  an agent may use both.
+
+## Measures
+
+Ways to know it is working, each observable:
+
+- pixel-probe ratio in the suite falls as stage 1 lands: expect-pixel
+  reserved for claims about pixels (themes, marks, fades);
+- a reported bug becomes a failing script in one sitting, routinely;
+- the release walkthroughs are scripts with shots, regenerated and
+  therefore true;
+- an agent completes the canonical tasks over the serial lane against
+  real hardware — the demo that is also the product claim.
