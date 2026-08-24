@@ -4930,11 +4930,18 @@ tracker_run(int argc, char **argv)
         const char *mirror = getenv("TIKU_MOUNT");
 
         if (mirror != NULL && mirror[0] == '/' && mirror[1] != '\0') {
-            tiku_backend_t *at_root =
-                tiku_mount_route(app.backend, "/", NULL, 0);
+            /*
+             * Its OWN backend, not the one already at the root.  Sharing
+             * the object would make the two names one store as far as
+             * anything that asks "are these the same store" is concerned
+             * -- which is the question a copy between mounts turns on,
+             * and the whole thing this exists to put under a test.
+             */
+            tiku_backend_t *second = tiku_backend_posix_open();
 
-            if (at_root != NULL) {
-                (void)tiku_mount_add(app.backend, mirror, at_root, 0);
+            if (second == NULL ||
+                tiku_mount_add(app.backend, mirror, second, 1) != 0) {
+                tiku_backend_close(second);
             }
         }
     }
