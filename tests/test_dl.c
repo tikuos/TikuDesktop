@@ -25,6 +25,7 @@
 #include "tiku_gfx.h"
 #include "tiku_ui.h"
 #include "tiku_font.h"
+#include "tiku_iconpaint.h"
 
 static int fails;
 
@@ -419,6 +420,84 @@ main(void)
         printf("\nFAILURES\n");
         return 1;
     }
+    printf("\nwhat the list cannot carry, it says so about (TS-DL)\n");
+    {
+        /*
+         * A painter that writes pixels the vocabulary cannot express has
+         * to mark the list not-whole -- or a window goes down the wire
+         * looking finished, missing whatever it drew.
+         *
+         * Six of these did not, and the fault was invisible because a
+         * folder window also has a plain icon in it, and THAT one said
+         * so: the list was refused for the right reason by accident.
+         * Take the icon away -- a window whose only picture is a
+         * selected row, or a drag under a wash -- and it went.
+         *
+         * Every public painter of pictures, one at a time, on its own.
+         */
+        tiku_surface_t *p = surface_new();
+        tiku_surface_t *tiny = surface_new();
+        tiku_dl_t *m = tiku_dl_new();
+        tiku_rect_t r = { 2, 2, 20, 20 };
+
+        p->record = m;
+
+        tiku_dl_clear(m);
+        (void)tiku_icon_paint(p, "folder", 2, 2, 16);
+        check(tiku_dl_misses(m) > 0, "an icon says the list is not whole");
+
+        tiku_dl_clear(m);
+        (void)tiku_icon_paint_selected(p, "folder", 2, 2, 16);
+        check(tiku_dl_misses(m) > 0,
+              "and a SELECTED one does too -- it takes a fast path that "
+              "never reached the place the saying was done");
+        tiku_dl_clear(m);
+        (void)tiku_icon_paint_selected(p, "folder", 2, 2, 16);
+        check(tiku_dl_misses(m) > 0,
+              "including the second time, when the washed art is cached "
+              "and less of the work happens");
+
+        tiku_dl_clear(m);
+        tiku_paint_tint(p, r, TIKU_RGB(0, 0, 255), 0.5f);
+        check(tiku_dl_misses(m) > 0, "a wash over what is already there");
+
+        tiku_dl_clear(m);
+        tiku_paint_band(p, r, 0);
+        check(tiku_dl_misses(m) > 0, "the selection band");
+
+        tiku_dl_clear(m);
+        tiku_invert_frame(p, r);
+        check(tiku_dl_misses(m) > 0, "an inverted frame");
+
+        tiku_dl_clear(m);
+        tiku_veil(p, r, TIKU_RGB(0, 0, 0), 0.5f);
+        check(tiku_dl_misses(m) > 0, "a veil laid over the screen");
+
+        tiku_dl_clear(m);
+        tiku_blit(p, 2, 2, tiny);
+        check(tiku_dl_misses(m) > 0, "and a surface copied in");
+
+        tiku_dl_clear(m);
+        tiku_copy_bits(p, r, 4, 0);
+        check(tiku_dl_misses(m) > 0,
+              "and pixels moved about, which is not a drawing at all");
+
+        /* The other half of the claim: the ordinary commands still do
+         * NOT miss, or the whole vocabulary would be worthless. */
+        tiku_dl_clear(m);
+        tiku_fill(p, r, TIKU_RGB(1, 2, 3));
+        tiku_frame(p, r, TIKU_RGB(1, 2, 3));
+        tiku_hline(p, 2, 2, 8, TIKU_RGB(1, 2, 3));
+        check(tiku_dl_misses(m) == 0 && tiku_dl_count(m) == 3,
+              "while what the vocabulary CAN say is still said, and "
+              "still costs the list nothing");
+
+        p->record = NULL;
+        tiku_dl_free(m);
+        tiku_surface_free(p);
+        tiku_surface_free(tiny);
+    }
+
     printf("\nthe stream is the same picture, and a fraction of it\n");
     return 0;
 }

@@ -124,6 +124,38 @@ main(void)
                      "Ping") == 0,
               "MENUS crossed: the same struct is the wire format");
         {
+            /*
+             * The handshake goes BOTH ways now.
+             *
+             * A client said what it could do and the desktop never
+             * answered, so a client had no way to know whether the far
+             * end could play a command stream -- and sent one anyway.
+             * That is survivable only while both ends are built
+             * together: an op the far end has not got is stepped over
+             * (tiku_dl.h), so the window arrives missing whatever it
+             * drew, and the list still says it is whole.
+             */
+            uint32_t wid = 0;
+            tiku_event_t ev;
+            int cmd = 0, type = 0;
+
+            for (spins = 0; spins < 200; spins++) {
+                type = tiku_remote_read(&client, &wid, &ev, &cmd);
+                if (type == (int)TIKU_RMSG_WELCOME) {
+                    break;
+                }
+                (void)tiku_remote_poll(&listener);
+                usleep(10000);
+            }
+            check(type == (int)TIKU_RMSG_WELCOME,
+                  "the desktop answers a HELLO rather than only hearing "
+                  "one");
+            check((tiku_remote_peer_features(&client) &
+                   TIKU_FEAT_COMMAND_STREAM) != 0u,
+                  "and says it can play a stream, which is the thing a "
+                  "client has to know before it sends one");
+        }
+        {
             /* And back down: a pick.  The listener addresses sessions by
              * window; on an adopted line there is none yet, so speak to
              * the session's fd the way the desktop would after binding
