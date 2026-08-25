@@ -1,0 +1,90 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A line of a program, coloured by what its parts MEAN -- end to end,
+# through the application the person actually types into.
+#
+# The two pixels below were probed rather than guessed, and they are
+# GLYPH pixels: the ink a letter is drawn with, not chrome.  Each is
+# asserted twice, before and after, so what is proven is the CHANGE --
+# this stretch of the line stopped being ordinary ink and became the
+# shade the theme names for what it means.
+wait 14
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+note one line of TikuOS BASIC, typed into the editor a key at a time
+key 1
+wait 3
+key 0
+wait 3
+key space
+wait 3
+key P
+wait 3
+key R
+wait 3
+key I
+wait 3
+key N
+wait 3
+key T
+wait 3
+key space
+wait 3
+key A
+wait 12
+note until it is asked, the editor holds prose: every byte is the
+note document's own ink, because a name that says nothing about the
+note language is not a reason to colour anything
+expect-pixel 235 122 000000
+expect-pixel 276 118 000000
+note the editor offers the choice by name, and the row says which way
+note it goes -- a published row is a label and a command, and a
+note checkmark would have to be invented in the wire as well
+click 60 8
+wait 6
+expect-menu Colour as BASIC
+menu-pick Colour as BASIC
+wait 20
+note now the line number stands back: ordinary ink pulled halfway to
+note the page, which is the one derivation that survives a dark table
+expect-pixel 235 122 7f7f7f
+note and PRINT wears the shade the theme names for a word the
+note language reserves -- taken from the interpreter's own table
+expect-pixel 276 118 0000b0
+note the row keeps ONE name and wears a mark while it holds, rather
+note than renaming itself into what would read as a second command
+click 60 8
+wait 6
+expect-menu Colour as BASIC
+note and taking it again puts both stretches back to the document's own
+note ink -- the claim a one-way toggle cannot make
+menu-pick Colour as BASIC
+wait 20
+expect-pixel 235 122 000000
+expect-pixel 276 118 000000
+note and the editor is put away rather than left standing: a script
+note that leaks a running application poisons the one after it.  Its
+note tab first: the bar took the keyboard when its menu was opened, and
+note a key aimed at an application has to be aimed at its window.
+click-window Edit
+wait 6
+key Escape
+wait 8
+expect-title Edit
+note Escape in the question presses Cancel, the safe road: still standing
+key Escape
+wait 6
+expect-title Edit
+note asked again, Return presses the default and it goes
+key Escape
+wait 6
+key Return
+wait 60
+expect-no-title Edit
+quit

@@ -25,6 +25,8 @@
 #include "tiku_alert.h"
 #include "tiku_tabs.h"
 #include "tiku_slider.h"
+#include "tiku_syntax.h"
+#include "tiku_font.h"
 
 static int fails;
 static void check(int c, const char *w){ printf("  [%s] %s\n", c?"PASS":"FAIL", w); if(!c) fails++; }
@@ -87,6 +89,100 @@ int main(void){
     { tiku_alert_t a; tiku_alert_reset(&a);
       tiku_alert_open(&a,TIKU_ALERT_WARN,0,"Discard changes? Nothing saved them.","Cancel|Discard");
       RT("alert", tiku_alert_draw(&a,s,(tiku_rect_t){10,10,420,150})); }
+    /* A line of a program: several runs, each meaning something, drawn
+     * with one call and travelling as the runs it is made of.
+     *
+     * It fills its own ground first, and must: RT draws twice into the
+     * same surface, so anything ANTIALIASED against what is already
+     * there -- which is all text -- blends over itself the second time
+     * and stops matching a replay that drew it once.  Every widget above
+     * paints its ground for its own reasons and is idempotent by
+     * accident; a bare line of text is the case that shows the rule. */
+    { tiku_span_t sp[16];
+      int nsp = tiku_syntax_spans(TIKU_SYNTAX_BASIC, "10 PRINT \"hi\"",
+                                  sp, 16);
+      RT("styled line",
+         tiku_fill(s, (tiku_rect_t){0, 0, W, H}, TIKU_C_DOC);
+         tiku_ui_text_spans(s, tiku_font_plain(), 10, 30,
+                            "10 PRINT \"hi\"", sp, nsp)); }
+
+    printf("\nwhat a run means decides its ink, and the ink is what crosses\n");
+    {
+        /*
+         * Not "some colours appeared": the command carrying PRINT must
+         * carry the shade the theme names for a reserved word, and the
+         * command carrying the line number must carry the receded ink.
+         * A highlighter that painted every run the same would pass any
+         * check that only counted commands.
+         */
+        tiku_surface_t *s2 = tiku_surface_new(W, H, TIKU_C_DOC);
+        tiku_dl_t *dl2 = tiku_dl_new();
+        tiku_span_t sp[16];
+        int nsp = tiku_syntax_spans(TIKU_SYNTAX_BASIC, "10 PRINT \"hi\"",
+                                    sp, 16);
+        unsigned char wire[8192];
+        size_t wrote = 0u, at = 0u;
+        int saw_word = 0, saw_faint = 0, saw_str = 0, texts = 0;
+
+        s2->record = dl2;
+        tiku_ui_text_spans(s2, tiku_font_plain(), 10, 30, "10 PRINT \"hi\"",
+                           sp, nsp);
+        s2->record = NULL;
+        check(nsp >= 4, "the line is told apart into runs before it is drawn");
+        check(tiku_dl_flatten(dl2, wire, sizeof wire, &wrote) && wrote > 0u,
+              "and the drawing of it flattens onto the wire");
+        /* Walk the commands by hand: [u16 op][u16 len][payload], and for
+         * a text command the colour is a u32 at payload+4 and the string
+         * begins at payload+9. */
+        while (at + 4u <= wrote) {
+            unsigned op = (unsigned)wire[at] | ((unsigned)wire[at + 1] << 8);
+            unsigned len = (unsigned)wire[at + 2] |
+                           ((unsigned)wire[at + 3] << 8);
+            const unsigned char *pay = wire + at + 4;
+
+            if (at + 4u + len > wrote) {
+                break;
+            }
+            if (op == 6u && len > 9u) {          /* OP_TEXT */
+                tiku_rgb_t c = (tiku_rgb_t)pay[4] |
+                               ((tiku_rgb_t)pay[5] << 8) |
+                               ((tiku_rgb_t)pay[6] << 16) |
+                               ((tiku_rgb_t)pay[7] << 24);
+                const char *t = (const char *)pay + 9;
+
+                texts++;
+                if (strcmp(t, "PRINT") == 0 && c == tiku_ink(TIKU_INK_WORD)) {
+                    saw_word = 1;
+                }
+                if (strcmp(t, "10") == 0 && c == tiku_ink(TIKU_INK_FAINT)) {
+                    saw_faint = 1;
+                }
+                if (strcmp(t, "\"hi\"") == 0 &&
+                    c == tiku_ink(TIKU_INK_STR)) {
+                    saw_str = 1;
+                }
+            }
+            at += 4u + len;
+        }
+        check(texts >= 4,
+              "each run crosses as its own text command, the way every "
+              "other coloured thing on this desktop travels");
+        check(saw_word,
+              "the command carrying PRINT carries the shade the theme "
+              "names for a word the language reserves");
+        check(saw_faint,
+              "the one carrying the line number carries the receded ink, "
+              "which is derived and not named");
+        check(saw_str, "and the quoted text carries the quoted-text ink");
+        check(tiku_ink(TIKU_INK_WORD) != tiku_ink(TIKU_INK_PLAIN) &&
+              tiku_ink(TIKU_INK_FAINT) != tiku_ink(TIKU_INK_PLAIN) &&
+              tiku_ink(TIKU_INK_STR) != tiku_ink(TIKU_INK_WORD),
+              "and the three are three different shades -- a highlighter "
+              "that painted them alike would satisfy every check above");
+        tiku_dl_free(dl2);
+        tiku_surface_free(s2);
+    }
+
     printf("\nthe window, narrated from the wire alone\n");
     {
         /*

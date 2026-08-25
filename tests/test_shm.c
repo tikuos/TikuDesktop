@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include "tiku_remote.h"
+#include "tiku_dl.h"
 
 static int fails;
 
@@ -111,6 +112,45 @@ main(void)
     check(s->shown == 1, "the next frame lands in the OTHER buffer");
     check(shown != NULL && shown[0] == 0x00445566u,
           "and that is the one shown, so nothing is half drawn");
+
+    /*
+     * The two ways a window arrives, in one session -- which is what
+     * every real application does: its first frame goes as pixels
+     * (before the far end has said it can play a stream) and the rest go
+     * as what was DRAWN.
+     *
+     * The shared buffer and the played list are two different places,
+     * and something has to decide which one the window IS.  It used to
+     * be neither: whichever arrived, the shared buffer was shown -- so
+     * an application that switched to sending lists painted into memory
+     * nobody looked at, and its window stood at the last frame it had
+     * sent as pixels.  Frozen, silently, with the stream still saying
+     * every command had been played.
+     */
+    {
+        tiku_dl_t *dl = tiku_dl_new();
+
+        (void)tiku_dl_fill(dl, (tiku_rect_t){ 0, 0, 8, 8 },
+                           TIKU_RGB(0x77, 0x88, 0x99));
+        check(tiku_remote_draw(&client, id, dl, 8, 8) == 1,
+              "the same session then sends a window as what was DRAWN");
+        settle(&listener, 40);
+        shown = tiku_remote_pixels(s);
+        check(shown != NULL && (shown[0] & 0xffffffu) == 0x00778899u,
+              "and THAT is what the window shows -- not the shared "
+              "buffer it last painted, which is a frame ago");
+
+        /* And back: a session may go on sending pixels, and the newer
+         * arrival wins whichever kind it is. */
+        pixels[0] = 0x00aabbccu;
+        (void)tiku_remote_frame(&client, id, pixels, 8, 8);
+        settle(&listener, 40);
+        shown = tiku_remote_pixels(s);
+        check(shown != NULL && shown[0] == 0x00aabbccu,
+              "a frame after a list is shown in its turn, so the two "
+              "ways cannot deadlock each other");
+        tiku_dl_free(dl);
+    }
 
     check(tiku_remote_mapped(&listener) == 1,
           "the surface is held while the session is alive");
