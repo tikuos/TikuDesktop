@@ -156,8 +156,21 @@ with its marker absent.  test_dlcontrols now draws every recording
 control, sends it, plays it back and compares the surfaces byte for byte,
 which is the only form this stage's claim can be checked in.
 
-What remains for this stage is the READER: nothing yet consumes the
-stream as a tree.  The vocabulary is no longer the blocker.
+**Later the same day: the reader exists.**  tiku_dl_read() walks a
+flattened stream and hands back each command as the facts it carries;
+tiku_dl_narrate() turns a stream into plain lines -- 'button "Discard",
+the default', 'tabs: "Info" "Permissions" (current)', 'gauge at 42%' --
+with the paint skipped and no surface anywhere in the call.  The proof is
+test_dlcontrols' closing section: a window with an alert, tabs, a gauge,
+a field and a slider is narrated from the wire alone, and a label that
+never terminates stops the reader rather than sending it past the
+payload's end, which is the difference between a reader and a hazard the
+moment the stream comes from a wire.
+
+What remains is COMPOSITION, and it belongs to the earlier stages:
+plumbing narration to a conductor noun (stage 1's vocabulary), and the
+subscription that pushes a changed window to a remote reader (stage 2).
+The library half of this stage is done.
 
 
 

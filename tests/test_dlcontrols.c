@@ -87,6 +87,86 @@ int main(void){
     { tiku_alert_t a; tiku_alert_reset(&a);
       tiku_alert_open(&a,TIKU_ALERT_WARN,0,"Discard changes? Nothing saved them.","Cancel|Discard");
       RT("alert", tiku_alert_draw(&a,s,(tiku_rect_t){10,10,420,150})); }
+    printf("\nthe window, narrated from the wire alone\n");
+    {
+        /*
+         * The stage-4 claim, made good at the smallest honest size: a
+         * reader that never touches a surface takes the same bytes the
+         * pixels came from and says what the window SHOWS.  Every fact
+         * asserted below reaches the narration through tiku_dl_read,
+         * from the flattened stream, with no pixels consulted anywhere.
+         */
+        tiku_surface_t *sf = tiku_surface_new(W, H, TIKU_C_PANEL);
+        tiku_dl_t *dl = tiku_dl_new();
+        unsigned char wire[65536];
+        static char story[4096];
+        size_t wrote = 0;
+        tiku_alert_t a;
+        tiku_tabs_t t;
+        tiku_slider_t sl;
+
+        sf->record = dl;
+        tiku_alert_reset(&a);
+        tiku_alert_open(&a, TIKU_ALERT_WARN, 0,
+                        "Discard unsaved changes?", "Cancel|Discard");
+        tiku_alert_draw(&a, sf, (tiku_rect_t){ 10, 10, 420, 150 });
+        tiku_tabs_init(&t);
+        (void)tiku_tabs_add(&t, "Info");
+        (void)tiku_tabs_add(&t, "Permissions");
+        (void)tiku_tabs_select(&t, 1);
+        tiku_tabs_draw(&t, sf, (tiku_rect_t){ 10, 170, 200, 22 });
+        tiku_ui_gauge(sf, (tiku_rect_t){ 10, 200, 200, 10 }, 0.42f);
+        tiku_ui_textfield(sf, (tiku_rect_t){ 10, 220, 200, 20 },
+                          "renamed.txt", 11, TIKU_S_FOCUS);
+        tiku_slider_init(&sl, 0, 100, 65, 5);
+        tiku_slider_draw(&sl, sf, (tiku_rect_t){ 10, 250, 200, 16 });
+        sf->record = NULL;
+
+        check(tiku_dl_flatten(dl, wire, sizeof wire, &wrote) && wrote > 0,
+              "narrate: the window flattens");
+        (void)tiku_dl_narrate(wire, wrote, story, sizeof story);
+        check(strstr(story, "a warning") != NULL,
+              "narrate: the alert's kind arrives as a word, not a disc");
+        check(strstr(story, "text \"Discard unsaved changes?\"") != NULL,
+              "narrate: the question itself is readable");
+        check(strstr(story, "button \"Discard\", the default") != NULL,
+              "narrate: the default button says it is the default");
+        check(strstr(story, "button \"Cancel\"") != NULL,
+              "narrate: and the safe road is listed beside it");
+        check(strstr(story,
+              "tabs: \"Info\" \"Permissions\" (current)") != NULL,
+              "narrate: which tab of which names is current");
+        check(strstr(story, "gauge at 42%") != NULL,
+              "narrate: the gauge is its number");
+        check(strstr(story, "text field \"renamed.txt\", focused") != NULL,
+              "narrate: the field, what is typed in it, and the focus");
+        check(strstr(story, "slider at 65 of 0..100") != NULL,
+              "narrate: the slider is a value on its scale");
+        {
+            /* A button whose label never terminates: thirteen bytes of
+             * payload and no NUL among them.  Read from a wire, that is
+             * an attack or a corruption; either way the answer is to
+             * STOP, not to walk past the payload's end reading whatever
+             * memory says next. */
+            unsigned char bad[4 + 13];
+            size_t bat = 0;
+            tiku_dl_fact_t bf;
+
+            bad[0] = 19; bad[1] = 0;        /* the button op */
+            bad[2] = 13; bad[3] = 0;        /* thirteen of payload */
+            memset(bad + 4, 'X', 13);       /* and no terminator */
+            check(!tiku_dl_read(bad, sizeof bad, &bat, &bf),
+                  "narrate: a label with no end stops the reader rather "
+                  "than sending it past the payload");
+        }
+        check(strstr(story, "FILL") == NULL &&
+              strstr(story, "fill") == NULL,
+              "narrate: the paint is not in the story");
+
+        tiku_dl_free(dl);
+        tiku_surface_free(sf);
+    }
+
     printf("\n%s\n", fails?"FAILURES":"the stream is the window");
     return fails?1:0;
 }
