@@ -18,4 +18,6 @@ key c ctrl
 wait 3
 key v ctrl
 expect-told a.txt copy
+note and the operation's own lifecycle has come back to rest
+expect-operation idle
 quit

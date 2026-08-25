@@ -295,3 +295,42 @@ tiku_trk_progress_show_speed(int64_t since_open)
     at = since_open % cycle;
     return (at < TIKU_TRK_PROGRESS_SPEED_US);
 }
+
+size_t
+tiku_trk_progress_say(const tiku_trk_progress_win_t *p, char *out,
+                      size_t max)
+{
+    size_t used = 0u;
+    int i;
+
+    if (out == NULL || max == 0u) {
+        return 0u;
+    }
+    out[0] = '\0';
+    if (p == NULL || !p->open) {
+        return (size_t)snprintf(out, max, "idle");
+    }
+    for (i = 0; i < TIKU_TRK_PROGRESS_ROWS; i++) {
+        const tiku_trk_progress_row_t *row = &p->row[i];
+        const char *slash;
+
+        if (!row->used) {
+            continue;
+        }
+        /* The leaf, not the path: the fact is WHAT is being copied and
+         * how far along, and a full path would drown the count. */
+        slash = strrchr(row->current, '/');
+        used += (size_t)snprintf(out + used,
+                                 (used < max) ? max - used : 0u,
+                                 "%s%s, %d of %d|", row->caption,
+                                 (slash != NULL) ? slash + 1 : row->current,
+                                 row->done, row->total);
+        if (used >= max) {
+            break;
+        }
+    }
+    if (used == 0u) {
+        used = (size_t)snprintf(out, max, "idle");
+    }
+    return used;
+}

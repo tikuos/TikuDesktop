@@ -1,0 +1,18 @@
+# shell: both
+# The operation's own lifecycle is a fact: idle, then the job by
+# caption, current leaf and count, then idle again.  The mid-flight
+# claim is safe HERE because the in-process driver is turn-locked --
+# the conducted lane, which races a real clock, claims only the
+# endpoints (told.script).
+wait 12
+expect-operation idle
+key a ctrl
+wait 3
+key c ctrl
+wait 3
+key v ctrl
+note mid-flight the job speaks its count -- the one phrase every
+note caption shares and idle never says
+expect-operation of
+expect-operation idle
+quit

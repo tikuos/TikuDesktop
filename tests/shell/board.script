@@ -1,0 +1,15 @@
+# shell: desktop
+# mount: /devices/board1
+# open: /devices/board1/tmp/trk_script
+# Stage 5's first clause, enacted: the canonical stage-1 asks run
+# against a DEVICE MOUNT, unchanged.  The window is a board's, the rows
+# are a board's files, the narration and the path reads route through
+# the namespace -- and not one line below is spelled differently than
+# it would be for a local folder.
+wait 14
+expect-title trk_script
+expect-narrate a.txt
+expect-control scrollbar
+expect-read /devices/board1/tmp/trk_script/a.txt hi
+expect-read /devices/board1/tmp/trk_script b.txt
+quit

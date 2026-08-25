@@ -1836,6 +1836,25 @@ script_say(void *ctx, const char *noun, char *out, size_t max)
         (void)script_recite(a, out, max, 1);
         return 1;
     }
+    if (strcmp(noun, "operation") == 0) {
+        /* This front-end keeps no progress window; the engine itself is
+         * asked, so the noun cannot say idle while a job runs. */
+        if (a->fs != NULL && tiku_fs_busy(a->fs)) {
+            const tiku_progress_t *pr = tiku_fs_progress(a->fs);
+            const char *slash = strrchr(pr->current, '/');
+
+            snprintf(out, max, "%s%s, %d of %d|",
+                     tiku_trk_progress_caption(pr->op),
+                     (slash != NULL) ? slash + 1 : pr->current,
+                     pr->done + pr->skipped, pr->total);
+        } else {
+            snprintf(out, max, "idle");
+        }
+        return 1;
+    }
+    if (noun[0] == '/') {
+        return tiku_backend_text(a->backend, noun, out, max);
+    }
     if (strcmp(noun, "alert") == 0) {
         tiku_alert_t *alert =
             tiku_trk_status_overlay_alert(&a->status_overlay);

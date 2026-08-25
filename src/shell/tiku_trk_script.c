@@ -30,7 +30,7 @@ typedef enum {
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_FONT,
-    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_TOLD, OP_EXPECT_MOUNTS, OP_EXPECT_CONTROL, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_TOLD, OP_EXPECT_MOUNTS, OP_EXPECT_CONTROL, OP_EXPECT_READ, OP_EXPECT_OPERATION, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_WRITE, OP_SAME_AS_REDRAW, OP_QUIT
 } sc_op_t;
 
@@ -443,6 +443,19 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-control") == 0 && n >= 2) {
             st->op = OP_EXPECT_CONTROL;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-read") == 0 && n >= 3) {
+            /* The path first, then the substring: a path is one word by
+             * construction, a value is not. */
+            st->op = OP_EXPECT_READ;
+            snprintf(st->text2, sizeof st->text2, "%s", w[1]);
+            rest(w, n, 2, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-operation") == 0 && n >= 2) {
+            st->op = OP_EXPECT_OPERATION;
+            rest(w, n, 1, st->text, sizeof st->text);
+            /* Smaller than expect-told's budget on purpose: the engine
+             * is asked directly, so there is no notification lag to
+             * outwait -- only the job itself, at its stepped pace. */
+            st->count = 400;
         } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
             st->op = OP_EXPECT_TOLD;
             rest(w, n, 1, st->text, sizeof st->text);
@@ -1079,6 +1092,46 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, strstr(text, cur->text) != NULL, noun, cur->text);
         if (s->fails > 0 && text[0] != '\0') {
             printf("         (%s: \"%s\")\n", noun, text);
+        }
+        return 1;
+    }
+    case OP_EXPECT_READ: {
+        /* The namespace as a noun table: the path is asked through the
+         * same say() the conductor answers with. */
+        char text[2048];
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, cur->text2, text, sizeof text);
+        }
+        verdict(s, strstr(text, cur->text) != NULL, cur->text2, cur->text);
+        if (s->fails > 0 && text[0] != '\0') {
+            printf("         (read: \"%s\")\n", text);
+        }
+        return 1;
+    }
+    case OP_EXPECT_OPERATION: {
+        /* Eventually, bounded: a job's lifecycle takes turns to reach
+         * any given state, and a driver that must catch it mid-flight
+         * would be racing the clock this harness refuses to race. */
+        char text[2048];
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, "operation", text, sizeof text);
+        }
+        if (strstr(text, cur->text) != NULL) {
+            verdict(s, 1, "operation says", cur->text);
+            return 1;
+        }
+        if (cur->count-- > 0) {
+            s->cursor--;
+            s->waiting = 1;
+            return 1;
+        }
+        verdict(s, 0, "operation says", cur->text);
+        if (text[0] != '\0') {
+            printf("         (operation: \"%s\")\n", text);
         }
         return 1;
     }

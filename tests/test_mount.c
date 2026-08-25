@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_fs.h"
 #include "tiku_mount.h"
 
 static int fails;
@@ -477,6 +478,22 @@ main(void)
               "and it answers for itself, by the name it was given -- "
               "which is what lets a caller ask without knowing whether "
               "there is a namespace in the way at all");
+    }
+
+    printf("\nthe namespace is a noun table (TS-MOUNT)\n");
+    {
+        char text[256];
+
+        check(tiku_backend_text(r, "/devices/board1", text,
+                                sizeof text) == 1 &&
+              strstr(text, "mem|") != NULL, "TS-MOUNT",
+              "a mounted device's root reads as its children by name -- "
+              "the device idiom as a text answer");
+        check(tiku_backend_text(r, "/devices/board9/x", text,
+                                sizeof text) == 0 && text[0] == '\0',
+              "TS-MOUNT",
+              "a path nothing serves is refused and reads as nothing, "
+              "never as something");
     }
 
     r->ops->close(r);

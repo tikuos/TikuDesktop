@@ -1,0 +1,9 @@
+# shell: both
+# The namespace is a noun table: any path the mount table serves is
+# answerable as text -- a node's value, a container's children -- in
+# both drivers, and watchable as ~/path through the same mechanism as
+# every other fact.
+wait 5
+expect-read /tmp/trk_script/a.txt hi
+expect-read /tmp/trk_script b.txt
+quit

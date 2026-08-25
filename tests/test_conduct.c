@@ -407,6 +407,78 @@ main(void)
         (void)unlink(gsock);
     }
 
+    printf("\na session's spend is bounded (stage 3)\n");
+    {
+        tiku_conduct_t meter;
+        const char *qsock = "/tmp/trk_conduct_quota.sock";
+        pid_t qkid;
+        int qstatus = 0;
+
+        (void)unlink(qsock);
+        check(tiku_conduct_listen(&meter, qsock, NULL, fake_inject,
+                                       fake_pixel, fake_text) == 0,
+              "a shell can meter its channel");
+        tiku_conduct_quota(&meter, 3);
+        (void)fflush(stdout);
+        qkid = fork();
+        if (qkid == 0) {
+            tiku_conduct_client_t d;
+            char text[TIKU_CONDUCT_TEXT];
+            int bad = 0, k;
+
+            if (tiku_conduct_connect(&d, qsock, 2000) != 0) {
+                _exit(9);
+            }
+            for (k = 0; k < 3; k++) {
+                if (!tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0,
+                                             "title", NULL, text,
+                                             sizeof text)) {
+                    printf("  [FAIL] the %dth question within the quota "
+                           "is answered\n", k + 1);
+                    bad++;
+                }
+            }
+            if (bad == 0) {
+                printf("  [PASS] every question within the quota is "
+                       "answered\n");
+            }
+            if (tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
+                                        NULL, text, sizeof text)) {
+                printf("  [FAIL] the question past the quota is cut "
+                       "off, not rationed\n");
+                bad++;
+            } else {
+                printf("  [PASS] the question past the quota is cut "
+                       "off, not rationed\n");
+            }
+            tiku_conduct_disconnect(&d);
+            (void)fflush(stdout);
+            _exit(bad);
+        }
+        for (turns = 0; turns < 3000; turns++) {
+            struct timespec ts;
+
+            (void)tiku_conduct_poll(&meter);
+            if (waitpid(qkid, &qstatus, WNOHANG) == qkid) {
+                qkid = -1;
+                break;
+            }
+            ts.tv_sec = 0;
+            ts.tv_nsec = 5 * 1000 * 1000;
+            (void)nanosleep(&ts, NULL);
+        }
+        if (qkid > 0) {
+            printf("  [FAIL] the quota driver never finished\n");
+            fails++;
+            (void)kill(qkid, SIGKILL);
+            (void)waitpid(qkid, &qstatus, 0);
+        }
+        check(WIFEXITED(qstatus) && WEXITSTATUS(qstatus) == 0,
+              "the cap holds at exactly the number it names");
+        tiku_conduct_shutdown(&meter);
+        (void)unlink(qsock);
+    }
+
     if (fails > 0) {
         printf("\nFAILURES\n");
         return 1;

@@ -150,6 +150,21 @@ the desktop's conduct_text -- the conductor's noun table answering the
 script engine too, which is principle 3 made literal.  What remains:
 an operation's own lifecycle as a noun, and `~path` riding the channel.
 
+**2026-08-26, later: both exist.**  "operation" answers the running
+job's own lifecycle -- "idle", or caption, current leaf and count --
+from the progress rows in the desktop and from the engine itself in the
+browser front-end, which cannot then say idle while a job runs;
+ops.script pins idle -> mid-flight count -> idle turn-locked in both
+front-ends, and told.script claims the conducted endpoint (a job comes
+back to rest) without racing a real clock.  And any name starting with
+'/' is now the NAMESPACE itself as a noun table: tiku_backend_text()
+answers a node's value or a container's children through whatever
+backend serves the path -- which through /devices/... is a board, and
+is the `~path` device idiom riding this channel with no new mechanism
+at all (watch any path like any other fact).  read.script proves the
+path form in every lane; test_mount proves the device routing and that
+a path nothing serves reads as nothing, never as something.
+
 ### Stage 3 — Identity and grants
 
 Prerequisite for any non-local reach, and for calling this an interface
@@ -183,6 +198,16 @@ the tty lane stays tokenless and proves the other one.
 Still open here: per-session quotas, and carrying the same principal
 into the window session -- both wait for the session-identity work they
 are meant to share.
+
+**2026-08-26, later: the quota exists.**  tiku_conduct_quota() caps a
+session's INJECTs and QUERYs together; past the cap the peer is CLOSED
+rather than rationed, because a driver that has to be rationed is
+broken, and a runaway one should cost a bounded amount of shell and
+then cost nothing.  test_conduct proves the cap holds at exactly the
+number it names, and the cut-off mutation fails it by name.  What still
+waits for the session-identity work is only the SHARED principal: the
+window session (tiku_remote) already carries a name in its own HELLO,
+and folding the two into one identity is that work's job, done once.
 
 ### Stage 4 — The structured screen as a feed
 
@@ -289,6 +314,17 @@ separate management plane to build or secure.
 
 Done when: the canonical tasks of stage 1 run against a device mount,
 unchanged, and a board that stops answering costs its own mount only.
+
+**2026-08-26: the first clause is met.**  board.script opens a window
+ON a mount (# mount: /devices/board1), and the canonical asks -- title,
+narration, controls, path reads through the namespace -- run against it
+spelled exactly as they are for a local folder, in the in-process lane
+and conducted over the named socket.  The second clause is genuinely
+blocked on the storage plan's non-blocking sessions: a board that stops
+answering can today stall the shell that mounted it, and no test here
+can honestly claim otherwise until that lands.  Fleet-at-N is then
+driver-side composition, which principle 1 already places outside the
+product.
 
 ## Non-goals, so they do not creep
 

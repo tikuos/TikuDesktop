@@ -19,7 +19,7 @@ devbin="$root/build/dev"
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
 # trk-conduct speaks (see tests/trk_conduct.c).
-conducted="defaultbar.script narrate.script told.script mounts.script calert.script"
+conducted="defaultbar.script narrate.script told.script mounts.script calert.script read.script board.script"
 
 # The rescue path first: -reset-settings must move the settings and every
 # device state aside WITHOUT drawing a pixel, for the day a setting makes
@@ -233,6 +233,9 @@ PYBG
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
             calert.script) echo other > "$work/sub/a.txt" ;;
+            ops.script)    for gi in $(seq 1 400); do
+                               echo x > "$work/g$gi.txt"
+                           done ;;
             completionw.script)
                 mkdir -p "$deskhome/Documents"
                 echo q > "$deskhome/recipes.query" ;;
@@ -486,14 +489,22 @@ for s in $conducted; do
     # Named on purpose (stage 3): the socket lane requires a token, so
     # every conducted script also proves the named-principal path; the
     # tty lane below stays tokenless and proves the other one.
+    cmount=$(sed -n 's/^# mount: //p' "$cs" | head -1)
+    copen=$(sed -n 's/^# open: //p' "$cs" | head -1)
+    # Through env(1): a word an expansion produced is not an assignment
+    # to the shell, and a lane that silently ran nothing would read as a
+    # driver failure on a healthy driver.
     ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
-        "$root/build/TikuDesktop" "$work" -conduct "$csock" \
+        env ${cmount:+TIKU_MOUNT=$cmount} \
+        "$root/build/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
         -conduct-token trk-drive > /dev/null 2>&1 & )
     "$root/build/dev/trk-conduct" -s "$csock" -n conducted -k trk-drive "$cs" ||
         fails=$((fails+1))
     # By name, not by pattern: a -f pattern matches the shell running
-    # this script too, whose command line contains it.
-    pkill -x desktop > /dev/null 2>&1
+    # this script too, whose command line contains it.  The name is the
+    # BINARY's -- "desktop" here killed nothing, and every conducted
+    # script left its shell running for the rest of the suite.
+    pkill -x TikuDesktop > /dev/null 2>&1
     rm -rf "$chome" "$csock"
 
     # And again over a LINE: the driver makes a pty pair, starts the same
@@ -510,10 +521,12 @@ for s in $conducted; do
     echo hi > "$work/c.txt"
     echo other > "$work/sub/a.txt"
     DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
+        env ${cmount:+TIKU_MOUNT=$cmount} \
         "$root/build/dev/trk-conduct" \
-        -n "over a line" "$cs" -- "$root/build/TikuDesktop" "$work" ||
+        -n "over a line" "$cs" -- "$root/build/TikuDesktop" \
+        "${copen:-$work}" ||
         fails=$((fails+1))
-    pkill -x desktop > /dev/null 2>&1
+    pkill -x TikuDesktop > /dev/null 2>&1
     rm -rf "$chome"
 done
 

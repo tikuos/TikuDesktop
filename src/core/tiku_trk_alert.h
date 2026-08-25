@@ -100,6 +100,15 @@ typedef struct {
 void tiku_trk_progress_reset(tiku_trk_progress_win_t *p);
 
 /**
+ * @brief The window's jobs as one line of text: "idle" when nothing
+ *        runs, else each row as caption, current leaf and count --
+ *        the operation's own lifecycle as a fact a driver can ask for
+ *        (and watch: ~operation is "the copy finished" as a push).
+ */
+size_t tiku_trk_progress_say(const tiku_trk_progress_win_t *p,
+                             char *out, size_t max);
+
+/**
  * @brief Whether a job of @p op over @p items should show a window at all.
  */
 int tiku_trk_progress_wanted(tiku_op_t op, int items);

@@ -4772,6 +4772,21 @@ conduct_text(void *context, const char *name, char *out, size_t max)
                                            out, max);
         return 1;
     }
+    if (strcmp(name, "operation") == 0) {
+        /* The running job's own lifecycle: "idle", or each job's
+         * caption, current leaf and count.  As ~operation, "the copy
+         * finished" is a push -- the fact, not the window about it. */
+        (void)tiku_trk_progress_say(progress_model(app), out, max);
+        return 1;
+    }
+    if (name[0] == '/') {
+        /* The namespace itself is a noun table: any path the shell's
+         * mount table serves, answered as a node's value or a
+         * container's children -- and through /devices/... that is a
+         * BOARD's file or sensor, which is the device idiom riding
+         * this channel.  ~/path watches it like any other fact. */
+        return tiku_backend_text(app->backend, name, out, max);
+    }
     if (strcmp(name, "narrate") == 0) {
         /* The focused window, said from its own display list -- the
          * reader's door of AGENT-SURFACE stage 4: a driver that has

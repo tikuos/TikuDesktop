@@ -27,7 +27,8 @@
  *   expect-menu <substring>      expect-status <substring>
  *   expect-narrate <substring>  expect-told <substring>
  *   expect-alert <substring>     expect-mounts <substring>
- *   expect-control <substring>
+ *   expect-control <substring>   expect-read <path> <substring>
+ *   expect-operation <substring>
  *   expect-count <substring>     quit
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -438,6 +439,32 @@ main(int argc, char **argv)
             (void)ask_text(&client, noun, text, sizeof text);
             snprintf(what, sizeof what, "%s says %s", noun, arg);
             verdict(strstr(text, arg) != NULL, what, text);
+        } else if (strcmp(w[0], "expect-read") == 0 && n >= 3) {
+            /* Any path the shell's namespace serves, as text. */
+            char what[LINE_MAX_CHARS];
+
+            rest(w, n, 2, arg, sizeof arg);
+            (void)ask_text(&client, w[1], text, sizeof text);
+            snprintf(what, sizeof what, "%s says %s", w[1], arg);
+            verdict(strstr(text, arg) != NULL, what, text);
+        } else if (strcmp(w[0], "expect-operation") == 0 && n >= 2) {
+            /* Eventually, bounded: ask again until the job's lifecycle
+             * reaches the asked state or the clock runs out. */
+            char what[LINE_MAX_CHARS];
+            int hit = 0, waited;
+
+            rest(w, n, 1, arg, sizeof arg);
+            for (waited = 0; waited < 4 * TIKU_CONDUCT_ANSWER_MS;
+                 waited += 100) {
+                (void)ask_text(&client, "operation", text, sizeof text);
+                if (strstr(text, arg) != NULL) {
+                    hit = 1;
+                    break;
+                }
+                turn(1);
+            }
+            snprintf(what, sizeof what, "operation says %s", arg);
+            verdict(hit, what, text);
         } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
             /* Being told, not asking again.  The first use subscribes
              * ~narrate and may already be answered by the current text;
