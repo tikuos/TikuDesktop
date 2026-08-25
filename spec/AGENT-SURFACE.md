@@ -119,6 +119,26 @@ wait-loop, and a mutation that drops the notice is caught by a test
 that would otherwise hang (bounded, so it FAILS rather than hangs —
 the harness's own rule).
 
+**2026-08-25: met, on the fact stage 4 needed first.**  QUERY "~name"
+is the watched form of any text noun the shell answers: it answers the
+current value AND registers the watch, and from then on the shell
+speaks first — a change is pushed as a TOLD frame on the same stream,
+at most once per interval, for as long as the peer lasts and no longer.
+The channel owns all of it (tiku_conduct.c): the shell above supplied
+nothing new, which is the point — being told is composed from the facts
+the shell already says.  expect-told spells the claim in both drivers:
+the conducted one subscribes ~narrate once and then only listens; the
+in-process one re-asks each turn under a turn budget, so the same
+script line is a push in one lane and a bounded poll in the other.
+told.script is the done-when sentence enacted: a copy runs to its
+finish with NO wait line between the paste and the claim.  The
+dropped-notice mutation fails test_conduct by name and fails the
+conducted lane in seconds, bounded, exactly as this section demands.
+
+Not yet carried up from this stage: watches on facts beyond the text
+nouns (an alert appearing, a mount arriving, an operation's own
+lifecycle), and the `~path` device idiom itself riding this channel.
+
 ### Stage 3 — Identity and grants
 
 Prerequisite for any non-local reach, and for calling this an interface
@@ -198,8 +218,12 @@ the bookkeeping would tell the next real frame its stale pixels are
 current.  Mutations for the noun, the bypass and the confession each
 fail a named check.
 
-Still open from this stage: the stage-2 changed-window subscription
-(being told, rather than asking again).
+**2026-08-25, again: the subscription exists** — QUERY "~narrate"
+(stage 2's mechanism, above) watches the window, and a changed window
+is pushed to the reader as a TOLD frame.  Both halves of this stage's
+composition are now real; what the feed still is not is a TREE — a
+reader gets the narrated lines, not a structure to walk, and no
+consumer has yet asked for one.
 
 
 

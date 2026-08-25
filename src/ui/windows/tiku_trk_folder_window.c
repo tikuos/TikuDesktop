@@ -1074,7 +1074,12 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
      * has to be told which rows a fill took with it, because every fill
      * here is a damage rectangle and every row a damage rectangle touches
      * is painted below in the same frame. */
-    slide = tiku_trk_poseview_repaint_take_slide(folder->view, &slide_y);
+    /* An observation takes nothing: the slide is a repaint the SHOWN
+     * frame is owed, and a narration that drained it would cost that
+     * frame its carry. */
+    slide = (surface->record == NULL)
+        ? tiku_trk_poseview_repaint_take_slide(folder->view, &slide_y)
+        : 0;
     render->ndamage = (!icons && paint != surface && folder->kept_ready)
                           ? tiku_trk_poseview_repaint_take(folder->view,
                                 render->damage, TIKU_TRK_REPAINT_MAX)

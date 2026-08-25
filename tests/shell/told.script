@@ -1,0 +1,21 @@
+# shell: both
+# Stage 2, on the fact stage 4 needed first: the window CHANGES and the
+# reader is told.  The conducted driver subscribes on its first
+# expect-told and after that only listens -- the shell speaks first.
+# The in-process driver composes the same bounded claim by asking each
+# turn; the same file proves it twice, two ways.
+#
+# The change is the spec's own example: a copy runs to its finish, and
+# there is no wait line between the paste and the claim -- waiting on
+# "the copy finished" without a wait-loop is exactly what this stage
+# exists to remove.
+wait 12
+expect-told a.txt
+note the watch stands; a copy now runs to its finish
+key a ctrl
+wait 3
+key c ctrl
+wait 3
+key v ctrl
+expect-told a.txt copy
+quit

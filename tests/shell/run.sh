@@ -19,7 +19,7 @@ devbin="$root/build/dev"
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
 # trk-conduct speaks (see tests/trk_conduct.c).
-conducted="defaultbar.script narrate.script"
+conducted="defaultbar.script narrate.script told.script"
 
 # The rescue path first: -reset-settings must move the settings and every
 # device state aside WITHOUT drawing a pixel, for the day a setting makes

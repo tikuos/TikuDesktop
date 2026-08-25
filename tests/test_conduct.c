@@ -63,12 +63,20 @@ fake_pixel(void *ctx, int x, int y)
     return (unsigned)((x << 8) ^ y) & 0xffffffu;
 }
 
+/* A fact that will CHANGE while the driver watches: the shell flips it
+ * mid-loop, and the driver must hear about it without asking again. */
+static const char *song = "quiet";
+
 static int
 fake_text(void *ctx, const char *name, char *out, size_t max)
 {
     (void)ctx;
     if (strcmp(name, "title") == 0) {
         snprintf(out, max, "Over the cable");
+        return 1;
+    }
+    if (strcmp(name, "song") == 0) {
+        snprintf(out, max, "%s", song);
         return 1;
     }
     return 0;                   /* every other name is unknown here */
@@ -144,6 +152,53 @@ drive(int fd)
                "than answered with something\n");
     }
 
+    text[0] = '\0';
+    if (!tiku_conduct_query(&driver, TIKU_CQ_TEXT, 0, 0, "~song",
+                                 NULL, text, sizeof text) ||
+        strcmp(text, "quiet") != 0) {
+        printf("  [FAIL] a watched name answers its current value\n");
+        bad++;
+    } else {
+        printf("  [PASS] a watched name answers its current value\n");
+    }
+
+    if (tiku_conduct_query(&driver, TIKU_CQ_TEXT, 0, 0, "~no-such-name",
+                                 NULL, text, sizeof text)) {
+        printf("  [FAIL] a watch on a name the shell cannot say is "
+               "refused, the way the name itself is\n");
+        bad++;
+    } else {
+        printf("  [PASS] a watch on a name the shell cannot say is "
+               "refused, the way the name itself is\n");
+    }
+
+    {
+        char who[TIKU_CONDUCT_ARG];
+        char said[TIKU_CONDUCT_TEXT];
+
+        /* The driver now goes silent.  The next thing on the wire must
+         * be the shell speaking first -- the whole point of stage 2. */
+        if (!tiku_conduct_told(&driver, who, sizeof who, said,
+                                    sizeof said, 4000) ||
+            strcmp(who, "song") != 0 || strcmp(said, "loud") != 0) {
+            printf("  [FAIL] the changed fact is PUSHED to the driver, "
+                   "named and current, unasked\n");
+            bad++;
+        } else {
+            printf("  [PASS] the changed fact is PUSHED to the driver, "
+                   "named and current, unasked\n");
+        }
+        /* And a quiet watch stays quiet: no change, no frame.  Bounded
+         * short -- this waits out the full window to prove silence. */
+        if (tiku_conduct_told(&driver, who, sizeof who, said,
+                                   sizeof said, 400)) {
+            printf("  [FAIL] an unchanged fact is not spoken of again\n");
+            bad++;
+        } else {
+            printf("  [PASS] an unchanged fact is not spoken of again\n");
+        }
+    }
+
     tiku_conduct_disconnect(&driver);
     return bad;
 }
@@ -196,10 +251,16 @@ main(void)
           "the shell speaks the channel over a line it was handed -- no "
           "socket, no listening, just the cable");
     /* The shell's turn, over and over, exactly as its main loop takes it. */
-    for (turns = 0; turns < 600; turns++) {
+    for (turns = 0; turns < 1600; turns++) {
         struct timespec ts;
 
         (void)tiku_conduct_poll(&shell);
+        if (shell.subs > 0 && strcmp(song, "quiet") == 0) {
+            /* Flipped on the FACT of the watch, not on a clock: the
+             * quiet answer is already on the wire when subs shows, so
+             * this cannot race the subscription on a slow machine. */
+            song = "loud";
+        }
         if (waitpid(kid, &status, WNOHANG) == kid) {
             kid = -1;
             break;

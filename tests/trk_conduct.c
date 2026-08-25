@@ -25,7 +25,7 @@
  *   expect-pixel <x> <y> <rrggbb>
  *   expect-title <substring>     expect-no-title <substring>
  *   expect-menu <substring>      expect-status <substring>
- *   expect-narrate <substring>
+ *   expect-narrate <substring>  expect-told <substring>
  *   expect-count <substring>     quit
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -281,6 +281,7 @@ main(int argc, char **argv)
     pid_t kid = -1;
     FILE *f;
     char line[LINE_MAX_CHARS];
+    int watching = 0;
     int i;
 
     for (i = 1; i < argc; i++) {
@@ -416,6 +417,42 @@ main(int argc, char **argv)
                 snprintf(what, sizeof what, "menu offers %s", arg);
                 verdict(strstr(text, arg) != NULL, what, text);
             }
+        } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
+            /* Being told, not asking again.  The first use subscribes
+             * ~narrate and may already be answered by the current text;
+             * after that the driver only LISTENS, so what this proves is
+             * the push: the shell spoke first.  Bounded, because a
+             * driver that can hang reports nothing and someone waits. */
+            char what[LINE_MAX_CHARS];
+            int hit = 0;
+
+            rest(w, n, 1, arg, sizeof arg);
+            snprintf(what, sizeof what, "told: the window comes to say %s",
+                     arg);
+            if (!watching) {
+                watching = ask_text(&client, "~narrate", text,
+                                    sizeof text);
+                hit = watching && strstr(text, arg) != NULL;
+            }
+            if (!hit) {
+                char from[TIKU_CONDUCT_ARG];
+                int budget;
+
+                /* Roomier than one answer's wait: what is listened for
+                 * here is real work finishing at the shell's own pace --
+                 * a stepped copy, a watch interval -- not a lookup.
+                 * Still bounded, still a failure someone sees. */
+                for (budget = 4 * TIKU_CONDUCT_ANSWER_MS;
+                     !hit && budget > 0; budget -= 200) {
+                    if (!tiku_conduct_told(&client, from, sizeof from,
+                                                text, sizeof text,
+                                                budget)) {
+                        break;
+                    }
+                    hit = strstr(text, arg) != NULL;
+                }
+            }
+            verdict(hit, what, text);
         } else if (strcmp(w[0], "expect-narrate") == 0 && n >= 2) {
             /* The focused window from its display list alone: the driver
              * has never seen a pixel of it, which is the stage-4 claim in

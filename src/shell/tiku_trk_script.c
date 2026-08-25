@@ -30,7 +30,7 @@ typedef enum {
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_FONT,
-    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_TOLD, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_WRITE, OP_SAME_AS_REDRAW, OP_QUIT
 } sc_op_t;
 
@@ -437,6 +437,10 @@ tiku_trk_script_open(const char *path)
         } else if (strcmp(w[0], "expect-narrate") == 0 && n >= 2) {
             st->op = OP_EXPECT_NARRATE;
             rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
+            st->op = OP_EXPECT_TOLD;
+            rest(w, n, 1, st->text, sizeof st->text);
+            st->count = 2000;    /* the turn budget: bounded, never hung */
         } else if (strcmp(w[0], "expect-no-menu") == 0) {
             st->op = OP_EXPECT_NO_MENU;
         } else if ((strcmp(w[0], "press-desk") == 0 ||
@@ -1053,6 +1057,33 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, st != NULL && st->menu != NULL && st->menu[0] == '\0',
                 "menu:", "nothing");
         return 1;
+    case OP_EXPECT_TOLD: {
+        /* Being told, composed the only way an in-process driver can:
+         * ask again each turn, bounded.  The conducted driver spells
+         * this same line as a real push from the shell; the CLAIM --
+         * the window comes to say it within the bound -- is what the
+         * two of them prove twice, two ways. */
+        char lines[2048];
+
+        lines[0] = '\0';
+        if (st != NULL && st->narrate != NULL) {
+            (void)st->narrate(st->pose_ctx, lines, sizeof lines);
+        }
+        if (strstr(lines, cur->text) != NULL) {
+            verdict(s, 1, "the window comes to say", cur->text);
+            return 1;
+        }
+        if (cur->count-- > 0) {
+            s->cursor--;        /* the same line again, next turn */
+            s->waiting = 1;
+            return 1;
+        }
+        verdict(s, 0, "the window comes to say", cur->text);
+        if (lines[0] != '\0') {
+            printf("         (narration: \"%s\")\n", lines);
+        }
+        return 1;
+    }
     case OP_EXPECT_NARRATE: {
         /* The focused window as its display list narrates it: the same
          * answer the conductor's "narrate" noun gives, so this line means
