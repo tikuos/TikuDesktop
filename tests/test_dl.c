@@ -350,10 +350,16 @@ main(void)
 
     /*
      * A control with no command of its OWN.  It has no fewer for that:
-     * a scrollbar is fills and bevels all the way down, and those record.
-     * So it costs more bytes than a button does and is drawn exactly the
-     * same at the far end -- which is the answer to "what about the
-     * controls you did not give an op to".
+     * the list header is fills, bevels and text all the way down, and
+     * those record.  So it costs more bytes than a button does and is
+     * drawn exactly the same at the far end -- which is the answer to
+     * "what about the controls you did not give an op to".
+     *
+     * The scrollbar used to stand here, and stopped being the example
+     * when it got a command of its own: twenty-five rectangles that said
+     * where a thumb was drawn became two numbers that say where the view
+     * IS.  A reader wanting the second cannot get it from the first.
+     * The menu field followed it, for a sharper reason -- see below.
      */
     {
         tiku_surface_t *drawn = surface_new();
@@ -362,8 +368,13 @@ main(void)
         int off = 0;
 
         drawn->record = bar;
-        tiku_ui_scrollbar(drawn, (tiku_rect_t){ 4, 4, 12, 100 },
-                               0.25f, 0.5f, 0);
+        {
+            static const char *const cols[] = { "Name", "Size" };
+            static const int widths[] = { 60, 40 };
+
+            tiku_ui_list_header(drawn, (tiku_rect_t){ 4, 4, 100, 18 },
+                                     cols, widths, 2, 0);
+        }
         drawn->record = NULL;
         check(tiku_dl_count(bar) > 1 && tiku_dl_misses(bar) == 0,
               "a control with no command of its own records as the "
@@ -374,7 +385,7 @@ main(void)
                 off++;
             }
         }
-        check(off == 0, "and comes out the same scrollbar at the far end");
+        check(off == 0, "and comes out the same control at the far end");
         tiku_dl_free(bar);
         surface_free(drawn);
         surface_free(replayed);
