@@ -75,7 +75,6 @@ typedef struct {
     int                  used;
     char                 path[TIKU_PATH_MAX];
     tiku_model_t     model;
-    tiku_trk_info_tab_t  tab;
     /* The size walk.  A queue of directories rather than recursion, so a
      * step can return to the caller between any two of them -- a walk that
      * could not be left half-done could not be stopped either. */

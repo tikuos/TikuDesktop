@@ -112,7 +112,7 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff $(BUILD)/test_strings \
             $(BUILD)/test_msg $(BUILD)/test_metrics $(BUILD)/test_theme \
-            $(BUILD)/test_dl $(BUILD)/test_logo \
+            $(BUILD)/test_dl $(BUILD)/test_logo $(BUILD)/test_tabs \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
@@ -354,6 +354,9 @@ $(BUILD)/test_edit: src/core/tiku_trk_select.c \
                     src/core/tiku_trk_match.c tests/test_edit.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
+$(BUILD)/test_tabs: tests/test_tabs.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_tabs.c $(DESK_LIBS) $(LDFLAGS)
+
 $(BUILD)/test_menu: src/ui/tiku_trk_shortcuts.c \
                     src/ui/tiku_trk_cwmenu.c \
                     tests/test_menu.c | $(BUILD)
@@ -516,6 +519,7 @@ test: all desk-apps
 	@$(BUILD)/test_icondir
 	@$(BUILD)/test_deskprefs
 	@$(BUILD)/test_menu
+	@$(BUILD)/test_tabs
 	@$(BUILD)/test_attr
 	@$(BUILD)/test_query
 	@$(BUILD)/test_notify

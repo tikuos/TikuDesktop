@@ -5795,14 +5795,11 @@ tracker_run(int argc, char **argv)
                             &app.info_windows, islot, ev.x, ev.y, &which);
 
                         if (ih == TIKU_TRK_INFO_HIT_TAB && which >= 0) {
-                            info->tab = (tiku_trk_info_tab_t)which;
-                            if (info->tab ==
-                                    TIKU_TRK_INFO_TAB_ATTRIBUTES) {
-                                /* Re-read on the way in: an attribute
-                                 * written since the window opened would
-                                 * otherwise never appear. */
-                                (void)tiku_trk_info_attrs(info, app.store);
-                            }
+                            /* The tab strip owns which is current; the
+                             * window re-reads the Attributes tab as it
+                             * becomes current. */
+                            tiku_trk_info_windows_select_tab(
+                                &app.info_windows, islot, which);
                             app.dirty = 1;
                             break;
                         }

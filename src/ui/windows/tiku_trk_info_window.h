@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "tiku_window.h"
+#include "tiku_tabs.h"
 #include "tiku_trk_alert.h"
 #include "tiku_field.h"
 #include "tiku_fs.h"
@@ -41,6 +42,7 @@ typedef struct {
 struct tiku_trk_info_windows {
     tiku_trk_info_t                model[TIKU_TRK_INFO_WINDOW_MAX];
     tiku_window_t            *window[TIKU_TRK_INFO_WINDOW_MAX];
+    tiku_tabs_t                    tabs[TIKU_TRK_INFO_WINDOW_MAX];
     tiku_trk_info_window_context_t context[TIKU_TRK_INFO_WINDOW_MAX];
     tiku_workspace_t         *workspace;
     tiku_backend_t            *backend;
@@ -77,6 +79,15 @@ tiku_window_t *tiku_trk_info_windows_handle(
 
 tiku_trk_info_hit_t tiku_trk_info_windows_hit(
     tiku_trk_info_windows_t *controller, int slot, int x, int y, int *which);
+
+/**
+ * @brief Make tab @p which current in @p slot, re-reading what it shows.
+ *
+ * The tab strip owns which is current; this is where a click on it lands,
+ * and where the Attributes tab gets a fresh read on the way in.
+ */
+void tiku_trk_info_windows_select_tab(tiku_trk_info_windows_t *controller,
+                                      int slot, int which);
 /** @brief The screen rectangle of field row @p i in @p slot (AW-073). */
 int tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
                                      int slot, int i,

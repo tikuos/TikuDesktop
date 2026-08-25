@@ -99,16 +99,6 @@ measure_info_text(const char *text, void *ctx)
 }
 
 static tiku_rect_t
-tab_rect(tiku_rect_t tabs, int index)
-{
-    tiku_rect_t result = tabs;
-
-    result.w = tabs.w / TIKU_TRK_INFO_TABS;
-    result.x = tabs.x + index * result.w;
-    return result;
-}
-
-static tiku_rect_t
 permission_rect(tiku_rect_t body, int index)
 {
     return (tiku_rect_t){ body.x + 8,
@@ -240,16 +230,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         tiku_text(surface, font, name.x, name.y + font->height,
                        info->model.name, TIKU_C_TEXT);
     }
-    for (i = 0; i < TIKU_TRK_INFO_TABS; i++) {
-        tiku_rect_t rect = tab_rect(tabs, i);
-
-        tiku_ui_button(surface, rect,
-                            tiku_trk_info_tab_name((tiku_trk_info_tab_t)i),
-                            info->tab == (tiku_trk_info_tab_t)i
-                                ? TIKU_S_DEFAULT : 0u);
-    }
+    tiku_tabs_draw(&controller->tabs[window_context->slot], surface, tabs);
     tiku_ui_sunken(surface, body, TIKU_C_PANEL);
-    if (info->tab == TIKU_TRK_INFO_TAB_INFO) {
+    if (tiku_tabs_current(&controller->tabs[window_context->slot]) ==
+            TIKU_TRK_INFO_TAB_INFO) {
         for (i = 0; i < TIKU_TRK_INFO_FIELDS; i++) {
             char value[TIKU_TRK_INFO_VAL_MAX];
             const char *label = "";
@@ -281,7 +265,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                 }
             }
         }
-    } else if (info->tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
+    } else if (tiku_tabs_current(&controller->tabs[window_context->slot]) ==
+                   TIKU_TRK_INFO_TAB_PERMISSIONS) {
         static const char *const labels[] = { "Read", "Write", "Execute" };
 
         for (i = 0; i < 3; i++) {
@@ -433,6 +418,15 @@ tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
     controller->window[slot] = tiku_workspace_open(controller->workspace,
         title, frame, draw, &controller->context[slot],
         &controller->model[slot]);
+    tiku_tabs_init(&controller->tabs[slot]);
+    {
+        int ti;
+
+        for (ti = 0; ti < TIKU_TRK_INFO_TABS; ti++) {
+            (void)tiku_tabs_add(&controller->tabs[slot],
+                tiku_trk_info_tab_name((tiku_trk_info_tab_t)ti));
+        }
+    }
     mark_dirty(controller);
     return slot;
 }
@@ -493,7 +487,6 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
                           int x, int y, int *which)
 {
     tiku_rect_t content, icon, name, tabs, body;
-    tiku_trk_info_t *info;
     int i;
 
     if (which != NULL) {
@@ -503,22 +496,22 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
         controller->window[slot] == NULL) {
         return TIKU_TRK_INFO_HIT_NONE;
     }
-    info = &controller->model[slot];
     content = tiku_window_content(controller->window[slot]);
     layout(content, &icon, &name, &tabs, &body);
 #define INSIDE(rect) (x >= (rect).x && x < (rect).x + (rect).w && \
                       y >= (rect).y && y < (rect).y + (rect).h)
     if (INSIDE(icon)) { return TIKU_TRK_INFO_HIT_ICON; }
     if (INSIDE(name)) { return TIKU_TRK_INFO_HIT_NAME; }
-    for (i = 0; i < TIKU_TRK_INFO_TABS; i++) {
-        tiku_rect_t rect = tab_rect(tabs, i);
+    {
+        int hit = tiku_tabs_hit(&controller->tabs[slot], tabs, x, y);
 
-        if (INSIDE(rect)) {
-            if (which != NULL) { *which = i; }
+        if (hit >= 0) {
+            if (which != NULL) { *which = hit; }
             return TIKU_TRK_INFO_HIT_TAB;
         }
     }
-    if (info->tab == TIKU_TRK_INFO_TAB_PERMISSIONS) {
+    if (tiku_tabs_current(&controller->tabs[slot]) ==
+            TIKU_TRK_INFO_TAB_PERMISSIONS) {
         for (i = 0; i < 3; i++) {
             tiku_rect_t rect = permission_rect(body, i);
 
@@ -528,7 +521,8 @@ tiku_trk_info_windows_hit(tiku_trk_info_windows_t *controller, int slot,
             }
         }
     }
-    if (info->tab == TIKU_TRK_INFO_TAB_INFO && INSIDE(body)) {
+    if (tiku_tabs_current(&controller->tabs[slot]) ==
+            TIKU_TRK_INFO_TAB_INFO && INSIDE(body)) {
         i = (y - body.y - 6) / row_h();
         if (i >= 0 && i < TIKU_TRK_INFO_FIELDS) {
             if (which != NULL) { *which = i; }
@@ -678,4 +672,23 @@ tiku_trk_info_windows_refresh(tiku_trk_info_windows_t *controller,
         mark_dirty(controller);
     }
     return changed;
+}
+
+void
+tiku_trk_info_windows_select_tab(tiku_trk_info_windows_t *controller,
+                                 int slot, int which)
+{
+    if (controller == NULL || slot < 0 ||
+        slot >= TIKU_TRK_INFO_WINDOW_MAX) {
+        return;
+    }
+    (void)tiku_tabs_select(&controller->tabs[slot], which);
+    if (tiku_tabs_current(&controller->tabs[slot]) ==
+            TIKU_TRK_INFO_TAB_ATTRIBUTES) {
+        /* Re-read on the way in: an attribute written since the window
+         * opened would otherwise never appear. */
+        (void)tiku_trk_info_attrs(&controller->model[slot],
+                                  controller->store);
+    }
+    mark_dirty(controller);
 }
