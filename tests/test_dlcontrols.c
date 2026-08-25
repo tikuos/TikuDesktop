@@ -142,6 +142,18 @@ int main(void){
               "narrate: the field, what is typed in it, and the focus");
         check(strstr(story, "slider at 65 of 0..100") != NULL,
               "narrate: the slider is a value on its scale");
+        sf->record = dl;    /* detached above: reattach for the addendum */
+        tiku_ui_checkbox(sf, (tiku_rect_t){ 10, 275, 120, 16 },
+                              "Read only",
+                              TIKU_S_ON | TIKU_S_DISABLED);
+        sf->record = NULL;
+        check(tiku_dl_flatten(dl, wire, sizeof wire, &wrote) && wrote > 0,
+              "narrate: reflattens with the dead checkbox in it");
+        (void)tiku_dl_narrate(wire, wrote, story, sizeof story);
+        check(strstr(story, "checkbox \"Read only\", on, disabled")
+                  != NULL,
+              "narrate: a dead control says it is dead -- the wire always "
+              "carried the bit, and only the button's line spoke it");
         {
             /* A button whose label never terminates: thirteen bytes of
              * payload and no NUL among them.  Read from a wire, that is

@@ -20,6 +20,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "tiku_gfx.h"
 
@@ -107,6 +108,35 @@ main(void)
         printf("\nFAILURES\n");
         return 1;
     }
+    printf("\ndisabled ink recedes on every table\n");
+    {
+        /*
+         * The derivation, not the shade: tiku_tint moves a colour toward
+         * white or toward black, and either direction inverts on one of
+         * the tables -- under dusk a greyed menu command was BRIGHTER
+         * than a pickable one.  The midpoint of ink and ground is half
+         * the enabled contrast wherever both came from one theme.
+         */
+        int t;
+
+        for (t = 0; t < 2; t++) {
+            tiku_rgb_t text, panel, dim;
+            long ce, cd;
+
+            if (t == 1) { tiku_theme_dark(); }
+            text = TIKU_C_TEXT;
+            panel = TIKU_C_PANEL;
+            dim = tiku_dim(text, panel);
+            ce = labs((long)(text & 0xffu) - (long)(panel & 0xffu));
+            cd = labs((long)(dim & 0xffu) - (long)(panel & 0xffu));
+            check(cd > 0 && cd < ce,
+                  t ? "on the dusk table too, where tinting toward white "
+                      "made disabled ADVANCE"
+                    : "on the light table the dim ink sits between text "
+                      "and panel");
+        }
+    }
+
     printf("\nthe tables keep their roles apart\n");
     return 0;
 }

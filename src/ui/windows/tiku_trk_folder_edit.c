@@ -240,6 +240,20 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         (!controller->renaming && !controller->editing)) {
         return 0;
     }
+    /*
+     * Only the window the editor is IN.  The caller resolves keys by the
+     * FOCUSED window, but focus can move with a rename still open -- a
+     * click on another window's tab activates it without committing --
+     * and this controller is app-wide, so typing aimed at the newly
+     * focused window landed in the old window's rename box and renamed a
+     * file the user was not looking at.  The desktop backdrop's folder
+     * has no window and keeps its editor regardless.
+     */
+    if (controller->renaming && controller->rename_folder != NULL &&
+        controller->rename_folder->win != NULL &&
+        folder != controller->rename_folder) {
+        return 0;               /* not this window's editor */
+    }
     if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
         tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT

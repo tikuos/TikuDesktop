@@ -392,6 +392,28 @@ main(void)
     }
 
     /*
+     * Pixels the vocabulary cannot say, SAID.  tiku_pixel was the one
+     * primitive that neither recorded nor confessed, so a title tab's
+     * boxes and a marked menu row crossed the wire looking finished with
+     * their marks missing -- zero misses and a wrong window, the exact
+     * lie the miss counter exists to prevent.
+     */
+    {
+        tiku_surface_t *drawn = surface_new();
+        tiku_dl_t *px = tiku_dl_new();
+
+        drawn->record = px;
+        tiku_ui_tab_widget(drawn, (tiku_rect_t){ 4, 4, 12, 12 }, 0,
+                                TIKU_C_TAB, 0);
+        drawn->record = NULL;
+        check(tiku_dl_misses(px) > 0,
+              "a control drawn from bare pixels marks the list not-whole "
+              "rather than sending a window with pieces missing");
+        tiku_dl_free(px);
+        surface_free(drawn);
+    }
+
+    /*
      * A face off the four: the status line of a real application is set
      * at eleven, and a stream that could not say so would deliver it in
      * the body size and never mention it.

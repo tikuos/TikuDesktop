@@ -4248,8 +4248,7 @@ draw_nav_levels(desktop_t *app, int px, int py)
             if (lv->n == 0) {
                 tiku_text(app->surf, nf, r.x + 8,
                                r.y + 2 + nf->ascent, TIKU_TRK_NAV_EMPTY,
-                               tiku_tint(TIKU_C_TEXT,
-                                              TIKU_LIGHTEN_2));
+                               tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
             }
             for (i = 0; i < lv->n; i++) {
                 int ty = r.y + 2 + i * TIKU_TRK_NAV_ROW;
@@ -4264,8 +4263,8 @@ draw_nav_levels(desktop_t *app, int px, int py)
                                lv->item[i].name,
                                (i == lv->sel) ? TIKU_C_SELTEXT
                                : (lv->item[i].enabled ? TIKU_C_TEXT
-                                  : tiku_tint(TIKU_C_TEXT,
-                                                   TIKU_LIGHTEN_2)));
+                                  : tiku_dim(TIKU_C_TEXT,
+                                             TIKU_C_PANEL)));
                 if (lv->item[i].is_container) {
                     /* The arrow says a row goes further, which is the one
                      * thing a nested menu must announce. */
@@ -6586,6 +6585,17 @@ tracker_run(int argc, char **argv)
                      * That is what lets a click reach a list in a window
                      * behind another without the raise eating it -- the
                      * click-through a spatial desktop depends on. */
+                    if (app.folder_edit.renaming &&
+                        app.folder_edit.rename_folder != NULL &&
+                        app.folder_edit.rename_folder->win != NULL &&
+                        app.folder_edit.rename_folder->win != w) {
+                        /* An open rename commits when its window loses
+                         * the keyboard, as the other four activation
+                         * roads already commit it: left open, the lit
+                         * field in the background window was a lie, and
+                         * the editor a place keys could still land. */
+                        commit_rename(&app, 1);
+                    }
                     tiku_workspace_activate(app.desk, w);
                 }
                 if (hit == TIKU_HIT_ZOOM) {

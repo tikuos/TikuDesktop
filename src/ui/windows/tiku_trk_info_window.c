@@ -223,9 +223,18 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             INFO_ICON);
     }
     if (controller->renaming == window_context->slot) {
+        /* Ring AND caret follow the keyboard: the key handler resolves
+         * its slot from the focused window, so a renaming Get Info in
+         * the background takes nothing -- and a field that still showed
+         * a lit ring and a caret there was promising keys it could not
+         * receive. */
+        int owns = (window ==
+                    tiku_workspace_focused(controller->workspace));
+
         tiku_ui_textfield_sel(surface, name, controller->name.text,
-            controller->name.caret, controller->name.sel_a,
-            controller->name.sel_b, TIKU_S_FOCUS);
+            owns ? controller->name.caret : -1,
+            controller->name.sel_a,
+            controller->name.sel_b, owns ? TIKU_S_FOCUS : 0u);
     } else {
         tiku_text(surface, font, name.x, name.y + font->height,
                        info->model.name, TIKU_C_TEXT);

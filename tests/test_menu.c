@@ -84,14 +84,23 @@ main(void)
         f.w = m.width;
         f.h = m.height;
 
-        check(tiku_menu_item_at(&m, f, 110, 50) == 0,
-              "the first item is hit at the top of the frame");
+        /* frame.y itself is the top bevel, which no item owns: the
+         * first row a click can choose is one below it.  These two
+         * assertions used to pin the OLD alignment, where the hit bands
+         * sat one row above the painted ones -- so the bevel chose item
+         * zero and the last painted row of every item chose nothing. */
+        check(tiku_menu_item_at(&m, f, 110, 50) == -1,
+              "the frame's own bevel row belongs to no item");
+        check(tiku_menu_item_at(&m, f, 110, 51) == 0,
+              "the first item is hit where it is painted, one below");
         check(tiku_menu_item_at(&m, f, 110,
                                     50 + tiku_menu_item_top(&m, 1) + 3)
               == -1, "a separator is never hit");
-        seam_y = 50 + tiku_menu_item_height(&m, 0);
+        seam_y = 50 + 1 + tiku_menu_item_height(&m, 0);
+        check(tiku_menu_item_at(&m, f, 110, seam_y - 1) == 0,
+              "the last painted row of an item still chooses it");
         check(tiku_menu_item_at(&m, f, 110, seam_y) == -1,
-              "the seam between items belongs to neither");
+              "and the seam between items belongs to neither");
         check(tiku_menu_item_at(&m, f, 5, 50) == -1,
               "a point outside the frame misses");
     }

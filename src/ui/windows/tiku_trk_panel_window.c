@@ -186,6 +186,12 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_model_t selected[8];
     int selected_count = selection(controller, selected, 8);
     int rows, scroll, total, i;
+    /* The panel owns the keyboard only while it is the focused window --
+     * the rule its own default button already keeps, eight lines from a
+     * name field that was ignoring it. */
+    int owns = (controller->window != NULL &&
+                controller->window ==
+                    tiku_workspace_focused(controller->workspace));
 
     (void)window;
     tiku_ui_panel(surface, content);
@@ -228,10 +234,12 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_clip_reset(surface);
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
         tiku_ui_textfield_sel(surface, name, controller->name.text,
-            controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME
+            (owns &&
+             controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME)
                 ? controller->name.caret : -1,
             controller->name.sel_a, controller->name.sel_b,
-            controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME
+            (owns &&
+             controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME)
                 ? TIKU_S_FOCUS : 0u);
     }
     tiku_ui_button(surface, cancel, "Cancel", 0u);
@@ -265,7 +273,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
              * nothing (CW-058). */
             tiku_text(surface, font, fr.x + 8,
                 fr.y + 2 + font->ascent + 1, "<No recent items>",
-                tiku_tint(TIKU_C_TEXT, TIKU_LIGHTEN_2));
+                tiku_dim(TIKU_C_TEXT, TIKU_C_DOC));
         }
         for (i = 0; i <= controller->fav_count; i++) {
             const char *text = (i == controller->fav_count)

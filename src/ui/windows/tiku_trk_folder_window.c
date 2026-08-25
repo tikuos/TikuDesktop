@@ -683,8 +683,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                            : cut ? tiku_tint(TIKU_C_SELTEXT,
                                                   1.45f)
                                  : TIKU_C_SELTEXT)
-                        : (cut ? tiku_tint(TIKU_C_TEXT,
-                                                TIKU_LIGHTEN_2)
+                        : (cut ? tiku_dim(TIKU_C_TEXT, TIKU_C_DOC)
                                : TIKU_C_TEXT));
                 if (cols[j].field == TIKU_TRK_COL_NAME &&
                     pose->model.kind == TIKU_KIND_SYMLINK) {

@@ -116,6 +116,27 @@ the desktop composition function.
 The status overlay owns alert and progress rendering plus modal input, while
 filesystem answers remain a shell callback.
 
+## Focus and disabled: the rules, and why there is no focus manager
+
+Two rules, both enforced by the suite rather than by machinery:
+
+1. **A focus ring or caret is drawn only while its window owns the
+   keyboard** -- the same `tiku_workspace_focused()` test the window's
+   own key handler opens with.  There is deliberately NO generic focus
+   manager or tab order in the kit: the windows' focus is SEMANTIC
+   (which field of the Find panel, which row of a rule), not a uniform
+   list of controls, and Tab already means four different things across
+   the shells.  A widget that wants a ring takes `TIKU_S_FOCUS` from its
+   window's own gate.
+
+2. **Disabled ink is `tiku_dim(ink, ground)`** -- the ink pulled halfway
+   toward whatever it sits on.  Never `tiku_tint` toward white or black:
+   either direction inverts on one of the theme tables, which is how a
+   greyed menu command came to be BRIGHTER than a pickable one under
+   dusk.  And a control that is drawn disabled must also be inert on
+   every dispatch path -- the kit's menu refuses the pick; a shell
+   branch that forgets is the bug class test_menu now pins.
+
 ## Two front-ends, one tree
 
 The directories above are the real structure, and binary ownership

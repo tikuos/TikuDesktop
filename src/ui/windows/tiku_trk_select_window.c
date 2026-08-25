@@ -73,6 +73,13 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     const tiku_font_t *font = tiku_font_plain();
     tiku_rect_t expression, rule, ignore, invert, apply;
     char label[96];
+    /* Caret and ring only while this window owns the keyboard -- the same
+     * test its own key handler opens with, which the field never asked:
+     * from open to close it sat lit, promising keys the handler was
+     * refusing. */
+    int owns = (controller->window != NULL &&
+                controller->window ==
+                    tiku_workspace_focused(controller->workspace));
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
@@ -81,10 +88,11 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                    "Select items whose name", TIKU_C_TEXT);
     tiku_ui_textfield_sel(surface, expression,
         controller->model.expr.text,
-        controller->field == SELECT_HIT_EXPRESSION
+        (owns && controller->field == SELECT_HIT_EXPRESSION)
             ? controller->model.expr.caret : -1,
         controller->model.expr.sel_a, controller->model.expr.sel_b,
-        controller->field == SELECT_HIT_EXPRESSION ? TIKU_S_FOCUS : 0u);
+        (owns && controller->field == SELECT_HIT_EXPRESSION)
+            ? TIKU_S_FOCUS : 0u);
     snprintf(label, sizeof label, "%s",
              tiku_trk_select_rule_label(controller->model.rule));
     tiku_ui_menufield(surface, rule, label, 0u);
@@ -92,7 +100,11 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         controller->model.ignore_case ? TIKU_S_ON : 0u);
     tiku_ui_checkbox(surface, invert, "Invert selection",
         controller->model.invert ? TIKU_S_ON : 0u);
-    tiku_ui_button(surface, apply, "Select", 0u);
+    /* Return presses this while the window owns the keyboard, and the
+     * ring says so -- it wore no ring at all while the key handler was
+     * binding Return to it, the exact inverse of the field above. */
+    tiku_ui_button(surface, apply, "Select",
+                        owns ? TIKU_S_DEFAULT : 0u);
 }
 
 static select_hit_t

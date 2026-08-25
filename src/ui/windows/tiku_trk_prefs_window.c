@@ -68,17 +68,20 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         box.h = 12;
         int on = tiku_trk_prefs_control_enabled(&controller->model, pref);
         unsigned ink = on ? TIKU_C_TEXT
-                          : tiku_tint(TIKU_C_TEXT,
-                                           TIKU_LIGHTEN_2);
+                          : tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL);
 
         if (pref->type == TIKU_TRK_PREF_BOOL) {
-            tiku_fill(surface, box,
-                           on ? TIKU_C_DOC : TIKU_C_PANEL);
-            tiku_frame(surface, box, ink);
-            if (pref->value) {
-                tiku_text(surface, font, box.x + 2, box.y + 11, "x",
-                               ink);
-            }
+            /* The kit's own checkbox, mark and all: this window drew a
+             * letter x in a flat box while its Defaults button eight
+             * lines down was kit-drawn, and Find, Select and Get Info
+             * all draw this exact kind of setting with the kit. */
+            tiku_rect_t row = { content.x + x, content.y + y,
+                                     width, height };
+
+            tiku_ui_checkbox(surface, row, pref->name,
+                (unsigned)(pref->value ? TIKU_S_ON : 0u)
+                | (unsigned)(on ? 0u : TIKU_S_DISABLED));
+            continue;
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
             /* The swatch IS the control: it shows the colour and a click
              * walks to the next one. */

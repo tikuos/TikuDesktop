@@ -129,8 +129,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                      tiku_trk_launch_relation_label(c->cand[at].rel));
             tiku_text(surface, font, row.x + row.w - 176, row.y + 13,
                            rel, selected ? TIKU_C_SELTEXT
-                                         : tiku_tint(TIKU_C_TEXT,
-                                                          0.45f));
+                                         : tiku_dim(TIKU_C_TEXT,
+                                                    TIKU_C_DOC));
         }
     }
     buttons(c, content, &open_b, &prefer_b);

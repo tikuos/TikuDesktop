@@ -987,6 +987,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
         r.y += (ROW_H - TEXT_H) / 2;
         r.h = TEXT_H;
         draw_field(s, r, f->name_text,
+                   f->has_keyboard &&
                    f->focus == TIKU_TRK_FIND_FOCUS_NAME);
     } else if (f->mode == TIKU_QMODE_FORMULA) {
         r = row_rect(frame, 0);
@@ -996,6 +997,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
         r.y += (ROW_H - TEXT_H) / 2;
         r.h = TEXT_H;
         draw_field(s, r, f->formula,
+                   f->has_keyboard &&
                    f->focus == TIKU_TRK_FIND_FOCUS_FORMULA);
     } else {
         for (i = 0; i < f->row_count; i++) {
@@ -1012,7 +1014,13 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
             c.w = VALUE_W;
             c.y += (ROW_H - TEXT_H) / 2;
             c.h = TEXT_H;
+            /* Gated at the DRAW only: f->focus keeps naming the buffer
+             * keys go into after re-activation, so it must survive the
+             * window losing the keyboard.  The other two fields above
+             * keep the same rule, which the default button had all
+             * along. */
             draw_field(s, c, f->row[i].value,
+                       f->has_keyboard &&
                        f->focus == TIKU_TRK_FIND_FOCUS_ROW &&
                        f->focus_row == i);
             /* The and/or belongs to the gap between this row and the next,
@@ -1618,7 +1626,10 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
             pick = tiku_menu_item_at(&f->popup, f->popup_frame, x, y);
         }
 
-        if (pick >= 0) {
+        /* Enabled, as the shells' own popups ask: a supertype whose
+         * children are all in the most-used list is added greyed with an
+         * EMPTY submenu, and this click opened that nothing. */
+        if (pick >= 0 && picked_menu->item[pick].enabled) {
             int cmd = picked_menu->item[pick].command;
 
             if (picked_menu == &f->popup &&
