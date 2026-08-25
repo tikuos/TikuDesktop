@@ -319,6 +319,25 @@ tiku_trk_launch_reason(tiku_trk_launch_err_t err)
     }
 }
 
+int
+tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out)
+{
+    const char *leaf;
+
+    if (m == NULL || out == NULL || m->path[0] == '\0' ||
+        tiku_model_is_container(m) ||
+        (m->facts.perm & TIKU_P_EXEC) == 0u) {
+        return 0;
+    }
+    memset(out, 0, sizeof *out);
+    snprintf(out->cmd, sizeof out->cmd, "%s", m->path);
+    snprintf(out->path, sizeof out->path, "%s", m->path);
+    leaf = strrchr(m->path, '/');
+    snprintf(out->name, sizeof out->name, "%s",
+             (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : m->path);
+    return 1;
+}
+
 tiku_trk_launch_err_t
 tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
                     int n)

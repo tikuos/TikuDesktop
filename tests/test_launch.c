@@ -224,6 +224,67 @@ main(void)
     }
 
     tiku_store_free(st);
+    printf("\nan executable is its own application\n");
+    {
+        /*
+         * The registry answers which application opens a DOCUMENT.  Asked
+         * about a program it has nothing to say, and the shell used to
+         * stop there -- so the one file in a folder guaranteed to be
+         * runnable was the one that would not run.
+         */
+        tiku_trk_app_t self;
+        tiku_model_t m;
+
+        memset(&m, 0, sizeof m);
+        snprintf(m.path, sizeof m.path, "%s", "/tmp/trk_launch_self");
+        snprintf(m.name, sizeof m.name, "%s", "trk_launch_self");
+        m.kind = TIKU_KIND_FILE;
+        m.facts.perm = TIKU_P_READ;
+        check(!tiku_trk_launch_self(&m, &self), "AW-030",
+              "a file that cannot be executed is not an application");
+        m.facts.perm |= TIKU_P_EXEC;
+        check(tiku_trk_launch_self(&m, &self), "AW-030",
+              "one that can, is: it needs nothing else to open it");
+        check(strcmp(self.cmd, m.path) == 0, "AW-030",
+              "and it is run as ITSELF, by its own path");
+        check(strcmp(self.name, "trk_launch_self") == 0, "AW-030",
+              "named by its leaf, which is what a status line shows");
+        m.kind = TIKU_KIND_DIRECTORY;
+        check(!tiku_trk_launch_self(&m, &self), "AW-030",
+              "a directory is never run, whatever its bits say");
+    }
+
+    printf("\na program this system built is not just any binary\n");
+    {
+        /*
+         * The stamp, end to end: the application kit puts a ".tikuos"
+         * section into anything that links it, and the backend reads the
+         * section table to tell tiku-term from /bin/ls.  Without it every
+         * TikuOS application wore the same art as any executable on the
+         * machine, which is the thing a person is trying to pick out.
+         */
+        tiku_backend_t *b = tiku_backend_posix_open();
+        tiku_model_t m;
+        const char *self = "../TikuDesktop/build/tiku-term";
+
+        if (b != NULL && b->ops->stat(b, self, &m) == 0) {
+            check(strcmp(tiku_model_icon_name(&m), "application") == 0,
+                  "AW-030", "a TikuOS application wears the application "
+                  "art, not the generic executable one");
+            check(strcmp(m.type, "application/x-vnd.be-app") == 0,
+                  "AW-030", "and says so in its type");
+        }
+        /* /bin/ls, not /bin/sh: on many systems sh is a SYMLINK, and a
+         * link is neither an executable nor an application -- which the
+         * first draft of this check discovered the hard way. */
+        if (b != NULL && b->ops->stat(b, "/bin/ls", &m) == 0) {
+            check(strcmp(tiku_model_icon_name(&m), "executable") == 0,
+                  "AW-030", "while a program it did not build stays a "
+                  "plain executable");
+        }
+        if (b != NULL) { b->ops->close(b); }
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the launch rules hold");
     return fails ? 1 : 0;
 }

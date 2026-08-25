@@ -164,6 +164,19 @@ typedef enum {
  *
  * @return TIKU_TRK_LAUNCH_OK, or why not.
  */
+/**
+ * @brief Make @p m into the application it already is.
+ *
+ * A file that can be executed does not need something else to open it --
+ * it IS the thing that opens.  Double-clicking one used to ask the
+ * registry which application handles its type, get no answer, and say
+ * "no application": the one file in a folder guaranteed to be runnable
+ * was the one the shell refused to run.
+ *
+ * @return 1 when @p m is a runnable file and @p out was filled.
+ */
+int tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out);
+
 tiku_trk_launch_err_t tiku_trk_launch_run(const tiku_trk_app_t *app,
                                           const char *const *paths, int n);
 

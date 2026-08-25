@@ -1,0 +1,24 @@
+# shell: desktop
+# AW-030: a double click on a file that can be EXECUTED starts it.
+#
+# The registry answers which application opens a document.  Asked about a
+# program, it has nothing to say -- nothing "opens" an executable -- and
+# the shell used to stop there and report that no application was found,
+# with a runnable file sitting under the pointer.  A program needs no
+# opener: it is one.
+#
+# Proved by effect rather than by appearance: the script fixture plants a
+# runnable that leaves a file behind, and the check is that the file is
+# there.  A launch that only looked like it happened would pass a check
+# on the window and fail this one.
+wait 14
+note the runnable sits after the folder and the three text files
+click-row 4
+wait 3
+expect-selected-name runme
+note a double click starts it, and it leaves its mark
+click-row 4
+click-row 4
+wait 40
+expect-file /tmp/trk_ran
+quit

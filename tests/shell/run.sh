@@ -190,6 +190,12 @@ for s in "$here"/*.script; do
             # for it has exactly one answer and an emptied panel -- which
             # matches everything -- cannot be mistaken for a restored one.
             query.script) touch "$work/zqxjv.txt" ;;
+            # A program to double-click, and the mark it leaves when it
+            # actually runs: the only evidence a launch really happened.
+            runapp.script)
+                rm -f /tmp/trk_ran
+                printf '#!/bin/sh\ntouch /tmp/trk_ran\n' > "$work/runme"
+                chmod +x "$work/runme" ;;
             # A folder carrying a background picture, written the way the
             # store keeps one: a 64x48 bitmap of a known colour, and the
             # record naming it, tiled over the window.

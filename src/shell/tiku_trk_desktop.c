@@ -1827,6 +1827,35 @@ handler_for(desktop_t *app, const tiku_model_t *model)
 }
 
 /**
+ * @brief Open one entry that is not a folder: run it, or open it in
+ *        whatever handles its type.
+ *
+ * The order is the whole point.  A file that can be EXECUTED is asked to
+ * run itself first, because it needs nothing else to open it; only then
+ * does the registry get asked which application handles the type.  The
+ * other way round, double-clicking tiku-term asked what opens an
+ * octet-stream, was told nothing does, and said so -- while the file
+ * sitting there was a program the shell could have started.
+ */
+static int
+open_one(desktop_t *app, const tiku_model_t *model)
+{
+    tiku_trk_app_t itself;
+    const char *one[1];
+
+    if (model == NULL) {
+        return 0;
+    }
+    if (tiku_trk_launch_self(model, &itself)) {
+        /* No documents: it is being started, not being given something
+         * to open.  launch_run drops an application's own path anyway. */
+        return launch_paths(app, &itself, NULL, 0);
+    }
+    one[0] = model->path;
+    return launch_paths(app, handler_for(app, model), one, 1);
+}
+
+/**
  * @brief Fill an Info window's "Opens with" row from the registry (AW-071).
  *
  * The user's preferred handler when one is set, the best candidate when
@@ -1960,10 +1989,7 @@ script_command_line(desktop_t *app, const char *line, FILE *reply)
             if (tiku_model_is_container(&m)) {
                 (void)open_folder(app, rep.result[i]);
             } else {
-                const char *one[1];
-
-                one[0] = rep.result[i];
-                (void)launch_paths(app, handler_for(app, &m), one, 1);
+                (void)open_one(app, &m);
             }
         }
     } else if (req.verb == TIKU_TRK_VERB_DELETE) {
@@ -6924,14 +6950,8 @@ tracker_run(int argc, char **argv)
                                      * what a double click has always meant
                                      * and this shell could not do (AW-030,
                                      * PVS-010). */
-                                    const char *one[1];
+                                    int went = open_one(&app, &p->model);
 
-                                    int went;
-
-                                    one[0] = p->model.path;
-                                    went = launch_paths(&app,
-                                              handler_for(&app, &p->model),
-                                              one, 1);
                                     if ((ev.modifiers & TIKU_MOD_OPTION) &&
                                         went) {
                                         /* Option-open closes the window it

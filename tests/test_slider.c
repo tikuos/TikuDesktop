@@ -119,6 +119,52 @@ main(void)
               "repaint for it");
     }
 
+    printf("\nan arrow that cannot move says so\n");
+    {
+        /*
+         * The stepper's arrows were raised boxes with nothing in them:
+         * blank at both ends of the range, pressable-looking and dead.
+         * Measured as ink rather than described, because "it looks
+         * right" is exactly what was wrong with it.
+         */
+        tiku_rect_t box = { 10, 10, 80, 24 };
+        int aw = tiku_ui_step_w();
+        tiku_rgb_t live = 0, dead = 0;
+        int nlive = 0, ndead = 0;
+        int pass;
+
+        for (pass = 0; pass < 2; pass++) {
+            tiku_surface_t *sf = tiku_surface_new(120, 60, TIKU_C_PANEL);
+            tiku_slider_t st;
+            int x, y;
+
+            tiku_slider_init(&st, 1, 9, (pass == 0) ? 5 : 9, 1);
+            tiku_stepper_draw(&st, sf, box);
+            for (y = box.y + 2; y < box.y + box.h / 2 - 2; y++) {
+                for (x = box.x + box.w - aw + 2;
+                     x < box.x + box.w - 2; x++) {
+                    tiku_rgb_t px = sf->px[y * sf->w + x];
+
+                    if (px != TIKU_C_PANEL) {
+                        if (pass == 0) {
+                            nlive++;
+                            if (live == 0) { live = px; }
+                        } else {
+                            ndead++;
+                            if (dead == 0) { dead = px; }
+                        }
+                    }
+                }
+            }
+            tiku_surface_free(sf);
+        }
+        check(nlive > 4, "the up arrow is an arrow, not an empty box");
+        check(ndead > 4, "and it is still drawn at the top of the range");
+        check(live != dead,
+              "but in a fainter ink there: an arrow that cannot go "
+              "further must not look like one that can");
+    }
+
     {
         tiku_surface_t *s = tiku_surface_new(400, 120, TIKU_C_PANEL);
 
