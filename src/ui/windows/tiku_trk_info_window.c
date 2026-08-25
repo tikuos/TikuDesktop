@@ -569,9 +569,9 @@ tiku_trk_info_windows_begin_rename(tiku_trk_info_windows_t *controller,
         return;
     }
     controller->renaming = slot;
-    tiku_trk_edit_start(&controller->name,
+    tiku_field_start(&controller->name,
                         controller->model[slot].model.name);
-    tiku_trk_edit_deny(&controller->name, tiku_fs_name_deny());
+    tiku_field_deny(&controller->name, tiku_fs_name_deny());
     mark_dirty(controller);
 }
 
@@ -591,11 +591,11 @@ tiku_trk_info_windows_key(tiku_trk_info_windows_t *controller,
         } else if (key == TIKU_KEY_ESCAPE) {
             finish_rename(controller, 0);
         } else if (key == TIKU_KEY_BACKSPACE) {
-            (void)tiku_trk_edit_key(&controller->name,
-                                    TIKU_TRK_EDIT_BACKSPACE, 0, '\0');
+            (void)tiku_field_key(&controller->name,
+                                    TIKU_FIELD_BACKSPACE, 0, '\0');
         } else if (character != '\0') {
-            (void)tiku_trk_edit_key(&controller->name,
-                                    TIKU_TRK_EDIT_CHAR, 0, character);
+            (void)tiku_field_key(&controller->name,
+                                    TIKU_FIELD_CHAR, 0, character);
         }
         mark_dirty(controller);
         return 1;

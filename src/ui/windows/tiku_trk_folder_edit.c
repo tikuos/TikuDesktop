@@ -51,7 +51,7 @@ tiku_trk_folder_edit_begin_value(tiku_trk_folder_edit_t *controller,
     controller->edit_desc = pose->desc;
     snprintf(controller->edit_path, sizeof controller->edit_path, "%s",
              pose->model.path);
-    tiku_trk_edit_start(&controller->value_edit,
+    tiku_field_start(&controller->value_edit,
                         pose->value_valid ? pose->value : "");
     controller->status[0] = '\0';
     *controller->dirty = 1;
@@ -69,7 +69,7 @@ tiku_trk_folder_edit_commit_value(tiku_trk_folder_edit_t *controller,
         return;
     }
     controller->editing = 0;
-    tiku_trk_edit_stop(&controller->value_edit);
+    tiku_field_stop(&controller->value_edit);
     if (!tiku_attr_validate(&controller->edit_desc,
                                 controller->value_edit.text, error,
                                 sizeof error)) {
@@ -103,7 +103,7 @@ tiku_trk_folder_edit_cancel_value(tiku_trk_folder_edit_t *controller)
         return;
     }
     controller->editing = 0;
-    tiku_trk_edit_stop(&controller->value_edit);
+    tiku_field_stop(&controller->value_edit);
     controller->status[0] = '\0';
     *controller->dirty = 1;
 }
@@ -132,12 +132,12 @@ tiku_trk_folder_edit_begin_rename(tiku_trk_folder_edit_t *controller,
     controller->renaming = 1;
     controller->rename_folder = folder;
     controller->rename_row = row;
-    tiku_trk_edit_start(&controller->rename_edit, pose->model.name);
-    tiku_trk_edit_deny(&controller->rename_edit, tiku_fs_name_deny());
+    tiku_field_start(&controller->rename_edit, pose->model.name);
+    tiku_field_deny(&controller->rename_edit, tiku_fs_name_deny());
     /* A read-only volume still offers the name as selectable text.  This
      * keeps the usual rename affordance useful for copying a name without
      * exposing a write path that the volume cannot satisfy (MA-048). */
-    tiku_trk_edit_set_editable(&controller->rename_edit,
+    tiku_field_set_editable(&controller->rename_edit,
         (pose->model.facts.vol_flags & TIKU_VOL_READ_ONLY) == 0u);
     snprintf(controller->rename_path, sizeof controller->rename_path, "%s",
              pose->model.path);
@@ -180,23 +180,23 @@ tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
         controller->status[0] = '\0';
     }
     controller->renaming = 0;
-    tiku_trk_edit_stop(&controller->rename_edit);
+    tiku_field_stop(&controller->rename_edit);
     *controller->dirty = 1;
 }
 
-static tiku_trk_edit_key_t
+static tiku_field_key_t
 edit_key(unsigned key)
 {
     switch (key) {
-    case TIKU_KEY_RETURN:    return TIKU_TRK_EDIT_COMMIT;
-    case TIKU_KEY_ESCAPE:    return TIKU_TRK_EDIT_CANCEL;
-    case TIKU_KEY_BACKSPACE: return TIKU_TRK_EDIT_BACKSPACE;
-    case TIKU_KEY_DELETE:    return TIKU_TRK_EDIT_DELETE;
-    case TIKU_KEY_LEFT:      return TIKU_TRK_EDIT_LEFT;
-    case TIKU_KEY_RIGHT:     return TIKU_TRK_EDIT_RIGHT;
-    case TIKU_KEY_HOME:      return TIKU_TRK_EDIT_HOME;
-    case TIKU_KEY_END:       return TIKU_TRK_EDIT_END;
-    default:                      return TIKU_TRK_EDIT_CHAR;
+    case TIKU_KEY_RETURN:    return TIKU_FIELD_COMMIT;
+    case TIKU_KEY_ESCAPE:    return TIKU_FIELD_CANCEL;
+    case TIKU_KEY_BACKSPACE: return TIKU_FIELD_BACKSPACE;
+    case TIKU_KEY_DELETE:    return TIKU_FIELD_DELETE;
+    case TIKU_KEY_LEFT:      return TIKU_FIELD_LEFT;
+    case TIKU_KEY_RIGHT:     return TIKU_FIELD_RIGHT;
+    case TIKU_KEY_HOME:      return TIKU_FIELD_HOME;
+    case TIKU_KEY_END:       return TIKU_FIELD_END;
+    default:                      return TIKU_FIELD_CHAR;
     }
 }
 
@@ -231,9 +231,9 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     tiku_trk_folder_window_t *folder, unsigned key, unsigned modifiers,
     char character)
 {
-    tiku_trk_edit_t *editor;
-    tiku_trk_edit_key_t action;
-    tiku_trk_edit_result_t result;
+    tiku_field_t *editor;
+    tiku_field_key_t action;
+    tiku_field_result_t result;
     int renaming;
 
     if (controller == NULL ||
@@ -242,12 +242,12 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     }
     if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
-        tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
-                                  : (key == 'c') ? TIKU_TRK_EDIT_COPY
-                                                 : TIKU_TRK_EDIT_PASTE;
+        tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
+                                  : (key == 'c') ? TIKU_FIELD_COPY
+                                                 : TIKU_FIELD_PASTE;
         editor = controller->renaming ? &controller->rename_edit
                                       : &controller->value_edit;
-        (void)tiku_trk_edit_key(editor, text_key, 0, '\0');
+        (void)tiku_field_key(editor, text_key, 0, '\0');
         *controller->dirty = 1;
         return 1;
     }
@@ -318,18 +318,18 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     renaming = controller->renaming;
     editor = renaming ? &controller->rename_edit : &controller->value_edit;
     action = edit_key(key);
-    if (action == TIKU_TRK_EDIT_CHAR && character == '\0') {
+    if (action == TIKU_FIELD_CHAR && character == '\0') {
         return 1;
     }
-    result = tiku_trk_edit_key(editor, action,
+    result = tiku_field_key(editor, action,
         (modifiers & TIKU_MOD_SHIFT) != 0u, character);
-    if (result == TIKU_TRK_EDIT_COMMITTED) {
+    if (result == TIKU_FIELD_COMMITTED) {
         if (renaming) {
             tiku_trk_folder_edit_finish_rename(controller, 1);
         } else {
             tiku_trk_folder_edit_commit_value(controller, folder);
         }
-    } else if (result == TIKU_TRK_EDIT_CANCELLED) {
+    } else if (result == TIKU_FIELD_CANCELLED) {
         if (renaming) {
             tiku_trk_folder_edit_finish_rename(controller, 0);
         } else {

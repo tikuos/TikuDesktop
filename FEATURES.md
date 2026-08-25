@@ -956,8 +956,8 @@ move_pose and remove_pose; tests/test_iconview.c*
 UpdateScrollRange: min = min(extent.leftTop, origin), max = (extent.rightBottom - bounds.rightBottom) + origin clamped to be at least origin; SetSteps(fListElemHeight/2, bounds.Width()/Height()); proportion = bounds dimension / (extent | bounds) dimension. Range and proportion are only written when they actually changed. The window is locked for the Bounds/Extent read and unlocked before touching the scrollbars.  
 `PoseView.cpp` → `BPoseView::UpdateScrollRange`  
 **PORT:** The bar is whole now, in BOTH shells.  The range, the visible-fraction thumb with its grab floor, the track that pages, the drag that keeps its grip, and the STEPPER ARROWS -- real controls stepping half a line, top and bottom, left and right -- all answer; and the spatial shell's folder windows draw a bar of their own at last, each window holding its own scroll state so a grip survives the frame.  
-*src/ui/tiku_trk_scroll.c; src/shell/tiku_trk_app.c (both bars); src/ui/windows/tiku_trk_folder_window.c + src/shell/tiku_trk_desktop.c (the window bar); tests/shell/scrollbar.script, hscrollbar.script, winbar.script (all mutation-tested); tests/test_scroll.c*
-*src/ui/tiku_trk_scroll.c; src/shell/tiku_trk_app.c (the bar's press, drag and release); tests/test_scroll.c; tests/shell/scrollbar.script*  
+*../kits/interface/tiku_scroll.c; src/shell/tiku_trk_app.c (both bars); src/ui/windows/tiku_trk_folder_window.c + src/shell/tiku_trk_desktop.c (the window bar); tests/shell/scrollbar.script, hscrollbar.script, winbar.script (all mutation-tested); tests/test_scroll.c*
+*../kits/interface/tiku_scroll.c; src/shell/tiku_trk_app.c (the bar's press, drag and release); tests/test_scroll.c; tests/shell/scrollbar.script*  
 *Shell: tracker*
 *src/shell/tiku_trk_app.c:draw (500-507) and ButtonPress wheel handling (1213-1226); src/ui/tiku_trk_poseview.c:tiku_trk_poseview_set_visible_rows (2244-2251)*
 
@@ -966,7 +966,7 @@ UpdateScrollRange: min = min(extent.leftTop, origin), max = (extent.rightBottom 
 Pulse compares Extent() and LeftTop() against fLastExtent/fLastLeftTop and calls UpdateScrollRange only when GetMouse reports buttons == 0. Pulse also drives UpdateCount(), auto-scroll and the pending text-widget double-click expiry.  
 `PoseView.cpp` → `BPoseView::Pulse`
 **PORT:** A range handed to a held bar is remembered rather than taken -- it would make the thumb jump out from under the pointer -- and applied on release. It is not a pulse that notices: the range is offered every frame, and the bar decides whether it can take it.  
-*src/ui/tiku_trk_scroll.c:tiku_trk_scroll_set_range/_release; tests/test_scroll.c*
+*../kits/interface/tiku_scroll.c:tiku_scroll_set_range/_release; tests/test_scroll.c*
 
 #### PVL-053 · polish · done
 **A corrupt or absurd saved scroll origin is silently reset to the top-left instead of scrolling into nowhere.**  
@@ -1021,7 +1021,7 @@ ResizeToFit insets the screen frame by 5, adds the tab height, sizes the frame t
 DisableScrollBars sets both scrollbar targets to NULL, EnableScrollBars restores them. The sequence used everywhere is Disable → ScrollTo(newOrigin) → UpdateScrollRange → SetScrollBarsTo(newOrigin) → Enable.  
 `PoseView.cpp` → `BPoseView::DisableScrollBars / BPoseView::EnableScrollBars / BPoseView::ResetOrigin`
 **PORT:** Detach and attach around every bulk re-layout -- mode switch, clean-up, folder switch -- and the shapes passed through in between are refused, so none of them feeds back into a view that is halfway rebuilt. Attaching takes the last one, and a position past the end of the new content is pulled back rather than left pointing past it.  
-*src/ui/tiku_trk_scroll.c:tiku_trk_scroll_detach/_attach; src/shell/tiku_trk_app.c; tests/test_scroll.c*
+*../kits/interface/tiku_scroll.c:tiku_scroll_detach/_attach; src/shell/tiku_trk_app.c; tests/test_scroll.c*
 
 #### PVL-061 · polish · done
 **A folder that finishes loading while scrolled past its last row scrolls back so you are not left staring at an empty window.**  
@@ -2105,7 +2105,7 @@ tiku_fs_delete_question; tests/shell/trash.script*
 **When a text field has focus, the Delete key and the Cut/Copy/Paste/Select-all shortcuts are forwarded to that text view instead of acting on files.**  
 kMoveSelectionToTrash synthesises a B_DELETE KeyDown on the focused BTextView; BContainerWindow::MessageReceived re-posts B_CUT/B_COPY/B_PASTE/B_SELECT_ALL to CurrentFocus() when it is a BTextView, otherwise to the PoseView. B_SELECT_ALL inside the pose view selects the active pose's text widget when one is being edited.  
 `PoseView.cpp` → `BPoseView::MessageReceived (case kMoveSelectionToTrash, case B_SELECT_ALL); BContainerWindow::MessageReceived (ContainerWindow.cpp)`  
-**PORT:** Focused inline editors consume Cut/Copy/Paste before file dispatch, using a shared text payload and selection-aware operations. Delete and Select All continue to route through the same editor path. `src/core/tiku_trk_edit.c; src/shell/tiku_trk_app.c; src/ui/windows/tiku_trk_folder_edit.c`
+**PORT:** Focused inline editors consume Cut/Copy/Paste before file dispatch, using a shared text payload and selection-aware operations. Delete and Select All continue to route through the same editor path. `../kits/interface/tiku_field.c; src/shell/tiku_trk_app.c; src/ui/windows/tiku_trk_folder_edit.c`
 
 #### PVK-040 · important · done
 **Command+Up opens the parent folder; it is refused at the root (and on the Desktop) unless Control is also held, which forces it.**  
@@ -3168,7 +3168,7 @@ BRecentItemsList::GetNextMenuItem resolves a symlink to its target model, picks 
 **Cut/Copy/Paste/Select all go to the file list normally, but go to the text field when one has focus - so renaming a file or typing in a panel behaves like a text editor.**  
 MessageReceived forwards B_CUT/B_COPY/B_PASTE/B_SELECT_ALL to PoseView() unless CurrentFocus() is a BTextView, in which case it forwards to that view (the custom kCutMoreSelectionToClipboard / kCopyMoreSelectionToClipboard / kPasteLinksFromClipboard variants always go to the PoseView to avoid recursion).  
 `ContainerWindow.cpp` → `BContainerWindow::MessageReceived cases B_CUT/B_COPY/B_PASTE/B_SELECT_ALL`  
-**PORT:** Select All and Delete remain editor-local when an inline field is focused. Cut/Copy/Paste now route to the shared text editor in both shells, while the desktop menu context marks `text_focus` so its enablement follows the same rule; otherwise the commands continue to target the file clipboard. `src/core/tiku_trk_edit.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c; src/ui/commands/tiku_trk_folder_menu.c`
+**PORT:** Select All and Delete remain editor-local when an inline field is focused. Cut/Copy/Paste now route to the shared text editor in both shells, while the desktop menu context marks `text_focus` so its enablement follows the same rule; otherwise the commands continue to target the file clipboard. `../kits/interface/tiku_field.c; src/shell/tiku_trk_app.c; src/shell/tiku_trk_desktop.c; src/ui/commands/tiku_trk_folder_menu.c`
 
 #### CW-061 · important · done
 **Cmd+Z undoes the last file operation and Shift+Cmd+Z redoes it, unless a text field has focus, in which case the text view handles it.**  
@@ -4197,14 +4197,14 @@ StartEdit returns early if !IsEditable() || IsActive(), and again if view->IsDra
 SetupEditing is per-attribute: name widgets call DisallowFilenameKeys, SetMaxBytes(B_FILE_NAME_LENGTH) and set the full value; generic attribute widgets call SetMaxBytes(kGenericReadBufferSize - 1) = 1023. StartEdit then calls SelectAll() and ScrollToSelection() so the beginning of long text is visible, and MakeFocus().  
 `WidgetAttributeText.cpp` → `NameAttributeText::SetupEditing`  
 **VERIFICATION LIMIT:** Nothing after that point could be verified. The truncated row itself IS correct as far as it goes (WidgetAttributeText.cpp:301 FittingText recomputes when fDirty || (list mode && column width != fOldWidth) || CheckSettingsChanged()). No app-windows rows were reviewed, so treat that area as unverified, not as verified-empty.
-**PORT:** The separate plain append buffer is gone. desktop.c begin_edit now calls tiku_trk_edit_start(&app->ed, p->value_valid ? p->value : ""), the same primitive the rename editor uses, and edit_start sets sel_a=0, sel_b=len; the keystroke path feeds app->ed through tiku_trk_edit_key, whose CHAR case calls delete_selection() before inserting, so the first keystroke replaces the whole reading. It is seeded from the STORED value (p->value), not the fitted cell text, which is the untruncated half of the rule. The rename editor already satisfied it (app.c:693, desktop.c:632).
+**PORT:** The separate plain append buffer is gone. desktop.c begin_edit now calls tiku_field_start(&app->ed, p->value_valid ? p->value : ""), the same primitive the rename editor uses, and edit_start sets sel_a=0, sel_b=len; the keystroke path feeds app->ed through tiku_field_key, whose CHAR case calls delete_selection() before inserting, so the first keystroke replaces the whole reading. It is seeded from the STORED value (p->value), not the fitted cell text, which is the untruncated half of the rule. The rename editor already satisfied it (app.c:693, desktop.c:632).
 
 #### MA-046 · core · done
 **While renaming, control characters and '/' cannot be typed at all — the keystroke is swallowed rather than rejected at commit.**  
 DisallowChar for every code below 0x20 plus '/'. Separately DisallowMetaKeys blocks Tab, Escape, Insert, Delete, Home, End, PageUp, PageDown and function keys from reaching the text view (they are handled by the key filter instead).  
 `Utilities.cpp` → `DisallowFilenameKeys`  
 **TIKU:** Namespace paths have their own illegal characters; the disallow set should be derived from the VFS path rules rather than hardcoded to '/'.  
-**PORT:** '/' is now swallowed at the keystroke. tiku_trk_edit_t carries a `deny` set consulted at the top of the CHAR case, before delete_selection, so a denied character neither appears nor clobbers the selection; both rename entry points arm it with tiku_fs_name_deny(). The control-character and meta-key halves were already there (ch < 0x20 || ch == 0x7f is dropped; Tab/Escape/Delete/Home/End are consumed by the editor's own switch). The deny set is sourced from the store as the TIKU note asks — NAME_DENY lives once in tiku_fs.c next to tiku_fs_name_ok, so the keystroke filter and the commit check cannot drift apart. test_edit.c:89-104 covers both the armed and unarmed cases.
+**PORT:** '/' is now swallowed at the keystroke. tiku_field_t carries a `deny` set consulted at the top of the CHAR case, before delete_selection, so a denied character neither appears nor clobbers the selection; both rename entry points arm it with tiku_fs_name_deny(). The control-character and meta-key halves were already there (ch < 0x20 || ch == 0x7f is dropped; Tab/Escape/Delete/Home/End are consumed by the editor's own switch). The deny set is sourced from the store as the TIKU note asks — NAME_DENY lives once in tiku_fs.c next to tiku_fs_name_ok, so the keystroke filter and the commit check cannot drift apart. test_edit.c:89-104 covers both the armed and unarmed cases.
 
 #### MA-047 · core · done
 **Return commits the rename, Escape abandons it, Tab moves to the next editable column committing the current one, and Shift-Tab moves to the previous.**  
@@ -4212,7 +4212,7 @@ TextViewKeyDownFilter intercepts B_RETURN and B_ESCAPE and calls view->CommitAct
 `TextWidget.cpp` → `TextViewKeyDownFilter`  
 **PORT:** All four keys answer: Return commits, Escape abandons, and TAB commits the current editor and walks to the next editable column -- the Value column when the entry can carry one, with Shift-Tab walking back from the value editor to the name.  Where no editable column remains in the walk's direction, the walk continues into the next row's name, which is where the next editable thing lives.  
 *src/ui/windows/tiku_trk_folder_edit.c (the Tab walk); tests/shell/tabcolumns.script (forward into Value -- proven by the value it writes -- and back; mutation-tested)*
-*src/shell/tiku_trk_app.c:808 (editing key switch) / src/core/tiku_trk_edit.c:153 (COMMIT/CANCEL)*
+*src/shell/tiku_trk_app.c:808 (editing key switch) / ../kits/interface/tiku_field.c:153 (COMMIT/CANCEL)*
 
 #### MA-048 · important · done
 **On a read-only volume the rename editor still opens but the text cannot be changed — it is selectable only, and paste handling is not installed.**  
@@ -4225,8 +4225,8 @@ StartEdit calls textView->MakeEditable(false) and MakeSelectable(true) when view
 **The rename editor grows as you type but never past the column width (list view) or ~30 characters (icon views), scrolling instead.**  
 fMaxWidth is the column width in list mode, else StringWidth("M")*30. MakeResizable(!tooWide, tooWide ? NULL : scrollView) toggles between grow-with-text and fixed-width-with-scrolling; the key-down filter re-evaluates on every keystroke. TextViewPasteFilter computes the post-paste width (text width, minus the selected region being replaced, plus the clipboard text width) and, when too wide, resizes the scroll view to exactly maxWidth, shifting it left by half the delta for centered text and the full delta for right-aligned text.  
 `TextWidget.cpp` → `TextViewPasteFilter`  
-**PORT:** The editor GROWS with the text now, in both shells, and never past the name column's width; past the cap the box stays put and the text SLIDES so the caret stays visible -- never past the text's own end, and not at all while the caret sits at the head.  The arithmetic is one core function (`tiku_trk_edit_metrics`), unit-tested, drawn through the toolkit's new sliding text field.  The ~30-character icon-mode form has no referent: neither shell opens an inline editor in icon mode -- renames are the list's -- so the list cap is the only cap with a subject.  
-*src/core/tiku_trk_edit.c:tiku_trk_edit_metrics; applications/kits/interface/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
+**PORT:** The editor GROWS with the text now, in both shells, and never past the name column's width; past the cap the box stays put and the text SLIDES so the caret stays visible -- never past the text's own end, and not at all while the caret sits at the head.  The arithmetic is one core function (`tiku_field_metrics`), unit-tested, drawn through the toolkit's new sliding text field.  The ~30-character icon-mode form has no referent: neither shell opens an inline editor in icon mode -- renames are the list's -- so the list cap is the only cap with a subject.  
+*../kits/interface/tiku_field.c:tiku_field_metrics; applications/kits/interface/tiku_ui.c:tiku_ui_textfield_scroll; both shells' editor draws; tests/test_edit.c MA-049 block*
 *src/shell/tiku_trk_app.c:533 (editor box = cols[0].width); src/shell/tiku_trk_desktop.c:299*
 
 #### MA-050 · core · done
@@ -4460,7 +4460,7 @@ GenericAttributeText::CommitEditedTextFlavor: types outside the string/scalar/fl
 **Committing an edited name widget renames the file through the normal rename path, so every rename refusal and the well-known-directory confirmation apply; the field itself is capped at the file-name length and rejects illegal filename characters as you type.**  
 NameAttributeText::SetupEditing calls DisallowFilenameKeys(textView) and SetMaxBytes(B_FILE_NAME_LENGTH); CommitEditedTextFlavor calls EditModelName(fModel, name, length) and reports success only on B_OK. RealNameAttributeText::SetupEditing does the same for the "Real name" column.  
 `WidgetAttributeText.cpp` → `NameAttributeText::SetupEditing / NameAttributeText::CommitEditedTextFlavor`  
-**PORT:** All three layers exist now and the audit predates the middle one: the commit goes through the shared rename path with its refusals, the field is length-capped, and the AS-YOU-TYPE filter is `tiku_trk_edit_deny(fs_name_deny())` -- '/' dies at the keystroke in every rename editor (folder, Info window, browser), the MA-046 close.  The well-known-directory confirmation stays out with the source's own scope: the port's Trash/Desktop cannot be renamed at all (MA-051), which is the stronger guard.
+**PORT:** All three layers exist now and the audit predates the middle one: the commit goes through the shared rename path with its refusals, the field is length-capped, and the AS-YOU-TYPE filter is `tiku_field_deny(fs_name_deny())` -- '/' dies at the keystroke in every rename editor (folder, Info window, browser), the MA-046 close.  The well-known-directory confirmation stays out with the source's own scope: the port's Trash/Desktop cannot be renamed at all (MA-051), which is the stronger guard.
 *src/shell/tiku_trk_app.c:699 (end_rename → tiku_fs_rename) and src/backends/tiku_fs.c:86 (name_ok, commit-time only)*
 
 #### MA-080 · polish · done ⟨found by verification⟩

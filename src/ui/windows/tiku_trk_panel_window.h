@@ -14,7 +14,7 @@
 
 #include "tiku_window.h"
 #include "tiku_trk_alert.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_trk_panel.h"
 #include "tiku_trk_poseview.h"
 
@@ -25,7 +25,7 @@ typedef void (*tiku_trk_panel_window_commit_fn)(void *context, void *target,
 /** @brief One reusable destination panel and all of its transient UI state. */
 typedef struct {
     tiku_trk_panel_t       model;
-    tiku_trk_edit_t        name;
+    tiku_field_t        name;
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
     tiku_trk_poseview_t   *view;

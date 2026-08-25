@@ -31,7 +31,7 @@ tiku_trk_select_init(tiku_trk_select_t *w)
         return;
     }
     memset(w, 0, sizeof *w);
-    tiku_trk_edit_start(&w->expr, "");
+    tiku_field_start(&w->expr, "");
     /* Item 3 -- wildcard -- marked, and Ignore case checked: an expression
      * with no metacharacters in it is then an exact, case-blind match, which
      * is what a typed name looks like it should do. */

@@ -334,7 +334,7 @@ go(tiku_trk_panel_window_t *controller, const char *directory)
 static void
 sync_name(tiku_trk_panel_window_t *controller)
 {
-    tiku_trk_edit_start(&controller->name, controller->model.name);
+    tiku_field_start(&controller->name, controller->model.name);
 }
 
 static void
@@ -627,7 +627,7 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
         y = (controller->screen_h - height) / 3;
     }
     frame = (tiku_rect_t){ x, y, width, height };
-    tiku_trk_edit_start(&controller->name, "");
+    tiku_field_start(&controller->name, "");
     if (controller->window != NULL && controller->window->open) {
         controller->window->frame = frame;
         tiku_workspace_activate(controller->workspace,
@@ -662,7 +662,7 @@ tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
     snprintf(controller->model.name, sizeof controller->model.name, "%s",
              initial_name != NULL ? initial_name : "");
     controller->model.name_len = (int)strlen(controller->model.name);
-    tiku_trk_edit_start(&controller->name, controller->model.name);
+    tiku_field_start(&controller->name, controller->model.name);
     controller->pending_save[0] = '\0';
     snprintf(controller->window->title, sizeof controller->window->title,
              "%s", "Save");
@@ -802,16 +802,16 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                 if (tiku_trk_panel_complete(controller->backend,
                         controller->model.dir, controller->name.text,
                         full, sizeof full) > 0) {
-                    tiku_trk_edit_start(&controller->name, full);
+                    tiku_field_start(&controller->name, full);
                     controller->name.sel_a = controller->name.sel_b =
                         controller->name.caret = controller->name.len;
                 }
             } else if (key == TIKU_KEY_BACKSPACE) {
-                (void)tiku_trk_edit_key(&controller->name,
-                    TIKU_TRK_EDIT_BACKSPACE, tracker_mods, '\0');
+                (void)tiku_field_key(&controller->name,
+                    TIKU_FIELD_BACKSPACE, tracker_mods, '\0');
             } else if (character != '\0') {
-                (void)tiku_trk_edit_key(&controller->name,
-                    TIKU_TRK_EDIT_CHAR, tracker_mods, character);
+                (void)tiku_field_key(&controller->name,
+                    TIKU_FIELD_CHAR, tracker_mods, character);
             }
             snprintf(controller->model.name, sizeof controller->model.name,
                      "%.*s", (int)sizeof controller->model.name - 1,

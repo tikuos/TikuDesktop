@@ -99,7 +99,7 @@ CORE := src/core/tiku_trk_task.c src/core/tiku_trk_match.c \
         src/core/tiku_trk_info.c src/core/tiku_trk_repaint.c \
         src/core/tiku_trk_drop_protocol.c src/core/tiku_trk_color.c \
         src/core/tiku_trk_state_pipeline.c src/core/tiku_trk_background.c
-UI_SUPPORT := src/ui/tiku_trk_scroll.c src/ui/tiku_trk_navmenu.c \
+UI_SUPPORT := src/ui/tiku_trk_navmenu.c \
               src/ui/tiku_trk_nodeicon.c src/ui/tiku_trk_springmenu.c
 COMMON := $(CORE) $(UI_SUPPORT)
 
@@ -350,9 +350,9 @@ $(BUILD)/test_clip: src/core/tiku_trk_clip.c \
                     tests/test_clip.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_edit: src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
+$(BUILD)/test_edit: src/core/tiku_trk_select.c \
                     src/core/tiku_trk_match.c tests/test_edit.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                     src/ui/tiku_trk_cwmenu.c \
@@ -433,7 +433,7 @@ $(BUILD)/test_icondir: \
 TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
-               src/core/tiku_trk_edit.c src/ui/tiku_trk_titleview.c \
+               src/ui/tiku_trk_titleview.c \
                src/ui/tiku_trk_navigator.c \
                src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
                src/ui/tiku_trk_cwmenu.c \
@@ -451,7 +451,7 @@ $(DEVBUILD)/TikuTracker: $(TRACKER_SRC) $(SCRIPT_ENGINE_TRACKER) | $(DEVBUILD)
 DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
-               src/core/tiku_trk_edit.c src/core/tiku_trk_select.c \
+               src/core/tiku_trk_select.c \
                src/ui/tiku_trk_titleview.c \
                src/deskbar/tiku_trk_deskbar.c \
                $(DESKTOP_CONTROLLERS) \

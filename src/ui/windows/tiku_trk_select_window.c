@@ -243,7 +243,7 @@ int
 tiku_trk_select_window_key(tiku_trk_select_window_t *controller,
     int key, unsigned modifiers, char character)
 {
-    tiku_trk_edit_key_t edit_key = TIKU_TRK_EDIT_CHAR;
+    tiku_field_key_t edit_key = TIKU_FIELD_CHAR;
     int shift = (modifiers & TIKU_MOD_SHIFT) != 0u;
 
     if (controller->window == NULL || !controller->window->open ||
@@ -262,12 +262,12 @@ tiku_trk_select_window_key(tiku_trk_select_window_t *controller,
         controller->window = NULL;
         mark_dirty(controller);
         return 1;
-    case TIKU_KEY_BACKSPACE: edit_key = TIKU_TRK_EDIT_BACKSPACE; break;
-    case TIKU_KEY_DELETE:    edit_key = TIKU_TRK_EDIT_DELETE;    break;
-    case TIKU_KEY_LEFT:      edit_key = TIKU_TRK_EDIT_LEFT;      break;
-    case TIKU_KEY_RIGHT:     edit_key = TIKU_TRK_EDIT_RIGHT;     break;
-    case TIKU_KEY_HOME:      edit_key = TIKU_TRK_EDIT_HOME;      break;
-    case TIKU_KEY_END:       edit_key = TIKU_TRK_EDIT_END;       break;
+    case TIKU_KEY_BACKSPACE: edit_key = TIKU_FIELD_BACKSPACE; break;
+    case TIKU_KEY_DELETE:    edit_key = TIKU_FIELD_DELETE;    break;
+    case TIKU_KEY_LEFT:      edit_key = TIKU_FIELD_LEFT;      break;
+    case TIKU_KEY_RIGHT:     edit_key = TIKU_FIELD_RIGHT;     break;
+    case TIKU_KEY_HOME:      edit_key = TIKU_FIELD_HOME;      break;
+    case TIKU_KEY_END:       edit_key = TIKU_FIELD_END;       break;
     case TIKU_KEY_TAB:
         tiku_trk_select_set_rule(&controller->model,
             (controller->model.rule + 1) % TIKU_TRK_SELECT_RULES);
@@ -279,7 +279,7 @@ tiku_trk_select_window_key(tiku_trk_select_window_t *controller,
         }
         break;
     }
-    (void)tiku_trk_edit_key(&controller->model.expr, edit_key, shift,
+    (void)tiku_field_key(&controller->model.expr, edit_key, shift,
                             character);
     mark_dirty(controller);
     return 1;

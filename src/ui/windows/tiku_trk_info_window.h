@@ -14,7 +14,7 @@
 
 #include "tiku_window.h"
 #include "tiku_trk_alert.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_fs.h"
 #include "tiku_trk_info.h"
 #include "tiku_model.h"
@@ -47,7 +47,7 @@ struct tiku_trk_info_windows {
     tiku_store_t              *store;
     tiku_fs_t                 *fs;
     tiku_trk_alert_t              *alert;
-    tiku_trk_edit_t                name;
+    tiku_field_t                name;
     int                            renaming;
     /* The slot whose icon an in-flight drag is over, or -1: the icon
      * answers a hover the way a pose does, by its selected variant

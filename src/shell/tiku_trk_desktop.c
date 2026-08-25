@@ -69,7 +69,7 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_model.h"
 #include "tiku_trk_poseview.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_trk_select.h"
 #include "tiku_trk_select_window.h"
 #include "tiku_trk_find.h"
@@ -5364,8 +5364,8 @@ tracker_run(int argc, char **argv)
             const char *e = "gpio*";
 
             while (*e != '\0') {
-                (void)tiku_trk_edit_key(&select_model(&app)->expr,
-                                        TIKU_TRK_EDIT_CHAR, 0, *e++);
+                (void)tiku_field_key(&select_model(&app)->expr,
+                                        TIKU_FIELD_CHAR, 0, *e++);
             }
         }
     }
@@ -5443,7 +5443,7 @@ tracker_run(int argc, char **argv)
                 tiku_trk_poseview_click(fl->view, i2, 0u);
                 begin_edit(&app, fl);
                 if (eq != NULL && app.folder_edit.editing) {
-                    tiku_trk_edit_start(&app.folder_edit.value_edit, eq + 1);
+                    tiku_field_start(&app.folder_edit.value_edit, eq + 1);
                     commit_edit(&app, fl);
                 }
                 break;
@@ -6370,18 +6370,18 @@ tracker_run(int argc, char **argv)
                         int btn = sb.w;
 
                         if (at < btn) {
-                            tiku_trk_scroll_arrow_press(&sfl->sbar, -1);
+                            tiku_scroll_arrow_press(&sfl->sbar, -1);
                             tiku_trk_poseview_scroll_to(sfl->view,
                                 tiku_trk_poseview_scroll(sfl->view) -
-                                    tiku_trk_scroll_line(&sfl->sbar));
+                                    tiku_scroll_line(&sfl->sbar));
                         } else if (at >= sb.h - btn) {
-                            tiku_trk_scroll_arrow_press(&sfl->sbar, 1);
+                            tiku_scroll_arrow_press(&sfl->sbar, 1);
                             tiku_trk_poseview_scroll_to(sfl->view,
                                 tiku_trk_poseview_scroll(sfl->view) +
-                                    tiku_trk_scroll_line(&sfl->sbar));
+                                    tiku_scroll_line(&sfl->sbar));
                         } else {
                             tiku_trk_poseview_scroll_to(sfl->view,
-                                tiku_trk_scroll_press(&sfl->sbar,
+                                tiku_scroll_press(&sfl->sbar,
                                     sb.h - 2 * btn, at - btn));
                         }
                         app.sbar_fl = sfl;
@@ -6946,7 +6946,7 @@ tracker_run(int argc, char **argv)
                         tiku_trk_folder_window_scrollbar(app.sbar_fl);
 
                     tiku_trk_poseview_scroll_to(app.sbar_fl->view,
-                        tiku_trk_scroll_drag(&app.sbar_fl->sbar,
+                        tiku_scroll_drag(&app.sbar_fl->sbar,
                             sb.h - 2 * sb.w, ev.y - sb.y - sb.w));
                     app.dirty = 1;
                     break;
@@ -7276,7 +7276,7 @@ tracker_run(int argc, char **argv)
                                                   app.press_window);
                 }
                 if (app.sbar_fl != NULL) {
-                    tiku_trk_scroll_release(&app.sbar_fl->sbar);
+                    tiku_scroll_release(&app.sbar_fl->sbar);
                     app.sbar_fl = NULL;
                 }
                 tiku_trk_drag_reset(&app.drag);
@@ -8424,12 +8424,12 @@ tracker_run(int argc, char **argv)
             (void)tiku_trk_loop_pulse(app.loop);
             if (app.sbar_fl != NULL && app.sbar_fl->view != NULL) {
                 /* A held arrow keeps stepping (NeXT UIG ch3). */
-                int rep = tiku_trk_scroll_arrow_repeat(&app.sbar_fl->sbar);
+                int rep = tiku_scroll_arrow_repeat(&app.sbar_fl->sbar);
 
                 if (rep != 0) {
                     tiku_trk_poseview_scroll_to(app.sbar_fl->view,
                         tiku_trk_poseview_scroll(app.sbar_fl->view) +
-                            rep * tiku_trk_scroll_line(&app.sbar_fl->sbar));
+                            rep * tiku_scroll_line(&app.sbar_fl->sbar));
                     app.dirty = 1;
                 }
             }

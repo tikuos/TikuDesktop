@@ -20,7 +20,7 @@
 #ifndef TIKU_TRK_SELECT_H_
 #define TIKU_TRK_SELECT_H_
 
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_trk_match.h"
 
 /** @brief The five rules, in the order the popup offers them. */
@@ -30,7 +30,7 @@
 #define TIKU_TRK_SELECT_MARGIN 20
 
 typedef struct {
-    tiku_trk_edit_t  expr;
+    tiku_field_t  expr;
     int              rule;          /* index into the rule table          */
     int              ignore_case;
     int              invert;

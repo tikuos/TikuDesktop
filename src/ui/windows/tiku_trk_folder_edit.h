@@ -13,7 +13,7 @@
 #include <stddef.h>
 
 #include "tiku_attr.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_trk_folder_window.h"
 #include "tiku_fs.h"
 
@@ -25,11 +25,11 @@ typedef struct {
     size_t status_size;
     int *dirty;
     int editing;
-    tiku_trk_edit_t value_edit;
+    tiku_field_t value_edit;
     char edit_path[TIKU_PATH_MAX];
     tiku_desc_t edit_desc;
     int renaming;
-    tiku_trk_edit_t rename_edit;
+    tiku_field_t rename_edit;
     char rename_path[TIKU_PATH_MAX];
     tiku_trk_folder_window_t *rename_folder;
     int rename_row;

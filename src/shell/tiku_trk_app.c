@@ -26,7 +26,7 @@
 #include "tiku_attr.h"
 #include "tiku_trk_drag.h"
 #include "tiku_trk_panel.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_model.h"
 #include "tiku_fs.h"
 #include "tiku_iconpaint.h"
@@ -37,7 +37,7 @@
 #include "tiku_trk_navigator.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_prefs.h"
-#include "tiku_trk_scroll.h"
+#include "tiku_scroll.h"
 #include "tiku_trk_titleview.h"
 #include "tiku_volume.h"
 #include "tiku_trk_script.h"
@@ -76,7 +76,7 @@ typedef struct {
     char                 status[220];
     /* inline rename: the editor is a mode, as Tracker's TextWidget is */
     int                  editing;
-    tiku_trk_edit_t      ed;
+    tiku_field_t      ed;
     char                 edit_path[TIKU_PATH_MAX];
     int                  edit_row;
     /* The window's own activation state, which decides whether a selection
@@ -95,8 +95,8 @@ typedef struct {
     /* The scrollbar as an object: a range that can be held steady while
      * the user drags it, and detached while a bulk re-layout runs
      * (PVL-051, PVL-052, PVL-060). */
-    tiku_trk_scroll_t    sb;
-    tiku_trk_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
+    tiku_scroll_t    sb;
+    tiku_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
     tiku_rect_t     hsb_rect;
     tiku_rect_t     sb_rect;
     /* The same container-window menus the desktop shell presents. */
@@ -110,7 +110,7 @@ typedef struct {
     int                  bar_open;
     /* Browser chrome owns its history and location editor per window. */
     tiku_trk_navigator_t nav;
-    tiku_trk_edit_t      nav_edit;
+    tiku_field_t      nav_edit;
     int                  nav_editing;
     int                  show_nav;
     char                 prefs_path[TIKU_PATH_MAX];
@@ -276,7 +276,7 @@ index_of_path(app_t *a, const char *path)
 static int
 measure_prefix_px(const char *text, int n, void *ctx)
 {
-    char tmp[TIKU_TRK_EDIT_MAX];
+    char tmp[TIKU_FIELD_MAX];
 
     (void)ctx;
     if (n < 0) { n = 0; }
@@ -676,12 +676,12 @@ draw_count(app_t *a, tiku_rect_t list)
         a->hsb_rect = (tiku_rect_t){ list.x + count.w,
                                           count.y, list.w - count.w,
                                           COUNT_H };
-        (void)tiku_trk_scroll_set_range(&a->hsb, content, list.w);
+        (void)tiku_scroll_set_range(&a->hsb, content, list.w);
         if (!a->hsb.tracking) {
-            (void)tiku_trk_scroll_to(&a->hsb,
+            (void)tiku_scroll_to(&a->hsb,
                                      tiku_trk_poseview_hscroll(a->view));
         }
-        if (tiku_trk_scroll_thumb(&a->hsb, a->hsb_rect.w, &tpos, &tlen)) {
+        if (tiku_scroll_thumb(&a->hsb, a->hsb_rect.w, &tpos, &tlen)) {
             frac = (float)tlen / (float)a->hsb_rect.w;
             pos = (a->hsb_rect.w > tlen)
                       ? (float)tpos / (float)(a->hsb_rect.w - tlen) : 0.0f;
@@ -1117,11 +1117,11 @@ draw(app_t *a)
         int tpos = 0, tlen = 0;
         float frac, pos;
 
-        (void)tiku_trk_scroll_set_range(&a->sb, total, rows);
+        (void)tiku_scroll_set_range(&a->sb, total, rows);
         if (!a->sb.tracking) {
-            (void)tiku_trk_scroll_to(&a->sb, scroll);
+            (void)tiku_scroll_to(&a->sb, scroll);
         }
-        if (tiku_trk_scroll_thumb(&a->sb, list.h, &tpos, &tlen)) {
+        if (tiku_scroll_thumb(&a->sb, list.h, &tpos, &tlen)) {
             frac = (float)tlen / (float)list.h;
             pos = (list.h > tlen)
                       ? (float)tpos / (float)(list.h - tlen) : 0.0f;
@@ -1168,7 +1168,7 @@ draw(app_t *a)
                  * visible (MA-049). */
                 int bw = cols[0].width, bs = 0;
 
-                tiku_trk_edit_metrics(&a->ed, 60, cols[0].width,
+                tiku_field_metrics(&a->ed, 60, cols[0].width,
                                       measure_prefix_px, NULL, &bw, &bs);
                 box.x = col_x(a, &cols[0]);
                 box.y = list.y + 2 + (i - scroll) * a->row_h;
@@ -1421,9 +1421,9 @@ begin_rename(app_t *a)
     }
     a->editing = 1;
     a->edit_row = pose_index(a, p);
-    tiku_trk_edit_start(&a->ed, p->model.name);
+    tiku_field_start(&a->ed, p->model.name);
     /* A character the store will refuse must never reach the field. */
-    tiku_trk_edit_deny(&a->ed, tiku_fs_name_deny());
+    tiku_field_deny(&a->ed, tiku_fs_name_deny());
     snprintf(a->edit_path, sizeof a->edit_path, "%s", p->model.path);
     a->status[0] = '\0';
     a->dirty = 1;
@@ -1502,7 +1502,7 @@ end_rename(app_t *a, int commit)
         }
     }
     a->editing = 0;
-    tiku_trk_edit_stop(&a->ed);
+    tiku_field_stop(&a->ed);
     a->dirty = 1;
 }
 
@@ -1553,17 +1553,17 @@ navigate_to(app_t *a, const char *path, int record)
     if (strcmp(dest, tiku_trk_poseview_path(a->view)) == 0) {
         return 1;
     }
-    tiku_trk_scroll_detach(&a->sb);
+    tiku_scroll_detach(&a->sb);
     (void)tiku_trk_poseview_save_state(a->view);
     (void)tiku_trk_poseview_save_columns(a->view);
     /* switch_dir returns the new row count, and only a negative value is an
      * error.  A non-empty directory is therefore a successful switch. */
     if (tiku_trk_poseview_switch_dir(a->view, dest) < 0) {
-        tiku_trk_scroll_attach(&a->sb);
+        tiku_scroll_attach(&a->sb);
         return 0;
     }
     (void)tiku_trk_poseview_load_begin(a->view, tiku_trk_now());
-    tiku_trk_scroll_attach(&a->sb);
+    tiku_scroll_attach(&a->sb);
     (void)tiku_trk_poseview_load_step(a->view, tiku_trk_now());
     (void)tiku_trk_poseview_restore_state(a->view);
     (void)tiku_trk_poseview_restore_columns(a->view);
@@ -1619,7 +1619,7 @@ begin_location(app_t *a)
 {
     end_rename(a, 1);
     a->nav_editing = 1;
-    tiku_trk_edit_start(&a->nav_edit,
+    tiku_field_start(&a->nav_edit,
                         tiku_trk_navigator_current(&a->nav));
     a->dirty = 1;
 }
@@ -1635,7 +1635,7 @@ end_location(app_t *a, int apply)
     }
     snprintf(path, sizeof path, "%s",
              (a->nav_edit.text[0] != '\0') ? a->nav_edit.text : "/");
-    tiku_trk_edit_stop(&a->nav_edit);
+    tiku_field_stop(&a->nav_edit);
     a->nav_editing = 0;
     if (apply) {
         (void)navigate_to(a, path, 1);
@@ -1807,8 +1807,8 @@ handle_key(app_t *a, const tiku_event_t *event)
         return;
     }
     if (a->nav_editing) {
-        tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
-        tiku_trk_edit_result_t result;
+        tiku_field_key_t k = TIKU_FIELD_CHAR;
+        tiku_field_result_t result;
         int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
@@ -1830,7 +1830,7 @@ handle_key(app_t *a, const tiku_event_t *event)
                     snprintf(full, sizeof full, "%s%s%s", dir,
                              (dir[strlen(dir) - 1u] == '/') ? "" : "/",
                              leaf);
-                    tiku_trk_edit_start(&a->nav_edit, full);
+                    tiku_field_start(&a->nav_edit, full);
                     a->nav_edit.sel_a = a->nav_edit.sel_b =
                         a->nav_edit.caret = a->nav_edit.len;
                 }
@@ -1839,31 +1839,31 @@ handle_key(app_t *a, const tiku_event_t *event)
             return;
         }
         switch (key) {
-        case TIKU_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;     break;
-        case TIKU_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;     break;
-        case TIKU_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-        case TIKU_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;     break;
-        case TIKU_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;       break;
-        case TIKU_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;      break;
-        case TIKU_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;       break;
-        case TIKU_KEY_END:    k = TIKU_TRK_EDIT_END;        break;
+        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;     break;
+        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;     break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;     break;
+        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;       break;
+        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;      break;
+        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;       break;
+        case TIKU_KEY_END:    k = TIKU_FIELD_END;        break;
         case 'a':
             if (modifiers & TIKU_MOD_CMD) {
-                k = TIKU_TRK_EDIT_SELECT_ALL;
+                k = TIKU_FIELD_SELECT_ALL;
             }
             break;
         default: break;
         }
-        if (k == TIKU_TRK_EDIT_CHAR) {
+        if (k == TIKU_FIELD_CHAR) {
             ch = key_char(event);
             if (ch == '\0') {
                 return;
             }
         }
-        result = tiku_trk_edit_key(&a->nav_edit, k, shift, ch);
-        if (result == TIKU_TRK_EDIT_COMMITTED) {
+        result = tiku_field_key(&a->nav_edit, k, shift, ch);
+        if (result == TIKU_FIELD_COMMITTED) {
             end_location(a, 1);
-        } else if (result == TIKU_TRK_EDIT_CANCELLED) {
+        } else if (result == TIKU_FIELD_CANCELLED) {
             end_location(a, 0);
         }
         a->dirty = 1;
@@ -1873,16 +1873,16 @@ handle_key(app_t *a, const tiku_event_t *event)
         /* While editing a name the view's keys are OFF: an arrow must move
          * the caret's row selection nowhere, and 'd' must type a letter,
          * not duplicate the file. */
-        tiku_trk_edit_key_t k = TIKU_TRK_EDIT_CHAR;
+        tiku_field_key_t k = TIKU_FIELD_CHAR;
         int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
 
         if ((modifiers & TIKU_MOD_CMD) &&
             (key == 'x' || key == 'c' || key == 'v')) {
-            tiku_trk_edit_key_t text_key = (key == 'x') ? TIKU_TRK_EDIT_CUT
-                                      : (key == 'c') ? TIKU_TRK_EDIT_COPY
-                                                     : TIKU_TRK_EDIT_PASTE;
-            (void)tiku_trk_edit_key(&a->ed, text_key, 0, '\0');
+            tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
+                                      : (key == 'c') ? TIKU_FIELD_COPY
+                                                     : TIKU_FIELD_PASTE;
+            (void)tiku_field_key(&a->ed, text_key, 0, '\0');
             a->dirty = 1;
             return;
         }
@@ -1903,30 +1903,30 @@ handle_key(app_t *a, const tiku_event_t *event)
             return;
         }
         switch (key) {
-        case TIKU_KEY_RETURN: k = TIKU_TRK_EDIT_COMMIT;    break;
-        case TIKU_KEY_ESCAPE: k = TIKU_TRK_EDIT_CANCEL;    break;
-        case TIKU_KEY_BACKSPACE: k = TIKU_TRK_EDIT_BACKSPACE; break;
-        case TIKU_KEY_DELETE: k = TIKU_TRK_EDIT_DELETE;    break;
-        case TIKU_KEY_LEFT:   k = TIKU_TRK_EDIT_LEFT;      break;
-        case TIKU_KEY_RIGHT:  k = TIKU_TRK_EDIT_RIGHT;     break;
-        case TIKU_KEY_HOME:   k = TIKU_TRK_EDIT_HOME;      break;
-        case TIKU_KEY_END:    k = TIKU_TRK_EDIT_END;       break;
+        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;    break;
+        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;    break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;    break;
+        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;      break;
+        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;     break;
+        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;      break;
+        case TIKU_KEY_END:    k = TIKU_FIELD_END;       break;
         case 'a':
             if (modifiers & TIKU_MOD_CMD) {
-                k = TIKU_TRK_EDIT_SELECT_ALL;
+                k = TIKU_FIELD_SELECT_ALL;
             }
             break;
         default: break;
         }
-        if (k == TIKU_TRK_EDIT_CHAR) {
+        if (k == TIKU_FIELD_CHAR) {
             ch = key_char(event);
             if (ch == '\0') {
                 return;
             }
         }
-        switch (tiku_trk_edit_key(&a->ed, k, shift, ch)) {
-        case TIKU_TRK_EDIT_COMMITTED: end_rename(a, 1); break;
-        case TIKU_TRK_EDIT_CANCELLED: end_rename(a, 0); break;
+        switch (tiku_field_key(&a->ed, k, shift, ch)) {
+        case TIKU_FIELD_COMMITTED: end_rename(a, 1); break;
+        case TIKU_FIELD_CANCELLED: end_rename(a, 0); break;
         default: break;
         }
         a->dirty = 1;
@@ -2275,13 +2275,13 @@ not_editing:
             /* Cmd+K snaps what is there; Shift re-lays it out in sort
              * order.  Straightening an arrangement and replacing it are
              * two different commands (PVL-021). */
-            tiku_trk_scroll_detach(&a->sb);
+            tiku_scroll_detach(&a->sb);
             if (modifiers & TIKU_MOD_SHIFT) {
                 tiku_trk_poseview_cleanup(a->view, lr.w - 4);
             } else {
                 (void)tiku_trk_poseview_snap_to_grid(a->view);
             }
-            tiku_trk_scroll_attach(&a->sb);
+            tiku_scroll_attach(&a->sb);
             (void)tiku_trk_poseview_save_state(a->view);
             a->dirty = 1;
             return;
@@ -2870,8 +2870,8 @@ tracker_run(int argc, char **argv)
 
     tiku_trk_menu_set_icon_painter(paint_menu_icon);
     a.loop = tiku_trk_loop_new();
-    tiku_trk_scroll_init(&a.sb, 1);
-    tiku_trk_scroll_init(&a.hsb, 20);
+    tiku_scroll_init(&a.sb, 1);
+    tiku_scroll_init(&a.hsb, 20);
     a.view = tiku_trk_poseview_new(a.backend, start);
     if (a.view != NULL) {
         (void)tiku_trk_poseview_restore_state(a.view);
@@ -2962,9 +2962,9 @@ tracker_run(int argc, char **argv)
         /* Scripted: icon mode, auto-place, then move two icons the way a
          * user would drag them, so the capture shows real spatial state. */
         tiku_rect_t lr = list_rect(&a);
-        tiku_trk_scroll_detach(&a.sb);
+        tiku_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_ICON);
-        tiku_trk_scroll_attach(&a.sb);
+        tiku_scroll_attach(&a.sb);
         (void)tiku_trk_poseview_place_unplaced(a.view, lr.w - 4);
         {
             tiku_trk_pose_t *p0 = tiku_trk_poseview_at(a.view, 0);
@@ -2977,9 +2977,9 @@ tracker_run(int argc, char **argv)
     if (getenv("TRK_DEMO_MINI") != NULL) {
         tiku_rect_t lr = list_rect(&a);
 
-        tiku_trk_scroll_detach(&a.sb);
+        tiku_scroll_detach(&a.sb);
         tiku_trk_poseview_set_mode(a.view, TIKU_TRK_MODE_MINI);
-        tiku_trk_scroll_attach(&a.sb);
+        tiku_scroll_attach(&a.sb);
         (void)tiku_trk_poseview_place_unplaced(a.view, lr.w - 4);
         tiku_trk_poseview_click(a.view, 2, 0);
     }
@@ -3269,18 +3269,18 @@ tracker_run(int argc, char **argv)
                     int btn = a.sb_rect.w;
 
                     if (at < btn) {
-                        tiku_trk_scroll_arrow_press(&a.sb, -1);
+                        tiku_scroll_arrow_press(&a.sb, -1);
                         tiku_trk_poseview_scroll_to(a.view,
                             tiku_trk_poseview_scroll(a.view) -
-                                tiku_trk_scroll_line(&a.sb));
+                                tiku_scroll_line(&a.sb));
                     } else if (at >= a.sb_rect.h - btn) {
-                        tiku_trk_scroll_arrow_press(&a.sb, 1);
+                        tiku_scroll_arrow_press(&a.sb, 1);
                         tiku_trk_poseview_scroll_to(a.view,
                             tiku_trk_poseview_scroll(a.view) +
-                                tiku_trk_scroll_line(&a.sb));
+                                tiku_scroll_line(&a.sb));
                     } else {
                         tiku_trk_poseview_scroll_to(a.view,
-                            tiku_trk_scroll_press(&a.sb,
+                            tiku_scroll_press(&a.sb,
                                 a.sb_rect.h - 2 * btn, at - btn));
                     }
                     a.dirty = 1;
@@ -3311,18 +3311,18 @@ tracker_run(int argc, char **argv)
                     int btn = a.hsb_rect.h;
 
                     if (at < btn) {
-                        tiku_trk_scroll_arrow_press(&a.hsb, -1);
+                        tiku_scroll_arrow_press(&a.hsb, -1);
                         tiku_trk_poseview_set_hscroll(a.view,
                             tiku_trk_poseview_hscroll(a.view) -
-                                tiku_trk_scroll_line(&a.hsb));
+                                tiku_scroll_line(&a.hsb));
                     } else if (at >= a.hsb_rect.w - btn) {
-                        tiku_trk_scroll_arrow_press(&a.hsb, 1);
+                        tiku_scroll_arrow_press(&a.hsb, 1);
                         tiku_trk_poseview_set_hscroll(a.view,
                             tiku_trk_poseview_hscroll(a.view) +
-                                tiku_trk_scroll_line(&a.hsb));
+                                tiku_scroll_line(&a.hsb));
                     } else {
                         tiku_trk_poseview_set_hscroll(a.view,
-                            tiku_trk_scroll_press(&a.hsb,
+                            tiku_scroll_press(&a.hsb,
                                 a.hsb_rect.w - 2 * btn, at - btn));
                     }
                     a.dirty = 1;
@@ -3632,7 +3632,7 @@ tracker_run(int argc, char **argv)
                 }
                 if (a.sb.tracking) {
                     tiku_trk_poseview_scroll_to(a.view,
-                        tiku_trk_scroll_drag(&a.sb,
+                        tiku_scroll_drag(&a.sb,
                             a.sb_rect.h - 2 * a.sb_rect.w,
                             ev.y - a.sb_rect.y - a.sb_rect.w));
                     a.dirty = 1;
@@ -3640,7 +3640,7 @@ tracker_run(int argc, char **argv)
                 }
                 if (a.hsb.tracking) {
                     tiku_trk_poseview_set_hscroll(a.view,
-                        tiku_trk_scroll_drag(&a.hsb,
+                        tiku_scroll_drag(&a.hsb,
                             a.hsb_rect.w - 2 * a.hsb_rect.h,
                             ev.x - a.hsb_rect.x - a.hsb_rect.h));
                     a.dirty = 1;
@@ -3725,8 +3725,8 @@ tracker_run(int argc, char **argv)
             case TIKU_EVENT_POINTER_UP:
                 /* Letting go applies whatever range arrived while the bar
                  * was held (PVL-052). */
-                tiku_trk_scroll_release(&a.sb);
-                tiku_trk_scroll_release(&a.hsb);
+                tiku_scroll_release(&a.sb);
+                tiku_scroll_release(&a.hsb);
                 if (tiku_trk_titleview_tracking(&a.tv) !=
                         TIKU_TRK_TRACK_NONE) {
                     int cx = 0, cy = 0;
@@ -3900,19 +3900,19 @@ tracker_run(int argc, char **argv)
              * itself; running is not, by itself, a repaint. */
             (void)tiku_trk_loop_pulse(a.loop);
             {   /* A held arrow keeps stepping (NeXT UIG ch3). */
-                int rep = tiku_trk_scroll_arrow_repeat(&a.sb);
+                int rep = tiku_scroll_arrow_repeat(&a.sb);
 
                 if (rep != 0) {
                     tiku_trk_poseview_scroll_to(a.view,
                         tiku_trk_poseview_scroll(a.view) +
-                            rep * tiku_trk_scroll_line(&a.sb));
+                            rep * tiku_scroll_line(&a.sb));
                     a.dirty = 1;
                 }
-                rep = tiku_trk_scroll_arrow_repeat(&a.hsb);
+                rep = tiku_scroll_arrow_repeat(&a.hsb);
                 if (rep != 0) {
                     tiku_trk_poseview_set_hscroll(a.view,
                         tiku_trk_poseview_hscroll(a.view) +
-                            rep * tiku_trk_scroll_line(&a.hsb));
+                            rep * tiku_scroll_line(&a.hsb));
                     a.dirty = 1;
                 }
             }

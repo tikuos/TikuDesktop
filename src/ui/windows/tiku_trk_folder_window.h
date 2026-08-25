@@ -15,11 +15,11 @@
 #include "tiku_window.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_cwmenu.h"
-#include "tiku_trk_edit.h"
+#include "tiku_field.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_poseview.h"
-#include "tiku_trk_scroll.h"
+#include "tiku_scroll.h"
 #include "tiku_trk_background.h"
 #include "tiku_trk_prefs.h"
 #include "tiku_query.h"
@@ -68,11 +68,11 @@ typedef struct {
     char                  *find_text;
     int                   *editing;
     char                  *edit_path;
-    tiku_trk_edit_t       *value_edit;
+    tiku_field_t       *value_edit;
     int                   *renaming;
     tiku_trk_folder_window_t **rename_folder;
     int                   *rename_row;
-    tiku_trk_edit_t       *rename_edit;
+    tiku_field_t       *rename_edit;
     tiku_trk_folder_window_t **band_folder;
     int                   *band_x0;
     int                   *band_y0;
@@ -103,7 +103,7 @@ struct tiku_trk_folder_window {
     int                        live;
     int                        gone;
     tiku_trk_frame_t           opened_with;
-    tiku_trk_scroll_t          sbar;    /* the window's own bar (PVL-051) */
+    tiku_scroll_t          sbar;    /* the window's own bar (PVL-051) */
     int                        trash_union; /* every volume's trash, one
                                              * window (PVN-027) */
     int                        had_frame;

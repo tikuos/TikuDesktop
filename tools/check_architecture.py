@@ -27,10 +27,17 @@ X11_LEGACY = set()
 # kit that reached the Interface kit is refused by check_kits.py before
 # this ever runs.
 HEADLESS = {
-    "alert", "clip", "drag", "edit", "frame", "info", "launch", "match",
+    "alert", "clip", "drag", "frame", "info", "launch", "match",
     "navigator", "navmenu", "nodeicon", "panel", "poseview", "prefs",
-    "scroll", "select", "switcher", "task", "types",
+    "select", "switcher", "task", "types",
 }
+
+# Interaction state that moved INTO the Interface kit keeps the same
+# draws-nothing rule it had here: it lives beside the painters now, so
+# check_kits.py cannot see an include that never crosses a kit boundary
+# -- this is the guard that survives the move.
+KIT_HEADLESS = ("tiku_scroll.c", "tiku_field.c", "tiku_scroll.h",
+                "tiku_field.h")
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
 
@@ -108,9 +115,18 @@ def main() -> int:
     # one that is still Tracker's.
     kit_headers = {p.name for p in KITS.rglob("*.h")}
     for path in sorted(KITS.rglob("*.[ch]")):
-        for inc in INCLUDE.findall(path.read_text(errors="replace")):
+        includes = INCLUDE.findall(path.read_text(errors="replace"))
+        for inc in includes:
             if inc.startswith("tiku_trk_") and inc not in kit_headers:
                 errors.append(f"{path}: a kit imports Tracker: {inc}")
+        if path.name in KIT_HEADLESS:
+            ui = [inc for inc in includes
+                  if inc in {"tiku_gfx.h", "tiku_font.h",
+                             "tiku_ui.h", "tiku_host.h"}]
+            if ui:
+                errors.append(
+                    f"{path}: interaction state imports drawing: "
+                    f"{', '.join(ui)}")
 
     for path in sorted(TRACKER_SRC.rglob("*.[ch]")):
         includes = INCLUDE.findall(path.read_text(errors="replace"))

@@ -48,9 +48,12 @@ The kits publish that split, one archive per kit -- six in all, of which
 three carry this document's boundaries:
 
 - `kits/interface` -> `libtiku_interface.a`: the surface, fonts, the
-  colour table, the R5 control set, windows and focus, and the platform
-  adapter behind the portable event boundary -- the whole drawing floor
-  in one archive, because everything in it reaches for the same pixels;
+  colour table, the R5 control set, windows and focus, the platform
+  adapter behind the portable event boundary -- and the interaction
+  state behind two of the controls, the scrollbar's tracking
+  (`tiku_scroll`) and the text field's editing (`tiku_field`), which
+  draw nothing and are checked for it, so an application gets the
+  behaviour and not just the picture;
 - `kits/application` -> `libtiku_application.a`: embedded application
   descriptors, the registry they are selected from, their lifecycle, and
   the client, conductor, and remote channels;
@@ -118,10 +121,10 @@ filesystem answers remain a shell callback.
 The directories above are the real structure, and binary ownership
 deliberately is not: the two shells are one product built two ways, and
 the tree is organised by LAYER because that is where the boundaries are.
-Measured from the link lists (2026-08-25), of the sixty-nine sources
+Measured from the link lists (2026-08-25), of the sixty-seven sources
 under `src/`:
 
-- thirty-five are linked into BOTH binaries -- the models, the pose
+- thirty-three are linked into BOTH binaries -- the models, the pose
   engine, the menus, the deskbar's icon layer: the product itself;
 - twenty-nine are the desktop's alone: its composition and splash, the
   Deskbar proper, the session controller, and nearly every feature

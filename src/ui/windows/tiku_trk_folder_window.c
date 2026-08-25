@@ -704,7 +704,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
 static int
 fw_measure_prefix(const char *text, int n, void *ctx)
 {
-    char tmp[TIKU_TRK_EDIT_MAX];
+    char tmp[TIKU_FIELD_MAX];
 
     (void)ctx;
     if (n < 0) { n = 0; }
@@ -923,7 +923,7 @@ draw_transients(tiku_trk_folder_window_t *folder,
             int bw = cap, bs = 0;
             tiku_rect_t box;
 
-            tiku_trk_edit_metrics(render->rename_edit, 60, cap,
+            tiku_field_metrics(render->rename_edit, 60, cap,
                                   fw_measure_prefix, NULL, &bw, &bs);
             box = (tiku_rect_t){ list.x + 2,
                 list.y + 2 + at * render->row_h, bw, render->row_h };
@@ -1280,11 +1280,11 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
         int tpos = 0, tlen = 0;
         float frac, pos;
 
-        (void)tiku_trk_scroll_set_range(&folder->sbar, total, rows);
+        (void)tiku_scroll_set_range(&folder->sbar, total, rows);
         if (!folder->sbar.tracking) {
-            (void)tiku_trk_scroll_to(&folder->sbar, scroll);
+            (void)tiku_scroll_to(&folder->sbar, scroll);
         }
-        if (tiku_trk_scroll_thumb(&folder->sbar, sb.h, &tpos, &tlen)) {
+        if (tiku_scroll_thumb(&folder->sbar, sb.h, &tpos, &tlen)) {
             frac = (float)tlen / (float)sb.h;
             pos = (sb.h > tlen) ? (float)tpos / (float)(sb.h - tlen)
                                 : 0.0f;
