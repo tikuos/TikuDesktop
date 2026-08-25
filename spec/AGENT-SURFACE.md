@@ -138,6 +138,29 @@ nothing beyond version 1.
 
 ### Stage 4 — The structured screen as a feed
 
+**2026-08-25: the vocabulary is now worth reading.**  Fourteen controls
+record themselves as what they ARE rather than as the rectangles they are
+drawn from -- button, checkbox, radio, list row, panel, raised, sunken,
+icon, and now gauge, tip, text field, scrollbar, slider, tab strip, alert
+icon and menu field.  An alert crosses in ten commands where it took
+seventy-three, a scrollbar in one where it took twenty-five, and what a
+reader gets is the noun: a field and what is typed in it, a bar and how
+full it is, which tab of which names is current.
+
+Two of those were not merely verbose but WRONG, and the measurement is
+what found them: the gauge recorded a single fill and suppressed the
+calls that draw its frame and its bar, so it crossed as an empty box; the
+menu field's marker is stroked pixel by pixel, which the list cannot
+carry, and it recorded no miss -- a window that arrived looking finished
+with its marker absent.  test_dlcontrols now draws every recording
+control, sends it, plays it back and compares the surfaces byte for byte,
+which is the only form this stage's claim can be checked in.
+
+What remains for this stage is the READER: nothing yet consumes the
+stream as a tree.  The vocabulary is no longer the blocker.
+
+
+
 The display list is already a semantic description of a window — "a
 button, here, labelled this; this art, there".  Let a permitted reader
 subscribe to it as a UI TREE rather than replaying it as pixels.  This

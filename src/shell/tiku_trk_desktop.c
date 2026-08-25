@@ -1680,6 +1680,17 @@ rebuild_global_bar(desktop_t *app)
                 (void)tiku_menu_add_separator(to);
             } else if (i + 1 < from->nitem &&
                        from->item[i + 1].level == 1 && nsub < 4) {
+                /*
+                 * Four submenus per published menu, which is what gsub
+                 * holds.  A fifth would fall to the plain-item road
+                 * below and its children would be skipped by the level
+                 * test at the top of this loop -- a row that opens
+                 * nothing.  No application publishes that many today;
+                 * the day one does, the answer is to FLATTEN the extra
+                 * submenu's items into their holder rather than to grow
+                 * the array, because a menu five submenus deep in one
+                 * strip is a menu that wants rethinking.
+                 */
                 tiku_menu_t *sub = &app->gsub[m][nsub++];
                 int k = i + 1;
 
