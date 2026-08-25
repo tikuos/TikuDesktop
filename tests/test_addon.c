@@ -6,7 +6,7 @@ static int invoked;
 static int invoke(const tiku_trk_addon_t *a, void *ctx)
 { invoked = (a->key == 'x' && ctx != NULL); return invoked; }
 int main(void) {
-    tiku_trk_addons_t a; tiku_trk_menu_t m; const char *types[] = {"text/plain"};
+    tiku_trk_addons_t a; tiku_menu_t m; const char *types[] = {"text/plain"};
     tiku_trk_addons_init(&a);
     tiku_trk_addons_register(&a, "Generic", "/bin/true", "*", 'g');
     tiku_trk_addons_register(&a, "Writer", "/bin/true", "text/plain", 'w');
@@ -15,7 +15,7 @@ int main(void) {
     if (tiku_trk_addons_rebind(&a, "Writer=x\n") != 1 || m.item[0].shortcut != 'w') return 1;
     tiku_trk_addons_build_menu(&a, types, 1, &m, 1000);
     if (m.item[0].shortcut != 'x') return 1;
-    tiku_trk_menu_set_icon(&m, m.item[0].command, "text-file");
+    tiku_menu_set_icon(&m, m.item[0].command, "text-file");
     if (strcmp(m.item[0].icon, "text-file") != 0) return 1;
     if (!tiku_trk_addons_invoke(&a, 1001, 1000, invoke, &a) || !invoked) return 1;
     if (tiku_trk_addons_shortcut(&a, 'x', 0x3u, 1000) != 1001) return 1;

@@ -43,8 +43,8 @@ typedef struct {
     int *drop_row;
     tiku_trk_drag_t pending;
     char destination[TIKU_PATH_MAX];
-    tiku_trk_menu_t **popup;
-    tiku_trk_menu_t **popup_sub;
+    tiku_menu_t **popup;
+    tiku_menu_t **popup_sub;
     tiku_rect_t *popup_frame;
     char *progress_destination;
     size_t progress_destination_size;
@@ -68,7 +68,7 @@ void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
     tiku_trk_cwmenu_t *menus, tiku_trk_alert_t *alert,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
-    int *drop_row, tiku_trk_menu_t **popup, tiku_trk_menu_t **popup_sub,
+    int *drop_row, tiku_menu_t **popup, tiku_menu_t **popup_sub,
     tiku_rect_t *popup_frame, char *progress_destination,
     size_t progress_destination_size, char *status, size_t status_size,
     int *dirty, int screen_w, int screen_h,

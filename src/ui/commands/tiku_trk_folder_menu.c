@@ -197,7 +197,7 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
     }
     count = tiku_trk_poseview_types_present(folder->view, types, 4);
     for (i = 0; i < count; i++) {
-        tiku_trk_menu_t *menu = &controller->menus->per_type[i];
+        tiku_menu_t *menu = &controller->menus->per_type[i];
         const tiku_trk_typerec_t *record =
             tiku_trk_types_find(controller->types, types[i]);
         int k;
@@ -210,13 +210,13 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
         snprintf(controller->menus->per_type_icon[controller->menus->per_type_count],
                  sizeof controller->menus->per_type_icon[0], "%s",
                  record->icon);
-        tiku_trk_menu_clear(menu);
+        tiku_menu_clear(menu);
         for (k = 0; k < record->ncol; k++) {
             const char *title = NULL;
             int command = column_command(record->col[k], &title);
 
             if (command != 0) {
-                (void)tiku_trk_menu_add(menu, title, command, 0, 0u, 1);
+                (void)tiku_menu_add(menu, title, command, 0, 0u, 1);
             }
         }
         for (k = 0; k < record->nattr; k++) {
@@ -224,7 +224,7 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
                 record->attr[k], record->attr[k], 120);
 
             if (field >= 0) {
-                (void)tiku_trk_menu_add(menu, record->attr[k],
+                (void)tiku_menu_add(menu, record->attr[k],
                     TIKU_TRK_CMD_COL_ATTR_BASE + field, 0, 0u, 1);
             }
         }

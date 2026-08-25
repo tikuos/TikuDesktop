@@ -85,11 +85,11 @@ before(const tiku_trk_addon_t *a, const tiku_trk_addon_t *b,
 
 int
 tiku_trk_addons_build_menu(const tiku_trk_addons_t *a, const char *const *types,
-                           int ntypes, tiku_trk_menu_t *menu, int base)
+                           int ntypes, tiku_menu_t *menu, int base)
 {
     int order[TIKU_TRK_ADDON_MAX], i, j;
     if (a == NULL || menu == NULL) return 0;
-    tiku_trk_menu_clear(menu);
+    tiku_menu_clear(menu);
     for (i = 0; i < a->count; i++) order[i] = i;
     for (i = 1; i < a->count; i++) {
         int hold = order[i];
@@ -97,9 +97,9 @@ tiku_trk_addons_build_menu(const tiku_trk_addons_t *a, const char *const *types,
             order[j] = order[j-1];
         order[j] = hold;
     }
-    for (i = 0; i < a->count && menu->count < TIKU_TRK_MENU_ITEMS_MAX; i++) {
+    for (i = 0; i < a->count && menu->count < TIKU_MENU_ITEMS_MAX; i++) {
         const tiku_trk_addon_t *x = &a->item[order[i]];
-        (void)tiku_trk_menu_add(menu, x->name, base + order[i], x->key,
+        (void)tiku_menu_add(menu, x->name, base + order[i], x->key,
                                 x->mods, 1);
     }
     return menu->count;

@@ -2,7 +2,7 @@
 #ifndef TIKU_TRK_ADDON_H_
 #define TIKU_TRK_ADDON_H_
 
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_model.h"
 
 #define TIKU_TRK_ADDON_MAX 32
@@ -38,7 +38,7 @@ int tiku_trk_addons_accepts(const tiku_trk_addon_t *addon,
                             const char *const *types, int ntypes);
 int tiku_trk_addons_build_menu(const tiku_trk_addons_t *addons,
                                const char *const *types, int ntypes,
-                               tiku_trk_menu_t *menu, int command_base);
+                               tiku_menu_t *menu, int command_base);
 int tiku_trk_addons_invoke(const tiku_trk_addons_t *addons, int command,
                            int command_base, tiku_trk_addon_invoke_fn fn,
                            void *context);

@@ -14,7 +14,7 @@
 
 #include "tiku_trk_folder_window.h"
 #include "tiku_trk_launch.h"
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_state.h"
 
 typedef void (*tiku_trk_launch_open_path_fn)(void *context,
@@ -45,7 +45,7 @@ int tiku_trk_launch_controller_run(tiku_trk_launch_controller_t *controller,
     const tiku_trk_app_t *application, const char *const *paths, int count);
 /** @brief Rebuild an Open-with menu for the folder's current selection. */
 void tiku_trk_launch_controller_build_menu(
-    tiku_trk_launch_controller_t *controller, tiku_trk_menu_t *menu,
+    tiku_trk_launch_controller_t *controller, tiku_menu_t *menu,
     tiku_trk_folder_window_t *folder);
 /** @brief Invoke one entry from the freshly rebuilt Open-with candidates. */
 void tiku_trk_launch_controller_pick(

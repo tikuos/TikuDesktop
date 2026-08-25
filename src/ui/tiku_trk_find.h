@@ -20,7 +20,7 @@
 #ifndef TIKU_TRK_FIND_H_
 #define TIKU_TRK_FIND_H_
 
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_query.h"
 #include "tiku_trk_types.h"
 
@@ -102,15 +102,15 @@ typedef struct {
     tiku_trk_find_focus_t focus;
     int                   focus_row;
     /* A popup currently showing, and what it belongs to. */
-    tiku_trk_menu_t       popup;
+    tiku_menu_t       popup;
     tiku_trk_find_hit_t   popup_for;
     int                   popup_row;
     tiku_rect_t      popup_frame;
     /* Type submenus are owned by the panel: menu items intentionally keep
      * non-owned pointers, so stack-built children would dangle on return. */
-    tiku_trk_menu_t       type_sub[TIKU_TRK_FIND_TYPE_SUPERS];
+    tiku_menu_t       type_sub[TIKU_TRK_FIND_TYPE_SUPERS];
     int                   type_sub_count;
-    tiku_trk_menu_t      *popup_sub;
+    tiku_menu_t      *popup_sub;
     tiku_rect_t      popup_sub_frame;
     char                  type_choice[TIKU_TRK_FIND_TYPE_CHOICES]
                                      [TIKU_TYPE_MAX];

@@ -1070,9 +1070,9 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
     draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_S_NORMAL);
 
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
-        tiku_trk_menu_draw(&f->popup, s, f->popup_frame);
+        tiku_menu_draw(&f->popup, s, f->popup_frame);
         if (f->popup_sub != NULL) {
-            tiku_trk_menu_draw(f->popup_sub, s, f->popup_sub_frame);
+            tiku_menu_draw(f->popup_sub, s, f->popup_sub_frame);
         }
     }
 }
@@ -1188,18 +1188,18 @@ static void
 open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
            tiku_rect_t under, tiku_rect_t screen)
 {
-    tiku_trk_menu_t *m = &f->popup;
+    tiku_menu_t *m = &f->popup;
     int i;
 
-    tiku_trk_menu_clear(m);
+    tiku_menu_clear(m);
     f->popup_sub = NULL;
     f->type_sub_count = 0;
     f->type_choice_count = 0;
     switch (what) {
     case TIKU_TRK_FIND_HIT_MODE:
-        (void)tiku_trk_menu_add(m, "by name", 0, 0, 0u, 1);
-        (void)tiku_trk_menu_add(m, "by attribute", 1, 0, 0u, 1);
-        (void)tiku_trk_menu_add(m, "by formula", 2, 0, 0u, 1);
+        (void)tiku_menu_add(m, "by name", 0, 0, 0u, 1);
+        (void)tiku_menu_add(m, "by attribute", 1, 0, 0u, 1);
+        (void)tiku_menu_add(m, "by formula", 2, 0, 0u, 1);
         m->item[f->mode].marked = 1;
         break;
     case TIKU_TRK_FIND_HIT_FIELD:
@@ -1209,7 +1209,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             if (!field_in_menu(f, kFields[i].field)) {
                 continue;
             }
-            at = tiku_trk_menu_add(m, tiku_str(kFields[i].label), i, 0,
+            at = tiku_menu_add(m, tiku_str(kFields[i].label), i, 0,
                                    0u, 1);
             if (kFields[i].field == f->row[row].field) {
                 m->item[at].marked = 1;
@@ -1226,7 +1226,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             if ((ops & (1u << i)) == 0u) {
                 continue;
             }
-            (void)tiku_trk_menu_add(m,
+            (void)tiku_menu_add(m,
                                     op_label(f->row[row].field,
                                              (tiku_qop_t)i),
                                     i, 0, 0u, 1);
@@ -1237,15 +1237,15 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         break;
     }
     case TIKU_TRK_FIND_HIT_JOIN:
-        (void)tiku_trk_menu_add(m, "and", 0, 0, 0u, 1);
-        (void)tiku_trk_menu_add(m, "or", 1, 0, 0u, 1);
+        (void)tiku_menu_add(m, "and", 0, 0, 0u, 1);
+        (void)tiku_menu_add(m, "or", 1, 0, 0u, 1);
         m->item[f->row[row].join].marked = 1;
         break;
     case TIKU_TRK_FIND_HIT_QUERIES: {
         char names[TIKU_QUERY_LIST_MAX][128];
         int n;
 
-        (void)tiku_trk_menu_add(m, tiku_str("find.save_as_template"), 0, 0,
+        (void)tiku_menu_add(m, tiku_str("find.save_as_template"), 0, 0,
                                 0u, 1);
         /* Templates ABOVE the queries that were run, which is the order
          * the original's menu has them in: a template is a thing you keep,
@@ -1253,59 +1253,59 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         n = tiku_query_list_kind(f->store, TIKU_QREC_TEMPLATE,
                                      names, TIKU_QUERY_LIST_MAX);
         if (n > 0) {
-            (void)tiku_trk_menu_add_separator(m);
+            (void)tiku_menu_add_separator(m);
             for (i = 0; i < n; i++) {
-                (void)tiku_trk_menu_add(m, names[i], 100 + i, 0, 0u, 1);
+                (void)tiku_menu_add(m, names[i], 100 + i, 0, 0u, 1);
             }
         }
         n = tiku_query_list_kind(f->store, TIKU_QREC_QUERY, names,
                                      TIKU_TRK_FIND_RECENT_MAX);
         if (n > 0) {
-            (void)tiku_trk_menu_add_separator(m);
+            (void)tiku_menu_add_separator(m);
             for (i = 0; i < n; i++) {
-                (void)tiku_trk_menu_add(m, names[i], 200 + i, 0, 0u, 1);
+                (void)tiku_menu_add(m, names[i], 200 + i, 0, 0u, 1);
             }
         }
         /* Kept at the end so attaching a loaded template does not move the
          * template and recent-query entries the user was already using. */
         if (f->loaded_kind == TIKU_QREC_TEMPLATE &&
             f->loaded_name[0] != '\0' && !f->edit_template) {
-            (void)tiku_trk_menu_add_separator(m);
-            (void)tiku_trk_menu_add(m, tiku_str("find.edit_loaded_template"), 1,
+            (void)tiku_menu_add_separator(m);
+            (void)tiku_menu_add(m, tiku_str("find.edit_loaded_template"), 1,
                                     0, 0u,
                                     1);
         }
         break;
     }
     case TIKU_TRK_FIND_HIT_SCOPE:
-        (void)tiku_trk_menu_add(m, "Everywhere", 0, 0, 0u, 1);
+        (void)tiku_menu_add(m, "Everywhere", 0, 0, 0u, 1);
         m->item[0].marked = f->everywhere;
-        (void)tiku_trk_menu_add_separator(m);
+        (void)tiku_menu_add_separator(m);
         for (i = 0; i < f->place_count; i++) {
             char lbl[TIKU_NAME_MAX + 2];
 
             snprintf(lbl, sizeof lbl, "/%s", f->place[i]);
-            (void)tiku_trk_menu_add(m, lbl, 100 + i, 0, 0u, 1);
+            (void)tiku_menu_add(m, lbl, 100 + i, 0, 0u, 1);
             if (!f->everywhere && (f->place_mask & (1u << i))) {
                 m->item[m->count - 1].marked = 1;
             }
         }
-        (void)tiku_trk_menu_add_separator(m);
+        (void)tiku_menu_add_separator(m);
         /* Any folder at all, not only the roots the startup scan found:
          * the chooser is the file panel (Q-019). */
-        (void)tiku_trk_menu_add(m, tiku_str("find.select_folders"), 99, 0,
+        (void)tiku_menu_add(m, tiku_str("find.select_folders"), 99, 0,
                                 0u, 1);
         break;
     case TIKU_TRK_FIND_HIT_TYPE: {
         char used[TIKU_TRK_FIND_MOST_USED][TIKU_TYPE_MAX];
         int nu = used_read(f->store, used, TIKU_TRK_FIND_MOST_USED);
 
-        (void)tiku_trk_menu_add(m, tiku_str("find.all_files"), 0, 0, 0u, 1);
+        (void)tiku_menu_add(m, tiku_str("find.all_files"), 0, 0, 0u, 1);
         m->item[0].marked = (f->type[0] == '\0');
-        (void)tiku_trk_menu_add_separator(m);
+        (void)tiku_menu_add_separator(m);
         for (i = 0; i < nu; i++) {
             int cmd = type_command(f, used[i]);
-            int at = tiku_trk_menu_add(m, type_label(f, used[i]), cmd,
+            int at = tiku_menu_add(m, type_label(f, used[i]), cmd,
                                        0, 0u, cmd >= 0);
 
             if (at >= 0 && strcmp(f->type, used[i]) == 0) {
@@ -1313,7 +1313,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             }
         }
         if (nu > 0) {
-            (void)tiku_trk_menu_add_separator(m);
+            (void)tiku_menu_add_separator(m);
         }
         if (f->types != NULL) {
             /* Supertypes own their subtype menus.  A supertype with no
@@ -1322,7 +1322,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
             for (i = 0; i < f->types->n; i++) {
                 const tiku_trk_typerec_t *super = &f->types->rec[i];
                 size_t sn = strlen(super->type);
-                tiku_trk_menu_t *sub;
+                tiku_menu_t *sub;
                 int k, children = 0;
 
                 if (sn == 0u || super->type[sn - 1u] != '/') {
@@ -1341,15 +1341,15 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                     continue;
                 }
                 sub = &f->type_sub[f->type_sub_count++];
-                tiku_trk_menu_clear(sub);
+                tiku_menu_clear(sub);
                 if (!type_is_used(used, nu, super->type)) {
-                    char all[TIKU_TRK_MENU_LABEL_MAX];
+                    char all[TIKU_MENU_LABEL_MAX];
                     int cmd = type_command(f, super->type);
                     int at;
 
                     snprintf(all, sizeof all, "All %s",
                              type_label(f, super->type));
-                    at = tiku_trk_menu_add(sub, all, cmd, 0, 0u, cmd >= 0);
+                    at = tiku_menu_add(sub, all, cmd, 0, 0u, cmd >= 0);
                     if (at >= 0 && strcmp(f->type, super->type) == 0) {
                         sub->item[at].marked = 1;
                     }
@@ -1364,13 +1364,13 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                         continue;
                     }
                     cmd = type_command(f, child->type);
-                    at = tiku_trk_menu_add(sub, type_label(f, child->type),
+                    at = tiku_menu_add(sub, type_label(f, child->type),
                                            cmd, 0, 0u, cmd >= 0);
                     if (at >= 0 && strcmp(f->type, child->type) == 0) {
                         sub->item[at].marked = 1;
                     }
                 }
-                (void)tiku_trk_menu_add_submenu(m,
+                (void)tiku_menu_add_submenu(m,
                                                 type_label(f, super->type),
                                                 sub, sub->count > 0);
             }
@@ -1385,7 +1385,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                     continue;
                 }
                 cmd = type_command(f, type);
-                at = tiku_trk_menu_add(m, type_label(f, type), cmd, 0, 0u,
+                at = tiku_menu_add(m, type_label(f, type), cmd, 0, 0u,
                                        cmd >= 0);
                 if (at >= 0 && strcmp(f->type, type) == 0) {
                     m->item[at].marked = 1;
@@ -1403,7 +1403,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                     continue;
                 }
                 cmd = type_command(f, type);
-                at = tiku_trk_menu_add(m, type_label(f, type), cmd, 0, 0u,
+                at = tiku_menu_add(m, type_label(f, type), cmd, 0, 0u,
                                        cmd >= 0);
                 if (at >= 0 && strcmp(f->type, type) == 0) {
                     m->item[at].marked = 1;
@@ -1415,7 +1415,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
 
             for (i = nu; i < n; i++) {
                 int cmd = type_command(f, types[i]);
-                int at = tiku_trk_menu_add(m, type_label(f, types[i]), cmd,
+                int at = tiku_menu_add(m, type_label(f, types[i]), cmd,
                                            0, 0u, cmd >= 0);
 
                 if (at >= 0 && strcmp(f->type, types[i]) == 0) {
@@ -1430,7 +1430,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
     }
     f->popup_for = what;
     f->popup_row = row;
-    f->popup_frame = tiku_trk_menu_place(m, under.x, under.y + under.h,
+    f->popup_frame = tiku_menu_place(m, under.x, under.y + under.h,
                                          screen);
 }
 
@@ -1603,11 +1603,11 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
     }
     /* A showing popup eats the click, whether it lands on an item or not. */
     if (f->popup_for != TIKU_TRK_FIND_HIT_NONE) {
-        tiku_trk_menu_t *picked_menu = &f->popup;
+        tiku_menu_t *picked_menu = &f->popup;
         int pick = -1;
 
         if (f->popup_sub != NULL) {
-            pick = tiku_trk_menu_item_at(f->popup_sub, f->popup_sub_frame,
+            pick = tiku_menu_item_at(f->popup_sub, f->popup_sub_frame,
                                          x, y);
             if (pick >= 0) {
                 picked_menu = f->popup_sub;
@@ -1615,7 +1615,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
         }
         if (pick < 0) {
             picked_menu = &f->popup;
-            pick = tiku_trk_menu_item_at(&f->popup, f->popup_frame, x, y);
+            pick = tiku_menu_item_at(&f->popup, f->popup_frame, x, y);
         }
 
         if (pick >= 0) {
@@ -1625,7 +1625,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
                 f->popup.item[pick].submenu != NULL) {
                 f->popup_sub = f->popup.item[pick].submenu;
                 f->popup.open_index = pick;
-                f->popup_sub_frame = tiku_trk_menu_place_sub(
+                f->popup_sub_frame = tiku_menu_place_sub(
                     &f->popup, pick, f->popup_frame, screen);
                 return TIKU_TRK_FIND_HIT_NONE;
             }

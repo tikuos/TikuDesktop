@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_trk_shortcuts.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_trk_cwmenu.h"
@@ -47,52 +47,52 @@ main(void)
 {
     printf("menu geometry\n");
     {
-        tiku_trk_menu_t m;
+        tiku_menu_t m;
         int h0, h1;
 
-        tiku_trk_menu_clear(&m);
-        (void)tiku_trk_menu_add(&m, "Open", TIKU_TRK_CMD_OPEN, 'O',
-                                TIKU_TRK_MENU_MOD_CMD, 1);
-        (void)tiku_trk_menu_add_separator(&m);
-        (void)tiku_trk_menu_add(&m, "Get info", TIKU_TRK_CMD_GET_INFO, 'I',
-                                TIKU_TRK_MENU_MOD_CMD, 1);
-        tiku_trk_menu_measure(&m);
+        tiku_menu_clear(&m);
+        (void)tiku_menu_add(&m, "Open", TIKU_TRK_CMD_OPEN, 'O',
+                                TIKU_MENU_MOD_CMD, 1);
+        (void)tiku_menu_add_separator(&m);
+        (void)tiku_menu_add(&m, "Get info", TIKU_TRK_CMD_GET_INFO, 'I',
+                                TIKU_MENU_MOD_CMD, 1);
+        tiku_menu_measure(&m);
 
-        h0 = tiku_trk_menu_item_height(&m, 0);
-        h1 = tiku_trk_menu_item_height(&m, 1);
+        h0 = tiku_menu_item_height(&m, 0);
+        h1 = tiku_menu_item_height(&m, 1);
         check(h1 == 8, "a separator is 8 px tall, not a full row");
         check(h0 > h1, "an item is taller than a separator");
         /* Items do not tile: there is a one-pixel seam under each. */
-        check(tiku_trk_menu_item_top(&m, 1) == h0 + 1,
+        check(tiku_menu_item_top(&m, 1) == h0 + 1,
               "each item leaves a one-pixel seam below it");
-        check(tiku_trk_menu_item_top(&m, 2) == h0 + 1 + h1 + 1,
+        check(tiku_menu_item_top(&m, 2) == h0 + 1 + h1 + 1,
               "the seam accumulates down the menu");
         check(m.width > 0 && m.height > 0, "the menu measures non-empty");
     }
 
     printf("\nhit-testing\n");
     {
-        tiku_trk_menu_t m;
+        tiku_menu_t m;
         tiku_rect_t f = { 100, 50, 0, 0 };
         int seam_y;
 
-        tiku_trk_menu_clear(&m);
-        (void)tiku_trk_menu_add(&m, "Open", TIKU_TRK_CMD_OPEN, 0, 0u, 1);
-        (void)tiku_trk_menu_add_separator(&m);
-        (void)tiku_trk_menu_add(&m, "Close", TIKU_TRK_CMD_CLOSE, 0, 0u, 1);
-        tiku_trk_menu_measure(&m);
+        tiku_menu_clear(&m);
+        (void)tiku_menu_add(&m, "Open", TIKU_TRK_CMD_OPEN, 0, 0u, 1);
+        (void)tiku_menu_add_separator(&m);
+        (void)tiku_menu_add(&m, "Close", TIKU_TRK_CMD_CLOSE, 0, 0u, 1);
+        tiku_menu_measure(&m);
         f.w = m.width;
         f.h = m.height;
 
-        check(tiku_trk_menu_item_at(&m, f, 110, 50) == 0,
+        check(tiku_menu_item_at(&m, f, 110, 50) == 0,
               "the first item is hit at the top of the frame");
-        check(tiku_trk_menu_item_at(&m, f, 110,
-                                    50 + tiku_trk_menu_item_top(&m, 1) + 3)
+        check(tiku_menu_item_at(&m, f, 110,
+                                    50 + tiku_menu_item_top(&m, 1) + 3)
               == -1, "a separator is never hit");
-        seam_y = 50 + tiku_trk_menu_item_height(&m, 0);
-        check(tiku_trk_menu_item_at(&m, f, 110, seam_y) == -1,
+        seam_y = 50 + tiku_menu_item_height(&m, 0);
+        check(tiku_menu_item_at(&m, f, 110, seam_y) == -1,
               "the seam between items belongs to neither");
-        check(tiku_trk_menu_item_at(&m, f, 5, 50) == -1,
+        check(tiku_menu_item_at(&m, f, 5, 50) == -1,
               "a point outside the frame misses");
     }
 
@@ -146,13 +146,13 @@ main(void)
 
     printf("\nan item showing its shifted face still updates back\n");
     {
-        tiku_trk_menu_t m;
+        tiku_menu_t m;
         tiku_trk_sc_ctx_t c = base_ctx();
         int i;
 
         c.mods = TIKU_TRK_MOD_SHIFT;
         c.selection = 1;
-        tiku_trk_menu_clear(&m);
+        tiku_menu_clear(&m);
         (void)tiku_trk_sc_add(&m, TIKU_TRK_CMD_MOVE_TO_TRASH, &c);
         i = 0;
         check(strcmp(m.item[i].label, "Delete") == 0 &&
@@ -253,72 +253,72 @@ main(void)
         check(tiku_trk_sc_key(TIKU_TRK_CMD_MOVE_TO_TRASH) == 0x7F,
               "Move to Trash is bound to Del");
         check((tiku_trk_sc_mods(TIKU_TRK_CMD_MOVE_TO_TRASH, 0u) &
-               TIKU_TRK_MENU_MOD_CMD) == 0u,
+               TIKU_MENU_MOD_CMD) == 0u,
               "and without the command key, unlike every other action");
         check((tiku_trk_sc_mods(TIKU_TRK_CMD_SELECT_MATCHING, 0u) &
-               TIKU_TRK_MENU_MOD_SHIFT) != 0u,
+               TIKU_MENU_MOD_SHIFT) != 0u,
               "Select... carries Shift in its own shortcut");
         check((tiku_trk_sc_mods(TIKU_TRK_CMD_COPY, TIKU_TRK_MOD_SHIFT) &
-               TIKU_TRK_MENU_MOD_SHIFT) != 0u,
+               TIKU_MENU_MOD_SHIFT) != 0u,
               "Copy's shown shortcut gains Shift while Shift is held");
     }
 
     printf("\nmarking and the menu bar\n");
     {
-        tiku_trk_menu_t win, attr;
-        tiku_trk_menubar_t bar;
+        tiku_menu_t win, attr;
+        tiku_menubar_t bar;
         static const int modes[] = { TIKU_TRK_CMD_ICON_VIEW,
                                      TIKU_TRK_CMD_MINI_ICON_VIEW,
                                      TIKU_TRK_CMD_LIST_VIEW };
         tiku_trk_sc_ctx_t c = base_ctx();
 
-        tiku_trk_menu_clear(&win);
+        tiku_menu_clear(&win);
         snprintf(win.title, sizeof win.title, "Window");
         (void)tiku_trk_sc_add(&win, TIKU_TRK_CMD_ICON_VIEW, &c);
         (void)tiku_trk_sc_add(&win, TIKU_TRK_CMD_MINI_ICON_VIEW, &c);
         (void)tiku_trk_sc_add(&win, TIKU_TRK_CMD_LIST_VIEW, &c);
-        tiku_trk_menu_mark_radio(&win, modes, 3, TIKU_TRK_CMD_LIST_VIEW);
+        tiku_menu_mark_radio(&win, modes, 3, TIKU_TRK_CMD_LIST_VIEW);
         check(win.item[2].marked && !win.item[0].marked &&
               !win.item[1].marked, "exactly one view mode is marked");
-        tiku_trk_menu_mark_radio(&win, modes, 3, TIKU_TRK_CMD_ICON_VIEW);
+        tiku_menu_mark_radio(&win, modes, 3, TIKU_TRK_CMD_ICON_VIEW);
         check(win.item[0].marked && !win.item[2].marked,
               "marking another unmarks the first");
 
-        tiku_trk_menu_clear(&attr);
+        tiku_menu_clear(&attr);
         snprintf(attr.title, sizeof attr.title, "Attributes");
-        tiku_trk_menubar_init(&bar);
-        (void)tiku_trk_menubar_add(&bar, &win);
+        tiku_menubar_init(&bar);
+        (void)tiku_menubar_add(&bar, &win);
         check(bar.count == 1, "the bar takes a menu");
-        (void)tiku_trk_menubar_insert(&bar, 1, &attr);
+        (void)tiku_menubar_insert(&bar, 1, &attr);
         check(bar.count == 2 && bar.menu[1] == &attr,
               "Attributes inserts at its own index");
-        tiku_trk_menubar_remove(&bar, &attr);
+        tiku_menubar_remove(&bar, &attr);
         check(bar.count == 1 && bar.menu[0] == &win,
               "and leaves again when the view mode changes");
     }
 
     printf("\nsubmenu placement\n");
     {
-        tiku_trk_menu_t m, sub;
+        tiku_menu_t m, sub;
         tiku_rect_t screen = { 0, 0, 640, 480 };
         tiku_rect_t frame, r;
         tiku_trk_sc_ctx_t c = base_ctx();
 
-        tiku_trk_menu_clear(&sub);
+        tiku_menu_clear(&sub);
         (void)tiku_trk_sc_add(&sub, TIKU_TRK_CMD_SORT_BY_NAME, &c);
-        tiku_trk_menu_clear(&m);
-        (void)tiku_trk_menu_add_submenu(&m, "Arrange by", &sub, 1);
-        tiku_trk_menu_measure(&m);
+        tiku_menu_clear(&m);
+        (void)tiku_menu_add_submenu(&m, "Arrange by", &sub, 1);
+        tiku_menu_measure(&m);
 
         frame = (tiku_rect_t){ 40, 40, m.width, m.height };
-        r = tiku_trk_menu_place_sub(&m, 0, frame, screen);
+        r = tiku_menu_place_sub(&m, 0, frame, screen);
         check(r.x >= frame.x + frame.w,
               "a submenu opens off its parent's right edge");
 
         /* Against the right edge it flips to the LEFT rather than being
          * clamped, which would cover the parent it came from. */
         frame.x = screen.w - m.width - 4;
-        r = tiku_trk_menu_place_sub(&m, 0, frame, screen);
+        r = tiku_menu_place_sub(&m, 0, frame, screen);
         check(r.x + r.w <= frame.x + 1,
               "at the screen edge it flips to the left instead");
         check(r.x >= 0, "and stays on the screen");
@@ -347,41 +347,41 @@ main(void)
 
             q.is_query = 1;
             tiku_trk_cwmenu_rebuild(&cw, &q);
-            check(tiku_trk_menu_find(&cw.window,
+            check(tiku_menu_find(&cw.window,
                                      TIKU_TRK_CMD_LIST_VIEW) < 0 &&
-                  tiku_trk_menu_find(&cw.window,
+                  tiku_menu_find(&cw.window,
                                      TIKU_TRK_CMD_OPEN_PARENT) < 0,
                   "CW-023: a results window has no view modes and nothing "
                   "to open above it -- it is a set of answers, not a "
                   "place");
-            check(tiku_trk_menu_find(&cw.window,
+            check(tiku_menu_find(&cw.window,
                                      TIKU_TRK_CMD_SELECT_ALL) >= 0 &&
-                  tiku_trk_menu_find(&cw.window,
+                  tiku_menu_find(&cw.window,
                                      TIKU_TRK_CMD_RESIZE_TO_FIT) >= 0,
                   "CW-023: but it can still be sized and its answers "
                   "picked out");
             check(cw.window.count == 6 &&
-                  tiku_trk_menu_find(&cw.window,
+                  tiku_menu_find(&cw.window,
                       TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE) >= 0,
                   "Q-044: its Window menu is exactly the six result-set "
                   "actions");
             check(tiku_trk_cwmenu_context(&cw, NULL, &q) ==
                   &cw.window_ctx && cw.window_ctx.count == 4 &&
-                  tiku_trk_menu_find(&cw.window_ctx,
+                  tiku_menu_find(&cw.window_ctx,
                       TIKU_TRK_CMD_RESIZE_TO_FIT) >= 0 &&
-                  tiku_trk_menu_find(&cw.window_ctx,
+                  tiku_menu_find(&cw.window_ctx,
                       TIKU_TRK_CMD_INVERT_SELECTION) < 0,
                   "Q-044: its background menu has Resize, Select, Select "
                   "all and Close only");
             tiku_trk_cwmenu_rebuild(&cw, &c);
-            check(tiku_trk_menu_find(&cw.window,
+            check(tiku_menu_find(&cw.window,
                                      TIKU_TRK_CMD_LIST_VIEW) >= 0,
                   "CW-023: and an ordinary folder keeps the whole menu");
         }
-        check(tiku_trk_menu_find(&cw.attributes, TIKU_TRK_CMD_COL_DATE) >= 0
-              && tiku_trk_menu_find(&cw.attributes,
+        check(tiku_menu_find(&cw.attributes, TIKU_TRK_CMD_COL_DATE) >= 0
+              && tiku_menu_find(&cw.attributes,
                                     TIKU_TRK_CMD_COL_PATH) >= 0 &&
-              tiku_trk_menu_find(&cw.attributes,
+              tiku_menu_find(&cw.attributes,
                                  TIKU_TRK_CMD_COL_PERM) >= 0,
               "CW-025: the Attributes menu offers Modified, Location and "
               "Permissions as well -- the vocabulary was five columns wide "
@@ -396,11 +396,11 @@ main(void)
             snprintf(cw.per_type_name[1], sizeof cw.per_type_name[1],
                      "tiku-gpio");
             cw.per_type_count = 2;
-            tiku_trk_menu_clear(&cw.per_type[0]);
-            (void)tiku_trk_menu_add(&cw.per_type[0], "Size",
+            tiku_menu_clear(&cw.per_type[0]);
+            (void)tiku_menu_add(&cw.per_type[0], "Size",
                                     TIKU_TRK_CMD_COL_SIZE, 0, 0u, 1);
-            tiku_trk_menu_clear(&cw.per_type[1]);
-            (void)tiku_trk_menu_add(&cw.per_type[1], "Value",
+            tiku_menu_clear(&cw.per_type[1]);
+            (void)tiku_menu_add(&cw.per_type[1], "Value",
                                     TIKU_TRK_CMD_COL_VALUE, 0, 0u, 1);
             tiku_trk_cwmenu_rebuild(&cw, &c);
             check(cw.attributes.count == before + 3,
@@ -418,18 +418,18 @@ main(void)
                   "CW-026: a folder holding none of them is offered none: the menu "
                   "reports the listing rather than the vocabulary");
         }
-        check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_PASTE) >= 0,
+        check(tiku_menu_find(&cw.file, TIKU_TRK_CMD_PASTE) >= 0,
               "an ordinary folder's File menu has the clipboard block");
         c.is_trash = 1;
         tiku_trk_cwmenu_rebuild(&cw, &c);
-        check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_PASTE) < 0,
+        check(tiku_menu_find(&cw.file, TIKU_TRK_CMD_PASTE) < 0,
               "the Trash window has no clipboard block");
-        check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_EMPTY_TRASH) == 0,
+        check(tiku_menu_find(&cw.file, TIKU_TRK_CMD_EMPTY_TRASH) == 0,
               "and leads with Empty Trash");
-        check(tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_RESTORE) >= 0 &&
-              tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_DUPLICATE) < 0,
+        check(tiku_menu_find(&cw.file, TIKU_TRK_CMD_RESTORE) >= 0 &&
+              tiku_menu_find(&cw.file, TIKU_TRK_CMD_DUPLICATE) < 0,
               "Restore stands where Duplicate would be");
-        i = tiku_trk_menu_find(&cw.file, TIKU_TRK_CMD_DELETE);
+        i = tiku_menu_find(&cw.file, TIKU_TRK_CMD_DELETE);
         check(i >= 0 && strcmp(cw.file.item[i].label, "Delete") == 0,
               "the Trash inventory names its destructive action Delete");
         tiku_trk_sc_update(&cw.file, &c);
@@ -447,7 +447,7 @@ main(void)
               "right-clicking a file gets the pose menu");
         check(tiku_trk_cwmenu_context(&cw, &vol, &c) == &cw.volume_ctx,
               "right-clicking a volume gets its own menu");
-        check(tiku_trk_menu_find(&cw.volume_ctx, TIKU_TRK_CMD_CUT) < 0,
+        check(tiku_menu_find(&cw.volume_ctx, TIKU_TRK_CMD_CUT) < 0,
               "the volume menu has no clipboard items");
     }
 
@@ -476,7 +476,7 @@ main(void)
             (void)setenv("HOME", temp, 1);
             tiku_trk_cwmenu_init(&tcw);
             tiku_trk_cwmenu_rebuild(&tcw, &tc);
-            check(tiku_trk_menu_find(&tcw.file, TIKU_TRK_CMD_NEW_FOLDER) < 0,
+            check(tiku_menu_find(&tcw.file, TIKU_TRK_CMD_NEW_FOLDER) < 0,
                   "CW-037: stored templates replace plain New folder");
             check(tcw.new_menu.count > 0 && tcw.templates.count > 0,
                   "CW-037: New contains a discovered Templates submenu");
@@ -508,33 +508,33 @@ main(void)
     printf("\nthe drop menu\n");
     {
         tiku_trk_cwmenu_t cw;
-        tiku_trk_menu_t *d;
+        tiku_menu_t *d;
         int i;
 
         tiku_trk_cwmenu_init(&cw);
         d = tiku_trk_cwmenu_drop(&cw, 0, 0, 0u);
-        check(tiku_trk_menu_find(d, TIKU_TRK_CMD_MOVE_HERE) >= 0 &&
-              tiku_trk_menu_find(d, TIKU_TRK_CMD_CANCEL) >= 0,
+        check(tiku_menu_find(d, TIKU_TRK_CMD_MOVE_HERE) >= 0 &&
+              tiku_menu_find(d, TIKU_TRK_CMD_CANCEL) >= 0,
               "a drop offers Move/Copy/Link and a way out");
-        i = tiku_trk_menu_find(d, TIKU_TRK_CMD_LINK_HERE);
+        i = tiku_menu_find(d, TIKU_TRK_CMD_LINK_HERE);
         check(i >= 0 && d->item[i].enabled,
               "the link verb is usable when a drag payload exists");
 
         d = tiku_trk_cwmenu_drop(&cw, 1, 0, 0u);
-        i = tiku_trk_menu_find(d, TIKU_TRK_CMD_MOVE_HERE);
+        i = tiku_menu_find(d, TIKU_TRK_CMD_MOVE_HERE);
         check(!d->item[i].enabled,
               "an unwritable destination disables every verb");
-        check(d->item[tiku_trk_menu_find(d, TIKU_TRK_CMD_CANCEL)].enabled,
+        check(d->item[tiku_menu_find(d, TIKU_TRK_CMD_CANCEL)].enabled,
               "but never Cancel");
 
         d = tiku_trk_cwmenu_drop(&cw, 0, 1, 0u);
-        check(!d->item[tiku_trk_menu_find(d, TIKU_TRK_CMD_MOVE_HERE)].enabled,
+        check(!d->item[tiku_menu_find(d, TIKU_TRK_CMD_MOVE_HERE)].enabled,
               "an unwritable source disables Move");
-        check(d->item[tiku_trk_menu_find(d, TIKU_TRK_CMD_COPY_HERE)].enabled,
+        check(d->item[tiku_menu_find(d, TIKU_TRK_CMD_COPY_HERE)].enabled,
               "but copying out of it is still allowed");
 
         d = tiku_trk_cwmenu_drop(&cw, 0, 0, TIKU_TRK_MOD_SHIFT);
-        i = tiku_trk_menu_find(d, TIKU_TRK_CMD_REL_LINK_HERE);
+        i = tiku_menu_find(d, TIKU_TRK_CMD_REL_LINK_HERE);
         check(i >= 0 && d->item[i].enabled,
               "Shift turns the link verb into a usable relative link");
     }

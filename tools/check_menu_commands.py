@@ -50,7 +50,7 @@ def disabled_on_add(text):
     choice -- Name is always a column, and Open with says so when nothing
     can open the thing."""
     return set(re.findall(
-        r"tiku_trk_menu_enable\([^,]+,\s*(TIKU_TRK_CMD_[A-Z0-9_]+)\s*,\s*0\)",
+        r"tiku_menu_enable\([^,]+,\s*(TIKU_TRK_CMD_[A-Z0-9_]+)\s*,\s*0\)",
         text))
 
 

@@ -144,9 +144,9 @@ typedef struct desktop {
     tiku_trk_session_controller_t session;
     tiku_trk_script_adapter_t script_adapter;
     tiku_trk_folder_menu_t folder_menu;
-    tiku_trk_menu_t     *popup;          /* the menu showing, or NULL       */
+    tiku_menu_t     *popup;          /* the menu showing, or NULL       */
     tiku_rect_t     popup_frame;
-    tiku_trk_menu_t     *popup_sub;      /* its open submenu, or NULL       */
+    tiku_menu_t     *popup_sub;      /* its open submenu, or NULL       */
     tiku_rect_t     popup_sub_frame;
     folder_t            *bar_fl;         /* window whose bar opened popup   */
     int                  bar_open;       /* title in that window, or -1     */
@@ -200,10 +200,10 @@ typedef struct desktop {
      * rebuilt per draw from the published data alone -- the strip never
      * reaches into a window's widgets. */
     int                  gbar_on;       /* -1 until the first sync      */
-    tiku_trk_menu_t      sysmenu;
-    tiku_trk_menu_t      gmenu[TIKU_MENUSET_MENUS];
-    tiku_trk_menu_t      gsub[TIKU_MENUSET_MENUS][4];
-    tiku_trk_menubar_t   gbar;
+    tiku_menu_t      sysmenu;
+    tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];
+    tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];
+    tiku_menubar_t   gbar;
     tiku_window_t  *gbar_from;     /* whose menus the strip shows  */
     int                  gbar_open;     /* open strip menu, or -1       */
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
@@ -1049,7 +1049,7 @@ picker_add(desktop_t *app, int k, const char *label, const char *path,
             return;             /* one row per destination */
         }
     }
-    if (tiku_trk_menu_add(&cw->picker[k], label,
+    if (tiku_menu_add(&cw->picker[k], label,
             TIKU_TRK_CMD_DEST_BASE + k * TIKU_TRK_CMD_DEST_MAX + n,
             0, 0u, 1) >= 0) {
         snprintf(cw->picker_path[k][n], TIKU_PATH_MAX, "%s", path);
@@ -1087,7 +1087,7 @@ build_pickers(desktop_t *app, folder_t *fl)
     nvol = (tiku_volumes_scan(&vs) > 0) ? vs.n : 0;
     (void)tiku_desktop_dir(desk, sizeof desk);
     for (k = 0; k < 3; k++) {
-        tiku_trk_menu_clear(&app->menus.picker[k]);
+        tiku_menu_clear(&app->menus.picker[k]);
         snprintf(app->menus.picker[k].title,
                  sizeof app->menus.picker[k].title, "%s", title[k]);
         app->menus.picker_paths[k] = 0;
@@ -1144,8 +1144,8 @@ build_pickers(desktop_t *app, folder_t *fl)
         if (k < 2 && app->menus.picker[k].count > 0) {
             /* Somewhere deeper than a row can name: the panel is the
              * navigator (AW-050), reached from inside the picker. */
-            (void)tiku_trk_menu_add_separator(&app->menus.picker[k]);
-            (void)tiku_trk_menu_add(&app->menus.picker[k],
+            (void)tiku_menu_add_separator(&app->menus.picker[k]);
+            (void)tiku_menu_add(&app->menus.picker[k],
                 "Choose folder\xe2\x80\xa6",
                 (k == 0) ? TIKU_TRK_CMD_MOVE_TO : TIKU_TRK_CMD_COPY_TO,
                 0, 0u, 1);
@@ -1587,13 +1587,13 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
     memset(&set, 0, sizeof set);
     for (m = 0; m < app->menus.bar.count &&
                 set.nmenu < TIKU_MENUSET_MENUS; m++) {
-        const tiku_trk_menu_t *from = app->menus.bar.menu[m];
+        const tiku_menu_t *from = app->menus.bar.menu[m];
         tiku_menu_list_t *to = &set.menu[set.nmenu];
         int i;
 
         snprintf(to->title, sizeof to->title, "%s", from->title);
         for (i = 0; i < from->count; i++) {
-            const tiku_trk_mitem_t *fi = &from->item[i];
+            const tiku_menu_item_t *fi = &from->item[i];
             tiku_menu_entry_t *ti;
 
             if (to->nitem >= TIKU_MENUSET_ITEMS) {
@@ -1611,12 +1611,12 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
             if (fi->submenu != NULL) {
                 /* The submenu rides along as level-1 entries under its
                  * holder, which is all the flat description needs. */
-                const tiku_trk_menu_t *sub = fi->submenu;
+                const tiku_menu_t *sub = fi->submenu;
                 int k;
 
                 for (k = 0; k < sub->count &&
                             to->nitem < TIKU_MENUSET_ITEMS; k++) {
-                    const tiku_trk_mitem_t *si = &sub->item[k];
+                    const tiku_menu_item_t *si = &sub->item[k];
                     tiku_menu_entry_t *st = &to->item[to->nitem++];
 
                     snprintf(st->label, sizeof st->label, "%s", si->label);
@@ -1645,30 +1645,30 @@ rebuild_global_bar(desktop_t *app)
     int was_open = app->gbar_open;
     int m;
 
-    tiku_trk_menubar_init(&app->gbar);
+    tiku_menubar_init(&app->gbar);
     /* The system menu first, where the corner ritual lives. */
-    tiku_trk_menu_clear(&app->sysmenu);
+    tiku_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.about"),
+    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.about"),
                             TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
-    tiku_trk_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT, MARK_ICON);
-    (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.find"),
+    tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT, MARK_ICON);
+    (void)tiku_menu_add_separator(&app->sysmenu);
+    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.find"),
                             TIKU_TRK_CMD_FIND,
                             'f', TIKU_TRK_MOD_CMD, 1);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.preferences"),
+    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.preferences"),
                             TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
-    (void)tiku_trk_menu_add_separator(&app->sysmenu);
-    (void)tiku_trk_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
+    (void)tiku_menu_add_separator(&app->sysmenu);
+    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
                             TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
-    (void)tiku_trk_menubar_add(&app->gbar, &app->sysmenu);
+    (void)tiku_menubar_add(&app->gbar, &app->sysmenu);
     app->gbar_from = (set != NULL) ? fw : NULL;
     for (m = 0; set != NULL && m < set->nmenu; m++) {
         const tiku_menu_list_t *from = &set->menu[m];
-        tiku_trk_menu_t *to = &app->gmenu[m];
+        tiku_menu_t *to = &app->gmenu[m];
         int i, nsub = 0;
 
-        tiku_trk_menu_clear(to);
+        tiku_menu_clear(to);
         snprintf(to->title, sizeof to->title, "%s", from->title);
         for (i = 0; i < from->nitem; i++) {
             const tiku_menu_entry_t *fi = &from->item[i];
@@ -1677,41 +1677,41 @@ rebuild_global_bar(desktop_t *app)
                 continue;           /* consumed with its holder below */
             }
             if (fi->separator) {
-                (void)tiku_trk_menu_add_separator(to);
+                (void)tiku_menu_add_separator(to);
             } else if (i + 1 < from->nitem &&
                        from->item[i + 1].level == 1 && nsub < 4) {
-                tiku_trk_menu_t *sub = &app->gsub[m][nsub++];
+                tiku_menu_t *sub = &app->gsub[m][nsub++];
                 int k = i + 1;
 
-                tiku_trk_menu_clear(sub);
+                tiku_menu_clear(sub);
                 snprintf(sub->title, sizeof sub->title, "%s", fi->label);
                 for (; k < from->nitem && from->item[k].level == 1; k++) {
                     const tiku_menu_entry_t *si = &from->item[k];
 
                     if (si->separator) {
-                        (void)tiku_trk_menu_add_separator(sub);
+                        (void)tiku_menu_add_separator(sub);
                     } else {
-                        (void)tiku_trk_menu_add(sub, si->label,
+                        (void)tiku_menu_add(sub, si->label,
                             si->command, si->sc, si->mods, si->enabled);
                         if (si->marked) {
-                            tiku_trk_menu_mark(sub, si->command, 1);
+                            tiku_menu_mark(sub, si->command, 1);
                         }
                     }
                 }
-                (void)tiku_trk_menu_add_submenu(to, fi->label, sub,
+                (void)tiku_menu_add_submenu(to, fi->label, sub,
                                                 fi->enabled);
                 if (fi->marked && to->count > 0) {
                     to->item[to->count - 1].marked = 1;
                 }
             } else {
-                (void)tiku_trk_menu_add(to, fi->label, fi->command,
+                (void)tiku_menu_add(to, fi->label, fi->command,
                                         fi->sc, fi->mods, fi->enabled);
                 if (fi->marked) {
-                    tiku_trk_menu_mark(to, fi->command, 1);
+                    tiku_menu_mark(to, fi->command, 1);
                 }
             }
         }
-        (void)tiku_trk_menubar_add(&app->gbar, to);
+        (void)tiku_menubar_add(&app->gbar, to);
     }
     app->gbar.open = was_open;
 }
@@ -4134,10 +4134,10 @@ draw_all(desktop_t *app)
         tiku_fill(app->surf, strip, TIKU_C_PANEL);
         tiku_hline(app->surf, strip.x, strip.y + strip.h - 1,
                         strip.w, tiku_tint(TIKU_C_PANEL, 1.40f));
-        tiku_trk_menubar_draw(&app->gbar, app->surf, strip);
+        tiku_menubar_draw(&app->gbar, app->surf, strip);
         if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
             app->popup = app->gbar.menu[app->gbar_open];
-            app->popup_frame = tiku_trk_menubar_panel(&app->gbar, strip,
+            app->popup_frame = tiku_menubar_panel(&app->gbar, strip,
                 (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
         }
     }
@@ -4146,14 +4146,14 @@ draw_all(desktop_t *app)
     if (app->popup != NULL) {
         /* Re-aimed here because the menus are rebuilt per draw, which
          * clears the hot row a moment after the motion set it. */
-        (void)tiku_trk_menu_track(app->popup, app->popup_frame,
+        (void)tiku_menu_track(app->popup, app->popup_frame,
                                   app->ptr_x, app->ptr_y);
-        tiku_trk_menu_draw(app->popup, app->surf, app->popup_frame);
+        tiku_menu_draw(app->popup, app->surf, app->popup_frame);
         if (app->popup_sub != NULL) {
-            (void)tiku_trk_menu_track(app->popup_sub,
+            (void)tiku_menu_track(app->popup_sub,
                                       app->popup_sub_frame, app->ptr_x,
                                       app->ptr_y);
-            tiku_trk_menu_draw(app->popup_sub, app->surf,
+            tiku_menu_draw(app->popup_sub, app->surf,
                                app->popup_sub_frame);
         }
     }
@@ -4559,7 +4559,7 @@ offer_installed(desktop_t *app, const char *argv0)
 
 /** @brief Append one menu's rows to @p out, the way a driver reads them. */
 static void
-conduct_append_menu(char *out, size_t max, const tiku_trk_menu_t *menu)
+conduct_append_menu(char *out, size_t max, const tiku_menu_t *menu)
 {
     int i;
 
@@ -4881,7 +4881,7 @@ tracker_run(int argc, char **argv)
     app.theme_mode = -1;      /* unapplied: the first sync decides */
     app.gbar_on = -1;
     app.gbar_open = -1;
-    tiku_trk_menubar_init(&app.gbar);
+    tiku_menubar_init(&app.gbar);
     (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
@@ -5203,7 +5203,7 @@ tracker_run(int argc, char **argv)
     tiku_trk_folder_menu_init(&app.folder_menu, &app.menus, &app.clip,
         app.backend, app.fs, &app.types, &app.launcher, &app.bar_fl,
         &app.bar_open);
-    tiku_trk_menu_set_icon_painter(paint_menu_icon);
+    tiku_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_deskbar_set_menu_icon_painter(app.deskbar, deskbar_menu_icon,
                                            &app);
     tiku_trk_addons_init(&app.addons);
@@ -5596,7 +5596,7 @@ tracker_run(int argc, char **argv)
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
-        app.popup_frame = tiku_trk_menu_place(app.popup, 250, 150,
+        app.popup_frame = tiku_menu_place(app.popup, 250, 150,
                               (tiku_rect_t){ 0, 0, app.surf->w,
                                                   app.surf->h });
         c = menu_ctx(&app, fl, TIKU_TRK_MOD_SHIFT);
@@ -5618,7 +5618,7 @@ tracker_run(int argc, char **argv)
         app.popup = tiku_trk_cwmenu_context(&app.menus,
                                             (p != NULL) ? &p->model : NULL,
                                             &c);
-        app.popup_frame = tiku_trk_menu_place(app.popup, 250, 160,
+        app.popup_frame = tiku_menu_place(app.popup, 250, 160,
                               (tiku_rect_t){ 0, 0, app.surf->w,
                                                   app.surf->h });
     }
@@ -5871,19 +5871,19 @@ tracker_run(int argc, char **argv)
                                 if (tiku_model_is_container(&m) &&
                                     m.kind != TIKU_KIND_VOLUME &&
                                     m.kind != TIKU_KIND_ROOT) {
-                                    (void)tiku_trk_menu_add(app.popup,
+                                    (void)tiku_menu_add(app.popup,
                                         "Recalculate folder size",
                                         TIKU_TRK_CMD_RECALC_SIZE, 0, 0u,
                                         1);
                                 }
                                 if (m.kind == TIKU_KIND_SYMLINK) {
-                                    (void)tiku_trk_menu_add(app.popup,
+                                    (void)tiku_menu_add(app.popup,
                                         "Set new link target",
                                         TIKU_TRK_CMD_SET_LINK_TARGET, 0,
                                         0u, 1);
                                 }
                                 app.popup_sub = NULL;
-                                app.popup_frame = tiku_trk_menu_place(
+                                app.popup_frame = tiku_menu_place(
                                     app.popup, ev.x, ev.y,
                                     (tiku_rect_t){ 0, 0, app.surf->w,
                                                         app.surf->h });
@@ -6121,7 +6121,7 @@ tracker_run(int argc, char **argv)
                     int pick = -1;
 
                     if (app.popup_sub != NULL) {
-                        pick = tiku_trk_menu_item_at(app.popup_sub,
+                        pick = tiku_menu_item_at(app.popup_sub,
                                                      app.popup_sub_frame,
                                                      ev.x,
                                                      ev.y);
@@ -6138,7 +6138,7 @@ tracker_run(int argc, char **argv)
                         }
                     }
                     if (pick < 0) {
-                        pick = tiku_trk_menu_item_at(app.popup,
+                        pick = tiku_menu_item_at(app.popup,
                                                      app.popup_frame,
                                                      ev.x,
                                                      ev.y);
@@ -6148,7 +6148,7 @@ tracker_run(int argc, char **argv)
                                  * menu stays up. */
                                 app.popup_sub = app.popup->item[pick].submenu;
                                 app.popup_sub_frame =
-                                    tiku_trk_menu_place_sub(app.popup, pick,
+                                    tiku_menu_place_sub(app.popup, pick,
                                         app.popup_frame,
                                         (tiku_rect_t){ 0, 0,
                                             app.surf->w, app.surf->h });
@@ -6224,7 +6224,7 @@ tracker_run(int argc, char **argv)
                     /* The strip: a press on a title opens its menu, from
                      * the published description alone. */
                     tiku_rect_t strip = global_bar_rect(&app);
-                    int bi = tiku_trk_menubar_title_at(&app.gbar, strip,
+                    int bi = tiku_menubar_title_at(&app.gbar, strip,
                                                        ev.x, ev.y);
 
                     if (bi >= 0) {
@@ -6233,7 +6233,7 @@ tracker_run(int argc, char **argv)
                         app.gbar.open = bi;
                         app.popup = app.gbar.menu[bi];
                         app.popup_sub = NULL;
-                        app.popup_frame = tiku_trk_menubar_panel(&app.gbar,
+                        app.popup_frame = tiku_menubar_panel(&app.gbar,
                             strip, (tiku_rect_t){ 0, 0, app.surf->w,
                                                        app.surf->h });
                         app.nav_on = 0;
@@ -6408,7 +6408,7 @@ tracker_run(int argc, char **argv)
 
                             tiku_trk_cwmenu_rebuild(&app.menus, &bc);
                         }
-                        bi = tiku_trk_menubar_title_at(&app.menus.bar, bf,
+                        bi = tiku_menubar_title_at(&app.menus.bar, bf,
                                 ev.x, ev.y);
                         if (bi >= 0) {
                             commit_rename(&app, 1);
@@ -6418,7 +6418,7 @@ tracker_run(int argc, char **argv)
                             app.menus.bar.open = bi;
                             app.popup = app.menus.bar.menu[bi];
                             app.popup_sub = NULL;
-                            app.popup_frame = tiku_trk_menubar_panel(
+                            app.popup_frame = tiku_menubar_panel(
                                 &app.menus.bar, bf,
                                 (tiku_rect_t){ 0, 0, app.surf->w,
                                                     app.surf->h });
@@ -6526,7 +6526,7 @@ tracker_run(int argc, char **argv)
                         app.menus.bar.open = -1;
                         app.popup = &app.menus.attributes;
                         app.popup_sub = NULL;
-                        app.popup_frame = tiku_trk_menu_place(app.popup,
+                        app.popup_frame = tiku_menu_place(app.popup,
                             ev.x, ev.y,
                             (tiku_rect_t){ 0, 0, app.surf->w,
                                                 app.surf->h });
@@ -6984,11 +6984,11 @@ tracker_run(int argc, char **argv)
                      * item a pick would take. */
                     int menu_moved = 0;
 
-                    menu_moved |= tiku_trk_menu_track(app.popup,
+                    menu_moved |= tiku_menu_track(app.popup,
                                                       app.popup_frame,
                                                       ev.x, ev.y);
                     if (app.popup_sub != NULL) {
-                        menu_moved |= tiku_trk_menu_track(app.popup_sub,
+                        menu_moved |= tiku_menu_track(app.popup_sub,
                                                           app.popup_sub_frame,
                                                           ev.x, ev.y);
                     }
@@ -7223,7 +7223,7 @@ tracker_run(int argc, char **argv)
                                                                ro);
                         app.popup_fl = tfl;
                         app.popup_sub = NULL;
-                        app.popup_frame = tiku_trk_menu_place(app.popup,
+                        app.popup_frame = tiku_menu_place(app.popup,
                             ev.x, ev.y,
                             (tiku_rect_t){ 0, 0, app.surf->w,
                                                 app.surf->h });
@@ -7304,10 +7304,10 @@ tracker_run(int argc, char **argv)
                     tiku_trk_sc_ctx_t c;
 
                     if (ev.modifiers & TIKU_MOD_SHIFT) {
-                        cmods |= TIKU_TRK_MENU_MOD_SHIFT;
+                        cmods |= TIKU_MENU_MOD_SHIFT;
                     }
                     if (ev.modifiers & TIKU_MOD_CMD) {
-                        cmods |= TIKU_TRK_MENU_MOD_CMD;
+                        cmods |= TIKU_MENU_MOD_CMD;
                     }
                     c = menu_ctx(&app, pfl, cmods);
                     app.popup_fl = pfl;
@@ -7330,7 +7330,7 @@ tracker_run(int argc, char **argv)
                         app.nav_on = 1;
                     }
                     app.popup_sub = NULL;
-                    app.popup_frame = tiku_trk_menu_place(app.popup,
+                    app.popup_frame = tiku_menu_place(app.popup,
                         ev.x, ev.y,
                         (tiku_rect_t){ 0, 0, app.surf->w,
                                             app.surf->h });
@@ -8151,7 +8151,7 @@ tracker_run(int argc, char **argv)
             app.popup = tiku_trk_cwmenu_context(&app.menus,
                             (p != NULL) ? &p->model : NULL, &c);
             app.popup_sub = NULL;
-            app.popup_frame = tiku_trk_menu_place(app.popup, app.press_x,
+            app.popup_frame = tiku_menu_place(app.popup, app.press_x,
                 app.press_y, (tiku_rect_t){ 0, 0, app.surf->w,
                                                  app.surf->h });
             app.press_menu = 1;

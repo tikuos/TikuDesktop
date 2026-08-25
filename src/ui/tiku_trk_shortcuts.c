@@ -303,9 +303,9 @@ tiku_trk_sc_mods(int command, unsigned mods)
         /* No command key; Shift joins it to mean Delete. */
         return live;
     case TIKU_TRK_CMD_SELECT_MATCHING:
-        return TIKU_TRK_MENU_MOD_CMD | TIKU_TRK_MENU_MOD_SHIFT;
+        return TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_SHIFT;
     case TIKU_TRK_CMD_OPEN_WITH:
-        return TIKU_TRK_MENU_MOD_CMD | TIKU_TRK_MENU_MOD_CTRL;
+        return TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_CTRL;
     /* The five that carry the live shift into their own shortcut, so the
      * key shown is the key that will actually fire the shifted command. */
     case TIKU_TRK_CMD_CLEANUP:
@@ -313,9 +313,9 @@ tiku_trk_sc_mods(int command, unsigned mods)
     case TIKU_TRK_CMD_COPY:
     case TIKU_TRK_CMD_CUT:
     case TIKU_TRK_CMD_PASTE:
-        return TIKU_TRK_MENU_MOD_CMD | live;
+        return TIKU_MENU_MOD_CMD | live;
     default:
-        return (tiku_trk_sc_key(command) != 0) ? TIKU_TRK_MENU_MOD_CMD : 0u;
+        return (tiku_trk_sc_key(command) != 0) ? TIKU_MENU_MOD_CMD : 0u;
     }
 }
 
@@ -433,11 +433,11 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
 }
 
 int
-tiku_trk_sc_add(tiku_trk_menu_t *m, int command, const tiku_trk_sc_ctx_t *c)
+tiku_trk_sc_add(tiku_menu_t *m, int command, const tiku_trk_sc_ctx_t *c)
 {
     unsigned mods = (c != NULL) ? c->mods : 0u;
 
-    return tiku_trk_menu_add(m, tiku_trk_sc_label(command, mods),
+    return tiku_menu_add(m, tiku_trk_sc_label(command, mods),
                              tiku_trk_sc_command(command, mods),
                              tiku_trk_sc_key(command),
                              tiku_trk_sc_mods(command, mods),
@@ -445,7 +445,7 @@ tiku_trk_sc_add(tiku_trk_menu_t *m, int command, const tiku_trk_sc_ctx_t *c)
 }
 
 void
-tiku_trk_sc_update(tiku_trk_menu_t *m, const tiku_trk_sc_ctx_t *c)
+tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c)
 {
     unsigned mods = (c != NULL) ? c->mods : 0u;
     int i;
@@ -454,7 +454,7 @@ tiku_trk_sc_update(tiku_trk_menu_t *m, const tiku_trk_sc_ctx_t *c)
         return;
     }
     for (i = 0; i < m->count; i++) {
-        tiku_trk_mitem_t *it = &m->item[i];
+        tiku_menu_item_t *it = &m->item[i];
         int base;
 
         if (it->separator) {
@@ -473,7 +473,7 @@ tiku_trk_sc_update(tiku_trk_menu_t *m, const tiku_trk_sc_ctx_t *c)
         base = (it->command == TIKU_TRK_CMD_DELETE && c != NULL &&
                 (c->is_trash || c->in_trash))
                    ? TIKU_TRK_CMD_DELETE : canonical(it->command);
-        tiku_trk_menu_relabel(m, i, tiku_trk_sc_label(base, mods),
+        tiku_menu_relabel(m, i, tiku_trk_sc_label(base, mods),
                               tiku_trk_sc_command(base, mods),
                               tiku_trk_sc_key(base),
                               tiku_trk_sc_mods(base, mods));

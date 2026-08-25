@@ -16,7 +16,7 @@
 #ifndef TIKU_TRK_CWMENU_H_
 #define TIKU_TRK_CWMENU_H_
 
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_model.h"
 #include "tiku_trk_shortcuts.h"
 
@@ -34,54 +34,54 @@
 #define TIKU_TRK_MOUNT_PART_MAX 32
 
 typedef struct {
-    tiku_trk_menubar_t bar;
-    tiku_trk_menu_t    file;
-    tiku_trk_menu_t    new_menu;     /* New folder and discovered templates */
-    tiku_trk_menu_t    templates;    /* root of the template hierarchy       */
-    tiku_trk_menu_t    window;
-    tiku_trk_menu_t    attributes;
-    tiku_trk_menu_t    arrange;      /* submenu of Window                   */
-    tiku_trk_menu_t    icon_size;    /* submenu of Window                   */
-    tiku_trk_menu_t    addons;      /* add-on inventory                      */
+    tiku_menubar_t bar;
+    tiku_menu_t    file;
+    tiku_menu_t    new_menu;     /* New folder and discovered templates */
+    tiku_menu_t    templates;    /* root of the template hierarchy       */
+    tiku_menu_t    window;
+    tiku_menu_t    attributes;
+    tiku_menu_t    arrange;      /* submenu of Window                   */
+    tiku_menu_t    icon_size;    /* submenu of Window                   */
+    tiku_menu_t    addons;      /* add-on inventory                      */
     /* Mount >: every partition, mounted ones marked, plus Mount all and
      * Settings… (CW-034).  The names are kept beside the menu so a picked
      * command can be answered without a second scan racing the first. */
-    tiku_trk_menu_t    mount_menu;
+    tiku_menu_t    mount_menu;
     char               mount_part[TIKU_TRK_MOUNT_PART_MAX][32];
     int                mount_parts;
     /* The four context menus, kept apart rather than rebuilt into one, so
      * which one appeared is answerable afterwards. */
-    tiku_trk_menu_t    pose_ctx;
-    tiku_trk_menu_t    window_ctx;
-    tiku_trk_menu_t    volume_ctx;
-    tiku_trk_menu_t    trash_ctx;
-    tiku_trk_menu_t    drop_ctx;
-    tiku_trk_menu_t    view_ctx;    /* the gutter's view-mode popup     */
+    tiku_menu_t    pose_ctx;
+    tiku_menu_t    window_ctx;
+    tiku_menu_t    volume_ctx;
+    tiku_menu_t    trash_ctx;
+    tiku_menu_t    drop_ctx;
+    tiku_menu_t    view_ctx;    /* the gutter's view-mode popup     */
     /* The Info window icon's own copy of its context menu: the shared
      * pose_ctx is rebuilt by every folder draw, and the icon's extra
      * items (AW-076) must survive the frame. */
-    tiku_trk_menu_t    info_ctx;
+    tiku_menu_t    info_ctx;
     /* The applications that can open what is selected, as a submenu of the
      * "Open with" item.  Built by the shell, which is what knows the
      * registry, and attached here so both menus show the same one. */
-    tiku_trk_menu_t    open_with;
+    tiku_menu_t    open_with;
     /* Move to / Copy to / Create link as hierarchical pickers: Current
      * folder, Recent folders, Desktop, Home, volumes -- built by the
      * shell, which knows the recents and the mounts (CW-035, CW-058). */
-    tiku_trk_menu_t    picker[3];
+    tiku_menu_t    picker[3];
     char               picker_path[3][TIKU_TRK_CMD_DEST_MAX][TIKU_PATH_MAX];
     int                picker_paths[3];
     /* One submenu per type the folder actually holds, each offering the
      * columns that type has to show (CW-026).  Filled by the shell, which
      * is what can see the listing. */
-    tiku_trk_menu_t    per_type[4];
+    tiku_menu_t    per_type[4];
     char               per_type_icon[4][32]; /* the type's art (IV-056)   */
     char               per_type_name[4][TIKU_TYPE_MAX];
     int                per_type_count;
     int                attributes_shown;
     char               templates_root[TIKU_PATH_MAX];
     struct {
-        tiku_trk_menu_t menu;
+        tiku_menu_t menu;
         char            path[TIKU_PATH_MAX];
     } template_node[64];
     int                template_node_count;
@@ -129,17 +129,17 @@ void tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw,
  *
  * @param m NULL when the click was on empty window background.
  */
-tiku_trk_menu_t *tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw,
+tiku_menu_t *tiku_trk_cwmenu_context(tiku_trk_cwmenu_t *cw,
                                          const tiku_model_t *m,
                                          const tiku_trk_sc_ctx_t *c);
 
 /** @brief The menu offered when items are dropped with the second button. */
-tiku_trk_menu_t *tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw,
+tiku_menu_t *tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw,
                                       int dst_read_only, int src_read_only,
                                       unsigned mods);
 
 /** @brief The Find icon's drop menu: query, template, cancel (Q-034). */
-tiku_trk_menu_t *tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw,
+tiku_menu_t *tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw,
                                             int dst_read_only);
 
 /**
@@ -147,7 +147,7 @@ tiku_trk_menu_t *tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw,
  *        only controls that decide how the document is VIEWED may live in
  *        the scroller area -- and a view-mode popup is the named example).
  */
-tiku_trk_menu_t *tiku_trk_cwmenu_view_popup(tiku_trk_cwmenu_t *cw,
+tiku_menu_t *tiku_trk_cwmenu_view_popup(tiku_trk_cwmenu_t *cw,
                                             const tiku_trk_sc_ctx_t *c);
 
 #endif /* TIKU_TRK_CWMENU_H_ */

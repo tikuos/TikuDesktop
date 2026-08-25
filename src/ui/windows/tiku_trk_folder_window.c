@@ -1022,7 +1022,7 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
         tiku_trk_prefs_get(render->prefs, "ShowSelectionWhenInactive"));
     bar.h = render->global_bar ? 0 : render->menus->bar.height;
     if (!render->global_bar) {
-        tiku_trk_menubar_draw(&render->menus->bar, surface, bar);
+        tiku_menubar_draw(&render->menus->bar, surface, bar);
         draw_folder_icon(folder, surface);
     }
     list.y += bar.h;

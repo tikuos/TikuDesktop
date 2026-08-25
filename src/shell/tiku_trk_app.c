@@ -101,8 +101,8 @@ typedef struct {
     tiku_rect_t     sb_rect;
     /* The same container-window menus the desktop shell presents. */
     tiku_trk_cwmenu_t    menus;
-    tiku_trk_menu_t     *popup;
-    tiku_trk_menu_t     *popup_sub;
+    tiku_menu_t     *popup;
+    tiku_menu_t     *popup_sub;
     tiku_rect_t     popup_frame;
     tiku_rect_t     popup_sub_frame;
     tiku_rect_t     viewbtn_rect;  /* the gutter's view popup    */
@@ -875,13 +875,13 @@ draw_popup(app_t *a)
     /* Re-aimed here because the menus are rebuilt per draw, which clears
      * the hot row a moment after the motion set it: the last pointer the
      * window saw is where the highlight belongs. */
-    (void)tiku_trk_menu_track(a->popup, a->popup_frame, a->ptr_x,
+    (void)tiku_menu_track(a->popup, a->popup_frame, a->ptr_x,
                               a->ptr_y);
-    tiku_trk_menu_draw(a->popup, a->surf, a->popup_frame);
+    tiku_menu_draw(a->popup, a->surf, a->popup_frame);
     if (a->popup_sub != NULL) {
-        (void)tiku_trk_menu_track(a->popup_sub, a->popup_sub_frame,
+        (void)tiku_menu_track(a->popup_sub, a->popup_sub_frame,
                                   a->ptr_x, a->ptr_y);
-        tiku_trk_menu_draw(a->popup_sub, a->surf, a->popup_sub_frame);
+        tiku_menu_draw(a->popup_sub, a->surf, a->popup_sub_frame);
     }
 }
 
@@ -935,7 +935,7 @@ draw(app_t *a)
     tiku_trk_cwmenu_rebuild(&a->menus, &mc);
     a->menus.bar.open = a->bar_open;
     bar = menubar_rect(a);
-    tiku_trk_menubar_draw(&a->menus.bar, s, bar);
+    tiku_menubar_draw(&a->menus.bar, s, bar);
     draw_folder_icon(a, bar);
     draw_navigator(a);
     list = list_rect(a);
@@ -2715,19 +2715,19 @@ menubar_press(app_t *a, int x, int y, unsigned state)
     unsigned mods = 0u;
     int which;
 
-    which = tiku_trk_menubar_title_at(&a->menus.bar, bar, x, y);
+    which = tiku_menubar_title_at(&a->menus.bar, bar, x, y);
     if (which < 0) {
         return 0;
     }
-    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
-    if (state & TIKU_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_MENU_MOD_SHIFT; }
+    if (state & TIKU_MOD_CMD) { mods |= TIKU_MENU_MOD_CMD; }
     c = menu_ctx(a, mods);
     tiku_trk_cwmenu_rebuild(&a->menus, &c);
     a->bar_open = which;
     a->menus.bar.open = which;
     a->popup = a->menus.bar.menu[which];
     a->popup_sub = NULL;
-    a->popup_frame = tiku_trk_menubar_panel(&a->menus.bar, bar,
+    a->popup_frame = tiku_menubar_panel(&a->menus.bar, bar,
                          (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
     a->dirty = 1;
     return 1;
@@ -2737,7 +2737,7 @@ menubar_press(app_t *a, int x, int y, unsigned state)
 static int
 popup_press(app_t *a, int x, int y)
 {
-    tiku_trk_menu_t *m;
+    tiku_menu_t *m;
     tiku_rect_t frame;
     int item;
 
@@ -2746,12 +2746,12 @@ popup_press(app_t *a, int x, int y)
     }
     m = (a->popup_sub != NULL) ? a->popup_sub : a->popup;
     frame = (a->popup_sub != NULL) ? a->popup_sub_frame : a->popup_frame;
-    item = tiku_trk_menu_item_at(m, frame, x, y);
+    item = tiku_menu_item_at(m, frame, x, y);
     if (item >= 0 && m->item[item].enabled) {
         if (m->item[item].submenu != NULL) {
             m->open_index = item;
             a->popup_sub = m->item[item].submenu;
-            a->popup_sub_frame = tiku_trk_menu_place_sub(
+            a->popup_sub_frame = tiku_menu_place_sub(
                 m, item, frame,
                 (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
             a->dirty = 1;
@@ -2776,8 +2776,8 @@ open_context_menu(app_t *a, int row, int x, int y, unsigned state)
     unsigned mods = 0u;
     tiku_trk_sc_ctx_t c;
 
-    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MENU_MOD_SHIFT; }
-    if (state & TIKU_MOD_CMD) { mods |= TIKU_TRK_MENU_MOD_CMD; }
+    if (state & TIKU_MOD_SHIFT) { mods |= TIKU_MENU_MOD_SHIFT; }
+    if (state & TIKU_MOD_CMD) { mods |= TIKU_MENU_MOD_CMD; }
     c = menu_ctx(a, mods);
     tiku_trk_cwmenu_rebuild(&a->menus, &c);
     a->popup = tiku_trk_cwmenu_context(&a->menus,
@@ -2785,7 +2785,7 @@ open_context_menu(app_t *a, int row, int x, int y, unsigned state)
     a->popup_sub = NULL;
     a->bar_open = -1;
     a->menus.bar.open = -1;
-    a->popup_frame = tiku_trk_menu_place(a->popup, x, y,
+    a->popup_frame = tiku_menu_place(a->popup, x, y,
         (tiku_rect_t){ 0, 0, a->surf->w, a->surf->h });
     a->dirty = 1;
 }
@@ -2868,7 +2868,7 @@ tracker_run(int argc, char **argv)
         if (start == NULL) { start = "/"; }
     }
 
-    tiku_trk_menu_set_icon_painter(paint_menu_icon);
+    tiku_menu_set_icon_painter(paint_menu_icon);
     a.loop = tiku_trk_loop_new();
     tiku_scroll_init(&a.sb, 1);
     tiku_scroll_init(&a.hsb, 20);
@@ -3073,7 +3073,7 @@ tracker_run(int argc, char **argv)
                 }
                 {
                     static char labels[512];
-                    tiku_trk_menu_t *open = (a.popup_sub != NULL)
+                    tiku_menu_t *open = (a.popup_sub != NULL)
                                                   ? a.popup_sub : a.popup;
                     int mi;
 
@@ -3148,7 +3148,7 @@ tracker_run(int argc, char **argv)
                     (void)tiku_surface_png(a.surf, sp.path);
                     break;
                 case TIKU_TRK_SC_MENU_PICK: {
-                    tiku_trk_menu_t *m = (a.popup_sub != NULL)
+                    tiku_menu_t *m = (a.popup_sub != NULL)
                                              ? a.popup_sub : a.popup;
                     tiku_rect_t fr = (a.popup_sub != NULL)
                                               ? a.popup_sub_frame
@@ -3166,8 +3166,8 @@ tracker_run(int argc, char **argv)
                             ev.type = TIKU_EVENT_POINTER_DOWN;
                             ev.x = fr.x + 8;
                             ev.y = fr.y +
-                                tiku_trk_menu_item_top(m, k) +
-                                tiku_trk_menu_item_height(m, k) / 2;
+                                tiku_menu_item_top(m, k) +
+                                tiku_menu_item_height(m, k) / 2;
                             ev.button = 1u;
                             ev.time_us = tiku_trk_now();
                             have = 1;
@@ -3295,7 +3295,7 @@ tracker_run(int argc, char **argv)
 
                     a.popup = tiku_trk_cwmenu_view_popup(&a.menus, &vc);
                     a.popup_sub = NULL;
-                    a.popup_frame = tiku_trk_menu_place(a.popup,
+                    a.popup_frame = tiku_menu_place(a.popup,
                         a.viewbtn_rect.x, a.viewbtn_rect.y,
                         (tiku_rect_t){ 0, 0, a.surf->w, a.surf->h });
                     a.dirty = 1;
@@ -3354,7 +3354,7 @@ tracker_run(int argc, char **argv)
                                 a.menus.bar.open = -1;
                                 a.popup_sub = NULL;
                                 a.popup = &a.menus.attributes;
-                                a.popup_frame = tiku_trk_menu_place(
+                                a.popup_frame = tiku_menu_place(
                                     a.popup, ev.x, ev.y,
                                     (tiku_rect_t){ 0, 0, a.surf->w,
                                                         a.surf->h });
@@ -3618,10 +3618,10 @@ tracker_run(int argc, char **argv)
                      * item a pick would take. */
                     int moved = 0;
 
-                    moved |= tiku_trk_menu_track(a.popup, a.popup_frame,
+                    moved |= tiku_menu_track(a.popup, a.popup_frame,
                                                  ev.x, ev.y);
                     if (a.popup_sub != NULL) {
-                        moved |= tiku_trk_menu_track(a.popup_sub,
+                        moved |= tiku_menu_track(a.popup_sub,
                                                      a.popup_sub_frame,
                                                      ev.x, ev.y);
                     }

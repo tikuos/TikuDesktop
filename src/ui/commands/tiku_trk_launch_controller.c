@@ -123,7 +123,7 @@ collect_selection(tiku_trk_folder_window_t *folder, const char **types,
 
 void
 tiku_trk_launch_controller_build_menu(
-    tiku_trk_launch_controller_t *controller, tiku_trk_menu_t *menu,
+    tiku_trk_launch_controller_t *controller, tiku_menu_t *menu,
     tiku_trk_folder_window_t *folder)
 {
     const char *types[TIKU_TRK_APP_TYPES_MAX];
@@ -133,7 +133,7 @@ tiku_trk_launch_controller_build_menu(
     if (menu == NULL) {
         return;
     }
-    tiku_trk_menu_clear(menu);
+    tiku_menu_clear(menu);
     if (controller == NULL ||
         !collect_selection(folder, types, &type_count, NULL, &path_count) ||
         type_count == 0) {
@@ -148,26 +148,26 @@ tiku_trk_launch_controller_build_menu(
             /* A rule between the relation groups: how well an entry
              * matches is the menu's ORDER, and the rule is where the
              * order changes meaning (AW-048). */
-            (void)tiku_trk_menu_add_separator(menu);
+            (void)tiku_menu_add_separator(menu);
         }
         snprintf(label, sizeof label, "%s (%s)", candidates[i].app->name,
                  tiku_trk_launch_relation_label(candidates[i].rel));
-        (void)tiku_trk_menu_add(menu, label,
+        (void)tiku_menu_add(menu, label,
             TIKU_TRK_CMD_OPEN_WITH_BASE + i, 0, 0u, 1);
         /* Each candidate wears the application art: the item names a
          * runnable file, and the icon says so (IV-054). */
-        tiku_trk_menu_set_icon(menu, TIKU_TRK_CMD_OPEN_WITH_BASE + i,
+        tiku_menu_set_icon(menu, TIKU_TRK_CMD_OPEN_WITH_BASE + i,
                                "application");
         if (candidates[i].preferred) {
             menu->item[menu->count - 1].marked = 1;
         }
     }
     if (menu->count > 0) {
-        (void)tiku_trk_menu_add_separator(menu);
+        (void)tiku_menu_add_separator(menu);
     }
     /* The window, for the case the shortlist cannot answer: every
      * application, relations said, one selection (AW-047). */
-    (void)tiku_trk_menu_add(menu, "Open with…",
+    (void)tiku_menu_add(menu, "Open with…",
                             TIKU_TRK_CMD_OPEN_WITH_WINDOW, 0, 0u, 1);
 }
 

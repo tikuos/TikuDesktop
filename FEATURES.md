@@ -76,7 +76,7 @@ behaviour.
 
 The 2026-08-14 follow-up batch adds `src/core/tiku_trk_addon.[ch]` for the
 static add-on registry, MIME-prioritized menu construction and live shortcut
-rebinding, and extends `src/ui/tiku_trk_menu.[ch]` with typed icon slots and
+rebinding, and extends `../kits/interface/tiku_menu.[ch]` with typed icon slots and
 disabled-state painting. Focused coverage is in `tests/test_addon.c`,
 `test_launch`, `test_vdir`, and `test_menu`.
 
@@ -4828,7 +4828,7 @@ AddRecentQueries collects `_trk/recentQuery == 1` hits from all volumes, skips T
 **VERIFIER CORRECTION:** Templates are conditional on the `includeTemplates` argument (default true). The Find window's own Query > Recent queries submenu is built with `AddRecentQueries(fHistoryMenu, false, &messenger, kSwitchToQueryTemplate, false)` — includeTemplates = **false**, so that menu lists queries only. Templates appear above the queries only in the default-argument callers (RecentFindItemsMenu::AttachedToWindow / TrackerBuildRecentFindItemsMenu).  
 **CHECKED:** There is no recent-queries menu anywhere in the panel, the menu bar, the context menus or the Deskbar; the newest-first name index that tiku_query_save maintains records only explicitly saved queries, is capped by the caller not at 10, has no template notion and is never surfaced in any UI.  
 *none found (tiku_query_list has no non-test caller)*
-**WIRING:** The code exists: tiku_query_save maintains a newest-first name index (src/core/tiku_query.c:810-827) and tiku_query_list reads it back (src/core/tiku_query.c:851-885). The caller is absent: only tests/test_query.c:280-288 invoke the lister; no panel popup (src/ui/tiku_trk_find.c:637-704), no cwmenu entry and no deskbar item surfaces it (grep quer over src/deskbar/tiku_trk_deskbar.c, src/ui/tiku_trk_cwmenu.c, src/ui/tiku_trk_menu.c returns nothing). The index also has no template notion and no timestamp ordering beyond insertion.  
+**WIRING:** The code exists: tiku_query_save maintains a newest-first name index (src/core/tiku_query.c:810-827) and tiku_query_list reads it back (src/core/tiku_query.c:851-885). The caller is absent: only tests/test_query.c:280-288 invoke the lister; no panel popup (src/ui/tiku_trk_find.c:637-704), no cwmenu entry and no deskbar item surfaces it (grep quer over src/deskbar/tiku_trk_deskbar.c, src/ui/tiku_trk_cwmenu.c, ../kits/interface/tiku_menu.c returns nothing). The index also has no template notion and no timestamp ordering beyond insertion.  
 
 #### Q-033 · important · done
 **Every query or template written stamps a change time and a marker attribute, which is what makes it show up in the recent/templates menus.**  
@@ -5530,13 +5530,13 @@ MakeDragBitmap builds an RGBA32 bitmap clipped to a ComposeIconSize(256)-sized b
 ModelMenuItem::DrawIcon draws at BSize(ListIconSize()-1, ListIconSize()-1) through IconCache::Draw when enabled, and through SyncDraw with DimmedIconBlitter when not - which blits B_OP_ALPHA/B_CONSTANT_ALPHA at high colour (0,0,0,128) for RGBA32 icons and B_OP_BLEND otherwise. Label is offset by iconSize + iconSize/4 and the item height grows to the icon height.  
 `src/kits/tracker/IconMenuItem.cpp` → `ModelMenuItem::DrawIcon / DimmedIconBlitter / ModelMenuItem::GetContentSize`
 **PORT:** The slot draws real art now: a painter hook keeps the menu layer linkable without the rasteriser, both shells install one, and an Open With candidate wears the application art -- the kind icon the port's immutable icon table gives every runnable file, its stated adaptation of Haiku's file-backed icons.  A disabled item's icon is drawn dimmed through the same hook.  
-*src/ui/tiku_trk_menu.c (icon_painter); src/ui/commands/tiku_trk_launch_controller.c (set_icon); tests/shell/menuicons.script*
+*../kits/interface/tiku_menu.c (icon_painter); src/ui/commands/tiku_trk_launch_controller.c (set_icon); tests/shell/menuicons.script*
 
 #### IV-055 · polish · differs
 **Marking an icon menu item inside a menu field copies its icon up to the field's visible item.**  
 IconMenuItem::SetMarked walks up Supermenu() to the topmost menu, checks its parent is a BMenuField, and calls SetIcon(fDeviceIcon) on the first item, then invalidates the menu. SetIcon re-creates the bitmap at ComposeIconSize(fWhich) and ImportBits into it.  
 `src/kits/tracker/IconMenuItem.cpp` → `IconMenuItem::SetMarked / IconMenuItem::SetIcon`
-**BLOCKED:** the same absent menu-item icon field (src/ui/tiku_trk_menu.h:36-46) plus a menu-field widget, which does not exist — grep -ri menufield/menu_field src/ returns nothing (the only popups are the Find and Select rule popups, src/ui/tiku_trk_find.h:74-78, src/core/tiku_trk_select.h)  
+**BLOCKED:** the same absent menu-item icon field (../kits/interface/tiku_menu.h) plus a menu-field widget, which does not exist — grep -ri menufield/menu_field src/ returns nothing (the only popups are the Find and Select rule popups, src/ui/tiku_trk_find.h:74-78, src/core/tiku_trk_select.h)  
 **PORT:** Menu items carry icons, and the copy-up rule differs by the toolkit's shape: there is no menu-FIELD control here at all -- nothing shows a closed menu's marked item as a labelled field -- so there is no visible item for the icon to be copied up into.  The consumers the source's rule serves read their icons in the open menu itself.
 
 #### IV-056 · polish · done

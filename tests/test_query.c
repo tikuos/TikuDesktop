@@ -813,7 +813,7 @@ main(void)
                   "clicking it opens a menu that offers Size");
             if (picked >= 0) {
                 int y = f.popup_frame.y +
-                        tiku_trk_menu_item_top(&f.popup, picked) + 2;
+                        tiku_menu_item_top(&f.popup, picked) + 2;
                 (void)tiku_trk_find_click(&f, fr, f.popup_frame.x + 4, y);
             }
             check(f.row[0].field == TIKU_QF_SIZE,
@@ -1154,7 +1154,7 @@ main(void)
               "not another flat type");
         if (group >= 0) {
             y = f.popup_frame.y +
-                tiku_trk_menu_item_top(&f.popup, group) + 2;
+                tiku_menu_item_top(&f.popup, group) + 2;
             (void)tiku_trk_find_click(&f, fr, f.popup_frame.x + 4, y);
             for (x = 0; f.popup_sub != NULL &&
                         x < f.popup_sub->count; x++) {
@@ -1166,7 +1166,7 @@ main(void)
         check(item >= 0, "Q-015: the subtype is nested under its supertype");
         if (item >= 0) {
             y = f.popup_sub_frame.y +
-                tiku_trk_menu_item_top(f.popup_sub, item) + 2;
+                tiku_menu_item_top(f.popup_sub, item) + 2;
             (void)tiku_trk_find_click(&f, fr, f.popup_sub_frame.x + 4, y);
         }
         check(strcmp(f.type, "sensor/temp") == 0,
@@ -1307,7 +1307,7 @@ main(void)
             }
             if (edit >= 0) {
                 y = f.popup_frame.y +
-                    tiku_trk_menu_item_top(&f.popup, edit) + 2;
+                    tiku_menu_item_top(&f.popup, edit) + 2;
                 (void)tiku_trk_find_click(&f, fr,
                                           f.popup_frame.x + 4, y);
             }

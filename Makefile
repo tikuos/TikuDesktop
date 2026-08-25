@@ -174,7 +174,7 @@ $(BUILD)/test_springmenu: src/ui/tiku_trk_springmenu.c tests/test_springmenu.c |
 $(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD)/test_addon: src/shell/tiku_trk_addon.c src/ui/tiku_trk_menu.c \
+$(BUILD)/test_addon: src/shell/tiku_trk_addon.c \
                      tests/test_addon.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
@@ -207,8 +207,8 @@ $(BUILD)/test_launch: $(COMMON) tests/test_launch.c | $(BUILD)
 
 $(BUILD)/test_query: \
                      src/ui/tiku_trk_find.c src/core/tiku_trk_types.c \
-                     src/ui/tiku_trk_menu.c tests/test_query.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+                     tests/test_query.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_notify: src/ui/tiku_trk_poseview.c \
                       src/core/tiku_trk_match.c src/core/tiku_trk_clip.c \
@@ -292,7 +292,7 @@ $(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c \
 
 $(BUILD)/test_dbdrop: $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c \
                       src/deskbar/tiku_trk_deskbar_prefs.c \
-                      src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+                      src/ui/tiku_trk_shortcuts.c \
                       tests/test_dbdrop.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
@@ -354,9 +354,8 @@ $(BUILD)/test_edit: src/core/tiku_trk_select.c \
                     src/core/tiku_trk_match.c tests/test_edit.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
 
-$(BUILD)/test_menu: src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+$(BUILD)/test_menu: src/ui/tiku_trk_shortcuts.c \
                     src/ui/tiku_trk_cwmenu.c \
-                    \
                     tests/test_menu.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -435,7 +434,7 @@ TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/shell/tiku_trk_script_api.c src/deskbar/tiku_trk_deskicons.c \
                src/ui/tiku_trk_titleview.c \
                src/ui/tiku_trk_navigator.c \
-               src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+               src/ui/tiku_trk_shortcuts.c \
                src/ui/tiku_trk_cwmenu.c \
                src/ui/commands/tiku_trk_folder_file_actions.c \
                src/ui/overlays/tiku_trk_status_overlay.c \
@@ -455,7 +454,7 @@ DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_titleview.c \
                src/deskbar/tiku_trk_deskbar.c \
                $(DESKTOP_CONTROLLERS) \
-               src/ui/tiku_trk_menu.c src/ui/tiku_trk_shortcuts.c \
+               src/ui/tiku_trk_shortcuts.c \
                src/ui/tiku_trk_cwmenu.c src/ui/tiku_trk_find.c \
                src/shell/tiku_trk_desktop.c src/shell/tiku_trk_launcher.c \
                src/shell/tiku_trk_splash.c

@@ -17,7 +17,7 @@
 #include "tiku_trk_folder_edit.h"
 #include "tiku_trk_folder_lifecycle.h"
 #include "tiku_trk_panel_window.h"
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 #include "tiku_trk_script.h"
 
 /** @brief Read-only presentation dependencies exposed to script callbacks. */
@@ -31,8 +31,8 @@ typedef struct {
     tiku_trk_find_window_t *find_window;
     tiku_trk_panel_window_t *panel_window;
     tiku_trk_folder_edit_t *folder_edit;
-    tiku_trk_menu_t **popup;
-    tiku_trk_menu_t **popup_sub;
+    tiku_menu_t **popup;
+    tiku_menu_t **popup_sub;
     tiku_rect_t *popup_frame;
     tiku_rect_t *popup_sub_frame;
     char *status;
@@ -52,8 +52,8 @@ void tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
     tiku_trk_desktop_view_t *desktop_view, tiku_trk_deskbar_t *deskbar,
     tiku_trk_alert_t *alert, tiku_trk_find_window_t *find_window,
     tiku_trk_panel_window_t *panel_window,
-    tiku_trk_folder_edit_t *folder_edit, tiku_trk_menu_t **popup,
-    tiku_trk_menu_t **popup_sub, tiku_rect_t *popup_frame,
+    tiku_trk_folder_edit_t *folder_edit, tiku_menu_t **popup,
+    tiku_menu_t **popup_sub, tiku_rect_t *popup_frame,
     tiku_rect_t *popup_sub_frame, char *status, char *count_text,
     int row_h);
 int tiku_trk_script_adapter_tab_point(void *context, const char *title,

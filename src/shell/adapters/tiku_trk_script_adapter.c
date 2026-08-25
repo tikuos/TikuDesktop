@@ -24,8 +24,8 @@ tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
     tiku_trk_desktop_view_t *desktop_view, tiku_trk_deskbar_t *deskbar,
     tiku_trk_alert_t *alert, tiku_trk_find_window_t *find_window,
     tiku_trk_panel_window_t *panel_window,
-    tiku_trk_folder_edit_t *folder_edit, tiku_trk_menu_t **popup,
-    tiku_trk_menu_t **popup_sub, tiku_rect_t *popup_frame,
+    tiku_trk_folder_edit_t *folder_edit, tiku_menu_t **popup,
+    tiku_menu_t **popup_sub, tiku_rect_t *popup_frame,
     tiku_rect_t *popup_sub_frame, char *status, char *count_text,
     int row_h)
 {
@@ -307,7 +307,7 @@ tiku_trk_script_adapter_pose_screen(void *context, const char *name,
 }
 
 static void
-append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_trk_menu_t *menu)
+append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_menu_t *menu)
 {
     int i;
 
@@ -465,7 +465,7 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
 {
     tiku_trk_find_t *find =
         tiku_trk_find_window_model(adapter->find_window);
-    tiku_trk_menu_t *menu = *adapter->popup_sub != NULL
+    tiku_menu_t *menu = *adapter->popup_sub != NULL
         ? *adapter->popup_sub : *adapter->popup;
     tiku_rect_t frame = *adapter->popup_sub != NULL
         ? *adapter->popup_sub_frame : *adapter->popup_frame;
@@ -507,8 +507,8 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
                 }
                 event->type = TIKU_EVENT_POINTER_DOWN;
                 event->x = frame.x + 8;
-                event->y = frame.y + tiku_trk_menu_item_top(menu, i) +
-                    tiku_trk_menu_item_height(menu, i) / 2;
+                event->y = frame.y + tiku_menu_item_top(menu, i) +
+                    tiku_menu_item_height(menu, i) / 2;
                 event->button = 1u;
                 event->time_us = tiku_trk_now();
                 return 1;

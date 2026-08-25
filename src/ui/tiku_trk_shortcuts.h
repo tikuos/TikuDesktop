@@ -21,7 +21,7 @@
 #ifndef TIKU_TRK_SHORTCUTS_H_
 #define TIKU_TRK_SHORTCUTS_H_
 
-#include "tiku_trk_menu.h"
+#include "tiku_menu.h"
 
 /** @brief Commands.  Values are ours; the actions are Tracker's. */
 enum {
@@ -185,7 +185,7 @@ unsigned tiku_trk_sc_mods(int command, unsigned mods);
  * This is the only way menus should gain items: label, command, shortcut and
  * enabled state all come from one place and cannot drift apart.
  */
-int tiku_trk_sc_add(tiku_trk_menu_t *m, int command,
+int tiku_trk_sc_add(tiku_menu_t *m, int command,
                     const tiku_trk_sc_ctx_t *c);
 
 /**
@@ -194,6 +194,6 @@ int tiku_trk_sc_add(tiku_trk_menu_t *m, int command,
  * Called when a menu opens, and again whenever the modifiers change while it
  * is open, which is what makes the nine rename themselves live.
  */
-void tiku_trk_sc_update(tiku_trk_menu_t *m, const tiku_trk_sc_ctx_t *c);
+void tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c);
 
 #endif /* TIKU_TRK_SHORTCUTS_H_ */
