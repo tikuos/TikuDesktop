@@ -6159,7 +6159,19 @@ tracker_run(int argc, char **argv)
                                                      app.popup_sub_frame,
                                                      ev.x,
                                                      ev.y);
-                        if (pick >= 0) {
+                        /*
+                         * Enabled, like the parent menu below and like
+                         * the other shell: a disabled row is drawn grey
+                         * and refuses to light under the pointer, and
+                         * this branch alone still ran it.  Mount's rows
+                         * are built with enabled = NOT mounted, so
+                         * clicking a greyed partition mounted it again.
+                         *
+                         * pick stays set on purpose: the click is then
+                         * swallowed by the dismissal below rather than
+                         * being offered to the parent menu underneath.
+                         */
+                        if (pick >= 0 && app.popup_sub->item[pick].enabled) {
                             if (app.popup_path[0] != '\0') {
                                 (void)tiku_trk_folder_file_actions_invoke_path(
                                     &app.file_actions, app.popup_path,

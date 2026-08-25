@@ -539,6 +539,30 @@ main(void)
               "Shift turns the link verb into a usable relative link");
     }
 
+    printf("\na row somebody BUILT is not the action table's to rewrite\n");
+    {
+        /*
+         * Menus carry rows nobody wrote a command for: the partitions
+         * under Mount, the applications under Open with.  Their label and
+         * their enablement are facts the BUILDER knows and the shortcut
+         * table does not -- and the table used to relabel every row it
+         * walked, writing the empty string over a name it had never heard
+         * of and turning a deliberately greyed row back on.
+         */
+        tiku_menu_t m;
+        tiku_trk_sc_ctx_t c;
+
+        memset(&c, 0, sizeof c);
+        tiku_menu_clear(&m);
+        (void)tiku_menu_add(&m, "nvme0n1p1 (500 MB)", 90000, 0, 0u, 0);
+        tiku_trk_sc_update(&m, &c);
+        check(strcmp(m.item[0].label, "nvme0n1p1 (500 MB)") == 0,
+              "a built row keeps its name through an update");
+        check(m.item[0].enabled == 0,
+              "and stays disabled: the table speaks for the commands it "
+              "knows and no others");
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "every menu rule holds");
     return fails ? 1 : 0;
 }

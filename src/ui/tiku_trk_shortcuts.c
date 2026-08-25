@@ -473,6 +473,18 @@ tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c)
         base = (it->command == TIKU_TRK_CMD_DELETE && c != NULL &&
                 (c->is_trash || c->in_trash))
                    ? TIKU_TRK_CMD_DELETE : canonical(it->command);
+        if (tiku_trk_sc_label(base, mods)[0] == '\0') {
+            /*
+             * A command this table has never heard of: a row somebody
+             * BUILT, like a partition under Mount or an application under
+             * Open with, whose label and enablement are the builder's own
+             * facts.  Relabelling it from the table wrote the empty
+             * string over the name and turned the row back on -- so a
+             * greyed, already-mounted partition came back lit and blank.
+             * The table speaks for the commands it knows and no others.
+             */
+            continue;
+        }
         tiku_menu_relabel(m, i, tiku_trk_sc_label(base, mods),
                               tiku_trk_sc_command(base, mods),
                               tiku_trk_sc_key(base),
