@@ -37,7 +37,7 @@ typedef struct {
     tiku_fs_t *fs;
     tiku_trk_desktop_view_t *desktop_view;
     tiku_trk_cwmenu_t *menus;
-    tiku_trk_alert_t *alert;
+    tiku_alert_t *alert;
     tiku_trk_drag_t *drag;
     tiku_trk_folder_window_t **drop_folder;
     int *drop_row;
@@ -66,7 +66,7 @@ typedef struct {
 void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_trk_deskbar_t *deskbar, tiku_backend_t *backend,
     tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
-    tiku_trk_cwmenu_t *menus, tiku_trk_alert_t *alert,
+    tiku_trk_cwmenu_t *menus, tiku_alert_t *alert,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_menu_t **popup, tiku_menu_t **popup_sub,
     tiku_rect_t *popup_frame, char *progress_destination,

@@ -589,7 +589,7 @@ find_model(desktop_t *app)
 }
 
 /** @brief Modal question state is presented by the shared overlay. */
-static tiku_trk_alert_t *
+static tiku_alert_t *
 alert_model(desktop_t *app)
 {
     return tiku_trk_status_overlay_alert(&app->status_overlay);
@@ -622,7 +622,7 @@ offer_broken_link(desktop_t *app, const char *path)
 {
     snprintf(app->broken_open_path, sizeof app->broken_open_path, "%s",
              path);
-    tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+    tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                         TIKU_TRK_ALERT_TAG_BROKEN_OPEN,
                         tiku_str("alert.msg.broken_open"),
                         tiku_str("alert.btn.get_info"));
@@ -750,7 +750,7 @@ paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
 
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
-status_answer(void *context, const tiku_trk_alert_t *alert)
+status_answer(void *context, const tiku_alert_t *alert)
 {
     desktop_t *app = context;
 
@@ -1742,7 +1742,7 @@ system_invoke(desktop_t *app, int command)
     case TIKU_TRK_CMD_SHUTDOWN:
         /* The ellipsis is a promise: Shut down… asks before anything is
          * taken down (DB-006), the same question the leaf asks. */
-        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
                             tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
         return 1;
@@ -2609,7 +2609,7 @@ apply_select_model(void *context, void *target,
     if (count < 0) {
         /* A bad expression is a stop alert, closeable with Escape, and it
          * selects nothing (PVK-047). */
-        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+        tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                             TIKU_TRK_ALERT_TAG_REFUSAL, error, "Cancel");
         return NULL;
     }
@@ -2978,8 +2978,8 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     case TIKU_TRK_DB_QUIT:
         /* The ellipsis is a promise: Shut down… asks
          * before anything is taken down (DB-006). */
-        tiku_trk_alert_open(alert_model(app),
-            TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(alert_model(app),
+            TIKU_ALERT_WARN,
             TIKU_TRK_ALERT_TAG_SHUTDOWN,
             "Shut down the desktop?",
             tiku_str("alert.btn.shut_down"));
@@ -3334,7 +3334,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (command == TIKU_TRK_CMD_SHUTDOWN) {
         /* The system menu's corner ritual, by the same question the
          * Deskbar asks (DB-006). */
-        tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
                             tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
         return;
@@ -3532,7 +3532,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             }
         }
         if (failed && why[0] != '\0') {
-            tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+            tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                                 TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
         } else if (tried == 0) {
             snprintf(app->status, sizeof app->status,
@@ -3598,7 +3598,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
                          "unmounted \"%.60s\"",
                          (uvol != NULL) ? uvol->name : upath);
             } else if (uwhy[0] != '\0') {
-                tiku_trk_alert_open(alert_model(app), TIKU_TRK_ALERT_STOP,
+                tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                                     TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
                                     "Cancel");
             }
@@ -5814,8 +5814,8 @@ tracker_run(int argc, char **argv)
                             if (tiku_trk_info_perm_toggle(info,
                                     app.backend, which, perr,
                                     sizeof perr) != 0) {
-                                tiku_trk_alert_open(alert_model(&app),
-                                    TIKU_TRK_ALERT_WARN,
+                                tiku_alert_open(alert_model(&app),
+                                    TIKU_ALERT_WARN,
                                     TIKU_TRK_ALERT_TAG_ERROR, perr,
                                     "Cancel");
                             }

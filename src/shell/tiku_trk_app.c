@@ -154,7 +154,7 @@ paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
 
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
-app_alert_answer(void *context, const tiku_trk_alert_t *alert)
+app_alert_answer(void *context, const tiku_alert_t *alert)
 {
     app_t *a = context;
 
@@ -2445,9 +2445,9 @@ menu_invoke(app_t *a, int command)
             }
         }
         if (failed && why[0] != '\0') {
-            tiku_trk_alert_open(
+            tiku_alert_open(
                 tiku_trk_status_overlay_alert(&a->status_overlay),
-                TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
                 "Cancel");
         } else if (tried == 0) {
             snprintf(a->status, sizeof a->status,
@@ -2479,9 +2479,9 @@ menu_invoke(app_t *a, int command)
                 snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
                          (vol != NULL) ? vol->name : path);
             } else if (why[0] != '\0') {
-                tiku_trk_alert_open(
+                tiku_alert_open(
                     tiku_trk_status_overlay_alert(&a->status_overlay),
-                    TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                    TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
                     "Cancel");
             }
         } else {

@@ -21,3 +21,28 @@ expect-title Edit
 key Escape
 wait 20
 expect-no-title Edit
+note and an editor with TYPING in it does not die by the same key: the
+note kit's own alert asks first, inside the application's window -- no
+note shell involved, which is the point of the alert being the kit's
+click 980 20
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+key x
+wait 4
+key Escape
+wait 8
+expect-title Edit
+note Escape in the question presses Cancel, the safe road: still standing
+key Escape
+wait 6
+expect-title Edit
+note asked again, Return presses the default -- Discard -- and it goes
+key Escape
+wait 6
+key Return
+wait 20
+expect-no-title Edit

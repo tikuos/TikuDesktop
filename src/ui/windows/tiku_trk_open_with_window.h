@@ -35,7 +35,7 @@ typedef struct {
     int                   *dirty;
     tiku_trk_ow_open_fn    open;
     void                  *open_context;
-    tiku_trk_alert_t      *alert;       /* the shell's, for the confirm  */
+    tiku_alert_t      *alert;       /* the shell's, for the confirm  */
     struct tiku_store *store;       /* where preferred lives         */
     /* The question being asked. */
     tiku_trk_cand_t        cand[TIKU_TRK_APP_MAX];
@@ -53,7 +53,7 @@ typedef struct {
 void tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *controller,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
-    tiku_trk_alert_t *alert, struct tiku_store *store);
+    tiku_alert_t *alert, struct tiku_store *store);
 
 /** @brief Ask which application, for @p paths of @p types. */
 void tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *controller,

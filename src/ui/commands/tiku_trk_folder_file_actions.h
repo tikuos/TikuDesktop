@@ -37,7 +37,7 @@ typedef struct {
     tiku_trk_clip_t                  *clip;
     tiku_trk_drag_t                  *pending;
     char                             *drop_destination;
-    tiku_trk_alert_t                 *alert;
+    tiku_alert_t                 *alert;
     tiku_trk_folder_prefs_fn          open_prefs;
     void                             *prefs_context;
     char                             *status;
@@ -62,7 +62,7 @@ void tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_fs_t *fs,
     tiku_backend_t *backend,
     tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
-    char *drop_destination, tiku_trk_alert_t *alert,
+    char *drop_destination, tiku_alert_t *alert,
     tiku_trk_folder_prefs_fn open_prefs, void *prefs_context,
     char *status, size_t status_size,
     tiku_trk_folder_close_under_fn close_under, void *close_context);

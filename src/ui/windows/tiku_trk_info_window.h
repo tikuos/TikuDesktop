@@ -48,7 +48,7 @@ struct tiku_trk_info_windows {
     tiku_backend_t            *backend;
     tiku_store_t              *store;
     tiku_fs_t                 *fs;
-    tiku_trk_alert_t              *alert;
+    tiku_alert_t              *alert;
     tiku_field_t                name;
     int                            renaming;
     /* The slot whose icon an in-flight drag is over, or -1: the icon
@@ -64,7 +64,7 @@ struct tiku_trk_info_windows {
 
 void tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
     tiku_workspace_t *workspace, tiku_backend_t *backend,
-    tiku_store_t *store, tiku_fs_t *fs, tiku_trk_alert_t *alert,
+    tiku_store_t *store, tiku_fs_t *fs, tiku_alert_t *alert,
     int *dirty);
 int tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
                                const char *path);

@@ -25,7 +25,7 @@ check(int cond, const char *row, const char *what)
 int
 main(void)
 {
-    tiku_trk_alert_t a;
+    tiku_alert_t a;
     tiku_progress_t pr;
     tiku_trk_progress_win_t w;
 
@@ -71,7 +71,7 @@ main(void)
     snprintf(pr.error, sizeof pr.error, "Error deleting \"x\": busy.");
     pr.error_can_continue = 0;
     tiku_trk_alert_for_error(&a, &pr);
-    check(a.nbutton == 1 && a.kind == TIKU_TRK_ALERT_STOP, "FS-035",
+    check(a.nbutton == 1 && a.kind == TIKU_ALERT_STOP, "FS-035",
           "a delete failure offers no way on -- there is nothing to "
           "continue to");
     pr.error_can_continue = 1;
@@ -83,16 +83,16 @@ main(void)
     {
         int bx, by, bw, bh, last;
 
-        tiku_trk_alert_button_rect(&a, 1, 400, 160, &bx, &by, &bw, &bh);
+        tiku_alert_button_rect(&a, 1, 400, 160, &bx, &by, &bw, &bh);
         check(bx + bw <= 400 && by + bh <= 160, "FS-035",
               "the default button sits inside the alert");
-        tiku_trk_alert_button_rect(&a, 0, 400, 160, &last, NULL, NULL, NULL);
+        tiku_alert_button_rect(&a, 0, 400, 160, &last, NULL, NULL, NULL);
         check(last < bx, "FS-035",
               "and Cancel is to its LEFT: the default is rightmost, where "
               "the pointer already is");
-        check(tiku_trk_alert_button_at(&a, 400, 160, bx + 4, by + 4) == 1,
+        check(tiku_alert_button_at(&a, 400, 160, bx + 4, by + 4) == 1,
               "FS-035", "a click inside a button finds it");
-        check(tiku_trk_alert_button_at(&a, 400, 160, 10, 10) == -1,
+        check(tiku_alert_button_at(&a, 400, 160, 10, 10) == -1,
               "FS-035", "and one on the text finds nothing");
     }
 

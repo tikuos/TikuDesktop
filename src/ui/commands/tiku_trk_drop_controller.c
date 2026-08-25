@@ -24,7 +24,7 @@ void
 tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_trk_deskbar_t *deskbar, tiku_backend_t *backend,
     tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
-    tiku_trk_cwmenu_t *menus, tiku_trk_alert_t *alert,
+    tiku_trk_cwmenu_t *menus, tiku_alert_t *alert,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_menu_t **popup, tiku_menu_t **popup_sub,
     tiku_rect_t *popup_frame, char *progress_destination,
@@ -249,7 +249,7 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
         result = tiku_trk_foreign_drop(&offer, destination[0] != '\0', 0,
                                        strcmp(destination, "/") == 0, 0);
         if (!result.accepted) {
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+            tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_REFUSAL,
                                 "This drop target cannot accept those items.",
                                 "Cancel");
@@ -274,7 +274,7 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
         reason = refused;
     }
     if (reason != NULL) {
-        tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_REFUSAL, reason, "Cancel");
         return 0;
     }
@@ -497,8 +497,8 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
             if (!tiku_volume_may_unmount(&vols, path, why,
                                              sizeof why)) {
                 if (why[0] != '\0') {
-                    tiku_trk_alert_open(controller->alert,
-                        TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
+                    tiku_alert_open(controller->alert,
+                        TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
                         why, "Cancel");
                 }
             } else if (tiku_volume_unmount(&vols, path, NULL, NULL,
@@ -510,8 +510,8 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
                          "unmounted \"%.60s\"",
                          (vol != NULL) ? vol->name : path);
             } else if (why[0] != '\0') {
-                tiku_trk_alert_open(controller->alert,
-                    TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
+                tiku_alert_open(controller->alert,
+                    TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL,
                     why, "Cancel");
             }
         }

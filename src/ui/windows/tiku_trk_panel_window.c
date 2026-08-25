@@ -369,11 +369,11 @@ commit(tiku_trk_panel_window_t *controller)
             snprintf(ask, sizeof ask,
                      tiku_str("alert.msg.exists_replace"),
                      controller->model.name);
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+            tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_SAVE_REPLACE, ask,
                                 tiku_str("alert.btn.replace"));
         } else if (controller->alert != NULL) {
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+            tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_ERROR,
                                 tiku_trk_panel_save_text(why), "Cancel");
             controller->name.sel_a = 0;
@@ -411,7 +411,7 @@ tiku_trk_panel_window_confirmed(tiku_trk_panel_window_t *controller)
 
 void
 tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
-                                tiku_trk_alert_t *alert)
+                                tiku_alert_t *alert)
 {
     if (controller != NULL) {
         controller->alert = alert;

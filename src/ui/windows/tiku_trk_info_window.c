@@ -335,7 +335,7 @@ finish_rename(tiku_trk_info_windows_t *controller, int apply)
     }
     if (tiku_fs_rename(controller->fs, controller->model[slot].path,
                            controller->name.text, error, sizeof error) != 0) {
-        tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_ERROR, error, "Cancel");
     } else {
         char parent[TIKU_PATH_MAX], destination[TIKU_PATH_MAX];
@@ -363,7 +363,7 @@ finish_rename(tiku_trk_info_windows_t *controller, int apply)
 void
 tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
     tiku_workspace_t *workspace, tiku_backend_t *backend,
-    tiku_store_t *store, tiku_fs_t *fs, tiku_trk_alert_t *alert,
+    tiku_store_t *store, tiku_fs_t *fs, tiku_alert_t *alert,
     int *dirty)
 {
     int i;

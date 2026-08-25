@@ -46,7 +46,7 @@ void
 tiku_trk_folder_file_actions_init(
     tiku_trk_folder_file_actions_t *controller, tiku_fs_t *fs,
     tiku_backend_t *backend, tiku_trk_clip_t *clip, tiku_trk_drag_t *pending,
-    char *drop_destination, tiku_trk_alert_t *alert,
+    char *drop_destination, tiku_alert_t *alert,
     tiku_trk_folder_prefs_fn open_prefs, void *prefs_context,
     char *status, size_t status_size,
     tiku_trk_folder_close_under_fn close_under, void *close_context)
@@ -321,7 +321,7 @@ unmount_selected_volumes(tiku_trk_folder_file_actions_t *controller,
         if (!tiku_volume_may_unmount(&vols, p->model.path, why,
                                          sizeof why)) {
             if (why[0] != '\0') {
-                tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+                tiku_alert_open(controller->alert, TIKU_ALERT_STOP,
                     TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
             }
         } else if (tiku_volume_unmount(&vols, p->model.path, NULL,
@@ -329,7 +329,7 @@ unmount_selected_volumes(tiku_trk_folder_file_actions_t *controller,
             snprintf(controller->status, controller->status_size,
                      "unmounted \"%.60s\"", p->model.name);
         } else if (why[0] != '\0') {
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+            tiku_alert_open(controller->alert, TIKU_ALERT_STOP,
                 TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
         }
     }
@@ -367,7 +367,7 @@ move_to_trash(tiku_trk_folder_file_actions_t *controller,
             snprintf(message, sizeof message,
                 "\"%.60s\" is a system folder.  Hold Shift and choose "
                 "Move to confirm.", selection[i]);
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_STOP,
+            tiku_alert_open(controller->alert, TIKU_ALERT_STOP,
                 TIKU_TRK_ALERT_TAG_REFUSAL, message, "Cancel");
             return;
         }
@@ -453,7 +453,7 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
         snprintf(message, sizeof message,
                  tiku_str("alert.msg.delete_items"), count,
                  count == 1 ? "" : "s");
-        tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_DELETE, message,
                             tiku_str("alert.btn.trash_delete"));
     }
@@ -715,7 +715,7 @@ tiku_trk_folder_file_actions_invoke(
          * does not ride Return: Cancel keeps the default ring and
          * emptying takes an aimed press (item 5's rule). */
         if (controller->alert != NULL) {
-            tiku_trk_alert_open(controller->alert, TIKU_TRK_ALERT_WARN,
+            tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                 TIKU_TRK_ALERT_TAG_EMPTY_TRASH,
                 tiku_str("alert.msg.empty_trash"),
                 tiku_str("alert.btn.empty_trash"));

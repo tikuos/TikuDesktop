@@ -17,11 +17,11 @@
 #include "tiku_trk_alert.h"
 
 typedef void (*tiku_trk_status_alert_fn)(void *context,
-                                         const tiku_trk_alert_t *alert);
+                                         const tiku_alert_t *alert);
 typedef void (*tiku_trk_status_stop_fn)(void *context);
 
 typedef struct {
-    tiku_trk_alert_t          alert;
+    tiku_alert_t          alert;
     tiku_trk_progress_win_t   progress;
     tiku_surface_t      *surface;
     int                       screen_w;
@@ -38,7 +38,7 @@ void tiku_trk_status_overlay_init(tiku_trk_status_overlay_t *controller,
     tiku_trk_status_alert_fn answer, tiku_trk_status_stop_fn stop,
     void *callback_context);
 
-tiku_trk_alert_t *tiku_trk_status_overlay_alert(
+tiku_alert_t *tiku_trk_status_overlay_alert(
     tiku_trk_status_overlay_t *controller);
 tiku_trk_progress_win_t *tiku_trk_status_overlay_progress(
     tiku_trk_status_overlay_t *controller);

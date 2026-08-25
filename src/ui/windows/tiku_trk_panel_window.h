@@ -44,7 +44,7 @@ typedef struct {
     void                  *commit_context;
     /* The shell's alert, for a save's refusals and its Replace question;
      * the checked path waits here while the question is on screen. */
-    tiku_trk_alert_t      *alert;
+    tiku_alert_t      *alert;
     char                   pending_save[TIKU_PATH_MAX];
     /* The Favorites menu: favourites, then recent folders, dropped up
      * from the bottom-left button (AW-062, CW-058). */
@@ -82,7 +82,7 @@ void tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
 
 /** @brief Give the panel the shell's alert for its save questions. */
 void tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
-                                     tiku_trk_alert_t *alert);
+                                     tiku_alert_t *alert);
 void tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller);
 void tiku_trk_panel_window_destroy(tiku_trk_panel_window_t *controller);
 

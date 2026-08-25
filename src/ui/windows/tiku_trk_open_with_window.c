@@ -181,7 +181,7 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
         snprintf(text, sizeof text,
                  "\"%.48s\" does not claim this document's type.  Open "
                  "anyway?", pick->app->name);
-        tiku_trk_alert_open(c->alert, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(c->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_OPEN_ANYWAY, text,
                             tiku_str("alert.btn.open"));
         return;                     /* the answer re-enters via confirmed */
@@ -244,7 +244,7 @@ void
 tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
-    tiku_trk_alert_t *alert, struct tiku_store *store)
+    tiku_alert_t *alert, struct tiku_store *store)
 {
     memset(c, 0, sizeof *c);
     c->workspace = workspace;

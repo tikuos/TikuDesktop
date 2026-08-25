@@ -15,8 +15,6 @@
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_task.h"
 
-#define ALERT_WIDTH     420
-#define ALERT_HEIGHT    150
 #define PROGRESS_WIDTH  380
 #define PROGRESS_MARGIN 24
 #define PROGRESS_ROW_H  48
@@ -33,10 +31,12 @@ mark_dirty(tiku_trk_status_overlay_t *controller)
 static tiku_rect_t
 alert_frame(const tiku_trk_status_overlay_t *controller)
 {
+    int w, h;
+
+    tiku_alert_size(&w, &h);
     return (tiku_rect_t){
-        (controller->screen_w - ALERT_WIDTH) / 2,
-        (controller->screen_h - ALERT_HEIGHT) / 3,
-        ALERT_WIDTH, ALERT_HEIGHT
+        (controller->screen_w - w) / 2,
+        (controller->screen_h - h) / 3, w, h
     };
 }
 
@@ -52,212 +52,16 @@ progress_frame(const tiku_trk_status_overlay_t *controller)
     };
 }
 
-/** @brief A filled disc, span by span: the primitives have no circle. */
-static void
-draw_disc(tiku_surface_t *surface, int cx, int cy, int r,
-          tiku_rgb_t color)
-{
-    int dy;
-
-    for (dy = -r; dy <= r; dy++) {
-        int half = 0;
-
-        while ((half + 1) * (half + 1) + dy * dy <= r * r) {
-            half++;
-        }
-        tiku_hline(surface, cx - half, cy + dy, 2 * half + 1, color);
-    }
-}
-
-/**
- * @brief The alert's own icon: what KIND of thing is being said.
- *
- * Info speaks in blue, a warning in the tab's yellow, a stop in red --
- * a ringed disc with its mark, drawn from primitives so every target
- * carries it.
- */
-static void
-draw_alert_icon(tiku_surface_t *surface, int cx, int cy,
-                tiku_trk_alert_kind_t kind)
-{
-    tiku_rgb_t body = (kind == TIKU_TRK_ALERT_STOP)
-                               ? TIKU_C_DANGER
-                         : (kind == TIKU_TRK_ALERT_WARN)
-                               ? TIKU_C_TAB
-                               : TIKU_C_SELECT;
-    tiku_rgb_t ink = (kind == TIKU_TRK_ALERT_WARN)
-                              ? TIKU_C_TEXT : TIKU_C_DOC;
-    int k;
-
-    draw_disc(surface, cx, cy, 16, tiku_tint(body, 1.45f));
-    draw_disc(surface, cx, cy, 14, body);
-    if (kind == TIKU_TRK_ALERT_STOP) {
-        /* The cross: this far and no further. */
-        for (k = -6; k <= 6; k++) {
-            tiku_fill(surface, (tiku_rect_t){ cx + k - 1,
-                           cy + k - 1, 3, 3 }, ink);
-            tiku_fill(surface, (tiku_rect_t){ cx - k - 1,
-                           cy + k - 1, 3, 3 }, ink);
-        }
-    } else if (kind == TIKU_TRK_ALERT_WARN) {
-        /* The exclamation: a bar and its dot. */
-        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 9, 4, 11 },
-                       ink);
-        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy + 5, 4, 4 },
-                       ink);
-    } else {
-        /* The i: a dot and its bar. */
-        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 9, 4, 4 },
-                       ink);
-        tiku_fill(surface, (tiku_rect_t){ cx - 2, cy - 2, 4, 11 },
-                       ink);
-    }
-}
-
 static void
 draw_alert(tiku_trk_status_overlay_t *controller)
 {
-    tiku_rect_t frame = alert_frame(controller);
-    const tiku_font_t *font = tiku_font_plain();
-    int i, text_y;
-
     if (!controller->alert.open) {
         return;
     }
-    /* A modal window, not a floating slab: the same dark frame and
-     * bevel every window body wears -- BeOS had no borderless windows,
-     * and neither does this one. */
-    tiku_fill(controller->surface, frame, TIKU_C_PANEL);
-    tiku_frame(controller->surface, frame,
-        tiku_tint(TIKU_C_PANEL, 1.40f));
-    tiku_bevel(controller->surface, tiku_inset(frame, 1),
-        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
-        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
-    tiku_bevel(controller->surface, tiku_inset(frame, 2),
-        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_1),
-        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
-    {
-        /* The icon on its grey stripe, as BAlert lays it: the KIND of
-         * thing being said, visible before a word is read. */
-        tiku_rect_t stripe = { frame.x + 3, frame.y + 3, 52,
-                                    frame.h - 6 };
-
-        tiku_fill(controller->surface, stripe,
-                       tiku_tint(TIKU_C_PANEL,
-                                      TIKU_DARKEN_1));
-        draw_alert_icon(controller->surface, stripe.x + 26, frame.y + 36,
-                        controller->alert.kind);
-    }
-    text_y = frame.y + 24;
-    {
-        /* Two tiers (Mac HIG ch3): the first sentence is the SUMMARY and
-         * wears the bold face; whatever follows is the detail, in the
-         * plain face below it.  One text block in, two voices out -- no
-         * caller changes. */
-        const tiku_font_t *bold = tiku_font_bold();
-        const char *text = controller->alert.text;
-        const char *split = NULL;
-        const char *at;
-        size_t lines = 0;
-        int tier;
-
-        for (at = text; *at != '\0'; at++) {
-            if ((*at == '.' || *at == '?' || *at == '!') &&
-                (at[1] == ' ' || at[1] == '\0')) {
-                split = at + 1;
-                break;
-            }
-        }
-        for (tier = 0; tier < 2; tier++) {
-            const tiku_font_t *face = (tier == 0 && split != NULL)
-                                               ? bold : font;
-            const char *end = (tier == 0) ? split : NULL;
-            char line[80] = "";
-
-            if (tier == 1) {
-                if (split == NULL || *split == '\0') {
-                    break;
-                }
-                text = split;
-                while (*text == ' ') {
-                    text++;
-                }
-                text_y += 2;    /* a breath between the voices */
-            }
-            while (*text != '\0' && (end == NULL || text < end) &&
-                   text_y < frame.y + frame.h - 46) {
-                size_t length = 0;
-                const char *space = NULL;
-
-                while (text[length] != '\0' &&
-                       (end == NULL || text + length < end) &&
-                       length < sizeof line - 1u) {
-                    if (text[length] == ' ') {
-                        space = text + length;
-                    }
-                    line[length] = text[length];
-                    line[length + 1u] = '\0';
-                    if (tiku_text_width(face, line) > frame.w - 88) {
-                        break;
-                    }
-                    length++;
-                }
-                if (text[length] != '\0' &&
-                    (end == NULL || text + length < end) &&
-                    space != NULL && space > text) {
-                    length = (size_t)(space - text);
-                    line[length] = '\0';
-                }
-                tiku_text(controller->surface, face, frame.x + 66,
-                               text_y, line, TIKU_C_TEXT);
-                text_y += face->height + 4;
-                text += length;
-                while (*text == ' ') {
-                    text++;
-                }
-                if (++lines > 6u) {
-                    break;
-                }
-            }
-            if (split == NULL) {
-                break;
-            }
-        }
-    }
-    {
-        /* Uniform buttons, sized by the longest label (Mac HIG ch3): the
-         * geometry lives in the core, the fonts live here, so the width
-         * is measured here and handed over. */
-        int widest = 0;
-
-        for (i = 0; i < controller->alert.nbutton; i++) {
-            int lw = tiku_text_width(font,
-                                          controller->alert.button[i]);
-
-            if (lw > widest) {
-                widest = lw;
-            }
-        }
-        widest += 20;
-        if (widest < 58) { widest = 58; }
-        if (widest > 150) { widest = 150; }
-        controller->alert.btn_w = widest;
-    }
-    for (i = 0; i < controller->alert.nbutton; i++) {
-        tiku_rect_t button;
-        int x, y, width, height;
-
-        tiku_trk_alert_button_rect(&controller->alert, i, frame.w, frame.h,
-                                   &x, &y, &width, &height);
-        button = (tiku_rect_t){ frame.x + x, frame.y + y,
-                                     width, height };
-        /* The R5 button, ring and all: the rightmost is the default,
-         * which is where the pointer already is after reading. */
-        tiku_ui_button(controller->surface, button,
-                            controller->alert.button[i],
-                            (i == controller->alert.dflt)
-                                ? TIKU_S_DEFAULT : 0u);
-    }
+    /* The panel is the kit's: the same question an application can raise
+     * over its own window, drawn here over the whole desktop. */
+    tiku_alert_draw(&controller->alert, controller->surface,
+                    alert_frame(controller));
 }
 
 static void
@@ -377,7 +181,7 @@ answer(tiku_trk_status_overlay_t *controller, int chosen)
         controller->answer(controller->callback_context,
                            &controller->alert);
     }
-    tiku_trk_alert_reset(&controller->alert);
+    tiku_alert_reset(&controller->alert);
     mark_dirty(controller);
 }
 
@@ -395,11 +199,11 @@ tiku_trk_status_overlay_init(tiku_trk_status_overlay_t *controller,
     controller->answer = answer_callback;
     controller->stop = stop_callback;
     controller->callback_context = callback_context;
-    tiku_trk_alert_reset(&controller->alert);
+    tiku_alert_reset(&controller->alert);
     tiku_trk_progress_reset(&controller->progress);
 }
 
-tiku_trk_alert_t *
+tiku_alert_t *
 tiku_trk_status_overlay_alert(tiku_trk_status_overlay_t *controller)
 {
     return &controller->alert;
@@ -447,7 +251,7 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
 {
     if (controller->alert.open) {
         tiku_rect_t frame = alert_frame(controller);
-        int picked = tiku_trk_alert_button_at(&controller->alert,
+        int picked = tiku_alert_button_at(&controller->alert,
             frame.w, frame.h, x - frame.x, y - frame.y);
 
         if (picked >= 0) {

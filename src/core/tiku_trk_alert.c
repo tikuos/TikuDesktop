@@ -15,81 +15,8 @@
 #include <string.h>
 
 /** @brief Button geometry, shared by the drawing and the hit test. */
-#define BTN_W   96
-#define BTN_H   24
-#define BTN_GAP 8
-#define BTN_PAD 12
-
 void
-tiku_trk_alert_reset(tiku_trk_alert_t *a)
-{
-    if (a != NULL) {
-        memset(a, 0, sizeof *a);
-        a->chosen = -1;
-        a->cancel = -1;
-    }
-}
-
-void
-tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind, int tag,
-                    const char *text, const char *buttons)
-{
-    const char *p = buttons;
-
-    if (a == NULL) {
-        return;
-    }
-    tiku_trk_alert_reset(a);
-    a->kind = kind;
-    a->tag = tag;
-    snprintf(a->text, sizeof a->text, "%s", (text != NULL) ? text : "");
-    while (p != NULL && *p != '\0' && a->nbutton < TIKU_TRK_ALERT_BUTTONS) {
-        const char *bar = strchr(p, '|');
-        size_t n = (bar != NULL) ? (size_t)(bar - p) : strlen(p);
-
-        if (n >= sizeof a->button[0]) {
-            n = sizeof a->button[0] - 1u;
-        }
-        memcpy(a->button[a->nbutton], p, n);
-        a->button[a->nbutton][n] = '\0';
-        a->nbutton++;
-        p = (bar != NULL) ? bar + 1 : p + n;
-    }
-    /* Escape presses the FIRST button.  The original puts Cancel leftmost
-     * and makes it the escape route, so the safe answer is the one a
-     * keyboard reflex reaches. */
-    a->cancel = (a->nbutton > 0) ? 0 : -1;
-    a->dflt = a->nbutton - 1;
-    {
-        /* A destructive verb never rides Return: while the default names
-         * an action that erases or overwrites, it steps LEFT toward the
-         * safer answers -- the delete question's Return lands on Move to
-         * Trash, an overwrite's on Cancel -- and the destructive answer
-         * takes an aimed click (Mac HIG ch3; NeXT UIG ch5: the default
-         * should be the safest of the alternatives). */
-        static const char *harm[] = { "Delete", "Replace", "Replace all",
-                                      "Empty Trash" };
-        int harmful = 1;
-
-        while (harmful && a->dflt > 0) {
-            size_t k;
-
-            harmful = 0;
-            for (k = 0; k < sizeof harm / sizeof harm[0]; k++) {
-                if (strcmp(a->button[a->dflt], harm[k]) == 0) {
-                    harmful = 1;
-                }
-            }
-            if (harmful) {
-                a->dflt--;
-            }
-        }
-    }
-    a->open = 1;
-}
-
-void
-tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_progress_t *pr)
+tiku_trk_alert_for_conflict(tiku_alert_t *a, const tiku_progress_t *pr)
 {
     char text[512];
     const char *leaf;
@@ -105,18 +32,18 @@ tiku_trk_alert_for_conflict(tiku_trk_alert_t *a, const tiku_progress_t *pr)
      * collision is pending; otherwise the short one.  The engine already
      * decided which -- this only renders it (FS-018, FS-019). */
     if (pr->conflict_many) {
-        tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(a, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
                             tiku_str("alert.btn.conflict"));
     } else {
-        tiku_trk_alert_open(a, TIKU_TRK_ALERT_WARN,
+        tiku_alert_open(a, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
                             tiku_str("alert.btn.replace"));
     }
 }
 
 void
-tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_progress_t *pr)
+tiku_trk_alert_for_error(tiku_alert_t *a, const tiku_progress_t *pr)
 {
     if (a == NULL || pr == NULL) {
         return;
@@ -124,61 +51,14 @@ tiku_trk_alert_for_error(tiku_trk_alert_t *a, const tiku_progress_t *pr)
     /* A delete failure offers no way on: there is nothing to continue to,
      * which is why the engine carries the flag rather than the shell
      * guessing from the message. */
-    tiku_trk_alert_open(a, TIKU_TRK_ALERT_STOP, TIKU_TRK_ALERT_TAG_ERROR,
+    tiku_alert_open(a, TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_ERROR,
                         pr->error,
                         pr->error_can_continue ? tiku_str("alert.btn.ok")
                                                : tiku_str("button.cancel"));
 }
 
-void
-tiku_trk_alert_button_rect(const tiku_trk_alert_t *a, int i, int w, int h,
-                           int *bx, int *by, int *bw, int *bh)
-{
-    int from_right;
-
-    if (a == NULL || i < 0 || i >= a->nbutton) {
-        return;
-    }
-    /* Laid out from the right edge: the default action is the rightmost,
-     * which is where the pointer already is after reading the text. */
-    from_right = a->nbutton - 1 - i;
-    {
-        /* One width for the whole set, from the longest label when the
-         * renderer has measured one (Mac HIG ch3: uniform buttons, sized
-         * by the longest). */
-        int bwidth = (a->btn_w > 0) ? a->btn_w : BTN_W;
-
-        if (bx != NULL) {
-            *bx = w - BTN_PAD - bwidth - from_right * (bwidth + BTN_GAP);
-        }
-        if (bw != NULL) { *bw = bwidth; }
-    }
-    if (by != NULL) { *by = h - BTN_PAD - BTN_H; }
-    if (bh != NULL) { *bh = BTN_H; }
-}
-
-int
-tiku_trk_alert_button_at(const tiku_trk_alert_t *a, int w, int h, int x,
-                         int y)
-{
-    int i;
-
-    if (a == NULL || !a->open) {
-        return -1;
-    }
-    for (i = 0; i < a->nbutton; i++) {
-        int bx, by, bw, bh;
-
-        tiku_trk_alert_button_rect(a, i, w, h, &bx, &by, &bw, &bh);
-        if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 tiku_conflict_t
-tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a)
+tiku_trk_alert_conflict_answer(const tiku_alert_t *a)
 {
     if (a == NULL || a->chosen < 0) {
         return TIKU_CONFLICT_ASK;

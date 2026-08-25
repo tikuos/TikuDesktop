@@ -3,14 +3,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_alert.h - the question the shell puts to the user, and the
- * progress a running job reports.
+ * tiku_trk_alert.h - what Tracker's alerts MEAN, and the progress a
+ * running job reports.
  *
- * The engine has always been able to ask -- a collision, an error, a
- * refusal -- and the shells have always answered for it, because there was
- * nowhere to put the question.  This is that place: state and hit-testing
- * only, so the same alert can be raised by either front end and driven by a
- * script.
+ * The QUESTION itself is the Interface kit's now (tiku_alert.h): state,
+ * geometry, keys and the look, one object any application can raise over
+ * its own content.  What stays here is Tracker's half -- which alert a
+ * collision or a failed item builds, and what the chosen button means to
+ * the engine -- because an answer's meaning belongs to whoever asked.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,41 +18,7 @@
 #define TIKU_TRK_ALERT_H_
 
 #include "tiku_fs.h"
-
-/** @brief How many buttons an alert can carry. */
-#define TIKU_TRK_ALERT_BUTTONS 4
-
-/** @brief What an alert is for; it decides the icon and the wording. */
-typedef enum {
-    TIKU_TRK_ALERT_INFO = 0,
-    TIKU_TRK_ALERT_WARN,
-    TIKU_TRK_ALERT_STOP
-} tiku_trk_alert_kind_t;
-
-/** @brief One alert, open or not. */
-typedef struct {
-    int                   open;
-    tiku_trk_alert_kind_t kind;
-    char                  text[512];
-    char                  button[TIKU_TRK_ALERT_BUTTONS][40];
-    int                   nbutton;
-    int                   cancel;   /* which button Escape presses       */
-    /* Which button Return presses, drawn with the default ring.  The
-     * rightmost unless the rightmost is DESTRUCTIVE: a default that
-     * erases something must be an aimed click, never a keyboard reflex
-     * (Mac HIG ch3 / NeXT UIG ch5). */
-    int                   dflt;
-    /* Button width for THIS alert, measured from its longest label by the
-     * renderer (which owns the fonts); 0 falls back to the classic fixed
-     * width.  One width for the whole set: uniform buttons, sized by the
-     * longest label (Mac HIG ch3). */
-    int                   btn_w;
-    int                   chosen;   /* -1 until one is pressed           */
-    /* What the answer is FOR.  An alert raised by a collision has to hand
-     * its answer back to the engine, and the shell must not have to
-     * remember which question it asked. */
-    int                   tag;
-} tiku_trk_alert_t;
+#include "tiku_alert.h"
 
 /** @brief What an alert's answer belongs to. */
 #define TIKU_TRK_ALERT_TAG_NONE     0
@@ -66,15 +32,6 @@ typedef struct {
 #define TIKU_TRK_ALERT_TAG_SAVE_REPLACE 8   /* a save would overwrite */
 #define TIKU_TRK_ALERT_TAG_EMPTY_TRASH 9    /* asks before emptying   */
 
-void tiku_trk_alert_reset(tiku_trk_alert_t *a);
-
-/**
- * @brief Raise an alert.  @p buttons is a "|"-separated list, right to left
- * as the original lays them out: the default is last.
- */
-void tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind,
-                         int tag, const char *text, const char *buttons);
-
 /**
  * @brief Build the alert a collision asks, from the progress record.
  *
@@ -82,27 +39,19 @@ void tiku_trk_alert_open(tiku_trk_alert_t *a, tiku_trk_alert_kind_t kind,
  * any collision while more than one is pending, gets the four-way form --
  * the shape the engine already worked out (FS-018, FS-019).
  */
-void tiku_trk_alert_for_conflict(tiku_trk_alert_t *a,
+void tiku_trk_alert_for_conflict(tiku_alert_t *a,
                                  const tiku_progress_t *pr);
 
 /** @brief Build the alert a failed item asks (FS-035). */
-void tiku_trk_alert_for_error(tiku_trk_alert_t *a,
+void tiku_trk_alert_for_error(tiku_alert_t *a,
                               const tiku_progress_t *pr);
-
-/** @brief Which button a point is over, or -1. */
-int tiku_trk_alert_button_at(const tiku_trk_alert_t *a, int w, int h,
-                             int x, int y);
-
-/** @brief The rectangle of button @p i inside a @p w by @p h alert. */
-void tiku_trk_alert_button_rect(const tiku_trk_alert_t *a, int i, int w,
-                                int h, int *bx, int *by, int *bw, int *bh);
 
 /**
  * @brief Answer the collision alert; maps the chosen button to the engine.
  *
  * @return the conflict answer to hand to tiku_fs_resolve().
  */
-tiku_conflict_t tiku_trk_alert_conflict_answer(const tiku_trk_alert_t *a);
+tiku_conflict_t tiku_trk_alert_conflict_answer(const tiku_alert_t *a);
 
 /*---------------------------------------------------------------------------*/
 /* The progress window                                                        */
