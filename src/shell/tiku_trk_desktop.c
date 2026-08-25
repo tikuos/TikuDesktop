@@ -160,7 +160,6 @@ typedef struct desktop {
     int                  find_len;
     int                  find_serial;
     tiku_trk_find_window_t find_window;
-    tiku_trk_about_window_t about_window;
     tiku_remote_listener_t remote;
     /* The conductor channel: an outside driver's events and questions.
      * Off unless -conduct asked for it.  Injected events queue here and
@@ -862,12 +861,17 @@ tick_clock(void *ctx)
  * for the same reason: a blind dirty on a timer repaints the world.
  */
 static int
-tick_about_logo(void *ctx)
+tick_embeds(void *ctx)
 {
     desktop_t *app = ctx;
+    int e;
 
-    if (tiku_trk_about_window_pulse(&app->about_window, tiku_trk_now())) {
-        app->dirty = 1;
+    for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
+        if (app->embeds[e].running &&
+            app->embeds[e].descriptor->tick != NULL) {
+            app->embeds[e].descriptor->tick(app->embeds[e].state,
+                                            tiku_trk_now());
+        }
     }
     return 0;                       /* periodic: never done */
 }
@@ -1277,6 +1281,58 @@ embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
     return 0;
 }
 
+/**
+ * @brief The ANNOUNCE role: centred, upper third, fixed size.
+ *
+ * The application says what KIND of window it opened; where such a
+ * window goes on THIS screen is the host's guideline, which is exactly
+ * why the contract carries a role and not a coordinate.
+ */
+static int
+embed_svc_place(void *ctx, uint32_t id, int role)
+{
+    struct desktop_embed *slot = ctx;
+    desktop_t *app = slot->app;
+
+    (void)id;
+    if (slot->window == NULL || role != TIKU_APP_PLACE_ANNOUNCE) {
+        return -1;
+    }
+    slot->window->frame.x =
+        (app->surf->w - slot->window->frame.w) / 2;
+    /* The UPPER part of the screen, as the guideline places a panel
+     * that announces something. */
+    slot->window->frame.y =
+        (app->surf->h - slot->window->frame.h) / 3;
+    tiku_window_set_size_controls(slot->window, 0, 0);
+    app->dirty = 1;
+    return 0;
+}
+
+/**
+ * @brief The window's content grew or shrank; the corner stays put.
+ *
+ * A window that re-placed itself on a refit would jump under the
+ * pointer -- the About takes a new size when the face changes, and only
+ * the size.
+ */
+static int
+embed_svc_resize(void *ctx, uint32_t id, int w, int h)
+{
+    struct desktop_embed *slot = ctx;
+    desktop_t *app = slot->app;
+
+    (void)id;
+    if (slot->window == NULL || w <= 0 || h <= 0) {
+        return -1;
+    }
+    slot->window->frame.w = w + 2 * TIKU_WINDOW_BORDER;
+    slot->window->frame.h = h + tiku_window_tab_h() +
+                            2 * TIKU_WINDOW_BORDER;
+    app->dirty = 1;
+    return 0;
+}
+
 static void
 embed_svc_close(void *ctx, uint32_t id)
 {
@@ -1341,11 +1397,43 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.frame = embed_svc_frame;
     slot->services.menus = embed_svc_menus;
     slot->services.close = embed_svc_close;
+    slot->services.place = embed_svc_place;
+    slot->services.resize = embed_svc_resize;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
     slot->running = 1;
     return 1;
+}
+
+/**
+ * @brief Start @p descriptor, or bring its running window forward.
+ *
+ * By the descriptor's ID, which is what "the same application" means
+ * across every way of reaching it: the second menu pick raises the
+ * window the first one opened, rather than opening a twin.
+ */
+static int
+embed_open_or_raise(desktop_t *app, const tiku_app_descriptor_t *descriptor)
+{
+    int i;
+
+    if (descriptor == NULL || descriptor->id == NULL) {
+        return 0;
+    }
+    for (i = 0; i < TIKU_TRK_EMBED_MAX; i++) {
+        struct desktop_embed *slot = &app->embeds[i];
+
+        if (slot->running && slot->descriptor->id != NULL &&
+            strcmp(slot->descriptor->id, descriptor->id) == 0) {
+            if (slot->window != NULL) {
+                tiku_workspace_activate(app->desk, slot->window);
+            }
+            app->dirty = 1;
+            return 1;
+        }
+    }
+    return embed_start(app, descriptor);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1642,7 +1730,7 @@ system_invoke(desktop_t *app, int command)
 {
     switch (command) {
     case TIKU_TRK_CMD_ABOUT:
-        tiku_trk_about_window_open(&app->about_window);
+        (void)embed_open_or_raise(app, &tiku_trk_about_app);
         return 1;
 
     case TIKU_TRK_CMD_FIND:
@@ -2197,10 +2285,6 @@ close_window(desktop_t *app, tiku_window_t *w)
     if (tiku_remote_owner(&app->remote, w) != NULL) {
         tiku_remote_window_closed(&app->remote, w);
         tiku_workspace_close(app->desk, w);
-        return;
-    }
-    if (w == tiku_trk_about_window_handle(&app->about_window)) {
-        tiku_trk_about_window_close(&app->about_window);
         return;
     }
     if (w == tiku_trk_find_window_handle(&app->find_window)) {
@@ -2889,7 +2973,7 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         break;
     }
     case TIKU_TRK_DB_SHOW_ABOUT:
-        tiku_trk_about_window_open(&app->about_window);
+        (void)embed_open_or_raise(app, &tiku_trk_about_app);
         break;
     case TIKU_TRK_DB_QUIT:
         /* The ellipsis is a promise: Shut down… asks
@@ -3244,7 +3328,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         }
     }
     if (command == TIKU_TRK_CMD_ABOUT) {
-        tiku_trk_about_window_open(&app->about_window);
+        (void)embed_open_or_raise(app, &tiku_trk_about_app);
         return;
     }
     if (command == TIKU_TRK_CMD_SHUTDOWN) {
@@ -4990,8 +5074,6 @@ tracker_run(int argc, char **argv)
         DESK_W, DESK_H, &app.dirty, status_answer, status_stop, &app);
     tiku_trk_find_window_init(&app.find_window, app.desk, DESK_W, DESK_H,
         &app.dirty, app.status, sizeof app.status, panel_search, &app);
-    tiku_trk_about_window_init(&app.about_window, app.desk, DESK_W,
-                               DESK_H, &app.dirty);
     prepare_places(&app);
     offer_installed(&app, argv[0]);
     /*
@@ -5015,9 +5097,11 @@ tracker_run(int argc, char **argv)
     (void)tiku_trk_run_periodic(app.loop, tick_clock, &app, NULL, 1000000,
                                 0);
     /* Fast enough that a fade of sixteen steps reads as continuous, and
-     * cheap because the pulse answers "nothing changed" most of the
-     * time.  75 ms: the fade is 1.2 seconds. */
-    (void)tiku_trk_run_periodic(app.loop, tick_about_logo, &app, NULL,
+     * cheap because a tick that changes nothing frames nothing.  75 ms:
+     * the About's fade is 1.2 seconds, and every hosted application's
+     * tick rides the same beat rather than each arriving with a timer
+     * of its own. */
+    (void)tiku_trk_run_periodic(app.loop, tick_embeds, &app, NULL,
                                 75000, 0);
     if (script_path == NULL && conduct_path == NULL &&
         conduct_tty == NULL) {
@@ -5602,17 +5686,6 @@ tracker_run(int argc, char **argv)
         }
         remote_reconcile(&app);
         remote_sweep(&app);
-        {
-            int e;
-
-            for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
-                if (app.embeds[e].running &&
-                    app.embeds[e].descriptor->tick != NULL) {
-                    app.embeds[e].descriptor->tick(app.embeds[e].state,
-                                                   tiku_trk_now());
-                }
-            }
-        }
         sync_folder_preferences(&app);
         sync_addons(&app, 0);
         for (;;) {
@@ -7431,6 +7504,17 @@ tracker_run(int argc, char **argv)
                             embed_of_window(&app, rfw);
                         tiku_event_t rev = ev;
 
+                        /* Closing a window is the RUNTIME's gesture, not
+                         * a key the application may swallow: rule 6 gives
+                         * the runtime the lifecycle, and an application
+                         * that could eat Cmd-W would be unclosable from
+                         * the keyboard. */
+                        if (key == 'w' &&
+                            (ev.modifiers & TIKU_MOD_CMD)) {
+                            embed_stop(slot);
+                            app.dirty = 1;
+                            break;
+                        }
                         if (slot->descriptor->event != NULL &&
                             slot->descriptor->event(slot->state, &rev)) {
                             embed_stop(slot);
@@ -7445,9 +7529,6 @@ tracker_run(int argc, char **argv)
                         app.dirty = 1;
                         break;
                     }
-                }
-                if (tiku_trk_about_window_key(&app.about_window, key)) {
-                    break;
                 }
                 if (tiku_trk_find_window_key(&app.find_window, key,
                                              key_char(&ev))) {
@@ -8292,10 +8373,6 @@ tracker_run(int argc, char **argv)
             changed += tiku_trk_info_windows_refresh(&app.info_windows,
                                                       tiku_trk_now());
             changed += tiku_trk_deskbar_refresh(app.deskbar);
-            if (tiku_trk_about_window_handle(&app.about_window) != NULL) {
-                /* The About box's uptime ticks while it stands. */
-                changed++;
-            }
             /* Live queries re-evaluate on a slower beat than values are
              * read: a re-walk costs a directory listing per subtree, and a
              * result set that moves every 400 ms is unreadable anyway. */

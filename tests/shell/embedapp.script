@@ -27,6 +27,27 @@ wait 4
 click 68 8
 wait 4
 expect-menu Refresh
+note a second application arrives while the demo holds the first slot:
+note the About asks for the ANNOUNCE role, and the host centres it --
+note the same amber-rule pixel about.script pins -- rather than putting
+note it one cascade step down and across from the demo.  The first slot
+note cascades by zero, so only a window in a LATER slot can tell a
+note honoured role from a lucky default -- the open demo menu is put
+note away on the backdrop first, where the click reaches no application
+click 500 620
+wait 3
+click 20 8
+wait 4
+menu-pick About this system
+wait 8
+expect-title About this system
+expect-pixel 330 305 ffcb00
+key Escape
+wait 6
+click-window Descriptor Demo
+wait 4
+click 68 8
+wait 4
 menu-pick Quit
 wait 10
 expect-no-title Descriptor Demo

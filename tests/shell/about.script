@@ -16,6 +16,11 @@ note Escape closes it, as a panel that announces should
 key Escape
 wait 4
 expect-no-title About this system
+note and CLOSED means closed, not defocused: the title noun reads the
+note FOCUSED window, so it alone cannot tell a closed panel from one that
+note lost focus -- the spot where the amber rule stood shows the folder
+note window's own paper again only when the panel is really gone
+expect-pixel 330 305 ffffff
 note and from the global bar's Tiku menu, the corner ritual's first row
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
 wait 20
