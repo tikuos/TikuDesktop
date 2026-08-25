@@ -335,14 +335,10 @@ draw_progress(tiku_trk_status_overlay_t *controller)
         }
         bar = (tiku_rect_t){ frame.x + 10, y + 34,
                                   frame.w - 20, 8 };
-        tiku_fill(controller->surface, bar, TIKU_C_DOC);
-        if (progress->total > 0) {
-            bar.w = (frame.w - 20) * progress->done / progress->total;
-            if (bar.w > 0) {
-                tiku_fill(controller->surface, bar,
-                               TIKU_C_SELECT);
-            }
-        }
+        tiku_ui_gauge(controller->surface, bar,
+                      (progress->total > 0)
+                          ? (float)progress->done / (float)progress->total
+                          : 0.0f);
         {
             int action;
 

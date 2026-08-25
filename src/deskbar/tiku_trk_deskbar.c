@@ -2809,15 +2809,12 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     if (db->tip_y >= 0 && db->tip[0] != '\0') {
         /* The whole name, said beside the row that could not fit it
          * (DB-032). */
-        int tw = tiku_text_width(f, db->tip) + 12;
-        tiku_rect_t b = { db->frame.x - tw - 4, db->tip_y, tw,
-                               f->height + 6 };
+        tiku_rect_t b = tiku_ui_tip_size(db->tip);
 
+        b.x = db->frame.x - b.w - 4;
+        b.y = db->tip_y;
         if (b.x < 0) { b.x = 0; }
-        tiku_fill(s, b, TIKU_C_NOTE);
-        tiku_frame(s, b, TIKU_C_TEXT);
-        tiku_text(s, f, b.x + 6, b.y + 3 + f->ascent, db->tip,
-                       TIKU_C_TEXT);
+        tiku_ui_tip(s, b, db->tip);
     }
     if (db->calendar_open) {
         /* The clock's calendar: a month grid with steppers, popped beside

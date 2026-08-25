@@ -33,6 +33,7 @@
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
 #include "tiku_font.h"
+#include "tiku_ui.h"
 #include "tiku_window.h"
 
 #define ABOUT_W 430
@@ -281,15 +282,8 @@ paint(about_state_t *st)
                  avail / 1024, total / 1024);
         tiku_text(surface, plain, facts_x, y + plain->ascent, line,
                        TIKU_C_TEXT);
-        tiku_fill(surface, gauge, TIKU_C_DOC);
-        tiku_frame(surface, gauge,
-                        tiku_tint(TIKU_C_PANEL, 1.40f));
-        if (total > 0) {
-            tiku_rect_t fillr = { gauge.x + 1, gauge.y + 1,
-                (int)((long)(gauge.w - 2) * used / total), gauge.h - 2 };
-
-            tiku_fill(surface, fillr, TIKU_C_SELECT);
-        }
+        tiku_ui_gauge(surface, gauge,
+                      (total > 0) ? (float)used / (float)total : 0.0f);
     }
     {   /* Whose it is, where it lives, and on what terms.  Two lines
          * rather than one because the three together are 405 pixels at
