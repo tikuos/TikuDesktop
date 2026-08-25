@@ -1,0 +1,16 @@
+# shell: desktop
+# An agent must never learn about a dialog by staring at pixels: the
+# collision question is a FACT, answered by name in both drivers --
+# in-process from the overlay's state, conducted through the channel's
+# "alert" noun.  Escape answers it, and the fact empties.
+note copy a.txt onto sub, which already holds one of that name
+press 200 117
+move 200 110
+move 200 97
+release 200 97
+wait 25
+expect-alert exists
+note Escape presses Cancel, which abandons the job and destroys nothing
+key Escape
+wait 15
+quit

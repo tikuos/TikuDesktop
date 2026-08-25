@@ -171,6 +171,27 @@ main(void)
         check(tiku_workspace_narrate(ws, NULL, lines, sizeof lines) == 0u &&
               lines[0] == '\0',
               "no window narrates as silence, not as a fault");
+
+        /* The walkable form: the same window as machine lines a driver
+         * can ACT on.  The button's line is pinned whole -- kind, label,
+         * the rect it was drawn at, and its state -- because a rect a
+         * reader cannot trust is a rect nobody can click. */
+        w = tiku_workspace_open(ws, "Sound2", at, narrated_draw, NULL,
+                                     NULL);
+        used = tiku_workspace_controls(ws, w, lines, sizeof lines);
+        {
+            char want[128];
+            tiku_rect_t c2 = tiku_window_content(w);
+
+            snprintf(want, sizeof want,
+                     "button\t\"Apply\"\t%d %d 80 24\t%u\n",
+                     c2.x + 8, c2.y + 8, (unsigned)TIKU_S_DEFAULT);
+            check(used > 0u && strstr(lines, want) != NULL,
+                  "a control's fact line carries its kind, label, rect "
+                  "and state");
+            check(strstr(lines, "checkbox\t\"Loud\"") != NULL,
+                  "and every control is a line of its own");
+        }
         tiku_workspace_free(ws);
         tiku_surface_free(surface);
     }

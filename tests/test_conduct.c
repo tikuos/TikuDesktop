@@ -203,6 +203,81 @@ drive(int fd)
     return bad;
 }
 
+/* The grants section's world: how many events got through the door. */
+static int g_injected;
+
+static void
+grant_inject(void *ctx, const tiku_event_t *event)
+{
+    (void)ctx;
+    (void)event;
+    g_injected++;
+}
+
+/** @brief One session under required names: says what its grant let it do. */
+static int
+grant_drive(const char *sock)
+{
+    tiku_conduct_client_t d;
+    tiku_event_t ev;
+    char text[TIKU_CONDUCT_TEXT];
+    int bad = 0;
+
+    memset(&ev, 0, sizeof ev);
+    ev.type = TIKU_EVENT_POINTER_DOWN;
+    ev.x = 1;
+    ev.y = 2;
+    ev.button = 1u;
+
+    /* An unnamed (wrongly named) peer gets exactly what a version
+     * mismatch gets: nothing.  The closed line reads as a failed
+     * question, quickly, not as a wait. */
+    if (tiku_conduct_connect_as(&d, sock, 2000, "wrong-name") != 0) {
+        printf("  [FAIL] the socket accepts a connection at all\n");
+        return 1;
+    }
+    if (tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
+                                NULL, text, sizeof text)) {
+        printf("  [FAIL] a wrongly named peer is answered nothing\n");
+        bad++;
+    } else {
+        printf("  [PASS] a wrongly named peer is answered nothing\n");
+    }
+    tiku_conduct_disconnect(&d);
+
+    /* The reader's credential: asking works, injecting provably not. */
+    if (tiku_conduct_connect_as(&d, sock, 2000, "look-only") != 0) {
+        printf("  [FAIL] the reader can connect\n");
+        return bad + 1;
+    }
+    text[0] = '\0';
+    if (!tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
+                                 NULL, text, sizeof text) ||
+        strcmp(text, "Over the cable") != 0) {
+        printf("  [FAIL] a QUERY-only credential is answered\n");
+        bad++;
+    } else {
+        printf("  [PASS] a QUERY-only credential is answered\n");
+    }
+    (void)tiku_conduct_inject(&d, &ev);      /* it TRIES -- see parent */
+    /* One more answered question AFTER the try, so the inject cannot
+     * still be in flight when the parent counts what arrived. */
+    (void)tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
+                                  NULL, text, sizeof text);
+    tiku_conduct_disconnect(&d);
+
+    /* The driver's credential: the same event goes through. */
+    if (tiku_conduct_connect_as(&d, sock, 2000, "drive-me") != 0) {
+        printf("  [FAIL] the full driver can connect\n");
+        return bad + 1;
+    }
+    (void)tiku_conduct_inject(&d, &ev);
+    (void)tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
+                                  NULL, text, sizeof text);
+    tiku_conduct_disconnect(&d);
+    return bad;
+}
+
 int
 main(void)
 {
@@ -284,6 +359,53 @@ main(void)
           "and every question the driver asked was answered over the wire");
 
     tiku_conduct_shutdown(&shell);
+
+    printf("\nidentity before reach: names decide grants (stage 3)\n");
+    {
+        tiku_conduct_t gate;
+        const char *gsock = "/tmp/trk_conduct_grants.sock";
+        pid_t gkid;
+        int gstatus = 0;
+
+        (void)unlink(gsock);
+        check(tiku_conduct_listen(&gate, gsock, NULL, grant_inject,
+                                       fake_pixel, fake_text) == 0,
+              "a shell can require names on its channel");
+        tiku_conduct_require(&gate, "drive-me", "look-only");
+        (void)fflush(stdout);
+        gkid = fork();
+        if (gkid == 0) {
+            int bad = grant_drive(gsock);
+
+            (void)fflush(stdout);
+            _exit(bad);
+        }
+        for (turns = 0; turns < 3000; turns++) {
+            struct timespec ts;
+
+            (void)tiku_conduct_poll(&gate);
+            if (waitpid(gkid, &gstatus, WNOHANG) == gkid) {
+                gkid = -1;
+                break;
+            }
+            ts.tv_sec = 0;
+            ts.tv_nsec = 5 * 1000 * 1000;
+            (void)nanosleep(&ts, NULL);
+        }
+        if (gkid > 0) {
+            printf("  [FAIL] the grants driver never finished\n");
+            fails++;
+            (void)kill(gkid, SIGKILL);
+            (void)waitpid(gkid, &gstatus, 0);
+        }
+        check(WIFEXITED(gstatus) && WEXITSTATUS(gstatus) == 0,
+              "every grant answered exactly what its name allows");
+        check(g_injected == 1,
+              "one event arrived: the driver's -- the reader's try was "
+              "dropped at the door");
+        tiku_conduct_shutdown(&gate);
+        (void)unlink(gsock);
+    }
 
     if (fails > 0) {
         printf("\nFAILURES\n");

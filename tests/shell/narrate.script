@@ -9,4 +9,6 @@ note the folder's rows arrive as prose, not paint
 expect-narrate a.txt
 note and its chrome as controls by name
 expect-narrate scrollbar
+note the walkable form carries the same facts with their rects
+expect-control scrollbar
 quit

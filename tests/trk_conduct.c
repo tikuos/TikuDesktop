@@ -26,6 +26,8 @@
  *   expect-title <substring>     expect-no-title <substring>
  *   expect-menu <substring>      expect-status <substring>
  *   expect-narrate <substring>  expect-told <substring>
+ *   expect-alert <substring>     expect-mounts <substring>
+ *   expect-control <substring>
  *   expect-count <substring>     quit
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -277,6 +279,7 @@ main(int argc, char **argv)
     const char *tty = NULL;
     const char *path = NULL;
     const char *who = "conducted";
+    const char *token = NULL;   /* the name this session offers (-k) */
     char **spawn = NULL;
     pid_t kid = -1;
     FILE *f;
@@ -288,6 +291,7 @@ main(int argc, char **argv)
         if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)      { sock = argv[++i]; }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) { tty = argv[++i]; }
         else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) { who = argv[++i]; }
+        else if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) { token = argv[++i]; }
         else if (strcmp(argv[i], "--") == 0 && i + 1 < argc) {
             spawn = &argv[i + 1];
             break;              /* the rest is the shell's command line */
@@ -296,7 +300,8 @@ main(int argc, char **argv)
     }
     if ((sock == NULL && tty == NULL && spawn == NULL) || path == NULL) {
         fprintf(stderr, "usage: trk-conduct [-s <socket> | -t <tty>] "
-                        "[-n <name>] <script> [-- <shell> <args>...]\n");
+                        "[-n <name>] [-k <token>] <script> "
+                        "[-- <shell> <args>...]\n");
         return 2;
     }
     f = fopen(path, "r");
@@ -308,7 +313,7 @@ main(int argc, char **argv)
         int master = spawn_on_line(spawn, &kid);
 
         if (master < 0 ||
-            tiku_conduct_connect_fd(&client, master) != 0) {
+            tiku_conduct_connect_fd_as(&client, master, token) != 0) {
             fprintf(stderr, "trk-conduct: cannot start %s on a line\n",
                     spawn[0]);
             (void)fclose(f);
@@ -318,12 +323,12 @@ main(int argc, char **argv)
         int line_fd = tiku_conduct_open_tty(tty, 0);
 
         if (line_fd < 0 ||
-            tiku_conduct_connect_fd(&client, line_fd) != 0) {
+            tiku_conduct_connect_fd_as(&client, line_fd, token) != 0) {
             fprintf(stderr, "trk-conduct: cannot speak over %s\n", tty);
             (void)fclose(f);
             return 2;
         }
-    } else if (tiku_conduct_connect(&client, sock, 8000) != 0) {
+    } else if (tiku_conduct_connect_as(&client, sock, 8000, token) != 0) {
         /* The shell may still be starting; the wait is what frees the
          * harness from sequencing two processes by hand. */
         fprintf(stderr, "trk-conduct: no shell answered on %s\n", sock);
@@ -417,6 +422,22 @@ main(int argc, char **argv)
                 snprintf(what, sizeof what, "menu offers %s", arg);
                 verdict(strstr(text, arg) != NULL, what, text);
             }
+        } else if ((strcmp(w[0], "expect-alert") == 0 ||
+                    strcmp(w[0], "expect-mounts") == 0 ||
+                    strcmp(w[0], "expect-control") == 0) && n >= 2) {
+            /* One shape, three nouns: ask the shell by name and look for
+             * the substring in what it said.  expect-control asks the
+             * "controls" noun -- the verb is singular the way a script
+             * speaks of one control, the noun answers them all. */
+            const char *noun = (strcmp(w[0], "expect-control") == 0)
+                                   ? "controls"
+                                   : w[0] + strlen("expect-");
+            char what[LINE_MAX_CHARS];
+
+            rest(w, n, 1, arg, sizeof arg);
+            (void)ask_text(&client, noun, text, sizeof text);
+            snprintf(what, sizeof what, "%s says %s", noun, arg);
+            verdict(strstr(text, arg) != NULL, what, text);
         } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
             /* Being told, not asking again.  The first use subscribes
              * ~narrate and may already be answered by the current text;

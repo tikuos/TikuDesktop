@@ -4735,6 +4735,43 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         snprintf(out, max, "%s", conduct_menu_labels(app));
         return 1;
     }
+    if (strcmp(name, "alert") == 0) {
+        /* The open question's text, or nothing: an agent must never
+         * learn about a dialog by staring at pixels -- and as ~alert
+         * this is "an alert appeared" pushed, for free. */
+        tiku_alert_t *alert = alert_model(app);
+
+        snprintf(out, max, "%s", alert->open ? alert->text : "");
+        return 1;
+    }
+    if (strcmp(name, "mounts") == 0) {
+        /* Every mounted volume by name: as ~mounts, "a mount arrived"
+         * is a push rather than a poll. */
+        tiku_volumes_t vs;
+        size_t used = 0u;
+        int i;
+
+        out[0] = '\0';
+        (void)tiku_volumes_scan(&vs);
+        for (i = 0; i < vs.n; i++) {
+            used += (size_t)snprintf(out + used,
+                                     (used < max) ? max - used : 0u,
+                                     "%s|", vs.v[i].name);
+            if (used >= max) {
+                break;
+            }
+        }
+        return 1;
+    }
+    if (strcmp(name, "controls") == 0) {
+        /* The focused window as machine lines -- kind, label, rect,
+         * state: the walkable form of the feed, for the party that
+         * wants to click the button it heard about. */
+        (void)tiku_workspace_controls(app->desk,
+                                           tiku_workspace_focused(app->desk),
+                                           out, max);
+        return 1;
+    }
     if (strcmp(name, "narrate") == 0) {
         /* The focused window, said from its own display list -- the
          * reader's door of AGENT-SURFACE stage 4: a driver that has
@@ -4901,6 +4938,10 @@ tracker_run(int argc, char **argv)
      * shell on a real board is driven, from whatever is on the other end
      * of its console cable. */
     const char *conduct_tty = NULL;
+    /* Stage 3: names on the channel.  Either may stand alone; requiring
+     * one turns every unnamed peer away at HELLO. */
+    const char *conduct_token = NULL;
+    const char *conduct_query_token = NULL;
 
     restart_argv = argv;
     /* The words the interface is made of, before anything is drawn with
@@ -4992,6 +5033,8 @@ tracker_run(int argc, char **argv)
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { script_path = argv[++i]; }
         else if (strcmp(argv[i], "-conduct") == 0 && i + 1 < argc) { conduct_path = argv[++i]; }
         else if (strcmp(argv[i], "-conduct-tty") == 0 && i + 1 < argc) { conduct_tty = argv[++i]; }
+        else if (strcmp(argv[i], "-conduct-token") == 0 && i + 1 < argc) { conduct_token = argv[++i]; }
+        else if (strcmp(argv[i], "-conduct-query-token") == 0 && i + 1 < argc) { conduct_query_token = argv[++i]; }
         else if (strcmp(argv[i], "-shotedit") == 0 && i + 1 < argc) {
             shot_edit = argv[++i];
         }
@@ -5364,6 +5407,8 @@ tracker_run(int argc, char **argv)
     /* After the init, which writes the whole adapter. */
     app.script_adapter.redraw_diff = script_redraw_diff;
     app.script_adapter.redraw_ctx = &app;
+    app.script_adapter.say = conduct_text;
+    app.script_adapter.say_ctx = &app;
     tiku_trk_drop_controller_init(&app.drop_controller, app.deskbar,
         app.backend, app.fs, &app.desktop_view, &app.menus,
         alert_model(&app), &app.drag, &app.drag_target.folder,
@@ -5428,6 +5473,11 @@ tracker_run(int argc, char **argv)
             return 3;
         }
         app.conduct_on = 1;
+    }
+    if (app.conduct_on &&
+        (conduct_token != NULL || conduct_query_token != NULL)) {
+        tiku_conduct_require(&app.conduct, conduct_token,
+                                  conduct_query_token);
     }
     if (app.conduct_on) {
         /* The same fixture clock a scripted run froze: a driver comparing

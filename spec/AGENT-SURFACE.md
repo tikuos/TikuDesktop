@@ -139,6 +139,17 @@ Not yet carried up from this stage: watches on facts beyond the text
 nouns (an alert appearing, a mount arriving, an operation's own
 lifecycle), and the `~path` device idiom itself riding this channel.
 
+**2026-08-26: the first two are text nouns now.**  "alert" answers the
+open question's text (an agent must never learn about a dialog from
+pixels -- calert.script proves the collision question is a fact in both
+drivers), and "mounts" answers every volume by name (mounts.script; the
+root is always "Boot").  Both are therefore watchable as ~alert and
+~mounts through the mechanism above, unchanged.  The in-process engine
+gained the same answers through ONE door: the state's say() callback IS
+the desktop's conduct_text -- the conductor's noun table answering the
+script engine too, which is principle 3 made literal.  What remains:
+an operation's own lifecycle as a noun, and `~path` riding the channel.
+
 ### Stage 3 — Identity and grants
 
 Prerequisite for any non-local reach, and for calling this an interface
@@ -155,6 +166,23 @@ rather than a harness:
 Done when: a QUERY-only credential provably cannot inject (a test that
 tries), and an unnamed peer gets exactly what an unanswered HELLO gets:
 nothing beyond version 1.
+
+**2026-08-26: met.**  The HELLO carries a token after its version, and a
+shell told to require names (tiku_conduct_require, -conduct-token /
+-conduct-query-token) decides the session's GRANT at HELLO: the full
+token drives, the query token asks and watches but its INJECT is
+dropped in the channel before the shell ever sees it, and an unnamed or
+wrongly named peer is closed -- it gets exactly what a version mismatch
+gets.  Unconfigured, the channel behaves as it always has, which is the
+harness's own local lane.  test_conduct's grants section is the done-when
+enacted: the reader's inject provably does not arrive while its query is
+answered, the wrong name is answered nothing, and the gate mutation
+fails it by name.  run.sh's conducted socket lane now runs NAMED
+(-k trk-drive), so every conducted script also proves the named path;
+the tty lane stays tokenless and proves the other one.
+Still open here: per-session quotas, and carrying the same principal
+into the window session -- both wait for the session-identity work they
+are meant to share.
 
 ### Stage 4 — The structured screen as a feed
 
@@ -224,6 +252,18 @@ is pushed to the reader as a TOLD frame.  Both halves of this stage's
 composition are now real; what the feed still is not is a TREE — a
 reader gets the narrated lines, not a structure to walk, and no
 consumer has yet asked for one.
+
+**2026-08-26: the walkable form exists, flat on purpose.**  The
+"controls" noun (tiku_dl_facts / tiku_workspace_controls) answers the
+focused window as one machine line per control -- kind, label, rect,
+state, tab-separated -- which is stage 1's "the control labelled X is
+at rect R" bullet met, and the form a driver that wants to CLICK what
+it heard about actually consumes; test_win pins a button's line whole,
+because a rect a reader cannot trust is a rect nobody can click.  It is
+deliberately a flat list, not a hierarchy: the wire records what was
+drawn, not what contains what, and no reader has yet needed nesting --
+when one does, containment is a new fact for the wire to carry, not a
+guess for the reader to infer.
 
 
 

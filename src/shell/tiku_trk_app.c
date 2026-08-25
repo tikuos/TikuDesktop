@@ -1763,7 +1763,7 @@ script_pixel_at(void *ctx, int x, int y)
  * scratch surface -- the shown pixels are never touched, and nothing is
  * drained or signed that a real frame would miss. */
 static size_t
-script_narrate(void *ctx, char *out, size_t max)
+script_recite(void *ctx, char *out, size_t max, int as_facts)
 {
     app_t *a = (app_t *)ctx;
     tiku_surface_t *shown = a->surf;
@@ -1792,10 +1792,58 @@ script_narrate(void *ctx, char *out, size_t max)
     draw(a);
     a->surf = shown;
     scratch->record = NULL;
-    used = tiku_dl_say(dl, out, max);
+    used = as_facts ? tiku_dl_facts(dl, out, max)
+                    : tiku_dl_say(dl, out, max);
     tiku_dl_free(dl);
     tiku_surface_free(scratch);
     return used;
+}
+
+static size_t
+script_narrate(void *ctx, char *out, size_t max)
+{
+    return script_recite(ctx, out, max, 0);
+}
+
+/** @brief The nouns this front-end can say, spelled as the desktop's
+ *         conductor spells them, so a shared script means one thing. */
+static int
+script_say(void *ctx, const char *noun, char *out, size_t max)
+{
+    app_t *a = (app_t *)ctx;
+
+    if (noun == NULL || out == NULL) {
+        return 0;
+    }
+    if (strcmp(noun, "mounts") == 0) {
+        tiku_volumes_t vs;
+        size_t used = 0u;
+        int i;
+
+        out[0] = '\0';
+        (void)tiku_volumes_scan(&vs);
+        for (i = 0; i < vs.n; i++) {
+            used += (size_t)snprintf(out + used,
+                                     (used < max) ? max - used : 0u,
+                                     "%s|", vs.v[i].name);
+            if (used >= max) {
+                break;
+            }
+        }
+        return 1;
+    }
+    if (strcmp(noun, "controls") == 0) {
+        (void)script_recite(a, out, max, 1);
+        return 1;
+    }
+    if (strcmp(noun, "alert") == 0) {
+        tiku_alert_t *alert =
+            tiku_trk_status_overlay_alert(&a->status_overlay);
+
+        snprintf(out, max, "%s", alert->open ? alert->text : "");
+        return 1;
+    }
+    return 0;                   /* a noun this front-end cannot say */
 }
 
 /** @brief Resolve a named icon to the screen point it is drawn at. */
@@ -3149,6 +3197,8 @@ tracker_run(int argc, char **argv)
                 sst.pose_screen = script_pose_screen;
                 sst.pixel_at = script_pixel_at;
                 sst.narrate = script_narrate;
+                sst.say = script_say;
+                sst.say_ctx = &a;
                 sst.pose_ctx = &a;
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     a.running = 0;

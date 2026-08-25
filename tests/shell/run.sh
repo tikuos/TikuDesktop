@@ -19,7 +19,7 @@ devbin="$root/build/dev"
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
 # trk-conduct speaks (see tests/trk_conduct.c).
-conducted="defaultbar.script narrate.script told.script"
+conducted="defaultbar.script narrate.script told.script mounts.script calert.script"
 
 # The rescue path first: -reset-settings must move the settings and every
 # device state aside WITHOUT drawing a pixel, for the day a setting makes
@@ -232,6 +232,7 @@ PYBG
                 setfattr -n 'user._trk/background' \
                          -v "3 0 0 $work/wall.bmp" "$work" ;;
             alert.script)  echo other > "$work/sub/a.txt" ;;
+            calert.script) echo other > "$work/sub/a.txt" ;;
             completionw.script)
                 mkdir -p "$deskhome/Documents"
                 echo q > "$deskhome/recipes.query" ;;
@@ -481,10 +482,14 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
+    echo other > "$work/sub/a.txt"
+    # Named on purpose (stage 3): the socket lane requires a token, so
+    # every conducted script also proves the named-principal path; the
+    # tty lane below stays tokenless and proves the other one.
     ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         "$root/build/TikuDesktop" "$work" -conduct "$csock" \
-        > /dev/null 2>&1 & )
-    "$root/build/dev/trk-conduct" -s "$csock" -n conducted "$cs" ||
+        -conduct-token trk-drive > /dev/null 2>&1 & )
+    "$root/build/dev/trk-conduct" -s "$csock" -n conducted -k trk-drive "$cs" ||
         fails=$((fails+1))
     # By name, not by pattern: a -f pattern matches the shell running
     # this script too, whose command line contains it.
@@ -503,6 +508,7 @@ for s in $conducted; do
     echo hi > "$work/a.txt"
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
+    echo other > "$work/sub/a.txt"
     DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         "$root/build/dev/trk-conduct" \
         -n "over a line" "$cs" -- "$root/build/TikuDesktop" "$work" ||

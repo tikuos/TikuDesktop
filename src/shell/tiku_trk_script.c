@@ -30,7 +30,7 @@ typedef enum {
     OP_EXPECT_NAV_FORWARD, OP_EXPECT_NAV_UP, OP_EXPECT_NAV_VISIBLE,
     OP_EXPECT_VIEWPORT_ROWS,
     OP_EXPECT_STATUS, OP_EXPECT_TITLE, OP_EXPECT_ALERT, OP_EXPECT_SCROLL, OP_EXPECT_ROWS, OP_REMOVE, OP_EXPECT_PERM, OP_EXPECT_WINDOWS, OP_EXPECT_SEL, OP_EXPECT_SELNAME, OP_EXPECT_RENAMING, OP_EXPECT_FINDTEXT, OP_EXPECT_FINDTYPE, OP_EXPECT_FOLDERS, OP_EXPECT_WINAT, OP_EXPECT_COLS, OP_EXPECT_BARAT, OP_EXPECT_FILE, OP_EXPECT_NO_FILE, OP_EXPECT_ICONAT, OP_EXPECT_ICONSCREEN, OP_EXPECT_PIXEL, OP_EXPECT_INK, OP_EXPECT_FONT,
-    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_TOLD, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
+    OP_EXPECT_NO_TITLE, OP_DRAW_RESET, OP_EXPECT_DRAWN, OP_EXPECT_MENU, OP_EXPECT_NO_MENU, OP_EXPECT_NARRATE, OP_EXPECT_TOLD, OP_EXPECT_MOUNTS, OP_EXPECT_CONTROL, OP_EXPECT_COUNT, OP_EXPECT_LINK, OP_EXPECT_FILEHAS, OP_EXPECT_FILELACKS, OP_EXPECT_DESKSEL, OP_EXPECT_DESKICON, OP_EXPECT_NO_DESKICON, OP_EXPECT_DESKSELNAME,
     OP_NOTE, OP_MENU_PICK, OP_WRITE, OP_SAME_AS_REDRAW, OP_QUIT
 } sc_op_t;
 
@@ -436,6 +436,12 @@ tiku_trk_script_open(const char *path)
             rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-narrate") == 0 && n >= 2) {
             st->op = OP_EXPECT_NARRATE;
+            rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-mounts") == 0 && n >= 2) {
+            st->op = OP_EXPECT_MOUNTS;
+            rest(w, n, 1, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-control") == 0 && n >= 2) {
+            st->op = OP_EXPECT_CONTROL;
             rest(w, n, 1, st->text, sizeof st->text);
         } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
             st->op = OP_EXPECT_TOLD;
@@ -1057,6 +1063,25 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         verdict(s, st != NULL && st->menu != NULL && st->menu[0] == '\0',
                 "menu:", "nothing");
         return 1;
+    case OP_EXPECT_MOUNTS:
+    case OP_EXPECT_CONTROL: {
+        /* Asked through the shell's own noun table -- the same answer
+         * the conductor's QUERY gives, so this line means one thing in
+         * both drivers. */
+        const char *noun =
+            (cur->op == OP_EXPECT_MOUNTS) ? "mounts" : "controls";
+        char text[2048];
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, noun, text, sizeof text);
+        }
+        verdict(s, strstr(text, cur->text) != NULL, noun, cur->text);
+        if (s->fails > 0 && text[0] != '\0') {
+            printf("         (%s: \"%s\")\n", noun, text);
+        }
+        return 1;
+    }
     case OP_EXPECT_TOLD: {
         /* Being told, composed the only way an in-process driver can:
          * ask again each turn, bounded.  The conducted driver spells

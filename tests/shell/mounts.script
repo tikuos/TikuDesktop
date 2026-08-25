@@ -1,0 +1,8 @@
+# shell: both
+# The mount table is a fact on the surface: every mounted volume by
+# name, in both drivers -- and as ~mounts, "a mount arrived" is a push.
+# The root volume is always named Boot, which is the one stable claim a
+# machine-independent script can make about it.
+wait 5
+expect-mounts Boot
+quit

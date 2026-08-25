@@ -98,6 +98,12 @@ typedef struct {
      * chrome -- the thing a test must never encode, because it moves
      * whenever the chrome does. */
     int       (*tab_point)(void *ctx, const char *title, int *x, int *y);
+    /* Any named fact the shell can say, by the same noun table the
+     * conductor's QUERY answers -- one surface, principle 3: a script
+     * line and a driver on a socket read the same answer.  0 for a noun
+     * this shell cannot say. */
+    int       (*say)(void *ctx, const char *noun, char *out, size_t max);
+    void       *say_ctx;
     /* The focused window narrated from its display list, the same lines
      * the conductor's "narrate" noun answers with -- computed only when
      * an op asks, because a narration is a full content draw. */

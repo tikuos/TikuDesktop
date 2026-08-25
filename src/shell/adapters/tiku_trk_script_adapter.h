@@ -44,6 +44,11 @@ typedef struct {
      * painted is what a full redraw would have drawn. */
     long               (*redraw_diff)(void *ctx);
     void                *redraw_ctx;
+    /* The shell's named-fact answerer -- the SAME function its conductor
+     * channel answers QUERY with, so both surfaces stay one surface. */
+    int                (*say)(void *ctx, const char *noun, char *out,
+                              size_t max);
+    void                *say_ctx;
 } tiku_trk_script_adapter_t;
 
 void tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
