@@ -9,7 +9,9 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
+#include "tiku_ui.h"
 #include "tiku_window.h"
 
 static int fails;
@@ -47,6 +49,31 @@ on_destroy(tiku_window_t *win, void *ctx)
     (void)win;
     (void)ctx;
     destroys++;
+}
+
+/** @brief A window of two controls and a line of prose, for narration. */
+static void
+narrated_draw(tiku_window_t *win, tiku_surface_t *s,
+              tiku_rect_t content, void *ctx)
+{
+    tiku_rect_t b = { content.x + 8, content.y + 8, 80, 24 };
+    tiku_rect_t c = { content.x + 8, content.y + 40, 120, 16 };
+
+    (void)win;
+    (void)ctx;
+    tiku_ui_button(s, b, "Apply", TIKU_S_DEFAULT);
+    tiku_ui_checkbox(s, c, "Loud", TIKU_S_ON);
+    tiku_text(s, tiku_font_plain(), content.x + 8, content.y + 70,
+                   "three files", TIKU_C_TEXT);
+}
+
+/** @brief The same window, plus one bare pixel the wire cannot carry. */
+static void
+stroking_draw(tiku_window_t *win, tiku_surface_t *s,
+              tiku_rect_t content, void *ctx)
+{
+    narrated_draw(win, s, content, ctx);
+    tiku_pixel(s, content.x + 2, content.y + 2, TIKU_C_TEXT);
 }
 
 int
@@ -107,6 +134,47 @@ main(void)
           "an accepted close destroys application state exactly once");
 
     tiku_workspace_free(desk);
+
+    printf("\na window can say what it shows, from its own display list\n");
+    {
+        tiku_surface_t *surface = tiku_surface_new(800, 600, TIKU_C_PANEL);
+        tiku_workspace_t *ws = tiku_workspace_new(surface);
+        tiku_rect_t at = { 100, 100, 300, 200 };
+        tiku_window_t *w =
+            tiku_workspace_open(ws, "Sound", at, narrated_draw, NULL, NULL);
+        char lines[2048];
+        size_t used;
+
+        /* A sentinel where the window sits: narration that painted the
+         * shown surface to answer would erase it. */
+        surface->px[(size_t)150 * 800u + 150u] = 0x123456u;
+        used = tiku_workspace_narrate(ws, w, lines, sizeof lines);
+
+        check(used > 0u, "narration comes back non-empty");
+        check(strstr(lines, "button \"Apply\", the default") != NULL,
+              "and says the button by name, with its ring");
+        check(strstr(lines, "checkbox \"Loud\", on") != NULL,
+              "and the checkbox with its state");
+        check(strstr(lines, "text \"three files\"") != NULL,
+              "and the prose the window shows");
+        check(strstr(lines, "could not carry") == NULL,
+              "a window of controls and text narrates whole");
+        check(surface->px[(size_t)150 * 800u + 150u] == 0x123456u,
+              "and the shown surface was not painted on to answer");
+
+        w = tiku_workspace_open(ws, "Marks", at, stroking_draw, NULL, NULL);
+        used = tiku_workspace_narrate(ws, w, lines, sizeof lines);
+        check(used > 0u &&
+              strstr(lines, "could not carry") != NULL,
+              "a window that strokes bare pixels confesses, not omits");
+
+        check(tiku_workspace_narrate(ws, NULL, lines, sizeof lines) == 0u &&
+              lines[0] == '\0',
+              "no window narrates as silence, not as a fault");
+        tiku_workspace_free(ws);
+        tiku_surface_free(surface);
+    }
+
     printf("\n%s\n", fails ? "window rule FAILED" :
                               "every window rule holds");
     return fails ? 1 : 0;

@@ -31,6 +31,7 @@
 #include "tiku_fs.h"
 #include "tiku_iconpaint.h"
 #include "tiku_trk_clip.h"
+#include "tiku_dl.h"
 #include "tiku_trk_cwmenu.h"
 #include "tiku_trk_folder_file_actions.h"
 #include "tiku_trk_status_overlay.h"
@@ -1755,6 +1756,48 @@ script_pixel_at(void *ctx, int x, int y)
     return (unsigned)tiku_peek(a->surf, x, y) & 0xffffffu;
 }
 
+/** @brief The window said from its display list, for expect-narrate.
+ *
+ * This front-end paints its whole window every frame with no kept
+ * pixels, so the same draw() the loop calls is aimed once at a recording
+ * scratch surface -- the shown pixels are never touched, and nothing is
+ * drained or signed that a real frame would miss. */
+static size_t
+script_narrate(void *ctx, char *out, size_t max)
+{
+    app_t *a = (app_t *)ctx;
+    tiku_surface_t *shown = a->surf;
+    tiku_surface_t *scratch;
+    tiku_dl_t *dl;
+    size_t used;
+
+    if (out == NULL || max == 0u) {
+        return 0u;
+    }
+    out[0] = '\0';
+    if (shown == NULL) {
+        return 0u;
+    }
+    scratch = tiku_surface_new(shown->w, shown->h, TIKU_C_PANEL);
+    if (scratch == NULL) {
+        return 0u;
+    }
+    dl = tiku_dl_new();
+    if (dl == NULL) {
+        tiku_surface_free(scratch);
+        return 0u;
+    }
+    scratch->record = dl;
+    a->surf = scratch;
+    draw(a);
+    a->surf = shown;
+    scratch->record = NULL;
+    used = tiku_dl_say(dl, out, max);
+    tiku_dl_free(dl);
+    tiku_surface_free(scratch);
+    return used;
+}
+
 /** @brief Resolve a named icon to the screen point it is drawn at. */
 static int
 script_pose_screen(void *ctx, const char *name, int *x, int *y)
@@ -3105,6 +3148,7 @@ tracker_run(int argc, char **argv)
                 sst.pose_at = script_pose_at;
                 sst.pose_screen = script_pose_screen;
                 sst.pixel_at = script_pixel_at;
+                sst.narrate = script_narrate;
                 sst.pose_ctx = &a;
                 if (!tiku_trk_script_pump(sc, &sst, &sp)) {
                     a.running = 0;

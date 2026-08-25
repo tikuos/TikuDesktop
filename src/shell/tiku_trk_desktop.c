@@ -4735,6 +4735,17 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         snprintf(out, max, "%s", conduct_menu_labels(app));
         return 1;
     }
+    if (strcmp(name, "narrate") == 0) {
+        /* The focused window, said from its own display list -- the
+         * reader's door of AGENT-SURFACE stage 4: a driver that has
+         * never seen a pixel of this window hears what it shows.  No
+         * focused window is an empty answer, not a refusal, the same
+         * shape "title" gives. */
+        (void)tiku_workspace_narrate(app->desk,
+                                          tiku_workspace_focused(app->desk),
+                                          out, max);
+        return 1;
+    }
     return 0;                   /* a name this build cannot say */
 }
 

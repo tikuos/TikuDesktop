@@ -25,6 +25,7 @@
  *   expect-pixel <x> <y> <rrggbb>
  *   expect-title <substring>     expect-no-title <substring>
  *   expect-menu <substring>      expect-status <substring>
+ *   expect-narrate <substring>
  *   expect-count <substring>     quit
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -413,6 +414,18 @@ main(int argc, char **argv)
                 char what[LINE_MAX_CHARS];
 
                 snprintf(what, sizeof what, "menu offers %s", arg);
+                verdict(strstr(text, arg) != NULL, what, text);
+            }
+        } else if (strcmp(w[0], "expect-narrate") == 0 && n >= 2) {
+            /* The focused window from its display list alone: the driver
+             * has never seen a pixel of it, which is the stage-4 claim in
+             * the one form it can be checked in. */
+            rest(w, n, 1, arg, sizeof arg);
+            (void)ask_text(&client, "narrate", text, sizeof text);
+            {
+                char what[LINE_MAX_CHARS];
+
+                snprintf(what, sizeof what, "narration says %s", arg);
                 verdict(strstr(text, arg) != NULL, what, text);
             }
         } else if (strcmp(w[0], "expect-status") == 0 && n >= 2) {

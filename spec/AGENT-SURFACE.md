@@ -172,6 +172,35 @@ plumbing narration to a conductor noun (stage 1's vocabulary), and the
 subscription that pushes a changed window to a remote reader (stage 2).
 The library half of this stage is done.
 
+**2026-08-25, later: the noun exists, and the stage's claim is met.**
+QUERY "narrate" answers with the focused window as tiku_dl_narrate()'s
+plain lines; expect-narrate spells it identically in both drivers, and
+narrate.script proves it three ways -- both in-process front-ends, and
+the conducted lane, where the driver has never seen a pixel of the
+window it hears rows, a scrollbar and a count from.  The kit owns the
+composition: tiku_workspace_narrate() draws the window's content ONCE
+onto a recording surface of its own -- never the shown one, the pixel
+query's own rule -- and tiku_dl_say() flattens, narrates, and closes
+with a confession line when the list holds marks the wire could not
+carry.  The answer's text grew to 2048 for this, which is a framing
+change, and so the channel version moved to 2 -- a mismatched pairing
+is refused at HELLO rather than half-served.
+
+Narrating found one more silent wrong, the same shape stage 4 keeps
+finding: the folder window's kept-pixels economy handed a reader its
+cache as one blit -- headers and chrome as prose, every row missing,
+one mark confessed.  The rule that fixes it is now in the window and
+stated here: **a recording surface is a reader asking, not a frame
+being shown** -- an incremental painter paints ALL of what it shows
+through drawing calls, and writes NOTHING back (no row signatures, no
+damage drained, no economy counters), because a narration that updated
+the bookkeeping would tell the next real frame its stale pixels are
+current.  Mutations for the noun, the bypass and the confession each
+fail a named check.
+
+Still open from this stage: the stage-2 changed-window subscription
+(being told, rather than asking again).
+
 
 
 The display list is already a semantic description of a window — "a

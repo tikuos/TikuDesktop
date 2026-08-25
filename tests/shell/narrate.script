@@ -1,0 +1,12 @@
+# shell: both
+# The reader's door (AGENT-SURFACE stage 4): the focused window said from
+# its own display list, no pixel consulted.  The same line means the same
+# thing in both drivers -- and in the conducted lane the driver has never
+# seen a pixel of this window at all, which is the stage's claim in the
+# one form it can be checked in.
+wait 12
+note the folder's rows arrive as prose, not paint
+expect-narrate a.txt
+note and its chrome as controls by name
+expect-narrate scrollbar
+quit

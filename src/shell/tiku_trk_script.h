@@ -16,6 +16,8 @@
 #ifndef TIKU_TRK_SCRIPT_H_
 #define TIKU_TRK_SCRIPT_H_
 
+#include <stddef.h>
+
 #include "tiku_event.h"
 
 /** @brief What the driver should do for one step. */
@@ -96,6 +98,10 @@ typedef struct {
      * chrome -- the thing a test must never encode, because it moves
      * whenever the chrome does. */
     int       (*tab_point)(void *ctx, const char *title, int *x, int *y);
+    /* The focused window narrated from its display list, the same lines
+     * the conductor's "narrate" noun answers with -- computed only when
+     * an op asks, because a narration is a full content draw. */
+    size_t    (*narrate)(void *ctx, char *out, size_t max);
     /* One pixel of what is actually on screen, 0xRRGGBB.  Drawing is the
      * only evidence for a rule about how something LOOKS -- a band style
      * changes no state a checker could otherwise read. */

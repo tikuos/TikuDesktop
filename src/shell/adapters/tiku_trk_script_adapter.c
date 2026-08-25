@@ -377,6 +377,15 @@ desktop_selection(tiku_trk_script_adapter_t *adapter,
     }
 }
 
+static size_t
+adapter_narrate(void *ctx, char *out, size_t max)
+{
+    tiku_trk_script_adapter_t *adapter = ctx;
+
+    return tiku_workspace_narrate(adapter->workspace,
+        tiku_workspace_focused(adapter->workspace), out, max);
+}
+
 static void
 fill_state(tiku_trk_script_adapter_t *adapter,
            tiku_trk_script_state_t *state)
@@ -453,6 +462,7 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->cell_point = tiku_trk_script_adapter_cell_point;
     state->rows_drawn = tiku_trk_script_adapter_rows_drawn;
     state->tab_point = tiku_trk_script_adapter_tab_point;
+    state->narrate = adapter_narrate;
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
     state->redraw_diff = adapter->redraw_diff;
     state->redraw_ctx = adapter->redraw_ctx;

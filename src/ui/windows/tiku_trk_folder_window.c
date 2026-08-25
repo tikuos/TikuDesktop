@@ -196,8 +196,9 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
 
     /* The economy counter the scripts read.  The backdrop's own poses
      * are not counted: it is always on screen, and the scripts measure
-     * the WINDOW they drove. */
-    if (folder->win != NULL) {
+     * the WINDOW they drove -- and a narration is not driving, so a
+     * recording surface leaves the count alone too. */
+    if (folder->win != NULL && surface->record == NULL) {
         render->rows_drawn++;
     }
     const tiku_font_t *font = tiku_font_plain();
@@ -524,6 +525,11 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
     const tiku_font_t *font = tiku_font_plain();
     const tiku_trk_repaint_rect_t *damage = folder->render->damage;
     int ndamage = folder->render->ndamage;
+    /* A recording surface is a READER asking, not a frame being shown:
+     * paint all of it (ndamage is 0 on that path), and write nothing
+     * back -- a narration that updated row signatures would tell the
+     * next real frame its stale kept pixels are current. */
+    int observing = (surface->record != NULL);
     int win_active = (folder->win == NULL ||
                       folder->win ==
                           tiku_workspace_focused(render->workspace));
@@ -560,19 +566,23 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                 hit = damage[d].y < top + render->row_h &&
                       damage[d].y + damage[d].h > top;
             }
-            if (!hit && folder->row_sig[i] == sig) {
+            if (!observing && !hit && folder->row_sig[i] == sig) {
                 /* Skipping the PAINT must not skip the asking: a row's
                  * thumbnail is queued while it is drawn, and a row that
                  * stops being drawn would stop ever being asked for. */
                 queue_thumbnail(folder, pose);
                 continue;
             }
-            folder->row_sig[i] = sig;
-        } else if (i < TIKU_TRK_ROWS_KEPT) {
+            if (!observing) {
+                folder->row_sig[i] = sig;
+            }
+        } else if (!observing && i < TIKU_TRK_ROWS_KEPT) {
             folder->row_sig[i] = row_signature(folder, pose, i, selected,
                                                cut);
         }
-        render->rows_drawn++;
+        if (!observing) {
+            render->rows_drawn++;
+        }
         tiku_fill(surface, row, TIKU_C_DOC);
         {
             const tiku_trk_column_t *cols = NULL;
@@ -1048,7 +1058,13 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
         folder->kept_ready = 0;
         folder->kept_icons = icons;
     }
-    if (keep_pixels(folder, list.w, list.h, surface->scale)) {
+    /* A recording surface never takes the kept-pixels shortcut: the kept
+     * cache is a picture, and a picture blitted whole is one mark the
+     * wire cannot carry where a reader wanted the rows.  Painting direct
+     * also leaves the cache and its bookkeeping exactly as the shown
+     * frames left them. */
+    if (surface->record == NULL &&
+        keep_pixels(folder, list.w, list.h, surface->scale)) {
         paint = &folder->kept;
         area = (tiku_rect_t){ 0, 0, list.w, list.h };
     }
@@ -1163,7 +1179,8 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
         band_up = (*render->band_folder == folder);
         full = !folder->kept_ready || vsig != folder->icon_view_sig ||
                origin_x != folder->icon_origin_x ||
-               origin_y != folder->icon_origin_y || band_up;
+               origin_y != folder->icon_origin_y || band_up ||
+               surface->record != NULL;
         if (tiku_trk_poseview_visible_range(folder->view, &first, &last)) {
             int ox = origin_x - (area.x + 2);
             int oy = origin_y - (area.y + 2);
@@ -1253,13 +1270,16 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
             }
         }
         tiku_clip_set(paint, inner);
-        memcpy(folder->icon_sig, cur_sig, sizeof cur_sig[0] * (size_t)cur_n);
-        memcpy(folder->icon_rect, cur_rect,
-               sizeof cur_rect[0] * (size_t)cur_n);
-        folder->icon_kept_n = cur_n;
-        folder->icon_view_sig = vsig;
-        folder->icon_origin_x = origin_x;
-        folder->icon_origin_y = origin_y;
+        if (surface->record == NULL) {
+            memcpy(folder->icon_sig, cur_sig,
+                   sizeof cur_sig[0] * (size_t)cur_n);
+            memcpy(folder->icon_rect, cur_rect,
+                   sizeof cur_rect[0] * (size_t)cur_n);
+            folder->icon_kept_n = cur_n;
+            folder->icon_view_sig = vsig;
+            folder->icon_origin_x = origin_x;
+            folder->icon_origin_y = origin_y;
+        }
     } else {
         draw_list(folder, paint, area, rows, scroll, total);
     }
