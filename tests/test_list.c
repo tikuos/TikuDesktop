@@ -325,6 +325,91 @@ main(void)
         tiku_surface_free(s);
     }
 
+    /*
+     * Headings: furniture among the rows.  A project window names its
+     * groups this way, and the whole of what a heading IS lives here --
+     * it cannot be picked by any road, travel steps over it, spelling
+     * passes it by, and it crosses the wire as words rather than as a
+     * row a reader would think it could open.
+     */
+    {
+        tiku_list_t l;
+        tiku_rect_t body = { 0, 0, 200, 200 };
+
+        tiku_list_init(&l, 0);
+        tiku_list_set_row_h(&l, 20);
+        (void)tiku_list_set_count(&l, 6);
+        tiku_list_set_heading(&l, 0, 1);        /* alpha names 1..2  */
+        tiku_list_set_heading(&l, 3, 1);        /* delta names 4..5  */
+        check(tiku_list_is_heading(&l, 0) && tiku_list_is_heading(&l, 3) &&
+              !tiku_list_is_heading(&l, 1),
+              "a row can be made a heading, and its neighbours are not");
+        tiku_list_select_only(&l, 0);
+        same(&l, "......",
+             "a heading cannot be selected, even asked for by name");
+        tiku_list_click(&l, 1, 0u);
+        same(&l, ".*....", "the row under it can");
+        tiku_list_click(&l, 3, 0u);
+        same(&l, ".*....",
+             "and clicking the heading takes nothing and lets go of "
+             "nothing: pressing a word is not choosing a file");
+        tiku_list_click(&l, 5, TIKU_MOD_SHIFT);
+        same(&l, ".**.**",
+             "a range reaches OVER the heading in its way rather than "
+             "taking it");
+        tiku_list_select_all(&l);
+        same(&l, ".**.**", "and neither does taking everything");
+        tiku_list_select_none(&l);
+        tiku_list_invert(&l);
+        same(&l, ".**.**", "nor does turning the selection inside out");
+        /* Travel. */
+        tiku_list_select_only(&l, 2);
+        (void)tiku_list_key(&l, TIKU_KEY_DOWN, 0u, body);
+        same(&l, "....*.",
+             "travelling DOWN steps over the heading onto the row "
+             "beneath it");
+        (void)tiku_list_key(&l, TIKU_KEY_UP, 0u, body);
+        same(&l, "..*...", "and back UP over it the other way");
+        (void)tiku_list_key(&l, TIKU_KEY_HOME, 0u, body);
+        same(&l, ".*....",
+             "HOME onto a heading means the first row UNDER it, not the "
+             "nothing that lies before it");
+        (void)tiku_list_key(&l, TIKU_KEY_END, 0u, body);
+        same(&l, ".....*", "and END the last row there is");
+        /* Spelling. */
+        tiku_list_select_none(&l);
+        check(tiku_list_typeahead(&l, 'd', 1000, body, name_of,
+                                  NULL) == -1,
+              "spelling a heading's own name finds nothing: it is not "
+              "something to open");
+        check(tiku_list_typeahead(&l, 'z', 5000000, body, name_of,
+                                  NULL) == 5,
+              "while a row's name still finds its row");
+        /* What crosses the wire. */
+        {
+            tiku_surface_t *sf = tiku_surface_new(200, 200,
+                                                            TIKU_C_DOC);
+            tiku_dl_t *dl = tiku_dl_new();
+            char lines[4096];
+
+            sf->record = dl;
+            tiku_list_draw(&l, sf, body, name_of, NULL);
+            sf->record = NULL;
+            (void)tiku_dl_say(dl, lines, sizeof lines);
+            check(strstr(lines, "row \"beta\"") != NULL,
+                  "a drawn list still narrates its rows");
+            check(strstr(lines, "row \"alpha\"") == NULL &&
+                  strstr(lines, "row \"delta\"") == NULL,
+                  "but a heading is not among them: furniture told as a "
+                  "row is a row a reader would try to open");
+            check(strstr(lines, "alpha") != NULL,
+                  "it is there as WORDS, because it still names the "
+                  "group underneath");
+            tiku_dl_free(dl);
+            tiku_surface_free(sf);
+        }
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the rows hold their places");
     return fails ? 1 : 0;
 }
