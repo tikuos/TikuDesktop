@@ -248,6 +248,16 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            idemessages.script)
+                # A program with a mistake ON A KNOWN LINE: what the
+                # interpreter blames is what the message must name.
+                mkdir -p "$deskhome"
+                printf 'title Blinker\ngroup Sources\nfile blink.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 PRINT "lamp"\n20 PRUNT "bad"\n30 PRINT "after"\n' \
+                    > "$deskhome/blink.bas"
+                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                      "$appsdir/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
                 # it names, beside each other where the panel opens.
