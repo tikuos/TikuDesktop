@@ -18,6 +18,7 @@
 #define TIKU_TRK_OPEN_WITH_WINDOW_H_
 
 #include "tiku_window.h"
+#include "tiku_list.h"
 #include "tiku_trk_alert.h"
 #include "tiku_trk_launch.h"
 #include "tiku_model.h"
@@ -46,8 +47,11 @@ typedef struct {
     char                   types[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX];
     int                    type_count;
     int                    generic_only; /* every document is untyped     */
-    int                    sel;          /* single selection, or -1       */
-    int                    scroll;
+    /* The rows, the one that is picked and the one shown first: the
+     * kit's list rather than an index and a scroll of its own, so the
+     * anchor rules and the walk are the same ones every other list on
+     * this desktop keeps. */
+    tiku_list_t       list;
 } tiku_trk_open_with_window_t;
 
 void tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *controller,

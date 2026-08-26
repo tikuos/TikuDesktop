@@ -18,7 +18,10 @@ note its foot is where a 12 px face puts it
 expect-pixel 350 419 336698
 note the best claim leads the list; Down takes it and Return opens
 key Down
-wait 2
+wait 3
+note and the row it took is lit where the first row is drawn -- which
+note pins WHERE the list puts its rows, not merely that a key was taken
+expect-pixel 350 193 336698
 key Return
 wait 25
 expect-file /tmp/trk_launched

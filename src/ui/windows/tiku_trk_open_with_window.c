@@ -41,6 +41,27 @@ static int ow_height(void)
     return 260 + (list_top() - 26) + OW_ROWS * (row_h() - 18);
 }
 
+/**
+ * @brief Where the rows go: the same rectangle the loop below used to
+ *        lay out a row at a time.
+ *
+ * Ten rows of the face's height, inset eight from the window's sides --
+ * written once here so the draw, the click and the keyboard cannot come
+ * to disagree about where a row is, which is the bug the arithmetic in
+ * three places was one edit away from.
+ */
+static tiku_rect_t
+list_body(tiku_rect_t content)
+{
+    tiku_rect_t body;
+
+    body.x = content.x + 8;
+    body.y = content.y + list_top();
+    body.w = content.w - 16;
+    body.h = OW_ROWS * row_h();
+    return body;
+}
+
 static void
 mark_dirty(tiku_trk_open_with_window_t *c)
 {
@@ -77,11 +98,13 @@ static void
 enables(const tiku_trk_open_with_window_t *c, int *can_open,
         int *can_prefer)
 {
-    *can_open = (c->sel >= 0 && c->sel < c->count);
+    int sel = tiku_list_chosen(&c->list);
+
+    *can_open = (sel >= 0 && sel < c->count);
     /* No relation cannot become preferred, and the preferred app already
      * is: neither button press would change anything true. */
-    *can_prefer = *can_open && c->cand[c->sel].rel != TIKU_TRK_REL_NONE &&
-                  !c->cand[c->sel].preferred;
+    *can_prefer = *can_open && c->cand[sel].rel != TIKU_TRK_REL_NONE &&
+                  !c->cand[sel].preferred;
 }
 
 static void
@@ -98,16 +121,15 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_text(surface, font, content.x + 10, content.y + 16,
                    "Open with:", TIKU_C_TEXT);
     for (i = 0; i < OW_ROWS; i++) {
-        int at = c->scroll + i;
-        tiku_rect_t row = { content.x + 8,
-                                 content.y + list_top() + i * row_h(),
-                                 content.w - 16, row_h() };
+        int at = c->list.top + i;
+        tiku_rect_t row = tiku_list_row_rect(&c->list,
+                                                  list_body(content), at);
         int selected;
 
         if (at >= c->count) {
             break;
         }
-        selected = (at == c->sel);
+        selected = tiku_list_selected(&c->list, at);
         tiku_fill(surface, row, selected ? TIKU_C_SELECT
                                               : TIKU_C_DOC);
         {
@@ -162,7 +184,7 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
     if (!can_open || (make_preferred && !can_prefer)) {
         return;
     }
-    pick = &c->cand[c->sel];
+    pick = &c->cand[tiku_list_chosen(&c->list)];
     if (make_preferred && c->store != NULL) {
         int t;
 
@@ -195,9 +217,13 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
 void
 tiku_trk_open_with_window_confirmed(tiku_trk_open_with_window_t *c)
 {
-    if (c->sel >= 0 && c->sel < c->count && c->open != NULL) {
-        c->open(c->open_context, c->cand[c->sel].app, c->path_ptr,
-                c->path_count);
+    {
+        int sel = tiku_list_chosen(&c->list);
+
+        if (sel >= 0 && sel < c->count && c->open != NULL) {
+            c->open(c->open_context, c->cand[sel].app, c->path_ptr,
+                    c->path_count);
+        }
     }
     close_window(c);
 }
@@ -226,13 +252,11 @@ event(tiku_window_t *window, const tiku_event_t *ev,
         return 1;
     }
 #undef INSIDE
-    if (ev->y >= content.y + list_top()) {
-        int at = c->scroll +
-                 (ev->y - content.y - list_top()) / row_h();
+    {
+        int at = tiku_list_at(&c->list, list_body(content), ev->x, ev->y);
 
-        if (at >= 0 && at < c->count) {
-            /* SINGLE selection: the window answers one question. */
-            c->sel = at;
+        if (at >= 0) {
+            tiku_list_click(&c->list, at, ev->modifiers);
             mark_dirty(c);
             return 1;
         }
@@ -255,7 +279,11 @@ tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *c,
     c->open_context = open_context;
     c->alert = alert;
     c->store = store;
-    c->sel = -1;
+    /* One question, one answer: the list holds a single row at a time,
+     * and it is the list that enforces that rather than each gesture
+     * here remembering to. */
+    tiku_list_init(&c->list, 1);
+    tiku_list_set_row_h(&c->list, row_h());
 }
 
 void
@@ -269,8 +297,8 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
         return;
     }
     c->count = 0;
-    c->sel = -1;
-    c->scroll = 0;
+    tiku_list_init(&c->list, 1);
+    tiku_list_set_row_h(&c->list, row_h());
     c->type_count = 0;
     c->generic_only = 1;
     for (i = 0; i < ntypes && c->type_count < TIKU_TRK_APP_TYPES_MAX; i++) {
@@ -333,6 +361,9 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
             }
         }
     }
+    /* The candidates are settled: the list is told how many rows it
+     * has, which is what makes a click or an arrow mean anything. */
+    (void)tiku_list_set_count(&c->list, c->count);
     {
         tiku_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
                                    (c->screen_h - ow_height()) / 3,
@@ -361,7 +392,6 @@ int
 tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
                               unsigned modifiers)
 {
-    (void)modifiers;
     if (c->window == NULL || !c->window->open ||
         tiku_workspace_focused(c->workspace) != c->window) {
         return 0;
@@ -378,23 +408,16 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         close_window(c);
         return 1;
     case TIKU_KEY_UP:
-        if (c->sel > 0) {
-            c->sel--;
-        } else if (c->sel < 0 && c->count > 0) {
-            c->sel = 0;
-        }
-        if (c->sel < c->scroll) {
-            c->scroll = c->sel;
-        }
-        mark_dirty(c);
-        return 1;
     case TIKU_KEY_DOWN:
-        if (c->sel < c->count - 1) {
-            c->sel++;
-        }
-        if (c->sel >= c->scroll + OW_ROWS) {
-            c->scroll = c->sel - OW_ROWS + 1;
-        }
+    case TIKU_KEY_PAGE_UP:
+    case TIKU_KEY_PAGE_DOWN:
+    case TIKU_KEY_HOME:
+    case TIKU_KEY_END:
+        /* The walk, and the scrolling that has to follow it, are the
+         * list's -- so this window gained Page and Home and End by
+         * giving up the four lines that did Up and Down badly. */
+        (void)tiku_list_key(&c->list, key, modifiers,
+                            list_body(tiku_window_content(c->window)));
         mark_dirty(c);
         return 1;
     case TIKU_KEY_RETURN:
