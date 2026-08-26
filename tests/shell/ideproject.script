@@ -1,0 +1,97 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The project window: a program is what a person works on, and the
+# files it is made of are LISTED rather than remembered.  Opening a row
+# opens an editor window of its own; opening it again brings that
+# window back rather than making a second one onto the same document;
+# and the Window menu is the one place that says which of them has work
+# in it that nothing has saved.
+#
+# The project is a FOLDER with a project.tiku in it, and the shell's
+# own panel is how it is opened -- the IDE never learns to walk a
+# filesystem.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+expect-menu IDE
+menu-pick IDE
+wait 150
+expect-title Project
+note the project is handed over by the shell's panel, as every file an
+note application is given comes to it
+click 71 8
+wait 8
+expect-menu Open Project…
+menu-pick Open Project…
+wait 40
+expect-title TikuTracker: Open
+click 400 248
+wait 6
+click 675 413
+wait 60
+expect-no-title TikuTracker: Open
+note the list travels over the group's NAME: Down from nothing lands on
+note the first FILE, because a heading is not something to open
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title blink.bas
+note a second file opens a window of its own
+click-window Project
+wait 8
+key Down
+wait 6
+key Return
+wait 90
+expect-title util.bas
+note and the Window menu names them both
+click-window Project
+wait 8
+click 132 8
+wait 8
+expect-menu blink.bas|util.bas|
+menu-pick blink.bas
+wait 30
+expect-title blink.bas
+note typing marks the document, and the mark shows in the one list
+note that says where a person's unsaved work is
+key h shift
+key i
+wait 20
+click-window Project
+wait 8
+click 132 8
+wait 8
+expect-menu blink.bas (changed)
+menu-pick blink.bas (changed)
+wait 30
+expect-title blink.bas
+note asking for a file already open brings ITS window back rather than
+note opening the same document twice
+click-window Project
+wait 8
+key Up
+wait 6
+key Return
+wait 40
+expect-title blink.bas
+expect-windows 4
+note saving puts the words in the file and takes the mark off again
+click 71 8
+wait 8
+menu-pick Save blink.bas
+wait 30
+expect-file-has /tmp/trk_home/blink.bas Hi
+click-window Project
+wait 8
+click 132 8
+wait 8
+expect-menu blink.bas|util.bas|
+key Escape
+wait 6

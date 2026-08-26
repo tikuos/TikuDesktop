@@ -525,7 +525,9 @@ desk-apps:
 	@$(MAKE) --no-print-directory -C ../TikuDesktop \
 	    build/tiku-demo-app build/tiku-term \
 	    build/apps/terminal.so build/apps/editor.so \
-	    build/apps/sketch.so build/apps/clock.so
+	    build/apps/sketch.so build/apps/clock.so \
+	    build/apps/twowin.so build/apps/IDE.so \
+	    build/tiku-run
 
 test: all desk-apps
 	@$(MAKE) --no-print-directory check-architecture

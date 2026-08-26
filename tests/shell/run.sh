@@ -248,6 +248,18 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            ideproject.script)
+                # A project is a FOLDER: the description, and the files
+                # it names, beside each other where the panel opens.
+                # Where the panel opens, so the description is picked
+                # in one gesture; the project's directory IS its folder.
+                mkdir -p "$deskhome"
+                printf 'title Blinker\ngroup Sources\nfile blink.bas\nfile util.bas\ntarget rp2350\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
+                printf '20 REM helpers\n' > "$deskhome/util.bas"
+                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                      "$appsdir/" ;;
             twowinremote.script)
                 # Installed, not trusted: the runner starts it in a
                 # process of its own, so the windows are held over the
