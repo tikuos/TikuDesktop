@@ -176,7 +176,7 @@ main(void)
 
     /* Wait for the window before timing anything: the open is the
      * application starting up, not the latency being measured. */
-    for (i = 0; i < 400 && !listener.session[0].opened; i++) {
+    for (i = 0; i < 400 && !listener.session[0].win[0].opened; i++) {
         struct timespec nap;
 
         (void)tiku_remote_poll(&listener);
@@ -184,7 +184,7 @@ main(void)
         nap.tv_nsec = 5 * 1000 * 1000;
         (void)nanosleep(&nap, NULL);
     }
-    check(listener.session[0].opened, "and it asks for a window");
+    check(listener.session[0].win[0].opened, "and it asks for a window");
 
     memset(&key, 0, sizeof key);
     key.type = TIKU_EVENT_KEY_DOWN;
@@ -192,7 +192,7 @@ main(void)
     /* Events are addressed to a WINDOW; a bare listener has none, so a
      * fake one is bound to the session and the public path used. */
     memset(&fake, 0, sizeof fake);
-    listener.session[0].window = &fake;
+    listener.session[0].win[0].window = &fake;
     for (i = 0; i < 5; i++) {
         int64_t took;
 

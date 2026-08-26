@@ -248,6 +248,13 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            twowinremote.script)
+                # Installed, not trusted: the runner starts it in a
+                # process of its own, so the windows are held over the
+                # wire rather than in this one.
+                cp -f "$root/../TikuDesktop/build/apps/twowin.so" \
+                      "$appsdir/"
+                rm -rf /tmp/trk_twowin ;;
             twowin.script)
                 # Trusted, so the two windows are open before the script
                 # touches anything: what is being proven is the runtime

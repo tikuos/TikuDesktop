@@ -89,7 +89,7 @@ main(void)
 
     id = tiku_remote_open(&client, "Shared", 8, 8);
     settle(&listener, 40);
-    check(s->opened, "the window is asked for over the socket");
+    check(s->win[0].opened, "the window is asked for over the socket");
     check((s->features & TIKU_FEAT_SHARED_SURFACE) != 0u,
           "and the peer says it can share a surface, being on this "
           "machine");
@@ -98,18 +98,18 @@ main(void)
     pixels[0] = 0x00112233u;
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
-    check(s->shared != NULL, "a surface arrives that both ends can see");
-    check(s->frame == NULL,
+    check(s->win[0].shared != NULL, "a surface arrives that both ends can see");
+    check(s->win[0].frame == NULL,
           "and no copy of the pixels was ever sent -- that is the point");
-    shown = tiku_remote_pixels(s);
+    shown = tiku_remote_pixels(&s->win[0]);
     check(shown != NULL && shown[0] == 0x00112233u,
           "what the window draws is the application's own memory");
 
     pixels[0] = 0x00445566u;
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
-    shown = tiku_remote_pixels(s);
-    check(s->shown == 1, "the next frame lands in the OTHER buffer");
+    shown = tiku_remote_pixels(&s->win[0]);
+    check(s->win[0].shown == 1, "the next frame lands in the OTHER buffer");
     check(shown != NULL && shown[0] == 0x00445566u,
           "and that is the one shown, so nothing is half drawn");
 
@@ -135,7 +135,7 @@ main(void)
         check(tiku_remote_draw(&client, id, dl, 8, 8) == 1,
               "the same session then sends a window as what was DRAWN");
         settle(&listener, 40);
-        shown = tiku_remote_pixels(s);
+        shown = tiku_remote_pixels(&s->win[0]);
         check(shown != NULL && (shown[0] & 0xffffffu) == 0x00778899u,
               "and THAT is what the window shows -- not the shared "
               "buffer it last painted, which is a frame ago");
@@ -145,7 +145,7 @@ main(void)
         pixels[0] = 0x00aabbccu;
         (void)tiku_remote_frame(&client, id, pixels, 8, 8);
         settle(&listener, 40);
-        shown = tiku_remote_pixels(s);
+        shown = tiku_remote_pixels(&s->win[0]);
         check(shown != NULL && shown[0] == 0x00aabbccu,
               "a frame after a list is shown in its turn, so the two "
               "ways cannot deadlock each other");
@@ -193,9 +193,9 @@ main(void)
         settle(&listener, 60);
         check((s->features & TIKU_FEAT_SHARED_SURFACE) == 0u,
               "a peer on a line does not claim to share memory");
-        check(s->shared == NULL && s->frame != NULL,
+        check(s->win[0].shared == NULL && s->win[0].frame != NULL,
               "so its pixels are sent, as they always were");
-        shown = tiku_remote_pixels(s);
+        shown = tiku_remote_pixels(&s->win[0]);
         check(shown != NULL && shown[0] == 0x00778899u,
               "and the window draws them the same way");
         tiku_remote_disconnect(&client);

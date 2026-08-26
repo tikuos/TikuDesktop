@@ -1672,29 +1672,29 @@ static void
 remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
                    tiku_rect_t content, void *context)
 {
-    tiku_remote_session_t *s = context;
+    tiku_remote_window_t *rw = context;
     const uint32_t *px;
     int y, w, h;
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
-    if (s == NULL) {
+    if (rw == NULL) {
         return;
     }
     /* A shared surface is drawn out of the application's own pixels; a
      * copied frame out of the copy.  Nothing else differs. */
-    px = tiku_remote_pixels(s);
+    px = tiku_remote_pixels(rw);
     if (px == NULL) {
         return;
     }
-    w = (s->fw < content.w) ? s->fw : content.w;
-    h = (s->fh < content.h) ? s->fh : content.h;
+    w = (rw->fw < content.w) ? rw->fw : content.w;
+    h = (rw->fh < content.h) ? rw->fh : content.h;
     for (y = 0; y < h; y++) {
         int x;
 
         for (x = 0; x < w; x++) {
             tiku_pixel(surface, content.x + x, content.y + y,
-                            px[(size_t)y * (size_t)s->fw + x]);
+                            px[(size_t)y * (size_t)rw->fw + x]);
         }
     }
 }
@@ -1720,34 +1720,71 @@ remote_reconcile(desktop_t *app)
 
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         tiku_remote_session_t *s = &app->remote.session[i];
+        int j;
 
         if (!s->used) {
             continue;
         }
-        if (s->opened && s->window == NULL) {
-            tiku_rect_t frame;
+        for (j = 0; j < TIKU_REMOTE_WINDOWS; j++) {
+            tiku_remote_window_t *rw = &s->win[j];
 
-            frame.w = s->open_w + 2 * TIKU_WINDOW_BORDER;
-            frame.h = s->open_h + tiku_window_tab_h() +
-                      2 * TIKU_WINDOW_BORDER;
-            frame.x = (app->surf->w - frame.w) / 2;
-            frame.y = (app->surf->h - frame.h) / 3;
-            s->window = tiku_workspace_open(app->desk, s->title,
-                frame, remote_window_draw, s, s);
-            if (s->window != NULL) {
-                tiku_window_set_size_controls(s->window, 0, 0);
+            if (rw->opened && rw->window == NULL) {
+                tiku_rect_t frame;
+
+                frame.w = rw->open_w + 2 * TIKU_WINDOW_BORDER;
+                frame.h = rw->open_h + tiku_window_tab_h() +
+                          2 * TIKU_WINDOW_BORDER;
+                frame.x = (app->surf->w - frame.w) / 2;
+                frame.y = (app->surf->h - frame.h) / 3;
+                /* Beside each other, and tagged by the WINDOW: a tag
+                 * naming the session handed the second window the
+                 * first one back, wearing a name it never took. */
+                {
+                    int across = frame.w + 8;
+                    int cols = (across > 0) ? (app->surf->w / across) : 1;
+
+                    if (cols < 1) {
+                        cols = 1;
+                    }
+                    frame.x += (j % cols) * across;
+                    frame.y += (j / cols) * (frame.h + 8);
+                    if (frame.x + frame.w > app->surf->w) {
+                        frame.x = app->surf->w - frame.w;
+                    }
+                    if (frame.y + frame.h > app->surf->h) {
+                        frame.y = app->surf->h - frame.h;
+                    }
+                    if (frame.x < 0) {
+                        frame.x = 0;
+                    }
+                    if (frame.y < 0) {
+                        frame.y = 0;
+                    }
+                }
+                rw->window = tiku_workspace_open(app->desk, rw->title,
+                    frame, remote_window_draw, rw, rw);
+                if (rw->window != NULL) {
+                    tiku_window_set_size_controls(rw->window, 0, 0);
+                }
+                app->dirty = 1;
             }
-            app->dirty = 1;
-        }
-        if (s->window != NULL && s->menus_fresh) {
-            tiku_window_publish_menus(s->window, &s->menus,
-                                           remote_menu_pick, app);
-            s->menus_fresh = 0;
-            app->dirty = 1;
-        }
-        if (!s->used && s->window != NULL) {
-            tiku_workspace_close(app->desk, s->window);
-            s->window = NULL;
+            if (rw->window != NULL && rw->menus_fresh) {
+                tiku_window_publish_menus(rw->window, &rw->menus,
+                                               remote_menu_pick, app);
+                rw->menus_fresh = 0;
+                app->dirty = 1;
+            }
+            /* A row the application gave back: the window goes with it.
+             * The session stays -- it has others, or it is about to
+             * say it is leaving. */
+            if (rw->window != NULL && !rw->opened) {
+                if (app->remote_press == rw->window) {
+                    app->remote_press = NULL;
+                }
+                tiku_workspace_close(app->desk, rw->window);
+                rw->window = NULL;
+                app->dirty = 1;
+            }
         }
     }
 }

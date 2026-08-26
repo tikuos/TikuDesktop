@@ -1,0 +1,68 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The same two windows, from a process of its own.  Out here the id is
+# not a pointer the shell can follow: it rides the wire on every
+# message, and a session that was ITSELF a window quietly became the
+# second one and wore its name.  The application is started the way an
+# installed application is started -- through the runner, from the
+# Applications menu -- so nothing about the road is special.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+expect-menu Twowin
+menu-pick Twowin
+wait 150
+note two windows over the wire, each wearing its own name
+click-window TwoAlpha
+wait 8
+expect-title TwoAlpha
+click-window TwoBeta
+wait 8
+expect-title TwoBeta
+note keys reach the window they were typed into, over the wire
+key x
+key x
+wait 20
+expect-file-has /tmp/trk_twowin/beta 2
+expect-file-has /tmp/trk_twowin/alpha 0
+click-window TwoAlpha
+wait 8
+key x
+wait 20
+expect-file-has /tmp/trk_twowin/alpha 1
+expect-file-has /tmp/trk_twowin/beta 2
+note the strip carries the menus of the window in front, from the
+note description that came down the wire for THAT window
+click 60 8
+wait 8
+expect-menu Alpha typed 1
+menu-pick Alpha typed 1
+wait 8
+note and the OTHER window's rows are its own: a wire that dropped the
+note id would show these two windows the same menu
+click-window TwoBeta
+wait 8
+click 60 8
+wait 8
+expect-menu Beta typed 2
+menu-pick Beta typed 2
+wait 8
+click-window TwoAlpha
+wait 8
+click 60 8
+wait 8
+note closing one window leaves the other, and the process behind it:
+note the row asks the application, the application gives that window
+note back by name, and the name is carried over the wire
+menu-pick Close Alpha
+wait 30
+expect-no-title TwoAlpha
+click-window TwoBeta
+wait 8
+expect-title TwoBeta
+key x
+wait 20
+expect-file-has /tmp/trk_twowin/beta 3

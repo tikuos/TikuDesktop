@@ -104,24 +104,24 @@ main(void)
         (void)tiku_remote_menus(&client, id, &menus);
         for (spins = 0; spins < 200; spins++) {
             (void)tiku_remote_poll(&listener);
-            if (listener.session[0].used && listener.session[0].opened &&
-                listener.session[0].frame != NULL &&
-                listener.session[0].has_menus) {
+            if (listener.session[0].used && listener.session[0].win[0].opened &&
+                listener.session[0].win[0].frame != NULL &&
+                listener.session[0].win[0].has_menus) {
                 break;
             }
             usleep(10000);
         }
-        check(listener.session[0].used && listener.session[0].opened,
+        check(listener.session[0].used && listener.session[0].win[0].opened,
               "OPEN crossed: the session wants its window");
-        check(strcmp(listener.session[0].title, "Over the wire") == 0,
+        check(strcmp(listener.session[0].win[0].title, "Over the wire") == 0,
               "with its title intact");
-        check(listener.session[0].frame != NULL &&
-              listener.session[0].fw == 40 &&
-              listener.session[0].frame[0] == 0x00ffcb00u,
+        check(listener.session[0].win[0].frame != NULL &&
+              listener.session[0].win[0].fw == 40 &&
+              listener.session[0].win[0].frame[0] == 0x00ffcb00u,
               "FRAME crossed: the pixels arrived as sent");
-        check(listener.session[0].has_menus &&
-              listener.session[0].menus.nmenu == 1 &&
-              strcmp(listener.session[0].menus.menu[0].item[0].label,
+        check(listener.session[0].win[0].has_menus &&
+              listener.session[0].win[0].menus.nmenu == 1 &&
+              strcmp(listener.session[0].win[0].menus.menu[0].item[0].label,
                      "Ping") == 0,
               "MENUS crossed: the same struct is the wire format");
         {
@@ -173,7 +173,7 @@ main(void)
             int type = 0;
 
             memset(&fake, 0, sizeof fake);
-            listener.session[0].window = &fake;
+            listener.session[0].win[0].window = &fake;
             tiku_remote_pick(&listener, &fake, 7);
             for (spins = 0; spins < 200; spins++) {
                 type = tiku_remote_read(&client, &evid, &event,
@@ -218,13 +218,13 @@ main(void)
                   "a window goes over as what was drawn, not as pixels");
             for (spins = 0; spins < 200; spins++) {
                 (void)tiku_remote_poll(&listener);
-                if (listener.session[0].fw == 64 &&
-                    listener.session[0].fh == 32) {
+                if (listener.session[0].win[0].fw == 64 &&
+                    listener.session[0].win[0].fh == 32) {
                     break;
                 }
                 usleep(10000);
             }
-            theirs = tiku_remote_pixels(&listener.session[0]);
+            theirs = tiku_remote_pixels(&listener.session[0].win[0]);
             for (k = 0; theirs != NULL && k < 64 * 32; k++) {
                 if (theirs[k] != mine[k]) {
                     differing++;
@@ -269,7 +269,7 @@ main(void)
                       "and goes over as commands, art and all");
                 for (spins = 0; spins < 200; spins++) {
                     (void)tiku_remote_poll(&listener);
-                    theirs2 = tiku_remote_pixels(&listener.session[0]);
+                    theirs2 = tiku_remote_pixels(&listener.session[0].win[0]);
                     if (theirs2 != NULL &&
                         theirs2[4 * 64 + 4] != mine[4 * 64 + 4]) {
                         /* the icon frame replaced the old window */
@@ -307,7 +307,7 @@ main(void)
                 (void)tiku_remote_draw(&client, 1u, small, 64, 32);
                 for (spins = 0; spins < 200; spins++) {
                     (void)tiku_remote_poll(&listener);
-                    theirs = tiku_remote_pixels(&listener.session[0]);
+                    theirs = tiku_remote_pixels(&listener.session[0].win[0]);
                     if (theirs != NULL && theirs[63] != mine[63]) {
                         break;
                     }
@@ -320,7 +320,7 @@ main(void)
                  * what was there before -- the button's highlight is
                  * white and so is the new fill.
                  */
-                theirs = tiku_remote_pixels(&listener.session[0]);
+                theirs = tiku_remote_pixels(&listener.session[0].win[0]);
                 for (k = 0; theirs != NULL && k < 64 * 32; k++) {
                     int row = k / 64, col = k % 64;
 
@@ -363,8 +363,8 @@ main(void)
                     (void)tiku_remote_poll(&listener);
                     usleep(5000);
                 }
-                check(listener.session[0].fw == 64 &&
-                      listener.session[0].fh == 32,
+                check(listener.session[0].win[0].fw == 64 &&
+                      listener.session[0].win[0].fh == 32,
                       "a stream claiming a sixty-four megabyte window is "
                       "refused, and the window it had is untouched");
             }
