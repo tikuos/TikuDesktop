@@ -93,5 +93,45 @@ wait 8
 click 132 8
 wait 8
 expect-menu blink.bas|util.bas|
+note taking a row of the Window menu is how the OTHER window is
+note reached, and it puts the menu away with the same gesture
+menu-pick util.bas
+wait 30
+expect-title util.bas
+note closing the project asks ONCE, and names what is at stake: the
+note question is the application's own, over its own window, and it
+note stands until somebody answers it
+key q
+wait 20
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick Close Project
+wait 30
+expect-title Project
+note Escape presses Cancel, the safe road: everything is still standing
 key Escape
-wait 6
+wait 20
+expect-title Project
+note every window it opened is still there, and still reachable by the
+note list that names them
+expect-windows 4
+click 132 8
+wait 8
+menu-pick blink.bas
+wait 30
+expect-title blink.bas
+note asked again, Return presses the default and the project goes,
+note taking every window it opened with it
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick Close Project
+wait 30
+key Return
+wait 40
+expect-no-title blink.bas
+expect-no-title util.bas
+expect-no-title Project
