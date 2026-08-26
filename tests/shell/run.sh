@@ -248,6 +248,12 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            shiftcaps.script)
+                # A file for the editor to hold while Shift is proven:
+                # the capital lands IN the file, which is the one place
+                # a test can read the case back from.
+                mkdir -p "$deskhome"
+                printf 'x\n' > "$deskhome/caps.txt" ;;
             runbas.script)
                 # A program whose effect is a FILE, because an effect is
                 # the one thing a test can hold: the run writes /led

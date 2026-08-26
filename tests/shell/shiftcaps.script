@@ -1,0 +1,43 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Shift means CAPITAL.  X11 puts the character a keypress TYPED in the
+# event's text -- the key itself is the folded keysym that shortcuts
+# match on, and the fold loses the case Shift put there.  An editor
+# that types from the key writes lowercase whatever the hands did; the
+# scripts never saw it because they passed capitals ready-made.  This
+# one holds Shift the way hands do: lowercase key, shift held.
+wait 14
+expect-file /tmp/trk_home/caps.txt
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 30
+expect-title TikuTracker: Open
+click 400 230
+wait 4
+click 675 413
+wait 40
+expect-no-title TikuTracker: Open
+click-window Edit
+wait 4
+note Shift held for the H, released for the i
+key h shift
+wait 4
+key i
+wait 4
+key s ctrl
+wait 20
+expect-file-has /tmp/trk_home/caps.txt Hix
+click-window Edit
+wait 4
+key Escape
+wait 30
+quit
