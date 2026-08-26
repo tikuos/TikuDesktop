@@ -248,6 +248,19 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            idebuild.script)
+                # A project that says what it is FOR, and C with a
+                # mistake on a line the compiler will name.
+                mkdir -p "$deskhome"
+                printf 'title Firmware\ntarget host\ngroup Sources\nfile bad.c\n' \
+                    > "$deskhome/project.tiku"
+                # No indent on the line that will be blamed: "go to
+                # line" means its FIRST column, and a needle with a run
+                # of spaces in it cannot be written in a script.
+                printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
+                    > "$deskhome/bad.c"
+                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                      "$appsdir/" ;;
             ccolour.script)
                 # The same words twice: once inside a block remark that
                 # was opened on an earlier line, once outside it.

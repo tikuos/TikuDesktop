@@ -1,0 +1,63 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# What BUILD means, decided and shown: the project says what it is FOR,
+# and the compiler for that target is asked whether its C is good.  What
+# it says arrives as messages of the same three things a run's do --
+# words, a file, a line -- so the window that shows a run's mistakes
+# shows a build's without knowing the difference.
+#
+# The line a COMPILER means is a line of the file; the line BASIC means
+# is a number the program wears.  Landing the caret needs to know which,
+# and this proves it does.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick IDE
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title TikuTracker: Open
+click 400 248
+wait 6
+click 675 413
+wait 60
+expect-no-title TikuTracker: Open
+note the row says what the project is for, which the project itself said
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Build for host
+menu-pick Build for host
+wait 200
+note the compiler's complaint arrives as a message, and it is about
+note somewhere: the file it named and the line in it
+expect-title Messages
+note the compiler names the function first and the place second, so the
+note first row is about nowhere and the one under it is the complaint
+key Down
+wait 8
+key Down
+wait 10
+click 71 8
+wait 8
+expect-menu Go to line 4
+menu-pick Go to line 4
+wait 120
+note following it opens that file at that line -- counted the way a
+note compiler counts, which is not how BASIC names its own
+expect-title bad.c
+key x shift
+wait 10
+click 71 8
+wait 8
+menu-pick Save bad.c
+wait 90
+expect-file-has /tmp/trk_home/bad.c Xreturn nope
+expect-file-lacks /tmp/trk_home/bad.c Xint main
