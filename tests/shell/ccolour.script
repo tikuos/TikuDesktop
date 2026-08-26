@@ -1,0 +1,47 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# C carries a remark from one line to the next, and this is the claim a
+# line-local classifier could not make.
+#
+# The file holds the SAME words twice -- `int x = 42;` -- once inside a
+# block remark opened on an earlier line and once outside it.  Nothing
+# on either line says which is which; only what came before does.  The
+# two pixels below are the SAME glyph of the same word, two rows apart,
+# and they are asserted in both colours: what is proven is that the
+# runtime tells them apart, not merely that something was coloured.
+#
+# The pixels were probed rather than guessed, and they are GLYPH pixels
+# -- the ink a letter is drawn with, not chrome.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title TikuTracker: Open
+click 400 228
+wait 6
+click 675 413
+wait 60
+expect-no-title TikuTracker: Open
+click-window Edit
+wait 25
+note inside the remark: the words are what the machine ignores, however
+note much they look like a language
+expect-pixel 239 137 607060
+note and outside it, two lines down, the very same word is a word the
+note language reserves
+expect-pixel 239 171 0000b0
+note neither is the other, which is the whole of what carrying means
+expect-pixel 239 137 607060
+note put the editor away rather than leave it standing
+key Escape
+wait 30
+expect-no-title Edit

@@ -71,6 +71,52 @@ classify(const char *line)
     return map;
 }
 
+/** @brief The same map for C, which has to be told where it came from. */
+static const char *
+classify_c(const char *line, tiku_syntax_state_t in,
+           tiku_syntax_state_t *out)
+{
+    static char map[256];
+    tiku_span_t span[64];
+    int n = tiku_syntax_spans_on(TIKU_SYNTAX_C, line, in, out, span, 64);
+    size_t at = 0u, len = strlen(line);
+    int i;
+
+    memset(map, 'p', sizeof map);
+    for (i = 0; i < n && at < sizeof map - 1u; i++) {
+        char c = span[i].ink == TIKU_INK_FAINT  ? 'f'
+               : span[i].ink == TIKU_INK_WORD   ? 'w'
+               : span[i].ink == TIKU_INK_NUM    ? 'n'
+               : span[i].ink == TIKU_INK_STR    ? 's'
+               : span[i].ink == TIKU_INK_REMARK ? 'r' : 'p';
+        int k;
+
+        for (k = 0; k < span[i].len && at < sizeof map - 1u; k++) {
+            map[at++] = c;
+        }
+    }
+    if (len < sizeof map) {
+        map[len] = '\0';
+    } else {
+        map[sizeof map - 1u] = '\0';
+    }
+    return map;
+}
+
+static void
+same_c(const char *line, tiku_syntax_state_t in, const char *want,
+       const char *what)
+{
+    tiku_syntax_state_t out = TIKU_SYNTAX_OPEN;
+    const char *got = classify_c(line, in, &out);
+
+    check(strcmp(got, want) == 0, what);
+    if (strcmp(got, want) != 0) {
+        printf("         line: %s\n         want: %s\n         got:  %s\n",
+               line, want, got);
+    }
+}
+
 static void
 same(const char *line, const char *want, const char *what)
 {
@@ -243,6 +289,63 @@ main(void)
     check(tiku_syntax_of_path(NULL) == TIKU_SYNTAX_NONE &&
           tiku_syntax_of_path(".bas") == TIKU_SYNTAX_BASIC,
           "no name is prose; a name that is only the suffix is not");
+
+    printf("\nand C, which carries a remark from one line to the next\n");
+    check(tiku_syntax_of_path("/src/tiku_ide.c") == TIKU_SYNTAX_C &&
+          tiku_syntax_of_path("tiku_app.h") == TIKU_SYNTAX_C,
+          "a .c and a .h are C");
+    check(tiku_syntax_of_path("/src/notes.txt") == TIKU_SYNTAX_NONE,
+          "and everything else is still prose");
+    same_c("int x = 42;", TIKU_SYNTAX_OPEN, "wwwpppppnnp",
+           "a word the language reserves, and a number written down");
+    same_c("count = total;", TIKU_SYNTAX_OPEN, "pppppppppppppp",
+           "a name the language did NOT reserve is the document's own "
+           "ink: a table with a library in it would claim `count`");
+    same_c("// gone", TIKU_SYNTAX_OPEN, "rrrrrrr",
+           "a line remark runs to the end of its line");
+    {
+        tiku_syntax_state_t out = TIKU_SYNTAX_OPEN;
+
+        /* The claim the line-local signature could not make. */
+        (void)classify_c("int a; /* opens", TIKU_SYNTAX_OPEN, &out);
+        check(out == TIKU_SYNTAX_BLOCK,
+              "a block remark left open is SAID to be open: the next "
+              "line cannot tell on its own, and this is the whole "
+              "reason the state is carried");
+        same_c("still inside", TIKU_SYNTAX_BLOCK, "rrrrrrrrrrrr",
+               "a line begun inside a remark is all remark, whatever "
+               "words happen to be in it");
+        (void)classify_c("still inside", TIKU_SYNTAX_BLOCK, &out);
+        check(out == TIKU_SYNTAX_BLOCK,
+              "and it leaves the next line inside it too");
+        same_c("done */ int b;", TIKU_SYNTAX_BLOCK, "rrrrrrrpwwwppp",
+               "the close belongs to the remark; what follows is the "
+               "language again");
+        (void)classify_c("done */ int b;", TIKU_SYNTAX_BLOCK, &out);
+        check(out == TIKU_SYNTAX_OPEN, "and the carrying stops there");
+        (void)classify_c("a /* b */ c", TIKU_SYNTAX_OPEN, &out);
+        check(out == TIKU_SYNTAX_OPEN,
+              "a remark opened and closed on one line carries nothing");
+    }
+    same_c("s = \"/* not a remark\";", TIKU_SYNTAX_OPEN,
+           "ppppsssssssssssssssssp",
+           "a remark opener inside quotes is text: the string had it "
+           "first");
+    {
+        tiku_syntax_state_t out = TIKU_SYNTAX_BLOCK;
+
+        (void)classify_c("s = \"/* not a remark\";", TIKU_SYNTAX_OPEN,
+                         &out);
+        check(out == TIKU_SYNTAX_OPEN,
+              "and it opens nothing for the line after it");
+    }
+    same_c("#include <stdio.h>", TIKU_SYNTAX_OPEN, "wwwwwwwwpppppppppp",
+           "what the preprocessor was told is reserved too");
+    same_c("c = 'x';", TIKU_SYNTAX_OPEN, "ppppsssp",
+           "a character is text in quotes, like any other");
+    same_c("s = \"open", TIKU_SYNTAX_OPEN, "ppppsssss",
+           "a quote never closed ends with its line rather than eating "
+           "the next -- the same answer BASIC gives");
 
     printf("\n%s\n", fails ? "FAILURES"
                            : "the colours say what the interpreter would");
