@@ -78,9 +78,29 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
         }
         /* Inside its tab: the strip is TAB_H deep from the frame's top
          * edge, and starts four pixels in.  Thirty across is inside the
-         * narrowest tab the window layer will draw. */
+         * narrowest tab the window layer will draw.
+         *
+         * Where another window stands over that spot, the tab is walked
+         * for somewhere this one is really in front: a point under
+         * another window is not a point a hand could reach, and an
+         * application holding several windows has tabs that overlap. */
         *x = w->frame.x + 30;
         *y = w->frame.y + tiku_window_tab_h() / 2;
+        {
+            int step;
+
+            for (step = 30; step < w->frame.w - 8; step += 12) {
+                tiku_window_t *front = NULL;
+                int at = w->frame.x + step;
+
+                if (tiku_workspace_hit(adapter->workspace, at, *y,
+                                            &front) == TIKU_HIT_TAB &&
+                    front == w) {
+                    *x = at;
+                    break;
+                }
+            }
+        }
         return 1;
     }
     return 0;

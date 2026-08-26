@@ -1,0 +1,68 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# One application, two windows.  Everything an application with more
+# than one window needs, held in one place: both windows are THERE and
+# wearing their own names, each takes the keys typed into it and no
+# others, each publishes its own menus, and closing one closes ONE --
+# the other stands, and so does the application behind both.
+#
+# Nothing here is about the spike application: every claim is about the
+# runtime carrying the window id it was already given.
+wait 25
+note the shell's own folder window opens over them; it is focused, so
+note the runtime's own close gesture takes it and leaves the two behind
+key w ctrl
+wait 10
+note two windows, not one window wearing the second name: a runtime
+note that aliases them shows only the first title, and only one window
+click-window TwoAlpha
+wait 6
+expect-title TwoAlpha
+click-window TwoBeta
+wait 6
+expect-title TwoBeta
+note keys reach the window that has them, and no other
+key x
+key x
+key x
+wait 10
+expect-file-has /tmp/trk_twowin/beta 3
+expect-file-has /tmp/trk_twowin/alpha 0
+click-window TwoAlpha
+wait 6
+key x
+wait 10
+expect-file-has /tmp/trk_twowin/alpha 1
+expect-file-has /tmp/trk_twowin/beta 3
+note the strip carries the menus of whichever window is in front
+click 60 8
+wait 6
+expect-menu Alpha typed 1
+note the count row does nothing; taking it is how the strip is put
+note away again without another gesture standing in for a click
+menu-pick Alpha typed 1
+wait 6
+click-window TwoBeta
+wait 8
+expect-title TwoBeta
+click 60 8
+wait 8
+expect-menu Beta typed 3
+menu-pick Beta typed 3
+wait 6
+note closing one window closes one window
+key w ctrl
+wait 12
+expect-no-title TwoBeta
+click-window TwoAlpha
+wait 6
+expect-title TwoAlpha
+note and the application behind it is alive: it still takes keys
+key x
+wait 10
+expect-file-has /tmp/trk_twowin/alpha 2
+note the last window closing is the application ending
+key w ctrl
+wait 12
+expect-no-title TwoAlpha

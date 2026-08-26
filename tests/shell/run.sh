@@ -248,6 +248,14 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            twowin.script)
+                # Trusted, so the two windows are open before the script
+                # touches anything: what is being proven is the runtime
+                # keeping them apart, not the road that starts them.
+                mkdir -p "$appsdir/trusted"
+                cp -f "$root/../TikuDesktop/build/apps/twowin.so" \
+                      "$appsdir/trusted/"
+                rm -rf /tmp/trk_twowin ;;
             shiftcaps.script)
                 # A file for the editor to hold while Shift is proven:
                 # the capital lands IN the file, which is the one place

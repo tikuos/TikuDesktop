@@ -100,6 +100,11 @@
 
 /* How many applications this desktop hosts in its own process. */
 #define TIKU_TRK_EMBED_MAX 8
+/* Windows ONE application may hold at once.  An application is not its
+ * window: the id every service already carries is what tells them
+ * apart, and a host that kept one window per application was throwing
+ * that id away. */
+#define TIKU_TRK_EMBED_WINDOWS 8
 
 #define DESK_W 1000
 #define DESK_H  680
@@ -179,16 +184,23 @@ typedef struct desktop {
         const tiku_app_descriptor_t *descriptor;
         tiku_app_services_t services;
         void                *state;
-        tiku_window_t  *window;
-        uint32_t            *frame;
-        int                  fw, fh;
+        /* One of these per window the application holds.  Each is its
+         * own workspace TAG, which is what stops a second window from
+         * being handed back the first one. */
+        struct embed_win {
+            struct desktop_embed *slot; /* the window's way back    */
+            uint32_t             id;    /* what the application was told */
+            tiku_window_t       *window;
+            uint32_t            *frame;
+            int                  fw, fh;
+        } win[TIKU_TRK_EMBED_WINDOWS];
         uint32_t             next_id;
         int                  running;
     } embeds[TIKU_TRK_EMBED_MAX];
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_window_t  *remote_press;
-    struct desktop_embed *embed_press;  /* the slot holding a press */
+    struct embed_win     *embed_press;  /* the window holding a press */
     /*
      * The application the file panel is up for, if it is up for one.
      * The panel carries only an opaque (target, command) pair, and the
@@ -1199,39 +1211,72 @@ static void
 embed_window_draw(tiku_window_t *window, tiku_surface_t *surface,
                   tiku_rect_t content, void *context)
 {
-    struct desktop_embed *slot = context;
+    struct embed_win *ew = context;
     int x, y, w, h;
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
-    if (slot == NULL || slot->frame == NULL) {
+    if (ew == NULL || ew->frame == NULL) {
         return;
     }
-    w = (slot->fw < content.w) ? slot->fw : content.w;
-    h = (slot->fh < content.h) ? slot->fh : content.h;
+    w = (ew->fw < content.w) ? ew->fw : content.w;
+    h = (ew->fh < content.h) ? ew->fh : content.h;
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
             tiku_pixel(surface, content.x + x, content.y + y,
-                            slot->frame[(size_t)y * (size_t)slot->fw + x]);
+                            ew->frame[(size_t)y * (size_t)ew->fw + x]);
         }
     }
 }
 
-/** @brief The hosted application owning @p w, or NULL. */
-static struct desktop_embed *
-embed_of_window(desktop_t *app, const tiku_window_t *w)
+/** @brief The window @p w of a hosted application, or NULL. */
+static struct embed_win *
+embed_win_of_window(desktop_t *app, const tiku_window_t *w)
 {
-    int i;
+    int i, j;
 
     if (w == NULL) {
         return NULL;
     }
     for (i = 0; i < TIKU_TRK_EMBED_MAX; i++) {
-        if (app->embeds[i].running && app->embeds[i].window == w) {
-            return &app->embeds[i];
+        if (!app->embeds[i].running) {
+            continue;
+        }
+        for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
+            if (app->embeds[i].win[j].window == w) {
+                return &app->embeds[i].win[j];
+            }
         }
     }
     return NULL;
+}
+
+/** @brief The window this application knows as @p id, or NULL. */
+static struct embed_win *
+embed_win_of_id(struct desktop_embed *slot, uint32_t id)
+{
+    int j;
+
+    for (j = 0; slot != NULL && j < TIKU_TRK_EMBED_WINDOWS; j++) {
+        if (slot->win[j].window != NULL && slot->win[j].id == id) {
+            return &slot->win[j];
+        }
+    }
+    return NULL;
+}
+
+/** @brief How many windows this application still holds. */
+static int
+embed_window_count(const struct desktop_embed *slot)
+{
+    int j, n = 0;
+
+    for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
+        if (slot->win[j].window != NULL) {
+            n++;
+        }
+    }
+    return n;
 }
 
 static void embed_stop(struct desktop_embed *slot);
@@ -1241,43 +1286,88 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
 {
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
+    struct embed_win *ew = NULL;
     tiku_rect_t frame;
+    int j;
 
+    for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
+        if (slot->win[j].window == NULL) {
+            ew = &slot->win[j];
+            break;
+        }
+    }
+    if (ew == NULL) {
+        return 0;               /* no room: said with a 0, not a lie */
+    }
     frame.w = w + 2 * TIKU_WINDOW_BORDER;
     frame.h = h + tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
     frame.x = (app->surf->w - frame.w) / 2;
     frame.y = (app->surf->h - frame.h) / 3;
-    /* Stepped down and across per slot, so a second application does not
-     * open exactly on top of the first. */
+    /* Applications are stepped past each other; the WINDOWS of one
+     * application are set BESIDE each other instead.  A window laid
+     * over another's tab is a window that cannot be reached by the one
+     * gesture that raises it, and an application with several windows
+     * is asking for them to be worked with, not stacked. */
     frame.x += (int)(slot - app->embeds) * 24;
     frame.y += (int)(slot - app->embeds) * 20;
-    slot->window = tiku_workspace_open(app->desk, title, frame,
-                                            embed_window_draw, slot, slot);
-    if (slot->window != NULL) {
-        tiku_window_set_size_controls(slot->window, 0, 0);
+    {
+        int across = frame.w + 8;
+        int down = frame.h + 8;
+        int cols = (across > 0) ? (app->surf->w / across) : 1;
+
+        if (cols < 1) {
+            cols = 1;
+        }
+        frame.x += (j % cols) * across;
+        frame.y += (j / cols) * down;
+        /* Off the bottom is worse than over the top: a window nobody
+         * can see is a window nobody can close. */
+        if (frame.y + frame.h > app->surf->h) {
+            frame.y = app->surf->h - frame.h;
+        }
+        if (frame.x + frame.w > app->surf->w) {
+            frame.x = app->surf->w - frame.w;
+        }
+        if (frame.x < 0) {
+            frame.x = 0;
+        }
+        if (frame.y < 0) {
+            frame.y = 0;
+        }
     }
+    ew->slot = slot;
+    ew->id = slot->next_id++;
+    /* The WINDOW is the tag, not the application: a tag naming the
+     * application would find the first window and hand it back, so the
+     * second window would be the first one wearing a second name. */
+    ew->window = tiku_workspace_open(app->desk, title, frame,
+                                          embed_window_draw, ew, ew);
+    if (ew->window == NULL) {
+        return 0;
+    }
+    tiku_window_set_size_controls(ew->window, 0, 0);
     app->dirty = 1;
-    return slot->next_id++;
+    return ew->id;
 }
 
 static int
 embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
     struct desktop_embed *slot = ctx;
+    struct embed_win *ew = embed_win_of_id(slot, id);
     uint32_t *copy;
 
-    (void)id;
-    if (px == NULL || w < 1 || h < 1) {
+    if (ew == NULL || px == NULL || w < 1 || h < 1) {
         return -1;
     }
-    copy = realloc(slot->frame, 4u * (size_t)w * (size_t)h);
+    copy = realloc(ew->frame, 4u * (size_t)w * (size_t)h);
     if (copy == NULL) {
         return -1;
     }
     memcpy(copy, px, 4u * (size_t)w * (size_t)h);
-    slot->frame = copy;
-    slot->fw = w;
-    slot->fh = h;
+    ew->frame = copy;
+    ew->fw = w;
+    ew->fh = h;
     slot->app->dirty = 1;
     return 0;
 }
@@ -1285,11 +1375,15 @@ embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 static void
 embed_menu_pick(tiku_window_t *window, int command, void *context)
 {
-    struct desktop_embed *slot = context;
+    struct embed_win *ew = context;
+    struct desktop_embed *slot = (ew != NULL) ? ew->slot : NULL;
 
     (void)window;
-    if (slot->running && slot->descriptor->pick != NULL &&
-        slot->descriptor->pick(slot->state, 1, command)) {
+    /* The window that PUBLISHED the row is the window the pick belongs
+     * to; a host that said "1" here told every application with two
+     * windows that both their menus were the first one's. */
+    if (slot != NULL && slot->running && slot->descriptor->pick != NULL &&
+        slot->descriptor->pick(slot->state, ew->id, command)) {
         embed_stop(slot);
     }
 }
@@ -1298,11 +1392,10 @@ static int
 embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
     struct desktop_embed *slot = ctx;
+    struct embed_win *ew = embed_win_of_id(slot, id);
 
-    (void)id;
-    if (slot->window != NULL) {
-        tiku_window_publish_menus(slot->window, set, embed_menu_pick,
-                                       slot);
+    if (ew != NULL) {
+        tiku_window_publish_menus(ew->window, set, embed_menu_pick, ew);
     }
     return 0;
 }
@@ -1319,18 +1412,16 @@ embed_svc_place(void *ctx, uint32_t id, int role)
 {
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
+    struct embed_win *ew = embed_win_of_id(slot, id);
 
-    (void)id;
-    if (slot->window == NULL || role != TIKU_APP_PLACE_ANNOUNCE) {
+    if (ew == NULL || role != TIKU_APP_PLACE_ANNOUNCE) {
         return -1;
     }
-    slot->window->frame.x =
-        (app->surf->w - slot->window->frame.w) / 2;
+    ew->window->frame.x = (app->surf->w - ew->window->frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel
      * that announces something. */
-    slot->window->frame.y =
-        (app->surf->h - slot->window->frame.h) / 3;
-    tiku_window_set_size_controls(slot->window, 0, 0);
+    ew->window->frame.y = (app->surf->h - ew->window->frame.h) / 3;
+    tiku_window_set_size_controls(ew->window, 0, 0);
     app->dirty = 1;
     return 0;
 }
@@ -1347,14 +1438,14 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
 {
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
+    struct embed_win *ew = embed_win_of_id(slot, id);
 
-    (void)id;
-    if (slot->window == NULL || w <= 0 || h <= 0) {
+    if (ew == NULL || w <= 0 || h <= 0) {
         return -1;
     }
-    slot->window->frame.w = w + 2 * TIKU_WINDOW_BORDER;
-    slot->window->frame.h = h + tiku_window_tab_h() +
-                            2 * TIKU_WINDOW_BORDER;
+    ew->window->frame.w = w + 2 * TIKU_WINDOW_BORDER;
+    ew->window->frame.h = h + tiku_window_tab_h() +
+                          2 * TIKU_WINDOW_BORDER;
     app->dirty = 1;
     return 0;
 }
@@ -1392,17 +1483,58 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     return 1;
 }
 
+/**
+ * @brief Let go of one window of an application.
+ *
+ * @param tell nonzero when the RUNTIME took it and the application has
+ *        yet to hear so; zero when the application asked.
+ */
+static void
+embed_drop_window(struct embed_win *ew, int tell)
+{
+    struct desktop_embed *slot = (ew != NULL) ? ew->slot : NULL;
+    tiku_window_t *window;
+
+    if (slot == NULL || ew->window == NULL) {
+        return;
+    }
+    window = ew->window;
+    ew->window = NULL;          /* before the close, so nothing re-enters */
+    free(ew->frame);
+    ew->frame = NULL;
+    ew->fw = 0;
+    ew->fh = 0;
+    if (slot->app->embed_press == ew) {
+        slot->app->embed_press = NULL;
+    }
+    tiku_workspace_close(slot->app->desk, window);
+    if (tell && slot->running && slot->descriptor->closed != NULL) {
+        slot->descriptor->closed(slot->state, ew->id);
+    }
+    slot->app->dirty = 1;
+    /* An application with no windows left has nothing to be: the last
+     * window closing is the application ending, which is exactly what
+     * closing the ONE window always meant. */
+    if (embed_window_count(slot) == 0) {
+        embed_stop(slot);
+    }
+}
+
 static void
 embed_svc_close(void *ctx, uint32_t id)
 {
-    (void)ctx;
-    (void)id;
+    struct desktop_embed *slot = ctx;
+
+    /* The application asked, so it already knows: told again it would
+     * be hearing about a window it has just let go of. */
+    embed_drop_window(embed_win_of_id(slot, id), 0);
 }
 
 static void
 embed_stop(struct desktop_embed *slot)
 {
     desktop_t *app = slot->app;
+    int j;
 
     if (!slot->running) {
         return;
@@ -1412,16 +1544,41 @@ embed_stop(struct desktop_embed *slot)
         slot->descriptor->stop(slot->state);
     }
     slot->state = NULL;
-    if (slot->window != NULL) {
-        tiku_workspace_close(app->desk, slot->window);
-        slot->window = NULL;
-    }
-    free(slot->frame);
-    slot->frame = NULL;
-    if (app->embed_press == slot) {
-        app->embed_press = NULL;
+    for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
+        struct embed_win *ew = &slot->win[j];
+
+        if (ew->window != NULL) {
+            tiku_workspace_close(app->desk, ew->window);
+            ew->window = NULL;
+        }
+        free(ew->frame);
+        ew->frame = NULL;
+        if (app->embed_press == ew) {
+            app->embed_press = NULL;
+        }
     }
     app->dirty = 1;
+}
+
+/**
+ * @brief Hand @p ev to the application, saying which window it landed in.
+ *
+ * An application built before windows could be told apart hears the
+ * older call and is none the wiser, which is what lets one host carry
+ * both.
+ *
+ * @return nonzero when the application says it is done.
+ */
+static int
+embed_deliver(struct embed_win *ew, const tiku_event_t *ev)
+{
+    struct desktop_embed *slot = (ew != NULL) ? ew->slot : NULL;
+
+    if (slot == NULL || !slot->running) {
+        return 0;
+    }
+    return tiku_app_deliver_event(slot->descriptor, slot->state,
+                                       ew->id, ev);
 }
 
 /**
@@ -1486,8 +1643,18 @@ embed_open_or_raise(desktop_t *app, const tiku_app_descriptor_t *descriptor)
 
         if (slot->running && slot->descriptor->id != NULL &&
             strcmp(slot->descriptor->id, descriptor->id) == 0) {
-            if (slot->window != NULL) {
-                tiku_workspace_activate(app->desk, slot->window);
+            int j;
+
+            /* The first window it still holds: an application asked for
+             * again is being asked to come forward, and it is the one
+             * that can say which of its windows means "the application"
+             * -- so the host raises the earliest rather than guessing. */
+            for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
+                if (slot->win[j].window != NULL) {
+                    tiku_workspace_activate(app->desk,
+                                                 slot->win[j].window);
+                    break;
+                }
             }
             app->dirty = 1;
             return 1;
@@ -2586,10 +2753,10 @@ close_window(desktop_t *app, tiku_window_t *w)
         return;
     }
     {
-        struct desktop_embed *slot = embed_of_window(app, w);
+        struct embed_win *ew = embed_win_of_window(app, w);
 
-        if (slot != NULL) {
-            embed_stop(slot);
+        if (ew != NULL) {
+            embed_drop_window(ew, 1);
             return;
         }
     }
@@ -7064,19 +7231,18 @@ tracker_run(int argc, char **argv)
                     tiku_workspace_activate(app.desk, w);
                     (void)tiku_window_send(w, &ev);
                 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
-                           embed_of_window(&app, w) != NULL) {
-                    struct desktop_embed *slot = embed_of_window(&app, w);
+                           embed_win_of_window(&app, w) != NULL) {
+                    struct embed_win *ew = embed_win_of_window(&app, w);
                     tiku_event_t rev = ev;
                     tiku_rect_t rc = tiku_window_content(w);
 
                     tiku_workspace_activate(app.desk, w);
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    if (slot->descriptor->event != NULL &&
-                        slot->descriptor->event(slot->state, &rev)) {
-                        embed_stop(slot);
+                    if (embed_deliver(ew, &rev)) {
+                        embed_stop(ew->slot);
                     } else {
-                        app.embed_press = slot;
+                        app.embed_press = ew;
                     }
                     app.dirty = 1;
                 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
@@ -7400,16 +7566,15 @@ tracker_run(int argc, char **argv)
                 app.ptr_y = ev.y;
                 if (app.embed_press != NULL &&
                     app.embed_press->window != NULL) {
-                    struct desktop_embed *slot = app.embed_press;
+                    struct embed_win *ew = app.embed_press;
                     tiku_event_t rev = ev;
                     tiku_rect_t rc =
-                        tiku_window_content(slot->window);
+                        tiku_window_content(ew->window);
 
                     rev.x -= rc.x;
                     rev.y -= rc.y;
-                    if (slot->descriptor->event != NULL &&
-                        slot->descriptor->event(slot->state, &rev)) {
-                        embed_stop(slot);
+                    if (embed_deliver(ew, &rev)) {
+                        embed_stop(ew->slot);
                     }
                     app.dirty = 1;
                     break;
@@ -7615,19 +7780,18 @@ tracker_run(int argc, char **argv)
                 int dropped = tiku_trk_drag_active(&app.drag);
 
                 if (app.embed_press != NULL) {
-                    struct desktop_embed *slot = app.embed_press;
+                    struct embed_win *ew = app.embed_press;
 
                     app.embed_press = NULL;
-                    if (slot->running && slot->window != NULL) {
+                    if (ew->slot->running && ew->window != NULL) {
                         tiku_event_t rev = ev;
                         tiku_rect_t rc =
-                            tiku_window_content(slot->window);
+                            tiku_window_content(ew->window);
 
                         rev.x -= rc.x;
                         rev.y -= rc.y;
-                        if (slot->descriptor->event != NULL &&
-                            slot->descriptor->event(slot->state, &rev)) {
-                            embed_stop(slot);
+                        if (embed_deliver(ew, &rev)) {
+                            embed_stop(ew->slot);
                         }
                     }
                     app.dirty = 1;
@@ -7955,25 +8119,25 @@ tracker_run(int argc, char **argv)
                     tiku_window_t *rfw =
                         tiku_workspace_focused(app.desk);
 
-                    if (embed_of_window(&app, rfw) != NULL) {
-                        struct desktop_embed *slot =
-                            embed_of_window(&app, rfw);
+                    if (embed_win_of_window(&app, rfw) != NULL) {
+                        struct embed_win *ew =
+                            embed_win_of_window(&app, rfw);
                         tiku_event_t rev = ev;
 
                         /* Closing a window is the RUNTIME's gesture, not
                          * a key the application may swallow: rule 6 gives
                          * the runtime the lifecycle, and an application
                          * that could eat Cmd-W would be unclosable from
-                         * the keyboard. */
+                         * the keyboard.  It closes THIS window, which is
+                         * the whole window when there is only one. */
                         if (key == 'w' &&
                             (ev.modifiers & TIKU_MOD_CMD)) {
-                            embed_stop(slot);
+                            embed_drop_window(ew, 1);
                             app.dirty = 1;
                             break;
                         }
-                        if (slot->descriptor->event != NULL &&
-                            slot->descriptor->event(slot->state, &rev)) {
-                            embed_stop(slot);
+                        if (embed_deliver(ew, &rev)) {
+                            embed_stop(ew->slot);
                         }
                         app.dirty = 1;
                         break;
