@@ -1,0 +1,28 @@
+# shell: desktop
+# The thesis, in one window: a board ships NO interface code.  It says
+# in a few lines what it has and which PLACE each control shows or
+# changes, and the desktop is the program that draws it -- with the
+# same controls, the same theme and the same narration as everything
+# else here, because it IS everything else here.
+wait 12
+note the description opens as a panel, titled what it called itself
+click-row 3
+wait 3
+click-row 3
+wait 12
+expect-title Board one
+note the places are read, so the panel shows what IS rather than what
+note somebody typed into a mock-up: the name field carries the board's
+expect-narrate workshop
+note and the gauge reads the temperature the board wrote down
+expect-narrate gauge
+note a row this build has never heard of is COUNTED and said out loud,
+note not silently dropped: a panel from a newer device is short
+expect-narrate does not know
+note working the switch WRITES to the place the board named -- which is
+note the whole of the interface
+expect-file-has /tmp/trk_board/led 0
+click 480 272
+wait 12
+expect-file-has /tmp/trk_board/led 1
+quit

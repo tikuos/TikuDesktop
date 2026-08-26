@@ -77,6 +77,7 @@
 #include "tiku_trk_about_window.h"
 #include "tiku_remote.h"
 #include "tiku_msg.h"
+#include "tiku_form.h"
 #include "tiku_demo_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
@@ -200,6 +201,18 @@ typedef struct desktop {
         int                   session;  /* remote: which session          */
         uint32_t              window;   /* the window that asked          */
     } pending_pick;
+    /*
+     * A panel a DEVICE described.  Not a window class of its own: the
+     * form says what controls there are and which places they show, and
+     * everything else here is the shell doing what it already does --
+     * reading a path, writing a path, drawing controls.
+     */
+    struct {
+        tiku_form_t      form;
+        tiku_window_t   *window;
+        char             path[TIKU_PATH_MAX];
+        int              unknown;   /* rows this build did not know */
+    } device_panel;
     /* Where the runner is, for starting an installed application in a
      * process of its own. */
     char                 runner[TIKU_PATH_MAX];
@@ -1928,6 +1941,147 @@ handler_for(desktop_t *app, const tiku_model_t *model)
  * octet-stream, was told nothing does, and said so -- while the file
  * sitting there was a program the shell could have started.
  */
+/** @brief Read every bound place, so the panel shows what IS. */
+static void
+panel_refresh(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < app->device_panel.form.nrow; i++) {
+        tiku_form_row_t *row = &app->device_panel.form.row[i];
+
+        if (row->bind[0] == '\0' || row->kind == TIKU_FORM_BUTTON) {
+            continue;
+        }
+        if (tiku_backend_text(app->backend, row->bind, row->value,
+                              sizeof row->value)) {
+            /* Trailing blanks are how a device ends a line, not part of
+             * what it said. */
+            size_t n = strlen(row->value);
+
+            while (n > 0u && (row->value[n - 1u] == '\n' ||
+                              row->value[n - 1u] == '\r' ||
+                              row->value[n - 1u] == ' ')) {
+                row->value[--n] = '\0';
+            }
+            row->known = 1;
+        } else {
+            row->known = 0;     /* the place went quiet: say so, do not
+                                 * keep showing what it last said */
+        }
+    }
+}
+
+static void
+panel_draw(tiku_window_t *window, tiku_surface_t *surface,
+           tiku_rect_t content, void *context)
+{
+    desktop_t *app = context;
+
+    (void)window;
+    tiku_fill(surface, content, TIKU_C_PANEL);
+    tiku_form_draw(&app->device_panel.form, surface, content);
+    if (app->device_panel.unknown > 0) {
+        /* Said out loud rather than hidden: a panel from a device this
+         * build is older than has rows it cannot draw, and a person
+         * looking at a short panel deserves to know it is short. */
+        const tiku_font_t *f = tiku_font_plain();
+        char note[80];
+
+        snprintf(note, sizeof note, "%d row(s) this build does not know",
+                 app->device_panel.unknown);
+        tiku_text(surface, f, content.x + 8,
+                       content.y + content.h - 6, note,
+                       tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
+    }
+}
+
+static int
+panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
+{
+    desktop_t *app = context;
+    tiku_rect_t content = tiku_window_content(window);
+    int row;
+
+    if (event->type != TIKU_EVENT_POINTER_DOWN) {
+        return 0;
+    }
+    row = tiku_form_at(&app->device_panel.form, content, event->x, event->y);
+    if (row < 0) {
+        return 0;
+    }
+    {
+        const char *write = tiku_form_press(&app->device_panel.form, row);
+
+        if (write != NULL) {
+            /*
+             * Working a control WRITES to the place it named.  That is
+             * the whole of the interface: the device published where
+             * its switch lives, and the desktop puts a value there.
+             */
+            char err[160];
+            const char *bind = app->device_panel.form.row[row].bind;
+
+            err[0] = '\0';
+            if (app->backend != NULL && app->backend->ops != NULL &&
+                app->backend->ops->write != NULL) {
+                (void)app->backend->ops->write(app->backend, bind, write,
+                                               strlen(write), err,
+                                               sizeof err);
+            }
+            panel_refresh(app);
+            app->dirty = 1;
+        }
+    }
+    return 1;
+}
+
+/**
+ * @brief Open the panel a file DESCRIBES.
+ *
+ * The file is read through the namespace like anything else, so a
+ * description sitting on a board reached over a serial line opens the
+ * same way as one in a folder here.
+ */
+static int
+open_described_panel(desktop_t *app, const tiku_model_t *model)
+{
+    char text[4096];
+    tiku_rect_t frame;
+    int rows;
+
+    if (!tiku_backend_text(app->backend, model->path, text, sizeof text)) {
+        return 0;
+    }
+    rows = tiku_form_parse(&app->device_panel.form, text,
+                           &app->device_panel.unknown);
+    if (rows == 0 && app->device_panel.unknown == 0) {
+        return 0;               /* not a panel after all */
+    }
+    snprintf(app->device_panel.path, sizeof app->device_panel.path, "%s",
+             model->path);
+    panel_refresh(app);
+    frame.w = 320;
+    frame.h = tiku_form_height(&app->device_panel.form) +
+              tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER + 14;
+    frame.x = (app->surf->w - frame.w) / 2;
+    frame.y = (app->surf->h - frame.h) / 3;
+    if (app->device_panel.window != NULL &&
+        app->device_panel.window->open) {
+        tiku_workspace_close(app->desk, app->device_panel.window);
+    }
+    app->device_panel.window = tiku_workspace_open(app->desk,
+        app->device_panel.form.title[0] != '\0'
+            ? app->device_panel.form.title : model->name,
+        frame, panel_draw, app, &app->device_panel);
+    if (app->device_panel.window != NULL) {
+        tiku_window_set_handlers(app->device_panel.window, panel_event,
+                                 NULL, NULL);
+    }
+    app->dirty = 1;
+    return 1;
+}
+
 static int
 open_one(desktop_t *app, const tiku_model_t *model)
 {
@@ -1936,6 +2090,14 @@ open_one(desktop_t *app, const tiku_model_t *model)
 
     if (model == NULL) {
         return 0;
+    }
+    if (model->name[0] != '\0') {
+        const char *dot = strrchr(model->name, '.');
+
+        if (dot != NULL && strcmp(dot, ".panel") == 0 &&
+            open_described_panel(app, model)) {
+            return 1;
+        }
     }
     if (tiku_trk_launch_self(model, &itself)) {
         /* No documents: it is being started, not being given something
@@ -6871,6 +7033,13 @@ tracker_run(int argc, char **argv)
                 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            w == tiku_trk_panel_window_handle(
                                     &app.file_panel)) {
+                    (void)tiku_window_send(w, &ev);
+                } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
+                           w == app.device_panel.window) {
+                    /* A panel a device described: its controls are the
+                     * shell's own, so its clicks come here like any
+                     * other window's. */
+                    tiku_workspace_activate(app.desk, w);
                     (void)tiku_window_send(w, &ev);
                 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
                            embed_of_window(&app, w) != NULL) {
