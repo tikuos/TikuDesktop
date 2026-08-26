@@ -87,6 +87,7 @@ static void
 buttons(tiku_trk_open_with_window_t *c, tiku_rect_t content,
         tiku_rect_t *open_b, tiku_rect_t *prefer_b)
 {
+    (void)c;
     *open_b = (tiku_rect_t){ content.x + content.w - 70,
                                   content.y + content.h - 30, 60, 22 };
     *prefer_b = (tiku_rect_t){ content.x + content.w - 260,

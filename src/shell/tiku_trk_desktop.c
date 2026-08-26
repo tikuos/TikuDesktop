@@ -1629,6 +1629,27 @@ remote_hear(desktop_t *app)
     }
 }
 
+/**
+ * @brief Forget an ask whose panel is no longer asking it.
+ *
+ * The panel tells its caller nothing on cancel -- that is its contract,
+ * and the application is owed no answer.  But the SHELL had written the
+ * ask down, and a note that outlives the question refuses every later
+ * one: after a single cancelled panel, no application could ever ask
+ * again.  The panel's target says whose question it is holding; the
+ * moment that is not ours -- closed, or re-purposed by one of the
+ * shell's own five askers -- the ask is over.
+ */
+static void
+pick_sweep(desktop_t *app)
+{
+    if (app->pending_pick.kind != 0 &&
+        app->file_panel.target != &app->pending_pick) {
+        app->pending_pick.kind = 0;
+        app->pending_pick.slot = NULL;
+    }
+}
+
 /** @brief Close the windows of sessions that died since the last poll. */
 static void
 remote_sweep(desktop_t *app)
@@ -6098,6 +6119,7 @@ tracker_run(int argc, char **argv)
         }
         remote_reconcile(&app);
         remote_hear(&app);
+        pick_sweep(&app);
         remote_sweep(&app);
         sync_folder_preferences(&app);
         sync_addons(&app, 0);

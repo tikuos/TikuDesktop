@@ -106,6 +106,14 @@ int main(void){
          tiku_ui_text_spans(s, tiku_font_plain(), 10, 30,
                             "10 PRINT \"hi\"", sp, nsp)); }
 
+    /* The group box: no command of its own, so it crosses as the lines
+     * it is made of -- the list_header precedent -- and must replay to
+     * the byte like everything else. */
+    RT("group",
+       tiku_fill(s, (tiku_rect_t){0, 0, W, H}, TIKU_C_PANEL);
+       (void)tiku_ui_group(s, (tiku_rect_t){10, 10, 200, 90},
+                                "Sensors"));
+
     /* A picture: a bitmap with its own mask, which used to be the one
      * thing a window could only send as pixels. */
     { uint32_t art[16 * 16];

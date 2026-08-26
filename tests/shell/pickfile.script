@@ -27,6 +27,19 @@ menu-pick Open…
 wait 30
 note the SHELL's panel, over the namespace the shell already holds
 expect-title TikuTracker: Open
+note a cancelled panel answers nothing -- and the shell FORGETS the
+note ask.  It did not: the note outlived the question, and one Escape
+note here refused every application's every ask from then on
+key Escape
+wait 15
+expect-no-title TikuTracker: Open
+click-window Edit
+wait 4
+click 60 8
+wait 6
+menu-pick Open…
+wait 30
+expect-title TikuTracker: Open
 note picking the program and pressing Open answers the application
 click 400 230
 wait 4

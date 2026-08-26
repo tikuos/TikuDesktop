@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_dl.h"
 #include "tiku_list.h"
 
 static int fails;
@@ -288,6 +289,40 @@ main(void)
                                   NULL) == -1 &&
               tiku_list_chosen(&l) == 2,
               "and the spelling goes on from there");
+    }
+
+    printf("\nthe simple look draws the rows it holds, and says so\n");
+    {
+        /* The one drawing convenience the widget offers: plain named
+         * rows through the kit's row painter -- so each crosses the
+         * wire as the row it is, and a reader is told its name and
+         * whether it is picked.  Proven from the wire, because that is
+         * the claim. */
+        tiku_surface_t *s = tiku_surface_new(300, 200, TIKU_C_DOC);
+        tiku_dl_t *dl = tiku_dl_new();
+        char lines[1024];
+
+        tiku_list_init(&l, 0);
+        tiku_list_set_row_h(&l, 20);
+        (void)tiku_list_set_count(&l, 10);
+        tiku_list_select_only(&l, 1);
+        (void)tiku_list_scroll_to(&l, 0, body);
+        s->record = dl;
+        tiku_list_draw(&l, s, (tiku_rect_t){ 10, 10, 280, 80 },
+                       name_of, NULL);
+        s->record = NULL;
+        (void)tiku_dl_say(dl, lines, sizeof lines);
+        check(strstr(lines, "row \"alpha\"") != NULL &&
+              strstr(lines, "row \"beta\", selected") != NULL,
+              "a drawn list narrates its rows by name, with the picked "
+              "one saying so");
+        check(strstr(lines, "row \"epsilon\"") == NULL,
+              "and only the rows that SHOW are drawn -- four fit, so the "
+              "fifth is not on the wire pretending to be visible");
+        check(tiku_dl_misses(dl) == 0,
+              "whole on the wire: nothing about it was pixels");
+        tiku_dl_free(dl);
+        tiku_surface_free(s);
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the rows hold their places");
