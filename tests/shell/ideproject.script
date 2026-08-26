@@ -42,12 +42,13 @@ wait 8
 key Return
 wait 90
 expect-title blink.bas
-note a second file opens a window of its own
+note a second file opens a window of its own -- by MOUSE this time:
+note two clicks on its row are the same door Return is
 click-window Project
 wait 8
-key Down
+click 400 203
 wait 6
-key Return
+click 400 203
 wait 90
 expect-title util.bas
 note and the Window menu names them both

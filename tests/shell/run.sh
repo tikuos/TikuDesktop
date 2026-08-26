@@ -248,6 +248,11 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            idenew.script)
+                # NOTHING is planted: the cold start is the claim.
+                mkdir -p "$deskhome"
+                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                      "$appsdir/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
                 # mistake on a line the compiler will name.

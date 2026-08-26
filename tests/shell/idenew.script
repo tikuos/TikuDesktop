@@ -1,0 +1,83 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The cold start: the IDE is launched with NO project anywhere, and a
+# person makes one from nothing -- a project, then a file in it, then
+# words in the file -- through the shell's own panels, without touching
+# a terminal.  Every earlier proof planted a project first, which is
+# how an IDE that could not create anything went unnoticed.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick IDE
+wait 150
+expect-title Project
+note the menu offers the start: a new project, made where the person
+note says, through the shell's own Save panel
+click 71 8
+wait 8
+expect-menu New Project…|Open Project…|New File…|Add File…
+menu-pick New Project…
+wait 40
+expect-title Save
+note the panel offers the name the opener looks for; taking it as
+note offered puts the project in the home the panel shows
+click 675 413
+wait 60
+expect-no-title Save
+note the description exists now, named for the folder that holds it
+expect-file-has /tmp/trk_home/project.tiku title trk_home
+expect-file-has /tmp/trk_home/project.tiku group Sources
+note a new file, offered as BASIC because that is what boards speak
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick New File…
+wait 40
+expect-title Save
+click 675 413
+wait 90
+note the file is IN the project -- appended to the description, so the
+note lines this build does not know would have survived the edit
+expect-file-has /tmp/trk_home/project.tiku file untitled.bas
+note and its editor window is already open, ready to be typed into
+expect-title untitled.bas
+key h shift
+key i
+wait 10
+click 71 8
+wait 8
+menu-pick Save untitled.bas
+wait 60
+expect-file-has /tmp/trk_home/untitled.bas Hi
+note asking for a NEW project where one already stands means opening
+note it: a person naming an existing project is not asking to empty it
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick New Project…
+wait 40
+expect-title Save
+note the panel notices the name is taken and asks; answering Replace is
+note what hands the path over, and even THEN the project is opened
+note rather than emptied -- the description still holds its file
+click 675 413
+wait 20
+expect-alert exists
+key r
+wait 60
+expect-no-title Save
+expect-file-has /tmp/trk_home/project.tiku file untitled.bas
+note the Window menu knows the window, as it knows every editor
+click-window Project
+wait 8
+click 132 8
+wait 8
+expect-menu untitled.bas
+menu-pick untitled.bas
+wait 30
+expect-title untitled.bas
