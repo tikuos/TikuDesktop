@@ -619,6 +619,7 @@ test: all desk-apps
 	@# And that the scripted driver those scripts need is NOT in what
 	@# ships: the harness runs build/dev, the product is build/.
 	@python3 tools/check_shipping.py
+	@../TikuDesktop/basichost/check_basic_host.sh ../TikuDesktop/build/tiku-basic
 	@tests/shell/run.sh
 
 check-architecture:

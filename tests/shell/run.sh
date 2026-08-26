@@ -248,6 +248,13 @@ PYBG
                 printf 'workshop\n' > /tmp/trk_board/name
                 printf 'title Board one\ntext Sensors and switches\ngauge Temperature /tmp/trk_board/temp 0 120\ntoggle Lamp /tmp/trk_board/led\nfield Name /tmp/trk_board/name\nhologram Face /nope\n' \
                     > "$work/board.panel" ;;
+            runbas.script)
+                # A program whose effect is a FILE, because an effect is
+                # the one thing a test can hold: the run writes /led
+                # into the sandbox beside its source.
+                mkdir -p "$deskhome"
+                printf '10 PRINT "lamp goes on"\n20 VFSWRITE "/led", 7\n' \
+                    > "$deskhome/blink.bas" ;;
             pickfile.script)
                 # A program for the editor to be given, where the shell's
                 # own panel starts looking: the home it opens on.  The
@@ -475,14 +482,18 @@ PYEOF
                 env ${embed:+TIKU_EMBED_DEMO=1} ${splash:+TIKU_SPLASH=1} \
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
-                TIKU_APPS="$appsdir" "$devbin/$exe" \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$root/../TikuDesktop" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_DEMO=1} ${splash:+TIKU_SPLASH=1} \
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
-                TIKU_APPS="$appsdir" "$devbin/$exe" ${openat:-$work} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$root/../TikuDesktop" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
                 -script "$s" || fails=$((fails+1))
         fi
     done

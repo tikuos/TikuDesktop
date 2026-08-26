@@ -1,0 +1,50 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The IDE, closed end to end: the editor is handed a program through
+# the shell's panel, colours it because its name says BASIC, and RUNS
+# it -- in the interpreter a BOARD runs, the kernel's own engine
+# compiled for the host, as a child on the far end of a pipe.  The
+# program's effect lands in a real file beside its source, which is
+# the one claim a test can hold in its hand.
+wait 14
+expect-file /tmp/trk_home/blink.bas
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 30
+expect-title TikuTracker: Open
+note the program is picked in the shell's own panel
+click 400 230
+wait 4
+click 675 413
+wait 40
+expect-no-title TikuTracker: Open
+note Run is offered because the NAME said BASIC, and taking it runs
+note the program on the board's own interpreter
+click-window Edit
+wait 4
+click 60 8
+wait 6
+expect-menu Run
+menu-pick Run
+wait 120
+note the run's effect is in the sandbox beside the source: the lamp
+note file holds what the program wrote
+expect-file-has /tmp/trk_home/led 7
+note and what the program SAID is in the output pane, in the ink that
+note tells a reader these words came from the run rather than the file
+expect-pixel 233 374 607060
+note put the editor away
+click-window Edit
+wait 4
+key Escape
+wait 30
+quit
