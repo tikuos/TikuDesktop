@@ -254,8 +254,18 @@ PYBG
                 mkdir -p "$deskhome"
                 printf 'title Blinker\ngroup Sources\nfile blink.bas\n' \
                     > "$deskhome/project.tiku"
-                printf '10 PRINT "lamp"\n20 PRUNT "bad"\n30 PRINT "after"\n' \
-                    > "$deskhome/blink.bas"
+                # The mistake is DEEP in the file -- past what the
+                # window shows -- so following the message has to move
+                # the page as well as the caret.
+                {
+                    printf '10 PRINT "lamp"\n'
+                    i=20
+                    while [ $i -le 240 ]; do
+                        printf '%d REM x\n' $i
+                        i=$((i + 10))
+                    done
+                    printf '250 PRUNT "bad"\n260 PRINT "after"\n'
+                } > "$deskhome/blink.bas"
                 cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
                       "$appsdir/" ;;
             ideproject.script)

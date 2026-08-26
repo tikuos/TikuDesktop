@@ -58,18 +58,19 @@ key Down
 wait 10
 click 71 8
 wait 8
-expect-menu Go to line 20
-menu-pick Go to line 20
+expect-menu Go to line 250
+menu-pick Go to line 250
 wait 90
 note following it opened the file the message was about
 expect-title blink.bas
 note and put the caret ON that line, which the file itself can show:
-note a letter typed here lands at the head of the line the run blamed
+note a letter typed here lands at the head of the line the run blamed,
+note which is well past what the window was showing
 key x shift
 wait 10
 click 71 8
 wait 8
 menu-pick Save blink.bas
-wait 40
-expect-file-has /tmp/trk_home/blink.bas X20 PRUNT
+wait 60
+expect-file-has /tmp/trk_home/blink.bas X250 PRUNT
 expect-file-lacks /tmp/trk_home/blink.bas X10 PRINT
