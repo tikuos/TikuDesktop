@@ -50,6 +50,13 @@ wait 8
 expect-menu Beta typed 2
 menu-pick Beta typed 2
 wait 8
+note an application reaches its OWN other window over the wire too:
+note the row is picked here, the shell is asked, and Alpha comes forward
+click 60 8
+wait 8
+menu-pick Show the other one
+wait 90
+expect-title TwoAlpha
 click-window TwoAlpha
 wait 8
 click 60 8

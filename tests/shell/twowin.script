@@ -51,6 +51,19 @@ wait 8
 expect-menu Beta typed 3
 menu-pick Beta typed 3
 wait 6
+note an application can reach its OWN other window: the row is
+note picked in the window in front, and the OTHER one comes forward --
+note which is what a Window menu is, in the smallest form there is
+click 60 8
+wait 8
+menu-pick Show the other one
+wait 20
+expect-title TwoAlpha
+note and back, by hand, so what follows is asked of the window it was
+note always asked of
+click-window TwoBeta
+wait 8
+expect-title TwoBeta
 note closing one window closes one window
 key w ctrl
 wait 12

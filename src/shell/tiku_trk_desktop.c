@@ -1520,6 +1520,21 @@ embed_drop_window(struct embed_win *ew, int tell)
     }
 }
 
+/** @brief Bring one of this application's windows to the front. */
+static int
+embed_svc_raise(void *ctx, uint32_t id)
+{
+    struct desktop_embed *slot = ctx;
+    struct embed_win *ew = embed_win_of_id(slot, id);
+
+    if (ew == NULL) {
+        return -1;
+    }
+    tiku_workspace_activate(slot->app->desk, ew->window);
+    slot->app->dirty = 1;
+    return 0;
+}
+
 static void
 embed_svc_close(void *ctx, uint32_t id)
 {
@@ -1616,6 +1631,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.place = embed_svc_place;
     slot->services.resize = embed_svc_resize;
     slot->services.pick = embed_svc_pick;
+    slot->services.raise_window = embed_svc_raise;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
@@ -1772,6 +1788,11 @@ remote_reconcile(desktop_t *app)
                 tiku_window_publish_menus(rw->window, &rw->menus,
                                                remote_menu_pick, app);
                 rw->menus_fresh = 0;
+                app->dirty = 1;
+            }
+            if (rw->window != NULL && rw->wants_front) {
+                tiku_workspace_activate(app->desk, rw->window);
+                rw->wants_front = 0;
                 app->dirty = 1;
             }
             /* A row the application gave back: the window goes with it.
