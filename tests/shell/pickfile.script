@@ -1,0 +1,48 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The whole road, end to end: an application asks the SHELL for a file,
+# the person picks one in the shell's own panel, and the application is
+# told -- some frames later, over the same session its window rides on.
+#
+# The editor never learns to walk a filesystem and never draws a panel.
+# And because the name it is handed ends in .bas, the document arrives
+# coloured: the language is read from the name the shell gave it.
+wait 14
+note the fixture really planted the program the panel will offer, so a
+note missing one reads as a missing FILE rather than a broken road
+expect-file /tmp/trk_home/hello.bas
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+note the editor offers Open only because this host can ask for one
+click 60 8
+wait 6
+expect-menu Open…
+menu-pick Open…
+wait 30
+note the SHELL's panel, over the namespace the shell already holds
+expect-title TikuTracker: Open
+note picking the program and pressing Open answers the application
+click 400 230
+wait 4
+click 675 413
+wait 40
+note the panel is gone and the editor is showing what it was handed
+expect-no-title TikuTracker: Open
+expect-title Edit
+note and it arrived COLOURED, because .bas said which language it is:
+note the line number receded, the statement in the reserved-word ink
+expect-pixel 235 122 7f7f7f
+expect-pixel 276 118 0000b0
+note put the editor away rather than leaving it standing
+click-window Edit
+wait 6
+key Escape
+wait 20
+expect-no-title Edit
+quit

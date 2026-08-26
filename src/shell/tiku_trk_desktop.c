@@ -76,6 +76,7 @@
 #include "tiku_trk_find_window.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_remote.h"
+#include "tiku_msg.h"
 #include "tiku_demo_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
@@ -187,6 +188,18 @@ typedef struct desktop {
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_window_t  *remote_press;
     struct desktop_embed *embed_press;  /* the slot holding a press */
+    /*
+     * The application the file panel is up for, if it is up for one.
+     * The panel carries only an opaque (target, command) pair, and the
+     * rest of an ask lives here beside pending_query and info_relink --
+     * which is where every other ask's remainder already lives.
+     */
+    struct {
+        int                   kind;     /* 0 nobody, 1 embedded, 2 remote */
+        struct desktop_embed *slot;     /* embedded: which one            */
+        int                   session;  /* remote: which session          */
+        uint32_t              window;   /* the window that asked          */
+    } pending_pick;
     /* Where the runner is, for starting an installed application in a
      * process of its own. */
     char                 runner[TIKU_PATH_MAX];
@@ -1333,6 +1346,39 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
     return 0;
 }
 
+/**
+ * @brief An application asks for the file panel; the shell puts up ITS
+ *        panel and answers later.
+ *
+ * One panel, one question -- the rule the shell already keeps for its
+ * own five askers.  A second ask while one is up is refused rather than
+ * queued: two answers to one panel is what the rule exists to prevent,
+ * and an application told no can ask again.
+ */
+static int
+embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
+               const char *name)
+{
+    struct desktop_embed *slot = ctx;
+    desktop_t *app = slot->app;
+
+    if (app->pending_pick.kind != 0) {
+        return 0;
+    }
+    app->pending_pick.kind = 1;
+    app->pending_pick.slot = slot;
+    app->pending_pick.window = id;
+    if (mode == TIKU_APP_PICK_SAVE) {
+        tiku_trk_panel_window_open_save(&app->file_panel,
+            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
+    } else {
+        tiku_trk_panel_window_open_file(&app->file_panel,
+            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start);
+    }
+    app->dirty = 1;
+    return 1;
+}
+
 static void
 embed_svc_close(void *ctx, uint32_t id)
 {
@@ -1399,6 +1445,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.close = embed_svc_close;
     slot->services.place = embed_svc_place;
     slot->services.resize = embed_svc_resize;
+    slot->services.pick = embed_svc_pick;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
@@ -1521,6 +1568,50 @@ remote_reconcile(desktop_t *app)
         if (!s->used && s->window != NULL) {
             tiku_workspace_close(app->desk, s->window);
             s->window = NULL;
+        }
+    }
+}
+
+/**
+ * @brief Take what each session has said, and act on what it asked for.
+ *
+ * The upward message road existed and nothing drained it: a session
+ * could say things into an eight-deep ring for ever and the shell would
+ * never look.  The first thing worth saying is "let the person pick a
+ * file", so this is where it is heard.
+ */
+static void
+remote_hear(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        tiku_msg_t *m;
+
+        while ((m = tiku_remote_said(&app->remote, i)) != NULL) {
+            if (tiku_msg_what(m) == TIKU_MSG_PICK &&
+                app->pending_pick.kind == 0) {
+                int32_t window = 0, mode = TIKU_APP_PICK_OPEN;
+                const char *start = tiku_msg_find_string(m, "start", 0);
+                const char *name = tiku_msg_find_string(m, "name", 0);
+
+                (void)tiku_msg_find_int32(m, "window", 0, &window);
+                (void)tiku_msg_find_int32(m, "mode", 0, &mode);
+                app->pending_pick.kind = 2;
+                app->pending_pick.session = i;
+                app->pending_pick.slot = NULL;
+                app->pending_pick.window = (uint32_t)window;
+                if (mode == TIKU_APP_PICK_SAVE) {
+                    tiku_trk_panel_window_open_save(&app->file_panel,
+                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK,
+                        start, name);
+                } else {
+                    tiku_trk_panel_window_open_file(&app->file_panel,
+                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start);
+                }
+                app->dirty = 1;
+            }
+            tiku_msg_free(m);
         }
     }
 }
@@ -2840,6 +2931,44 @@ folder_selection(desktop_t *app, folder_t *fl,
 /*---------------------------------------------------------------------------*/
 
 /** @brief Apply the destination panel answer to its opaque folder target. */
+/**
+ * @brief Tell whoever asked what the person chose, and forget the ask.
+ *
+ * Both hosts, one function: an embedded application is called through
+ * its descriptor, a remote one is told over its own session.  The note
+ * is cleared either way, including when there is nobody left to tell --
+ * an application that went away while the panel was up must not leave
+ * the shell believing it is still asking.
+ */
+static void
+deliver_pick(desktop_t *app, const char *path)
+{
+    int kind = app->pending_pick.kind;
+    struct desktop_embed *slot = app->pending_pick.slot;
+    int session = app->pending_pick.session;
+    uint32_t window = app->pending_pick.window;
+
+    app->pending_pick.kind = 0;
+    app->pending_pick.slot = NULL;
+    if (path == NULL) {
+        return;
+    }
+    if (kind == 1 && slot != NULL && slot->running &&
+        slot->descriptor != NULL && slot->descriptor->picked != NULL) {
+        slot->descriptor->picked(slot->state, window, path);
+        app->dirty = 1;
+    } else if (kind == 2) {
+        tiku_msg_t *m = tiku_msg_new(TIKU_MSG_PICKED);
+
+        if (m != NULL) {
+            (void)tiku_msg_add_int32(m, "window", (int32_t)window);
+            (void)tiku_msg_add_string(m, "path", path);
+            (void)tiku_remote_tell(&app->remote, session, m);
+            tiku_msg_free(m);
+        }
+    }
+}
+
 static void
 fpanel_commit(void *context, void *target, int command,
               const char *destination)
@@ -2850,6 +2979,15 @@ fpanel_commit(void *context, void *target, int command,
     const char *selection[16];
     int count;
 
+    if (command == TIKU_TRK_CMD_APP_PICK) {
+        /*
+         * An application's ask, answered.  Which application is not the
+         * panel's business -- it carried an opaque target and this is
+         * where the shell reads its own note about who was asking.
+         */
+        deliver_pick(app, destination);
+        return;
+    }
     if (command == TIKU_TRK_CMD_ADD_SCOPE && destination != NULL) {
         /* The chosen folder becomes a place and the search is scoped to
          * it at once (Q-019). */
@@ -5797,6 +5935,7 @@ tracker_run(int argc, char **argv)
             (void)tiku_conduct_poll(&app.conduct);
         }
         remote_reconcile(&app);
+        remote_hear(&app);
         remote_sweep(&app);
         sync_folder_preferences(&app);
         sync_addons(&app, 0);

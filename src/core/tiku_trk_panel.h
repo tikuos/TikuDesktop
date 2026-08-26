@@ -105,6 +105,16 @@ void tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
                          unsigned flavors, const char *want,
                          tiku_backend_t *b, const char *client);
 
+/**
+ * @brief Whether @p m is a thing THIS panel may be answered with.
+ *
+ * The rule the panel already keeps for what it will accept, said out
+ * loud so the window can ask it rather than assume a folder: a panel
+ * asked for a file must not answer with the folder the file is in.
+ */
+int tiku_trk_panel_choosable(const tiku_trk_panel_t *p,
+                             const tiku_model_t *m);
+
 /** @brief The window title: "<client>: Open" / "<client>: Save" (AW-064). */
 void tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max);
 

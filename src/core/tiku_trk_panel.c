@@ -109,6 +109,12 @@ acceptable(const tiku_trk_panel_t *p, const tiku_model_t *m)
     return (p->flavors & TIKU_TRK_PANEL_FILE) != 0u;
 }
 
+int
+tiku_trk_panel_choosable(const tiku_trk_panel_t *p, const tiku_model_t *m)
+{
+    return (p != NULL) ? acceptable(p, m) : 0;
+}
+
 const char *
 tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
                             const tiku_model_t *sel, int n)

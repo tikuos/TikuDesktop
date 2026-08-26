@@ -25,6 +25,10 @@
 /* The save panel's own errand: write the Find panel's query as a file. */
 #define TIKU_TRK_CMD_SAVE_QUERY      1700
 #define TIKU_TRK_CMD_ADD_SCOPE       1701
+/* An application asked the shell to let the user pick a file.  Who
+ * asked is not a folder like the other askers, so it rides in the
+ * shell's pending_pick rather than in the panel's target. */
+#define TIKU_TRK_CMD_APP_PICK        1702
 /* The Move to / Copy to / Create link pickers: 16 destinations each
  * (CW-035).  (command - BASE) / 16 says which picker, % 16 which entry. */
 #define TIKU_TRK_CMD_RECALC_SIZE     1702

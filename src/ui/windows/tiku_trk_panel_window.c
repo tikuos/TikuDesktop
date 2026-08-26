@@ -391,11 +391,21 @@ commit(tiku_trk_panel_window_t *controller)
         return;
     }
     count = selection(controller, selected, 8);
-    if (count == 1 && tiku_model_is_container(&selected[0])) {
+    if (count == 1 &&
+        tiku_trk_panel_choosable(&controller->model, &selected[0])) {
         snprintf(destination, sizeof destination, "%s", selected[0].path);
-    } else {
+    } else if ((controller->model.flavors & TIKU_TRK_PANEL_DIR) != 0u) {
+        /* Nothing picked, and a folder is an answer: the one being
+         * shown is what the button means (AW-055). */
         snprintf(destination, sizeof destination, "%s",
                  controller->model.dir);
+    } else {
+        /*
+         * Asked for a file and given none: there is nothing to answer
+         * with, so the panel stays up rather than handing back the
+         * folder -- which the asker would take for a document.
+         */
+        return;
     }
     if (controller->commit != NULL) {
         controller->commit(controller->commit_context, controller->target,
@@ -650,6 +660,19 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
         }
     }
     reload(controller, NULL);
+}
+
+void
+tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
+    void *target, int command, const char *initial_directory)
+{
+    tiku_trk_panel_window_open(controller, target, command,
+                               initial_directory);
+    if (controller->target != NULL) {
+        /* Only what may be ANSWERED with changes; the panel, its rows
+         * and its walking are the ones the person already knows. */
+        controller->model.flavors = TIKU_TRK_PANEL_FILE;
+    }
 }
 
 void

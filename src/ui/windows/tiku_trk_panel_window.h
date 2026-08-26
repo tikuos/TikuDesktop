@@ -68,6 +68,16 @@ void tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
     void *target, int command, const char *initial_directory,
     const char *initial_name);
 
+/**
+ * @brief Open the panel to choose a FILE rather than a folder.
+ *
+ * The same panel and the same answer road; only what it may be answered
+ * with differs.  A folder is still entered by double-clicking it -- it
+ * is simply not an answer.
+ */
+void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
+    void *target, int command, const char *initial_directory);
+
 /** @brief The Replace question said replace (AW-052). */
 void tiku_trk_panel_window_confirmed(tiku_trk_panel_window_t *controller);
 
