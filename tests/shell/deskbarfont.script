@@ -12,7 +12,10 @@ menu-pick Settings
 wait 3
 menu-pick Deskbar preferences
 wait 5
-click 668 270
+note the PLUS, which is now a button a press can land on: the row used
+note to be the string "-  12 px  +" split at a written-down pixel, and
+note which half a click fell in moved with the face and the number
+click 715 270
 wait 3
 key w ctrl
 wait 3

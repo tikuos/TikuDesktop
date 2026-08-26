@@ -15,6 +15,8 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_strings.h"
+#include "tiku_layout.h"
+#include "tiku_ui.h"
 
 enum {
     ROW_SORT = 0, ROW_TRACKER, ROW_EXPANDER, ROW_EXPAND_NEW,
@@ -90,6 +92,43 @@ apply(tiku_trk_deskbar_prefs_window_t *controller)
     if (controller->dirty != NULL) { *controller->dirty = 1; }
 }
 
+/**
+ * @brief Where a stepper's two arrows and its number go, in the row at
+ *        @p y of @p content.
+ *
+ * ONE description, asked by the drawing and by the press.  It used to
+ * be neither: the row was drawn as the string "-   12 px   +" and the
+ * press was split at a written-down pixel, so which half a click landed
+ * in moved with the face AND with the number -- "8 px" and "128 px" are
+ * not the same width, and the minus of one sat where the plus of the
+ * other had been.  Part 0 is the minus, part 1 the number, part 2 the
+ * plus.
+ */
+static void
+stepper_row(tiku_layout_t *l)
+{
+    int w = tiku_ui_step_w();
+
+    tiku_layout_init(l, 1, 4, 0);
+    (void)tiku_layout_add(l, w, 0, 0);      /* minus  */
+    (void)tiku_layout_add(l, 0, 1, 40);     /* the number it changes */
+    (void)tiku_layout_add(l, w, 0, 0);      /* plus   */
+}
+
+/** @brief The run the stepper is laid along, in the row at @p y. */
+static tiku_rect_t
+stepper_rect(tiku_rect_t content, int y)
+{
+    tiku_rect_t r;
+    int h = tiku_ui_row_h();
+
+    r.x = content.x + 320;
+    r.y = y - 2;
+    r.w = 140;
+    r.h = h;
+    return r;
+}
+
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -122,9 +161,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             enabled ? TIKU_C_TEXT
                     : tiku_tint(TIKU_C_PANEL, 1.45f));
         if (row == ROW_ICON) {
-            snprintf(number, sizeof number, "-   %d px   +", s->icon_size);
+            snprintf(number, sizeof number, "%d px", s->icon_size);
         } else if (row == ROW_FONT) {
-            snprintf(number, sizeof number, "-   %d px   +", s->font_size);
+            snprintf(number, sizeof number, "%d px", s->font_size);
         } else if (row >= ROW_DOCS && row <= ROW_APPS) {
             int which = row - ROW_DOCS;
             tiku_rect_t box = { content.x + 18, y, 13, 13 };
@@ -135,14 +174,29 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                 tiku_text(surface, font, box.x + 2, box.y + 11, "x",
                                TIKU_C_TEXT);
             }
-            snprintf(number, sizeof number, "-   %d   +",
+            snprintf(number, sizeof number, "%d",
                      s->recent_count[which]);
         } else {
             number[0] = '\0';
         }
         if (number[0] != '\0') {
-            tiku_text(surface, font, content.x + 330, y + 12, number,
-                           TIKU_C_TEXT);
+            /* Two arrows a press can land ON, and the number between
+             * them -- laid from the same description the press reads. */
+            tiku_layout_t step;
+            tiku_rect_t run = stepper_rect(content, y);
+            tiku_rect_t minus, mid, plus;
+
+            stepper_row(&step);
+            minus = tiku_layout_slot(&step, run, 0);
+            mid = tiku_layout_slot(&step, run, 1);
+            plus = tiku_layout_slot(&step, run, 2);
+            tiku_ui_button(surface, minus, "-",
+                                enabled ? 0u : TIKU_S_DISABLED);
+            tiku_ui_button(surface, plus, "+",
+                                enabled ? 0u : TIKU_S_DISABLED);
+            tiku_text(surface, font, mid.x + 4, y + 12, number,
+                           enabled ? TIKU_C_TEXT
+                                   : tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
         }
     }
     {
@@ -189,17 +243,36 @@ event(tiku_window_t *window, const tiku_event_t *event,
         int *value = row_value(s, row);
 
         if (!row_enabled(controller, row)) { return 1; }
-        if (row == ROW_ICON) {
-            s->icon_size += (x >= 360) ? 8 : -8;
-        } else if (row == ROW_FONT) {
-            s->font_size += (x >= 360) ? 2 : -2;
-        } else if (row >= ROW_DOCS && row <= ROW_APPS) {
-            int which = row - ROW_DOCS;
+        if (row == ROW_ICON || row == ROW_FONT ||
+            (row >= ROW_DOCS && row <= ROW_APPS)) {
+            /*
+             * The arrows, asked for rather than recalled: part 0 is the
+             * minus and part 2 the plus, wherever the face put them.
+             * A press anywhere else in the row is not a step.
+             */
+            tiku_layout_t step;
+            tiku_rect_t run = stepper_rect((tiku_rect_t){ 0, 0, 0, 0 },
+                                           12 + row * 29);
+            int part;
 
-            if (x < 320) {
-                s->recent_enabled[which] = !s->recent_enabled[which];
+            stepper_row(&step);
+            part = tiku_layout_at(&step, run, x, y);
+            if (row == ROW_ICON) {
+                if (part == 0) { s->icon_size -= 8; }
+                if (part == 2) { s->icon_size += 8; }
+            } else if (row == ROW_FONT) {
+                if (part == 0) { s->font_size -= 2; }
+                if (part == 2) { s->font_size += 2; }
             } else {
-                s->recent_count[which] += (x >= 380) ? 1 : -1;
+                int which = row - ROW_DOCS;
+
+                if (x < 300) {
+                    s->recent_enabled[which] = !s->recent_enabled[which];
+                } else if (part == 0) {
+                    s->recent_count[which] -= 1;
+                } else if (part == 2) {
+                    s->recent_count[which] += 1;
+                }
             }
         } else if (value != NULL) {
             *value = !*value;

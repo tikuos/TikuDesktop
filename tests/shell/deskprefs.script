@@ -24,6 +24,13 @@ note tiled repeats the small picture instead, so the same point is field
 click 350 395
 wait 12
 expect-pixel 100 120 10c810
+note a press outside the row changes nothing.  It used to change the
+note laying: the rows were bounded on y alone, so a click anywhere at
+note that height -- including where nothing is drawn -- laid the
+note wallpaper out again.  The rows are asked for whole now.
+click 300 373
+wait 12
+expect-pixel 100 120 10c810
 shot /tmp/trk_deskprefs_shot.png
 wait 3
 note and the icons have a size of their own, on a stepper of two buttons

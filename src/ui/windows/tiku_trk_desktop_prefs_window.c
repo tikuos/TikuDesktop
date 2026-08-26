@@ -55,6 +55,24 @@ static int box_side(void)
  * they stay within a few pixels of the same place at every size -- and
  * handed back, so drawing and hit-testing cannot disagree about them.
  */
+/**
+ * @brief Row @p i of the laying-mode choices, in @p content's space.
+ *
+ * Written once, so the drawing and the click agree about it -- they did
+ * not: the click was bounded on y alone and accepted any x at all.
+ */
+static tiku_rect_t
+mode_row(tiku_rect_t content, int i)
+{
+    tiku_rect_t r;
+
+    r.x = content.x + PAD;
+    r.y = content.y + mode_y() + i * row_h();
+    r.w = content.w - 2 * PAD;
+    r.h = row_h();
+    return r;
+}
+
 static tiku_rect_t
 plus_rect(tiku_rect_t content)
 {
@@ -249,8 +267,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                    content.y + mode_y() - 12,
                    tiku_str("prefs.desktop.how_laid"), TIKU_C_TEXT);
     for (i = 0; i < 4; i++) {
-        int y = content.y + mode_y() + i * row_h();
-        tiku_rect_t box = { content.x + PAD + 2,
+        tiku_rect_t row = mode_row(content, i);
+        int y = row.y;
+        tiku_rect_t box = { row.x + 2,
                                  y + (row_h() - box_side()) / 2,
                                  box_side(), box_side() };
 
@@ -260,7 +279,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_fill(surface, tiku_inset(box, 3),
                            TIKU_C_TEXT);
         }
-        tiku_text(surface, font, content.x + PAD + 24,
+        tiku_text(surface, font, row.x + 24,
                        y + 4 + font->ascent, tiku_str(kModeKeys[i]),
                        v->have_bg ? TIKU_C_TEXT
                                   : tiku_tint(TIKU_C_PANEL,
@@ -321,15 +340,31 @@ event(tiku_window_t *window, const tiku_event_t *event,
         }
         return 1;
     }
-    if (y >= mode_y() && y < mode_y() + 4 * row_h()) {
-        /* Only while a picture is showing: a way of laying nothing is
-         * not a choice anybody can see the result of. */
-        if (controller->model.value.have_bg) {
-            tiku_trk_deskprefs_set_mode(&controller->model,
-                (tiku_trk_bg_mode_t)((y - mode_y()) / row_h()));
-            apply(controller);
+    {
+        /*
+         * The rows, asked for rather than recalled -- and asked for
+         * WHOLE.  The bound used to be on y alone, so a click at the far
+         * right edge of the window, hundreds of pixels from anything
+         * drawn, laid the wallpaper out again.
+         */
+        tiku_rect_t zero = { 0, 0, TIKU_TRK_DESK_PREFS_W, 0 };
+        int i;
+
+        for (i = 0; i < 4; i++) {
+            tiku_rect_t row = mode_row(zero, i);
+
+            if (x >= row.x && x < row.x + row.w &&
+                y >= row.y && y < row.y + row.h) {
+                /* Only while a picture is showing: a way of laying
+                 * nothing is not a choice anybody can see. */
+                if (controller->model.value.have_bg) {
+                    tiku_trk_deskprefs_set_mode(&controller->model,
+                        (tiku_trk_bg_mode_t)i);
+                    apply(controller);
+                }
+                return 1;
+            }
         }
-        return 1;
     }
     if (inside(minus_rect(content), event->x, event->y) ||
         inside(plus_rect(content), event->x, event->y)) {
