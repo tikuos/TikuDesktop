@@ -106,6 +106,94 @@ int main(void){
          tiku_ui_text_spans(s, tiku_font_plain(), 10, 30,
                             "10 PRINT \"hi\"", sp, nsp)); }
 
+    /* A picture: a bitmap with its own mask, which used to be the one
+     * thing a window could only send as pixels. */
+    { uint32_t art[16 * 16];
+      int k;
+
+      for (k = 0; k < 16 * 16; k++) {
+          /* A shape, not a square: the corners are left transparent so
+           * the mask has something to carry. */
+          int px = k % 16, py = k / 16;
+          int inside = (px > 2 && px < 13) || (py > 2 && py < 13);
+
+          art[k] = inside ? (0xff000000u | (uint32_t)(px * 16) << 16 |
+                             (uint32_t)(py * 16) << 8 | 0x40u)
+                          : 0u;
+      }
+      RT("picture",
+         tiku_fill(s, (tiku_rect_t){0, 0, W, H}, TIKU_C_PANEL);
+         tiku_picture(s, 20, 20, 16, 16, art)); }
+
+    printf("\na picture crosses as a picture, mask and all\n");
+    {
+        tiku_surface_t *s2 = tiku_surface_new(64, 64, TIKU_C_PANEL);
+        tiku_dl_t *dl2 = tiku_dl_new();
+        uint32_t art[8 * 8];
+        char lines[512];
+        int k;
+
+        for (k = 0; k < 8 * 8; k++) {
+            art[k] = (k == 0) ? 0u : (0xff000000u | 0x00204080u);
+        }
+        s2->record = dl2;
+        tiku_picture(s2, 4, 4, 8, 8, art);
+        s2->record = NULL;
+        check(tiku_dl_pictures(dl2) == 1 && tiku_dl_misses(dl2) == 0,
+              "a small picture is carried, not confessed");
+        check(tiku_dl_count(dl2) == 1,
+              "as ONE command -- the pixels under it are part of it, not "
+              "sixty-four more commands");
+        (void)tiku_dl_say(dl2, lines, sizeof lines);
+        check(strstr(lines, "a picture, 8 by 8") != NULL,
+              "and a reader is told there is a picture and how big it is");
+        /* The far end must draw the mask the same way: the corner pixel
+         * this list leaves transparent must stay the ground it was. */
+        {
+            tiku_surface_t *back = tiku_surface_new(64, 64, TIKU_C_PANEL);
+            unsigned char wire[8192];
+            size_t wrote = 0u;
+            tiku_dl_t *again;
+
+            check(tiku_dl_flatten(dl2, wire, sizeof wire, &wrote) &&
+                  wrote > 0u, "it flattens onto the wire");
+            again = tiku_dl_unflatten(wire, wrote, NULL);
+            check(again != NULL && tiku_dl_pictures(again) == 1,
+                  "and comes back still a picture -- a fact of the list, "
+                  "whichever end is holding it");
+            if (again != NULL) {
+                (void)tiku_dl_play(again, back);
+                tiku_dl_free(again);
+            }
+            check(tiku_peek(back, 4, 4) == TIKU_C_PANEL,
+                  "the pixel the mask left out is the ground it was, not "
+                  "a square of black around the shape");
+            check(tiku_peek(back, 5, 5) == TIKU_RGB(0x20, 0x40, 0x80),
+                  "and the pixel it carried is the colour it carried");
+            tiku_surface_free(back);
+        }
+        /*
+         * Bigger than a picture command may carry: refused, and SAID so.
+         * 100 by 100 is the size that matters -- it is 40 008 bytes,
+         * which the wire's own u16 length would take happily, so what
+         * refuses it is the cap and nothing else.
+         */
+        {
+            static uint32_t big[100 * 100];
+            tiku_dl_t *dl3 = tiku_dl_new();
+
+            s2->record = dl3;
+            tiku_picture(s2, 0, 0, 100, 100, big);
+            s2->record = NULL;
+            check(tiku_dl_pictures(dl3) == 0 && tiku_dl_misses(dl3) > 0,
+                  "a picture past the cap marks the list not-whole "
+                  "rather than crossing as a command nobody sized for");
+            tiku_dl_free(dl3);
+        }
+        tiku_dl_free(dl2);
+        tiku_surface_free(s2);
+    }
+
     printf("\nwhat a run means decides its ink, and the ink is what crosses\n");
     {
         /*
