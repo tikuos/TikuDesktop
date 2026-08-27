@@ -26,27 +26,27 @@ expect-menu Open…
 menu-pick Open…
 wait 30
 note the SHELL's panel, over the namespace the shell already holds
-expect-title TikuTracker: Open
+expect-title Open
 note a cancelled panel answers nothing -- and the shell FORGETS the
 note ask.  It did not: the note outlived the question, and one Escape
 note here refused every application's every ask from then on
 key Escape
 wait 15
-expect-no-title TikuTracker: Open
+expect-no-title Open
 click-window Edit
 wait 4
 click 60 8
 wait 6
 menu-pick Open…
 wait 30
-expect-title TikuTracker: Open
+expect-title Open
 note picking the program and pressing Open answers the application
 click 400 262
 wait 4
 click 675 413
 wait 40
 note the panel is gone and the editor is showing what it was handed
-expect-no-title TikuTracker: Open
+expect-no-title Open
 expect-title Edit
 note and it arrived COLOURED, because .bas said which language it is:
 note the line number receded, the statement in the reserved-word ink

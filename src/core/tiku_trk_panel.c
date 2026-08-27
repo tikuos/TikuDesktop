@@ -89,10 +89,11 @@ tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max)
         out[0] = '\0';
         return;
     }
-    /* The application's name and what it is asking for -- NOT the folder
-     * being shown, which is what a folder window's title is.  A panel that
-     * retitled as it browsed would stop saying whose question it is. */
-    snprintf(out, max, "%s: %s", p->client,
+    /* What is being asked, plainly: Save, or Open.  The asker's name
+     * came off the title the day the panel learned to say WHERE it is
+     * -- a title carrying both was a title too long to read, and the
+     * question is the half a person acts on. */
+    snprintf(out, max, "%s",
              (p->mode == TIKU_TRK_PANEL_SAVE) ? "Save" : "Open");
 }
 

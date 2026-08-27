@@ -23,7 +23,7 @@ click 71 8
 wait 8
 menu-pick Open Project…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 note the way UP is on the panel itself now: two clicks step into a
 note folder, and Up steps back out of it -- without it a panel that
 note opened deep was a panel a person could not leave

@@ -20,13 +20,13 @@ click 60 8
 wait 6
 menu-pick Open…
 wait 30
-expect-title TikuTracker: Open
+expect-title Open
 note the program is picked in the shell's own panel
 click 400 262
 wait 4
 click 675 413
 wait 40
-expect-no-title TikuTracker: Open
+expect-no-title Open
 note Run is offered because the NAME said BASIC, and taking it runs
 note the program on the board's own interpreter
 click-window Edit

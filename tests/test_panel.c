@@ -83,14 +83,13 @@ main(void)
               "somewhere the panel can browse");
     }
 
-    printf("\nthe title says whose question it is (AW-064)\n");
+    printf("\nthe title says what is asked (AW-064)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_SAVE, TIKU_TRK_PANEL_FILE, work,
                         b, "StyledEdit");
     tiku_trk_panel_title(&p, buf, sizeof buf);
-    check(strcmp(buf, "StyledEdit: Save") == 0, "AW-064",
-          "the application and what it is asking, not the folder shown -- "
-          "a panel that retitled as it browsed would stop saying who is "
-          "asking");
+    check(strcmp(buf, "Save") == 0, "AW-064",
+          "the question plainly, and only the question: the asker's name "
+          "made the title too long to read");
 
     printf("\nthe default button (AW-053, AW-054)\n");
     tiku_trk_panel_open(&p, TIKU_TRK_PANEL_OPEN, TIKU_TRK_PANEL_FILE, work,

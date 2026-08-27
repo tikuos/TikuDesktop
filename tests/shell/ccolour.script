@@ -25,12 +25,12 @@ click 60 8
 wait 6
 menu-pick Open…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 click 400 260
 wait 6
 click 675 413
 wait 60
-expect-no-title TikuTracker: Open
+expect-no-title Open
 click-window Edit
 wait 25
 note inside the remark: the words are what the machine ignores, however

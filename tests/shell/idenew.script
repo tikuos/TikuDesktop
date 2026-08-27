@@ -94,7 +94,7 @@ click 132 8
 wait 8
 menu-pick Open File…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 click 400 280
 wait 6
 click 675 413

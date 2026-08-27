@@ -20,12 +20,12 @@ click 60 8
 wait 6
 menu-pick Open…
 wait 30
-expect-title TikuTracker: Open
+expect-title Open
 click 400 262
 wait 4
 click 675 413
 wait 40
-expect-no-title TikuTracker: Open
+expect-no-title Open
 click-window Edit
 wait 4
 note Shift held for the H, released for the i

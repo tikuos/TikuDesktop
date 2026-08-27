@@ -21,12 +21,12 @@ click 71 8
 wait 8
 menu-pick Open Project…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 click 400 280
 wait 6
 click 675 413
 wait 60
-expect-no-title TikuTracker: Open
+expect-no-title Open
 note the row the list is standing on is the one Run offers, and it is
 note offered because its NAME says the interpreter would know it
 click-window Project

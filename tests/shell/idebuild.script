@@ -22,12 +22,12 @@ click 71 8
 wait 8
 menu-pick Open Project…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 click 400 280
 wait 6
 click 675 413
 wait 60
-expect-no-title TikuTracker: Open
+expect-no-title Open
 note the row says what the project is for, which the project itself said
 click-window Project
 wait 8

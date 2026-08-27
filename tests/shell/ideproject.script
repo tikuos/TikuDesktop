@@ -49,12 +49,12 @@ wait 8
 expect-menu Open Project…
 menu-pick Open Project…
 wait 40
-expect-title TikuTracker: Open
+expect-title Open
 click 400 280
 wait 6
 click 675 413
 wait 60
-expect-no-title TikuTracker: Open
+expect-no-title Open
 note the list travels over the group's NAME: Down from nothing lands on
 note the first FILE, because a heading is not something to open
 click-window Project

@@ -108,33 +108,45 @@ layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
 }
 
 /**
- * @brief The Up button: out of this folder into the one that holds it.
+ * @brief The FOLDER THAT HOLDS this one, worn as the list's own first
+ *        row rather than as a button.
  *
  * The one road a list of what is INSIDE a folder cannot offer on its
- * own rows -- and without it a panel that opened deep is a panel a
- * person cannot leave.
+ * own rows -- so it is given the shape of a row, above them, the way
+ * the modern desks keep the enclosing folder at the head of the list.
+ * At the root there is nothing above, and no row says so.
  */
 static tiku_rect_t
-up_button(const tiku_trk_panel_window_t *controller)
+parent_row(const tiku_trk_panel_window_t *controller)
 {
     tiku_rect_t content = tiku_window_content(controller->window);
 
     return (tiku_rect_t){ content.x + PANEL_PADDING,
                                content.y + PANEL_PADDING,
-                               34, button_h() };
+                               content.w - 2 * PANEL_PADDING,
+                               button_h() };
 }
 
-/** @brief Where the panel IS, said beside the way up. */
-static tiku_rect_t
-where_rect(const tiku_trk_panel_window_t *controller)
+/** @brief The path one rung up from @p dir, into @p out. */
+static int
+parent_of(const char *dir, char *out, size_t max)
 {
-    tiku_rect_t content = tiku_window_content(controller->window);
-    tiku_rect_t up = up_button(controller);
+    char *slash;
 
-    return (tiku_rect_t){ up.x + up.w + PANEL_PADDING,
-                               up.y,
-                               content.w - 3 * PANEL_PADDING - up.w,
-                               up.h };
+    if (strcmp(dir, "/") == 0) {
+        return 0;               /* the root holds itself */
+    }
+    snprintf(out, max, "%s", dir);
+    slash = strrchr(out, '/');
+    if (slash == NULL) {
+        return 0;
+    }
+    if (slash == out) {
+        slash[1] = '\0';
+    } else {
+        *slash = '\0';
+    }
+    return 1;
 }
 
 /** @brief The Favorites button, bottom-left, and its open list. */
@@ -314,20 +326,27 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
     {
         const tiku_font_t *pf = tiku_font_plain();
-        tiku_rect_t wr = where_rect(controller);
-        const char *dir = controller->model.dir;
-        int dw = tiku_text_width(pf, dir);
+        tiku_rect_t pr = parent_row(controller);
+        char above[TIKU_PATH_MAX];
 
-        tiku_ui_button(surface, up_button(controller), "Up", 0u);
-        /* The TAIL of a long path, because the leaf end is the half a
-         * person is navigating by. */
-        while (*dir != '\0' && dw > wr.w - 8) {
-            dir++;
-            dw = tiku_text_width(pf, dir);
+        if (parent_of(controller->model.dir, above, sizeof above)) {
+            const char *leaf = strrchr(above, '/');
+            char says[128];
+
+            snprintf(says, sizeof says, "%s",
+                     (leaf != NULL && leaf[1] != '\0') ? leaf + 1
+                                                       : above);
+            tiku_fill(surface, pr, TIKU_C_DOC);
+            (void)tiku_icon_paint(surface, "folder", pr.x + 4,
+                                      pr.y + (pr.h - 16) / 2, 16);
+            tiku_text(surface, pf, pr.x + 26,
+                           pr.y + (pr.h - pf->height) / 2 + pf->ascent,
+                           says, TIKU_C_TEXT);
+            tiku_hline(surface, pr.x, pr.y + pr.h - 1, pr.w,
+                            tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
+        } else {
+            tiku_fill(surface, pr, TIKU_C_DOC);
         }
-        tiku_text(surface, pf, wr.x + 4,
-                       wr.y + (wr.h - pf->height) / 2 + pf->ascent,
-                       dir, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     }
     tiku_ui_button(surface, favorites_button(controller), "Favorites",
                         0u);
@@ -575,9 +594,14 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
         }
         if (INSIDE(fav)) { return PANEL_HIT_FAVORITES; }
         {
-            tiku_rect_t up = up_button(controller);
+            tiku_rect_t up = parent_row(controller);
+            char above[TIKU_PATH_MAX];
 
-            if (INSIDE(up)) { return PANEL_HIT_UP; }
+            if (INSIDE(up) &&
+                parent_of(controller->model.dir, above,
+                          sizeof above)) {
+                return PANEL_HIT_UP;
+            }
         }
         if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
             tiku_rect_t nf = new_folder_button(controller);
@@ -625,19 +649,10 @@ event(tiku_window_t *window, const tiku_event_t *input,
         controller->fav_open = !controller->fav_open;
         break;
     case PANEL_HIT_UP: {
-        /* Into the folder that holds this one.  The root holds itself,
-         * which is where climbing honestly ends. */
+        /* Into the folder that holds this one. */
         char above[TIKU_PATH_MAX];
-        char *slash;
 
-        snprintf(above, sizeof above, "%s", controller->model.dir);
-        slash = strrchr(above, '/');
-        if (slash != NULL) {
-            if (slash == above) {
-                slash[1] = '\0';   /* "/" is as far up as up goes */
-            } else {
-                *slash = '\0';
-            }
+        if (parent_of(controller->model.dir, above, sizeof above)) {
             go(controller, above);
         }
         break;
