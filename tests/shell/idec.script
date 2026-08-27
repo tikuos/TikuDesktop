@@ -29,8 +29,15 @@ wait 6
 click 675 413
 wait 60
 note no Run row -- Add File… sits beside Build, and Build needs no
-note target line to be offered
+note target line to be offered.  And no About row here: that went
+note where the system keeps its own, wearing this program's name
 click-window Project
+wait 8
+click 20 8
+wait 8
+expect-menu About TikuC
+note a click on open ground puts the strip's menu away
+click 500 600
 wait 8
 click 71 8
 wait 8

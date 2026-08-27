@@ -21,9 +21,10 @@ expect-menu TikuBasic
 menu-pick TikuBasic
 wait 150
 expect-title Project
-note the application says what it is when asked: the About box stands
-note until it has been read, and Escape puts it away
-click 71 8
+note the program's About lives where the system's does: hoisted into
+note the Tiku menu, wearing the program's name, and taken OUT of the
+note menus the program published -- the way the modern desks keep it
+click 20 8
 wait 8
 expect-menu About TikuBasic
 menu-pick About TikuBasic
@@ -32,7 +33,7 @@ expect-title About TikuBasic
 note asked for again it comes FORWARD rather than doubling
 click-window Project
 wait 8
-click 71 8
+click 20 8
 wait 8
 menu-pick About TikuBasic
 wait 30

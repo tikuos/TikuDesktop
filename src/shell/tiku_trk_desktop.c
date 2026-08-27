@@ -246,6 +246,10 @@ typedef struct desktop {
     tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];
     tiku_menubar_t   gbar;
     tiku_window_t  *gbar_from;     /* whose menus the strip shows  */
+    /* The focused program's About row, hoisted into the system menu:
+     * the published command, and the label it was published under. */
+    int                  about_hoist;
+    char                 about_label[64];
     int                  gbar_open;     /* open strip menu, or -1       */
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
     int                  qdrag_on;
@@ -2029,12 +2033,45 @@ rebuild_global_bar(desktop_t *app)
     int m;
 
     tiku_menubar_init(&app->gbar);
+    /*
+     * The focused program's About, HOISTED: a program that published a
+     * row called "About <itself>" meant the one thing every program
+     * means by it, and that row belongs in the system menu beside the
+     * system's own -- not wherever the program happened to file it.
+     * The label is the protocol, which is what lets a program built
+     * yesterday take part without a word of new wire.
+     */
+    app->about_hoist = 0;
+    if (set != NULL) {
+        for (m = 0; m < set->nmenu && app->about_hoist == 0; m++) {
+            int i;
+
+            for (i = 0; i < set->menu[m].nitem; i++) {
+                if (strncmp(set->menu[m].item[i].label, "About ", 6)
+                        == 0 &&
+                    set->menu[m].item[i].level == 0) {
+                    app->about_hoist = set->menu[m].item[i].command;
+                    snprintf(app->about_label, sizeof app->about_label,
+                             "%s", set->menu[m].item[i].label);
+                    break;
+                }
+            }
+        }
+    }
     /* The system menu first, where the corner ritual lives. */
     tiku_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.about"),
-                            TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
-    tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT, MARK_ICON);
+    if (app->about_hoist != 0) {
+        (void)tiku_menu_add(&app->sysmenu, app->about_label,
+                                TIKU_TRK_CMD_APP_ABOUT, 0, 0u, 1);
+        tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_APP_ABOUT,
+                                MARK_ICON);
+    } else {
+        (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.about"),
+                                TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
+        tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT,
+                                MARK_ICON);
+    }
     (void)tiku_menu_add_separator(&app->sysmenu);
     (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.find"),
                             TIKU_TRK_CMD_FIND,
@@ -2058,6 +2095,11 @@ rebuild_global_bar(desktop_t *app)
 
             if (fi->level == 1) {
                 continue;           /* consumed with its holder below */
+            }
+            if (app->about_hoist != 0 &&
+                fi->command == app->about_hoist &&
+                strncmp(fi->label, "About ", 6) == 0) {
+                continue;           /* hoisted into the system menu */
             }
             if (fi->separator) {
                 (void)tiku_menu_add_separator(to);
@@ -2132,6 +2174,15 @@ system_invoke(desktop_t *app, int command)
         return 1;
     case TIKU_TRK_CMD_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
+        return 1;
+    case TIKU_TRK_CMD_APP_ABOUT:
+        /* The hoisted row: it looks like the system's but it belongs to
+         * the program that published it, and goes back there. */
+        if (app->about_hoist != 0 && app->gbar_from != NULL &&
+            app->gbar_from->menu_pick != NULL) {
+            app->gbar_from->menu_pick(app->gbar_from, app->about_hoist,
+                                      app->gbar_from->menu_pick_context);
+        }
         return 1;
     case TIKU_TRK_CMD_SHUTDOWN:
         /* The ellipsis is a promise: Shut down… asks before anything is
