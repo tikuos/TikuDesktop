@@ -1,0 +1,50 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The toolbar grew past Save and Run: undo and redo, dimmed when there
+# is nothing to take back, and find.  Proven by the buttons DOING what
+# they show -- the file read back after undo and redo, the find bar
+# appearing when its glass is pressed.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note a word typed, then the UNDO button takes it back in one press
+key x
+key y
+key z
+wait 6
+click 290 268
+wait 8
+click 205 268
+wait 60
+expect-file-lacks /tmp/trk_home/main.bas tailxyz
+note the REDO button puts it back
+click 318 268
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas tailxyz
+note the FIND button drops the find bar, its label showing
+click 353 268
+wait 8
+expect-pixel 198 293 000000
+quit

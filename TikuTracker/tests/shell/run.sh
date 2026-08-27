@@ -386,6 +386,12 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            idetoolbar.script)
+                mkdir -p "$deskhome"
+                printf 'title Bar\ngroup Sources\nfile main.bas\n' > "$deskhome/project.tiku"
+                printf '10 rem head\n20 rem tail\n' > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" "$appsdir/programming/" ;;
             ideundo.script)
                 mkdir -p "$deskhome"
                 printf 'title Undo\ngroup Sources\nfile main.bas\n' \

@@ -84,6 +84,9 @@
 #define TB_ICON  24
 #define TB_SAVE  (tiku_rect_t){ 8, 3, TB_ICON, TB_ICON }
 #define TB_RUN   (tiku_rect_t){ 44, 3, TB_ICON, TB_ICON }
+#define TB_UNDO  (tiku_rect_t){ 88, 3, TB_ICON, TB_ICON }
+#define TB_REDO  (tiku_rect_t){ 116, 3, TB_ICON, TB_ICON }
+#define TB_FIND  (tiku_rect_t){ 152, 3, TB_ICON, TB_ICON }
 
 #define MSG_W      420
 #define MSG_H      220
@@ -443,6 +446,56 @@ lang_of(const char *name)
 }
 
 /**
+ * @brief Draw the toolbar's own icons -- pictures, like the run arrow,
+ *        because a worded button is a second menu.
+ *
+ * Undo and redo are curved arrows, back and forward, DIMMED when there
+ * is nothing to take back or put again; find is a glass.  Drawn from
+ * the same lines the rest of the window is, so they carry no baked art.
+ */
+static void
+tb_arrow(tiku_surface_t *s, int x, int back, int on)
+{
+    tiku_rgb_t c = on ? TIKU_RGB(64, 64, 64) : TIKU_RGB(178, 178, 178);
+    int mid = 3 + TB_ICON / 2;          /* the toolbar y of the middle */
+    int hx = back ? x + 7 : x + 16;     /* the arrowhead's tip */
+    int dir = back ? 1 : -1;
+
+    /* the shaft, and a hook rising at the tail so it reads as a RETURN
+     * rather than a plain move */
+    tiku_hline(s, x + 7, mid, 10, c);
+    tiku_vline(s, back ? x + 16 : x + 7, mid - 4, 5, c);
+    tiku_hline(s, back ? x + 13 : x + 7, mid - 4, 4, c);
+    /* the arrowhead */
+    tiku_pixel(s, hx + dir, mid - 2, c);
+    tiku_pixel(s, hx + dir * 2, mid - 1, c);
+    tiku_pixel(s, hx + dir, mid + 2, c);
+    tiku_pixel(s, hx + dir * 2, mid + 1, c);
+}
+
+static void
+tb_glass(tiku_surface_t *s, int x)
+{
+    tiku_rgb_t c = TIKU_RGB(64, 64, 64);
+    int i;
+
+    /* the ring, an octagon of the lines we have (toolbar y = 3 + n) */
+    tiku_hline(s, x + 8, 3 + 6, 4, c);
+    tiku_hline(s, x + 8, 3 + 13, 4, c);
+    tiku_vline(s, x + 6, 3 + 8, 4, c);
+    tiku_vline(s, x + 13, 3 + 8, 4, c);
+    tiku_pixel(s, x + 7, 3 + 7, c);
+    tiku_pixel(s, x + 12, 3 + 7, c);
+    tiku_pixel(s, x + 7, 3 + 12, c);
+    tiku_pixel(s, x + 12, 3 + 12, c);
+    /* the handle, out of the lower right */
+    for (i = 0; i < 4; i++) {
+        tiku_pixel(s, x + 14 + i, 3 + 14 + i, c);
+        tiku_pixel(s, x + 15 + i, 3 + 14 + i, c);
+    }
+}
+
+/**
  * @brief Where the PAGE begins: below the toolbar, and below the find
  *        bar when it is open, which drops between them.
  */
@@ -544,6 +597,15 @@ edit_paint(ide_t *st, edit_t *e)
             tiku_hline(e->surface, rn.x + 4,
                             rn.y + 3 + i, 2 + half * 2, go);
         }
+    }
+    {
+        /* Undo, redo and find join the reach: the edits a hand on the
+         * mouse wants most, beside Save and Run. */
+        tb_arrow(e->surface, TB_UNDO.x, 1,
+                 tiku_textview_can_undo(&e->tv));
+        tb_arrow(e->surface, TB_REDO.x, 0,
+                 tiku_textview_can_redo(&e->tv));
+        tb_glass(e->surface, TB_FIND.x);
     }
     {
         /* A thin rule under the tools, so the bar reads as furniture
@@ -2612,6 +2674,36 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 run_file(st, e->path);
                 project_publish(st);
                 return 0;
+            }
+            {
+                /* The new tools: undo, redo, and find. */
+                tiku_rect_t u = TB_UNDO, r = TB_REDO, fb = TB_FIND;
+                int hit_u = event->x >= u.x && event->x < u.x + u.w &&
+                            event->y >= u.y && event->y < u.y + u.h;
+                int hit_r = event->x >= r.x && event->x < r.x + r.w &&
+                            event->y >= r.y && event->y < r.y + r.h;
+                int hit_f = event->x >= fb.x && event->x < fb.x + fb.w &&
+                            event->y >= fb.y && event->y < fb.y + fb.h;
+
+                if (hit_u || hit_r) {
+                    if (edit_clip(st, e, hit_u ? CMD_UNDO : CMD_REDO)) {
+                        (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+                        edit_paint(st, e);
+                        edit_publish(st, e);
+                        project_publish(st);
+                    }
+                    return 0;
+                }
+                if (hit_f) {
+                    e->finding = !e->finding;
+                    if (e->finding) {
+                        tiku_field_start(&e->find, "");
+                    } else {
+                        tiku_field_stop(&e->find);
+                    }
+                    edit_paint(st, e);
+                    return 0;
+                }
             }
             /* A press on the scrollbar's track PAGES the view toward
              * the hand -- the same gesture the panels and folders
