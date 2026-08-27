@@ -253,6 +253,16 @@ PYBG
                 mkdir -p "$deskhome"
                 cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
                       "$appsdir/" ;;
+            idec.script)
+                # A C project that names NO target: TikuC asks this
+                # machine's compiler about it anyway.
+                mkdir -p "$deskhome"
+                printf 'title Firmware\ngroup Sources\nfile bad.c\n' \
+                    > "$deskhome/project.tiku"
+                printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
+                    > "$deskhome/bad.c"
+                cp -f "$root/../TikuDesktop/build/apps/TikuC.so" \
+                      "$appsdir/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
                 # mistake on a line the compiler will name.

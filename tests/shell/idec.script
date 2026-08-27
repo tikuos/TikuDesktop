@@ -1,0 +1,57 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# TikuC: the same place to work, wearing its other name.  What differs
+# is what it puts FORWARD -- no Run row, because nothing here runs a C
+# program yet, and Build offered without being asked, because asking
+# the compiler is what this program is for.  A project that names no
+# target is asked about on this machine.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+expect-menu TikuC
+menu-pick TikuC
+wait 25
+note it announces itself under its own name
+expect-title TikuC
+wait 200
+expect-no-title TikuC
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title TikuTracker: Open
+click 400 248
+wait 6
+click 675 413
+wait 60
+note no Run row -- Add File… sits beside Build, and Build needs no
+note target line to be offered
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Add File…|Build for host|Close Project
+menu-pick Build for host
+wait 200
+expect-title Messages
+key Down
+wait 8
+key Down
+wait 10
+click 71 8
+wait 8
+expect-menu Go to line 4
+menu-pick Go to line 4
+wait 120
+expect-title bad.c
+key x shift
+wait 10
+click 71 8
+wait 8
+menu-pick Save bad.c
+wait 90
+expect-file-has /tmp/trk_home/bad.c Xreturn nope
