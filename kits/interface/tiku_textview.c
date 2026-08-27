@@ -147,8 +147,26 @@ record(tiku_textview_t *tv, int kind, int line, int col,
     top->text = dupn(text, len);
     top->len = len;
     top->coalesce = (len == 1 && text[0] != '\n');
+    top->group = tv->group_open;
     tv->undo_n++;
     tv->undo_at = tv->undo_n;
+}
+
+void
+tiku_textview_group_begin(tiku_textview_t *tv)
+{
+    if (tv != NULL) {
+        tv->group_seq++;
+        tv->group_open = tv->group_seq;
+    }
+}
+
+void
+tiku_textview_group_end(tiku_textview_t *tv)
+{
+    if (tv != NULL) {
+        tv->group_open = 0;
+    }
 }
 
 static int sel_delete(tiku_textview_t *tv);
@@ -391,7 +409,10 @@ tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
         if (c0 > len) { c0 = len; }
         if (c1 > len) { c1 = len; }
         n = (size_t)((c1 > c0) ? c1 - c0 : 0);
-        if (used + n + 2u > max) {
+        /* room for these characters, the newline this line carries only
+         * if it is NOT the last, and the terminator -- reserving a
+         * newline the last line never has would drop its final byte. */
+        if (used + n + (size_t)((line < y1) ? 1u : 0u) + 1u > max) {
             break;              /* whole characters or none of them */
         }
         memcpy(out + used, text + c0, n);
@@ -456,21 +477,28 @@ tiku_textview_undo(tiku_textview_t *tv)
     if (tv == NULL || tv->undo_at <= 0) {
         return 0;
     }
-    e = &tv->undo[tv->undo_at - 1];
-    tv->recording = 0;
-    tv->selecting = 0;
-    tiku_textview_place(tv, e->line, e->col);
-    if (e->kind == 1) {
-        int k = e->len;         /* it was inserted: take it back out */
+    {
+        int g = tv->undo[tv->undo_at - 1].group;
 
-        while (k-- > 0) {
-            tiku_textview_delete(tv);
-        }
-    } else {
-        tiku_textview_insert_text(tv, e->text);   /* it was deleted */
+        tv->recording = 0;
+        tv->selecting = 0;
+        do {
+            e = &tv->undo[tv->undo_at - 1];
+            tiku_textview_place(tv, e->line, e->col);
+            if (e->kind == 1) {
+                int k = e->len;     /* inserted: take it back out */
+
+                while (k-- > 0) {
+                    tiku_textview_delete(tv);
+                }
+            } else {
+                tiku_textview_insert_text(tv, e->text);
+            }
+            tv->undo_at--;
+        } while (g != 0 && tv->undo_at > 0 &&
+                 tv->undo[tv->undo_at - 1].group == g);
+        tv->recording = 1;
     }
-    tv->recording = 1;
-    tv->undo_at--;
     /* The run below is closed, so a new edit after an undo is its own
      * entry rather than a fold into a pre-undo one. */
     if (tv->undo_at > 0) {
@@ -487,21 +515,28 @@ tiku_textview_redo(tiku_textview_t *tv)
     if (tv == NULL || tv->undo_at >= tv->undo_n) {
         return 0;
     }
-    e = &tv->undo[tv->undo_at];
-    tv->recording = 0;
-    tv->selecting = 0;
-    tiku_textview_place(tv, e->line, e->col);
-    if (e->kind == 1) {
-        tiku_textview_insert_text(tv, e->text);
-    } else {
-        int k = e->len;
+    {
+        int g = tv->undo[tv->undo_at].group;
 
-        while (k-- > 0) {
-            tiku_textview_delete(tv);
-        }
+        tv->recording = 0;
+        tv->selecting = 0;
+        do {
+            e = &tv->undo[tv->undo_at];
+            tiku_textview_place(tv, e->line, e->col);
+            if (e->kind == 1) {
+                tiku_textview_insert_text(tv, e->text);
+            } else {
+                int k = e->len;
+
+                while (k-- > 0) {
+                    tiku_textview_delete(tv);
+                }
+            }
+            tv->undo_at++;
+        } while (g != 0 && tv->undo_at < tv->undo_n &&
+                 tv->undo[tv->undo_at].group == g);
+        tv->recording = 1;
     }
-    tv->recording = 1;
-    tv->undo_at++;
     if (tv->undo_at > 0) {
         tv->undo[tv->undo_at - 1].coalesce = 0;
     }

@@ -273,6 +273,24 @@ main(void)
     check(strcmp(tiku_textview_line(&tv, 0), "XY") == 0,
           "and undone whole, in one step, not a character at a time");
 
+    printf("\na grouped batch of edits undoes as one\n");
+    tiku_textview_set(&tv, "a\nb\nc");
+    tiku_textview_group_begin(&tv);
+    tiku_textview_select_all(&tv);
+    tiku_textview_insert_text(&tv, "X\nY\nZ");
+    tiku_textview_group_end(&tv);
+    check(strcmp(tiku_textview_line(&tv, 2), "Z") == 0,
+          "the batch replaced the whole document");
+    tiku_textview_undo(&tv);
+    check(tiku_textview_lines(&tv) == 3 &&
+          strcmp(tiku_textview_line(&tv, 0), "a") == 0 &&
+          strcmp(tiku_textview_line(&tv, 2), "c") == 0,
+          "and ONE undo took the whole batch back, not a piece of it");
+    tiku_textview_redo(&tv);
+    check(strcmp(tiku_textview_line(&tv, 0), "X") == 0 &&
+          strcmp(tiku_textview_line(&tv, 2), "Z") == 0,
+          "and one redo put the whole batch back");
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }

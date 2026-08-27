@@ -356,6 +356,27 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            iderenum.script)
+                # Numbers out of tens and a GOTO whose target must follow
+                # when they are renumbered.
+                mkdir -p "$deskhome"
+                printf 'title Renum\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '5 rem start\n7 goto 23\n23 print "hi"\n' \
+                    > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
+            idehscroll.script)
+                mkdir -p "$deskhome"
+                printf 'title Wide\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                long="aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq rrrr ssss tttt uuuu vvvv wwww xxxx yyyy"
+                printf '10 rem head\n20 print "%s Zz"\n' "$long" \
+                    > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             idefind.script)
                 mkdir -p "$deskhome"
                 printf 'title Find\ngroup Sources\nfile main.bas\n' \

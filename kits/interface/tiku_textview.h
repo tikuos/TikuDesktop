@@ -51,11 +51,14 @@ typedef struct {
         char *text;             /* the characters, '\n' between lines */
         int   len;
         int   coalesce;         /* a like edit beside it may still fold in */
+        int   group;            /* 0 solo; else a batch undone as one */
     } undo[TIKU_TEXTVIEW_UNDO];
     int undo_n;                 /* entries held (redo history is above at) */
     int undo_at;                /* the present: undo below it, redo above */
     int saved_at;               /* undo_at when the file was last saved */
     int recording;             /* 0 while undo/redo replays, so it is quiet */
+    int group_open;             /* the batch id edits join now, 0 = none */
+    int group_seq;              /* the last batch id handed out */
 } tiku_textview_t;
 
 /** @brief Start on one empty line, which is what an empty document is. */
@@ -153,6 +156,17 @@ int tiku_textview_redo(tiku_textview_t *tv);
 /** @brief Whether there is an edit to undo / a undone edit to redo. */
 int tiku_textview_can_undo(const tiku_textview_t *tv);
 int tiku_textview_can_redo(const tiku_textview_t *tv);
+
+/**
+ * @brief Bracket a batch of edits so undo takes ALL of them at once.
+ *
+ * A renumber rewrites every line; without this it would be a string of
+ * undos to walk back.  Between begin and end the edits still happen
+ * one by one -- and coalesce as usual -- but each is stamped with one
+ * batch id, and undo/redo carry the whole run of a batch together.
+ */
+void tiku_textview_group_begin(tiku_textview_t *tv);
+void tiku_textview_group_end(tiku_textview_t *tv);
 
 /** @brief Type one character at the caret. */
 void tiku_textview_insert(tiku_textview_t *tv, char ch);

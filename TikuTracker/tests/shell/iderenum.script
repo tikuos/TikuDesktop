@@ -1,0 +1,50 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Renumber rewrites a BASIC program's lines by tens -- 5,7,23 become
+# 10,20,30 -- AND rewrites every branch to follow: GOTO 23 becomes
+# GOTO 30, or renumbering would break the jump.  It is ONE journal
+# batch, so a single Undo takes the whole of it back.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note the Edit menu offers Renumber for a BASIC file, after the clipboard
+click 117 8
+wait 8
+expect-menu Undo|Redo|Cut|Copy|Paste|Select all|Renumber|
+menu-pick Renumber
+wait 20
+click 205 268
+wait 60
+note the lines are 10, 20, 30 now, and the GOTO followed its target
+expect-file-has /tmp/trk_home/main.bas 10 rem start
+expect-file-has /tmp/trk_home/main.bas 20 goto 30
+expect-file-has /tmp/trk_home/main.bas 30 print "hi"
+expect-file-lacks /tmp/trk_home/main.bas goto 23
+note ONE undo takes the whole renumber back to 5, 7, 23
+key z ctrl
+wait 10
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 7 goto 23
+expect-file-lacks /tmp/trk_home/main.bas 20 goto 30
+quit

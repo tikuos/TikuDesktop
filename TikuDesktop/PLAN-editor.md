@@ -284,12 +284,37 @@ everything below except the BASIC-only roads, which stay gated on
   sat.  Mutations by name: no wrap (the wrapped hit's replacement never
   lands, the plan's named one); no line-number jump (the text "40" is
   taken instead of the line).
-- **P7 — renumber (BASIC only).**  A `Renumber` row: rewrite the
-  numbers by tens in file order AND rewrite every GOTO/GOSUB/THEN/ELSE
-  target to follow.  No confirmation dialog — it is ONE journal entry
-  and P5's Undo is the answer.  Proving: plant `5,7,23` with `GOTO
-  23`; renumber; the file says `10,20,30` and `GOTO 30`; undo restores
-  the file.  Mutation: leave GOTO targets unrewritten.
+- **P7 — renumber (BASIC only).**  DONE 2026-08-28.  The Edit menu's
+  Renumber row (BASIC files only) gives every numbered line the next
+  ten in file order and rewrites every branch to follow -- a number
+  after GOTO / GOSUB / THEN / ELSE (the word matched case-insensitively
+  at a boundary) is remapped through the same old->new table, while a
+  number in a string or a REM is left alone.  It needed a journal
+  primitive P5 did not have: `tiku_textview_group_begin/end` bracket a
+  batch so undo and redo carry the WHOLE run of one batch together --
+  so the select-all + insert_text that replaces the program is ONE
+  Undo, which is the only guard the transform needs (no dialog).
+  Building it surfaced a latent bug: `tiku_textview_selected` reserved
+  a trailing newline the LAST line never has, so a span copied into an
+  exactly-sized buffer lost its final byte -- which is why a grouped
+  renumber first came back a character short.  Proven by `test_textview`
+  (a batch undoes and redoes as one) and `iderenum.script` (5,7,23 with
+  GOTO 23 -> 10,20,30 with GOTO 30; one Undo back to 5,7,23).  Mutations
+  by name: branches not followed (the GOTO keeps 23, the plan's named
+  one); undo not group-aware (a single Undo leaves the program gutted).
+- **P8 — the long line.**  DONE 2026-08-28.  A per-editor `scroll_x`
+  slides the whole page left so the measured caret stays inside the
+  text area on a line longer than the window; Home takes the caret to
+  column zero, whose x is zero, which pulls the slide back to nothing,
+  so the view comes home on its own.  No wrap -- the line stays one
+  line.  Every x that draws (the text, the caret, the selection ground,
+  and the click-to-column arithmetic) now subtracts `scroll_x`; the
+  scrollbar redraws over the gutter, so a long line needs no clip.
+  `idehscroll.script` proves it by the caret: at a long line's end it
+  stands near the RIGHT edge (000000 where, without the follow, the
+  caret has run off-screen and the pixel is blank), and Home puts it
+  back at the left with the right edge cleared.  Mutation: no rightward
+  follow (the end-of-line caret never appears).
 - **P8 — the long line.**  A horizontal follow: the painter takes an
   x offset that keeps the measured caret inside the page as it walks a
   line longer than the window; Home brings the view back.  No wrap
@@ -299,6 +324,13 @@ Order matters: P1/P2 are catch-up the simple editor half-knows
 already; P3 unlocks P4 and P6; P5 sits after P4 so Cut is undoable;
 P7 rides P5's journal.  Phases are small enough for the house method
 to hold whole.
+
+**All eight phases are DONE (2026-08-27..28).**  The MVP page grew a
+caret that goes everywhere and follows the pointer, a wheel, a
+scrollbar and a status line, selection, a desk-wide clipboard and an
+Edit menu, undo/redo, find with a number that is a line to go to,
+renumber, and a horizontal follow for long lines.  What §4 deliberately
+left out still stands as later arguments, not forgotten ones.
 
 ## 4. What is deliberately NOT in this plan
 

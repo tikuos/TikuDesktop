@@ -33,6 +33,7 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -126,6 +127,7 @@ enum {
 #define CMD_SELALL   16
 #define CMD_UNDO     17
 #define CMD_REDO     18
+#define CMD_RENUM    19
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -187,6 +189,7 @@ typedef struct {
     int                  drag_select;   /* a press began on the page */
     int                  finding;        /* the find bar is open */
     tiku_field_t         find;           /* what is being searched for */
+    int                  scroll_x;       /* the page slid left, for long lines */
 } edit_t;
 
 /**
@@ -466,6 +469,35 @@ edit_paint(ide_t *st, edit_t *e)
     if (e->surface == NULL) {
         return;
     }
+    {
+        /* The page follows the caret sideways on a line longer than the
+         * window: the caret's own x is measured, and the slide kept just
+         * enough that it stays inside the text area.  Home takes the
+         * caret to column zero, whose x is zero, which pulls the slide
+         * back to nothing -- so the view comes home on its own. */
+        int cy, cx, cut, caret_x;
+        const char *ct;
+        int room = (e->w - PAGE_SB) - MARGIN;
+        char head[TIKU_TEXTVIEW_LINE_MAX];
+
+        tiku_textview_caret(&e->tv, &cy, &cx);
+        ct = tiku_textview_line(&e->tv, cy);
+        cut = tiku_textview_line_len(&e->tv, cy);
+        if (cut > cx) { cut = cx; }
+        if (cut > (int)sizeof head - 1) { cut = (int)sizeof head - 1; }
+        memcpy(head, (ct != NULL) ? ct : "", (size_t)cut);
+        head[cut] = '\0';
+        caret_x = tiku_text_width(f, head);
+        if (caret_x - e->scroll_x < 0) {
+            e->scroll_x = caret_x;
+        }
+        if (room > 16 && caret_x - e->scroll_x > room - 8) {
+            e->scroll_x = caret_x - (room - 8);
+        }
+        if (e->scroll_x < 0) {
+            e->scroll_x = 0;
+        }
+    }
     /*
      * C carries a remark between lines, so the first line SHOWN cannot
      * be told apart on its own: the walk starts at the document's own
@@ -558,10 +590,10 @@ edit_paint(ide_t *st, edit_t *e)
                                       span,
                                       (int)(sizeof span / sizeof span[0]));
 
-            (void)tiku_ui_text_spans(e->surface, f, MARGIN, y + f->ascent,
+            (void)tiku_ui_text_spans(e->surface, f, MARGIN - e->scroll_x, y + f->ascent,
                                      text, span, n);
         } else {
-            tiku_text(e->surface, f, MARGIN, y + f->ascent, text,
+            tiku_text(e->surface, f, MARGIN - e->scroll_x, y + f->ascent, text,
                            TIKU_C_TEXT);
         }
     }
@@ -595,10 +627,10 @@ edit_paint(ide_t *st, edit_t *e)
                 if (c1 > len) { c1 = len; }
                 memcpy(head, text, (size_t)c0);
                 head[c0] = '\0';
-                px0 = MARGIN + tiku_text_width(f, head);
+                px0 = MARGIN - e->scroll_x + tiku_text_width(f, head);
                 memcpy(head, text, (size_t)c1);
                 head[c1] = '\0';
-                px1 = MARGIN + tiku_text_width(f, head);
+                px1 = MARGIN - e->scroll_x + tiku_text_width(f, head);
                 y = ptop + MARGIN + i * (f->height + 2);
                 selr = (tiku_rect_t){ px0, y,
                                       (px1 > px0) ? px1 - px0 : 2,
@@ -608,7 +640,7 @@ edit_paint(ide_t *st, edit_t *e)
                 }
                 tiku_fill(e->surface, selr, TIKU_C_SELECT);
                 tiku_clip_set(e->surface, selr);
-                tiku_text(e->surface, f, MARGIN, y + f->ascent, text,
+                tiku_text(e->surface, f, MARGIN - e->scroll_x, y + f->ascent, text,
                                TIKU_C_SELTEXT);
                 tiku_clip_reset(e->surface);
             }
@@ -638,7 +670,7 @@ edit_paint(ide_t *st, edit_t *e)
             memcpy(head, (text != NULL) ? text : "", (size_t)cut);
             head[cut] = '\0';
             tiku_vline(e->surface,
-                            MARGIN + tiku_text_width(f, head),
+                            MARGIN - e->scroll_x + tiku_text_width(f, head),
                             ptop + MARGIN + row * (f->height + 2),
                             f->height + 2, TIKU_C_TEXT);
         }
@@ -734,13 +766,13 @@ edit_place_from_xy(edit_t *e, int x, int y)
     text = tiku_textview_line(&e->tv, line);
     len = tiku_textview_line_len(&e->tv, line);
     col = len;
-    prevw = MARGIN;
+    prevw = MARGIN - e->scroll_x;
     for (k = 0; k <= len && k < (int)sizeof head - 1; k++) {
         int w;
 
         memcpy(head, (text != NULL) ? text : "", (size_t)k);
         head[k] = '\0';
-        w = MARGIN + tiku_text_width(f, head);
+        w = MARGIN - e->scroll_x + tiku_text_width(f, head);
         if (w >= x) {
             /* Between edge k-1 and k: the nearer edge wins. */
             col = (k > 0 && (x - prevw) > (w - x)) ? k : (k > 0 ? k - 1 : 0);
@@ -902,6 +934,164 @@ edit_find_run(edit_t *e)
     }
 }
 
+static int
+renum_is_word(int c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9');
+}
+
+/** @brief The length of a target keyword starting here, or 0. */
+static int
+renum_keyword(const char *s)
+{
+    static const char *const K[] = { "goto", "gosub", "then", "else" };
+    size_t i;
+
+    for (i = 0; i < sizeof K / sizeof K[0]; i++) {
+        int n = (int)strlen(K[i]);
+
+        if (strncasecmp(s, K[i], (size_t)n) == 0 && !renum_is_word(s[n])) {
+            return n;
+        }
+    }
+    return 0;
+}
+
+/** @brief The new number an old one maps to, or the old if none. */
+static int
+renum_map(int old, const int *olds, const int *news, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (olds[i] == old) {
+            return news[i];
+        }
+    }
+    return old;
+}
+
+/**
+ * @brief Copy @p s, rewriting a number after GOTO/GOSUB/THEN/ELSE.
+ *
+ * A jump has to follow the line it names when the numbers move, or
+ * renumbering would quietly break every branch.  Only a number that
+ * FOLLOWS one of the branch words is touched; a number sitting in a
+ * string or a REM is left as it stands.
+ */
+static void
+renum_emit(char *out, size_t *u, const char *s,
+           const int *olds, const int *news, int n)
+{
+    int prev_word = 0;
+
+    while (*s != '\0') {
+        int kw = prev_word ? 0 : renum_keyword(s);
+
+        if (kw > 0) {
+            memcpy(out + *u, s, (size_t)kw);
+            *u += (size_t)kw;
+            s += kw;
+            while (*s == ' ' || *s == '\t') {
+                out[(*u)++] = *s++;
+            }
+            if (*s >= '0' && *s <= '9') {
+                int old = 0;
+                char nb[16];
+                int nl;
+
+                while (*s >= '0' && *s <= '9') {
+                    old = old * 10 + (*s - '0');
+                    s++;
+                }
+                nl = snprintf(nb, sizeof nb, "%d",
+                              renum_map(old, olds, news, n));
+                memcpy(out + *u, nb, (size_t)nl);
+                *u += (size_t)nl;
+            }
+            prev_word = 1;
+            continue;
+        }
+        prev_word = renum_is_word((unsigned char)*s);
+        out[(*u)++] = *s++;
+    }
+}
+
+/**
+ * @brief Renumber a BASIC program by tens, branches following.
+ *
+ * Every line that WEARS a number is given the next ten; every branch to
+ * an old number is rewritten to the new one.  The whole rewrite is ONE
+ * journal batch, so a single Undo takes it all back -- which is the
+ * only thing standing in the way of a person trying it.
+ */
+static void
+renumber_basic(edit_t *e)
+{
+    int total = tiku_textview_lines(&e->tv);
+    int *olds, *news;
+    int nmap = 0, next = 10, L;
+    size_t cap = 64, used = 0;
+    char *out;
+
+    if (total <= 0) {
+        return;
+    }
+    olds = malloc((size_t)total * sizeof *olds);
+    news = malloc((size_t)total * sizeof *news);
+    for (L = 0; L < total; L++) {
+        cap += (size_t)tiku_textview_line_len(&e->tv, L) + 16u;
+    }
+    out = malloc(cap);
+    if (olds == NULL || news == NULL || out == NULL) {
+        free(olds); free(news); free(out);
+        return;
+    }
+    for (L = 0; L < total; L++) {
+        const char *t = tiku_textview_line(&e->tv, L);
+
+        if (t != NULL && t[0] >= '0' && t[0] <= '9') {
+            olds[nmap] = atoi(t);
+            news[nmap] = next;
+            nmap++;
+            next += 10;
+        }
+    }
+    for (L = 0; L < total; L++) {
+        const char *t = tiku_textview_line(&e->tv, L);
+        int d = 0;
+
+        if (t == NULL) {
+            t = "";
+        }
+        while (t[d] >= '0' && t[d] <= '9') {
+            d++;
+        }
+        if (d > 0) {
+            char nb[16];
+            int nl = snprintf(nb, sizeof nb, "%d",
+                              renum_map(atoi(t), olds, news, nmap));
+
+            memcpy(out + used, nb, (size_t)nl);
+            used += (size_t)nl;
+            renum_emit(out, &used, t + d, olds, news, nmap);
+        } else {
+            renum_emit(out, &used, t, olds, news, nmap);
+        }
+        if (L < total - 1) {
+            out[used++] = '\n';
+        }
+    }
+    out[used] = '\0';
+    tiku_textview_group_begin(&e->tv);
+    tiku_textview_select_all(&e->tv);
+    tiku_textview_insert_text(&e->tv, out);
+    tiku_textview_group_end(&e->tv);
+    (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+    free(olds); free(news); free(out);
+}
+
 static void
 edit_publish(ide_t *st, edit_t *e)
 {
@@ -950,6 +1140,15 @@ edit_publish(ide_t *st, edit_t *e)
              sizeof menus.menu[1].item[5].label, "Select all");
     menus.menu[1].item[5].command = CMD_SELALL;
     menus.menu[1].item[5].enabled = 1;
+    if (e->lang == TIKU_SYNTAX_BASIC) {
+        /* A BASIC program's lines wear their numbers, so it -- and only
+         * it -- is offered the tidy that renumbers them by tens. */
+        snprintf(menus.menu[1].item[6].label,
+                 sizeof menus.menu[1].item[6].label, "Renumber");
+        menus.menu[1].item[6].command = CMD_RENUM;
+        menus.menu[1].item[6].enabled = 1;
+        menus.menu[1].nitem = 7;
+    }
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
@@ -1916,8 +2115,6 @@ message_follow(ide_t *st)
     /* A compiler counted the lines of the file; BASIC named one. */
     at = m->numbered ? line_of_number(&e->tv, m->line) : m->line - 1;
     if (at >= 0) {
-        const tiku_font_t *f = tiku_font_plain();
-
         tiku_textview_place(&e->tv, at, 0);
         /* Placing the caret does not move the PAGE, and a caret below
          * the window is a jump that looks like nothing happening. */
@@ -2701,6 +2898,13 @@ ide_pick(void *state, uint32_t window, int command)
             (void)st->services->raise_window(st->services->ctx,
                                              st->edit[i].id);
         }
+        return 0;
+    }
+    if (e != NULL && command == CMD_RENUM) {
+        renumber_basic(e);
+        edit_paint(st, e);
+        edit_publish(st, e);
+        project_publish(st);
         return 0;
     }
     if (e != NULL && (command == CMD_CUT || command == CMD_COPY ||
