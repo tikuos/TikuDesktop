@@ -1,0 +1,73 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Find drops a bar under the toolbar; Return walks the hits and wraps,
+# and the hit becomes the SELECTION, so a character typed over it
+# replaces it.  For a BASIC file a NUMBER is a line to GO to -- not the
+# first place those digits appear as text, but the line that WEARS the
+# number -- proven by putting the same digits both places and reading
+# back which one a typed character replaced.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note the find bar drops in, its label saying a number here is a line
+key f ctrl
+wait 8
+expect-pixel 198 293 000000
+note a number goes to the LINE that WEARS it -- line 40, not the "40"
+note that sits as text on the first line -- and its number is selected
+key 4
+key 0
+wait 4
+key Return
+wait 8
+key Escape
+wait 4
+key X shift
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas X done
+expect-file-has /tmp/trk_home/main.bas say 40 here
+note a word is walked by Return, and the THIRD hit wraps to the first
+key f ctrl
+wait 8
+key h
+key e
+key r
+key e
+wait 4
+key Return
+wait 6
+key Return
+wait 6
+key Return
+wait 6
+key Escape
+wait 4
+key z
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 10 say 40 z
+expect-file-has /tmp/trk_home/main.bas 30 say here
+quit

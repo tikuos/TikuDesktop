@@ -261,15 +261,29 @@ everything below except the BASIC-only roads, which stay gated on
   letter-at-a-time undo would leave), then redo restores it.  Mutations
   by name: no coalescing (undo leaves "xy", the plan's named one); redo
   refusing (the word never comes back).
-- **P6 — find.**  Ctrl-F drops a find field under the toolbar
-  (`tiku_field`); Return finds forward from the caret, wraps, reveals,
-  and the hit becomes the SELECTION (P3 paints it, typing replaces
-  it); Escape puts the field away.  A search that is all digits and
-  matches a BASIC line number jumps to that LINE — goto-line for a
-  language whose lines wear their own numbers, no second dialog.
-  Proving: two hits of one word prove wrap; find-then-type proves the
-  selection; a digits search lands the caret (pixel).  Mutation:
-  break the wrap.
+- **P6 — find.**  DONE 2026-08-28.  Cmd-F drops a `tiku_field` bar
+  BETWEEN the toolbar and the page (the page's top became
+  `edit_page_top()`, which every geometry site now asks -- rows, the
+  caret, the selection ground, the scrollbar, the click arithmetic --
+  so the page simply sits lower while the bar is open).  While it is
+  open the bar has the keys; Return runs the find, Escape closes it.
+  A hit becomes the SELECTION (`edit_select_span` -- anchor at the
+  start, caret at the end), so P3 paints it and a character typed after
+  Escape replaces it.  `find_forward` sweeps from the caret to the end
+  and then, wrapping, from the top back to the caret, so the third
+  Return after the last hit lands on the first.  For a BASIC file an
+  ALL-DIGITS search is first a line NUMBER: the caret goes to the line
+  that WEARS the number and its digits are selected -- and only if no
+  line wears it is it looked for as text.  The bar's label says so
+  ("Find / line:").  `idefind.script` proves all of it by reading the
+  FILE after a character lands on each hit: the number jump replaces
+  the LINE numbered 40, not the "40" sitting as text on line one (the
+  caret is below both, so a text search would WRAP to the text one --
+  which is exactly what the broken-jump mutation does); the word's
+  third Return wraps to the first line, not the second where the caret
+  sat.  Mutations by name: no wrap (the wrapped hit's replacement never
+  lands, the plan's named one); no line-number jump (the text "40" is
+  taken instead of the line).
 - **P7 — renumber (BASIC only).**  A `Renumber` row: rewrite the
   numbers by tens in file order AND rewrite every GOTO/GOSUB/THEN/ELSE
   target to follow.  No confirmation dialog — it is ONE journal entry

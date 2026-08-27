@@ -48,6 +48,7 @@
 #include "tiku_splash.h"
 #include "tiku_syntax.h"
 #include "tiku_clipboard.h"
+#include "tiku_field.h"
 #include "tiku_textview.h"
 #include "tiku_ui.h"
 
@@ -75,6 +76,7 @@
 #define STRIP_H    22
 #define TOOLBAR_H  30
 #define PAGE_SB    12   /* the page's own scrollbar gutter, at the right */
+#define FIND_H     26   /* the find bar, dropped under the toolbar */
 #define MARGIN     6
 
 /* The editor toolbar's two tools, in the window's own coordinates. */
@@ -183,6 +185,8 @@ typedef struct {
     char                 path[512];
     char                 name[64];
     int                  drag_select;   /* a press began on the page */
+    int                  finding;        /* the find bar is open */
+    tiku_field_t         find;           /* what is being searched for */
 } edit_t;
 
 /**
@@ -435,14 +439,25 @@ lang_of(const char *name)
     return tiku_syntax_of_path(name);
 }
 
+/**
+ * @brief Where the PAGE begins: below the toolbar, and below the find
+ *        bar when it is open, which drops between them.
+ */
+static int
+edit_page_top(const edit_t *e)
+{
+    return TOOLBAR_H + (e->finding ? FIND_H : 0);
+}
+
 static void
 edit_paint(ide_t *st, edit_t *e)
 {
     const tiku_font_t *f = tiku_font_plain();
+    int ptop = edit_page_top(e);
     tiku_rect_t bar = { 0, 0, e->w, TOOLBAR_H };
-    tiku_rect_t page = { 0, TOOLBAR_H, e->w, e->h - STRIP_H - TOOLBAR_H };
+    tiku_rect_t page = { 0, ptop, e->w, e->h - STRIP_H - ptop };
     tiku_rect_t strip = { 0, e->h - STRIP_H, e->w, STRIP_H };
-    int rows = (e->h - STRIP_H - TOOLBAR_H - MARGIN) / (f->height + 2);
+    int rows = (e->h - STRIP_H - ptop - MARGIN) / (f->height + 2);
     tiku_syntax_state_t carry = TIKU_SYNTAX_OPEN;
     int top = tiku_textview_top(&e->tv);
     int i;
@@ -504,11 +519,35 @@ edit_paint(ide_t *st, edit_t *e)
         tiku_hline(e->surface, 0, TOOLBAR_H - 1, e->w,
                         tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     }
+    if (e->finding) {
+        /* The find bar, dropped between the toolbar and the page: a
+         * word to look for, Return to walk the hits, Escape to put it
+         * away.  For a BASIC file, a number typed here goes to that
+         * LINE -- the label says so, because the language's lines wear
+         * their numbers and "find 250" reads two ways. */
+        tiku_rect_t fbar = { 0, TOOLBAR_H, e->w, FIND_H };
+        tiku_rect_t fld;
+        const char *label = (e->lang == TIKU_SYNTAX_BASIC)
+                                ? "Find / line:" : "Find:";
+        int lw = tiku_text_width(f, label);
+
+        tiku_fill(e->surface, fbar, TIKU_C_PANEL);
+        tiku_hline(e->surface, 0, TOOLBAR_H + FIND_H - 1, e->w,
+                        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+        tiku_text(e->surface, f, MARGIN,
+                       TOOLBAR_H + (FIND_H - f->height) / 2 + f->ascent,
+                       label, TIKU_C_TEXT);
+        fld = (tiku_rect_t){ MARGIN + lw + 6, TOOLBAR_H + 3,
+                             e->w - (MARGIN + lw + 6) - MARGIN,
+                             FIND_H - 6 };
+        tiku_ui_textfield(e->surface, fld, e->find.text,
+                          e->find.caret, 0u);
+    }
     tiku_ui_sunken(e->surface, page, TIKU_C_DOC);
     for (i = 0; i < rows; i++) {
         int line = top + i;
         const char *text = tiku_textview_line(&e->tv, line);
-        int y = TOOLBAR_H + MARGIN + i * (f->height + 2);
+        int y = ptop + MARGIN + i * (f->height + 2);
 
         if (text == NULL) {
             break;
@@ -560,7 +599,7 @@ edit_paint(ide_t *st, edit_t *e)
                 memcpy(head, text, (size_t)c1);
                 head[c1] = '\0';
                 px1 = MARGIN + tiku_text_width(f, head);
-                y = TOOLBAR_H + MARGIN + i * (f->height + 2);
+                y = ptop + MARGIN + i * (f->height + 2);
                 selr = (tiku_rect_t){ px0, y,
                                       (px1 > px0) ? px1 - px0 : 2,
                                       f->height + 2 };
@@ -600,7 +639,7 @@ edit_paint(ide_t *st, edit_t *e)
             head[cut] = '\0';
             tiku_vline(e->surface,
                             MARGIN + tiku_text_width(f, head),
-                            TOOLBAR_H + MARGIN + row * (f->height + 2),
+                            ptop + MARGIN + row * (f->height + 2),
                             f->height + 2, TIKU_C_TEXT);
         }
     }
@@ -611,8 +650,8 @@ edit_paint(ide_t *st, edit_t *e)
         int total = tiku_textview_lines(&e->tv);
 
         if (total > rows && rows > 0) {
-            tiku_rect_t sb = { e->w - PAGE_SB, TOOLBAR_H, PAGE_SB,
-                               e->h - STRIP_H - TOOLBAR_H };
+            tiku_rect_t sb = { e->w - PAGE_SB, ptop, PAGE_SB,
+                               e->h - STRIP_H - ptop };
 
             tiku_ui_scrollbar(e->surface, sb,
                 (float)top / (float)(total - rows),
@@ -655,7 +694,7 @@ edit_rows(const edit_t *e)
 {
     const tiku_font_t *f = tiku_font_plain();
 
-    return (e->h - STRIP_H - TOOLBAR_H - MARGIN) / (f->height + 2);
+    return (e->h - STRIP_H - edit_page_top(e) - MARGIN) / (f->height + 2);
 }
 
 /**
@@ -674,7 +713,7 @@ edit_place_from_xy(edit_t *e, int x, int y)
     int rows = edit_rows(e);
     int top = tiku_textview_top(&e->tv);
     int nline = tiku_textview_lines(&e->tv);
-    int row = (y - TOOLBAR_H - MARGIN) / (f->height + 2);
+    int row = (y - edit_page_top(e) - MARGIN) / (f->height + 2);
     int line, len, col, k, prevw;
     const char *text;
     char head[TIKU_TEXTVIEW_LINE_MAX];
@@ -756,6 +795,110 @@ edit_clip(ide_t *st, edit_t *e, int command)
         return tiku_textview_redo(&e->tv);
     default:
         return 0;
+    }
+}
+
+/**
+ * @brief The first hit of @p q at or after (sy,sx), wrapping once.
+ *
+ * Single-line matches -- a find is one line's worth of text -- swept
+ * from the caret to the end and then, if nothing, from the top back to
+ * the caret, so the second Return after the last hit lands on the
+ * first.  @return 1 and the place, 0 for no hit.
+ */
+static int
+find_forward(const tiku_textview_t *tv, const char *q,
+             int sy, int sx, int *oy, int *ox)
+{
+    int qlen = (int)strlen(q);
+    int total = tiku_textview_lines(tv);
+    int L, i;
+
+    if (qlen == 0) {
+        return 0;
+    }
+    for (L = sy; L < total; L++) {
+        const char *t = tiku_textview_line(tv, L);
+        int ll = tiku_textview_line_len(tv, L);
+        int start = (L == sy) ? sx : 0;
+
+        for (i = start; i + qlen <= ll; i++) {
+            if (memcmp(t + i, q, (size_t)qlen) == 0) {
+                *oy = L; *ox = i; return 1;
+            }
+        }
+    }
+    for (L = 0; L <= sy && L < total; L++) {
+        const char *t = tiku_textview_line(tv, L);
+        int ll = tiku_textview_line_len(tv, L);
+        int limit = (L == sy) ? sx : ll;
+
+        for (i = 0; i + qlen <= ll && i < limit; i++) {
+            if (memcmp(t + i, q, (size_t)qlen) == 0) {
+                *oy = L; *ox = i; return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/** @brief Select the span [ (y,x0) , (y,x1) ] and bring it into view. */
+static void
+edit_select_span(edit_t *e, int y, int x0, int x1)
+{
+    tiku_textview_place(&e->tv, y, x0);
+    tiku_textview_select_none(&e->tv);
+    tiku_textview_select_begin(&e->tv);
+    tiku_textview_place(&e->tv, y, x1);
+    (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+}
+
+/**
+ * @brief Run the find field: a hit becomes the selection.
+ *
+ * For a BASIC file a search that is ALL DIGITS is first tried as a
+ * line NUMBER -- the caret goes to that line and its number is
+ * selected -- and only if no line wears it is it looked for as text.
+ * Everything else is text, found forward from the caret with a wrap,
+ * so Return walks the hits.
+ */
+static void
+edit_find_run(edit_t *e)
+{
+    const char *q = e->find.text;
+    int cy, cx, hy, hx;
+
+    if (q[0] == '\0') {
+        return;
+    }
+    if (e->lang == TIKU_SYNTAX_BASIC) {
+        int alldig = 1, i;
+
+        for (i = 0; q[i] != '\0'; i++) {
+            if (q[i] < '0' || q[i] > '9') { alldig = 0; break; }
+        }
+        if (alldig) {
+            int total = tiku_textview_lines(&e->tv);
+            int L, n = (int)strlen(q);
+
+            for (L = 0; L < total; L++) {
+                const char *t = tiku_textview_line(&e->tv, L);
+                int d = 0;
+
+                while (t[d] >= '0' && t[d] <= '9') {
+                    d++;
+                }
+                if (d == n && memcmp(t, q, (size_t)n) == 0) {
+                    edit_select_span(e, L, 0, d);
+                    return;
+                }
+            }
+            /* no line wears it: fall through and find it as text */
+        }
+    }
+    tiku_textview_caret(&e->tv, &cy, &cx);
+    if (find_forward(&e->tv, q, cy, cx, &hy, &hx)) {
+        edit_select_span(e, hy, hx, hx + (int)strlen(q));
     }
 }
 
@@ -1778,8 +1921,7 @@ message_follow(ide_t *st)
         tiku_textview_place(&e->tv, at, 0);
         /* Placing the caret does not move the PAGE, and a caret below
          * the window is a jump that looks like nothing happening. */
-        (void)tiku_textview_reveal(&e->tv,
-            (e->h - STRIP_H - TOOLBAR_H - MARGIN) / (f->height + 2));
+        (void)tiku_textview_reveal(&e->tv, edit_rows(e));
         edit_paint(st, e);
     }
     if (st->services->raise_window != NULL) {
@@ -2279,10 +2421,11 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * answer -- and moves the page WITHOUT the caret, because a
              * person looking elsewhere has not moved where they type. */
             if (event->x >= e->w - PAGE_SB &&
-                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
                 int rows = edit_rows(e);
                 int top = tiku_textview_top(&e->tv);
-                int mid = TOOLBAR_H + (e->h - STRIP_H - TOOLBAR_H) / 2;
+                int ptop = edit_page_top(e);
+                int mid = ptop + (e->h - STRIP_H - ptop) / 2;
                 int step = (rows > 1) ? rows - 1 : 1;
 
                 (void)tiku_textview_scroll_to(&e->tv,
@@ -2295,7 +2438,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * there -- a drag from here grows it, and a click that does
              * not move leaves anchor and caret together, which is none. */
             if (event->x < e->w - PAGE_SB &&
-                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
                 edit_place_from_xy(e, event->x, event->y);
                 tiku_textview_select_none(&e->tv);
                 tiku_textview_select_begin(&e->tv);
@@ -2310,7 +2453,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * pointer; a move with no such press is not ours. */
             if (e->drag_select &&
                 event->x < e->w - PAGE_SB &&
-                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
                 edit_place_from_xy(e, event->x, event->y);
                 (void)tiku_textview_reveal(&e->tv, edit_rows(e));
                 edit_paint(st, e);
@@ -2323,6 +2466,33 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         }
         if (ch == 0u) {
             ch = event->key;
+        }
+        if (e->finding) {
+            /* The find bar has the keys while it is open: Escape puts it
+             * away, Return walks the hits, the rest edit the word. */
+            if (event->key == TIKU_KEY_ESCAPE) {
+                e->finding = 0;
+                tiku_field_stop(&e->find);
+                edit_paint(st, e);
+                return 0;
+            }
+            if (event->key == TIKU_KEY_RETURN) {
+                edit_find_run(e);
+                edit_paint(st, e);
+                return 0;
+            }
+            if (event->key == TIKU_KEY_BACKSPACE) {
+                (void)tiku_field_key(&e->find, TIKU_FIELD_BACKSPACE, 0, '\0');
+            } else if (event->key == TIKU_KEY_LEFT) {
+                (void)tiku_field_key(&e->find, TIKU_FIELD_LEFT, 0, '\0');
+            } else if (event->key == TIKU_KEY_RIGHT) {
+                (void)tiku_field_key(&e->find, TIKU_FIELD_RIGHT, 0, '\0');
+            } else if (ch >= 32u && ch < 127u &&
+                       !(event->modifiers & TIKU_MOD_CMD)) {
+                (void)tiku_field_key(&e->find, TIKU_FIELD_CHAR, 0, (char)ch);
+            }
+            edit_paint(st, e);
+            return 0;
         }
         {
             int rows = edit_rows(e);
@@ -2338,6 +2508,13 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 event->key == TIKU_KEY_PAGE_UP ||
                 event->key == TIKU_KEY_PAGE_DOWN;
 
+            /* Cmd-F opens the find bar, which then has the keys. */
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'f') {
+                e->finding = 1;
+                tiku_field_start(&e->find, "");
+                edit_paint(st, e);
+                return 0;
+            }
             /* The desk's editing keys -- Cmd X/C/V/A, and Cmd-Z /
              * Cmd-Shift-Z for undo and redo -- caught before the
              * switch, so their letters are never typed. */
