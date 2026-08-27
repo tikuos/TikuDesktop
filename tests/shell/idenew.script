@@ -16,9 +16,11 @@ wait 25
 note the application arrives announcing itself: its name, over its own
 note mark, in a window that stands in front and then leaves on its own
 expect-title TikuBasic
-note and it is the PLAQUE: the artwork banded across the top in the
-note mark's own palettes, the way the big programs used to come up
-expect-pixel 320 180 edde87
+note and the banner it wears is the PERSON'S OWN: a picture put where
+note the program looks -- beside the replaced icons -- is chosen, and
+note the band wears it edge to edge
+expect-pixel 320 180 b45a28
+expect-pixel 650 180 b45a28
 wait 200
 expect-no-title TikuBasic
 expect-title Project

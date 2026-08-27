@@ -112,7 +112,7 @@ TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUIL
             $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
             $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff $(BUILD)/test_strings \
             $(BUILD)/test_msg $(BUILD)/test_metrics $(BUILD)/test_theme \
-            $(BUILD)/test_dl $(BUILD)/test_logo $(BUILD)/test_tabs $(BUILD)/test_slider $(BUILD)/test_textview $(BUILD)/test_dlcontrols $(BUILD)/test_syntax $(BUILD)/test_list $(BUILD)/test_plaque $(BUILD)/test_layout $(BUILD)/test_form \
+            $(BUILD)/test_dl $(BUILD)/test_logo $(BUILD)/test_tabs $(BUILD)/test_slider $(BUILD)/test_textview $(BUILD)/test_dlcontrols $(BUILD)/test_syntax $(BUILD)/test_list $(BUILD)/test_splashkit $(BUILD)/test_layout $(BUILD)/test_form \
             $(BUILD)/test_copybits \
             $(BUILD)/test_notify $(BUILD)/test_match \
             $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
@@ -366,8 +366,8 @@ $(BUILD)/test_layout: tests/test_layout.c | $(BUILD)
 $(BUILD)/test_list: tests/test_list.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_list.c $(DESK_LIBS) $(LDFLAGS)
 
-$(BUILD)/test_plaque: tests/test_plaque.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_plaque.c $(DESK_LIBS) $(LDFLAGS)
+$(BUILD)/test_splashkit: tests/test_splashkit.c | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tests/test_splashkit.c $(DESK_LIBS) $(LDFLAGS)
 
 $(BUILD)/test_syntax: tests/test_syntax.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ tests/test_syntax.c $(DESK_LIBS) $(LDFLAGS)
@@ -552,7 +552,7 @@ test: all desk-apps
 	@$(BUILD)/test_textview
 	@$(BUILD)/test_syntax
 	@$(BUILD)/test_list
-	@$(BUILD)/test_plaque
+	@$(BUILD)/test_splashkit
 	@$(BUILD)/test_layout
 	@$(BUILD)/test_form
 	@$(BUILD)/test_dlcontrols

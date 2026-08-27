@@ -3,7 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * test_plaque.c - the plaque holds its shape.
+ * test_splashkit.c - the splash screen holds its shape.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,14 +12,14 @@
 
 #include "tiku_font.h"
 #include "tiku_gfx.h"
-#include "tiku_plaque.h"
+#include "tiku_splash.h"
 
 static int fails;
 
 static void
 check(int cond, const char *what)
 {
-    printf("  [%s] plaque  %s\n", cond ? "PASS" : "FAIL", what);
+    printf("  [%s] splash screen  %s\n", cond ? "PASS" : "FAIL", what);
     if (!cond) {
         fails++;
     }
@@ -47,7 +47,7 @@ main(void)
 
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    tiku_plaque_paint(a, "Something", LINES, 2, "V1", "gathering…");
+    tiku_splash_paint(a, "Something", LINES, 2, "V1", "gathering…", NULL);
     /* The band: artwork, not paper.  Every row of the band's middle
      * column should have LEFT the paper colour behind. */
     for (y = 4; y < 80; y += 8) {
@@ -57,19 +57,33 @@ main(void)
           "the artwork is banded across the top, and none of it is "
           "bare paper");
     check(a->px[150 * a->w + 200] == TIKU_C_DOC,
-          "and below the band the plaque IS paper");
-    tiku_plaque_paint(b, "Something", LINES, 2, "V1", NULL);
+          "and below the band the splash screen IS paper");
+    tiku_splash_paint(b, "Something", LINES, 2, "V1", NULL, NULL);
     check(differ(a, b) > 0,
-          "a plaque still gathering says so: the status line is the "
+          "a splash screen still gathering says so: the status line is the "
           "difference between it and the finished one");
-    tiku_plaque_paint(b, "Something", LINES, 2, "V1", "gathering…");
+    tiku_splash_paint(b, "Something", LINES, 2, "V1", "gathering…", NULL);
     check(differ(a, b) == 0,
-          "and the same words paint the same plaque, so a stage can be "
+          "and the same words paint the same splash screen, so a stage can be "
           "redrawn without the picture creeping");
-    tiku_plaque_paint(b, "Something else", LINES, 2, "V1", "gathering…");
+    tiku_splash_paint(b, "Something else", LINES, 2, "V1", "gathering…", NULL);
     check(differ(a, b) > 0, "the name is on it");
+    {
+        /* The person's own banner: one loud colour, and the band wears
+         * it edge to edge instead of the sweep. */
+        tiku_surface_t *art = tiku_surface_new(2, 2,
+                                     TIKU_RGB(200, 30, 30));
+
+        tiku_splash_paint(b, "Something", LINES, 2, "V1", NULL, art);
+        check(b->px[40 * b->w + 200] == TIKU_RGB(200, 30, 30) &&
+              b->px[40 * b->w + 20] == TIKU_RGB(200, 30, 30),
+              "a banner the caller hands in IS the band, edge to edge");
+        check(b->px[150 * b->w + 200] == TIKU_C_DOC,
+              "and the field below it is still paper");
+        tiku_surface_free(art);
+    }
     tiku_surface_free(a);
     tiku_surface_free(b);
-    printf("\n%s\n", fails ? "FAILURES" : "the plaque holds its shape");
+    printf("\n%s\n", fails ? "FAILURES" : "the splash screen holds its shape");
     return fails ? 1 : 0;
 }
