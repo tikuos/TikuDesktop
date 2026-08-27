@@ -273,6 +273,12 @@ PYSPLASH
                     > "$deskhome/project.tiku"
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
+                mkdir -p "$deskhome/deep"
+                # More entries than the panel shows at once, so the
+                # scrollbar has something to be.
+                for zi in $(seq -w 1 20); do
+                    echo x > "$deskhome/zz$zi"
+                done
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuC.so" \
                       "$appsdir/programming/" ;;

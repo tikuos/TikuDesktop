@@ -50,7 +50,7 @@ expect-menu Open Project…
 menu-pick Open Project…
 wait 40
 expect-title Open
-click 400 280
+click 400 220
 wait 6
 click 675 413
 wait 60

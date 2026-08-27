@@ -49,6 +49,12 @@ typedef struct {
     /* The save name the caller OFFERED, so entering a folder the New
      * folder button just made can put it back in the field. */
     char                   offered[64];
+    /* The rows a person is SHOWN: the poses whose names do not begin
+     * with a dot, by pose index -- the panel is for choosing, and the
+     * machinery folders are not choices.  The scroll is in this space. */
+    int                    vis[1024];
+    int                    nvis;
+    int                    scroll;
     /* The Favorites menu: favourites, then recent folders, dropped up
      * from the bottom-left button (AW-062, CW-058). */
     int                    fav_open;

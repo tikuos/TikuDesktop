@@ -26,7 +26,7 @@ wait 6
 menu-pick Open…
 wait 40
 expect-title Open
-click 400 260
+click 400 200
 wait 6
 click 675 413
 wait 60

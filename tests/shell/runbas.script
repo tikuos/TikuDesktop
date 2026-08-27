@@ -22,7 +22,7 @@ menu-pick Open…
 wait 30
 expect-title Open
 note the program is picked in the shell's own panel
-click 400 262
+click 400 200
 wait 4
 click 675 413
 wait 40

@@ -24,17 +24,29 @@ wait 8
 menu-pick Open Project…
 wait 40
 expect-title Open
-note the way UP is on the panel itself now: two clicks step into a
-note folder, and Up steps back out of it -- without it a panel that
-note opened deep was a panel a person could not leave
+note the same scrollbar the folder windows wear, in the same place --
+note and a press on its track PAGES the listing toward the hand
+note the same scrollbar the folder windows wear, in the same gutter --
+note and a press on its track PAGES the listing toward the hand
+expect-pixel 722 230 d8d8d8
+click 722 360
+wait 8
+expect-pixel 722 230 d4d4d4
+click 722 215
+wait 8
+expect-pixel 722 230 d8d8d8
+note the way UP heads the list itself: two clicks step into a folder,
+note and the enclosing folder's row steps back out -- without it a
+note panel that opened deep was a panel a person could not leave.  The
+note machinery folders are not among the rows at all
 click 400 200
 wait 4
-click 400 200
+key Return
 wait 20
 click 300 165
 wait 20
 note back where it began, which the pick below can only make if so
-click 400 280
+click 400 240
 wait 6
 click 675 413
 wait 60

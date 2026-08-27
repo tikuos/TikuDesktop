@@ -61,6 +61,7 @@ typedef enum {
     PANEL_HIT_FAVORITES,
     PANEL_HIT_NEWFOLDER,
     PANEL_HIT_UP,
+    PANEL_HIT_SCROLL,
     PANEL_HIT_FAV_ROW
 } panel_hit_t;
 
@@ -105,6 +106,13 @@ layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
         bottom, PANEL_BUTTON_W, button_h() };
     *cancel = *default_button;
     cancel->x -= PANEL_PADDING + PANEL_BUTTON_W;
+}
+
+/** @brief The scrollbar's place: the gutter to the list's right. */
+static tiku_rect_t
+scrollbar_rect(tiku_rect_t list)
+{
+    return (tiku_rect_t){ list.x + list.w + 2, list.y, 12, list.h };
 }
 
 /**
@@ -266,12 +274,13 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
     rows = (list.h - 4) / controller->row_h;
     tiku_trk_poseview_set_visible_rows(controller->view, rows);
-    scroll = tiku_trk_poseview_scroll(controller->view);
-    total = tiku_trk_poseview_count(controller->view);
+    scroll = controller->scroll;
+    total = controller->nvis;
     tiku_clip_set(surface, tiku_inset(list, 2));
     for (i = 0; i < rows && scroll + i < total; i++) {
         tiku_trk_pose_t *pose =
-            tiku_trk_poseview_at(controller->view, scroll + i);
+            tiku_trk_poseview_at(controller->view,
+                                 controller->vis[scroll + i]);
         tiku_rect_t row;
         int mini = controller->row_h - 4;
 
@@ -296,6 +305,13 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             pose->selected ? TIKU_C_SELTEXT : TIKU_C_TEXT);
     }
     tiku_clip_reset(surface);
+    if (total > rows && rows > 0) {
+        /* The same bar the folder windows wear, in the same place: one
+         * scrollbar everywhere, or a person has to learn two. */
+        tiku_ui_scrollbar(surface, scrollbar_rect(list),
+            (float)scroll / (float)(total - rows),
+            (float)rows / (float)total, 0);
+    }
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
         tiku_ui_textfield_sel(surface, name, controller->name.text,
             (owns &&
@@ -330,15 +346,18 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         char above[TIKU_PATH_MAX];
 
         if (parent_of(controller->model.dir, above, sizeof above)) {
-            const char *leaf = strrchr(above, '/');
-            char says[128];
+            const char *says = above;
+            int sw2 = tiku_text_width(pf, says);
 
-            snprintf(says, sizeof says, "%s",
-                     (leaf != NULL && leaf[1] != '\0') ? leaf + 1
-                                                       : above);
             tiku_fill(surface, pr, TIKU_C_DOC);
             (void)tiku_icon_paint(surface, "folder", pr.x + 4,
                                       pr.y + (pr.h - 16) / 2, 16);
+            /* The WHOLE path, tail kept when it will not fit: the leaf
+             * end is the half a person navigates by. */
+            while (*says != '\0' && sw2 > pr.w - 32) {
+                says++;
+                sw2 = tiku_text_width(pf, says);
+            }
             tiku_text(surface, pf, pr.x + 26,
                            pr.y + (pr.h - pf->height) / 2 + pf->ascent,
                            says, TIKU_C_TEXT);
@@ -381,6 +400,43 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
+/**
+ * @brief Which poses a person is shown: the machinery folders -- the
+ *        dot-named ones -- are not choices, and a home that holds
+ *        thirty of them buried everything a person actually keeps.
+ */
+static void
+rebuild_visible(tiku_trk_panel_window_t *controller)
+{
+    int i, total;
+
+    controller->nvis = 0;
+    if (controller->view == NULL) {
+        return;
+    }
+    total = tiku_trk_poseview_count(controller->view);
+    for (i = 0; i < total &&
+                controller->nvis <
+                    (int)(sizeof controller->vis /
+                          sizeof controller->vis[0]); i++) {
+        tiku_trk_pose_t *pose =
+            tiku_trk_poseview_at(controller->view, i);
+
+        if (pose == NULL || pose->model.name[0] == '.' ||
+            pose->invisible) {
+            continue;
+        }
+        controller->vis[controller->nvis++] = i;
+    }
+    if (controller->scroll > controller->nvis - 1) {
+        controller->scroll = (controller->nvis > 0)
+                                 ? controller->nvis - 1 : 0;
+    }
+    if (controller->scroll < 0) {
+        controller->scroll = 0;
+    }
+}
+
 static void
 reload(tiku_trk_panel_window_t *controller, const char *select)
 {
@@ -400,6 +456,8 @@ reload(tiku_trk_panel_window_t *controller, const char *select)
     tiku_trk_poseview_set_multiple(controller->view,
                                    controller->model.multiple);
     (void)tiku_trk_poseview_reload(controller->view);
+    controller->scroll = 0;
+    rebuild_visible(controller);
     if (select != NULL && select[0] != '\0') {
         count = tiku_trk_poseview_count(controller->view);
         for (i = 0; i < count; i++) {
@@ -554,11 +612,14 @@ activate_default(tiku_trk_panel_window_t *controller)
     tiku_model_t selected[8];
     int count = selection(controller, selected, 8);
 
-    if (!tiku_trk_panel_button_enabled(&controller->model, selected, count)) {
-        return;
-    }
+    /* ENTERING a folder is navigation, not answering, so it is not
+     * behind the button's enablement: a file panel with a folder
+     * selected has somewhere to GO even when it has nothing to say. */
     if (count == 1 && tiku_model_is_container(&selected[0])) {
         go(controller, selected[0].path);
+        return;
+    }
+    if (!tiku_trk_panel_button_enabled(&controller->model, selected, count)) {
         return;
     }
     commit(controller);
@@ -614,14 +675,25 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE && INSIDE(name)) {
         return PANEL_HIT_NAME;
     }
+    {
+        tiku_rect_t sb = scrollbar_rect(list);
+
+        if (INSIDE(sb)) {
+            if (row != NULL) {
+                /* Which half of the track was pressed rides out in the
+                 * row slot: negative for back, positive for on. */
+                *row = (y < sb.y + sb.h / 2) ? -2 : -3;
+            }
+            return PANEL_HIT_SCROLL;
+        }
+    }
     if (INSIDE(list)) {
         int index = (y - list.y - 2) / controller->row_h;
 
         if (row != NULL && controller->view != NULL) {
-            index += tiku_trk_poseview_scroll(controller->view);
-            *row = index >= 0 &&
-                   index < tiku_trk_poseview_count(controller->view)
-                       ? index : -1;
+            index += controller->scroll;
+            *row = (index >= 0 && index < controller->nvis)
+                       ? controller->vis[index] : -1;
         }
         return PANEL_HIT_LIST;
     }
@@ -648,6 +720,28 @@ event(tiku_window_t *window, const tiku_event_t *input,
         }
         controller->fav_open = !controller->fav_open;
         break;
+    case PANEL_HIT_SCROLL: {
+        /* A press on the bar PAGES toward the hand, the way the track
+         * of every scrollbar here answers a press beside its thumb. */
+        tiku_rect_t content = tiku_window_content(controller->window);
+        tiku_rect_t list2, nm, db, cb;
+        int rows2;
+
+        layout(controller, content, &list2, &nm, &db, &cb);
+        rows2 = (list2.h - 4) / controller->row_h;
+        if (rows2 < 1) {
+            rows2 = 1;
+        }
+        controller->scroll += (row == -2) ? -(rows2 - 1) : (rows2 - 1);
+        if (controller->scroll > controller->nvis - rows2) {
+            controller->scroll = controller->nvis - rows2;
+        }
+        if (controller->scroll < 0) {
+            controller->scroll = 0;
+        }
+        mark_dirty(controller);
+        break;
+    }
     case PANEL_HIT_UP: {
         /* Into the folder that holds this one. */
         char above[TIKU_PATH_MAX];
@@ -977,13 +1071,42 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
     default:
         if (controller->model.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
             (key == TIKU_KEY_UP || key == TIKU_KEY_DOWN)) {
+            /* Travel in the SHOWN rows: the arrows walk what the
+             * person sees, never the machinery folders under it, and
+             * the window follows the walk off either end. */
             tiku_model_t picked[8];
-            int n;
+            int n, at = -1, i;
 
-            (void)tiku_trk_poseview_key_nav(controller->view,
-                key == TIKU_KEY_UP ? TIKU_TRK_KEY_UP
-                                        : TIKU_TRK_KEY_DOWN,
-                tracker_mods);
+            for (i = 0; i < controller->nvis; i++) {
+                tiku_trk_pose_t *pose = tiku_trk_poseview_at(
+                    controller->view, controller->vis[i]);
+
+                if (pose != NULL && pose->selected) {
+                    at = i;
+                    break;
+                }
+            }
+            at += (key == TIKU_KEY_DOWN) ? 1 : (at > 0 ? -1 : 0);
+            if (at >= controller->nvis) {
+                at = controller->nvis - 1;
+            }
+            if (at >= 0 && at < controller->nvis) {
+                tiku_rect_t content =
+                    tiku_window_content(controller->window);
+                tiku_rect_t list2, nm, db, cb;
+                int rows2;
+
+                tiku_trk_poseview_click(controller->view,
+                                        controller->vis[at], 0u);
+                layout(controller, content, &list2, &nm, &db, &cb);
+                rows2 = (list2.h - 4) / controller->row_h;
+                if (at < controller->scroll) {
+                    controller->scroll = at;
+                }
+                if (rows2 > 0 && at >= controller->scroll + rows2) {
+                    controller->scroll = at - rows2 + 1;
+                }
+            }
             n = selection(controller, picked, 8);
             if (tiku_trk_panel_pick_name(&controller->model, picked, n)) {
                 sync_name(controller);
