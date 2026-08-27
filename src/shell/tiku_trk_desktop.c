@@ -2058,29 +2058,46 @@ rebuild_global_bar(desktop_t *app)
             }
         }
     }
-    /* The system menu first, where the corner ritual lives. */
+    /*
+     * The system menu first, where the corner ritual lives -- but WHOSE
+     * corner depends on who is in front.  With a hosted program's
+     * window focused, the desktop's own gestures -- Find, Preferences,
+     * Shut down -- are not the program's to wear: the menu is the
+     * PROGRAM's then, and says About it and no more.  The desktop's
+     * whole menu is one click on its own ground away, and the Deskbar's
+     * leaf carries Shut down whoever is in front.
+     */
     tiku_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    if (app->about_hoist != 0) {
-        (void)tiku_menu_add(&app->sysmenu, app->about_label,
-                                TIKU_TRK_CMD_APP_ABOUT, 0, 0u, 1);
-        tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_APP_ABOUT,
-                                MARK_ICON);
-    } else {
-        (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.about"),
-                                TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
-        tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT,
-                                MARK_ICON);
+    {
+        int program = (fw != NULL &&
+                       (embed_win_of_window(app, fw) != NULL ||
+                        tiku_remote_owner(&app->remote, fw) != NULL));
+
+        if (app->about_hoist != 0) {
+            (void)tiku_menu_add(&app->sysmenu, app->about_label,
+                                    TIKU_TRK_CMD_APP_ABOUT, 0, 0u, 1);
+            tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_APP_ABOUT,
+                                    MARK_ICON);
+        } else {
+            (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.about"),
+                                    TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
+            tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT,
+                                    MARK_ICON);
+        }
+        if (!program) {
+            (void)tiku_menu_add_separator(&app->sysmenu);
+            (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.find"),
+                                    TIKU_TRK_CMD_FIND,
+                                    'f', TIKU_TRK_MOD_CMD, 1);
+            (void)tiku_menu_add(&app->sysmenu,
+                                    tiku_str("cmd.preferences"),
+                                    TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
+            (void)tiku_menu_add_separator(&app->sysmenu);
+            (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
+                                    TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
+        }
     }
-    (void)tiku_menu_add_separator(&app->sysmenu);
-    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.find"),
-                            TIKU_TRK_CMD_FIND,
-                            'f', TIKU_TRK_MOD_CMD, 1);
-    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.preferences"),
-                            TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
-    (void)tiku_menu_add_separator(&app->sysmenu);
-    (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
-                            TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
     (void)tiku_menubar_add(&app->gbar, &app->sysmenu);
     app->gbar_from = (set != NULL) ? fw : NULL;
     for (m = 0; set != NULL && m < set->nmenu; m++) {

@@ -36,6 +36,13 @@ wait 8
 click 20 8
 wait 8
 expect-menu About TikuC
+note and the desktop's own gestures are NOT on it -- Find, Preferences,
+note Shut down are the desktop speaking, and the desktop is not who is
+note in front.  Picking Preferences here reaches nothing, because the
+note row is not there to pick
+menu-pick Preferences…
+wait 15
+expect-no-title preferences
 note a click on open ground puts the strip's menu away
 click 500 600
 wait 8
