@@ -389,7 +389,7 @@ PYSPLASH
             idetoolbar.script)
                 mkdir -p "$deskhome"
                 printf 'title Bar\ngroup Sources\nfile main.bas\n' > "$deskhome/project.tiku"
-                printf '10 rem head\n20 rem tail\n' > "$deskhome/main.bas"
+                printf '3 goto 9\n9 input a$\n' > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" "$appsdir/programming/" ;;
             ideundo.script)

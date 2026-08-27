@@ -7906,6 +7906,40 @@ tracker_run(int argc, char **argv)
                     app.dirty = 1;
                     break;
                 }
+                if (!tiku_trk_drag_active(&app.drag)) {
+                    /* No press held anywhere: the window UNDER the
+                     * pointer still hears it passing, which is what a
+                     * toolbar's tips and every other hover are made
+                     * of.  An application that wants none returns 0
+                     * and the move cost a message. */
+                    tiku_window_t *hw = NULL;
+
+                    if (tiku_workspace_hit(app.desk, ev.x, ev.y,
+                                                &hw) == TIKU_HIT_CONTENT &&
+                        hw != NULL) {
+                        struct embed_win *hew =
+                            embed_win_of_window(&app, hw);
+
+                        if (hew != NULL) {
+                            tiku_event_t rev = ev;
+                            tiku_rect_t rc = tiku_window_content(hw);
+
+                            rev.x -= rc.x;
+                            rev.y -= rc.y;
+                            if (embed_deliver(hew, &rev)) {
+                                embed_stop(hew->slot);
+                            }
+                        } else if (tiku_remote_owner(&app.remote, hw)
+                                       != NULL) {
+                            tiku_event_t rev = ev;
+                            tiku_rect_t rc = tiku_window_content(hw);
+
+                            rev.x -= rc.x;
+                            rev.y -= rc.y;
+                            tiku_remote_event(&app.remote, hw, &rev);
+                        }
+                    }
+                }
                 if (app.qdrag_on) {
                     app.dirty = 1;
                 }

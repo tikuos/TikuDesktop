@@ -61,3 +61,10 @@ menu-pick Save bad.c
 wait 90
 expect-file-has /tmp/trk_home/bad.c Xreturn nope
 expect-file-lacks /tmp/trk_home/bad.c Xint main
+note the C page's toolbar wears the BUILD mallet where BASIC wears the
+note run arrow, and pressing it is the same build the menu does: the
+note compiler's complaint about the fresh typo comes forward
+click 246 268
+wait 200
+expect-title Messages
+quit

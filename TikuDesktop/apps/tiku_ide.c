@@ -84,9 +84,11 @@
 #define TB_ICON  24
 #define TB_SAVE  (tiku_rect_t){ 8, 3, TB_ICON, TB_ICON }
 #define TB_RUN   (tiku_rect_t){ 44, 3, TB_ICON, TB_ICON }
-#define TB_UNDO  (tiku_rect_t){ 88, 3, TB_ICON, TB_ICON }
-#define TB_REDO  (tiku_rect_t){ 116, 3, TB_ICON, TB_ICON }
-#define TB_FIND  (tiku_rect_t){ 152, 3, TB_ICON, TB_ICON }
+#define TB_STOP  (tiku_rect_t){ 72, 3, TB_ICON, TB_ICON }
+#define TB_UNDO  (tiku_rect_t){ 108, 3, TB_ICON, TB_ICON }
+#define TB_REDO  (tiku_rect_t){ 136, 3, TB_ICON, TB_ICON }
+#define TB_FIND  (tiku_rect_t){ 172, 3, TB_ICON, TB_ICON }
+#define TB_RENUM (tiku_rect_t){ 208, 3, TB_ICON, TB_ICON }
 
 #define MSG_W      420
 #define MSG_H      220
@@ -193,6 +195,7 @@ typedef struct {
     int                  finding;        /* the find bar is open */
     tiku_field_t         find;           /* what is being searched for */
     int                  scroll_x;       /* the page slid left, for long lines */
+    int                  tip;            /* the toolbar tool under the pointer, -1 none */
 } edit_t;
 
 /**
@@ -496,6 +499,96 @@ tb_glass(tiku_surface_t *s, int x)
 }
 
 /**
+ * @brief Which toolbar tool sits at @p x,@p y for this page, or -1.
+ *
+ * One table for the pointer and the tip, so a tool cannot be named
+ * without being hittable or hit without wearing a name.
+ */
+static int
+tb_tool_at(const edit_t *e, int x, int y)
+{
+    static const tiku_rect_t R[] = {
+        { 8, 3, TB_ICON, TB_ICON },     /* 0 Save */
+        { 44, 3, TB_ICON, TB_ICON },    /* 1 Run / Build */
+        { 72, 3, TB_ICON, TB_ICON },    /* 2 Stop */
+        { 108, 3, TB_ICON, TB_ICON },   /* 3 Undo */
+        { 136, 3, TB_ICON, TB_ICON },   /* 4 Redo */
+        { 172, 3, TB_ICON, TB_ICON },   /* 5 Find */
+        { 208, 3, TB_ICON, TB_ICON }    /* 6 Renumber */
+    };
+    int i;
+
+    for (i = 0; i < (int)(sizeof R / sizeof R[0]); i++) {
+        if (x >= R[i].x && x < R[i].x + R[i].w &&
+            y >= R[i].y && y < R[i].y + R[i].h) {
+            if ((i == 2 || i == 6) && e->lang != TIKU_SYNTAX_BASIC) {
+                return -1;      /* stop and renumber are BASIC's */
+            }
+            if (i == 1 && e->lang != TIKU_SYNTAX_BASIC &&
+                e->lang != TIKU_SYNTAX_C) {
+                return -1;
+            }
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** @brief The name a hovered tool wears on its tip. */
+static const char *
+tb_tool_name(const edit_t *e, int tool)
+{
+    static const char *const N[] = {
+        "Save", "Run", "Stop", "Undo", "Redo", "Find", "Renumber"
+    };
+
+    if (tool == 1 && e->lang == TIKU_SYNTAX_C) {
+        return "Build";
+    }
+    return (tool >= 0 && tool < 7) ? N[tool] : "";
+}
+
+/** @brief The stop square, red while a run is there to stop. */
+static void
+tb_stop(tiku_surface_t *s, int x, int on)
+{
+    tiku_rect_t sq = { x + 6, 3 + 6, 12, 12 };
+
+    tiku_fill(s, sq, on ? TIKU_RGB(178, 52, 52)
+                        : TIKU_RGB(178, 178, 178));
+}
+
+/** @brief The build mallet: a head and a handle, from the lines we have. */
+static void
+tb_mallet(tiku_surface_t *s, int x)
+{
+    tiku_rgb_t c = TIKU_RGB(64, 64, 64);
+    tiku_rect_t head = { x + 5, 3 + 5, 14, 5 };
+    int i;
+
+    tiku_fill(s, head, c);
+    tiku_vline(s, x + 11, 3 + 10, 9, c);
+    tiku_vline(s, x + 12, 3 + 10, 9, c);
+    (void)i;
+}
+
+/** @brief Renumber: the ten every line is counted by, and an arrow on. */
+static void
+tb_renum(tiku_surface_t *s, int x)
+{
+    const tiku_font_t *f = tiku_font_at(11);
+    tiku_rgb_t c = TIKU_RGB(64, 64, 64);
+    int mid = 3 + TB_ICON / 2;
+
+    tiku_text(s, f, x + 3, 3 + 6 + f->ascent, "10", c);
+    tiku_hline(s, x + 15, mid + 1, 5, c);
+    tiku_pixel(s, x + 18, mid, c);
+    tiku_pixel(s, x + 18, mid + 2, c);
+    tiku_pixel(s, x + 17, mid - 1, c);
+    tiku_pixel(s, x + 17, mid + 3, c);
+}
+
+/**
  * @brief Where the PAGE begins: below the toolbar, and below the find
  *        bar when it is open, which drops between them.
  */
@@ -598,6 +691,14 @@ edit_paint(ide_t *st, edit_t *e)
                             rn.y + 3 + i, 2 + half * 2, go);
         }
     }
+    if (e->lang == TIKU_SYNTAX_BASIC) {
+        /* Stop stands beside Run, red only while something runs. */
+        tb_stop(e->surface, TB_STOP.x, st->running);
+    }
+    if (e->lang == TIKU_SYNTAX_C) {
+        /* The C page's run is a BUILD: the mallet where the arrow is. */
+        tb_mallet(e->surface, TB_RUN.x);
+    }
     {
         /* Undo, redo and find join the reach: the edits a hand on the
          * mouse wants most, beside Save and Run. */
@@ -606,6 +707,11 @@ edit_paint(ide_t *st, edit_t *e)
         tb_arrow(e->surface, TB_REDO.x, 0,
                  tiku_textview_can_redo(&e->tv));
         tb_glass(e->surface, TB_FIND.x);
+    }
+    if (e->lang == TIKU_SYNTAX_BASIC) {
+        /* The tidy that renumbers by tens, for the language whose
+         * lines wear their numbers. */
+        tb_renum(e->surface, TB_RENUM.x);
     }
     {
         /* A thin rule under the tools, so the bar reads as furniture
@@ -778,6 +884,19 @@ edit_paint(ide_t *st, edit_t *e)
     tiku_text(e->surface, f, MARGIN,
                    strip.y + (STRIP_H - f->height) / 2 + f->ascent,
                    where, TIKU_C_TEXT);
+    if (e->tip >= 0) {
+        /* The hovered tool's name, on the kit's own tip, below the
+         * button so the pointer does not sit on the words. */
+        const char *name = tb_tool_name(e, e->tip);
+        tiku_rect_t tr = tiku_ui_tip_size(name);
+
+        tr.x = 8 + e->tip * 4 + e->tip * 28;   /* near its button */
+        tr.y = TOOLBAR_H + 2;
+        if (tr.x + tr.w > e->w) {
+            tr.x = e->w - tr.w - 2;
+        }
+        tiku_ui_tip(e->surface, tr, name);
+    }
     (void)st->services->frame(st->services->ctx, e->id, e->surface->px,
                               e->w, e->h);
 }
@@ -1326,6 +1445,7 @@ edit_open(ide_t *st, const prow_t *row)
         return;
     }
     memset(e, 0, sizeof *e);
+    e->tip = -1;
     snprintf(e->path, sizeof e->path, "%s", row->path);
     snprintf(e->name, sizeof e->name, "%s", row->name);
     e->lang = lang_of(e->name);
@@ -1982,6 +2102,31 @@ line_of_number(const tiku_textview_t *tv, int want)
  * editor's Run does, for a file the project names.  The sandbox is the
  * file's own folder, so what a program writes lands beside its source.
  */
+/**
+ * @brief End a run by hand: the same road the time bound takes.
+ *
+ * A program waiting on INPUT, or printing for ever, is somebody's to
+ * stop NOW rather than when the bound gives up on it; the message says
+ * which way it ended.
+ */
+static void
+run_stop(ide_t *st, const char *why)
+{
+    if (!st->running) {
+        return;
+    }
+    (void)kill(st->child, SIGTERM);
+    (void)waitpid(st->child, NULL, 0);
+    st->running = 0;
+    (void)close(st->child_fd);
+    st->child_fd = -1;
+    message_take(st, why);
+    messages_show(st);
+    if (st->services->raise_window != NULL) {
+        (void)st->services->raise_window(st->services->ctx, st->msg_id);
+    }
+}
+
 static void
 run_file(ide_t *st, const char *path)
 {
@@ -2272,13 +2417,7 @@ ide_tick(void *state, int64_t now_us)
      * killed.
      */
     if (now_us - st->run_from > IDE_RUN_LIMIT_US) {
-        (void)kill(st->child, SIGTERM);
-        (void)waitpid(st->child, NULL, 0);
-        st->running = 0;
-        (void)close(st->child_fd);
-        st->child_fd = -1;
-        message_take(st, "? the run was stopped: it did not finish");
-        messages_show(st);
+        run_stop(st, "? the run was stopped: it did not finish");
         return;
     }
     for (;;) {
@@ -2322,6 +2461,14 @@ ide_tick(void *state, int64_t now_us)
         (void)close(st->child_fd);
         st->child_fd = -1;
         heard = 1;
+        /* The run is OVER: what it said comes forward, or a build
+         * pressed while the messages stood buried behind the page
+         * looks like nothing happening.  Once, at the end -- never on
+         * the chunks in between, which would fight the person's hands. */
+        if (st->nmsg > 0 && st->services->raise_window != NULL) {
+            (void)st->services->raise_window(st->services->ctx,
+                                             st->msg_id);
+        }
     }
     if (heard) {
         messages_show(st);
@@ -2667,11 +2814,13 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 event->x >= run_b.x && event->x < run_b.x + run_b.w &&
                 event->y >= run_b.y && event->y < run_b.y + run_b.h) {
                 /* What is run is what is on disk, so the button saves
-                 * first -- the same rule the menu's Run keeps. */
+                 * first -- the same rule the menu's Run keeps.  Painted
+                 * AFTER the run starts, so the stop square is already
+                 * red when the eye comes looking for it. */
                 (void)edit_save(e);
+                run_file(st, e->path);
                 edit_paint(st, e);
                 edit_publish(st, e);
-                run_file(st, e->path);
                 project_publish(st);
                 return 0;
             }
@@ -2702,6 +2851,34 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                         tiku_field_stop(&e->find);
                     }
                     edit_paint(st, e);
+                    return 0;
+                }
+            }
+            {
+                int tool = tb_tool_at(e, event->x, event->y);
+
+                if (tool == 2 && e->lang == TIKU_SYNTAX_BASIC) {
+                    /* Stop: the person's hand on a run that will not
+                     * end on its own. */
+                    run_stop(st, "? the run was stopped by hand");
+                    edit_paint(st, e);
+                    return 0;
+                }
+                if (tool == 1 && e->lang == TIKU_SYNTAX_C) {
+                    /* Build, the C page's run: saved first, the same
+                     * rule Run keeps. */
+                    (void)edit_save(e);
+                    edit_paint(st, e);
+                    edit_publish(st, e);
+                    build_project(st);
+                    project_publish(st);
+                    return 0;
+                }
+                if (tool == 6 && e->lang == TIKU_SYNTAX_BASIC) {
+                    renumber_basic(e);
+                    edit_paint(st, e);
+                    edit_publish(st, e);
+                    project_publish(st);
                     return 0;
                 }
             }
@@ -2738,6 +2915,15 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             return 0;
         }
         if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            /* Over the toolbar the pointer NAMES the tool it rests on:
+             * the tip appears when it arrives and leaves when it does. */
+            int tool = (event->y < TOOLBAR_H)
+                           ? tb_tool_at(e, event->x, event->y) : -1;
+
+            if (tool != e->tip) {
+                e->tip = tool;
+                edit_paint(st, e);
+            }
             /* A drag from a page press extends the selection to the
              * pointer; a move with no such press is not ours. */
             if (e->drag_select &&

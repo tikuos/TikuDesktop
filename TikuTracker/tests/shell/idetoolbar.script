@@ -1,10 +1,12 @@
 # shell: desktop
 # home: fixture
 # prefs: factory
-# The toolbar grew past Save and Run: undo and redo, dimmed when there
-# is nothing to take back, and find.  Proven by the buttons DOING what
-# they show -- the file read back after undo and redo, the find bar
-# appearing when its glass is pressed.
+# The toolbar, grown up: undo and redo (dimmed when empty-handed),
+# find, renumber, and a STOP that ends a run by hand -- red only while
+# something runs.  Hovering a tool names it on a tip.  Every button is
+# proven by DOING: files read back, the find bar's label, the Messages
+# window a stopped run leaves -- long before the 30-second bound could
+# have said the same.
 wait 25
 click 980 30
 wait 4
@@ -27,24 +29,44 @@ wait 8
 key Return
 wait 90
 expect-title main.bas
-note a word typed, then the UNDO button takes it back in one press
+note a word typed, the UNDO button takes it back whole, REDO returns it
 key x
 key y
 key z
 wait 6
-click 290 268
+click 310 268
 wait 8
 click 205 268
 wait 60
-expect-file-lacks /tmp/trk_home/main.bas tailxyz
-note the REDO button puts it back
-click 318 268
+expect-file-lacks /tmp/trk_home/main.bas xyz
+click 338 268
 wait 8
 click 205 268
 wait 60
-expect-file-has /tmp/trk_home/main.bas tailxyz
-note the FIND button drops the find bar, its label showing
-click 353 268
+expect-file-has /tmp/trk_home/main.bas a$xyz
+note hovering a tool names it: the tip's ground appears under Undo
+move 310 268
+wait 10
+expect-pixel 316 294 ffffc8
+move 500 500
 wait 8
-expect-pixel 198 293 000000
+note the RENUMBER button counts the lines by tens, branches following
+click 410 268
+wait 10
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 10 goto 20
+expect-file-has /tmp/trk_home/main.bas 20 input a$xyz
+note the stop square stands grey while nothing runs
+expect-pixel 274 270 b2b2b2
+note Run starts the program, which waits on INPUT for a person who is
+note not going to answer -- and the square turns red, a run to stop
+click 246 268
+wait 20
+expect-pixel 274 270 b23434
+note STOP ends it BY HAND, and says so in the messages, seconds before
+note the thirty-second bound would have given up on it
+click 274 268
+wait 30
+expect-title Messages
 quit
