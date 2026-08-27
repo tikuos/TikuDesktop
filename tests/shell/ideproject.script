@@ -16,26 +16,26 @@ click 980 30
 wait 4
 menu-pick Applications
 wait 4
-expect-menu TikuIDE
-menu-pick TikuIDE
+expect-menu TikuBasic
+menu-pick TikuBasic
 wait 150
 expect-title Project
 note the application says what it is when asked: the About box stands
 note until it has been read, and Escape puts it away
 click 71 8
 wait 8
-expect-menu About TikuIDE
-menu-pick About TikuIDE
+expect-menu About TikuBasic
+menu-pick About TikuBasic
 wait 30
-expect-title About TikuIDE
+expect-title About TikuBasic
 note asked for again it comes FORWARD rather than doubling
 click-window Project
 wait 8
 click 71 8
 wait 8
-menu-pick About TikuIDE
+menu-pick About TikuBasic
 wait 30
-expect-title About TikuIDE
+expect-title About TikuBasic
 expect-windows 3
 key Escape
 wait 20

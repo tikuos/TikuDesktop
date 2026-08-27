@@ -15,7 +15,7 @@ click 980 30
 wait 4
 menu-pick Applications
 wait 4
-menu-pick TikuIDE
+menu-pick TikuBasic
 wait 150
 expect-title Project
 click 71 8

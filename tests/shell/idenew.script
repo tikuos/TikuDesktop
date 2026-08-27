@@ -11,13 +11,13 @@ click 980 30
 wait 4
 menu-pick Applications
 wait 4
-menu-pick TikuIDE
+menu-pick TikuBasic
 wait 25
 note the application arrives announcing itself: its name, over its own
 note mark, in a window that stands in front and then leaves on its own
-expect-title TikuIDE
+expect-title TikuBasic
 wait 200
-expect-no-title TikuIDE
+expect-no-title TikuBasic
 expect-title Project
 note the menu offers the start: a new project, made where the person
 note says, through the shell's own Save panel
@@ -40,6 +40,9 @@ click-window Project
 wait 8
 click 71 8
 wait 8
+note a project that does not say what it is FOR is offered no Build:
+note BASIC first, and a road nobody asked for is not on the menu
+expect-menu Run|Close Project
 menu-pick New File…
 wait 40
 expect-title Save
