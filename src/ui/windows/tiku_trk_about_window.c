@@ -297,6 +297,19 @@ paint(about_state_t *st)
                        TIKU_C_TEXT);
         tiku_text(surface, plain, left, foot,
                        "Apache License 2.0", TIKU_C_TEXT);
+        /* WHICH build, on the box itself: a development machine grows
+         * copies, and the one question worth answering at a glance is
+         * whether the window in front of you is today's. */
+        {
+            char built[64];
+            int w;
+
+            snprintf(built, sizeof built, "built %s %s", __DATE__,
+                     __TIME__);
+            w = tiku_text_width(plain, built);
+            tiku_text(surface, plain, surface->w - 14 - w, foot,
+                           built, TIKU_C_TEXT);
+        }
     }
 }
 

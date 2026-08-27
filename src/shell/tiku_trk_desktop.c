@@ -5682,6 +5682,15 @@ tracker_run(int argc, char **argv)
     (void)setlocale(LC_ALL, "");
     app.bar_open = -1;
     for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-version") == 0 ||
+            strcmp(argv[i], "--version") == 0) {
+            /* WHICH build this is, said before anything else: four
+             * copies of this program live in a development tree, and
+             * "the code is still old" has to be answerable in one
+             * line rather than by archaeology. */
+            printf("TikuDesktop, built %s %s\n", __DATE__, __TIME__);
+            return 0;
+        }
         if (strcmp(argv[i], "-reset-settings") == 0 ||
             strcmp(argv[i], "--reset-settings") == 0) {
             /* The rescue path: settings back to factory WITHOUT drawing a
