@@ -20,6 +20,26 @@ expect-menu TikuIDE
 menu-pick TikuIDE
 wait 150
 expect-title Project
+note the application says what it is when asked: the About box stands
+note until it has been read, and Escape puts it away
+click 71 8
+wait 8
+expect-menu About TikuIDE
+menu-pick About TikuIDE
+wait 30
+expect-title About TikuIDE
+note asked for again it comes FORWARD rather than doubling
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick About TikuIDE
+wait 30
+expect-title About TikuIDE
+expect-windows 3
+key Escape
+wait 20
+expect-no-title About
 note the project is handed over by the shell's panel, as every file an
 note application is given comes to it
 click 71 8
