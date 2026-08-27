@@ -14,7 +14,8 @@
 wait 25
 click 980 30
 wait 4
-menu-pick Applications
+note the tools a person programs WITH have a row of their own
+menu-pick Programming
 wait 4
 expect-menu TikuBasic
 menu-pick TikuBasic

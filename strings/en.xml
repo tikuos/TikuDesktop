@@ -33,6 +33,7 @@
   <string name="menu.find">Find…</string>
   <string name="menu.settings">Settings</string>
   <string name="menu.applications">Applications</string>
+  <string name="menu.programming">Programming</string>
   <string name="menu.deskbar_prefs">Deskbar preferences…</string>
   <string name="menu.tracker_prefs">TikuTracker preferences…</string>
   <string name="menu.desktop_prefs">TikuDesktop preferences…</string>

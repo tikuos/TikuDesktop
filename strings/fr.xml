@@ -24,6 +24,7 @@
   <string name="menu.find">Rechercher…</string>
   <string name="menu.settings">Réglages</string>
   <string name="menu.applications">Applications</string>
+  <string name="menu.programming">Programmation</string>
   <string name="menu.deskbar_prefs">Préférences du Deskbar…</string>
   <string name="menu.tracker_prefs">Préférences de TikuTracker…</string>
   <string name="menu.desktop_prefs">Préférences de TikuDesktop…</string>

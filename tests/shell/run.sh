@@ -251,8 +251,9 @@ PYBG
             idenew.script)
                 # NOTHING is planted: the cold start is the claim.
                 mkdir -p "$deskhome"
+                mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
-                      "$appsdir/" ;;
+                      "$appsdir/programming/" ;;
             idec.script)
                 # A C project that names NO target: TikuC asks this
                 # machine's compiler about it anyway.
@@ -261,8 +262,9 @@ PYBG
                     > "$deskhome/project.tiku"
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
+                mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/TikuC.so" \
-                      "$appsdir/" ;;
+                      "$appsdir/programming/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
                 # mistake on a line the compiler will name.
@@ -274,8 +276,9 @@ PYBG
                 # of spaces in it cannot be written in a script.
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
+                mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
-                      "$appsdir/" ;;
+                      "$appsdir/programming/" ;;
             ccolour.script)
                 # The same words twice: once inside a block remark that
                 # was opened on an earlier line, once outside it.
@@ -312,8 +315,9 @@ PYBG
                     # what ran and the first was never in the program.
                     printf '250 REM shadowed\n250 PRUNT "bad"\n260 PRINT "after"\n'
                 } > "$deskhome/blink.bas"
+                mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
-                      "$appsdir/" ;;
+                      "$appsdir/programming/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
                 # it names, beside each other where the panel opens.
@@ -324,8 +328,9 @@ PYBG
                     > "$deskhome/project.tiku"
                 printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
                 printf '20 REM helpers\n' > "$deskhome/util.bas"
+                mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
-                      "$appsdir/" ;;
+                      "$appsdir/programming/" ;;
             twowinremote.script)
                 # Installed, not trusted: the runner starts it in a
                 # process of its own, so the windows are held over the

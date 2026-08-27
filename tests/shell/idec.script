@@ -9,7 +9,7 @@
 wait 25
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Programming
 wait 4
 expect-menu TikuC
 menu-pick TikuC

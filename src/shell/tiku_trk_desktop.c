@@ -5166,6 +5166,53 @@ offer_installed(desktop_t *app, const char *argv0)
                                            app_icon(name[i]));
         }
     }
+
+    {
+        /* Where a file is installed decides where it is OFFERED, the
+         * rule trusted/ already keeps: apps/programming/ is the
+         * Programming row's list -- the tools a person makes programs
+         * with, not one more thing that happens to be installed. */
+        char progdir[TIKU_PATH_MAX];
+        char name[TIKU_TRK_DB_APPS_MAX][64];
+        int count = 0;
+        int i, j;
+
+        snprintf(progdir, sizeof progdir, "%s/programming", root);
+        dir = opendir(progdir);
+        while (dir != NULL && (entry = readdir(dir)) != NULL &&
+               count < TIKU_TRK_DB_APPS_MAX) {
+            size_t n = strlen(entry->d_name);
+
+            if (n < 4u || n >= sizeof name[0] ||
+                strcmp(entry->d_name + n - 3, ".so") != 0 ||
+                !have_runner) {
+                continue;
+            }
+            snprintf(name[count++], sizeof name[0], "%s", entry->d_name);
+        }
+        if (dir != NULL) {
+            (void)closedir(dir);
+        }
+        for (i = 1; i < count; i++) {
+            char hold[64];
+
+            snprintf(hold, sizeof hold, "%s", name[i]);
+            for (j = i; j > 0 && strcmp(name[j - 1], hold) > 0; j--) {
+                snprintf(name[j], sizeof name[0], "%s", name[j - 1]);
+            }
+            snprintf(name[j], sizeof name[0], "%s", hold);
+        }
+        for (i = 0; i < count; i++) {
+            char path[TIKU_PATH_MAX];
+            char label[TIKU_TRK_DB_LABEL_MAX];
+
+            snprintf(path, sizeof path, "%s/%s", progdir, name[i]);
+            app_label(name[i], label, sizeof label);
+            (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+                TIKU_TRK_DB_GROUP_PROGRAMMING, label, path,
+                app_icon(name[i]));
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------*/

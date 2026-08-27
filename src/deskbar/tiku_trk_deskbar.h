@@ -111,6 +111,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_RESTART,
     TIKU_TRK_DB_ITEM_SETTINGS,  /* expand it: what configures this      */
     TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
+    TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
     TIKU_TRK_DB_ITEM_APP        /* start the program named by its path  */
 } tiku_trk_db_item_kind_t;
 
@@ -630,6 +631,23 @@ void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
  */
 int tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
                              const char *command, const char *icon);
+
+/** @brief Which group of the leaf an installed program's row lives in. */
+enum {
+    TIKU_TRK_DB_GROUP_APPS = 0,
+    TIKU_TRK_DB_GROUP_PROGRAMMING
+};
+
+/**
+ * @brief Register a program under a GROUP of the leaf.
+ *
+ * The groups are rows of the leaf menu, each expanding to its own
+ * list: what a person programs WITH is worth a row of its own rather
+ * than a place in the middle of everything installed.
+ */
+int tiku_trk_deskbar_add_app_in(tiku_trk_deskbar_t *db, int group,
+                                const char *label, const char *command,
+                                const char *icon);
 
 /** @brief Where the theme switch sits, so a test can put a finger on it. */
 tiku_rect_t tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db);

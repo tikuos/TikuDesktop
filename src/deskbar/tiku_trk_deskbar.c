@@ -115,6 +115,7 @@ struct tiku_trk_deskbar {
         char label[TIKU_TRK_DB_LABEL_MAX];
         char command[TIKU_PATH_MAX];
         char icon[24];
+        int  group;             /* which leaf row lists it */
     }                    app[TIKU_TRK_DB_APPS_MAX];
     int                  app_count;
     int                  top_inset; /* the global bar owns this much   */
@@ -337,12 +338,30 @@ build_leaf(tiku_trk_deskbar_t *db)
      * the lists live inside it. */
     add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_str("menu.settings"),
              NULL, 0);
-    if (db->app_count > 0) {
-        /* One row, not one per program: the leaf is the system's own
-         * menu, and a list of what happens to be installed belongs
-         * inside it rather than across it. */
-        add_item(db, TIKU_TRK_DB_ITEM_APPS, tiku_str("menu.applications"),
-                 NULL, 0);
+    {
+        int napps = 0, nprog = 0;
+
+        for (i = 0; i < db->app_count; i++) {
+            if (db->app[i].group == TIKU_TRK_DB_GROUP_PROGRAMMING) {
+                nprog++;
+            } else {
+                napps++;
+            }
+        }
+        if (napps > 0) {
+            /* One row, not one per program: the leaf is the system's
+             * own menu, and a list of what happens to be installed
+             * belongs inside it rather than across it. */
+            add_item(db, TIKU_TRK_DB_ITEM_APPS,
+                     tiku_str("menu.applications"), NULL, 0);
+        }
+        if (nprog > 0) {
+            /* What a person programs WITH, in a row of its own: the
+             * tools for making programs are not one more thing that
+             * happens to be installed. */
+            add_item(db, TIKU_TRK_DB_ITEM_PROGRAMMING,
+                     tiku_str("menu.programming"), NULL, 0);
+        }
     }
     {
         /*
@@ -1597,6 +1616,15 @@ int
 tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
                          const char *command, const char *icon)
 {
+    return tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_APPS,
+                                       label, command, icon);
+}
+
+int
+tiku_trk_deskbar_add_app_in(tiku_trk_deskbar_t *db, int group,
+                            const char *label, const char *command,
+                            const char *icon)
+{
     if (db == NULL || label == NULL || command == NULL ||
         db->app_count >= (int)(sizeof db->app / sizeof db->app[0])) {
         return 0;
@@ -1608,6 +1636,7 @@ tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
     snprintf(db->app[db->app_count].icon,
              sizeof db->app[db->app_count].icon, "%s",
              (icon != NULL) ? icon : "");
+    db->app[db->app_count].group = group;
     db->app_count++;
     return 1;
 }
@@ -2162,12 +2191,21 @@ open_sub(tiku_trk_deskbar_t *db, int at)
         snprintf(si->label, sizeof si->label, "%s",
                  tiku_str(db->show_replicants ? "menu.hide_replicants"
                                                   : "menu.show_replicants"));
-    } else if (it->kind == TIKU_TRK_DB_ITEM_APPS) {
+    } else if (it->kind == TIKU_TRK_DB_ITEM_APPS ||
+               it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING) {
+        int want = (it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING)
+                       ? TIKU_TRK_DB_GROUP_PROGRAMMING
+                       : TIKU_TRK_DB_GROUP_APPS;
         int i;
 
-        for (i = 0; i < db->app_count && i < TIKU_TRK_DB_SUB_MAX; i++) {
-            tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
+        for (i = 0; i < db->app_count &&
+                    db->sub_count < TIKU_TRK_DB_SUB_MAX; i++) {
+            tiku_trk_db_item_t *si;
 
+            if (db->app[i].group != want) {
+                continue;
+            }
+            si = &db->sub[db->sub_count++];
             memset(si, 0, sizeof *si);
             si->kind = TIKU_TRK_DB_ITEM_APP;
             snprintf(si->label, sizeof si->label, "%s", db->app[i].label);
@@ -2716,6 +2754,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
             } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_APPS ||
+                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_PROGRAMMING ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_SETTINGS ||
                        db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
                 /* What expands says so, the way every hierarchical menu
@@ -3044,6 +3083,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_DIR:
             case TIKU_TRK_DB_ITEM_RECENT:
             case TIKU_TRK_DB_ITEM_APPS:
+            case TIKU_TRK_DB_ITEM_PROGRAMMING:
             case TIKU_TRK_DB_ITEM_SETTINGS:
                 /* Expanding is not choosing: the menu stays up, with the
                  * row's contents beside it. */
