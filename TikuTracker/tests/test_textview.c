@@ -230,6 +230,49 @@ main(void)
     check(!tiku_textview_selection(&tv, NULL, NULL, NULL, NULL),
           "and letting it go leaves no span");
 
+    printf("\nundo folds a typed word and walks back to the save\n");
+    tiku_textview_init(&tv);
+    type(&tv, "hello");
+    check(tiku_textview_can_undo(&tv), "a typed word is something to undo");
+    tiku_textview_undo(&tv);
+    check(strcmp(tiku_textview_line(&tv, 0), "") == 0,
+          "and ONE undo takes the whole word -- the run was folded into "
+          "one edit, not five");
+    check(tiku_textview_can_redo(&tv), "the undone word is there to redo");
+    tiku_textview_redo(&tv);
+    check(strcmp(tiku_textview_line(&tv, 0), "hello") == 0,
+          "redo puts it back exactly");
+    /* A return breaks the run: the word before it undoes on its own. */
+    tiku_textview_init(&tv);
+    type(&tv, "one");
+    tiku_textview_newline(&tv);
+    type(&tv, "two");
+    tiku_textview_undo(&tv);
+    check(tiku_textview_lines(&tv) == 2 &&
+          strcmp(tiku_textview_line(&tv, 1), "") == 0,
+          "undo takes the second word but leaves the line break and the "
+          "first word standing");
+    /* Modified is the DISTANCE from the save, not a one-way flag. */
+    tiku_textview_init(&tv);
+    type(&tv, "ab");
+    tiku_textview_saved(&tv);
+    check(!tiku_textview_modified(&tv), "a save clears the modified mark");
+    type(&tv, "c");
+    check(tiku_textview_modified(&tv), "typing after a save marks it again");
+    tiku_textview_undo(&tv);
+    check(!tiku_textview_modified(&tv),
+          "and undoing back to the save reads as unmodified once more");
+    /* Paste is one entry: a single undo removes the whole of it. */
+    tiku_textview_init(&tv);
+    type(&tv, "XY");
+    tiku_textview_place(&tv, 0, 1);
+    tiku_textview_insert_text(&tv, "abc");
+    check(strcmp(tiku_textview_line(&tv, 0), "XabcY") == 0,
+          "a run is inserted whole");
+    tiku_textview_undo(&tv);
+    check(strcmp(tiku_textview_line(&tv, 0), "XY") == 0,
+          "and undone whole, in one step, not a character at a time");
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }

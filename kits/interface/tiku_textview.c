@@ -35,11 +35,123 @@ line_set(tiku_textview_line_t *l, const char *text, int len)
     l->len = len;
 }
 
-static void
-touched(tiku_textview_t *tv)
+/** @brief A NUL-closed copy of @p n bytes of @p src. */
+static char *
+dupn(const char *src, int n)
 {
-    tv->modified = 1;
+    char *p = malloc((size_t)n + 1u);
+
+    if (p == NULL) {
+        return NULL;
+    }
+    if (n > 0 && src != NULL) {
+        memcpy(p, src, (size_t)n);
+    }
+    p[n] = '\0';
+    return p;
 }
+
+/** @brief Empty the journal, freeing every entry's text. */
+static void
+journal_clear(tiku_textview_t *tv)
+{
+    int i;
+
+    for (i = 0; i < tv->undo_n; i++) {
+        free(tv->undo[i].text);
+        tv->undo[i].text = NULL;
+    }
+    tv->undo_n = 0;
+    tv->undo_at = 0;
+    tv->saved_at = 0;
+}
+
+/**
+ * @brief Write one edit into the journal, folding a keystroke run.
+ *
+ * A single character continuing the run above -- typed just after the
+ * last, or rubbed out just before it -- grows that entry rather than
+ * making a new one, so a word is one step to undo.  Anything else
+ * starts a fresh entry, and the redo history above the present is let
+ * go the moment a new edit lands.  Quiet while undo/redo is replaying.
+ */
+static void
+record(tiku_textview_t *tv, int kind, int line, int col,
+       const char *text, int len)
+{
+    struct tiku_textview_edit *top;
+    int i;
+
+    if (tv == NULL || !tv->recording) {
+        return;
+    }
+    for (i = tv->undo_at; i < tv->undo_n; i++) {
+        free(tv->undo[i].text);
+        tv->undo[i].text = NULL;
+    }
+    tv->undo_n = tv->undo_at;
+
+    if (len == 1 && text[0] != '\n' && tv->undo_n > 0) {
+        top = &tv->undo[tv->undo_n - 1];
+        if (top->coalesce && top->kind == kind && top->line == line) {
+            if (kind == 1 && top->col + top->len == col) {
+                char *g = dupn(top->text, top->len + 1);
+
+                if (g != NULL) {
+                    g[top->len] = text[0];
+                    free(top->text);
+                    top->text = g;
+                    top->len++;
+                }
+                return;         /* typing forward: appended */
+            }
+            if (kind == 2 && col == top->col) {
+                char *g = dupn(top->text, top->len + 1);
+
+                if (g != NULL) {
+                    g[top->len] = text[0];
+                    free(top->text);
+                    top->text = g;
+                    top->len++;
+                }
+                return;         /* forward delete at one place: appended */
+            }
+            if (kind == 2 && col + 1 == top->col) {
+                char *g = malloc((size_t)top->len + 2u);
+
+                if (g != NULL) {
+                    g[0] = text[0];
+                    memcpy(g + 1, top->text, (size_t)top->len + 1u);
+                    free(top->text);
+                    top->text = g;
+                    top->len++;
+                    top->col = col;
+                }
+                return;         /* backspace run: prepended */
+            }
+        }
+    }
+
+    if (tv->undo_n >= TIKU_TEXTVIEW_UNDO) {
+        free(tv->undo[0].text);
+        for (i = 1; i < tv->undo_n; i++) {
+            tv->undo[i - 1] = tv->undo[i];
+        }
+        tv->undo_n--;
+        tv->saved_at = (tv->saved_at > 0) ? tv->saved_at - 1 : -1;
+    }
+    top = &tv->undo[tv->undo_n];
+    top->kind = kind;
+    top->line = line;
+    top->col = col;
+    top->text = dupn(text, len);
+    top->len = len;
+    top->coalesce = (len == 1 && text[0] != '\n');
+    tv->undo_n++;
+    tv->undo_at = tv->undo_n;
+}
+
+static int sel_delete(tiku_textview_t *tv);
 
 void
 tiku_textview_init(tiku_textview_t *tv)
@@ -52,6 +164,7 @@ tiku_textview_init(tiku_textview_t *tv)
      * caret has a line to stand on, which is what keeps them short. */
     line_set(&tv->line[0], "", 0);
     tv->nline = 1;
+    tv->recording = 1;          /* the journal listens from the start */
 }
 
 void
@@ -68,6 +181,7 @@ tiku_textview_free(tiku_textview_t *tv)
         tv->line[i].len = 0;
     }
     tv->nline = 0;
+    journal_clear(tv);
     tiku_textview_init(tv);
 }
 
@@ -114,8 +228,9 @@ tiku_textview_set(tiku_textview_t *tv, const char *text)
     tv->cy = 0;
     tv->cx = 0;
     tv->selecting = 0;
+    journal_clear(tv);          /* a fresh document has nothing to undo */
+    tv->recording = 1;
     tv->top = 0;
-    tv->modified = 0;
 }
 
 int
@@ -146,14 +261,22 @@ tiku_textview_line_len(const tiku_textview_t *tv, int i)
 int
 tiku_textview_modified(const tiku_textview_t *tv)
 {
-    return (tv != NULL) ? tv->modified : 0;
+    /* Not a flag that only ever goes up: the DISTANCE from the mark the
+     * last save left, so undoing back to a save reads as unmodified. */
+    return (tv != NULL) ? (tv->undo_at != tv->saved_at) : 0;
 }
 
 void
 tiku_textview_saved(tiku_textview_t *tv)
 {
     if (tv != NULL) {
-        tv->modified = 0;
+        tv->saved_at = tv->undo_at;
+        /* The run is closed at a save, so the next keystroke starts a
+         * new entry -- or typing after a save would grow the entry the
+         * mark points at, and the change would not read as one. */
+        if (tv->undo_n > 0) {
+            tv->undo[tv->undo_n - 1].coalesce = 0;
+        }
     }
 }
 
@@ -286,17 +409,115 @@ tiku_textview_insert_text(tiku_textview_t *tv, const char *text)
 {
     size_t i;
 
+    int ol, oc, was_rec;
+    char *clean;
+    size_t n = 0;
+
     if (tv == NULL || text == NULL) {
         return;
     }
+    (void)sel_delete(tv);       /* a paste over a selection replaces it */
+    ol = tv->cy;
+    oc = tv->cx;
+    /* Cleaned to what a file may hold FIRST, so the journal records
+     * exactly what landed -- undoing a paste then removes just those
+     * characters, not the ones the paste itself dropped. */
+    clean = malloc(strlen(text) + 1u);
+    if (clean == NULL) {
+        return;
+    }
     for (i = 0; text[i] != '\0'; i++) {
-        if (text[i] == '\n') {
-            tiku_textview_newline(tv);
-        } else if ((unsigned char)text[i] >= 32u &&
-                   (unsigned char)text[i] < 127u) {
-            tiku_textview_insert(tv, text[i]);
+        if (text[i] == '\n' ||
+            ((unsigned char)text[i] >= 32u &&
+             (unsigned char)text[i] < 127u)) {
+            clean[n++] = text[i];
         }
     }
+    clean[n] = '\0';
+    was_rec = tv->recording;
+    tv->recording = 0;          /* the run lands as ONE journal entry */
+    for (i = 0; i < n; i++) {
+        if (clean[i] == '\n') {
+            tiku_textview_newline(tv);
+        } else {
+            tiku_textview_insert(tv, clean[i]);
+        }
+    }
+    tv->recording = was_rec;
+    record(tv, 1, ol, oc, clean, (int)n);
+    free(clean);
+}
+
+int
+tiku_textview_undo(tiku_textview_t *tv)
+{
+    struct tiku_textview_edit *e;
+
+    if (tv == NULL || tv->undo_at <= 0) {
+        return 0;
+    }
+    e = &tv->undo[tv->undo_at - 1];
+    tv->recording = 0;
+    tv->selecting = 0;
+    tiku_textview_place(tv, e->line, e->col);
+    if (e->kind == 1) {
+        int k = e->len;         /* it was inserted: take it back out */
+
+        while (k-- > 0) {
+            tiku_textview_delete(tv);
+        }
+    } else {
+        tiku_textview_insert_text(tv, e->text);   /* it was deleted */
+    }
+    tv->recording = 1;
+    tv->undo_at--;
+    /* The run below is closed, so a new edit after an undo is its own
+     * entry rather than a fold into a pre-undo one. */
+    if (tv->undo_at > 0) {
+        tv->undo[tv->undo_at - 1].coalesce = 0;
+    }
+    return 1;
+}
+
+int
+tiku_textview_redo(tiku_textview_t *tv)
+{
+    struct tiku_textview_edit *e;
+
+    if (tv == NULL || tv->undo_at >= tv->undo_n) {
+        return 0;
+    }
+    e = &tv->undo[tv->undo_at];
+    tv->recording = 0;
+    tv->selecting = 0;
+    tiku_textview_place(tv, e->line, e->col);
+    if (e->kind == 1) {
+        tiku_textview_insert_text(tv, e->text);
+    } else {
+        int k = e->len;
+
+        while (k-- > 0) {
+            tiku_textview_delete(tv);
+        }
+    }
+    tv->recording = 1;
+    tv->undo_at++;
+    if (tv->undo_at > 0) {
+        tv->undo[tv->undo_at - 1].coalesce = 0;
+    }
+    return 1;
+}
+
+int
+tiku_textview_can_undo(const tiku_textview_t *tv)
+{
+    return (tv != NULL && tv->undo_at > 0);
+}
+
+int
+tiku_textview_can_redo(const tiku_textview_t *tv)
+{
+    return (tv != NULL && tv->undo_at < tv->undo_n);
 }
 
 /**
@@ -313,10 +534,12 @@ sel_delete(tiku_textview_t *tv)
 {
     int y0, x0, y1, x1, count, i;
 
+    int was_rec;
+    char *span;
+
     if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
         return 0;
     }
-    tv->selecting = 0;
     if (y0 == y1) {
         count = x1 - x0;
     } else {
@@ -327,10 +550,25 @@ sel_delete(tiku_textview_t *tv)
         count += x1;
         count += (y1 - y0);     /* the line breaks the span crosses */
     }
+    /* The span kept whole FIRST, so the journal holds it as one delete
+     * a single undo restores -- rather than the string of backspaces
+     * that actually take it apart below. */
+    span = dupn("", count);
+    if (span != NULL) {
+        (void)tiku_textview_selected(tv, span, (size_t)count + 1u);
+    }
+    tv->selecting = 0;
+    was_rec = tv->recording;
+    tv->recording = 0;
     tv->cy = y1;
     tv->cx = x1;
     while (count-- > 0) {
         tiku_textview_backspace(tv);
+    }
+    tv->recording = was_rec;
+    if (span != NULL) {
+        record(tv, 2, y0, x0, span, (int)strlen(span));
+        free(span);
     }
     return 1;
 }
@@ -349,13 +587,17 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     if (l->len + 1 >= TIKU_TEXTVIEW_LINE_MAX) {
         return;                 /* a full line refuses rather than truncates */
     }
-    memcpy(buf, l->text, (size_t)tv->cx);
-    buf[tv->cx] = ch;
-    memcpy(buf + tv->cx + 1, l->text + tv->cx,
-           (size_t)(l->len - tv->cx));
-    line_set(l, buf, l->len + 1);
-    tv->cx++;
-    touched(tv);
+    {
+        int ol = tv->cy, oc = tv->cx;
+
+        memcpy(buf, l->text, (size_t)tv->cx);
+        buf[tv->cx] = ch;
+        memcpy(buf + tv->cx + 1, l->text + tv->cx,
+               (size_t)(l->len - tv->cx));
+        line_set(l, buf, l->len + 1);
+        tv->cx++;
+        record(tv, 1, ol, oc, &ch, 1);
+    }
 }
 
 void
@@ -376,13 +618,17 @@ tiku_textview_newline(tiku_textview_t *tv)
     for (i = tv->nline; i > tv->cy + 1; i--) {
         tv->line[i] = tv->line[i - 1];
     }
-    memset(&tv->line[tv->cy + 1], 0, sizeof tv->line[0]);
-    line_set(&tv->line[tv->cy + 1], l->text + tv->cx, tail);
-    line_set(l, l->text, tv->cx);
-    tv->nline++;
-    tv->cy++;
-    tv->cx = 0;
-    touched(tv);
+    {
+        int ol = tv->cy, oc = tv->cx;
+
+        memset(&tv->line[tv->cy + 1], 0, sizeof tv->line[0]);
+        line_set(&tv->line[tv->cy + 1], l->text + tv->cx, tail);
+        line_set(l, l->text, tv->cx);
+        tv->nline++;
+        tv->cy++;
+        tv->cx = 0;
+        record(tv, 1, ol, oc, "\n", 1);
+    }
 }
 
 /** @brief Fold line @p at into the one before it, caret at the seam. */
@@ -409,7 +655,6 @@ join_previous(tiku_textview_t *tv, int at)
     tv->nline--;
     tv->cy = at - 1;
     tv->cx = seam;
-    touched(tv);
 }
 
 void
@@ -426,14 +671,20 @@ tiku_textview_backspace(tiku_textview_t *tv)
     }
     l = &tv->line[tv->cy];
     if (tv->cx > 0) {
+        char gone = l->text[tv->cx - 1];
+        int gl = tv->cy, gc = tv->cx - 1;
+
         memcpy(buf, l->text, (size_t)(tv->cx - 1));
         memcpy(buf + tv->cx - 1, l->text + tv->cx,
                (size_t)(l->len - tv->cx));
         line_set(l, buf, l->len - 1);
         tv->cx--;
-        touched(tv);
+        record(tv, 2, gl, gc, &gone, 1);
     } else if (tv->cy > 0) {
+        int gl = tv->cy - 1, gc = tv->line[tv->cy - 1].len;
+
         join_previous(tv, tv->cy);
+        record(tv, 2, gl, gc, "\n", 1);
     }
 }
 
@@ -451,16 +702,22 @@ tiku_textview_delete(tiku_textview_t *tv)
     }
     l = &tv->line[tv->cy];
     if (tv->cx < l->len) {
+        char gone = l->text[tv->cx];
+        int gl = tv->cy, gc = tv->cx;
+
         memcpy(buf, l->text, (size_t)tv->cx);
         memcpy(buf + tv->cx, l->text + tv->cx + 1,
                (size_t)(l->len - tv->cx - 1));
         line_set(l, buf, l->len - 1);
-        touched(tv);
+        record(tv, 2, gl, gc, &gone, 1);
     } else if (tv->cy + 1 < tv->nline) {
         /* Forwards at a line's end is the same fold as backspace at the
          * next line's head, so it is the same code -- and the caret must
          * come back to where it already was, which join leaves it. */
+        int gl = tv->cy, gc = tv->cx;
+
         join_previous(tv, tv->cy + 1);
+        record(tv, 2, gl, gc, "\n", 1);
     }
 }
 

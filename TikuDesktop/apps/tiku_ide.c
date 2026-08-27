@@ -122,6 +122,8 @@ enum {
 #define CMD_COPY     14
 #define CMD_PASTE    15
 #define CMD_SELALL   16
+#define CMD_UNDO     17
+#define CMD_REDO     18
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -748,6 +750,10 @@ edit_clip(ide_t *st, edit_t *e, int command)
     case CMD_SELALL:
         tiku_textview_select_all(&e->tv);
         return 1;
+    case CMD_UNDO:
+        return tiku_textview_undo(&e->tv);
+    case CMD_REDO:
+        return tiku_textview_redo(&e->tv);
     default:
         return 0;
     }
@@ -774,23 +780,33 @@ edit_publish(ide_t *st, edit_t *e)
     /* The desk's editing menu, worn by the page that answers it.  The
      * labels say the keys, the way the desk's other menus do. */
     snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
-    menus.menu[1].nitem = 4;
+    menus.menu[1].nitem = 6;
     snprintf(menus.menu[1].item[0].label,
-             sizeof menus.menu[1].item[0].label, "Cut");
-    menus.menu[1].item[0].command = CMD_CUT;
-    menus.menu[1].item[0].enabled = 1;
+             sizeof menus.menu[1].item[0].label, "Undo");
+    menus.menu[1].item[0].command = CMD_UNDO;
+    menus.menu[1].item[0].enabled =
+        (unsigned char)tiku_textview_can_undo(&e->tv);
     snprintf(menus.menu[1].item[1].label,
-             sizeof menus.menu[1].item[1].label, "Copy");
-    menus.menu[1].item[1].command = CMD_COPY;
-    menus.menu[1].item[1].enabled = 1;
+             sizeof menus.menu[1].item[1].label, "Redo");
+    menus.menu[1].item[1].command = CMD_REDO;
+    menus.menu[1].item[1].enabled =
+        (unsigned char)tiku_textview_can_redo(&e->tv);
     snprintf(menus.menu[1].item[2].label,
-             sizeof menus.menu[1].item[2].label, "Paste");
-    menus.menu[1].item[2].command = CMD_PASTE;
+             sizeof menus.menu[1].item[2].label, "Cut");
+    menus.menu[1].item[2].command = CMD_CUT;
     menus.menu[1].item[2].enabled = 1;
     snprintf(menus.menu[1].item[3].label,
-             sizeof menus.menu[1].item[3].label, "Select all");
-    menus.menu[1].item[3].command = CMD_SELALL;
+             sizeof menus.menu[1].item[3].label, "Copy");
+    menus.menu[1].item[3].command = CMD_COPY;
     menus.menu[1].item[3].enabled = 1;
+    snprintf(menus.menu[1].item[4].label,
+             sizeof menus.menu[1].item[4].label, "Paste");
+    menus.menu[1].item[4].command = CMD_PASTE;
+    menus.menu[1].item[4].enabled = 1;
+    snprintf(menus.menu[1].item[5].label,
+             sizeof menus.menu[1].item[5].label, "Select all");
+    menus.menu[1].item[5].command = CMD_SELALL;
+    menus.menu[1].item[5].enabled = 1;
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
@@ -2322,17 +2338,22 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 event->key == TIKU_KEY_PAGE_UP ||
                 event->key == TIKU_KEY_PAGE_DOWN;
 
-            /* The desk's editing keys -- Cmd X/C/V/A -- caught before
-             * the switch, so their letters are never typed. */
+            /* The desk's editing keys -- Cmd X/C/V/A, and Cmd-Z /
+             * Cmd-Shift-Z for undo and redo -- caught before the
+             * switch, so their letters are never typed. */
             if ((event->modifiers & TIKU_MOD_CMD) &&
                 (event->key == 'x' || event->key == 'c' ||
-                 event->key == 'v' || event->key == 'a')) {
-                int did = edit_clip(st, e,
-                    (event->key == 'x') ? CMD_CUT
-                  : (event->key == 'c') ? CMD_COPY
-                  : (event->key == 'v') ? CMD_PASTE : CMD_SELALL);
+                 event->key == 'v' || event->key == 'a' ||
+                 event->key == 'z')) {
+                int cmd = (event->key == 'x') ? CMD_CUT
+                        : (event->key == 'c') ? CMD_COPY
+                        : (event->key == 'v') ? CMD_PASTE
+                        : (event->key == 'a') ? CMD_SELALL
+                        : ((event->modifiers & TIKU_MOD_SHIFT)
+                               ? CMD_REDO : CMD_UNDO);
+                int did = edit_clip(st, e, cmd);
 
-                if (did && (event->key == 'x' || event->key == 'v')) {
+                if (did && cmd != CMD_COPY && cmd != CMD_SELALL) {
                     (void)tiku_textview_reveal(&e->tv, rows);
                     edit_publish(st, e);
                     project_publish(st);
@@ -2506,10 +2527,12 @@ ide_pick(void *state, uint32_t window, int command)
         return 0;
     }
     if (e != NULL && (command == CMD_CUT || command == CMD_COPY ||
-                      command == CMD_PASTE || command == CMD_SELALL)) {
+                      command == CMD_PASTE || command == CMD_SELALL ||
+                      command == CMD_UNDO || command == CMD_REDO)) {
         if (edit_clip(st, e, command)) {
+            (void)tiku_textview_reveal(&e->tv, edit_rows(e));
             edit_paint(st, e);
-            if (command == CMD_CUT || command == CMD_PASTE) {
+            if (command != CMD_COPY && command != CMD_SELALL) {
                 edit_publish(st, e);
                 project_publish(st);
             }

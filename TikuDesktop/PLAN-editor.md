@@ -237,16 +237,30 @@ everything below except the BASIC-only roads, which stay gated on
   TRAP for the executing agent: the remote lane's client lives in
   `tiku-run`, which is NOT rebuilt by the app's `.so` target -- a stale
   runner takes the new services table and quietly lacks the entries.
-- **P5 — undo and redo.**  Kit: a journal in `tiku_textview` — entry
-  (kind, line, col, text), runs of plain typing COALESCED into one,
-  bounded (256 entries, oldest fall off); undo/redo walk it; the
-  modified flag follows the journal's distance from the saved mark, so
-  undoing back to the save clears `(changed)`.  Edit menu gains
-  Undo/Redo.  Proving: type a word, undo ONCE removes the word (the
-  coalescing is the point), redo restores; undo to the mark then the
-  strip says unchanged (assert by saving and comparing the file to the
-  original).  Mutation: break coalescing — undo removes one character
-  and the named assert fails.
+- **P5 — undo and redo.**  DONE 2026-08-28.  `tiku_textview` keeps a
+  journal (256 entries, oldest fall off) of each edit as an INSERT or
+  a DELETE of text at a place; a `record()` folds a continuing
+  keystroke into the run above (typed forward, or rubbed out just
+  before/at it), so a word is one entry and one step to undo.  undo and
+  redo REPLAY the inverse with recording off -- an insert is undone by
+  deleting its length forward, a delete by re-inserting its text -- so
+  there is no second copy of the edit logic, only its mirror.  The
+  compound ops record ONE entry each: `sel_delete` keeps the span whole
+  before the backspaces that take it apart, and `insert_text` (paste)
+  filters to what a file may hold and records that, so a paste undoes
+  whole and by exactly what it put in.  "Modified" stopped being a
+  one-way flag and became the journal's DISTANCE from the mark a save
+  leaves (`undo_at != saved_at`) -- so undoing back through a save
+  reads as unmodified, and a save closes the run so the next keystroke
+  is its own entry.  The editor: Cmd-Z / Cmd-Shift-Z and Undo/Redo at
+  the head of the Edit menu, each enabled by `can_undo`/`can_redo`.
+  Proven by `test_textview` (word folds to one undo, redo restores, a
+  Return breaks the run, modified walks back to a save, paste is one
+  entry) and `ideundo.script` end to end: type a word, save, undo,
+  save -- the whole word gone (the file LACKS even the "xy" a
+  letter-at-a-time undo would leave), then redo restores it.  Mutations
+  by name: no coalescing (undo leaves "xy", the plan's named one); redo
+  refusing (the word never comes back).
 - **P6 — find.**  Ctrl-F drops a find field under the toolbar
   (`tiku_field`); Return finds forward from the caret, wraps, reveals,
   and the hit becomes the SELECTION (P3 paints it, typing replaces

@@ -1,0 +1,57 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Undo takes back an edit, and a run of typing is ONE edit: a word goes
+# in one step, not a letter at a time.  Redo puts it back.  Proven by
+# reading the file after each: the whole word gone, then whole again.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note a word typed at the head of a line, and saved
+key Home
+wait 3
+key x
+key y
+key z
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas xyz30 gamma
+note ONE undo takes the WHOLE word -- the letters were folded into a
+note single edit, so nothing of xyz is left, not even the xy a
+note letter-at-a-time undo would leave behind
+key z ctrl
+wait 8
+click 205 268
+wait 60
+expect-file-lacks /tmp/trk_home/main.bas xy
+note and redo puts the whole word back
+key z ctrl shift
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas xyz30 gamma
+note the Edit menu names Undo and Redo, before the clipboard rows
+click 117 8
+wait 8
+expect-menu Undo|Redo|Cut|Copy|Paste|Select all|
+quit

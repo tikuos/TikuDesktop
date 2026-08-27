@@ -27,6 +27,7 @@
 
 #define TIKU_TEXTVIEW_LINES_MAX 4000
 #define TIKU_TEXTVIEW_LINE_MAX  1024
+#define TIKU_TEXTVIEW_UNDO      256
 
 typedef struct {
     char *text;                 /* NUL-terminated, owned */
@@ -40,7 +41,21 @@ typedef struct {
     int ay, ax;                 /* the selection's anchor, line then col */
     int selecting;              /* a selection is being HELD from anchor */
     int top;                    /* first line shown             */
-    int modified;
+    /* The journal: every edit as an insert or a delete of text at a
+     * place, runs of typing folded into one, so a word undoes in one
+     * step.  "Modified" is this journal's DISTANCE from the mark a save
+     * left, so undoing back to a save reads as unmodified. */
+    struct tiku_textview_edit {
+        int   kind;             /* 0 empty, 1 inserted, 2 deleted */
+        int   line, col;        /* where the run began */
+        char *text;             /* the characters, '\n' between lines */
+        int   len;
+        int   coalesce;         /* a like edit beside it may still fold in */
+    } undo[TIKU_TEXTVIEW_UNDO];
+    int undo_n;                 /* entries held (redo history is above at) */
+    int undo_at;                /* the present: undo below it, redo above */
+    int saved_at;               /* undo_at when the file was last saved */
+    int recording;             /* 0 while undo/redo replays, so it is quiet */
 } tiku_textview_t;
 
 /** @brief Start on one empty line, which is what an empty document is. */
@@ -128,6 +143,16 @@ size_t tiku_textview_selected(const tiku_textview_t *tv, char *out,
  * file should not hold is dropped rather than half-taken.
  */
 void tiku_textview_insert_text(tiku_textview_t *tv, const char *text);
+
+/** @brief Take back the last edit; @return 1 if there was one. */
+int tiku_textview_undo(tiku_textview_t *tv);
+
+/** @brief Do again the last undone edit; @return 1 if there was one. */
+int tiku_textview_redo(tiku_textview_t *tv);
+
+/** @brief Whether there is an edit to undo / a undone edit to redo. */
+int tiku_textview_can_undo(const tiku_textview_t *tv);
+int tiku_textview_can_redo(const tiku_textview_t *tv);
 
 /** @brief Type one character at the caret. */
 void tiku_textview_insert(tiku_textview_t *tv, char ch);

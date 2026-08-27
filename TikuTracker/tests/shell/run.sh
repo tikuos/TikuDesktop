@@ -356,6 +356,15 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            ideundo.script)
+                mkdir -p "$deskhome"
+                printf 'title Undo\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 alpha\n20 beta\n30 gamma\n' \
+                    > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             ideselect.script)
                 # Three short lines, so a selection is easy to name and
                 # read back after it is typed over.
