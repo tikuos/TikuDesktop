@@ -175,6 +175,7 @@ typedef struct {
     tiku_syntax_lang_t   lang;
     char                 path[512];
     char                 name[64];
+    int                  drag_select;   /* a press began on the page */
 } edit_t;
 
 /**
@@ -516,6 +517,55 @@ edit_paint(ide_t *st, edit_t *e)
         } else {
             tiku_text(e->surface, f, MARGIN, y + f->ascent, text,
                            TIKU_C_TEXT);
+        }
+    }
+    {
+        /* The selection's ground, behind the text it covers: the blue
+         * the panels and lists give a chosen thing, and the text on it
+         * turned white so it reads.  A line wholly inside the span
+         * carries a nib past its end, so the line break it holds is
+         * shown to be part of what is selected. */
+        int sy0, sx0, sy1, sx1;
+
+        if (tiku_textview_selection(&e->tv, &sy0, &sx0, &sy1, &sx1)) {
+            for (i = 0; i < rows; i++) {
+                int line = top + i;
+                const char *text;
+                int len, c0, c1, px0, px1, y;
+                char head[TIKU_TEXTVIEW_LINE_MAX];
+                tiku_rect_t selr;
+
+                if (line < sy0 || line > sy1) {
+                    continue;
+                }
+                text = tiku_textview_line(&e->tv, line);
+                if (text == NULL) {
+                    continue;
+                }
+                len = tiku_textview_line_len(&e->tv, line);
+                c0 = (line == sy0) ? sx0 : 0;
+                c1 = (line == sy1) ? sx1 : len;
+                if (c0 > len) { c0 = len; }
+                if (c1 > len) { c1 = len; }
+                memcpy(head, text, (size_t)c0);
+                head[c0] = '\0';
+                px0 = MARGIN + tiku_text_width(f, head);
+                memcpy(head, text, (size_t)c1);
+                head[c1] = '\0';
+                px1 = MARGIN + tiku_text_width(f, head);
+                y = TOOLBAR_H + MARGIN + i * (f->height + 2);
+                selr = (tiku_rect_t){ px0, y,
+                                      (px1 > px0) ? px1 - px0 : 2,
+                                      f->height + 2 };
+                if (line < sy1) {
+                    selr.w += 4;    /* the line break, shown as taken */
+                }
+                tiku_fill(e->surface, selr, TIKU_C_SELECT);
+                tiku_clip_set(e->surface, selr);
+                tiku_text(e->surface, f, MARGIN, y + f->ascent, text,
+                               TIKU_C_SELTEXT);
+                tiku_clip_reset(e->surface);
+            }
         }
     }
     {
@@ -2042,6 +2092,8 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
 
     if (event->type != TIKU_EVENT_KEY_DOWN &&
         event->type != TIKU_EVENT_POINTER_DOWN &&
+        event->type != TIKU_EVENT_POINTER_MOVE &&
+        event->type != TIKU_EVENT_POINTER_UP &&
         event->type != TIKU_EVENT_RESIZE &&
         event->type != TIKU_EVENT_WHEEL) {
         return 0;
@@ -2155,13 +2207,34 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 return 0;
             }
             /* Not a button or the bar: the page itself, so the caret
-             * goes where the pointer is and the person types there. */
+             * goes where the pointer is.  The press ANCHORS a selection
+             * there -- a drag from here grows it, and a click that does
+             * not move leaves anchor and caret together, which is none. */
             if (event->x < e->w - PAGE_SB &&
+                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                edit_place_from_xy(e, event->x, event->y);
+                tiku_textview_select_none(&e->tv);
+                tiku_textview_select_begin(&e->tv);
+                e->drag_select = 1;
+                (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+                edit_paint(st, e);
+            }
+            return 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            /* A drag from a page press extends the selection to the
+             * pointer; a move with no such press is not ours. */
+            if (e->drag_select &&
+                event->x < e->w - PAGE_SB &&
                 event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
                 edit_place_from_xy(e, event->x, event->y);
                 (void)tiku_textview_reveal(&e->tv, edit_rows(e));
                 edit_paint(st, e);
             }
+            return 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_UP) {
+            e->drag_select = 0;
             return 0;
         }
         if (ch == 0u) {
@@ -2170,6 +2243,35 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         {
             int rows = edit_rows(e);
             int edited = 0;
+            int shift = (event->modifiers & TIKU_MOD_SHIFT) != 0;
+            int is_move =
+                event->key == TIKU_KEY_LEFT ||
+                event->key == TIKU_KEY_RIGHT ||
+                event->key == TIKU_KEY_UP ||
+                event->key == TIKU_KEY_DOWN ||
+                event->key == TIKU_KEY_HOME ||
+                event->key == TIKU_KEY_END ||
+                event->key == TIKU_KEY_PAGE_UP ||
+                event->key == TIKU_KEY_PAGE_DOWN;
+
+            /* The whole document, on the desk's own select-all key.
+             * Caught before the switch, so its letter is never typed. */
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'a') {
+                tiku_textview_select_all(&e->tv);
+                edit_paint(st, e);
+                return 0;
+            }
+            /* A move with Shift GROWS the selection from where it was
+             * anchored; a move without lets any selection go.  The
+             * editing keys need no such care -- the view removes a
+             * selection before it inserts, breaks or rubs out. */
+            if (is_move) {
+                if (shift) {
+                    tiku_textview_select_begin(&e->tv);
+                } else {
+                    tiku_textview_select_none(&e->tv);
+                }
+            }
 
             switch (event->key) {
             case TIKU_KEY_LEFT:

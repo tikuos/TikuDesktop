@@ -173,14 +173,35 @@ everything below except the BASIC-only roads, which stay gated on
   Mutations by name: no bar (gutter goes white); no paging (thumb does
   not move on the press); the old short status (the middle glyph goes
   to background).
-- **P3 — selection.**  Kit: an anchor (line,col) and an active flag in
-  `tiku_textview`; shift+moves extend; `tiku_textview_selection()`
-  answers a normalized span; insert/newline/backspace/delete COLLAPSE
-  the selection first, so typing replaces.  App: paint the selection
-  ground behind the spans (prefix-measured, multi-line); mouse drag
-  selects; Select All.  Proving: shift-arrows then type, the FILE
-  proves the replacement; a selection-ground pixel.  Mutation: break
-  collapse-on-insert — the named file assert fails.
+- **P3 — selection.**  DONE 2026-08-28.  Kit: `tiku_textview` gained an
+  anchor (`ay,ax`) and a `selecting` flag; `select_begin` drops the
+  anchor once, `select_none` lets it go, `select_all` takes the whole
+  document, and `tiku_textview_selection()` answers a NORMALISED span.
+  insert / newline / backspace / delete all call a private `sel_delete`
+  FIRST -- so typing, a return, or either rubbing-out key replaces what
+  is selected; the deletion is counted as characters plus the line
+  breaks it crosses and taken by the ordinary backspace, so there is no
+  second copy of the fold logic.  App (IDE): a move with Shift extends,
+  a move without lets go; Cmd-A selects all (caught before the switch
+  so its letter is never typed); a pointer press anchors and a drag
+  extends (the shell already forwards MOVE/UP to a pressed app window,
+  both lanes -- no shell change); the ground is painted in the chosen
+  blue with the text turned white on it, a nib past a wholly-selected
+  line to show the break is taken.  Proven two ways at once:
+  `test_textview` unit-checks the pure span logic (both anchor orders,
+  multi-line replace, backspace-is-the-deletion, select-all);
+  `ideselect.script` proves the three roads end to end -- shift+End
+  with a ground pixel, a pointer drag, and Cmd-A -- each by reading the
+  FILE back after a character lands on the span (the replaced word
+  GONE, the character there).  Mutations by name: no collapse (every
+  replace-assert fails, the plan's named one); no ground (the blue
+  pixel goes white); no drag-extend (the dragged word survives).
+  §5 decision: the behaviour lives in the KIT, so it does not fork --
+  the simple editor inherits collapse-on-edit unchanged (its scripts
+  still green) and never sets a selection, so it is safe; wiring the
+  simple editor's own shift-select UI is a small follow-on with its own
+  proof (shiftcaps is its harness), deferred because the IDE is the
+  editor being built up here.
 - **P4 — the clipboard, and an Edit menu.**  The clipboard is the
   SHELL's, one per desk, so text crosses windows and applications:
   wire verbs CLIPSET/CLIPGET and two appended service entries, the way

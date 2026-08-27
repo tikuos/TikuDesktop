@@ -1,0 +1,72 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A selection is a span the editor SHOWS and typing REPLACES.  It is
+# grown three ways -- shift and a move, a drag of the pointer, and the
+# whole-document key -- and each is proven where it can only be: the
+# ground drawn under it, and the file read back after a character lands
+# on top of it, holding the character and none of what it replaced.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note shift and a move grow the span from the caret: from after the
+note line number to the line's end takes the word, and the ground is
+note drawn under it in the blue a chosen thing wears
+key Home
+wait 3
+key Right
+key Right
+key Right
+wait 3
+key End shift
+wait 8
+expect-pixel 250 332 336698
+note a character typed lands ON the span, replacing every bit of it
+key z
+wait 8
+note a DRAG of the pointer selects too: over the first line's word,
+note then a character replaces it
+press 218 294 1
+wait 4
+move 292 294 1
+wait 4
+release 292 294 1
+wait 8
+key k
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 30 z
+expect-file-has /tmp/trk_home/main.bas 10 k
+expect-file-lacks /tmp/trk_home/main.bas gamma
+expect-file-lacks /tmp/trk_home/main.bas alpha
+note the whole-document key takes everything; a character then leaves
+note the file holding only itself
+key a ctrl
+wait 6
+key q
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas q
+expect-file-lacks /tmp/trk_home/main.bas beta
+quit

@@ -113,6 +113,7 @@ tiku_textview_set(tiku_textview_t *tv, const char *text)
     }
     tv->cy = 0;
     tv->cx = 0;
+    tv->selecting = 0;
     tv->top = 0;
     tv->modified = 0;
 }
@@ -184,6 +185,103 @@ tiku_textview_place(tiku_textview_t *tv, int line, int col)
 }
 
 void
+tiku_textview_select_begin(tiku_textview_t *tv)
+{
+    if (tv == NULL) {
+        return;
+    }
+    if (!tv->selecting) {
+        tv->ay = tv->cy;
+        tv->ax = tv->cx;
+        tv->selecting = 1;
+    }
+}
+
+void
+tiku_textview_select_none(tiku_textview_t *tv)
+{
+    if (tv != NULL) {
+        tv->selecting = 0;
+    }
+}
+
+void
+tiku_textview_select_all(tiku_textview_t *tv)
+{
+    if (tv == NULL || tv->nline <= 0) {
+        return;
+    }
+    tv->ay = 0;
+    tv->ax = 0;
+    tv->selecting = 1;
+    tv->cy = tv->nline - 1;
+    tv->cx = tv->line[tv->cy].len;
+}
+
+int
+tiku_textview_selection(const tiku_textview_t *tv,
+                        int *y0, int *x0, int *y1, int *x1)
+{
+    int ay, ax, by, bx;
+
+    if (tv == NULL || !tv->selecting) {
+        return 0;
+    }
+    if (tv->ay == tv->cy && tv->ax == tv->cx) {
+        return 0;               /* an anchor at the caret is no span */
+    }
+    ay = tv->ay; ax = tv->ax;
+    by = tv->cy; bx = tv->cx;
+    if (ay > by || (ay == by && ax > bx)) {
+        int ty = ay, tx = ax;
+
+        ay = by; ax = bx;
+        by = ty; bx = tx;
+    }
+    if (y0 != NULL) { *y0 = ay; }
+    if (x0 != NULL) { *x0 = ax; }
+    if (y1 != NULL) { *y1 = by; }
+    if (x1 != NULL) { *x1 = bx; }
+    return 1;
+}
+
+/**
+ * @brief Remove the selected span, caret left where it began.
+ *
+ * Counted as characters and the newlines between the lines, then taken
+ * from the far end by the ordinary backspace -- which already folds a
+ * line into the one before it -- so this owns no second copy of that.
+ * The flag is dropped FIRST, so the backspace it calls does not see a
+ * selection and turn back on itself.
+ */
+static int
+sel_delete(tiku_textview_t *tv)
+{
+    int y0, x0, y1, x1, count, i;
+
+    if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
+        return 0;
+    }
+    tv->selecting = 0;
+    if (y0 == y1) {
+        count = x1 - x0;
+    } else {
+        count = tv->line[y0].len - x0;
+        for (i = y0 + 1; i < y1; i++) {
+            count += tv->line[i].len;
+        }
+        count += x1;
+        count += (y1 - y0);     /* the line breaks the span crosses */
+    }
+    tv->cy = y1;
+    tv->cx = x1;
+    while (count-- > 0) {
+        tiku_textview_backspace(tv);
+    }
+    return 1;
+}
+
+void
 tiku_textview_insert(tiku_textview_t *tv, char ch)
 {
     char buf[TIKU_TEXTVIEW_LINE_MAX];
@@ -192,6 +290,7 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    (void)sel_delete(tv);       /* typing REPLACES what is selected */
     l = &tv->line[tv->cy];
     if (l->len + 1 >= TIKU_TEXTVIEW_LINE_MAX) {
         return;                 /* a full line refuses rather than truncates */
@@ -211,7 +310,11 @@ tiku_textview_newline(tiku_textview_t *tv)
     tiku_textview_line_t *l;
     int tail, i;
 
-    if (tv == NULL || tv->nline + 1 >= TIKU_TEXTVIEW_LINES_MAX) {
+    if (tv == NULL) {
+        return;
+    }
+    (void)sel_delete(tv);       /* a return over a selection replaces it */
+    if (tv->nline + 1 >= TIKU_TEXTVIEW_LINES_MAX) {
         return;
     }
     l = &tv->line[tv->cy];
@@ -264,6 +367,9 @@ tiku_textview_backspace(tiku_textview_t *tv)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    if (sel_delete(tv)) {
+        return;                 /* the selection was the thing to remove */
+    }
     l = &tv->line[tv->cy];
     if (tv->cx > 0) {
         memcpy(buf, l->text, (size_t)(tv->cx - 1));
@@ -284,6 +390,9 @@ tiku_textview_delete(tiku_textview_t *tv)
     tiku_textview_line_t *l;
 
     if (tv == NULL || tv->nline <= 0) {
+        return;
+    }
+    if (sel_delete(tv)) {
         return;
     }
     l = &tv->line[tv->cy];

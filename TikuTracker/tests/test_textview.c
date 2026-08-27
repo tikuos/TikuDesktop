@@ -175,6 +175,61 @@ main(void)
               "a near-black lands on black, not on whatever comes first");
     }
 
+    printf("\na selection is a span, and editing over it replaces it\n");
+    tiku_textview_set(&tv, "alpha\nbeta\ngamma");
+    tiku_textview_place(&tv, 0, 1);           /* after the 'a' of alpha */
+    check(!tiku_textview_selection(&tv, NULL, NULL, NULL, NULL),
+          "a caret with no anchor is no selection");
+    tiku_textview_select_begin(&tv);
+    tiku_textview_place(&tv, 2, 3);           /* into 'gam|ma' */
+    {
+        int y0, x0, y1, x1;
+
+        check(tiku_textview_selection(&tv, &y0, &x0, &y1, &x1) &&
+              y0 == 0 && x0 == 1 && y1 == 2 && x1 == 3,
+              "the span runs anchor to caret, in document order");
+    }
+    /* Anchor after the caret answers the same span, normalised. */
+    tiku_textview_set(&tv, "alpha\nbeta\ngamma");
+    tiku_textview_place(&tv, 2, 3);
+    tiku_textview_select_begin(&tv);
+    tiku_textview_place(&tv, 0, 1);
+    {
+        int y0, x0, y1, x1;
+
+        check(tiku_textview_selection(&tv, &y0, &x0, &y1, &x1) &&
+              y0 == 0 && x0 == 1 && y1 == 2 && x1 == 3,
+              "and the same span whichever end the anchor is at");
+    }
+    /* Typing over the multi-line span replaces the whole of it. */
+    type(&tv, "X");
+    check(tiku_textview_lines(&tv) == 1 &&
+          strcmp(tiku_textview_line(&tv, 0), "aXma") == 0,
+          "a character typed over a selection replaces every line of it");
+    check(!tiku_textview_selection(&tv, NULL, NULL, NULL, NULL),
+          "and the selection is gone once it has been replaced");
+    /* Backspace over a selection is the deletion, taking nothing more. */
+    tiku_textview_set(&tv, "keepXXXkeep");
+    tiku_textview_place(&tv, 0, 4);
+    tiku_textview_select_begin(&tv);
+    tiku_textview_place(&tv, 0, 7);
+    tiku_textview_backspace(&tv);
+    check(strcmp(tiku_textview_line(&tv, 0), "keepkeep") == 0,
+          "backspace removes the selection and not the character beyond it");
+    /* Select-all spans the document; a plain move lets it go. */
+    tiku_textview_set(&tv, "one\ntwo");
+    tiku_textview_select_all(&tv);
+    {
+        int y0, x0, y1, x1;
+
+        check(tiku_textview_selection(&tv, &y0, &x0, &y1, &x1) &&
+              y0 == 0 && x0 == 0 && y1 == 1 && x1 == 3,
+              "select-all runs from the top to the last line's end");
+    }
+    tiku_textview_select_none(&tv);
+    check(!tiku_textview_selection(&tv, NULL, NULL, NULL, NULL),
+          "and letting it go leaves no span");
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }

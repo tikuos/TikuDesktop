@@ -37,6 +37,8 @@ typedef struct {
     tiku_textview_line_t line[TIKU_TEXTVIEW_LINES_MAX];
     int nline;
     int cy, cx;                 /* the caret: line, then column */
+    int ay, ax;                 /* the selection's anchor, line then col */
+    int selecting;              /* a selection is being HELD from anchor */
     int top;                    /* first line shown             */
     int modified;
 } tiku_textview_t;
@@ -79,6 +81,34 @@ int tiku_textview_top(const tiku_textview_t *tv);
 
 /** @brief Put the caret on @p line, @p col, clamped into the text. */
 void tiku_textview_place(tiku_textview_t *tv, int line, int col);
+
+/**
+ * @brief Begin a selection at the caret, if one is not already held.
+ *
+ * Idempotent while a selection stands: the anchor is dropped ONCE, at
+ * the caret it was called on, and every extending move after grows the
+ * span from there.  A shift+move calls this before moving; a plain move
+ * calls tiku_textview_select_none() instead.
+ */
+void tiku_textview_select_begin(tiku_textview_t *tv);
+
+/** @brief Let a selection go; the caret stays where it is. */
+void tiku_textview_select_none(tiku_textview_t *tv);
+
+/** @brief Take the whole document: anchor at the top, caret at the end. */
+void tiku_textview_select_all(tiku_textview_t *tv);
+
+/**
+ * @brief The selected span, NORMALISED so start is not past end.
+ *
+ * @return 1 and fills the four coordinates when a non-empty selection
+ * is held; 0 (and touches nothing) when there is none.  An insert, a
+ * newline, a backspace or a delete first REMOVES this span, so typing
+ * replaces what is selected -- the behaviour lives here, once, for
+ * every editor that uses the view.
+ */
+int tiku_textview_selection(const tiku_textview_t *tv,
+                            int *y0, int *x0, int *y1, int *x1);
 
 /** @brief Type one character at the caret. */
 void tiku_textview_insert(tiku_textview_t *tv, char ch);
