@@ -344,6 +344,24 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            ideedit.script)
+                # A project whose one file is 40 numbered lines, so the
+                # caret has somewhere to travel and the page has more
+                # than a screenful to reveal.  Files beside the
+                # description, where the panel opens.
+                mkdir -p "$deskhome"
+                printf 'title Nav\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                : > "$deskhome/main.bas"
+                i=1
+                while [ $i -le 40 ]; do
+                    printf '%d line%02d\n' $((i*10)) $i \
+                        >> "$deskhome/main.bas"
+                    i=$((i+1))
+                done
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
                 # it names, beside each other where the panel opens.

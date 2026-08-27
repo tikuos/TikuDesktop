@@ -109,19 +109,44 @@ everything below except the BASIC-only roads, which stay gated on
 
 ## 3. Phases, in order, each ending green and committed
 
-- **P1 — the caret goes everywhere.**  Kit: `tiku_textview_page(tv,
-  ±rows)` beside the move enum.  App: wire LEFT RIGHT UP DOWN HOME END
-  DELETE PGUP PGDN in the IDE's key road and call `reveal` after EVERY
-  key, exactly as the simple editor does.  Mouse: a pointer down on
-  the page places the caret — row from y, column by walking the line's
-  prefix widths through the face, the same arithmetic the caret
-  painter already runs, backwards.  Wheel scrolls the page; FIRST
-  prove both lanes deliver wheel to an app window (a spike assert in
-  the proving script) — if a host drops it, that host is the fix.
-  Proving: plant a 30-line program; arrows/PgDn then type, save, and
-  the file says where the character landed; click mid-text, type,
-  save, same proof; caret pixel asserts for reveal.  Mutation: remove
-  the reveal call — the named caret-pixel assert fails.
+- **P1 — the caret goes everywhere.**  DONE 2026-08-27.  The IDE's key
+  road now wires LEFT RIGHT UP DOWN HOME END DELETE PGUP PGDN and calls
+  `reveal` after EVERY key; a pointer down on the page places the caret
+  — row from y, column by `edit_place_from_xy` walking the line's prefix
+  widths through the face, the SAME arithmetic the caret painter runs,
+  so the caret lands exactly where it will be drawn.  `ideedit.script`
+  proves each move where it can only be proven — by typing a mark and
+  reading back WHERE in the file it landed — plus a click landing at
+  column zero of a known line, and a caret-pixel for reveal.  Three
+  decisions worth keeping:
+  (a) NO kit change.  Paging stayed inline (caret + `place`, mirroring
+  the simple editor): a screenful is a VIEW quantity the app already
+  holds as `rows`, not document state, so `tiku_textview_page` earned
+  no place in the kit.
+  (b) WHEEL deferred to its own phase (now P1b).  The spike was
+  answered by READING, not a script: the shell consumes button 4/5 for
+  its OWN windows (deskbar, folders) and drops it when the window under
+  the pointer is an application window — `folder_of` returns NULL and
+  the branch just `break`s.  No forwarding path exists in EITHER lane,
+  so wheel-to-app is a shell+wire change, not app work, and does not
+  belong in a phase that touches only the app.
+  (c) A real defect fixed alongside: `edit_open` placed the caret at
+  the end of the file but never revealed it, so a long BASIC program
+  opened with its caret lost below the bottom edge until the first
+  keypress.  `edit_open` now reveals on open — which also makes the
+  reveal proof DECISIVE, because the view starts at the bottom and only
+  reveal can bring the caret back to the top.
+  Mutations proven by name: no-Up fails the movement marks; no key-road
+  reveal turns the caret pixel to background; a pointer-ignoring place
+  fails the column-zero mark.
+- **P1b — the wheel scrolls the page.**  A shell+wire phase, split from
+  P1.  Over an application window the shell must translate button 4/5
+  into a `TIKU_EVENT_WHEEL` (the `dy` field is already in the event)
+  and deliver it — in the embed lane through `tiku_app_deliver_event`,
+  in the remote lane as a new wire message — and the editor scrolls its
+  page by `tiku_textview_scroll_to`.  Prove BOTH lanes: a wheel gesture
+  over the page moves `top` (a caret/row pixel), embedded and through
+  the runner.  Mutation: the shell keeps consuming it for itself.
 - **P2 — the page says where it is.**  A real `tiku_ui_scrollbar` in
   a right gutter of the page (the panels wear one; the editor wearing
   none is the inconsistency a person already reported once about the

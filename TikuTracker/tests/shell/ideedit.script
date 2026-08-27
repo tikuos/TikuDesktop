@@ -1,0 +1,99 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The caret goes everywhere.  A file of forty numbered lines is opened
+# and the caret is walked by every key an editor answers -- Home, End,
+# Up, Down, Left, Right, PgUp -- each move proven where it can only be
+# proven, by typing a mark and reading back WHERE in the file it
+# landed.  Then the page follows: a click puts the caret under the
+# pointer, and a caret sent off the top brings the view up to meet it.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+note the project is opened by the shell's own panel, its description
+note picked where the panel first stands
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+note a file opens into an editor of its own; the caret stands at the
+note END of the last line, where a person left off writing
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note HOME takes the caret to the head of the line it is on
+key Home
+wait 3
+key q
+wait 6
+note UP lifts it to the line above -- proven by a mark that can only
+note land there if the caret left the bottom line
+key Up
+wait 3
+key Home
+wait 3
+key w
+wait 6
+note DOWN returns it, RIGHT walks it into the line, and the marks
+note spell out the road the caret took
+key Down
+wait 3
+key Home
+wait 3
+key e
+wait 6
+key Home
+wait 3
+key Right
+key Right
+key Right
+wait 3
+key t
+wait 6
+note DELETE takes the character the caret is BEFORE, not behind
+key Delete
+wait 6
+note END runs to the tail, where typing appends
+key End
+wait 3
+key n
+wait 6
+note the whole road, saved and read back
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas w390 line39
+expect-file-has /tmp/trk_home/main.bas eq4t0 line40n
+expect-file-lacks /tmp/trk_home/main.bas eq4t00
+note the caret sent above the page brings the page UP to meet it, so
+note it is never lost off the top edge: two pages up land it on the
+note first line, and the view has come up to show that line
+key Prior
+wait 4
+key Prior
+wait 8
+expect-pixel 253 298 000000
+note with the page at its top, a click lands the caret on the line
+note under the pointer at its first column -- the third line here
+click 194 332
+wait 6
+key k
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas k30 line03
+quit

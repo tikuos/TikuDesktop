@@ -557,6 +557,69 @@ edit_paint(ide_t *st, edit_t *e)
                               e->w, e->h);
 }
 
+/** @brief How many text rows the page shows at this window's height. */
+static int
+edit_rows(const edit_t *e)
+{
+    const tiku_font_t *f = tiku_font_plain();
+
+    return (e->h - STRIP_H - TOOLBAR_H - MARGIN) / (f->height + 2);
+}
+
+/**
+ * @brief Put the caret under the pointer.
+ *
+ * The row is which screenful line the y falls on, offset by the line
+ * the page starts at; the column is found the way the caret is PAINTED
+ * -- by measuring the prefix through the proportional face and taking
+ * the character edge the x is nearest -- so the caret lands exactly
+ * where it will be drawn, never a glyph off.
+ */
+static void
+edit_place_from_xy(edit_t *e, int x, int y)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    int rows = edit_rows(e);
+    int top = tiku_textview_top(&e->tv);
+    int nline = tiku_textview_lines(&e->tv);
+    int row = (y - TOOLBAR_H - MARGIN) / (f->height + 2);
+    int line, len, col, k, prevw;
+    const char *text;
+    char head[TIKU_TEXTVIEW_LINE_MAX];
+
+    if (row < 0) {
+        row = 0;
+    }
+    if (row >= rows) {
+        row = rows - 1;
+    }
+    line = top + row;
+    if (line >= nline) {
+        line = nline - 1;
+    }
+    if (line < 0) {
+        line = 0;
+    }
+    text = tiku_textview_line(&e->tv, line);
+    len = tiku_textview_line_len(&e->tv, line);
+    col = len;
+    prevw = MARGIN;
+    for (k = 0; k <= len && k < (int)sizeof head - 1; k++) {
+        int w;
+
+        memcpy(head, (text != NULL) ? text : "", (size_t)k);
+        head[k] = '\0';
+        w = MARGIN + tiku_text_width(f, head);
+        if (w >= x) {
+            /* Between edge k-1 and k: the nearer edge wins. */
+            col = (k > 0 && (x - prevw) > (w - x)) ? k : (k > 0 ? k - 1 : 0);
+            break;
+        }
+        prevw = w;
+    }
+    tiku_textview_place(&e->tv, line, col);
+}
+
 static void
 edit_publish(ide_t *st, edit_t *e)
 {
@@ -714,6 +777,10 @@ edit_open(ide_t *st, const prow_t *row)
     }
     e->w = EDIT_W;
     e->h = EDIT_H;
+    /* The caret was placed at the end of a file that may run past a
+     * screenful; bring the page to it, so opening a long program does
+     * not begin with the caret lost below the bottom edge. */
+    (void)tiku_textview_reveal(&e->tv, edit_rows(e));
     e->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_PANEL);
     if (e->surface == NULL) {
         return;
@@ -2024,37 +2091,97 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 project_publish(st);
                 return 0;
             }
+            /* Not a button: the page itself, so the caret goes where
+             * the pointer is and the person types from there. */
+            if (event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                edit_place_from_xy(e, event->x, event->y);
+                (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+                edit_paint(st, e);
+            }
             return 0;
         }
         if (ch == 0u) {
             ch = event->key;
         }
-        if (event->key == TIKU_KEY_RETURN) {
-            int cy, cx, n;
+        {
+            int rows = edit_rows(e);
+            int edited = 0;
 
-            tiku_textview_caret(&e->tv, &cy, &cx);
-            tiku_textview_newline(&e->tv);
-            /* The next line's number, already typed: the numbers are
-             * the language's bookkeeping, and bookkeeping is what a
-             * machine is FOR.  A line wearing none offers none, so
-             * prose in a .bas file is not fought over. */
-            if (e->lang == TIKU_SYNTAX_BASIC) {
-                n = next_number(&e->tv, cy);
-                if (n > 0) {
-                    type_number(&e->tv, n);
-                }
+            switch (event->key) {
+            case TIKU_KEY_LEFT:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_LEFT);
+                break;
+            case TIKU_KEY_RIGHT:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_RIGHT);
+                break;
+            case TIKU_KEY_UP:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_UP);
+                break;
+            case TIKU_KEY_DOWN:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_DOWN);
+                break;
+            case TIKU_KEY_HOME:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_HOME);
+                break;
+            case TIKU_KEY_END:
+                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_END);
+                break;
+            case TIKU_KEY_PAGE_UP:
+            case TIKU_KEY_PAGE_DOWN: {
+                /* A screenful, the caret keeping its column where the
+                 * line it lands on is long enough to hold it. */
+                int cy, cx;
+
+                tiku_textview_caret(&e->tv, &cy, &cx);
+                cy += (event->key == TIKU_KEY_PAGE_UP) ? -rows : rows;
+                tiku_textview_place(&e->tv, cy, cx);
+                break;
             }
-        } else if (event->key == TIKU_KEY_BACKSPACE) {
-            tiku_textview_backspace(&e->tv);
-        } else if (ch >= 32u && ch < 127u) {
-            tiku_textview_insert(&e->tv, (char)ch);
-        } else {
+            case TIKU_KEY_DELETE:
+                tiku_textview_delete(&e->tv);
+                edited = 1;
+                break;
+            case TIKU_KEY_BACKSPACE:
+                tiku_textview_backspace(&e->tv);
+                edited = 1;
+                break;
+            case TIKU_KEY_RETURN: {
+                int cy, cx, n;
+
+                tiku_textview_caret(&e->tv, &cy, &cx);
+                tiku_textview_newline(&e->tv);
+                /* The next line's number, already typed: the numbers
+                 * are the language's bookkeeping, and bookkeeping is
+                 * what a machine is FOR.  A line wearing none offers
+                 * none, so prose in a .bas file is not fought over. */
+                if (e->lang == TIKU_SYNTAX_BASIC) {
+                    n = next_number(&e->tv, cy);
+                    if (n > 0) {
+                        type_number(&e->tv, n);
+                    }
+                }
+                edited = 1;
+                break;
+            }
+            default:
+                if (ch >= 32u && ch < 127u) {
+                    tiku_textview_insert(&e->tv, (char)ch);
+                    edited = 1;
+                } else {
+                    return 0;   /* not the editor's key */
+                }
+                break;
+            }
+            /* The caret is followed after EVERY move, so typing at the
+             * bottom of a long file never runs off the page edge. */
+            (void)tiku_textview_reveal(&e->tv, rows);
+            edit_paint(st, e);
+            if (edited) {
+                edit_publish(st, e);
+                project_publish(st);   /* the mark follows the document */
+            }
             return 0;
         }
-        edit_paint(st, e);
-        edit_publish(st, e);
-        project_publish(st);    /* the mark follows the document */
-        return 0;
     }
     if (window == st->msg_id && st->msg_surface != NULL) {
         tiku_rect_t body = { MARGIN, MARGIN, MSG_W - 2 * MARGIN,
