@@ -16,8 +16,8 @@ click 980 30
 wait 4
 menu-pick Applications
 wait 4
-expect-menu IDE
-menu-pick IDE
+expect-menu TikuIDE
+menu-pick TikuIDE
 wait 150
 expect-title Project
 note the project is handed over by the shell's panel, as every file an

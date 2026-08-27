@@ -251,7 +251,7 @@ PYBG
             idenew.script)
                 # NOTHING is planted: the cold start is the claim.
                 mkdir -p "$deskhome"
-                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                cp -f "$root/../TikuDesktop/build/apps/TikuIDE.so" \
                       "$appsdir/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
@@ -264,7 +264,7 @@ PYBG
                 # of spaces in it cannot be written in a script.
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
-                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                cp -f "$root/../TikuDesktop/build/apps/TikuIDE.so" \
                       "$appsdir/" ;;
             ccolour.script)
                 # The same words twice: once inside a block remark that
@@ -302,7 +302,7 @@ PYBG
                     # what ran and the first was never in the program.
                     printf '250 REM shadowed\n250 PRUNT "bad"\n260 PRINT "after"\n'
                 } > "$deskhome/blink.bas"
-                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                cp -f "$root/../TikuDesktop/build/apps/TikuIDE.so" \
                       "$appsdir/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
@@ -314,7 +314,7 @@ PYBG
                     > "$deskhome/project.tiku"
                 printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
                 printf '20 REM helpers\n' > "$deskhome/util.bas"
-                cp -f "$root/../TikuDesktop/build/apps/IDE.so" \
+                cp -f "$root/../TikuDesktop/build/apps/TikuIDE.so" \
                       "$appsdir/" ;;
             twowinremote.script)
                 # Installed, not trusted: the runner starts it in a

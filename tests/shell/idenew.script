@@ -11,8 +11,13 @@ click 980 30
 wait 4
 menu-pick Applications
 wait 4
-menu-pick IDE
-wait 150
+menu-pick TikuIDE
+wait 25
+note the application arrives announcing itself: its name, over its own
+note mark, in a window that stands in front and then leaves on its own
+expect-title TikuIDE
+wait 200
+expect-no-title TikuIDE
 expect-title Project
 note the menu offers the start: a new project, made where the person
 note says, through the shell's own Save panel

@@ -526,7 +526,7 @@ desk-apps:
 	    build/tiku-demo-app build/tiku-term \
 	    build/apps/terminal.so build/apps/editor.so \
 	    build/apps/sketch.so build/apps/clock.so \
-	    build/apps/twowin.so build/apps/IDE.so \
+	    build/apps/twowin.so build/apps/TikuIDE.so \
 	    build/tiku-run
 
 test: all desk-apps
