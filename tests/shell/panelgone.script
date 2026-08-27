@@ -9,14 +9,14 @@ menu-pick Copy to
 wait 3
 menu-pick Choose folder
 wait 5
-click 400 168
-click 400 168
+click 400 200
+click 400 200
 wait 5
 expect-rows 0
 note sub is deleted underneath it -- the picker is still there
 remove /tmp/trk_script/sub
 wait 40
-expect-title Tracker: Open
+expect-title Open
 note and it is showing somewhere real again
 expect-rows-at-least 1
 quit

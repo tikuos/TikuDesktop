@@ -8,7 +8,7 @@ menu-pick Copy to
 wait 3
 menu-pick Choose folder
 wait 5
-expect-title Tracker: Open
+expect-title Open
 note three Ups: /tmp, then /, then -- setting on by default -- the Desktop
 key Up ctrl
 wait 3

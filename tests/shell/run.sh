@@ -47,6 +47,15 @@ for s in "$here"/*.script; do
        [ "$(basename "$s")" != "$TRK_SHELL_ONLY" ]; then
         continue
     fi
+    # A run that was cut short is finished from where it stopped: names
+    # BEFORE this one (the alphabet already walked) are passed by.
+    if [ -n "${TRK_SHELL_FROM:-}" ]; then
+        first=$(printf '%s\n%s\n' "$(basename "$s")" "$TRK_SHELL_FROM" \
+                | LC_ALL=C sort | head -1)
+        if [ "$first" != "$TRK_SHELL_FROM" ]; then
+            continue
+        fi
+    fi
     which=$(sed -n 's/^# shell: //p' "$s" | head -1)
     [ -z "$which" ] && which=both
     for bin in tracker desktop; do

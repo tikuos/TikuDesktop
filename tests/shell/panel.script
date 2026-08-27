@@ -9,11 +9,11 @@ menu-pick Copy to
 wait 3
 menu-pick Choose folder
 wait 5
-expect-title Tracker: Open
+expect-title Open
 note a double-click on a folder goes INTO it: the picker is showing sub,
 note which is empty, rather than still showing the three rows behind it
-click 400 168
-click 400 168
+click 400 200
+click 400 200
 wait 5
 expect-rows 0
 note and the button, with nothing picked, answers with the folder shown

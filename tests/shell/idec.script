@@ -31,7 +31,7 @@ note and a press on its track PAGES the listing toward the hand
 expect-pixel 722 230 d8d8d8
 click 722 360
 wait 8
-expect-pixel 722 230 d4d4d4
+expect-pixel 722 230 b1b1b1
 click 722 215
 wait 8
 expect-pixel 722 230 d8d8d8

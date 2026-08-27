@@ -33,5 +33,5 @@ wait 3
 expect-menu Set new link target
 menu-pick Set new link target
 wait 5
-expect-title Tracker: Open
+expect-title Open
 quit

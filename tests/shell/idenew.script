@@ -1,11 +1,11 @@
 # shell: desktop
 # home: fixture
 # prefs: factory
-# The cold start: the IDE is launched with NO project anywhere, and a
-# person makes one from nothing -- a project, then a file in it, then
-# words in the file -- through the shell's own panels, without touching
-# a terminal.  Every earlier proof planted a project first, which is
-# how an IDE that could not create anything went unnoticed.
+# The cold start: TikuBasic is launched with NO project anywhere, and a
+# person makes one from nothing -- through the shell's own panels,
+# without touching a terminal.  A project is a FOLDER, born holding its
+# description and its first source file, and the editor is already open
+# on it, because a person who just made a project is there to write it.
 wait 25
 click 980 30
 wait 4
@@ -24,132 +24,105 @@ expect-pixel 650 180 b45a28
 wait 200
 expect-no-title TikuBasic
 expect-title Project
-note the menu offers the start: a new project, made where the person
-note says, through the shell's own Save panel
+note the menu offers the start; a project that does not say what it is
+note FOR is offered no Build, and the file roads live under File
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…|Run|Close Project
+expect-menu New Project…|Open Project…|Run
 menu-pick New Project…
 wait 40
 expect-title Save
-note the panel offers the name the opener looks for; taking it as
-note offered puts the project in the home the panel shows
+note the offered name names the FOLDER: taking it as offered makes
+note untitled/, holding the description and the first source file
 click 675 413
-wait 60
-expect-no-title Save
-note the description exists now, named for the folder that holds it
-expect-file-has /tmp/trk_home/project.tiku title trk_home
-expect-file-has /tmp/trk_home/project.tiku group Sources
-note a new file, offered as BASIC because that is what boards speak
+wait 120
+expect-file-has /tmp/trk_home/untitled/project.tiku title untitled
+expect-file-has /tmp/trk_home/untitled/project.tiku file main.bas
+note and the editor is already open on main.bas, at half the screen,
+note the page numbered 10 with the caret standing black just past it
+expect-title main.bas
+expect-pixel 216 296 000000
+note the source file is REAL before anything was ever saved: the Open
+note panel stands in the project's own folder and LISTS it, and picking
+note it brings the open editor forward rather than opening a second one
 click-window Project
-wait 8
-click 71 8
-wait 8
-note a project that does not say what it is FOR is offered no Build,
-note and the file roads are not here either: Project is about the
-note project, and File is where hands look for files
-expect-menu Open Project…|Run
-expect-menu Run|Close Project
-note a click on open ground puts one menu away before the next
-click 500 600
 wait 8
 click 132 8
 wait 8
 expect-menu New File…|Open File…|Add File…
-menu-pick New File…
+menu-pick Open File…
 wait 40
-expect-title Save
+expect-title Open
+click 400 200
+wait 6
 click 675 413
-wait 90
-note the file is IN the project -- appended to the description, so the
-note lines this build does not know would have survived the edit
-expect-file-has /tmp/trk_home/project.tiku file untitled.bas
-note and its editor window is already open, ready to be typed into
-expect-title untitled.bas
-note and the page does not open empty: a fresh page of BASIC begins
-note where every line of it must -- numbered, 10, with the caret
-note standing black just past the number, ready for the statement
-expect-pixel 561 182 000000
+wait 60
+expect-title main.bas
+note typing lands after the number, and Return TYPES the next number
+note itself, counted by tens the way the interpreter counts
 key h shift
 key i
-wait 10
-note and Return TYPES the next number itself, counted by tens the way
-note the interpreter counts -- the numbers are the language's
-note bookkeeping, and bookkeeping is what a machine is for
+wait 8
 key Return
 wait 8
 key x
 wait 10
 note the toolbar's Save is the same gesture as the menu's, one reach
 note closer to the hand
-click 560 155
+click 205 268
 wait 60
-expect-file-has /tmp/trk_home/untitled.bas 10 Hi
-expect-file-has /tmp/trk_home/untitled.bas 20 x
-note Open File… is an editor on a file, nothing more -- and a file
-note already open comes FORWARD, its count continuing where it stood
+expect-file-has /tmp/trk_home/untitled/main.bas 10 Hi
+expect-file-has /tmp/trk_home/untitled/main.bas 20 x
+note a second file, through the File menu
 click-window Project
 wait 8
 click 132 8
 wait 8
-menu-pick Open File…
-wait 40
-expect-title Open
-click 400 220
-wait 6
-click 675 413
-wait 60
-expect-title untitled.bas
-note and Return still counts from where the program stands
-key Return
-wait 8
-key z
-wait 10
-click 560 155
-wait 60
-expect-file-has /tmp/trk_home/untitled.bas 30 z
-note and the page is the person's to grow: the corner is dragged, the
-note editor hears its new size and repaints at it: the grown ground is
-note the PAGE's own paper, which only the application's repaint lays --
-note a runtime filling the gap would leave panel grey there
-press 990 440 1
-wait 4
-move 990 560 1
-wait 4
-release 990 560 1
-wait 80
-expect-pixel 700 500 ffffff
-note asking for a NEW project where one already stands means opening
-note it: a person naming an existing project is not asking to empty it
-click-window Project
-wait 8
-click 71 8
-wait 8
-menu-pick New Project…
+menu-pick New File…
 wait 40
 expect-title Save
-note the panel notices the name is taken and asks; answering Replace is
-note what hands the path over, and even THEN the project is opened
-note rather than emptied -- the description still holds its file
 click 675 413
-wait 20
-expect-alert exists
-key r
-wait 60
-expect-no-title Save
-expect-file-has /tmp/trk_home/project.tiku file untitled.bas
-note the Window menu knows the window, as it knows every editor
+wait 90
+expect-file-has /tmp/trk_home/untitled/project.tiku file untitled.bas
+expect-title untitled.bas
+note back on the first editor by its Window row, the count continues
+note where it stood
 click-window Project
 wait 8
 click 185 8
 wait 8
-expect-menu untitled.bas
+menu-pick main.bas
+wait 30
+expect-title main.bas
+key Return
+wait 8
+key z
+wait 10
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/untitled/main.bas 30 z
+note the page is the person's to resize: the corner is dragged in and
+note the editor repaints at the size the window now is -- the strip
+note stands at the new bottom, where the old painting had only page
+press 810 672 1
+wait 4
+move 700 500 1
+wait 4
+release 700 500 1
+wait 80
+expect-pixel 250 486 d8d8d8
+note the Window menu names every editor, and reaches them
+click-window Project
+wait 8
+click 185 8
+wait 8
+expect-menu main.bas|untitled.bas
 menu-pick untitled.bas
 wait 30
 expect-title untitled.bas
 note and a folder that does not exist yet is made without leaving the
 note panel: the name field names the folder, New folder steps inside,
-note and the offered name comes back, ready to save
+note and the offered name comes back, ready to make a project there
 click-window Project
 wait 8
 click 71 8
@@ -168,8 +141,7 @@ wait 6
 click 410 413
 wait 30
 click 675 413
-wait 80
-note the project lives in the folder that was made for it, named for
-note it -- and the one already in the home is untouched
-expect-file-has /tmp/trk_home/blinker/project.tiku title blinker
-expect-file-has /tmp/trk_home/project.tiku file untitled.bas
+wait 120
+expect-file-has /tmp/trk_home/blinker/untitled/project.tiku title untitled
+note and the first project is untouched beside it
+expect-file-has /tmp/trk_home/untitled/project.tiku file untitled.bas

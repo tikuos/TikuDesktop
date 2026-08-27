@@ -38,5 +38,5 @@ menu-pick Copy to
 wait 3
 menu-pick Choose folder
 wait 5
-expect-title Tracker: Open
+expect-title Open
 quit
