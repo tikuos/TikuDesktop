@@ -60,6 +60,7 @@ typedef enum {
     PANEL_HIT_CANCEL,
     PANEL_HIT_FAVORITES,
     PANEL_HIT_NEWFOLDER,
+    PANEL_HIT_UP,
     PANEL_HIT_FAV_ROW
 } panel_hit_t;
 
@@ -89,7 +90,8 @@ layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
                     ? field_h() + PANEL_PADDING : 0;
 
     *list = (tiku_rect_t){ content.x + PANEL_PADDING,
-                                content.y + PANEL_PADDING,
+                                content.y + PANEL_PADDING + button_h() +
+                                    PANEL_PADDING,
                                 content.w - 2 * PANEL_PADDING, 0 };
     list->h = bottom - list->y - PANEL_PADDING - field;
     if (list->h < 40) {
@@ -103,6 +105,36 @@ layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
         bottom, PANEL_BUTTON_W, button_h() };
     *cancel = *default_button;
     cancel->x -= PANEL_PADDING + PANEL_BUTTON_W;
+}
+
+/**
+ * @brief The Up button: out of this folder into the one that holds it.
+ *
+ * The one road a list of what is INSIDE a folder cannot offer on its
+ * own rows -- and without it a panel that opened deep is a panel a
+ * person cannot leave.
+ */
+static tiku_rect_t
+up_button(const tiku_trk_panel_window_t *controller)
+{
+    tiku_rect_t content = tiku_window_content(controller->window);
+
+    return (tiku_rect_t){ content.x + PANEL_PADDING,
+                               content.y + PANEL_PADDING,
+                               34, button_h() };
+}
+
+/** @brief Where the panel IS, said beside the way up. */
+static tiku_rect_t
+where_rect(const tiku_trk_panel_window_t *controller)
+{
+    tiku_rect_t content = tiku_window_content(controller->window);
+    tiku_rect_t up = up_button(controller);
+
+    return (tiku_rect_t){ up.x + up.w + PANEL_PADDING,
+                               up.y,
+                               content.w - 3 * PANEL_PADDING - up.w,
+                               up.h };
 }
 
 /** @brief The Favorites button, bottom-left, and its open list. */
@@ -279,6 +311,23 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
         tiku_ui_button(surface, new_folder_button(controller),
                             "New folder", 0u);
+    }
+    {
+        const tiku_font_t *pf = tiku_font_plain();
+        tiku_rect_t wr = where_rect(controller);
+        const char *dir = controller->model.dir;
+        int dw = tiku_text_width(pf, dir);
+
+        tiku_ui_button(surface, up_button(controller), "Up", 0u);
+        /* The TAIL of a long path, because the leaf end is the half a
+         * person is navigating by. */
+        while (*dir != '\0' && dw > wr.w - 8) {
+            dir++;
+            dw = tiku_text_width(pf, dir);
+        }
+        tiku_text(surface, pf, wr.x + 4,
+                       wr.y + (wr.h - pf->height) / 2 + pf->ascent,
+                       dir, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     }
     tiku_ui_button(surface, favorites_button(controller), "Favorites",
                         0u);
@@ -525,6 +574,11 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
             }
         }
         if (INSIDE(fav)) { return PANEL_HIT_FAVORITES; }
+        {
+            tiku_rect_t up = up_button(controller);
+
+            if (INSIDE(up)) { return PANEL_HIT_UP; }
+        }
         if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
             tiku_rect_t nf = new_folder_button(controller);
 
@@ -570,6 +624,24 @@ event(tiku_window_t *window, const tiku_event_t *input,
         }
         controller->fav_open = !controller->fav_open;
         break;
+    case PANEL_HIT_UP: {
+        /* Into the folder that holds this one.  The root holds itself,
+         * which is where climbing honestly ends. */
+        char above[TIKU_PATH_MAX];
+        char *slash;
+
+        snprintf(above, sizeof above, "%s", controller->model.dir);
+        slash = strrchr(above, '/');
+        if (slash != NULL) {
+            if (slash == above) {
+                slash[1] = '\0';   /* "/" is as far up as up goes */
+            } else {
+                *slash = '\0';
+            }
+            go(controller, above);
+        }
+        break;
+    }
     case PANEL_HIT_NEWFOLDER: {
         /* The NAME field names the folder: a person typing "blinker"
          * and pressing the button lands INSIDE blinker/, with the name

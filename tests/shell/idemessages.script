@@ -22,7 +22,7 @@ wait 8
 menu-pick Open Project…
 wait 40
 expect-title TikuTracker: Open
-click 400 248
+click 400 280
 wait 6
 click 675 413
 wait 60

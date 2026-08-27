@@ -26,7 +26,7 @@ wait 6
 menu-pick Open…
 wait 40
 expect-title TikuTracker: Open
-click 400 228
+click 400 260
 wait 6
 click 675 413
 wait 60

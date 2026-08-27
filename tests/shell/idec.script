@@ -24,7 +24,17 @@ wait 8
 menu-pick Open Project…
 wait 40
 expect-title TikuTracker: Open
-click 400 248
+note the way UP is on the panel itself now: two clicks step into a
+note folder, and Up steps back out of it -- without it a panel that
+note opened deep was a panel a person could not leave
+click 400 200
+wait 4
+click 400 200
+wait 20
+click 300 165
+wait 20
+note back where it began, which the pick below can only make if so
+click 400 280
 wait 6
 click 675 413
 wait 60
