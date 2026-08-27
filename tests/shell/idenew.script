@@ -45,6 +45,10 @@ note lines this build does not know would have survived the edit
 expect-file-has /tmp/trk_home/project.tiku file untitled.bas
 note and its editor window is already open, ready to be typed into
 expect-title untitled.bas
+note with the caret standing at the head of the empty page: a person
+note must SEE where their typing will land, and on an empty page any
+note ink at all is the caret
+expect-pixel 541 152 000000
 key h shift
 key i
 wait 10
