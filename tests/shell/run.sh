@@ -252,7 +252,7 @@ PYBG
                 # NOTHING is planted: the cold start is the claim.
                 mkdir -p "$deskhome"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idec.script)
                 # A C project that names NO target: TikuC asks this
@@ -263,7 +263,7 @@ PYBG
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/TikuC.so" \
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuC.so" \
                       "$appsdir/programming/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
@@ -277,7 +277,7 @@ PYBG
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ccolour.script)
                 # The same words twice: once inside a block remark that
@@ -316,7 +316,7 @@ PYBG
                     printf '250 REM shadowed\n250 PRUNT "bad"\n260 PRINT "after"\n'
                 } > "$deskhome/blink.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
@@ -329,7 +329,7 @@ PYBG
                 printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
                 printf '20 REM helpers\n' > "$deskhome/util.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/TikuBasic.so" \
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             twowinremote.script)
                 # Installed, not trusted: the runner starts it in a
