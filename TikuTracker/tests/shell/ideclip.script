@@ -1,0 +1,101 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# ONE clipboard for the desk.  Text selected on an editor's page is
+# copied and pasted into ANOTHER editor's page; then into the SHELL'S
+# own Save-panel field, where it names the file being made; then a name
+# copied out of that field lands back on a page.  Application to
+# application, application to shell, shell to application -- one store,
+# and out of process every road crosses the wire.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+key Home
+wait 3
+key Right
+key Right
+key Right
+wait 3
+key End shift
+wait 6
+key c ctrl
+wait 8
+click-window Project
+wait 8
+key Down
+key Down
+wait 6
+key Return
+wait 90
+expect-title util.bas
+note the page wears an Edit menu, and its Paste is the same paste
+click 117 8
+wait 8
+expect-menu Cut|Copy|Paste|Select all|
+menu-pick Paste
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/util.bas 40 deltagamma
+click-window Project
+wait 8
+click 132 8
+wait 8
+menu-pick New File…
+wait 40
+expect-title Save
+key a ctrl
+wait 4
+key v ctrl
+wait 6
+click 675 413
+wait 90
+expect-file-has /tmp/trk_home/project.tiku file gamma
+note and BACK: a name copied out of the shell's own field lands on an
+note editor's page, replacing the selection still held there
+click-window Project
+wait 8
+click 132 8
+wait 8
+menu-pick New File…
+wait 40
+expect-title Save
+key a ctrl
+wait 4
+key c ctrl
+wait 6
+click 587 413
+wait 30
+click-window Project
+wait 8
+click 185 8
+wait 8
+menu-pick main.bas
+wait 30
+expect-title main.bas
+key v ctrl
+wait 8
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 30 untitled.bas
+expect-file-lacks /tmp/trk_home/main.bas 30 gamma
+quit

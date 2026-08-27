@@ -40,6 +40,7 @@ typedef struct {
     tiku_surface_t *surface;    /* NULL once the window has gone */
     int                  typed;
     int                  wheeled;     /* summed wheel delta, for the test */
+    char                 clip[64];    /* what a 'p' key pasted, for the test */
     const char          *name;       /* "alpha": the file it writes  */
     const char          *label;      /* "Alpha": what a person reads */
 } pane_t;
@@ -61,7 +62,8 @@ record(const pane_t *p)
     snprintf(path, sizeof path, "%s/%s", TWOWIN_DIR, p->name);
     f = fopen(path, "w");
     if (f != NULL) {
-        fprintf(f, "%d\nwheel %d\n", p->typed, p->wheeled);
+        fprintf(f, "%d\nwheel %d\nclip %s\n", p->typed, p->wheeled,
+                p->clip);
         (void)fclose(f);
     }
 }
@@ -225,6 +227,22 @@ twowin_event_in(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (event->type != TIKU_EVENT_KEY_DOWN) {
+        return 0;
+    }
+    /* Two keys are CLIPBOARD verbs, not typing: 'y' puts this pane's
+     * name on the desk, 'p' asks the desk and records the answer.  The
+     * spike's job is the runtime's plumbing, so the gesture is plain. */
+    if (event->key == 'y' && st->services->clip_set != NULL) {
+        char said[64];
+
+        snprintf(said, sizeof said, "from-%s", p->name);
+        (void)st->services->clip_set(st->services->ctx, said);
+        return 0;
+    }
+    if (event->key == 'p' && st->services->clip_get != NULL) {
+        (void)st->services->clip_get(st->services->ctx, p->clip,
+                                     sizeof p->clip);
+        record(p);
         return 0;
     }
     if (event->key < 32u || event->key >= 127u) {

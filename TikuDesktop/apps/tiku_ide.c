@@ -47,6 +47,7 @@
 #include "tiku_logo.h"
 #include "tiku_splash.h"
 #include "tiku_syntax.h"
+#include "tiku_clipboard.h"
 #include "tiku_textview.h"
 #include "tiku_ui.h"
 
@@ -117,6 +118,10 @@ enum {
     ASK_FILE,                   /* New/Add File…: put it in the project */
     ASK_EDIT                    /* Open File…: just an editor on it     */
 };
+#define CMD_CUT      13
+#define CMD_COPY     14
+#define CMD_PASTE    15
+#define CMD_SELALL   16
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -705,13 +710,56 @@ edit_place_from_xy(edit_t *e, int x, int y)
     tiku_textview_place(&e->tv, line, col);
 }
 
+/**
+ * @brief Cut, copy or paste at this editor, over the DESK's clipboard.
+ *
+ * Copy puts the selection on the desk; cut is a copy and then the one
+ * backspace that removes a held selection; paste types what the desk
+ * holds, replacing a selection the way any typing does.  All three
+ * through the services, so the same page behaves the same hosted in
+ * the shell or across the wire.
+ */
+static int
+edit_clip(ide_t *st, edit_t *e, int command)
+{
+    char text[TIKU_CLIPBOARD_MAX];
+
+    switch (command) {
+    case CMD_COPY:
+    case CMD_CUT:
+        if (tiku_textview_selected(&e->tv, text, sizeof text) == 0u) {
+            return 0;           /* nothing held: nothing to take */
+        }
+        if (st->services->clip_set != NULL) {
+            (void)st->services->clip_set(st->services->ctx, text);
+        }
+        if (command == CMD_CUT) {
+            tiku_textview_backspace(&e->tv);
+        }
+        return 1;
+    case CMD_PASTE:
+        if (st->services->clip_get == NULL ||
+            st->services->clip_get(st->services->ctx, text,
+                                   sizeof text) <= 0) {
+            return 0;
+        }
+        tiku_textview_insert_text(&e->tv, text);
+        return 1;
+    case CMD_SELALL:
+        tiku_textview_select_all(&e->tv);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void
 edit_publish(ide_t *st, edit_t *e)
 {
     tiku_menuset_t menus;
 
     memset(&menus, 0, sizeof menus);
-    menus.nmenu = 1;
+    menus.nmenu = 2;
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
     menus.menu[0].nitem = 2;
     snprintf(menus.menu[0].item[0].label,
@@ -723,6 +771,26 @@ edit_publish(ide_t *st, edit_t *e)
              sizeof menus.menu[0].item[1].label, "Close %s", e->name);
     menus.menu[0].item[1].command = CMD_QUIT;
     menus.menu[0].item[1].enabled = 1;
+    /* The desk's editing menu, worn by the page that answers it.  The
+     * labels say the keys, the way the desk's other menus do. */
+    snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
+    menus.menu[1].nitem = 4;
+    snprintf(menus.menu[1].item[0].label,
+             sizeof menus.menu[1].item[0].label, "Cut");
+    menus.menu[1].item[0].command = CMD_CUT;
+    menus.menu[1].item[0].enabled = 1;
+    snprintf(menus.menu[1].item[1].label,
+             sizeof menus.menu[1].item[1].label, "Copy");
+    menus.menu[1].item[1].command = CMD_COPY;
+    menus.menu[1].item[1].enabled = 1;
+    snprintf(menus.menu[1].item[2].label,
+             sizeof menus.menu[1].item[2].label, "Paste");
+    menus.menu[1].item[2].command = CMD_PASTE;
+    menus.menu[1].item[2].enabled = 1;
+    snprintf(menus.menu[1].item[3].label,
+             sizeof menus.menu[1].item[3].label, "Select all");
+    menus.menu[1].item[3].command = CMD_SELALL;
+    menus.menu[1].item[3].enabled = 1;
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
@@ -2254,10 +2322,21 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 event->key == TIKU_KEY_PAGE_UP ||
                 event->key == TIKU_KEY_PAGE_DOWN;
 
-            /* The whole document, on the desk's own select-all key.
-             * Caught before the switch, so its letter is never typed. */
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'a') {
-                tiku_textview_select_all(&e->tv);
+            /* The desk's editing keys -- Cmd X/C/V/A -- caught before
+             * the switch, so their letters are never typed. */
+            if ((event->modifiers & TIKU_MOD_CMD) &&
+                (event->key == 'x' || event->key == 'c' ||
+                 event->key == 'v' || event->key == 'a')) {
+                int did = edit_clip(st, e,
+                    (event->key == 'x') ? CMD_CUT
+                  : (event->key == 'c') ? CMD_COPY
+                  : (event->key == 'v') ? CMD_PASTE : CMD_SELALL);
+
+                if (did && (event->key == 'x' || event->key == 'v')) {
+                    (void)tiku_textview_reveal(&e->tv, rows);
+                    edit_publish(st, e);
+                    project_publish(st);
+                }
                 edit_paint(st, e);
                 return 0;
             }
@@ -2423,6 +2502,17 @@ ide_pick(void *state, uint32_t window, int command)
             st->services->raise_window != NULL) {
             (void)st->services->raise_window(st->services->ctx,
                                              st->edit[i].id);
+        }
+        return 0;
+    }
+    if (e != NULL && (command == CMD_CUT || command == CMD_COPY ||
+                      command == CMD_PASTE || command == CMD_SELALL)) {
+        if (edit_clip(st, e, command)) {
+            edit_paint(st, e);
+            if (command == CMD_CUT || command == CMD_PASTE) {
+                edit_publish(st, e);
+                project_publish(st);
+            }
         }
         return 0;
     }

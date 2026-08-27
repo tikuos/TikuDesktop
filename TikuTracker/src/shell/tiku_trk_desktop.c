@@ -69,6 +69,7 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_model.h"
 #include "tiku_trk_poseview.h"
+#include "tiku_clipboard.h"
 #include "tiku_field.h"
 #include "tiku_trk_select.h"
 #include "tiku_trk_select_window.h"
@@ -1541,6 +1542,28 @@ embed_svc_sizeable(void *ctx, uint32_t id)
     return 0;
 }
 
+/** @brief The desk's clipboard, from an application in this process. */
+static int
+embed_svc_clip_set(void *ctx, const char *text)
+{
+    (void)ctx;
+    tiku_clipboard_set(text);
+    /* The sessions hear about it from the main loop's stamp watch --
+     * the same road a field's copy takes, so there is one road. */
+    return 1;
+}
+
+static int
+embed_svc_clip_get(void *ctx, char *out, size_t max)
+{
+    (void)ctx;
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    snprintf(out, max, "%s", tiku_clipboard_text());
+    return (int)strlen(out);
+}
+
 /** @brief Bring one of this application's windows to the front. */
 static int
 embed_svc_raise(void *ctx, uint32_t id)
@@ -1654,6 +1677,8 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.pick = embed_svc_pick;
     slot->services.raise_window = embed_svc_raise;
     slot->services.sizeable = embed_svc_sizeable;
+    slot->services.clip_set = embed_svc_clip_set;
+    slot->services.clip_get = embed_svc_clip_get;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
@@ -1886,9 +1911,49 @@ remote_hear(desktop_t *app)
                 }
                 app->dirty = 1;
             }
+            if (tiku_msg_what(m) == TIKU_MSG_CLIP) {
+                /* A session put text on the desk's clipboard.  Taken
+                 * into the one store; the stamp watch below mirrors it
+                 * back out to every session, this one included. */
+                const char *text = tiku_msg_find_string(m, "text", 0);
+
+                tiku_clipboard_set((text != NULL) ? text : "");
+            }
             tiku_msg_free(m);
         }
     }
+}
+
+/**
+ * @brief Mirror the desk's clipboard to every session when it moves.
+ *
+ * The store cannot say who changed it -- a field's Cmd-C deep in the
+ * kit, an embedded application's service, a session over the wire --
+ * so the shell WATCHES its stamp once a turn and tells the sessions on
+ * any change.  Every session's copy is therefore always warm, and a
+ * paste out of process never waits on the wire.
+ */
+static void
+clip_mirror(desktop_t *app)
+{
+    static unsigned told;
+    unsigned now = tiku_clipboard_stamp();
+    tiku_msg_t *m;
+    int i;
+
+    if (now == told) {
+        return;
+    }
+    told = now;
+    m = tiku_msg_new(TIKU_MSG_CLIP);
+    if (m == NULL) {
+        return;
+    }
+    (void)tiku_msg_add_string(m, "text", tiku_clipboard_text());
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        (void)tiku_remote_tell(&app->remote, i, m);
+    }
+    tiku_msg_free(m);
 }
 
 /**
@@ -6502,6 +6567,7 @@ tracker_run(int argc, char **argv)
         }
         remote_reconcile(&app);
         remote_hear(&app);
+        clip_mirror(&app);
         pick_sweep(&app);
         remote_sweep(&app);
         sync_folder_preferences(&app);

@@ -110,6 +110,25 @@ void tiku_textview_select_all(tiku_textview_t *tv);
 int tiku_textview_selection(const tiku_textview_t *tv,
                             int *y0, int *x0, int *y1, int *x1);
 
+/**
+ * @brief The selected text, newlines between its lines, NUL-closed.
+ *
+ * @return the length written (not counting the NUL); 0 when nothing is
+ * selected or the buffer cannot hold the first character.
+ */
+size_t tiku_textview_selected(const tiku_textview_t *tv, char *out,
+                              size_t max);
+
+/**
+ * @brief Type @p text at the caret, newlines breaking lines.
+ *
+ * The first character removes a held selection exactly as a typed key
+ * does -- pasting over a selection replaces it -- and the rest lands
+ * after it.  Only printable ASCII and the newline are taken; what a
+ * file should not hold is dropped rather than half-taken.
+ */
+void tiku_textview_insert_text(tiku_textview_t *tv, const char *text);
+
 /** @brief Type one character at the caret. */
 void tiku_textview_insert(tiku_textview_t *tv, char ch);
 

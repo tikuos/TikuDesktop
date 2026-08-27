@@ -289,6 +289,11 @@ const uint32_t *tiku_remote_pixels(
  */
 #define TIKU_MSG_PICK   0x7069636bu   /* 'pick' */
 #define TIKU_MSG_PICKED 0x70696b64u   /* 'pikd' */
+/* The desk's clipboard, both ways: an application SAYs it with "text"
+ * to put text on the desk, and the shell TELLs it to every session
+ * whenever the clipboard moves, so a session's copy is always warm and
+ * clip_get() never waits on the wire. */
+#define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 
 /**
  * @brief Take the next message a session sent, or NULL.

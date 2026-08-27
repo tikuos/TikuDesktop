@@ -245,6 +245,60 @@ tiku_textview_selection(const tiku_textview_t *tv,
     return 1;
 }
 
+size_t
+tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
+{
+    int y0, x0, y1, x1, line;
+    size_t used = 0;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
+        return 0;
+    }
+    for (line = y0; line <= y1; line++) {
+        const char *text = tv->line[line].text;
+        int len = tv->line[line].len;
+        int c0 = (line == y0) ? x0 : 0;
+        int c1 = (line == y1) ? x1 : len;
+        size_t n;
+
+        if (c0 > len) { c0 = len; }
+        if (c1 > len) { c1 = len; }
+        n = (size_t)((c1 > c0) ? c1 - c0 : 0);
+        if (used + n + 2u > max) {
+            break;              /* whole characters or none of them */
+        }
+        memcpy(out + used, text + c0, n);
+        used += n;
+        if (line < y1) {
+            out[used++] = '\n';
+        }
+    }
+    out[used] = '\0';
+    return used;
+}
+
+void
+tiku_textview_insert_text(tiku_textview_t *tv, const char *text)
+{
+    size_t i;
+
+    if (tv == NULL || text == NULL) {
+        return;
+    }
+    for (i = 0; text[i] != '\0'; i++) {
+        if (text[i] == '\n') {
+            tiku_textview_newline(tv);
+        } else if ((unsigned char)text[i] >= 32u &&
+                   (unsigned char)text[i] < 127u) {
+            tiku_textview_insert(tv, text[i]);
+        }
+    }
+}
+
 /**
  * @brief Remove the selected span, caret left where it began.
  *

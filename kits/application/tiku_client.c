@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <poll.h>
@@ -40,6 +41,9 @@ typedef struct {
      * last one goes -- which for an application with one window is the
      * moment its window is closed, exactly as before. */
     int                       windows;
+    /* The desk's clipboard, mirrored: the shell TELLs every change, so
+     * a paste reads from here and never waits on the wire. */
+    char                      clip[4096];
 } client_ctx_t;
 
 static uint32_t
@@ -192,6 +196,38 @@ svc_pick(void *ctx, uint32_t id, int mode, const char *start,
 }
 
 static int
+svc_clip_set(void *ctx, const char *text)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m;
+    int sent;
+
+    /* The local copy first: a copy-then-paste inside this application
+     * must work even before the shell's echo comes back around. */
+    snprintf(c->clip, sizeof c->clip, "%s", (text != NULL) ? text : "");
+    m = tiku_msg_new(TIKU_MSG_CLIP);
+    if (m == NULL) {
+        return 0;
+    }
+    (void)tiku_msg_add_string(m, "text", (text != NULL) ? text : "");
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
+svc_clip_get(void *ctx, char *out, size_t max)
+{
+    client_ctx_t *c = ctx;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    snprintf(out, max, "%s", c->clip);
+    return (int)strlen(out);
+}
+
+static int
 pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
 {
     tiku_app_services_t services;
@@ -207,6 +243,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.pick = svc_pick;
     services.raise_window = svc_raise;
     services.sizeable = svc_sizeable;
+    services.clip_set = svc_clip_set;
+    services.clip_get = svc_clip_get;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;
@@ -260,6 +298,13 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
                 tiku_msg_t *heard = tiku_remote_heard(&ctx->remote);
 
                 if (heard != NULL) {
+                    if (tiku_msg_what(heard) == TIKU_MSG_CLIP) {
+                        const char *text =
+                            tiku_msg_find_string(heard, "text", 0);
+
+                        snprintf(ctx->clip, sizeof ctx->clip, "%s",
+                                 (text != NULL) ? text : "");
+                    }
                     if (tiku_msg_what(heard) == TIKU_MSG_PICKED &&
                         app->picked != NULL) {
                         const char *path =

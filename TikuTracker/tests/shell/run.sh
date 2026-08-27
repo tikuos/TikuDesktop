@@ -344,6 +344,18 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            ideclip.script)
+                # Two files, so a copy has somewhere to cross to; the
+                # desk's own Save panel is the third party.
+                mkdir -p "$deskhome"
+                printf 'title Clip\ngroup Sources\nfile main.bas\nfile util.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 alpha\n20 beta\n30 gamma\n' \
+                    > "$deskhome/main.bas"
+                printf '40 delta\n' > "$deskhome/util.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             ideselect.script)
                 # Three short lines, so a selection is easy to name and
                 # read back after it is typed over.

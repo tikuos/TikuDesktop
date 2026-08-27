@@ -47,6 +47,19 @@ press 757 261 5
 wait 10
 expect-file-has /tmp/trk_twowin/beta wheel 3
 expect-file-has /tmp/trk_twowin/alpha wheel -3
+note and the DESK's clipboard is one clipboard: what Alpha put on it,
+note Beta reads back -- through the services, hosted in this process
+click-window TwoAlpha
+wait 6
+key y
+wait 6
+click-window TwoBeta
+wait 6
+key p
+wait 10
+expect-file-has /tmp/trk_twowin/beta clip from-alpha
+click-window TwoAlpha
+wait 6
 note the strip carries the menus of whichever window is in front
 click 60 8
 wait 6

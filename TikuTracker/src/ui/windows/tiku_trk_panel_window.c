@@ -1126,6 +1126,18 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                     controller->name.sel_a = controller->name.sel_b =
                         controller->name.caret = controller->name.len;
                 }
+            } else if ((modifiers & TIKU_MOD_CMD) != 0u &&
+                       (key == 'x' || key == 'c' || key == 'v' ||
+                        key == 'a')) {
+                /* The desk's editing keys, in the panel's name too: a
+                 * name copied from an editor's page lands here, and a
+                 * name cut here lands there. */
+                (void)tiku_field_key(&controller->name,
+                    (key == 'x') ? TIKU_FIELD_CUT
+                  : (key == 'c') ? TIKU_FIELD_COPY
+                  : (key == 'v') ? TIKU_FIELD_PASTE
+                                 : TIKU_FIELD_SELECT_ALL,
+                    tracker_mods, '\0');
             } else if (key == TIKU_KEY_BACKSPACE) {
                 (void)tiku_field_key(&controller->name,
                     TIKU_FIELD_BACKSPACE, tracker_mods, '\0');

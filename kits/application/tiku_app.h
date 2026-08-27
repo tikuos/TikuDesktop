@@ -144,6 +144,28 @@ typedef struct tiku_app_services {
      * and such a window simply stays the size it opened at.
      */
     int (*sizeable)(void *ctx, uint32_t id);
+    /**
+     * @brief Put @p text on the DESK's clipboard.
+     *
+     * One clipboard for the desk, not one per application: what is cut
+     * here can be pasted into another application's page, or into the
+     * shell's own rename and Save-panel fields, and the other way
+     * round.  Text only -- the file clipboard is a different thing and
+     * must stay one.
+     *
+     * Appended, like the rest: a host that predates it leaves it NULL,
+     * and an application then keeps its habit of having no clipboard.
+     */
+    int (*clip_set)(void *ctx, const char *text);
+    /**
+     * @brief What the desk's clipboard holds, into @p out.
+     *
+     * Answered from what the host already knows -- out of process the
+     * shell keeps every session's copy in step as the clipboard moves,
+     * so this never waits on a wire.  @return the length written, 0
+     * when the clipboard is empty (or the service is absent).
+     */
+    int (*clip_get)(void *ctx, char *out, size_t max);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */

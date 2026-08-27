@@ -202,17 +202,41 @@ everything below except the BASIC-only roads, which stay gated on
   simple editor's own shift-select UI is a small follow-on with its own
   proof (shiftcaps is its harness), deferred because the IDE is the
   editor being built up here.
-- **P4 — the clipboard, and an Edit menu.**  The clipboard is the
-  SHELL's, one per desk, so text crosses windows and applications:
-  wire verbs CLIPSET/CLIPGET and two appended service entries, the way
-  `raise_window` was appended — both placements reach it, embedded and
-  through the runner.  Do not build an app-local clipboard first: a
-  clipboard nobody can paste across windows teaches the wrong habit.
-  Editor windows publish `Edit`: Cut, Copy, Paste, Select All (Undo's
-  row arrives with P5).  Proving: copy in one editor, paste in the
-  OTHER editor of the same project, save both, files prove it — then
-  the same again through the runner lane.  Mutation: Cut leaves the
-  text behind.
+- **P4 — the clipboard, and an Edit menu.**  DONE 2026-08-28, and it
+  went FURTHER than planned: the desk's clipboard is one store for the
+  applications AND the shell's own fields.  What existed pointed the
+  way -- `tiku_field` already kept a process-local text clipboard (a
+  static inside the kit) -- so that store was promoted to
+  `kits/interface/tiku_clipboard.{h,c}` (`set`/`text`/`stamp`, 4096
+  bytes), the field rewired onto it, and every field in the shell was
+  desk-wide at a stroke.  Services `clip_set`/`clip_get` appended;
+  embedded they touch the store directly.  Out of process, ONE msg kind
+  `TIKU_MSG_CLIP` ('clip', a "text" string) rides the EXISTING SAY/TELL
+  roads -- no new wire verbs: a session SAYs its copy up, and the shell
+  MIRRORS the store to every session whenever its stamp moves
+  (`clip_mirror`, once a turn), so every session's copy is warm and a
+  paste never waits on the wire; the client also writes its own cache on
+  copy, so copy-then-paste inside one application never depends on the
+  echo.  The store cannot say who changed it -- a field's Cmd-C deep in
+  the kit, an embedded service, a session -- which is why it wears a
+  STAMP and the shell watches it, rather than every changer learning to
+  broadcast.  The editor: Cmd-X/C/V (+A) and an Edit menu (Cut, Copy,
+  Paste, Select all) through one `edit_clip`; cut is copy plus the one
+  backspace that removes a held selection; textview gained
+  `selected()` (span extraction) and `insert_text()` (paste as typing,
+  so it replaces a selection).  The panel's NAME field gained the same
+  Cmd keys the rename field already had.  Proven in three scripts:
+  `twowin.script` (EMBEDDED: pane Alpha puts, pane Beta gets, one
+  store); `ideclip.script` (REMOTE: page to page across windows, page
+  to the Save panel's field WHERE THE PASTE NAMES THE FILE BEING MADE,
+  and field back to page replacing the selection still held there);
+  the Edit menu's Paste proven as the same paste.  Mutations by name,
+  each killing ONE leg: the shell not mirroring fails only
+  field-to-editor; the shell deaf to a session's CLIP fails only
+  editor-to-field; the embed clip_get dead fails only the twowin round.
+  TRAP for the executing agent: the remote lane's client lives in
+  `tiku-run`, which is NOT rebuilt by the app's `.so` target -- a stale
+  runner takes the new services table and quietly lacks the entries.
 - **P5 — undo and redo.**  Kit: a journal in `tiku_textview` — entry
   (kind, line, col, text), runs of plain typing COALESCED into one,
   bounded (256 entries, oldest fall off); undo/redo walk it; the

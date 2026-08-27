@@ -9,16 +9,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "tiku_clipboard.h"
 #include "tiku_field.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/* Every field in the process shares one TEXT clipboard, held here.
- * Keeping the payload inside the editor also makes it impossible for a
- * focused field's Cmd-X/C/V to fall through into an application's own
- * clipboard -- a rename's Cut must never cut the selected files. */
-static char edit_clipboard[TIKU_FIELD_MAX];
+/* Every field speaks the DESK's one text clipboard, so what was cut
+ * from a rename can be pasted into a program and back.  It is still a
+ * TEXT clipboard only -- a rename's Cut must never cut the selected
+ * files, which is why the file clipboard is a different thing. */
 
 static void
 copy_selection(tiku_field_t *e)
@@ -26,15 +26,17 @@ copy_selection(tiku_field_t *e)
     int from, to;
 
     if (tiku_field_selection(e, &from, &to)) {
+        char taken[TIKU_FIELD_MAX];
         size_t n = (size_t)(to - from);
 
-        if (n >= sizeof edit_clipboard) {
-            n = sizeof edit_clipboard - 1u;
+        if (n >= sizeof taken) {
+            n = sizeof taken - 1u;
         }
-        memcpy(edit_clipboard, e->text + from, n);
-        edit_clipboard[n] = '\0';
+        memcpy(taken, e->text + from, n);
+        taken[n] = '\0';
+        tiku_clipboard_set(taken);
     } else {
-        edit_clipboard[0] = '\0';
+        tiku_clipboard_set("");
     }
 }
 
@@ -264,9 +266,12 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
         }
 
         delete_selection(e);
-        for (i = 0; edit_clipboard[i] != '\0'; i++) {
-            (void)tiku_field_key(e, TIKU_FIELD_CHAR, 0,
-                                    edit_clipboard[i]);
+        {
+            const char *held = tiku_clipboard_text();
+
+            for (i = 0; held[i] != '\0'; i++) {
+                (void)tiku_field_key(e, TIKU_FIELD_CHAR, 0, held[i]);
+            }
         }
         return TIKU_FIELD_HANDLED;
     }
