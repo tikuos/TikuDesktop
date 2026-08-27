@@ -139,24 +139,40 @@ everything below except the BASIC-only roads, which stay gated on
   Mutations proven by name: no-Up fails the movement marks; no key-road
   reveal turns the caret pixel to background; a pointer-ignoring place
   fails the column-zero mark.
-- **P1b — the wheel scrolls the page.**  A shell+wire phase, split from
-  P1.  Over an application window the shell must translate button 4/5
-  into a `TIKU_EVENT_WHEEL` (the `dy` field is already in the event)
-  and deliver it — in the embed lane through `tiku_app_deliver_event`,
-  in the remote lane as a new wire message — and the editor scrolls its
-  page by `tiku_textview_scroll_to`.  Prove BOTH lanes: a wheel gesture
-  over the page moves `top` (a caret/row pixel), embedded and through
-  the runner.  Mutation: the shell keeps consuming it for itself.
-- **P2 — the page says where it is.**  A real `tiku_ui_scrollbar` in
-  a right gutter of the page (the panels wear one; the editor wearing
-  none is the inconsistency a person already reported once about the
-  panels).  Track press pages, thumb reflects top/rows/total.  The
-  strip gains `line L, col C` — and for a BASIC line wearing a number,
-  the NUMBER, which is the name the interpreter will use.  Dirty mark
-  stays in the strip (retitling a window on every keystroke would put
-  the wire between the person and their typing).  Proving: track-click
-  pages (caret pixel), thumb pixel before/after.  Mutation: break the
-  thumb length arithmetic.
+- **P1b — the wheel scrolls the page.**  DONE 2026-08-27.  Over an
+  application window the shell now builds a `TIKU_EVENT_WHEEL` (dy = ±3
+  lines, button 4 up / 5 down) in window coordinates and delivers it --
+  `embed_deliver` in this process, `tiku_remote_event` across the wire.
+  NO wire change was needed: `tiku_remote_event` already copies the
+  WHOLE `tiku_event_t` (type and dy included) and `tiku_remote_read`
+  reads it back, so a WHEEL crosses intact.  The editor scrolls its
+  page by `tiku_textview_scroll_to`, leaving the caret where it is.
+  Proven in BOTH lanes with distinct code: `twowin.script` (EMBEDDED)
+  records each pane's wheel and proves per-window delivery AND
+  direction (`wheel -3` on the pane rolled up, `wheel 3` on the other
+  rolled down, the untouched pane `wheel 0`); `idewheel.script` (REMOTE
+  TikuBasic through the runner) rolls the wheel over the page and the
+  scrollbar thumb walks from bottom to top.  A script drives the wheel
+  as `press X Y 4`/`5` -- the adapter carries the button through as a
+  POINTER_DOWN, which is exactly what a real wheel is.  Mutations by
+  name: the shell dropping the wheel fails BOTH lanes; the editor
+  ignoring it fails only the remote thumb-move, isolating the two.
+- **P2 — the page says where it is.**  DONE 2026-08-27.  A real
+  `tiku_ui_scrollbar` sits in a 12px gutter (`PAGE_SB`) at the page's
+  right -- the same bar, colours and paging the panels and folders
+  wear, so there is one scrollbar to learn, not two.  A press on the
+  track pages the view (`tiku_textview_scroll_to`) WITHOUT moving the
+  caret; the thumb reflects top/rows/total.  The strip gained
+  `line L, col C` and, for a BASIC line wearing a number, `[N]` -- the
+  number the interpreter will name it by (parsed with `atoi`, which is
+  0 for a line that wears none).  The dirty `(changed)` mark stays in
+  the strip.  `idescroll.script` proves it: a status glyph in the
+  new-only middle of the strip (000000 where the old short status left
+  background), the thumb at the BOTTOM on open (reveal-on-open), and a
+  track press high on the bar that walks the thumb to the top.
+  Mutations by name: no bar (gutter goes white); no paging (thumb does
+  not move on the press); the old short status (the middle glyph goes
+  to background).
 - **P3 — selection.**  Kit: an anchor (line,col) and an active flag in
   `tiku_textview`; shift+moves extend; `tiku_textview_selection()`
   answers a normalized span; insert/newline/backspace/delete COLLAPSE

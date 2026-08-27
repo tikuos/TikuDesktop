@@ -344,6 +344,38 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            idewheel.script)
+                # A page longer than the window, so the wheel has
+                # somewhere to roll it.
+                mkdir -p "$deskhome"
+                printf 'title Wheel\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                : > "$deskhome/main.bas"
+                i=1
+                while [ $i -le 40 ]; do
+                    printf '%d line%02d\n' $((i*10)) $i \
+                        >> "$deskhome/main.bas"
+                    i=$((i+1))
+                done
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
+            idescroll.script)
+                # The same 40-line program, to give the page a tail
+                # longer than the window so the scrollbar has work.
+                mkdir -p "$deskhome"
+                printf 'title Scroll\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                : > "$deskhome/main.bas"
+                i=1
+                while [ $i -le 40 ]; do
+                    printf '%d line%02d\n' $((i*10)) $i \
+                        >> "$deskhome/main.bas"
+                    i=$((i+1))
+                done
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             ideedit.script)
                 # A project whose one file is 40 numbered lines, so the
                 # caret has somewhere to travel and the page has more

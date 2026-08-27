@@ -7158,6 +7158,33 @@ tracker_run(int argc, char **argv)
                                     step * 3);
                         }
                         app.dirty = 1;
+                    } else if (ww != NULL) {
+                        /* Over an application's own page: the wheel is
+                         * ITS to answer, so it rides in as a WHEEL event
+                         * in window coordinates -- embedded in this
+                         * process, or across the wire to the session
+                         * that owns it, the road a click already takes. */
+                        struct embed_win *ew =
+                            embed_win_of_window(&app, ww);
+                        tiku_rect_t rc = tiku_window_content(ww);
+                        tiku_event_t we;
+
+                        memset(&we, 0, sizeof we);
+                        we.type = TIKU_EVENT_WHEEL;
+                        we.x = ev.x - rc.x;
+                        we.y = ev.y - rc.y;
+                        we.dy = (ev.button == 4u) ? -3 : 3;
+                        we.time_us = tiku_trk_now();
+                        if (ew != NULL) {
+                            if (embed_deliver(ew, &we)) {
+                                embed_stop(ew->slot);
+                            }
+                            app.dirty = 1;
+                        } else if (tiku_remote_owner(&app.remote, ww)
+                                       != NULL) {
+                            tiku_remote_event(&app.remote, ww, &we);
+                            app.dirty = 1;
+                        }
                     }
                     break;
                 }

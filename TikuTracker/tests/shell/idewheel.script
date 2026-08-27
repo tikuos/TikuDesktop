@@ -1,0 +1,53 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The wheel scrolls the page.  A program opened at its end stands with
+# its thumb at the bottom; rolling the wheel up over the page walks the
+# view -- and the thumb with it -- toward the top, the caret staying
+# where it was left.  This is the runner's lane: TikuBasic is hosted
+# through tiku-run, so the wheel here has crossed the wire to reach it.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note the page opened at its end: the thumb is at the bottom, the track
+note above it empty
+expect-pixel 803 350 b1b1b1
+expect-pixel 803 500 d8d8d8
+note the wheel rolled up over the page walks the view to the top, and
+note the thumb comes with it
+press 400 400 4
+wait 6
+press 400 400 4
+wait 6
+press 400 400 4
+wait 6
+press 400 400 4
+wait 6
+press 400 400 4
+wait 6
+press 400 400 4
+wait 6
+press 400 400 4
+wait 20
+expect-pixel 803 350 d8d8d8
+expect-pixel 803 500 b1b1b1
+quit

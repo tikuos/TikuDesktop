@@ -35,6 +35,18 @@ key x
 wait 10
 expect-file-has /tmp/trk_twowin/alpha 1
 expect-file-has /tmp/trk_twowin/beta 3
+note the runtime carries a WHEEL to the window UNDER it, the way it
+note carries a key to the window that HAS it: each pane counts only
+note its own, and the direction it was rolled -- this is the embedded
+note lane, the application hosted in the shell's own process
+press 499 261 4
+wait 10
+expect-file-has /tmp/trk_twowin/alpha wheel -3
+expect-file-has /tmp/trk_twowin/beta wheel 0
+press 757 261 5
+wait 10
+expect-file-has /tmp/trk_twowin/beta wheel 3
+expect-file-has /tmp/trk_twowin/alpha wheel -3
 note the strip carries the menus of whichever window is in front
 click 60 8
 wait 6

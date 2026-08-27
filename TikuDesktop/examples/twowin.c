@@ -39,6 +39,7 @@ typedef struct {
     uint32_t             id;
     tiku_surface_t *surface;    /* NULL once the window has gone */
     int                  typed;
+    int                  wheeled;     /* summed wheel delta, for the test */
     const char          *name;       /* "alpha": the file it writes  */
     const char          *label;      /* "Alpha": what a person reads */
 } pane_t;
@@ -60,7 +61,7 @@ record(const pane_t *p)
     snprintf(path, sizeof path, "%s/%s", TWOWIN_DIR, p->name);
     f = fopen(path, "w");
     if (f != NULL) {
-        fprintf(f, "%d\n", p->typed);
+        fprintf(f, "%d\nwheel %d\n", p->typed, p->wheeled);
         (void)fclose(f);
     }
 }
@@ -211,7 +212,19 @@ twowin_event_in(void *state, uint32_t window, const tiku_event_t *event)
     twowin_state_t *st = state;
     pane_t *p = pane_of(st, window);
 
-    if (p == NULL || event->type != TIKU_EVENT_KEY_DOWN) {
+    if (p == NULL) {
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_WHEEL) {
+        /* The runtime carried a wheel to THIS window: recorded so a
+         * test can read that it arrived, and in which window. */
+        p->wheeled += event->dy;
+        record(p);
+        paint(st, p);
+        publish(st, p);
+        return 0;
+    }
+    if (event->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }
     if (event->key < 32u || event->key >= 127u) {

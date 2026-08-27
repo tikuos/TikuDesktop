@@ -73,6 +73,7 @@
 #define EDIT_H     420
 #define STRIP_H    22
 #define TOOLBAR_H  30
+#define PAGE_SB    12   /* the page's own scrollbar gutter, at the right */
 #define MARGIN     6
 
 /* The editor toolbar's two tools, in the window's own coordinates. */
@@ -546,10 +547,44 @@ edit_paint(ide_t *st, edit_t *e)
                             f->height + 2, TIKU_C_TEXT);
         }
     }
+    {
+        /* The same scrollbar the folder windows and the panels wear,
+         * in a gutter of its own at the page's right: a listing longer
+         * than the window SAYS so, rather than hiding its own tail. */
+        int total = tiku_textview_lines(&e->tv);
+
+        if (total > rows && rows > 0) {
+            tiku_rect_t sb = { e->w - PAGE_SB, TOOLBAR_H, PAGE_SB,
+                               e->h - STRIP_H - TOOLBAR_H };
+
+            tiku_ui_scrollbar(e->surface, sb,
+                (float)top / (float)(total - rows),
+                (float)rows / (float)total, 0);
+        }
+    }
     tiku_fill(e->surface, strip, TIKU_C_PANEL);
-    snprintf(where, sizeof where, "%s%s  %d lines", e->name,
-             tiku_textview_modified(&e->tv) ? " (changed)" : "",
-             tiku_textview_lines(&e->tv));
+    {
+        /* The strip says where the caret is -- the line and column an
+         * editor is always asked -- and, for a BASIC line wearing its
+         * number, the NUMBER the interpreter will name it by. */
+        int cy, cx, num = 0;
+        const char *cline;
+        char bas[24];
+
+        tiku_textview_caret(&e->tv, &cy, &cx);
+        cline = tiku_textview_line(&e->tv, cy);
+        bas[0] = '\0';
+        if (e->lang == TIKU_SYNTAX_BASIC && cline != NULL) {
+            num = atoi(cline);
+        }
+        if (num > 0) {
+            snprintf(bas, sizeof bas, "   [%d]", num);
+        }
+        snprintf(where, sizeof where, "%s%s   line %d, col %d%s   %d lines",
+                 e->name,
+                 tiku_textview_modified(&e->tv) ? " (changed)" : "",
+                 cy + 1, cx + 1, bas, tiku_textview_lines(&e->tv));
+    }
     tiku_text(e->surface, f, MARGIN,
                    strip.y + (STRIP_H - f->height) / 2 + f->ascent,
                    where, TIKU_C_TEXT);
@@ -2007,7 +2042,8 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
 
     if (event->type != TIKU_EVENT_KEY_DOWN &&
         event->type != TIKU_EVENT_POINTER_DOWN &&
-        event->type != TIKU_EVENT_RESIZE) {
+        event->type != TIKU_EVENT_RESIZE &&
+        event->type != TIKU_EVENT_WHEEL) {
         return 0;
     }
     if (window == st->about_id && st->about_surface != NULL) {
@@ -2063,6 +2099,17 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         }
         return 0;
     }
+    if (e != NULL && event->type == TIKU_EVENT_WHEEL) {
+        /* The wheel scrolls the page and leaves the caret where it is,
+         * the way the scrollbar's track does: a person reading ahead
+         * has not moved where they type. */
+        int rows = edit_rows(e);
+        int top = tiku_textview_top(&e->tv);
+
+        (void)tiku_textview_scroll_to(&e->tv, top + event->dy, rows);
+        edit_paint(st, e);
+        return 0;
+    }
     if (e != NULL) {
         /* An editor window: the document takes it. */
         unsigned ch = (unsigned char)event->text[0];
@@ -2091,9 +2138,26 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 project_publish(st);
                 return 0;
             }
-            /* Not a button: the page itself, so the caret goes where
-             * the pointer is and the person types from there. */
-            if (event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+            /* A press on the scrollbar's track PAGES the view toward
+             * the hand -- the same gesture the panels and folders
+             * answer -- and moves the page WITHOUT the caret, because a
+             * person looking elsewhere has not moved where they type. */
+            if (event->x >= e->w - PAGE_SB &&
+                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
+                int rows = edit_rows(e);
+                int top = tiku_textview_top(&e->tv);
+                int mid = TOOLBAR_H + (e->h - STRIP_H - TOOLBAR_H) / 2;
+                int step = (rows > 1) ? rows - 1 : 1;
+
+                (void)tiku_textview_scroll_to(&e->tv,
+                    top + ((event->y < mid) ? -step : step), rows);
+                edit_paint(st, e);
+                return 0;
+            }
+            /* Not a button or the bar: the page itself, so the caret
+             * goes where the pointer is and the person types there. */
+            if (event->x < e->w - PAGE_SB &&
+                event->y >= TOOLBAR_H && event->y < e->h - STRIP_H) {
                 edit_place_from_xy(e, event->x, event->y);
                 (void)tiku_textview_reveal(&e->tv, edit_rows(e));
                 edit_paint(st, e);
