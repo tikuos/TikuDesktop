@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -57,6 +59,7 @@ typedef enum {
     PANEL_HIT_DEFAULT,
     PANEL_HIT_CANCEL,
     PANEL_HIT_FAVORITES,
+    PANEL_HIT_NEWFOLDER,
     PANEL_HIT_FAV_ROW
 } panel_hit_t;
 
@@ -112,6 +115,23 @@ favorites_button(const tiku_trk_panel_window_t *controller)
                                content.y + content.h - PANEL_PADDING -
                                    button_h(),
                                PANEL_BUTTON_W, button_h() };
+}
+
+/**
+ * @brief The New folder button, beside Favorites; the SAVE panel only.
+ *
+ * Saving is the one time a person discovers the folder they meant to
+ * save INTO does not exist yet -- a new project wants a folder of its
+ * own -- and sending them away to make one loses the panel, the place
+ * and the name they had already typed.
+ */
+static tiku_rect_t
+new_folder_button(const tiku_trk_panel_window_t *controller)
+{
+    tiku_rect_t fav = favorites_button(controller);
+
+    fav.x += PANEL_BUTTON_W + PANEL_PADDING;
+    return fav;
 }
 
 static tiku_rect_t
@@ -256,6 +276,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
            controller->window ==
                tiku_workspace_focused(controller->workspace))
             ? TIKU_S_DEFAULT : TIKU_S_NORMAL);
+    if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
+        tiku_ui_button(surface, new_folder_button(controller),
+                            "New folder", 0u);
+    }
     tiku_ui_button(surface, favorites_button(controller), "Favorites",
                         0u);
     if (controller->fav_open) {
@@ -501,6 +525,11 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
             }
         }
         if (INSIDE(fav)) { return PANEL_HIT_FAVORITES; }
+        if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
+            tiku_rect_t nf = new_folder_button(controller);
+
+            if (INSIDE(nf)) { return PANEL_HIT_NEWFOLDER; }
+        }
     }
     if (INSIDE(default_button)) { return PANEL_HIT_DEFAULT; }
     if (INSIDE(cancel))         { return PANEL_HIT_CANCEL; }
@@ -541,6 +570,54 @@ event(tiku_window_t *window, const tiku_event_t *input,
         }
         controller->fav_open = !controller->fav_open;
         break;
+    case PANEL_HIT_NEWFOLDER: {
+        /* The NAME field names the folder: a person typing "blinker"
+         * and pressing the button lands INSIDE blinker/, with the name
+         * the caller offered back in the field, ready to save. */
+        char at[TIKU_PATH_MAX];
+        struct stat sb;
+
+        if (controller->model.name[0] == '\0') {
+            if (controller->alert != NULL) {
+                tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
+                                    TIKU_TRK_ALERT_TAG_ERROR,
+                                    "Name the folder first: what is "
+                                    "typed in the name field is what "
+                                    "the folder will be called.",
+                                    "Cancel");
+            }
+            break;
+        }
+        snprintf(at, sizeof at, "%s/%s", controller->model.dir,
+                 controller->model.name);
+        if (stat(at, &sb) == 0 && !S_ISDIR(sb.st_mode)) {
+            if (controller->alert != NULL) {
+                tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
+                                    TIKU_TRK_ALERT_TAG_ERROR,
+                                    "Something of that name is already "
+                                    "here, and it is not a folder.",
+                                    "Cancel");
+            }
+            break;
+        }
+        /* Already a folder is not an error: the person is taken in,
+         * which is what they were making it FOR. */
+        if (stat(at, &sb) != 0 && mkdir(at, 0755) != 0) {
+            if (controller->alert != NULL) {
+                tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
+                                    TIKU_TRK_ALERT_TAG_ERROR,
+                                    "The folder could not be made "
+                                    "here.", "Cancel");
+            }
+            break;
+        }
+        go(controller, at);
+        snprintf(controller->model.name, sizeof controller->model.name,
+                 "%s", controller->offered);
+        controller->model.name_len = (int)strlen(controller->model.name);
+        sync_name(controller);
+        break;
+    }
     case PANEL_HIT_FAV_ROW:
         if (controller->fav_count == 0) {
             row -= 1;           /* row 0 is the disabled placeholder */
@@ -693,6 +770,8 @@ tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
     snprintf(controller->model.name, sizeof controller->model.name, "%s",
              initial_name != NULL ? initial_name : "");
     controller->model.name_len = (int)strlen(controller->model.name);
+    snprintf(controller->offered, sizeof controller->offered, "%s",
+             controller->model.name);
     tiku_field_start(&controller->name, controller->model.name);
     controller->pending_save[0] = '\0';
     snprintf(controller->window->title, sizeof controller->window->title,

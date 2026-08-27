@@ -53,15 +53,26 @@ expect-title untitled.bas
 note with the caret standing at the head of the empty page: a person
 note must SEE where their typing will land, and on an empty page any
 note ink at all is the caret
-expect-pixel 541 152 000000
+expect-pixel 541 182 000000
 key h shift
 key i
 wait 10
-click 71 8
-wait 8
-menu-pick Save untitled.bas
+note the toolbar's Save is the same gesture as the menu's, one reach
+note closer to the hand
+click 560 155
 wait 60
 expect-file-has /tmp/trk_home/untitled.bas Hi
+note and the page is the person's to grow: the corner is dragged, the
+note editor hears its new size and repaints at it: the grown ground is
+note the PAGE's own paper, which only the application's repaint lays --
+note a runtime filling the gap would leave panel grey there
+press 990 440 1
+wait 4
+move 990 560 1
+wait 4
+release 990 560 1
+wait 80
+expect-pixel 700 500 ffffff
 note asking for a NEW project where one already stands means opening
 note it: a person naming an existing project is not asking to empty it
 click-window Project
@@ -90,3 +101,41 @@ expect-menu untitled.bas
 menu-pick untitled.bas
 wait 30
 expect-title untitled.bas
+note and a folder that does not exist yet is made without leaving the
+note panel: the name field names the folder, New folder steps inside,
+note and the offered name comes back, ready to save
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick New Project…
+wait 40
+expect-title Save
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key b
+key l
+key i
+key n
+key k
+key e
+key r
+wait 6
+click 410 413
+wait 30
+click 675 413
+wait 80
+note the project lives in the folder that was made for it, named for
+note it -- and the one already in the home is untouched
+expect-file-has /tmp/trk_home/blinker/project.tiku title blinker
+expect-file-has /tmp/trk_home/project.tiku file untitled.bas

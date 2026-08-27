@@ -201,6 +201,9 @@ typedef struct desktop {
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_window_t  *remote_press;
     struct embed_win     *embed_press;  /* the window holding a press */
+    /* The window a resize track is reshaping, so the owner can be told
+     * the new size when the hand lets go. */
+    tiku_window_t  *resize_track;
     /*
      * The application the file panel is up for, if it is up for one.
      * The panel carries only an opaque (target, command) pair, and the
@@ -1520,6 +1523,20 @@ embed_drop_window(struct embed_win *ew, int tell)
     }
 }
 
+/** @brief From now on the person may resize this window. */
+static int
+embed_svc_sizeable(void *ctx, uint32_t id)
+{
+    struct desktop_embed *slot = ctx;
+    struct embed_win *ew = embed_win_of_id(slot, id);
+
+    if (ew == NULL || ew->window == NULL) {
+        return -1;
+    }
+    tiku_window_set_size_controls(ew->window, 1, 0);
+    return 0;
+}
+
 /** @brief Bring one of this application's windows to the front. */
 static int
 embed_svc_raise(void *ctx, uint32_t id)
@@ -1632,6 +1649,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.resize = embed_svc_resize;
     slot->services.pick = embed_svc_pick;
     slot->services.raise_window = embed_svc_raise;
+    slot->services.sizeable = embed_svc_sizeable;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
@@ -1744,6 +1762,17 @@ remote_reconcile(desktop_t *app)
         for (j = 0; j < TIKU_REMOTE_WINDOWS; j++) {
             tiku_remote_window_t *rw = &s->win[j];
 
+            if (rw->reap != NULL) {
+                /* A window whose row has already moved on: closed here,
+                 * where the workspace is, before anything else about
+                 * the row is believed. */
+                if (app->remote_press == rw->reap) {
+                    app->remote_press = NULL;
+                }
+                tiku_workspace_close(app->desk, rw->reap);
+                rw->reap = NULL;
+                app->dirty = 1;
+            }
             if (rw->opened && rw->window == NULL) {
                 tiku_rect_t frame;
 
@@ -1789,6 +1818,10 @@ remote_reconcile(desktop_t *app)
                                                remote_menu_pick, app);
                 rw->menus_fresh = 0;
                 app->dirty = 1;
+            }
+            if (rw->window != NULL && rw->wants_size) {
+                tiku_window_set_size_controls(rw->window, 1, 0);
+                rw->wants_size = 0;
             }
             if (rw->window != NULL && rw->wants_front) {
                 tiku_workspace_activate(app->desk, rw->window);
@@ -7271,6 +7304,10 @@ tracker_run(int argc, char **argv)
                     close_window(&app, w);
                 } else if (hit == TIKU_HIT_TAB ||
                            hit == TIKU_HIT_RESIZE) {
+                    /* An application window being RESHAPED will need to
+                     * hear its new size when the hand lets go. */
+                    app.resize_track =
+                        (hit == TIKU_HIT_RESIZE) ? w : NULL;
                     tiku_workspace_begin_track(app.desk, w, hit, ev.x,
                                               ev.y);
                 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
@@ -8048,6 +8085,29 @@ tracker_run(int argc, char **argv)
                 app.press_window = NULL;
                 app.press_focus = NULL;
                 tiku_workspace_end_track(app.desk);
+                if (app.resize_track != NULL) {
+                    /* The hand let go: whoever owns the window is told
+                     * the content's new size, and answers with a frame
+                     * painted at it. */
+                    tiku_window_t *rw2 = app.resize_track;
+                    tiku_rect_t rc = tiku_window_content(rw2);
+                    tiku_event_t rev;
+                    struct embed_win *ew =
+                        embed_win_of_window(&app, rw2);
+
+                    memset(&rev, 0, sizeof rev);
+                    rev.type = TIKU_EVENT_RESIZE;
+                    rev.width = rc.w;
+                    rev.height = rc.h;
+                    if (ew != NULL) {
+                        (void)embed_deliver(ew, &rev);
+                    } else if (tiku_remote_owner(&app.remote,
+                                                      rw2) != NULL) {
+                        tiku_remote_event(&app.remote, rw2, &rev);
+                    }
+                    app.resize_track = NULL;
+                    app.dirty = 1;
+                }
                 break;
             }
             case TIKU_EVENT_KEY_UP:

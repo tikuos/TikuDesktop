@@ -46,6 +46,9 @@ typedef struct {
      * the checked path waits here while the question is on screen. */
     tiku_alert_t      *alert;
     char                   pending_save[TIKU_PATH_MAX];
+    /* The save name the caller OFFERED, so entering a folder the New
+     * folder button just made can put it back in the field. */
+    char                   offered[64];
     /* The Favorites menu: favourites, then recent folders, dropped up
      * from the bottom-left button (AW-062, CW-058). */
     int                    fav_open;
