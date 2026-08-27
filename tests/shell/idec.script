@@ -33,6 +33,8 @@ note target line to be offered.  And no About row here: that went
 note where the system keeps its own, wearing this program's name
 click-window Project
 wait 8
+note the system's menu wears the system's mark, right on the bar
+expect-pixel 12 9 f7e689
 click 20 8
 wait 8
 expect-menu About TikuC
@@ -48,7 +50,7 @@ click 500 600
 wait 8
 click 71 8
 wait 8
-expect-menu Add File…|Build for host|Close Project
+expect-menu Open Project…|Build for host|Close Project
 menu-pick Build for host
 wait 200
 expect-title Messages

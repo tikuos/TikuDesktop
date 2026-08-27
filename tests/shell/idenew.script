@@ -28,7 +28,7 @@ note the menu offers the start: a new project, made where the person
 note says, through the shell's own Save panel
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…|New File…|Add File…
+expect-menu New Project…|Open Project…|Run|Close Project
 menu-pick New Project…
 wait 40
 expect-title Save
@@ -45,9 +45,17 @@ click-window Project
 wait 8
 click 71 8
 wait 8
-note a project that does not say what it is FOR is offered no Build:
-note BASIC first, and a road nobody asked for is not on the menu
+note a project that does not say what it is FOR is offered no Build,
+note and the file roads are not here either: Project is about the
+note project, and File is where hands look for files
+expect-menu Open Project…|Run
 expect-menu Run|Close Project
+note a click on open ground puts one menu away before the next
+click 500 600
+wait 8
+click 132 8
+wait 8
+expect-menu New File…|Add File…
 menu-pick New File…
 wait 40
 expect-title Save
@@ -58,18 +66,26 @@ note lines this build does not know would have survived the edit
 expect-file-has /tmp/trk_home/project.tiku file untitled.bas
 note and its editor window is already open, ready to be typed into
 expect-title untitled.bas
-note with the caret standing at the head of the empty page: a person
-note must SEE where their typing will land, and on an empty page any
-note ink at all is the caret
-expect-pixel 541 182 000000
+note and the page does not open empty: a fresh page of BASIC begins
+note where every line of it must -- numbered, 10, with the caret
+note standing black just past the number, ready for the statement
+expect-pixel 561 182 000000
 key h shift
 key i
+wait 10
+note and Return TYPES the next number itself, counted by tens the way
+note the interpreter counts -- the numbers are the language's
+note bookkeeping, and bookkeeping is what a machine is for
+key Return
+wait 8
+key x
 wait 10
 note the toolbar's Save is the same gesture as the menu's, one reach
 note closer to the hand
 click 560 155
 wait 60
-expect-file-has /tmp/trk_home/untitled.bas Hi
+expect-file-has /tmp/trk_home/untitled.bas 10 Hi
+expect-file-has /tmp/trk_home/untitled.bas 20 x
 note and the page is the person's to grow: the corner is dragged, the
 note editor hears its new size and repaints at it: the grown ground is
 note the PAGE's own paper, which only the application's repaint lays --
@@ -103,7 +119,7 @@ expect-file-has /tmp/trk_home/project.tiku file untitled.bas
 note the Window menu knows the window, as it knows every editor
 click-window Project
 wait 8
-click 132 8
+click 185 8
 wait 8
 expect-menu untitled.bas
 menu-pick untitled.bas
@@ -119,18 +135,6 @@ wait 8
 menu-pick New Project…
 wait 40
 expect-title Save
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
-key Backspace
 key b
 key l
 key i

@@ -2069,6 +2069,7 @@ rebuild_global_bar(desktop_t *app)
      */
     tiku_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
+    app->sysmenu.mark = 1;      /* the system's menu wears its mark */
     {
         int program = (fw != NULL &&
                        (embed_win_of_window(app, fw) != NULL ||

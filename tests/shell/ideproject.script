@@ -76,7 +76,7 @@ expect-title util.bas
 note and the Window menu names them both
 click-window Project
 wait 8
-click 132 8
+click 185 8
 wait 8
 expect-menu blink.bas|util.bas|
 menu-pick blink.bas
@@ -89,7 +89,7 @@ key i
 wait 20
 click-window Project
 wait 8
-click 132 8
+click 185 8
 wait 8
 expect-menu blink.bas (changed)
 menu-pick blink.bas (changed)
@@ -113,7 +113,7 @@ wait 30
 expect-file-has /tmp/trk_home/blink.bas Hi
 click-window Project
 wait 8
-click 132 8
+click 185 8
 wait 8
 expect-menu blink.bas|util.bas|
 note taking a row of the Window menu is how the OTHER window is
@@ -140,7 +140,7 @@ expect-title Project
 note every window it opened is still there, and still reachable by the
 note list that names them
 expect-windows 4
-click 132 8
+click 185 8
 wait 8
 menu-pick blink.bas
 wait 30
