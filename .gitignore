@@ -1,4 +1,5 @@
-# Build output.  Everything under here is derived from the sources beside it.
+# Build output, in every corner of the tree: derived from the sources
+# beside it, never carried.
 build/
 
 # Editor and OS leavings.
@@ -6,10 +7,9 @@ build/
 *.swp
 .DS_Store
 
-# HIG reference documents, kept beside the code but not in it.
+# Reference documents kept beside the code but not in it.
 temp/
 
-# Python's bytecode cache.  The generators under tools/ are run by hand,
-# and each run leaves one of these beside them.
+# Python's bytecode cache, left behind by the hand-run generators.
 __pycache__/
 *.pyc
