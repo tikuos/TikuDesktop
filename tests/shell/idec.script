@@ -33,8 +33,9 @@ note target line to be offered.  And no About row here: that went
 note where the system keeps its own, wearing this program's name
 click-window Project
 wait 8
-note the system's menu wears the system's mark, right on the bar
-expect-pixel 12 9 f7e689
+note the system's menu wears the system's mark, right on the bar --
+note one colour, the title's own ink, or at this size it is nothing
+expect-pixel 13 5 000000
 click 20 8
 wait 8
 expect-menu About TikuC

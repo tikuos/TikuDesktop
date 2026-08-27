@@ -55,7 +55,7 @@ click 500 600
 wait 8
 click 132 8
 wait 8
-expect-menu New File…|Add File…
+expect-menu New File…|Open File…|Add File…
 menu-pick New File…
 wait 40
 expect-title Save
@@ -86,6 +86,28 @@ click 560 155
 wait 60
 expect-file-has /tmp/trk_home/untitled.bas 10 Hi
 expect-file-has /tmp/trk_home/untitled.bas 20 x
+note Open File… is an editor on a file, nothing more -- and a file
+note already open comes FORWARD, its count continuing where it stood
+click-window Project
+wait 8
+click 132 8
+wait 8
+menu-pick Open File…
+wait 40
+expect-title TikuTracker: Open
+click 400 248
+wait 6
+click 675 413
+wait 60
+expect-title untitled.bas
+note and Return still counts from where the program stands
+key Return
+wait 8
+key z
+wait 10
+click 560 155
+wait 60
+expect-file-has /tmp/trk_home/untitled.bas 30 z
 note and the page is the person's to grow: the corner is dragged, the
 note editor hears its new size and repaints at it: the grown ground is
 note the PAGE's own paper, which only the application's repaint lays --

@@ -110,7 +110,7 @@ click 71 8
 wait 8
 menu-pick Save blink.bas
 wait 30
-expect-file-has /tmp/trk_home/blink.bas Hi
+expect-file-has /tmp/trk_home/blink.bas lamp"Hi
 click-window Project
 wait 8
 click 185 8
