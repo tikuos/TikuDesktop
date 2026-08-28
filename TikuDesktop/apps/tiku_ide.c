@@ -2504,7 +2504,11 @@ ide_tick(void *state, int64_t now_us)
          * what those splash screens were FOR, and the one part of them that
          * was never decoration. */
         static const char *const STAGE[] = {
+#ifdef TIKU_IDE_C
+            "finding the compilers…",
+#else
             "waking the interpreter…",
+#endif
             "reading the kits…",
             "opening the project window…"
         };
@@ -2648,7 +2652,11 @@ announce_paint_art(tiku_surface_t *sf, const char *status,
 {
     static const char *const LINES[] = {
         "by Ambuj Varshney",
+#ifdef TIKU_IDE_C
+        "the compiler is the target's own",
+#else
         "the interpreter is the board's own",
+#endif
         "drawn with the six kits"
     };
 
@@ -2756,7 +2764,12 @@ ide_start(void **state, const tiku_app_services_t *services)
     if (st->splash_surface != NULL) {
         st->splash_id = services->open(services->ctx, APP_NAME,
                                        SPLASH_W, SPLASH_H);
-        announce_paint_art(st->splash_surface, "waking the interpreter…",
+        announce_paint_art(st->splash_surface,
+#ifdef TIKU_IDE_C
+                           "finding the compilers…",
+#else
+                           "waking the interpreter…",
+#endif
                            st->splash_art);
         (void)services->frame(services->ctx, st->splash_id,
                               st->splash_surface->px, SPLASH_W,

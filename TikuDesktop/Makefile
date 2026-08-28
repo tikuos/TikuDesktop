@@ -135,6 +135,14 @@ libs:
 # of this tree in a tarball.  Through a temporary name and a rename,
 # because overwriting a binary that is currently running is ETXTBSY while
 # replacing it is not.
+# The banners live in the repo's assets tree, sorted by APPLICATION --
+# one folder per program, the source art beside the scaled splash the
+# program actually wears.  Installing one is copying it to where the
+# program looks: the same ~/.config/<name>/ a person's own replacement
+# goes, which is why a person's choice still wins by overwriting it.
+banners:
+	@for app in TikuBasic TikuC; do 	    mkdir -p "$$HOME/.config/$$app"; 	    cp -f ../assets/applications/$$app/splash.png 	          "$$HOME/.config/$$app/splash.png"; 	    echo "installed $$app banner"; 	done
+
 shell: libs
 	@$(MAKE) --no-print-directory -C $(TRACKER) \
 	    build/TikuDesktop build/dev/TikuDesktop
