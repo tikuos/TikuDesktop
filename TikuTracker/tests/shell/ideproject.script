@@ -30,9 +30,13 @@ expect-menu About TikuBasic
 menu-pick About TikuBasic
 wait 30
 expect-title About TikuBasic
-note asked for again it comes FORWARD rather than doubling
-click-window Project
-wait 8
+note asked for again it comes FORWARD rather than doubling.  The
+note project window is reached by its DESKBAR row: the plain About
+note covers its tab, and a click anywhere on a plain About is "read
+note it, done" -- the deskbar is the road that is always clear
+click 930 105
+wait 10
+expect-title Project
 click 20 8
 wait 8
 menu-pick About TikuBasic

@@ -19,7 +19,10 @@
 static int
 band_h(int h)
 {
-    return (h * 2) / 5;
+    /* Half: the artwork IS the announcement, the way the old splash
+     * screens wore it -- and the words below still get the room the
+     * name, the status, the credits and the version corner need. */
+    return h / 2;
 }
 
 /**

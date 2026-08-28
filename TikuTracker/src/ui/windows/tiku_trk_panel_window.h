@@ -53,6 +53,14 @@ typedef struct {
      * with a dot, by pose index -- the panel is for choosing, and the
      * machinery folders are not choices.  The scroll is in this space. */
     int                    vis[1024];
+    /* Beside each visible row: whether a FOLDER row is a project --
+     * it holds a project.tiku -- so the listing can dress it as the
+     * developer's folder it is. */
+    unsigned char          proj[1024];
+    /* When set, the ONE file name this panel may answer with: every
+     * other file shows greyed and refuses the pick, while folders stay
+     * the roads they are.  Empty means any file. */
+    char                   only[64];
     int                    nvis;
     int                    scroll;
     /* The Favorites menu: favourites, then recent folders, dropped up
@@ -85,7 +93,8 @@ void tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
  * is simply not an answer.
  */
 void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
-    void *target, int command, const char *initial_directory);
+    void *target, int command, const char *initial_directory,
+    const char *only);
 
 /** @brief The Replace question said replace (AW-052). */
 void tiku_trk_panel_window_confirmed(tiku_trk_panel_window_t *controller);

@@ -1,0 +1,39 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A folder that IS a project says so in the panel: it wears the
+# developer's folder -- the badge at its corner -- while a plain folder
+# beside it stays plain.  And Open Project… offers only what it can
+# take: a file that is not a project.tiku shows greyed and refuses the
+# pick, while the folders stay the roads they are.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+expect-pixel 294 204 d11c1c
+expect-pixel 294 224 2b2b2b
+expect-pixel 330 218 000000
+expect-pixel 317 238 8c8c8c
+click 400 240
+wait 6
+click 675 413
+wait 30
+expect-title Open
+click 400 200
+wait 6
+key Return
+wait 30
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+quit

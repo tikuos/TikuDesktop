@@ -41,7 +41,7 @@ wait 4
 menu-pick About this system
 wait 8
 expect-title About this system
-expect-pixel 330 305 ffcb00
+expect-pixel 330 290 ffcb00
 key Escape
 wait 6
 click-window Descriptor Demo

@@ -92,8 +92,10 @@
 
 #define MSG_W      420
 #define MSG_H      220
-#define SPLASH_W   400
-#define SPLASH_H   230
+/* Wide, the way the banners those splash screens wore are wide: the
+ * band takes a picture cut close to three-to-one edge to edge. */
+#define SPLASH_W   560
+#define SPLASH_H   330
 #define SPLASH_ART 148          /* the art field's width, on the left */
 /* How long the splash stands before leaving on its own. */
 #define SPLASH_US  2500000
@@ -2857,6 +2859,12 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (window == st->about_id && st->about_surface != NULL) {
+        if (event->type == TIKU_EVENT_POINTER_DOWN) {
+            /* A plain panel wears no close button: a click IS the
+             * "read it, done" the old About boxes answered to. */
+            st->services->close(st->services->ctx, st->about_id);
+            return 0;
+        }
         if (event->type == TIKU_EVENT_KEY_DOWN &&
             (event->key == TIKU_KEY_ESCAPE ||
              event->key == TIKU_KEY_RETURN)) {
@@ -3380,8 +3388,11 @@ ide_pick(void *state, uint32_t window, int command)
     case CMD_OPEN:
         if (st->services->pick != NULL) {
             st->asked = ASK_OPEN;
+            /* Only a project DESCRIPTION answers this question, and
+             * the panel says so: every other file shows greyed. */
             (void)st->services->pick(st->services->ctx, st->proj_id,
-                                     TIKU_APP_PICK_OPEN, NULL, NULL);
+                                     TIKU_APP_PICK_OPEN, NULL,
+                                     "project.tiku");
         }
         break;
     case CMD_ABOUT:

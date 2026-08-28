@@ -116,6 +116,20 @@ scrollbar_rect(tiku_rect_t list)
 }
 
 /**
+ * @brief Whether a row is SHOWN but not OFFERED: a file the panel's
+ *        one-name filter rules out.  Folders are never dimmed -- they
+ *        are the roads to the file being looked for.
+ */
+static int
+row_dimmed(const tiku_trk_panel_window_t *controller,
+           const tiku_model_t *m)
+{
+    return controller->only[0] != '\0' &&
+           !tiku_model_is_container(m) &&
+           strcmp(m->name, controller->only) != 0;
+}
+
+/**
  * @brief The FOLDER THAT HOLDS this one, worn as the list's own first
  *        row rather than as a button.
  *
@@ -296,13 +310,26 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         if (pose->selected) {
             tiku_fill(surface, row, TIKU_C_SELECT);
         }
+        if (row_dimmed(controller, &pose->model)) {
+            /* Shown but not offered: the person sees the file exists
+             * and sees it is not what this panel is asking for. */
+            (void)tiku_icon_paint_dim(surface,
+                tiku_model_icon_name(&pose->model), row.x + 2,
+                row.y + (controller->row_h - mini) / 2, mini,
+                0.6f, TIKU_C_DOC);
+            tiku_text(surface, font, row.x + 2 + mini + 4,
+                row.y + (controller->row_h + font->height) / 2 - 2,
+                pose->model.name, tiku_tint(TIKU_C_TEXT, 0.45f));
+        } else {
         (void)tiku_icon_paint(surface,
-            tiku_model_icon_name(&pose->model), row.x + 2,
+            controller->proj[scroll + i] ? "folder_develop"
+                : tiku_model_icon_name(&pose->model), row.x + 2,
             row.y + (controller->row_h - mini) / 2, mini);
         tiku_text(surface, font, row.x + 2 + mini + 4,
             row.y + (controller->row_h + font->height) / 2 - 2,
             pose->model.name,
             pose->selected ? TIKU_C_SELTEXT : TIKU_C_TEXT);
+        }
     }
     tiku_clip_reset(surface);
     if (total > rows && rows > 0) {
@@ -425,6 +452,27 @@ rebuild_visible(tiku_trk_panel_window_t *controller)
         if (pose == NULL || pose->model.name[0] == '.' ||
             pose->invisible) {
             continue;
+        }
+        /* A folder that HOLDS a project description is a project, and
+         * the row says so with the developer's folder: a person asked
+         * to open a project should not have to open every folder to
+         * learn which ones are. */
+        controller->proj[controller->nvis] = 0;
+        if (tiku_model_is_container(&pose->model) &&
+            controller->backend != NULL &&
+            controller->backend->ops != NULL &&
+            controller->backend->ops->stat != NULL) {
+            char probe[TIKU_PATH_MAX];
+            tiku_model_t pm;
+
+            snprintf(probe, sizeof probe, "%s/%s/project.tiku",
+                     (strcmp(controller->model.dir, "/") == 0)
+                         ? "" : controller->model.dir,
+                     pose->model.name);
+            if (controller->backend->ops->stat(controller->backend,
+                                               probe, &pm) == 0) {
+                controller->proj[controller->nvis] = 1;
+            }
         }
         controller->vis[controller->nvis++] = i;
     }
@@ -825,6 +873,15 @@ event(tiku_window_t *window, const tiku_event_t *input,
     case PANEL_HIT_LIST:
         controller->fav_open = 0;
         controller->model.focus = TIKU_TRK_PANEL_FOCUS_LIST;
+        if (row >= 0) {
+            tiku_trk_pose_t *dp =
+                tiku_trk_poseview_at(controller->view, row);
+
+            if (dp != NULL && row_dimmed(controller, &dp->model)) {
+                break;          /* shown, not offered: the click is not
+                                 * a choice */
+            }
+        }
         tiku_trk_poseview_click(controller->view, row, 0u);
         {
             /* A lone file lends its name to the save field, focus left
@@ -893,6 +950,7 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
     }
     controller->target = target;
     controller->command = command;
+    controller->only[0] = '\0';
     tiku_trk_panel_open(&controller->model, TIKU_TRK_PANEL_OPEN,
         TIKU_TRK_PANEL_DIR, initial_directory, controller->backend,
         "TikuTracker");
@@ -922,7 +980,8 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
 
 void
 tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
-    void *target, int command, const char *initial_directory)
+    void *target, int command, const char *initial_directory,
+    const char *only)
 {
     tiku_trk_panel_window_open(controller, target, command,
                                initial_directory);
@@ -930,6 +989,10 @@ tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
         /* Only what may be ANSWERED with changes; the panel, its rows
          * and its walking are the ones the person already knows. */
         controller->model.flavors = TIKU_TRK_PANEL_FILE;
+        if (only != NULL) {
+            snprintf(controller->only, sizeof controller->only, "%s",
+                     only);
+        }
     }
 }
 
@@ -1089,6 +1152,30 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             at += (key == TIKU_KEY_DOWN) ? 1 : (at > 0 ? -1 : 0);
             if (at >= controller->nvis) {
                 at = controller->nvis - 1;
+            }
+            /* The walk steps OVER what is not offered, the way it
+             * steps over a heading: dimmed rows are read, not stood
+             * on. */
+            while (at >= 0 && at < controller->nvis) {
+                tiku_trk_pose_t *wp = tiku_trk_poseview_at(
+                    controller->view, controller->vis[at]);
+
+                if (wp == NULL || !row_dimmed(controller, &wp->model)) {
+                    break;
+                }
+                at += (key == TIKU_KEY_DOWN) ? 1 : -1;
+            }
+            if (at >= controller->nvis) {
+                at = controller->nvis - 1;
+            }
+            if (at >= 0 && at < controller->nvis) {
+                tiku_trk_pose_t *lp = tiku_trk_poseview_at(
+                    controller->view, controller->vis[at]);
+
+                if (lp != NULL && row_dimmed(controller, &lp->model)) {
+                    return 0;   /* the clamp landed on what is not
+                                 * offered: the walk stays put */
+                }
             }
             if (at >= 0 && at < controller->nvis) {
                 tiku_rect_t content =

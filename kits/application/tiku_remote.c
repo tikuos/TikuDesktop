@@ -495,6 +495,18 @@ session_message(tiku_remote_session_t *s)
             changed = 1;
         }
         break;
+    case TIKU_RMSG_PLACE:
+        /* What KIND of window this is: noted for the shell, which owns
+         * where such a window goes and what it wears. */
+        win = (s->want >= 8u) ? session_window(s, id_of(p)) : NULL;
+        if (win != NULL) {
+            int32_t role = 0;
+
+            memcpy(&role, p + 4, 4);
+            win->wants_place = (int)role;
+            changed = 1;
+        }
+        break;
     case TIKU_RMSG_SIZEABLE:
         win = (s->want >= 4u) ? session_window(s, id_of(p)) : NULL;
         if (win != NULL) {
@@ -1107,6 +1119,17 @@ tiku_remote_raise(tiku_remote_client_t *client, uint32_t id)
         return;
     }
     send_msg(client->fd, TIKU_RMSG_RAISE, &id, 4);
+}
+
+void
+tiku_remote_place(tiku_remote_client_t *client, uint32_t id, int role)
+{
+    unsigned char payload[8];
+    int32_t r = role;
+
+    memcpy(payload, &id, 4);
+    memcpy(payload + 4, &r, 4);
+    send_msg(client->fd, TIKU_RMSG_PLACE, payload, sizeof payload);
 }
 
 void

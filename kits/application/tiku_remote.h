@@ -96,6 +96,7 @@
 #define TIKU_RMSG_DRAW    9u   /* u32 id, i32 w, i32 h, a tiku_dl_t */
 #define TIKU_RMSG_RAISE   10u  /* u32 id: bring that window forward  */
 #define TIKU_RMSG_SIZEABLE 11u /* u32 id: the person may resize it   */
+#define TIKU_RMSG_PLACE   12u  /* u32 id, i32 role: what KIND it is  */
 /* ...and desktop to client. */
 #define TIKU_RMSG_EVENT   16u  /* u32 id, tiku_event_t         */
 #define TIKU_RMSG_PICK    17u  /* u32 id, i32 command               */
@@ -137,6 +138,7 @@ int tiku_remote_path(char *out, size_t max);
 typedef struct tiku_remote_window {
     struct tiku_remote_session *session; /* the row's way back        */
     int                  wants_front;   /* a RAISE the shell owes it   */
+    int                  wants_place;   /* a PLACE role the shell owes, 0 none */
     /* A workspace window the shell still owes a closing.  A CLOSE
      * frees the row at once -- an OPEN in the same breath may take it
      * -- but the WINDOW is the shell's to close, so it waits here
@@ -402,6 +404,10 @@ void tiku_remote_close_window(tiku_remote_client_t *client, uint32_t id);
 
 /** @brief Ask for one of this session's windows to come to the front. */
 void tiku_remote_raise(tiku_remote_client_t *client, uint32_t id);
+
+/** @brief Say what KIND of window @p id is (a place role). */
+void tiku_remote_place(tiku_remote_client_t *client, uint32_t id,
+                            int role);
 
 /** @brief Say the person may resize this window. */
 void tiku_remote_sizeable(tiku_remote_client_t *client, uint32_t id);

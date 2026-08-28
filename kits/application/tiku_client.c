@@ -134,6 +134,15 @@ svc_raise(void *ctx, uint32_t id)
 }
 
 static int
+svc_place(void *ctx, uint32_t id, int role)
+{
+    client_ctx_t *c = ctx;
+
+    tiku_remote_place(&c->remote, id, role);
+    return 0;
+}
+
+static int
 svc_sizeable(void *ctx, uint32_t id)
 {
     client_ctx_t *c = ctx;
@@ -241,6 +250,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.menus = svc_menus;
     services.close = svc_close;
     services.pick = svc_pick;
+    services.place = svc_place;
     services.raise_window = svc_raise;
     services.sizeable = svc_sizeable;
     services.clip_set = svc_clip_set;

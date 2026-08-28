@@ -1425,11 +1425,17 @@ embed_svc_place(void *ctx, uint32_t id, int role)
     if (ew == NULL || role != TIKU_APP_PLACE_ANNOUNCE) {
         return -1;
     }
+    /* The frame was cut for a tab it will not wear: taken in, so the
+     * hairline hugs the content exactly. */
+    ew->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
+    ew->window->frame.h -= tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
     ew->window->frame.x = (app->surf->w - ew->window->frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel
      * that announces something. */
     ew->window->frame.y = (app->surf->h - ew->window->frame.h) / 3;
     tiku_window_set_size_controls(ew->window, 0, 0);
+    /* And PLAIN: an announcement wears no tab and no close. */
+    tiku_window_set_plain(ew->window, 1);
     app->dirty = 1;
     return 0;
 }
@@ -1484,8 +1490,10 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
     } else {
+        /* On the OPEN road the name is a FILTER: the one file name the
+         * asker can accept, every other file greyed out of the offer. */
         tiku_trk_panel_window_open_file(&app->file_panel,
-            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start);
+            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
     }
     app->dirty = 1;
     return 1;
@@ -1857,6 +1865,26 @@ remote_reconcile(desktop_t *app)
                 rw->wants_front = 0;
                 app->dirty = 1;
             }
+            if (rw->window != NULL &&
+                rw->wants_place == TIKU_APP_PLACE_ANNOUNCE) {
+                /* The frame was cut for a tab it will not wear: taken
+                 * in, so the hairline hugs the content exactly. */
+                rw->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
+                rw->window->frame.h -=
+                    tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
+                /* The ANNOUNCE role, across the wire at last: centred
+                 * in the upper part, fixed, and PLAIN -- a splash
+                 * screen wears no tab and no close, it is not a window
+                 * a person manages but a card the program holds up. */
+                rw->window->frame.x =
+                    (app->surf->w - rw->window->frame.w) / 2;
+                rw->window->frame.y =
+                    (app->surf->h - rw->window->frame.h) / 3;
+                tiku_window_set_size_controls(rw->window, 0, 0);
+                tiku_window_set_plain(rw->window, 1);
+                rw->wants_place = 0;
+                app->dirty = 1;
+            }
             /* A row the application gave back: the window goes with it.
              * The session stays -- it has others, or it is about to
              * say it is leaving. */
@@ -1907,7 +1935,8 @@ remote_hear(desktop_t *app)
                         start, name);
                 } else {
                     tiku_trk_panel_window_open_file(&app->file_panel,
-                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start);
+                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start,
+                        name);
                 }
                 app->dirty = 1;
             }

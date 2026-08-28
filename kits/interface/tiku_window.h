@@ -123,6 +123,12 @@ struct tiku_window {
     void                        *menu_pick_context;
     tiku_rect_t             saved_zoom;
     int                          zoom_valid;
+    /* A PLAIN window wears no furniture: no tab, no buttons, only a
+     * hairline around its content -- the look a splash screen or an
+     * About panel announces itself in.  It cannot be dragged or closed
+     * by hand, because it carries nothing to grab; whoever opened it
+     * takes it down. */
+    int                          plain;
 };
 
 tiku_workspace_t *tiku_workspace_new(
@@ -146,6 +152,9 @@ tiku_window_t *tiku_workspace_focused(
 int tiku_workspace_count(const tiku_workspace_t *workspace);
 tiku_window_t *tiku_workspace_at(
     tiku_workspace_t *workspace, int index);
+
+/** @brief Dress @p window plain: no tab, only the hairline. */
+void tiku_window_set_plain(tiku_window_t *window, int plain);
 
 void tiku_window_set_handlers(tiku_window_t *window,
     tiku_window_event_fn event,

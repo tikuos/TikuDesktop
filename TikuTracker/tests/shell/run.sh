@@ -386,6 +386,17 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            ideprojicon.script)
+                # Two folders side by side: one IS a project, one is
+                # merely a folder, and the panel must say which.
+                mkdir -p "$deskhome/aproj" "$deskhome/bplain"
+                printf 'title aproj\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/aproj/project.tiku"
+                : > "$deskhome/aproj/main.bas"
+                printf '10 rem stray\n' > "$deskhome/stray.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             idemenu.script)
                 # Two files, an unknown line the description must keep,
                 # and a program that waits on INPUT so a run can be

@@ -21,6 +21,12 @@ note the program looks -- beside the replaced icons -- is chosen, and
 note the band wears it edge to edge
 expect-pixel 320 180 b45a28
 expect-pixel 650 180 b45a28
+note and the splash screen is WIDE now: the band carries the banner past
+note where the old, narrower announcement even reached
+expect-pixel 740 180 b45a28
+note and the announcement is PLAIN: no tab, no close button -- the
+note banner starts right under the hairline at the window's own top
+expect-pixel 500 140 b45a28
 wait 200
 expect-no-title TikuBasic
 expect-title Project

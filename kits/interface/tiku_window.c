@@ -246,6 +246,14 @@ tiku_workspace_close(tiku_workspace_t *workspace,
 }
 
 void
+tiku_window_set_plain(tiku_window_t *window, int plain)
+{
+    if (window != NULL) {
+        window->plain = plain;
+    }
+}
+
+void
 tiku_window_set_handlers(tiku_window_t *window,
                               tiku_window_event_fn event,
                               tiku_window_close_fn close_requested,
@@ -287,6 +295,13 @@ tiku_window_content(const tiku_window_t *window)
 {
     tiku_rect_t content;
 
+    if (window->plain) {
+        /* Only the hairline stands between the frame and the page. */
+        content = tiku_inset(window->frame, 1);
+        if (content.w < 0) { content.w = 0; }
+        if (content.h < 0) { content.h = 0; }
+        return content;
+    }
     content.x = window->frame.x + TIKU_WINDOW_BORDER;
     content.y = window->frame.y + tiku_window_tab_h() +
                 TIKU_WINDOW_BORDER;
@@ -322,6 +337,12 @@ tiku_workspace_hit(tiku_workspace_t *workspace, int x, int y,
         tiku_rect_t tab, content;
 
         if (!window->open || window->minimized) { continue; }
+        if (window->plain) {
+            /* Nothing to grab: inside is content, outside is not it. */
+            if (!inside(window->frame, x, y)) { continue; }
+            if (out != NULL) { *out = window; }
+            return TIKU_HIT_CONTENT;
+        }
         tab = tab_rect(window);
         if (inside(tab, x, y)) {
             if (out != NULL) { *out = window; }
@@ -481,6 +502,18 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
                                        : TIKU_C_TAB_IDLE;
     tiku_rgb_t dark = tiku_tint(TIKU_C_PANEL, 1.40f);
 
+    if (window->plain) {
+        /* The announcement look: the page, a hairline, nothing else. */
+        (void)active;
+        tiku_fill(surface, window->frame, TIKU_C_PANEL);
+        tiku_frame(surface, window->frame, dark);
+        if (window->draw != NULL && content.w > 0 && content.h > 0) {
+            tiku_clip_set(surface, content);
+            window->draw(window, surface, content, window->context);
+            tiku_clip_reset(surface);
+        }
+        return;
+    }
     tiku_fill(surface, body, TIKU_C_PANEL);
     tiku_frame(surface, body, dark);
     tiku_bevel(surface, tiku_inset(body, 1),
