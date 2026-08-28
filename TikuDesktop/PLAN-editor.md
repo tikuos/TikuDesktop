@@ -347,3 +347,84 @@ into `tiku_textview` should be exercised once from the SIMPLE editor
 too (arrows there already; selection/undo/clipboard should not fork
 its behaviour from the IDE's) — one text engine, everywhere, is the
 whole reason the kit owns it.
+
+## 7. The second wave — audited 2026-08-28, three phases planned
+
+Audited against the tree at `6205fbf`.  What the four asked-for
+behaviours already have, and what is missing, verified by reading:
+
+- **Syntax highlighting** -- keywords, strings and line numbers are
+  DONE and were built right: the classifier (`tiku_syntax.c`) speaks
+  the interpreter's own crunch table, and the ink enum
+  (`tiku_gfx.h`) already tells apart WORD, STR, NUM, REMARK and FAINT
+  -- the leading line number is painted as ink standing back, exactly
+  the receded look asked for.  VFS paths as their OWN token class do
+  not exist: a quoted path is inked as any string.  That is P9.
+- **Auto line numbering** -- DONE, both halves.  A fresh page seeds
+  `10 `, Return TYPES the next number by tens, a person never types a
+  number; and RENUM exists as Edit > Renumber and the toolbar's own
+  tool -- by tens, GOTO/GOSUB/THEN/ELSE following, one Undo.  Gaps are
+  what Renumber is for, which is the listed design.
+- **Case normalization** -- NOT built.  Nothing uppercases; the
+  fixtures type lowercase and the interpreter accepts either.  P10.
+- **Error squiggles** -- NOT built.  The ink table already carries
+  TIKU_INK_WRONG, put there for exactly this and used by nothing.  P11.
+
+- **P9 — the path is its own kind of thing.**  A quoted string that
+  BEGINS with `/` is a name in the namespace, and the reader should see
+  that it is an address rather than prose.  Kit: a `TIKU_INK_PATH`
+  entry in the ink enum, derived from the theme the way FAINT is
+  derived (never a named colour); the BASIC classifier, on closing a
+  quoted run, re-inks it PATH when its first byte after the quote is
+  `/`.  Line-local, exactly as strings already are.  The quotes
+  themselves stay STR ink, so the string's edges still read as edges.
+  Proving: a ccolour-style pixel pair -- the same word quoted with and
+  without the leading slash, two inks; `test_syntax` grows the table
+  rows.  Mutation: the re-ink dropped -- the path paints as a plain
+  string and the named pixel fails.
+- **P10 — keywords uppercase themselves, 1982-style.**  When a typed
+  word ENDS -- the boundary character lands: space, quote, bracket,
+  colon, or Return -- and the finished word is one the interpreter
+  reserves, the editor rewrites it uppercase.  The spelling authority
+  is the classifier's own table: expose
+  `tiku_syntax_reserved(lang, word, len)` from the kit rather than
+  keeping a second list.  The rewrite happens ONLY where the word is
+  code: classify the line first and leave a word alone inside STR or
+  REMARK spans -- `PRINT "goto the shop"` keeps its prose.  The
+  rewrite is textview ops (delete back, insert upper) inside one
+  `group_begin/end`, so a single Undo takes the word back exactly as
+  typed -- and the run-coalescing rules already close the entry at the
+  boundary, so nothing folds wrong.  App-side in the IDE's key road;
+  the simple editor can join later by the same kit query.  Proving:
+  type `print` and a space, save -- the file says `PRINT`; type
+  `"goto "` inside quotes, save -- lowercase stands.  Mutation: the
+  normalizer dropped -- `PRINT` never appears.
+- **P11 — error squiggles, one grammar two hosts.**  The grammar that
+  must judge a line is the interpreter's, or the editor teaches lies
+  -- the same rule the highlighter was built under.  The interpreter
+  already builds and runs on the host (`basichost/`, the same
+  `tiku-basic` the Run button spawns), so the road is: give the HOST
+  BINARY a `-check <file>` mode that LOADS the program and reports,
+  without running it, every line the cruncher and the statement
+  dispatch can refuse -- `line N: what` on the pipe, one per fault,
+  exit says whether any.  Honesty the plan must keep: a 1982
+  interpreter defers much to runtime, so -check catches what can be
+  known STATICALLY (a word no dispatcher owns, an unclosed quote, a
+  malformed expression where the parse helpers can be run dry) and no
+  more; the bound grows as the kernel's own checking grows, and the
+  editor inherits every improvement free, because it is ONE grammar.
+  Editor side: on SAVE (and on open), run `-check` through the same
+  bounded pipe machinery Run uses; mark the lines it names; paint a
+  wavy underline under each marked line's text in `tiku_ink(WRONG)`
+  -- the ink that has been waiting for this.  Marks clear on the next
+  save.  Never per keystroke: a child per keypress is a fork bomb
+  wearing a nicety's name.  Proving: save a program with an unclosed
+  quote -- a WRONG-ink pixel under that line; fix it, save, the pixel
+  is the page again; and the check road proves itself end to end
+  because the same binary run by hand says the same line.  Mutations:
+  the editor never spawning -check (no squiggle, named pixel fails);
+  -check reporting nothing (same fail, from the other host).
+
+Order: P9 is an afternoon; P10 rides the kit query and the journal
+grouping that already exist; P11 is the deep one and starts in the
+kernel's basic, which is also what makes it worth doing.
