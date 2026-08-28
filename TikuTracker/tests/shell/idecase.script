@@ -1,0 +1,84 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Keywords uppercase themselves as they are typed, 1982-style: when a
+# non-word character or a Return ENDS a word the interpreter reserves,
+# the editor shouts it -- but only where the word is CODE, so a keyword
+# inside a string stays as it was typed.  And the shout is ONE journal
+# batch: a single undo puts the word back as the hands left it.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note a keyword typed lower-case, then a space -- and it is uppercased
+key p
+key r
+key i
+key n
+key t
+wait 3
+key space
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 10 PRINT
+note a keyword INSIDE a string is left exactly as typed: PRINT here is
+note code and shouts, goto is inside the quotes and does not
+key Return
+wait 8
+key p
+key r
+key i
+key n
+key t
+key space
+wait 4
+key "
+key g
+key o
+key t
+key o
+wait 3
+key space
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 20 PRINT "goto
+expect-file-lacks /tmp/trk_home/main.bas GOTO
+note the shout is ONE undo away from what was typed: two undos -- the
+note space, then the whole re-cased word as a batch -- give back "let"
+key Return
+wait 8
+key l
+key e
+key t
+wait 3
+key space
+wait 6
+key z ctrl
+wait 4
+key z ctrl
+wait 6
+click 205 268
+wait 60
+expect-file-has /tmp/trk_home/main.bas 30 let
+expect-file-lacks /tmp/trk_home/main.bas 30 LET
+quit

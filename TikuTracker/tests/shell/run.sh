@@ -377,6 +377,14 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            idecase.script)
+                mkdir -p "$deskhome"
+                printf 'title Case\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 \n' > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             idepath.script)
                 mkdir -p "$deskhome"
                 printf 'title Path\ngroup Sources\nfile main.bas\n' \

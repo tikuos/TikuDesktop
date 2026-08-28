@@ -386,23 +386,27 @@ behaviours already have, and what is missing, verified by reading:
   reserved word's blue above them both.  Mutation: the re-ink dropped
   -- the /dev/led glyph paints string red where the path ink was
   named, and that pixel fails.
-- **P10 — keywords uppercase themselves, 1982-style.**  When a typed
-  word ENDS -- the boundary character lands: space, quote, bracket,
-  colon, or Return -- and the finished word is one the interpreter
-  reserves, the editor rewrites it uppercase.  The spelling authority
-  is the classifier's own table: expose
-  `tiku_syntax_reserved(lang, word, len)` from the kit rather than
-  keeping a second list.  The rewrite happens ONLY where the word is
-  code: classify the line first and leave a word alone inside STR or
-  REMARK spans -- `PRINT "goto the shop"` keeps its prose.  The
-  rewrite is textview ops (delete back, insert upper) inside one
-  `group_begin/end`, so a single Undo takes the word back exactly as
-  typed -- and the run-coalescing rules already close the entry at the
-  boundary, so nothing folds wrong.  App-side in the IDE's key road;
-  the simple editor can join later by the same kit query.  Proving:
-  type `print` and a space, save -- the file says `PRINT`; type
-  `"goto "` inside quotes, save -- lowercase stands.  Mutation: the
-  normalizer dropped -- `PRINT` never appears.
+- **P10 — keywords uppercase themselves, 1982-style.**  DONE
+  2026-08-29, and SIMPLER than the plan feared: no new kit query was
+  needed, because the CLASSIFIER is already the reserved-word authority
+  AND already knows a keyword in a string from one in code.  App-side
+  `edit_normalize_word` (IDE key road): when a non-word character or a
+  Return ends a word, classify the line and find the run the finished
+  word falls in -- if it is a WORD span, uppercase exactly those bytes.
+  A keyword inside a string or a remark is a STR / REMARK span, so it
+  is left alone for free, and a name that merely begins with a keyword
+  (`PRINTER`) is a PLAIN span and untouched.  The rewrite is textview
+  ops (place, backspace the word, insert upper) inside one
+  `group_begin/end`, so the re-case is ONE undo unit -- the five
+  backspaces coalesce and the insert is one entry, both in the batch.
+  BASIC only.  `idecase.script` proves all three: `print`+space becomes
+  `10 PRINT`; `print "goto`+space keeps goto lower while PRINT shouts;
+  and after `let`+space, two undos (the space, then the batch) give
+  back `30 let` -- which only holds because the re-case is grouped.
+  Mutations: the normalizer dropped (nothing shouts, `10 PRINT` fails);
+  the group dropped (two undos overshoot to empty, `30 let` fails while
+  the uppercase rounds still pass -- so the grouping is what is pinned).
+  A script types a quote with `key "` (single-char keys pass through).
 - **P11 — error squiggles, one grammar two hosts.**  The grammar that
   must judge a line is the interpreter's, or the editor teaches lies
   -- the same rule the highlighter was built under.  The interpreter

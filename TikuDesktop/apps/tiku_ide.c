@@ -1121,6 +1121,82 @@ edit_find_run(edit_t *e)
 }
 
 static int
+norm_is_word(int c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '$';
+}
+
+/**
+ * @brief Uppercase the reserved word the caret just finished, 1982-style.
+ *
+ * The spelling authority is the CLASSIFIER's -- the same table the
+ * colours come from -- so a word is uppercased exactly when it would be
+ * painted as reserved, which also means a keyword typed inside a string
+ * or a remark is left alone for free.  The rewrite is one journal
+ * batch, so a single Undo puts back what the hands typed.  BASIC only:
+ * C is not a language of shouted keywords.
+ */
+static void
+edit_normalize_word(edit_t *e)
+{
+    int cy, cx, s, i, off, ink = -1, span_s = -1, span_len = 0, n;
+    const char *line;
+    tiku_span_t span[64];
+    char up[64];
+
+    if (e->lang != TIKU_SYNTAX_BASIC) {
+        return;
+    }
+    tiku_textview_caret(&e->tv, &cy, &cx);
+    line = tiku_textview_line(&e->tv, cy);
+    if (line == NULL || cx <= 0 || !norm_is_word((unsigned char)line[cx - 1])) {
+        return;                 /* no word just ended here */
+    }
+    s = cx;
+    while (s > 0 && norm_is_word((unsigned char)line[s - 1])) {
+        s--;
+    }
+    /* Which run the finished word falls in: only a RESERVED word is
+     * touched, and the classifier already knows a keyword in a string
+     * from one in the code. */
+    n = tiku_syntax_spans(TIKU_SYNTAX_BASIC, line, span,
+                          (int)(sizeof span / sizeof span[0]));
+    for (i = 0, off = 0; i < n; i++) {
+        if (cx - 1 >= off && cx - 1 < off + span[i].len) {
+            ink = span[i].ink;
+            span_s = off;
+            span_len = span[i].len;
+            break;
+        }
+        off += span[i].len;
+    }
+    if (ink != TIKU_INK_WORD || span_len <= 0 ||
+        span_len >= (int)sizeof up) {
+        return;
+    }
+    for (i = 0; i < span_len; i++) {
+        char c = line[span_s + i];
+
+        up[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+    }
+    up[span_len] = '\0';
+    if (memcmp(up, line + span_s, (size_t)span_len) == 0) {
+        return;                 /* already shouting: nothing to do */
+    }
+    /* One batch: the word out, the word back in upper -- a single Undo
+     * away from exactly what was typed. */
+    tiku_textview_group_begin(&e->tv);
+    tiku_textview_place(&e->tv, cy, span_s + span_len);
+    for (i = 0; i < span_len; i++) {
+        tiku_textview_backspace(&e->tv);
+    }
+    tiku_textview_insert_text(&e->tv, up);
+    tiku_textview_group_end(&e->tv);
+    tiku_textview_place(&e->tv, cy, cx);   /* case is length: caret stands */
+}
+
+static int
 renum_is_word(int c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -3252,6 +3328,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 int cy, cx, n;
 
                 tiku_textview_caret(&e->tv, &cy, &cx);
+                edit_normalize_word(e);   /* the return ends a word */
                 tiku_textview_newline(&e->tv);
                 /* The next line's number, already typed: the numbers
                  * are the language's bookkeeping, and bookkeeping is
@@ -3268,6 +3345,11 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             }
             default:
                 if (ch >= 32u && ch < 127u) {
+                    /* A non-word character ENDS the word before it, and
+                     * a keyword there shouts before the character lands. */
+                    if (!norm_is_word((int)ch)) {
+                        edit_normalize_word(e);
+                    }
                     tiku_textview_insert(&e->tv, (char)ch);
                     edited = 1;
                 } else {
