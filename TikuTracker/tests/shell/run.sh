@@ -377,6 +377,15 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            idepath.script)
+                mkdir -p "$deskhome"
+                printf 'title Path\ngroup Sources\nfile main.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 print "/dev/led"\n20 print "hello there"\n' \
+                    > "$deskhome/main.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             idefind.script)
                 mkdir -p "$deskhome"
                 printf 'title Find\ngroup Sources\nfile main.bas\n' \

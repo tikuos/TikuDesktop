@@ -234,7 +234,8 @@ typedef enum {
     TIKU_INK_NUM,         /* a number written down                     */
     TIKU_INK_STR,         /* text in quotes                            */
     TIKU_INK_REMARK,      /* a remark the machine ignores              */
-    TIKU_INK_WRONG        /* what the reader must see is wrong         */
+    TIKU_INK_WRONG,       /* what the reader must see is wrong         */
+    TIKU_INK_PATH         /* a name in the namespace: an address, not prose */
 } tiku_ink_t;
 
 /**

@@ -1,0 +1,39 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A quoted name that begins with a slash is an ADDRESS in the
+# namespace, not prose, and the colour says so: the path wears an ink
+# of its own -- the string's, met halfway with the shade a chosen thing
+# wears -- while a string that is NOT a path stays plain string red.
+# Two glyph pixels, two rows apart, two inks: what is proven is that
+# the classifier tells a path from a string, not merely that something
+# was coloured.  The pixels were probed, and they are GLYPH pixels.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note the path's own ink, on a glyph of "/dev/led"
+expect-pixel 268 299 69435c
+note the plain string's red, on a glyph of "hello there" a row below
+expect-pixel 288 313 a02020
+note and the statement before them both is still the reserved word's blue
+expect-pixel 241 296 0000b0
+quit

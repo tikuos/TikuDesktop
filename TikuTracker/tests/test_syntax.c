@@ -54,7 +54,8 @@ classify(const char *line)
                : span[i].ink == TIKU_INK_WORD   ? 'w'
                : span[i].ink == TIKU_INK_NUM    ? 'n'
                : span[i].ink == TIKU_INK_STR    ? 's'
-               : span[i].ink == TIKU_INK_REMARK ? 'r' : 'p';
+               : span[i].ink == TIKU_INK_REMARK ? 'r'
+               : span[i].ink == TIKU_INK_PATH   ? 'a' : 'p';
         int k;
 
         for (k = 0; k < span[i].len && at < sizeof map - 1u; k++) {
@@ -163,6 +164,18 @@ main(void)
     same("PRINTER = 1", "ppppppppppn",
          "a name that merely begins with a keyword is left alone");
     same("print a", "wwwwwpp", "lower case is the same language");
+    /* A path is a string that is also an ADDRESS: its body takes the
+     * path ink, the quotes stay string, and a string that is NOT a
+     * path is not touched. */
+    same("PRINT \"/dev/led\"", "wwwwwpsaaaaaaaas",
+         "a quoted name beginning with a slash is an address: the body "
+         "is path ink, the quotes stay string");
+    same("PRINT \"hi there\"", "wwwwwpssssssssss",
+         "a quoted name that is not a path is an ordinary string, "
+         "untouched");
+    same("PRINT \"/x", "wwwwwpsaa",
+         "an unterminated path runs to the line's end with no closing "
+         "quote to wear string ink");
 
     printf("\nremarks swallow the rest of the line, colons and all\n");
     same("REM PRINT 1", "rrrrrrrrrrr",

@@ -370,18 +370,22 @@ behaviours already have, and what is missing, verified by reading:
 - **Error squiggles** -- NOT built.  The ink table already carries
   TIKU_INK_WRONG, put there for exactly this and used by nothing.  P11.
 
-- **P9 — the path is its own kind of thing.**  A quoted string that
-  BEGINS with `/` is a name in the namespace, and the reader should see
-  that it is an address rather than prose.  Kit: a `TIKU_INK_PATH`
-  entry in the ink enum, derived from the theme the way FAINT is
-  derived (never a named colour); the BASIC classifier, on closing a
-  quoted run, re-inks it PATH when its first byte after the quote is
-  `/`.  Line-local, exactly as strings already are.  The quotes
-  themselves stay STR ink, so the string's edges still read as edges.
-  Proving: a ccolour-style pixel pair -- the same word quoted with and
-  without the leading slash, two inks; `test_syntax` grows the table
-  rows.  Mutation: the re-ink dropped -- the path paints as a plain
-  string and the named pixel fails.
+- **P9 — the path is its own kind of thing.**  DONE 2026-08-28.
+  `TIKU_INK_PATH` was APPENDED to the ink enum (so no existing value
+  shifted) and derives its shade `tiku_dim(CODE_STR, SELECT)` -- the
+  string's ink met halfway with the shade the desk gives a chosen
+  thing, so it re-themes on every table and names no fourth colour.
+  In `basic_spans` a quoted run whose first byte after the quote is `/`
+  becomes THREE spans -- the opening quote STR, the body PATH, the
+  closing quote STR (absent on an unterminated string, which runs to
+  the line's end as strings already do).  Line-local, C untouched.
+  `test_syntax` pins the split (`PRINT "/dev/led"` = wwwwwpsaaaaaaaas,
+  a non-path string untouched, an unterminated path to the line end);
+  `idepath.script` proves it in the running editor by GLYPH pixels --
+  the path's 69435c a row apart from the plain string's a02020, the
+  reserved word's blue above them both.  Mutation: the re-ink dropped
+  -- the /dev/led glyph paints string red where the path ink was
+  named, and that pixel fails.
 - **P10 — keywords uppercase themselves, 1982-style.**  When a typed
   word ENDS -- the boundary character lands: space, quote, bracket,
   colon, or Return -- and the finished word is one the interpreter

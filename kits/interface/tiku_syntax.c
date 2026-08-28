@@ -642,7 +642,24 @@ basic_spans(tiku_syntax_lang_t lang, const char *line, tiku_span_t *out,
         }
         if (c == '"') {
             len = string_at(line + i);
-            if (!push(&s, TIKU_INK_STR, len)) {
+            /* A quoted name that BEGINS with a slash is an ADDRESS in
+             * the namespace, not prose: its body takes the path ink
+             * while the quotes stay string, so the string's edges still
+             * read as edges.  Line-local like every other string. */
+            if (len >= 2 && line[i + 1] == '/') {
+                int closed = (line[i + len - 1] == '"');
+                int body = closed ? len - 2 : len - 1;
+
+                if (!push(&s, TIKU_INK_STR, 1)) {
+                    break;
+                }
+                if (body > 0 && !push(&s, TIKU_INK_PATH, body)) {
+                    break;
+                }
+                if (closed && !push(&s, TIKU_INK_STR, 1)) {
+                    break;
+                }
+            } else if (!push(&s, TIKU_INK_STR, len)) {
                 break;
             }
             at_stmt = 0;
