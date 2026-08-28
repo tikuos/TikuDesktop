@@ -386,6 +386,18 @@ PYSPLASH
                 mkdir -p "$appsdir/programming"
                 cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
+            idemenu.script)
+                # Two files, an unknown line the description must keep,
+                # and a program that waits on INPUT so a run can be
+                # stopped from the menu.
+                mkdir -p "$deskhome"
+                printf 'title Menu\nboard zebra\ngroup Sources\nfile main.bas\nfile util.bas\n' \
+                    > "$deskhome/project.tiku"
+                printf '10 rem go\n20 input a$\n' > "$deskhome/main.bas"
+                printf '40 rem other\n' > "$deskhome/util.bas"
+                mkdir -p "$appsdir/programming"
+                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                      "$appsdir/programming/" ;;
             idetoolbar.script)
                 mkdir -p "$deskhome"
                 printf 'title Bar\ngroup Sources\nfile main.bas\n' > "$deskhome/project.tiku"

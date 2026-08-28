@@ -30,7 +30,7 @@ expect-title main.bas
 note the Edit menu offers Renumber for a BASIC file, after the clipboard
 click 117 8
 wait 8
-expect-menu Undo|Redo|Cut|Copy|Paste|Select all|Renumber|
+expect-menu Undo|Redo||Cut|Copy|Paste|Select all||Find…|Renumber|
 menu-pick Renumber
 wait 20
 click 205 268

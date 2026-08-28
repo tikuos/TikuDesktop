@@ -133,6 +133,9 @@ enum {
 #define CMD_UNDO     17
 #define CMD_REDO     18
 #define CMD_RENUM    19
+#define CMD_STOP     20
+#define CMD_FIND     21
+#define CMD_REMOVEFILE 22
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -1273,63 +1276,113 @@ renumber_basic(edit_t *e)
     free(olds); free(news); free(out);
 }
 
+/** @brief Append one row: the label, its command, and the KEY it says. */
+static void
+mrow(tiku_menu_list_t *m, const char *label, int command,
+     char sc, unsigned mods, int enabled)
+{
+    tiku_menu_entry_t *it = &m->item[m->nitem];
+
+    if (m->nitem >= TIKU_MENUSET_ITEMS) {
+        return;
+    }
+    memset(it, 0, sizeof *it);
+    snprintf(it->label, sizeof it->label, "%s", label);
+    it->command = command;
+    it->sc = sc;
+    it->mods = mods;
+    it->enabled = (unsigned char)enabled;
+    m->nitem++;
+}
+
+/** @brief A line between the groups, the way the desk's menus keep them. */
+static void
+msep(tiku_menu_list_t *m)
+{
+    if (m->nitem >= TIKU_MENUSET_ITEMS) {
+        return;
+    }
+    memset(&m->item[m->nitem], 0, sizeof m->item[0]);
+    m->item[m->nitem].separator = 1;
+    m->nitem++;
+}
+
+/**
+ * @brief The Window menu, the same on EVERY window of the program.
+ *
+ * A person in one editor reaches the other from where they are; making
+ * them return to the project window first was a detour every proving
+ * script had memorised, which is how a missing road shows itself.
+ */
+static void
+window_menu(ide_t *st, tiku_menu_list_t *m)
+{
+    int i, n = 0;
+    char row[64];
+
+    snprintf(m->title, sizeof m->title, "Window");
+    for (i = 0; i < IDE_EDITS; i++) {
+        edit_t *e = &st->edit[i];
+
+        if (e->surface == NULL) {
+            continue;
+        }
+        /* The mark is the DOCUMENT's, not the window's: a person
+         * looking for where their unsaved work is should find it in the
+         * list of windows rather than by opening each one. */
+        snprintf(row, sizeof row, "%s%s", e->name,
+                 tiku_textview_modified(&e->tv) ? " (changed)" : "");
+        mrow(m, row, CMD_WINDOW + i, 0, 0u, 1);
+        n++;
+    }
+    if (n == 0) {
+        mrow(m, "No open files", 0, 0, 0u, 0);
+    }
+}
+
 static void
 edit_publish(ide_t *st, edit_t *e)
 {
     tiku_menuset_t menus;
+    char row[64];
 
     memset(&menus, 0, sizeof menus);
-    menus.nmenu = 2;
+    menus.nmenu = 3;
+    /* File: the page's own file, its run, and its leaving -- each row
+     * saying the key that is the same gesture. */
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
-    menus.menu[0].nitem = 2;
-    snprintf(menus.menu[0].item[0].label,
-             sizeof menus.menu[0].item[0].label, "Save %s", e->name);
-    menus.menu[0].item[0].command = CMD_SAVE;
-    menus.menu[0].item[0].enabled =
-        (unsigned char)tiku_textview_modified(&e->tv);
-    snprintf(menus.menu[0].item[1].label,
-             sizeof menus.menu[0].item[1].label, "Close %s", e->name);
-    menus.menu[0].item[1].command = CMD_QUIT;
-    menus.menu[0].item[1].enabled = 1;
-    /* The desk's editing menu, worn by the page that answers it.  The
-     * labels say the keys, the way the desk's other menus do. */
-    snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
-    menus.menu[1].nitem = 6;
-    snprintf(menus.menu[1].item[0].label,
-             sizeof menus.menu[1].item[0].label, "Undo");
-    menus.menu[1].item[0].command = CMD_UNDO;
-    menus.menu[1].item[0].enabled =
-        (unsigned char)tiku_textview_can_undo(&e->tv);
-    snprintf(menus.menu[1].item[1].label,
-             sizeof menus.menu[1].item[1].label, "Redo");
-    menus.menu[1].item[1].command = CMD_REDO;
-    menus.menu[1].item[1].enabled =
-        (unsigned char)tiku_textview_can_redo(&e->tv);
-    snprintf(menus.menu[1].item[2].label,
-             sizeof menus.menu[1].item[2].label, "Cut");
-    menus.menu[1].item[2].command = CMD_CUT;
-    menus.menu[1].item[2].enabled = 1;
-    snprintf(menus.menu[1].item[3].label,
-             sizeof menus.menu[1].item[3].label, "Copy");
-    menus.menu[1].item[3].command = CMD_COPY;
-    menus.menu[1].item[3].enabled = 1;
-    snprintf(menus.menu[1].item[4].label,
-             sizeof menus.menu[1].item[4].label, "Paste");
-    menus.menu[1].item[4].command = CMD_PASTE;
-    menus.menu[1].item[4].enabled = 1;
-    snprintf(menus.menu[1].item[5].label,
-             sizeof menus.menu[1].item[5].label, "Select all");
-    menus.menu[1].item[5].command = CMD_SELALL;
-    menus.menu[1].item[5].enabled = 1;
+    snprintf(row, sizeof row, "Save %s", e->name);
+    mrow(&menus.menu[0], row, CMD_SAVE, 's', TIKU_MOD_CMD,
+         tiku_textview_modified(&e->tv));
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* A BASIC program's lines wear their numbers, so it -- and only
-         * it -- is offered the tidy that renumbers them by tens. */
-        snprintf(menus.menu[1].item[6].label,
-                 sizeof menus.menu[1].item[6].label, "Renumber");
-        menus.menu[1].item[6].command = CMD_RENUM;
-        menus.menu[1].item[6].enabled = 1;
-        menus.menu[1].nitem = 7;
+        snprintf(row, sizeof row, "Run %s", e->name);
+        mrow(&menus.menu[0], row, CMD_RUN, 'r', TIKU_MOD_CMD,
+             !st->running);
+        mrow(&menus.menu[0], "Stop", CMD_STOP, '.', TIKU_MOD_CMD,
+             st->running);
     }
+    msep(&menus.menu[0]);
+    snprintf(row, sizeof row, "Close %s", e->name);
+    mrow(&menus.menu[0], row, CMD_QUIT, 'w', TIKU_MOD_CMD, 1);
+    /* Edit: the desk's editing rows, grouped, each wearing its key. */
+    snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
+    mrow(&menus.menu[1], "Undo", CMD_UNDO, 'z', TIKU_MOD_CMD,
+         tiku_textview_can_undo(&e->tv));
+    mrow(&menus.menu[1], "Redo", CMD_REDO, 'z',
+         TIKU_MOD_CMD | TIKU_MOD_SHIFT, tiku_textview_can_redo(&e->tv));
+    msep(&menus.menu[1]);
+    mrow(&menus.menu[1], "Cut", CMD_CUT, 'x', TIKU_MOD_CMD, 1);
+    mrow(&menus.menu[1], "Copy", CMD_COPY, 'c', TIKU_MOD_CMD, 1);
+    mrow(&menus.menu[1], "Paste", CMD_PASTE, 'v', TIKU_MOD_CMD, 1);
+    mrow(&menus.menu[1], "Select all", CMD_SELALL, 'a', TIKU_MOD_CMD, 1);
+    msep(&menus.menu[1]);
+    mrow(&menus.menu[1], "Find…", CMD_FIND, 'f', TIKU_MOD_CMD, 1);
+    if (e->lang == TIKU_SYNTAX_BASIC) {
+        /* The tidy that renumbers by tens, for the language whose
+         * lines wear their numbers. */
+        mrow(&menus.menu[1], "Renumber", CMD_RENUM, 0, 0u, 1);
+    }
+    window_menu(st, &menus.menu[2]);
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
@@ -1501,11 +1554,21 @@ edit_open(ide_t *st, const prow_t *row)
 static void
 edit_drop(ide_t *st, edit_t *e)
 {
+    int i;
+
     st->services->close(st->services->ctx, e->id);
     tiku_surface_free(e->surface);
     e->surface = NULL;
     project_paint(st);
     project_publish(st);
+    /* Every surviving editor's Window menu named the one that left:
+     * republished, or the stale row would offer a window that is not
+     * there to raise. */
+    for (i = 0; i < IDE_EDITS; i++) {
+        if (st->edit[i].surface != NULL) {
+            edit_publish(st, &st->edit[i]);
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1599,7 +1662,6 @@ static void
 project_publish(ide_t *st)
 {
     tiku_menuset_t menus;
-    int i, n = 0;
 
     memset(&menus, 0, sizeof menus);
     menus.nmenu = 3;
@@ -1608,16 +1670,21 @@ project_publish(ide_t *st)
              sizeof menus.menu[0].item[0].label, APP_ABOUT);
     menus.menu[0].item[0].command = CMD_ABOUT;
     menus.menu[0].item[0].enabled = 1;
-    snprintf(menus.menu[0].item[1].label,
-             sizeof menus.menu[0].item[1].label, "New Project…");
-    menus.menu[0].item[1].command = CMD_NEWPROJ;
-    menus.menu[0].item[1].enabled = 1;
+    /* The groups a person reads at a glance: what this IS, then the
+     * projects, then the work, then the leaving. */
+    menus.menu[0].item[1].separator = 1;
     snprintf(menus.menu[0].item[2].label,
-             sizeof menus.menu[0].item[2].label, "Open Project…");
-    menus.menu[0].item[2].command = CMD_OPEN;
+             sizeof menus.menu[0].item[2].label, "New Project…");
+    menus.menu[0].item[2].command = CMD_NEWPROJ;
     menus.menu[0].item[2].enabled = 1;
+    snprintf(menus.menu[0].item[3].label,
+             sizeof menus.menu[0].item[3].label, "Open Project…");
+    menus.menu[0].item[3].command = CMD_OPEN;
+    menus.menu[0].item[3].enabled = 1;
     {
-    int mrow = 3;
+    int mrow = 4;
+    menus.menu[0].item[mrow].separator = 1;
+    mrow++;
 #ifndef TIKU_IDE_C
     {
         /* Run is offered for the row the list is standing on, and only
@@ -1667,6 +1734,8 @@ project_publish(ide_t *st)
                 (unsigned char)(st->proj.nrow > 0 && !st->running);
             at++;
         }
+        menus.menu[0].item[at].separator = 1;
+        at++;
         snprintf(menus.menu[0].item[at].label,
                  sizeof menus.menu[0].item[at].label, "Close Project");
         menus.menu[0].item[at].command = CMD_SHUT;
@@ -1696,33 +1765,24 @@ project_publish(ide_t *st)
     menus.menu[1].item[2].command = CMD_ADDFILE;
     menus.menu[1].item[2].enabled =
         (unsigned char)(st->proj_file[0] != '\0');
-    menus.menu[1].nitem = 3;
+    menus.menu[1].item[3].separator = 1;
+    {
+        /* The road OUT that Add File… promised a partner for: the
+         * selected row leaves the DESCRIPTION and only that -- the
+         * file stays on the disk, exactly as BeIDE meant it. */
+        int row = tiku_list_chosen(&st->tv_list);
 
-    snprintf(menus.menu[2].title, sizeof menus.menu[2].title, "Window");
-    for (i = 0; i < IDE_EDITS && n < TIKU_MENUSET_ITEMS; i++) {
-        edit_t *e = &st->edit[i];
+        snprintf(menus.menu[1].item[4].label,
+                 sizeof menus.menu[1].item[4].label, "Remove File");
+        menus.menu[1].item[4].command = CMD_REMOVEFILE;
+        menus.menu[1].item[4].enabled =
+            (unsigned char)(st->proj_file[0] != '\0' &&
+                            row >= 0 && row < st->proj.nrow &&
+                            !st->proj.row[row].heading);
+    }
+    menus.menu[1].nitem = 5;
 
-        if (e->surface == NULL) {
-            continue;
-        }
-        /* The mark is the DOCUMENT's, not the window's: a person
-         * looking for where their unsaved work is should find it in the
-         * list of windows rather than by opening each one. */
-        snprintf(menus.menu[2].item[n].label,
-                 sizeof menus.menu[2].item[n].label, "%s%s", e->name,
-                 tiku_textview_modified(&e->tv) ? " (changed)" : "");
-        menus.menu[2].item[n].command = CMD_WINDOW + i;
-        menus.menu[2].item[n].enabled = 1;
-        n++;
-    }
-    if (n == 0) {
-        snprintf(menus.menu[2].item[0].label,
-                 sizeof menus.menu[2].item[0].label, "No open files");
-        menus.menu[2].item[0].command = 0;
-        menus.menu[2].item[0].enabled = 0;
-        n = 1;
-    }
-    menus.menu[2].nitem = n;
+    window_menu(st, &menus.menu[2]);
     (void)st->services->menus(st->services->ctx, st->proj_id, &menus);
 }
 
@@ -1838,6 +1898,72 @@ project_add_file(ide_t *st, const char *path)
             return;
         }
     }
+}
+
+/**
+ * @brief Take the SELECTED row out of the project's description.
+ *
+ * Out of the PROJECT, not off the DISK: the file stays where it is,
+ * exactly as BeIDE meant it.  The description is rewritten keeping
+ * every line as it stands except the one `file` line being dropped --
+ * so the lines this build does not know (a target, a board) ride
+ * through untouched, the same promise Add File keeps by appending.
+ */
+static void
+project_remove_file(ide_t *st)
+{
+    int row = tiku_list_chosen(&st->tv_list);
+    char whole[8192];
+    char kept[8192];
+    char want[96];
+    size_t used = 0, w = 0;
+    FILE *f;
+    const char *leaf, *slash;
+    char *line;
+    int dropped = 0;
+
+    if (st->proj_file[0] == '\0' ||
+        row < 0 || row >= st->proj.nrow || st->proj.row[row].heading) {
+        return;
+    }
+    slash = strrchr(st->proj.row[row].path, '/');
+    leaf = (slash != NULL) ? slash + 1 : st->proj.row[row].path;
+    snprintf(want, sizeof want, "file %s", leaf);
+    f = fopen(st->proj_file, "r");
+    if (f == NULL) {
+        return;
+    }
+    used = fread(whole, 1u, sizeof whole - 1u, f);
+    (void)fclose(f);
+    whole[used] = '\0';
+    line = whole;
+    while (*line != '\0') {
+        char *nl = strchr(line, '\n');
+        size_t n = (nl != NULL) ? (size_t)(nl - line) + 1u
+                                : strlen(line);
+
+        if (!dropped && strncmp(line, want, strlen(want)) == 0 &&
+            (line[strlen(want)] == '\n' ||
+             line[strlen(want)] == '\0')) {
+            dropped = 1;        /* the one line being taken out */
+        } else if (w + n < sizeof kept) {
+            memcpy(kept + w, line, n);
+            w += n;
+        }
+        line += n;
+    }
+    if (!dropped) {
+        return;
+    }
+    f = fopen(st->proj_file, "w");
+    if (f == NULL) {
+        snprintf(st->note, sizeof st->note, "cannot write the project");
+        project_paint(st);
+        return;
+    }
+    (void)fwrite(kept, 1u, w, f);
+    (void)fclose(f);
+    project_take(st, st->proj_file);
 }
 
 /**
@@ -2990,6 +3116,35 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 edit_paint(st, e);
                 return 0;
             }
+            /* The file keys: Cmd-S saves, Cmd-W closes THIS window,
+             * Cmd-R runs the page's own program, Cmd-. stops a run --
+             * each the key its menu row says. */
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 's') {
+                (void)edit_save(e);
+                edit_paint(st, e);
+                edit_publish(st, e);
+                project_publish(st);
+                return 0;
+            }
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'w') {
+                edit_drop(st, e);
+                return 0;
+            }
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'r' &&
+                e->lang == TIKU_SYNTAX_BASIC) {
+                (void)edit_save(e);
+                run_file(st, e->path);
+                edit_paint(st, e);
+                edit_publish(st, e);
+                project_publish(st);
+                return 0;
+            }
+            if ((event->modifiers & TIKU_MOD_CMD) && event->key == '.' &&
+                e->lang == TIKU_SYNTAX_BASIC) {
+                run_stop(st, "? the run was stopped by hand");
+                edit_paint(st, e);
+                return 0;
+            }
             /* The desk's editing keys -- Cmd X/C/V/A, and Cmd-Z /
              * Cmd-Shift-Z for undo and redo -- caught before the
              * switch, so their letters are never typed. */
@@ -3178,6 +3333,29 @@ ide_pick(void *state, uint32_t window, int command)
         }
         return 0;
     }
+    if (e != NULL && command == CMD_RUN &&
+        e->lang == TIKU_SYNTAX_BASIC) {
+        /* Run, asked ON a page: THIS file, not whichever row the
+         * project window happens to hold selected. */
+        (void)edit_save(e);
+        run_file(st, e->path);
+        edit_paint(st, e);
+        edit_publish(st, e);
+        project_publish(st);
+        return 0;
+    }
+    if (e != NULL && command == CMD_STOP) {
+        run_stop(st, "? the run was stopped by hand");
+        edit_paint(st, e);
+        edit_publish(st, e);
+        return 0;
+    }
+    if (e != NULL && command == CMD_FIND) {
+        e->finding = 1;
+        tiku_field_start(&e->find, "");
+        edit_paint(st, e);
+        return 0;
+    }
     if (e != NULL && command == CMD_RENUM) {
         renumber_basic(e);
         edit_paint(st, e);
@@ -3256,6 +3434,9 @@ ide_pick(void *state, uint32_t window, int command)
         if (e != NULL) {
             edit_drop(st, e);
         }
+        break;
+    case CMD_REMOVEFILE:
+        project_remove_file(st);
         break;
     case CMD_RUN: {
         int row = tiku_list_chosen(&st->tv_list);

@@ -28,7 +28,7 @@ note the menu offers the start; a project that does not say what it is
 note FOR is offered no Build, and the file roads live under File
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…|Run
+expect-menu New Project…|Open Project…||Run
 menu-pick New Project…
 wait 40
 expect-title Save

@@ -1,0 +1,101 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# The menu bar, audited and grown: every editor wears File, Edit AND
+# Window -- so the other editor is reached from HERE, not through the
+# project window; File carries the page's own Run and Stop with their
+# keys; Cmd-S and Cmd-W are the keys their rows say; and Remove File
+# takes a row out of the description while keeping every line the
+# build does not know.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 8
+key Down
+wait 8
+key Return
+wait 90
+expect-title main.bas
+note the second file, opened from the project as before
+click-window Project
+wait 8
+key Down
+key Down
+wait 6
+key Return
+wait 90
+expect-title util.bas
+note the editor's OWN Window menu hops to the other editor: no detour
+note through the project window, which every earlier script had to take
+click 163 8
+wait 8
+expect-menu main.bas|util.bas|
+menu-pick main.bas
+wait 30
+expect-title main.bas
+note Cmd-S is the key its row says: a character, the key, the disk
+key End
+wait 3
+key q
+wait 4
+key s ctrl
+wait 60
+expect-file-has /tmp/trk_home/main.bas a$q
+note and back by the same menu, to close the second page by its key --
+note Cmd-W takes the window it was pressed in, and only that one
+click 163 8
+wait 8
+menu-pick util.bas
+wait 30
+expect-title util.bas
+key w ctrl
+wait 20
+expect-no-title util.bas
+click-window main.bas
+wait 8
+click 163 8
+wait 8
+expect-menu main.bas|
+menu-pick main.bas
+wait 10
+note the page's File menu runs THIS file, and Stop stands beside it
+click 71 8
+wait 8
+expect-menu Save main.bas|Run main.bas|Stop||Close main.bas|
+menu-pick Run main.bas
+wait 20
+expect-pixel 274 270 b23434
+click 71 8
+wait 8
+menu-pick Stop
+wait 30
+expect-title Messages
+note Remove File takes the SELECTED row out of the description -- and
+note ONLY that: the line the build does not know rides through intact
+click-window Project
+wait 8
+key Down
+key Down
+wait 6
+click 132 8
+wait 8
+expect-menu New File…|Open File…|Add File…||Remove File|
+menu-pick Remove File
+wait 30
+expect-file-lacks /tmp/trk_home/project.tiku file util.bas
+expect-file-has /tmp/trk_home/project.tiku file main.bas
+expect-file-has /tmp/trk_home/project.tiku board zebra
+quit

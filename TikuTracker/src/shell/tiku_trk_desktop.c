@@ -2185,7 +2185,12 @@ rebuild_global_bar(desktop_t *app)
                 continue;           /* hoisted into the system menu */
             }
             if (fi->separator) {
-                (void)tiku_menu_add_separator(to);
+                /* Never as the FIRST row: the About above it may have
+                 * been hoisted away, and a menu that opens with a rule
+                 * is ruling off nothing. */
+                if (to->count > 0) {
+                    (void)tiku_menu_add_separator(to);
+                }
             } else if (i + 1 < from->nitem &&
                        from->item[i + 1].level == 1 && nsub < 4) {
                 /*
