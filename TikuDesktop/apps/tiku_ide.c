@@ -95,7 +95,7 @@
 /* Wide, the way the banners those splash screens wore are wide: the
  * band takes a picture cut close to three-to-one edge to edge. */
 #define SPLASH_W   560
-#define SPLASH_H   330
+#define SPLASH_H   300
 #define SPLASH_ART 148          /* the art field's width, on the left */
 /* How long the splash stands before leaving on its own. */
 #define SPLASH_US  2500000
@@ -2660,6 +2660,15 @@ announce_paint_art(tiku_surface_t *sf, const char *status,
         "drawn with the six kits"
     };
 
+    if (status != NULL) {
+        /* The SPLASH says only what a passing card should: the art,
+         * the name, and what is being gathered.  The credits and the
+         * version belong to the About box, which is the same card
+         * held still for somebody who ASKED -- that is what asking
+         * is for. */
+        tiku_splash_paint(sf, APP_NAME, NULL, 0, NULL, status, art);
+        return;
+    }
     tiku_splash_paint(sf, APP_NAME, LINES,
                            (int)(sizeof LINES / sizeof LINES[0]),
                            "TikuOS 0.06", status, art);
