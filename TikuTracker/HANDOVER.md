@@ -319,10 +319,11 @@ dynamic allocation in the hot paths, Doxygen on anything public.
 ### Comments
 
 `hygiene/commentstyle.md` at the tikuOS root governs both comments and commit
-messages, but `hygiene/` is gitignored (`.gitignore:107`): a clone of this
-tree does not carry it, and there is no `make lint` target here, so nothing
-checks these rules for you. The last tracked checker is recoverable with
-`git -C /home/ambujv/Tiku/tikuOS show a2ef818^:tools/check_comment_style.py`. The rule that
+messages, but `hygiene/` is gitignored there: a clone of this tree does not
+carry it, and there is no `make lint` target here, so nothing checks these
+rules for you. Inside a tikuOS checkout the checkers are two levels up:
+`python3 ../../hygiene/check_comment_style.py <file>`, and the commit-msg hook
+in `../../hygiene/githooks` applies to this repository too. The rule that
 matters: a comment states the **live hazard or the reason**, never the route
 you took to find it. No "used to", no "turned out", no milestone markers.
 
