@@ -42,6 +42,14 @@ BUILD     := build
 # no timestamp would leave an instrumented binary sitting under the
 # shipping name, which is the exact accident this split exists to stop.
 DEVBUILD  := build/dev
+# Every source compiles ONCE, here, and the binaries below link objects.
+# Both flavours of both shells share these: the only source that reads
+# TRK_SCRIPT_ENABLE is the stub, which the development flavour does not
+# link, so nothing here differs between them.
+OBJ       := $(BUILD)/obj
+$(OBJ)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 # The interpreter is common; the presentation adapter reads desktop
 # controllers and so belongs to that shell alone.
 SCRIPT_ENGINE_TRACKER := src/shell/tiku_trk_script.c
@@ -468,11 +476,17 @@ TRACKER_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/windows/tiku_trk_folder_window.c \
                src/shell/tiku_trk_app.c src/shell/tiku_trk_launcher.c
 
-$(BUILD)/TikuTracker: $(TRACKER_SRC) $(SCRIPT_STUB) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
+TRACKER_OBJ        := $(patsubst %.c,$(OBJ)/%.o,$(TRACKER_SRC))
+STUB_OBJ           := $(patsubst %.c,$(OBJ)/%.o,$(SCRIPT_STUB))
+ENGINE_TRACKER_OBJ := $(patsubst %.c,$(OBJ)/%.o,$(SCRIPT_ENGINE_TRACKER))
 
-$(DEVBUILD)/TikuTracker: $(TRACKER_SRC) $(SCRIPT_ENGINE_TRACKER) | $(DEVBUILD)
-	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
+$(BUILD)/TikuTracker: $(TRACKER_OBJ) $(STUB_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
+	      $(LDFLAGS) -lX11 -lm
+
+$(DEVBUILD)/TikuTracker: $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) | $(DEVBUILD)
+	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) \
+	      $(LDFLAGS) -lX11 -lm
 
 DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/ui/tiku_trk_poseview.c \
@@ -486,11 +500,16 @@ DESKTOP_SRC := $(COMMON) src/shell/tiku_trk_addon.c $(ICONS) \
                src/shell/tiku_trk_desktop.c src/shell/tiku_trk_launcher.c \
                src/shell/tiku_trk_splash.c
 
-$(BUILD)/TikuDesktop: $(DESKTOP_SRC) $(SCRIPT_STUB) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
+DESKTOP_OBJ        := $(patsubst %.c,$(OBJ)/%.o,$(DESKTOP_SRC))
+ENGINE_DESKTOP_OBJ := $(patsubst %.c,$(OBJ)/%.o,$(SCRIPT_ENGINE_DESKTOP))
 
-$(DEVBUILD)/TikuDesktop: $(DESKTOP_SRC) $(SCRIPT_ENGINE_DESKTOP) | $(DEVBUILD)
-	$(CC) $(CFLAGS) -DTRK_SCRIPT_ENABLE=1 -o $@ $^ $(LDFLAGS) -lX11 -lm
+$(BUILD)/TikuDesktop: $(DESKTOP_OBJ) $(STUB_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
+	      $(LDFLAGS) -lX11 -lm
+
+$(DEVBUILD)/TikuDesktop: $(DESKTOP_OBJ) $(ENGINE_DESKTOP_OBJ) | $(DEVBUILD)
+	$(CC) $(CFLAGS) -o $@ $(DESKTOP_OBJ) $(ENGINE_DESKTOP_OBJ) $(DESK_LIBS) \
+	      $(LDFLAGS) -lX11 -lm
 
 # The out-of-process driver: an ordinary program that speaks the conductor
 # channel.  It links FOUR KITS and nothing of Tracker -- not even Storage,
@@ -642,3 +661,5 @@ check-shipping:
 
 clean:
 	rm -rf $(BUILD)
+
+-include $(shell find $(OBJ) -name '*.d' 2>/dev/null)
