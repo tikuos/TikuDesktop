@@ -409,9 +409,43 @@ typedef struct {
 /* The argv the desktop restarts itself with, kept by the Deskbar. */
 extern char **restart_argv;
 
+/* What the command line asked for. */
+typedef struct {
+    int         want_devices;
+    const char *port;
+    int         baud;
+    int         use_device;
+    const char *shot;               /* write a frame here, then stop */
+    int         shot_menu, shot_panel, shot_live, shot_shift, shot_zoom;
+    int         shot_cascade, shot_notify, shot_select;
+    const char *shot_edit, *shot_find;
+    /* Safe mode starts deliberately plain: it restores no session.  The
+     * row's other clauses -- replicants and add-ons -- have nothing here
+     * to suppress (AW-007). */
+    int         safe_mode;
+    const char *script_path;
+    /* The conductor channel is OFF unless asked for by name: a shell
+     * that anything reaching its socket could puppet is a shell with a
+     * hole in it.  The path is given rather than derived so a harness
+     * can run more than one driven shell at once.  Over a LINE instead
+     * of a socket is how a shell on a real board is driven, from
+     * whatever is on the other end of its console cable.  The tokens
+     * are names on the channel; requiring one turns every unnamed peer
+     * away at HELLO. */
+    const char *conduct_path, *conduct_tty;
+    const char *conduct_token, *conduct_query_token;
+    const char *openme[TIKU_WINDOW_MAX];   /* paths to open at start */
+    const char *argv0;              /* how this shell was started */
+    int         nopen;
+    int64_t     deadline;           /* -seconds: stop at this time, 0 never */
+} desktop_options_t;
+
 /* What the shell's loop keeps between one event and the next. */
 typedef struct {
-    tiku_trk_click_t click;     /* the click before this one */
+    tiku_trk_click_t    click;      /* the click before this one */
+    tiku_trk_script_t  *sc;         /* the script driving this run, or NULL */
+    int64_t             shot_at;    /* when the -shot frame is due, 0 never */
+    int64_t             last_pump, last_requery, last_sweep, started_at;
 } desktop_loop_t;
 
 /* The models behind the windows, read where they are used. */
@@ -565,11 +599,11 @@ void publish_folder_menus(desktop_t *app, folder_t *fl);
 void rebuild_global_bar(desktop_t *app);
 
 /* tiku_trk_desktop_lifecycle.c */
+int desktop_boot(desktop_t *app, const desktop_options_t *o,
+                 desktop_loop_t *lp);
+int desktop_parse_args(int argc, char **argv, desktop_options_t *o);
+int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
-void splash_settle(desktop_t *app);
-void splash_stage(desktop_t *app, const char *what);
-void status_answer(void *context, const tiku_alert_t *alert);
-void status_stop(void *context);
 
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud);
