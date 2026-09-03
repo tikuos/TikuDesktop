@@ -409,6 +409,11 @@ typedef struct {
 /* The argv the desktop restarts itself with, kept by the Deskbar. */
 extern char **restart_argv;
 
+/* What the shell's loop keeps between one event and the next. */
+typedef struct {
+    tiku_trk_click_t click;     /* the click before this one */
+} desktop_loop_t;
+
 /* The models behind the windows, read where they are used. */
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
@@ -540,6 +545,16 @@ int tick_embeds(void *ctx);
 struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
+
+/* tiku_trk_desktop_events.c */
+void desktop_key_down(desktop_t *app, const tiku_event_t *ev,
+                      desktop_loop_t *lp);
+void desktop_pointer_down(desktop_t *app, const tiku_event_t *ev,
+                          desktop_loop_t *lp);
+void desktop_pointer_move(desktop_t *app, const tiku_event_t *ev,
+                          desktop_loop_t *lp);
+void desktop_pointer_up(desktop_t *app, const tiku_event_t *ev,
+                        desktop_loop_t *lp);
 
 /* tiku_trk_desktop_globalbar.c */
 char key_char(const tiku_event_t *event);
