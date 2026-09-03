@@ -461,10 +461,13 @@ desktop_folder(desktop_t *app)
 /* Shared across the desktop's files: defined in one, used in another. */
 
 /* tiku_trk_desktop.c */
+folder_t *open_folder(desktop_t *app, const char *path);
+int folder_selection(desktop_t *app, folder_t *fl, char paths[][TIKU_PATH_MAX],
+                     const char **out, int max);
+void build_pickers(desktop_t *app, folder_t *fl);
 void close_window(desktop_t *app, tiku_window_t *w);
 void draw_all(desktop_t *app);
 void menu_invoke(desktop_t *app, folder_t *fl, int command);
-void open_panel(desktop_t *app);
 
 /* tiku_trk_desktop_drivers.c */
 int conduct_text(void *context, const char *name, char *out, size_t max);
@@ -494,6 +497,32 @@ void rebuild_global_bar(desktop_t *app);
 int mount_devices(desktop_t *app, const char *port, int baud);
 int refresh_after_mount(void *ctx);
 void save_before_unmount(dev_t dev, void *context);
+
+/* tiku_trk_desktop_panels.c */
+int launch_paths(desktop_t *app, const tiku_trk_app_t *application,
+                 const char *const *paths, int count);
+int list_children(tiku_backend_t *b, const char *path, tiku_model_t *out,
+                  int max);
+int open_one(desktop_t *app, const tiku_model_t *model);
+int panel_search(void *context, tiku_trk_find_t *panel);
+int refresh_results(desktop_t *app, folder_t *fl);
+int select_named(desktop_t *app, folder_t *fl, const char *name);
+tiku_window_t *apply_select_model(void *context, void *target,
+                                  const tiku_trk_select_t *selection);
+void build_open_with(desktop_t *app, folder_t *fl);
+void find_save_as(void *context);
+void find_select_folder(void *context);
+void fpanel_commit(void *context, void *target, int command,
+                   const char *destination);
+void fpanel_open(desktop_t *app, folder_t *folder, int command);
+void info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info);
+void info_opens_with_next(desktop_t *app, tiku_trk_info_t *info);
+void open_panel(desktop_t *app);
+void open_with_pick(desktop_t *app, folder_t *fl, int at);
+void open_with_window_launch(void *context, const tiku_trk_app_t *application,
+                             const char *const *paths, int count);
+void prepare_places(desktop_t *app);
+void run_find(desktop_t *app, folder_t *from);
 
 /* tiku_trk_desktop_remote.c */
 void clip_mirror(desktop_t *app);
