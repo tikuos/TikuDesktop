@@ -3,13 +3,15 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * test_splash.c - the boot screen's pacing.
+ * test_splash.c - the boot screen's pacing, and the closing screen's.
  *
  * A script can only see the last stage and the way out, because every
  * stage before it is held during startup, before the script's own loop
  * begins.  What paces them is arithmetic, and arithmetic is testable
  * without a screen at all -- so it is tested here, with the clock handed
- * in rather than read.
+ * in rather than read.  The way DOWN is the same arithmetic run the
+ * other way, and a script can see even less of it: the shell stops as
+ * soon as it is over.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -138,6 +140,95 @@ main(void)
           "a second done does not restart the fade -- the shell says it "
           "in one place, but a boot screen that came back would be worse "
           "than one that never went");
+
+    printf("\nnothing to lower when there is no screen (TS-DOWN)\n");
+    tiku_trk_splash_begin(&sp, 0, t);
+    tiku_trk_splash_closing(&sp, t);
+    check(tiku_trk_splash_closed(&sp, t), "TS-DOWN",
+          "a run with no splash is closed the moment it is asked: a "
+          "scripted shell stops where it always stopped rather than "
+          "waiting out a transition nobody is watching");
+    check(!tiku_trk_splash_visible(&sp, t), "TS-DOWN",
+          "and puts nothing on the screen on its way");
+
+    printf("\na stage said onto no screen costs nothing (TS-DOWN)\n");
+    tiku_trk_splash_begin(&sp, 1, t);
+    tiku_trk_splash_say(&sp, "storage", t);
+    tiku_trk_splash_done(&sp, t);
+    t += TIKU_TRK_SPLASH_HOLD_US + TIKU_TRK_SPLASH_FADE_US;
+    tiku_trk_splash_say(&sp, "the Deskbar", t);
+    check(sp.count == 1 && tiku_trk_splash_owed(&sp, t) == 0, "TS-DOWN",
+          "the teardown names its stages on every way out, and the ways "
+          "with no transition -- the window closed, the deadline reached "
+          "-- must not pay a dwell for lines drawn on nothing");
+
+    printf("\nthe black comes back down (TS-DOWN)\n");
+    tiku_trk_splash_begin(&sp, 1, t);
+    tiku_trk_splash_say(&sp, "the desktop", t);
+    tiku_trk_splash_done(&sp, t);
+    t += TIKU_TRK_SPLASH_HOLD_US + TIKU_TRK_SPLASH_FADE_US;
+    check(tiku_trk_splash_veil(&sp, t) == 0.0f, "TS-DOWN",
+          "the boot screen is long gone before any of this");
+    tiku_trk_splash_closing(&sp, t);
+    check(tiku_trk_splash_veil(&sp, t) == 0.0f &&
+          tiku_trk_splash_visible(&sp, t), "TS-DOWN",
+          "and the closing starts perfectly CLEAR yet already visible: a "
+          "screen that waited to be visible until it had something to "
+          "show would never be drawn the frames it arrives over");
+    check(sp.what[0] == '\0' && sp.count == 0, "TS-DOWN",
+          "the line the boot went out on is dropped -- what is said from "
+          "here is what is being put away, not what was built");
+    {
+        /* Up the whole way, without dipping anywhere. */
+        float last = 0.0f;
+        int steps = 0, falling = 0;
+        int64_t at;
+
+        for (at = t; at <= t + TIKU_TRK_SPLASH_FADE_US;
+             at += TIKU_TRK_SPLASH_FADE_US / 32) {
+            float v = tiku_trk_splash_veil(&sp, at);
+
+            if (v < last) {
+                falling = 1;
+            }
+            if (v > last) {
+                steps++;
+            }
+            last = v;
+        }
+        check(!falling && steps >= 30, "TS-DOWN",
+              "it arrives in as many steps as it left in, and only ever "
+              "one way");
+    }
+    check(tiku_trk_splash_veil(&sp, t + TIKU_TRK_SPLASH_FADE_US / 2) >
+              0.4f &&
+          tiku_trk_splash_veil(&sp, t + TIKU_TRK_SPLASH_FADE_US / 2) <
+              0.6f, "TS-DOWN",
+          "halfway down it is half there, over the same second the way "
+          "in took to lift");
+    check(tiku_trk_splash_veil(&sp, t + TIKU_TRK_SPLASH_FADE_US) == 1.0f &&
+          tiku_trk_splash_veil(&sp, t + 60000000) == 1.0f, "TS-DOWN",
+          "and then it stays solid: every line the teardown says is said "
+          "on that black, so a veil that carried on past one would take "
+          "the words with it");
+
+    printf("\nand the shell waits for it (TS-DOWN)\n");
+    check(!tiku_trk_splash_closed(&sp, t), "TS-DOWN",
+          "not closed the moment it is asked for");
+    check(!tiku_trk_splash_closed(&sp, t + TIKU_TRK_SPLASH_FADE_US),
+          "TS-DOWN",
+          "nor when the black has just arrived: it holds a beat, so the "
+          "desktop going under and the first line of the teardown are "
+          "not the same frame");
+    check(tiku_trk_splash_closed(&sp, t + TIKU_TRK_SPLASH_FADE_US +
+                                 TIKU_TRK_SPLASH_HOLD_US), "TS-DOWN",
+          "and closed after the hold, which is when the putting away "
+          "starts");
+    tiku_trk_splash_closing(&sp, t + 30000000);
+    check(tiku_trk_splash_veil(&sp, t + 30000000) == 1.0f, "TS-DOWN",
+          "a second closing does not start it over -- the shell says it "
+          "from three places, and a screen that lifted to fall again "
+          "would say the machine had changed its mind");
 
     printf("\n%s\n", fails ? "FAILURES" : "the boot screen keeps its time");
     return fails ? 1 : 0;

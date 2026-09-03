@@ -140,6 +140,9 @@ typedef struct desktop {
     int                  row_h;
     int                  team;
     int                  running;
+    /* Being taken down: the loop runs on so the screen can go under,
+     * but nothing a person does reaches anything any more. */
+    int                  closing;
     int                  dirty;
     /* Menus.  One set serves every folder window, rebuilt from whichever is
      * focused each time a menu opens -- the original rebuilds on open too. */
@@ -745,16 +748,17 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
 }
 
 /**
- * @brief Say what has just come up, and hold it long enough to be read.
+ * @brief Hold the line now up for whatever is still owed it.
  *
- * The dwell is paid at the START of the next call rather than at the end
+ * The dwell is paid at the START of the next stage rather than at the end
  * of this one, so the work a stage names counts toward its own dwell: a
  * piece that takes 300ms is shown for 300ms and topped up by nothing,
  * and one that takes 2ms is topped up to the minimum.  What is being
- * paced is the reading, not the loading.
+ * paced is the reading, not the loading.  The last line of all has no
+ * next stage to pay it, so the caller settles that one itself.
  */
 static void
-splash_stage(desktop_t *app, const char *what)
+splash_settle(desktop_t *app)
 {
     int64_t owed;
 
@@ -769,6 +773,16 @@ splash_stage(desktop_t *app, const char *what)
         ts.tv_nsec = (long)(owed % 1000000) * 1000L;
         (void)nanosleep(&ts, NULL);
     }
+}
+
+/** @brief Name the piece now being built, or now being put away. */
+static void
+splash_stage(desktop_t *app, const char *what)
+{
+    if (!app->splash.live) {
+        return;
+    }
+    splash_settle(app);
     tiku_trk_splash_say(&app->splash, what, tiku_trk_now());
     tiku_trk_splash_draw(&app->splash, app->surf,
                          (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
@@ -776,6 +790,26 @@ splash_stage(desktop_t *app, const char *what)
     if (app->host != NULL) {
         (void)tiku_host_present(app->host, app->surf);
     }
+}
+
+/**
+ * @brief Take the desktop down behind the screen it came up behind.
+ *
+ * The shutdown a PERSON asked for, which is the one worth showing: the
+ * black comes back over the desktop, and the pieces name themselves as
+ * they are put away.  A run with no splash -- scripted, or driven over
+ * the conductor channel -- stops where it always stopped.
+ */
+static void
+begin_shutdown(desktop_t *app)
+{
+    tiku_trk_splash_closing(&app->splash, tiku_trk_now());
+    if (tiku_trk_splash_closed(&app->splash, tiku_trk_now())) {
+        app->running = 0;
+        return;
+    }
+    app->closing = 1;
+    app->dirty = 1;
 }
 
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
@@ -813,7 +847,7 @@ status_answer(void *context, const tiku_alert_t *alert)
                                   alert->chosen != alert->cancel);
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_SHUTDOWN) {
         if (alert->chosen != alert->cancel) {
-            app->running = 0;
+            begin_shutdown(app);
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_SAVE_REPLACE) {
         if (alert->chosen != alert->cancel) {
@@ -3867,9 +3901,10 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         break;
     }
     case TIKU_TRK_DB_POWER_OFF:
-        /* Chosen inside the submenu: immediate, no question -- the
-         * parent's ellipsis is where the asking lives (DB-006). */
-        app->running = 0;
+        /* Chosen inside the submenu: no question asked -- the parent's
+         * ellipsis is where the asking lives (DB-006).  It still goes
+         * down the way it came up; what was skipped is the asking. */
+        begin_shutdown(app);
         break;
     case TIKU_TRK_DB_RESTART:
         /* A real restart of the desktop: the same image, started
@@ -6667,6 +6702,13 @@ tracker_run(int argc, char **argv)
             if (!have) {
                 break;
             }
+            if (app.closing) {
+                /* Still taken OFF the queue -- a display whose events go
+                 * unread stops sending them -- and then dropped: a click
+                 * during the second the screen is going under would open
+                 * something nobody is going to see. */
+                continue;
+            }
             switch (ev.type) {
             case TIKU_EVENT_RESIZE:
                 (void)resize_desktop(&app, ev.width, ev.height);
@@ -8643,7 +8685,7 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (key == 'q' && (ev.modifiers & TIKU_MOD_CMD)) {
-                    app.running = 0;
+                    begin_shutdown(&app);
                     break;
                 }
                 {
@@ -9542,6 +9584,12 @@ tracker_run(int argc, char **argv)
         if (deadline > 0 && tiku_trk_now() > deadline) {
             app.running = 0;
         }
+        if (app.closing &&
+            tiku_trk_splash_closed(&app.splash, tiku_trk_now())) {
+            /* The black has arrived and held.  What is left is the
+             * putting away, and it is named on the screen below. */
+            app.running = 0;
+        }
         /* A script still lets the clock run, just faster: the notice
          * poll, the armed rename and the barber pole are all timed, and a
          * loop that spun without time passing would test none of them. */
@@ -9575,7 +9623,16 @@ tracker_run(int argc, char **argv)
         }
     }
 
+    /*
+     * The way out, named as it happens.  Each line goes up before the
+     * work it names, the way the boot's do, so the dwell a stage is held
+     * for is the time that piece actually took plus whatever it takes to
+     * reach the minimum -- and the order is the order the pieces really
+     * come apart, which is the boot read backwards.
+     */
+    splash_stage(&app, "the session");
     tiku_trk_session_controller_save(&app.session);
+    splash_stage(&app, "the desktop");
     for (i = 0; i < app.folder_count; i++) {
         tiku_trk_poseview_free(app.folders[i].view);
     }
@@ -9588,12 +9645,17 @@ tracker_run(int argc, char **argv)
     tiku_trk_desktop_prefs_window_destroy(&app.desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app.fonts_window);
     tiku_trk_prefs_window_destroy(&app.prefs_window);
+    splash_stage(&app, "the Deskbar");
     tiku_trk_deskbar_free(app.deskbar);
+    splash_stage(&app, "applications");
     tiku_remote_shutdown(&app.remote);
     tiku_workspace_free(app.desk);
+    splash_stage(&app, "storage");
     /* Quitting waits for work already under way, up to five seconds
      * (AW-009): the alternative is a copy abandoned mid-file with
-     * nothing to say so. */
+     * nothing to say so.  A stage that waits on a real copy is the one
+     * place here where the line is reporting the wait rather than
+     * covering it, which is what it is for. */
     tiku_trk_session_drain_filesystem(app.fs);
     if (sc != NULL) {
         rc = tiku_trk_script_report(sc, "desktop");
@@ -9604,6 +9666,10 @@ tracker_run(int argc, char **argv)
     if (app.conduct_on) {
         tiku_conduct_shutdown(&app.conduct);
     }
+    /* The last line has nothing after it to pay its dwell, so it is paid
+     * here: without this the screen's final word is on the glass for
+     * however long the last free took, which is nothing. */
+    splash_settle(&app);
     tiku_host_close(app.host);
     tiku_surface_free(app.surf);
     return rc;

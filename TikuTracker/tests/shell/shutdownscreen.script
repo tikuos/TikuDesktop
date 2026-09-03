@@ -1,0 +1,27 @@
+# shell: desktop
+# splash: on
+# The way out is the way in, run backwards.  The desktop does not simply
+# stop being drawn: the black comes back down over it across the second
+# it took to lift, holds, and the teardown then names each piece as it is
+# put away -- so what a person sees is the machine closing rather than a
+# window that vanished.
+wait 150
+expect-pixel 5 5 336698
+note the boot screen is off and the desktop is up.  Now ask for it back,
+note from the Deskbar's own row, and answer the question it asks
+press 900 20 1
+wait 2
+release 900 20 1
+wait 5
+menu-pick Shut down
+wait 5
+expect-alert Shut down
+key Return
+note a second later the black has ARRIVED rather than the shell having
+note gone: the backdrop's corner is under it, and the mark stands where
+note it stood on the way in -- pinned on its filled face, the same pixel
+note splash.script holds the way up by
+wait 60
+expect-pixel 5 5 000000
+expect-pixel 507 307 f7e689
+quit

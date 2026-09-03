@@ -47,10 +47,25 @@ tiku_trk_splash_begin(tiku_trk_splash_t *sp, int live, int64_t now)
     sp->stage_us = now;
 }
 
+/**
+ * @brief Whether there is a screen to say anything ON.
+ *
+ * Coming up, or going down.  In between -- the desktop is up and the
+ * black is off it -- there is none, and a stage named then is a line
+ * nobody could see paid for with a dwell everybody waits out.  The
+ * teardown names its stages on every way out, including the ways that
+ * have no transition at all, so this is what keeps those free.
+ */
+static int
+on_screen(const tiku_trk_splash_t *sp)
+{
+    return sp->close_us != 0 || sp->done_us == 0;
+}
+
 void
 tiku_trk_splash_say(tiku_trk_splash_t *sp, const char *what, int64_t now)
 {
-    if (sp == NULL || !sp->live) {
+    if (sp == NULL || !sp->live || !on_screen(sp)) {
         return;
     }
     snprintf(sp->what, sizeof sp->what, "%s", (what != NULL) ? what : "");
@@ -82,6 +97,34 @@ tiku_trk_splash_done(tiku_trk_splash_t *sp, int64_t now)
     sp->done_us = now;
 }
 
+void
+tiku_trk_splash_closing(tiku_trk_splash_t *sp, int64_t now)
+{
+    if (sp == NULL || !sp->live || sp->close_us != 0) {
+        return;
+    }
+    sp->close_us = now;
+    /* The stage the boot went out on is not the thing to come back with:
+     * the screen is blank until the first piece is put away, and the
+     * count starts over so that piece is held as long as any other. */
+    sp->what[0] = '\0';
+    sp->count = 0;
+    sp->stage_us = now;
+}
+
+int
+tiku_trk_splash_closed(const tiku_trk_splash_t *sp, int64_t now)
+{
+    if (sp == NULL || !sp->live) {
+        return 1;               /* nothing to lower, nothing to wait for */
+    }
+    if (sp->close_us == 0) {
+        return 0;
+    }
+    return now - sp->close_us >=
+           TIKU_TRK_SPLASH_FADE_US + TIKU_TRK_SPLASH_HOLD_US;
+}
+
 float
 tiku_trk_splash_veil(const tiku_trk_splash_t *sp, int64_t now)
 {
@@ -89,6 +132,15 @@ tiku_trk_splash_veil(const tiku_trk_splash_t *sp, int64_t now)
 
     if (sp == NULL || !sp->live) {
         return 0.0f;
+    }
+    if (sp->close_us != 0) {
+        /* Going down, over the second the way in took to lift.  It stays
+         * solid after that: everything the teardown says is said on it. */
+        gone = now - sp->close_us;
+        if (gone >= TIKU_TRK_SPLASH_FADE_US) {
+            return 1.0f;
+        }
+        return (float)gone / (float)TIKU_TRK_SPLASH_FADE_US;
     }
     if (sp->done_us == 0) {
         return 1.0f;            /* still loading: solid */
@@ -107,6 +159,13 @@ tiku_trk_splash_veil(const tiku_trk_splash_t *sp, int64_t now)
 int
 tiku_trk_splash_visible(const tiku_trk_splash_t *sp, int64_t now)
 {
+    /* On the way down it is visible from the first frame, when it is
+     * still perfectly clear: the caller repaints while this is true, and
+     * a screen that only became visible once it had something to show
+     * would never get the frames it needs to arrive. */
+    if (sp != NULL && sp->live && sp->close_us != 0) {
+        return 1;
+    }
     return tiku_trk_splash_veil(sp, now) > 0.0f;
 }
 

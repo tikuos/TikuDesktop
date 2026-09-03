@@ -21,6 +21,12 @@
  * lifted off it over about a second, which is the transition -- the
  * shell is already running by then, so nothing is being waited for.
  *
+ * The way out is the same screen run backwards.  The black is laid back
+ * over the desktop across that same second, holds for a beat, and then
+ * the stages name the pieces being put away in the order they really are
+ * put away -- so a shutdown reads as the machine closing rather than as
+ * a window that disappeared.
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef TIKU_TRK_SPLASH_H_
@@ -48,6 +54,7 @@ typedef struct {
     int     live;            /* whether there is a splash at all      */
     int64_t stage_us;        /* when the line now up was written      */
     int64_t done_us;         /* when loading finished; 0 until it has */
+    int64_t close_us;        /* when the closing began; 0 until it has*/
     int     count;           /* how many stages have been named       */
     char    what[48];        /* the line now up                       */
 } tiku_trk_splash_t;
@@ -84,9 +91,29 @@ int tiku_trk_splash_visible(const tiku_trk_splash_t *sp, int64_t now);
  * @brief How solid it is: 1 while loading and holding, 0 once gone.
  *
  * Everything the splash draws is drawn at this strength, so the mark,
- * the line and the black all leave together.
+ * the line and the black all leave together -- and, on the way out,
+ * arrive together.
  */
 float tiku_trk_splash_veil(const tiku_trk_splash_t *sp, int64_t now);
+
+/**
+ * @brief Start the closing: the black comes back down over the desktop.
+ *
+ * The line the boot screen went out on is dropped, because what is said
+ * from here is what is being put away rather than what was built.  A
+ * screen that is not live has nothing to lower, and says so through
+ * tiku_trk_splash_closed() at once.
+ */
+void tiku_trk_splash_closing(tiku_trk_splash_t *sp, int64_t now);
+
+/**
+ * @brief Whether the screen is down and the shell may stop.
+ *
+ * True once the black has arrived and held its beat -- and immediately
+ * when there is no splash at all, so a scripted run ends where it always
+ * did rather than waiting out a transition nobody is watching.
+ */
+int tiku_trk_splash_closed(const tiku_trk_splash_t *sp, int64_t now);
 
 /** @brief Lay it over @p screen, whatever is already drawn there. */
 void tiku_trk_splash_draw(const tiku_trk_splash_t *sp, tiku_surface_t *s,
