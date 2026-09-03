@@ -455,6 +455,15 @@ desktop_folder(desktop_t *app)
 
 /* Shared across the desktop's files: defined in one, used in another. */
 
+/* tiku_trk_desktop.c */
+void draw_all(desktop_t *app);
+
+/* tiku_trk_desktop_drivers.c */
+int conduct_text(void *context, const char *name, char *out, size_t max);
+long script_redraw_diff(void *ctx);
+unsigned conduct_pixel(void *context, int x, int y);
+void conduct_inject(void *context, const tiku_event_t *event);
+
 /* tiku_trk_desktop_embed.c */
 int embed_deliver(struct embed_win *ew, const tiku_event_t *ev);
 int embed_open_or_raise(desktop_t *app,
