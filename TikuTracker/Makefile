@@ -49,7 +49,7 @@ DEVBUILD  := build/dev
 OBJ       := $(BUILD)/obj
 $(OBJ)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $($(notdir $*)_CFLAGS) -MMD -MP -c -o $@ $<
 # The interpreter is common; the presentation adapter reads desktop
 # controllers and so belongs to that shell alone.
 SCRIPT_ENGINE_TRACKER := src/shell/tiku_trk_script.c
@@ -112,22 +112,11 @@ UI_SUPPORT := src/ui/tiku_trk_navmenu.c \
 COMMON := $(CORE) $(UI_SUPPORT)
 
 .PHONY: all test clean check-architecture desk-apps
-# Every test belongs here.  A suite left out of `all` is a suite that keeps
-# running from whatever binary happened to survive, which is how a stale
-# build reports a pass it did not earn.
-TESTBINS := $(BUILD)/test_types $(BUILD)/test_scroll $(BUILD)/test_launch $(BUILD)/test_deskbar_dock $(BUILD)/test_deskbar_prefs $(BUILD)/test_win $(BUILD)/test_frame $(BUILD)/test_iconview $(BUILD)/test_info $(BUILD)/test_panel $(BUILD)/test_nodeicon $(BUILD)/test_navmenu $(BUILD)/test_navigator $(BUILD)/test_dbdrop $(BUILD)/test_switcher $(BUILD)/test_deskicons $(BUILD)/test_scripting $(BUILD)/test_prefs $(BUILD)/test_volume $(BUILD)/test_vdir $(BUILD)/test_alert $(BUILD)/test_inflate $(BUILD)/test_thumb $(BUILD)/test_drag $(BUILD)/test_remote $(BUILD)/test_conduct $(BUILD)/test_client_wake $(BUILD)/test_appload $(BUILD)/test_shm $(BUILD)/test_task $(BUILD)/test_model $(BUILD)/test_poseview \
-            $(BUILD)/test_fs $(BUILD)/test_hvif $(BUILD)/test_icondir $(BUILD)/test_deskprefs $(BUILD)/test_fontprefs $(BUILD)/test_menu \
-            $(BUILD)/test_attr $(BUILD)/test_query $(BUILD)/test_background \
-            $(BUILD)/test_text $(BUILD)/test_ttf $(BUILD)/test_cff $(BUILD)/test_strings \
-            $(BUILD)/test_msg $(BUILD)/test_metrics $(BUILD)/test_theme \
-            $(BUILD)/test_dl $(BUILD)/test_logo $(BUILD)/test_tabs $(BUILD)/test_slider $(BUILD)/test_textview $(BUILD)/test_dlcontrols $(BUILD)/test_syntax $(BUILD)/test_list $(BUILD)/test_splashkit $(BUILD)/test_layout $(BUILD)/test_form \
-            $(BUILD)/test_copybits \
-            $(BUILD)/test_notify $(BUILD)/test_match \
-            $(BUILD)/test_edit $(BUILD)/test_title $(BUILD)/test_clip \
-            $(BUILD)/test_repaint $(BUILD)/test_drop_protocol \
-            $(BUILD)/test_springmenu $(BUILD)/test_color $(BUILD)/test_addon \
-            $(BUILD)/test_state_pipeline $(BUILD)/test_splash \
-            $(BUILD)/test_mount $(BUILD)/test_crossmount
+# Every test is the directory: a suite is built and run because
+# tests/test_<name>.c exists, so one cannot be compiled on every build and
+# executed on none, which is how test_launch once sat for a session.
+TESTS    := $(patsubst tests/%.c,%,$(wildcard tests/test_*.c))
+TESTBINS := $(addprefix $(BUILD)/,$(TESTS))
 
 # The shells were renamed, and `make` does not remove what it stopped
 # building.  A stale binary under a name somebody still types is worse
@@ -167,296 +156,92 @@ $(DESK_LIBS) &: $(DESK_SOURCES)
 $(TESTBINS) $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
 $(DEVBUILD)/TikuTracker $(DEVBUILD)/TikuDesktop: $(DESK_LIBS)
 
-$(BUILD)/test_task: src/core/tiku_trk_task.c tests/test_task.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# One line per test: the sources it links besides its own object, and
+# any library past the six kits, which every test links.  A test with
+# no line here is its own object and the kits, nothing else.
+test_task_SRCS   := src/core/tiku_trk_task.c
+test_repaint_SRCS   := src/core/tiku_trk_repaint.c
+test_drop_protocol_SRCS   := src/core/tiku_trk_drop_protocol.c
+test_springmenu_SRCS   := src/ui/tiku_trk_springmenu.c
+test_color_SRCS   := src/core/tiku_trk_color.c
+test_addon_SRCS   := src/shell/tiku_trk_addon.c
+test_state_pipeline_SRCS   := src/core/tiku_trk_state_pipeline.c
+test_model_SRCS   := $(COMMON)
+test_poseview_SRCS   := $(COMMON) src/ui/tiku_trk_poseview.c
+test_fs_SRCS   := $(COMMON)
+test_types_SRCS   := $(COMMON)
+test_scroll_SRCS   := $(COMMON)
+test_launch_SRCS   := $(COMMON)
+test_query_SRCS   := src/ui/tiku_trk_find.c src/core/tiku_trk_types.c
+test_notify_SRCS   := src/ui/tiku_trk_poseview.c src/core/tiku_trk_match.c src/core/tiku_trk_clip.c src/core/tiku_trk_task.c src/core/tiku_trk_repaint.c src/ui/tiku_trk_nodeicon.c src/core/tiku_trk_types.c
+test_title_SRCS   := $(COMMON) src/ui/tiku_trk_poseview.c src/ui/tiku_trk_titleview.c
+test_match_SRCS   := src/core/tiku_trk_match.c
+test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c src/deskbar/tiku_trk_deskbar_prefs.c
+test_deskbar_dock_LDLIBS := -lm
+test_text_LDLIBS := -lm
+test_ttf_LDLIBS := -lm
+test_cff_LDLIBS := -lm
+test_fontprefs_SRCS   := src/deskbar/tiku_trk_deskbar_prefs.c src/deskbar/tiku_trk_fontprefs.c
+test_deskbar_prefs_SRCS   := src/deskbar/tiku_trk_deskbar_prefs.c
+test_frame_SRCS   := $(COMMON)
+test_copybits_SRCS   := $(COMMON)
+test_background_SRCS   := $(COMMON)
+test_iconview_SRCS   := $(COMMON) src/ui/tiku_trk_poseview.c
+test_info_SRCS   := $(COMMON)
+test_panel_SRCS   := $(COMMON) src/ui/tiku_trk_poseview.c
+test_nodeicon_SRCS   := $(COMMON)
+test_navmenu_SRCS   := $(COMMON)
+test_navigator_SRCS   := src/ui/tiku_trk_navigator.c
+test_dbdrop_SRCS   := $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c src/deskbar/tiku_trk_deskbar_prefs.c src/ui/tiku_trk_shortcuts.c
+test_dbdrop_LDLIBS := -lm
+test_switcher_SRCS   := src/core/tiku_trk_switcher.c
+test_deskicons_SRCS   := $(COMMON) src/deskbar/tiku_trk_deskicons.c src/ui/tiku_trk_poseview.c
+test_scripting_SRCS   := $(COMMON) src/ui/tiku_trk_poseview.c src/shell/tiku_trk_script_api.c
+test_prefs_SRCS   := src/core/tiku_trk_prefs.c
+test_volume_SRCS   := $(COMMON) src/deskbar/tiku_trk_deskicons.c
+test_vdir_SRCS   := $(COMMON)
+test_alert_SRCS   := src/core/tiku_trk_alert.c src/core/tiku_trk_match.c src/core/tiku_trk_task.c src/core/tiku_trk_clip.c src/core/tiku_trk_drag.c
+test_inflate_CFLAGS := -Itests
+test_thumb_CFLAGS := -Itests
+test_drag_SRCS   := src/core/tiku_trk_drag.c
+test_clip_SRCS   := src/core/tiku_trk_clip.c
+test_edit_SRCS   := src/core/tiku_trk_select.c src/core/tiku_trk_match.c
+test_menu_SRCS   := src/ui/tiku_trk_shortcuts.c src/ui/tiku_trk_cwmenu.c
+test_crossmount_LDLIBS := -lm
+test_mount_LDLIBS := -lm
+test_splash_SRCS   := src/shell/tiku_trk_splash.c
+test_splash_LDLIBS := -lm
+test_logo_LDLIBS := -lm
+test_dl_LDLIBS := -lm
+test_theme_LDLIBS := -lm
+test_metrics_LDLIBS := -lm
+test_remote_LDLIBS := -lm
+test_conduct_LDLIBS := -lX11 -lm
+test_client_wake_LDLIBS := -lX11 -lm
+test_appload_LDLIBS := -lX11 -lm -ldl
+test_shm_LDLIBS := -lX11 -lm -lrt
+test_hvif_LDLIBS := -lm
+test_deskprefs_SRCS   := src/core/tiku_trk_deskprefs.c src/core/tiku_trk_background.c
+test_deskprefs_LDLIBS := -lm
+test_icondir_LDLIBS := -lm
 
-$(BUILD)/test_repaint: src/core/tiku_trk_repaint.c tests/test_repaint.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_drop_protocol: src/core/tiku_trk_drop_protocol.c tests/test_drop_protocol.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_springmenu: src/ui/tiku_trk_springmenu.c tests/test_springmenu.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_color: src/core/tiku_trk_color.c tests/test_color.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_addon: src/shell/tiku_trk_addon.c \
-                     tests/test_addon.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_state_pipeline: \
-                              src/core/tiku_trk_state_pipeline.c \
-                              tests/test_state_pipeline.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_model: $(COMMON) tests/test_model.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_poseview: $(COMMON) src/ui/tiku_trk_poseview.c tests/test_poseview.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_fs: $(COMMON) tests/test_fs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# The one link rule.  A test's object, the objects of the sources it
+# names, the kits, and its own libraries.
+objs = $(patsubst %.c,$(OBJ)/%.o,$(1))
+.SECONDEXPANSION:
+$(BUILD)/test_%: $(OBJ)/tests/test_%.o $$(call objs,$$(test_$$*_SRCS)) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(OBJ)/tests/test_$*.o $(call objs,$(test_$*_SRCS)) \
+	      $(DESK_LIBS) $(LDFLAGS) $(test_$*_LDLIBS)
 
 # The HVIF icon set went down into the Translation kit, where a picture
 # turning into pixels belongs; the archive carries it now.
 ICONS :=
-
-$(BUILD)/test_types: $(COMMON) tests/test_types.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_types.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_scroll: $(COMMON) tests/test_scroll.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_scroll.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_launch: $(COMMON) tests/test_launch.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(COMMON) tests/test_launch.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_query: \
-                     src/ui/tiku_trk_find.c src/core/tiku_trk_types.c \
-                     tests/test_query.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_notify: src/ui/tiku_trk_poseview.c \
-                      src/core/tiku_trk_match.c src/core/tiku_trk_clip.c \
-                      src/core/tiku_trk_task.c \
-                      src/core/tiku_trk_repaint.c \
-                      src/ui/tiku_trk_nodeicon.c src/core/tiku_trk_types.c \
-                      \
-                      tests/test_notify.c \
-                     | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_attr: \
-                    tests/test_attr.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_title: $(COMMON) src/ui/tiku_trk_poseview.c src/ui/tiku_trk_titleview.c \
-                     tests/test_title.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_match: src/core/tiku_trk_match.c tests/test_match.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_deskbar_dock: $(COMMON) $(ICONS) \
-                            src/deskbar/tiku_trk_deskbar.c \
-                            src/deskbar/tiku_trk_deskbar_prefs.c \
-                            tests/test_deskbar_dock.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_text: tests/test_text.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_ttf: tests/test_ttf.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_cff: tests/test_cff.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_fontprefs: \
-                         src/deskbar/tiku_trk_deskbar_prefs.c \
-                         src/deskbar/tiku_trk_fontprefs.c \
-                         tests/test_fontprefs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_deskbar_prefs: \
-                              src/deskbar/tiku_trk_deskbar_prefs.c \
-                              tests/test_deskbar_prefs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_frame: $(COMMON) tests/test_frame.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_win: tests/test_win.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_copybits: $(COMMON) tests/test_copybits.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_background: $(COMMON) tests/test_background.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_iconview: $(COMMON) src/ui/tiku_trk_poseview.c \
-                        tests/test_iconview.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_info: $(COMMON) tests/test_info.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_panel: $(COMMON) src/ui/tiku_trk_poseview.c tests/test_panel.c \
-                     | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_nodeicon: $(COMMON) tests/test_nodeicon.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_navmenu: $(COMMON) tests/test_navmenu.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_navigator: src/ui/tiku_trk_navigator.c \
-                         tests/test_navigator.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_dbdrop: $(COMMON) $(ICONS) src/deskbar/tiku_trk_deskbar.c \
-                      src/deskbar/tiku_trk_deskbar_prefs.c \
-                      src/ui/tiku_trk_shortcuts.c \
-                      tests/test_dbdrop.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_switcher: src/core/tiku_trk_switcher.c tests/test_switcher.c \
-                        | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_deskicons: $(COMMON) src/deskbar/tiku_trk_deskicons.c \
-                         src/ui/tiku_trk_poseview.c tests/test_deskicons.c \
-                         | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_scripting: $(COMMON) src/ui/tiku_trk_poseview.c \
-                        src/shell/tiku_trk_script_api.c tests/test_scripting.c \
-                        | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_prefs: src/core/tiku_trk_prefs.c \
-                     tests/test_prefs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_strings: tests/test_strings.c \
-                       | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_volume: $(COMMON) src/deskbar/tiku_trk_deskicons.c tests/test_volume.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_vdir: $(COMMON) tests/test_vdir.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_alert: src/core/tiku_trk_alert.c \
-                     \
-                     \
-                     src/core/tiku_trk_match.c \
-                     src/core/tiku_trk_task.c \
-                     src/core/tiku_trk_clip.c src/core/tiku_trk_drag.c \
-                     \
-                     tests/test_alert.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_inflate: tests/test_inflate.c | $(BUILD)
-	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_thumb: \
-                     \
-                     tests/test_thumb.c | $(BUILD)
-	$(CC) $(CFLAGS) -Itests -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_drag: src/core/tiku_trk_drag.c \
-                    tests/test_drag.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_clip: src/core/tiku_trk_clip.c \
-                    tests/test_clip.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_edit: src/core/tiku_trk_select.c \
-                    src/core/tiku_trk_match.c tests/test_edit.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_dlcontrols: tests/test_dlcontrols.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_dlcontrols.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_form: tests/test_form.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_form.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_layout: tests/test_layout.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_layout.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_list: tests/test_list.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_list.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_splashkit: tests/test_splashkit.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_splashkit.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_syntax: tests/test_syntax.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_syntax.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_textview: tests/test_textview.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_textview.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_slider: tests/test_slider.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_slider.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_tabs: tests/test_tabs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_tabs.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_menu: src/ui/tiku_trk_shortcuts.c \
-                    src/ui/tiku_trk_cwmenu.c \
-                    tests/test_menu.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD)/test_crossmount: tests/test_crossmount.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_crossmount.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_mount: tests/test_mount.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_mount.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_splash: tests/test_splash.c src/shell/tiku_trk_splash.c \
-                     $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_splash.c src/shell/tiku_trk_splash.c \
-	      $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_logo: tests/test_logo.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_logo.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_dl: tests/test_dl.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_dl.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_theme: tests/test_theme.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_theme.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_metrics: tests/test_metrics.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_metrics.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_msg: tests/test_msg.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_msg.c $(DESK_LIBS) $(LDFLAGS)
-
-$(BUILD)/test_remote: tests/test_remote.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_remote.c $(DESK_LIBS) $(LDFLAGS) -lm
-
-$(BUILD)/test_conduct: tests/test_conduct.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_conduct.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
-
-$(BUILD)/test_client_wake: tests/test_client_wake.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_client_wake.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
-
-$(BUILD)/test_appload: tests/test_appload.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_appload.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm -ldl
-
-$(BUILD)/test_shm: tests/test_shm.c $(DESK_LIBS) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ tests/test_shm.c $(DESK_LIBS) $(LDFLAGS) -lX11 -lm -lrt
-
-$(BUILD)/test_hvif: \
-                    tests/test_hvif.c \
-                    | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD)/icon-export: \
                       tools/tiku_trk_icon_export.c | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ \
 	      tools/tiku_trk_icon_export.c \
 	      $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
-
-$(BUILD)/test_deskprefs: src/core/tiku_trk_deskprefs.c \
-                        src/core/tiku_trk_background.c \
-                        \
-                        \
-                        tests/test_deskprefs.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
-
-$(BUILD)/test_icondir: \
-                       tests/test_icondir.c \
-                       | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 
 # Who links what is a FACT with a checker, not a convention: the two
@@ -555,84 +340,12 @@ desk-apps:
 
 test: all desk-apps
 	@$(MAKE) --no-print-directory check-architecture
-	@$(BUILD)/test_task
-	@$(BUILD)/test_model $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD))
-	@$(BUILD)/test_poseview
-	@$(BUILD)/test_types
-	@$(BUILD)/test_scroll
-	@$(BUILD)/test_launch
-	@$(BUILD)/test_fs
-	@$(BUILD)/test_hvif
-	@$(BUILD)/test_icondir
-	@$(BUILD)/test_deskprefs
-	@$(BUILD)/test_menu
-	@$(BUILD)/test_tabs
-	@$(BUILD)/test_slider
-	@$(BUILD)/test_textview
-	@$(BUILD)/test_syntax
-	@$(BUILD)/test_list
-	@$(BUILD)/test_splashkit
-	@$(BUILD)/test_layout
-	@$(BUILD)/test_form
-	@$(BUILD)/test_dlcontrols
-	@$(BUILD)/test_attr
-	@$(BUILD)/test_query
-	@$(BUILD)/test_notify
-	@$(BUILD)/test_match
-	@$(BUILD)/test_edit
-	@$(BUILD)/test_title
-	@$(BUILD)/test_clip
-	@$(BUILD)/test_drag
-	@$(BUILD)/test_remote
-	@$(BUILD)/test_conduct
-	@$(BUILD)/test_client_wake
-	@$(BUILD)/test_appload
-	@$(BUILD)/test_shm
-	@$(BUILD)/test_thumb
-	@$(BUILD)/test_inflate
-	@$(BUILD)/test_alert
-	@$(BUILD)/test_vdir
-	@$(BUILD)/test_volume
-	@$(BUILD)/test_prefs
-	@$(BUILD)/test_scripting
-	@$(BUILD)/test_deskicons
-	@$(BUILD)/test_switcher
-	@$(BUILD)/test_dbdrop
-	@$(BUILD)/test_navmenu
-	@$(BUILD)/test_navigator
-	@$(BUILD)/test_nodeicon
-	@$(BUILD)/test_panel
-	@$(BUILD)/test_info
-	@$(BUILD)/test_copybits
-	@$(BUILD)/test_background
-	@$(BUILD)/test_iconview
-	@$(BUILD)/test_win
-	@$(BUILD)/test_frame
-	@$(BUILD)/test_deskbar_dock
-	@$(BUILD)/test_deskbar_prefs
-	@$(BUILD)/test_fontprefs
-	@$(BUILD)/test_strings
-	@$(BUILD)/test_msg
-	@$(BUILD)/test_metrics
-	@$(BUILD)/test_theme
-	@$(BUILD)/test_dl
-	@$(BUILD)/test_logo
-	@$(BUILD)/test_splash
-	@$(BUILD)/test_mount
-	@$(BUILD)/test_crossmount
-# Built by `all` and, until now, run by nothing.  A test that is
-# compiled on every build and executed on none is worse than no test:
-# it keeps passing review by existing.  The list is kept in two
-# places, which is how they got out of step.
-	@$(BUILD)/test_addon
-	@$(BUILD)/test_color
-	@$(BUILD)/test_drop_protocol
-	@$(BUILD)/test_repaint
-	@$(BUILD)/test_springmenu
-	@$(BUILD)/test_state_pipeline
-	@$(BUILD)/test_text
-	@$(BUILD)/test_ttf
-	@$(BUILD)/test_cff
+	@for t in $(TESTBINS); do \
+	    case $$t in \
+	        */test_model) $$t $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD)) ;; \
+	        *) $$t ;; \
+	    esac || exit 1; \
+	done
 	@# The shells are the other half of the product and have no unit
 	@# tests of their own; these drive the real binaries with no display.
 	@# The contract is data every count is drawn from; a copy of it that

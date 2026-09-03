@@ -236,14 +236,14 @@ the browser shell's own sources are the two short lists that remain, and
 does not change.
 
 **Tests are the directory.**  `TESTS := $(wildcard TikuTracker/tests/test_*.c)`;
-one pattern rule links `build/tests/test_X` from `test_X.o` + `libtracker.a`
-+ the kits; `make test` runs `$(TESTS:…)` — one list, so a test cannot be
-built and not run.  The tests that today deliberately link *nothing* but
-their named sources, to prove a module is libc-only (`test_task`,
-`test_match`, `test_repaint`, …), keep that property through one variable
-per such test: `test_task_ONLY := src/core/tiku_trk_task.c`.  The
-explicitness is the check, so it stays explicit; what goes is the
-seventy copies of the same recipe.
+one pattern rule links each test from its object, the objects of the
+sources its table line names (`test_alert_SRCS := …`), and the six kits;
+`make test` runs that same list, so a test cannot be built and not run.
+Every test already linked all six kits — the shared prerequisite line
+`$(TESTBINS) …: $(DESK_LIBS)` put them in `$^` — so no test was ever the
+libc-only proof its bare rule suggested; the static guard for headless
+modules is `check_architecture.py`'s include check, and it stays.  What
+goes is the seventy copies of the same recipe.
 
 **Applications from one source.**  Each `apps/<name>/` has one `.c` and
 `apps.mk` builds two things from it: `build/tiku-<name>` and
@@ -372,7 +372,7 @@ counts compared rather than the colour.
 | Phase | What | Budget | Done when |
 |---|---|---|---|
 | **0 — The map** | root `README.md`; one `.gitignore`; delete `_attic-…`; fix the stale paths in HANDOVER; decide `applications.mk` | half a day | a reader can find the desktop shell's source and the apps from the root README alone |
-| **1 — One build** | root `Makefile` + `mk/`; objects once; `libtracker.a`; tests from the directory; the apps rule; `make`/`make test`/`make run` at the root; `TIKUOS` for the BASIC host | one to two days | same 74 binaries and same pass counts; `check_shipping` green; touch-one-file rebuild under 3 s |
+| **1 — One build** | root `Makefile` + `mk/`; objects once; tests from the directory; the apps rule; `make`/`make test`/`make run` at the root; `TIKUOS` for the BASIC host | one to two days | same 74 binaries and same pass counts; `check_shipping` green; touch-one-file rebuild under 3 s |
 | **2 — The rename** | `git mv TikuDesktop apps`; `find_apps_dir()` looks for `build/apps`; paths in `run.sh`, the two PLANs, `tiku_font.h` | half a day | `grep -rn TikuDesktop/` finds only binaries and prose |
 | **3 — The shell in files** | split `tiku_trk_desktop.c` along its banners, `tracker_run` last | two to three days | no function over 500 lines in `src/shell/desktop/`; `print-ownership` unchanged |
 | **4 — The harness** | headers replace the case block; early stop is a failure; (optionally) `run.py` | one day | `run.sh` under 250 lines or replaced; the shutdown-screen test fails when the transition is removed |

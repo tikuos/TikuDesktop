@@ -90,13 +90,17 @@ eighteen rows back for exactly that.
 ## 2. Build and test
 
 ```sh
-cd applications/TikuTracker
-make                 # builds both shells and every test binary
-make test            # unit suites, the contract check, then the shell scripts
-python3 tools/check_contract.py    # 889 rows, no duplicates
-bash tests/shell/run.sh            # the shell scripts alone
-TRK_SHELL_ONLY=drop.script bash tests/shell/run.sh   # one of them
+cd applications
+make -j$(nproc)      # the whole tree into build/: kits, shells, apps, every test
+make test            # gates, unit suites, the BASIC host, then the shell scripts
+python3 TikuTracker/tools/check_contract.py TikuTracker/FEATURES.md   # 889 rows
+sh TikuTracker/tests/shell/run.sh                   # the shell scripts alone
+TRK_SHELL_ONLY=drop.script sh TikuTracker/tests/shell/run.sh   # one of them
 ```
+
+`make` typed inside `TikuTracker/` forwards to the root, so the old habit
+holds.  The unit binaries are `build/tests/test_*`, run from the root:
+`./build/tests/test_poseview`.
 
 `make test` must end with **`shell scripts hold in both front-ends`** and no
 `FAILURES`. Count the passes (`make test | grep -c '\[PASS\]'`) — a suite that
@@ -104,13 +108,13 @@ silently stopped running still prints no failures.
 
 ### Traps in the build system
 
-- **Every test target lists its sources by hand** in the `Makefile`. Adding a
-  dependency to a shared file (e.g. making `tiku_trk_nodeicon.c` call into
-  `tiku_trk_types.c`) breaks six targets at link time. Grep the Makefile for
-  the file you touched and add the new source everywhere it appears.
-- **A test binary in `TESTBINS` is not necessarily run.** `test_launch` sat
-  built-but-never-run for a whole session because it was missing from the
-  `test:` recipe. If you add a suite, add it to both.
+- **A test is a line in the Makefile's table**, `test_<name>_SRCS`, naming
+  the sources it links besides its own object; every test links the six
+  kits.  A test with no line links its object and the kits, nothing else.
+  Adding a dependency to a shared file means adding that file to the
+  lines of the tests that reach it -- the link error names them.
+- **Every `tests/test_*.c` is built and run.**  The list is the directory,
+  so a suite cannot be compiled on every build and executed on none.
 - **Three ways to reach a shell.** `-conduct <socket>` offers the channel on
   a local socket; `-conduct-tty <device>` offers it over a **raw serial
   line**, which is how a shell on a real board is driven from whatever holds
