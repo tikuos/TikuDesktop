@@ -265,7 +265,7 @@ main(void)
          */
         tiku_backend_t *b = tiku_backend_posix_open();
         tiku_model_t m;
-        const char *self = "../TikuDesktop/build/tiku-term";
+        const char *self = "build/tiku-term";   /* the tree's own build */
 
         if (b != NULL && b->ops->stat(b, self, &m) == 0) {
             check(strcmp(tiku_model_icon_name(&m), "application") == 0,

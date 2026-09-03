@@ -24,7 +24,6 @@ TRK_INC := -I$(T)/src/core -I$(T)/src/ui -I$(T)/src/ui/commands \
            -I$(T)/src/ui/windows -I$(T)/src/ui/overlays -I$(T)/src/ui/input \
            -I$(T)/src/deskbar -I$(T)/src/shell -I$(T)/src/shell/adapters \
            -I$(T)/src/shell/session
-APP_INC := -I$(D)/src
 
 $(OBJ)/kits/%.o: kits/%.c
 	@mkdir -p $(dir $@)
@@ -46,5 +45,4 @@ $(OBJ)/$(T)/%.o: $(T)/%.c
 
 $(OBJ)/$(D)/%.o: $(D)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) $(APP_INC) -MMD -MP \
-	      -c -o $@ $<
+	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<

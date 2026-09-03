@@ -5103,7 +5103,6 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     static const char *const where[] = {
         "%s/%s",                        /* installed beside this shell   */
         "%s/build/%s",                  /* the tree's own build          */
-        "%s/TikuDesktop/build/%s",      /* built in place, the old way   */
         "%s/libexec/tiku/%s"
     };
     char dir[TIKU_PATH_MAX];
@@ -5207,14 +5206,8 @@ find_apps_dir(const char *argv0, char *out, size_t max)
             }
             snprintf(step + used, sizeof step - used, "/..");
         }
-        /* The tree's own build first, then the older in-place layout.
-         * Through real[], for the reason find_companion() gives. */
+        /* Through real[], for the reason find_companion() gives. */
         snprintf(found, sizeof found, "%s/build/apps", step);
-        if (access(found, X_OK) == 0 && realpath(found, real) != NULL) {
-            snprintf(out, max, "%s", real);
-            return 1;
-        }
-        snprintf(found, sizeof found, "%s/TikuDesktop/build/apps", step);
         if (access(found, X_OK) == 0 && realpath(found, real) != NULL) {
             snprintf(out, max, "%s", real);
             return 1;

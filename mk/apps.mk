@@ -2,8 +2,9 @@
 # framework samples, and the board's BASIC interpreter compiled for the
 # host.
 #
-# An application is one source file that defines a descriptor, and it is
-# built two ways from that one file: as its own process, and as a loadable
+# An application is one directory holding the one source file that
+# defines its descriptor -- apps/edit/tiku_edit.c -- built two ways from
+# that file: as its own process, and as a loadable
 # .so (-DTIKU_APP_EMBED) that the desktop opens in-process or hands to
 # tiku-run.  The .so is compiled from source with -fPIC against the PIC
 # kits rather than from the shared objects, because the defines change
@@ -74,19 +75,24 @@ apps: $(PROBE) $(GALLERY) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
 examples: $(EXAMPLES)
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(RUNNER)
 
-$(PROBE): $(OBJ)/$(D)/src/tiku_probe.o $(LIB_TRANSPORT) | $(BUILD)
+$(PROBE): $(OBJ)/$(D)/samples/tiku_probe.o $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(GALLERY): $(OBJ)/$(D)/src/tiku_gallery.o $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
+$(GALLERY): $(OBJ)/$(D)/samples/tiku_gallery.o $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11
 
-$(DEMOAPP): $(OBJ)/$(D)/src/tiku_demo_main.o $(LIB_RUNTIME) $(LIB_UI) \
+$(DEMOAPP): $(OBJ)/$(D)/samples/tiku_demo_main.o $(LIB_RUNTIME) $(LIB_UI) \
             $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
 
-$(APPS): $(BUILD)/tiku-%: $(OBJ)/$(D)/apps/tiku_%.o $(LIB_RUNTIME) $(LIB_UI) \
-                          $(LIB_TRANSPORT) | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
+# One rule per application, generated: a static pattern substitutes its
+# stem once, and the object's path needs the name twice.
+define APP_RULE
+$(BUILD)/tiku-$(1): $(OBJ)/$(D)/$(1)/tiku_$(1).o $(LIB_RUNTIME) $(LIB_UI) \
+                    $(LIB_TRANSPORT) | $(BUILD)
+	$$(CC) $$(CFLAGS) -o $$@ $$^ $$(LDFLAGS) -lX11 -lm
+endef
+$(foreach a,$(APP_NAMES),$(eval $(call APP_RULE,$(a))))
 
 $(EXAMPLES): $(BUILD)/tiku-example-%: $(OBJ)/$(D)/examples/%.o $(LIB_RUNTIME) \
                                       $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
@@ -94,29 +100,29 @@ $(EXAMPLES): $(BUILD)/tiku-example-%: $(OBJ)/$(D)/examples/%.o $(LIB_RUNTIME) \
 
 # Gives a loaded application a process of its own: the same file the
 # desktop can open in-process, started beside it instead.
-$(RUNNER): $(OBJ)/$(D)/apps/tiku_run.o $(LIB_RUNTIME) $(LIB_UI) \
+$(RUNNER): $(OBJ)/$(D)/run/tiku_run.o $(LIB_RUNTIME) $(LIB_UI) \
            $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm -ldl
 
-SO_CFLAGS := $(CFLAGS) -Wno-unused-parameter $(KIT_INC) $(APP_INC) -fPIC -shared \
+SO_CFLAGS := $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -shared \
              -DTIKU_APP_EMBED -DTIKU_APP_SO
 
-$(APPS_D)/terminal.so: $(D)/apps/tiku_term.c $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
-$(APPS_D)/editor.so: $(D)/apps/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
-$(PROG_D)/TikuBasic.so: $(D)/apps/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
+$(PROG_D)/TikuBasic.so: $(D)/ide/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
-$(PROG_D)/TikuC.so: $(D)/apps/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
+$(PROG_D)/TikuC.so: $(D)/ide/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
 	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/%.so: $(D)/examples/%.c $(PIC_LIBS) | $(APPS_D)
-	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) $(APP_INC) -fPIC -shared \
+	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -shared \
 	      -DTIKU_EXAMPLE_EMBED -DTIKU_APP_SO -o $@ $< $(PIC_LIBS) \
 	      $(LDFLAGS) -lX11 -lm
 

@@ -17,7 +17,7 @@
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 
 T      := TikuTracker
-D      := TikuDesktop
+D      := apps
 BUILD  := build
 OBJ    := $(BUILD)/obj
 PIC    := $(BUILD)/pic

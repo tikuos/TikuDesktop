@@ -19,7 +19,7 @@ tracker `7a1b758`).
 
 - Toolkit: `applications/kits/` inside the **tikuOS repo**
   (`/home/ambujv/Tiku/tikuOS`, branch `vfs-watch-wip`). The toolkit moved
-  out into the six kits; what is left in `applications/TikuDesktop/` is the
+  out into the six kits; what is left in `applications/apps/` is the
   samples, apps and tools that exercise them. The repo `.gitignore` covers
   `applications/`, so **new files need `git add -f`**, and a commit should
   be verified with `git show HEAD:./applications/kits/<kit>/<file>`.
@@ -76,7 +76,7 @@ matches the wrapper shell's own command line and kills the session).
   `tiku_trk_deskbar_add_app()`; a pick arrives as `TIKU_TRK_DB_LAUNCH_APP`
   and runs through `tiku_trk_launch_run`. `TIKU_DESK_APPS` env overrides
   the search.
-- **Apps**: `applications/TikuDesktop/apps/tiku_edit.c`, `tiku_term.c` — single
+- **Apps**: `applications/apps/edit/tiku_edit.c`, `term/tiku_term.c` — single
   files, descriptor + `main` guarded by `#ifndef TIKU_APP_EMBED`. Examples
   in `examples/` use `TIKU_EXAMPLE_EMBED` the same way.
 - **Test harness**: `tests/shell/run.sh` drives `build/dev/*` (in-process

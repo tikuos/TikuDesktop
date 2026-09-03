@@ -18,7 +18,7 @@ execute one by one, each ending green and committed.
 
 **Repos.**  ONE applications repository now, rooted at `applications/`
 (remote `tikuos/tracker.git`, private, branch `main`), holding
-`TikuTracker/`, `TikuDesktop/` and `kits/`.  The tikuOS repository
+`TikuTracker/`, `apps/` and `kits/`.  The tikuOS repository
 above it is the OS alone (branch `vfs-watch`) and nothing in this plan
 touches it.  Never `git add -f` applications files anywhere else.
 
@@ -36,7 +36,7 @@ BEFORE the first save).
 
 **Builds.**  `make` in `applications/TikuDesktop` is THE user-facing
 rebuild; four TikuDesktop binaries exist (`TikuTracker/build{,/dev}`
-and `TikuDesktop/build{,/dev}`) and the person launches the
+and `build/{,dev/}` at the tree's root) and the person launches the
 TikuDesktop-side ones — `TikuDesktop -version` says the build stamp.
 The app builds as `make build/apps/programming/TikuBasic.so` and
 `TikuC.so` (same `apps/tiku_ide.c`, `-DTIKU_IDE_C`); the Makefile is

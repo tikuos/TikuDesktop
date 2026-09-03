@@ -11,7 +11,7 @@ directory is its own repository, cloned into a tikuOS checkout at
 |---|---|---|
 | `kits/` | six libraries a program links without knowing what else links them: `support`, `device`, `interface`, `storage`, `translation`, `application`.  `tools/check_kits.py` holds the dependency table and refuses an include that crosses it | `build/libtiku_*.a` and PIC twins under `build/pic/` |
 | `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/TikuTracker`, `build/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/tests/test_*` |
-| `TikuDesktop/` | what runs **on** the desktop: the applications (`apps/`: edit, term, ide, run), the toolkit examples, the framework samples (`src/`: probe, gallery, demo), the BASIC host and the font tools.  Despite the name, the desktop *shell*'s source is not here | `build/tiku-*`, `build/apps/*.so` |
+| `apps/` | what runs **on** the desktop: one directory per application (`edit/`, `term/`, `ide/`, `run/`), the toolkit `examples/`, the framework `samples/` (probe, gallery, demo), the BASIC host and the font tools | `build/tiku-*`, `build/apps/*.so` |
 | `assets/` | the mark, the banners and splashes the applications wear | — |
 
 The desktop shell's source is `TikuTracker/src/shell/tiku_trk_desktop.c`;
@@ -29,7 +29,7 @@ make run                 # build/TikuDesktop, over the host filesystem
 ```
 
 The rules are `Makefile` and `mk/` (one fragment per tree); the Makefiles
-inside `kits/`, `TikuTracker/` and `TikuDesktop/` only forward here, so
+inside `kits/`, `TikuTracker/` and `apps/` only forward here, so
 `make test` typed in any of them is the same run.  One script alone:
 
 ```sh
@@ -49,7 +49,7 @@ person `build/`.
 
 ## Where it must live
 
-One thing pins the clone location: `TikuDesktop/basichost` compiles the
+One thing pins the clone location: `apps/basichost` compiles the
 board's own BASIC interpreter for the host from
 `../../kernel/shell/basic/tiku_basic.c`, so this directory must sit at
 `tikuOS/applications/`.  Everything else builds from anywhere.  The tikuOS
@@ -60,5 +60,5 @@ board's own BASIC interpreter for the host from
 `TikuTracker/HANDOVER.md` — how the work is done, the contract, what bites.
 `TikuTracker/FEATURES.md` — the fidelity contract, 889 rows read from the
 original source.  `TikuTracker/spec/` — the architecture as decided.
-`TikuDesktop/examples/README.md` — the least an application can be.
+`apps/examples/README.md` — the least an application can be.
 `PLAN-structure.md` — the shape this tree is being moved toward.
