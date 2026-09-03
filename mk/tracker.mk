@@ -90,6 +90,9 @@ TRACKER_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/ui/overlays/tiku_trk_status_overlay.c \
                $(T)/src/ui/windows/tiku_trk_folder_window.c \
                $(T)/src/shell/tiku_trk_app.c $(T)/src/shell/tiku_trk_launcher.c
+# The desktop shell itself, one composition over several files.
+DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c
+
 DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/ui/tiku_trk_poseview.c \
                $(T)/src/shell/tiku_trk_script_api.c \
@@ -100,7 +103,7 @@ DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(DESKTOP_CONTROLLERS) \
                $(T)/src/ui/tiku_trk_shortcuts.c \
                $(T)/src/ui/tiku_trk_cwmenu.c $(T)/src/ui/tiku_trk_find.c \
-               $(T)/src/shell/tiku_trk_desktop.c \
+               $(DESKTOP_SHELL) \
                $(T)/src/shell/tiku_trk_launcher.c \
                $(T)/src/shell/tiku_trk_splash.c
 
