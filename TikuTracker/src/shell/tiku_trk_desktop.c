@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <limits.h>
 #include <locale.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -5091,6 +5092,7 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
         }
         for (i = 0; i < sizeof where / sizeof where[0]; i++) {
             char found[TIKU_PATH_MAX];
+            char real[PATH_MAX];
 
             snprintf(found, sizeof found, where[i], step, name);
             if (access(found, X_OK) != 0) {
@@ -5098,8 +5100,15 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
             }
             /* ABSOLUTE, because everything launched starts in the user's
              * home: a path relative to this shell's directory names
-             * nothing once the child has moved there. */
-            if (realpath(found, out) == NULL) {
+             * nothing once the child has moved there.
+             *
+             * Resolved through a buffer of realpath()'s own size, which
+             * is PATH_MAX and not this tree's shorter path limit: handed
+             * a smaller one, a fortified libc aborts the process instead
+             * of truncating. */
+            if (realpath(found, real) != NULL) {
+                snprintf(out, max, "%s", real);
+            } else {
                 snprintf(out, max, "%s", found);
             }
             return 1;
@@ -5136,6 +5145,7 @@ find_apps_dir(const char *argv0, char *out, size_t max)
     for (up = 0; up < 5; up++) {
         char step[TIKU_PATH_MAX];
         char found[TIKU_PATH_MAX];
+        char real[PATH_MAX];
         int k;
 
         snprintf(step, sizeof step, "%s", dir);
@@ -5148,7 +5158,9 @@ find_apps_dir(const char *argv0, char *out, size_t max)
             snprintf(step + used, sizeof step - used, "/..");
         }
         snprintf(found, sizeof found, "%s/TikuDesktop/build/apps", step);
-        if (access(found, X_OK) == 0 && realpath(found, out) != NULL) {
+        /* Through real[], for the reason find_companion() gives. */
+        if (access(found, X_OK) == 0 && realpath(found, real) != NULL) {
+            snprintf(out, max, "%s", real);
             return 1;
         }
     }
