@@ -465,6 +465,13 @@ struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
 
+/* tiku_trk_desktop_remote.c */
+void clip_mirror(desktop_t *app);
+void pick_sweep(desktop_t *app);
+void remote_hear(desktop_t *app);
+void remote_reconcile(desktop_t *app);
+void remote_sweep(desktop_t *app);
+
 /* End of the shared functions. */
 
 #endif /* TIKU_TRK_DESKTOP_PRIVATE_H_ */
