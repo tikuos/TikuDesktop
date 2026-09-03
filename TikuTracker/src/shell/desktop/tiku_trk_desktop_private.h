@@ -455,6 +455,16 @@ desktop_folder(desktop_t *app)
 
 /* Shared across the desktop's files: defined in one, used in another. */
 
+/* tiku_trk_desktop_embed.c */
+int embed_deliver(struct embed_win *ew, const tiku_event_t *ev);
+int embed_open_or_raise(desktop_t *app,
+                        const tiku_app_descriptor_t *descriptor);
+int embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor);
+int tick_embeds(void *ctx);
+struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
+void embed_drop_window(struct embed_win *ew, int tell);
+void embed_stop(struct desktop_embed *slot);
+
 /* End of the shared functions. */
 
 #endif /* TIKU_TRK_DESKTOP_PRIVATE_H_ */
