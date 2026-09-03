@@ -472,7 +472,6 @@ desktop_folder(desktop_t *app)
 /* tiku_trk_desktop.c */
 void begin_shutdown(desktop_t *app);
 void build_pickers(desktop_t *app, folder_t *fl);
-void draw_all(desktop_t *app);
 void sync_folder_preferences(desktop_t *app);
 
 /* tiku_trk_desktop_commands.c */
@@ -516,6 +515,13 @@ int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
 void deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x,
                            int y);
 void open_preferences(void *context);
+
+/* tiku_trk_desktop_draw.c */
+int resize_desktop(desktop_t *app, int width, int height);
+int tick_clock(void *ctx);
+void blit(desktop_t *app);
+void draw_all(desktop_t *app);
+void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */
 int conduct_text(void *context, const char *name, char *out, size_t max);
