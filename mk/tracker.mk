@@ -92,6 +92,7 @@ TRACKER_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/shell/tiku_trk_app.c $(T)/src/shell/tiku_trk_launcher.c
 # The desktop shell itself, one composition over several files.
 DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_lifecycle.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_apps.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_draw.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_deskbar.c \

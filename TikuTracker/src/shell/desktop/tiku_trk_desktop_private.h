@@ -470,7 +470,6 @@ desktop_folder(desktop_t *app)
 /* Shared across the desktop's files: defined in one, used in another. */
 
 /* tiku_trk_desktop.c */
-void begin_shutdown(desktop_t *app);
 void sync_folder_preferences(desktop_t *app);
 
 /* tiku_trk_desktop_apps.c */
@@ -549,6 +548,13 @@ tiku_rect_t global_bar_rect(desktop_t *app);
 void global_or_invoke(desktop_t *app, folder_t *ffl, int command);
 void publish_folder_menus(desktop_t *app, folder_t *fl);
 void rebuild_global_bar(desktop_t *app);
+
+/* tiku_trk_desktop_lifecycle.c */
+void begin_shutdown(desktop_t *app);
+void splash_settle(desktop_t *app);
+void splash_stage(desktop_t *app, const char *what);
+void status_answer(void *context, const tiku_alert_t *alert);
+void status_stop(void *context);
 
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud);
