@@ -400,6 +400,12 @@ static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
 static folder_t *desktop_folder(desktop_t *app);
 
 
+/** @brief One created entry waiting to be selected where it lives. */
+typedef struct {
+    desktop_t *app;
+    char       path[TIKU_PATH_MAX];
+} select_created_t;
+
 /* The models behind the windows, read where they are used. */
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
@@ -461,13 +467,41 @@ desktop_folder(desktop_t *app)
 /* Shared across the desktop's files: defined in one, used in another. */
 
 /* tiku_trk_desktop.c */
+void build_pickers(desktop_t *app, folder_t *fl);
+void draw_all(desktop_t *app);
+
+/* tiku_trk_desktop_commands.c */
 folder_t *open_folder(desktop_t *app, const char *path);
+int drop_launch(void *context, const struct tiku_trk_app *application,
+                const char *const *paths, int count);
+int drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers);
+int drop_on_panel(desktop_t *app, int x, int y);
 int folder_selection(desktop_t *app, folder_t *fl, char paths[][TIKU_PATH_MAX],
                      const char **out, int max);
-void build_pickers(desktop_t *app, folder_t *fl);
+int info_icon_drop_slot(desktop_t *app, int x, int y);
+int select_created(void *ctx);
+int spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max);
+int trash_union_refresh(desktop_t *app, folder_t *fl);
+void begin_edit(desktop_t *app, folder_t *fl);
+void begin_rename(desktop_t *app, folder_t *fl, int row);
+void build_per_type(desktop_t *app, folder_t *fl);
 void close_window(desktop_t *app, tiku_window_t *w);
-void draw_all(desktop_t *app);
+void close_windows_under(desktop_t *app, const char *path);
+void commit_edit(desktop_t *app, folder_t *fl);
+void commit_rename(desktop_t *app, int commit);
+void deskbar_edit_path(void *context, const char *path);
+void do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button);
+void file_actions_close_under(void *context, const char *path);
+void launch_open_path(void *context, const char *path);
 void menu_invoke(desktop_t *app, folder_t *fl, int command);
+void offer_broken_link(desktop_t *app, const char *path);
+void parent_path(const char *path, char *out, size_t size);
+void script_command_file(desktop_t *app, const char *path);
+void spring_nav_close(desktop_t *app);
+void spring_nav_states(desktop_t *app);
+void spring_nav_track(desktop_t *app, int x, int y);
+void spring_open_nav(void *context, const char *path);
+void sync_addons(desktop_t *app, int force);
 
 /* tiku_trk_desktop_drivers.c */
 int conduct_text(void *context, const char *name, char *out, size_t max);
