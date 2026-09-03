@@ -124,6 +124,11 @@
 
 /** @brief How much of the count view's text a script can read. */
 #define TIKU_TRK_COUNT_TEXT_MAX 64
+/*
+ * The system's own face, asked for by name so both menus can want it
+ * without either of them knowing it is drawn rather than looked up.
+ */
+#define MARK_ICON "tikuos"
 
 typedef tiku_trk_folder_window_t folder_t;
 
@@ -458,6 +463,8 @@ desktop_folder(desktop_t *app)
 /* tiku_trk_desktop.c */
 void close_window(desktop_t *app, tiku_window_t *w);
 void draw_all(desktop_t *app);
+void menu_invoke(desktop_t *app, folder_t *fl, int command);
+void open_panel(desktop_t *app);
 
 /* tiku_trk_desktop_drivers.c */
 int conduct_text(void *context, const char *name, char *out, size_t max);
@@ -474,6 +481,14 @@ int tick_embeds(void *ctx);
 struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
+
+/* tiku_trk_desktop_globalbar.c */
+char key_char(const tiku_event_t *event);
+const char *key_name(const tiku_event_t *event, char printable[2]);
+tiku_rect_t global_bar_rect(desktop_t *app);
+void global_or_invoke(desktop_t *app, folder_t *ffl, int command);
+void publish_folder_menus(desktop_t *app, folder_t *fl);
+void rebuild_global_bar(desktop_t *app);
 
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud);
