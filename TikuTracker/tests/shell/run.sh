@@ -7,6 +7,9 @@
 set -u
 here=$(dirname "$0")
 root=$here/../..
+# Everything is built at the top of the applications tree, into one
+# build/ -- the shells, the driver, the applications this suite starts.
+top=$root/..
 work=/tmp/trk_script
 fails=0
 
@@ -14,7 +17,7 @@ fails=0
 # reads these files is test infrastructure and is not linked into what
 # ships (build/TikuDesktop, build/TikuTracker).  Those refuse -script loudly, so
 # a harness pointed at the wrong one fails rather than passing quietly.
-devbin="$root/build/dev"
+devbin="$top/build/dev"
 
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
@@ -32,7 +35,7 @@ if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
     echo junk > "$rsthome/.local/share/tracker/devices/local.state"
     # The SHIPPING binary here on purpose: the rescue path is a product
     # feature, and this is the one check that proves what ships has it.
-    HOME="$rsthome" "$root/build/TikuDesktop" -reset-settings > /dev/null
+    HOME="$rsthome" "$top/build/TikuDesktop" -reset-settings > /dev/null
     if [ -e "$rsthome/.config/TrackerSettings" ] ||
        [ -e "$rsthome/.local/share/tracker/devices/local.state" ] ||
        [ ! -e "$rsthome/.config/TrackerSettings.factory-reset" ]; then
@@ -181,8 +184,8 @@ for s in "$here"/*.script; do
         appsdir=/tmp/trk_apps
         rm -rf "$appsdir"
         mkdir -p "$appsdir"
-        cp -f "$root/../TikuDesktop/build/apps/terminal.so" \
-              "$root/../TikuDesktop/build/apps/editor.so" "$appsdir/" \
+        cp -f "$top/build/apps/terminal.so" \
+              "$top/build/apps/editor.so" "$appsdir/" \
             2>/dev/null || true
 
         mkdir -p $work/sub
@@ -272,7 +275,7 @@ d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
 open(sys.argv[1]+"/.config/TikuBasic/splash.bmp","wb").write(d)
 PYSPLASH
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idec.script)
                 # A C project that names NO target: TikuC asks this
@@ -289,7 +292,7 @@ PYSPLASH
                     echo x > "$deskhome/zz$zi"
                 done
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuC.so" \
+                cp -f "$top/build/apps/programming/TikuC.so" \
                       "$appsdir/programming/" ;;
             idebuild.script)
                 # A project that says what it is FOR, and C with a
@@ -303,7 +306,7 @@ PYSPLASH
                 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
                     > "$deskhome/bad.c"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ccolour.script)
                 # The same words twice: once inside a block remark that
@@ -342,7 +345,7 @@ PYSPLASH
                     printf '250 REM shadowed\n250 PRUNT "bad"\n260 PRINT "after"\n'
                 } > "$deskhome/blink.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideclip.script)
                 # Two files, so a copy has somewhere to cross to; the
@@ -354,7 +357,7 @@ PYSPLASH
                     > "$deskhome/main.bas"
                 printf '40 delta\n' > "$deskhome/util.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             iderenum.script)
                 # Numbers out of tens and a GOTO whose target must follow
@@ -365,7 +368,7 @@ PYSPLASH
                 printf '5 rem start\n7 goto 23\n23 print "hi"\n' \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idehscroll.script)
                 mkdir -p "$deskhome"
@@ -375,7 +378,7 @@ PYSPLASH
                 printf '10 rem head\n20 print "%s Zz"\n' "$long" \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idecase.script)
                 mkdir -p "$deskhome"
@@ -383,7 +386,7 @@ PYSPLASH
                     > "$deskhome/project.tiku"
                 printf '10 \n' > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idepath.script)
                 mkdir -p "$deskhome"
@@ -392,7 +395,7 @@ PYSPLASH
                 printf '10 print "/dev/led"\n20 print "hello there"\n' \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idefind.script)
                 mkdir -p "$deskhome"
@@ -401,7 +404,7 @@ PYSPLASH
                 printf '10 say 40 here\n20 rem\n30 say here\n40 done\n' \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideprojicon.script)
                 # Two folders side by side: one IS a project, one is
@@ -412,7 +415,7 @@ PYSPLASH
                 : > "$deskhome/aproj/main.bas"
                 printf '10 rem stray\n' > "$deskhome/stray.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idemenu.script)
                 # Two files, an unknown line the description must keep,
@@ -424,14 +427,14 @@ PYSPLASH
                 printf '10 rem go\n20 input a$\n' > "$deskhome/main.bas"
                 printf '40 rem other\n' > "$deskhome/util.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idetoolbar.script)
                 mkdir -p "$deskhome"
                 printf 'title Bar\ngroup Sources\nfile main.bas\n' > "$deskhome/project.tiku"
                 printf '3 goto 9\n9 input a$\n' > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" "$appsdir/programming/" ;;
+                cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/" ;;
             ideundo.script)
                 mkdir -p "$deskhome"
                 printf 'title Undo\ngroup Sources\nfile main.bas\n' \
@@ -439,7 +442,7 @@ PYSPLASH
                 printf '10 alpha\n20 beta\n30 gamma\n' \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideselect.script)
                 # Three short lines, so a selection is easy to name and
@@ -450,7 +453,7 @@ PYSPLASH
                 printf '10 alpha\n20 beta\n30 gamma\n' \
                     > "$deskhome/main.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idewheel.script)
                 # A page longer than the window, so the wheel has
@@ -466,7 +469,7 @@ PYSPLASH
                     i=$((i+1))
                 done
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             idescroll.script)
                 # The same 40-line program, to give the page a tail
@@ -482,7 +485,7 @@ PYSPLASH
                     i=$((i+1))
                 done
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideedit.script)
                 # A project whose one file is 40 numbered lines, so the
@@ -500,7 +503,7 @@ PYSPLASH
                     i=$((i+1))
                 done
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             ideproject.script)
                 # A project is a FOLDER: the description, and the files
@@ -513,13 +516,13 @@ PYSPLASH
                 printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
                 printf '20 REM helpers\n' > "$deskhome/util.bas"
                 mkdir -p "$appsdir/programming"
-                cp -f "$root/../TikuDesktop/build/apps/programming/TikuBasic.so" \
+                cp -f "$top/build/apps/programming/TikuBasic.so" \
                       "$appsdir/programming/" ;;
             twowinremote.script)
                 # Installed, not trusted: the runner starts it in a
                 # process of its own, so the windows are held over the
                 # wire rather than in this one.
-                cp -f "$root/../TikuDesktop/build/apps/twowin.so" \
+                cp -f "$top/build/apps/twowin.so" \
                       "$appsdir/"
                 rm -rf /tmp/trk_twowin ;;
             twowin.script)
@@ -527,7 +530,7 @@ PYSPLASH
                 # touches anything: what is being proven is the runtime
                 # keeping them apart, not the road that starts them.
                 mkdir -p "$appsdir/trusted"
-                cp -f "$root/../TikuDesktop/build/apps/twowin.so" \
+                cp -f "$top/build/apps/twowin.so" \
                       "$appsdir/trusted/"
                 rm -rf /tmp/trk_twowin ;;
             shiftcaps.script)
@@ -598,14 +601,14 @@ PYDP
                 # Art dropped where the desktop looks: the folder icon is
                 # the printer's, which nothing would draw by accident.
                 mkdir -p "$deskhome/.config/tracker/icons"
-                "$root/build/icon-export" printer \
+                "$top/build/icon-export" printer \
                     "$deskhome/.config/tracker/icons/folder.hvif" ;;
             appsdir.script)
                 # Installed, not linked: a trusted copy for the desktop
                 # to load, and a plain one for the runner to start.
                 mkdir -p "$appsdir/trusted"
-                cp -f "$root/../TikuDesktop/build/apps/sketch.so" "$appsdir/"
-                cp -f "$root/../TikuDesktop/build/apps/clock.so" \
+                cp -f "$top/build/apps/sketch.so" "$appsdir/"
+                cp -f "$top/build/apps/clock.so" \
                       "$appsdir/trusted/" ;;
             terminal.script)
                 # A program that paints one row at an ABSOLUTE position:
@@ -614,12 +617,12 @@ PYDP
                 printf '#!/bin/sh\nprintf "\\033[12;1H\\033[7m%%80s\\033[0m" ""\n' \
                     > /tmp/trk_term_cup.sh
                 chmod +x /tmp/trk_term_cup.sh
-                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-term" \
+                ( HOME="$deskhome" "$top/build/tiku-term" \
                       >/dev/null 2>&1 & ) ;;
             remoteapp.script)
                 # The out-of-process client: started BESIDE the desktop,
                 # its connect retry covers the launch order.
-                ( HOME="$deskhome" "$root/../TikuDesktop/build/tiku-demo-app" \
+                ( HOME="$deskhome" "$top/build/tiku-demo-app" \
                       >/dev/null 2>&1 & ) ;;
             safedefault.script)
                 mkdir -p "$deskhome/.Trash" "$deskhome/.config/tracker"
@@ -771,7 +774,7 @@ PYEOF
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$root/../TikuDesktop" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
@@ -780,7 +783,7 @@ PYEOF
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$root/../TikuDesktop" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -script "$s" || fails=$((fails+1))
         fi
@@ -815,9 +818,9 @@ for s in $conducted; do
     # driver failure on a healthy driver.
     ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         env ${cmount:+TIKU_MOUNT=$cmount} \
-        "$root/build/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
+        "$top/build/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
         -conduct-token trk-drive > /dev/null 2>&1 & )
-    "$root/build/dev/trk-conduct" -s "$csock" -n conducted -k trk-drive "$cs" ||
+    "$top/build/dev/trk-conduct" -s "$csock" -n conducted -k trk-drive "$cs" ||
         fails=$((fails+1))
     # By name, not by pattern: a -f pattern matches the shell running
     # this script too, whose command line contains it.  The name is the
@@ -841,8 +844,8 @@ for s in $conducted; do
     echo other > "$work/sub/a.txt"
     DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
         env ${cmount:+TIKU_MOUNT=$cmount} \
-        "$root/build/dev/trk-conduct" \
-        -n "over a line" "$cs" -- "$root/build/TikuDesktop" \
+        "$top/build/dev/trk-conduct" \
+        -n "over a line" "$cs" -- "$top/build/TikuDesktop" \
         "${copen:-$work}" ||
         fails=$((fails+1))
     pkill -x TikuDesktop > /dev/null 2>&1

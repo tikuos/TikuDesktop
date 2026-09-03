@@ -19,6 +19,12 @@
 
 #include "tiku_app.h"
 
+/* Where the kits are, from the build that compiled this test: the
+ * fixture below is compiled at run time against the same headers. */
+#ifndef TIKU_KITS_DIR
+#define TIKU_KITS_DIR "../kits"
+#endif
+
 static int fails;
 
 static void
@@ -51,7 +57,7 @@ build_so(const char *path, const char *body)
     (void)fprintf(f, "#include \"tiku_app.h\"\n%s\n", body);
     (void)fclose(f);
     snprintf(command, sizeof command,
-             "cc -std=gnu11 -fPIC -shared -I../kits/application -I../kits/interface -I../kits/support -o %s %s "
+             "cc -std=gnu11 -fPIC -shared -I" TIKU_KITS_DIR "/application -I" TIKU_KITS_DIR "/interface -I" TIKU_KITS_DIR "/support -o %s %s "
              "2>/dev/null", path, source);
     return system(command);
 }

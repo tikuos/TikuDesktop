@@ -189,7 +189,7 @@ mutation is equivalent.
 
 Plain C, one `check(cond, "ROW-ID", "what this proves")` per assertion. The
 text is read by humans: say what the behaviour *is*, not what the code does.
-Run one directly: `./build/test_poseview`.
+Run one directly, from the root: `./build/tests/test_poseview`.
 
 ### Shell scripts — `tests/shell/*.script`
 

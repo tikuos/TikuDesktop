@@ -7,11 +7,11 @@ directory is its own repository, cloned into a tikuOS checkout at
 
 ## The four directories
 
-| directory | holds | builds |
+| directory | holds | products, all under `build/` at this level |
 |---|---|---|
-| `kits/` | six libraries a program links without knowing what else links them: `support`, `device`, `interface`, `storage`, `translation`, `application`.  `tools/check_kits.py` holds the dependency table and refuses an include that crosses it | `kits/build/libtiku_*.a` and PIC twins under `build/pic/` |
-| `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/TikuTracker`, `build/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/test_*` |
-| `TikuDesktop/` | what runs **on** the desktop: the applications (`apps/`: edit, term, ide, run), the toolkit examples, the framework samples (`src/`: probe, gallery, demo), the BASIC host and the font tools.  Despite the name, the desktop *shell* is not built here — it is built next door and copied in by `make shell` | `build/tiku-*`, `build/apps/*.so`, and a copy of the shell |
+| `kits/` | six libraries a program links without knowing what else links them: `support`, `device`, `interface`, `storage`, `translation`, `application`.  `tools/check_kits.py` holds the dependency table and refuses an include that crosses it | `build/libtiku_*.a` and PIC twins under `build/pic/` |
+| `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/TikuTracker`, `build/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/tests/test_*` |
+| `TikuDesktop/` | what runs **on** the desktop: the applications (`apps/`: edit, term, ide, run), the toolkit examples, the framework samples (`src/`: probe, gallery, demo), the BASIC host and the font tools.  Despite the name, the desktop *shell*'s source is not here | `build/tiku-*`, `build/apps/*.so` |
 | `assets/` | the mark, the banners and splashes the applications wear | — |
 
 The desktop shell's source is `TikuTracker/src/shell/tiku_trk_desktop.c`;
@@ -19,24 +19,25 @@ the browser shell's is `TikuTracker/src/shell/tiku_trk_app.c`.
 
 ## Building
 
+Everything builds from this directory, into one `build/`:
+
 ```sh
-cd TikuDesktop && make all -j$(nproc)   # kits, then the apps, then the shell from next door
-./build/TikuDesktop                     # the desktop, over the host filesystem
-./build/TikuDesktop -d                  # over a board on serial (-p PORT -b BAUD)
+make -j$(nproc)          # kits, both shells in both flavours, the apps, every test
+make test                # gates, unit suites, the BASIC host check, the scripts
+make run                 # build/TikuDesktop, over the host filesystem
+./build/TikuDesktop -d   # over a board on serial (-p PORT -b BAUD)
 ```
 
-`make all`, not bare `make`: the first rule in that Makefile is the BASIC
-host, so a bare `make` builds only `build/tiku-basic` and stops.
-
-The full test run lives with the shells:
+The rules are `Makefile` and `mk/` (one fragment per tree); the Makefiles
+inside `kits/`, `TikuTracker/` and `TikuDesktop/` only forward here, so
+`make test` typed in any of them is the same run.  One script alone:
 
 ```sh
-cd TikuTracker && make test             # gates, unit suites, the BASIC host check, the scripts
-TRK_SHELL_ONLY=about.script sh tests/shell/run.sh   # one script
+TRK_SHELL_ONLY=about.script sh TikuTracker/tests/shell/run.sh
 ```
 
 Read a result by its counts, not its colour: a suite that silently stopped
-prints no failures.  `HANDOVER.md` §2 lists the build's traps.
+prints no failures.  `TikuTracker/HANDOVER.md` §2 lists the build's traps.
 
 ## Two flavours of each shell
 

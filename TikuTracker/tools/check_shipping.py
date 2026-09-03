@@ -17,7 +17,8 @@ from pathlib import Path
 import sys
 
 
-ROOT = Path(__file__).resolve().parents[1]
+# The shells are built at the top of the applications tree.
+ROOT = Path(__file__).resolve().parents[2]
 SHIPPING = ["build/TikuTracker", "build/TikuDesktop"]
 DEVELOPMENT = ["build/dev/TikuTracker", "build/dev/TikuDesktop"]
 

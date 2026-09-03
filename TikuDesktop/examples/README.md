@@ -15,14 +15,14 @@ desktop that linked it.
 ## Building and running
 
 ```sh
-cd applications/TikuDesktop
+cd applications
 make examples                 # build/tiku-example-{hello,clock,counter,sketch}
 
 # in one terminal: a desktop to host them
-cd ../TikuTracker && ./build/TikuDesktop ~/Desktop
+./build/TikuDesktop ~/Desktop
 
 # in another: any example, as its own process
-applications/TikuDesktop/build/tiku-example-sketch
+./build/tiku-example-sketch
 ```
 
 The application finds the desktop at `$HOME/.config/tracker/desk.sock`, and
