@@ -406,6 +406,9 @@ typedef struct {
     char       path[TIKU_PATH_MAX];
 } select_created_t;
 
+/* The argv the desktop restarts itself with, kept by the Deskbar. */
+extern char **restart_argv;
+
 /* The models behind the windows, read where they are used. */
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
@@ -467,8 +470,10 @@ desktop_folder(desktop_t *app)
 /* Shared across the desktop's files: defined in one, used in another. */
 
 /* tiku_trk_desktop.c */
+void begin_shutdown(desktop_t *app);
 void build_pickers(desktop_t *app, folder_t *fl);
 void draw_all(desktop_t *app);
+void sync_folder_preferences(desktop_t *app);
 
 /* tiku_trk_desktop_commands.c */
 folder_t *open_folder(desktop_t *app, const char *path);
@@ -502,6 +507,15 @@ void spring_nav_states(desktop_t *app);
 void spring_nav_track(desktop_t *app, int x, int y);
 void spring_open_nav(void *context, const char *path);
 void sync_addons(desktop_t *app, int force);
+
+/* tiku_trk_desktop_deskbar.c */
+int deskbar_menu_icon(void *context, tiku_surface_t *s,
+                      const tiku_trk_db_item_t *item, int x, int y, int size);
+int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
+                    int dimmed);
+void deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x,
+                           int y);
+void open_preferences(void *context);
 
 /* tiku_trk_desktop_drivers.c */
 int conduct_text(void *context, const char *name, char *out, size_t max);
