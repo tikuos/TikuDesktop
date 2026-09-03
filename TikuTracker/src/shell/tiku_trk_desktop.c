@@ -1410,7 +1410,7 @@ embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 }
 
 /**
- * @brief The ANNOUNCE role: centred, upper third, fixed size.
+ * @brief The ANNOUNCE and PANEL roles: centred, upper third, fixed size.
  *
  * The application says what KIND of window it opened; where such a
  * window goes on THIS screen is the host's guideline, which is exactly
@@ -1422,21 +1422,28 @@ embed_svc_place(void *ctx, uint32_t id, int role)
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
     struct embed_win *ew = embed_win_of_id(slot, id);
+    int plain = (role == TIKU_APP_PLACE_ANNOUNCE);
 
-    if (ew == NULL || role != TIKU_APP_PLACE_ANNOUNCE) {
+    if (ew == NULL || (role != TIKU_APP_PLACE_ANNOUNCE &&
+                       role != TIKU_APP_PLACE_PANEL)) {
         return -1;
     }
-    /* The frame was cut for a tab it will not wear: taken in, so the
-     * hairline hugs the content exactly. */
-    ew->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
-    ew->window->frame.h -= tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
+    if (plain) {
+        /* The frame was cut for a tab it will not wear: taken in, so the
+         * hairline hugs the content exactly.  A PANEL wears the tab the
+         * frame was cut for, so its frame stands as opened. */
+        ew->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
+        ew->window->frame.h -= tiku_window_tab_h() +
+                               2 * TIKU_WINDOW_BORDER - 2;
+    }
     ew->window->frame.x = (app->surf->w - ew->window->frame.w) / 2;
     /* The UPPER part of the screen, as the guideline places a panel
      * that announces something. */
     ew->window->frame.y = (app->surf->h - ew->window->frame.h) / 3;
     tiku_window_set_size_controls(ew->window, 0, 0);
-    /* And PLAIN: an announcement wears no tab and no close. */
-    tiku_window_set_plain(ew->window, 1);
+    /* An announcement wears no tab and no close; a panel keeps both,
+     * because the person who opened it is the one who puts it away. */
+    tiku_window_set_plain(ew->window, plain);
     app->dirty = 1;
     return 0;
 }
@@ -1867,22 +1874,29 @@ remote_reconcile(desktop_t *app)
                 app->dirty = 1;
             }
             if (rw->window != NULL &&
-                rw->wants_place == TIKU_APP_PLACE_ANNOUNCE) {
-                /* The frame was cut for a tab it will not wear: taken
-                 * in, so the hairline hugs the content exactly. */
-                rw->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
-                rw->window->frame.h -=
-                    tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
-                /* The ANNOUNCE role, across the wire at last: centred
-                 * in the upper part, fixed, and PLAIN -- a splash
-                 * screen wears no tab and no close, it is not a window
-                 * a person manages but a card the program holds up. */
+                (rw->wants_place == TIKU_APP_PLACE_ANNOUNCE ||
+                 rw->wants_place == TIKU_APP_PLACE_PANEL)) {
+                int plain =
+                    (rw->wants_place == TIKU_APP_PLACE_ANNOUNCE);
+
+                if (plain) {
+                    /* The frame was cut for a tab it will not wear:
+                     * taken in, so the hairline hugs the content. */
+                    rw->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
+                    rw->window->frame.h -=
+                        tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
+                }
+                /* Both roles across the wire: centred in the upper
+                 * part and fixed.  A splash is PLAIN -- a card the
+                 * program holds up, taken down by the program.  A
+                 * panel keeps its tab, because a window a person
+                 * opened is a window a person must be able to close. */
                 rw->window->frame.x =
                     (app->surf->w - rw->window->frame.w) / 2;
                 rw->window->frame.y =
                     (app->surf->h - rw->window->frame.h) / 3;
                 tiku_window_set_size_controls(rw->window, 0, 0);
-                tiku_window_set_plain(rw->window, 1);
+                tiku_window_set_plain(rw->window, plain);
                 rw->wants_place = 0;
                 app->dirty = 1;
             }

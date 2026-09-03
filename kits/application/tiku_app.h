@@ -172,9 +172,17 @@ typedef struct tiku_app_services {
 #define TIKU_APP_PICK_OPEN 0
 #define TIKU_APP_PICK_SAVE 1
 
-/** @brief Window roles for place(). */
+/**
+ * @brief Window roles for place().
+ *
+ * Both sit centred in the upper third at a fixed size; they differ in
+ * whether the window is FURNITURE a person handles.  A card the program
+ * holds up is taken down by the program; a panel a person opened from a
+ * menu has to be closable by the person who opened it.
+ */
 enum {
-    TIKU_APP_PLACE_ANNOUNCE = 1   /* centred, upper third, fixed size */
+    TIKU_APP_PLACE_ANNOUNCE = 1,  /* a card: no tab, no close */
+    TIKU_APP_PLACE_PANEL    = 2   /* managed: wears its tab and close */
 };
 
 typedef struct {

@@ -353,10 +353,12 @@ about_start(void **state, const tiku_app_services_t *services)
     }
     /* A role, not a position: where a panel that announces goes is the
      * HOST's guideline, and a host too old to have the service places it
-     * however it places anything. */
+     * however it places anything.  PANEL rather than ANNOUNCE: this box
+     * is opened from a menu and stays until it is dismissed, so it wears
+     * the tab and close a person reaches for. */
     if (services->place != NULL) {
         (void)services->place(services->ctx, st->id,
-                              TIKU_APP_PLACE_ANNOUNCE);
+                              TIKU_APP_PLACE_PANEL);
     }
     show(st);
     *state = st;
