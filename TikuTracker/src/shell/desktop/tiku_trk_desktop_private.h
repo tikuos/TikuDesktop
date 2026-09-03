@@ -471,8 +471,11 @@ desktop_folder(desktop_t *app)
 
 /* tiku_trk_desktop.c */
 void begin_shutdown(desktop_t *app);
-void build_pickers(desktop_t *app, folder_t *fl);
 void sync_folder_preferences(desktop_t *app);
+
+/* tiku_trk_desktop_apps.c */
+void build_pickers(desktop_t *app, folder_t *fl);
+void offer_installed(desktop_t *app, const char *argv0);
 
 /* tiku_trk_desktop_commands.c */
 folder_t *open_folder(desktop_t *app, const char *path);
