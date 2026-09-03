@@ -456,6 +456,7 @@ desktop_folder(desktop_t *app)
 /* Shared across the desktop's files: defined in one, used in another. */
 
 /* tiku_trk_desktop.c */
+void close_window(desktop_t *app, tiku_window_t *w);
 void draw_all(desktop_t *app);
 
 /* tiku_trk_desktop_drivers.c */
@@ -473,6 +474,11 @@ int tick_embeds(void *ctx);
 struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
+
+/* tiku_trk_desktop_mounts.c */
+int mount_devices(desktop_t *app, const char *port, int baud);
+int refresh_after_mount(void *ctx);
+void save_before_unmount(dev_t dev, void *context);
 
 /* tiku_trk_desktop_remote.c */
 void clip_mirror(desktop_t *app);
