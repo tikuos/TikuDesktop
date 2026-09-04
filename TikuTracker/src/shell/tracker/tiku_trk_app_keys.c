@@ -15,7 +15,8 @@ int
 browser_title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
     tiku_rect_t list = browser_list_rect(a);
-    int top = TAB_H + BORDER + a->menus.bar.height + browser_navigator_height(a);
+    int top = TAB_H + BORDER + a->menus.bar.height +
+              browser_navigator_height(a);
 
     if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
         return 0;

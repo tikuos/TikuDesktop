@@ -322,7 +322,8 @@ browser_measure_text(const char *s, void *ctx)
 int
 browser_col_x(const app_t *a, const tiku_trk_column_t *c)
 {
-    return browser_list_rect(a).x + c->offset - tiku_trk_poseview_hscroll(a->view);
+    return browser_list_rect(a).x + c->offset -
+           tiku_trk_poseview_hscroll(a->view);
 }
 
 /**

@@ -90,8 +90,8 @@ tracker_run(int argc, char **argv)
                 {
                     static char script_count[240];
 
-                    browser_count_label(&a, browser_list_rect(&a).w, script_count,
-                                sizeof script_count);
+                    browser_count_label(&a, browser_list_rect(&a).w,
+                                        script_count, sizeof script_count);
                     sst.count = script_count;
                 }
                 sst.renaming = a.editing;

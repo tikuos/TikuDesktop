@@ -626,7 +626,8 @@ browser_draw(app_t *a)
                 int bw = cols[0].width, bs = 0;
 
                 tiku_field_metrics(&a->ed, 60, cols[0].width,
-                                      browser_measure_prefix_px, NULL, &bw, &bs);
+                                   browser_measure_prefix_px, NULL, &bw,
+                                   &bs);
                 box.x = browser_col_x(a, &cols[0]);
                 box.y = list.y + 2 + (i - scroll) * a->row_h;
                 box.w = bw;

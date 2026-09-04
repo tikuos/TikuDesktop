@@ -12,7 +12,8 @@
 #include "tiku_trk_app_private.h"
 
 /**
- * @brief What a turn does after the events: progress, loading, the pump, the shot, the frame, the deadline, and the nap.
+ * @brief What a turn does after the events: progress, loading, the pump, the
+ * shot, the frame, the deadline, and the nap.
  */
 void
 browser_turn_end(app_t *app, const browser_options_t *o, browser_loop_t *lp)
@@ -207,7 +208,8 @@ browser_pointer_up(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 }
 
 /**
- * @brief The pointer moved: drags, bands, hovers and the tracking a press began.
+ * @brief The pointer moved: drags, bands, hovers and the tracking a press
+ * began.
  */
 void
 browser_pointer_move(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
@@ -325,7 +327,8 @@ browser_pointer_move(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 }
 
 /**
- * @brief A button went down: what is under the pointer decides everything that follows.
+ * @brief A button went down: what is under the pointer decides everything that
+ * follows.
  */
 void
 browser_pointer_down(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)

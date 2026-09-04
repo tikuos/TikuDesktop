@@ -12,7 +12,8 @@
 #include "tiku_trk_app_private.h"
 
 /**
- * @brief The way out: the window, the surface, the work still under way, and the script's verdict.
+ * @brief The way out: the window, the surface, the work still under way, and
+ * the script's verdict.
  */
 int
 browser_teardown(app_t *app, browser_loop_t *lp)
@@ -36,7 +37,9 @@ browser_teardown(app_t *app, browser_loop_t *lp)
 }
 
 /**
- * @brief Everything between the command line and the first frame.  @return -1 once the window is up; otherwise the exit code of the piece that refused.
+ * @brief Everything between the command line and the first frame.  @return -1
+ * once the window is up; otherwise the exit code of the piece that
+ * refused.
  */
 int
 browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
@@ -72,8 +75,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
     tiku_trk_clip_init(&app->clip);
     app->surf = tiku_surface_new(WIN_W, WIN_H, TIKU_C_PANEL);
     tiku_trk_status_overlay_init(&app->status_overlay, app->surf, WIN_W, WIN_H,
-                                 &app->dirty, browser_app_alert_answer, browser_app_alert_stop,
-                                 app);
+                                 &app->dirty, browser_app_alert_answer,
+                                 browser_app_alert_stop, app);
     /* No preferences window in this shell, but the command layer now has
      * somewhere to ASK: the overlay's alert, so the delete question and a
      * collision are put up here exactly as the desktop puts them up
@@ -213,7 +216,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
 }
 
 /**
- * @brief What the command line asked for, into @p o.  @return -1 to carry on; otherwise an exit code.
+ * @brief What the command line asked for, into @p o.  @return -1 to carry on;
+ * otherwise an exit code.
  */
 int
 browser_parse_args(int argc, char **argv, browser_options_t *o)

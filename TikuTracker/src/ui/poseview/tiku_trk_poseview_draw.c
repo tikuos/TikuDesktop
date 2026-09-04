@@ -390,9 +390,9 @@ tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v)
     tiku_trk_poseview_reflow_columns(v);
     v->sort_field = tiku_trk_poseview_has_column(v, pv_g_layout_clip.sort_field)
                         ? pv_g_layout_clip.sort_field : TIKU_TRK_COL_NAME;
-    v->sort2_field = tiku_trk_poseview_has_column(v,
-                                                   pv_g_layout_clip.sort_secondary)
-                         ? pv_g_layout_clip.sort_secondary : -1;
+    v->sort2_field =
+        tiku_trk_poseview_has_column(v, pv_g_layout_clip.sort_secondary)
+            ? pv_g_layout_clip.sort_secondary : -1;
     if (v->sort2_field == v->sort_field) {
         v->sort2_field = -1;
     }
