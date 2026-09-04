@@ -25,8 +25,13 @@
 
 # The interpreter is common; the presentation adapter reads desktop
 # controllers and so belongs to that shell alone.
-SCRIPT_ENGINE_TRACKER := $(T)/src/shell/tiku_trk_script.c
-SCRIPT_ENGINE_DESKTOP := $(T)/src/shell/tiku_trk_script.c \
+# tiku_trk_script, one composition over the files of one directory.
+SCRIPT_ENGINE := $(T)/src/shell/script/tiku_trk_script.c \
+                 $(T)/src/shell/script/tiku_trk_script_gesture.c \
+                 $(T)/src/shell/script/tiku_trk_script_expect.c
+
+SCRIPT_ENGINE_TRACKER := $(SCRIPT_ENGINE)
+SCRIPT_ENGINE_DESKTOP := $(SCRIPT_ENGINE) \
                          $(T)/src/shell/adapters/tiku_trk_script_adapter.c
 SCRIPT_STUB   := $(T)/src/shell/tiku_trk_script_stub.c
 
