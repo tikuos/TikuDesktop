@@ -117,3 +117,12 @@ kits: $(DESK_LIBS) $(PIC_LIBS)
 # What keeps a kit a kit.
 check-kits:
 	@python3 $(K)/tools/check_kits.py
+
+# The UI font is baked and committed: making it needs PIL and the faces
+# this machine happens to have.  What is checked on every machine is that
+# the generator has not moved on since the bake.
+.PHONY: font check-font
+font:
+	python3 $(K)/interface/tools/genfont.py > $(K)/interface/tiku_font_data.h
+check-font:
+	@python3 $(K)/interface/tools/check_font.py

@@ -69,7 +69,7 @@ BASIC_TARGETS :=
 $(info tiku-basic not built: no TikuOS checkout at $(TIKUOS); set TIKUOS= to name one)
 endif
 
-.PHONY: apps examples loadable gallery font banners probe
+.PHONY: apps examples loadable gallery banners probe
 apps: $(PROBE) $(GALLERY) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
       $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP)
 examples: $(EXAMPLES)
@@ -133,10 +133,6 @@ $(TEST_APP): $(OBJ)/$(D)/tests/test_app.o $(LIB_RUNTIME) $(LIB_UI) | $(BUILD)/te
 # an R5 screenshot.
 gallery: $(GALLERY)
 	$(GALLERY) -o $(BUILD)/gallery.png -q
-
-# Regenerate the baked font (needs python3 + PIL; output is committed).
-font:
-	python3 $(D)/tools/genfont.py > kits/interface/tiku_font_data.h
 
 # The banners live in the assets tree, sorted by APPLICATION.  Installing
 # one is copying it to where the program looks: the same ~/.config/<name>/

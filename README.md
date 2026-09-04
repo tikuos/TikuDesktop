@@ -11,7 +11,7 @@ directory is its own repository, cloned into a tikuOS checkout at
 |---|---|---|
 | `kits/` | six libraries a program links without knowing what else links them: `support`, `device`, `interface`, `storage`, `translation`, `application`.  `tools/check_kits.py` holds the dependency table and refuses an include that crosses it | `build/libtiku_*.a` and PIC twins under `build/pic/` |
 | `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/TikuTracker`, `build/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/tests/test_*` |
-| `apps/` | what runs **on** the desktop: one directory per application (`edit/`, `term/`, `ide/`, `run/`), the toolkit `examples/`, the framework `samples/` (probe, gallery, demo), the BASIC host and the font tools | `build/tiku-*`, `build/apps/*.so` |
+| `apps/` | what runs **on** the desktop: one directory per application (`edit/`, `term/`, `ide/`, `run/`), the toolkit `examples/`, the framework `samples/` (probe, gallery, demo), and the BASIC host | `build/tiku-*`, `build/apps/*.so` |
 | `assets/` | the mark, the banners and splashes the applications wear | — |
 
 The desktop shell's source is `TikuTracker/src/shell/tiku_trk_desktop.c`;

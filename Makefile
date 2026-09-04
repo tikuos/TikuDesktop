@@ -63,7 +63,7 @@ $(BUILD) $(DEV) $(BUILD)/tests $(APPS_D) $(PROG_D):
 # the build's own directory, which is where a test that writes a sheet
 # into build/ or compiles a fixture against the kits expects to be.
 test: all
-	@$(MAKE) --no-print-directory check-architecture
+	@$(MAKE) --no-print-directory check-architecture check-font
 	@for t in $(TESTBINS) $(TEST_APP); do \
 	    case $$t in \
 	        */test_model) $$t $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD)) ;; \
