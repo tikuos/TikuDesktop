@@ -86,10 +86,13 @@ check-shipping:
 # The comment and commit rules are house convention kept in the tikuOS
 # checkout's hygiene/, which is gitignored there and absent from a clone
 # of this tree alone.  Checked when present; said out loud when not,
-# because a check that silently did not run reads as a pass.
+# because a check that silently did not run reads as a pass.  This tree's
+# comments are written denser than the kernel's, so its ceilings are six
+# lines of prose and a twenty-line header rather than three and fifteen.
 lint:
 	@if [ -x $(TIKUOS)/hygiene/check_comment_style.py ]; then \
-	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR); \
+	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR) \
+	        --prose=6 --header=20; \
 	else \
 	    echo "check_comment_style: SKIPPED -- no hygiene/ at $(TIKUOS)"; \
 	    echo "  comment style is UNCHECKED; see hygiene/commentstyle.md"; \
