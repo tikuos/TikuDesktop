@@ -240,6 +240,27 @@ tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
     tiku_impl_t *impl = b->impl;
     const tiku_node_t *n = tiku_ns_find(impl->ns, path);
 
+    if (n == NULL && path[0] == '/' && path[1] == '\0') {
+        /*
+         * The root is no line of the manifest, and asking the line about
+         * it answers ENOENT both ways.  It is the one path the router
+         * asks of a mount while listing the folder the mount sits in,
+         * so it is answered here: the device itself, as a volume, under
+         * the name the device gives itself.
+         */
+        tiku_node_t root;
+
+        memset(&root, 0, sizeof root);
+        root.path[0] = '/';
+        snprintf(root.name, sizeof root.name, "%s",
+                 impl->ident.name[0] != '\0' ? impl->ident.name
+                                              : impl->devid);
+        snprintf(root.cap, sizeof root.cap, "-");
+        snprintf(root.meta, sizeof root.meta, "-");
+        root.is_dir = 1;
+        from_node(b, &root, out);
+        return 0;
+    }
     if (n == NULL) {
         /* Not in the manifest.  Ask the device before declaring it absent:
          * the manifest is a snapshot, and a node born since -- a /data file,

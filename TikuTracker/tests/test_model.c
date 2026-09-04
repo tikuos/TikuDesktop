@@ -381,6 +381,12 @@ test_tiku(const char *port, int baud)
     check(b->devid[0] != '\0', "bound a device identity");
     printf("         devid=%s\n", b->devid);
 
+    /* The root is no manifest line, and it is the one path the router
+     * asks of a mount when listing the folder the mount sits in: a
+     * root that cannot be stat'ed is a board with no row. */
+    check(b->ops->stat(b, "/", &m) == 0, "stat the root");
+    check(m.kind == TIKU_KIND_VOLUME, "the root is the device, a volume");
+    check(m.name[0] != '\0', "and it has a name to show");
     check(b->ops->stat(b, "/sys", &m) == 0, "stat /sys");
     check(m.kind == TIKU_KIND_VIRTUAL_DIR, "/sys is a namespace folder");
     check(tiku_model_is_container(&m), "it contains");
