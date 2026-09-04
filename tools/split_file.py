@@ -164,7 +164,7 @@ def sections(lines):
     return out
 
 
-def prototype(lines, f):
+def prototype(lines, f, prefix=''):
     sig = ' '.join(l.strip() for l in lines[f['sig']:f['sigend'] + 1])
     sig = re.sub(r'\s+', ' ', sig)
     ret = f['ret']
@@ -172,6 +172,7 @@ def prototype(lines, f):
         text = re.sub(r'^static\s+', '', sig) + ';'
     else:
         text = ('%s %s;' % (ret, sig)) if not ret.endswith('*') else ('%s%s;' % (ret, sig))
+    text = prefix + text
     if len(text) <= 80:
         return text
     head, params = text.split('(', 1)
@@ -402,7 +403,7 @@ def sync(fam, verbose=True):
                 continue
             before = '\n'.join(lines[:fn['start']])
             if word_in(fn['name'], before):
-                fwd.append('static ' + prototype(lines, fn))
+                fwd.append(prototype(lines, fn, 'static '))
         inc = '#include "%s"' % fam.hdr
         if fwd:
             block = FWD_A + '\n' + '\n'.join(fwd) + '\n' + FWD_B
@@ -449,6 +450,30 @@ def sync(fam, verbose=True):
     if verbose:
         print('sync:', {f: len(v) for f, v in protos.items()},
               'externs:', {f: len(v) for f, v in externs.items()})
+
+
+def forward_decls(p):
+    """Keep one block of forward declarations for the statics a loose file
+    uses before it defines them, after its last #include."""
+    text = rd(p)
+    a = text.find(FWD_A)
+    b = text.find(FWD_B)
+    if a >= 0 and b >= 0:
+        text = text[:a] + text[b + len(FWD_B):].lstrip('\n')
+    lines = text.split('\n')
+    idx = index(lines)
+    fwd = []
+    for fn in idx:
+        tline = fn['sig'] if fn.get('oneline') else fn['sig'] - 1
+        if not lines[tline].startswith('static '):
+            continue
+        before = '\n'.join(lines[:fn['start']])
+        if word_in(fn['name'], before):
+            fwd.append(prototype(lines, fn, 'static '))
+    if fwd:
+        last = max(k for k, l in enumerate(lines) if l.startswith('#include'))
+        lines[last + 1:last + 1] = ['', FWD_A] + fwd + [FWD_B]
+    wr(p, '\n'.join(lines))
 
 
 def banner_free(body):
@@ -732,12 +757,25 @@ def loop_marks(lines):
     return out
 
 
-def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=None):
-    fam = Family(d)
-    target = '%s_%s.c' % (fam.stem, suffix)
-    src = src or fam.main
-    lines = rd(fam.path(src)).split('\n')
+def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=None,
+        case_return=None):
+    loose = not [f for f in os.listdir(d) if f.endswith('_private.h')]
+    if loose:
+        if src is None:
+            sys.exit('a directory without a private header needs --file')
+        fam = None
+        target = src
+        path = lambda f: os.path.join(d, f)
+    else:
+        fam = Family(d)
+        target = '%s_%s.c' % (fam.stem, suffix)
+        src = src or fam.main
+        path = fam.path
+    lines = rd(path(src)).split('\n')
     body = lines[lo - 1:hi]
+    if substs:
+        body = subst_code('\n'.join(body), substs, None).split('\n')
+        substs = None
     if case:
         label = body[0].strip()
         if not label.startswith('case ') and not label.startswith('default'):
@@ -758,22 +796,27 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=No
         for k, l in enumerate(body):
             st = l.strip()
             if not marks[k] and st == 'break;':
-                body[k] = l.replace('break;', 'return;')
+                body[k] = l.replace('break;', 'return %s;' % case_return if case_return else 'return;')
             elif not marks[k] and st == 'continue;' or st.startswith('goto '):
                 sys.exit('line %d: %s at case level cannot be lifted' % (lo + 1 + k, st))
     # dedent by the least indent of a code line
     ind = min((len(l) - len(l.lstrip()) for l in body if l.strip()), default=0)
     body = [l[ind - 4:] if len(l) >= ind - 4 and l.strip() else '' for l in body] if ind > 4 else body
     text = '\n'.join(body)
-    if substs:
-        text = subst_code(text, substs, None)
     fn = []
     if brief:
         first = textwrap.wrap(brief, 70)
         rest = textwrap.wrap(' '.join(first[1:]), 77) if len(first) > 1 else []
         fn.append('/**\n * @brief ' + '\n * '.join([first[0]] + rest) + '\n */')
+    if loose and not sig.startswith('static '):
+        sig = 'static ' + sig
     ret, _, rest = sig.partition(' ')
-    if sig.count(' ') and not sig.startswith(('void', 'int', 'static', 'const', 'unsigned')):
+    if sig.startswith('static '):
+        ret, rest = sig.rsplit(' ', 1)[0], sig.rsplit(' ', 1)[1]
+        k = sig.index('(')
+        ret = sig[:k].rsplit(' ', 1)[0]
+        rest = sig[len(ret) + 1:]
+    elif sig.count(' ') and not sig.startswith(('void', 'int', 'const', 'unsigned')):
         ret, rest = sig.split(' ', 1)
     fn.append(ret)
     if len(rest) > 80:
@@ -805,8 +848,8 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=No
         fn.append('    ' + post.replace('\\n', '\n    '))
     fn.append('}')
     lines[lo - 1:hi] = call.replace('\\n', '\n').split('\n')
-    wr(fam.path(src), '\n'.join(lines))
-    tp = fam.path(target)
+    wr(path(src), '\n'.join(lines))
+    tp = path(target)
     if os.path.exists(tp):
         wr(tp, rd(tp).rstrip('\n') + '\n\n' + '\n'.join(fn) + '\n')
     else:
@@ -814,8 +857,11 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=No
         wr(tp, '\n'.join(hdr) + '\n' + '\n'.join(fn) + '\n')
         if mk:
             add_to_mk(mk, tp)
-    sync(fam, False)
-    sync(fam, False)
+    if loose:
+        forward_decls(tp)
+    else:
+        sync(fam, False)
+        sync(fam, False)
     print('cut %d lines into %s in %s' % (hi - lo + 1, rest.split('(')[0], target))
 
 
@@ -859,7 +905,7 @@ def main(argv):
             report(p, names)
         return 0
     opts = dict(dir=None, inline=[], public=[], mk=None, lines=[], section=None, tag=None,
-                into=None, sig=None, call=None, brief=None, pre=None, post=None, **{'from': None, 'file': None},
+                into=None, sig=None, call=None, brief=None, pre=None, post=None, **{'from': None, 'file': None, 'case-return': None},
                 subst=[], case=False)
     rest = []
     while args:
@@ -874,7 +920,7 @@ def main(argv):
             opts['mk'] = args.pop(0)
         elif a == '--tag':
             opts['tag'] = args.pop(0)
-        elif a in ('--into', '--sig', '--call', '--brief', '--pre', '--post', '--from', '--file'):
+        elif a in ('--into', '--sig', '--call', '--brief', '--pre', '--post', '--from', '--file', '--case-return'):
             opts[a[2:]] = args.pop(0)
         elif a == '--subst':
             pat, _, rep = args.pop(0).partition('=>')
@@ -896,7 +942,8 @@ def main(argv):
     elif cmd == 'cut':
         (lo, hi), = opts['lines']
         cut(opts['dir'], lo, hi, opts['into'], opts['sig'], opts['call'], opts['brief'],
-            opts['pre'], opts['post'], opts['subst'], opts['case'], opts['mk'], opts['file'])
+            opts['pre'], opts['post'], opts['subst'], opts['case'], opts['mk'], opts['file'],
+            opts['case-return'])
     elif cmd == 'hoist':
         if opts['lines']:
             (lo, hi), = opts['lines']

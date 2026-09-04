@@ -481,112 +481,6 @@ sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         sc_verdict(s, st != NULL && st->columns == cur->count, "columns:", n);
         return 1;
     }
-    case OP_EXPECT_BARAT: {
-        char at[48];
-
-        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->bar_x : -1,
-                 (st != NULL) ? st->bar_y : -1);
-        sc_verdict(s, st != NULL && st->bar_x == cur->x && st->bar_y == cur->y,
-                "deskbar at:", at);
-        return 1;
-    }
-    case OP_EXPECT_WINAT: {
-        char at[48];
-
-        /* Report where the window IS: an expectation echoed back tells
-         * the reader nothing about what moved it. */
-        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->win_x : -1,
-                 (st != NULL) ? st->win_y : -1);
-        sc_verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
-                "window at:", at);
-        return 1;
-    }
-    case OP_EXPECT_ICONAT:
-    case OP_EXPECT_ICONSCREEN: {
-        char at[64];
-        int px = 0, py = 0, got = 0;
-
-        if (st != NULL && cur->op == OP_EXPECT_ICONSCREEN) {
-            got = st->pose_screen != NULL &&
-                  st->pose_screen(st->pose_ctx, cur->text, &px, &py);
-        } else if (st != NULL && st->pose_at != NULL) {
-            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
-        }
-        if (got) {
-            snprintf(at, sizeof at, "%s at %d,%d", cur->text, px, py);
-        } else {
-            snprintf(at, sizeof at, "%s is not there", cur->text);
-        }
-        /* Within a few pixels: the position is stored unscaled and scaled
-         * back for the view, and a rounding of one pixel each way is not
-         * the arrangement being wrong. */
-        sc_verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
-                       py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
-        return 1;
-    }
-    case OP_DRAW_RESET:
-        if (st != NULL && st->rows_drawn != NULL) {
-            (void)st->rows_drawn(st->pose_ctx, 1);
-        }
-        return 1;
-    case OP_EXPECT_DRAWN: {
-        char n[32];
-        int got = (st != NULL && st->rows_drawn != NULL)
-                      ? st->rows_drawn(st->pose_ctx, 0) : -1;
-
-        snprintf(n, sizeof n, "%d", got);
-        sc_verdict(s, got >= 0 && (cur->x ? got >= cur->count
-                                       : got <= cur->count),
-                "rows painted:", n);
-        return 1;
-    }
-    case OP_EXPECT_FONT: {
-        /* Asked of the TOOLKIT, which is where every label in the
-         * interface gets its metrics: what it answers is what the whole
-         * desktop is drawn in, not what one window believes. */
-        const char *name = tiku_font_current_family();
-        char got[64];
-
-        snprintf(got, sizeof got, "%s %d px",
-                 (name != NULL) ? name : "nothing",
-                 tiku_font_size());
-        sc_verdict(s, strstr(got, cur->text) != NULL,
-                "the interface is drawn in", got);
-        return 1;
-    }
-    case OP_EXPECT_INK: {
-        char got[16];
-        unsigned rgb = 0u;
-
-        if (st != NULL && st->pixel_at != NULL) {
-            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
-        }
-        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
-        sc_verdict(s, (rgb & 0xffffffu) != 0xffffffu, "ink at:", got);
-        return 1;
-    }
-    case OP_SAME_AS_REDRAW: {
-        char got[32];
-        long differ = -1;
-
-        if (st != NULL && st->redraw_diff != NULL) {
-            differ = st->redraw_diff(st->redraw_ctx);
-        }
-        snprintf(got, sizeof got, "%ld pixels", differ);
-        sc_verdict(s, differ == 0, "against a full redraw:", got);
-        return 1;
-    }
-    case OP_EXPECT_PIXEL: {
-        char got[16];
-        unsigned rgb = 0u;
-
-        if (st != NULL && st->pixel_at != NULL) {
-            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
-        }
-        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
-        sc_verdict(s, strcasecmp(got, cur->text) == 0, "pixel:", got);
-        return 1;
-    }
     default:
         return 0;
     }
@@ -866,6 +760,129 @@ sc_parse_window(sc_step_t *st, char **w, int n)
         st->y = atoi(w[2]);
         snprintf(st->text, sizeof st->text, "%s", w[3]);
     } else {
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief where things are and what was painted: the bar, a window, an icon, the
+ * rows drawn, the font, ink and pixels, and a redraw compared
+ */
+int
+sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
+               tiku_trk_script_step_t *out, sc_step_t *cur)
+{
+    (void)out;
+    switch (cur->op) {
+
+    case OP_EXPECT_BARAT: {
+        char at[48];
+
+        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->bar_x : -1,
+                 (st != NULL) ? st->bar_y : -1);
+        sc_verdict(s, st != NULL && st->bar_x == cur->x && st->bar_y == cur->y,
+                "deskbar at:", at);
+        return 1;
+    }
+    case OP_EXPECT_WINAT: {
+        char at[48];
+
+        /* Report where the window IS: an expectation echoed back tells
+         * the reader nothing about what moved it. */
+        snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->win_x : -1,
+                 (st != NULL) ? st->win_y : -1);
+        sc_verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
+                "window at:", at);
+        return 1;
+    }
+    case OP_EXPECT_ICONAT:
+    case OP_EXPECT_ICONSCREEN: {
+        char at[64];
+        int px = 0, py = 0, got = 0;
+
+        if (st != NULL && cur->op == OP_EXPECT_ICONSCREEN) {
+            got = st->pose_screen != NULL &&
+                  st->pose_screen(st->pose_ctx, cur->text, &px, &py);
+        } else if (st != NULL && st->pose_at != NULL) {
+            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
+        }
+        if (got) {
+            snprintf(at, sizeof at, "%s at %d,%d", cur->text, px, py);
+        } else {
+            snprintf(at, sizeof at, "%s is not there", cur->text);
+        }
+        /* Within a few pixels: the position is stored unscaled and scaled
+         * back for the view, and a rounding of one pixel each way is not
+         * the arrangement being wrong. */
+        sc_verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
+                       py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
+        return 1;
+    }
+    case OP_DRAW_RESET:
+        if (st != NULL && st->rows_drawn != NULL) {
+            (void)st->rows_drawn(st->pose_ctx, 1);
+        }
+        return 1;
+    case OP_EXPECT_DRAWN: {
+        char n[32];
+        int got = (st != NULL && st->rows_drawn != NULL)
+                      ? st->rows_drawn(st->pose_ctx, 0) : -1;
+
+        snprintf(n, sizeof n, "%d", got);
+        sc_verdict(s, got >= 0 && (cur->x ? got >= cur->count
+                                       : got <= cur->count),
+                "rows painted:", n);
+        return 1;
+    }
+    case OP_EXPECT_FONT: {
+        /* Asked of the TOOLKIT, which is where every label in the
+         * interface gets its metrics: what it answers is what the whole
+         * desktop is drawn in, not what one window believes. */
+        const char *name = tiku_font_current_family();
+        char got[64];
+
+        snprintf(got, sizeof got, "%s %d px",
+                 (name != NULL) ? name : "nothing",
+                 tiku_font_size());
+        sc_verdict(s, strstr(got, cur->text) != NULL,
+                "the interface is drawn in", got);
+        return 1;
+    }
+    case OP_EXPECT_INK: {
+        char got[16];
+        unsigned rgb = 0u;
+
+        if (st != NULL && st->pixel_at != NULL) {
+            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
+        }
+        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
+        sc_verdict(s, (rgb & 0xffffffu) != 0xffffffu, "ink at:", got);
+        return 1;
+    }
+    case OP_SAME_AS_REDRAW: {
+        char got[32];
+        long differ = -1;
+
+        if (st != NULL && st->redraw_diff != NULL) {
+            differ = st->redraw_diff(st->redraw_ctx);
+        }
+        snprintf(got, sizeof got, "%ld pixels", differ);
+        sc_verdict(s, differ == 0, "against a full redraw:", got);
+        return 1;
+    }
+    case OP_EXPECT_PIXEL: {
+        char got[16];
+        unsigned rgb = 0u;
+
+        if (st != NULL && st->pixel_at != NULL) {
+            rgb = st->pixel_at(st->pose_ctx, cur->x, cur->y);
+        }
+        snprintf(got, sizeof got, "%06x", rgb & 0xffffffu);
+        sc_verdict(s, strcasecmp(got, cur->text) == 0, "pixel:", got);
+        return 1;
+    }
+    default:
         return 0;
     }
     return 1;

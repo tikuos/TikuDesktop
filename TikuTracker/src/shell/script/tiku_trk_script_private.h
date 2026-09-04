@@ -95,6 +95,8 @@ int sc_pump_file_contents(tiku_trk_script_t *s,
                           tiku_trk_script_step_t *out, sc_step_t *cur);
 int sc_pump_file_state(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                        tiku_trk_script_step_t *out, sc_step_t *cur);
+int sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
+                   tiku_trk_script_step_t *out, sc_step_t *cur);
 int sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                  tiku_trk_script_step_t *out, sc_step_t *cur);
 int sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,

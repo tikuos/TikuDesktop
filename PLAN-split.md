@@ -14,7 +14,9 @@ the link; and split files live in a subdirectory with the `tiku_trk_`
 prefix kept.  Milestone 3 (the deskbar, eleven files under `src/deskbar/bar/`)
 and the first three of milestone 4 (the desktop turn, the script pump and
 the script parser, the engine now a family under `src/shell/script/`)
-followed the same day; fourteen of the seventeen remain.
+followed the same day.  By the evening every one of the seventeen was cut:
+nothing in `TikuTracker/src` is over 200 lines, the largest function being
+`browser_script_step` at 157.
 
 ## 1. Where the tree stands against the kernel style
 

@@ -282,6 +282,9 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     if (sc_pump_window(s, st, out, cur)) {
         return 1;
     }
+    if (sc_pump_pixels(s, st, out, cur)) {
+        return 1;
+    }
     if (sc_pump_file_contents(s, st, out, cur)) {
         return 1;
     }
