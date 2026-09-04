@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # PVL-046: rows arriving ABOVE what is on screen must not push the listing
 # down under the reader.  The view records how far it was pushed; nothing
 # applied it, so a folder that gains files while you read the middle of it

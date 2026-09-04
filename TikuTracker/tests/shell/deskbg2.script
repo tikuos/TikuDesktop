@@ -1,5 +1,6 @@
 # shell: desktop
 # argv: none
+# setup: deskbg
 # AW-016: only when there is none yet.  This desktop already carries a
 # record, put at 600,400 -- the boot install must leave it where it is.
 wait 10

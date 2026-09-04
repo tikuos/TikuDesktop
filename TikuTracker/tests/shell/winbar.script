@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # PVL-051: the spatial shell's folder windows draw a real bar too --
 # a track that pages, a thumb, and steppers that walk half a line.
 wait 10

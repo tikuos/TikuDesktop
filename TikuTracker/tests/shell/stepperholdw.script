@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # NeXT UIG ch3, in the spatial shell's window bar: a held stepper arrow
 # keeps walking without further clicks.
 wait 10

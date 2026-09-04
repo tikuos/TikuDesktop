@@ -1,4 +1,5 @@
 # shell: tracker
+# setup: bandscroll
 # NeXT UIG ch3: when the APPLICATION moves the selection, it keeps it in
 # view -- a rename that re-sorts the row past the viewport follows it.
 wait 8

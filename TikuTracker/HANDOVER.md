@@ -232,8 +232,15 @@ landed.  A coordinate belongs in a script only when the coordinate IS the
 behaviour: a drop point, a band, a point over the backdrop.
 
 `run.sh` recreates the fixture per script, and wipes **every** device state
-file and `~/.config/TrackerSettings` between scripts. Per-script extras live
-in the `case` block near the top.
+file and `~/.config/TrackerSettings` between scripts. What one script needs
+laid out beyond that lives beside the scripts in `tests/shell/setup/<name>.sh`
+— the file a `# setup: <name>` header names, else the one named after the
+script — sourced with `$deskhome`, `$work`, `$appsdir` and `$top` in scope.
+
+A script the shell leaves with steps unreached is a **failure**: the report
+says `stopped at line N, step K of M, steps unreached`. Two checks of four
+passing is a run cut short, not a pass; a script that ran every step and has
+no `quit` ended the way it meant to.
 
 Every script also runs with **`HOME` pointing at `/tmp/trk_home`**, not at the
 account. Run against the real home, a drag that misses its window drops files

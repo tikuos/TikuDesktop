@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # CW-019: the scroll bar highlights with the focus border -- framed in the
 # focus colour while its window is the focused one, plain the moment
 # another window takes the keyboard.

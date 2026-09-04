@@ -1,4 +1,5 @@
 # shell: tracker
+# setup: bandscroll
 # PVL-051: the scrollbar is a CONTROL.  It was a picture: a pure function
 # of the view redrawn every frame, which could be looked at and never used.
 wait 6

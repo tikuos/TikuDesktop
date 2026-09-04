@@ -1,4 +1,5 @@
 # shell: tracker
+# setup: bandscroll
 # NeXT UIG ch3: wherever clicking repeats a step, PRESSING repeats it --
 # a held stepper arrow keeps walking without further clicks.
 wait 8

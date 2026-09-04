@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # PVL-059: Resize to fit sizes the window to its content AND scrolls it to
 # the content's top-left -- a fitted window shows everything from the top.
 wait 10

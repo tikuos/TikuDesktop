@@ -1,4 +1,5 @@
 # shell: tracker
+# setup: bandscroll
 # NeXT UIG ch7: an arrow that cannot scroll any further says so -- at the
 # top the up arrow's glyph is dimmed while the down arrow's is full ink,
 # and one step down restores the up arrow.

@@ -1,4 +1,5 @@
 # shell: desktop
+# setup: bandscroll
 # PVS-050: a drag held in the band at the list's edge scrolls it, after a
 # hold delay.  Both halves matter, so both are checked against their own
 # negative: the middle of the list never scrolls however long you hold, and
