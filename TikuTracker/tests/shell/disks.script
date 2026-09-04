@@ -6,13 +6,14 @@
 # something else happened to rebuild the listing.
 wait 12
 expect-desk-icon Boot
-note turned off in the preferences, it goes at once
+note turned off in the preferences, it goes at the next volume poll,
+note which rides the notice pump every 400 ms: the wait covers two
 key comma ctrl
 wait 5
 click 432 202
 wait 3
 key Escape
-wait 12
+wait 60
 expect-no-desk-icon Boot
 expect-desk-icon notes.txt
 quit

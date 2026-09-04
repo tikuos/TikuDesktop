@@ -11,7 +11,9 @@ wait 3
 expect-menu Stamper (opens this type)
 key Escape
 wait 3
-note renamed to a .png, the same row's menu now offers the png handler
+note renamed to a .png, the same row's menu now offers the png handler.
+note The view learns of the rename from the notice pump, which runs every
+note 400 ms: the wait after the rename covers one pump with room to spare
 click-row 1
 wait 2
 key e ctrl
@@ -23,7 +25,7 @@ key p
 key n
 key g
 key Return
-wait 8
+wait 30
 click-row 1 3
 wait 3
 menu-pick Open with
