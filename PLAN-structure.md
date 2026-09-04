@@ -1,5 +1,14 @@
 # The applications tree: one build, and names that say what they hold
 
+> **Landed 2026-09-03/04**, Phases 0–6 and the follow-ups: the root build
+> (`a4467e6`..`a30fff3`), the rename (`fc07933`), the shell in fourteen files
+> (`24706a9`..`bec9f20`, `2e7dbcc`), the harness (`3e831cc`, `954299b`),
+> the generated files (`f6bb2fb`, `5cc6e73`), then the boot in stages, the
+> loop as a pump between two turn functions, headers for the simplest
+> setups, and `make lint`.  Where this plan and the tree differ, the tree is
+> right; the differences are recorded in the sections they belong to.  What
+> remains is Phase 6, the device host, which waits on the device work.
+
 A plan for the shape of `applications/` — where sources live, how the
 products are built, and how the tests are found — written for an agent with
 no prior context.  Every number below was measured against the tree on
@@ -148,7 +157,9 @@ and nothing at the root says so.
   which nothing calls.
 - `applications.mk` at the root is untracked, references nothing that
   exists, and is the OS Makefile's `-include` hook.
-- `assets/reference/photoshop7.png` — a 2 MB reference screenshot in git.
+- `assets/reference/photoshop7.png` — a reference screenshot in git (68 KB;
+  an earlier draft of this list said 2 MB, which was the whole `assets/`
+  directory, mostly the banners).
 - `tools/glyphdump.c.gamma`.
 - `_attic-2026-09-03/` — 31 MB of pre-restructure leftovers parked there
   during today's clone reshuffle; delete once you have looked.
@@ -295,7 +306,11 @@ after each:
 | `tiku_trk_desktop_private.h` | — | `desktop_t` and the statics the parts share |
 
 `desktop_t` is already one struct passed by pointer, which is what makes
-this mechanical.  `print-ownership` keeps the sources in `DESKTOP_SRC`, so
+this mechanical.  *As landed:* fourteen files, split by function cluster
+rather than by line range, since the banners marked where a topic began
+but not where it ended; the boot is nine stage functions and the loop a
+pump between `desktop_turn_begin` and `desktop_turn_end`; the largest
+function in the directory is 476 lines.  `print-ownership` keeps the sources in `DESKTOP_SRC`, so
 the ownership check sees the split as the same binary it always was.
 `tiku_trk_poseview.c` at 6,529 lines is the next candidate but is out of
 scope here: the spec's extraction order already treats it as one engine.
@@ -323,11 +338,18 @@ by name.  Whether the loop itself is then worth rewriting as
 `run.py` (it is already a Python-tooling tree: twelve tools) is a
 decision, below.
 
+*As landed:* every case body became `tests/shell/setup/<name>.sh` verbatim
+first, then the fourteen that were only mkdir/echo/touch/rm/ln became the
+headers above, each proven to lay the same tree as the file it replaced;
+forty-two that plant programs, pictures or projects remain files, which the
+`# setup:` header can also name.
+
 **A script that stops early fails.**  `tiku_trk_script_report()` knows the
-cursor and the op count; a script that did not reach `quit` reports
-`stopped at line N of M` and counts as a failure.  Every script in the tree
-ends with `quit`, so nothing currently passing changes — except a script
-that was passing by being cut short, which is the point.
+cursor and the op count; a script the shell left with steps unreached
+reports `stopped at line N, step K of M, steps unreached` and counts as a
+failure.  *As landed:* eighteen scripts have no `quit` and end by running
+off their last step, which the first draft of the rule called a failure;
+the rule is unreached steps, not a missing `quit`.
 
 ### 2.5 Generated files
 
@@ -376,7 +398,7 @@ counts compared rather than the colour.
 | **2 — The rename** | `git mv TikuDesktop apps`; `find_apps_dir()` looks for `build/apps`; paths in `run.sh`, the two PLANs, `tiku_font.h` | half a day | `grep -rn TikuDesktop/` finds only binaries and prose |
 | **3 — The shell in files** | split `tiku_trk_desktop.c` along its banners, `tracker_run` last | two to three days | no function over 500 lines in `src/shell/desktop/`; `print-ownership` unchanged |
 | **4 — The harness** | headers replace the case block; early stop is a failure; (optionally) `run.py` | one day | `run.sh` under 250 lines or replaced; the shutdown-screen test fails when the transition is removed |
-| **5 — Generated files** | generators beside their outputs; strings baked at build time; `check-font` | half a day | `git ls-files` shows no generated strings header; `make check-font` exists and passes |
+| **5 — Generated files** | generators beside their outputs; strings baked at build time; `check-font` | half a day | `git ls-files` shows no generated strings header; `make check-font` exists and passes (*landed:* the font bake is not reproducible across machines — it depends on the faces installed — so `check-font` checks the generator's hash stamped in the bake, not a regeneration) |
 | **6 — The device host** | `kits/interface/host/`, `HOST=` selection | when the device work starts | a second host file builds with no change outside its directory |
 
 Phases 0, 1 and 2 are the ones that change what a person types; they are
