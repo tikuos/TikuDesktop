@@ -11,8 +11,8 @@
 #include "tiku_trk_deskbar_private.h"
 
 /* Used before they are defined. */
-static void fit_label(const tiku_font_t *f, const char *src, int budget, char *out,
-               size_t max);
+static void fit_label(const tiku_font_t *f, const char *src, int budget,
+                      char *out, size_t max);
 /* End of the forward declarations. */
 
 /** @brief A window's state icon: filled when shown, hollow when minimised. */
@@ -637,365 +637,204 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
                  ? db->settings.icon_size + 4 : db_team_row();
     db->screen_h = s->h;
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : db_list_rows(db);
-    {
-        /* How much room the list actually has, once the leaf, the tray and
-         * the clock have taken theirs.  A list longer than that is what
-         * makes the bar scrollable (DB-034). */
-        int room = s->h - db->top_inset - (db_leaf_row() + PAD) -
-                   (db->tray_count * TRAY_ROW) - SWITCH_ROW -
-                   (db->settings.show_clock ? db_clock_row() : 0) - 2 * PAD;
-
-        db->overflow = (!tiku_trk_deskbar_mini(db->dock) && rows > room &&
-                        room > 0);
-        if (!db->overflow) {
-            db->scroll = 0;     /* nothing hidden: nothing scrolled past */
-        }
-        if (db->overflow && rows > room) {
-            rows = room;
-        }
-    }
-    db->frame.w = tiku_trk_deskbar_width(db);
-    /* The bar starts below whatever owns the top of the screen: with the
-     * global menu bar on, a Deskbar at y 0 would put its own leaf under
-     * the strip. */
-    db->frame.y = db->top_inset;
-    if (tiku_trk_deskbar_vertical(db->dock)) {
-        db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
-                       db->dock == TIKU_TRK_DB_LEFT_MINI)
-                          ? 0 : s->w - db->frame.w;
-        db->frame.h = db_leaf_row() + PAD + rows + PAD +
-                      (tiku_trk_deskbar_mini(db->dock) ? db_team_row() + 2
-                                                       : 0) +
-                      db->tray_count * TRAY_ROW + SWITCH_ROW +
-                      (db->settings.show_clock ? db_clock_row() : 0) + PAD;
-    } else {
-        /* Along an edge: the bar spans the screen and is as deep as one
-         * row needs.  The application STRIP lives here -- buttons that
-         * shrink as more launch and grow back as they quit (DB-033). */
-        db->frame.x = 0;
-        db->frame.w = s->w;
-        db->frame.h = db_leaf_row() + PAD;
-        db->frame.y = (db->dock == TIKU_TRK_DB_TOP)
-                          ? db->top_inset : s->h - db->frame.h;
-        rows = 0;
-    }
-    if (!tiku_trk_deskbar_shown(db)) {
-        /* Hidden: a sliver against its own edge, which is all there is
-         * left to touch (DB-051).  The frame is what the hit test and the
-         * drawing both read, so hiding is a geometry change and not a
-         * second drawing path. */
-        if (tiku_trk_deskbar_vertical(db->dock)) {
-            if (db->frame.x > 0) {
-                db->frame.x = s->w - TIKU_TRK_DB_SLIVER;
-            }
-            db->frame.w = TIKU_TRK_DB_SLIVER;
-        } else {
-            if (db->frame.y > 0) {
-                db->frame.y = s->h - TIKU_TRK_DB_SLIVER;
-            }
-            db->frame.h = TIKU_TRK_DB_SLIVER;
-        }
-        tiku_fill(s, db->frame, TIKU_C_PANEL);
-        return;
-    }
+    db_draw_frame(db, s, &rows);
 
     tiku_fill(s, db->frame, TIKU_C_PANEL);
     tiku_bevel(s, db->frame,
                     tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
                     tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
 
-    /* The leaf: the one control that is not a list item, so it is the one
-     * thing wearing the tab colour. */
-    leaf = (tiku_rect_t){ db->frame.x + 2, db->frame.y + 2,
-                               tiku_trk_deskbar_vertical(db->dock)
-                                   ? db->frame.w - 4 : HLEAF_W,
-                               db_leaf_row() };
-    tiku_fill(s, leaf, TIKU_C_TAB);
-    tiku_frame(s, leaf, dark);
-    tiku_bevel(s, tiku_inset(leaf, 1),
-                    tiku_tint(TIKU_C_TAB, TIKU_LIGHTEN_1),
-                    tiku_tint(TIKU_C_TAB, TIKU_DARKEN_2));
-    {
-        /*
-         * The mark, then the name beside it.  Drawn without its own
-         * ground: the leaf already has a surface of its own and a pale
-         * square on the amber would read as a sticker stuck to it.
-         */
-        int mark = db_leaf_row() - 10;  /* 24 at the default face */
-        tiku_rect_t label = leaf;
-        /*
-         * Shaded to the ground it is standing on, which is the leaf and
-         * so is a different colour in each of the three modes.  Light:
-         * as drawn -- near-black edges on amber.  Dark: lifted well up,
-         * because the deepened amber under it is dark enough that the
-         * mark's own edges would sink into the button and leave a smudge.
-         * Without hue: a touch down, so it sits on the mid-grey tab
-         * rather than floating over it.
-         */
-        float shade = (db->theme == 1) ? 0.35f
-                    : (db->theme == 2) ? 1.15f : 1.0f;
+    db_draw_leaf(db, s, fb, dark, &leaf);
 
-        tiku_logo_paint_with(s, (tiku_rect_t){ leaf.x + 4,
-                                               leaf.y + (leaf.h - mark) / 2,
-                                               mark, mark }, 0u, NULL,
-                             shade);
-        label.x += mark + 8;
-        label.w -= mark + 8;
-        (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);
-    }
+    db_draw_mini(db, s, f);
 
-    if (tiku_trk_deskbar_mini(db->dock)) {
-        /* The collapsed dock's second icon: the application list folded
-         * into one button that pops the running-apps menu (DB-037). */
-        tiku_rect_t ab = { db->frame.x + 2,
-                                db->frame.y + 2 + db_leaf_row() + 2,
-                                db->frame.w - 4, db_team_row() };
+    db_draw_teams(db, s, f, team_h, &y);
 
-        draw_row_bg(s, ab, db->apps_menu_open);
-        (void)tiku_icon_paint(s, "application",
-                                  ab.x + (ab.w - 16) / 2,
-                                  ab.y + (ab.h - 16) / 2, 16);
-        if (db->apps_menu_open) {
-            const char *items[TIKU_TRK_DB_TEAMS_MAX];
-            int n = db->team_count, k;
-            int rowh = f->height + 6;
-            tiku_rect_t am;
+    db_draw_tray(db, s, f, &y);
+    db_draw_switch(db, s);
+    db_draw_clock(db, s, f, &y);
 
-            if (n == 0) {
-                items[0] = "no application running";
-                n = 1;
-            } else {
-                for (k = 0; k < n; k++) {
-                    items[k] = db->teams[db->order[k]].name;
+    db_draw_leaf_menu(db, s, f);
+    db_draw_win_menu(db, s, f);
+    db_draw_clock_menu(db, s);
+    db_draw_switch_strip(db, s);
+    db_draw_tip(db, s);
+    db_draw_calendar(db, s, f, fb, dark);
+}
+
+/**
+ * @brief the calendar under the clock
+ */
+void
+db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                 const tiku_font_t *f, const tiku_font_t *fb, tiku_rgb_t dark)
+{
+    if (db->calendar_open) {
+        /* The clock's calendar: a month grid with steppers, popped beside
+         * the bar and dismissed by the next click anywhere. */
+        struct tm tmv;
+        tiku_rect_t c = db_calendar_rect(db);
+        int col, rowi, first, days;
+
+        memset(&tmv, 0, sizeof tmv);
+        tmv.tm_year = db->calendar_year - 1900;
+        tmv.tm_mon = db->calendar_month - 1;
+        tmv.tm_mday = 1;
+        tmv.tm_isdst = -1;
+        (void)mktime(&tmv);
+        tiku_fill(s, c, TIKU_C_PANEL);
+        tiku_frame(s, c, dark);
+        tiku_bevel(s, tiku_inset(c, 1),
+                        tiku_tint(TIKU_C_PANEL,
+                                       TIKU_LIGHTEN_MAX),
+                        tiku_tint(TIKU_C_PANEL,
+                                       TIKU_DARKEN_2));
+        {
+            char head[32];
+            snprintf(head, sizeof head, "%s %d",
+                     tiku_str((const char *[]){ "month.1", "month.2",
+                       "month.3", "month.4", "month.5", "month.6", "month.7",
+                       "month.8", "month.9", "month.10", "month.11",
+                       "month.12" }[tmv.tm_mon]), 1900 + tmv.tm_year);
+            (void)tiku_text_centered(s, fb,
+                (tiku_rect_t){ c.x, c.y + 2, c.w, 18 }, head,
+                TIKU_C_TEXT);
+        }
+        first = tmv.tm_wday;
+        days = db_calendar_days(db->calendar_year, db->calendar_month);
+        for (rowi = 0; rowi < 6; rowi++) {
+            for (col = 0; col < 7; col++) {
+                int day = rowi * 7 + col - first + 1;
+                char num[12];
+                tiku_rect_t cell = { c.x + 6 + col * 25,
+                                          c.y + 22 + rowi * 20, 24, 18 };
+                if (day < 1 || day > days) {
+                    continue;
                 }
+                if (day == db->calendar_day) {
+                    tiku_fill(s, cell, TIKU_C_SELECT);
+                }
+                snprintf(num, sizeof num, "%d", day);
+                (void)tiku_text_centered(s, f, cell, num,
+                    (day == db->calendar_day) ? TIKU_C_SELTEXT
+                                         : TIKU_C_TEXT);
             }
-            am.w = 176;
-            am.h = n * rowh + 4;
-            am.y = ab.y;
-            am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
-                                     : db->frame.x + db->frame.w + 2;
-            tiku_ui_menu(s, am, items, n, db->apps_hot);
-            if (db->team_count == 0) {
-                /* Disabled the one way this layer says it (DB-004). */
-                tiku_rect_t r = { am.x + 2, am.y + 2, am.w - 4,
-                                       rowh };
+        }
+    }
+}
+
+/**
+ * @brief the tip over a row
+ */
+void
+db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
+{
+    if (db->tip_y >= 0 && db->tip[0] != '\0') {
+        /* The whole name, said beside the row that could not fit it
+         * (DB-032). */
+        tiku_rect_t b = tiku_ui_tip_size(db->tip);
+
+        b.x = db->frame.x - b.w - 4;
+        b.y = db->tip_y;
+        if (b.x < 0) { b.x = 0; }
+        tiku_ui_tip(s, b, db->tip);
+    }
+}
+
+/**
+ * @brief the theme switch in its own strip of tray
+ */
+void
+db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
+{
+    {
+        /* The scroll arrows: shown the moment something is out of sight
+         * in the direction they point (DB-034). */
+        int up = 0, down = 0, k;
+        int ly = db_list_y(db);
+        int lb = db->frame.y + db->frame.h -
+                 (db->tray_count * TRAY_ROW) -
+                 (db->settings.show_clock ? db_clock_row() : 0) - PAD;
+        int cx = db->frame.x + db->frame.w / 2;
+
+        tiku_trk_deskbar_arrows(db, &up, &down);
+        for (k = 0; k < 4 && up; k++) {
+            tiku_hline(s, cx - k, ly + 1 + k, 2 * k + 1,
+                            TIKU_C_TEXT);
+        }
+        for (k = 0; k < 4 && down; k++) {
+            tiku_hline(s, cx - (3 - k), lb - 5 + k, 2 * (3 - k) + 1,
+                            TIKU_C_TEXT);
+        }
+    }
+}
+
+/**
+ * @brief the clock menu
+ */
+void
+db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s)
+{
+    if (db->clock_menu_open) {
+        const char *items[] = {
+            tiku_str(db->settings.show_clock ? "menu.clock.hide"
+                                                 : "menu.clock.show"),
+            tiku_str(db->settings.show_seconds ? "menu.seconds.hide"
+                                                   : "menu.seconds.show"),
+            tiku_str(db->settings.show_day_of_week ? "menu.day.hide"
+                                                       : "menu.day.show"),
+            tiku_str(db->settings.show_timezone ? "menu.zone.hide"
+                                                    : "menu.zone.show")
+        };
+        tiku_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
+                               db_clock_row() - 32, 170, 4 * 28 };
+        tiku_ui_menu(s, m, items, 4, db->clock_hot);
+    }
+}
+
+/**
+ * @brief the window menu for one application
+ */
+void
+db_draw_win_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                 const tiku_font_t *f)
+{
+    /* The window menu for one application: Hide all / Show all / Close all,
+     * which the original appends to every application's window list. */
+    if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
+        const char *items[4];
+        int enabled[4];
+        int n = db_win_menu_items(db, db->win_menu_team, items, enabled);
+        int rowh = f->height + 6;
+        tiku_rect_t m = db_win_menu_rect(db, n, rowh);
+        int k;
+
+        tiku_ui_menu(s, m, items, n, db->win_hot);
+        for (k = 0; k < n; k++) {
+            /* A row that cannot be chosen is drawn as such, with the one
+             * dimmed ink the menu layer has (DB-004, DB-028). */
+            if (!enabled[k] && items[k][0] != '-') {
+                tiku_rect_t r = { m.x + 2, m.y + 2 + k * rowh,
+                                       m.w - 4, rowh };
 
                 tiku_fill(s, r, TIKU_C_PANEL);
-                tiku_text(s, f, r.x + 10,
+                tiku_text(s, f, r.x + 8,
                                r.y + (rowh - f->height) / 2 + f->ascent,
-                               items[0],
+                               items[k],
                                tiku_tint(TIKU_C_PANEL, 1.55f));
             }
         }
     }
+}
 
-    if (!tiku_trk_deskbar_mini(db->dock) &&
-        !tiku_trk_deskbar_vertical(db->dock)) {
-        /* The horizontal strip: as many buttons as fit, each between a
-         * font-derived minimum and 1.25x it, shrinking as applications
-         * launch and growing back as they quit; past the minimum, the
-         * ends grow arrows (DB-033). */
-        int n = db->team_count;
-        int min_w = 24 + tiku_text_width(f, "abcdefgh");
-        int max_w = min_w + min_w / 4;
-        int left = db->frame.x + 2 + HLEAF_W + 4;
-        int right = db->frame.x + db->frame.w - (SWITCH_W + 14);
-        int avail = right - left;
-        int bw = (n > 0) ? avail / n : max_w;
-        int bx, i2, k;
-
-        if (bw > max_w) { bw = max_w; }
-        db->hoverflow = (n > 0 && bw < min_w);
-        if (db->hoverflow) {
-            bw = min_w;
-            left += 12;
-            right -= 12;
-        } else {
-            db->scroll = 0;
-        }
-        db->overflow = db->hoverflow;
-        db->hbutton_w = bw;
-        db->hleft = left;
-        bx = left;
-        for (i2 = (db->hoverflow ? db->scroll : 0); i2 < n; i2++) {
-            tiku_trk_team_t *t = &db->teams[db->order[i2]];
-            tiku_rect_t b = { bx, db->frame.y + 2, bw - 2, db_leaf_row() };
-            char label[TIKU_TRK_DB_LABEL_MAX];
-
-            if (bx + bw > right) {
-                break;
-            }
-            draw_row_bg(s, b, t->active);
-            (void)tiku_icon_paint(s,
-                strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application",
-                b.x + 3, b.y + (db_leaf_row() - 16) / 2, 16);
-            fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
-            tiku_text(s, f, b.x + 16 + 6,
-                           b.y + (db_leaf_row() - f->height) / 2 + f->ascent,
-                           label, TIKU_C_TEXT);
-            bx += bw;
-        }
-        if (db->hoverflow) {
-            int ay = db->frame.y + db->frame.h / 2;
-
-            for (k = 0; k < 4; k++) {
-                if (db->scroll > 0) {
-                    tiku_vline(s, left - 10 + k, ay - k, 2 * k + 1,
-                                    TIKU_C_TEXT);
-                }
-                tiku_vline(s, right + 3 + k, ay - (3 - k),
-                                2 * (3 - k) + 1, TIKU_C_TEXT);
-            }
-        }
-    }
-    if (!tiku_trk_deskbar_mini(db->dock) &&
-        tiku_trk_deskbar_vertical(db->dock)) {
-        y = db_list_y(db);
-        for (i = 0; i < db->team_count; i++) {
-            int team = db->order[i];
-            tiku_trk_team_t *t = &db->teams[team];
-            tiku_rect_t row = { db->frame.x + 2, y, db->frame.w - 4,
-                                     team_h };
-            int icon_size = db->settings.icon_size;
-            tiku_rect_t icon = { row.x + 4,
-                                      y + (team_h - icon_size) / 2,
-                                      icon_size, icon_size };
-            char label[TIKU_TRK_DB_LABEL_MAX];
-
-            /* A hovering drag lights the row it would be handed to, so
-             * the promise the drop makes is visible before it is made
-             * (DB-035). */
-            if (db->drop_team == team) {
-                tiku_fill(s, row, TIKU_C_SELECT);
-            } else {
-                draw_row_bg(s, row, t->active);
-            }
-            /* The application's icon.  Tracker's own team is the one that
-             * can be named; anything else gets the generic application icon
-             * rather than a blank, so the column never has a hole in it. */
-            /* DB-018: when even the generic icon is missing, the slot is
-             * left as it is.  A coloured rectangle where an icon failed
-             * looks like an application whose icon IS a blue square. */
-            (void)tiku_icon_paint(s, strcmp(t->name, "TikuTracker") == 0
-                                         ? "folder" : "application",
-                                      icon.x, icon.y, icon_size);
-
-            if (!db->settings.hide_app_names) {
-                fit_label(f, t->name,
-                          row.w - icon_size - EXPANDER_W - 14, label,
-                          sizeof label);
-                tiku_text(s, f, icon.x + icon_size + 5,
-                               y + (team_h - f->height) / 2 + f->ascent,
-                               label, TIKU_C_TEXT);
-            }
-            if (db->settings.show_expander) {
-                draw_expander(s, row.x + row.w - EXPANDER_W - 2,
-                              y + (team_h - 9) / 2,
-                              t->expanded ||
-                              db->expander_press == db->order[i]);
-            }
-            y += team_h + SEAM;
-
-            if (!t->expanded) {
-                continue;
-            }
-            for (j = 0; j < t->win_count; j++) {
-                tiku_trk_dbwin_t *w = &t->wins[j];
-                tiku_rect_t wr = { db->frame.x + 2, y, db->frame.w - 4,
-                                        db_win_row() };
-                char wl[TIKU_TRK_DB_LABEL_MAX];
-
-                draw_row_bg(s, wr, w->current);
-                draw_win_icon(s, wr.x + WIN_INDENT,
-                              y + (db_win_row() - 9) / 2,
-                              w->state == TIKU_TRK_DBW_MINIMIZED,
-                              0);
-                fit_label(f, w->title, wr.w - WIN_INDENT - 20, wl,
-                          sizeof wl);
-                tiku_text(s, f, wr.x + WIN_INDENT + 14,
-                          y + (db_win_row() - f->height) / 2 + f->ascent,
-                          wl, TIKU_C_TEXT);
-                y += db_win_row() + SEAM;
-            }
-        }
-    }
-
-    /* The tray, then the clock beneath it: the original reserves the
-     * clock's room in the first row, and stacking it here is the vertical
-     * equivalent. */
-    y = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + db_leaf_row() + PAD
-                                        : db_tray_y(db);
-    tiku_hline(s, db->frame.x + 4, y - 3, db->frame.w - 8,
-                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
-    tiku_hline(s, db->frame.x + 4, y - 2, db->frame.w - 8,
-                    tiku_tint(TIKU_C_PANEL,
-                                   TIKU_LIGHTEN_MAX));
-    for (i = 0; i < db->tray_count; i++) {
-        const tiku_trk_replicant_t *r = &db->tray[i];
-        int ty = y + (TRAY_ROW - f->height) / 2 + f->ascent;
-        char val[32];
-        int vw;
-
-        /* The tray is the narrowest place on screen, so it is the place a
-         * formatted reading earns the most: the column is too thin to read
-         * a raw second count or byte count against. */
-        (void)tiku_attr_format(r->desc_known ? &r->desc : NULL,
-                                   r->valid ? r->value : "",
-                                   val, sizeof val);
-        vw = tiku_text_width(f, val);
-
-        tiku_text(s, f, db->frame.x + 6, ty, r->label, TIKU_C_TEXT);
-        tiku_text(s, f, db->frame.x + db->frame.w - 6 - vw, ty, val,
-                       TIKU_C_TEXT);
-        y += TRAY_ROW;
-    }
-    db_draw_switch(db, s);
-    if (tiku_trk_deskbar_vertical(db->dock)) {
-        y += SWITCH_ROW;
-    }
-    if (db->settings.show_clock) {
-        time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
-        struct tm tmv;
-        char clock[64];
-        char date[32];
-        char time_text[32];
-        char time_fmt[16] = "%H:%M";
-        int cw;
-
-        (void)localtime_r(&now, &tmv);
-        if (db->settings.show_seconds) {
-            snprintf(time_fmt, sizeof time_fmt, "%%H:%%M:%%S");
-        }
-        if (strftime(date, sizeof date,
-                     db->settings.show_day_of_week ? "%a %e %b" : "%e %b",
-                     &tmv) == 0) {
-            snprintf(date, sizeof date, "%d", tmv.tm_mday);
-        }
-        if (strftime(time_text, sizeof time_text, time_fmt, &tmv) == 0) {
-            snprintf(time_text, sizeof time_text, "%02d:%02d",
-                     tmv.tm_hour, tmv.tm_min);
-        }
-        if (db->settings.show_timezone) {
-            char zone[16];
-            size_t used;
-
-            if (strftime(zone, sizeof zone, "%Z", &tmv) == 0 ||
-                zone[0] == '\0') {
-                snprintf(zone, sizeof zone, "local");
-            }
-            snprintf(clock, sizeof clock, "%s %s", date, time_text);
-            used = strlen(clock);
-            if (used + 1u < sizeof clock) {
-                snprintf(clock + used, sizeof clock - used, " %s", zone);
-            }
-        } else {
-            snprintf(clock, sizeof clock, "%s %s", date, time_text);
-        }
-        cw = tiku_text_width(f, clock);
-        tiku_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
-                       y + (db_clock_row() - f->height) / 2 + f->ascent, clock,
-                       TIKU_C_TEXT);
-    }
+/**
+ * @brief the leaf menu: the head, the recent folders, the places
+ */
+void
+db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                  const tiku_font_t *f)
+{
+    int i;
 
     /* The leaf menu: the head the original always shows, then the recent
      * lists, then whatever is in the Deskbar folder right now. */
@@ -1062,127 +901,411 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
             }
         }
     }
-    /* The window menu for one application: Hide all / Show all / Close all,
-     * which the original appends to every application's window list. */
-    if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
-        const char *items[4];
-        int enabled[4];
-        int n = db_win_menu_items(db, db->win_menu_team, items, enabled);
-        int rowh = f->height + 6;
-        tiku_rect_t m = db_win_menu_rect(db, n, rowh);
-        int k;
+}
 
-        tiku_ui_menu(s, m, items, n, db->win_hot);
-        for (k = 0; k < n; k++) {
-            /* A row that cannot be chosen is drawn as such, with the one
-             * dimmed ink the menu layer has (DB-004, DB-028). */
-            if (!enabled[k] && items[k][0] != '-') {
-                tiku_rect_t r = { m.x + 2, m.y + 2 + k * rowh,
-                                       m.w - 4, rowh };
+/**
+ * @brief the clock beneath the tray
+ */
+void
+db_draw_clock(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
+              int *y)
+{
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        (*y) += SWITCH_ROW;
+    }
+    if (db->settings.show_clock) {
+        time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
+        struct tm tmv;
+        char clock[64];
+        char date[32];
+        char time_text[32];
+        char time_fmt[16] = "%H:%M";
+        int cw;
+
+        (void)localtime_r(&now, &tmv);
+        if (db->settings.show_seconds) {
+            snprintf(time_fmt, sizeof time_fmt, "%%H:%%M:%%S");
+        }
+        if (strftime(date, sizeof date,
+                     db->settings.show_day_of_week ? "%a %e %b" : "%e %b",
+                     &tmv) == 0) {
+            snprintf(date, sizeof date, "%d", tmv.tm_mday);
+        }
+        if (strftime(time_text, sizeof time_text, time_fmt, &tmv) == 0) {
+            snprintf(time_text, sizeof time_text, "%02d:%02d",
+                     tmv.tm_hour, tmv.tm_min);
+        }
+        if (db->settings.show_timezone) {
+            char zone[16];
+            size_t used;
+
+            if (strftime(zone, sizeof zone, "%Z", &tmv) == 0 ||
+                zone[0] == '\0') {
+                snprintf(zone, sizeof zone, "local");
+            }
+            snprintf(clock, sizeof clock, "%s %s", date, time_text);
+            used = strlen(clock);
+            if (used + 1u < sizeof clock) {
+                snprintf(clock + used, sizeof clock - used, " %s", zone);
+            }
+        } else {
+            snprintf(clock, sizeof clock, "%s %s", date, time_text);
+        }
+        cw = tiku_text_width(f, clock);
+        tiku_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
+                  (*y) + (db_clock_row() - f->height) / 2 + f->ascent,
+                  clock, TIKU_C_TEXT);
+    }
+}
+
+/**
+ * @brief the tray: the replicants, one row each
+ */
+void
+db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
+             int *y)
+{
+    int i;
+
+    /* The tray, then the clock beneath it: the original reserves the
+     * clock's room in the first row, and stacking it here is the vertical
+     * equivalent. */
+    (*y) = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + db_leaf_row() + PAD
+                                        : db_tray_y(db);
+    tiku_hline(s, db->frame.x + 4, (*y) - 3, db->frame.w - 8,
+                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_hline(s, db->frame.x + 4, (*y) - 2, db->frame.w - 8,
+                    tiku_tint(TIKU_C_PANEL,
+                                   TIKU_LIGHTEN_MAX));
+    for (i = 0; i < db->tray_count; i++) {
+        const tiku_trk_replicant_t *r = &db->tray[i];
+        int ty = (*y) + (TRAY_ROW - f->height) / 2 + f->ascent;
+        char val[32];
+        int vw;
+
+        /* The tray is the narrowest place on screen, so it is the place a
+         * formatted reading earns the most: the column is too thin to read
+         * a raw second count or byte count against. */
+        (void)tiku_attr_format(r->desc_known ? &r->desc : NULL,
+                                   r->valid ? r->value : "",
+                                   val, sizeof val);
+        vw = tiku_text_width(f, val);
+
+        tiku_text(s, f, db->frame.x + 6, ty, r->label, TIKU_C_TEXT);
+        tiku_text(s, f, db->frame.x + db->frame.w - 6 - vw, ty, val,
+                       TIKU_C_TEXT);
+        (*y) += TRAY_ROW;
+    }
+}
+
+/**
+ * @brief the application list: a row per team, its windows beneath it
+ */
+void
+db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
+              int team_h, int *y)
+{
+    int i, j;
+
+    if (!tiku_trk_deskbar_mini(db->dock) &&
+        !tiku_trk_deskbar_vertical(db->dock)) {
+        /* The horizontal strip: as many buttons as fit, each between a
+         * font-derived minimum and 1.25x it, shrinking as applications
+         * launch and growing back as they quit; past the minimum, the
+         * ends grow arrows (DB-033). */
+        int n = db->team_count;
+        int min_w = 24 + tiku_text_width(f, "abcdefgh");
+        int max_w = min_w + min_w / 4;
+        int left = db->frame.x + 2 + HLEAF_W + 4;
+        int right = db->frame.x + db->frame.w - (SWITCH_W + 14);
+        int avail = right - left;
+        int bw = (n > 0) ? avail / n : max_w;
+        int bx, i2, k;
+
+        if (bw > max_w) { bw = max_w; }
+        db->hoverflow = (n > 0 && bw < min_w);
+        if (db->hoverflow) {
+            bw = min_w;
+            left += 12;
+            right -= 12;
+        } else {
+            db->scroll = 0;
+        }
+        db->overflow = db->hoverflow;
+        db->hbutton_w = bw;
+        db->hleft = left;
+        bx = left;
+        for (i2 = (db->hoverflow ? db->scroll : 0); i2 < n; i2++) {
+            tiku_trk_team_t *t = &db->teams[db->order[i2]];
+            tiku_rect_t b = { bx, db->frame.y + 2, bw - 2, db_leaf_row() };
+            char label[TIKU_TRK_DB_LABEL_MAX];
+
+            if (bx + bw > right) {
+                break;
+            }
+            draw_row_bg(s, b, t->active);
+            (void)tiku_icon_paint(s,
+                strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application",
+                b.x + 3, b.y + (db_leaf_row() - 16) / 2, 16);
+            fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
+            tiku_text(s, f, b.x + 16 + 6,
+                           b.y + (db_leaf_row() - f->height) / 2 + f->ascent,
+                           label, TIKU_C_TEXT);
+            bx += bw;
+        }
+        if (db->hoverflow) {
+            int ay = db->frame.y + db->frame.h / 2;
+
+            for (k = 0; k < 4; k++) {
+                if (db->scroll > 0) {
+                    tiku_vline(s, left - 10 + k, ay - k, 2 * k + 1,
+                                    TIKU_C_TEXT);
+                }
+                tiku_vline(s, right + 3 + k, ay - (3 - k),
+                                2 * (3 - k) + 1, TIKU_C_TEXT);
+            }
+        }
+    }
+    if (!tiku_trk_deskbar_mini(db->dock) &&
+        tiku_trk_deskbar_vertical(db->dock)) {
+        (*y) = db_list_y(db);
+        for (i = 0; i < db->team_count; i++) {
+            int team = db->order[i];
+            tiku_trk_team_t *t = &db->teams[team];
+            tiku_rect_t row = { db->frame.x + 2, (*y), db->frame.w - 4,
+                                     team_h };
+            int icon_size = db->settings.icon_size;
+            tiku_rect_t icon = { row.x + 4,
+                                      (*y) + (team_h - icon_size) / 2,
+                                      icon_size, icon_size };
+            char label[TIKU_TRK_DB_LABEL_MAX];
+
+            /* A hovering drag lights the row it would be handed to, so
+             * the promise the drop makes is visible before it is made
+             * (DB-035). */
+            if (db->drop_team == team) {
+                tiku_fill(s, row, TIKU_C_SELECT);
+            } else {
+                draw_row_bg(s, row, t->active);
+            }
+            /* The application's icon.  Tracker's own team is the one that
+             * can be named; anything else gets the generic application icon
+             * rather than a blank, so the column never has a hole in it. */
+            /* DB-018: when even the generic icon is missing, the slot is
+             * left as it is.  A coloured rectangle where an icon failed
+             * looks like an application whose icon IS a blue square. */
+            (void)tiku_icon_paint(s, strcmp(t->name, "TikuTracker") == 0
+                                         ? "folder" : "application",
+                                      icon.x, icon.y, icon_size);
+
+            if (!db->settings.hide_app_names) {
+                fit_label(f, t->name,
+                          row.w - icon_size - EXPANDER_W - 14, label,
+                          sizeof label);
+                tiku_text(s, f, icon.x + icon_size + 5,
+                               (*y) + (team_h - f->height) / 2 + f->ascent,
+                               label, TIKU_C_TEXT);
+            }
+            if (db->settings.show_expander) {
+                draw_expander(s, row.x + row.w - EXPANDER_W - 2,
+                              (*y) + (team_h - 9) / 2,
+                              t->expanded ||
+                              db->expander_press == db->order[i]);
+            }
+            (*y) += team_h + SEAM;
+
+            if (!t->expanded) {
+                continue;
+            }
+            for (j = 0; j < t->win_count; j++) {
+                tiku_trk_dbwin_t *w = &t->wins[j];
+                tiku_rect_t wr = { db->frame.x + 2, (*y), db->frame.w - 4,
+                                        db_win_row() };
+                char wl[TIKU_TRK_DB_LABEL_MAX];
+
+                draw_row_bg(s, wr, w->current);
+                draw_win_icon(s, wr.x + WIN_INDENT,
+                              (*y) + (db_win_row() - 9) / 2,
+                              w->state == TIKU_TRK_DBW_MINIMIZED,
+                              0);
+                fit_label(f, w->title, wr.w - WIN_INDENT - 20, wl,
+                          sizeof wl);
+                tiku_text(s, f, wr.x + WIN_INDENT + 14,
+                          (*y) + (db_win_row() - f->height) / 2 + f->ascent,
+                          wl, TIKU_C_TEXT);
+                (*y) += db_win_row() + SEAM;
+            }
+        }
+    }
+}
+
+/**
+ * @brief the mini bar: one row of icons
+ */
+void
+db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
+{
+    if (tiku_trk_deskbar_mini(db->dock)) {
+        /* The collapsed dock's second icon: the application list folded
+         * into one button that pops the running-apps menu (DB-037). */
+        tiku_rect_t ab = { db->frame.x + 2,
+                                db->frame.y + 2 + db_leaf_row() + 2,
+                                db->frame.w - 4, db_team_row() };
+
+        draw_row_bg(s, ab, db->apps_menu_open);
+        (void)tiku_icon_paint(s, "application",
+                                  ab.x + (ab.w - 16) / 2,
+                                  ab.y + (ab.h - 16) / 2, 16);
+        if (db->apps_menu_open) {
+            const char *items[TIKU_TRK_DB_TEAMS_MAX];
+            int n = db->team_count, k;
+            int rowh = f->height + 6;
+            tiku_rect_t am;
+
+            if (n == 0) {
+                items[0] = "no application running";
+                n = 1;
+            } else {
+                for (k = 0; k < n; k++) {
+                    items[k] = db->teams[db->order[k]].name;
+                }
+            }
+            am.w = 176;
+            am.h = n * rowh + 4;
+            am.y = ab.y;
+            am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
+                                     : db->frame.x + db->frame.w + 2;
+            tiku_ui_menu(s, am, items, n, db->apps_hot);
+            if (db->team_count == 0) {
+                /* Disabled the one way this layer says it (DB-004). */
+                tiku_rect_t r = { am.x + 2, am.y + 2, am.w - 4,
+                                       rowh };
 
                 tiku_fill(s, r, TIKU_C_PANEL);
-                tiku_text(s, f, r.x + 8,
+                tiku_text(s, f, r.x + 10,
                                r.y + (rowh - f->height) / 2 + f->ascent,
-                               items[k],
+                               items[0],
                                tiku_tint(TIKU_C_PANEL, 1.55f));
             }
         }
     }
-    if (db->clock_menu_open) {
-        const char *items[] = {
-            tiku_str(db->settings.show_clock ? "menu.clock.hide"
-                                                 : "menu.clock.show"),
-            tiku_str(db->settings.show_seconds ? "menu.seconds.hide"
-                                                   : "menu.seconds.show"),
-            tiku_str(db->settings.show_day_of_week ? "menu.day.hide"
-                                                       : "menu.day.show"),
-            tiku_str(db->settings.show_timezone ? "menu.zone.hide"
-                                                    : "menu.zone.show")
-        };
-        tiku_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               db_clock_row() - 32, 170, 4 * 28 };
-        tiku_ui_menu(s, m, items, 4, db->clock_hot);
-    }
+}
+
+/**
+ * @brief the leaf, the one control that is not a list item
+ */
+void
+db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
+             tiku_rgb_t dark, tiku_rect_t *leaf)
+{
+    /* The leaf: the one control that is not a list item, so it is the one
+     * thing wearing the tab colour. */
+    (*leaf) = (tiku_rect_t){ db->frame.x + 2, db->frame.y + 2,
+                               tiku_trk_deskbar_vertical(db->dock)
+                                   ? db->frame.w - 4 : HLEAF_W,
+                               db_leaf_row() };
+    tiku_fill(s, (*leaf), TIKU_C_TAB);
+    tiku_frame(s, (*leaf), dark);
+    tiku_bevel(s, tiku_inset((*leaf), 1),
+                    tiku_tint(TIKU_C_TAB, TIKU_LIGHTEN_1),
+                    tiku_tint(TIKU_C_TAB, TIKU_DARKEN_2));
     {
-        /* The scroll arrows: shown the moment something is out of sight
-         * in the direction they point (DB-034). */
-        int up = 0, down = 0, k;
-        int ly = db_list_y(db);
-        int lb = db->frame.y + db->frame.h -
-                 (db->tray_count * TRAY_ROW) -
-                 (db->settings.show_clock ? db_clock_row() : 0) - PAD;
-        int cx = db->frame.x + db->frame.w / 2;
+        /*
+         * The mark, then the name beside it.  Drawn without its own
+         * ground: the leaf already has a surface of its own and a pale
+         * square on the amber would read as a sticker stuck to it.
+         */
+        int mark = db_leaf_row() - 10;  /* 24 at the default face */
+        tiku_rect_t label = (*leaf);
+        /*
+         * Shaded to the ground it is standing on, which is the leaf and
+         * so is a different colour in each of the three modes.  Light:
+         * as drawn -- near-black edges on amber.  Dark: lifted well up,
+         * because the deepened amber under it is dark enough that the
+         * mark's own edges would sink into the button and leave a smudge.
+         * Without hue: a touch down, so it sits on the mid-grey tab
+         * rather than floating over it.
+         */
+        float shade = (db->theme == 1) ? 0.35f
+                    : (db->theme == 2) ? 1.15f : 1.0f;
 
-        tiku_trk_deskbar_arrows(db, &up, &down);
-        for (k = 0; k < 4 && up; k++) {
-            tiku_hline(s, cx - k, ly + 1 + k, 2 * k + 1,
-                            TIKU_C_TEXT);
+        tiku_logo_paint_with(s, (tiku_rect_t){ (*leaf).x + 4,
+                                               (*leaf).y +
+                                                   ((*leaf).h - mark) / 2,
+                                               mark, mark }, 0u, NULL,
+                             shade);
+        label.x += mark + 8;
+        label.w -= mark + 8;
+        (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);
+    }
+}
+
+/**
+ * @brief the frame: the backdrop, the bevel, and where the bar sits when hidden
+ * or vertical
+ */
+void
+db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
+{
+    {
+        /* How much room the list actually has, once the leaf, the tray and
+         * the clock have taken theirs.  A list longer than that is what
+         * makes the bar scrollable (DB-034). */
+        int room = s->h - db->top_inset - (db_leaf_row() + PAD) -
+                   (db->tray_count * TRAY_ROW) - SWITCH_ROW -
+                   (db->settings.show_clock ? db_clock_row() : 0) - 2 * PAD;
+
+        db->overflow = (!tiku_trk_deskbar_mini(db->dock) && (*rows) > room &&
+                        room > 0);
+        if (!db->overflow) {
+            db->scroll = 0;     /* nothing hidden: nothing scrolled past */
         }
-        for (k = 0; k < 4 && down; k++) {
-            tiku_hline(s, cx - (3 - k), lb - 5 + k, 2 * (3 - k) + 1,
-                            TIKU_C_TEXT);
+        if (db->overflow && (*rows) > room) {
+            (*rows) = room;
         }
     }
-    if (db->tip_y >= 0 && db->tip[0] != '\0') {
-        /* The whole name, said beside the row that could not fit it
-         * (DB-032). */
-        tiku_rect_t b = tiku_ui_tip_size(db->tip);
-
-        b.x = db->frame.x - b.w - 4;
-        b.y = db->tip_y;
-        if (b.x < 0) { b.x = 0; }
-        tiku_ui_tip(s, b, db->tip);
+    db->frame.w = tiku_trk_deskbar_width(db);
+    /* The bar starts below whatever owns the top of the screen: with the
+     * global menu bar on, a Deskbar at y 0 would put its own leaf under
+     * the strip. */
+    db->frame.y = db->top_inset;
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+                       db->dock == TIKU_TRK_DB_LEFT_MINI)
+                          ? 0 : s->w - db->frame.w;
+        db->frame.h = db_leaf_row() + PAD + (*rows) + PAD +
+                      (tiku_trk_deskbar_mini(db->dock) ? db_team_row() + 2
+                                                       : 0) +
+                      db->tray_count * TRAY_ROW + SWITCH_ROW +
+                      (db->settings.show_clock ? db_clock_row() : 0) + PAD;
+    } else {
+        /* Along an edge: the bar spans the screen and is as deep as one
+         * row needs.  The application STRIP lives here -- buttons that
+         * shrink as more launch and grow back as they quit (DB-033). */
+        db->frame.x = 0;
+        db->frame.w = s->w;
+        db->frame.h = db_leaf_row() + PAD;
+        db->frame.y = (db->dock == TIKU_TRK_DB_TOP)
+                          ? db->top_inset : s->h - db->frame.h;
+        (*rows) = 0;
     }
-    if (db->calendar_open) {
-        /* The clock's calendar: a month grid with steppers, popped beside
-         * the bar and dismissed by the next click anywhere. */
-        struct tm tmv;
-        tiku_rect_t c = db_calendar_rect(db);
-        int col, rowi, first, days;
-
-        memset(&tmv, 0, sizeof tmv);
-        tmv.tm_year = db->calendar_year - 1900;
-        tmv.tm_mon = db->calendar_month - 1;
-        tmv.tm_mday = 1;
-        tmv.tm_isdst = -1;
-        (void)mktime(&tmv);
-        tiku_fill(s, c, TIKU_C_PANEL);
-        tiku_frame(s, c, dark);
-        tiku_bevel(s, tiku_inset(c, 1),
-                        tiku_tint(TIKU_C_PANEL,
-                                       TIKU_LIGHTEN_MAX),
-                        tiku_tint(TIKU_C_PANEL,
-                                       TIKU_DARKEN_2));
-        {
-            char head[32];
-            snprintf(head, sizeof head, "%s %d",
-                     tiku_str((const char *[]){ "month.1", "month.2",
-                       "month.3", "month.4", "month.5", "month.6", "month.7",
-                       "month.8", "month.9", "month.10", "month.11",
-                       "month.12" }[tmv.tm_mon]), 1900 + tmv.tm_year);
-            (void)tiku_text_centered(s, fb,
-                (tiku_rect_t){ c.x, c.y + 2, c.w, 18 }, head,
-                TIKU_C_TEXT);
-        }
-        first = tmv.tm_wday;
-        days = db_calendar_days(db->calendar_year, db->calendar_month);
-        for (rowi = 0; rowi < 6; rowi++) {
-            for (col = 0; col < 7; col++) {
-                int day = rowi * 7 + col - first + 1;
-                char num[12];
-                tiku_rect_t cell = { c.x + 6 + col * 25,
-                                          c.y + 22 + rowi * 20, 24, 18 };
-                if (day < 1 || day > days) {
-                    continue;
-                }
-                if (day == db->calendar_day) {
-                    tiku_fill(s, cell, TIKU_C_SELECT);
-                }
-                snprintf(num, sizeof num, "%d", day);
-                (void)tiku_text_centered(s, f, cell, num,
-                    (day == db->calendar_day) ? TIKU_C_SELTEXT
-                                         : TIKU_C_TEXT);
+    if (!tiku_trk_deskbar_shown(db)) {
+        /* Hidden: a sliver against its own edge, which is all there is
+         * left to touch (DB-051).  The frame is what the hit test and the
+         * drawing both read, so hiding is a geometry change and not a
+         * second drawing path. */
+        if (tiku_trk_deskbar_vertical(db->dock)) {
+            if (db->frame.x > 0) {
+                db->frame.x = s->w - TIKU_TRK_DB_SLIVER;
             }
+            db->frame.w = TIKU_TRK_DB_SLIVER;
+        } else {
+            if (db->frame.y > 0) {
+                db->frame.y = s->h - TIKU_TRK_DB_SLIVER;
+            }
+            db->frame.h = TIKU_TRK_DB_SLIVER;
         }
+        tiku_fill(s, db->frame, TIKU_C_PANEL);
+        return;
     }
 }
