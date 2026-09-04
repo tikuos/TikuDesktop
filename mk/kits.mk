@@ -61,6 +61,16 @@ APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_client.c \
                $(K)/application/tiku_demo_app.c
 
+# The English catalogue, baked at build time: the words are the shells'
+# (TikuTracker/strings/en.xml) and the baking is the kit's, so the header
+# is made here from both rather than kept in the tree where it would
+# only learn to disagree with the XML.
+GEN_STRINGS := $(BUILD)/gen/tiku_strings_default.h
+$(GEN_STRINGS): $(T)/strings/en.xml $(K)/support/tools/genstrings.py
+	@mkdir -p $(dir $@)
+	python3 $(K)/support/tools/genstrings.py $< > $@
+$(OBJ)/$(K)/support/tiku_strings.o $(PIC)/$(K)/support/tiku_strings.o: $(GEN_STRINGS)
+
 LIB_SUPPORT     := $(BUILD)/libtiku_support.a
 LIB_DEVICE      := $(BUILD)/libtiku_device.a
 LIB_STORAGE     := $(BUILD)/libtiku_storage.a

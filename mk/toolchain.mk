@@ -19,7 +19,7 @@ CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra
 LDFLAGS ?=
 
 KIT_INC := -Ikits/support -Ikits/device -Ikits/storage -Ikits/interface \
-           -Ikits/translation -Ikits/application
+           -Ikits/translation -Ikits/application -I$(BUILD)/gen
 TRK_INC := -I$(T)/src/core -I$(T)/src/ui -I$(T)/src/ui/commands \
            -I$(T)/src/ui/windows -I$(T)/src/ui/overlays -I$(T)/src/ui/input \
            -I$(T)/src/deskbar -I$(T)/src/shell -I$(T)/src/shell/adapters \
