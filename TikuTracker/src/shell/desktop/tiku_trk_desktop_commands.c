@@ -877,145 +877,17 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             return;
         }
     }
-    if (command == TIKU_TRK_CMD_ABOUT) {
-        (void)embed_open_or_raise(app, &tiku_trk_about_app);
+    if (desktop_cmd_system(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_SHUTDOWN) {
-        /* The system menu's corner ritual, by the same question the
-         * Deskbar asks (DB-006). */
-        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
-                            TIKU_TRK_ALERT_TAG_SHUTDOWN,
-                            tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
+    if (desktop_cmd_query(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_CREATE_QUERY ||
-        command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
-        /* The Find icon's drop chose (Q-034): the current search becomes
-         * a record in the folder it was dropped on, under the first free
-         * "New Query" name, as a query or as a template. */
-        char dest[TIKU_PATH_MAX];
-        tiku_model_t probe;
-        int k;
-
-        if (app->qdrop_dest[0] == '\0') {
-            return;
-        }
-        tiku_trk_find_build(&app->find_window.model, &app->pending_query);
-        app->pending_query.kind =
-            (command == TIKU_TRK_CMD_CREATE_QUERY_TPL)
-                ? TIKU_QREC_TEMPLATE : TIKU_QREC_QUERY;
-        for (k = 0; k < 100; k++) {
-            if (k == 0) {
-                snprintf(dest, sizeof dest, "%s/New Query",
-                         app->qdrop_dest);
-            } else {
-                snprintf(dest, sizeof dest, "%s/New Query %d",
-                         app->qdrop_dest, k + 1);
-            }
-            if (app->backend->ops->stat(app->backend, dest, &probe) != 0) {
-                break;
-            }
-        }
-        fpanel_commit(app, fl, TIKU_TRK_CMD_SAVE_QUERY, dest);
-        app->qdrop_dest[0] = '\0';
+    if (desktop_cmd_destination(app, fl, command, &template_path)) {
         return;
     }
-    if (command >= TIKU_TRK_CMD_DEST_BASE &&
-        command < TIKU_TRK_CMD_DEST_BASE + 3 * TIKU_TRK_CMD_DEST_MAX) {
-        /* A picker row IS the destination (CW-035): the same act the
-         * panel commits, aimed where the row points. */
-        int k = (command - TIKU_TRK_CMD_DEST_BASE) / TIKU_TRK_CMD_DEST_MAX;
-        int at = (command - TIKU_TRK_CMD_DEST_BASE) % TIKU_TRK_CMD_DEST_MAX;
-        const char *dest = app->menus.picker_path[k][at];
-
-        if (at >= app->menus.picker_paths[k]) {
-            return;
-        }
-        if (k == 2) {
-            char paths[16][TIKU_PATH_MAX];
-            const char *selection[16];
-            int count = folder_selection(app, fl, paths, selection, 16);
-
-            if (count > 0) {
-                (void)tiku_fs_link(app->fs, selection, count, dest, 0);
-                snprintf(app->status, sizeof app->status,
-                         "linking %d item%s", count, count == 1 ? "" : "s");
-                tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
-                                    dest);
-            }
-        } else {
-            fpanel_commit(app, fl, (k == 0) ? TIKU_TRK_CMD_MOVE_TO
-                                            : TIKU_TRK_CMD_COPY_TO, dest);
-        }
-        return;
-    }
-    template_path = tiku_trk_cwmenu_template_path(&app->menus, command);
-    /* Where the user asked for it, worked out BEFORE the entry exists: the
-     * menu that makes it is still up, and its corner is the click that
-     * opened it (PVL-025, PVL-098). */
-    if (template_path != NULL || command == TIKU_TRK_CMD_NEW_FOLDER) {
-        seeded = seed_new_entry(app, fl, &seed_x, &seed_y);
-    }
-    if (template_path != NULL) {
-        char made[TIKU_PATH_MAX], error[200];
-        const char *slash;
-        int row;
-
-        if (tiku_fs_new_from_template(app->fs, template_path, fl->path,
-                                          made, sizeof made, error,
-                                          sizeof error) == 0) {
-            slash = strrchr(made, '/');
-            land_new_entry(app, fl, made, seeded, seed_x, seed_y);
-            (void)tiku_trk_poseview_reload(fl->view);
-            row = select_named(app, fl,
-                               slash != NULL ? slash + 1 : made);
-            if (row >= 0) {
-                begin_rename(app, fl, row);
-            }
-            snprintf(app->status, sizeof app->status, "created '%.150s'",
-                     slash != NULL ? slash + 1 : made);
-        } else {
-            snprintf(app->status, sizeof app->status, "%.180s",
-                     error[0] != '\0' ? error : "could not create from template");
-        }
-        app->dirty = 1;
-        return;
-    }
-    template_parent = tiku_trk_cwmenu_template_add_path(&app->menus, command);
-    if (template_parent != NULL) {
-        char made[TIKU_PATH_MAX], error[200];
-
-        if (tiku_fs_new_folder(app->fs, template_parent, made,
-                                   sizeof made, error, sizeof error) == 0) {
-            const char *root = tiku_trk_cwmenu_templates_root(&app->menus);
-
-            snprintf(app->status, sizeof app->status,
-                     "created template submenu '%.130s'", strrchr(made, '/')
-                     != NULL ? strrchr(made, '/') + 1 : made);
-            if (root != NULL) {
-                folder_t *templates = open_folder(app, template_parent);
-                const char *slash = strrchr(made, '/');
-
-                if (templates != NULL && slash != NULL) {
-                    (void)select_named(app, templates, slash + 1);
-                }
-            }
-        } else {
-            snprintf(app->status, sizeof app->status, "%.180s",
-                     error[0] != '\0' ? error :
-                     "could not create template submenu");
-        }
-        app->dirty = 1;
-        return;
-    }
-    if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
-        const char *root = tiku_trk_cwmenu_templates_root(&app->menus);
-
-        if (root != NULL) {
-            (void)open_folder(app, root);
-        }
-        app->dirty = 1;
+    if (desktop_cmd_template(app, fl, command, template_path, &template_parent,
+        &seeded, &seed_x, &seed_y)) {
         return;
     }
     if (tiku_trk_addons_invoke(&app->addons, command,
@@ -1024,172 +896,19 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         app->dirty = 1;
         return;
     }
-    if (command == TIKU_TRK_CMD_COPY_LAYOUT) {
-        (void)tiku_trk_poseview_copy_layout(fl->view);
-        app->dirty = 1;
+    if (desktop_cmd_layout(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_PASTE_LAYOUT) {
-        if (tiku_trk_poseview_paste_layout(fl->view) > 0) {
-            (void)tiku_trk_poseview_save_columns(fl->view);
-            snprintf(app->status, sizeof app->status, "pasted layout");
-        }
-        app->dirty = 1;
+    if (desktop_cmd_mount(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
-        /* Straight to the Disk mount page: the one caller the jump-to-page
-         * request has (AW-101, CW-034). */
-        app->prefs_window.page = TIKU_TRK_PAGE_MOUNT;
-        tiku_trk_prefs_window_open(&app->prefs_window);
-        app->dirty = 1;
+    if (desktop_cmd_open_with(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
-        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
-         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
-                       TIKU_TRK_MOUNT_PART_MAX)) {
-        /* Asked of the system, and the answer -- on this host, that
-         * mounting needs its leave -- is said out loud (CW-034). */
-        char why[200];
-        int failed = 0, tried = 0;
-
-        why[0] = '\0';
-        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
-            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
-            int pn = tiku_partitions_scan(part,
-                                              TIKU_TRK_MOUNT_PART_MAX);
-            int k;
-
-            for (k = 0; k < pn; k++) {
-                if (part[k].mounted) {
-                    continue;
-                }
-                tried++;
-                if (tiku_volume_mount(part[k].name, why,
-                                          sizeof why) != 0) {
-                    failed++;
-                    break;
-                }
-            }
-        } else {
-            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
-
-            if (idx < app->menus.mount_parts) {
-                tried++;
-                failed = tiku_volume_mount(app->menus.mount_part[idx],
-                                               why, sizeof why) != 0;
-            }
-        }
-        if (failed && why[0] != '\0') {
-            tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
-                                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
-        } else if (tried == 0) {
-            snprintf(app->status, sizeof app->status,
-                     "every partition is already mounted");
-        }
-        app->dirty = 1;
+    if (desktop_cmd_unmount(app, fl, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_OPEN_WITH_WINDOW) {
-        char wpaths[TIKU_TRK_OW_PATHS][TIKU_PATH_MAX];
-        const char *wsel[TIKU_TRK_OW_PATHS];
-        const char *wtypes[TIKU_TRK_APP_TYPES_MAX];
-        int wn, wt = 0, wi, wk, wcount;
-
-        wn = tiku_trk_folder_file_actions_selection(fl, wpaths, wsel,
-                                                    TIKU_TRK_OW_PATHS);
-        if (wn > 0) {
-            wcount = tiku_trk_poseview_count(fl->view);
-            for (wi = 0; wi < wcount && wt < TIKU_TRK_APP_TYPES_MAX; wi++) {
-                tiku_trk_pose_t *wp = tiku_trk_poseview_at(fl->view, wi);
-
-                if (wp == NULL || !wp->selected) {
-                    continue;
-                }
-                for (wk = 0; wk < wt; wk++) {
-                    if (strcmp(wtypes[wk], wp->model.type) == 0) {
-                        break;
-                    }
-                }
-                if (wk == wt) {
-                    wtypes[wt++] = wp->model.type;
-                }
-            }
-            tiku_trk_open_with_window_open(&app->open_with_window,
-                &app->apps, wtypes, wt, wsel, wn);
-        }
-        app->dirty = 1;
-        return;
-    }
-    if (command == TIKU_TRK_CMD_UNMOUNT) {
-        /* The selection names the volume; with none, the volume ROOT the
-         * window is showing is the one the gesture means (CW-034).
-         * Everything open on it saves itself first (AW-096), and a
-         * refusal or failure is said out loud. */
-        char upaths[1][TIKU_PATH_MAX];
-        const char *usel[1];
-        const char *upath =
-            (tiku_trk_folder_file_actions_selection(fl, upaths, usel, 1) > 0)
-                ? usel[0] : fl->path;
-        tiku_volumes_t uvols;
-        char uwhy[200];
-
-        uwhy[0] = '\0';
-        if (tiku_volumes_scan(&uvols) > 0 &&
-            tiku_volume_is_root(&uvols, upath)) {
-            const tiku_volume_t *uvol =
-                tiku_volume_of(&uvols, upath);
-
-            if (tiku_volume_unmount(&uvols, upath, save_before_unmount,
-                                        app, uwhy, sizeof uwhy) ==
-                    TIKU_UNMOUNT_OK) {
-                snprintf(app->status, sizeof app->status,
-                         "unmounted \"%.60s\"",
-                         (uvol != NULL) ? uvol->name : upath);
-            } else if (uwhy[0] != '\0') {
-                tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
-                                    TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
-                                    "Cancel");
-            }
-        } else {
-            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
-             * ch6). */
-            snprintf(app->status, sizeof app->status,
-                     "Unmount is not available here");
-        }
-        app->dirty = 1;
-        return;
-    }
-    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
-        char made[TIKU_PATH_MAX], error[200];
-        const char *slash;
-        int row;
-
-        error[0] = '\0';
-        if (app->fs != NULL && tiku_fs_new_folder(
-                app->fs, fl->path, made, sizeof made, error,
-                sizeof error) == 0) {
-            slash = strrchr(made, '/');
-            snprintf(app->status, sizeof app->status, "created '%.150s'",
-                     slash != NULL ? slash + 1 : made);
-            land_new_entry(app, fl, made, seeded, seed_x, seed_y);
-            (void)tiku_trk_poseview_reload(fl->view);
-            row = select_named(app, fl,
-                               slash != NULL ? slash + 1 : made);
-            if (row >= 0) {
-                begin_rename(app, fl, row);
-                /* Opening the editor must not hide the operation result;
-                 * scripts and users should still see what was made. */
-                snprintf(app->status, sizeof app->status,
-                         "created '%.150s'",
-                         slash != NULL ? slash + 1 : made);
-            }
-        } else {
-            snprintf(app->status, sizeof app->status, "%.180s",
-                     error[0] != '\0' ? error : "could not create a new folder");
-        }
-        app->dirty = 1;
+    if (desktop_cmd_new_folder(app, fl, command, seeded, seed_x, seed_y)) {
         return;
     }
     if (tiku_trk_folder_actions_invoke(app->desk, fl, command)) {
@@ -1557,4 +1276,407 @@ desktop_spring_tick(desktop_t *app)
             }
         }
     }
+}
+
+/**
+ * @brief a new folder, named and renamed in place.  @return 1 when this was the
+ * command
+ */
+int
+desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command, int seeded,
+                       int seed_x, int seed_y)
+{
+    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
+        char made[TIKU_PATH_MAX], error[200];
+        const char *slash;
+        int row;
+
+        error[0] = '\0';
+        if (app->fs != NULL && tiku_fs_new_folder(
+                app->fs, fl->path, made, sizeof made, error,
+                sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            snprintf(app->status, sizeof app->status, "created '%.150s'",
+                     slash != NULL ? slash + 1 : made);
+            land_new_entry(app, fl, made, seeded, seed_x, seed_y);
+            (void)tiku_trk_poseview_reload(fl->view);
+            row = select_named(app, fl,
+                               slash != NULL ? slash + 1 : made);
+            if (row >= 0) {
+                begin_rename(app, fl, row);
+                /* Opening the editor must not hide the operation result;
+                 * scripts and users should still see what was made. */
+                snprintf(app->status, sizeof app->status,
+                         "created '%.150s'",
+                         slash != NULL ? slash + 1 : made);
+            }
+        } else {
+            snprintf(app->status, sizeof app->status, "%.180s",
+                     error[0] != '\0' ? error : "could not create a new folder");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief unmounting the folder's volume, refused out loud when it cannot be.
+ * @return 1 when this was the command
+ */
+int
+desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
+{
+    if (command == TIKU_TRK_CMD_UNMOUNT) {
+        /* The selection names the volume; with none, the volume ROOT the
+         * window is showing is the one the gesture means (CW-034).
+         * Everything open on it saves itself first (AW-096), and a
+         * refusal or failure is said out loud. */
+        char upaths[1][TIKU_PATH_MAX];
+        const char *usel[1];
+        const char *upath =
+            (tiku_trk_folder_file_actions_selection(fl, upaths, usel, 1) > 0)
+                ? usel[0] : fl->path;
+        tiku_volumes_t uvols;
+        char uwhy[200];
+
+        uwhy[0] = '\0';
+        if (tiku_volumes_scan(&uvols) > 0 &&
+            tiku_volume_is_root(&uvols, upath)) {
+            const tiku_volume_t *uvol =
+                tiku_volume_of(&uvols, upath);
+
+            if (tiku_volume_unmount(&uvols, upath, save_before_unmount,
+                                        app, uwhy, sizeof uwhy) ==
+                    TIKU_UNMOUNT_OK) {
+                snprintf(app->status, sizeof app->status,
+                         "unmounted \"%.60s\"",
+                         (uvol != NULL) ? uvol->name : upath);
+            } else if (uwhy[0] != '\0') {
+                tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
+                                    TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
+                                    "Cancel");
+            }
+        } else {
+            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
+             * ch6). */
+            snprintf(app->status, sizeof app->status,
+                     "Unmount is not available here");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief the Open With window.  @return 1 when this was the command
+ */
+int
+desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command)
+{
+    if (command == TIKU_TRK_CMD_OPEN_WITH_WINDOW) {
+        char wpaths[TIKU_TRK_OW_PATHS][TIKU_PATH_MAX];
+        const char *wsel[TIKU_TRK_OW_PATHS];
+        const char *wtypes[TIKU_TRK_APP_TYPES_MAX];
+        int wn, wt = 0, wi, wk, wcount;
+
+        wn = tiku_trk_folder_file_actions_selection(fl, wpaths, wsel,
+                                                    TIKU_TRK_OW_PATHS);
+        if (wn > 0) {
+            wcount = tiku_trk_poseview_count(fl->view);
+            for (wi = 0; wi < wcount && wt < TIKU_TRK_APP_TYPES_MAX; wi++) {
+                tiku_trk_pose_t *wp = tiku_trk_poseview_at(fl->view, wi);
+
+                if (wp == NULL || !wp->selected) {
+                    continue;
+                }
+                for (wk = 0; wk < wt; wk++) {
+                    if (strcmp(wtypes[wk], wp->model.type) == 0) {
+                        break;
+                    }
+                }
+                if (wk == wt) {
+                    wtypes[wt++] = wp->model.type;
+                }
+            }
+            tiku_trk_open_with_window_open(&app->open_with_window,
+                &app->apps, wtypes, wt, wsel, wn);
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief the mount settings and mounting everything.  @return 1 when this was
+ * the command
+ */
+int
+desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
+{
+    (void)fl;
+    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
+        /* Straight to the Disk mount page: the one caller the jump-to-page
+         * request has (AW-101, CW-034). */
+        app->prefs_window.page = TIKU_TRK_PAGE_MOUNT;
+        tiku_trk_prefs_window_open(&app->prefs_window);
+        app->dirty = 1;
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
+        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
+         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
+                       TIKU_TRK_MOUNT_PART_MAX)) {
+        /* Asked of the system, and the answer -- on this host, that
+         * mounting needs its leave -- is said out loud (CW-034). */
+        char why[200];
+        int failed = 0, tried = 0;
+
+        why[0] = '\0';
+        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
+            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_partitions_scan(part,
+                                              TIKU_TRK_MOUNT_PART_MAX);
+            int k;
+
+            for (k = 0; k < pn; k++) {
+                if (part[k].mounted) {
+                    continue;
+                }
+                tried++;
+                if (tiku_volume_mount(part[k].name, why,
+                                          sizeof why) != 0) {
+                    failed++;
+                    break;
+                }
+            }
+        } else {
+            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
+
+            if (idx < app->menus.mount_parts) {
+                tried++;
+                failed = tiku_volume_mount(app->menus.mount_part[idx],
+                                               why, sizeof why) != 0;
+            }
+        }
+        if (failed && why[0] != '\0') {
+            tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
+                                TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
+        } else if (tried == 0) {
+            snprintf(app->status, sizeof app->status,
+                     "every partition is already mounted");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief copying and pasting a window layout.  @return 1 when this was the
+ * command
+ */
+int
+desktop_cmd_layout(desktop_t *app, folder_t *fl, int command)
+{
+    if (command == TIKU_TRK_CMD_COPY_LAYOUT) {
+        (void)tiku_trk_poseview_copy_layout(fl->view);
+        app->dirty = 1;
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_PASTE_LAYOUT) {
+        if (tiku_trk_poseview_paste_layout(fl->view) > 0) {
+            (void)tiku_trk_poseview_save_columns(fl->view);
+            snprintf(app->status, sizeof app->status, "pasted layout");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief a new entry from a template, and editing the templates.  @return 1
+ * when this was the command
+ */
+int
+desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
+                     const char *template_path, const char **template_parent,
+                     int *seeded, int *seed_x, int *seed_y)
+{
+    /* Where the user asked for it, worked out BEFORE the entry exists: the
+     * menu that makes it is still up, and its corner is the click that
+     * opened it (PVL-025, PVL-098). */
+    if (template_path != NULL || command == TIKU_TRK_CMD_NEW_FOLDER) {
+        (*seeded) = seed_new_entry(app, fl, &(*seed_x), &(*seed_y));
+    }
+    if (template_path != NULL) {
+        char made[TIKU_PATH_MAX], error[200];
+        const char *slash;
+        int row;
+
+        if (tiku_fs_new_from_template(app->fs, template_path, fl->path,
+                                          made, sizeof made, error,
+                                          sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            land_new_entry(app, fl, made, (*seeded), (*seed_x), (*seed_y));
+            (void)tiku_trk_poseview_reload(fl->view);
+            row = select_named(app, fl,
+                               slash != NULL ? slash + 1 : made);
+            if (row >= 0) {
+                begin_rename(app, fl, row);
+            }
+            snprintf(app->status, sizeof app->status, "created '%.150s'",
+                     slash != NULL ? slash + 1 : made);
+        } else {
+            snprintf(app->status, sizeof app->status, "%.180s",
+                     error[0] != '\0' ? error : "could not create from template");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    (*template_parent) = tiku_trk_cwmenu_template_add_path(&app->menus,
+                                                           command);
+    if ((*template_parent) != NULL) {
+        char made[TIKU_PATH_MAX], error[200];
+
+        if (tiku_fs_new_folder(app->fs, (*template_parent), made,
+                                   sizeof made, error, sizeof error) == 0) {
+            const char *root = tiku_trk_cwmenu_templates_root(&app->menus);
+
+            snprintf(app->status, sizeof app->status,
+                     "created template submenu '%.130s'", strrchr(made, '/')
+                     != NULL ? strrchr(made, '/') + 1 : made);
+            if (root != NULL) {
+                folder_t *templates = open_folder(app, (*template_parent));
+                const char *slash = strrchr(made, '/');
+
+                if (templates != NULL && slash != NULL) {
+                    (void)select_named(app, templates, slash + 1);
+                }
+            }
+        } else {
+            snprintf(app->status, sizeof app->status, "%.180s",
+                     error[0] != '\0' ? error :
+                     "could not create template submenu");
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
+        const char *root = tiku_trk_cwmenu_templates_root(&app->menus);
+
+        if (root != NULL) {
+            (void)open_folder(app, root);
+        }
+        app->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief Move to and Copy to, the destination chosen from the menu.  @return 1
+ * when this was the command
+ */
+int
+desktop_cmd_destination(desktop_t *app, folder_t *fl, int command,
+                        const char **template_path)
+{
+    if (command >= TIKU_TRK_CMD_DEST_BASE &&
+        command < TIKU_TRK_CMD_DEST_BASE + 3 * TIKU_TRK_CMD_DEST_MAX) {
+        /* A picker row IS the destination (CW-035): the same act the
+         * panel commits, aimed where the row points. */
+        int k = (command - TIKU_TRK_CMD_DEST_BASE) / TIKU_TRK_CMD_DEST_MAX;
+        int at = (command - TIKU_TRK_CMD_DEST_BASE) % TIKU_TRK_CMD_DEST_MAX;
+        const char *dest = app->menus.picker_path[k][at];
+
+        if (at >= app->menus.picker_paths[k]) {
+            return 1;
+        }
+        if (k == 2) {
+            char paths[16][TIKU_PATH_MAX];
+            const char *selection[16];
+            int count = folder_selection(app, fl, paths, selection, 16);
+
+            if (count > 0) {
+                (void)tiku_fs_link(app->fs, selection, count, dest, 0);
+                snprintf(app->status, sizeof app->status,
+                         "linking %d item%s", count, count == 1 ? "" : "s");
+                tiku_trk_recent_add(app->store, TIKU_TRK_RECENT_FOLDERS,
+                                    dest);
+            }
+        } else {
+            fpanel_commit(app, fl, (k == 0) ? TIKU_TRK_CMD_MOVE_TO
+                                            : TIKU_TRK_CMD_COPY_TO, dest);
+        }
+        return 1;
+    }
+    (*template_path) = tiku_trk_cwmenu_template_path(&app->menus, command);
+    return 0;
+}
+
+/**
+ * @brief creating and editing a query.  @return 1 when this was the command
+ */
+int
+desktop_cmd_query(desktop_t *app, folder_t *fl, int command)
+{
+    if (command == TIKU_TRK_CMD_CREATE_QUERY ||
+        command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
+        /* The Find icon's drop chose (Q-034): the current search becomes
+         * a record in the folder it was dropped on, under the first free
+         * "New Query" name, as a query or as a template. */
+        char dest[TIKU_PATH_MAX];
+        tiku_model_t probe;
+        int k;
+
+        if (app->qdrop_dest[0] == '\0') {
+            return 1;
+        }
+        tiku_trk_find_build(&app->find_window.model, &app->pending_query);
+        app->pending_query.kind =
+            (command == TIKU_TRK_CMD_CREATE_QUERY_TPL)
+                ? TIKU_QREC_TEMPLATE : TIKU_QREC_QUERY;
+        for (k = 0; k < 100; k++) {
+            if (k == 0) {
+                snprintf(dest, sizeof dest, "%s/New Query",
+                         app->qdrop_dest);
+            } else {
+                snprintf(dest, sizeof dest, "%s/New Query %d",
+                         app->qdrop_dest, k + 1);
+            }
+            if (app->backend->ops->stat(app->backend, dest, &probe) != 0) {
+                break;
+            }
+        }
+        fpanel_commit(app, fl, TIKU_TRK_CMD_SAVE_QUERY, dest);
+        app->qdrop_dest[0] = '\0';
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief About and Shut down.  @return 1 when this was the command
+ */
+int
+desktop_cmd_system(desktop_t *app, folder_t *fl, int command)
+{
+    (void)fl;
+    if (command == TIKU_TRK_CMD_ABOUT) {
+        (void)embed_open_or_raise(app, &tiku_trk_about_app);
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_SHUTDOWN) {
+        /* The system menu's corner ritual, by the same question the
+         * Deskbar asks (DB-006). */
+        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
+                            TIKU_TRK_ALERT_TAG_SHUTDOWN,
+                            tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));
+        return 1;
+    }
+    return 0;
 }

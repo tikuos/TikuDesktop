@@ -12,10 +12,6 @@
 
 #include "tiku_trk_desktop_private.h"
 
-/* Used before they are defined. */
-static void draw_nav_levels(desktop_t *app, int px, int py);
-/* End of the forward declarations. */
-
 void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
 {
@@ -157,283 +153,14 @@ draw_all(desktop_t *app)
         tiku_workspace_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
-    if (app->zoom_t0 != 0) {
-        /* The window frame sliding out of or into the menu item's
-         * rectangle: four steps of an inverted outline, done in an eye
-         * blink (DB-030). */
-        int64_t age = tiku_trk_now() - app->zoom_t0;
-
-        if (age > 120000) {
-            app->zoom_t0 = 0;
-        } else {
-            int num = (int)(age / 30000) + 1;   /* 1..4 */
-            tiku_rect_t z;
-
-            z.x = app->zoom_from.x +
-                  (app->zoom_to.x - app->zoom_from.x) * num / 4;
-            z.y = app->zoom_from.y +
-                  (app->zoom_to.y - app->zoom_from.y) * num / 4;
-            z.w = app->zoom_from.w +
-                  (app->zoom_to.w - app->zoom_from.w) * num / 4;
-            z.h = app->zoom_from.h +
-                  (app->zoom_to.h - app->zoom_from.h) * num / 4;
-            tiku_invert_frame(app->surf, z);
-            app->dirty = 1;     /* the next frame moves it again */
-        }
-    }
-    if (app->info_windows.hover_slot >= 0 &&
-        app->info_windows.hover_field >= 0) {
-        /* The truncated field's full text, floated over everything and
-         * clamped to the screen (AW-073).  Only when the value really is
-         * wider than its row -- a pop-up repeating what is already
-         * readable would be noise. */
-        int slot = app->info_windows.hover_slot;
-        tiku_trk_info_t *info = &app->info_windows.model[slot];
-        char value[TIKU_TRK_INFO_VAL_MAX];
-        const char *label = "";
-        int fx, fy, fw, fh;
-
-        if (tiku_trk_info_field(info, app->store,
-                app->info_windows.hover_field, &label, value,
-                sizeof value) != TIKU_TRK_INFO_F_NONE &&
-            tiku_trk_info_windows_field_rect(&app->info_windows, slot,
-                app->info_windows.hover_field, &fx, &fy, &fw, &fh)) {
-            const tiku_font_t *font = tiku_font_plain();
-            int tw = tiku_text_width(font, value);
-
-            if (tw > fw) {
-                tiku_rect_t box = { fx - 4, fy - 2, tw + 12,
-                                         font->height + 6 };
-
-                if (box.x + box.w > app->surf->w) {
-                    box.x = app->surf->w - box.w;
-                }
-                if (box.x < 0) {
-                    box.x = 0;
-                }
-                tiku_fill(app->surf, box, TIKU_C_NOTE);
-                tiku_frame(app->surf, box, TIKU_C_TEXT);
-                tiku_text(app->surf, font, box.x + 5,
-                               box.y + 2 + font->ascent, value,
-                               TIKU_C_TEXT);
-            }
-        }
-    }
-    if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
-        app->tstrip.removed) {
-        /* The torn-out column follows the pointer as a dotted outline
-         * (TS-008): dashes, drawn over everything, the column's own width
-         * and the strip's height. */
-        int wds = app->tstrip.removed_width;
-        int x0 = app->strip_ptr_x - wds / 2;
-        int y0 = app->strip_ptr_y - 20 /* TITLE_HEIGHT */ / 2;
-        int d;
-
-        for (d = 0; d < wds; d += 4) {
-            tiku_rect_t dash = { x0 + d, y0, 2, 1 };
-
-            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
-            dash.y = y0 + 20 /* TITLE_HEIGHT */ - 1;
-            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
-        }
-        for (d = 0; d < 20 /* TITLE_HEIGHT */; d += 4) {
-            tiku_rect_t dash = { x0, y0 + d, 1, 2 };
-
-            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
-            dash.x = x0 + wds - 1;
-            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
-        }
-    }
-    if (tiku_trk_drag_active(&app->drag)) {
-        /* What is being carried, drawn at the pointer: a drag with no
-         * picture is a drag the user has to remember the contents of.
-         * Translucent, and faded further the more it holds, so what it is
-         * being dropped ON stays readable (IV-053). */
-        int i, shown = (app->drag.count < 4) ? app->drag.count : 4;
-        int alpha = (app->drag.count > 3) ? 120 : 168;
-
-        for (i = 0; i < shown; i++) {
-            tiku_rect_t box;
-            char art[TIKU_NAME_MAX];
-            tiku_model_t dm;
-
-            if (app->backend->ops->stat(app->backend, app->drag.path[i],
-                                        &dm) != 0) {
-                continue;
-            }
-            (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &dm,
-                                            art, sizeof art);
-            box.x = app->drag.x - 16 + i * 6;
-            box.y = app->drag.y - 16 + i * 6;
-            box.w = 32;
-            box.h = 32;
-            (void)tiku_icon_paint(app->surf, art, box.x, box.y, 32);
-            /* Tinted over its own pixels rather than composited in an
-             * offscreen: the picture is what the pointer carries, and it
-             * has to sit over whatever is under it. */
-            tiku_paint_tint(app->surf, box, app->backdrop_color,
-                                255 - alpha);
-            if (app->drag.count > 3) {
-                /* Large selections get a short fade at the edge of the
-                 * pointer picture.  The surface is opaque, so the fade is
-                 * expressed as progressively stronger backdrop tinting over
-                 * the four edge bands rather than an off-screen alpha
-                 * bitmap (PVS-034). */
-                tiku_rect_t edge = box;
-                edge.w = 4;
-                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
-                edge.x = box.x + box.w - 4;
-                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
-                edge = box;
-                edge.h = 4;
-                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
-                edge.y = box.y + box.h - 4;
-                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
-            }
-        }
-        /* The copy cursor's spelling here: when the drop in front of the
-         * pointer would COPY -- a directory on another store, or Option
-         * forcing it -- the ghost wears a small plus badge, so the user is
-         * told before the release which of the two acts this is
-         * (PVS-036). */
-        if (app->drag_target.folder != NULL) {
-            char dest[TIKU_PATH_MAX];
-            unsigned dmods = 0u;
-            int same;
-
-            if (app->drag_target.row >= 0) {
-                tiku_trk_pose_t *p = tiku_trk_poseview_at(
-                    app->drag_target.folder->view, app->drag_target.row);
-
-                snprintf(dest, sizeof dest, "%s",
-                         (p != NULL) ? p->model.path : "");
-            } else {
-                snprintf(dest, sizeof dest, "%s",
-                         app->drag_target.folder->path);
-            }
-            if ((app->drag_live_mods & TIKU_MOD_OPTION) != 0u) {
-                dmods |= TIKU_TRK_DRAG_MOD_COPY;
-            }
-            if ((app->drag_live_mods & TIKU_MOD_CMD) != 0u) {
-                dmods |= TIKU_TRK_DRAG_MOD_LINK;
-            }
-            same = dest[0] != '\0' &&
-                   tiku_fs_drop_action(app->fs, app->drag.path[0],
-                                           dest, 0) == TIKU_OP_MOVE;
-            if (dest[0] != '\0' &&
-                tiku_trk_drag_action(&app->drag, dest, dmods, same) ==
-                    TIKU_TRK_DROP_COPY) {
-                tiku_rect_t badge = { app->drag.x + 10,
-                                           app->drag.y + 10, 13, 13 };
-                tiku_rect_t stroke;
-
-                tiku_fill(app->surf, badge,
-                               TIKU_RGB(255, 255, 190));
-                tiku_frame(app->surf, badge, TIKU_C_TEXT);
-                stroke = (tiku_rect_t){ badge.x + 3, badge.y + 6,
-                                             7, 1 };
-                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
-                stroke = (tiku_rect_t){ badge.x + 6, badge.y + 3,
-                                             1, 7 };
-                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
-            }
-        }
-    }
-    /* Drawing another folder rebuilt the one shared menu model for that
-     * folder.  Put it back on the bar that actually owns the popup before
-     * painting or hit-testing it. */
-    if (app->bar_fl == NULL && app->bar_open < 0 && app->popup != NULL &&
-        app->popup_fl != NULL) {
-        tiku_trk_sc_ctx_t c;
-
-        build_open_with(app, app->popup_fl);
-        build_per_type(app, app->popup_fl);
-        c = menu_ctx(app, app->popup_fl, 0u);
-        tiku_trk_cwmenu_rebuild(&app->menus, &c);
-    }
-    if (app->bar_fl != NULL && app->bar_open >= 0) {
-        tiku_trk_sc_ctx_t c;
-
-        build_open_with(app, app->bar_fl);
-        build_per_type(app, app->bar_fl);
-        c = menu_ctx(app, app->bar_fl, 0u);
-        tiku_trk_cwmenu_rebuild(&app->menus, &c);
-        app->menus.bar.open = app->bar_open;
-        if (app->bar_open < app->menus.bar.count) {
-            app->popup = app->menus.bar.menu[app->bar_open];
-        }
-    }
-    if (app->gbar_on == 1) {
-        /* The global bar: the focused folder's menus are REBUILT and
-         * PUBLISHED, and the strip renders only what was published --
-         * the same data a foreign window would hand in. */
-        tiku_rect_t strip;
-        tiku_window_t *fw = tiku_workspace_focused(app->desk);
-        folder_t *ffl = folder_of(app, fw);
-
-        if (ffl != NULL) {
-            tiku_trk_sc_ctx_t gc;
-
-            build_open_with(app, ffl);
-            build_per_type(app, ffl);
-            gc = menu_ctx(app, ffl, 0u);
-            tiku_trk_cwmenu_rebuild(&app->menus, &gc);
-            publish_folder_menus(app, ffl);
-        }
-        rebuild_global_bar(app);
-        strip = global_bar_rect(app);
-        tiku_fill(app->surf, strip, TIKU_C_PANEL);
-        tiku_hline(app->surf, strip.x, strip.y + strip.h - 1,
-                        strip.w, tiku_tint(TIKU_C_PANEL, 1.40f));
-        tiku_menubar_draw(&app->gbar, app->surf, strip);
-        if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
-            app->popup = app->gbar.menu[app->gbar_open];
-            app->popup_frame = tiku_menubar_panel(&app->gbar, strip,
-                (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
-        }
-    }
-    /* A menu is drawn last because it is above everything, including the
-     * Deskbar strip. */
-    if (app->popup != NULL) {
-        /* Re-aimed here because the menus are rebuilt per draw, which
-         * clears the hot row a moment after the motion set it. */
-        (void)tiku_menu_track(app->popup, app->popup_frame,
-                                  app->ptr_x, app->ptr_y);
-        tiku_menu_draw(app->popup, app->surf, app->popup_frame);
-        if (app->popup_sub != NULL) {
-            (void)tiku_menu_track(app->popup_sub,
-                                      app->popup_sub_frame, app->ptr_x,
-                                      app->ptr_y);
-            tiku_menu_draw(app->popup_sub, app->surf,
-                               app->popup_sub_frame);
-        }
-    }
-    if (app->qdrag_on) {
-        /* The query icon in flight (Q-034), riding under the pointer. */
-        (void)tiku_icon_paint(app->surf, "query", app->ptr_x - 16,
-                                  app->ptr_y - 16, 32);
-    }
-    if (app->nav_on && app->popup != NULL) {
-        draw_nav_levels(app, app->popup_frame.x + app->popup_frame.w - 4,
-                        app->popup_frame.y + 4);
-    } else if (app->spring_nav_on) {
-        /* The spring's walk hangs off the sprung pose (PVS-051). */
-        draw_nav_levels(app, app->spring_nav_x, app->spring_nav_y);
-    }
-    tiku_trk_status_overlay_draw(&app->status_overlay);
-    app->dirty = 0;
-    /*
-     * Last of all, over everything: the boot screen on its way out.  The
-     * desktop underneath is fully drawn by now -- the fade is the black
-     * being lifted off a finished picture, not a picture being built up
-     * behind one.
-     */
-    if (tiku_trk_splash_visible(&app->splash, tiku_trk_now())) {
-        tiku_trk_splash_draw(&app->splash, app->surf,
-                             (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
-                             tiku_trk_now());
-        app->dirty = 1;         /* not finished going: come back */
-    }
+    desktop_draw_zoom(app);
+    desktop_draw_info_hover(app);
+    desktop_draw_strip_drag(app);
+    desktop_draw_drag(app);
+    desktop_draw_bars(app);
+    desktop_draw_popup(app);
+    desktop_draw_overlays(app);
+    desktop_draw_splash(app);
 }
 
 /**
@@ -543,4 +270,345 @@ desktop_idle_work(desktop_t *app)
     (void)tiku_trk_drag_target_pulse(&app->drag_target,
                                      tiku_trk_now());
 
+}
+
+/**
+ * @brief the boot and closing screens
+ */
+void
+desktop_draw_splash(desktop_t *app)
+{
+    /*
+     * Last of all, over everything: the boot screen on its way out.  The
+     * desktop underneath is fully drawn by now -- the fade is the black
+     * being lifted off a finished picture, not a picture being built up
+     * behind one.
+     */
+    if (tiku_trk_splash_visible(&app->splash, tiku_trk_now())) {
+        tiku_trk_splash_draw(&app->splash, app->surf,
+                             (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
+                             tiku_trk_now());
+        app->dirty = 1;         /* not finished going: come back */
+    }
+}
+
+/**
+ * @brief the query drag and the navigation menus
+ */
+void
+desktop_draw_overlays(desktop_t *app)
+{
+    if (app->qdrag_on) {
+        /* The query icon in flight (Q-034), riding under the pointer. */
+        (void)tiku_icon_paint(app->surf, "query", app->ptr_x - 16,
+                                  app->ptr_y - 16, 32);
+    }
+    if (app->nav_on && app->popup != NULL) {
+        draw_nav_levels(app, app->popup_frame.x + app->popup_frame.w - 4,
+                        app->popup_frame.y + 4);
+    } else if (app->spring_nav_on) {
+        /* The spring's walk hangs off the sprung pose (PVS-051). */
+        draw_nav_levels(app, app->spring_nav_x, app->spring_nav_y);
+    }
+    tiku_trk_status_overlay_draw(&app->status_overlay);
+    app->dirty = 0;
+}
+
+/**
+ * @brief the open menu, drawn last because it is above everything
+ */
+void
+desktop_draw_popup(desktop_t *app)
+{
+    /* A menu is drawn last because it is above everything, including the
+     * Deskbar strip. */
+    if (app->popup != NULL) {
+        /* Re-aimed here because the menus are rebuilt per draw, which
+         * clears the hot row a moment after the motion set it. */
+        (void)tiku_menu_track(app->popup, app->popup_frame,
+                                  app->ptr_x, app->ptr_y);
+        tiku_menu_draw(app->popup, app->surf, app->popup_frame);
+        if (app->popup_sub != NULL) {
+            (void)tiku_menu_track(app->popup_sub,
+                                      app->popup_sub_frame, app->ptr_x,
+                                      app->ptr_y);
+            tiku_menu_draw(app->popup_sub, app->surf,
+                               app->popup_sub_frame);
+        }
+    }
+}
+
+/**
+ * @brief the menu bar of the window that has one, and the global bar
+ */
+void
+desktop_draw_bars(desktop_t *app)
+{
+    /* Drawing another folder rebuilt the one shared menu model for that
+     * folder.  Put it back on the bar that actually owns the popup before
+     * painting or hit-testing it. */
+    if (app->bar_fl == NULL && app->bar_open < 0 && app->popup != NULL &&
+        app->popup_fl != NULL) {
+        tiku_trk_sc_ctx_t c;
+
+        build_open_with(app, app->popup_fl);
+        build_per_type(app, app->popup_fl);
+        c = menu_ctx(app, app->popup_fl, 0u);
+        tiku_trk_cwmenu_rebuild(&app->menus, &c);
+    }
+    if (app->bar_fl != NULL && app->bar_open >= 0) {
+        tiku_trk_sc_ctx_t c;
+
+        build_open_with(app, app->bar_fl);
+        build_per_type(app, app->bar_fl);
+        c = menu_ctx(app, app->bar_fl, 0u);
+        tiku_trk_cwmenu_rebuild(&app->menus, &c);
+        app->menus.bar.open = app->bar_open;
+        if (app->bar_open < app->menus.bar.count) {
+            app->popup = app->menus.bar.menu[app->bar_open];
+        }
+    }
+    if (app->gbar_on == 1) {
+        /* The global bar: the focused folder's menus are REBUILT and
+         * PUBLISHED, and the strip renders only what was published --
+         * the same data a foreign window would hand in. */
+        tiku_rect_t strip;
+        tiku_window_t *fw = tiku_workspace_focused(app->desk);
+        folder_t *ffl = folder_of(app, fw);
+
+        if (ffl != NULL) {
+            tiku_trk_sc_ctx_t gc;
+
+            build_open_with(app, ffl);
+            build_per_type(app, ffl);
+            gc = menu_ctx(app, ffl, 0u);
+            tiku_trk_cwmenu_rebuild(&app->menus, &gc);
+            publish_folder_menus(app, ffl);
+        }
+        rebuild_global_bar(app);
+        strip = global_bar_rect(app);
+        tiku_fill(app->surf, strip, TIKU_C_PANEL);
+        tiku_hline(app->surf, strip.x, strip.y + strip.h - 1,
+                        strip.w, tiku_tint(TIKU_C_PANEL, 1.40f));
+        tiku_menubar_draw(&app->gbar, app->surf, strip);
+        if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
+            app->popup = app->gbar.menu[app->gbar_open];
+            app->popup_frame = tiku_menubar_panel(&app->gbar, strip,
+                (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
+        }
+    }
+}
+
+/**
+ * @brief the drag in progress: the ghost, the band, the drop target
+ */
+void
+desktop_draw_drag(desktop_t *app)
+{
+    if (tiku_trk_drag_active(&app->drag)) {
+        /* What is being carried, drawn at the pointer: a drag with no
+         * picture is a drag the user has to remember the contents of.
+         * Translucent, and faded further the more it holds, so what it is
+         * being dropped ON stays readable (IV-053). */
+        int i, shown = (app->drag.count < 4) ? app->drag.count : 4;
+        int alpha = (app->drag.count > 3) ? 120 : 168;
+
+        for (i = 0; i < shown; i++) {
+            tiku_rect_t box;
+            char art[TIKU_NAME_MAX];
+            tiku_model_t dm;
+
+            if (app->backend->ops->stat(app->backend, app->drag.path[i],
+                                        &dm) != 0) {
+                continue;
+            }
+            (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &dm,
+                                            art, sizeof art);
+            box.x = app->drag.x - 16 + i * 6;
+            box.y = app->drag.y - 16 + i * 6;
+            box.w = 32;
+            box.h = 32;
+            (void)tiku_icon_paint(app->surf, art, box.x, box.y, 32);
+            /* Tinted over its own pixels rather than composited in an
+             * offscreen: the picture is what the pointer carries, and it
+             * has to sit over whatever is under it. */
+            tiku_paint_tint(app->surf, box, app->backdrop_color,
+                                255 - alpha);
+            if (app->drag.count > 3) {
+                /* Large selections get a short fade at the edge of the
+                 * pointer picture.  The surface is opaque, so the fade is
+                 * expressed as progressively stronger backdrop tinting over
+                 * the four edge bands rather than an off-screen alpha
+                 * bitmap (PVS-034). */
+                tiku_rect_t edge = box;
+                edge.w = 4;
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                edge.x = box.x + box.w - 4;
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                edge = box;
+                edge.h = 4;
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
+                edge.y = box.y + box.h - 4;
+                tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
+            }
+        }
+        /* The copy cursor's spelling here: when the drop in front of the
+         * pointer would COPY -- a directory on another store, or Option
+         * forcing it -- the ghost wears a small plus badge, so the user is
+         * told before the release which of the two acts this is
+         * (PVS-036). */
+        if (app->drag_target.folder != NULL) {
+            char dest[TIKU_PATH_MAX];
+            unsigned dmods = 0u;
+            int same;
+
+            if (app->drag_target.row >= 0) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(
+                    app->drag_target.folder->view, app->drag_target.row);
+
+                snprintf(dest, sizeof dest, "%s",
+                         (p != NULL) ? p->model.path : "");
+            } else {
+                snprintf(dest, sizeof dest, "%s",
+                         app->drag_target.folder->path);
+            }
+            if ((app->drag_live_mods & TIKU_MOD_OPTION) != 0u) {
+                dmods |= TIKU_TRK_DRAG_MOD_COPY;
+            }
+            if ((app->drag_live_mods & TIKU_MOD_CMD) != 0u) {
+                dmods |= TIKU_TRK_DRAG_MOD_LINK;
+            }
+            same = dest[0] != '\0' &&
+                   tiku_fs_drop_action(app->fs, app->drag.path[0],
+                                           dest, 0) == TIKU_OP_MOVE;
+            if (dest[0] != '\0' &&
+                tiku_trk_drag_action(&app->drag, dest, dmods, same) ==
+                    TIKU_TRK_DROP_COPY) {
+                tiku_rect_t badge = { app->drag.x + 10,
+                                           app->drag.y + 10, 13, 13 };
+                tiku_rect_t stroke;
+
+                tiku_fill(app->surf, badge,
+                               TIKU_RGB(255, 255, 190));
+                tiku_frame(app->surf, badge, TIKU_C_TEXT);
+                stroke = (tiku_rect_t){ badge.x + 3, badge.y + 6,
+                                             7, 1 };
+                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
+                stroke = (tiku_rect_t){ badge.x + 6, badge.y + 3,
+                                             1, 7 };
+                tiku_fill(app->surf, stroke, TIKU_C_TEXT);
+            }
+        }
+    }
+}
+
+/**
+ * @brief a column being dragged along the title strip
+ */
+void
+desktop_draw_strip_drag(desktop_t *app)
+{
+    if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
+        app->tstrip.removed) {
+        /* The torn-out column follows the pointer as a dotted outline
+         * (TS-008): dashes, drawn over everything, the column's own width
+         * and the strip's height. */
+        int wds = app->tstrip.removed_width;
+        int x0 = app->strip_ptr_x - wds / 2;
+        int y0 = app->strip_ptr_y - 20 /* TITLE_HEIGHT */ / 2;
+        int d;
+
+        for (d = 0; d < wds; d += 4) {
+            tiku_rect_t dash = { x0 + d, y0, 2, 1 };
+
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
+            dash.y = y0 + 20 /* TITLE_HEIGHT */ - 1;
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
+        }
+        for (d = 0; d < 20 /* TITLE_HEIGHT */; d += 4) {
+            tiku_rect_t dash = { x0, y0 + d, 1, 2 };
+
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
+            dash.x = x0 + wds - 1;
+            tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
+        }
+    }
+}
+
+/**
+ * @brief the hover over an Info window
+ */
+void
+desktop_draw_info_hover(desktop_t *app)
+{
+    if (app->info_windows.hover_slot >= 0 &&
+        app->info_windows.hover_field >= 0) {
+        /* The truncated field's full text, floated over everything and
+         * clamped to the screen (AW-073).  Only when the value really is
+         * wider than its row -- a pop-up repeating what is already
+         * readable would be noise. */
+        int slot = app->info_windows.hover_slot;
+        tiku_trk_info_t *info = &app->info_windows.model[slot];
+        char value[TIKU_TRK_INFO_VAL_MAX];
+        const char *label = "";
+        int fx, fy, fw, fh;
+
+        if (tiku_trk_info_field(info, app->store,
+                app->info_windows.hover_field, &label, value,
+                sizeof value) != TIKU_TRK_INFO_F_NONE &&
+            tiku_trk_info_windows_field_rect(&app->info_windows, slot,
+                app->info_windows.hover_field, &fx, &fy, &fw, &fh)) {
+            const tiku_font_t *font = tiku_font_plain();
+            int tw = tiku_text_width(font, value);
+
+            if (tw > fw) {
+                tiku_rect_t box = { fx - 4, fy - 2, tw + 12,
+                                         font->height + 6 };
+
+                if (box.x + box.w > app->surf->w) {
+                    box.x = app->surf->w - box.w;
+                }
+                if (box.x < 0) {
+                    box.x = 0;
+                }
+                tiku_fill(app->surf, box, TIKU_C_NOTE);
+                tiku_frame(app->surf, box, TIKU_C_TEXT);
+                tiku_text(app->surf, font, box.x + 5,
+                               box.y + 2 + font->ascent, value,
+                               TIKU_C_TEXT);
+            }
+        }
+    }
+}
+
+/**
+ * @brief the zoom animation between a window and its icon
+ */
+void
+desktop_draw_zoom(desktop_t *app)
+{
+    if (app->zoom_t0 != 0) {
+        /* The window frame sliding out of or into the menu item's
+         * rectangle: four steps of an inverted outline, done in an eye
+         * blink (DB-030). */
+        int64_t age = tiku_trk_now() - app->zoom_t0;
+
+        if (age > 120000) {
+            app->zoom_t0 = 0;
+        } else {
+            int num = (int)(age / 30000) + 1;   /* 1..4 */
+            tiku_rect_t z;
+
+            z.x = app->zoom_from.x +
+                  (app->zoom_to.x - app->zoom_from.x) * num / 4;
+            z.y = app->zoom_from.y +
+                  (app->zoom_to.y - app->zoom_from.y) * num / 4;
+            z.w = app->zoom_from.w +
+                  (app->zoom_to.w - app->zoom_from.w) * num / 4;
+            z.h = app->zoom_from.h +
+                  (app->zoom_to.h - app->zoom_from.h) * num / 4;
+            tiku_invert_frame(app->surf, z);
+            app->dirty = 1;     /* the next frame moves it again */
+        }
+    }
 }

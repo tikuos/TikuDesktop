@@ -112,86 +112,72 @@ paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
 void
 deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 {
-    tiku_window_t *t;
+    if (deskbar_pick_system(app, pick)) {
+        return;
+    }
+    if (deskbar_pick_team(app, pick, x, y)) {
+        return;
+    }
+    (void)deskbar_pick_clock(app, pick);
+}
 
+/**
+ * @brief A pick on the clock: shown, hidden, seconds, day, zone.  @return 1 for
+ * a pick of this group
+ */
+int
+deskbar_pick_clock(desktop_t *app, tiku_trk_db_pick_t *pick)
+{
     switch (pick->what) {
-    case TIKU_TRK_DB_FIND:
-        /* The leaf's Find item is the panel: the same
-         * entry point as Ctrl+F, reachable by mouse. */
-        open_panel(app);
-        break;
-    case TIKU_TRK_DB_PREFERENCES:
-        tiku_trk_deskbar_prefs_window_open(
-            &app->deskbar_prefs_window);
-        break;
-    case TIKU_TRK_DB_TRACKER_PREFERENCES:
-        tiku_trk_prefs_window_open(&app->prefs_window);
-        break;
-    case TIKU_TRK_DB_FONT_PREFERENCES:
-        tiku_trk_fonts_window_open(&app->fonts_window);
-        break;
-    case TIKU_TRK_DB_DESKTOP_PREFERENCES:
-        tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
-        break;
-    case TIKU_TRK_DB_LAUNCH_APP: {
-        /* Started, not opened: these are programs, and they place their
-         * own windows through the session the same way any application
-         * does. */
-        tiku_trk_app_t program;
 
-        const char *args[1];
-        size_t n = strlen(pick->path);
-        int nargs = 0;
-
-        memset(&program, 0, sizeof program);
-        snprintf(program.name, sizeof program.name, "%s", pick->path);
-        if (n > 3u && strcmp(pick->path + n - 3, ".so") == 0) {
-            /* A loadable application: the runner gives it the process
-             * this desktop is not giving it. */
-            snprintf(program.cmd, sizeof program.cmd, "%s", app->runner);
-            args[nargs++] = pick->path;
+    case TIKU_TRK_DB_CLOCK_HIDE:
+    case TIKU_TRK_DB_CLOCK_SHOW:
+        app->deskbar_prefs_window.model.value.show_clock =
+            (pick->what == TIKU_TRK_DB_CLOCK_SHOW);
+        tiku_trk_deskbar_settings_normalize(
+            &app->deskbar_prefs_window.model.value);
+        tiku_trk_deskbar_apply_settings(app->deskbar,
+            &app->deskbar_prefs_window.model.value);
+        (void)tiku_trk_deskbar_prefs_save(
+            &app->deskbar_prefs_window.model, app->store);
+        break;
+    case TIKU_TRK_DB_CLOCK_SECONDS:
+    case TIKU_TRK_DB_CLOCK_DAY:
+    case TIKU_TRK_DB_CLOCK_ZONE:
+        if (pick->what == TIKU_TRK_DB_CLOCK_SECONDS) {
+            app->deskbar_prefs_window.model.value.show_seconds =
+                !app->deskbar_prefs_window.model.value.show_seconds;
+        } else if (pick->what == TIKU_TRK_DB_CLOCK_DAY) {
+            app->deskbar_prefs_window.model.value.show_day_of_week =
+                !app->deskbar_prefs_window.model.value.show_day_of_week;
         } else {
-            snprintf(program.cmd, sizeof program.cmd, "%s", pick->path);
+            app->deskbar_prefs_window.model.value.show_timezone =
+                !app->deskbar_prefs_window.model.value.show_timezone;
         }
-        if (tiku_trk_launch_run(&program, (nargs > 0) ? args : NULL,
-                                nargs) != TIKU_TRK_LAUNCH_OK) {
-            snprintf(app->status, sizeof app->status,
-                     "could not start %s", pick->path);
-            app->dirty = 1;
-        }
+        tiku_trk_deskbar_settings_normalize(
+            &app->deskbar_prefs_window.model.value);
+        tiku_trk_deskbar_apply_settings(app->deskbar,
+            &app->deskbar_prefs_window.model.value);
+        (void)tiku_trk_deskbar_prefs_save(
+            &app->deskbar_prefs_window.model, app->store);
         break;
+    default:
+        return 0;
     }
-    case TIKU_TRK_DB_TOGGLE_DARK: {
-        /* The switch IS the DarkMode setting: flip it, write it down,
-         * and let the one sync path repaint the world -- so the switch,
-         * the checkbox and the settings file can never disagree. */
-        tiku_trk_prefs_t *prefs = prefs_model(app);
+    return 1;
+}
 
-        /* Three seats, so a press walks to the next one and round: the
-         * switch is the only control most people will ever touch, and a
-         * slider you cannot get back to the start of is a trap. */
-        tiku_trk_prefs_set(prefs, "DarkMode",
-                           (tiku_trk_prefs_get(prefs, "DarkMode") + 1) % 3);
-        (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
-        sync_folder_preferences(app);
-        app->dirty = 1;
-        break;
-    }
-    case TIKU_TRK_DB_SHOW_ABOUT:
-        (void)embed_open_or_raise(app, &tiku_trk_about_app);
-        break;
-    case TIKU_TRK_DB_QUIT:
-        /* The ellipsis is a promise: Shut down… asks
-         * before anything is taken down (DB-006). */
-        tiku_alert_open(alert_model(app),
-            TIKU_ALERT_WARN,
-            TIKU_TRK_ALERT_TAG_SHUTDOWN,
-            "Shut down the desktop?",
-            tiku_str("alert.btn.shut_down"));
-        break;
-    case TIKU_TRK_DB_OPEN_PATH:
-        (void)open_folder(app, pick->path);
-        break;
+/**
+ * @brief A pick on a team or one of its windows: activate, minimise, close,
+ * launch, quit, kill, hide and show all.  @return 1 for a pick of this group
+ */
+int
+deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
+{
+    tiku_window_t *t;
+    
+    switch (pick->what) {
+
     case TIKU_TRK_DB_ACTIVATE_WINDOW:
         /* Invoke is a no-op while dragging: the drop
          * owns the release, and a window that raised
@@ -335,38 +321,101 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         break;
     }
-    case TIKU_TRK_DB_CLOCK_HIDE:
-    case TIKU_TRK_DB_CLOCK_SHOW:
-        app->deskbar_prefs_window.model.value.show_clock =
-            (pick->what == TIKU_TRK_DB_CLOCK_SHOW);
-        tiku_trk_deskbar_settings_normalize(
-            &app->deskbar_prefs_window.model.value);
-        tiku_trk_deskbar_apply_settings(app->deskbar,
-            &app->deskbar_prefs_window.model.value);
-        (void)tiku_trk_deskbar_prefs_save(
-            &app->deskbar_prefs_window.model, app->store);
-        break;
-    case TIKU_TRK_DB_CLOCK_SECONDS:
-    case TIKU_TRK_DB_CLOCK_DAY:
-    case TIKU_TRK_DB_CLOCK_ZONE:
-        if (pick->what == TIKU_TRK_DB_CLOCK_SECONDS) {
-            app->deskbar_prefs_window.model.value.show_seconds =
-                !app->deskbar_prefs_window.model.value.show_seconds;
-        } else if (pick->what == TIKU_TRK_DB_CLOCK_DAY) {
-            app->deskbar_prefs_window.model.value.show_day_of_week =
-                !app->deskbar_prefs_window.model.value.show_day_of_week;
-        } else {
-            app->deskbar_prefs_window.model.value.show_timezone =
-                !app->deskbar_prefs_window.model.value.show_timezone;
-        }
-        tiku_trk_deskbar_settings_normalize(
-            &app->deskbar_prefs_window.model.value);
-        tiku_trk_deskbar_apply_settings(app->deskbar,
-            &app->deskbar_prefs_window.model.value);
-        (void)tiku_trk_deskbar_prefs_save(
-            &app->deskbar_prefs_window.model, app->store);
-        break;
     default:
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief A pick on the leaf menu's own rows: Find, the preferences, an
+ * application, the theme, About, quit and a path.  @return 1 for a pick of this
+ * group
+ */
+int
+deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
+{
+    switch (pick->what) {
+
+    case TIKU_TRK_DB_FIND:
+        /* The leaf's Find item is the panel: the same
+         * entry point as Ctrl+F, reachable by mouse. */
+        open_panel(app);
+        break;
+    case TIKU_TRK_DB_PREFERENCES:
+        tiku_trk_deskbar_prefs_window_open(
+            &app->deskbar_prefs_window);
+        break;
+    case TIKU_TRK_DB_TRACKER_PREFERENCES:
+        tiku_trk_prefs_window_open(&app->prefs_window);
+        break;
+    case TIKU_TRK_DB_FONT_PREFERENCES:
+        tiku_trk_fonts_window_open(&app->fonts_window);
+        break;
+    case TIKU_TRK_DB_DESKTOP_PREFERENCES:
+        tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
+        break;
+    case TIKU_TRK_DB_LAUNCH_APP: {
+        /* Started, not opened: these are programs, and they place their
+         * own windows through the session the same way any application
+         * does. */
+        tiku_trk_app_t program;
+
+        const char *args[1];
+        size_t n = strlen(pick->path);
+        int nargs = 0;
+
+        memset(&program, 0, sizeof program);
+        snprintf(program.name, sizeof program.name, "%s", pick->path);
+        if (n > 3u && strcmp(pick->path + n - 3, ".so") == 0) {
+            /* A loadable application: the runner gives it the process
+             * this desktop is not giving it. */
+            snprintf(program.cmd, sizeof program.cmd, "%s", app->runner);
+            args[nargs++] = pick->path;
+        } else {
+            snprintf(program.cmd, sizeof program.cmd, "%s", pick->path);
+        }
+        if (tiku_trk_launch_run(&program, (nargs > 0) ? args : NULL,
+                                nargs) != TIKU_TRK_LAUNCH_OK) {
+            snprintf(app->status, sizeof app->status,
+                     "could not start %s", pick->path);
+            app->dirty = 1;
+        }
         break;
     }
+    case TIKU_TRK_DB_TOGGLE_DARK: {
+        /* The switch IS the DarkMode setting: flip it, write it down,
+         * and let the one sync path repaint the world -- so the switch,
+         * the checkbox and the settings file can never disagree. */
+        tiku_trk_prefs_t *prefs = prefs_model(app);
+
+        /* Three seats, so a press walks to the next one and round: the
+         * switch is the only control most people will ever touch, and a
+         * slider you cannot get back to the start of is a trap. */
+        tiku_trk_prefs_set(prefs, "DarkMode",
+                           (tiku_trk_prefs_get(prefs, "DarkMode") + 1) % 3);
+        (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
+        sync_folder_preferences(app);
+        app->dirty = 1;
+        break;
+    }
+    case TIKU_TRK_DB_SHOW_ABOUT:
+        (void)embed_open_or_raise(app, &tiku_trk_about_app);
+        break;
+    case TIKU_TRK_DB_QUIT:
+        /* The ellipsis is a promise: Shut down… asks
+         * before anything is taken down (DB-006). */
+        tiku_alert_open(alert_model(app),
+            TIKU_ALERT_WARN,
+            TIKU_TRK_ALERT_TAG_SHUTDOWN,
+            "Shut down the desktop?",
+            tiku_str("alert.btn.shut_down"));
+        break;
+    case TIKU_TRK_DB_OPEN_PATH:
+        (void)open_folder(app, pick->path);
+        break;
+    default:
+        return 0;
+    }
+    return 1;
 }
