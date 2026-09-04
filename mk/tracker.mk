@@ -74,12 +74,26 @@ UI_SUPPORT := $(T)/src/ui/tiku_trk_navmenu.c \
               $(T)/src/ui/tiku_trk_nodeicon.c $(T)/src/ui/tiku_trk_springmenu.c
 COMMON := $(CORE) $(UI_SUPPORT)
 
+# tiku_trk_poseview, one composition over the files of one directory.
+POSEVIEW := $(T)/src/ui/poseview/tiku_trk_poseview.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_sort.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_load.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_select.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_keys.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_typeahead.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_iconmode.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_rename.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_spatial.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_extent.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_draw.c \
+            $(T)/src/ui/poseview/tiku_trk_poseview_columns.c
+
 # Nearly everything is linked into both binaries -- the two shells are one
 # product built two ways -- and tools/check_architecture.py holds the exact
 # remainder, so a file quietly joining one binary and not the other is
 # caught the build after it happens.  print-ownership is how it asks.
 TRACKER_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
-               $(T)/src/ui/tiku_trk_poseview.c \
+               $(POSEVIEW) \
                $(T)/src/shell/tiku_trk_script_api.c \
                $(T)/src/deskbar/tiku_trk_deskicons.c \
                $(T)/src/ui/tiku_trk_titleview.c \
@@ -106,7 +120,7 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_embed.c
 
 DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
-               $(T)/src/ui/tiku_trk_poseview.c \
+               $(POSEVIEW) \
                $(T)/src/shell/tiku_trk_script_api.c \
                $(T)/src/deskbar/tiku_trk_deskicons.c \
                $(T)/src/core/tiku_trk_select.c \
@@ -183,14 +197,14 @@ test_color_SRCS   := $(T)/src/core/tiku_trk_color.c
 test_addon_SRCS   := $(T)/src/shell/tiku_trk_addon.c
 test_state_pipeline_SRCS   := $(T)/src/core/tiku_trk_state_pipeline.c
 test_model_SRCS   := $(COMMON)
-test_poseview_SRCS   := $(COMMON) $(T)/src/ui/tiku_trk_poseview.c
+test_poseview_SRCS   := $(COMMON) $(POSEVIEW)
 test_fs_SRCS   := $(COMMON)
 test_types_SRCS   := $(COMMON)
 test_scroll_SRCS   := $(COMMON)
 test_launch_SRCS   := $(COMMON)
 test_query_SRCS   := $(T)/src/ui/tiku_trk_find.c $(T)/src/core/tiku_trk_types.c
-test_notify_SRCS   := $(T)/src/ui/tiku_trk_poseview.c $(T)/src/core/tiku_trk_match.c $(T)/src/core/tiku_trk_clip.c $(T)/src/core/tiku_trk_task.c $(T)/src/core/tiku_trk_repaint.c $(T)/src/ui/tiku_trk_nodeicon.c $(T)/src/core/tiku_trk_types.c
-test_title_SRCS   := $(COMMON) $(T)/src/ui/tiku_trk_poseview.c $(T)/src/ui/tiku_trk_titleview.c
+test_notify_SRCS   := $(POSEVIEW) $(T)/src/core/tiku_trk_match.c $(T)/src/core/tiku_trk_clip.c $(T)/src/core/tiku_trk_task.c $(T)/src/core/tiku_trk_repaint.c $(T)/src/ui/tiku_trk_nodeicon.c $(T)/src/core/tiku_trk_types.c
+test_title_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/ui/tiku_trk_titleview.c
 test_match_SRCS   := $(T)/src/core/tiku_trk_match.c
 test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(T)/src/deskbar/tiku_trk_deskbar.c $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_deskbar_dock_LDLIBS := -lm
@@ -202,17 +216,17 @@ test_deskbar_prefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_frame_SRCS   := $(COMMON)
 test_copybits_SRCS   := $(COMMON)
 test_background_SRCS   := $(COMMON)
-test_iconview_SRCS   := $(COMMON) $(T)/src/ui/tiku_trk_poseview.c
+test_iconview_SRCS   := $(COMMON) $(POSEVIEW)
 test_info_SRCS   := $(COMMON)
-test_panel_SRCS   := $(COMMON) $(T)/src/ui/tiku_trk_poseview.c
+test_panel_SRCS   := $(COMMON) $(POSEVIEW)
 test_nodeicon_SRCS   := $(COMMON)
 test_navmenu_SRCS   := $(COMMON)
 test_navigator_SRCS   := $(T)/src/ui/tiku_trk_navigator.c
 test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(T)/src/deskbar/tiku_trk_deskbar.c $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/ui/tiku_trk_shortcuts.c
 test_dbdrop_LDLIBS := -lm
 test_switcher_SRCS   := $(T)/src/core/tiku_trk_switcher.c
-test_deskicons_SRCS   := $(COMMON) $(T)/src/deskbar/tiku_trk_deskicons.c $(T)/src/ui/tiku_trk_poseview.c
-test_scripting_SRCS   := $(COMMON) $(T)/src/ui/tiku_trk_poseview.c $(T)/src/shell/tiku_trk_script_api.c
+test_deskicons_SRCS   := $(COMMON) $(T)/src/deskbar/tiku_trk_deskicons.c $(POSEVIEW)
+test_scripting_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/shell/tiku_trk_script_api.c
 test_prefs_SRCS   := $(T)/src/core/tiku_trk_prefs.c
 test_volume_SRCS   := $(COMMON) $(T)/src/deskbar/tiku_trk_deskicons.c
 test_vdir_SRCS   := $(COMMON)
