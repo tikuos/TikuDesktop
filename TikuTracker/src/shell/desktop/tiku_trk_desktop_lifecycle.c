@@ -268,17 +268,11 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
     return -1;
 }
 
-/**
- * @brief Everything between the command line and the first frame.
- *
- * The namespace, the host window, the boot screen and its stages: the
- * workspace, the Deskbar, settings, fonts, applications, icons, and
- * the session, in that order.  @return -1 once the desktop is up;
- * otherwise the exit code of the piece that refused.
- */
-int
-desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+/** @brief The namespace the shell holds and the window it draws in: one backend at the root, the devices beside it, the surface, and the host. */
+static int
+boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
+    (void)lp;
     {
         /*
          * The shell holds a NAMESPACE, never a backend directly -- even
@@ -367,6 +361,14 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
      * screen they are not looking at.  The one script that IS looking
      * sets TIKU_SPLASH.
      */
+    return -1;
+}
+
+/** @brief The boot screen goes up, and the workspace and the Deskbar are made. */
+static int
+boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)lp;
     tiku_trk_splash_begin(&app->splash,
         app->host != NULL || getenv("TIKU_SPLASH") != NULL, tiku_trk_now());
     splash_stage(app, "storage");
@@ -424,6 +426,15 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         DESK_W, DESK_H, &app->dirty, apply_select_model, app);
     tiku_trk_clip_init(&app->clip);
     app->store = tiku_trk_session_open_store(app->backend);
+    return -1;
+}
+
+/** @brief Settings and the windows that edit them. */
+static int
+boot_settings(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)o;
+    (void)lp;
     splash_stage(app, "settings");
     tiku_trk_deskbar_set_store(app->deskbar, app->store);
     (void)tiku_trk_deskbar_load_replicants(app->deskbar);
@@ -469,6 +480,15 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         (void)tiku_trk_fontprefs_load(&chosen, app->store);
         tiku_trk_fontprefs_apply(&chosen);
     }
+    return -1;
+}
+
+/** @brief The faces, and the window that chooses them. */
+static int
+boot_fonts(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)o;
+    (void)lp;
     splash_stage(app, "fonts");
     {
         /* Which applications there are.  A file rather than a database:
@@ -506,6 +526,15 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
                                        "/usr/share/tiku-tracker/apps");
         }
     }
+    return -1;
+}
+
+/** @brief The applications the desktop hosts and offers. */
+static int
+boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)o;
+    (void)lp;
     splash_stage(app, "applications");
     tiku_trk_launch_controller_init(&app->launcher, &app->apps, app->store,
         app->status, sizeof app->status, launch_open_path, app);
@@ -534,6 +563,15 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     }
     tiku_thumb_init(&app->thumbs);
     tiku_trk_nodeicon_init(&app->nicons);
+    return -1;
+}
+
+/** @brief The views, panels, controllers and adapters, and the art they draw with. */
+static int
+boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)o;
+    (void)lp;
     splash_stage(app, "icons");
     tiku_volwatch_init(&app->volwatch);
     app->info_relink = -1;
@@ -637,7 +675,14 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         DESK_W, DESK_H, set_backdrop_color, app);
     tiku_trk_drop_controller_set_launcher(&app->drop_controller,
         (const struct tiku_trk_apps *)&app->apps, drop_launch, app);
+    return -1;
+}
 
+/** @brief A device mounted beside the files when asked, and the last session's folders back where they were. */
+static int
+boot_session(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    (void)lp;
     if (o->use_device) {
         /* The tray is the device: three values that say at a glance whether
          * the board is alive and what it is doing. */
@@ -669,7 +714,13 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
                                      o->safe_mode, o->use_device);
 
     (void)tiku_trk_find_open_default(find_model(app), (int64_t)time(NULL));
+    return -1;
+}
 
+/** @brief The conductor channel and the script, for a shell driven from outside. */
+static int
+boot_drivers(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
     if (o->conduct_tty != NULL) {
         int line = tiku_conduct_open_tty(o->conduct_tty, 0);
 
@@ -749,6 +800,13 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     }
     /* Otherwise the window is already up: it was opened before any of
      * this was built, so the splash had somewhere to be. */
+    return -1;
+}
+
+/** @brief The -shot flags: what a headless run puts on screen before it writes its one frame. */
+static int
+boot_shots(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
     if (o->shot != NULL) {
         lp->shot_at = tiku_trk_now() + 2000000;
     }
@@ -938,6 +996,60 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
                               (tiku_rect_t){ 0, 0, app->surf->w,
                                                   app->surf->h });
     }
+    return -1;
+}
+
+
+/**
+ * @brief Everything between the command line and the first frame.
+ *
+ * The namespace, the host window, the boot screen and its stages: the
+ * workspace, the Deskbar, settings, fonts, applications, icons, and
+ * the session, in that order.  @return -1 once the desktop is up;
+ * otherwise the exit code of the piece that refused.
+ */
+int
+desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
+{
+    int code;
+
+    code = boot_namespace(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_deskbar(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_settings(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_fonts(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_applications(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_icons(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_session(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_drivers(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+    code = boot_shots(app, o, lp);
+    if (code >= 0) {
+        return code;
+    }
+
     app->running = 1;
     app->applied_hide_dotfiles = -1;
     app->applied_full_path = -1;
