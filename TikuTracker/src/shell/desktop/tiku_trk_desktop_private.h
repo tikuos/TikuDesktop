@@ -507,7 +507,7 @@ desktop_folder(desktop_t *app)
     return tiku_trk_desktop_view_folder(&app->desktop_view);
 }
 
-/* Shared across the desktop's files: defined in one, used in another. */
+/* Shared across the family: defined in one file, used in another. */
 
 /* tiku_trk_desktop.c */
 void sync_folder_preferences(desktop_t *app);
@@ -525,7 +525,6 @@ int drop_on_panel(desktop_t *app, int x, int y);
 int folder_selection(desktop_t *app, folder_t *fl, char paths[][TIKU_PATH_MAX],
                      const char **out, int max);
 int info_icon_drop_slot(desktop_t *app, int x, int y);
-int select_created(void *ctx);
 int spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max);
 int trash_union_refresh(desktop_t *app, folder_t *fl);
 void begin_edit(desktop_t *app, folder_t *fl);
@@ -536,6 +535,10 @@ void close_windows_under(desktop_t *app, const char *path);
 void commit_edit(desktop_t *app, folder_t *fl);
 void commit_rename(desktop_t *app, int commit);
 void deskbar_edit_path(void *context, const char *path);
+void desktop_press_hold(desktop_t *app);
+void desktop_progress_tick(desktop_t *app);
+void desktop_rename_pulse(desktop_t *app);
+void desktop_spring_tick(desktop_t *app);
 void do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button);
 void file_actions_close_under(void *context, const char *path);
 void launch_open_path(void *context, const char *path);
@@ -544,12 +547,12 @@ void offer_broken_link(desktop_t *app, const char *path);
 void parent_path(const char *path, char *out, size_t size);
 void script_command_file(desktop_t *app, const char *path);
 void spring_nav_close(desktop_t *app);
-void spring_nav_states(desktop_t *app);
 void spring_nav_track(desktop_t *app, int x, int y);
 void spring_open_nav(void *context, const char *path);
 void sync_addons(desktop_t *app, int force);
 
 /* tiku_trk_desktop_deskbar.c */
+extern char **restart_argv;
 int deskbar_menu_icon(void *context, tiku_surface_t *s,
                       const tiku_trk_db_item_t *item, int x, int y, int size);
 int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
@@ -562,6 +565,8 @@ void open_preferences(void *context);
 int resize_desktop(desktop_t *app, int width, int height);
 int tick_clock(void *ctx);
 void blit(desktop_t *app);
+void desktop_focus_paint(desktop_t *app);
+void desktop_idle_work(desktop_t *app);
 void draw_all(desktop_t *app);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
@@ -582,6 +587,13 @@ void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
 
 /* tiku_trk_desktop_events.c */
+extern folder_t *fl;
+extern tiku_hit_t hit;
+extern tiku_trk_db_pick_t pick;
+extern tiku_window_t *w;
+extern tiku_window_t *w;
+extern unsigned key;
+extern unsigned mods;
 void desktop_key_down(desktop_t *app, const tiku_event_t *ev,
                       desktop_loop_t *lp);
 void desktop_pointer_down(desktop_t *app, const tiku_event_t *ev,
@@ -611,9 +623,10 @@ int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
 
 /* tiku_trk_desktop_mounts.c */
-int mount_devices(desktop_t *app, const char *port, int baud,
-                  const char *at);
-int refresh_after_mount(void *ctx);
+int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
+void desktop_device_pump(desktop_t *app);
+void desktop_notice_pump(desktop_t *app, desktop_loop_t *lp);
+void desktop_sweep(desktop_t *app, desktop_loop_t *lp);
 void save_before_unmount(dev_t dev, void *context);
 
 /* tiku_trk_desktop_panels.c */
@@ -649,6 +662,6 @@ void remote_hear(desktop_t *app);
 void remote_reconcile(desktop_t *app);
 void remote_sweep(desktop_t *app);
 
-/* End of the shared functions. */
+/* End of the shared declarations. */
 
 #endif /* TIKU_TRK_DESKTOP_PRIVATE_H_ */

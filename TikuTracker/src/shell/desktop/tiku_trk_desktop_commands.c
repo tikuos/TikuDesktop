@@ -1337,3 +1337,224 @@ open_folder(desktop_t *app, const char *path)
     }
     return fl;
 }
+
+/**
+ * @brief One step of the file work under way, and the progress row it moves.
+ */
+void
+desktop_progress_tick(desktop_t *app)
+{
+    if (app->fs != NULL && tiku_fs_busy(app->fs) &&
+        !progress_model(app)->row[0].paused) {
+        const tiku_progress_t *pr;
+
+        /* Stepped here, not inside the command: start() only builds the
+         * queue, so a shell that never steps reports work it has not
+         * done.  Membership changes reach the windows through the
+         * notice poll above, which is why nothing is reloaded here. */
+        (void)tiku_fs_step(app->fs, 4);
+        if (!tiku_fs_busy(app->fs)) {
+            /* The operation just finished: what it MADE gets selected
+             * where it lives, once it shows up (AW-033). */
+            char made[8][TIKU_PATH_MAX];
+            int nmade = tiku_fs_last_created(app->fs, made, 8);
+            int mi;
+
+            for (mi = 0; mi < nmade; mi++) {
+                select_created_t *scx = malloc(sizeof *scx);
+
+                if (scx == NULL) {
+                    break;
+                }
+                scx->app = app;
+                snprintf(scx->path, sizeof scx->path, "%s", made[mi]);
+                (void)tiku_trk_run_periodic(app->loop, select_created,
+                                            scx, free, 200000,
+                                            5000000);
+            }
+        }
+        /* A mixed paste left its second half waiting for the engine to
+         * go idle; this is where it gets to start (FS-055). */
+        (void)tiku_trk_folder_file_actions_pump(&app->file_actions);
+        pr = tiku_fs_progress(app->fs);
+        if (pr->conflict) {
+            /* Asked, not assumed.  The engine worked out which form
+             * the question takes; this puts it up and waits. */
+            if (!alert_model(app)->open) {
+                tiku_trk_alert_for_conflict(alert_model(app), pr);
+            }
+        } else if (pr->error_ask) {
+            if (!alert_model(app)->open) {
+                tiku_trk_alert_for_error(alert_model(app), pr);
+            }
+        } else {
+            snprintf(app->status, sizeof app->status, "%d of %d%s%s",
+                     pr->done + pr->skipped, pr->total,
+                     pr->skipped ? " (some skipped)" : "",
+                     pr->failed ? " -- some failed" : "");
+        }
+        if (tiku_trk_progress_wanted(pr->op, pr->total)) {
+            /* Where it is going, which is the other half of "what is
+             * happening": a file name alone does not say whether this
+             * is the copy the user meant (FS-069). */
+            tiku_trk_progress_update(progress_model(app), 0, pr, 1,
+                                     pr->to[0] != '\0' ? pr->to
+                                     : app->prog_dest[0] != '\0'
+                                         ? app->prog_dest : NULL);
+            tiku_trk_progress_sample(progress_model(app), 0, pr->bytes,
+                                     tiku_trk_now());
+        }
+        app->dirty = 1;
+        if (tiku_trk_status_overlay_progress_opened(
+                &app->status_overlay) == 0) {
+            tiku_trk_status_overlay_progress_start(&app->status_overlay,
+                                                   tiku_trk_now());
+            /* Whoever was in front when the job began gets the focus
+             * back when it ends: an operation is not a reason to be
+             * left looking at something else (FS-073). */
+            app->prog_was_active = tiku_workspace_focused(app->desk);
+        }
+    } else if (progress_model(app)->open) {
+        tiku_trk_progress_update(progress_model(app), 0, NULL, 0, NULL);
+        tiku_trk_status_overlay_progress_finish(&app->status_overlay);
+        if (app->prog_was_active != NULL &&
+            app->prog_was_active->open) {
+            tiku_workspace_activate(app->desk, app->prog_was_active);
+        }
+        app->prog_was_active = NULL;
+        app->dirty = 1;
+    }
+}
+
+/**
+ * @brief Tracker's Pulse: a rename armed by a slow second click starts when its
+ * interval is up.
+ */
+void
+desktop_rename_pulse(desktop_t *app)
+{
+    int i;
+
+    /* Tracker's Pulse: a rename armed by a slow second click starts
+     * here rather than on the click itself (MA-043). */
+    for (i = 0; i < app->folder_count; i++) {
+        folder_t *fl = &app->folders[i];
+        int due;
+
+        if (fl->win == NULL || !fl->win->open) {
+            continue;
+        }
+        due = tiku_trk_poseview_edit_due(fl->view, tiku_trk_now());
+        if (due >= 0 && !app->folder_edit.editing) {
+            begin_rename(app, fl, due);
+            app->dirty = 1;
+        }
+    }
+}
+
+/**
+ * @brief A button held still for the click interval opens the context menu, on
+ * the bar or on a pose (PVS-017).
+ */
+void
+desktop_press_hold(desktop_t *app)
+{
+    /* PVS-017: a button held still for the click interval opens the
+     * context menu without waiting for the release. */
+    if (app->deskbar_press &&
+        tiku_trk_now() - app->press_at > 2 * TIKU_TRK_CLICK_SPEED_US) {
+        tiku_trk_db_pick_t dbpick;
+
+        /* A still primary press is the Deskbar's long-press equivalent
+         * of a secondary click.  It replaces the calendar with clock
+         * options without waiting for release. */
+        tiku_trk_deskbar_close_calendar(app->deskbar);
+        (void)tiku_trk_deskbar_click(app->deskbar, app->press_x,
+                                     app->press_y, 0u, 3, 1, &dbpick);
+        app->deskbar_press = 0;
+        app->dirty = 1;
+    }
+    if (app->press_down && !app->press_menu && app->popup == NULL &&
+        app->press_fl != NULL &&
+        tiku_trk_now() - app->press_at > TIKU_TRK_CLICK_SPEED_US) {
+        folder_t *pfl = app->press_fl;
+        tiku_trk_pose_t *p = (app->press_row >= 0)
+            ? tiku_trk_poseview_at(pfl->view, app->press_row) : NULL;
+        tiku_trk_sc_ctx_t c;
+
+        tiku_trk_poseview_cancel_edit_wait(pfl->view);
+        commit_rename(app, 1);            /* CW-029: mouse-opened */
+        (void)tiku_trk_poseview_context_click(pfl->view, app->press_row);
+        c = menu_ctx(app, pfl, 0u);
+        build_open_with(app, pfl);
+        build_per_type(app, pfl);
+        app->popup = tiku_trk_cwmenu_context(&app->menus,
+                        (p != NULL) ? &p->model : NULL, &c);
+        app->popup_sub = NULL;
+        app->popup_frame = tiku_menu_place(app->popup, app->press_x,
+            app->press_y, (tiku_rect_t){ 0, 0, app->surf->w,
+                                             app->surf->h });
+        app->press_menu = 1;
+        app->press_down = 0;
+        app->dirty = 1;
+    }
+}
+
+/**
+ * @brief The spring-loaded and navigation menus take a chunk of their folder
+ * per turn, and ask the entries not yet asked (CW-055).
+ */
+void
+desktop_spring_tick(desktop_t *app)
+{
+    int i;
+
+    if ((app->nav_on && app->popup != NULL) || app->spring_nav_on) {
+        /* A chunk per turn: the menu answers the mouse while a large
+         * folder is still arriving (CW-055). */
+        if (tiku_trk_nav_fill(&app->nav, app->nav.depth - 1)) {
+            if (app->spring_nav_on) {
+                /* What the drag can land on is per entry, so fresh
+                 * entries get their states as they arrive (PVS-052). */
+                spring_nav_states(app);
+            }
+            app->dirty = 1;
+        }
+    } else if (app->nav_on && app->popup == NULL) {
+        app->nav_on = 0;         /* the menu went; so does the walk */
+    }
+    {   /* Ask the entries that have not been asked whether they have
+         * a picture of their own -- a bounded batch per turn, for the
+         * same reason the thumbnails are made in one: a folder of a
+         * thousand images must not open a thousand files inside one
+         * tick (IV-005, IV-037). */
+        int budget = HINTS_PER_TURN;
+
+        for (i = 0; i < app->folder_count && budget > 0; i++) {
+            folder_t *fl = &app->folders[i];
+            int k, n;
+
+            if (fl->win == NULL || !fl->win->open) {
+                continue;
+            }
+            n = tiku_trk_poseview_count(fl->view);
+            for (k = 0; k < n && budget > 0; k++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(fl->view, k);
+
+                if (p == NULL || p->model.facts.icon_hint !=
+                                     TIKU_ICONHINT_UNASKED) {
+                    continue;
+                }
+                (void)tiku_trk_nodeicon_hint(app->store, &app->thumbs,
+                                             &p->model);
+                budget--;
+                /* One pose learned what picture it has, so one row is
+                 * what needs painting: a bare dirty here repainted the
+                 * whole listing and undid the damage the notice had
+                 * just recorded (PVL-075). */
+                tiku_trk_poseview_damage_row(fl->view, k);
+                app->dirty = 1;
+            }
+        }
+    }
+}

@@ -494,3 +494,53 @@ draw_nav_levels(desktop_t *app, int px, int py)
         }
     }
 }
+
+/**
+ * @brief Whichever window has focus paints its selection; the others show
+ * theirs muted (PVS-023).
+ */
+void
+desktop_focus_paint(desktop_t *app)
+{
+    int i;
+
+    /* PVS-023: whichever window has focus paints its selection; the
+     * rest own theirs without showing it.  Done once per cycle so every
+     * path that changes focus is covered rather than each one
+     * remembering to. */
+    {
+        tiku_window_t *fw = tiku_workspace_focused(app->desk);
+
+        for (i = 0; i < app->folder_count; i++) {
+            folder_t *fl = &app->folders[i];
+
+            if (fl->win == NULL || !fl->win->open) {
+                continue;
+            }
+            tiku_trk_poseview_window_activated(fl->view,
+                                               fl->win == fw);
+        }
+    }
+}
+
+/**
+ * @brief One step of the work that fills in while the desktop keeps answering:
+ * info sizes, thumbnails, the band and the drag.
+ */
+void
+desktop_idle_work(desktop_t *app)
+{
+    /* One directory of one folder-size walk per turn, so a Get Info
+     * window on a deep tree fills in while the desktop keeps answering. */
+    (void)tiku_trk_info_windows_calc_step(&app->info_windows);
+    if (tiku_thumb_step(&app->thumbs, app->store)) {
+        /* One picture per turn, on the idle tick: the window keeps
+         * answering while a folder of images fills in (IV-031). */
+        app->dirty = 1;
+    }
+    (void)tiku_trk_band_controller_pulse(&app->band_controller,
+                                         tiku_trk_now());
+    (void)tiku_trk_drag_target_pulse(&app->drag_target,
+                                     tiku_trk_now());
+
+}
