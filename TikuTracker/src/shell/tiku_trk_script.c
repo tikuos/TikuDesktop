@@ -60,6 +60,7 @@ struct tiku_trk_script {
     int       drag_to_x, drag_to_y;          /* a CLICK's second half         */
     char      note[SC_TEXT_MAX];        /* what the next check is for    */
     int       passes, fails;
+    int       finished;                 /* quit, or the last step, ran  */
 };
 
 /** @brief Whether @p path exists at all. */
@@ -603,6 +604,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     if (s->cursor >= s->count) {
+        s->finished = 1;        /* every step ran: the end IS the quit */
         return 0;
     }
     cur = &s->step[s->cursor++];
@@ -1261,6 +1263,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     }
     case OP_QUIT:
     default:
+        s->finished = 1;
         out->what = TIKU_TRK_SC_QUIT;
         return 1;
     }
@@ -1286,5 +1289,17 @@ tiku_trk_script_report(const tiku_trk_script_t *s, const char *who)
     }
     printf("\n%s: %d passed, %d failed\n", (who != NULL) ? who : "script",
            s->passes, s->fails);
+    /* A script the shell left with steps unreached proved only what it
+     * had reached: two checks of four is not a pass, it is a run cut
+     * short, and the checks after the cut are exactly the ones the
+     * shell's going would have failed.  A script that ran every step and
+     * never wrote quit ended the way it meant to. */
+    if (!s->finished) {
+        int at = (s->cursor > 0) ? s->step[s->cursor - 1].line : 0;
+
+        printf("%s: stopped at line %d, step %d of %d, steps unreached\n",
+               (who != NULL) ? who : "script", at, s->cursor, s->count);
+        return 1;
+    }
     return (s->fails > 0) ? 1 : 0;
 }
