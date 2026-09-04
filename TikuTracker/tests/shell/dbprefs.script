@@ -1,4 +1,5 @@
 # shell: desktop
+# rm: ~/.config/deskbar
 # DB-061..DB-065: the leaf opens the Deskbar preferences controller, which
 # hides on close, reopens, and edits the user's own menu folder.
 wait 8

@@ -1,5 +1,7 @@
 # shell: desktop
 # home: fixture
+# mkdir: ~/.Trash ~/.config/tracker
+# file: ~/.Trash/planted.txt hi
 # Item 5 of the HIG adoption: a destructive verb never rides Return.
 # Empty Trash asks and its default is Cancel; Delete's question completes
 # reversibly by default -- Return lands on Move to Trash, never Delete.

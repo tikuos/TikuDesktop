@@ -1,4 +1,5 @@
 # shell: desktop
+# link: /nowhere-at-all work/dangling
 # AW-031: opening a link that leads nowhere offers Get Info, not a bare
 # error.
 wait 8

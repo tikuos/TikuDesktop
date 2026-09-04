@@ -1,4 +1,5 @@
 # shell: desktop
+# file: work/sub/a.txt other
 # An agent must never learn about a dialog by staring at pixels: the
 # collision question is a FACT, answered by name in both drivers --
 # in-process from the overlay's state, conducted through the channel's

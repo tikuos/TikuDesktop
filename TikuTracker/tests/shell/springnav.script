@@ -1,4 +1,6 @@
 # shell: desktop
+# mkdir: work/sub/inner
+# file: work/sub/doc.txt hi
 # PVS-051/052/054: a drag resting on a folder springs a NAVIGABLE menu of
 # its contents; containers are enabled and descend in place, a file nothing
 # claims is greyed and swallows the release, choosing an entry drops the

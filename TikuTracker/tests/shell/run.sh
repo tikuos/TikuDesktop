@@ -192,6 +192,23 @@ for s in "$here"/*.script; do
         echo hi > $work/a.txt
         echo hi > $work/b.txt
         echo hi > $work/c.txt
+        # The simplest setup a script carries as headers of its own:
+        # "# mkdir: ~/Documents", "# file: work/sub/a.txt other",
+        # "# touch:", "# rm:", "# link: target path".  ~/ is the
+        # script's home and work/ its fixture; anything else is as
+        # written.  In the order the script says them.
+        grep -E '^# (mkdir|file|touch|rm|link): ' "$s" | while IFS= read -r line; do
+            kind=${line#\# }; kind=${kind%%:*}; args=${line#*: }
+            set -- $args
+            expand() { case $1 in "~/"*) printf '%s' "$deskhome/${1#"~/"}" ;; work/*) printf '%s' "$work/${1#work/}" ;; *) printf '%s' "$1" ;; esac; }
+            case $kind in
+                mkdir) for p in "$@"; do mkdir -p "$(expand "$p")"; done ;;
+                file)  p=$(expand "$1"); shift; printf '%s\n' "$*" > "$p" ;;
+                touch) : > "$(expand "$1")" ;;
+                rm)    rm -rf "$(expand "$1")" ;;
+                link)  ln -s "$(expand "$1")" "$(expand "$2")" ;;
+            esac
+        done
         # What one script needs laid out before it starts lives beside
         # the scripts, in setup/<name>.sh: the file a "# setup:" header
         # names, else the one named after the script, else nothing.

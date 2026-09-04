@@ -1,4 +1,5 @@
 # shell: desktop
+# file: work/sub/a.txt other
 # FS-018/FS-035: a collision now ASKS instead of the shell answering for it.
 # Copying a.txt onto a folder that already holds one must stop and put the
 # question up, and the answer must reach the engine.

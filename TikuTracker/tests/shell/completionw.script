@@ -1,5 +1,7 @@
 # shell: desktop
 # home: fixture
+# mkdir: ~/Documents
+# file: ~/recipes.query q
 # NeXT UIG ch3 in the desktop shell: Cmd-Space completes in the Find
 # window's name field and in the save panel's.
 wait 10

@@ -1,4 +1,6 @@
 # shell: desktop
+# mkdir: work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row
+# file: work/sub/quite-a-long-directory-name-that-will-not-fit-in-the-row/deep.txt hi
 # AW-073: a truncated Info field reveals its full text in a floating
 # pop-up while hovered, and the pop-up leaves with the pointer.
 wait 10

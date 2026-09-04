@@ -1,5 +1,6 @@
 # shell: desktop
 # home: fixture
+# mkdir: ~/.config/tracker/Desktop/sub
 # NeXT UIG ch8: two rows sharing a name gain the MINIMUM distinguishing
 # path -- here in the Move to picker's recent folders.
 wait 10

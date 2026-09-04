@@ -1,5 +1,7 @@
 # shell: desktop
 # work: home
+# mkdir: /dev/shm/.Trash
+# file: /dev/shm/.Trash/planted.txt hi
 # PVN-027: the Trash window is the union over every volume's trash, kept
 # live -- a move into ANY trash appears there on the refresh beat.
 wait 10

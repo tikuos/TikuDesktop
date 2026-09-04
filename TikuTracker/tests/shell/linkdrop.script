@@ -1,5 +1,7 @@
 # shell: desktop
 # home: fixture
+# link: work/sub work/alias
+# link: /nowhere-at-all work/broken
 # MA-016: a symlink defers to its TARGET as a drop target -- dropping on a
 # link to a folder lands the item in the folder; a broken link refuses.
 note rows: 0 alias->sub, 1 sub, 2 a.txt, 3 b.txt, 4 broken, 5 c.txt

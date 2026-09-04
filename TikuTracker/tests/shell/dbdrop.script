@@ -1,4 +1,5 @@
 # shell: desktop
+# rm: ~/.config/deskbar
 # DB-009: dragging a file onto the Deskbar leaf makes a link there, not a
 # copy -- the bar is a set of pointers at things.
 note drag a.txt from the window onto the Deskbar logo

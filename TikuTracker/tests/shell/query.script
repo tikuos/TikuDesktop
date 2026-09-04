@@ -1,4 +1,5 @@
 # shell: desktop
+# touch: work/zqxjv.txt
 # Q-023/Q-045/CW-033: a search leaves a record, and the window it produced
 # offers Edit query, which reopens the panel ON that query rather than
 # running the same search again.
