@@ -36,6 +36,14 @@ inside `kits/`, `TikuTracker/` and `apps/` only forward here, so
 TRK_SHELL_ONLY=about.script sh TikuTracker/tests/shell/run.sh
 ```
 
+With a TikuOS board on a serial line, the scripts marked `# board: yes`
+run a second time against it, mounted where the script expects the
+mirrored files:
+
+```sh
+TRK_PORT=/dev/ttyACM0 make test
+```
+
 Read a result by its counts, not its colour: a suite that silently stopped
 prints no failures.  `TikuTracker/HANDOVER.md` §2 lists the build's traps.
 

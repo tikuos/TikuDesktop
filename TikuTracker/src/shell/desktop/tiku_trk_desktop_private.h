@@ -415,6 +415,7 @@ typedef struct {
     const char *port;
     int         baud;
     int         use_device;
+    const char *mount_at;           /* -mount: where the -p board goes */
     const char *shot;               /* write a frame here, then stop */
     int         shot_menu, shot_panel, shot_live, shot_shift, shot_zoom;
     int         shot_cascade, shot_notify, shot_select;
@@ -610,7 +611,8 @@ int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
 
 /* tiku_trk_desktop_mounts.c */
-int mount_devices(desktop_t *app, const char *port, int baud);
+int mount_devices(desktop_t *app, const char *port, int baud,
+                  const char *at);
 int refresh_after_mount(void *ctx);
 void save_before_unmount(dev_t dev, void *context);
 

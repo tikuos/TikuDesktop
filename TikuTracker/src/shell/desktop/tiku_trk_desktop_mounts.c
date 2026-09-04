@@ -143,12 +143,14 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
  * One backend per board, each at a name of its own, so two of them are
  * two places in one namespace rather than two desktops.  A board that
  * will not open is skipped rather than fatal: the others are still
- * worth showing, and the shell is not a device tool.
+ * worth showing, and the shell is not a device tool.  A board named by
+ * @p port goes at @p at when that is given, so a namespace a script
+ * was written against can be laid over a real board.
  *
  * @return how many were mounted.
  */
 int
-mount_devices(desktop_t *app, const char *port, int baud)
+mount_devices(desktop_t *app, const char *port, int baud, const char *at)
 {
     char scan[TIKU_MOUNT_MAX][256];
     int found, i, mounted = 0;
@@ -166,8 +168,12 @@ mount_devices(desktop_t *app, const char *port, int baud)
         if (dev == NULL) {
             continue;
         }
-        device_mount_name(dev, app->backend, name, sizeof name);
-        snprintf(prefix, sizeof prefix, "/devices/%s", name);
+        if (at != NULL && at[0] == '/' && port != NULL && port[0] != '\0') {
+            snprintf(prefix, sizeof prefix, "%s", at);
+        } else {
+            device_mount_name(dev, app->backend, name, sizeof name);
+            snprintf(prefix, sizeof prefix, "/devices/%s", name);
+        }
         if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
             tiku_backend_close(dev);
             continue;

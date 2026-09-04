@@ -107,6 +107,16 @@ for s in "$here"/*.script; do
         if grep -q '^# mount: ' "$s"; then
             mountat=$(sed -n 's/^# mount: //p' "$s" | head -1)
         fi
+        # With a board on the cable (TRK_PORT=/dev/ttyACM0), a script that
+        # says "# board: yes" runs a second time with the board at its
+        # mount path instead of the mirrored files -- the same asks, of a
+        # store that answers over a line.  Scripts that read files the
+        # fixture wrote into the mirror do not say it.
+        board=""
+        if [ -n "${TRK_PORT:-}" ] && [ -n "$mountat" ] &&
+           grep -q '^# board: yes' "$s"; then
+            board=yes
+        fi
         # Which path the shell is started on.  The engine has no verb for
         # opening one, so the window a script wants is the one it was
         # given on the command line -- and a script about the namespace
@@ -320,6 +330,17 @@ for s in "$here"/*.script; do
                 TIKU_APPS="$appsdir" \
                 TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
+                -script "$s" || fails=$((fails+1))
+        fi
+        if [ -n "$board" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, board on %s)\n' "$(basename "$s")" "$bin" "$TRK_PORT"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -devices -p "$TRK_PORT" -mount "$mountat" \
                 -script "$s" || fails=$((fails+1))
         fi
     done

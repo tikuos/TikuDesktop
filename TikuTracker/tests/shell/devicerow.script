@@ -1,6 +1,7 @@
 # shell: desktop
 # home: fixture
 # mount: /devices/board1
+# board: yes
 # A store that is attached gets a row; one that is not gets nothing.
 #
 # This is the row /sys, /dev and /data used to occupy, written into every

@@ -1,6 +1,7 @@
 # shell: desktop
 # home: fixture
 # mount: /devices/bus/board1
+# board: yes
 # open: /devices
 # The namespace, under a real window.
 #

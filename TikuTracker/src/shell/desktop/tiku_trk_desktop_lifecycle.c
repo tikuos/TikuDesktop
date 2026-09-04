@@ -231,7 +231,13 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
          * desktops.  Both are kept: -d is what a device tool wants.
          */
         else if (strcmp(argv[i], "-devices") == 0) { o->want_devices = 1; }
-        else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { o->port = argv[++i]; o->use_device = 1; }
+        else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { o->port = argv[++i]; }
+        /*
+         * Where the one board -p names goes in the namespace, instead of
+         * under its own name: a script that expects /devices/board1 can
+         * be run against whatever is on the cable.
+         */
+        else if (strcmp(argv[i], "-mount") == 0 && i + 1 < argc) { o->mount_at = argv[++i]; o->want_devices = 1; }
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { o->baud = atoi(argv[++i]); }
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { o->shot = argv[++i]; }
         else if (strcmp(argv[i], "-shotmenu") == 0) { o->shot_menu = 1; }
@@ -264,6 +270,12 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
         else if (strcmp(argv[i], "-seconds") == 0 && i + 1 < argc) {
             o->deadline = tiku_trk_now() + (int64_t)atoi(argv[++i]) * 1000000;
         }
+    }
+    /* A port named without -devices is the board AT the root, the
+     * device-tool arrangement; with -devices it is one entry under
+     * /devices and the root stays local, so the line is opened once. */
+    if (o->port != NULL && !o->want_devices) {
+        o->use_device = 1;
     }
     return -1;
 }
@@ -299,7 +311,7 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         }
     }
     if (o->want_devices) {
-        (void)mount_devices(app, o->port, o->baud);
+        (void)mount_devices(app, o->port, o->baud, o->mount_at);
     }
     {
         /*
