@@ -1,98 +1,123 @@
-# One functionality, one file
+# One functionality, one file; one function, one screen
 
-*A plan for the four shell-side monoliths, 2026-09-04.  Follows
-PLAN-structure.md, whose phases 0-6 landed; the measurements below are of
-the tree at 8b53df7.*
+*The combined plan for the shells and the Tracker core (`TikuTracker/src`):
+the file split begun in this document's first version, and what the Linux
+kernel's coding style adds to it.  2026-09-04, measured on the tree after
+milestones 0-2.*
 
-## 1. What the rule finds
+**Status.**  Milestones 0, 1 and 2 landed on 2026-09-04: `tools/split_file.py`
+(report, bootstrap, move, cut, sync), `src/ui/poseview/` (13 files) and
+`src/shell/tracker/` (12 files).  Two things the work settled beyond the
+first plan: a promoted static is renamed with its family's tag (`pv_`,
+`browser_`), because the two families both had a `pose_index` and met in
+the link; and split files live in a subdirectory with the `tiku_trk_`
+prefix kept.  Milestones 3 to 6 below remain.
 
-The rule is the one the desktop shell already keeps after its split: a
-file owns one functionality, is named for it, and a reader can find it
-from the name alone.  Measured against that, nine files carry several
-functionalities under section banners and hold a third of the tree's
-93,000 lines.  Four of them are shell-side and are where the next bug
-lands; the kit-side ones (`tiku_fs`, `tiku_query`, `tiku_dl`, `tiku_msg`)
-are stages of one job each and stay.
+## 1. Where the tree stands against the kernel style
 
-| File | Lines | Functions | What is inside | Shared across sections |
-|---|---|---|---|---|
-| `src/ui/tiku_trk_poseview.c` | 6529 | 221 | 14 sections: list access, loading, batches, selection, keyboard, type-ahead, sorting, icon layout, rename, spatial memory, notices, viewport and extent, liveness and drawing, saved columns | 4 file-scope statics; each section calls 1-9 statics of the others |
-| `src/shell/tiku_trk_app.c` | 4067 | 63 | the TikuTracker browser shell in one file: `tracker_run` 1125 lines (arguments, boot, a 912-line loop, teardown), `handle_key` 516, `menu_invoke` 332, `draw` 271, navigation, rename, script hooks | none: it is one function talking to itself |
-| `src/deskbar/tiku_trk_deskbar.c` | 3564 | 116 | an unbannered 1485-line head (the menus), then layout, drawing, interaction, drops | the drawing and interaction sections call 10-11 statics of the head |
-| `src/shell/desktop/tiku_trk_desktop_events.c` | 2985 | 6 | the four event cases, and `desktop_turn_end`: 476 lines doing spring tracking, thumbnails, press-and-hold, the rename pulse, focus paint, the device pump, the sweep, the 400 ms notice pump (170 lines), the shot, the frame, progress, deadline, closing, the script clock | none |
+The kernel document (`docs.kernel.org/process/coding-style.html`) is
+mostly formatting, and on formatting this tree is already consistent.
+Measured on the 296 source files of `kits/`, `TikuTracker/src` and
+`apps/`, generated data excluded:
 
-The banners are the split, already written down: every section title
-is a file name.  The head of the deskbar and the loop of the browser
-shell are the two places with no banner, and they need one pass of
-reading before they can be cut.
+| Kernel rule | This tree | Verdict |
+|---|---|---|
+| 80 columns | 134 lines over, 15 over 100 | keep, and fix the 134 |
+| `/* */` only, no `//` | none | already so |
+| no trailing whitespace, no tab/space mix | none | already so |
+| `} else {` on one line, space after keywords | 423 so; 72 exceptions are one-line aligned `if/else if` tables | keep the idiom |
+| lowercase names, no camelCase, no Hungarian | 22 camelCase identifiers, all R5 names in comments | already so |
+| braces: omit on single statements | this tree always braces (6 exceptions) | keep ours: stricter |
+| centralised exit with `goto` | 51 uses, where it matters | keep |
+| macros: uppercase, `do { } while (0)`, no control flow | 0 violations | already so |
+| no `#ifdef` in `.c` bodies | 0 in `TikuTracker/src` | already so |
 
-What guards the cuts: `test_poseview.c` (1977 lines), `test_deskbar_dock.c`
-(1032), `test_deskbar_prefs.c`, 39 shell scripts that run the browser
-shell, and `make print-ownership`, which must not change.
+Four kernel rules this tree deliberately does not follow, and will not:
+8-column tabs; the return type on the same line as the name; no
+`typedef`s for structs; `!ptr` and `sizeof(x)` spellings.  Each is
+consistent across the tree (262 typedefs, 4215 `== NULL` to 124 `!p`,
+2073 `sizeof x` to 16) and is the TikuOS convention; changing any would
+be churn without gain.
 
-## 2. The method, once
+What the kernel is strict about and this tree is not is size and
+documentation, and those are the two things worth taking:
 
-The desktop split (PLAN-structure phase 3) settled the method, and it is
-reused unchanged:
+| Kernel rule | `TikuTracker/src` today |
+|---|---|
+| a function fits in one or two screens (48 lines) | 1433 functions; 162 over 48, 63 over 100, **17 over 200** |
+| five to ten locals, else the function does too much | 31 over five, 2 over ten |
+| comment at the head of a function, not inside it | 1007 definitions carry no comment; 273 exported functions are documented in no header either; 180 statics undocumented |
+| data declarations must be commented | 1083 struct fields, **898 without a comment** |
+| in-body comments only where the code is tricky | 3.1 comment blocks per 100 lines overall; the biggest functions carry 20 to 35 each, each block introducing what should be a function |
+| file heads short; long prose belongs in Documentation | 3 file headers over 20 lines, 12 doc comments over 6 prose lines |
 
-1. **A private header per split**: `tiku_trk_<x>_private.h` holds the
-   includes, the macros, the struct, the inline accessors, and a
-   generated block of prototypes for every function one file defines
-   and another uses.  Nothing becomes public that was static.
-2. **Moves in source order**, one section per file, the file named for
-   the banner.  A function is never edited in the move; forward
-   declarations are generated, not written.
-3. **The tool does the move**: bootstrap, move, sync, report.  Its
-   bugs are known (single and multi-line forward declarations, static
-   declarations copied into the header, `&app` losing its `&`,
-   `= ev;` copies, appending out of source order) and each has a check.
-4. **Proof is the diff of behaviour, not of text**: the same tests pass
-   before and after, `print-ownership` is byte-identical, and the
-   stripped object code of the split files links to the same symbol
-   set.
+The two tables are one finding.  The seventeen functions over 200 lines
+are where the in-body comments cluster, because a comment that introduces
+a block is a function name that was never written.  Splitting them by
+their comments is both halves of the kernel's advice at once.
+
+## 2. The seventeen
+
+Every function over 200 lines in the shells and the core, with the cut
+each wants.  The tool's `cut` does the lifting; the names come from the
+in-body comments already there.
+
+| Lines | Function | Cut |
+|---|---|---|
+| 709 | `tiku_trk_script_pump` (script engine) | one function per verb, called from a dispatch table |
+| 563 | `tiku_trk_deskbar_draw` | one function per region: clock, tray, application list, the folder |
+| 516 | `browser_handle_key` | by key group: navigation, selection, editing, the rest |
+| 476 | `desktop_turn_end` | by owner: notice pump and sweep to `_mounts.c`, rename pulse and press-and-hold to `_commands.c`, thumbnails and focus paint to `_draw.c` |
+| 460 | `menu_invoke` (desktop) | by command family: file, window, view, find, settings |
+| 417 | `tiku_trk_deskbar_click` | by region, mirroring the draw |
+| 387 | `browser_pointer_down` | by target: title, navigator, list, count bar, popup |
+| 379 | `tiku_trk_poseview_notify` | by notice kind: added, removed, renamed, changed |
+| 341 | `tiku_trk_script_open` | the parser: headers, then verbs |
+| 332 | `browser_menu_invoke` | by command family, as the desktop's |
+| 321 | `tiku_trk_folder_window_draw` | by region |
+| 300 | `draw_all` (desktop) | by layer: backdrop, windows, overlays, the bar |
+| 271 | `browser_draw` | by region |
+| 268 | `tracker_run` (browser) | the pump loop out as `browser_turn_begin`, as the desktop's |
+| 259 | `deskbar_pick_dispatch` | by pick kind |
+| 247 | `open_popup` (find) | one function per popup |
+| 204 | `tiku_trk_poseview_poll` | by stage: the ring, the re-list, the sweep |
+
+A cut is a move of lines into a named function with the state passed in;
+the tool does the substitutions and the tests prove the behaviour.  The
+ceiling after this milestone is 200 lines; the next pass, when it comes,
+takes it to 100, which is where 63 functions sit today.
 
 ## 3. Milestones
 
 | # | Milestone | Scope | Cost | Done when |
 |---|---|---|---|---|
-| **0** | The tool in the tree | `tools/split_file.py` from the desktop split's scratch tool, with its checks; a `--report` that lists a file's sections, their sizes and cross-section calls | half a day | `python3 tools/split_file.py --report src/ui/tiku_trk_poseview.c` prints the table in section 1 |
-| **1** | Poseview | `src/ui/poseview/`: `_private.h` + `list.c`, `load.c` (loading and batches), `select.c`, `keys.c`, `typeahead.c`, `sort.c`, `iconmode.c`, `rename.c`, `spatial.c`, `extent.c` (notices, viewport and extent), `draw.c`, `columns.c`; the public `tiku_trk_poseview.h` unchanged | two days | no file over 1300 lines, none with two banners; `test_poseview` and the scripts pass; ownership unchanged |
-| **2** | The browser shell | `src/shell/tracker/`: `_private.h` + `lifecycle.c` (arguments, boot stages, teardown), `events.c` (the loop's cases: key, pointer, tick), `commands.c` (`menu_invoke`), `draw.c`, `navigate.c`, `rename.c`, `script.c` (the script hooks); `tracker_run` becomes the loop between the calls, as the desktop's did | two days | `tracker_run` under 150 lines; no function over 300; the 39 scripts pass in the tracker lane |
-| **3** | The deskbar | one reading pass to banner the 1485-line head (the leaf menu, recents, places, the application list); then `src/deskbar/deskbar/`: `menus.c`, `layout.c`, `draw.c`, `press.c`, `drops.c` + `_private.h` | one and a half days | head bannered; no file over 1300 lines; `test_deskbar_dock` and `test_deskbar_prefs` pass |
-| **4** | The turn | `desktop_turn_end` split by owner, not by a new file: the notice pump to `_mounts.c`, the sweep with it, the rename pulse and press-and-hold to `_commands.c`, thumbnails and focus paint to `_draw.c`, shot, frame, deadline and closing stay as the turn; each a named function called in the same order | one day | `desktop_turn_end` under 80 lines and reads as a list of what a turn does |
-| **5** | The rule, enforced | `kits/tools/check_architecture.py` gains two limits under `make check-architecture`: no function over 300 lines and no file with more than one section banner; the four files above are the only ones it would have caught, so it goes in green | half a day | the check fails when a banner is added back into any split file (proved once, then reverted) |
+| **3** | The deskbar | one reading pass to banner the 1485-line head (leaf menu, recents, places, the application list); then `src/deskbar/deskbar/`: `menus`, `layout`, `draw`, `press`, `drops` and a private header, tag `db` | a day and a half | head bannered; no file over 1300 lines; `test_deskbar_dock` and `test_deskbar_prefs` pass |
+| **4** | The seventeen | the table in section 2, top down, each with `split_file.py cut` and the in-body comments becoming the names; the desktop turn and the deskbar draw first | three days | no function in `TikuTracker/src` over 200 lines; the suite passes after every cut |
+| **5** | Comments the kernel way | (a) every function documented exactly once: exported ones at their prototype in the header, statics at their definition -- the 273 and the 180 written, as contracts (what it does, what it returns, what it refuses); (b) every field of a shared struct commented, the three private headers first (`desktop_t`, `app_t`, the poseview struct) then the public ones, 898 fields; (c) the 12 long doc comments and 3 long file headers shortened, their essays to `TikuTracker/doc/` | three days | `tools/check_style.py` reports zero undocumented functions and zero uncommented fields in private headers |
+| **6** | The rule, enforced | `tools/check_style.py`, run by `make lint` beside the comment checker: function ≤ 200 lines, locals ≤ 10, one banner per file, file header ≤ 20 lines, no `//`, 80 columns, every function documented once, every private-header field commented.  An exemption list in the file, each entry with its reason.  Each rule proved by mutation once: a violation added, the check fails, the violation reverted | one day | `make lint` is green with the rules on, and each rule has failed once on purpose |
 
-Milestones 1 and 2 are independent of each other and each other's
-biggest; 3 and 4 are independent of everything.  5 last, so that it
-passes the day it lands.  The whole plan is a working week.
+Order: 3, then 4 and 5 interleaved (a cut writes the comment its new
+function needs), then 6 so it lands green.  Eight working days.
 
 ## 4. What is left alone, and why
 
-- `tiku_fs.c`, `tiku_query.c`, `tiku_dl.c`, `tiku_msg.c`: nine, four,
-  five and seven sections, but each is one job read start to end (a
-  queue and its work; matching, rendering, running; bytes to wire to
-  reader).  BeOS kept the equivalents as one class each.  The size
-  limit in milestone 5 would flag `tiku_fs.c`'s Trash section at 1024
-  lines; it is exempt by name in the check, with the reason written
-  there.
-- `apps/ide/tiku_ide.c` (3706 lines, five sections): an application,
-  not the shell, and the IDE has its own plan (`apps/PLAN-ide.md`).  It
-  gets the same treatment when that plan is worked, with milestone 0's
-  tool.
-- The folder window's six files: the opposite case, one window spread
-  over window, edit, lifecycle, actions, file actions, menu.  Each has
-  a name and a reason; a README line in `src/ui/windows/` mapping the
-  six is enough.
+- The kit-side sectioned files (`tiku_fs`, `tiku_query`, `tiku_dl`,
+  `tiku_msg`): stages of one job each, read start to end.  The 200-line
+  rule applied to `kits/` later would flag nine functions; that is a
+  separate pass with its own plan.
+- `apps/ide/tiku_ide.c` (3706 lines, `ide_event` at 484): an
+  application, with its own plan; it gets the same tool when that plan
+  is worked.
+- The formatting differences in section 1: decided, not deferred.
+- The folder window's six files: one window over six named files; a
+  README line in `src/ui/windows/` mapping them is enough.
 
 ## 5. Decisions that are yours
 
-1. Whether milestone 2 lands before or after 1.  The browser shell is
-   the one that ships on a device, which argues for first; poseview is
-   where the tests are thickest, which argues for practising there.
-2. Whether the split files live in a subdirectory (`src/ui/poseview/`)
-   or beside the old file with a suffix (`tiku_trk_poseview_select.c`).
-   The desktop split used the suffix form and it is already 14 files
-   wide; the subdirectory form is proposed here.
-3. The limits in milestone 5: 300 lines per function and one banner
-   per file are what the tree after milestones 1-4 satisfies with
-   room.  Tighter is possible later; looser defeats the point.
+1. The ceiling: 200 lines per function now, 100 later, is the proposal.
+   The kernel's own number is 48; that would be a rewrite, not a plan.
+2. Where the essays go when a file header is shortened:
+   `TikuTracker/doc/` beside `spec/`, or the existing `HANDOVER.md`.
+3. Whether milestone 5(a) documents the statics too, or only the
+   exported functions.  The kernel documents both; 180 statics is a
+   day.
