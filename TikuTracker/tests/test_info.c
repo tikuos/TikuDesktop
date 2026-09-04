@@ -526,7 +526,7 @@ main(void)
          * empty string without ever reaching the code it is about.
          */
         if (ns != NULL && tiku_mount_add(ns, "/", b, 0) == 0 &&
-            tiku_trk_info_open(&through, ns, "/tmp") == 0) {
+            tiku_trk_info_open(&through, ns, "/") == 0) {
             got = field_of(&through, st, TIKU_TRK_INFO_F_FILESYSTEM,
                            &label);
         }

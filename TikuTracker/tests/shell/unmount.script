@@ -1,10 +1,12 @@
 # shell: both
+# open: /dev/shm
 # AW-096/CW-034: Unmount is a real command reached from the keyboard, and
-# an unmount that cannot happen says so instead of doing nothing.
+# an unmount that cannot happen says so instead of doing nothing.  Shown a
+# VOLUME -- /dev/shm is one on every Linux, where /tmp is one only on
+# some -- because a folder that is no volume gets a status line, not a
+# refusal, and that is a different row.
 wait 8
-key Up ctrl
-wait 8
-expect-title tmp
+expect-title shm
 note Cmd+U on the volume being shown; without the right to unmount it,
 note the refusal is said out loud rather than nothing happening
 key u ctrl

@@ -188,8 +188,12 @@ main(void)
               TIKU_HIT_ZOOM && hit == window,
           "ordinary windows expose their zoom control");
     tiku_window_set_size_controls(window, 0, 0);
-    check(tiku_workspace_hit(workspace, 294, 250, &hit) ==
-              TIKU_HIT_TAB,
+    /* The tab is as wide as its title and buttons need, so with the zoom
+     * button gone the point that WAS the zoom is past the tab's end; the
+     * title, just right of the close box, is the tab in both shapes. */
+    check(tiku_workspace_hit(workspace, 294, 250, &hit) != TIKU_HIT_ZOOM &&
+          tiku_workspace_hit(workspace, 250, 250, &hit) == TIKU_HIT_TAB &&
+          hit == window,
           "window capabilities remove disabled chrome controls");
     tiku_window_set_handlers(window, window_event, window_close,
                                   window_destroy);

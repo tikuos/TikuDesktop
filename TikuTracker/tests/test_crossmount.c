@@ -122,7 +122,11 @@ main(void)
     char from[512], to[512], landed[512];
 
     setvbuf(stdout, NULL, _IOLBF, 0);
-    snprintf(work, sizeof work, "/tmp/trk-cross-%d", (int)getpid());
+    /* Under the home, not /tmp: the local item's Trash resolves into the
+     * home only when the two share a filesystem, and on a machine where
+     * /tmp is the root disk and /home its own, a /tmp fixture has no
+     * Trash a user may make. */
+    snprintf(work, sizeof work, "%s/.trk-cross-%d", getenv("HOME"), (int)getpid());
     sh("rm -rf %s && mkdir -p %s/here %s/away/sub", work, work, work);
     sh("printf 'hello' > %s/away/small.txt", work);
     sh("head -c 200000 /dev/zero > %s/away/big.bin", work);
