@@ -40,7 +40,7 @@ include mk/apps.mk
 .DEFAULT_GOAL := all
 
 .PHONY: all kits shells apps tests test run clean sweep-legacy \
-        check-architecture check-shipping
+        check-architecture check-shipping lint lint
 
 all: sweep-legacy kits shells apps tests
 
@@ -82,6 +82,18 @@ check-architecture:
 
 check-shipping:
 	@python3 $(T)/tools/check_shipping.py
+
+# The comment and commit rules are house convention kept in the tikuOS
+# checkout's hygiene/, which is gitignored there and absent from a clone
+# of this tree alone.  Checked when present; said out loud when not,
+# because a check that silently did not run reads as a pass.
+lint:
+	@if [ -x $(TIKUOS)/hygiene/check_comment_style.py ]; then \
+	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR); \
+	else \
+	    echo "check_comment_style: SKIPPED -- no hygiene/ at $(TIKUOS)"; \
+	    echo "  comment style is UNCHECKED; see hygiene/commentstyle.md"; \
+	fi
 
 run: $(BUILD)/TikuDesktop
 	./$(BUILD)/TikuDesktop
