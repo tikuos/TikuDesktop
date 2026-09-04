@@ -396,48 +396,140 @@ browser_draw(app_t *a)
     browser_draw_folder_icon(a, bar);
     draw_navigator(a);
     list = browser_list_rect(a);
-    /* The view cannot see its own window.  Without this a page is one row
-     * and the scroll is never clamped -- both stated in terms of what is
-     * VISIBLE, which only the window knows. */
-    tiku_trk_poseview_set_visible_rows(a->view, rows);
-
-    /* The title strip.  Every title is placed from its column's OFFSET, so
-     * a title and the cells beneath it cannot drift apart. */
-    title = (tiku_rect_t){ list.x,
-                                bar.y + bar.h + browser_navigator_height(a),
-                                list.w, TITLE_H };
-    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
-        tiku_fill(s, title, TIKU_C_PANEL);
-        tiku_clip_set(s, title);
-        {
-        int dragged, drag_dx = 0;
-
-        dragged = tiku_trk_titleview_dragged(&a->tv, &drag_dx);
-        for (i = 0; i < ncol; i++) {
-            if (cols[i].field != dragged) {
-                browser_draw_title(a, title, &cols[i], 0, 0);
-            }
-        }
-        /* The dragged title goes on top.  Drawn in place it would be
-         * partly erased by whichever neighbour it is sliding over, since
-         * the next title's rect begins exactly where this one ends. */
-        for (i = 0; i < ncol; i++) {
-            if (cols[i].field == dragged) {
-                browser_draw_title(a, title, &cols[i], 1, drag_dx);
-            }
-        }
-        }
-        tiku_clip_reset(s);
-    }
-
-    if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
-        browser_draw_icons(a, list);
-        draw_count(a, list);
-        draw_popup(a);
-        tiku_trk_status_overlay_draw(&a->status_overlay);
-        a->dirty = 0;
+    if (browser_paint_title(a, s, &cols, list, &title, bar, ncol, rows)) {
         return;
     }
+    browser_paint_rows(a, s, f, &cols, list, ncol, rows, scroll, total);
+    browser_paint_scrollbar(a, s, list, rows, scroll, total);
+    browser_paint_guide(a, s, list);
+    browser_paint_editor(a, s, &cols, list, count);
+}
+
+void
+browser_blit(app_t *a)
+{
+    if (a->host == NULL) {
+        return;                     /* displayless: the surface IS the
+                                     * output, and -shot writes it */
+    }
+    (void)tiku_host_present(a->host, a->surf);
+}
+
+/**
+ * @brief the inline rename editor over its row
+ */
+void
+browser_paint_editor(app_t *a, tiku_surface_t *s,
+                     const tiku_trk_column_t **cols, tiku_rect_t list,
+                     tiku_rect_t count)
+{
+    if (a->editing) {
+        /* The editor sits where the name is, as an editable field: the row
+         * stays visible around it so the context is not lost. */
+        int i, n = tiku_trk_poseview_count(a->view);
+        int scroll = tiku_trk_poseview_scroll(a->view);
+
+        for (i = 0; i < n; i++) {
+            tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+            tiku_rect_t box;
+
+            if (p == NULL || strcmp(p->model.path, a->edit_path) != 0) {
+                continue;
+            }
+            {
+                /* The editor grows with the text and never past the name
+                 * column; past the cap the text slides so the caret stays
+                 * visible (MA-049). */
+                int bw = (*cols)[0].width, bs = 0;
+
+                tiku_field_metrics(&a->ed, 60, (*cols)[0].width,
+                                   browser_measure_prefix_px, NULL, &bw,
+                                   &bs);
+                box.x = browser_col_x(a, &(*cols)[0]);
+                box.y = list.y + 2 + (i - scroll) * a->row_h;
+                box.w = bw;
+                box.h = a->row_h;
+                tiku_ui_textfield_scroll(s, box, a->ed.text,
+                                              a->ed.caret, a->ed.sel_a,
+                                              a->ed.sel_b,
+                                              TIKU_S_FOCUS, bs);
+            }
+            break;
+        }
+    }
+    draw_count(a, list);
+    draw_popup(a);
+    tiku_trk_status_overlay_draw(&a->status_overlay);
+    (void)count;
+    a->dirty = 0;
+}
+
+/**
+ * @brief the guide while a column is being resized
+ */
+void
+browser_paint_guide(app_t *a, tiku_surface_t *s, tiku_rect_t list)
+{
+    if (a->tv.track == TIKU_TRK_TRACK_RESIZE && a->tv.line_x >= 0) {
+        /* TS-011: a full-height line down the LIST, not a mark on the
+         * strip -- what the user is judging is where the column will fall
+         * against the rows, and the strip cannot show that. */
+        tiku_clip_set(s, tiku_inset(list, 2));
+        tiku_vline(s, list.x + a->tv.line_x -
+                        tiku_trk_poseview_hscroll(a->view), list.y + 2,
+                        list.h - 4,
+                        tiku_tint(TIKU_C_DOC, 1.40f));
+        tiku_clip_reset(s);
+    }
+}
+
+/**
+ * @brief the scrollbar, drawn from the bar rather than from the view
+ */
+void
+browser_paint_scrollbar(app_t *a, tiku_surface_t *s, tiku_rect_t list, int rows,
+                        int scroll, int total)
+{
+    /* Scrollbar.  Drawn FROM the bar rather than from the view: it is a
+     * thing that can be held, and while it is held the range it shows is
+     * the one it was holding (PVL-051, PVL-052). */
+    {
+        tiku_rect_t sb = { list.x + list.w, list.y, SCROLL_W, list.h };
+        int tpos = 0, tlen = 0;
+        float frac, pos;
+
+        (void)tiku_scroll_set_range(&a->sb, total, rows);
+        if (!a->sb.tracking) {
+            (void)tiku_scroll_to(&a->sb, scroll);
+        }
+        if (tiku_scroll_thumb(&a->sb, list.h, &tpos, &tlen)) {
+            frac = (float)tlen / (float)list.h;
+            pos = (list.h > tlen)
+                      ? (float)tpos / (float)(list.h - tlen) : 0.0f;
+        } else {
+            frac = 1.0f;
+            pos = 0.0f;
+        }
+        a->sb_rect = sb;
+        tiku_ui_scrollbar(s, sb, pos, frac, 0);
+        /* CW-019: the bar highlights with the focus border -- except in a
+         * query window, where Haiku keeps the highlight off. */
+        if (a->active && !tiku_trk_poseview_is_query(a->view)) {
+            tiku_frame(s, sb, TIKU_C_FOCUS);
+        }
+    }
+
+}
+
+/**
+ * @brief the rows on screen, each in its columns
+ */
+void
+browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
+                   const tiku_trk_column_t **cols, tiku_rect_t list, int ncol,
+                   int rows, int scroll, int total)
+{
+    int i;
 
     /* Rows.  A store that cannot be written to is tinted, so a window that
      * will refuse every edit says so before one is attempted (PVL-076). */
@@ -470,8 +562,8 @@ browser_draw(app_t *a)
             /* IV-024: selection belongs to the Name cell.  Keep the icon
              * selected, but leave Kind/Value/Location cells on document
              * ground instead of turning the whole row into one banner. */
-            tiku_rect_t name = { browser_col_x(a, &cols[0]), row.y,
-                                      cols[0].width, row.h };
+            tiku_rect_t name = { browser_col_x(a, &(*cols)[0]), row.y,
+                                      (*cols)[0].width, row.h };
             tiku_rect_t inner = tiku_inset(list, 2);
             int x0 = (name.x > inner.x) ? name.x : inner.x;
             int x1 = (name.x + name.w < inner.x + inner.w)
@@ -514,10 +606,10 @@ browser_draw(app_t *a)
              * implementations of "what does this cell say" is how a column
              * comes to be fitted to text the row does not draw. */
             const char *txt = tiku_trk_poseview_cell_text(a->view, p,
-                                                          cols[j].field, tmp,
+                                                          (*cols)[j].field, tmp,
                                                           sizeof tmp);
-            int text_x = browser_col_x(a, &cols[j]);
-            tiku_rect_t cell = { text_x, row.y, cols[j].width,
+            int text_x = browser_col_x(a, &(*cols)[j]);
+            tiku_rect_t cell = { text_x, row.y, (*cols)[j].width,
                                       a->row_h };
             char fitted[80];
             int tw;
@@ -535,22 +627,22 @@ browser_draw(app_t *a)
                 cell.w = (x1 > x0) ? x1 - x0 : 0;
                 tiku_clip_set(s, cell);
             }
-            (void)tiku_text_fit(txt, cols[j].width,
-                                    tiku_trk_col_trunc_end(cols[j].field)
+            (void)tiku_text_fit(txt, (*cols)[j].width,
+                                    tiku_trk_col_trunc_end((*cols)[j].field)
                                         ? TIKU_TRUNC_END
                                         : TIKU_TRUNC_MIDDLE,
                                     browser_measure_text, (void *)f, fitted,
                                     sizeof fitted);
             tw = tiku_text_width(f, fitted);
-            if (cols[j].alignment == TIKU_TRK_ALIGN_RIGHT) {
-                text_x += cols[j].width - tw;
+            if ((*cols)[j].alignment == TIKU_TRK_ALIGN_RIGHT) {
+                text_x += (*cols)[j].width - tw;
             }
             tiku_text(s, f, text_x,
                            row.y + (a->row_h - f->height) / 2 + f->ascent,
                            fitted, (drawn_sel && j == 0)
                                       ? TIKU_C_SELTEXT
                                       : TIKU_C_TEXT);
-            if (cols[j].field == TIKU_TRK_COL_NAME &&
+            if ((*cols)[j].field == TIKU_TRK_COL_NAME &&
                 p->model.kind == TIKU_KIND_SYMLINK) {
                 /* MA-076/IV-043: under the TEXT only, and only in the first
                  * column -- a rule that underlined the whole cell would
@@ -566,93 +658,61 @@ browser_draw(app_t *a)
     }
     tiku_clip_reset(s);
 
-    /* Scrollbar.  Drawn FROM the bar rather than from the view: it is a
-     * thing that can be held, and while it is held the range it shows is
-     * the one it was holding (PVL-051, PVL-052). */
-    {
-        tiku_rect_t sb = { list.x + list.w, list.y, SCROLL_W, list.h };
-        int tpos = 0, tlen = 0;
-        float frac, pos;
-
-        (void)tiku_scroll_set_range(&a->sb, total, rows);
-        if (!a->sb.tracking) {
-            (void)tiku_scroll_to(&a->sb, scroll);
-        }
-        if (tiku_scroll_thumb(&a->sb, list.h, &tpos, &tlen)) {
-            frac = (float)tlen / (float)list.h;
-            pos = (list.h > tlen)
-                      ? (float)tpos / (float)(list.h - tlen) : 0.0f;
-        } else {
-            frac = 1.0f;
-            pos = 0.0f;
-        }
-        a->sb_rect = sb;
-        tiku_ui_scrollbar(s, sb, pos, frac, 0);
-        /* CW-019: the bar highlights with the focus border -- except in a
-         * query window, where Haiku keeps the highlight off. */
-        if (a->active && !tiku_trk_poseview_is_query(a->view)) {
-            tiku_frame(s, sb, TIKU_C_FOCUS);
-        }
-    }
-
-    if (a->tv.track == TIKU_TRK_TRACK_RESIZE && a->tv.line_x >= 0) {
-        /* TS-011: a full-height line down the LIST, not a mark on the
-         * strip -- what the user is judging is where the column will fall
-         * against the rows, and the strip cannot show that. */
-        tiku_clip_set(s, tiku_inset(list, 2));
-        tiku_vline(s, list.x + a->tv.line_x -
-                        tiku_trk_poseview_hscroll(a->view), list.y + 2,
-                        list.h - 4,
-                        tiku_tint(TIKU_C_DOC, 1.40f));
-        tiku_clip_reset(s);
-    }
-    if (a->editing) {
-        /* The editor sits where the name is, as an editable field: the row
-         * stays visible around it so the context is not lost. */
-        int i, n = tiku_trk_poseview_count(a->view);
-        int scroll = tiku_trk_poseview_scroll(a->view);
-
-        for (i = 0; i < n; i++) {
-            tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
-            tiku_rect_t box;
-
-            if (p == NULL || strcmp(p->model.path, a->edit_path) != 0) {
-                continue;
-            }
-            {
-                /* The editor grows with the text and never past the name
-                 * column; past the cap the text slides so the caret stays
-                 * visible (MA-049). */
-                int bw = cols[0].width, bs = 0;
-
-                tiku_field_metrics(&a->ed, 60, cols[0].width,
-                                   browser_measure_prefix_px, NULL, &bw,
-                                   &bs);
-                box.x = browser_col_x(a, &cols[0]);
-                box.y = list.y + 2 + (i - scroll) * a->row_h;
-                box.w = bw;
-                box.h = a->row_h;
-                tiku_ui_textfield_scroll(s, box, a->ed.text,
-                                              a->ed.caret, a->ed.sel_a,
-                                              a->ed.sel_b,
-                                              TIKU_S_FOCUS, bs);
-            }
-            break;
-        }
-    }
-    draw_count(a, list);
-    draw_popup(a);
-    tiku_trk_status_overlay_draw(&a->status_overlay);
-    (void)count;
-    a->dirty = 0;
 }
 
-void
-browser_blit(app_t *a)
+/**
+ * @brief the title strip and the mode buttons.  @return 1 when the drawing
+ * stops here
+ */
+int
+browser_paint_title(app_t *a, tiku_surface_t *s, const tiku_trk_column_t **cols,
+                    tiku_rect_t list, tiku_rect_t *title, tiku_rect_t bar,
+                    int ncol, int rows)
 {
-    if (a->host == NULL) {
-        return;                     /* displayless: the surface IS the
-                                     * output, and -shot writes it */
+    int i;
+
+    /* The view cannot see its own window.  Without this a page is one row
+     * and the scroll is never clamped -- both stated in terms of what is
+     * VISIBLE, which only the window knows. */
+    tiku_trk_poseview_set_visible_rows(a->view, rows);
+
+    /* The title strip.  Every title is placed from its column's OFFSET, so
+     * a title and the cells beneath it cannot drift apart. */
+    (*title) = (tiku_rect_t){ list.x,
+                                bar.y + bar.h + browser_navigator_height(a),
+                                list.w, TITLE_H };
+    if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST) {
+        tiku_fill(s, (*title), TIKU_C_PANEL);
+        tiku_clip_set(s, (*title));
+        {
+        int dragged, drag_dx = 0;
+
+        dragged = tiku_trk_titleview_dragged(&a->tv, &drag_dx);
+        for (i = 0; i < ncol; i++) {
+            if ((*cols)[i].field != dragged) {
+                browser_draw_title(a, (*title), &(*cols)[i], 0, 0);
+            }
+        }
+        /* The dragged title goes on top.  Drawn in place it would be
+         * partly erased by whichever neighbour it is sliding over, since
+         * the next title's rect begins exactly where this one ends. */
+        for (i = 0; i < ncol; i++) {
+            if ((*cols)[i].field == dragged) {
+                browser_draw_title(a, (*title), &(*cols)[i], 1, drag_dx);
+            }
+        }
+        }
+        tiku_clip_reset(s);
     }
-    (void)tiku_host_present(a->host, a->surf);
+
+    if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
+        browser_draw_icons(a, list);
+        draw_count(a, list);
+        draw_popup(a);
+        tiku_trk_status_overlay_draw(&a->status_overlay);
+        a->dirty = 0;
+        return 1;
+    }
+
+    return 0;
 }

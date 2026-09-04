@@ -206,11 +206,7 @@ void browser_count_label(app_t *a, int width, char *label, size_t max);
 void browser_draw(app_t *a);
 
 /* tiku_trk_app_events.c */
-void browser_pointer_down(app_t *app, const tiku_event_t *ev,
-                          browser_loop_t *lp);
-void browser_pointer_move(app_t *app, const tiku_event_t *ev,
-                          browser_loop_t *lp);
-void browser_pointer_up(app_t *app, const tiku_event_t *ev, browser_loop_t *lp);
+void browser_turn_begin(app_t *app, browser_loop_t *lp);
 void browser_turn_end(app_t *app, const browser_options_t *o,
                       browser_loop_t *lp);
 

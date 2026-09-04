@@ -85,133 +85,13 @@ browser_menu_invoke(app_t *a, int command)
             return;
         }
     }
-    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
-        /* The preferences page for it lives in the desktop shell. */
-        snprintf(a->status, sizeof a->status,
-                 "mount settings live in the desktop shell's preferences");
-        a->dirty = 1;
+    if (browser_cmd_mount(a, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
-        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
-         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
-                       TIKU_TRK_MOUNT_PART_MAX)) {
-        /* Asked of the system, and the answer -- on this host, that
-         * mounting needs its leave -- is said out loud (CW-034). */
-        char why[200];
-        int failed = 0, tried = 0;
-
-        why[0] = '\0';
-        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
-            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
-            int pn = tiku_partitions_scan(part,
-                                              TIKU_TRK_MOUNT_PART_MAX);
-            int k;
-
-            for (k = 0; k < pn; k++) {
-                if (part[k].mounted) {
-                    continue;
-                }
-                tried++;
-                if (tiku_volume_mount(part[k].name, why,
-                                          sizeof why) != 0) {
-                    failed++;
-                    break;
-                }
-            }
-        } else {
-            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
-
-            if (idx < a->menus.mount_parts) {
-                tried++;
-                failed = tiku_volume_mount(a->menus.mount_part[idx],
-                                               why, sizeof why) != 0;
-            }
-        }
-        if (failed && why[0] != '\0') {
-            tiku_alert_open(
-                tiku_trk_status_overlay_alert(&a->status_overlay),
-                TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
-                "Cancel");
-        } else if (tried == 0) {
-            snprintf(a->status, sizeof a->status,
-                     "every partition is already mounted");
-        }
-        a->dirty = 1;
+    if (browser_cmd_unmount(a, command)) {
         return;
     }
-    if (command == TIKU_TRK_CMD_UNMOUNT) {
-        /* The selection names the volume; with none, the volume ROOT being
-         * shown is the one the gesture means (CW-034).  Everything open on
-         * it saves itself first, while there is still somewhere to save
-         * to, and a refusal or failure is said out loud (AW-096). */
-        char paths[1][TIKU_PATH_MAX];
-        const char *sel[1];
-        const char *path = (browser_selection_paths(a, paths, sel, 1) > 0)
-                               ? sel[0] : tiku_trk_poseview_path(a->view);
-        tiku_volumes_t vols;
-        char why[200];
-
-        why[0] = '\0';
-        if (tiku_volumes_scan(&vols) > 0 &&
-            tiku_volume_is_root(&vols, path)) {
-            const tiku_volume_t *vol = tiku_volume_of(&vols, path);
-
-            if (tiku_volume_unmount(&vols, path, save_before_unmount,
-                                        a, why, sizeof why) ==
-                    TIKU_UNMOUNT_OK) {
-                snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
-                         (vol != NULL) ? vol->name : path);
-            } else if (why[0] != '\0') {
-                tiku_alert_open(
-                    tiku_trk_status_overlay_alert(&a->status_overlay),
-                    TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
-                    "Cancel");
-            }
-        } else {
-            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
-             * ch6). */
-            snprintf(a->status, sizeof a->status,
-                     "Unmount is not available here");
-        }
-        a->dirty = 1;
-        return;
-    }
-    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
-        /* Made HERE rather than in the shared controller: only the shell
-         * knows where the asking click landed, and the folder must appear
-         * there rather than in the next free slot (PVL-025, PVL-098). */
-        char made[TIKU_PATH_MAX], error[200];
-        int seeded, sx = 0, sy = 0, row;
-        const char *slash;
-
-        error[0] = '\0';
-        seeded = seed_new_entry(a, &sx, &sy);
-        if (a->fs != NULL && tiku_fs_new_folder(a->fs,
-                tiku_trk_poseview_path(a->view), made, sizeof made,
-                error, sizeof error) == 0) {
-            slash = strrchr(made, '/');
-            if (seeded) {
-                tiku_trk_poseview_drop_land(a->view,
-                    (slash != NULL) ? slash + 1 : made, sx, sy);
-            }
-            (void)tiku_trk_poseview_reload(a->view);
-            /* A reload drains in one go, so the loading loop never runs
-             * for it: the landing recorded above is applied here or not
-             * at all. */
-            browser_settle_layout(a);
-            row = browser_index_of_path(a, made);
-            if (row >= 0) {
-                tiku_trk_poseview_click(a->view, row, 0u);
-                browser_begin_rename(a);
-            }
-            snprintf(a->status, sizeof a->status, "created '%.180s'",
-                     slash != NULL ? slash + 1 : made);
-        } else {
-            snprintf(a->status, sizeof a->status, "%.200s",
-                error[0] != '\0' ? error : "could not create a new folder");
-        }
-        a->dirty = 1;
+    if (browser_cmd_new_folder(a, command)) {
         return;
     }
     /* Through the shared controller first: what Delete, Duplicate, Create
@@ -233,63 +113,7 @@ browser_menu_invoke(app_t *a, int command)
     }
 
     template_path = tiku_trk_cwmenu_template_path(&a->menus, command);
-    if (template_path != NULL) {
-        char made[TIKU_PATH_MAX], error[200];
-        const char *slash;
-        int row;
-
-        if (tiku_fs_new_from_template(
-                a->fs, template_path, tiku_trk_poseview_path(a->view),
-                made, sizeof made, error, sizeof error) == 0) {
-            slash = strrchr(made, '/');
-            (void)tiku_trk_poseview_reload(a->view);
-            row = browser_index_of_path(a, made);
-            if (row >= 0) {
-                tiku_trk_poseview_click(a->view, row, 0u);
-                browser_begin_rename(a);
-            }
-            snprintf(a->status, sizeof a->status, "created '%.180s'",
-                     slash != NULL ? slash + 1 : made);
-        } else {
-            snprintf(a->status, sizeof a->status, "%.200s",
-                     error[0] != '\0' ? error : "could not create from template");
-        }
-        a->dirty = 1;
-        return;
-    }
-    template_parent = tiku_trk_cwmenu_template_add_path(&a->menus, command);
-    if (template_parent != NULL) {
-        char made[TIKU_PATH_MAX], error[200];
-
-        if (tiku_fs_new_folder(a->fs, template_parent, made,
-                                   sizeof made, error, sizeof error) == 0) {
-            const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
-
-            snprintf(a->status, sizeof a->status,
-                     "created template submenu '%.150s'", strrchr(made, '/')
-                     != NULL ? strrchr(made, '/') + 1 : made);
-            if (root != NULL && browser_navigate_to(a, template_parent, 1)) {
-                int row = browser_index_of_path(a, made);
-
-                if (row >= 0) {
-                    tiku_trk_poseview_click(a->view, row, 0u);
-                }
-            }
-        } else {
-            snprintf(a->status, sizeof a->status, "%.200s",
-                     error[0] != '\0' ? error :
-                     "could not create template submenu");
-        }
-        a->dirty = 1;
-        return;
-    }
-    if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
-        const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
-
-        if (root != NULL) {
-            (void)browser_navigate_to(a, root, 1);
-        }
-        a->dirty = 1;
+    if (browser_cmd_template(a, command, template_path, &template_parent)) {
         return;
     }
     switch (command) {
@@ -504,4 +328,233 @@ browser_navigator_press(app_t *a, int x, int y)
     a->dirty = 1;
 #undef INSIDE
     return 1;
+}
+
+/**
+ * @brief a new entry from a template, and editing the templates.  @return 1
+ * when this was the command
+ */
+int
+browser_cmd_template(app_t *a, int command, const char *template_path,
+                     const char **template_parent)
+{
+    if (template_path != NULL) {
+        char made[TIKU_PATH_MAX], error[200];
+        const char *slash;
+        int row;
+
+        if (tiku_fs_new_from_template(
+                a->fs, template_path, tiku_trk_poseview_path(a->view),
+                made, sizeof made, error, sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            (void)tiku_trk_poseview_reload(a->view);
+            row = browser_index_of_path(a, made);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                browser_begin_rename(a);
+            }
+            snprintf(a->status, sizeof a->status, "created '%.180s'",
+                     slash != NULL ? slash + 1 : made);
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                     error[0] != '\0' ? error : "could not create from template");
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    (*template_parent) = tiku_trk_cwmenu_template_add_path(&a->menus, command);
+    if ((*template_parent) != NULL) {
+        char made[TIKU_PATH_MAX], error[200];
+
+        if (tiku_fs_new_folder(a->fs, (*template_parent), made,
+                                   sizeof made, error, sizeof error) == 0) {
+            const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
+
+            snprintf(a->status, sizeof a->status,
+                     "created template submenu '%.150s'", strrchr(made, '/')
+                     != NULL ? strrchr(made, '/') + 1 : made);
+            if (root != NULL && browser_navigate_to(a, (*template_parent), 1)) {
+                int row = browser_index_of_path(a, made);
+
+                if (row >= 0) {
+                    tiku_trk_poseview_click(a->view, row, 0u);
+                }
+            }
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                     error[0] != '\0' ? error :
+                     "could not create template submenu");
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
+        const char *root = tiku_trk_cwmenu_templates_root(&a->menus);
+
+        if (root != NULL) {
+            (void)browser_navigate_to(a, root, 1);
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief a new folder, named and renamed in place.  @return 1 when this was the
+ * command
+ */
+int
+browser_cmd_new_folder(app_t *a, int command)
+{
+    if (command == TIKU_TRK_CMD_NEW_FOLDER) {
+        /* Made HERE rather than in the shared controller: only the shell
+         * knows where the asking click landed, and the folder must appear
+         * there rather than in the next free slot (PVL-025, PVL-098). */
+        char made[TIKU_PATH_MAX], error[200];
+        int seeded, sx = 0, sy = 0, row;
+        const char *slash;
+
+        error[0] = '\0';
+        seeded = seed_new_entry(a, &sx, &sy);
+        if (a->fs != NULL && tiku_fs_new_folder(a->fs,
+                tiku_trk_poseview_path(a->view), made, sizeof made,
+                error, sizeof error) == 0) {
+            slash = strrchr(made, '/');
+            if (seeded) {
+                tiku_trk_poseview_drop_land(a->view,
+                    (slash != NULL) ? slash + 1 : made, sx, sy);
+            }
+            (void)tiku_trk_poseview_reload(a->view);
+            /* A reload drains in one go, so the loading loop never runs
+             * for it: the landing recorded above is applied here or not
+             * at all. */
+            browser_settle_layout(a);
+            row = browser_index_of_path(a, made);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                browser_begin_rename(a);
+            }
+            snprintf(a->status, sizeof a->status, "created '%.180s'",
+                     slash != NULL ? slash + 1 : made);
+        } else {
+            snprintf(a->status, sizeof a->status, "%.200s",
+                error[0] != '\0' ? error : "could not create a new folder");
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief unmounting the volume shown, refused out loud when it cannot be.
+ * @return 1 when this was the command
+ */
+int
+browser_cmd_unmount(app_t *a, int command)
+{
+    if (command == TIKU_TRK_CMD_UNMOUNT) {
+        /* The selection names the volume; with none, the volume ROOT being
+         * shown is the one the gesture means (CW-034).  Everything open on
+         * it saves itself first, while there is still somewhere to save
+         * to, and a refusal or failure is said out loud (AW-096). */
+        char paths[1][TIKU_PATH_MAX];
+        const char *sel[1];
+        const char *path = (browser_selection_paths(a, paths, sel, 1) > 0)
+                               ? sel[0] : tiku_trk_poseview_path(a->view);
+        tiku_volumes_t vols;
+        char why[200];
+
+        why[0] = '\0';
+        if (tiku_volumes_scan(&vols) > 0 &&
+            tiku_volume_is_root(&vols, path)) {
+            const tiku_volume_t *vol = tiku_volume_of(&vols, path);
+
+            if (tiku_volume_unmount(&vols, path, save_before_unmount,
+                                        a, why, sizeof why) ==
+                    TIKU_UNMOUNT_OK) {
+                snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
+                         (vol != NULL) ? vol->name : path);
+            } else if (why[0] != '\0') {
+                tiku_alert_open(
+                    tiku_trk_status_overlay_alert(&a->status_overlay),
+                    TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                    "Cancel");
+            }
+        } else {
+            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
+             * ch6). */
+            snprintf(a->status, sizeof a->status,
+                     "Unmount is not available here");
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief the mount settings and mounting everything.  @return 1 when this was
+ * the command
+ */
+int
+browser_cmd_mount(app_t *a, int command)
+{
+    if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
+        /* The preferences page for it lives in the desktop shell. */
+        snprintf(a->status, sizeof a->status,
+                 "mount settings live in the desktop shell's preferences");
+        a->dirty = 1;
+        return 1;
+    }
+    if (command == TIKU_TRK_CMD_MOUNT_ALL ||
+        (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
+         command < TIKU_TRK_CMD_MOUNT_PART_BASE +
+                       TIKU_TRK_MOUNT_PART_MAX)) {
+        /* Asked of the system, and the answer -- on this host, that
+         * mounting needs its leave -- is said out loud (CW-034). */
+        char why[200];
+        int failed = 0, tried = 0;
+
+        why[0] = '\0';
+        if (command == TIKU_TRK_CMD_MOUNT_ALL) {
+            tiku_partition_t part[TIKU_TRK_MOUNT_PART_MAX];
+            int pn = tiku_partitions_scan(part,
+                                              TIKU_TRK_MOUNT_PART_MAX);
+            int k;
+
+            for (k = 0; k < pn; k++) {
+                if (part[k].mounted) {
+                    continue;
+                }
+                tried++;
+                if (tiku_volume_mount(part[k].name, why,
+                                          sizeof why) != 0) {
+                    failed++;
+                    break;
+                }
+            }
+        } else {
+            int idx = command - TIKU_TRK_CMD_MOUNT_PART_BASE;
+
+            if (idx < a->menus.mount_parts) {
+                tried++;
+                failed = tiku_volume_mount(a->menus.mount_part[idx],
+                                               why, sizeof why) != 0;
+            }
+        }
+        if (failed && why[0] != '\0') {
+            tiku_alert_open(
+                tiku_trk_status_overlay_alert(&a->status_overlay),
+                TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
+                "Cancel");
+        } else if (tried == 0) {
+            snprintf(a->status, sizeof a->status,
+                     "every partition is already mounted");
+        }
+        a->dirty = 1;
+        return 1;
+    }
+    return 0;
 }

@@ -36,7 +36,7 @@ browser_handle_key(app_t *a, const tiku_event_t *event)
     unsigned key = event->key;
     unsigned modifiers = event->modifiers;
     unsigned mods = 0;
-    int nav = 0;
+    int r;
 
     if (tiku_trk_status_overlay_key(&a->status_overlay, key)) {
         /* A modal alert owns the keyboard: Escape is Cancel, Return the
@@ -44,489 +44,26 @@ browser_handle_key(app_t *a, const tiku_event_t *event)
         a->dirty = 1;
         return;
     }
-    if (a->nav_editing) {
-        tiku_field_key_t k = TIKU_FIELD_CHAR;
-        tiku_field_result_t result;
-        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
-        char ch = '\0';
-
-        if (key == ' ' && (modifiers & TIKU_MOD_CMD) != 0u) {
-            /* Cmd-Space completes the last path component against the
-             * folder the rest of the path names (NeXT UIG ch3). */
-            char dir[TIKU_PATH_MAX], full[TIKU_PATH_MAX];
-            char *slash;
-
-            snprintf(dir, sizeof dir, "%s", a->nav_edit.text);
-            slash = strrchr(dir, '/');
-            if (slash != NULL) {
-                char leaf[TIKU_NAME_MAX];
-
-                snprintf(leaf, sizeof leaf, "%s", slash + 1);
-                slash[(slash == dir) ? 1 : 0] = '\0';
-                if (tiku_trk_panel_complete(a->backend, dir, leaf, leaf,
-                                            sizeof leaf) > 0) {
-                    snprintf(full, sizeof full, "%s%s%s", dir,
-                             (dir[strlen(dir) - 1u] == '/') ? "" : "/",
-                             leaf);
-                    tiku_field_start(&a->nav_edit, full);
-                    a->nav_edit.sel_a = a->nav_edit.sel_b =
-                        a->nav_edit.caret = a->nav_edit.len;
-                }
-            }
-            a->dirty = 1;
-            return;
-        }
-        switch (key) {
-        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;     break;
-        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;     break;
-        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
-        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;     break;
-        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;       break;
-        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;      break;
-        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;       break;
-        case TIKU_KEY_END:    k = TIKU_FIELD_END;        break;
-        case 'a':
-            if (modifiers & TIKU_MOD_CMD) {
-                k = TIKU_FIELD_SELECT_ALL;
-            }
-            break;
-        default: break;
-        }
-        if (k == TIKU_FIELD_CHAR) {
-            ch = browser_key_char(event);
-            if (ch == '\0') {
-                return;
-            }
-        }
-        result = tiku_field_key(&a->nav_edit, k, shift, ch);
-        if (result == TIKU_FIELD_COMMITTED) {
-            browser_end_location(a, 1);
-        } else if (result == TIKU_FIELD_CANCELLED) {
-            browser_end_location(a, 0);
-        }
-        a->dirty = 1;
+    if (browser_key_location(a, event, key, modifiers, mods) == 2) {
         return;
     }
-    if (a->editing) {
-        /* While editing a name the view's keys are OFF: an arrow must move
-         * the caret's row selection nowhere, and 'd' must type a letter,
-         * not duplicate the file. */
-        tiku_field_key_t k = TIKU_FIELD_CHAR;
-        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
-        char ch = '\0';
-
-        if ((modifiers & TIKU_MOD_CMD) &&
-            (key == 'x' || key == 'c' || key == 'v')) {
-            tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
-                                      : (key == 'c') ? TIKU_FIELD_COPY
-                                                     : TIKU_FIELD_PASTE;
-            (void)tiku_field_key(&a->ed, text_key, 0, '\0');
-            a->dirty = 1;
-            return;
-        }
-        if ((modifiers & TIKU_MOD_CMD) && key == 'n') {
-            browser_end_rename(a, 1);
-            goto not_editing;
-        }
-        if (key == TIKU_KEY_TAB) {
-            int row = browser_next_edit_row(a, a->edit_row,
-                                    (modifiers & TIKU_MOD_SHIFT) != 0u);
-
-            browser_end_rename(a, 1);
-            if (row >= 0) {
-                tiku_trk_poseview_click(a->view, row, 0u);
-                browser_begin_rename(a);
-            }
-            a->dirty = 1;
-            return;
-        }
-        switch (key) {
-        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;    break;
-        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;    break;
-        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
-        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;    break;
-        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;      break;
-        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;     break;
-        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;      break;
-        case TIKU_KEY_END:    k = TIKU_FIELD_END;       break;
-        case 'a':
-            if (modifiers & TIKU_MOD_CMD) {
-                k = TIKU_FIELD_SELECT_ALL;
-            }
-            break;
-        default: break;
-        }
-        if (k == TIKU_FIELD_CHAR) {
-            ch = browser_key_char(event);
-            if (ch == '\0') {
-                return;
-            }
-        }
-        switch (tiku_field_key(&a->ed, k, shift, ch)) {
-        case TIKU_FIELD_COMMITTED: browser_end_rename(a, 1); break;
-        case TIKU_FIELD_CANCELLED: browser_end_rename(a, 0); break;
-        default: break;
-        }
-        a->dirty = 1;
+    if (browser_key_rename(a, event, key, modifiers, mods) == 2) {
         return;
     }
-
-not_editing:
     if (modifiers & TIKU_MOD_SHIFT) { mods |= TIKU_TRK_MOD_SHIFT; }
     if (modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
 
-    if ((modifiers & TIKU_MOD_CMD) && key == 'l') {
-        browser_begin_location(a);
+    if (browser_key_cmd(a, event, key, modifiers, mods) == 2) {
         return;
     }
-    if ((modifiers & TIKU_MOD_CMD) &&
-        (key == 'x' || key == 'c' || key == 'v')) {
-        /* The clipboard verbs, through the shared command layer: this
-         * shell had none at all, so Cut, Copy and Paste were three keys
-         * that did nothing outside a text field. */
-        int base = (key == 'x') ? TIKU_TRK_CMD_CUT
-                 : (key == 'c') ? TIKU_TRK_CMD_COPY : TIKU_TRK_CMD_PASTE;
-
-        browser_menu_invoke(a, tiku_trk_sc_command(base, mods));
+    if (browser_key_nav(a, event, key, modifiers, mods) == 2) {
         return;
     }
-    if (modifiers & TIKU_MOD_CMD) {
-        if (key == TIKU_KEY_DOWN || key == TIKU_KEY_RETURN) {
-            browser_open_selection(a);
-            return;
-        }
-        if (key == TIKU_KEY_LEFT) {
-            browser_navigate_back(a);
-            return;
-        }
-        if (key == TIKU_KEY_RIGHT) {
-            browser_navigate_forward(a);
-            return;
-        }
-        if (key == TIKU_KEY_UP) {
-            browser_navigate_up(a);
-            return;
-        }
-    }
-    if ((modifiers & TIKU_MOD_OPTION) && key == TIKU_KEY_RETURN) {
-        browser_open_selection(a);
+    r = browser_key_open(a, event, key, modifiers, mods);
+    if (r == 0) { r = browser_key_view(a, event, key, modifiers, mods); }
+    if (r == 0) { r = browser_key_edit(a, event, key, modifiers, mods); }
+    if (r == 2) {
         return;
-    }
-
-    switch (key) {
-    case 'o':
-        if (mods & TIKU_TRK_MOD_CMD) {
-            if (tiku_trk_poseview_active(a->view) == NULL) {
-                /* Grey in the menu; said out loud for the chord
-                 * (NeXT UIG ch6). */
-                snprintf(a->status, sizeof a->status,
-                         "Open is not available here");
-                a->dirty = 1;
-                return;
-            }
-            browser_open_selection(a);
-            return;
-        }
-        break;
-    case TIKU_KEY_UP:        nav = TIKU_TRK_KEY_UP;    break;
-    case TIKU_KEY_DOWN:      nav = TIKU_TRK_KEY_DOWN;  break;
-    case TIKU_KEY_LEFT:      nav = TIKU_TRK_KEY_LEFT;  break;
-    case TIKU_KEY_RIGHT:     nav = TIKU_TRK_KEY_RIGHT; break;
-    case TIKU_KEY_HOME:      nav = TIKU_TRK_KEY_HOME;  break;
-    case TIKU_KEY_END:       nav = TIKU_TRK_KEY_END;   break;
-    case TIKU_KEY_PAGE_UP:   nav = TIKU_TRK_KEY_PGUP;  break;
-    case TIKU_KEY_PAGE_DOWN: nav = TIKU_TRK_KEY_PGDN;  break;
-    default: break;
-    }
-    if (nav != 0) {
-        int before = tiku_trk_poseview_scroll(a->view);
-        (void)tiku_trk_poseview_key_nav(a->view, nav, mods);
-        {   /* PVK-004: the arrow scrolls its target into view. */
-            tiku_trk_pose_t *act = tiku_trk_poseview_active(a->view);
-            int i, n = tiku_trk_poseview_count(a->view);
-            for (i = 0; act != NULL && i < n; i++) {
-                if (tiku_trk_poseview_at(a->view, i) == act) {
-                    tiku_trk_poseview_scroll_into_view(a->view, i,
-                                                       browser_visible_rows(a));
-                    break;
-                }
-            }
-        }
-        (void)before;
-        a->dirty = 1;
-        return;
-    }
-    switch (key) {
-    case TIKU_KEY_RETURN:
-        /* PVK-015/016: a filter that has already narrowed the listing to
-         * what the user wants should not also demand an arrow key first. */
-        if (tiku_trk_poseview_return_pressed(a->view,
-                                             (mods & TIKU_TRK_MOD_SHIFT))) {
-            browser_open_selection(a);
-            tiku_trk_poseview_set_filtering(a->view, 0);
-            if (a->filter_pref) {
-                /* The terms are spent; the MODE follows the preference,
-                 * so the next keystroke filters again (TS-052). */
-                tiku_trk_poseview_set_filtering(a->view, 1);
-            }
-        } else {
-            browser_open_selection(a);
-        }
-        a->dirty = 1;
-        return;
-    case ' ':
-        if (mods & TIKU_TRK_MOD_SHIFT) {
-            /* PVK-031: a second term, each free to match a different
-             * column, which is what makes two short words selective. */
-            if (tiku_trk_poseview_is_filtering(a->view)) {
-                (void)tiku_trk_poseview_filter_term(a->view);
-                a->dirty = 1;
-                return;
-            }
-        }
-        break;
-    case TIKU_KEY_BACKSPACE:
-        if (tiku_trk_poseview_type_string(a->view)[0] != '\0') {
-            tiku_trk_poseview_type_backspace(a->view);
-        } else {
-            browser_navigate_up(a);
-        }
-        a->dirty = 1;
-        return;
-    case TIKU_KEY_ESCAPE:
-        if (mods & TIKU_TRK_MOD_SHIFT) {
-            /* Shift+Escape removes the selection from the clipboard, or
-             * every pose in the folder when nothing is selected
-             * (PVK-034). */
-            int i, n = tiku_trk_poseview_count(a->view);
-            int any = tiku_trk_poseview_selection_count(a->view) > 0;
-
-            for (i = 0; i < n; i++) {
-                tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
-
-                if (p != NULL && (!any || p->selected)) {
-                    (void)tiku_trk_clip_remove(&a->clip, &p->model, 1);
-                }
-            }
-        } else {
-            if (tiku_trk_clip_count(&a->clip) > 0) {
-                /* A pending cut is aborted before the type-ahead goes,
-                 * in the source's own order (PVK-034). */
-                tiku_trk_clip_clear(&a->clip);
-            }
-            tiku_trk_poseview_type_clear(a->view);
-        }
-        a->dirty = 1;
-        return;
-    case TIKU_KEY_TAB:
-        if (!tiku_trk_poseview_is_filtering(a->view)) {
-            (void)tiku_trk_poseview_tab_next(a->view,
-                (modifiers & TIKU_MOD_SHIFT) != 0u);
-        }
-        a->dirty = 1;
-        return;
-    case 'q':
-        if (modifiers & TIKU_MOD_CMD) { a->running = 0; return; }
-        break;
-    case 'u':
-        if (modifiers & TIKU_MOD_CMD) {
-            /* Cmd+U, which the volume menus advertise (CW-034). */
-            browser_menu_invoke(a, TIKU_TRK_CMD_UNMOUNT);
-            return;
-        }
-        break;
-    case 'a':
-        if (modifiers & TIKU_MOD_CMD) {
-            tiku_trk_poseview_select_all(a->view);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case 's':
-        if (modifiers & TIKU_MOD_CMD) {
-            /* PVK-046: invert, which is the only way to say "everything
-             * except these" without clicking each of the rest. */
-            tiku_trk_poseview_invert_selection(a->view);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case '+':
-    case '=':
-        if (modifiers & TIKU_MOD_CMD) {
-            (void)tiku_trk_poseview_step_icon_size(a->view, 1);
-            browser_settle_layout(a);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case '-':
-        if (modifiers & TIKU_MOD_CMD) {
-            (void)tiku_trk_poseview_step_icon_size(a->view, 0);
-            browser_settle_layout(a);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case 'r':
-        if (modifiers & TIKU_MOD_CMD) {
-            (void)tiku_trk_poseview_reload(a->view);
-            (void)tiku_trk_poseview_restore_state(a->view);
-            browser_settle_layout(a);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case '1':
-    case '2':
-    case '3':
-        if (modifiers & TIKU_MOD_CMD) {
-            tiku_rect_t lr = browser_list_rect(a);
-            tiku_trk_poseview_set_mode(a->view,
-                (key == '1') ? TIKU_TRK_MODE_ICON :
-                (key == '2') ? TIKU_TRK_MODE_MINI : TIKU_TRK_MODE_LIST);
-            if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
-                (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
-            } else if (a->filter_pref &&
-                       !tiku_trk_poseview_is_filtering(a->view)) {
-                /* Leaving list mode tore filtering down; coming back the
-                 * preference still says filter (TS-052). */
-                tiku_trk_poseview_set_filtering(a->view, 1);
-            }
-            (void)tiku_trk_poseview_save_state(a->view);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case TIKU_KEY_F2:
-        browser_begin_rename(a);
-        return;
-    case 'e':
-        if (modifiers & TIKU_MOD_CMD) {
-            browser_begin_rename(a);
-            return;
-        }
-        break;
-    case TIKU_KEY_DELETE: {
-        /* What the key MEANS depends on where the items are: a move that
-         * can be undone where there is a Trash to move them to, and a
-         * deletion inside it or when Shift says the user has already
-         * decided (PVK-038).  The key asks the same controller the menu
-         * item does, so the question a delete puts up is one rule and not
-         * one per way of reaching it (FS-046). */
-        /* Noted BEFORE the listing changes: afterwards the index is
-         * the only thing left pointing at where the item was (FS-050). */
-        a->select_next = browser_first_selected_index(a);
-        browser_menu_invoke(a, (modifiers & TIKU_MOD_SHIFT)
-                           ? TIKU_TRK_CMD_DELETE
-                           : TIKU_TRK_CMD_MOVE_TO_TRASH);
-        a->dirty = 1;
-        return;
-    }
-    case 'd':
-        if (modifiers & TIKU_MOD_CMD) {
-            char paths[64][TIKU_PATH_MAX];
-            const char *sel[64];
-            int n = browser_selection_paths(a, paths, sel, 64);
-
-            if (n > 0 && a->fs != NULL) {
-                (void)tiku_fs_duplicate(a->fs, sel, n);
-                snprintf(a->status, sizeof a->status, "duplicating %d item%s",
-                         n, (n == 1) ? "" : "s");
-            }
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case 'z':
-        if ((modifiers & TIKU_MOD_CMD) &&
-            (modifiers & TIKU_MOD_SHIFT)) {
-            char what[64], err[200];
-
-            if (a->fs != NULL && tiku_fs_can_redo(a->fs, what,
-                                                      sizeof what)) {
-                int n = tiku_fs_redo(a->fs, err, sizeof err);
-
-                snprintf(a->status, sizeof a->status, "redid %s (%d item%s)",
-                         what, n, (n == 1) ? "" : "s");
-                browser_after_op(a);
-            } else {
-                snprintf(a->status, sizeof a->status, "nothing to redo");
-            }
-            a->dirty = 1;
-            return;
-        }
-        if (modifiers & TIKU_MOD_CMD) {
-            char what[64], err[200];
-
-            if (a->fs != NULL && tiku_fs_can_undo(a->fs, what,
-                                                      sizeof what)) {
-                int n = tiku_fs_undo(a->fs, err, sizeof err);
-                snprintf(a->status, sizeof a->status, "undid %s (%d item%s)",
-                         what, n, (n == 1) ? "" : "s");
-                browser_after_op(a);
-            } else {
-                snprintf(a->status, sizeof a->status, "nothing to undo");
-            }
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case 'n':
-        if (modifiers & TIKU_MOD_CMD) {
-            char made[TIKU_PATH_MAX], err[200];
-
-            if (a->fs != NULL &&
-                tiku_fs_new_folder(a->fs, tiku_trk_poseview_path(a->view), made, sizeof made, err,
-                                       sizeof err) == 0) {
-                const char *slash = strrchr(made, '/');
-
-                snprintf(a->status, sizeof a->status, "created '%.180s'",
-                         (slash != NULL) ? slash + 1 : made);
-                browser_after_op(a);
-                /* Tracker opens the name for editing straight away; here
-                 * the folder is at least selected, so the rename is the
-                 * next keystroke rather than a hunt down the list. */
-                {
-                    int i = browser_index_of_path(a, made);
-
-                    if (i >= 0) {
-                        tiku_trk_poseview_click(a->view, i, 0u);
-                        browser_begin_rename(a);
-                        snprintf(a->status, sizeof a->status,
-                                 "created '%.180s'",
-                                 (slash != NULL) ? slash + 1 : made);
-                    }
-                }
-            } else {
-                snprintf(a->status, sizeof a->status, "%s",
-                         err[0] ? err : "could not create a new folder");
-            }
-            a->dirty = 1;
-            return;
-        }
-        break;
-    case 'k':
-        if (modifiers & TIKU_MOD_CMD) {
-            tiku_rect_t lr = browser_list_rect(a);
-
-            /* Cmd+K snaps what is there; Shift re-lays it out in sort
-             * order.  Straightening an arrangement and replacing it are
-             * two different commands (PVL-021). */
-            tiku_scroll_detach(&a->sb);
-            if (modifiers & TIKU_MOD_SHIFT) {
-                tiku_trk_poseview_cleanup(a->view, lr.w - 4);
-            } else {
-                (void)tiku_trk_poseview_snap_to_grid(a->view);
-            }
-            tiku_scroll_attach(&a->sb);
-            (void)tiku_trk_poseview_save_state(a->view);
-            a->dirty = 1;
-            return;
-        }
-        break;
-    default:
-        break;
     }
     if ((modifiers & TIKU_MOD_CMD) != 0u) {
         /* The standard set's tail, from the same table the menus read:
@@ -563,4 +100,587 @@ browser_menu_key(app_t *a, unsigned key, unsigned modifiers)
         event.text[0] = (char)key;
     }
     browser_handle_key(a, &event);
+}
+
+/**
+ * @brief editing the selection: rename, delete, duplicate, undo, new folder.
+ * @return 0 for a key of another group, 1 when handled, 2 when the handler is
+ * done with the event
+ */
+int
+browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
+                 unsigned modifiers, unsigned mods)
+{
+    (void)event;
+    (void)mods;
+    switch (key) {
+
+    case TIKU_KEY_F2:
+        browser_begin_rename(a);
+        return 2;
+    case 'e':
+        if (modifiers & TIKU_MOD_CMD) {
+            browser_begin_rename(a);
+            return 2;
+        }
+        break;
+    case TIKU_KEY_DELETE: {
+        /* What the key MEANS depends on where the items are: a move that
+         * can be undone where there is a Trash to move them to, and a
+         * deletion inside it or when Shift says the user has already
+         * decided (PVK-038).  The key asks the same controller the menu
+         * item does, so the question a delete puts up is one rule and not
+         * one per way of reaching it (FS-046). */
+        /* Noted BEFORE the listing changes: afterwards the index is
+         * the only thing left pointing at where the item was (FS-050). */
+        a->select_next = browser_first_selected_index(a);
+        browser_menu_invoke(a, (modifiers & TIKU_MOD_SHIFT)
+                           ? TIKU_TRK_CMD_DELETE
+                           : TIKU_TRK_CMD_MOVE_TO_TRASH);
+        a->dirty = 1;
+        return 2;
+    }
+    case 'd':
+        if (modifiers & TIKU_MOD_CMD) {
+            char paths[64][TIKU_PATH_MAX];
+            const char *sel[64];
+            int n = browser_selection_paths(a, paths, sel, 64);
+
+            if (n > 0 && a->fs != NULL) {
+                (void)tiku_fs_duplicate(a->fs, sel, n);
+                snprintf(a->status, sizeof a->status, "duplicating %d item%s",
+                         n, (n == 1) ? "" : "s");
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case 'z':
+        if ((modifiers & TIKU_MOD_CMD) &&
+            (modifiers & TIKU_MOD_SHIFT)) {
+            char what[64], err[200];
+
+            if (a->fs != NULL && tiku_fs_can_redo(a->fs, what,
+                                                      sizeof what)) {
+                int n = tiku_fs_redo(a->fs, err, sizeof err);
+
+                snprintf(a->status, sizeof a->status, "redid %s (%d item%s)",
+                         what, n, (n == 1) ? "" : "s");
+                browser_after_op(a);
+            } else {
+                snprintf(a->status, sizeof a->status, "nothing to redo");
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        if (modifiers & TIKU_MOD_CMD) {
+            char what[64], err[200];
+
+            if (a->fs != NULL && tiku_fs_can_undo(a->fs, what,
+                                                      sizeof what)) {
+                int n = tiku_fs_undo(a->fs, err, sizeof err);
+                snprintf(a->status, sizeof a->status, "undid %s (%d item%s)",
+                         what, n, (n == 1) ? "" : "s");
+                browser_after_op(a);
+            } else {
+                snprintf(a->status, sizeof a->status, "nothing to undo");
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case 'n':
+        if (modifiers & TIKU_MOD_CMD) {
+            char made[TIKU_PATH_MAX], err[200];
+
+            if (a->fs != NULL &&
+                tiku_fs_new_folder(a->fs, tiku_trk_poseview_path(a->view), made, sizeof made, err,
+                                       sizeof err) == 0) {
+                const char *slash = strrchr(made, '/');
+
+                snprintf(a->status, sizeof a->status, "created '%.180s'",
+                         (slash != NULL) ? slash + 1 : made);
+                browser_after_op(a);
+                /* Tracker opens the name for editing straight away; here
+                 * the folder is at least selected, so the rename is the
+                 * next keystroke rather than a hunt down the list. */
+                {
+                    int i = browser_index_of_path(a, made);
+
+                    if (i >= 0) {
+                        tiku_trk_poseview_click(a->view, i, 0u);
+                        browser_begin_rename(a);
+                        snprintf(a->status, sizeof a->status,
+                                 "created '%.180s'",
+                                 (slash != NULL) ? slash + 1 : made);
+                    }
+                }
+            } else {
+                snprintf(a->status, sizeof a->status, "%s",
+                         err[0] ? err : "could not create a new folder");
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case 'k':
+        if (modifiers & TIKU_MOD_CMD) {
+            tiku_rect_t lr = browser_list_rect(a);
+
+            /* Cmd+K snaps what is there; Shift re-lays it out in sort
+             * order.  Straightening an arrangement and replacing it are
+             * two different commands (PVL-021). */
+            tiku_scroll_detach(&a->sb);
+            if (modifiers & TIKU_MOD_SHIFT) {
+                tiku_trk_poseview_cleanup(a->view, lr.w - 4);
+            } else {
+                (void)tiku_trk_poseview_snap_to_grid(a->view);
+            }
+            tiku_scroll_attach(&a->sb);
+            (void)tiku_trk_poseview_save_state(a->view);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief the view and window commands: quit, up, select all, sort, zoom,
+ * refresh, the modes.  @return 0 for a key of another group, 1 when handled, 2
+ * when the handler is done with the event
+ */
+int
+browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
+                 unsigned modifiers, unsigned mods)
+{
+    (void)event;
+    (void)mods;
+    switch (key) {
+
+    case 'q':
+        if (modifiers & TIKU_MOD_CMD) { a->running = 0; return 2; }
+        break;
+    case 'u':
+        if (modifiers & TIKU_MOD_CMD) {
+            /* Cmd+U, which the volume menus advertise (CW-034). */
+            browser_menu_invoke(a, TIKU_TRK_CMD_UNMOUNT);
+            return 2;
+        }
+        break;
+    case 'a':
+        if (modifiers & TIKU_MOD_CMD) {
+            tiku_trk_poseview_select_all(a->view);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case 's':
+        if (modifiers & TIKU_MOD_CMD) {
+            /* PVK-046: invert, which is the only way to say "everything
+             * except these" without clicking each of the rest. */
+            tiku_trk_poseview_invert_selection(a->view);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case '+':
+    case '=':
+        if (modifiers & TIKU_MOD_CMD) {
+            (void)tiku_trk_poseview_step_icon_size(a->view, 1);
+            browser_settle_layout(a);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case '-':
+        if (modifiers & TIKU_MOD_CMD) {
+            (void)tiku_trk_poseview_step_icon_size(a->view, 0);
+            browser_settle_layout(a);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case 'r':
+        if (modifiers & TIKU_MOD_CMD) {
+            (void)tiku_trk_poseview_reload(a->view);
+            (void)tiku_trk_poseview_restore_state(a->view);
+            browser_settle_layout(a);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    case '1':
+    case '2':
+    case '3':
+        if (modifiers & TIKU_MOD_CMD) {
+            tiku_rect_t lr = browser_list_rect(a);
+            tiku_trk_poseview_set_mode(a->view,
+                (key == '1') ? TIKU_TRK_MODE_ICON :
+                (key == '2') ? TIKU_TRK_MODE_MINI : TIKU_TRK_MODE_LIST);
+            if (tiku_trk_poseview_mode(a->view) != TIKU_TRK_MODE_LIST) {
+                (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
+            } else if (a->filter_pref &&
+                       !tiku_trk_poseview_is_filtering(a->view)) {
+                /* Leaving list mode tore filtering down; coming back the
+                 * preference still says filter (TS-052). */
+                tiku_trk_poseview_set_filtering(a->view, 1);
+            }
+            (void)tiku_trk_poseview_save_state(a->view);
+            a->dirty = 1;
+            return 2;
+        }
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief the keys that open, close and move: Return, Space, Backspace, Escape,
+ * Tab.  @return 0 for a key of another group, 1 when handled, 2 when the
+ * handler is done with the event
+ */
+int
+browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
+                 unsigned modifiers, unsigned mods)
+{
+    (void)event;
+    switch (key) {
+
+    case TIKU_KEY_RETURN:
+        /* PVK-015/016: a filter that has already narrowed the listing to
+         * what the user wants should not also demand an arrow key first. */
+        if (tiku_trk_poseview_return_pressed(a->view,
+                                             (mods & TIKU_TRK_MOD_SHIFT))) {
+            browser_open_selection(a);
+            tiku_trk_poseview_set_filtering(a->view, 0);
+            if (a->filter_pref) {
+                /* The terms are spent; the MODE follows the preference,
+                 * so the next keystroke filters again (TS-052). */
+                tiku_trk_poseview_set_filtering(a->view, 1);
+            }
+        } else {
+            browser_open_selection(a);
+        }
+        a->dirty = 1;
+        return 2;
+    case ' ':
+        if (mods & TIKU_TRK_MOD_SHIFT) {
+            /* PVK-031: a second term, each free to match a different
+             * column, which is what makes two short words selective. */
+            if (tiku_trk_poseview_is_filtering(a->view)) {
+                (void)tiku_trk_poseview_filter_term(a->view);
+                a->dirty = 1;
+                return 2;
+            }
+        }
+        break;
+    case TIKU_KEY_BACKSPACE:
+        if (tiku_trk_poseview_type_string(a->view)[0] != '\0') {
+            tiku_trk_poseview_type_backspace(a->view);
+        } else {
+            browser_navigate_up(a);
+        }
+        a->dirty = 1;
+        return 2;
+    case TIKU_KEY_ESCAPE:
+        if (mods & TIKU_TRK_MOD_SHIFT) {
+            /* Shift+Escape removes the selection from the clipboard, or
+             * every pose in the folder when nothing is selected
+             * (PVK-034). */
+            int i, n = tiku_trk_poseview_count(a->view);
+            int any = tiku_trk_poseview_selection_count(a->view) > 0;
+
+            for (i = 0; i < n; i++) {
+                tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
+
+                if (p != NULL && (!any || p->selected)) {
+                    (void)tiku_trk_clip_remove(&a->clip, &p->model, 1);
+                }
+            }
+        } else {
+            if (tiku_trk_clip_count(&a->clip) > 0) {
+                /* A pending cut is aborted before the type-ahead goes,
+                 * in the source's own order (PVK-034). */
+                tiku_trk_clip_clear(&a->clip);
+            }
+            tiku_trk_poseview_type_clear(a->view);
+        }
+        a->dirty = 1;
+        return 2;
+    case TIKU_KEY_TAB:
+        if (!tiku_trk_poseview_is_filtering(a->view)) {
+            (void)tiku_trk_poseview_tab_next(a->view,
+                (modifiers & TIKU_MOD_SHIFT) != 0u);
+        }
+        a->dirty = 1;
+        return 2;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief the arrows, Home, End and the page keys, handed to the pose view
+ */
+int
+browser_key_nav(app_t *a, const tiku_event_t *event, unsigned key,
+                unsigned modifiers, unsigned mods)
+{
+    (void)event;
+    (void)modifiers;
+    int nav = 0;
+
+    switch (key) {
+    case 'o':
+        if (mods & TIKU_TRK_MOD_CMD) {
+            if (tiku_trk_poseview_active(a->view) == NULL) {
+                /* Grey in the menu; said out loud for the chord
+                 * (NeXT UIG ch6). */
+                snprintf(a->status, sizeof a->status,
+                         "Open is not available here");
+                a->dirty = 1;
+                return 2;
+            }
+            browser_open_selection(a);
+            return 2;
+        }
+        break;
+    case TIKU_KEY_UP:        nav = TIKU_TRK_KEY_UP;    break;
+    case TIKU_KEY_DOWN:      nav = TIKU_TRK_KEY_DOWN;  break;
+    case TIKU_KEY_LEFT:      nav = TIKU_TRK_KEY_LEFT;  break;
+    case TIKU_KEY_RIGHT:     nav = TIKU_TRK_KEY_RIGHT; break;
+    case TIKU_KEY_HOME:      nav = TIKU_TRK_KEY_HOME;  break;
+    case TIKU_KEY_END:       nav = TIKU_TRK_KEY_END;   break;
+    case TIKU_KEY_PAGE_UP:   nav = TIKU_TRK_KEY_PGUP;  break;
+    case TIKU_KEY_PAGE_DOWN: nav = TIKU_TRK_KEY_PGDN;  break;
+    default: break;
+    }
+    if (nav != 0) {
+        int before = tiku_trk_poseview_scroll(a->view);
+        (void)tiku_trk_poseview_key_nav(a->view, nav, mods);
+        {   /* PVK-004: the arrow scrolls its target into view. */
+            tiku_trk_pose_t *act = tiku_trk_poseview_active(a->view);
+            int i, n = tiku_trk_poseview_count(a->view);
+            for (i = 0; act != NULL && i < n; i++) {
+                if (tiku_trk_poseview_at(a->view, i) == act) {
+                    tiku_trk_poseview_scroll_into_view(a->view, i,
+                                                       browser_visible_rows(a));
+                    break;
+                }
+            }
+        }
+        (void)before;
+        a->dirty = 1;
+        return 2;
+    }
+    return 1;
+}
+
+/**
+ * @brief the Cmd shortcuts that are not menu commands: the location, the
+ * navigator, the popup
+ */
+int
+browser_key_cmd(app_t *a, const tiku_event_t *event, unsigned key,
+                unsigned modifiers, unsigned mods)
+{
+    (void)event;
+    if ((modifiers & TIKU_MOD_CMD) && key == 'l') {
+        browser_begin_location(a);
+        return 2;
+    }
+    if ((modifiers & TIKU_MOD_CMD) &&
+        (key == 'x' || key == 'c' || key == 'v')) {
+        /* The clipboard verbs, through the shared command layer: this
+         * shell had none at all, so Cut, Copy and Paste were three keys
+         * that did nothing outside a text field. */
+        int base = (key == 'x') ? TIKU_TRK_CMD_CUT
+                 : (key == 'c') ? TIKU_TRK_CMD_COPY : TIKU_TRK_CMD_PASTE;
+
+        browser_menu_invoke(a, tiku_trk_sc_command(base, mods));
+        return 2;
+    }
+    if (modifiers & TIKU_MOD_CMD) {
+        if (key == TIKU_KEY_DOWN || key == TIKU_KEY_RETURN) {
+            browser_open_selection(a);
+            return 2;
+        }
+        if (key == TIKU_KEY_LEFT) {
+            browser_navigate_back(a);
+            return 2;
+        }
+        if (key == TIKU_KEY_RIGHT) {
+            browser_navigate_forward(a);
+            return 2;
+        }
+        if (key == TIKU_KEY_UP) {
+            browser_navigate_up(a);
+            return 2;
+        }
+    }
+    if ((modifiers & TIKU_MOD_OPTION) && key == TIKU_KEY_RETURN) {
+        browser_open_selection(a);
+        return 2;
+    }
+
+    return 1;
+}
+
+/**
+ * @brief typing into the inline rename: every key goes there until Return or
+ * Escape
+ */
+int
+browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
+                   unsigned modifiers, unsigned mods)
+{
+    (void)mods;
+    if (a->editing) {
+        /* While editing a name the view's keys are OFF: an arrow must move
+         * the caret's row selection nowhere, and 'd' must type a letter,
+         * not duplicate the file. */
+        tiku_field_key_t k = TIKU_FIELD_CHAR;
+        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
+        char ch = '\0';
+
+        if ((modifiers & TIKU_MOD_CMD) &&
+            (key == 'x' || key == 'c' || key == 'v')) {
+            tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
+                                      : (key == 'c') ? TIKU_FIELD_COPY
+                                                     : TIKU_FIELD_PASTE;
+            (void)tiku_field_key(&a->ed, text_key, 0, '\0');
+            a->dirty = 1;
+            return 2;
+        }
+        if ((modifiers & TIKU_MOD_CMD) && key == 'n') {
+            browser_end_rename(a, 1);
+            goto not_editing;
+        }
+        if (key == TIKU_KEY_TAB) {
+            int row = browser_next_edit_row(a, a->edit_row,
+                                    (modifiers & TIKU_MOD_SHIFT) != 0u);
+
+            browser_end_rename(a, 1);
+            if (row >= 0) {
+                tiku_trk_poseview_click(a->view, row, 0u);
+                browser_begin_rename(a);
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        switch (key) {
+        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;    break;
+        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;    break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;    break;
+        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;      break;
+        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;     break;
+        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;      break;
+        case TIKU_KEY_END:    k = TIKU_FIELD_END;       break;
+        case 'a':
+            if (modifiers & TIKU_MOD_CMD) {
+                k = TIKU_FIELD_SELECT_ALL;
+            }
+            break;
+        default: break;
+        }
+        if (k == TIKU_FIELD_CHAR) {
+            ch = browser_key_char(event);
+            if (ch == '\0') {
+                return 2;
+            }
+        }
+        switch (tiku_field_key(&a->ed, k, shift, ch)) {
+        case TIKU_FIELD_COMMITTED: browser_end_rename(a, 1); break;
+        case TIKU_FIELD_CANCELLED: browser_end_rename(a, 0); break;
+        default: break;
+        }
+        a->dirty = 1;
+        return 2;
+    }
+
+not_editing:
+    return 1;
+}
+
+/**
+ * @brief typing into the location field: every key goes there until Return or
+ * Escape
+ */
+int
+browser_key_location(app_t *a, const tiku_event_t *event, unsigned key,
+                     unsigned modifiers, unsigned mods)
+{
+    (void)mods;
+    if (a->nav_editing) {
+        tiku_field_key_t k = TIKU_FIELD_CHAR;
+        tiku_field_result_t result;
+        int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
+        char ch = '\0';
+
+        if (key == ' ' && (modifiers & TIKU_MOD_CMD) != 0u) {
+            /* Cmd-Space completes the last path component against the
+             * folder the rest of the path names (NeXT UIG ch3). */
+            char dir[TIKU_PATH_MAX], full[TIKU_PATH_MAX];
+            char *slash;
+
+            snprintf(dir, sizeof dir, "%s", a->nav_edit.text);
+            slash = strrchr(dir, '/');
+            if (slash != NULL) {
+                char leaf[TIKU_NAME_MAX];
+
+                snprintf(leaf, sizeof leaf, "%s", slash + 1);
+                slash[(slash == dir) ? 1 : 0] = '\0';
+                if (tiku_trk_panel_complete(a->backend, dir, leaf, leaf,
+                                            sizeof leaf) > 0) {
+                    snprintf(full, sizeof full, "%s%s%s", dir,
+                             (dir[strlen(dir) - 1u] == '/') ? "" : "/",
+                             leaf);
+                    tiku_field_start(&a->nav_edit, full);
+                    a->nav_edit.sel_a = a->nav_edit.sel_b =
+                        a->nav_edit.caret = a->nav_edit.len;
+                }
+            }
+            a->dirty = 1;
+            return 2;
+        }
+        switch (key) {
+        case TIKU_KEY_RETURN: k = TIKU_FIELD_COMMIT;     break;
+        case TIKU_KEY_ESCAPE: k = TIKU_FIELD_CANCEL;     break;
+        case TIKU_KEY_BACKSPACE: k = TIKU_FIELD_BACKSPACE; break;
+        case TIKU_KEY_DELETE: k = TIKU_FIELD_DELETE;     break;
+        case TIKU_KEY_LEFT:   k = TIKU_FIELD_LEFT;       break;
+        case TIKU_KEY_RIGHT:  k = TIKU_FIELD_RIGHT;      break;
+        case TIKU_KEY_HOME:   k = TIKU_FIELD_HOME;       break;
+        case TIKU_KEY_END:    k = TIKU_FIELD_END;        break;
+        case 'a':
+            if (modifiers & TIKU_MOD_CMD) {
+                k = TIKU_FIELD_SELECT_ALL;
+            }
+            break;
+        default: break;
+        }
+        if (k == TIKU_FIELD_CHAR) {
+            ch = browser_key_char(event);
+            if (ch == '\0') {
+                return 2;
+            }
+        }
+        result = tiku_field_key(&a->nav_edit, k, shift, ch);
+        if (result == TIKU_FIELD_COMMITTED) {
+            browser_end_location(a, 1);
+        } else if (result == TIKU_FIELD_CANCELLED) {
+            browser_end_location(a, 0);
+        }
+        a->dirty = 1;
+        return 2;
+    }
+    return 1;
 }
