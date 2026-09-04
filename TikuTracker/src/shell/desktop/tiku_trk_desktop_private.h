@@ -589,6 +589,10 @@ void desktop_pointer_move(desktop_t *app, const tiku_event_t *ev,
                           desktop_loop_t *lp);
 void desktop_pointer_up(desktop_t *app, const tiku_event_t *ev,
                         desktop_loop_t *lp);
+void desktop_turn_begin(desktop_t *app, const desktop_options_t *o,
+                        desktop_loop_t *lp);
+void desktop_turn_end(desktop_t *app, const desktop_options_t *o,
+                      desktop_loop_t *lp);
 
 /* tiku_trk_desktop_globalbar.c */
 char key_char(const tiku_event_t *event);
