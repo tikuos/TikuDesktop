@@ -22,7 +22,7 @@
  * treat as a variable teaches the reader something false about their own
  * program, and they will believe it, because the machine said it.
  *
- * CLASSIFICATION IS LINE-LOCAL FOR BASIC, and that is a fact about the
+ * Classification is line-local for BASIC, and that is a fact about the
  * language rather than a simplification: a remark runs to the end of its
  * line, a quoted string is closed by the line's end if the quote never
  * comes, and there is no continuation and no block comment.  Nothing
@@ -30,8 +30,8 @@
  * what lets a window classify only the lines it is showing, and never
  * re-scan a document to paint one row.
  *
- * C CANNOT USE THAT SIGNATURE, exactly as this file always said: a
- * block remark opened on one line is still open on the next, and no
+ * C cannot use that signature: a block remark opened on one line is
+ * still open on the next, and no
  * amount of looking at the second line can tell you so.  What carries
  * is one small thing -- whether the line BEGAN inside a remark -- and it
  * is carried explicitly, in and out, by tiku_syntax_spans_on().  A

@@ -18,7 +18,7 @@
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_types.h"
 
-/** @brief Services used to rebuild folder menus from live model state. */
+/** @brief Services the folder menus are rebuilt from, off live model state. */
 typedef struct {
     tiku_trk_cwmenu_t             *menus;
     tiku_trk_clip_t               *clip;

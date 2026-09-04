@@ -83,11 +83,11 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
     size_t frame = 4u * (size_t)w * (size_t)h;
 
     /*
-     * FOUR things, and the first is new: the far end has to have SAID it
-     * can play a stream.  It used to be assumed, which was survivable
-     * only while both ends were built together -- an end that cannot
-     * play a command steps over it (tiku_dl.h) and the window arrives
-     * missing whatever it drew, with the list still saying it is whole.
+     * FOUR things, and the first cannot be assumed: the far end has to
+     * have SAID it can play a stream.  Assuming it is survivable only
+     * while both ends are built together -- an end that cannot play a
+     * command steps over it (tiku_dl.h) and the window arrives missing
+     * whatever it drew, with the list still saying it is whole.
      *
      * Zero features means the desktop has not answered yet, or is too
      * old to answer at all.  Both get the pixels, which every version

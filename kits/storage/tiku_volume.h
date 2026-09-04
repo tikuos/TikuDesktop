@@ -251,7 +251,7 @@ void tiku_volwatch_init(tiku_volwatch_t *w);
 int tiku_volwatch_poll(tiku_volwatch_t *w,
                            tiku_volchange_t *out, int max);
 
-/** @brief The pure diff the poll runs: testable with tables of our own. */
+/** @brief The pure diff the poll runs: testable with the caller's tables. */
 int tiku_volwatch_diff(const tiku_volumes_t *was,
                            const tiku_volumes_t *now,
                            tiku_volchange_t *out, int max);

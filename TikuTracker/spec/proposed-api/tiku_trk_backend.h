@@ -33,7 +33,7 @@
 
 /* What a backend can do.  Absent bits are not failures: they select the
  * fallback the design already specifies. */
-#define TIKU_TRK_BK_PUSH      0x0001u /**< the store rings us on change   */
+#define TIKU_TRK_BK_PUSH      0x0001u /**< the store rings on change      */
 #define TIKU_TRK_BK_DIRWATCH  0x0002u /**< a directory watch is accepted  */
 #define TIKU_TRK_BK_EPOCH     0x0004u /**< cheap "nothing changed" oracle */
 #define TIKU_TRK_BK_MOVE      0x0008u /**< can report a true rename       */

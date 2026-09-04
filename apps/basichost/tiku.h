@@ -5,8 +5,8 @@
  * every peripheral gated off; what a board's kernel provides -- a
  * console, a clock, an arena -- the harness beside this provides from
  * the host's own libc.  Nothing of the interpreter itself is changed,
- * which is the point: the program a person runs in the editor is run
- * by the same bytes a board would run it with.
+ * and that is what matters: the program a person runs in the editor is
+ * run by the same bytes a board would run it with.
  */
 #ifndef TIKU_HOST_STUB_H_
 #define TIKU_HOST_STUB_H_

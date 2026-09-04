@@ -343,9 +343,9 @@ event(tiku_window_t *window, const tiku_event_t *event,
     {
         /*
          * The rows, asked for rather than recalled -- and asked for
-         * WHOLE.  The bound used to be on y alone, so a click at the far
-         * right edge of the window, hundreds of pixels from anything
-         * drawn, laid the wallpaper out again.
+         * WHOLE.  A bound on y alone lets a click at the far right edge
+         * of the window, hundreds of pixels from anything drawn, lay the
+         * wallpaper out again.
          */
         tiku_rect_t zero = { 0, 0, TIKU_TRK_DESK_PREFS_W, 0 };
         int i;

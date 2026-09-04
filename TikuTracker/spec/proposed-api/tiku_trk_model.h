@@ -15,8 +15,8 @@
  * State says how much of what is on screen is still true, which is the only
  * new axis a device forces, because a link can stall.
  *
- * A refusal is a typed verdict rather than a bool.  The device tells us why
- * it said no, and the alert has to say so; a bool throws that away.
+ * A refusal is a typed verdict rather than a bool.  The device says why it
+ * said no, and the alert has to say so; a bool throws that away.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -292,8 +292,8 @@ void tiku_trk_permit_of_target(const tiku_model_t *dir,
  * @brief Split a selection instead of refusing it wholesale.
  *
  * Tracker tests only the first selected item's volume, which a merged
- * local+device selection trips constantly.  We perform the permitted subset
- * and report the rest once.
+ * local+device selection trips constantly.  The permitted subset is
+ * performed and the rest reported once.
  *
  * @return Count that may proceed; @p refused receives the pruned models.
  */

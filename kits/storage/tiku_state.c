@@ -167,7 +167,7 @@ sidecar_load(tiku_store_t *s)
             break;
         }
         if (nl >= sizeof node || al >= sizeof attr || vl > sizeof val) {
-            break;                     /* corrupt: stop, keep what we have */
+            break;                     /* corrupt: stop, keep what is read */
         }
         if (fread(node, 1, nl, f) != nl || fread(attr, 1, al, f) != al ||
             fread(val, 1, vl, f) != vl) {

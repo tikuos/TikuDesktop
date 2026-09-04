@@ -78,9 +78,8 @@ paint(tiku_surface_t *s, const char *name, int x, int y, int size,
     int mono = tiku_theme_achromatic();
 
     /* What this says to a recording list is the ENTRY's business: an
-     * icon has a definition and records as a command now, so the miss
-     * this used to make would refuse exactly the lists the command
-     * exists to keep. */
+     * icon has a definition and records as a command, and a miss here
+     * would refuse exactly the lists the command exists to keep. */
     if (s == NULL || name == NULL || size <= 0) {
         return 0;
     }

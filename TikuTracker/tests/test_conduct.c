@@ -304,7 +304,7 @@ main(void)
     raw(master);
     raw(slave);
 
-    (void)fflush(stdout);       /* or the child inherits our lines */
+    (void)fflush(stdout);       /* or the child inherits these lines */
     kid = fork();
     if (kid < 0) {
         printf("  [FAIL] cannot fork the driver\n");

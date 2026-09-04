@@ -2361,7 +2361,7 @@ if (fl != NULL && key == TIKU_KEY_DOWN &&
 if (fl != NULL && key == TIKU_KEY_UP &&
     (ev->modifiers & TIKU_MOD_CMD)) {
     /* PVK-040/CW-051: Cmd+Up opens the parent; Option
-     * additionally takes the spatial window we left. */
+     * additionally takes the spatial window that was left. */
     if (strcmp(fl->path, "/") != 0) {
         char parent[TIKU_PATH_MAX];
         char *slash;

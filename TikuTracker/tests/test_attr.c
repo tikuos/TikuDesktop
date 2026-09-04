@@ -75,7 +75,7 @@ main(void)
         check(tiku_desc_parse("-", &d) == 0 &&
               d.vtype == TIKU_VT_NONE, "\"-\" is untyped, not a failure");
         check(tiku_desc_parse("", &d) == 0, "so is an empty descriptor");
-        /* A device that grows a type we do not know must still be listed. */
+        /* A device that grows a type nobody here knows must still be listed. */
         check(tiku_desc_parse("f64,degC,live,slow", &d) == 0,
               "an unrecognised vtype degrades to untyped rather than lying");
         check(tiku_desc_parse("u32,degC,live,slow", &d) == 1 &&

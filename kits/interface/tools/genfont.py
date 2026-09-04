@@ -83,7 +83,7 @@ SIZE = 12
 # The 1x faces reach past Latin-1 to the scripts a device is most likely
 # to name a file in: Latin Extended-A (European accents), Greek, and
 # Cyrillic.  The stretch between -- Latin Extended-B, the phonetic
-# blocks, the combining marks we do not compose -- is baked blank, which
+# blocks, the combining marks nothing here composes -- is baked blank, which
 # costs a table entry and one byte rather than a glyph.
 FIRST, LAST = 32, 0x4FF
 ASCII_LAST = 126

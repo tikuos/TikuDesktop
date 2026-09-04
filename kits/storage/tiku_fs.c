@@ -357,13 +357,12 @@ store_of(const tiku_fs_t *fs, const char *path, char *local, size_t max)
  * @brief Whether a DEVICE answers for @p path, rather than local files.
  *
  * Nearly everything in this file is about a local filesystem -- statvfs,
- * the volumes scan, the Trash resolution, rename(2), opendir -- and each
- * of those gates used to ask the shell's backend, as a whole, whether it
- * was a device.
+ * the volumes scan, the Trash resolution, rename(2), opendir -- and a
+ * gate that asks the shell's backend, as a whole, whether it is a device
+ * asks a question a namespace has no whole answer to.
  *
- * With a namespace in the way that question has no whole answer.  The
- * router carries its ROOT's identity, so with local files at the root
- * every path under /devices/<board> looked local, and the gates opened
+ * The router carries its ROOT's identity, so with local files at the
+ * root every path under /devices/<board> looks local, and the gates open
  * on paths no local filesystem has: rename(2) on a device node, unlink()
  * on a device node, a Trash offered for a store that has none.
  *
@@ -2116,11 +2115,11 @@ step_one(tiku_fs_t *fs)
              * store can be asked to change.  So this cannot be done, and
              * the only question is how it fails.
              *
-             * It used to call unlink() with the path the NAMESPACE knows
-             * -- /devices/board1/gpio/17 -- which no local filesystem has
-             * ever heard of.  The kernel said ENOENT, and "no such file"
-             * reads as the item being already gone, which is the one
-             * thing it is not.
+             * Calling unlink() with the path the NAMESPACE knows --
+             * /devices/board1/gpio/17 -- which no local filesystem has
+             * ever heard of, gets ENOENT from the kernel, and "no such
+             * file" reads as the item being already gone, which is the
+             * one thing it is not.
              *
              * Refused by name instead, the way a folder that cannot cross
              * stores is refused: a limit that says what it is can be

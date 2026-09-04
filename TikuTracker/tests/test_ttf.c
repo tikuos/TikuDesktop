@@ -6,7 +6,7 @@
  * test_ttf.c - reading a font somebody dropped in.
  *
  * The files are real ones off this machine, because the point of the
- * exercise is faces we did not make: a parser proved against its own
+ * exercise is faces nobody here made: a parser proved against its own
  * output proves only that it is consistent.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -192,7 +192,7 @@ main(void)
 
     /*
      * A VARIABLE font, whose outlines are CFF2 -- the same charstrings
-     * left adjustable.  We draw the default instance: the blend operator
+     * left adjustable.  The default instance is drawn: the blend operator
      * keeps each value's default and steps over its deltas, and getting
      * that step wrong desyncs the whole charstring.  So a ring must come
      * out a ring, and an ideograph must have ink -- the CJK faces on a
@@ -268,8 +268,8 @@ main(void)
         }
         {
             /* The point of all this: a Chinese face, which is a variable
-             * one on every system I have seen, and which no static table
-             * we could bake would ever hold. */
+             * one on every system seen so far, and which no static table
+             * baked here would ever hold. */
             static const char *const cjk[] = {
                 "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/"
                 "NotoSansCJK-VF.ttc",

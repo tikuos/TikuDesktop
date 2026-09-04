@@ -296,7 +296,7 @@ built_face(int px, int bold)
             }
         }
         if (spare < 0) {
-            return NULL;        /* all spoken for: draw with what we had */
+            return NULL;        /* all spoken for: draw with what there is */
         }
         built_free(&built[spare]);
     }
@@ -413,7 +413,7 @@ tiku_font_set_files(const char *regular, const char *bold)
     }
     r = tiku_ttf_open(regular);
     if (r == NULL) {
-        return 0;               /* what we cannot read, we do not adopt */
+        return 0;               /* what cannot be read is not adopted */
     }
     if (bold != NULL) {
         b = tiku_ttf_open(bold);

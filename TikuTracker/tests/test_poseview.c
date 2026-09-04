@@ -1893,13 +1893,13 @@ main(void)
     printf("\na tick costs what it was given, whatever the store does\n");
     {
         /*
-         * The value sweep used to read forty rows unconditionally, once
-         * per tick, each one a backend read.  A store on the far end of a
-         * serial line answers in SECONDS, so a window of device rows
-         * asked for minutes of work inside a frame that had
-         * milliseconds -- and the whole desktop waited for it.
+         * A value sweep reading forty rows unconditionally, once per
+         * tick, each one a backend read, asks a store on the far end of
+         * a serial line -- which answers in SECONDS -- for minutes of
+         * work inside a frame that has milliseconds, and the whole
+         * desktop waits for it.
          *
-         * Now the sweep carries a cursor and a deadline: it reads what
+         * So the sweep carries a cursor and a deadline: it reads what
          * there is time for and leaves the rest for the next tick.  The
          * cursor advances BEFORE the read, so a row that overruns cannot
          * be retried for ever while the rows behind it are never

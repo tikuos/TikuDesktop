@@ -73,8 +73,9 @@ typedef struct {
  * @brief Parse a manifest meta field.
  *
  * Accepts "-" and anything unrecognised, which yields an untyped descriptor
- * rather than an error: a node the device describes in a way we do not know
- * yet must still be listed, just without a specialised formatter.
+ * rather than an error: a node the device describes in a way this build
+ * does not know yet must still be listed, just without a specialised
+ * formatter.
  *
  * @return 1 when a type was recognised, 0 when the result is untyped.
  */

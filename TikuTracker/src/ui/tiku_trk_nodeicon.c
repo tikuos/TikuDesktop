@@ -36,7 +36,7 @@ tiku_trk_nodeicon_hint(tiku_store_t *store, const tiku_thumb_q_t *q,
         return m->facts.icon_hint;
     }
     /* A thumbnail is a node icon, and it counts from the moment the file is
-     * one we WOULD make a thumbnail of -- before it exists.  Waiting for the
+     * one that WOULD get a thumbnail -- before it exists.  Waiting for the
      * attribute would mean the first draw of every image took the type icon
      * and nothing ever asked again (IV-037). */
     if (q != NULL && tiku_thumb_wanted(q, m->path)) {

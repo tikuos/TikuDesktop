@@ -108,12 +108,10 @@ main(void)
 
         /*
          * The rows that take a drop are the ones the Deskbar FOLDER put
-         * there.  It used to be enough to open the menu and count, back
-         * when /sys, /dev and /data were written into every menu whether
-         * the machine had them or not -- so the count was of three rows
-         * nobody had chosen.  Now the folder has to have something in it
-         * for there to be anything to drop on, which is the honest
-         * arrangement and needs saying out loud here.
+         * there.  Opening the menu and counting is not enough: with no
+         * fixed rows for /sys, /dev and /data, the folder has to have
+         * something in it for there to be anything to drop on, which is
+         * the honest arrangement and needs saying out loud here.
          */
         (void)system("rm -rf /tmp/trk_dbdrop && mkdir -p "
                      "/tmp/trk_dbdrop/one /tmp/trk_dbdrop/two && "

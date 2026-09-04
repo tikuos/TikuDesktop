@@ -29,8 +29,8 @@
  * a device that can be puppeted by anything that reaches its socket is a
  * device with a hole in it.  The framing is the session's: little-endian
  * [u32 type][u32 length][payload] over any stream -- a local socket now, a
- * serial link to a real board later, which is the point of putting the
- * driver outside in the first place.
+ * serial link to a real board later, and that is what putting the driver
+ * outside is for.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

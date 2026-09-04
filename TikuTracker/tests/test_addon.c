@@ -21,7 +21,7 @@ int main(void) {
     if (tiku_trk_addons_shortcut(&a, 'x', 0x3u, 1000) != 1001) return 1;
     if (tiku_trk_addons_shortcut(&a, 'x', 0x2u, 1000) >= 0) return 1;
     {   /* Discovery: an add-ons directory of executables (CW-038).  A
-         * fixture of our own, so every gate can be asked. */
+         * fixture of its own, so every gate can be asked. */
         char dir[] = "/tmp/trk_addons_test";
         FILE *f;
 

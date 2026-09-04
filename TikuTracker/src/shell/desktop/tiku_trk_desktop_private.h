@@ -349,7 +349,7 @@ typedef struct desktop {
     char                 prog_dest[TIKU_PATH_MAX];
     /* The Open/Save panel.  ONE, because it is asking one question at a
      * time and a second would be a second answer to the same ask. */
-    /* What is mounted, and what it was last time we looked: the port's
+    /* What is mounted, and what it was at the last look: the port's
      * only source of mount and unmount notices (PVN-008). */
     tiku_volwatch_t  volwatch;
     /* The record the last search wrote, so Edit query has something to

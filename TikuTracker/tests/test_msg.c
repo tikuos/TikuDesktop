@@ -435,7 +435,7 @@ main(void)
             0x03, 0x00, 0x00, 0x00,             /* three bytes of it   */
             0xDE, 0xAD, 0xBE,                   /* which mean nothing  */
 
-            0x03, 0x00, 'o', 'l', 'd',          /* and one we do know  */
+            0x03, 0x00, 'o', 'l', 'd',          /* and one it does know */
             0x04, 0x00, 0x00, 0x00,             /* type: int32         */
             0x01, 0x00, 0x00, 0x00,
             0x04, 0x00, 0x00, 0x00,
@@ -533,10 +533,10 @@ main(void)
                     touch_all(t);
 
                     /*
-                     * Whatever it turned out to be, it must be the same
-                     * thing said twice: a changed byte may make another
-                     * message, but not one that reads differently the
-                     * second time round.
+                     * Whatever it is, it must be the same thing said
+                     * twice: a changed byte may make another message,
+                     * but not one that reads differently the second
+                     * time round.
                      */
                     {
                         size_t sz = tiku_msg_flat_size(t);

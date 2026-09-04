@@ -9,7 +9,7 @@
  *
  * The rules here are the ones the rows are about: a cached thumbnail is
  * trusted only while it is newer than the file, a big image must not stall
- * the small ones behind it, the same file is never worked twice at once, and
+ * the small ones behind it, the same file is not worked twice at once, and
  * a pose shows a type icon until the picture is ready rather than waiting.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -87,7 +87,7 @@ int tiku_thumb_fresh(tiku_store_t *store, const char *path,
  * @brief Queue @p path.
  *
  * @return 1 when it was queued, 0 when it was already in flight or queued
- *         (the same file is never worked twice at once), -1 when the queue
+ *         (the same file is not worked twice at once), -1 when the queue
  *         is full.
  */
 int tiku_thumb_queue(tiku_thumb_q_t *q, const char *path,

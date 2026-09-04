@@ -33,7 +33,7 @@
  *
  * Frames go the other way, so nothing down here is large: an event, a
  * pick, or a message a shell composed.  A quarter of a megabyte is room
- * for a very talkative one and still a number, which is the point -- the
+ * for a very talkative one and still a bound, which matters because the
  * client is reading it into a buffer before it has looked at it.
  */
 #define REMOTE_MAX_DOWN (256u * 1024u)
@@ -273,12 +273,11 @@ session_message(tiku_remote_session_t *s)
             }
             {
                 /*
-                 * And say what THIS end can do, which nothing used to.
-                 * A client cannot choose what to send without it, and
-                 * the choice is not optional once the vocabulary can
-                 * grow: an op the far end has not got is stepped over,
-                 * so guessing wrong loses whatever it drew rather than
-                 * failing.
+                 * And say what THIS end can do.  A client cannot choose
+                 * what to send without it, and the choice is not optional
+                 * once the vocabulary can grow: an op the far end has not
+                 * got is stepped over, so guessing wrong loses whatever it
+                 * drew rather than failing.
                  */
                 unsigned char reply[8];
                 uint32_t version = TIKU_REMOTE_VERSION;

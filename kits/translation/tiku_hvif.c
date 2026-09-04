@@ -18,7 +18,7 @@
  * src/libs/icon/{IconRenderer,style,shape,transformer}/ (Haiku,
  * haiku-os.org, MIT licensed).
  *
- * DELIBERATELY NOT IMPLEMENTED.  Each of these consumes its bytes so the
+ * Deliberately not implemented.  Each of these consumes its bytes so the
  * stream stays in sync, then degrades rather than failing:
  *   - CONTOUR (21), AFFINE (20) and PERSPECTIVE (22) transformers.  Zero
  *     occurrences in the Tracker set; AFFINE and PERSPECTIVE have zero in

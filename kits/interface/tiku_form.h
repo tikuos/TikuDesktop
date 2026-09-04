@@ -102,7 +102,7 @@ int tiku_form_at(const tiku_form_t *f, tiku_rect_t body, int x, int y);
  * @brief Draw the form in @p body.
  *
  * Every row records itself as the control it is, so a described panel
- * narrates like any other window -- which is the point: a board's
+ * narrates like any other window, and that is what it is for: a board's
  * interface is readable by a person, a test and an agent without the
  * board knowing any of them exist.
  */

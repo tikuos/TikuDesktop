@@ -29,7 +29,7 @@ typedef struct {
 /** @brief Why a load did not produce pixels. */
 typedef enum {
     TIKU_IMG_OK = 0,
-    TIKU_IMG_NOT_IMAGE,         /* not a format we recognise         */
+    TIKU_IMG_NOT_IMAGE,         /* not a recognised format           */
     TIKU_IMG_UNSUPPORTED,       /* recognised, but not decodable yet */
     TIKU_IMG_BAD                /* recognised and malformed          */
 } tiku_image_err_t;

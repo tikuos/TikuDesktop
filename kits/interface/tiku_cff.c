@@ -28,7 +28,7 @@
 #define CFF_MAX_DEPTH  10       /* subroutine calls within calls */
 #define CFF_MAX_STEMS  96
 #define CFF_MAX_OPS    100000   /* a charstring that never ends */
-#define CFF2_MAX_VS    64       /* variation subtables we keep a count for */
+#define CFF2_MAX_VS    64       /* variation subtables a count is kept for */
 
 typedef struct {
     const unsigned char *offsets;
@@ -53,7 +53,7 @@ struct tiku_cff {
     int                  fdcount;
     /*
      * A CFF2 face is the same machine with the outlines left variable.
-     * We draw the DEFAULT instance: the blend operator's deltas all fall
+     * The DEFAULT instance is drawn: the blend operator's deltas all fall
      * away, and all that is needed of the variation store is how many of
      * them each subtable carries, so the stack stays in step.
      */
@@ -264,8 +264,8 @@ dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
             }
             i += 5u;
         } else if (b0 == 30u) {
-            /* A real number, nibble by nibble; we only need its value
-             * roughly, for the FontMatrix. */
+            /* A real number, nibble by nibble; only its rough value is
+             * needed, for the FontMatrix. */
             char text[64];
             int at = 0;
             int done = 0;
@@ -807,8 +807,8 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
             int drop = n * run->cur_regions;
 
             /* The n default values sit BELOW n*regions deltas; dropping
-             * the deltas leaves the defaults, which is the instance we
-             * draw.  A well-made charstring never underflows this. */
+             * the deltas leaves the defaults, which is the instance
+             * drawn.  A well-made charstring never underflows this. */
             if (n < 0 || drop < 0) {
                 run->sp = 0;
             } else {
@@ -923,7 +923,7 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
     }
     default:
         /* The arithmetic and storage operators, which type designers do
-         * not use and which we must still not choke on. */
+         * not use and which must still not choke the reader. */
         run->sp = 0;
         return 1;
     }
@@ -1078,8 +1078,8 @@ read_fdarray(tiku_cff_t *cff, size_t off)
 /**
  * @brief Read a CFF2 variation store for its region counts.
  *
- * The default instance is all we draw, so the deltas themselves are of
- * no use -- but a blend has to know how many of them to step over, and
+ * The default instance is all that is drawn, so the deltas themselves
+ * are of no use -- but a blend has to know how many to step over, and
  * that count is per variation subtable.  vsindex picks the subtable.
  */
 static void

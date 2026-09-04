@@ -205,14 +205,13 @@ main(void)
     {
         /*
          * Nearly everything in tiku_fs is about a LOCAL filesystem --
-         * rename(2), unlink, opendir, statvfs, the Trash -- and each of
-         * those gates used to ask the shell's backend, as a whole,
-         * whether it was a device.
+         * rename(2), unlink, opendir, statvfs, the Trash -- and a gate
+         * that asks the shell's backend, as a whole, whether it is a
+         * device asks a question a namespace has no whole answer to.
          *
-         * A namespace has no whole answer.  The router carries its
-         * ROOT's identity, so with local files at the root every path
-         * under a mounted board looked local and the gates opened on
-         * paths no local filesystem has.
+         * The router carries its ROOT's identity, so with local files at
+         * the root every path under a mounted board looks local and the
+         * gates open on paths no local filesystem has.
          *
          * A store with a devid, mounted beside the disk, is what shows
          * it: the questions must come back different for the two.
@@ -280,10 +279,10 @@ main(void)
                  * And a delete of a device node is refused BY NAME.
                  *
                  * This is the half of the per-path question that can be
-                 * seen from outside.  The road it used to take called
-                 * unlink() with the path only the namespace knows, so
-                 * the kernel answered ENOENT and the user was told "no
-                 * such file" about an item sitting in front of them.
+                 * seen from outside.  A road that calls unlink() with
+                 * the path only the namespace knows gets ENOENT from the
+                 * kernel, and the user is told "no such file" about an
+                 * item sitting in front of them.
                  */
                 const char *one[1];
                 const tiku_progress_t *pr;

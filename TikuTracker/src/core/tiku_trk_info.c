@@ -413,7 +413,7 @@ tiku_trk_info_moved(tiku_trk_info_t *in, tiku_backend_t *b,
     return 1;
 }
 
-/** @brief The entry in a listing carrying the identity we are looking for. */
+/** @brief The entry in a listing carrying the identity being looked for. */
 static int
 same_node(const tiku_model_t *m, void *ctx)
 {

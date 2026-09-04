@@ -120,12 +120,11 @@ main(void)
      * as what was DRAWN.
      *
      * The shared buffer and the played list are two different places,
-     * and something has to decide which one the window IS.  It used to
-     * be neither: whichever arrived, the shared buffer was shown -- so
-     * an application that switched to sending lists painted into memory
-     * nobody looked at, and its window stood at the last frame it had
-     * sent as pixels.  Frozen, silently, with the stream still saying
-     * every command had been played.
+     * and something has to decide which one the window IS.  Showing the
+     * shared buffer whichever arrived leaves an application that switches
+     * to sending lists painting into memory nobody looks at, its window
+     * standing at the last frame it sent as pixels: frozen, silently,
+     * with the stream still saying every command has been played.
      */
     {
         tiku_dl_t *dl = tiku_dl_new();

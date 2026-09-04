@@ -2081,8 +2081,8 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
         /* In pixels, against the extent: an icon layout has no rows to
-         * count, and the row index these keys used to write was read by
-         * nothing that draws icons (PVK-010). */
+         * count, and a row index written by these keys is read by nothing
+         * that draws icons (PVK-010). */
         int ex, ey, ew, eh, ox, oy;
         int page = (v->view_h > 1) ? v->view_h : 1;
 
@@ -4655,8 +4655,8 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_node_event_t *e)
         } else {
             (void)tiku_trk_nodeicon_changed(v->icons, e->path);
             if (e->op == TIKU_EV_MOVED && e->from[0] != '\0') {
-                /* Keyed by path, so the name it USED to have is a key that
-                 * now describes nothing. */
+                /* Keyed by path, so its former name is a key that describes
+                 * nothing. */
                 (void)tiku_trk_nodeicon_changed(v->icons, e->from);
             }
         }
@@ -5162,8 +5162,8 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
      * trip answers "did anything happen at all" whatever the size of the
      * namespace, so a quiet device costs one question per tick instead of a
      * directory listing per open window.  A backend that cannot tell
-     * answers -1 and we fall through to the re-listing, which is what a
-     * local filesystem does.
+     * answers -1 and the re-listing follows, which is what a local
+     * filesystem does.
      */
     if (nch >= 0) {
         if (nch == 0 && complete) {
@@ -5492,12 +5492,12 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
 /**
  * @brief Re-read what is on screen, for as long as @p deadline allows.
  *
- * The sweep used to read forty rows unconditionally, once per tick.  Every
- * one of those is a backend read, and a store on the far end of a serial
- * line answers in seconds, not microseconds -- so a window of forty device
- * rows asked for minutes of work inside a frame that had milliseconds, and
- * the whole desktop waited for it.  A device that had stopped answering
- * altogether cost the full timeout PER ROW.
+ * Forty rows read unconditionally once per tick is forty backend reads,
+ * and a store on the far end of a serial line answers in seconds, not
+ * microseconds -- a window of forty device rows asks for minutes of work
+ * inside a frame that has milliseconds, and the whole desktop waits for
+ * it.  A device that has stopped answering altogether costs the full
+ * timeout PER ROW.
  *
  * So: a cursor that survives the tick, and a deadline.  Each tick reads
  * what it has time for and leaves the rest for the next one; the cursor
@@ -6032,7 +6032,7 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         got = (size_t)r;
     }
     /* A record that is not a whole number of columns is not a layout: it is
-     * a truncated write or something else's bytes under our name. */
+     * a truncated write or something else's bytes under this name. */
     if (got % sizeof rec[0] != 0u) {
         return 0;
     }

@@ -35,8 +35,8 @@ typedef struct tiku_path tiku_path_t;
  * boundaries instead of straddling two rows at half strength.  That is
  * what "hinted" buys at 10 and 12 px, and almost all of what it buys.
  *
- * With @c zones at 0 this is a plain scale, which is what a face we did
- * not measure gets.
+ * With @c zones at 0 this is a plain scale, which is what an unmeasured
+ * face gets.
  */
 #define TIKU_HINT_ZONES 3
 

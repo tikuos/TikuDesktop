@@ -3,13 +3,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * glyphdump.c - what our rasteriser makes of one glyph.
+ * glyphdump.c - what the kit's rasteriser makes of one glyph.
  *
  * A DEVELOPMENT tool, not part of the build or the suite: it prints a
  * glyph's metrics and coverage so tools/compare_freetype.py can hold them
- * against what freetype makes of the same glyph.  We ship no font library
- * and the suite depends on none; this is how we check our own work
- * against one anyway, on a machine that happens to have it.
+ * against what freetype makes of the same glyph.  No font library ships
+ * and the suite depends on none; this is how the kit's own work is
+ * checked against one anyway, on a machine that happens to have it.
  *
  *   cc -I../../kits/interface -o glyphdump glyphdump.c \
  *      ../../kits/build/libtiku_interface.a \

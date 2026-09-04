@@ -168,10 +168,10 @@ typedef enum {
  * @brief Make @p m into the application it already is.
  *
  * A file that can be executed does not need something else to open it --
- * it IS the thing that opens.  Double-clicking one used to ask the
- * registry which application handles its type, get no answer, and say
- * "no application": the one file in a folder guaranteed to be runnable
- * was the one the shell refused to run.
+ * it IS the thing that opens.  Asking the registry which application
+ * handles its type answers nothing for one, and "no application" for
+ * the one file in a folder guaranteed to be runnable is the wrong
+ * refusal.
  *
  * @return 1 when @p m is a runnable file and @p out was filled.
  */

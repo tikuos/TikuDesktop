@@ -91,7 +91,7 @@ typedef struct tiku_app_services {
      * heard of devices: the mount table is the shell's, and so is the
      * panel that walks it.
      *
-     * IT DOES NOT BLOCK, and must not: a shell that stopped to ask a
+     * It does not block, and must not: a shell that stopped to ask a
      * question would stop for every other window with it, which is the
      * same reason the kit's alert is drawn by the application over its
      * own surface rather than asked for through here.  The answer

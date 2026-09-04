@@ -86,9 +86,9 @@ main(void)
 
         /* frame.y itself is the top bevel, which no item owns: the
          * first row a click can choose is one below it.  These two
-         * assertions used to pin the OLD alignment, where the hit bands
-         * sat one row above the painted ones -- so the bevel chose item
-         * zero and the last painted row of every item chose nothing. */
+         * assertions pin the hit bands to the painted rows: bands one row
+         * above them let the bevel choose item zero and the last painted
+         * row of every item choose nothing. */
         check(tiku_menu_item_at(&m, f, 110, 50) == -1,
               "the frame's own bevel row belongs to no item");
         check(tiku_menu_item_at(&m, f, 110, 51) == 0,
@@ -554,9 +554,9 @@ main(void)
          * Menus carry rows nobody wrote a command for: the partitions
          * under Mount, the applications under Open with.  Their label and
          * their enablement are facts the BUILDER knows and the shortcut
-         * table does not -- and the table used to relabel every row it
-         * walked, writing the empty string over a name it had never heard
-         * of and turning a deliberately greyed row back on.
+         * table does not -- and a table that relabels every row it walks
+         * writes the empty string over a name it has never heard of and
+         * turns a deliberately greyed row back on.
          */
         tiku_menu_t m;
         tiku_trk_sc_ctx_t c;

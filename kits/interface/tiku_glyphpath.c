@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* A glyph is small.  These bound what a hostile file can ask us for. */
+/* A glyph is small.  These bound what a hostile file can ask for. */
 #define PATH_MAX_EDGES  20000
 #define PATH_MAX_STEPS  64
 #define PATH_MAX_SIZE   1024    /* pixels across; a glyph is not a poster */

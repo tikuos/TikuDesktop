@@ -209,7 +209,7 @@ tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
     return 1;
 }
 
-/** @brief Remember a line naming no setting we know. */
+/** @brief Remember a line naming no setting this build knows. */
 static void
 keep_unknown(tiku_trk_prefs_t *p, const char *line)
 {

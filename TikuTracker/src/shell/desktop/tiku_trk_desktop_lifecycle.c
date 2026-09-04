@@ -337,11 +337,11 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     app->backdrop_color = TIKU_C_BACKDROP;
     app->surf = tiku_surface_new(DESK_W, DESK_H, app->backdrop_color);
     /*
-     * The window goes up BEFORE the work does.  It used to be opened
-     * after everything was built, which is fine for a shell that appears
-     * all at once and useless for one that wants to say what it is
-     * doing: a boot screen that arrives after the boot has nothing left
-     * to report.  The displayless runs -- scripted, and driven over the
+     * The window goes up BEFORE the work does: a window opened after
+     * everything is built suits a shell that appears all at once and not
+     * one that says what it is doing, since a boot screen that arrives
+     * after the boot has nothing left to report.  The displayless runs
+     * -- scripted, and driven over the
      * conductor channel -- still take no window at all.
      */
     if (o->script_path == NULL && o->conduct_path == NULL && o->conduct_tty == NULL) {

@@ -226,7 +226,7 @@ tiku_attr_format(const tiku_desc_t *d, const char *raw,
             snprintf(out, max, "%s", (v != 0) ? "on" : "off");
         } else if (d->unit_name[0] != '\0' &&
                    strcmp(d->unit_name, "-") != 0) {
-            /* A unit we have no formatter for is still worth showing: the
+            /* A unit with no formatter is still worth showing: the
              * reading means more with its unit than without. */
             snprintf(out, max, "%ld %s", v, d->unit_name);
         } else {

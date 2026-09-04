@@ -12,7 +12,7 @@
  * letter of each.  It found a crash the suite could not have: a single
  * byte of an 88 KB file, three bytes in the whole file reaching it.
  *
- * Build it against the sanitisers, which is the point of it:
+ * Build it against the sanitisers, which is what it is for:
  *
  *   cc -g -fsanitize=address,undefined -I../../kits/interface \
  *      -o fontfuzz fontfuzz.c ../../kits/interface/tiku_ttf.c \

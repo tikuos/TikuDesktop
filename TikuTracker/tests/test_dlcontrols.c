@@ -114,8 +114,8 @@ int main(void){
        (void)tiku_ui_group(s, (tiku_rect_t){10, 10, 200, 90},
                                 "Sensors"));
 
-    /* A picture: a bitmap with its own mask, which used to be the one
-     * thing a window could only send as pixels. */
+    /* A picture: a bitmap with its own mask, the one thing a window would
+     * otherwise have to send as pixels. */
     { uint32_t art[16 * 16];
       int k;
 

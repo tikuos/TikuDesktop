@@ -176,10 +176,10 @@ main(void)
          * than a pickable one.  The midpoint of ink and ground is half
          * the enabled contrast wherever both came from one theme.
          *
-         * This used to call tiku_theme_dark() and THROW THE ANSWER AWAY,
-         * so the run labelled dusk read the light table and the claim
-         * about dusk -- the whole reason the check exists -- was never
-         * made.  Setting the table is the check.
+         * Setting the table is the check: calling tiku_theme_dark() and
+         * throwing the answer away leaves the run labelled dusk reading
+         * the light table, and the claim about dusk -- the whole reason
+         * the check exists -- never made.
          */
         int k;
 

@@ -34,7 +34,7 @@
  *     a selection, not by each caller remembering -- a rule kept at four
  *     call sites is a rule that will hold at three of them.
  *
- * ONE INDEX SPACE.  A row's index is its position in the list and also
+ * One index space.  A row's index is its position in the list and also
  * its position on screen; there is no filtered second ordering, and so
  * no bridge between two numbering schemes to get wrong.  A caller that
  * filters filters its own data and hands this a new count -- which is
@@ -191,7 +191,7 @@ void tiku_list_click(tiku_list_t *l, int row, unsigned modifiers);
  * starting over.  Cmd-A selects everything.  The top follows, so a
  * caller that draws from tiku_list_top() never has to scroll by hand.
  *
- * RETURN IS NOT HANDLED, and that is deliberate: what it means to open
+ * Return is not handled, and that is deliberate: what it means to open
  * a row is the caller's business, and a list that swallowed it would
  * make every caller work around the one key they all want.
  *

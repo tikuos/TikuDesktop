@@ -76,7 +76,7 @@ tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
     }
     tiku_trk_repaint_slide(r, row_y + row_h, -row_h, visible);
     /* Moving the rows up leaves the bottom row's worth of pixels holding
-     * what used to be there. */
+     * what was there before the move. */
     tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){
         visible.x, visible.y + visible.h - row_h, visible.w, row_h });
 }

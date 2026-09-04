@@ -30,7 +30,7 @@ typedef struct tiku_cff tiku_cff_t;
  *
  * The bytes are borrowed, not copied: they must outlive the handle.
  *
- * @return NULL for a table we cannot draw from.
+ * @return NULL for a table nothing here can draw from.
  */
 tiku_cff_t *tiku_cff_open(const unsigned char *data, size_t len);
 void tiku_cff_close(tiku_cff_t *cff);

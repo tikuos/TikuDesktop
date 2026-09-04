@@ -545,9 +545,9 @@ main(int argc, char **argv)
     (void)fclose(f);
     tiku_conduct_disconnect(&client);
     if (kid > 0) {
-        /* A shell we started on a line is ours to end: the line is gone
-         * the moment we are, and a shell left holding a dead cable would
-         * outlive every run that followed. */
+        /* A shell this driver started on a line is its to end: the line
+         * is gone the moment the driver is, and a shell left holding a
+         * dead cable would outlive every run that followed. */
         (void)kill(kid, SIGTERM);
         (void)waitpid(kid, NULL, 0);
     }

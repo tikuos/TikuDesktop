@@ -22,7 +22,7 @@ typedef struct tiku_ttf tiku_ttf_t;
 /**
  * @brief Open a TrueType file.
  *
- * @return NULL for anything we cannot draw with -- a PostScript-outline
+ * @return NULL for anything that cannot be drawn with -- a PostScript-outline
  *         .otf included, which says so in its header rather than lying.
  */
 tiku_ttf_t *tiku_ttf_open(const char *path);
@@ -34,7 +34,7 @@ const char *tiku_ttf_family(const tiku_ttf_t *ttf);
 /** @brief Whether the face calls itself bold. */
 int tiku_ttf_bold(const tiku_ttf_t *ttf);
 
-/** @brief Whether @p path looks like a face we could open, cheaply. */
+/** @brief Whether @p path looks like a face that could be opened, cheaply. */
 int tiku_ttf_is_font(const char *path);
 
 /**

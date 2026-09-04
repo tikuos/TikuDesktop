@@ -228,9 +228,9 @@ main(void)
     {
         /*
          * The registry answers which application opens a DOCUMENT.  Asked
-         * about a program it has nothing to say, and the shell used to
-         * stop there -- so the one file in a folder guaranteed to be
-         * runnable was the one that would not run.
+         * about a program it has nothing to say, and a shell that stops
+         * there makes the one file in a folder guaranteed to be runnable
+         * the one that will not run.
          */
         tiku_trk_app_t self;
         tiku_model_t m;

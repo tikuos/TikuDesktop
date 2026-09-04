@@ -219,7 +219,7 @@ entry_cmp(const void *a, const void *b)
  * @brief One XML entity, written into @p out.  @return bytes written.
  *
  * @p p points just past the '&'; on return @p end_out points past the ';'.
- * An entity we do not know is left as it was, '&' and all, rather than
+ * An unknown entity is left as it was, '&' and all, rather than
  * dropped -- a translator's stray ampersand should show, not vanish.
  */
 static int
@@ -263,7 +263,7 @@ entity(const char *p, const char *end, char *out, const char **after)
     } else if (semi - p == 4 && memcmp(p, "apos", 4) == 0) {
         cp = '\'';
     } else {
-        out[0] = '&';           /* an entity we do not know: leave it be */
+        out[0] = '&';           /* an unknown entity: leave it be */
         *after = p;
         return 1;
     }
@@ -331,7 +331,7 @@ is_space(char c)
  * VALUE, and match only when the WHOLE name equals @p name.  Anything
  * else -- the letters of @p name inside another attribute's value, an
  * attribute called something-name, a value whose quote never closes --
- * is stepped over rather than mistaken for the one we want.
+ * is stepped over rather than mistaken for the one wanted.
  */
 static char *
 attr(const char *p, const char *tagend, const char *name)
@@ -571,5 +571,5 @@ tiku_strings_init(const char *dir, const char *lang)
         snprintf(g_lang, sizeof g_lang, "%s", chosen);
         return g_lang;
     }
-    return "en";               /* asked for a language we do not carry */
+    return "en";               /* asked for a language not carried */
 }

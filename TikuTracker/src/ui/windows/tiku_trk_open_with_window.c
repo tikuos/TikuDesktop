@@ -20,9 +20,9 @@
 
 /*
  * A row is as tall as the name in it, and the list starts under a line of
- * text -- so both are asked for.  Each answers what was written here at
- * 12 px; at 16 the rows used to be 18 pixels tall holding 19-pixel words,
- * and a click landed a row away from the one it looked like.
+ * text -- so both are asked for.  Each answers what a fixed number gives
+ * at 12 px; at 16, rows 18 pixels tall holding 19-pixel words land a
+ * click a row away from the one it looked like.
  */
 static int row_h(void)    { return tiku_font_plain()->height + 3; }
 static int list_top(void) { return tiku_font_plain()->height + 11; }
@@ -30,9 +30,9 @@ static int list_top(void) { return tiku_font_plain()->height + 11; }
 /**
  * @brief The window, grown by what its ten rows grew by.
  *
- * It used to be the other way about -- the height was written down and
- * the row COUNT fell out of it -- so a larger face silently showed fewer
- * applications rather than a window with room for them.  260 stays the
+ * Not the other way about: a height written down, with the row COUNT
+ * falling out of it, shows a larger face fewer applications rather than
+ * a window with room for them.  260 stays the
  * origin, because the slack in it was chosen; only the difference the
  * face makes is worked out.
  */
@@ -42,8 +42,8 @@ static int ow_height(void)
 }
 
 /**
- * @brief Where the rows go: the same rectangle the loop below used to
- *        lay out a row at a time.
+ * @brief Where the rows go: the one rectangle the loop below lays a
+ *        row at a time into.
  *
  * Ten rows of the face's height, inset eight from the window's sides --
  * written once here so the draw, the click and the keyboard cannot come

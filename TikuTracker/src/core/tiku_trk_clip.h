@@ -71,7 +71,7 @@ tiku_trk_clip_mode_t tiku_trk_clip_mode_of(const tiku_trk_clip_t *c,
 int tiku_trk_clip_moved(tiku_trk_clip_t *c, uint64_t id, const char *to);
 
 /**
- * @brief Follow an entry by the path it used to have (FS-060).
+ * @brief Follow an entry by the path it had before the move (FS-060).
  *
  * What a shell can call: the operation engine reports the two paths and
  * nothing else, the identity having changed under it where the move

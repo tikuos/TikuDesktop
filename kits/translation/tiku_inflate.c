@@ -394,7 +394,7 @@ tiku_inflate_zlib(const unsigned char *src, long slen, unsigned char *out,
     if (src == NULL || slen < 2) {
         return -1;
     }
-    /* CMF/FLG: deflate with a window we do not need to honour (the whole
+    /* CMF/FLG: deflate with a window that need not be honoured (the whole
      * output is in memory), no preset dictionary, and the pair must be a
      * multiple of 31. */
     if ((src[0] & 0x0fu) != 8u || (src[1] & 0x20u) != 0u ||

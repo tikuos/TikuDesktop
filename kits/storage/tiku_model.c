@@ -331,9 +331,9 @@ tiku_model_icon_name(const tiku_model_t *m)
         return "folder_virtual";
     case TIKU_KIND_DIRECTORY:
         /* Tracker picks a special folder's icon by comparing node refs against
-         * the ones it looked up at startup; with no such registry we match the
-         * leaf name, which is right for the standard places and falls back to
-         * the plain folder everywhere else. */
+         * the ones it looked up at startup; with no such registry the leaf
+         * name is matched, which is right for the standard places and falls
+         * back to the plain folder everywhere else. */
         if (leaf_is(m->path, "Desktop"))   { return "desktop"; }
         if (leaf_is(m->path, "Downloads")) { return "folder_downloads"; }
         if (leaf_is(m->path, "Documents")) { return "folder_people"; }

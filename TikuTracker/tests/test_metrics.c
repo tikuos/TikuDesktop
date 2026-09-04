@@ -5,22 +5,21 @@
  *
  * test_metrics.c - how big a control is.
  *
- * These numbers used to be written into every window that drew one: a
- * 22-pixel row, a 26-pixel button, a 21-pixel title bar.  That was right
- * for a 12-pixel face and for nothing else, and when the face became a
- * preference the windows kept the numbers -- so at 16 px the words left
- * their rows, and one control's halves were split at a pixel the control
- * no longer reached.
+ * A 22-pixel row, a 26-pixel button, a 21-pixel title bar written into
+ * every window that draws one is right for a 12-pixel face and for
+ * nothing else: with the face a preference, at 16 px the words leave
+ * their rows, and one control's halves are split at a pixel the control
+ * no longer reaches.
  *
- * Two claims are made here, and the FIRST is the one that made the change
- * safe to attempt at all:
+ * Two claims are made here, and the FIRST is the one that makes the
+ * metrics safe to rely on at all:
  *
- *   at 12 px each answers exactly the number it replaced, so every pinned
- *   pixel in the shell suite goes on meaning what it meant; and
+ *   at 12 px each answers exactly the R5 number, so every pinned pixel
+ *   in the shell suite goes on meaning what it meant; and
  *
  *   at every other size it moves, in the direction the letters moved.
  *
- * The second without the first would have been a rewrite of the whole
+ * The second without the first would be a rewrite of the whole
  * interface.  The first without the second would be a rename.
  *
  * SPDX-License-Identifier: Apache-2.0

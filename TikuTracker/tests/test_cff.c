@@ -6,7 +6,7 @@
  * test_cff.c - a PostScript-outline face built byte by byte.
  *
  * The other tests read the fonts on this machine, which is the right way
- * to find out whether we can draw with real ones.  It is the wrong way
+ * to find out whether real ones draw.  It is the wrong way
  * to prove what happens to a BAD one: a fuzzer found a crash here in a
  * single byte of an 88 KB file -- three bytes in the whole file reach
  * it -- so no amount of bending at random would catch it coming back.
@@ -290,7 +290,7 @@ build_font(void)
     at = 1024;
 }
 
-/** @brief Write what we built, and hand back the path. */
+/** @brief Write the face built above, and hand back the path. */
 static const char *
 plant(void)
 {
@@ -339,7 +339,7 @@ main(void)
         tiku_ttf_glyph_t g;
 
         /*
-         * THE ONE THAT MATTERS.  Glyph 1's charstring calls subroutine
+         * The one that matters.  Glyph 1's charstring calls subroutine
          * zero of an index whose count says five and whose offsets are
          * off the end of the table.  A reader that keeps the count from
          * a read that FAILED will follow a pointer it never set.

@@ -404,11 +404,11 @@ draw_mark(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
 }
 
 /*
- * The submenu arrow used to be stroked here with a two-pixel pen.  It is
- * the kit's now, and drawn as horizontal runs, for two reasons: an open
- * chevron loses its point at a twelve-pixel row, and a plotted pixel is
- * not something the display list can carry, so a menu sent down a line
- * arrived with its arrows missing.  One arrow, in all three menus.
+ * The submenu arrow is the kit's, drawn as horizontal runs rather than
+ * stroked with a two-pixel pen, for two reasons: an open chevron loses
+ * its point at a twelve-pixel row, and a plotted pixel is not something
+ * the display list can carry, so a menu sent down a line arrives with
+ * its arrows missing.  One arrow, in all three menus.
  */
 static void
 draw_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)

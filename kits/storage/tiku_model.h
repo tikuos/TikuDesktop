@@ -58,7 +58,7 @@ typedef enum {
 #define TIKU_P_EXEC   0x4u
 
 /**
- * @brief What the backend told us about a node, as facts rather than verdicts.
+ * @brief What the backend said about a node, as facts rather than verdicts.
  *
  * ONE copy of the manifest's columns lives here; permission answers are
  * derived from it and memoised elsewhere, never duplicated -- two copies
@@ -199,8 +199,8 @@ const char *tiku_model_kind_string(const tiku_model_t *m);
  * @brief Which icon of the set represents it.
  *
  * Tracker resolves an icon from the node's own BEOS:ICON attribute, then its
- * MIME type, then a per-kind default; we have only the last two steps, so a
- * node cannot yet carry bespoke art.
+ * MIME type, then a per-kind default; only the last two steps exist here,
+ * so a node cannot yet carry bespoke art.
  *
  * @return A name for tiku_icons_bitmap(); never NULL.
  */

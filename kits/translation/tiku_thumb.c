@@ -130,7 +130,7 @@ tiku_thumb_queue(tiku_thumb_q_t *q, const char *path, int64_t bytes,
     if (q == NULL || !q->enabled || path == NULL || path[0] == '\0') {
         return -1;
     }
-    /* The same file is never worked twice at once: two windows showing one
+    /* The same file is not worked twice at once: two windows showing one
      * folder would otherwise both queue it (IV-033). */
     if (in_flight(q, path)) {
         return 0;

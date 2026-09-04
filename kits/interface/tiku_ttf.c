@@ -165,8 +165,8 @@ read_family(tiku_ttf_t *t, size_t name)
     }
     {
         /* UTF-16BE for the Windows and Unicode platforms, one byte per
-         * letter for Mac Roman.  Either way we keep what is ASCII: it is
-         * a name to pick from a list, not a document. */
+         * letter for Mac Roman.  Either way only what is ASCII is kept:
+         * it is a name to pick from a list, not a document. */
         unsigned i2, out = 0;
         unsigned step = best_wide ? 2u : 1u;
 
@@ -183,7 +183,7 @@ read_family(tiku_ttf_t *t, size_t name)
     }
 }
 
-/** @brief Pick the character map we can read, preferring the widest. */
+/** @brief Pick a readable character map, preferring the widest. */
 static void
 read_cmap(tiku_ttf_t *t, size_t cmap)
 {
@@ -422,7 +422,7 @@ read_simple(const tiku_ttf_t *t, size_t off, size_t len, int contours,
         return 0;
     }
     ins = rd16(t->data + p);
-    p += 2u + ins;              /* the hinting programme, which we skip */
+    p += 2u + ins;              /* the hinting programme, skipped */
 
     for (i = 0; i < points; ) {
         unsigned char f;
@@ -587,8 +587,8 @@ glyph_top(const tiku_ttf_t *t, unsigned cp)
  * @brief Find the x-height and cap height, once.
  *
  * The font's own OS/2 table states both, from version 2 on, and that is
- * the designer's answer rather than ours.  Failing that we measure the
- * two letters everyone measures.
+ * the designer's answer rather than a measured one.  Failing that, the
+ * two letters everyone measures are measured.
  */
 static void
 measure_zones(tiku_ttf_t *t)
@@ -608,7 +608,7 @@ measure_zones(tiku_ttf_t *t)
     if (t->zone_cap <= 0.0f) {
         t->zone_cap = glyph_top(t, 'H');
     }
-    /* A face whose zones we could not find -- a symbol font, a script
+    /* A face whose zones cannot be found -- a symbol font, a script
      * with no such lines -- is drawn unhinted rather than wrongly. */
     if (t->zone_x <= 0.0f || t->zone_cap <= t->zone_x) {
         t->zone_x = 0.0f;
@@ -625,7 +625,7 @@ build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
     memset(hint, 0, sizeof *hint);
     hint->scale = scale;
     if (off != NULL && off[0] == '0') {
-        return;                 /* an escape hatch, and how we measure it */
+        return;                 /* an escape hatch, and how zones are read */
     }
     measure_zones(t);
     if (t->zone_x > 0.0f) {
@@ -848,8 +848,8 @@ tiku_ttf_open(const char *path)
     t->glyf = table_of(t, dir, "glyf", &t->glyf_len);
     {
         /* The table's tag has a trailing space, which is easy to lose.
-         * CFF2 is the same outlines left variable: we draw its default
-         * instance, and it is opened by the same reader. */
+         * CFF2 is the same outlines left variable: its default instance
+         * is drawn, and it is opened by the same reader. */
         size_t cff_len = 0;
         size_t cff_off = table_of(t, dir, "CFF ", &cff_len);
 

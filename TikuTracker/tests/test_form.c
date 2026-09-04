@@ -9,8 +9,8 @@
  * it must not be able to do: rows in the order written, a place named
  * for each control, and a line this build has never heard of passed
  * over rather than refusing the whole panel -- because a device built
- * after this desktop will send one, and showing the rows we understand
- * beats showing none of them.
+ * after this desktop will send one, and showing the rows this build
+ * understands beats showing none of them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

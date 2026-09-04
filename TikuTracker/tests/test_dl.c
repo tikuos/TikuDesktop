@@ -355,11 +355,11 @@ main(void)
      * drawn exactly the same at the far end -- which is the answer to
      * "what about the controls you did not give an op to".
      *
-     * The scrollbar used to stand here, and stopped being the example
-     * when it got a command of its own: twenty-five rectangles that said
-     * where a thumb was drawn became two numbers that say where the view
-     * IS.  A reader wanting the second cannot get it from the first.
-     * The menu field followed it, for a sharper reason -- see below.
+     * The scrollbar is not the example, because it has a command of its
+     * own: twenty-five rectangles that say where a thumb is drawn against
+     * two numbers that say where the view IS, and a reader wanting the
+     * second cannot get it from the first.  The menu field has one for a
+     * sharper reason -- see below.
      */
     {
         tiku_surface_t *drawn = surface_new();

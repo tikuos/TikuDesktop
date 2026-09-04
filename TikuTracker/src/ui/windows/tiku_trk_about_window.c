@@ -18,8 +18,8 @@
  * Written as a DESCRIPTOR against the services contract, the same one a
  * third-party application gets: it paints its own surface and hands
  * frames over, asks for the ANNOUNCE role instead of a position, and
- * owns its colour cycle from its tick.  The shell that used to draw it
- * now only hosts it -- which is the boundary this whole panel exists to
+ * owns its colour cycle from its tick.  The shell only hosts it and
+ * never draws it -- which is the boundary this whole panel exists to
  * demonstrate, on the one window every user will open.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -171,11 +171,10 @@ static int about_content_w(void)
 /**
  * @brief How many processors, from /proc.
  *
- * The count and nothing else.  The model name used to be read too --
- * and on a machine whose cpuinfo does not carry one, the device tree
- * was asked instead, which answers with the name of the COMPUTER.  That
- * is how an About box for an operating system ended up announcing the
- * laptop it happened to be running on.
+ * The count and nothing else, not the model name: on a machine whose
+ * cpuinfo does not carry one, the device tree answers instead with the
+ * name of the COMPUTER, and an About box for an operating system then
+ * announces the laptop it happens to be running on.
  */
 static int
 count_cpus(void)

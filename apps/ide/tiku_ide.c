@@ -487,7 +487,7 @@ tb_glass(tiku_surface_t *s, int x)
     tiku_rgb_t c = TIKU_RGB(64, 64, 64);
     int i;
 
-    /* the ring, an octagon of the lines we have (toolbar y = 3 + n) */
+    /* the ring, an octagon of the lines available (toolbar y = 3 + n) */
     tiku_hline(s, x + 8, 3 + 6, 4, c);
     tiku_hline(s, x + 8, 3 + 13, 4, c);
     tiku_vline(s, x + 6, 3 + 8, 4, c);
@@ -563,7 +563,7 @@ tb_stop(tiku_surface_t *s, int x, int on)
                         : TIKU_RGB(178, 178, 178));
 }
 
-/** @brief The build mallet: a head and a handle, from the lines we have. */
+/** @brief The build mallet: a head and a handle, from the lines available. */
 static void
 tb_mallet(tiku_surface_t *s, int x)
 {

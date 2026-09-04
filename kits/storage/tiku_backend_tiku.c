@@ -126,7 +126,7 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
     snprintf(m->facts.req_cap, sizeof m->facts.req_cap, "%s", n->cap);
     snprintf(m->facts.meta, sizeof m->facts.meta, "%s", n->meta);
     /* "?" is what the ls-walk fills in when the manifest was cut, so the UI
-     * can tell "open" from "we never learned". */
+     * can tell "open" from "never learned". */
     m->facts.cap_known = (strcmp(n->cap, "?") != 0);
     m->facts.size = (int64_t)strlen(n->value);
     snprintf(m->type, sizeof m->type, "%s",
@@ -154,7 +154,7 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
 }
 
 /**
- * @brief What the device has recorded since we last asked.
+ * @brief What the device has recorded since the last ask.
  *
  * Reading the device's change ring is one round trip whatever the size of
  * the namespace, which is what makes it worth asking every tick where
@@ -442,7 +442,7 @@ tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     val[n] = '\0';
     /* The device's own refusal text is the error the user sees: it names the
      * real reason (EACCES from the capability gate, ERANGE from a range) and
-     * inventing our own would only obscure it. */
+     * inventing another would only obscure it. */
     return tiku_ns_write(impl->ns, path, val, err, errmax);
 }
 

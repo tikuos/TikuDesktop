@@ -368,12 +368,11 @@ build_leaf(tiku_trk_deskbar_t *db)
          * The stores that are ATTACHED, one row each, opening the place
          * they are mounted at.
          *
-         * This is the row /sys, /dev and /data used to occupy -- written
-         * into every menu whether the machine had them or not.  The
-         * difference is the whole point: a device that is not there does
-         * not get a row, so what is in the menu is what a person can
-         * actually reach.  The rule the recents already keep, applied to
-         * places instead of history.
+         * Not a fixed row each for /sys, /dev and /data, written into
+         * every menu whether the machine has them or not: a device that
+         * is not there does not get a row, so what is in the menu is
+         * what a person can actually reach.  The rule the recents already
+         * keep, applied to places instead of history.
          *
          * The namespace is asked directly rather than told, so a mount
          * that came or went is in the next menu opened; a list published
@@ -422,10 +421,10 @@ build_leaf(tiku_trk_deskbar_t *db)
          * The Deskbar folder's own items, under a rule that is only put
          * in if something follows it.
          *
-         * An empty folder used to get a row saying it was empty -- an
-         * entry whose whole content is that there is no entry, and one
-         * that cannot be chosen at that.  Nothing is the better answer,
-         * and it is the one an empty recents list already got (DB-074).
+         * An empty folder gets no row saying it is empty: an entry whose
+         * whole content is that there is no entry, and one that cannot be
+         * chosen at that, is worse than nothing, which is what an empty
+         * recents list gets (DB-074).
          *
          * The rule has to go in before the folder is walked, because the
          * walk is what adds the items; so it is taken out again if the
@@ -2592,9 +2591,9 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
             } else {
                 draw_row_bg(s, row, t->active);
             }
-            /* The application's icon.  Tracker's own team is the one we can
-             * name; anything else gets the generic application icon rather
-             * than a blank, so the column never has a hole in it. */
+            /* The application's icon.  Tracker's own team is the one that
+             * can be named; anything else gets the generic application icon
+             * rather than a blank, so the column never has a hole in it. */
             /* DB-018: when even the generic icon is missing, the slot is
              * left as it is.  A coloured rectangle where an icon failed
              * looks like an application whose icon IS a blue square. */

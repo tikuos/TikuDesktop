@@ -51,8 +51,9 @@ typedef struct {
 typedef struct {
     tiku_trk_pref_t *pref;
     int              n;
-    /* Lines from the file that name no setting we know.  Kept and written
-     * back so an older or newer Tracker's file round-trips rather than
+    /* Lines from the file that name no setting this build knows.  Kept and
+     * written back so an older or newer Tracker's file round-trips rather
+     * than
      * being quietly emptied (TS-062). */
     char           **unknown;
     int              nunknown;

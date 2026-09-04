@@ -27,13 +27,13 @@
 
 /*
  * Every measurement below is asked of the face in force rather than
- * written down, because this is the one window in which the face CHANGES
- * WHILE IT IS OPEN.  A row written down as 22 pixels is a row that stops
+ * written down, because this is the one window in which the face changes
+ * WHILE it is open.  A row written down as 22 pixels is a row that stops
  * holding its own words the moment somebody presses the + it contains.
  *
  * The arithmetic is chosen so that at 12 px -- what the interface has
- * always defaulted to -- each answers exactly the number that used to be
- * written here, and the window is pixel for pixel the one it was.
+ * always defaulted to -- each answers exactly the number the R5
+ * measurements give, and the window is pixel for pixel that one.
  */
 
 /** @brief How many families the list shows: the folder decides. */
@@ -91,13 +91,13 @@ button_y(const tiku_trk_fonts_window_t *controller)
 /*
  * The size stepper: two real buttons with the number between them.
  *
- * It used to be the string "-   12 px   +" with a click anywhere right of
- * pixel 300 counted as a plus.  At 12 px the plus sign happened to land
- * just past 300 and it worked; at 10 px the whole string is shorter, the
- * plus sign sits at 289, and every click ON IT was read as a minus -- so
- * the size could be taken down and never brought back up.  A control is
- * where it is drawn, so these hand back the same rectangles the drawing
- * uses, and the hit test asks them rather than guessing.
+ * Two real buttons rather than the string "-   12 px   +" with any
+ * click right of pixel 300 counted as a plus: at 12 px the plus sign
+ * lands just past 300, at 10 px the string is shorter, the plus sign
+ * sits at 289, and every click ON IT reads as a minus -- a size that
+ * can be taken down and never brought back up.  A control is where it
+ * is drawn, so these hand back the same rectangles the drawing uses,
+ * and the hit test asks them rather than guessing.
  *
  * They are laid out from the RIGHT edge in.  That is not a detail: it is
  * what keeps the two buttons within a few pixels of the same place at

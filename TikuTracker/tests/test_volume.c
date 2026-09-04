@@ -415,9 +415,9 @@ main(void)
         }
         check(dupes == 0, "PVN-027",
               "and each of this machine's appears once");
-        {   /* A table we control, so the two rules can be ASKED rather
-             * than hoped for: whatever this machine has mounted may
-             * happen to satisfy them by accident. */
+        {   /* A table under the test's control, so the two rules can be
+             * ASKED rather than hoped for: whatever this machine has
+             * mounted may happen to satisfy them by accident. */
             tiku_volumes_t made;
             char got[8][TIKU_PATH_MAX];
             int m;
@@ -442,8 +442,8 @@ main(void)
                      getenv("HOME"));
             made.v[0].read_only = 1;
             made.n = 1;
-            {   /* PVN-040: which volume earns a Desktop pose.  A table we
-                 * control, so every gate can be asked. */
+            {   /* PVN-040: which volume earns a Desktop pose.  A table
+                 * under the test's control, so every gate can be asked. */
                 tiku_volumes_t t;
 
                 memset(&t, 0, sizeof t);

@@ -20,13 +20,13 @@
 /*---------------------------------------------------------------------------*/
 /* How big a thing has to be, given the letters that go in it.               */
 /*                                                                          */
-/* These used to be written down.  A list row was 22 pixels because 22 was  */
-/* what a 12-pixel face needed, and a stepper's halves were split at pixel  */
-/* 300 because that was where its plus sign happened to land.  Then the     */
-/* face became a preference and the numbers stayed -- so at 16 the words no */
-/* longer fitted their rows, and at 10 the plus sign moved LEFT of the      */
-/* split and every click on it was read as a minus.  A control that is not  */
-/* where the click is looked for is not a control.                          */
+/* Written-down numbers -- a list row of 22 pixels because 22 is what a     */
+/* 12-pixel face needs, a stepper's halves split at pixel 300 because that  */
+/* is where its plus sign lands -- are right for one face only: with the    */
+/* face a preference, at 16 the words no longer fit their rows, and at 10   */
+/* the plus sign moves LEFT of the split and every click on it reads as a   */
+/* minus.  A control that is not where the click is looked for is not a     */
+/* control.                                                                 */
 /*                                                                          */
 /* So: ask.  Each answers exactly what was written down before at 12 px,    */
 /* which is the size the interface has always defaulted to, and the right   */

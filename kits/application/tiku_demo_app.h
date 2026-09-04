@@ -8,7 +8,7 @@
  *
  * Written once against the services contract: link it into a desktop or
  * run it through tiku_client_run as its own process -- it cannot
- * tell, which is the point.
+ * tell, and that is the contract.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

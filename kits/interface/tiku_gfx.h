@@ -151,7 +151,7 @@ typedef struct {
      */
     struct tiku_dl   *record;
     /*
-     * How deep inside a recorded call we are.  A frame is four lines and
+     * How deep inside a recorded call this is.  A frame is four lines and
      * a line is a fill, so without this the list would carry the frame
      * AND everything the frame is made of, and the far end would draw it
      * all twice.  Only the outermost call is written down.

@@ -773,9 +773,9 @@ main(void)
               "eight on a narrow screen shrink to the minimum and even "
               "that will not fit: the ends grow arrows");
         {
-            /* 36 px wider than it used to be: the strip's far end now
-             * belongs to the theme switch, and the breathing room this
-             * row measures excludes it. */
+            /* 36 px wider than the strip alone: its far end belongs to
+             * the theme switch, and the breathing room this row measures
+             * excludes it. */
             tiku_surface_t *mid = tiku_surface_new(836, 150,
                                               TIKU_C_BACKDROP);
 

@@ -96,13 +96,12 @@ apply(tiku_trk_deskbar_prefs_window_t *controller)
  * @brief Where a stepper's two arrows and its number go, in the row at
  *        @p y of @p content.
  *
- * ONE description, asked by the drawing and by the press.  It used to
- * be neither: the row was drawn as the string "-   12 px   +" and the
- * press was split at a written-down pixel, so which half a click landed
- * in moved with the face AND with the number -- "8 px" and "128 px" are
- * not the same width, and the minus of one sat where the plus of the
- * other had been.  Part 0 is the minus, part 1 the number, part 2 the
- * plus.
+ * ONE description, asked by the drawing and by the press.  A row drawn
+ * as the string "-   12 px   +" with the press split at a written-down
+ * pixel moves which half a click lands in with the face AND with the
+ * number -- "8 px" and "128 px" are not the same width, and the minus
+ * of one sits where the plus of the other was.  Part 0 is the minus,
+ * part 1 the number, part 2 the plus.
  */
 static void
 stepper_row(tiku_layout_t *l)

@@ -29,7 +29,7 @@ typedef struct {
  *
  * A face read from a file rasterises what it is asked for and keeps it,
  * so a dropped font draws any letter it HAS -- Greek, Cyrillic, kana --
- * rather than the couple of hundred we would otherwise have guessed at.
+ * rather than the couple of hundred a bake would otherwise guess at.
  */
 typedef struct tiku_face_src tiku_face_src_t;
 
