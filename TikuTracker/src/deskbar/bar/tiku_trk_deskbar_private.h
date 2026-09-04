@@ -1,0 +1,199 @@
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_deskbar_private.h - what the tiku_trk_deskbar files share: the
+ * includes, the types, the small accessors that read them, and the functions
+ * one file defines for another.  Nothing outside this directory includes it.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef TIKU_TRK_DESKBAR_PRIVATE_H_
+#define TIKU_TRK_DESKBAR_PRIVATE_H_
+
+/* split: public TikuTracker/src/deskbar/tiku_trk_deskbar.h */
+
+/* split: tag db */
+
+#include "tiku_logo.h"
+#include "tiku_trk_deskbar.h"
+#include "tiku_mount.h"
+#include "tiku_trk_deskbar_prefs.h"
+#include "tiku_iconpaint.h"
+#include "tiku_strings.h"
+#include "tiku_trk_input.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <locale.h>
+#include <time.h>
+
+/* Metrics read out of Deskbar's own source rather than estimated.  Rows do
+ * not tile: each is drawn one pixel short and the seam between them is left
+ * unpainted, so the pitch is the row plus SEAM. */
+#define BAR_W        134     /* gMinimumWindowWidth at the 12 px face      */
+/*
+ * The leaf is the one control on the strip that is not a list item, and
+ * it is the way in to the whole system -- so it is given the room to
+ * look like it, rather than the twenty-six pixels a row of text happens
+ * to need.  The mark inside it grows with it, and past twenty-two it
+ * stops being drawn as a filled silhouette and becomes the wireframe
+ * cube, which is the rendition worth having when there is room for it.
+ */
+#define LEAF_MIN      34
+#define HLEAF_W 120     /* the leaf button, horizontal (DB-033) */
+#define TEAM_MIN      20     /* kMinTeamItemHeight; pitch 21               */
+#define WIN_MIN       19     /* pitch 20                                   */
+#define SEAM           1     /* kGutter: the unpainted row between items   */
+#define WIN_INDENT    22
+#define TRAY_ROW      18     /* kGutter + fMaxReplicantHeight + kGutter    */
+#define CLOCK_MIN     20
+#define PAD            4
+#define EXPANDER_W    13     /* ExpanderBounds() is 13 px, not 12          */
+#define EXPANDER_ARM   5
+#define EXPANDER_PEN   2
+#define TRAY_PAD       3     /* fTrayPadding                               */
+#define CLOCK_MARGIN  12     /* fClockMargin = fTrayPadding * 4            */
+#define SWITCH_ROW    16     /* the theme switch's own strip of tray        */
+#define SWITCH_W      26     /* the track */
+#define SWITCH_H      12
+
+
+struct tiku_trk_deskbar {
+    tiku_backend_t  *backend;
+    tiku_store_t     *store;
+    tiku_trk_db_dock_t   dock;
+    tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
+    int                  order[TIKU_TRK_DB_TEAMS_MAX];
+    int                  dragging;
+    int                  drop_team;
+    int                  team_count;
+    tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
+    int                  tray_count;
+    int                  next_replicant;   /* the ids handed out (DB-038) */
+    int                  width;     /* the short axis, user-set        */
+    /* Which of the three tables is in force: 0 light, 1 dark, 2 no hue.
+     * The bar only DRAWS it; the shell owns the setting. */
+    int                  theme;
+    struct {
+        char label[TIKU_TRK_DB_LABEL_MAX];
+        char command[TIKU_PATH_MAX];
+        char icon[24];
+        int  group;             /* which leaf row lists it */
+    }                    app[TIKU_TRK_DB_APPS_MAX];
+    int                  app_count;
+    int                  top_inset; /* the global bar owns this much   */
+    tiku_trk_deskbar_settings_t settings;
+    int                  autohide;
+    int                  autoraise;
+    int                  show_replicants;
+    int                  pointer_on;  /* the pointer is over the bar    */
+    int                  scroll;      /* first application row shown    */
+    int                  overflow;    /* the list ran past the tray     */
+    int                  menu_open;
+    int                  calendar_open;
+    int                  clock_menu_open;
+    int                  calendar_year;
+    int                  calendar_month;
+    time_t               fixed_now;     /* frozen clock for fixtures, or 0 */
+    /* The hot row of each little menu, following the pointer; -1 when the
+     * pointer is elsewhere.  The draw has always been able to highlight
+     * one; this is the hand that moves it. */
+    int                  leaf_hot;
+    int                  sub_hot;
+    tiku_trk_db_icon_fn  menu_icon;     /* injected by the shell, or NULL */
+    void                *menu_icon_ctx;
+    int                  win_hot;
+    int                  clock_hot;
+    int                  calendar_day;
+    int                  win_menu_team;    /* -1 = none showing        */
+    /* The expander a press is riding: the arrow turns down at once but
+     * the state commits only on RELEASE over the same strip (DB-022). */
+    int                  expander_press;   /* team index, or -1        */
+    /* The row the pointer is resting on whose FULL name deserves saying:
+     * a truncated label, or any application row while names are hidden
+     * (DB-032). */
+    char                 tip[TIKU_TRK_DB_LABEL_MAX];
+    int                  tip_y;            /* the row's top, or -1     */
+    /* The horizontal strip's layout, computed at draw time so the click
+     * and the drawing read the same numbers (DB-033). */
+    int                  hbutton_w;
+    int                  hleft;            /* first button's left edge */
+    int                  hoverflow;
+    /* Mini mode's second icon: the running-apps popup (DB-037). */
+    int                  apps_menu_open;
+    int                  apps_hot;
+    int                  screen_h;         /* the surface's, at last draw */
+    /* The leaf menu, built from the namespace every time it opens rather
+     * than compiled in: a file put in the Deskbar folder has to appear
+     * without restarting anything (DB-005). */
+    tiku_trk_db_item_t   leaf[TIKU_TRK_DB_LEAF_MAX];
+    int                  leaf_count;
+    int                  sub_of;           /* leaf row whose submenu is
+                                            * open, or -1              */
+    tiku_trk_db_item_t   sub[TIKU_TRK_DB_SUB_MAX];
+    int                  sub_count;
+    char                 menu_dir[TIKU_PATH_MAX];
+    char                 menu_dir_fallback[TIKU_PATH_MAX];
+    char                 recent[TIKU_TRK_DB_RECENT_KINDS]
+                               [TIKU_TRK_DB_RECENT_MAX][TIKU_PATH_MAX];
+    int                  recent_count[TIKU_TRK_DB_RECENT_KINDS];
+    tiku_rect_t     frame;
+};
+
+/** @brief Collects one directory entry into the menu being built. */
+struct menu_walk {
+    tiku_trk_deskbar_t *db;
+    int                 n;
+    tiku_trk_db_item_t *into;
+    int                 max;
+};
+
+/** @brief Hand one row's item to the shell's painter. */
+struct menu_icon_relay {
+    tiku_trk_deskbar_t       *db;
+    const tiku_trk_db_item_t *items;
+};
+
+/* Shared across the family: defined in one file, used in another. */
+
+/* tiku_trk_deskbar.c */
+int db_clock_row(void);
+int db_leaf_row(void);
+int db_team_row(void);
+int db_win_row(void);
+
+/* tiku_trk_deskbar_draw.c */
+tiku_rect_t db_leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows);
+tiku_rect_t db_sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_rect_t m,
+                             int rowh);
+void db_open_sub(tiku_trk_deskbar_t *db, int at);
+
+/* tiku_trk_deskbar_layout.c */
+int db_list_rows(const tiku_trk_deskbar_t *db);
+int db_list_y(const tiku_trk_deskbar_t *db);
+int db_tray_y(const tiku_trk_deskbar_t *db);
+void db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s);
+
+/* tiku_trk_deskbar_leaf.c */
+const char *db_leaf_name(const char *path);
+int db_calendar_days(int year, int month);
+int db_menu_entry(const tiku_model_t *m, void *ctx);
+void db_build_leaf(tiku_trk_deskbar_t *db);
+void db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years);
+
+/* tiku_trk_deskbar_winmenu.c */
+int db_win_menu_items(const tiku_trk_deskbar_t *db, int team,
+                      const char **items, int *enabled);
+tiku_rect_t db_calendar_rect(const tiku_trk_deskbar_t *db);
+tiku_rect_t db_win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh);
+void db_reset_menu_hots(tiku_trk_deskbar_t *db);
+void db_team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,
+                    int clicks, tiku_trk_db_pick_t *pick);
+
+/* End of the shared declarations. */
+
+#endif /* TIKU_TRK_DESKBAR_PRIVATE_H_ */

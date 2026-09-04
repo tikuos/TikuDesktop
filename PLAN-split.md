@@ -11,7 +11,10 @@ milestones 0-2.*
 first plan: a promoted static is renamed with its family's tag (`pv_`,
 `browser_`), because the two families both had a `pose_index` and met in
 the link; and split files live in a subdirectory with the `tiku_trk_`
-prefix kept.  Milestones 3 to 6 below remain.
+prefix kept.  Milestone 3 (the deskbar, eleven files under `src/deskbar/bar/`)
+and the first three of milestone 4 (the desktop turn, the script pump and
+the script parser, the engine now a family under `src/shell/script/`)
+followed the same day; fourteen of the seventeen remain.
 
 ## 1. Where the tree stands against the kernel style
 

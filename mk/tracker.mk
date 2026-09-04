@@ -133,13 +133,25 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_remote.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_embed.c
 
+# tiku_trk_deskbar, one composition over the files of one directory.
+DESKBAR := $(T)/src/deskbar/bar/tiku_trk_deskbar.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_leaf.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_winmenu.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_bar.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_teams.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_replicants.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_layout.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_draw.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_press.c \
+           $(T)/src/deskbar/bar/tiku_trk_deskbar_drops.c
+
 DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(POSEVIEW) \
                $(T)/src/shell/tiku_trk_script_api.c \
                $(T)/src/deskbar/tiku_trk_deskicons.c \
                $(T)/src/core/tiku_trk_select.c \
                $(T)/src/ui/tiku_trk_titleview.c \
-               $(T)/src/deskbar/tiku_trk_deskbar.c \
+               $(DESKBAR) \
                $(DESKTOP_CONTROLLERS) \
                $(T)/src/ui/tiku_trk_shortcuts.c \
                $(T)/src/ui/tiku_trk_cwmenu.c $(T)/src/ui/tiku_trk_find.c \
@@ -220,7 +232,7 @@ test_query_SRCS   := $(T)/src/ui/tiku_trk_find.c $(T)/src/core/tiku_trk_types.c
 test_notify_SRCS   := $(POSEVIEW) $(T)/src/core/tiku_trk_match.c $(T)/src/core/tiku_trk_clip.c $(T)/src/core/tiku_trk_task.c $(T)/src/core/tiku_trk_repaint.c $(T)/src/ui/tiku_trk_nodeicon.c $(T)/src/core/tiku_trk_types.c
 test_title_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/ui/tiku_trk_titleview.c
 test_match_SRCS   := $(T)/src/core/tiku_trk_match.c
-test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(T)/src/deskbar/tiku_trk_deskbar.c $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
+test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_deskbar_dock_LDLIBS := -lm
 test_text_LDLIBS := -lm
 test_ttf_LDLIBS := -lm
@@ -236,7 +248,7 @@ test_panel_SRCS   := $(COMMON) $(POSEVIEW)
 test_nodeicon_SRCS   := $(COMMON)
 test_navmenu_SRCS   := $(COMMON)
 test_navigator_SRCS   := $(T)/src/ui/tiku_trk_navigator.c
-test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(T)/src/deskbar/tiku_trk_deskbar.c $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/ui/tiku_trk_shortcuts.c
+test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/ui/tiku_trk_shortcuts.c
 test_dbdrop_LDLIBS := -lm
 test_switcher_SRCS   := $(T)/src/core/tiku_trk_switcher.c
 test_deskicons_SRCS   := $(COMMON) $(T)/src/deskbar/tiku_trk_deskicons.c $(POSEVIEW)

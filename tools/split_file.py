@@ -25,6 +25,7 @@ the forward declarations each file needs on its own.
                               (a typedef, a table).  A banner left with
                               nothing under it goes.
   cut --dir DIR --lines A-B   lift lines A-B of a function in <stem>.c
+      [--file F]              (or in family file F)
       --into SUFFIX --sig S   into a new function whose signature is S,
       --call C [--case]       written to <stem>_SUFFIX.c, and put the
       [--brief B] [--pre P]   call C where the lines were.  --case takes
@@ -33,6 +34,10 @@ the forward declarations each file needs on its own.
                               rewrites the lifted code outside strings
                               and comments (a.x becomes app->x); --pre
                               and --post are lines placed first and last.
+  hoist --dir DIR --lines A-B move lines A-B of <stem>.c (a struct, a
+      | --from "text"          table of types) into the private header;
+                              --from names the block by its first line and
+                              takes it through the `};` that closes it
   sync --dir DIR              recompute linkage and the prototype block
                               (run after any hand edit to the family)
 
@@ -61,6 +66,7 @@ FWD_B = '/* End of the forward declarations. */'
 CFG = '/* split: public %s */'
 TAG = '/* split: tag %s */'
 
+ONELINE = re.compile(r'^(static\s+)?((?:inline\s+)?[A-Za-z_][\w \t*]*?[ *])([a-z_][a-z0-9_]*)\([^;{]*\)\s*$')
 TYPE_LINE = re.compile(r'^(static\s+)?(inline\s+)?[A-Za-z_][A-Za-z0-9_ \t*]*\**$')
 BANNER = re.compile(r'^/\*[-=]{20,}\*/$')
 STATIC_VAR = re.compile(r'^static\s+(?!inline\b)[A-Za-z_][\w\s\*]*?\b([a-z_]\w*)\s*(\[[^;=]*\])?\s*(=|;)')
@@ -117,7 +123,25 @@ def index(lines):
             out.append(dict(name=m.group(1), sig=i, start=s, end=j, sigend=e,
                             static=lines[i - 1].startswith('static'),
                             ret=re.sub(r'^static\s+', '',
-                                       lines[i - 1].strip())))
+                                       lines[i - 1].strip()),
+                            oneline=False))
+            i = j
+            i += 1
+            continue
+        m = ONELINE.match(lines[i])
+        if m and i + 1 < n and lines[i + 1] == '{':
+            j = i + 1
+            while j < n and lines[j] != '}':
+                j += 1
+            s = i
+            if s - 1 >= 0 and lines[s - 1].rstrip().endswith('*/'):
+                k = s - 1
+                while k >= 0 and not lines[k].lstrip().startswith('/*'):
+                    k -= 1
+                s = k
+            out.append(dict(name=m.group(3), sig=i, start=s, end=j, sigend=i,
+                            static=lines[i].startswith('static'),
+                            ret='', oneline=True))
             i = j
         i += 1
     return out
@@ -144,7 +168,10 @@ def prototype(lines, f):
     sig = ' '.join(l.strip() for l in lines[f['sig']:f['sigend'] + 1])
     sig = re.sub(r'\s+', ' ', sig)
     ret = f['ret']
-    text = ('%s %s;' % (ret, sig)) if not ret.endswith('*') else ('%s%s;' % (ret, sig))
+    if f.get('oneline'):
+        text = re.sub(r'^static\s+', '', sig) + ';'
+    else:
+        text = ('%s %s;' % (ret, sig)) if not ret.endswith('*') else ('%s%s;' % (ret, sig))
     if len(text) <= 80:
         return text
     head, params = text.split('(', 1)
@@ -266,6 +293,13 @@ class Family:
         self.main = self.stem + '.c'
         self.guard = 'TIKU_' + self.stem.upper().replace('TIKU_', '', 1) + '_PRIVATE_H_'
         h = rd(self.path(self.hdr))
+        # a header written before the markers settled carries the old
+        # ones; they are moved to the current text once, on first sight
+        old_a = "/* Shared across the desktop's files: defined in one, used in another. */"
+        old_b = '/* End of the shared functions. */'
+        if GUARD_A not in h and old_a in h and old_b in h:
+            h = h.replace(old_a, GUARD_A).replace(old_b, GUARD_B)
+            wr(self.path(self.hdr), h)
         m = re.search(r'/\* split: public (.*?) \*/', h)
         self.public = m.group(1).split() if m else []
         m = re.search(r'/\* split: tag (\w+) \*/', h)
@@ -309,11 +343,12 @@ def sync(fam, verbose=True):
         for fn in idx:
             shared = refs_outside(f, fn['name'], files)
             exported = shared or fn['name'] in public
-            tl = lines[fn['sig'] - 1]
+            tline = fn['sig'] if fn.get('oneline') else fn['sig'] - 1
+            tl = lines[tline]
             # promotion only: what was non-static is linked from outside
             # the family, which nothing here can see
             if exported and tl.startswith('static '):
-                lines[fn['sig'] - 1] = tl[len('static '):]
+                lines[tline] = tl[len('static '):]
                 if fam.tag and fn['name'] not in public:
                     renames.append((fn['name'], fam.tag + '_' + fn['name']))
             if shared and fn['name'] not in public:
@@ -342,7 +377,9 @@ def sync(fam, verbose=True):
         while k < len(lines):
             l = lines[k]
             m = re.match(r'^static [^=(]*\b([a-z_][a-z0-9_]*)\(', l)
-            if m and not l.rstrip().endswith('{') and m.group(1) in all_names:
+            # a declaration, not a one-line definition with its brace below
+            if (m and not l.rstrip().endswith('{') and m.group(1) in all_names
+                    and not (k + 1 < len(lines) and lines[k + 1] == '{')):
                 j = k
                 while not lines[j].rstrip().endswith(';'):
                     j += 1
@@ -360,7 +397,8 @@ def sync(fam, verbose=True):
         idx2 = index(lines)
         fwd = []
         for fn in idx2:
-            if not lines[fn['sig'] - 1].startswith('static '):
+            tline = fn['sig'] if fn.get('oneline') else fn['sig'] - 1
+            if not lines[tline].startswith('static '):
                 continue
             before = '\n'.join(lines[:fn['start']])
             if word_in(fn['name'], before):
@@ -694,10 +732,11 @@ def loop_marks(lines):
     return out
 
 
-def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk):
+def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk, src=None):
     fam = Family(d)
     target = '%s_%s.c' % (fam.stem, suffix)
-    lines = rd(fam.path(fam.main)).split('\n')
+    src = src or fam.main
+    lines = rd(fam.path(src)).split('\n')
     body = lines[lo - 1:hi]
     if case:
         label = body[0].strip()
@@ -730,13 +769,35 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk):
         text = subst_code(text, substs, None)
     fn = []
     if brief:
-        fn.append('/**\n * @brief %s\n */' % brief)
+        first = textwrap.wrap(brief, 70)
+        rest = textwrap.wrap(' '.join(first[1:]), 77) if len(first) > 1 else []
+        fn.append('/**\n * @brief ' + '\n * '.join([first[0]] + rest) + '\n */')
     ret, _, rest = sig.partition(' ')
     if sig.count(' ') and not sig.startswith(('void', 'int', 'static', 'const', 'unsigned')):
         ret, rest = sig.split(' ', 1)
     fn.append(ret)
+    if len(rest) > 80:
+        head, params = rest.split('(', 1)
+        parts = params[:-1].split(', ')
+        col = len(head) + 1
+        out_lines = []
+        cur = ''
+        for k, part in enumerate(parts):
+            piece = part + (', ' if k < len(parts) - 1 else ')')
+            if cur and col + len(cur) + len(piece.rstrip()) > 80:
+                out_lines.append(cur.rstrip())
+                cur = ''
+            cur += piece
+        out_lines.append(cur.rstrip())
+        rest = head + '(' + out_lines[0] + ''.join('\n' + ' ' * col + l for l in out_lines[1:])
     fn.append(rest)
     fn.append('{')
+    # a parameter the lifted code never names is silenced, not dropped:
+    # the signature is the family's, the body is what it is
+    params = re.findall(r'\b([a-z_]\w*)\s*(?:,|\)\s*$)', rest)
+    unused = [q for q in params if not re.search(r'\b%s\b' % q, text) and q != 'void']
+    if unused:
+        fn.append('\n'.join('    (void)%s;' % q for q in unused))
     if pre:
         fn.append('    ' + pre.replace('\\n', '\n    ') + '\n')
     fn.append(text)
@@ -744,7 +805,7 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk):
         fn.append('    ' + post.replace('\\n', '\n    '))
     fn.append('}')
     lines[lo - 1:hi] = call.replace('\\n', '\n').split('\n')
-    wr(fam.path(fam.main), '\n'.join(lines))
+    wr(fam.path(src), '\n'.join(lines))
     tp = fam.path(target)
     if os.path.exists(tp):
         wr(tp, rd(tp).rstrip('\n') + '\n\n' + '\n'.join(fn) + '\n')
@@ -756,6 +817,34 @@ def cut(d, lo, hi, suffix, sig, call, brief, pre, post, substs, case, mk):
     sync(fam, False)
     sync(fam, False)
     print('cut %d lines into %s in %s' % (hi - lo + 1, rest.split('(')[0], target))
+
+
+def hoist(d, lo, hi, start=None):
+    fam = Family(d)
+    lines = rd(fam.path(fam.main)).split('\n')
+    if start is not None:
+        lo = next((k + 1 for k, l in enumerate(lines) if l.startswith(start)), None)
+        if lo is None:
+            sys.exit('no line starts with %r' % start)
+        hi = next(k + 1 for k in range(lo, len(lines)) if lines[k].startswith('}'))
+        # a doc comment above the block goes with it
+        if lo >= 2 and lines[lo - 2].rstrip().endswith('*/'):
+            k = lo - 2
+            while k >= 0 and not lines[k].lstrip().startswith('/*'):
+                k -= 1
+            lo = k + 1
+    block = '\n'.join(lines[lo - 1:hi])
+    e = hi
+    while e < len(lines) and lines[e].strip() == '':
+        e += 1
+    del lines[lo - 1:e]
+    wr(fam.path(fam.main), '\n'.join(lines))
+    h = rd(fam.path(fam.hdr))
+    h = h.replace(GUARD_A, block + '\n\n' + GUARD_A, 1)
+    wr(fam.path(fam.hdr), h)
+    sync(fam, False)
+    sync(fam, False)
+    print('hoisted %d lines into %s' % (hi - lo + 1, fam.hdr))
 
 
 def main(argv):
@@ -770,7 +859,7 @@ def main(argv):
             report(p, names)
         return 0
     opts = dict(dir=None, inline=[], public=[], mk=None, lines=[], section=None, tag=None,
-                into=None, sig=None, call=None, brief=None, pre=None, post=None,
+                into=None, sig=None, call=None, brief=None, pre=None, post=None, **{'from': None, 'file': None},
                 subst=[], case=False)
     rest = []
     while args:
@@ -785,7 +874,7 @@ def main(argv):
             opts['mk'] = args.pop(0)
         elif a == '--tag':
             opts['tag'] = args.pop(0)
-        elif a in ('--into', '--sig', '--call', '--brief', '--pre', '--post'):
+        elif a in ('--into', '--sig', '--call', '--brief', '--pre', '--post', '--from', '--file'):
             opts[a[2:]] = args.pop(0)
         elif a == '--subst':
             pat, _, rep = args.pop(0).partition('=>')
@@ -807,7 +896,13 @@ def main(argv):
     elif cmd == 'cut':
         (lo, hi), = opts['lines']
         cut(opts['dir'], lo, hi, opts['into'], opts['sig'], opts['call'], opts['brief'],
-            opts['pre'], opts['post'], opts['subst'], opts['case'], opts['mk'])
+            opts['pre'], opts['post'], opts['subst'], opts['case'], opts['mk'], opts['file'])
+    elif cmd == 'hoist':
+        if opts['lines']:
+            (lo, hi), = opts['lines']
+            hoist(opts['dir'], lo, hi)
+        else:
+            hoist(opts['dir'], 0, 0, opts['from'])
     elif cmd == 'sync':
         fam = Family(opts['dir'])
         sync(fam)
