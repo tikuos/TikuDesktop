@@ -21,11 +21,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 MENUS = ROOT / "src/ui/tiku_trk_cwmenu.c"
 ENABLE = ROOT / "src/ui/tiku_trk_shortcuts.c"
-# The desktop shell is one composition over the files in its directory,
-# and a command may be dispatched from any of them.
+# Each shell is one composition over the files in its directory, and a
+# command may be dispatched from any of them.
 DISPATCH = sorted(str(p.relative_to(ROOT))
-                  for p in (ROOT / "src/shell/desktop").glob("*.c")) + [
-    "src/shell/tiku_trk_app.c",
+                  for d in ("src/shell/desktop", "src/shell/tracker")
+                  for p in (ROOT / d).glob("*.c")) + [
     "src/ui/commands/tiku_trk_folder_file_actions.c",
     "src/ui/commands/tiku_trk_folder_actions.c",
     "src/ui/commands/tiku_trk_folder_menu.c",

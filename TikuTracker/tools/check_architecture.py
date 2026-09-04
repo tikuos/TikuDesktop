@@ -51,8 +51,10 @@ INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
 # dropped from one binary's link line, which is precisely the quiet
 # breakage this check exists to catch.
 TRACKER_ONLY = {
-    "src/shell/tiku_trk_app.c",
     "src/ui/tiku_trk_navigator.c",
+} | {
+    # the browser shell, one composition over the files in its directory
+    str(p.relative_to(ROOT)) for p in (ROOT / "src/shell/tracker").glob("*.c")
 }
 
 

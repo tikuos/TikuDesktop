@@ -13,9 +13,12 @@ directory is its own repository, cloned into a tikuOS checkout at
 | `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/TikuTracker`, `build/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/tests/test_*` |
 | `apps/` | what runs **on** the desktop: one directory per application (`edit/`, `term/`, `ide/`, `run/`), the toolkit `examples/`, the framework `samples/` (probe, gallery, demo), and the BASIC host | `build/tiku-*`, `build/apps/*.so` |
 | `assets/` | the mark, the banners and splashes the applications wear | — |
+| `tools/` | what works on the tree rather than in it: `split_file.py` cuts a file that grew section banners into a directory of one-functionality files, moving functions whole and generating the rest (`PLAN-split.md`) | — |
 
-The desktop shell's source is `TikuTracker/src/shell/tiku_trk_desktop.c`;
-the browser shell's is `TikuTracker/src/shell/tiku_trk_app.c`.
+Each shell is one composition over the files of one directory:
+`TikuTracker/src/shell/desktop/` for the spatial desktop and
+`TikuTracker/src/shell/tracker/` for the single-window browser.  The
+pose view, which both share, is `TikuTracker/src/ui/poseview/`.
 
 ## Building
 

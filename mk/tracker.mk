@@ -88,6 +88,20 @@ POSEVIEW := $(T)/src/ui/poseview/tiku_trk_poseview.c \
             $(T)/src/ui/poseview/tiku_trk_poseview_draw.c \
             $(T)/src/ui/poseview/tiku_trk_poseview_columns.c
 
+# tiku_trk_app, one composition over the files of one directory.
+TRACKER_SHELL := $(T)/src/shell/tracker/tiku_trk_app.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_context.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_draw.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_layout.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_fileops.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_rename.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_navigate.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_script.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_keys.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_commands.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_lifecycle.c \
+                 $(T)/src/shell/tracker/tiku_trk_app_events.c
+
 # Nearly everything is linked into both binaries -- the two shells are one
 # product built two ways -- and tools/check_architecture.py holds the exact
 # remainder, so a file quietly joining one binary and not the other is
@@ -103,7 +117,7 @@ TRACKER_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/ui/commands/tiku_trk_folder_file_actions.c \
                $(T)/src/ui/overlays/tiku_trk_status_overlay.c \
                $(T)/src/ui/windows/tiku_trk_folder_window.c \
-               $(T)/src/shell/tiku_trk_app.c $(T)/src/shell/tiku_trk_launcher.c
+               $(TRACKER_SHELL) $(T)/src/shell/tiku_trk_launcher.c
 # The desktop shell itself, one composition over several files.
 DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_events.c \
