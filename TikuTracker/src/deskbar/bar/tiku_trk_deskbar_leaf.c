@@ -72,6 +72,37 @@ add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
     snprintf(it->path, sizeof it->path, "%s", (path != NULL) ? path : "");
 }
 
+/** @brief One form under a board's gui/: a row that opens its panel. */
+static int
+db_form_entry(const tiku_model_t *m, void *ctx)
+{
+    tiku_trk_deskbar_t *db = ctx;
+    char path[TIKU_PATH_MAX];
+
+    if (m == NULL || m->name[0] == '.' || !tiku_model_is_container(m)) {
+        return 0;
+    }
+    snprintf(path, sizeof path, "%.*s/panel", (int)sizeof path - 8, m->path);
+    add_item(db, TIKU_TRK_DB_ITEM_PANEL, m->name, path, 0);
+    return 0;
+}
+
+/**
+ * @brief The forms a board at @p prefix publishes, as rows after its
+ *        own: a board with none adds nothing.
+ */
+static void
+add_forms(tiku_trk_deskbar_t *db, const char *prefix)
+{
+    char dir[TIKU_PATH_MAX];
+
+    if (db->backend == NULL || db->backend->ops->list == NULL) {
+        return;
+    }
+    snprintf(dir, sizeof dir, "%s/gui", prefix);
+    (void)db->backend->ops->list(db->backend, dir, db_form_entry, db);
+}
+
 /**
  * @brief The listing callback that makes a leaf-menu row of an entry: into
  *        the walk's own table when it has one, else onto the bar's leaf.
@@ -205,6 +236,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
                 any = 1;
             }
             add_item(db, TIKU_TRK_DB_ITEM_PATH, leaf, prefix, 0);
+            add_forms(db, prefix);
         }
     }
     {

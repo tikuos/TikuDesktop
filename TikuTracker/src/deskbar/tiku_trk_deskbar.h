@@ -114,7 +114,8 @@ typedef enum {
     TIKU_TRK_DB_ITEM_SETTINGS,  /* expand it: what configures this      */
     TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
     TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
-    TIKU_TRK_DB_ITEM_APP        /* start the program named by its path  */
+    TIKU_TRK_DB_ITEM_APP,       /* start the program named by its path  */
+    TIKU_TRK_DB_ITEM_PANEL      /* open the described panel at its path */
 } tiku_trk_db_item_kind_t;
 
 /** @brief Which recent list a RECENT row shows. */
@@ -325,6 +326,7 @@ typedef enum {
     TIKU_TRK_DB_DESKTOP_PREFERENCES,
     TIKU_TRK_DB_FONT_PREFERENCES,
     TIKU_TRK_DB_SOUND_PREFERENCES,
+    TIKU_TRK_DB_OPEN_PANEL,     /* path names a described panel */
     TIKU_TRK_DB_HIDE_ALL,
     TIKU_TRK_DB_SHOW_ALL,
     TIKU_TRK_DB_CLOSE_ALL,

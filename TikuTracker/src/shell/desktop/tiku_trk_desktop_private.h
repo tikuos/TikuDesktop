@@ -134,6 +134,26 @@
 
 typedef tiku_trk_folder_window_t folder_t;
 
+/** @brief How many described panels may be open at once. */
+#define TIKU_TRK_PANELS_MAX 4
+
+/**
+ * @brief A panel a device described, open or free (window NULL).
+ *
+ * A board's form binds its rows to the board's own paths; root is the
+ * place those paths are relative to, "" for a .panel file whose binds
+ * are absolute.
+ */
+typedef struct {
+    struct desktop  *app;       /* the shell, for the window's callbacks */
+    tiku_form_t      form;      /* the rows, as the device said */
+    tiku_window_t   *window;    /* showing it, or NULL          */
+    char             path[TIKU_PATH_MAX];   /* the node described */
+    char             root[TIKU_PATH_MAX];   /* what /gui/ binds hang off */
+    char             status[96];/* the last refusal, or ""      */
+    int              unknown;   /* rows this build did not know */
+} tiku_trk_described_t;
+
 typedef struct desktop {
     tiku_host_t    *host;           /* the display, or NULL when headless */
     tiku_surface_t *surf;           /* the frame every window paints into */
@@ -238,12 +258,15 @@ typedef struct desktop {
      * everything else here is the shell doing what it already does --
      * reading a path, writing a path, drawing controls.
      */
+    tiku_trk_described_t panels[TIKU_TRK_PANELS_MAX];
+    /* One per mount: its gui/ node's identity, so a change record can
+     * be told to be the board's, and whether its forms were opened
+     * unasked once -- a panel a person closed is not put back. */
     struct {
-        tiku_form_t      form;      /* the rows, as the device said */
-        tiku_window_t   *window;    /* showing it, or NULL          */
-        char             path[TIKU_PATH_MAX];   /* the node described */
-        int              unknown;   /* rows this build did not know */
-    } device_panel;
+        char     root[TIKU_PATH_MAX];   /* the mount's prefix */
+        uint64_t gui_id;                /* 0 unknown, ~0 none */
+        int      announced;             /* its forms were opened */
+    } boards[TIKU_MOUNT_MAX];
     /* Where the runner is, for starting an installed application in a
      * process of its own. */
     char                 runner[TIKU_PATH_MAX];
@@ -462,6 +485,20 @@ typedef struct {
 } desktop_loop_t;
 
 /* The models behind the windows, read where they are used. */
+
+/**
+ * @brief Open the described panel at @p path, a .panel file or a board's
+ *        gui/<form>/panel node.  @return 1 when a window opened.
+ */
+int open_panel_path(desktop_t *app, const char *path);
+/** @brief The panel shown in @p w, or NULL. */
+tiku_trk_described_t *panel_of_window(desktop_t *app, const tiku_window_t *w);
+/**
+ * @brief The notices of a turn: a board's gui/ that changed refreshes
+ *        its open panels, and a board seen for the first time has its
+ *        forms opened.  @return how many panels changed.
+ */
+int panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch);
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
 static inline tiku_trk_prefs_t *

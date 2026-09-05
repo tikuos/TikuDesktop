@@ -112,9 +112,19 @@ for s in "$here"/*.script; do
         # mount path instead of the mirrored files -- the same asks, of a
         # store that answers over a line.  Scripts that read files the
         # fixture wrote into the mirror do not say it.
+        # "# board: only" is for an ask the mirror cannot answer -- a form a
+        # board's process publishes -- so it runs on the board alone, and
+        # not at all when no board is on the cable.
         board=""
+        boardonly=""
+        if grep -q '^# board: only' "$s"; then
+            boardonly=yes
+            if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
+                continue
+            fi
+        fi
         if [ -n "${TRK_PORT:-}" ] && [ -n "$mountat" ] &&
-           grep -q '^# board: yes' "$s"; then
+           grep -q '^# board: yes\|^# board: only' "$s"; then
             board=yes
         fi
         # Which path the shell is started on.  The engine has no verb for
@@ -313,7 +323,9 @@ for s in "$here"/*.script; do
             echo hi > "$deskdir/notes.txt"
             echo hi > "$deskdir/todo.txt"
         fi
-        if grep -q '^# argv: none' "$s"; then
+        if [ -n "$boardonly" ]; then
+            :                   # the mirror cannot answer this one
+        elif grep -q '^# argv: none' "$s"; then
             DISPLAY= HOME="$deskhome" \
                 env ${embed:+TIKU_EMBED_DEMO=1} ${splash:+TIKU_SPLASH=1} \
                 ${mountat:+TIKU_MOUNT=$mountat} \

@@ -478,21 +478,38 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
 {
     char cmd[TIKU_NS_PATH_MAX + TIKU_VAL_MAX + 16];
     char buf[512];
-    int rc;
+    int rc, attempt;
 
     if (ns == NULL || path == NULL || value == NULL) {
         return -1;
     }
     snprintf(cmd, sizeof cmd, "write %s %s", path, value);
-    rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 20000);
-    if (rc < 0) {
-        return -1;
+    /*
+     * The console has no flow control, so a busy board can drop bytes off
+     * the tail of a command -- "write /p 1" arrives as "write /p", and the
+     * shell answers "Usage:", which is neither a refusal nor a success.
+     * A refusal ("cannot write") is the board's own considered no and is
+     * returned at once; a mangled line is retried, since the value never
+     * reached the node.
+     */
+    for (attempt = 0; attempt < 3; attempt++) {
+        rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 20000);
+        if (rc < 0) {
+            return -1;
+        }
+        if (strstr(buf, "cannot write") != NULL) {
+            if (err != NULL && errmax > 0u) {
+                snprintf(err, errmax, "%s", buf);
+            }
+            return -1;
+        }
+        if (strstr(buf, "Usage:") == NULL) {
+            break;              /* accepted: the shell says nothing */
+        }
     }
-    /* The shell prints "write: cannot write '<path>' (<reason>)" on refusal,
-     * and nothing at all on success. */
-    if (strstr(buf, "cannot write") != NULL) {
+    if (strstr(buf, "Usage:") != NULL) {
         if (err != NULL && errmax > 0u) {
-            snprintf(err, errmax, "%s", buf);
+            snprintf(err, errmax, "the link dropped the value");
         }
         return -1;
     }

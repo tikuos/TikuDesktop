@@ -260,6 +260,7 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
             tiku_trk_now(), ch, nch, complete);
         changed += tiku_trk_panel_window_poll(&app->file_panel,
             tiku_trk_now(), ch, nch, complete);
+        changed += panels_poll(app, ch, nch);
         {   /* What has been mounted or unmounted since the last look.
              * Polled with everything else rather than on a timer of its
              * own: a volume arriving is a change like any other. */

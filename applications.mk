@@ -14,6 +14,16 @@
 APPL_SRCS   :=
 APPL_CFLAGS :=
 
+# --- gui (a form the desktop draws; PLAN-gui.md) ---------------------------
+ifeq ($(TIKU_APPL_GUI),1)
+APPL_SRCS   += applications/board/gui/tiku_gui.c
+APPL_CFLAGS += -DTIKU_APPL_GUI=1 -Iapplications/board/gui
+ifeq ($(TIKU_APPL_GUI_DEMO),1)
+APPL_SRCS   += applications/board/samples/panel_demo.c
+APPL_CFLAGS += -DTIKU_APPL_GUI_DEMO=1
+endif
+endif
+
 # --- tracker (namespace browser) -- placeholder, nothing built yet ---------
 # ifeq ($(TIKU_APPL_TRACKER),1)
 # APPL_SRCS   += applications/tracker/tiku_appl_tracker.c

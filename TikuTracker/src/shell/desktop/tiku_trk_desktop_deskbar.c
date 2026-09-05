@@ -425,6 +425,9 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_OPEN_PATH:
         (void)open_folder(app, pick->path);
         break;
+    case TIKU_TRK_DB_OPEN_PANEL:
+        (void)open_panel_path(app, pick->path);
+        break;
     default:
         return 0;
     }

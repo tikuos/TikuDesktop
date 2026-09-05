@@ -345,6 +345,10 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_SOUND_PREFS) {
                     pick->what = TIKU_TRK_DB_SOUND_PREFERENCES;
+                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PANEL) {
+                    pick->what = TIKU_TRK_DB_OPEN_PANEL;
+                    snprintf(pick->path, sizeof pick->path, "%s",
+                             db->sub[si].path);
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
                     /* A toggle is not a departure: the menu stays up
@@ -411,6 +415,10 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 break;
             case TIKU_TRK_DB_ITEM_PATH:
                 pick->what = TIKU_TRK_DB_OPEN_PATH;
+                snprintf(pick->path, sizeof pick->path, "%s", it->path);
+                break;
+            case TIKU_TRK_DB_ITEM_PANEL:
+                pick->what = TIKU_TRK_DB_OPEN_PANEL;
                 snprintf(pick->path, sizeof pick->path, "%s", it->path);
                 break;
             default:

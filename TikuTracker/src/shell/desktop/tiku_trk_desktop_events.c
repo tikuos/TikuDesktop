@@ -968,7 +968,7 @@ if (hit == TIKU_HIT_CLOSE) {
                     &app->file_panel)) {
     (void)tiku_window_send(w, ev);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
-           w == app->device_panel.window) {
+           panel_of_window(app, w) != NULL) {
     /* A panel a device described: its controls are the
      * shell's own, so its clicks come here like any
      * other window's. */

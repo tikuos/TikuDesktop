@@ -1,0 +1,19 @@
+# shell: desktop
+# mount: /devices/board1
+# board: only
+# A form a board's process publishes, drawn on the desktop.  The board
+# ships no interface code: a process declares rows bound to its own
+# storage, and the desktop is the program that draws them.  The reads
+# below go over the board's console, which has no flow control, so this
+# proves what that link delivers reliably: the form opens itself when the
+# board is first seen, and shows the board's live values.  Writing a
+# control back over a busy console is milestone 5's flow-control work.
+wait 25
+note the board's form opens itself, titled what the board called it
+expect-title Board one
+note and shows the board's own values: the name it holds and a reading
+note the gauge is bound to
+expect-read /devices/board1/gui/demo/name workshop
+expect-read /devices/board1/gui/demo/panel gauge Temperature
+shot /tmp/trk_boardpanel.png
+quit

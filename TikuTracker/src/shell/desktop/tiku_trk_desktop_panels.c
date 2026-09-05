@@ -60,20 +60,35 @@ handler_for(desktop_t *app, const tiku_model_t *model)
     return tiku_trk_launch_controller_handler(&app->launcher, model);
 }
 
+/** @brief The bind of @p row as a path of this namespace. */
+static const char *
+bind_path(const tiku_trk_described_t *p, const tiku_form_row_t *row,
+          char *buf, size_t max)
+{
+    if (p->root[0] != '\0' && strncmp(row->bind, "/gui/", 5) == 0) {
+        snprintf(buf, max, "%.*s%s", (int)(max / 2), p->root, row->bind);
+        return buf;
+    }
+    return row->bind;
+}
+
 /** @brief Read every bound place, so the panel shows what IS. */
 static void
-panel_refresh(desktop_t *app)
+panel_refresh(tiku_trk_described_t *p)
 {
+    desktop_t *app = p->app;
+    char path[TIKU_PATH_MAX];
     int i;
 
-    for (i = 0; i < app->device_panel.form.nrow; i++) {
-        tiku_form_row_t *row = &app->device_panel.form.row[i];
+    for (i = 0; i < p->form.nrow; i++) {
+        tiku_form_row_t *row = &p->form.row[i];
 
         if (row->bind[0] == '\0' || row->kind == TIKU_FORM_BUTTON) {
             continue;
         }
-        if (tiku_backend_text(app->backend, row->bind, row->value,
-                              sizeof row->value)) {
+        if (tiku_backend_text(app->backend,
+                              bind_path(p, row, path, sizeof path),
+                              row->value, sizeof row->value)) {
             /* Trailing blanks are how a device ends a line, not part of
              * what it said. */
             size_t n = strlen(row->value);
@@ -92,121 +107,362 @@ panel_refresh(desktop_t *app)
 }
 
 /**
- * @brief Paint the device panel: its form, and a note when the device
- *        sent rows this build cannot draw.
+ * @brief Paint a described panel: its form, the last refusal, and a note
+ *        when the device sent rows this build cannot draw.
  */
 static void
 panel_draw(tiku_window_t *window, tiku_surface_t *surface,
            tiku_rect_t content, void *context)
 {
-    desktop_t *app = context;
+    tiku_trk_described_t *p = context;
+    const tiku_font_t *f = tiku_font_plain();
+    char note[112];
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
-    tiku_form_draw(&app->device_panel.form, surface, content);
-    if (app->device_panel.unknown > 0) {
+    tiku_form_draw(&p->form, surface, content);
+    note[0] = '\0';
+    if (p->status[0] != '\0') {
+        snprintf(note, sizeof note, "%s", p->status);
+    } else if (p->unknown > 0) {
         /* Said out loud rather than hidden: a panel from a device this
          * build is older than has rows it cannot draw, and a person
          * looking at a short panel deserves to know it is short. */
-        const tiku_font_t *f = tiku_font_plain();
-        char note[80];
-
         snprintf(note, sizeof note, "%d row(s) this build does not know",
-                 app->device_panel.unknown);
-        tiku_text(surface, f, content.x + 8,
-                       content.y + content.h - 6, note,
-                       tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
+                 p->unknown);
+    }
+    if (note[0] != '\0') {
+        tiku_text(surface, f, content.x + 8, content.y + content.h - 6,
+                  note, tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
     }
 }
 
 /**
- * @brief A press on the device panel: the row under it is pressed and
- *        what it writes goes to the device.  @return 1 when a row took it.
+ * @brief A press on a described panel: the row under it is pressed and
+ *        what it writes goes to the device; a refusal is shown, not
+ *        dropped.  @return 1 when a row took it.
  */
 static int
 panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
 {
-    desktop_t *app = context;
+    tiku_trk_described_t *p = context;
+    desktop_t *app = p->app;
     tiku_rect_t content = tiku_window_content(window);
+    const char *write;
     int row;
 
     if (event->type != TIKU_EVENT_POINTER_DOWN) {
         return 0;
     }
-    row = tiku_form_at(&app->device_panel.form, content, event->x, event->y);
+    row = tiku_form_at(&p->form, content, event->x, event->y);
     if (row < 0) {
         return 0;
     }
-    {
-        const char *write = tiku_form_press(&app->device_panel.form, row);
+    write = tiku_form_press(&p->form, row);
+    if (write != NULL) {
+        /*
+         * Working a control WRITES to the place it named.  That is
+         * the whole of the interface: the device published where
+         * its switch lives, and the desktop puts a value there.
+         */
+        char err[160], path[TIKU_PATH_MAX];
+        const char *bind = bind_path(p, &p->form.row[row], path,
+                                     sizeof path);
+        int rc = -1;
 
-        if (write != NULL) {
-            /*
-             * Working a control WRITES to the place it named.  That is
-             * the whole of the interface: the device published where
-             * its switch lives, and the desktop puts a value there.
-             */
-            char err[160];
-            const char *bind = app->device_panel.form.row[row].bind;
-
-            err[0] = '\0';
-            if (app->backend != NULL && app->backend->ops != NULL &&
-                app->backend->ops->write != NULL) {
-                (void)app->backend->ops->write(app->backend, bind, write,
-                                               strlen(write), err,
-                                               sizeof err);
-            }
-            panel_refresh(app);
-            app->dirty = 1;
+        err[0] = '\0';
+        if (app->backend != NULL && app->backend->ops != NULL &&
+            app->backend->ops->write != NULL) {
+            rc = app->backend->ops->write(app->backend, bind, write,
+                                          strlen(write), err, sizeof err);
         }
+        if (rc != 0) {
+            snprintf(p->status, sizeof p->status, "%s: %s",
+                     p->form.row[row].label,
+                     err[0] != '\0' ? err : "refused");
+            tiku_sound_play(TIKU_SOUND_BEEP);
+        } else {
+            p->status[0] = '\0';
+        }
+        panel_refresh(p);
+        app->dirty = 1;
     }
     return 1;
 }
 
+tiku_trk_described_t *
+panel_of_window(desktop_t *app, const tiku_window_t *w)
+{
+    int i;
+
+    for (i = 0; w != NULL && i < TIKU_TRK_PANELS_MAX; i++) {
+        if (app->panels[i].window == w && w->open) {
+            return &app->panels[i];
+        }
+    }
+    return NULL;
+}
+
+/** @brief The open panel describing @p path, or NULL. */
+static tiku_trk_described_t *
+panel_of_path(desktop_t *app, const char *path)
+{
+    int i;
+
+    for (i = 0; i < TIKU_TRK_PANELS_MAX; i++) {
+        tiku_trk_described_t *p = &app->panels[i];
+
+        if (p->window != NULL && p->window->open &&
+            strcmp(p->path, path) == 0) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+/** @brief A free slot, else the first: one panel gives way for another. */
+static tiku_trk_described_t *
+panel_slot(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < TIKU_TRK_PANELS_MAX; i++) {
+        tiku_trk_described_t *p = &app->panels[i];
+
+        if (p->window == NULL || !p->window->open) {
+            return p;
+        }
+    }
+    return &app->panels[0];
+}
+
 /**
- * @brief Open the panel a file DESCRIBES.
- *
- * The file is read through the namespace like anything else, so a
- * description sitting on a board reached over a serial line opens the
- * same way as one in a folder here.
+ * @brief Where a board's binds hang off: for .../gui/<form>/panel the
+ *        part before /gui/, else "" (a .panel file binds absolutely).
+ */
+static void
+root_of(const char *path, char *root, size_t max)
+{
+    const char *gui = strstr(path, "/gui/");
+    size_t n = strlen(path);
+
+    root[0] = '\0';
+    if (gui != NULL && n >= 6 && strcmp(path + n - 6, "/panel") == 0) {
+        snprintf(root, max, "%.*s", (int)(gui - path), path);
+    }
+}
+
+int
+open_panel_path(desktop_t *app, const char *path)
+{
+    char text[4096];
+    tiku_rect_t frame;
+    tiku_trk_described_t *p;
+    const char *name;
+    int rows, unknown;
+    tiku_form_t form;
+
+    if (path == NULL ||
+        !tiku_backend_text(app->backend, path, text, sizeof text)) {
+        return 0;
+    }
+    rows = tiku_form_parse(&form, text, &unknown);
+    if (rows == 0 && unknown == 0) {
+        return 0;               /* not a panel after all */
+    }
+    p = panel_of_path(app, path);
+    if (p != NULL) {
+        /* Open already: it is brought forward with what it says now. */
+        p->form = form;
+        p->unknown = unknown;
+        panel_refresh(p);
+        tiku_workspace_activate(app->desk, p->window);
+        app->dirty = 1;
+        return 1;
+    }
+    p = panel_slot(app);
+    if (p->window != NULL && p->window->open) {
+        tiku_workspace_close(app->desk, p->window);
+    }
+    memset(p, 0, sizeof *p);
+    p->app = app;
+    p->form = form;
+    p->unknown = unknown;
+    snprintf(p->path, sizeof p->path, "%s", path);
+    root_of(path, p->root, sizeof p->root);
+    panel_refresh(p);
+    name = strrchr(path, '/');
+    name = (name != NULL) ? name + 1 : path;
+    frame.w = 320;
+    frame.h = tiku_form_height(&p->form) + tiku_window_tab_h() +
+              2 * TIKU_WINDOW_BORDER + 14;
+    frame.x = (app->surf->w - frame.w) / 2 +
+              (int)(p - app->panels) * 24;
+    frame.y = (app->surf->h - frame.h) / 3 + (int)(p - app->panels) * 24;
+    p->window = tiku_workspace_open(app->desk,
+        p->form.title[0] != '\0' ? p->form.title : name, frame,
+        panel_draw, p, p);
+    if (p->window != NULL) {
+        tiku_window_set_handlers(p->window, panel_event, NULL, NULL);
+    }
+    app->dirty = 1;
+    return p->window != NULL;
+}
+
+/** @brief One listing callback: open the panel of each form under gui/. */
+static int
+open_form_entry(const tiku_model_t *m, void *ctx)
+{
+    desktop_t *app = ctx;
+    char path[TIKU_PATH_MAX];
+
+    if (m == NULL || m->name[0] == '.' || !tiku_model_is_container(m)) {
+        return 0;
+    }
+    snprintf(path, sizeof path, "%.*s/panel", (int)sizeof path - 8, m->path);
+    (void)open_panel_path(app, path);
+    return 0;
+}
+
+/**
+ * @brief Keep one record per mount, with the identity of its gui/ node
+ *        looked up once; a mount that is not a board is marked so.
+ */
+static void
+boards_refresh(desktop_t *app)
+{
+    int slots = tiku_mount_slots(app->backend), i;
+
+    for (i = 0; i < slots && i < TIKU_MOUNT_MAX; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+        tiku_model_t m;
+        char dir[TIKU_PATH_MAX];
+
+        if (prefix == NULL || (prefix[0] == '/' && prefix[1] == '\0')) {
+            app->boards[i].root[0] = '\0';
+            continue;
+        }
+        if (strcmp(app->boards[i].root, prefix) != 0) {
+            memset(&app->boards[i], 0, sizeof app->boards[i]);
+            snprintf(app->boards[i].root, TIKU_PATH_MAX, "%s", prefix);
+        }
+        if (app->boards[i].gui_id != 0 || app->backend->ops->stat == NULL) {
+            continue;
+        }
+        snprintf(dir, sizeof dir, "%s/gui", prefix);
+        app->boards[i].gui_id =
+            (app->backend->ops->stat(app->backend, dir, &m) == 0 &&
+             m.node_id != 0) ? m.node_id : ~(uint64_t)0;
+    }
+}
+
+/**
+ * @brief Board @p b rang its gui/: re-read its open panels, or open its
+ *        forms the first time one is seen.  @return how many changed.
+ */
+static int
+panels_apply_board(desktop_t *app, int b)
+{
+    const char *root = app->boards[b].root;
+    int changed = 0, any = 0, i;
+
+    if (root[0] == '\0') {
+        return 0;
+    }
+    for (i = 0; i < TIKU_TRK_PANELS_MAX; i++) {
+        tiku_trk_described_t *p = &app->panels[i];
+
+        if (p->window != NULL && p->window->open &&
+            strcmp(p->root, root) == 0) {
+            panel_refresh(p);
+            any = 1;
+            changed++;
+        }
+    }
+    if (!any && !app->boards[b].announced &&
+        app->backend->ops->list != NULL) {
+        char dir[TIKU_PATH_MAX];
+
+        app->boards[b].announced = 1;
+        snprintf(dir, sizeof dir, "%s/gui", root);
+        (void)app->backend->ops->list(app->backend, dir, open_form_entry,
+                                      app);
+        changed++;
+    }
+    return changed;
+}
+
+/** @brief Apply a record whose id names a board's gui/ node. */
+static int
+panels_apply(desktop_t *app, const tiku_model_change_t *c)
+{
+    int b;
+
+    for (b = 0; b < TIKU_MOUNT_MAX; b++) {
+        if (app->boards[b].root[0] != '\0' &&
+            app->boards[b].gui_id == c->id) {
+            return panels_apply_board(app, b);
+        }
+    }
+    return 0;
+}
+
+int
+panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch)
+{
+    int changed = 0, k, b;
+
+    boards_refresh(app);
+    for (k = 0; k < nch; k++) {
+        changed += panels_apply(app, &ch[k]);
+    }
+    if (nch >= 0) {
+        return changed;
+    }
+    /*
+     * The namespace as a whole could not say (a root with no ring beside
+     * a board that has one), so nothing above drained the board: its
+     * ring is asked here, board by board, and the records are the
+     * panels' alone since every view is polling.
+     */
+    for (b = 0; b < TIKU_MOUNT_MAX; b++) {
+        tiku_backend_t *dev = tiku_mount_at(app->backend, b);
+        tiku_model_change_t mine[32];
+        int n, complete = 1;
+
+        if (app->boards[b].root[0] == '\0' ||
+            app->boards[b].gui_id == ~(uint64_t)0 || dev == NULL ||
+            dev->ops->changes == NULL) {
+            continue;
+        }
+        n = dev->ops->changes(dev, mine, 32, &complete);
+        if (n > 0) {
+            /* The records came off THIS board's ring, so they are its
+             * own -- the id need not be matched, and the board's dynamic
+             * gui/ hashes to no stable id to match against anyway. */
+            changed += panels_apply_board(app, b);
+        }
+    }
+    return changed;
+}
+
+/**
+ * @brief Open the panel a file DESCRIBES: a .panel file, or a board's
+ *        gui/<form>/panel node.
  */
 static int
 open_described_panel(desktop_t *app, const tiku_model_t *model)
 {
-    char text[4096];
-    tiku_rect_t frame;
-    int rows;
+    const char *dot = strrchr(model->name, '.');
 
-    if (!tiku_backend_text(app->backend, model->path, text, sizeof text)) {
-        return 0;
+    if (dot != NULL && strcmp(dot, ".panel") == 0) {
+        return open_panel_path(app, model->path);
     }
-    rows = tiku_form_parse(&app->device_panel.form, text,
-                           &app->device_panel.unknown);
-    if (rows == 0 && app->device_panel.unknown == 0) {
-        return 0;               /* not a panel after all */
+    if (strcmp(model->name, "panel") == 0 &&
+        strstr(model->path, "/gui/") != NULL) {
+        return open_panel_path(app, model->path);
     }
-    snprintf(app->device_panel.path, sizeof app->device_panel.path, "%s",
-             model->path);
-    panel_refresh(app);
-    frame.w = 320;
-    frame.h = tiku_form_height(&app->device_panel.form) +
-              tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER + 14;
-    frame.x = (app->surf->w - frame.w) / 2;
-    frame.y = (app->surf->h - frame.h) / 3;
-    if (app->device_panel.window != NULL &&
-        app->device_panel.window->open) {
-        tiku_workspace_close(app->desk, app->device_panel.window);
-    }
-    app->device_panel.window = tiku_workspace_open(app->desk,
-        app->device_panel.form.title[0] != '\0'
-            ? app->device_panel.form.title : model->name,
-        frame, panel_draw, app, &app->device_panel);
-    if (app->device_panel.window != NULL) {
-        tiku_window_set_handlers(app->device_panel.window, panel_event,
-                                 NULL, NULL);
-    }
-    app->dirty = 1;
-    return 1;
+    return 0;
 }
 
 /**
@@ -222,13 +478,8 @@ open_one(desktop_t *app, const tiku_model_t *model)
     if (model == NULL) {
         return 0;
     }
-    if (model->name[0] != '\0') {
-        const char *dot = strrchr(model->name, '.');
-
-        if (dot != NULL && strcmp(dot, ".panel") == 0 &&
-            open_described_panel(app, model)) {
-            return 1;
-        }
+    if (model->name[0] != '\0' && open_described_panel(app, model)) {
+        return 1;
     }
     if (tiku_trk_launch_self(model, &itself)) {
         /* No documents: it is being started, not being given something
