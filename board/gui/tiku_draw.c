@@ -72,9 +72,9 @@ escaped(unsigned char b)
     }
 }
 
-/** @brief One session message as one frame: header, then payload. */
+/** @brief Open a frame and write a message's header for @p len bytes. */
 static void
-send_msg(uint32_t type, const unsigned char *payload, uint32_t len)
+send_begin(uint32_t type, uint32_t len)
 {
     unsigned char head[8];
     uint32_t i;
@@ -92,6 +92,15 @@ send_msg(uint32_t type, const unsigned char *payload, uint32_t len)
     for (i = 0; i < 8; i++) {
         escaped(head[i]);
     }
+}
+
+/** @brief One session message as one frame: header, then payload. */
+static void
+send_msg(uint32_t type, const unsigned char *payload, uint32_t len)
+{
+    uint32_t i;
+
+    send_begin(type, len);
     for (i = 0; i < len; i++) {
         escaped(payload[i]);
     }
@@ -140,12 +149,12 @@ tiku_draw_hello(const char *name)
 
 int
 tiku_draw_open(tiku_draw_window_t *win, const char *title, int w, int h,
-               struct tiku_process *owner)
+               struct tiku_process *owner, unsigned char *list, size_t cap)
 {
     unsigned char payload[4 + 4 + 4 + 64];
     int i;
 
-    if (win == NULL || w < 1 || h < 1) {
+    if (win == NULL || w < 1 || h < 1 || list == NULL || cap < 16u) {
         return -1;
     }
     for (i = 0; i < TIKU_DRAW_WINDOWS && windows[i] != win; i++) {
@@ -168,7 +177,10 @@ tiku_draw_open(tiku_draw_window_t *win, const char *title, int w, int h,
     win->h = h;
     win->title = title;
     win->owner = owner;
+    win->list = list;
+    win->cap = cap;
     win->len = 0;
+    win->art = 0;
     win->open = 1;
     memset(payload, 0, sizeof payload);
     tiku_draw_put32(payload, win->id);
@@ -207,6 +219,7 @@ tiku_draw_begin(tiku_draw_window_t *win)
 {
     if (win != NULL) {
         win->len = 0;
+        win->art = 0;
     }
 }
 
@@ -215,8 +228,16 @@ tiku_draw_op_begin(tiku_draw_window_t *win, unsigned op, size_t len)
 {
     unsigned char *p;
 
-    if (win == NULL || win->len + 4u + len > sizeof win->list) {
+    if (win == NULL || win->list == NULL || win->len + 4u + len > win->cap) {
         return NULL;
+    }
+    /* Art and pictures are the bytes that make a window slow: budgeted
+     * per window, and refused past it rather than sent. */
+    if (op == 23u || op == 33u) {
+        if (win->art + len > TIKU_DRAW_ART_BUDGET) {
+            return NULL;
+        }
+        win->art += len;
     }
     p = win->list + win->len;
     tiku_draw_put16(p, (int)op);
@@ -270,16 +291,25 @@ tiku_draw_text_ascent(tiku_draw_face_t face)
 int
 tiku_draw_present(tiku_draw_window_t *win)
 {
-    unsigned char payload[12 + TIKU_DRAW_LIST_MAX];
+    unsigned char head[12];
+    size_t i;
 
     if (win == NULL || !win->open) {
         return -1;
     }
-    tiku_draw_put32(payload, win->id);
-    tiku_draw_put32(payload + 4, (uint32_t)win->w);
-    tiku_draw_put32(payload + 8, (uint32_t)win->h);
-    memcpy(payload + 12, win->list, win->len);
-    send_msg(RMSG_DRAW, payload, (uint32_t)(12u + win->len));
+    /* The frame is written straight out, the list after its head, so a
+     * list as large as the program's buffer needs no second copy. */
+    tiku_draw_put32(head, win->id);
+    tiku_draw_put32(head + 4, (uint32_t)win->w);
+    tiku_draw_put32(head + 8, (uint32_t)win->h);
+    send_begin(RMSG_DRAW, (uint32_t)(12u + win->len));
+    for (i = 0; i < 12u; i++) {
+        escaped(head[i]);
+    }
+    for (i = 0; i < win->len; i++) {
+        escaped(win->list[i]);
+    }
+    raw(FR_END);
     return 0;
 }
 

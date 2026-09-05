@@ -9,13 +9,16 @@
 wait 30
 note the board's window is on the desktop, beside its form
 expect-windows 3
-click 449 256
+click 430 227
 wait 20
 expect-title Board window
 expect-narrate Pressed 1 time
+note the window also carries tabs and a scrollbar, said as themselves
+expect-narrate tabs
+expect-narrate scrollbar
 note a second press, past the double-click interval, counts again
 wait 40
-click 430 262
+click 445 230
 wait 20
 expect-narrate Pressed 2 times
 shot /tmp/trk_boarddraw.png

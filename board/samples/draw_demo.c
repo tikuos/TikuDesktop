@@ -15,6 +15,7 @@
 TIKU_PROCESS(draw_demo_process, "draw-demo");
 
 static tiku_draw_window_t win;
+static unsigned char list[TIKU_DRAW_LIST_MAX];
 static int presses, level = 40;
 
 /** @brief The whole window, from its state. */
@@ -37,6 +38,10 @@ paint(void)
                      0u, "Count");
     tiku_draw_slider(&win, 12, 96, win.w - 24, 24, 0, 100, level);
     tiku_draw_gauge(&win, 12, 128, win.w - 24, 20, level * 10);
+    tiku_draw_tabs(&win, 12, 156, win.w - 24, 22, 2, presses & 1,
+                   "One\0Two\0", 8);
+    tiku_draw_scrollbar(&win, win.w - 14, 184, 14, win.h - 196, level * 10,
+                        250, 0);
     (void)tiku_draw_present(&win);
 }
 
@@ -45,8 +50,8 @@ TIKU_PROCESS_THREAD(draw_demo_process, ev, data)
     TIKU_PROCESS_BEGIN();
 
     (void)tiku_process_register("draw-demo", &draw_demo_process);
-    (void)tiku_draw_open(&win, "Board window", 240, 160,
-                         &draw_demo_process);
+    (void)tiku_draw_open(&win, "Board window", 240, 260,
+                         &draw_demo_process, list, sizeof list);
     paint();
 
     while (1) {

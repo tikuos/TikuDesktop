@@ -20,9 +20,13 @@
 #include "tiku.h"
 #include <kernel/process/tiku_process.h>
 
-#define TIKU_DRAW_LIST_MAX 1536     /**< one window's list, in bytes */
+#define TIKU_DRAW_LIST_MAX 1536     /**< a fair list buffer, in bytes */
 #define TIKU_DRAW_WINDOWS  2
 #define TIKU_DRAW_QUEUE    8        /**< events waiting for the owner */
+/** @brief Bytes of icon art and pictures one window may carry: those
+ *         cross the cable whole, and a window that costs a minute is
+ *         refused rather than sent. */
+#define TIKU_DRAW_ART_BUDGET 2048
 
 /** @brief The event a window's press or key posts; data is the window. */
 #define TIKU_EVENT_DRAW (TIKU_EVENT_USER + 0x41)
@@ -69,8 +73,10 @@ typedef struct tiku_draw_window {
     tiku_draw_event_t    event;     /**< the one taken, read by the owner */
     tiku_draw_event_t    queue[TIKU_DRAW_QUEUE]; /**< arrived, not yet taken */
     unsigned char        head, count;
-    unsigned char        list[TIKU_DRAW_LIST_MAX];
+    unsigned char       *list;      /**< the program's buffer for the list */
+    size_t               cap;       /**< its size */
     size_t               len;       /**< bytes of list written */
+    size_t               art;       /**< icon art and picture bytes so far */
     int                  open;
 } tiku_draw_window_t;
 
@@ -80,9 +86,14 @@ typedef struct tiku_draw_window {
  */
 void tiku_draw_hello(const char *name);
 
-/** @brief Open @p win as a window of @p w by @p h, owned by @p owner. */
+/**
+ * @brief Open @p win as a window of @p w by @p h, owned by @p owner,
+ *        its list written into @p list of @p cap bytes: a small window
+ *        pays for a small buffer.
+ */
 int tiku_draw_open(tiku_draw_window_t *win, const char *title, int w,
-                   int h, struct tiku_process *owner);
+                   int h, struct tiku_process *owner, unsigned char *list,
+                   size_t cap);
 
 /** @brief Close it on the desktop. */
 void tiku_draw_close(tiku_draw_window_t *win);

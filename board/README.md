@@ -75,8 +75,9 @@ A window (`samples/draw_demo.c`):
 
 ```c
 static tiku_draw_window_t win;
+static unsigned char list[TIKU_DRAW_LIST_MAX];   /* the window's list */
 
-tiku_draw_open(&win, "Board window", 240, 160, &my_process);
+tiku_draw_open(&win, "Board window", 240, 160, &my_process, list, sizeof list);
 tiku_draw_begin(&win);
 tiku_draw_text(&win, 12, 22, TIKU_DRAW_TEXT, TIKU_DRAW_BOLD, "Drawn by the board");
 tiku_draw_button(&win, 12, 60, 80, 24, 0u, "Count");

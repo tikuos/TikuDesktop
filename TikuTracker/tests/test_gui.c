@@ -257,14 +257,16 @@ main(void)
     printf("the drawing road\n");
     {
         tiku_draw_window_t win;
-        unsigned char msg[4096];
+        static unsigned char list[4096];
+        unsigned char msg[8192];
         size_t at = 0, n;
         tiku_dl_t *dl;
-        char said[1024];
+        char said[2048];
 
         wire_len = 0;
-        check(tiku_draw_open(&win, "Board window", 240, 160, &owner) == 0,
-              "a window opens");
+        check(tiku_draw_open(&win, "Board window", 240, 160, &owner, list,
+                             sizeof list) == 0,
+              "a window opens on the program's own buffer");
         n = next_frame(&at, msg, sizeof msg);
         check(n == 8 + 40 && msg[0] == 1 && msg[8] == 1 &&
                   strcmp((char *)msg + 12, "board") == 0 && msg[8 + 36] == 2,
@@ -301,6 +303,78 @@ main(void)
         check(tiku_draw_text_width(TIKU_DRAW_PLAIN, "Count") > 20 &&
                   tiku_draw_text_height(TIKU_DRAW_PLAIN) == 15,
               "text is measured from the baked metrics");
+
+        printf("every op\n");
+        {
+            /* One of each op the table names, written by the generated
+             * writers and read back by the desktop's own reader. */
+            static const unsigned char art[4] = { 1, 2, 3, 4 };
+            static const uint32_t px[4] = { 0xff0000u, 0x00ff00u, 0x0000ffu, 0 };
+            int ok = 1;
+
+            wire_len = 0;
+            tiku_draw_begin(&win);
+            ok &= tiku_draw_fill(&win, 0, 0, 10, 10, 1);
+            ok &= tiku_draw_frame(&win, 0, 0, 10, 10, 2);
+            ok &= tiku_draw_bevel(&win, 0, 0, 10, 10, 3, 4);
+            ok &= tiku_draw_hline(&win, 0, 0, 10, 5);
+            ok &= tiku_draw_vline(&win, 0, 0, 10, 6);
+            ok &= tiku_draw_text(&win, 1, 2, 7, TIKU_DRAW_PLAIN, "t");
+            ok &= tiku_draw_text_centered(&win, 0, 0, 10, 10, 8, TIKU_DRAW_BOLD, "c");
+            ok &= tiku_draw_clip_set(&win, 0, 0, 10, 10);
+            ok &= tiku_draw_clip_reset(&win);
+            ok &= tiku_draw_panel(&win, 0, 0, 10, 10);
+            ok &= tiku_draw_raised(&win, 0, 0, 10, 10);
+            ok &= tiku_draw_sunken(&win, 0, 0, 10, 10, 9);
+            ok &= tiku_draw_button(&win, 0, 0, 10, 10, 0u, "b");
+            ok &= tiku_draw_checkbox(&win, 0, 0, 10, 10, 0u, "k");
+            ok &= tiku_draw_radio(&win, 0, 0, 10, 10, 0u, "r");
+            ok &= tiku_draw_list_row(&win, 0, 0, 10, 10, 1u, "l");
+            ok &= tiku_draw_icon_art(&win, 77u, art, sizeof art);
+            ok &= tiku_draw_icon(&win, 77u, 1, 2, 16, 255u, 0u, 0u);
+            ok &= tiku_draw_gauge(&win, 0, 0, 10, 10, 500);
+            ok &= tiku_draw_tip(&win, 0, 0, 10, 10, 0u, "p");
+            ok &= tiku_draw_textfield(&win, 0, 0, 10, 10, 0u, "f");
+            ok &= tiku_draw_scrollbar(&win, 0, 0, 10, 10, 250, 500, 0);
+            ok &= tiku_draw_slider(&win, 0, 0, 10, 10, 0, 100, 40);
+            ok &= tiku_draw_alert_icon(&win, 5, 5, 1);
+            ok &= tiku_draw_tabs(&win, 0, 0, 10, 10, 2, 1, "A\0B\0", 4);
+            ok &= tiku_draw_menufield(&win, 0, 0, 10, 10, 0u, "m");
+            ok &= tiku_draw_picture(&win, 0, 0, 2, 2, px, sizeof px);
+            check(ok, "all twenty-seven ops write into the list");
+            (void)tiku_draw_present(&win);
+            at = 0;
+            n = next_frame(&at, msg, sizeof msg);
+            {
+                size_t took = 0;
+
+                dl = (n > 20) ? tiku_dl_unflatten(msg + 20, n - 20, &took)
+                              : NULL;
+                if (dl == NULL || tiku_dl_count(dl) != 27) {
+                    printf("         (frame %zu bytes, reader took %zu, count %d)\n",
+                           n, took, dl ? tiku_dl_count(dl) : -1);
+                }
+            }
+            check(dl != NULL && tiku_dl_count(dl) == 27,
+                  "and the desktop's reader takes all twenty-seven back");
+            said[0] = '\0';
+            if (dl != NULL) {
+                (void)tiku_dl_say(dl, said, sizeof said);
+            }
+            check(strstr(said, "scrollbar") != NULL && strstr(said, "tabs") != NULL
+                      && strstr(said, "picture") != NULL &&
+                      strstr(said, "icon") != NULL,
+                  "and says the scrollbar, the tabs, the picture and the icon");
+            tiku_dl_free(dl);
+            tiku_draw_begin(&win);
+            {
+                static const uint32_t big[40 * 40];
+
+                check(tiku_draw_picture(&win, 0, 0, 40, 40, big, sizeof big) == 0
+                          && win.len == 0,
+                      "a picture past the window's art budget is refused");
+            }
+        }
 
         printf("events back\n");
         posted = 0;
@@ -342,7 +416,7 @@ main(void)
             n = next_frame(&at, msg, sizeof msg);
             check(n == 84 && msg[0] == 2, "open");
             n = next_frame(&at, msg, sizeof msg);
-            check(n > 20 && msg[0] == 9, "and the window drawn as it was");
+            check(n >= 20 && msg[0] == 9, "and the window drawn as it was");
             check(posted == 1 && tiku_draw_event(TIKU_EVENT_DRAW, &win) == &win
                       && win.event.kind == TIKU_DRAW_SESSION,
                   "and the owner hears the session begin");
