@@ -1322,6 +1322,10 @@ if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
     app->dirty = 1;
     return;
 }
+if (panel_tracking(app) != NULL) {
+    (void)tiku_window_send(panel_tracking(app)->window, ev);
+    return;
+}
 if (app->embed_press != NULL &&
     app->embed_press->window != NULL) {
     struct embed_win *ew = app->embed_press;
@@ -1580,6 +1584,10 @@ if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
     (void)tiku_window_send(
         tiku_trk_sounds_window_handle(&app->sounds_window), ev);
     app->dirty = 1;
+    return;
+}
+if (panel_tracking(app) != NULL) {
+    (void)tiku_window_send(panel_tracking(app)->window, ev);
     return;
 }
 if (app->embed_press != NULL) {
@@ -1887,6 +1895,9 @@ if (key == TIKU_KEY_ESCAPE &&
 if (tiku_trk_info_windows_key(&app->info_windows, key,
                               ev->modifiers,
                               key_char(ev))) {
+    return;
+}
+if (panel_key(app, key, key_char(ev))) {
     return;
 }
 if (tiku_trk_panel_window_key(&app->file_panel, key,

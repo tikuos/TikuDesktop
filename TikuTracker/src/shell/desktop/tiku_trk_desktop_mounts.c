@@ -170,6 +170,9 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
             device_mount_name(dev, app->backend, name, sizeof name);
             snprintf(prefix, sizeof prefix, "/devices/%s", name);
         }
+        /* Four seconds: a control's write is a few bytes, and a board
+         * that takes longer is one to say something about, not wait on. */
+        tiku_backend_tiku_set_write_timeout(dev, 4000);
         if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
             tiku_backend_close(dev);
             continue;

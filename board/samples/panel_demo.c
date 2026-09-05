@@ -13,15 +13,17 @@
 #include <kernel/timers/tiku_timer.h>
 
 #include <stdio.h>
+#include <string.h>
 
 TIKU_PROCESS(gui_demo_process, "gui-demo");
 
 static tiku_gui_form_t demo;
 static struct tiku_timer demo_timer;
 static tiku_gui_row_t *temp_row;
-static int temp, lamp;
+static int temp, lamp, bright = 50;
 static char name[32] = "workshop";
 static char status[32] = "lamp off";
+static char mode[8] = "slow";
 
 /**
  * @brief The toggle drives the LED from the process's own thread, and
@@ -39,6 +41,16 @@ lamp_changed(tiku_gui_row_t *row)
     tiku_gui_changed(row);
 }
 
+/** @brief The choice sets how often the gauge moves. */
+static void
+mode_changed(tiku_gui_row_t *row)
+{
+    (void)row;
+    tiku_timer_set_event(&demo_timer, strcmp(mode, "fast") == 0
+                                          ? TIKU_CLOCK_SECOND / 4
+                                          : TIKU_CLOCK_SECOND);
+}
+
 TIKU_PROCESS_THREAD(gui_demo_process, ev, data)
 {
     TIKU_PROCESS_BEGIN();
@@ -52,6 +64,10 @@ TIKU_PROCESS_THREAD(gui_demo_process, ev, data)
     (void)tiku_gui_toggle(&demo, "lamp", "Lamp", &lamp, lamp_changed);
     (void)tiku_gui_field(&demo, "name", "Name", name, sizeof name, NULL);
     (void)tiku_gui_button(&demo, "count", "Count", NULL);
+    (void)tiku_gui_slider(&demo, "bright", "Brightness", &bright, 0, 100,
+                          NULL);
+    (void)tiku_gui_choice(&demo, "mode", "Mode", "slow|fast", mode,
+                          sizeof mode, mode_changed);
     (void)tiku_gui_text(&demo, "status", status);
     (void)tiku_gui_add(&demo);
     tiku_timer_set_event(&demo_timer, TIKU_CLOCK_SECOND);

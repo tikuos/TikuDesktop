@@ -33,6 +33,8 @@ struct tiku_ns {
     int                  push_probed;
     char                 pending[NS_PENDING_MAX][TIKU_NS_PATH_MAX];
     int                  npending;
+    int                  write_timeout_ms; /* a write's patience, default 20 s */
+    int                  down;            /* the link failed; reopen it   */
 };
 
 /** @brief Queue a rung path; the pump re-reads it after the current command. */
@@ -493,7 +495,9 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
      * reached the node.
      */
     for (attempt = 0; attempt < 3; attempt++) {
-        rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 20000);
+        rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf,
+                              ns->write_timeout_ms > 0 ? ns->write_timeout_ms
+                                                       : 20000);
         if (rc < 0) {
             return -1;
         }
@@ -518,6 +522,20 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
     }
     (void)tiku_ns_read(ns, path);
     return 0;
+}
+
+void
+tiku_ns_set_write_timeout(tiku_ns_t *ns, int ms)
+{
+    if (ns != NULL) {
+        ns->write_timeout_ms = ms;
+    }
+}
+
+int
+tiku_ns_down(const tiku_ns_t *ns)
+{
+    return ns != NULL && ns->down;
 }
 
 int
@@ -691,6 +709,14 @@ tiku_ns_pump(tiku_ns_t *ns, int timeout_ms)
         return -1;
     }
     if (tiku_session_poll(ns->s, timeout_ms) < 0) {
+        /* A link that broke is reopened on the next pump: a board
+         * replugged answers again without the desktop restarting. */
+        if (ns->down && tiku_session_reconnect(ns->s) == 0) {
+            ns->down = 0;
+            (void)tiku_ns_load(ns);
+            return 0;
+        }
+        ns->down = 1;
         return -1;
     }
     /* Re-read outside the notify callback: a handler must never re-enter the

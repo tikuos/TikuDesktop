@@ -13,20 +13,23 @@
 #include <string.h>
 
 #include "tiku_form.h"
+#include "tiku_event.h"
 #include "tiku_font.h"
 #include "tiku_layout.h"
 #include "tiku_ui.h"
 
-/** @brief Take the next blank-separated word of @p p into @p out. */
+/** @brief Take the next blank-separated word of @p p into @p out; a
+ *         carriage return is a blank, since a console ends lines CRLF. */
 static const char *
 word(const char *p, char *out, size_t max)
 {
     size_t n = 0u;
 
-    while (*p == ' ' || *p == '\t') {
+    while (*p == ' ' || *p == '\t' || *p == '\r') {
         p++;
     }
-    while (*p != '\0' && *p != '\n' && *p != ' ' && *p != '\t') {
+    while (*p != '\0' && *p != '\n' && *p != '\r' && *p != ' ' &&
+           *p != '\t') {
         if (n + 1u < max) {
             out[n++] = *p;
         }
@@ -113,10 +116,18 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
         if (strcmp(kind, "text") == 0) {
             row->kind = TIKU_FORM_TEXT;
             (void)tail(rest, row->label, sizeof row->label);
-        } else if (strcmp(kind, "gauge") == 0) {
+            /* One path and nothing else: the row shows what that place
+             * says, so a status line from a board stays live. */
+            if (row->label[0] == '/' && strchr(row->label, ' ') == NULL) {
+                snprintf(row->bind, sizeof row->bind, "%s", row->label);
+                row->label[0] = '\0';
+            }
+        } else if (strcmp(kind, "gauge") == 0 ||
+                   strcmp(kind, "slider") == 0) {
             char lo[16], hi[16];
 
-            row->kind = TIKU_FORM_GAUGE;
+            row->kind = (kind[0] == 'g') ? TIKU_FORM_GAUGE
+                                         : TIKU_FORM_SLIDER;
             rest = word(rest, row->label, sizeof row->label);
             rest = word(rest, row->bind, sizeof row->bind);
             rest = word(rest, lo, sizeof lo);
@@ -134,6 +145,15 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
             row->kind = TIKU_FORM_FIELD;
             rest = word(rest, row->label, sizeof row->label);
             (void)word(rest, row->bind, sizeof row->bind);
+        } else if (strcmp(kind, "entry") == 0) {
+            row->kind = TIKU_FORM_ENTRY;
+            rest = word(rest, row->label, sizeof row->label);
+            (void)word(rest, row->bind, sizeof row->bind);
+        } else if (strcmp(kind, "choice") == 0) {
+            row->kind = TIKU_FORM_CHOICE;
+            rest = word(rest, row->label, sizeof row->label);
+            rest = word(rest, row->bind, sizeof row->bind);
+            (void)word(rest, row->options, sizeof row->options);
         } else if (strcmp(kind, "button") == 0) {
             row->kind = TIKU_FORM_BUTTON;
             rest = word(rest, row->label, sizeof row->label);
@@ -246,7 +266,8 @@ tiku_form_draw(const tiku_form_t *f, tiku_surface_t *s, tiku_rect_t body)
         if (row->kind == TIKU_FORM_TEXT) {
             tiku_text(s, font, r.x + 2,
                            r.y + (r.h - font->height) / 2 + font->ascent,
-                           row->label, TIKU_C_TEXT);
+                           row->bind[0] != '\0' ? row->value : row->label,
+                           TIKU_C_TEXT);
             continue;
         }
         if (row->kind != TIKU_FORM_BUTTON) {
@@ -283,6 +304,33 @@ tiku_form_draw(const tiku_form_t *f, tiku_surface_t *s, tiku_rect_t body)
             tiku_ui_textfield(s, control,
                               row->known ? row->value : "", -1, 0u);
             break;
+        case TIKU_FORM_ENTRY:
+            tiku_ui_textfield(s, control,
+                              row->editing ? row->edit
+                              : row->known ? row->value : "",
+                              row->editing ? (int)strlen(row->edit) : -1,
+                              row->editing ? TIKU_S_FOCUS : 0u);
+            break;
+        case TIKU_FORM_SLIDER: {
+            tiku_rect_t track = control, knob = control;
+            int v = row->known ? atoi(row->value) : row->lo;
+
+            if (v < row->lo) { v = row->lo; }
+            if (v > row->hi) { v = row->hi; }
+            track.y += (control.h - 8) / 2;
+            track.h = 8;
+            tiku_ui_sunken(s, track, TIKU_C_DOC);
+            knob.w = 12;
+            knob.x = control.x + (row->hi > row->lo
+                ? (control.w - knob.w) * (v - row->lo) / (row->hi - row->lo)
+                : 0);
+            tiku_ui_raised(s, knob);
+            break;
+        }
+        case TIKU_FORM_CHOICE:
+            tiku_ui_menufield(s, control, row->known ? row->value : "",
+                              0u);
+            break;
         case TIKU_FORM_BUTTON:
             tiku_ui_button(s, control, row->label, 0u);
             break;
@@ -316,5 +364,130 @@ tiku_form_press(tiku_form_t *f, int i)
         row->known = 1;
         return row->value;
     }
+    if (row->kind == TIKU_FORM_CHOICE) {
+        /* The word after the one the place says, round to the first: a
+         * choice is pressed through rather than dropped down. */
+        char list[TIKU_FORM_VALUE];
+        char *save, *w, *first = NULL, *next = NULL;
+        int seen = 0;
+
+        snprintf(list, sizeof list, "%s", row->options);
+        for (w = strtok_r(list, "|", &save); w != NULL;
+             w = strtok_r(NULL, "|", &save)) {
+            if (first == NULL) {
+                first = w;
+            }
+            if (seen && next == NULL) {
+                next = w;
+            }
+            if (row->known && strcmp(w, row->value) == 0) {
+                seen = 1;
+            }
+        }
+        if (first == NULL) {
+            return NULL;
+        }
+        snprintf(row->value, sizeof row->value, "%s",
+                 next != NULL ? next : first);
+        row->known = 1;
+        return row->value;
+    }
     return NULL;
+}
+
+tiku_rect_t
+tiku_form_control_rect(const tiku_form_t *f, tiku_rect_t body, int i)
+{
+    tiku_rect_t label, control;
+
+    halves(tiku_form_row_rect(f, body, i), &label, &control);
+    return control;
+}
+
+const char *
+tiku_form_press_at(tiku_form_t *f, tiku_rect_t body, int i, int x)
+{
+    tiku_form_row_t *row;
+    tiku_rect_t control;
+    int v;
+
+    if (f == NULL || i < 0 || i >= f->nrow ||
+        f->row[i].kind != TIKU_FORM_SLIDER || f->row[i].hi <= f->row[i].lo) {
+        return NULL;
+    }
+    row = &f->row[i];
+    control = tiku_form_control_rect(f, body, i);
+    v = row->lo + (x - control.x - 6) * (row->hi - row->lo) /
+                      (control.w - 12);
+    if (v < row->lo) { v = row->lo; }
+    if (v > row->hi) { v = row->hi; }
+    snprintf(row->value, sizeof row->value, "%d", v);
+    row->known = 1;
+    return row->value;
+}
+
+void
+tiku_form_focus(tiku_form_t *f, int i)
+{
+    int k;
+
+    if (f == NULL) {
+        return;
+    }
+    for (k = 0; k < f->nrow; k++) {
+        f->row[k].editing = 0;
+    }
+    if (i >= 0 && i < f->nrow && f->row[i].kind == TIKU_FORM_ENTRY) {
+        f->row[i].editing = 1;
+        snprintf(f->row[i].edit, sizeof f->row[i].edit, "%s",
+                 f->row[i].known ? f->row[i].value : "");
+    }
+}
+
+int
+tiku_form_editing(const tiku_form_t *f)
+{
+    int k;
+
+    for (k = 0; f != NULL && k < f->nrow; k++) {
+        if (f->row[k].editing) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+int
+tiku_form_key(tiku_form_t *f, unsigned key, char ch)
+{
+    int i = tiku_form_editing(f);
+    tiku_form_row_t *row;
+    size_t n;
+
+    if (i < 0) {
+        return 0;
+    }
+    row = &f->row[i];
+    n = strlen(row->edit);
+    if (key == TIKU_KEY_RETURN) {
+        snprintf(row->value, sizeof row->value, "%s", row->edit);
+        row->known = 1;
+        row->editing = 0;
+        return 2;
+    }
+    if (key == TIKU_KEY_ESCAPE) {
+        row->editing = 0;
+        return 3;
+    }
+    if (key == TIKU_KEY_BACKSPACE) {
+        if (n > 0u) {
+            row->edit[n - 1u] = '\0';
+        }
+        return 1;
+    }
+    if (ch >= ' ' && (unsigned char)ch < 127u && n + 1u < sizeof row->edit) {
+        row->edit[n] = ch;
+        row->edit[n + 1u] = '\0';
+    }
+    return 1;
 }

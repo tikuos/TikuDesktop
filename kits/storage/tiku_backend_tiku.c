@@ -467,6 +467,24 @@ tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     return tiku_ns_write(impl->ns, path, val, err, errmax);
 }
 
+void
+tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms)
+{
+    tiku_impl_t *impl = (b != NULL) ? b->impl : NULL;
+
+    if (impl != NULL && impl->ns != NULL) {
+        tiku_ns_set_write_timeout(impl->ns, ms);
+    }
+}
+
+int
+tiku_backend_tiku_down(const tiku_backend_t *b)
+{
+    const tiku_impl_t *impl = (b != NULL) ? b->impl : NULL;
+
+    return impl != NULL && impl->ns != NULL && tiku_ns_down(impl->ns);
+}
+
 static int
 tk_pump(tiku_backend_t *b, int timeout_ms)
 {

@@ -284,6 +284,7 @@ desktop_idle_work(desktop_t *app)
     app->sound_focused = front;
     app->sound_windows = windows;
     tiku_sound_pump();
+    panels_pump(app);
     /* One directory of one folder-size walk per turn, so a Get Info
      * window on a deep tree fills in while the desktop keeps answering. */
     (void)tiku_trk_info_windows_calc_step(&app->info_windows);

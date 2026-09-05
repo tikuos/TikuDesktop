@@ -194,4 +194,15 @@ int tiku_ns_has_push(const tiku_ns_t *ns);
  */
 int tiku_ns_pump(tiku_ns_t *ns, int timeout_ms);
 
+/**
+ * @brief How long a write waits for the board's answer, in ms; 20 s by
+ *        default, for a file landing in NVM.  A panel's control is a few
+ *        bytes and wants a short one, so a slow board is felt, not waited
+ *        on.
+ */
+void tiku_ns_set_write_timeout(tiku_ns_t *ns, int ms);
+
+/** @brief Whether the link is down and awaiting a reopen on the pump. */
+int tiku_ns_down(const tiku_ns_t *ns);
+
 #endif /* TIKU_NS_H_ */

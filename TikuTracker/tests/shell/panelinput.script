@@ -1,0 +1,47 @@
+# shell: desktop
+# The rows a person works: an entry takes the keyboard once clicked and
+# writes on Return, a slider takes the value under the pointer, a choice
+# is pressed through its words.  Each lands in the place the row named.
+wait 12
+note the description opens as a panel
+click-row 4
+wait 3
+click-row 4
+wait 12
+expect-title Input
+note the entry takes the keyboard once clicked and writes on Return
+click 560 224
+wait 4
+key h
+key i
+key Return
+wait 6
+expect-file-has /tmp/trk_input/name workshophi
+note Escape lets go without writing
+click 560 224
+wait 4
+key x
+key Escape
+wait 6
+expect-file-lacks /tmp/trk_input/name workshophix
+note the slider takes the value under the pointer: three quarters along
+click 601 252
+wait 6
+expect-file-has /tmp/trk_input/bright 75
+note and the knob follows the hand, the place written when it lets go
+press 500 252
+wait 2
+move 641 252
+wait 2
+release 641 252
+wait 6
+expect-file-has /tmp/trk_input/bright 100
+note the choice is pressed through its words
+click 560 280
+wait 6
+expect-file-has /tmp/trk_input/mode fast
+click 560 280
+wait 6
+expect-file-has /tmp/trk_input/mode slow
+shot /tmp/trk_input_done.png
+quit

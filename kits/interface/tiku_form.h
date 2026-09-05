@@ -34,7 +34,10 @@ typedef enum {
     TIKU_FORM_GAUGE,        /* how full something is                 */
     TIKU_FORM_TOGGLE,       /* on or off, and it can be changed      */
     TIKU_FORM_FIELD,        /* what a place says, shown as words     */
-    TIKU_FORM_BUTTON        /* a press writes a value to the place   */
+    TIKU_FORM_BUTTON,       /* a press writes a value to the place   */
+    TIKU_FORM_ENTRY,        /* words a person types and enters       */
+    TIKU_FORM_SLIDER,       /* a number set by where it is pressed   */
+    TIKU_FORM_CHOICE        /* one of a few words, pressed through   */
 } tiku_form_kind_t;
 
 typedef struct {
@@ -42,8 +45,11 @@ typedef struct {
     char label[TIKU_FORM_LABEL];
     char bind[TIKU_FORM_BIND];      /* the place it shows or changes */
     char value[TIKU_FORM_VALUE];    /* what that place last said     */
-    int  lo, hi;                    /* a gauge's ends                */
+    char options[TIKU_FORM_VALUE];  /* a choice's words, | between   */
+    char edit[TIKU_FORM_VALUE];     /* an entry's words while typed  */
+    int  lo, hi;                    /* a gauge's or slider's ends    */
     int  known;                     /* nonzero once value was read   */
+    int  editing;                   /* an entry with the caret       */
 } tiku_form_row_t;
 
 typedef struct {
@@ -70,6 +76,30 @@ int tiku_form_parse(tiku_form_t *f, const char *text, int *unknown);
 int tiku_form_height(const tiku_form_t *f);
 
 /** @brief Where row @p i falls when the form is drawn in @p body. */
+/** @brief The control half of row @p i: where a slider's track lies. */
+tiku_rect_t tiku_form_control_rect(const tiku_form_t *f, tiku_rect_t body,
+                                   int i);
+
+/**
+ * @brief A press at @p x on row @p i's control: a slider takes the value
+ *        under the pointer.  @return what to write, or NULL.
+ */
+const char *tiku_form_press_at(tiku_form_t *f, tiku_rect_t body, int i,
+                               int x);
+
+/** @brief Give row @p i the caret, when it is an entry; -1 takes it away. */
+void tiku_form_focus(tiku_form_t *f, int i);
+
+/** @brief The row with the caret, or -1. */
+int tiku_form_editing(const tiku_form_t *f);
+
+/**
+ * @brief A key while an entry has the caret.
+ * @return 0 when no entry has it, 1 taken, 2 entered (write the row's
+ *         value), 3 reverted with Escape.
+ */
+int tiku_form_key(tiku_form_t *f, unsigned key, char ch);
+
 tiku_rect_t tiku_form_row_rect(const tiku_form_t *f, tiku_rect_t body,
                                int i);
 

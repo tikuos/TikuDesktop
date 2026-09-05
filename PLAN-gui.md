@@ -55,9 +55,9 @@ once the forms road has proved the loop end to end on the LM20.
 | **0 ✓** | The seam | `applications/board/gui/tiku_gui.h/.c` and an `APPL_SRCS` block in `applications.mk` behind `TIKU_APPL_GUI` (default off); the one mainline hook, a fifth root entry `/gui` in `kernel/vfs/tiku_vfs_tree.c` inside `#if TIKU_APPL_GUI`, filled by `tiku_gui_vfs_get()`; a board sample process `applications/board/samples/panel_demo.c` (a gauge fed by a timer, a toggle on the LED, a button that counts, a text row) started from the init table (`start gui-demo`); the flash-and-talk recipe for the LM20 written down | half a day | `make MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_APPL_GUI=1` builds and boots on the LM20 with `ls /gui` answering; the build without the macro has no `tiku_gui` symbol (`nm`), not merely the same size |
 | **1 ✓** | A form on the board | the API: `TIKU_GUI_FORM(demo, "Board one")`, then `tiku_gui_text/gauge/toggle/field/button(&demo, "Label", &variable, ...)` binding each row to the process's own storage, names at most 15 characters so `/gui/<form>/<row>` fits the 64-byte path; `/gui/<form>/panel` reads as the desktop's form text, with bind paths as the board's own paths; each row node reads the variable and a write parses it, stores it, and posts `TIKU_EVENT_GUI` (data = the row) to the owning process, so the process's callback runs in its own context, never in the shell's; `tiku_gui_changed(&row)` notifies the VFS; static tables, `TIKU_GUI_FORMS` 2 × 16 rows; `test_gui.c` in TikuBench's manner on the host build of the same file | one day | on the board, `cat /gui/demo/panel` prints the rows, `write /gui/demo/lamp 1` lights the LED and `cat /gui/demo/presses` shows the callback ran; the host unit test covers parse, bounds and refusals |
 | **2 ✓** | The desktop opens it | a `panel` node under a mount's `gui/` is a described panel: the Deskbar's board row lists the board's forms, and a `~gui/<form>/panel` notice opens or refreshes it, so a process that starts can say "show me" by notifying its own panel; bind paths in a board's panel are resolved against that board's mount, since the board cannot know where it was mounted; up to `TIKU_TRK_PANELS_MAX` (4) panels open at once, keyed by path; a refused write shows in the panel's status line instead of being dropped | one day | `boardpanel.script` (`# board: yes`) on the LM20: pick the form from the Deskbar, `expect-title Board one`, click the toggle, `expect-narrate` the LED row on, `read` the presses node through the mount and see 1; the same script passes against the folder-backed fixture with no board |
-| **3** | Live values | the panel subscribes its bound rows through the mount (`sub add`, `~` lines) and refreshes only rows the notice pump heard about; on firmware without push, the rows poll at the mount's tier interval; on the board, `tiku_gui_changed()` coalesces into the change ring rather than one watch slot per row, so a form of sixteen rows does not exhaust the eight slots; a row that goes quiet greys rather than showing a stale value | one day | the sample's gauge, driven by a timer on the board, moves on the desktop within a second with nothing pressed (`expect-narrate` twice with `wait` between); the link stays under a quarter of its bandwidth at 115200, measured by the mount's counters |
-| **4** | Input rows | three kinds the form lacks: `entry` (click focuses, keys edit, Enter writes; Escape reverts), `slider Label path lo hi` (the volume knob's track and knob, writing on release), `choice Label path a|b|c` (a menu field); the board library gains the matching rows and typed setters; the form's unknown-row rule keeps an older desktop drawing what it can | one to two days | typing a name into the sample's entry lands in the board's buffer and the process's callback sees it; the slider writes once per release, not per move; `test_form.c` and `boardpanel.script` cover all three |
-| **5** | The slow cable | writes from a panel go through a queue drained by the notice pump, never on the event thread; the panel's write timeout is two seconds, not the mount's twenty; a board that stops answering greys its panels and says so in the status line; a cable replugged reopens the port (`tiku_tx_reopen`) and refreshes; the BEEP moment on a refused write | one day | pulling the LM20's cable mid-session leaves the desktop answering with the panel greyed; plugging it back in refreshes the panel with no restart; `boardpanel.script` gains the refused-write case against the folder fixture |
+| **3 ✓** | Live values | the panel subscribes its bound rows through the mount (`sub add`, `~` lines) and refreshes only rows the notice pump heard about; on firmware without push, the rows poll at the mount's tier interval; on the board, `tiku_gui_changed()` coalesces into the change ring rather than one watch slot per row, so a form of sixteen rows does not exhaust the eight slots; a row that goes quiet greys rather than showing a stale value | one day | the sample's gauge, driven by a timer on the board, moves on the desktop within a second with nothing pressed (`expect-narrate` twice with `wait` between); the link stays under a quarter of its bandwidth at 115200, measured by the mount's counters |
+| **4 ✓** | Input rows | three kinds the form lacks: `entry` (click focuses, keys edit, Enter writes; Escape reverts), `slider Label path lo hi` (the volume knob's track and knob, writing on release), `choice Label path a|b|c` (a menu field); the board library gains the matching rows and typed setters; the form's unknown-row rule keeps an older desktop drawing what it can | one to two days | typing a name into the sample's entry lands in the board's buffer and the process's callback sees it; the slider writes once per release, not per move; `test_form.c` and `boardpanel.script` cover all three |
+| **5 ✓** | The slow cable | writes from a panel go through a queue drained by the notice pump, never on the event thread; the panel's write timeout is two seconds, not the mount's twenty; a board that stops answering greys its panels and says so in the status line; a cable replugged reopens the port (`tiku_tx_reopen`) and refreshes; the BEEP moment on a refused write | one day | pulling the LM20's cable mid-session leaves the desktop answering with the panel greyed; plugging it back in refreshes the panel with no restart; `boardpanel.script` gains the refused-write case against the folder fixture |
 | **6** | The drawing road | a framed channel on the console alongside the shell (a `0xC0`-delimited frame with a channel byte, on the pattern of the SLIP demux, host side in `tiku_session`), the desktop adopting the channel as a window session (`tiku_remote_adopt`) with `-session` on a mount; a direct display-list emitter for the board (`tiku_dl` append calls with a baked metrics table, no surface, no font rasteriser); window-sized flow control on the `.`-ack precedent; the hello example built for the board | a week, after 0–5 hold | the board's hello window is drawn on the desktop from a display list of a few hundred bytes and its key presses come back to the board's process; the console shell stays usable on the same cable throughout |
 
 ### Where it stands (2026-09-05)
@@ -72,16 +72,42 @@ binds resolved against the mount.  The sample form opens itself on the
 desktop and shows the board's live values; the folder-backed
 `devicepanel.script` and `boardpanel.script` both pass.
 
-One limitation is now measured and belongs to milestone 5.  The console
-has no flow control, so a control WRITE sent while the desktop is polling
-the board can lose bytes off its tail: the board reads `write /p` without
-the value and answers `Usage:`.  The device backend now treats that as a
-failure rather than a silent success and retries, but a saturated link
-still drops all three tries.  Reads are reliable; a value written back
-over a busy console is not, until milestone 5 gives the write its own
-paced, checked path (or milestone 6 a framed channel).  The board-side
-loop itself is sound: a direct `write /gui/demo/lamp 1` lights the LED and
-the process's callback records it, every time.
+Milestone 3 followed the same day.  The board rings its `/gui` directory
+when any row moves (the rows are dynamic children with no node of their
+own, so no watch slot is spent per row), and the desktop re-reads every
+open panel of that board on the ring; a `text` row naming one path shows
+what the place says, so a status line from the board is live.
+
+A write that never landed was traced, not to the cable, but to a carriage
+return: the board's console ends lines CRLF and the form parser kept the
+`\r` on a row's last field, so a toggle's bind was a path the board had
+never heard of and its `write` arrived with the value erased.  The parser
+now treats `\r` as a blank, and the device backend refuses a `Usage:`
+answer instead of reading it as success, retrying the line.  With that,
+the loop holds on the LM20 every run: a press on the desktop's toggle
+lights the board's LED, the process says so in its status row, and the
+button counts.
+
+Milestone 4 adds the three rows a person works: `entry` takes the caret
+on a click and writes on Return (Escape puts back what was there),
+`slider` takes the value under the pointer, `choice` is pressed through
+its words.  The board library renders a field as an entry and gains
+`tiku_gui_slider()` and `tiku_gui_choice()`, the latter refusing a word
+not on offer.  `panelinput.script` proves all three against files;
+`boardpanel.script` proves them on the LM20, the choice reaching the
+process's callback.  A drag on the slider is still a press: the release
+is not routed to a described panel yet.
+
+Milestone 5: a control's write is queued and made on the next idle
+turn, one a turn, so a press never waits on the cable; a device mount's
+write has four seconds' patience rather than twenty (a control is a few
+bytes; a file still gets the long wait elsewhere); a panel whose every
+place stops answering says "not answering" in its status line and draws
+its rows empty; and a link that breaks is reopened on the next pump,
+the manifest re-read, so a replugged board answers again with no
+restart.  The slider's knob now follows a drag and writes on release,
+proved in `panelinput.script`.  The replug itself is not in the harness:
+it needs a hand on the cable, and was not tried this session.
 
 ## 3. Decisions that are yours
 

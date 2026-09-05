@@ -301,6 +301,10 @@ tiku_backend_t *tiku_backend_posix_open(void);
  * @param baud  Line rate.
  */
 tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
+/** @brief A device backend's patience for one write, in ms. */
+void tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms);
+/** @brief Whether a device backend's link is down, awaiting a replug. */
+int tiku_backend_tiku_down(const tiku_backend_t *b);
 
 /**
  * @brief The identity that backend bound to, or NULL if it is not one.

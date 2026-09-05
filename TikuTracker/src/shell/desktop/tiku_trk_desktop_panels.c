@@ -78,7 +78,7 @@ panel_refresh(tiku_trk_described_t *p)
 {
     desktop_t *app = p->app;
     char path[TIKU_PATH_MAX];
-    int i;
+    int i, asked = 0, answered = 0;
 
     for (i = 0; i < p->form.nrow; i++) {
         tiku_form_row_t *row = &p->form.row[i];
@@ -86,9 +86,11 @@ panel_refresh(tiku_trk_described_t *p)
         if (row->bind[0] == '\0' || row->kind == TIKU_FORM_BUTTON) {
             continue;
         }
+        asked++;
         if (tiku_backend_text(app->backend,
                               bind_path(p, row, path, sizeof path),
                               row->value, sizeof row->value)) {
+            answered++;
             /* Trailing blanks are how a device ends a line, not part of
              * what it said. */
             size_t n = strlen(row->value);
@@ -103,6 +105,14 @@ panel_refresh(tiku_trk_described_t *p)
             row->known = 0;     /* the place went quiet: say so, do not
                                  * keep showing what it last said */
         }
+    }
+    /* Every place quiet at once is the board, not a row: said in the
+     * status line, and the rows are drawn empty rather than stale. */
+    p->quiet = (asked > 0 && answered == 0);
+    if (p->quiet) {
+        snprintf(p->status, sizeof p->status, "%s", "not answering");
+    } else if (strcmp(p->status, "not answering") == 0) {
+        p->status[0] = '\0';
     }
 }
 
@@ -137,6 +147,11 @@ panel_draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
+/* Used before it is defined. */
+static int panel_track(tiku_trk_described_t *p, tiku_window_t *window,
+                       const tiku_event_t *event);
+/* End of the forward declarations. */
+
 /**
  * @brief A press on a described panel: the row under it is pressed and
  *        what it writes goes to the device; a refusal is shown, not
@@ -151,6 +166,9 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
     const char *write;
     int row;
 
+    if (p->tracking) {
+        return panel_track(p, window, event);
+    }
     if (event->type != TIKU_EVENT_POINTER_DOWN) {
         return 0;
     }
@@ -158,36 +176,139 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
     if (row < 0) {
         return 0;
     }
+    if (p->form.row[row].kind == TIKU_FORM_ENTRY) {
+        /* The caret, and nothing written until Return. */
+        tiku_form_focus(&p->form, row);
+        app->dirty = 1;
+        return 1;
+    }
+    if (tiku_form_editing(&p->form) >= 0) {
+        tiku_form_focus(&p->form, -1);      /* a press elsewhere lets go */
+    }
+    if (p->form.row[row].kind == TIKU_FORM_SLIDER) {
+        /* The knob is taken: it follows the pointer, and the value is
+         * written once, when the hand lets go. */
+        (void)tiku_form_press_at(&p->form, content, row, event->x);
+        p->tracking = 1;
+        p->pending = row;
+        app->dirty = 1;
+        return 1;
+    }
     write = tiku_form_press(&p->form, row);
     if (write != NULL) {
         /*
-         * Working a control WRITES to the place it named.  That is
-         * the whole of the interface: the device published where
-         * its switch lives, and the desktop puts a value there.
+         * Working a control WRITES to the place it named.  That is the
+         * whole of the interface: the device published where its switch
+         * lives, and the desktop puts a value there -- on the next idle
+         * turn rather than under the pointer, so a slow cable never holds
+         * the press.
          */
-        char err[160], path[TIKU_PATH_MAX];
-        const char *bind = bind_path(p, &p->form.row[row], path,
-                                     sizeof path);
-        int rc = -1;
-
-        err[0] = '\0';
-        if (app->backend != NULL && app->backend->ops != NULL &&
-            app->backend->ops->write != NULL) {
-            rc = app->backend->ops->write(app->backend, bind, write,
-                                          strlen(write), err, sizeof err);
-        }
-        if (rc != 0) {
-            snprintf(p->status, sizeof p->status, "%s: %s",
-                     p->form.row[row].label,
-                     err[0] != '\0' ? err : "refused");
-            tiku_sound_play(TIKU_SOUND_BEEP);
-        } else {
-            p->status[0] = '\0';
-        }
-        panel_refresh(p);
+        p->pending = row;
         app->dirty = 1;
     }
     return 1;
+}
+
+/** @brief The slider's knob follows a move; the release writes it. */
+static int
+panel_track(tiku_trk_described_t *p, tiku_window_t *window,
+            const tiku_event_t *event)
+{
+    tiku_rect_t content = tiku_window_content(window);
+    int row = p->pending;
+
+    if (row < 0 || row >= p->form.nrow) {
+        p->tracking = 0;
+        return 0;
+    }
+    (void)tiku_form_press_at(&p->form, content, row, event->x);
+    if (event->type == TIKU_EVENT_POINTER_UP) {
+        p->tracking = 0;        /* pending stays: the pump writes it */
+    }
+    p->app->dirty = 1;
+    return 1;
+}
+
+/** @brief Write row @p row's value to its place, saying so on refusal. */
+static void
+panel_write(tiku_trk_described_t *p, int row)
+{
+    desktop_t *app = p->app;
+    char err[160], path[TIKU_PATH_MAX];
+    const char *bind = bind_path(p, &p->form.row[row], path, sizeof path);
+    const char *value = p->form.row[row].value;
+    int rc = -1;
+
+    err[0] = '\0';
+    if (app->backend != NULL && app->backend->ops != NULL &&
+        app->backend->ops->write != NULL) {
+        rc = app->backend->ops->write(app->backend, bind, value,
+                                      strlen(value), err, sizeof err);
+    }
+    if (rc != 0) {
+        snprintf(p->status, sizeof p->status, "%s: %s",
+                 p->form.row[row].label, err[0] != '\0' ? err : "refused");
+        tiku_sound_play(TIKU_SOUND_BEEP);
+    } else {
+        p->status[0] = '\0';
+    }
+    panel_refresh(p);
+    app->dirty = 1;
+}
+
+int
+panel_key(desktop_t *app, unsigned key, char ch)
+{
+    tiku_trk_described_t *p =
+        panel_of_window(app, tiku_workspace_focused(app->desk));
+    int row, took;
+
+    if (p == NULL) {
+        return 0;
+    }
+    row = tiku_form_editing(&p->form);
+    if (row < 0) {
+        return 0;
+    }
+    took = tiku_form_key(&p->form, key, ch);
+    if (took == 2) {
+        p->pending = row;
+    }
+    app->dirty = 1;
+    return took != 0;
+}
+
+void
+panels_pump(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < TIKU_TRK_PANELS_MAX; i++) {
+        tiku_trk_described_t *p = &app->panels[i];
+
+        if (p->window != NULL && p->window->open && p->pending >= 0 &&
+            !p->tracking) {
+            int row = p->pending;
+
+            p->pending = -1;
+            panel_write(p, row);
+            return;             /* one write a turn keeps the loop answering */
+        }
+    }
+}
+
+tiku_trk_described_t *
+panel_tracking(desktop_t *app)
+{
+    int i;
+
+    for (i = 0; i < TIKU_TRK_PANELS_MAX; i++) {
+        if (app->panels[i].tracking && app->panels[i].window != NULL &&
+            app->panels[i].window->open) {
+            return &app->panels[i];
+        }
+    }
+    return NULL;
 }
 
 tiku_trk_described_t *
@@ -288,6 +409,7 @@ open_panel_path(desktop_t *app, const char *path)
     p->app = app;
     p->form = form;
     p->unknown = unknown;
+    p->pending = -1;
     snprintf(p->path, sizeof p->path, "%s", path);
     root_of(path, p->root, sizeof p->root);
     panel_refresh(p);

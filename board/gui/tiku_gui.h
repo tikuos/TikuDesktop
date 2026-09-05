@@ -37,8 +37,10 @@ typedef enum {
     TIKU_GUI_TEXT,                  /**< a line of text, read only */
     TIKU_GUI_GAUGE,                 /**< an int between lo and hi */
     TIKU_GUI_TOGGLE,                /**< an int, 0 or 1 */
-    TIKU_GUI_FIELD,                 /**< a string the person may set */
-    TIKU_GUI_BUTTON                 /**< a press, counted */
+    TIKU_GUI_FIELD,                 /**< a string the person may type */
+    TIKU_GUI_BUTTON,                /**< a press, counted */
+    TIKU_GUI_SLIDER,                /**< an int the person may set, lo..hi */
+    TIKU_GUI_CHOICE                 /**< one word of a few, the person's */
 } tiku_gui_kind_t;
 
 struct tiku_gui_row;
@@ -54,6 +56,7 @@ typedef struct tiku_gui_row {
     int                 *value;     /**< a gauge's or toggle's storage */
     char                *text;      /**< a text row's or field's storage */
     size_t               text_max;  /**< the field buffer's size */
+    const char          *options;   /**< a choice's words, | between */
     uint32_t             presses;   /**< a button's count */
     tiku_gui_changed_fn  changed;   /**< optional, run by tiku_gui_event() */
     struct tiku_gui_form *form;
@@ -74,7 +77,8 @@ const tiku_vfs_node_t *tiku_gui_vfs_get(void);
 void tiku_gui_form_init(tiku_gui_form_t *form, const char *name,
                         const char *title, struct tiku_process *owner);
 
-/** @brief A line of text; @p text is borrowed and may change. */
+/** @brief A line of text; @p text is borrowed, and a change to it is
+ *         shown once tiku_gui_changed() is called for the row. */
 tiku_gui_row_t *tiku_gui_text(tiku_gui_form_t *form, const char *name,
                               const char *text);
 
@@ -92,6 +96,21 @@ tiku_gui_row_t *tiku_gui_toggle(tiku_gui_form_t *form, const char *name,
 tiku_gui_row_t *tiku_gui_field(tiku_gui_form_t *form, const char *name,
                                const char *label, char *text, size_t max,
                                tiku_gui_changed_fn changed);
+
+/** @brief A slider over @p *value between @p lo and @p hi, set by the
+ *         person; @p changed hears every move. */
+tiku_gui_row_t *tiku_gui_slider(tiku_gui_form_t *form, const char *name,
+                                const char *label, int *value, int lo,
+                                int hi, tiku_gui_changed_fn changed);
+
+/**
+ * @brief A choice of the words in @p options ("slow|fast"), the chosen
+ *        one kept in @p text of @p max bytes; @p changed hears a pick.
+ */
+tiku_gui_row_t *tiku_gui_choice(tiku_gui_form_t *form, const char *name,
+                                const char *label, const char *options,
+                                char *text, size_t max,
+                                tiku_gui_changed_fn changed);
 
 /** @brief A button; @p changed hears every press, and presses counts. */
 tiku_gui_row_t *tiku_gui_button(tiku_gui_form_t *form, const char *name,

@@ -309,6 +309,7 @@ tiku_session_cmd(tiku_session_t *s, const char *line, char *out,
         if (at >= 0) {
             size_t start = 0, n, eol = 0;
 
+
             /* The shell echoes the typed line.  Match it at the END of the
              * first line rather than the start: a stale prompt fragment can
              * precede the echo, and dropping through the newline removes

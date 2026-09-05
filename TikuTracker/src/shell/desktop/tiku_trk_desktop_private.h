@@ -152,6 +152,9 @@ typedef struct {
     char             root[TIKU_PATH_MAX];   /* what /gui/ binds hang off */
     char             status[96];/* the last refusal, or ""      */
     int              unknown;   /* rows this build did not know */
+    int              pending;   /* the row waiting to be written, or -1 */
+    int              tracking;  /* a slider's knob is in hand   */
+    int              quiet;     /* no bound place answered      */
 } tiku_trk_described_t;
 
 typedef struct desktop {
@@ -493,6 +496,16 @@ typedef struct {
 int open_panel_path(desktop_t *app, const char *path);
 /** @brief The panel shown in @p w, or NULL. */
 tiku_trk_described_t *panel_of_window(desktop_t *app, const tiku_window_t *w);
+/**
+ * @brief A key for the focused described panel's entry, if one has the
+ *        caret: typed, entered (and written) or reverted.  @return 1 when
+ *        the panel took it.
+ */
+int panel_key(desktop_t *app, unsigned key, char ch);
+/** @brief Write what the panels have queued, one row per turn. */
+void panels_pump(desktop_t *app);
+/** @brief The panel whose slider is in hand, or NULL. */
+tiku_trk_described_t *panel_tracking(desktop_t *app);
 /**
  * @brief The notices of a turn: a board's gui/ that changed refreshes
  *        its open panels, and a board seen for the first time has its
