@@ -4,11 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_channel.c - the socket pair between a console and a session.
+ * tiku_channel.c - the socket pair between a link and the desktop's listener.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_channel.h"
+#include "tiku_link_serial.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -25,16 +26,16 @@
 #define EVENT_POINTER_MOVE 8u
 
 struct tiku_channel {
-    tiku_session_t *s;
+    tiku_link_t    *link;           /* the board, over its medium */
     int             desk_fd;        /* the listener's end */
-    int             mine_fd;        /* fed by frames, drained to frames */
+    int             mine_fd;        /* fed by messages, drained to messages */
     unsigned char   out[OUT_MAX];   /* a message being gathered */
     size_t          got;
 };
 
-/** @brief A frame from the board: handed to the desktop as a stream. */
+/** @brief A message from the board: handed to the desktop as a stream. */
 static void
-on_frame(const unsigned char *bytes, size_t len, void *ctx)
+on_message(const unsigned char *bytes, size_t len, void *ctx)
 {
     tiku_channel_t *ch = ctx;
     size_t off = 0;
@@ -56,22 +57,26 @@ tiku_channel_t *
 tiku_channel_open(tiku_session_t *s)
 {
     tiku_channel_t *ch;
+    tiku_link_t *link;
     int sv[2];
 
-    if (s == NULL || socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+    link = tiku_link_serial_open(s);
+    if (link == NULL || socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        tiku_link_close(link);
         return NULL;
     }
     ch = calloc(1, sizeof *ch);
     if (ch == NULL) {
+        tiku_link_close(link);
         close(sv[0]);
         close(sv[1]);
         return NULL;
     }
-    ch->s = s;
+    ch->link = link;
     ch->desk_fd = sv[0];
     ch->mine_fd = sv[1];
     (void)fcntl(ch->mine_fd, F_SETFL, O_NONBLOCK);
-    tiku_session_on_frame(s, on_frame, ch);
+    tiku_link_on_message(link, on_message, ch);
     return ch;
 }
 
@@ -86,7 +91,7 @@ tiku_channel_greet(tiku_channel_t *ch)
                                                1, 0, 0, 0, 2, 0, 0, 0x80 };
 
     if (ch != NULL) {
-        (void)tiku_session_send_frame(ch->s, welcome, sizeof welcome);
+        (void)tiku_link_send(ch->link, welcome, sizeof welcome);
     }
 }
 
@@ -149,7 +154,7 @@ tiku_channel_pump(tiku_channel_t *ch)
             int drop = is_move(ch) && ch->got > MSG_HEAD + len;
 
             if (!drop &&
-                tiku_session_send_frame(ch->s, ch->out, MSG_HEAD + len) == 0) {
+                tiku_link_send(ch->link, ch->out, MSG_HEAD + len) == 0) {
                 sent++;
             }
             memmove(ch->out, ch->out + MSG_HEAD + len,
@@ -170,7 +175,7 @@ tiku_channel_close(tiku_channel_t *ch)
     if (ch == NULL) {
         return;
     }
-    tiku_session_on_frame(ch->s, NULL, NULL);
+    tiku_link_close(ch->link);
     close(ch->desk_fd);
     close(ch->mine_fd);
     free(ch);

@@ -17,6 +17,7 @@
 #ifndef TIKU_CHANNEL_H_
 #define TIKU_CHANNEL_H_
 
+#include "tiku_link.h"
 #include "tiku_session.h"
 
 typedef struct tiku_channel tiku_channel_t;
@@ -24,8 +25,8 @@ typedef struct tiku_channel tiku_channel_t;
 /** @brief The features bit that marks a WELCOME as an invitation. */
 #define TIKU_CHANNEL_INVITE 0x80000000u
 
-/** @brief Open a channel on @p s; frames now flow to it.  NULL when out
- *         of sockets. */
+/** @brief Open a channel on @p s: a serial link is opened over the session
+ *         and its messages flow to the channel.  NULL when out of sockets. */
 tiku_channel_t *tiku_channel_open(tiku_session_t *s);
 
 /**
