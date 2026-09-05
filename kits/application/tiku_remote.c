@@ -23,6 +23,7 @@
 #include <signal.h>
 
 #include "tiku_remote.h"
+#include "tiku_event.h"
 
 /** @brief One frame's ceiling, from the dimension cap. */
 #define REMOTE_MAX_PAYLOAD \
@@ -527,6 +528,24 @@ session_message(tiku_remote_session_t *s)
             win->has_menus = 1;
             win->menus_fresh = 1;
             changed = 1;
+        }
+        break;
+    case TIKU_RMSG_MENUS_TEXT:
+        win = (s->want >= 4u) ? session_window(s, id_of(p)) : NULL;
+        if (win != NULL) {
+            char text[2048];
+            size_t n = s->want - 4u;
+
+            if (n >= sizeof text) {
+                n = sizeof text - 1u;
+            }
+            memcpy(text, p + 4, n);
+            text[n] = '\0';
+            if (tiku_remote_menus_from_text(text, &win->menus) > 0) {
+                win->has_menus = 1;
+                win->menus_fresh = 1;
+                changed = 1;
+            }
         }
         break;
     case TIKU_RMSG_SAY: {
@@ -1242,6 +1261,65 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
     send_msg(client->fd, TIKU_RMSG_FRAME, payload, (uint32_t)n);
     free(payload);
     return 0;
+}
+
+int
+tiku_remote_menus_from_text(const char *text, tiku_menuset_t *set)
+{
+    const char *p = text;
+
+    if (text == NULL || set == NULL) {
+        return 0;
+    }
+    memset(set, 0, sizeof *set);
+    while (*p != '\0') {
+        const char *eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) : strlen(p);
+        char line[160], word[16];
+        tiku_menu_list_t *menu =
+            set->nmenu > 0 ? &set->menu[set->nmenu - 1] : NULL;
+        int n;
+
+        if (len >= sizeof line) {
+            len = sizeof line - 1u;
+        }
+        memcpy(line, p, len);
+        line[len] = '\0';
+        while (len > 0u && (line[len - 1u] == '\r' || line[len - 1u] == ' ')) {
+            line[--len] = '\0';
+        }
+        p += (eol ? (size_t)(eol - p) + 1u : strlen(p));
+        if (sscanf(line, "%15s%n", word, &n) < 1) {
+            continue;
+        }
+        if (strcmp(word, "menu") == 0) {
+            if (set->nmenu < TIKU_MENUSET_MENUS) {
+                menu = &set->menu[set->nmenu++];
+                memset(menu, 0, sizeof *menu);
+                snprintf(menu->title, sizeof menu->title, "%s",
+                         line + n + (line[n] == ' '));
+            }
+        } else if (menu != NULL && menu->nitem < TIKU_MENUSET_ITEMS &&
+                   strcmp(word, "sep") == 0) {
+            menu->item[menu->nitem++].separator = 1;
+        } else if (menu != NULL && menu->nitem < TIKU_MENUSET_ITEMS &&
+                   strcmp(word, "item") == 0) {
+            tiku_menu_entry_t *e = &menu->item[menu->nitem];
+            char sc[8];
+            int m2;
+
+            if (sscanf(line + n, "%d %7s%n", &e->command, sc, &m2) < 2) {
+                continue;
+            }
+            e->sc = (sc[0] != '-' && sc[1] == '\0') ? sc[0] : 0;
+            e->mods = e->sc ? TIKU_MOD_CMD : 0u;
+            e->enabled = 1;
+            snprintf(e->label, sizeof e->label, "%s",
+                     line + n + m2 + (line[n + m2] == ' '));
+            menu->nitem++;
+        }
+    }
+    return set->nmenu;
 }
 
 int

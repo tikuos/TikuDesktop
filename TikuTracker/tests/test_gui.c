@@ -22,6 +22,12 @@
 
 #include "tiku_dl.h"
 #include "tiku_form.h"
+#include "tiku_msg.h"
+
+/* The two message kinds the desk and a board agree on (tiku_remote.h,
+ * which carries the desktop's event record and so stays out of here). */
+#define TIKU_MSG_PICK   0x7069636bu
+#define TIKU_MSG_PICKED 0x70696b64u
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,6 +269,15 @@ main(void)
         tiku_dl_t *dl;
         char said[2048];
 
+        /* A desktop is listening: the board holds a window's traffic
+         * until greeted, so the test greets first and the open, then the
+         * list, flow as they would to a desktop that was there. */
+        {
+            unsigned char inv[16] = { 20, 0, 0, 0, 8, 0, 0, 0,
+                                      1, 0, 0, 0, 2, 0, 0, 0x80 };
+
+            feed(inv, sizeof inv);
+        }
         wire_len = 0;
         check(tiku_draw_open(&win, "Board window", 240, 160, &owner, list,
                              sizeof list) == 0,
@@ -397,8 +412,19 @@ main(void)
         feed(msg, n);
         check(posted == 0, "an event for a window not open goes nowhere");
         {
+            /* Paint something, so the re-announce below carries a list. */
+            tiku_draw_begin(&win);
+            (void)tiku_draw_text(&win, 12, 22, TIKU_DRAW_TEXT, TIKU_DRAW_BOLD,
+                                 "again");
+            (void)tiku_draw_present(&win);
+            while (tiku_draw_event(TIKU_EVENT_DRAW, &win) != NULL) {
+                ;
+            }
+
             /* A plain welcome, the listener's reply to a hello: nothing.
-             * An invitation: hello, open and draw again, and the owner
+             * An invitation: the windows announced again -- open and
+             * draw, but no fresh hello, so the desktop's own reply to a
+             * hello cannot start the two trading hellos -- and the owner
              * told a session began. */
             unsigned char welcome[16] = { 20, 0, 0, 0, 8, 0, 0, 0,
                                           1, 0, 0, 0, 2, 0, 0, 0 };
@@ -412,9 +438,8 @@ main(void)
             feed(welcome, sizeof welcome);
             at = 0;
             n = next_frame(&at, msg, sizeof msg);
-            check(n == 48 && msg[0] == 1, "an invitation is answered: hello");
-            n = next_frame(&at, msg, sizeof msg);
-            check(n == 84 && msg[0] == 2, "open");
+            check(n == 84 && msg[0] == 2,
+                  "an invitation is answered with the window, not a hello");
             n = next_frame(&at, msg, sizeof msg);
             check(n >= 20 && msg[0] == 9, "and the window drawn as it was");
             check(posted == 1 && tiku_draw_event(TIKU_EVENT_DRAW, &win) == &win
@@ -433,6 +458,101 @@ main(void)
             feed(msg, n);
             check(posted == 1, "and a frame after a doubled END still lands");
         }
+        printf("the rest of the session\n");
+        {
+            unsigned char pick[8 + 8], told[512];
+            tiku_msg_t *m;
+            size_t k;
+
+            /* Whatever the decoder tests above left queued is taken first,
+             * so each event below is the one just fed. */
+            while (tiku_draw_event(TIKU_EVENT_DRAW, &win) != NULL) {
+                ;
+            }
+            wire_len = 0;
+            tiku_draw_menus(&win, "menu File\nitem 1 o Open\n");
+            at = 0;
+            n = next_frame(&at, msg, sizeof msg);
+            check(n == 8 + 4 + 24 && msg[0] == 13 &&
+                      memcmp(msg + 12, "menu File\nitem 1 o Open\n", 24) == 0,
+                  "menus go as a text message with the window's id");
+            wire_len = 0;
+            tiku_draw_raise(&win);
+            tiku_draw_sizeable(&win);
+            tiku_draw_place(&win, 2);
+            at = 0;
+            n = next_frame(&at, msg, sizeof msg);
+            check(n == 12 && msg[0] == 10, "raise");
+            n = next_frame(&at, msg, sizeof msg);
+            check(n == 12 && msg[0] == 11, "sizeable");
+            n = next_frame(&at, msg, sizeof msg);
+            check(n == 16 && msg[0] == 12 && msg[12] == 2, "place, with its role");
+            /* A pick from the desktop's menu: type 17, the id and command. */
+            memset(pick, 0, sizeof pick);
+            pick[0] = 17;
+            pick[4] = 8;
+            memcpy(pick + 8, &win.id, 4);
+            pick[12] = 4;
+            posted = 0;
+            feed(pick, sizeof pick);
+            check(posted == 1 && tiku_draw_event(TIKU_EVENT_DRAW, &win) == &win &&
+                      win.event.kind == TIKU_DRAW_PICK && win.event.command == 4,
+                  "a menu pick reaches the owner with its command");
+            /* Asking for a file is a message the desktop's own reader
+             * takes apart. */
+            wire_len = 0;
+            tiku_draw_pick(&win, 1, "/home", "notes.txt");
+            at = 0;
+            n = next_frame(&at, msg, sizeof msg);
+            m = (n > 8 && msg[0] == 8) ? tiku_msg_unflatten(msg + 8, n - 8, NULL)
+                                        : NULL;
+            {
+                int32_t mode = -1, id = -1;
+                const char *start = m ? tiku_msg_find_string(m, "start", 0) : NULL;
+                const char *nm = m ? tiku_msg_find_string(m, "name", 0) : NULL;
+
+                if (m != NULL) {
+                    (void)tiku_msg_find_int32(m, "mode", 0, &mode);
+                    (void)tiku_msg_find_int32(m, "window", 0, &id);
+                }
+                check(m != NULL && tiku_msg_what(m) == TIKU_MSG_PICK && mode == 1 &&
+                          (uint32_t)id == win.id && start && nm &&
+                          strcmp(start, "/home") == 0 && strcmp(nm, "notes.txt") == 0,
+                      "the ask is a pick message the desktop reads whole");
+                tiku_msg_free(m);
+            }
+            /* And the answer: a TELL the desktop would send, framed. */
+            m = tiku_msg_new(TIKU_MSG_PICKED);
+            (void)tiku_msg_add_int32(m, "window", (int32_t)win.id);
+            (void)tiku_msg_add_string(m, "path", "/home/notes.txt");
+            told[0] = 19;
+            memset(told + 1, 0, 7);
+            (void)tiku_msg_flatten(m, told + 8, sizeof told - 8, &k);
+            told[4] = (unsigned char)k;
+            told[5] = (unsigned char)(k >> 8);
+            tiku_msg_free(m);
+            posted = 0;
+            feed(told, 8 + k);
+            check(posted == 1 && tiku_draw_event(TIKU_EVENT_DRAW, &win) == &win &&
+                      win.event.kind == TIKU_DRAW_PICKED &&
+                      strcmp(win.event.path, "/home/notes.txt") == 0,
+                  "the picked path comes back to the window that asked");
+            /* A resize event carries the new size into the window. */
+            {
+                unsigned char rs[8 + 68];
+
+                n = event_msg(rs, win.id, 3, 0, 0);
+                rs[12 + 56] = 200;
+                rs[12 + 60] = 100;
+                posted = 0;
+                feed(rs, n);
+                check(posted == 1 && tiku_draw_event(TIKU_EVENT_DRAW, &win) == &win &&
+                          win.event.kind == TIKU_DRAW_RESIZE && win.w == 200 &&
+                          win.h == 100,
+                      "a resize is heard and the window knows its new size");
+            }
+        }
+
         wire_len = 0;
         tiku_draw_close(&win);
         at = 0;

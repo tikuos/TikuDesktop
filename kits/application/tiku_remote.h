@@ -32,7 +32,7 @@
 #define TIKU_REMOTE_VERSION   1
 #define TIKU_REMOTE_SESSIONS  8
 /* Windows one out-of-process application may hold at once. */
-#define TIKU_REMOTE_WINDOWS   4
+#define TIKU_REMOTE_WINDOWS   8
 #define TIKU_REMOTE_TITLE     64
 #define TIKU_REMOTE_MAX_DIM   1024
 
@@ -93,6 +93,12 @@
 #define TIKU_RMSG_RAISE   10u  /* u32 id: bring that window forward  */
 #define TIKU_RMSG_SIZEABLE 11u /* u32 id: the person may resize it   */
 #define TIKU_RMSG_PLACE   12u  /* u32 id, i32 role: what KIND it is  */
+/*
+ * Menus as text: `menu File`, `item <command> <shortcut|-> <label>`,
+ * `sep`, one per line, expanded into a menu set by the desktop.  A menu
+ * set by value is ten kilobytes; a board says the same in a hundred.
+ */
+#define TIKU_RMSG_MENUS_TEXT 13u /* u32 id, then the lines           */
 /* ...and desktop to client. */
 #define TIKU_RMSG_EVENT   16u  /* u32 id, tiku_event_t         */
 #define TIKU_RMSG_PICK    17u  /* u32 id, i32 command               */
@@ -413,6 +419,13 @@ void tiku_remote_sizeable(tiku_remote_client_t *client, uint32_t id);
 
 int tiku_remote_menus(tiku_remote_client_t *client, uint32_t id,
                            const tiku_menuset_t *menus);
+
+/**
+ * @brief Read menus written as text into @p set: `menu <title>` opens a
+ *        menu, `item <command> <shortcut|-> <label words>` adds an item,
+ *        `sep` a separator.  @return how many menus, 0 for none.
+ */
+int tiku_remote_menus_from_text(const char *text, tiku_menuset_t *set);
 
 /**
  * @brief Read one message if one is ready.

@@ -21,7 +21,7 @@
 #include <kernel/process/tiku_process.h>
 
 #define TIKU_DRAW_LIST_MAX 1536     /**< a fair list buffer, in bytes */
-#define TIKU_DRAW_WINDOWS  2
+#define TIKU_DRAW_WINDOWS  8
 #define TIKU_DRAW_QUEUE    8        /**< events waiting for the owner */
 /** @brief Bytes of icon art and pictures one window may carry: those
  *         cross the cable whole, and a window that costs a minute is
@@ -39,9 +39,15 @@ typedef enum {
     TIKU_DRAW_POINTER_DOWN = 6,
     TIKU_DRAW_POINTER_UP = 7,
     TIKU_DRAW_POINTER_MOVE = 8,
+    TIKU_DRAW_RESIZE = 3,       /**< the person resized: w and h are new */
+    TIKU_DRAW_WHEEL = 9,        /**< dy tells how far */
     TIKU_DRAW_CLOSED = 100,     /**< the person closed the window */
-    TIKU_DRAW_SESSION = 101     /**< a desktop arrived: the window was
+    TIKU_DRAW_SESSION = 101,    /**< a desktop arrived: the window was
                                      announced again; draw it afresh */
+    TIKU_DRAW_PICK = 102,       /**< a menu item chosen: command says which */
+    TIKU_DRAW_PICKED = 103,     /**< the file panel answered: path */
+    TIKU_DRAW_CLIP = 104        /**< the desk's clipboard changed: path holds
+                                     the text */
 } tiku_draw_kind_t;
 
 typedef struct {
@@ -50,7 +56,11 @@ typedef struct {
     unsigned         modifiers;
     unsigned         button;
     int              x, y;      /**< within the window's content */
+    int              dy;        /**< a wheel's turn */
+    int              w, h;      /**< a resize's new content size */
+    int              command;   /**< a pick's command */
     char             text[8];   /**< the key's characters */
+    char             path[96];  /**< a picked path, or clipboard text */
 } tiku_draw_event_t;
 
 /** @brief The faces the desktop resolves by number. */
@@ -77,6 +87,8 @@ typedef struct tiku_draw_window {
     size_t               cap;       /**< its size */
     size_t               len;       /**< bytes of list written */
     size_t               art;       /**< icon art and picture bytes so far */
+    const char          *menus;     /**< the menu text, remembered */
+    int                  sizeable;  /**< the person may resize it */
     int                  open;
 } tiku_draw_window_t;
 
@@ -97,6 +109,33 @@ int tiku_draw_open(tiku_draw_window_t *win, const char *title, int w,
 
 /** @brief Close it on the desktop. */
 void tiku_draw_close(tiku_draw_window_t *win);
+
+/**
+ * @brief Give @p win a menu bar, written as text: `menu <title>`, then
+ *        `item <command> <shortcut|-> <label>` and `sep` lines.  A pick
+ *        comes back as TIKU_DRAW_PICK with the command.
+ */
+void tiku_draw_menus(tiku_draw_window_t *win, const char *text);
+
+/** @brief Bring it forward. */
+void tiku_draw_raise(tiku_draw_window_t *win);
+
+/** @brief Let the person resize it; a TIKU_DRAW_RESIZE follows each. */
+void tiku_draw_sizeable(tiku_draw_window_t *win);
+
+/** @brief What kind of window it is, as the desktop places kinds. */
+void tiku_draw_place(tiku_draw_window_t *win, int role);
+
+/**
+ * @brief Ask the desktop for a file: @p mode 0 to open, 1 to save,
+ *        listing @p start, the name @p name.  The answer arrives as
+ *        TIKU_DRAW_PICKED with the path.
+ */
+void tiku_draw_pick(tiku_draw_window_t *win, int mode, const char *start,
+                    const char *name);
+
+/** @brief Put @p text on the desk's clipboard. */
+void tiku_draw_clipboard(const char *text);
 
 /** @brief Start a fresh list for @p win: the window is drawn from nothing. */
 void tiku_draw_begin(tiku_draw_window_t *win);

@@ -5,7 +5,9 @@
  *
  * draw_demo.c - a window of the board's own, built from the desktop's
  * kit: tabs, a list, a slider, a field and a button, the same state
- * objects and the same paint calls a desktop program uses.
+ * objects and the same paint calls a desktop program uses; a menu bar
+ * written as text, a window the person may resize, and the desk's file
+ * panel asked for a path.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -41,18 +43,33 @@ static const char *const row_names[] = {
     "Temperature", "Humidity", "Pressure", "Light", "Sound"
 };
 
-/** @brief The layout: where each control sits in the window. */
+static const char *const menus_text =
+    "menu File\n"
+    "item 1 o Choose a file…\n"
+    "sep\n"
+    "item 9 q Reset\n"
+    "menu Level\n"
+    "item 2 - Up\n"
+    "item 3 - Down\n"
+    "menu Edit\n"
+    "item 4 c Copy the name\n";
+
+/**
+ * @brief The layout: where each control sits in the window, from its
+ *        size, so a resized window lays itself out again.
+ */
 static tiku_rect_t
 place(int which)
 {
     tiku_rect_t r = { 12, 0, win.w - 24, 24 };
+    int bottom = win.h - 12 - tiku_ui_button_h();
 
     switch (which) {
     case 0: r.y = 8;   r.h = 22; break;                 /* the tabs   */
-    case 1: r.y = 38;  r.h = 5 * tiku_ui_row_h(); break; /* the list  */
-    case 2: r.y = 158; r.h = 24; break;                 /* the slider */
-    case 3: r.y = 190; r.h = 24; break;                 /* the field  */
-    default: r.y = 222; r.h = tiku_ui_button_h();
+    case 1: r.y = 38;  r.h = bottom - 38 - 76; break;   /* the list   */
+    case 2: r.y = bottom - 66; r.h = 24; break;         /* the slider */
+    case 3: r.y = bottom - 34; r.h = 24; break;         /* the field  */
+    default: r.y = bottom; r.h = tiku_ui_button_h();
              r.w = tiku_ui_button_w("Count", 80); break; /* the button */
     }
     return r;
@@ -164,6 +181,8 @@ TIKU_PROCESS_THREAD(draw_demo_process, ev, data)
     name.len = (int)strlen(name.text);
     (void)tiku_draw_open(&win, "Board window", 260, 262, &draw_demo_process,
                          list_buf, sizeof list_buf);
+    tiku_draw_menus(&win, menus_text);
+    tiku_draw_sizeable(&win);
     tiku_surface_on_window(&surface, &win);
     paint();
 
@@ -194,6 +213,29 @@ TIKU_PROCESS_THREAD(draw_demo_process, ev, data)
                     key(e);
                     changed = 1;
                 }
+                break;
+            case TIKU_DRAW_RESIZE:
+                /* The size is in the window already; the layout follows. */
+                changed = 1;
+                break;
+            case TIKU_DRAW_PICK:
+                switch (e->command) {
+                case 1: tiku_draw_pick(w, 0, "/tmp", NULL); break;
+                case 2: (void)tiku_slider_step(&level, 1); break;
+                case 3: (void)tiku_slider_step(&level, -1); break;
+                case 4: tiku_draw_clipboard(name.text); break;
+                case 9: presses = 0; break;
+                default: break;
+                }
+                changed = 1;
+                break;
+            case TIKU_DRAW_PICKED:
+                /* The path chosen lands in the field. */
+                memset(&name, 0, sizeof name);
+                snprintf(name.text, sizeof name.text, "%s", e->path);
+                name.len = (int)strlen(name.text);
+                editing = 0;
+                changed = 1;
                 break;
             case TIKU_DRAW_SESSION:
                 /* A desktop arrived: the window starts as it did at boot,

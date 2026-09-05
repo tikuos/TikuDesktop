@@ -36,4 +36,22 @@ click 421 390
 wait 20
 expect-narrate Pressed 1 time
 shot /tmp/trk_boarddraw.png
+note the window has a menu bar of its own, published as text; with the
+note global bar shown, a pick on it reaches the board's process
+note the window publishes a menu bar of its own, as text; with the
+note global bar shown its File menu offers the board's own items
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click-window Board window
+wait 8
+note a pick on that menu rides the wire to the board's process, which
+note asks the desk for a file; the path chosen comes back over the wire
+note into the field -- a menu, a process and a panel over one console
+menu-pick Choose a file
+wait 15
+click 338 200
+wait 4
+click 676 413
+wait 20
+expect-narrate a.txt
 quit

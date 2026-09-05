@@ -20,7 +20,20 @@
 #define RMSG_OPEN    2u
 #define RMSG_CLOSE   5u
 #define RMSG_DRAW    9u
+#define RMSG_RAISE   10u
+#define RMSG_SIZEABLE 11u
+#define RMSG_PLACE   12u
+#define RMSG_MENUS_TEXT 13u
+#define RMSG_SAY     8u
 #define RMSG_EVENT   16u
+#define RMSG_PICK    17u
+#define RMSG_TELL    19u
+#define MSG_MAGIC    0x534D4B54u    /* 'TKMS' */
+#define MSG_T_INT32  4u
+#define MSG_T_STRING 8u
+#define WHAT_PICK    0x7069636bu    /* 'pick' */
+#define WHAT_PICKED  0x70696b64u    /* 'pikd' */
+#define WHAT_CLIP    0x636c6970u    /* 'clip' */
 #define RMSG_CLOSED  18u
 #define RMSG_WELCOME 20u
 #define REMOTE_VERSION 1u
@@ -38,6 +51,18 @@
 static tiku_draw_window_t *windows[TIKU_DRAW_WINDOWS];
 static uint32_t next_id = 1;
 static int said_hello;
+/*
+ * A desktop has greeted, so it is listening.  Until then a window's open
+ * and its list are held: a board boots and mounts at once, and its
+ * window frames sent into the desktop's busy mount-time namespace reads
+ * are the frames the shared console drops.  The greeting arrives after
+ * the mount, when the line is quiet, and everything is said then.
+ */
+static int greeted;
+
+/** @brief Announce @p win to a listening desktop: its open, then its
+ *         list, then its menus and whether it may be resized. */
+static void announce(tiku_draw_window_t *win);
 
 /*---------------------------------------------------------------------------*/
 /* Bytes out                                                                  */
@@ -182,13 +207,28 @@ tiku_draw_open(tiku_draw_window_t *win, const char *title, int w, int h,
     win->len = 0;
     win->art = 0;
     win->open = 1;
+    (void)payload;
+    /* The open itself waits for the greeting, so it does not race the
+     * desktop's mount; a window opened after the greeting is announced
+     * at once. */
+    if (greeted) {
+        announce(win);
+    }
+    return 0;
+}
+
+/** @brief Send @p win's open message.  Its list follows via present. */
+static void
+send_open(tiku_draw_window_t *win)
+{
+    unsigned char payload[4 + 4 + 4 + 64];
+
     memset(payload, 0, sizeof payload);
     tiku_draw_put32(payload, win->id);
-    tiku_draw_put32(payload + 4, (uint32_t)w);
-    tiku_draw_put32(payload + 8, (uint32_t)h);
-    strncpy((char *)payload + 12, title ? title : "", 63);
+    tiku_draw_put32(payload + 4, (uint32_t)win->w);
+    tiku_draw_put32(payload + 8, (uint32_t)win->h);
+    strncpy((char *)payload + 12, win->title ? win->title : "", 63);
     send_msg(RMSG_OPEN, payload, sizeof payload);
-    return 0;
 }
 
 void
@@ -208,6 +248,207 @@ tiku_draw_close(tiku_draw_window_t *win)
             windows[i] = NULL;
         }
     }
+}
+
+void
+tiku_draw_menus(tiku_draw_window_t *win, const char *text)
+{
+    unsigned char head[4];
+    size_t n = text ? strlen(text) : 0u, i;
+
+    if (win == NULL || !win->open) {
+        return;
+    }
+    win->menus = text;
+    if (!greeted) {
+        return;
+    }
+    tiku_draw_put32(head, win->id);
+    send_begin(RMSG_MENUS_TEXT, (uint32_t)(4u + n));
+    for (i = 0; i < 4u; i++) {
+        escaped(head[i]);
+    }
+    for (i = 0; i < n; i++) {
+        escaped((unsigned char)text[i]);
+    }
+    raw(FR_END);
+}
+
+/** @brief A message about @p win alone: its id, then @p extra words. */
+static void
+about(uint32_t type, const tiku_draw_window_t *win, int32_t extra,
+      int with_extra)
+{
+    unsigned char payload[8];
+
+    if (win == NULL || !win->open) {
+        return;
+    }
+    tiku_draw_put32(payload, win->id);
+    tiku_draw_put32(payload + 4, (uint32_t)extra);
+    send_msg(type, payload, with_extra ? 8u : 4u);
+}
+
+void
+tiku_draw_raise(tiku_draw_window_t *win)
+{
+    about(RMSG_RAISE, win, 0, 0);
+}
+
+void
+tiku_draw_sizeable(tiku_draw_window_t *win)
+{
+    if (win != NULL) {
+        win->sizeable = 1;
+    }
+    if (greeted) {
+        about(RMSG_SIZEABLE, win, 0, 0);
+    }
+}
+
+void
+tiku_draw_place(tiku_draw_window_t *win, int role)
+{
+    about(RMSG_PLACE, win, role, 1);
+}
+
+/*---------------------------------------------------------------------------*/
+/* Messages: the desk's own self-describing shape, the little of it a       */
+/* board says and hears                                                      */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Write one field's head: name, type, one value of @p len. */
+static size_t
+field_head(unsigned char *p, const char *name, uint32_t type, uint32_t len)
+{
+    size_t n = strlen(name);
+
+    tiku_draw_put16(p, (int)n);
+    memcpy(p + 2, name, n);
+    tiku_draw_put32(p + 2 + n, type);
+    tiku_draw_put32(p + 6 + n, 1u);
+    tiku_draw_put32(p + 10 + n, len);
+    return 14u + n;
+}
+
+/** @brief A string field into @p p.  @return bytes written. */
+static size_t
+field_string(unsigned char *p, const char *name, const char *value)
+{
+    size_t len = strlen(value) + 1u;
+    size_t n = field_head(p, name, MSG_T_STRING, (uint32_t)len);
+
+    memcpy(p + n, value, len);
+    return n + len;
+}
+
+/** @brief An int32 field into @p p.  @return bytes written. */
+static size_t
+field_int32(unsigned char *p, const char *name, int32_t value)
+{
+    size_t n = field_head(p, name, MSG_T_INT32, 4u);
+
+    tiku_draw_put32(p + n, (uint32_t)value);
+    return n + 4u;
+}
+
+/** @brief The message head: magic, what, how many fields follow. */
+static size_t
+msg_head(unsigned char *p, uint32_t what, uint32_t fields)
+{
+    tiku_draw_put32(p, MSG_MAGIC);
+    tiku_draw_put32(p + 4, what);
+    tiku_draw_put32(p + 8, fields);
+    return 12u;
+}
+
+void
+tiku_draw_pick(tiku_draw_window_t *win, int mode, const char *start,
+               const char *name)
+{
+    unsigned char m[320];
+    size_t n;
+
+    if (win == NULL || !win->open) {
+        return;
+    }
+    start = start ? start : "/";
+    name = name ? name : "";
+    if (strlen(start) > 120u || strlen(name) > 60u) {
+        return;
+    }
+    n = msg_head(m, WHAT_PICK, 4u);
+    n += field_int32(m + n, "window", (int32_t)win->id);
+    n += field_int32(m + n, "mode", mode);
+    n += field_string(m + n, "start", start);
+    n += field_string(m + n, "name", name);
+    send_msg(RMSG_SAY, m, (uint32_t)n);
+}
+
+void
+tiku_draw_clipboard(const char *text)
+{
+    unsigned char m[200];
+    size_t n;
+
+    text = text ? text : "";
+    if (strlen(text) > 160u) {
+        return;
+    }
+    n = msg_head(m, WHAT_CLIP, 1u);
+    n += field_string(m + n, "text", text);
+    send_msg(RMSG_SAY, m, (uint32_t)n);
+}
+
+/**
+ * @brief Find a field by name in a flattened message and copy its first
+ *        value out.  @return the value's length, or -1.
+ */
+static int
+msg_find(const unsigned char *m, size_t len, const char *name, uint32_t type,
+         unsigned char *out, size_t max)
+{
+    size_t at = 12u, want = strlen(name);
+    uint32_t fields, f;
+
+    if (len < 12u || get32(m) != MSG_MAGIC) {
+        return -1;
+    }
+    fields = get32(m + 8);
+    for (f = 0; f < fields && at + 2u <= len; f++) {
+        size_t nlen = (size_t)m[at] | ((size_t)m[at + 1] << 8);
+        const unsigned char *fname = m + at + 2;
+        uint32_t ftype, count, v;
+
+        at += 2u + nlen;
+        if (at + 8u > len) {
+            return -1;
+        }
+        ftype = get32(m + at);
+        count = get32(m + at + 4);
+        at += 8u;
+        for (v = 0; v < count; v++) {
+            uint32_t vlen;
+
+            if (at + 4u > len) {
+                return -1;
+            }
+            vlen = get32(m + at);
+            at += 4u;
+            if (at + vlen > len) {
+                return -1;
+            }
+            if (v == 0u && nlen == want && memcmp(fname, name, want) == 0 &&
+                ftype == type) {
+                size_t n = (vlen < max) ? vlen : max;
+
+                memcpy(out, m + at, n);
+                return (int)n;
+            }
+            at += vlen;
+        }
+    }
+    return -1;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -288,6 +529,26 @@ tiku_draw_text_ascent(tiku_draw_face_t face)
     return metrics(face)[1];
 }
 
+/**
+ * @brief Everything about @p win a fresh desktop must be told: its open,
+ *        its list, its menus and its resize.  The menus and the resize
+ *        are remembered on the window so they can be said again here.
+ */
+static void
+announce(tiku_draw_window_t *win)
+{
+    send_open(win);
+    if (win->len > 0u) {
+        (void)tiku_draw_present(win);   /* a window already painted */
+    }
+    if (win->menus != NULL) {
+        tiku_draw_menus(win, win->menus);
+    }
+    if (win->sizeable) {
+        tiku_draw_sizeable(win);
+    }
+}
+
 int
 tiku_draw_present(tiku_draw_window_t *win)
 {
@@ -296,6 +557,9 @@ tiku_draw_present(tiku_draw_window_t *win)
 
     if (win == NULL || !win->open) {
         return -1;
+    }
+    if (!greeted) {
+        return 0;                       /* held until a desktop greets */
     }
     /* The frame is written straight out, the list after its head, so a
      * list as large as the program's buffer needs no second copy. */
@@ -388,30 +652,72 @@ take_message(const unsigned char *msg, size_t len)
         memcpy(e.text, r + 32, 7);
         e.x = (int)(int32_t)get32(r + 40);
         e.y = (int)(int32_t)get32(r + 44);
+        e.dy = (int)(int32_t)get32(r + 52);
+        e.w = (int)(int32_t)get32(r + 56);
+        e.h = (int)(int32_t)get32(r + 60);
+        if (e.kind == TIKU_DRAW_RESIZE && e.w > 0 && e.h > 0) {
+            win->w = e.w;
+            win->h = e.h;
+        }
         push(win, &e);
+    } else if (type == RMSG_PICK && plen >= 8u) {
+        win = window_of(get32(p));
+        if (win == NULL) {
+            return;
+        }
+        memset(&e, 0, sizeof e);
+        e.kind = TIKU_DRAW_PICK;
+        e.command = (int)(int32_t)get32(p + 4);
+        push(win, &e);
+    } else if (type == RMSG_TELL && plen >= 12u) {
+        /* The desk answering: a picked path for the window that asked,
+         * or the clipboard's new text, told to every window. */
+        uint32_t what = get32(p + 4);
+        unsigned char path[96];
+        unsigned char wid[4];
+        int n, i;
+
+        memset(&e, 0, sizeof e);
+        if (what == WHAT_PICKED) {
+            n = msg_find(p, plen, "path", MSG_T_STRING, path, sizeof path - 1);
+            if (n < 0 || msg_find(p, plen, "window", MSG_T_INT32, wid, 4) < 0) {
+                return;
+            }
+            win = window_of(get32(wid));
+            if (win == NULL) {
+                return;
+            }
+            path[n] = '\0';
+            e.kind = TIKU_DRAW_PICKED;
+            memcpy(e.path, path, (size_t)n + 1u);
+            push(win, &e);
+        } else if (what == WHAT_CLIP) {
+            n = msg_find(p, plen, "text", MSG_T_STRING, path, sizeof path - 1);
+            if (n < 0) {
+                return;
+            }
+            path[n] = '\0';
+            e.kind = TIKU_DRAW_CLIP;
+            memcpy(e.path, path, (size_t)n + 1u);
+            for (i = 0; i < TIKU_DRAW_WINDOWS; i++) {
+                if (windows[i] != NULL && windows[i]->open) {
+                    push(windows[i], &e);
+                }
+            }
+        }
     } else if (type == RMSG_WELCOME && plen >= 8u &&
                (get32(p + 4) & 0x80000000u) != 0u) {
-        /* A desktop arrived, or came back, and invites: everything drawn
-         * before it was listening is said again.  Its reply to the hello
-         * is a WELCOME too, without the invitation, and passes. */
+        /* A desktop arrived, or came back, and invites: every open
+         * window is announced now, when the line is quiet enough for its
+         * frames to land -- an open, a list, the menus and the resize. */
         int i;
 
-        tiku_draw_hello("board");
+        greeted = 1;
         for (i = 0; i < TIKU_DRAW_WINDOWS; i++) {
             tiku_draw_window_t *w = windows[i];
 
             if (w != NULL && w->open) {
-                unsigned char payload[4 + 4 + 4 + 64];
-
-                memset(payload, 0, sizeof payload);
-                tiku_draw_put32(payload, w->id);
-                tiku_draw_put32(payload + 4, (uint32_t)w->w);
-                tiku_draw_put32(payload + 8, (uint32_t)w->h);
-                strncpy((char *)payload + 12, w->title ? w->title : "", 63);
-                send_msg(RMSG_OPEN, payload, sizeof payload);
-                (void)tiku_draw_present(w);
-                /* And the owner is told, so it may draw the window as
-                 * it is now rather than as it was last presented. */
+                announce(w);
                 memset(&e, 0, sizeof e);
                 e.kind = TIKU_DRAW_SESSION;
                 push(w, &e);
