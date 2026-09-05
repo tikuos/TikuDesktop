@@ -24,8 +24,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief The longest a score may render to, in seconds. */
-#define TIKU_SCORE_MAX_S 3u
+/**
+ * @brief The longest a clip may be, in seconds: room for a dropped-in
+ *        file, and a bound on what one rendering may take.
+ */
+#define TIKU_SCORE_MAX_S 30u
 
 /**
  * @brief How many frames @p text renders to at @p rate, without rendering.

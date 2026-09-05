@@ -526,6 +526,24 @@ tiku_fonts_dir(char *out, size_t max)
     return out;
 }
 
+const char *
+tiku_sounds_dir(char *out, size_t max)
+{
+    const char *set = getenv("TIKU_SOUNDS");
+    const char *home = getenv("HOME");
+
+    if (out == NULL || max == 0u) {
+        return out;
+    }
+    if (set != NULL && set[0] != '\0') {
+        snprintf(out, max, "%s", set);
+        return out;
+    }
+    snprintf(out, max, "%s/.config/tracker/sounds",
+             (home != NULL && home[0] != '\0') ? home : "");
+    return out;
+}
+
 int
 tiku_state_mkparents(const char *path)
 {

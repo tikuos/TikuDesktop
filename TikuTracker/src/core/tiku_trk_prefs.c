@@ -19,30 +19,31 @@
 #define B TIKU_TRK_PREF_BOOL
 #define I TIKU_TRK_PREF_INT
 #define C TIKU_TRK_PREF_COLOUR
+#define T TIKU_TRK_PREF_TEXT
 
 /** @brief Every setting, with the name it has in the file. */
 static const tiku_trk_pref_t table[] = {
     /* On: ONE way in to the machine's filesystem, for when a person
      * wants it.  The volumes themselves stay off, or the Desktop
      * becomes a view of the host again. */
-    { "ShowDisksIcon",           B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
+    { "ShowDisksIcon",           B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
     /* Off: this Desktop is a device's, and the machine's volumes are
      * not what it is for.  The Preferences page still offers them. */
-    { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 0, 0, 0 },
-    { "MountSharedVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
-    { "IntegrateNonBootBeOSDesktops", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0 },
+    { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 0, 0, 0, "" },
+    { "MountSharedVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
+    { "IntegrateNonBootBeOSDesktops", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
     /* Last on its page so the rows above it keep their places. */
     { "SelectedLabelColor",      C, TIKU_TRK_PAGE_DESKTOP,
-      (int32_t)0xc01a3350, 0, 0 },
-    { "ShowFullPathInTitleBar",  B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
-    { "SingleWindowBrowse",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
-    { "ShowNavigator",           B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
-    { "ShowSelectionWhenInactive", B, TIKU_TRK_PAGE_NONE,  1, 0, 0 },
-    { "TransparentSelection",    B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
-    { "SortFolderNamesFirst",    B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
-    { "HideDotFiles",            B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
-    { "TypeAheadFiltering",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
-    { "GenerateImageThumbnails", B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
+      (int32_t)0xc01a3350, 0, 0, "" },
+    { "ShowFullPathInTitleBar",  B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
+    { "SingleWindowBrowse",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
+    { "ShowNavigator",           B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
+    { "ShowSelectionWhenInactive", B, TIKU_TRK_PAGE_NONE,  1, 0, 0, "" },
+    { "TransparentSelection",    B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0, "" },
+    { "SortFolderNamesFirst",    B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0, "" },
+    { "HideDotFiles",            B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
+    { "TypeAheadFiltering",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
+    { "GenerateImageThumbnails", B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0, "" },
     /* Not a Haiku setting: the theme swap the toolkit's table makes
      * possible.  Appended so every row above keeps its place.
      *
@@ -51,36 +52,46 @@ static const tiku_trk_pref_t table[] = {
      * written in everybody's settings file and 0 and 1 still mean what
      * they meant -- see the read path, which also still answers to the
      * word "on" that a file written by an older build says. */
-    { "DarkMode",                I, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0 },
+    { "DarkMode",                I, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
     /* Not a Haiku setting either: one menu bar at the top of the screen,
      * fed by whatever the focused window publishes. */
-    { "GlobalMenuBar",           B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0 },
-    { "ShowVolumeSpaceBar",      B, TIKU_TRK_PAGE_VOLUMES, 0, 0, 0 },
+    { "GlobalMenuBar",           B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0, "" },
+    { "ShowVolumeSpaceBar",      B, TIKU_TRK_PAGE_VOLUMES, 0, 0, 0, "" },
     { "UsedSpaceColor",          C, TIKU_TRK_PAGE_VOLUMES,
-      (int32_t)0xc000cb00, 0, 0 },
+      (int32_t)0xc000cb00, 0, 0, "" },
     { "FreeSpaceColor",          C, TIKU_TRK_PAGE_VOLUMES,
-      (int32_t)0xc0c0cbc0, 0, 0 },
+      (int32_t)0xc0c0cbc0, 0, 0, "" },
     { "WarningSpaceColor",       C, TIKU_TRK_PAGE_VOLUMES,
-      (int32_t)0xc0cb0000, 0, 0 },
-    { "EjectWhenUnmounting",     B, TIKU_TRK_PAGE_MOUNT,   1, 0, 0 },
-    { "AutoMount",               B, TIKU_TRK_PAGE_MOUNT,   0, 0, 0 },
-    { "RecentApplications",      I, TIKU_TRK_PAGE_NONE,   10, 0, 0 },
-    { "RecentDocuments",         I, TIKU_TRK_PAGE_NONE,   10, 0, 0 },
-    { "RecentFolders",           I, TIKU_TRK_PAGE_NONE,   10, 0, 0 },
+      (int32_t)0xc0cb0000, 0, 0, "" },
+    { "EjectWhenUnmounting",     B, TIKU_TRK_PAGE_MOUNT,   1, 0, 0, "" },
+    { "AutoMount",               B, TIKU_TRK_PAGE_MOUNT,   0, 0, 0, "" },
+    { "RecentApplications",      I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
+    { "RecentDocuments",         I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
+    { "RecentFolders",           I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
     /* No control of their own, and still read and written so an older
      * file round-trips rather than losing them (TS-062). */
-    { "DesktopFilePanelRoot",    B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
+    { "DesktopFilePanelRoot",    B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
     /* The moments that sound (tiku_trk_soundprefs.h): the chime, the
      * beep and the closing sound on; the window ticks off, being many. */
-    { "sound.startup",           B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
-    { "sound.beep",              B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
-    { "sound.window-open",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
-    { "sound.window-close",      B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
-    { "sound.window-minimize",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
-    { "sound.window-zoom",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
-    { "sound.window-activate",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
-    { "sound.shutdown",          B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
-    { "sound.volume",            I, TIKU_TRK_PAGE_NONE,   80, 0, 0 }
+    { "sound.startup",           B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
+    { "sound.beep",              B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
+    { "sound.window-open",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-close",      B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-minimize",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-zoom",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-activate",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.shutdown",          B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
+    { "sound.volume",            I, TIKU_TRK_PAGE_NONE,   80, 0, 0, "" },
+    /* A file from the sounds folder in place of the baked score; ""
+     * is the baked one. */
+    { "sound.startup.clip",      T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.beep.clip",         T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-open.clip",  T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-close.clip", T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-minimize.clip", T, TIKU_TRK_PAGE_NONE, 0, 0, 0, "" },
+    { "sound.window-zoom.clip",  T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "sound.window-activate.clip", T, TIKU_TRK_PAGE_NONE, 0, 0, 0, "" },
+    { "sound.shutdown.clip",     T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" }
 };
 
 #define NPREF ((int)(sizeof table / sizeof table[0]))
@@ -206,6 +217,26 @@ tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v)
     }
 }
 
+const char *
+tiku_trk_prefs_text(tiku_trk_prefs_t *p, const char *name)
+{
+    tiku_trk_pref_t *f = tiku_trk_prefs_find(p, name);
+
+    return (f != NULL && f->type == TIKU_TRK_PREF_TEXT) ? f->text : "";
+}
+
+void
+tiku_trk_prefs_set_text(tiku_trk_prefs_t *p, const char *name,
+                        const char *text)
+{
+    tiku_trk_pref_t *f = tiku_trk_prefs_find(p, name);
+
+    if (f == NULL || f->type != TIKU_TRK_PREF_TEXT) {
+        return;
+    }
+    snprintf(f->text, sizeof f->text, "%s", (text != NULL) ? text : "");
+}
+
 int
 tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
                                const tiku_trk_pref_t *pref)
@@ -273,7 +304,15 @@ tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path)
             keep_unknown(p, line);
             continue;
         }
-        if (pr->type == TIKU_TRK_PREF_BOOL) {
+        if (pr->type == TIKU_TRK_PREF_TEXT) {
+            /* The rest of the line, spaces and all: a file's name. */
+            const char *rest = line + strlen(name);
+
+            while (*rest == ' ' || *rest == '\t') {
+                rest++;
+            }
+            snprintf(pr->text, sizeof pr->text, "%s", rest);
+        } else if (pr->type == TIKU_TRK_PREF_BOOL) {
             pr->value = (strcmp(val, "on") == 0);
         } else if (pr->type == TIKU_TRK_PREF_COLOUR) {
             pr->value = (int32_t)strtoul(val, NULL, 0);
@@ -321,6 +360,12 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
          * it (this happened -- the global bar's default flipped on and
          * old files kept saying off).  A divergence is a decision and is
          * written down; agreement is not. */
+        if (pr->type == TIKU_TRK_PREF_TEXT) {
+            if (pr->text[0] != '\0') {
+                fprintf(f, "%s %s\n", pr->name, pr->text);
+            }
+            continue;
+        }
         if (pr->value == pr->def) {
             continue;
         }

@@ -172,6 +172,13 @@ tiku_sound_volume(void)
     return sound.volume;
 }
 
+size_t
+tiku_sound_frames(tiku_sound_event_t event)
+{
+    return (event >= 0 && event < TIKU_SOUND_EVENTS)
+               ? sound.clip[event].frames : 0u;
+}
+
 int
 tiku_sound_playing(void)
 {

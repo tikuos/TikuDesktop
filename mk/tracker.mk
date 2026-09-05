@@ -230,8 +230,6 @@ test_color_SRCS   := $(T)/src/core/tiku_trk_color.c
 test_addon_SRCS   := $(T)/src/shell/tiku_trk_addon.c
 test_state_pipeline_SRCS   := $(T)/src/core/tiku_trk_state_pipeline.c
 test_model_SRCS   := $(COMMON)
-test_sound_LDLIBS := -lm
-test_score_LDLIBS := -lm
 test_poseview_SRCS   := $(COMMON) $(POSEVIEW)
 test_fs_SRCS   := $(COMMON)
 test_types_SRCS   := $(COMMON)
@@ -242,10 +240,6 @@ test_notify_SRCS   := $(POSEVIEW) $(T)/src/core/tiku_trk_match.c $(T)/src/core/t
 test_title_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/ui/tiku_trk_titleview.c
 test_match_SRCS   := $(T)/src/core/tiku_trk_match.c
 test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
-test_deskbar_dock_LDLIBS := -lm
-test_text_LDLIBS := -lm
-test_ttf_LDLIBS := -lm
-test_cff_LDLIBS := -lm
 test_fontprefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/deskbar/tiku_trk_fontprefs.c
 test_soundprefs_SRCS  := $(T)/src/core/tiku_trk_prefs.c $(T)/src/core/tiku_trk_soundprefs.c
 test_deskbar_prefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
@@ -259,7 +253,6 @@ test_nodeicon_SRCS   := $(COMMON)
 test_navmenu_SRCS   := $(COMMON)
 test_navigator_SRCS   := $(T)/src/ui/tiku_trk_navigator.c
 test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/ui/tiku_trk_shortcuts.c
-test_dbdrop_LDLIBS := -lm
 test_switcher_SRCS   := $(T)/src/core/tiku_trk_switcher.c
 test_deskicons_SRCS   := $(COMMON) $(T)/src/deskbar/tiku_trk_deskicons.c $(POSEVIEW)
 test_scripting_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/shell/tiku_trk_script_api.c
@@ -273,31 +266,20 @@ test_drag_SRCS   := $(T)/src/core/tiku_trk_drag.c
 test_clip_SRCS   := $(T)/src/core/tiku_trk_clip.c
 test_edit_SRCS   := $(T)/src/core/tiku_trk_select.c $(T)/src/core/tiku_trk_match.c
 test_menu_SRCS   := $(T)/src/ui/tiku_trk_shortcuts.c $(T)/src/ui/tiku_trk_cwmenu.c
-test_crossmount_LDLIBS := -lm
-test_mount_LDLIBS := -lm
 test_splash_SRCS   := $(T)/src/shell/tiku_trk_splash.c
-test_splash_LDLIBS := -lm
-test_logo_LDLIBS := -lm
-test_dl_LDLIBS := -lm
-test_theme_LDLIBS := -lm
-test_metrics_LDLIBS := -lm
-test_remote_LDLIBS := -lm
 test_conduct_LDLIBS := -lX11 -lm
 test_client_wake_LDLIBS := -lX11 -lm
 test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := -lX11 -lm -lrt
-test_hvif_LDLIBS := -lm
 test_deskprefs_SRCS   := $(T)/src/core/tiku_trk_deskprefs.c $(T)/src/core/tiku_trk_background.c
-test_deskprefs_LDLIBS := -lm
-test_icondir_LDLIBS := -lm
 
 # The one link rule.  A test's object, the objects of the sources it
 # names, the kits, and its own libraries.
 .SECONDEXPANSION:
 $(BUILD)/tests/test_%: $(OBJ)/$(T)/tests/test_%.o $$(call objs,$$(test_$$*_SRCS)) $(DESK_LIBS) | $(BUILD)/tests
 	$(CC) $(CFLAGS) -o $@ $(OBJ)/$(T)/tests/test_$*.o $(call objs,$(test_$*_SRCS)) \
-	      $(DESK_LIBS) $(LDFLAGS) $(test_$*_LDLIBS)
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
 .PHONY: tests
 tests: $(TESTBINS)

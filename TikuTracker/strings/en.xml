@@ -91,6 +91,8 @@
   <string name="prefs.sounds.event">Sound</string>
   <string name="prefs.sounds.volume">Volume</string>
   <string name="button.test">Test</string>
+  <string name="sound.builtin">Built-in</string>
+  <string name="sound.choose">...</string>
   <string name="sound.startup">Startup chime</string>
   <string name="sound.beep">Beep</string>
   <string name="sound.window-open">Window opened</string>

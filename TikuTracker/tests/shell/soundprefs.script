@@ -1,6 +1,8 @@
 # shell: desktop
 # The moments that sound are preferences: a row per moment with its
-# on/off and a Test button, and one volume under them.  A press applies
+# on/off, the sound it plays and a Test button, and one volume under
+# them.  A file dropped in the sounds folder is offered beside the baked
+# sound and chosen by pressing the row's name.  A press applies
 # at once and is written to the settings file as a sound.<event> line;
 # Test sounds a moment whether or not its row is on; Revert puts back
 # what the window opened on.  A scripted run is mute, so the shell's own
@@ -8,6 +10,8 @@
 wait 15
 key w ctrl
 wait 5
+note a score dropped in the sounds folder is offered beside the baked one
+write /tmp/trk_home/.config/tracker/sounds/ping.score note 880 60 0.4
 click 980 20
 wait 4
 menu-pick Settings
@@ -19,31 +23,64 @@ expect-sound-on beep
 expect-sound-off window-zoom
 expect-volume 80
 note a checkbox applies at once and is saved -- there is no OK button
-click 341 205
+click 292 205
 wait 5
 expect-sound-off beep
 expect-file-has /tmp/trk_home/.config/TrackerSettings sound.beep off
-click 341 305
+click 292 305
 wait 5
 expect-sound-on window-zoom
 expect-file-has /tmp/trk_home/.config/TrackerSettings sound.window-zoom on
 note Test sounds a moment that is off, without turning it on
-click 632 330
+click 682 330
 wait 5
 expect-sound window-activate
 expect-sound-off window-activate
-note the volume moves a step at a time
-click 408 391
+note pressing a row's sound name moves to the next file on offer, and
+note plays it; past the last file it is the baked sound again
+click 543 205
+wait 8
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.beep.clip ping.score
+expect-sound beep
+click 543 205
 wait 5
-expect-volume 70
-expect-file-has /tmp/trk_home/.config/TrackerSettings sound.volume 70
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings sound.beep.clip
+note a file from anywhere: the row's "..." puts the file panel up, and
+note the file chosen is copied into the sounds folder and chosen there
+write /tmp/trk_home/tick.score note 1200 40 0.4
+click 642 205
+wait 12
+expect-title Open
+click 338 200
+wait 4
+click 676 413
+wait 12
+expect-no-title Open
+expect-file /tmp/trk_home/.config/tracker/sounds/tick.score
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.beep.clip tick.score
+expect-sound beep
+note the volume is a slider: a press on the track puts the knob there
+click 507 391
+wait 5
+expect-volume 50
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.volume 50
+note and the knob follows the hand until it lets go
+press 507 391
+wait 2
+move 600 391
+wait 2
+release 600 391
+wait 5
+expect-volume 77
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.volume 77
 shot /tmp/trk_soundprefs.png
 note Revert puts back what the window opened on; a default is not
 note written down, so the file stops saying off rather than saying on
-click 508 431
+click 459 431
 wait 5
 expect-sound-on beep
 expect-sound-off window-zoom
 expect-volume 80
 expect-file-lacks /tmp/trk_home/.config/TrackerSettings sound.beep off
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings sound.beep.clip
 quit

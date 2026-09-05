@@ -116,6 +116,19 @@ int tiku_sound_load_scores(void);
 /** @brief The score text baked for @p event, or NULL. */
 const char *tiku_sound_score(tiku_sound_event_t event);
 
+/** @brief Give @p event its baked score again.  @return 1 when it has one. */
+int tiku_sound_load_score(tiku_sound_event_t event);
+
+/**
+ * @brief Give @p event the sound in @p path instead: a .score is rendered,
+ *        a .wav is read (tiku_wav.h).  @return 1 when the clip changed;
+ *        0 leaves whatever it had.
+ */
+int tiku_sound_load_file(tiku_sound_event_t event, const char *path);
+
+/** @brief How many frames @p event's clip has, 0 for none. */
+size_t tiku_sound_frames(tiku_sound_event_t event);
+
 /**
  * @brief The host backend: the PulseAudio simple API, opened at run time.
  *

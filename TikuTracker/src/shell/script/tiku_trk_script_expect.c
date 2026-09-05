@@ -10,6 +10,7 @@
  */
 
 #include "tiku_trk_script_private.h"
+#include "tiku_state.h"
 
 /**
  * @brief files on disk: their bits, their presence, and writing or removing
@@ -56,7 +57,10 @@ sc_pump_file_state(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         sc_verdict(s, !sc_there(cur->text), "gone:", cur->text);
         return 1;
     case OP_WRITE: {
-        FILE *f = fopen(cur->text, "w");
+        FILE *f;
+
+        (void)tiku_state_mkparents(cur->text);
+        f = fopen(cur->text, "w");
 
         if (f != NULL) {
             (void)fputs(cur->text2, f);

@@ -73,7 +73,7 @@ main(void)
           "so does a verb it does not know");
     check(tiku_score_frames("wave sine\n# nothing\n", TIKU_SOUND_RATE) == 0u,
           "and a score with no note is no score");
-    check(tiku_score_frames("wave sine\nnote 440 9000 0.5\n", TIKU_SOUND_RATE)
+    check(tiku_score_frames("wave sine\nnote 440 40000 0.5\n", TIKU_SOUND_RATE)
               == TIKU_SOUND_RATE * TIKU_SCORE_MAX_S,
           "a score longer than the bound is cut at it");
 

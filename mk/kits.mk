@@ -57,7 +57,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c $(K)/translation/tiku_fontdir.c
 MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c \
-               $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c
+               $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c \
+               $(K)/media/tiku_wav.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \

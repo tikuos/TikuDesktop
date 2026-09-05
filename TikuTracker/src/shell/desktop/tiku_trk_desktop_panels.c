@@ -632,6 +632,11 @@ fpanel_commit(void *context, void *target, int command,
         deliver_pick(app, destination);
         return;
     }
+    if (command == TIKU_TRK_CMD_CHOOSE_SOUND && destination != NULL) {
+        tiku_trk_sounds_window_chosen(&app->sounds_window, app->sound_pick,
+                                      destination);
+        return;
+    }
     if (command == TIKU_TRK_CMD_ADD_SCOPE && destination != NULL) {
         /* The chosen folder becomes a place and the search is scoped to
          * it at once (Q-019). */
@@ -696,6 +701,21 @@ find_select_folder(void *context)
 
     tiku_trk_panel_window_open(&app->file_panel, app,
                                TIKU_TRK_CMD_ADD_SCOPE, "/");
+}
+
+/** @brief The Sounds window's "…": any file at all for @p event. */
+void
+sound_choose(void *context, tiku_sound_event_t event)
+{
+    desktop_t *app = context;
+    const char *home = getenv("HOME");
+
+    app->sound_pick = event;
+    tiku_trk_panel_window_open_file(&app->file_panel, &app->sounds_window,
+                                    TIKU_TRK_CMD_CHOOSE_SOUND,
+                                    (home != NULL && home[0] != '\0')
+                                        ? home : "/",
+                                    NULL);
 }
 
 /** @brief Find's Save with nowhere attached: ask WHERE with the panel. */

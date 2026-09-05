@@ -15,10 +15,14 @@
 #include "tiku_sound.h"
 #include "tiku_score.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "tiku_scores_default.h"
+#include "tiku_wav.h"
+
+#define SCORE_FILE_MAX 4096
 
 static int16_t *rendered[TIKU_SOUND_EVENTS];
 
@@ -36,33 +40,106 @@ score_text(const char *name)
     return NULL;
 }
 
+/** @brief Hand @p event the buffer @p pcm, freeing the one before. */
+static void
+take(tiku_sound_event_t event, int16_t *pcm, size_t frames)
+{
+    if (tiku_sound_playing()) {
+        /* The clip in flight may be the one being replaced. */
+        tiku_sound_set_clip(event, NULL, 0);
+    }
+    free(rendered[event]);
+    rendered[event] = pcm;
+    tiku_sound_set_clip(event, pcm, frames);
+}
+
+int
+tiku_sound_load_score(tiku_sound_event_t event)
+{
+    const char *text;
+    int16_t *pcm;
+    size_t frames;
+
+    if (event < 0 || event >= TIKU_SOUND_EVENTS) {
+        return 0;
+    }
+    text = score_text(tiku_sound_name(event));
+    frames = (text != NULL) ? tiku_score_frames(text, TIKU_SOUND_RATE) : 0;
+    if (frames == 0) {
+        take(event, NULL, 0);
+        return 0;
+    }
+    pcm = malloc(frames * sizeof *pcm);
+    if (pcm == NULL) {
+        return 0;
+    }
+    frames = tiku_score_render(text, TIKU_SOUND_RATE, pcm, frames);
+    take(event, pcm, frames);
+    return 1;
+}
+
 int
 tiku_sound_load_scores(void)
 {
     int i, loaded = 0;
 
     for (i = 0; i < TIKU_SOUND_EVENTS; i++) {
-        const char *text = score_text(tiku_sound_name((tiku_sound_event_t)i));
-        size_t frames;
-
-        free(rendered[i]);
-        rendered[i] = NULL;
-        if (text == NULL) {
-            continue;
-        }
-        frames = tiku_score_frames(text, TIKU_SOUND_RATE);
-        if (frames == 0) {
-            continue;
-        }
-        rendered[i] = malloc(frames * sizeof(int16_t));
-        if (rendered[i] == NULL) {
-            continue;
-        }
-        frames = tiku_score_render(text, TIKU_SOUND_RATE, rendered[i], frames);
-        tiku_sound_set_clip((tiku_sound_event_t)i, rendered[i], frames);
-        loaded++;
+        loaded += tiku_sound_load_score((tiku_sound_event_t)i);
     }
     return loaded;
+}
+
+/** @brief The whole of @p path as text, malloc'd, or NULL. */
+static char *
+slurp(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    char *text;
+    size_t n;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    text = malloc(SCORE_FILE_MAX + 1);
+    if (text == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    n = fread(text, 1, SCORE_FILE_MAX, f);
+    fclose(f);
+    text[n] = '\0';
+    return text;
+}
+
+int
+tiku_sound_load_file(tiku_sound_event_t event, const char *path)
+{
+    const char *dot;
+    int16_t *pcm = NULL;
+    size_t frames = 0;
+
+    if (event < 0 || event >= TIKU_SOUND_EVENTS || path == NULL) {
+        return 0;
+    }
+    dot = strrchr(path, '.');
+    if (dot != NULL && strcmp(dot, ".wav") == 0) {
+        pcm = tiku_wav_read(path, TIKU_SOUND_RATE, TIKU_SCORE_MAX_S, &frames);
+    } else if (dot != NULL && strcmp(dot, ".score") == 0) {
+        char *text = slurp(path);
+
+        frames = (text != NULL) ? tiku_score_frames(text, TIKU_SOUND_RATE) : 0;
+        pcm = (frames > 0) ? malloc(frames * sizeof *pcm) : NULL;
+        if (pcm != NULL) {
+            frames = tiku_score_render(text, TIKU_SOUND_RATE, pcm, frames);
+        }
+        free(text);
+    }
+    if (pcm == NULL || frames == 0) {
+        free(pcm);
+        return 0;
+    }
+    take(event, pcm, frames);
+    return 1;
 }
 
 const char *

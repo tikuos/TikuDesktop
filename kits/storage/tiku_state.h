@@ -176,4 +176,10 @@ const char *tiku_desktop_dir(char *out, size_t max);
  */
 const char *tiku_fonts_dir(char *out, size_t max);
 
+/**
+ * @brief Where sounds dropped in live: $TIKU_SOUNDS, else under the
+ *        Tracker's own folder, beside the fonts.
+ */
+const char *tiku_sounds_dir(char *out, size_t max);
+
 #endif /* TIKU_STATE_H_ */

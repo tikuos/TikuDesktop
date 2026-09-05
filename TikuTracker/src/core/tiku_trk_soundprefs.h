@@ -18,6 +18,13 @@
 #include "tiku_trk_prefs.h"
 
 #define TIKU_TRK_SOUND_VOLUME_STEP 10
+#define TIKU_TRK_SOUND_OFFER_MAX 24
+
+/** @brief The files in the sounds folder, by name, in order. */
+typedef struct {
+    char name[TIKU_TRK_SOUND_OFFER_MAX][TIKU_TRK_PREF_TEXT_MAX];
+    int  count;
+} tiku_trk_soundprefs_offer_t;
 
 /** @brief The setting's name for @p event: "sound." and the kit's name. */
 const char *tiku_trk_soundprefs_key(tiku_sound_event_t event);
@@ -38,6 +45,33 @@ int tiku_trk_soundprefs_volume(tiku_trk_prefs_t *prefs);
  * @return 1 when it moved, 0 at either end.
  */
 int tiku_trk_soundprefs_step_volume(tiku_trk_prefs_t *prefs, int up);
+
+/** @brief The setting naming @p event's clip: "sound.<name>.clip". */
+const char *tiku_trk_soundprefs_clip_key(tiku_sound_event_t event);
+
+/** @brief The file @p event plays from the sounds folder, "" for baked. */
+const char *tiku_trk_soundprefs_clip(tiku_trk_prefs_t *prefs,
+                                     tiku_sound_event_t event);
+
+/** @brief Name the file @p event plays; "" or NULL means the baked one. */
+void tiku_trk_soundprefs_set_clip(tiku_trk_prefs_t *prefs,
+                                  tiku_sound_event_t event,
+                                  const char *name);
+
+/**
+ * @brief The .score and .wav files in the sounds folder (tiku_sounds_dir),
+ *        sorted.  @return how many.
+ */
+int tiku_trk_soundprefs_offer(tiku_trk_soundprefs_offer_t *out);
+
+/**
+ * @brief Move @p event to the next choice: the baked sound, then each
+ *        file on offer, then the baked sound again.
+ * @return 1 when it changed, 0 with nothing on offer.
+ */
+int tiku_trk_soundprefs_cycle_clip(tiku_trk_prefs_t *prefs,
+                                   const tiku_trk_soundprefs_offer_t *offer,
+                                   tiku_sound_event_t event);
 
 /** @brief Whether any sound setting differs from its default. */
 int tiku_trk_soundprefs_defaultable(tiku_trk_prefs_t *prefs);

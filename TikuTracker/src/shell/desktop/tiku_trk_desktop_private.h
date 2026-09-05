@@ -372,6 +372,7 @@ typedef struct desktop {
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
     tiku_trk_sounds_window_t        sounds_window;          /* the moments */
+    tiku_sound_event_t sound_pick;  /* the moment the file panel is for */
     tiku_window_t *sound_focused;   /* the front window last turn */
     int            sound_windows;   /* how many were open last turn */
     /* The settings as last pushed to the windows, so a change is applied
@@ -654,6 +655,7 @@ tiku_window_t *apply_select_model(void *context, void *target,
 void build_open_with(desktop_t *app, folder_t *fl);
 void find_save_as(void *context);
 void find_select_folder(void *context);
+void sound_choose(void *context, tiku_sound_event_t event);
 void fpanel_commit(void *context, void *target, int command,
                    const char *destination);
 void fpanel_open(desktop_t *app, folder_t *folder, int command);

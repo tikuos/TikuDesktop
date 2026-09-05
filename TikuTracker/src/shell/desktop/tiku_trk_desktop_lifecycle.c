@@ -624,7 +624,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
             DESK_W, DESK_H, path, &app->dirty,
             &alert_model(app)->open);
         tiku_trk_sounds_window_init(&app->sounds_window, app->desk,
-            prefs_model(app), path, DESK_W, DESK_H, &app->dirty);
+            prefs_model(app), path, DESK_W, DESK_H, &app->dirty,
+            sound_choose, app);
         /* The chime has played by now on the kit's own defaults; from
          * here the settings file says which moments sound. */
         tiku_trk_soundprefs_apply(prefs_model(app));

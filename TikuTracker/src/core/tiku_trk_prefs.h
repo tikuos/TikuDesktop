@@ -34,8 +34,11 @@ typedef enum {
 typedef enum {
     TIKU_TRK_PREF_BOOL = 0,
     TIKU_TRK_PREF_INT,
-    TIKU_TRK_PREF_COLOUR
+    TIKU_TRK_PREF_COLOUR,
+    TIKU_TRK_PREF_TEXT          /* a name; "" is the default            */
 } tiku_trk_pref_type_t;
+
+#define TIKU_TRK_PREF_TEXT_MAX 64
 
 /** @brief One setting: its name in the file, its page, and three values. */
 typedef struct {
@@ -45,6 +48,7 @@ typedef struct {
     int32_t              def;       /* the compiled-in default            */
     int32_t              value;     /* what it is now                     */
     int32_t              opened;    /* what it was when the window opened */
+    char                 text[TIKU_TRK_PREF_TEXT_MAX]; /* a TEXT's value */
 } tiku_trk_pref_t;
 
 /** @brief Every setting, plus whatever an older file carried. */
@@ -71,6 +75,11 @@ tiku_trk_pref_t *tiku_trk_prefs_find(tiku_trk_prefs_t *p, const char *name);
 int32_t tiku_trk_prefs_get(tiku_trk_prefs_t *p, const char *name);
 /** @brief Set @p name, then the interlocks that follow from it. */
 void tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v);
+/** @brief A TEXT setting's value, "" when unset or not a TEXT. */
+const char *tiku_trk_prefs_text(tiku_trk_prefs_t *p, const char *name);
+/** @brief Set a TEXT setting; NULL or "" puts it back to the default. */
+void tiku_trk_prefs_set_text(tiku_trk_prefs_t *p, const char *name,
+                             const char *text);
 
 /** @brief Whether a control answers clicks, by the interlocks (TS-046). */
 int tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,

@@ -330,8 +330,13 @@ if (ev->button == 1u &&
     {
         tiku_window_t *sounds =
             tiku_trk_sounds_window_handle(&app->sounds_window);
+        tiku_window_t *under = NULL;
 
-        if (sounds != NULL && sounds->open &&
+        /* Only when it is the window under the pointer: the file panel
+         * it puts up lies over it, and a press on the panel's rows is
+         * the panel's. */
+        (void)tiku_workspace_hit(app->desk, ev->x, ev->y, &under);
+        if (sounds != NULL && sounds->open && under == sounds &&
             !alert_model(app)->open) {
             tiku_event_t window_event = { 0 };
 
@@ -1310,6 +1315,13 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
+if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
+    /* The volume knob is in hand: every move is its. */
+    (void)tiku_window_send(
+        tiku_trk_sounds_window_handle(&app->sounds_window), ev);
+    app->dirty = 1;
+    return;
+}
 if (app->embed_press != NULL &&
     app->embed_press->window != NULL) {
     struct embed_win *ew = app->embed_press;
@@ -1564,6 +1576,12 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     (void)lp;
 int dropped = tiku_trk_drag_active(&app->drag);
 
+if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
+    (void)tiku_window_send(
+        tiku_trk_sounds_window_handle(&app->sounds_window), ev);
+    app->dirty = 1;
+    return;
+}
 if (app->embed_press != NULL) {
     struct embed_win *ew = app->embed_press;
 
