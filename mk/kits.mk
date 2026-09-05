@@ -17,6 +17,7 @@
 #                  interface
 #   application -> support, device,      apps, windows, messages
 #                  interface
+#   media                                system sounds, a backend behind
 #
 # kits/tools/check_kits.py holds that table and fails the build if an
 # include crosses it the wrong way.  The rule is the point of the
@@ -55,6 +56,7 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c $(K)/translation/tiku_fontdir.c
+MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \
@@ -77,12 +79,13 @@ LIB_STORAGE     := $(BUILD)/libtiku_storage.a
 LIB_INTERFACE   := $(BUILD)/libtiku_interface.a
 LIB_TRANSLATION := $(BUILD)/libtiku_translation.a
 LIB_APPLICATION := $(BUILD)/libtiku_application.a
+LIB_MEDIA       := $(BUILD)/libtiku_media.a
 
 # In link order: a linker resolves left to right, so a kit must come
 # before the kits it draws on.  DESK_LIBS is the name every rule in the
 # tree links them by.
 DESK_LIBS := $(LIB_APPLICATION) $(LIB_TRANSLATION) $(LIB_INTERFACE) \
-             $(LIB_STORAGE) $(LIB_DEVICE) $(LIB_SUPPORT)
+             $(LIB_STORAGE) $(LIB_DEVICE) $(LIB_MEDIA) $(LIB_SUPPORT)
 PIC_LIBS  := $(patsubst $(BUILD)/%,$(PIC)/%,$(DESK_LIBS))
 
 #
@@ -110,6 +113,7 @@ $(eval $(call KIT_RULES,storage,STORAGE))
 $(eval $(call KIT_RULES,interface,INTERFACE))
 $(eval $(call KIT_RULES,translation,TRANSLATION))
 $(eval $(call KIT_RULES,application,APPLICATION))
+$(eval $(call KIT_RULES,media,MEDIA))
 
 .PHONY: kits check-kits
 kits: $(DESK_LIBS) $(PIC_LIBS)
