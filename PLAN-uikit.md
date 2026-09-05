@@ -64,7 +64,7 @@ moment the desktop does.
 | **4 ✓** | The rest of the session | a compact menu message: a menu set as text lines (`menu File`, `item Open… o cmd`, `sep`) the desktop expands into its own menu set, so a board carries a hundred bytes rather than ten kilobytes; PICK from the desktop's menus back to the board as a command; raise, place and sizeable; up to eight windows; resize events; SAY/TELL carried as flattened messages with a board-side `tiku_msg` reader (the format is byte-at-a-time already), so the board can ask for the file picker and hear the path, and set and read the clipboard | two days | a board window has a menu bar whose pick reaches the process; `boardmenu.script` picks an item and reads the board's answer; a board asks for a file and hears its path |
 | **5 ✓** | Layout without numbers | `tiku_layout` (a rectangle divided as described) compiled on the board from milestone 2, with the board's metrics behind the measure seam, so a program says rows and columns and weights and never a pixel; a form-like helper that places a column of labelled controls the way the described panel does | one day | the counter example's window lays itself out from a layout description and looks the same on the desktop and from the board |
 | **6** | The application runtime for the board | `tiku_app_descriptor_t` (`start`, `stop`, `event`, `tick`, `pick`, `picked`, `closed`) is the desktop's application shape; a board runner `tiku_draw_run(descriptor, process)` drives it from a process's events, offering the same `tiku_app_services_t` table (open, present, menus, close, place, pick, raise, sizeable, clip) over the console; a descriptor builds as a desktop application, an embedded one, or a board one, from one source | two days | `apps/examples/sketch.c` runs on the board unchanged and on the desktop unchanged; `embedapp.script`, `remoteapp.script` and a new `boardapp.script` assert the same behaviours of the same descriptor |
-| **7** | Keeping them the same | `make check-toolkit` under `make test`: the op table is generated and current, every behaviour file compiles for the board, every op the desktop can narrate the board can write, every service in the runtime table has a board implementation or a documented refusal; a page in `kits/interface/doc/toolkit.md` that says how to add a control: the behaviour file, the op row, the painter, the narration words, and nothing else | one day | a new control added by that page's steps appears on the board with no change under `board/`; the check fails when any of the four is missing (shown to fire) |
+| **7 ✓** | Keeping them the same | `make check-toolkit` under `make test`: the op table is generated and current, every behaviour file compiles for the board, every op the desktop can narrate the board can write, every service in the runtime table has a board implementation or a documented refusal; a page in `kits/interface/doc/toolkit.md` that says how to add a control: the behaviour file, the op row, the painter, the narration words, and nothing else | one day | a new control added by that page's steps appears on the board with no change under `board/`; the check fails when any of the four is missing (shown to fire) |
 
 Milestone 0 landed the same day: `kits/interface/dl_ops.txt` names every
 op with its fields in wire order; `gendl.py` writes `tiku_dl_ops.h`
@@ -139,7 +139,35 @@ words, measured through the seam, and the control beside it
 (`test_gui`); driving a window resize on hardware needs a corner drag the
 scripting has no verb for.
 
-Costs sum to about three weeks.  Milestones 0, 1 and 2 are desktop-side
+Milestone 7 ties the guards together: `make check-toolkit`, under `make
+test`, runs check-dl (the op table current on both ends), check-metrics
+(the board's text metrics current), check-behaviour (every behaviour
+file compiles for the board) and check-kits (no paint in a behaviour
+file).  `kits/interface/doc/toolkit.md` is the page: the three seams,
+and the four steps to add a control -- the op row, the paint, the
+narration, and nothing under board/ -- with the check failing until the
+op and the paint agree.
+
+Milestone 6 is left, and its shape is now clearer than the plan first
+drew it.  The desktop's own example applications (`apps/examples/*`)
+draw by allocating a pixel surface and handing whole frames to
+`services->frame` -- 449 KB for a 372x302 window, a minute over a serial
+line.  A board application must draw through `services->present` with a
+display list instead, a few hundred bytes.  So "the same example runs on
+the board unchanged" holds only for descriptors written to the
+display-list path; the pixel-path examples would each need that one
+change first.  The board runtime (`tiku_draw_run(descriptor, process)`
+offering the services table over the console) and a display-list example
+that builds for the desktop and the board from one source are the work
+that remains; the sample already draws with the whole kit, so what is
+left is the descriptor shape around it, not the drawing.
+
+Milestones 0 through 5 and 7 are done: one op table both ends generate
+from, the kit's behaviour compiled for the board, the board drawing the
+desktop's full control set and laying out with its layout, the rest of
+the session, and the check that keeps the two ends the same.  A board
+program builds any window the desktop can show, and a control added to
+the desktop reaches the board by the same act.  Milestones 0, 1 and 2 are desktop-side
 refactoring with the suite as the net; 3 to 6 are where the board gains
 the kit; 7 is what keeps it gained.
 

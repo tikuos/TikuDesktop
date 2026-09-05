@@ -1,0 +1,56 @@
+# One toolkit, both ends
+
+The desktop's interface kit and a TikuOS board draw with the same code.
+A control is written once; it reaches the board the same day.  This is
+how the two ends are kept the same, and how to add to them.
+
+## The three seams
+
+1. **The op table.**  `dl_ops.txt` names every display-list op with its
+   fields in wire order.  `gendl.py` writes `tiku_dl_ops.h`, which the
+   desktop's reader (`tiku_dl.c`) takes its numbers and lengths from, and
+   `board/gui/tiku_draw_ops.h`, the board's writers.  A row added reaches
+   both; `make check-dl` fails if either generated header is stale.
+
+2. **Behaviour apart from paint.**  A control keeps state and takes input
+   in `tiku_<x>.c`, which includes nothing that draws, and paints in
+   `tiku_<x>_paint.c`.  `check_kits.py` refuses a paint header
+   (`tiku_gfx.h`, `tiku_font.h`, `tiku_ui.h`, `tiku_dl.h`) in a behaviour
+   file, and `make check-behaviour` compiles every behaviour file with
+   the board's own compiler.  Text is measured through `tiku_measure.h`,
+   which the desktop answers from its faces and the board from
+   `tiku_metrics.h` (`make check-metrics`).
+
+3. **The board records instead of painting.**  Under `TIKU_DISPLAYLESS`
+   the four painting kit headers hand their names to the board's
+   recording surface (`board/gui/tiku_gfx.h` and friends), so the paint
+   files run on the board unchanged and each `tiku_ui_*` call writes its
+   op rather than pixels.
+
+`make check-toolkit` runs all of the above at once.
+
+## Adding a control
+
+Say the desktop gains a `dial`.
+
+1. **The op.**  Add a row to `dl_ops.txt` with its fields in wire order,
+   pick the next free number, and run `make dl`.  Both ends now have
+   `tiku_dl_dial` / `tiku_draw_dial`.
+2. **The paint.**  Add `tiku_dl_dial` to `tiku_dl.c`'s recorder and its
+   reader, and paint it in `tiku_ui.c` (desktop) recording that op.  A
+   control with behaviour of its own gets `tiku_dial.c` (state and input,
+   no drawing) and `tiku_dial_paint.c` (the drawing), and its name goes
+   in `check_kits.py`'s `BEHAVIOUR` list and `applications.mk`.
+3. **The narration.**  Give the op a fact in `tiku_dl.c`'s reader and a
+   word in `tiku_dl_say`, so a reader hears it.
+4. **Nothing under `board/`.**  The board gains the writer from the
+   table and the paint from the kit; there is no board copy to keep.
+
+`make check-toolkit` fails until steps 1 and 2 agree, so the two ends
+cannot drift apart unnoticed.
+
+## What stays on the desktop
+
+The font rasteriser, the icon renderer, theming and the file panel are
+the drawing end's, by design: the board says what to draw in a few
+hundred bytes and never carries the machinery that turns it into pixels.

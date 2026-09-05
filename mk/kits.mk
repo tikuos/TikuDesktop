@@ -157,6 +157,12 @@ BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
                   $(K)/interface/tiku_tabs.c $(K)/interface/tiku_list.c \
                   $(K)/interface/tiku_layout.c $(K)/interface/tiku_colors.c \
                   $(K)/interface/tiku_form_row.c
+# The whole toolkit's two-ends contract in one target.
+check-toolkit:
+	@$(MAKE) --no-print-directory check-dl check-metrics check-behaviour \
+	    check-kits
+	@echo "check-toolkit: one toolkit, both ends, kept the same"
+
 check-behaviour:
 	@for f in $(BEHAVIOUR_SRCS); do \
 	    arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra \
