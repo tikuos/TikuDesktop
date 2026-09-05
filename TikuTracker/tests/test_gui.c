@@ -275,9 +275,9 @@ main(void)
               "the second an open: id, size, title");
         tiku_draw_begin(&win);
         (void)tiku_draw_panel(&win, 0, 0, 240, 160);
-        (void)tiku_draw_text(&win, TIKU_DRAW_BOLD, 12, 22, "Drawn by the board",
-                             TIKU_DRAW_TEXT);
-        (void)tiku_draw_button(&win, 12, 60, 80, 24, "Count", 0u);
+        (void)tiku_draw_text(&win, 12, 22, TIKU_DRAW_TEXT, TIKU_DRAW_BOLD,
+                             "Drawn by the board");
+        (void)tiku_draw_button(&win, 12, 60, 80, 24, 0u, "Count");
         (void)tiku_draw_slider(&win, 12, 96, 216, 24, 0, 100, 40);
         (void)tiku_draw_gauge(&win, 12, 128, 216, 20, 400);
         check(tiku_draw_present(&win) == 0, "a list presents");

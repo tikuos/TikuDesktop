@@ -90,40 +90,22 @@ void tiku_draw_close(tiku_draw_window_t *win);
 /** @brief Start a fresh list for @p win: the window is drawn from nothing. */
 void tiku_draw_begin(tiku_draw_window_t *win);
 
-/* The commands.  Each returns 1 when written, 0 when the list is full. */
-int tiku_draw_fill(tiku_draw_window_t *win, int x, int y, int w, int h,
-                   uint32_t colour);
-int tiku_draw_frame(tiku_draw_window_t *win, int x, int y, int w, int h,
-                    uint32_t colour);
-int tiku_draw_hline(tiku_draw_window_t *win, int x, int y, int w,
-                    uint32_t colour);
-int tiku_draw_vline(tiku_draw_window_t *win, int x, int y, int h,
-                    uint32_t colour);
-int tiku_draw_text(tiku_draw_window_t *win, tiku_draw_face_t face, int x,
-                   int y, const char *text, uint32_t colour);
-int tiku_draw_text_centered(tiku_draw_window_t *win, tiku_draw_face_t face,
-                            int x, int y, int w, int h, const char *text,
-                            uint32_t colour);
-int tiku_draw_panel(tiku_draw_window_t *win, int x, int y, int w, int h);
-int tiku_draw_raised(tiku_draw_window_t *win, int x, int y, int w, int h);
-int tiku_draw_sunken(tiku_draw_window_t *win, int x, int y, int w, int h,
-                     uint32_t face);
-int tiku_draw_button(tiku_draw_window_t *win, int x, int y, int w, int h,
-                     const char *label, unsigned state);
-int tiku_draw_checkbox(tiku_draw_window_t *win, int x, int y, int w, int h,
-                       const char *label, unsigned state);
-int tiku_draw_radio(tiku_draw_window_t *win, int x, int y, int w, int h,
-                    const char *label, unsigned state);
-int tiku_draw_gauge(tiku_draw_window_t *win, int x, int y, int w, int h,
-                    int per_mille);
-int tiku_draw_textfield(tiku_draw_window_t *win, int x, int y, int w, int h,
-                        const char *text, unsigned state);
-int tiku_draw_slider(tiku_draw_window_t *win, int x, int y, int w, int h,
-                     int lo, int hi, int value);
-int tiku_draw_menufield(tiku_draw_window_t *win, int x, int y, int w, int h,
-                        const char *label, unsigned state);
-int tiku_draw_list_row(tiku_draw_window_t *win, int x, int y, int w, int h,
-                       const char *text, int selected);
+/*
+ * The commands, one per op of the display list, their fields in wire
+ * order (a rectangle as x, y, w, h; a colour as 0xRRGGBB; a control's
+ * state before its label).  Generated from kits/interface/dl_ops.txt,
+ * so an op the desktop gains is here the same day.  Each returns 1
+ * when written, 0 when the list is full.
+ */
+#define TIKU_DRAW_OPS_PROTOTYPES
+#include "tiku_draw_ops.h"
+#undef TIKU_DRAW_OPS_PROTOTYPES
+
+/* The byte helpers the generated writers use; not for a program. */
+unsigned char *tiku_draw_op_begin(tiku_draw_window_t *win, unsigned op,
+                                  size_t len);
+void tiku_draw_put16(unsigned char *p, int v);
+void tiku_draw_put32(unsigned char *p, uint32_t v);
 
 /** @brief The states a control may be drawn in. */
 #define TIKU_DRAW_S_DISABLED 0x01u

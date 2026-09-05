@@ -30,48 +30,10 @@
 #include "tiku_alert.h"
 #include "tiku_tabs.h"
 
-/* The ops.  The number is part of the wire format; gaps are deliberate,
- * so the primitives and the controls stay legible as two groups. */
-#define OP_FILL          1u
-#define OP_FRAME         2u
-#define OP_BEVEL         3u
-#define OP_HLINE         4u
-#define OP_VLINE         5u
-#define OP_TEXT          6u
-#define OP_TEXT_CENTERED 7u
-#define OP_CLIP_SET      8u
-#define OP_CLIP_RESET    9u
-
-#define OP_PANEL        16u
-#define OP_RAISED       17u
-#define OP_SUNKEN       18u
-#define OP_BUTTON       19u
-#define OP_CHECKBOX     20u
-#define OP_RADIO        21u
-#define OP_LIST_ROW     22u
-
-/* Art once, placements by reference: [u32 id][u16 len][hvif], then
- * [u32 id][i16 x][i16 y][i16 size][u8 mix][u8 0][u32 wash]. */
-#define OP_ICON_ART     23u
-#define OP_ICON         24u
-
-/*
- * The second round of control ops.  Every one of these replaces a run of
- * rectangles that said only what a thing LOOKED like: the far end draws
- * them from the kit it already has, and a reader that is not drawing at
- * all -- an agent, a screen reader -- gets the noun instead of the
- * spans.  A gauge was arriving as one grey box with no bar in it, and an
- * alert's warning disc as sixty-six horizontal lines.
- */
-#define OP_GAUGE        25u
-#define OP_TIP          26u
-#define OP_TEXTFIELD    27u
-#define OP_SCROLLBAR    28u
-#define OP_SLIDER       29u
-#define OP_ALERT_ICON   30u
-#define OP_TABS         31u
-#define OP_MENUFIELD    32u
-#define OP_PICTURE      33u
+/* The ops: their numbers, lengths and names come from dl_ops.txt, the
+ * one table the board's writers are generated from as well. */
+#include "tiku_dl_ops.h"
+TIKU_DL_OP_SHORT_NAMES
 
 struct tiku_dl {
     unsigned char *b;
@@ -750,54 +712,21 @@ tiku_dl_flatten(const tiku_dl_t *dl, void *buf, size_t max, size_t *wrote)
 static int
 fixed_payload(uint16_t op)
 {
-    switch (op) {
-    case OP_FILL:
-    case OP_FRAME:
-    case OP_SUNKEN:      return 12;
-    case OP_BEVEL:       return 16;
-    case OP_HLINE:
-    case OP_VLINE:       return 10;
-    case OP_CLIP_SET:
-    case OP_PANEL:
-    case OP_RAISED:      return 8;
-    case OP_ICON:        return 16;
-    case OP_GAUGE:       return 10;
-    case OP_SCROLLBAR:
-    case OP_SLIDER:      return 14;
-    case OP_ALERT_ICON:  return 6;
-    case OP_CLIP_RESET:  return 0;
-    default:             return -1;
-    }
+    return tiku_dl_op_fixed(op);
 }
 
 /** @brief The smallest a command carrying text can be, or -1. */
 static int
 least_payload(uint16_t op)
 {
-    switch (op) {
-    case OP_TEXT:          return 10;   /* 9 + a terminator      */
-    case OP_TEXT_CENTERED: return 14;   /* 13 + a terminator     */
-    case OP_BUTTON:
-    case OP_CHECKBOX:
-    case OP_RADIO:
-    case OP_LIST_ROW:
-    case OP_TIP:
-    case OP_TEXTFIELD:     return 13;   /* 12 + a terminator     */
-    case OP_TABS:
-    case OP_MENUFIELD:     return 13;   /* 12 + a terminator     */
-    default:               return -1;
-    }
+    return tiku_dl_op_least(op);
 }
 
 /** @brief Where the text starts inside a command that carries some. */
 static int
 text_at(uint16_t op)
 {
-    switch (op) {
-    case OP_TEXT:          return 9;
-    case OP_TEXT_CENTERED: return 13;
-    default:               return 12;
-    }
+    return tiku_dl_op_text_at(op);
 }
 
 tiku_dl_t *

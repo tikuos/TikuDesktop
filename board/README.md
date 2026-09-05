@@ -78,8 +78,8 @@ static tiku_draw_window_t win;
 
 tiku_draw_open(&win, "Board window", 240, 160, &my_process);
 tiku_draw_begin(&win);
-tiku_draw_text(&win, TIKU_DRAW_BOLD, 12, 22, "Drawn by the board", TIKU_DRAW_TEXT);
-tiku_draw_button(&win, 12, 60, 80, 24, "Count", 0u);
+tiku_draw_text(&win, 12, 22, TIKU_DRAW_TEXT, TIKU_DRAW_BOLD, "Drawn by the board");
+tiku_draw_button(&win, 12, 60, 80, 24, 0u, "Count");
 tiku_draw_present(&win);
 /* in the thread: */
 while ((w = tiku_draw_event(ev, data)) != NULL) {

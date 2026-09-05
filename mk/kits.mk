@@ -139,3 +139,17 @@ font:
 	python3 $(K)/interface/tools/genfont.py > $(K)/interface/tiku_font_data.h
 check-font:
 	@python3 $(K)/interface/tools/check_font.py
+
+# The display list's ops, generated for both ends from one table.
+dl:
+	python3 $(K)/interface/tools/gendl.py desktop $(K)/interface/dl_ops.txt \
+	    > $(K)/interface/tiku_dl_ops.h
+	python3 $(K)/interface/tools/gendl.py board $(K)/interface/dl_ops.txt \
+	    > board/gui/tiku_draw_ops.h
+check-dl:
+	@python3 $(K)/interface/tools/gendl.py desktop $(K)/interface/dl_ops.txt \
+	    | diff -q - $(K)/interface/tiku_dl_ops.h > /dev/null \
+	    && python3 $(K)/interface/tools/gendl.py board $(K)/interface/dl_ops.txt \
+	    | diff -q - board/gui/tiku_draw_ops.h > /dev/null \
+	    && echo "check-dl: both ends match dl_ops.txt" \
+	    || { echo "check-dl: a generated op header is stale; run make dl"; exit 1; }

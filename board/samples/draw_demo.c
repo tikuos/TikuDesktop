@@ -25,16 +25,16 @@ paint(void)
 
     tiku_draw_begin(&win);
     tiku_draw_panel(&win, 0, 0, win.w, win.h);
-    tiku_draw_text(&win, TIKU_DRAW_BOLD, 12, 22, "Drawn by the board",
-                   TIKU_DRAW_TEXT);
+    tiku_draw_text(&win, 12, 22, TIKU_DRAW_TEXT, TIKU_DRAW_BOLD,
+                   "Drawn by the board");
     snprintf(line, sizeof line, "Pressed %d time%s", presses,
              presses == 1 ? "" : "s");
-    tiku_draw_text(&win, TIKU_DRAW_PLAIN, 12, 46, line, TIKU_DRAW_TEXT);
+    tiku_draw_text(&win, 12, 46, TIKU_DRAW_TEXT, TIKU_DRAW_PLAIN, line);
     /* The button as wide as its word wants, measured as the desktop
      * will draw it. */
     tiku_draw_button(&win, 12, 60, tiku_draw_text_width(TIKU_DRAW_PLAIN,
                                                        "Count") + 40, 24,
-                     "Count", 0u);
+                     0u, "Count");
     tiku_draw_slider(&win, 12, 96, win.w - 24, 24, 0, 100, level);
     tiku_draw_gauge(&win, 12, 128, win.w - 24, 20, level * 10);
     (void)tiku_draw_present(&win);

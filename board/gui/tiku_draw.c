@@ -26,25 +26,6 @@
 #define REMOTE_VERSION 1u
 #define FEAT_COMMAND_STREAM 0x2u
 
-/* The list's ops, as the desktop numbers them. */
-#define OP_FILL 1u
-#define OP_FRAME 2u
-#define OP_HLINE 4u
-#define OP_VLINE 5u
-#define OP_TEXT 6u
-#define OP_TEXT_CENTERED 7u
-#define OP_PANEL 16u
-#define OP_RAISED 17u
-#define OP_SUNKEN 18u
-#define OP_BUTTON 19u
-#define OP_CHECKBOX 20u
-#define OP_RADIO 21u
-#define OP_LIST_ROW 22u
-#define OP_GAUGE 25u
-#define OP_TEXTFIELD 27u
-#define OP_SLIDER 29u
-#define OP_MENUFIELD 32u
-
 /* The frame on the console. */
 #define FR_END 0xC0u
 #define FR_ESC 0xDBu
@@ -117,15 +98,15 @@ send_msg(uint32_t type, const unsigned char *payload, uint32_t len)
     raw(FR_END);
 }
 
-static void
-put16(unsigned char *p, int v)
+void
+tiku_draw_put16(unsigned char *p, int v)
 {
     p[0] = (unsigned char)((uint16_t)v & 0xFFu);
     p[1] = (unsigned char)(((uint16_t)v >> 8) & 0xFFu);
 }
 
-static void
-put32(unsigned char *p, uint32_t v)
+void
+tiku_draw_put32(unsigned char *p, uint32_t v)
 {
     p[0] = (unsigned char)(v & 0xFFu);
     p[1] = (unsigned char)((v >> 8) & 0xFFu);
@@ -150,9 +131,9 @@ tiku_draw_hello(const char *name)
     unsigned char payload[40];
 
     memset(payload, 0, sizeof payload);
-    put32(payload, REMOTE_VERSION);
+    tiku_draw_put32(payload, REMOTE_VERSION);
     strncpy((char *)payload + 4, name ? name : "board", 31);
-    put32(payload + 36, FEAT_COMMAND_STREAM);
+    tiku_draw_put32(payload + 36, FEAT_COMMAND_STREAM);
     send_msg(RMSG_HELLO, payload, sizeof payload);
     said_hello = 1;
 }
@@ -190,9 +171,9 @@ tiku_draw_open(tiku_draw_window_t *win, const char *title, int w, int h,
     win->len = 0;
     win->open = 1;
     memset(payload, 0, sizeof payload);
-    put32(payload, win->id);
-    put32(payload + 4, (uint32_t)w);
-    put32(payload + 8, (uint32_t)h);
+    tiku_draw_put32(payload, win->id);
+    tiku_draw_put32(payload + 4, (uint32_t)w);
+    tiku_draw_put32(payload + 8, (uint32_t)h);
     strncpy((char *)payload + 12, title ? title : "", 63);
     send_msg(RMSG_OPEN, payload, sizeof payload);
     return 0;
@@ -207,7 +188,7 @@ tiku_draw_close(tiku_draw_window_t *win)
     if (win == NULL || !win->open) {
         return;
     }
-    put32(payload, win->id);
+    tiku_draw_put32(payload, win->id);
     send_msg(RMSG_CLOSE, payload, sizeof payload);
     win->open = 0;
     for (i = 0; i < TIKU_DRAW_WINDOWS; i++) {
@@ -229,9 +210,8 @@ tiku_draw_begin(tiku_draw_window_t *win)
     }
 }
 
-/** @brief Room for a command of @p len payload bytes, its header written. */
-static unsigned char *
-begin(tiku_draw_window_t *win, unsigned op, size_t len)
+unsigned char *
+tiku_draw_op_begin(tiku_draw_window_t *win, unsigned op, size_t len)
 {
     unsigned char *p;
 
@@ -239,235 +219,16 @@ begin(tiku_draw_window_t *win, unsigned op, size_t len)
         return NULL;
     }
     p = win->list + win->len;
-    put16(p, (int)op);
-    put16(p + 2, (int)len);
+    tiku_draw_put16(p, (int)op);
+    tiku_draw_put16(p + 2, (int)len);
     win->len += 4u + len;
     return p + 4;
 }
 
-static void
-put_rect(unsigned char *p, int x, int y, int w, int h)
-{
-    put16(p, x);
-    put16(p + 2, y);
-    put16(p + 4, w);
-    put16(p + 6, h);
-}
-
-/** @brief A rectangle and a colour: fill, frame, sunken. */
-static int
-rect_colour(tiku_draw_window_t *win, unsigned op, int x, int y, int w,
-            int h, uint32_t c)
-{
-    unsigned char *p = begin(win, op, 12);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    put32(p + 8, c);
-    return 1;
-}
-
-int
-tiku_draw_fill(tiku_draw_window_t *win, int x, int y, int w, int h,
-               uint32_t colour)
-{
-    return rect_colour(win, OP_FILL, x, y, w, h, colour);
-}
-
-int
-tiku_draw_frame(tiku_draw_window_t *win, int x, int y, int w, int h,
-                uint32_t colour)
-{
-    return rect_colour(win, OP_FRAME, x, y, w, h, colour);
-}
-
-int
-tiku_draw_sunken(tiku_draw_window_t *win, int x, int y, int w, int h,
-                 uint32_t face)
-{
-    return rect_colour(win, OP_SUNKEN, x, y, w, h, face);
-}
-
-/** @brief A line from (x, y) running @p run pixels. */
-static int
-line(tiku_draw_window_t *win, unsigned op, int x, int y, int run,
-     uint32_t c)
-{
-    unsigned char *p = begin(win, op, 10);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put16(p, x);
-    put16(p + 2, y);
-    put16(p + 4, run);
-    put32(p + 6, c);
-    return 1;
-}
-
-int
-tiku_draw_hline(tiku_draw_window_t *win, int x, int y, int w, uint32_t colour)
-{
-    return line(win, OP_HLINE, x, y, w, colour);
-}
-
-int
-tiku_draw_vline(tiku_draw_window_t *win, int x, int y, int h, uint32_t colour)
-{
-    return line(win, OP_VLINE, x, y, h, colour);
-}
-
-int
-tiku_draw_text(tiku_draw_window_t *win, tiku_draw_face_t face, int x, int y,
-               const char *text, uint32_t colour)
-{
-    size_t n = (text != NULL) ? strlen(text) + 1u : 1u;
-    unsigned char *p = begin(win, OP_TEXT, 9u + n);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put16(p, x);
-    put16(p + 2, y);
-    put32(p + 4, colour);
-    p[8] = (unsigned char)face;
-    memcpy(p + 9, text ? text : "", n);
-    return 1;
-}
-
-int
-tiku_draw_text_centered(tiku_draw_window_t *win, tiku_draw_face_t face,
-                        int x, int y, int w, int h, const char *text,
-                        uint32_t colour)
-{
-    size_t n = (text != NULL) ? strlen(text) + 1u : 1u;
-    unsigned char *p = begin(win, OP_TEXT_CENTERED, 13u + n);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    put32(p + 8, colour);
-    p[12] = (unsigned char)face;
-    memcpy(p + 13, text ? text : "", n);
-    return 1;
-}
-
-/** @brief A rectangle alone: panel, raised. */
-static int
-rect_only(tiku_draw_window_t *win, unsigned op, int x, int y, int w, int h)
-{
-    unsigned char *p = begin(win, op, 8);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    return 1;
-}
-
-int
-tiku_draw_panel(tiku_draw_window_t *win, int x, int y, int w, int h)
-{
-    return rect_only(win, OP_PANEL, x, y, w, h);
-}
-
-int
-tiku_draw_raised(tiku_draw_window_t *win, int x, int y, int w, int h)
-{
-    return rect_only(win, OP_RAISED, x, y, w, h);
-}
-
-/** @brief A control with a label and a state. */
-static int
-labelled(tiku_draw_window_t *win, unsigned op, int x, int y, int w, int h,
-         const char *label, unsigned state)
-{
-    size_t n = (label != NULL) ? strlen(label) + 1u : 1u;
-    unsigned char *p = begin(win, op, 12u + n);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    put32(p + 8, state);
-    memcpy(p + 12, label ? label : "", n);
-    return 1;
-}
-
-int
-tiku_draw_button(tiku_draw_window_t *win, int x, int y, int w, int h,
-                 const char *label, unsigned state)
-{
-    return labelled(win, OP_BUTTON, x, y, w, h, label, state);
-}
-
-int
-tiku_draw_checkbox(tiku_draw_window_t *win, int x, int y, int w, int h,
-                   const char *label, unsigned state)
-{
-    return labelled(win, OP_CHECKBOX, x, y, w, h, label, state);
-}
-
-int
-tiku_draw_radio(tiku_draw_window_t *win, int x, int y, int w, int h,
-                const char *label, unsigned state)
-{
-    return labelled(win, OP_RADIO, x, y, w, h, label, state);
-}
-
-int
-tiku_draw_textfield(tiku_draw_window_t *win, int x, int y, int w, int h,
-                    const char *text, unsigned state)
-{
-    return labelled(win, OP_TEXTFIELD, x, y, w, h, text, state);
-}
-
-int
-tiku_draw_menufield(tiku_draw_window_t *win, int x, int y, int w, int h,
-                    const char *label, unsigned state)
-{
-    return labelled(win, OP_MENUFIELD, x, y, w, h, label, state);
-}
-
-int
-tiku_draw_list_row(tiku_draw_window_t *win, int x, int y, int w, int h,
-                   const char *text, int selected)
-{
-    return labelled(win, OP_LIST_ROW, x, y, w, h, text, selected ? 1u : 0u);
-}
-
-int
-tiku_draw_gauge(tiku_draw_window_t *win, int x, int y, int w, int h,
-                int per_mille)
-{
-    unsigned char *p = begin(win, OP_GAUGE, 10);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    put16(p + 8, per_mille);
-    return 1;
-}
-
-int
-tiku_draw_slider(tiku_draw_window_t *win, int x, int y, int w, int h,
-                 int lo, int hi, int value)
-{
-    unsigned char *p = begin(win, OP_SLIDER, 14);
-
-    if (p == NULL) {
-        return 0;
-    }
-    put_rect(p, x, y, w, h);
-    put16(p + 8, lo);
-    put16(p + 10, hi);
-    put16(p + 12, value);
-    return 1;
-}
+/* The writers, one per op, generated from the desktop's table. */
+#define TIKU_DRAW_OPS_BODIES
+#include "tiku_draw_ops.h"
+#undef TIKU_DRAW_OPS_BODIES
 
 /** @brief The metrics table of @p face. */
 static const unsigned char *
@@ -514,9 +275,9 @@ tiku_draw_present(tiku_draw_window_t *win)
     if (win == NULL || !win->open) {
         return -1;
     }
-    put32(payload, win->id);
-    put32(payload + 4, (uint32_t)win->w);
-    put32(payload + 8, (uint32_t)win->h);
+    tiku_draw_put32(payload, win->id);
+    tiku_draw_put32(payload + 4, (uint32_t)win->w);
+    tiku_draw_put32(payload + 8, (uint32_t)win->h);
     memcpy(payload + 12, win->list, win->len);
     send_msg(RMSG_DRAW, payload, (uint32_t)(12u + win->len));
     return 0;
@@ -613,9 +374,9 @@ take_message(const unsigned char *msg, size_t len)
                 unsigned char payload[4 + 4 + 4 + 64];
 
                 memset(payload, 0, sizeof payload);
-                put32(payload, w->id);
-                put32(payload + 4, (uint32_t)w->w);
-                put32(payload + 8, (uint32_t)w->h);
+                tiku_draw_put32(payload, w->id);
+                tiku_draw_put32(payload + 4, (uint32_t)w->w);
+                tiku_draw_put32(payload + 8, (uint32_t)w->h);
                 strncpy((char *)payload + 12, w->title ? w->title : "", 63);
                 send_msg(RMSG_OPEN, payload, sizeof payload);
                 (void)tiku_draw_present(w);
