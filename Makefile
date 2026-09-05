@@ -89,6 +89,15 @@ check-shipping:
 # because a check that silently did not run reads as a pass.  This tree's
 # comments are written denser than the kernel's, so its ceilings are six
 # lines of prose and a twenty-line header rather than three and fifteen.
+# Size and documentation, the two rules the kernel's coding style is strict
+# about (PLAN-split.md): no function over 200 lines or ten locals, one
+# banner per file, every function documented once, every private-header
+# field commented, 80 columns.  Exemptions live in the checker with their
+# reasons.
+.PHONY: check-style
+check-style:
+	@python3 tools/check_style.py
+
 lint:
 	@if [ -x $(TIKUOS)/hygiene/check_comment_style.py ]; then \
 	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR) \
@@ -97,6 +106,7 @@ lint:
 	    echo "check_comment_style: SKIPPED -- no hygiene/ at $(TIKUOS)"; \
 	    echo "  comment style is UNCHECKED; see hygiene/commentstyle.md"; \
 	fi
+	@python3 tools/check_style.py
 
 run: $(BUILD)/TikuDesktop
 	./$(BUILD)/TikuDesktop

@@ -30,7 +30,8 @@ the forward declarations each file needs on its own.
       --call C [--case]       written to <stem>_SUFFIX.c, and put the
       [--brief B] [--pre P]   call C where the lines were.  --case takes
       [--post Q]              a whole `case X: {...}` block and turns its
-      [--subst RE=REP]..      case-level breaks into returns.  --subst
+      [--case-return E]       case-level breaks into `return E;`
+      [--subst RE=>REP]..     (bare returns without it).  --subst
                               rewrites the lifted code outside strings
                               and comments (a.x becomes app->x); --pre
                               and --post are lines placed first and last.

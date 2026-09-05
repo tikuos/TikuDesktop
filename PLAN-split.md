@@ -16,7 +16,13 @@ and the first three of milestone 4 (the desktop turn, the script pump and
 the script parser, the engine now a family under `src/shell/script/`)
 followed the same day.  By the evening every one of the seventeen was cut:
 nothing in `TikuTracker/src` is over 200 lines, the largest function being
-`browser_script_step` at 157.
+`browser_script_step` at 157.  Milestone 5 followed on 2026-09-05: every
+function in the shells and core documented once (exported at the prototype,
+static at the definition, family-internal at the definition since the
+generated block carries no comments), every private-header field commented,
+the script grammar moved to `TikuTracker/doc/scripting.md`, and the long
+headers and doc comments brought under the ceilings.  Milestone 6 is
+`tools/check_style.py`, run by `make lint`, each rule proved by mutation.
 
 ## 1. Where the tree stands against the kernel style
 
