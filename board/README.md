@@ -25,9 +25,9 @@ From the firmware repository, with this repository cloned into
     make flash MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_APPL_GUI=1 \
          TIKU_APPL_GUI_DEMO=1 TIKU_APPL_DRAW_DEMO=1
 
-`TIKU_APPL_GUI` builds the library and its one mainline hook (a `/gui`
-root and the console frame decoder, both behind the macro); the two
-`_DEMO` flags add the samples.  Without the macro the firmware is
+`TIKU_APPL_GUI` builds the library and its one mainline hook (the `/gui`
+root and the console channel, attached together behind the macro); the
+two `_DEMO` flags add the samples.  Without the macro the firmware is
 byte-identical to a tree that never had this directory:
 
     arm-none-eabi-nm main.elf | grep -c tiku_gui      # 0 without, 10+ with
@@ -96,8 +96,10 @@ the desktop draws with.
 
 Both roads share the console.  The forms road is the shell's own text
 commands.  The drawing road is the desktop's window session, one message
-per frame: `0xC0 0xF1`, the message SLIP-escaped, `0xC0`.  The shell's
-read loop cuts those frames out before its line editor sees a byte, and
-the desktop's session does the same on its side, so typed commands and
-frames interleave freely.  The plan and its milestones are in
-`../PLAN-gui.md`.
+per frame: `0xC0 0xF1`, the message SLIP-escaped, `0xC0`.  The kernel's
+console (`kernel/console/`) cuts every frame out of the line before the
+shell's line editor sees a byte and hands it whole to the channel its
+marker names -- this library registers `0xF1` at boot, the IP stack the
+IPv4 nibble -- and the desktop's session does the same on its side, so
+typed commands and frames interleave freely.  The plan and its milestones
+are in `../PLAN-gui.md`; the link under the session in `../PLAN-link.md`.

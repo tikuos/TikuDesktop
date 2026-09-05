@@ -3,7 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_draw.c - the session client, the list writer and the frame codec.
+ * tiku_draw.c - the session client and the list writer, over a link.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,7 +11,7 @@
 
 #include "tiku_metrics.h"
 
-#include <kernel/shell/tiku_shell_io.h>
+#include <kernel/link/tiku_link_console.h>
 
 #include <string.h>
 
@@ -39,14 +39,13 @@
 #define REMOTE_VERSION 1u
 #define FEAT_COMMAND_STREAM 0x2u
 
-/* The frame on the console. */
-#define FR_END 0xC0u
-#define FR_ESC 0xDBu
-#define FR_ESC_END 0xDCu
-#define FR_ESC_ESC 0xDDu
-#define FR_ESC_NUL 0xDEu
-#define FR_MARK 0xF1u
 #define FRAME_MAX 256           /* what the desktop sends: an event */
+
+/* The window session rides a console link; its messages arrive as whole
+ * frames in this buffer, and go out as one frame each. */
+static tiku_link_console_t session_link;
+static tiku_link_t *link;
+static unsigned char frame_buf[FRAME_MAX];
 
 static tiku_draw_window_t *windows[TIKU_DRAW_WINDOWS];
 static uint32_t next_id = 1;
@@ -65,71 +64,31 @@ static int greeted;
 static void announce(tiku_draw_window_t *win);
 
 /*---------------------------------------------------------------------------*/
-/* Bytes out                                                                  */
+/* Messages out                                                               */
 /*---------------------------------------------------------------------------*/
 
-/** @brief One raw byte to the console, past the CRLF rule. */
+/** @brief The 8-byte message head: type, then payload length. */
 static void
-raw(unsigned char b)
+wire_head(unsigned char *h, uint32_t type, uint32_t len)
 {
-    const tiku_shell_io_t *io = tiku_shell_io_get_backend();
-
-    if (io != NULL && io->putc != NULL) {
-        io->putc((char)b);
-    }
+    h[0] = (unsigned char)type;
+    h[1] = (unsigned char)(type >> 8);
+    h[2] = (unsigned char)(type >> 16);
+    h[3] = (unsigned char)(type >> 24);
+    h[4] = (unsigned char)len;
+    h[5] = (unsigned char)(len >> 8);
+    h[6] = (unsigned char)(len >> 16);
+    h[7] = (unsigned char)(len >> 24);
 }
 
-/** @brief One escaped byte of a frame. */
-static void
-escaped(unsigned char b)
-{
-    if (b == FR_END) {
-        raw(FR_ESC);
-        raw(FR_ESC_END);
-    } else if (b == FR_ESC) {
-        raw(FR_ESC);
-        raw(FR_ESC_ESC);
-    } else if (b == 0u) {
-        raw(FR_ESC);
-        raw(FR_ESC_NUL);
-    } else {
-        raw(b);
-    }
-}
-
-/** @brief Open a frame and write a message's header for @p len bytes. */
-static void
-send_begin(uint32_t type, uint32_t len)
-{
-    unsigned char head[8];
-    uint32_t i;
-
-    head[0] = (unsigned char)type;
-    head[1] = (unsigned char)(type >> 8);
-    head[2] = (unsigned char)(type >> 16);
-    head[3] = (unsigned char)(type >> 24);
-    head[4] = (unsigned char)len;
-    head[5] = (unsigned char)(len >> 8);
-    head[6] = (unsigned char)(len >> 16);
-    head[7] = (unsigned char)(len >> 24);
-    raw(FR_END);
-    raw(FR_MARK);
-    for (i = 0; i < 8; i++) {
-        escaped(head[i]);
-    }
-}
-
-/** @brief One session message as one frame: header, then payload. */
+/** @brief One session message as one link message: its head, its payload. */
 static void
 send_msg(uint32_t type, const unsigned char *payload, uint32_t len)
 {
-    uint32_t i;
+    unsigned char head[8];
 
-    send_begin(type, len);
-    for (i = 0; i < len; i++) {
-        escaped(payload[i]);
-    }
-    raw(FR_END);
+    wire_head(head, type, len);
+    (void)tiku_link_send2(link, head, sizeof head, payload, len);
 }
 
 void
@@ -253,8 +212,8 @@ tiku_draw_close(tiku_draw_window_t *win)
 void
 tiku_draw_menus(tiku_draw_window_t *win, const char *text)
 {
-    unsigned char head[4];
-    size_t n = text ? strlen(text) : 0u, i;
+    unsigned char head[12];
+    size_t n = text ? strlen(text) : 0u;
 
     if (win == NULL || !win->open) {
         return;
@@ -263,15 +222,9 @@ tiku_draw_menus(tiku_draw_window_t *win, const char *text)
     if (!greeted) {
         return;
     }
-    tiku_draw_put32(head, win->id);
-    send_begin(RMSG_MENUS_TEXT, (uint32_t)(4u + n));
-    for (i = 0; i < 4u; i++) {
-        escaped(head[i]);
-    }
-    for (i = 0; i < n; i++) {
-        escaped((unsigned char)text[i]);
-    }
-    raw(FR_END);
+    wire_head(head, RMSG_MENUS_TEXT, (uint32_t)(4u + n));
+    tiku_draw_put32(head + 8, win->id);
+    (void)tiku_link_send2(link, head, sizeof head, text, n);
 }
 
 /** @brief A message about @p win alone: its id, then @p extra words. */
@@ -552,8 +505,7 @@ announce(tiku_draw_window_t *win)
 int
 tiku_draw_present(tiku_draw_window_t *win)
 {
-    unsigned char head[12];
-    size_t i;
+    unsigned char head[20];
 
     if (win == NULL || !win->open) {
         return -1;
@@ -561,19 +513,13 @@ tiku_draw_present(tiku_draw_window_t *win)
     if (!greeted) {
         return 0;                       /* held until a desktop greets */
     }
-    /* The frame is written straight out, the list after its head, so a
-     * list as large as the program's buffer needs no second copy. */
-    tiku_draw_put32(head, win->id);
-    tiku_draw_put32(head + 4, (uint32_t)win->w);
-    tiku_draw_put32(head + 8, (uint32_t)win->h);
-    send_begin(RMSG_DRAW, (uint32_t)(12u + win->len));
-    for (i = 0; i < 12u; i++) {
-        escaped(head[i]);
-    }
-    for (i = 0; i < win->len; i++) {
-        escaped(win->list[i]);
-    }
-    raw(FR_END);
+    /* The list is the message's body, sent straight from the window's own
+     * buffer after the head, so a list as large as it needs no second copy. */
+    wire_head(head, RMSG_DRAW, (uint32_t)(12u + win->len));
+    tiku_draw_put32(head + 8, win->id);
+    tiku_draw_put32(head + 12, (uint32_t)win->w);
+    tiku_draw_put32(head + 16, (uint32_t)win->h);
+    (void)tiku_link_send2(link, head, 20u, win->list, win->len);
     return 0;
 }
 
@@ -736,56 +682,20 @@ take_message(const unsigned char *msg, size_t len)
     }
 }
 
-int
-tiku_draw_frame_byte(int ch)
+/** @brief One whole message from the desk, as the console delivers it. */
+static void
+on_frame(void *ctx, uint8_t *buf, size_t len)
 {
-    static unsigned char fbuf[FRAME_MAX];
-    static size_t flen;
-    static int armed, in_frame, esc;
-    unsigned char b = (unsigned char)ch;
+    (void)ctx;
+    take_message(buf, len);
+}
 
-    if (in_frame) {
-        if (b == FR_END) {
-            if (flen > 0u) {
-                take_message(fbuf, flen);
-            }
-            in_frame = 0;
-            armed = 1;
-            flen = 0;
-            esc = 0;
-            return 1;
-        }
-        if (esc) {
-            esc = 0;
-            b = (b == FR_ESC_END) ? FR_END : (b == FR_ESC_ESC) ? FR_ESC
-              : (b == FR_ESC_NUL) ? 0u : b;
-        } else if (b == FR_ESC) {
-            esc = 1;
-            return 1;
-        }
-        if (flen < sizeof fbuf) {
-            fbuf[flen++] = b;
-        }
-        return 1;
-    }
-    if (armed) {
-        if (b == FR_END) {
-            return 1;           /* one END after another: still armed */
-        }
-        armed = 0;
-        if (b == FR_MARK) {
-            in_frame = 1;
-            flen = 0;
-            esc = 0;
-            return 1;
-        }
-        return 0;               /* a stray END: this byte is the shell's */
-    }
-    if (b == FR_END) {
-        armed = 1;
-        return 1;
-    }
-    return 0;
+void
+tiku_draw_init(void)
+{
+    link = tiku_link_console_open(&session_link, TIKU_LINK_CONSOLE_SESSION,
+                                  frame_buf, sizeof frame_buf);
+    tiku_link_on_recv(link, on_frame, NULL);
 }
 
 tiku_draw_window_t *

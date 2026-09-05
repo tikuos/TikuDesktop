@@ -6,19 +6,20 @@
  * test_gui.c - the board library, run on the host against the desktop's
  * own readers.
  *
- * The kernel is four stub headers and the functions below; the library's
+ * The kernel is five stub headers and the functions below; the library's
  * sources are included whole.  A form renders the panel text the desktop
  * parses and takes writes as the shell would deliver them; a window's
  * frames, unescaped, unflatten with the desktop's own display-list
- * reader and narrate as the desktop would say them; events framed as
- * the desktop sends them reach the owner, queued.
+ * reader and narrate as the desktop would say them; the desktop's
+ * messages, delivered whole to the channel the library registers on the
+ * console, reach the owner, queued.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku.h"
 #include <kernel/process/tiku_process.h>
 #include <kernel/vfs/tiku_vfs.h>
-#include <kernel/shell/tiku_shell_io.h>
+#include <kernel/link/tiku_link_console.h>
 
 #include "tiku_dl.h"
 #include "tiku_form.h"
@@ -80,12 +81,22 @@ stub_putc(char c)
     }
 }
 
-static const tiku_shell_io_t stub_io = { stub_putc, NULL, NULL, 0u, 0u };
-
-const tiku_shell_io_t *
-tiku_shell_io_get_backend(void)
+/** @brief One byte of a frame's payload, SLIP-escaped onto the wire. */
+static void
+stub_escape(unsigned char b)
 {
-    return &stub_io;
+    if (b == 0xC0) {
+        stub_putc((char)0xDB);
+        stub_putc((char)0xDC);
+    } else if (b == 0xDB) {
+        stub_putc((char)0xDB);
+        stub_putc((char)0xDD);
+    } else if (b == 0) {
+        stub_putc((char)0xDB);
+        stub_putc((char)0xDE);
+    } else {
+        stub_putc((char)b);
+    }
 }
 
 #include "tiku_gui.c"
@@ -153,31 +164,63 @@ next_frame(size_t *at, unsigned char *out, size_t max)
     return 0;
 }
 
-/** @brief Feed a whole message to the board as the desktop would frame it. */
+/* The link the board opens, as the test plays it: it keeps the message
+ * receiver and the marker, frames what the board sends into the wire the
+ * desktop's readers parse, and delivers a message the desktop wrote. */
+static struct tiku_link { int used; } the_link;
+static tiku_link_recv_fn link_recv;
+static void *link_ctx;
+static uint8_t link_marker;
+static uint8_t link_buf[512];
+
+tiku_link_t *
+tiku_link_console_open(tiku_link_console_t *lc, uint8_t marker,
+                       uint8_t *buf, size_t cap)
+{
+    (void)lc;
+    (void)buf;
+    (void)cap;
+    link_marker = marker;
+    return &the_link;
+}
+
+void
+tiku_link_on_recv(tiku_link_t *l, tiku_link_recv_fn fn, void *ctx)
+{
+    (void)l;
+    link_recv = fn;
+    link_ctx = ctx;
+}
+
+int
+tiku_link_send2(tiku_link_t *l, const void *head, size_t hlen,
+                const void *body, size_t blen)
+{
+    const unsigned char *h = head, *b = body;
+    size_t i;
+
+    (void)l;
+    stub_putc((char)0xC0);
+    stub_putc((char)link_marker);
+    for (i = 0; i < hlen; i++) {
+        stub_escape(h[i]);
+    }
+    for (i = 0; i < blen; i++) {
+        stub_escape(b[i]);
+    }
+    stub_putc((char)0xC0);
+    return 0;
+}
+
+/** @brief Deliver a whole message to the board, as its link would. */
 static void
 feed(const unsigned char *msg, size_t len)
 {
-    size_t i;
-
-    (void)tiku_draw_frame_byte(0xC0);
-    (void)tiku_draw_frame_byte(0xF1);
-    for (i = 0; i < len; i++) {
-        unsigned char b = msg[i];
-
-        if (b == 0xC0) {
-            (void)tiku_draw_frame_byte(0xDB);
-            (void)tiku_draw_frame_byte(0xDC);
-        } else if (b == 0xDB) {
-            (void)tiku_draw_frame_byte(0xDB);
-            (void)tiku_draw_frame_byte(0xDD);
-        } else if (b == 0) {
-            (void)tiku_draw_frame_byte(0xDB);
-            (void)tiku_draw_frame_byte(0xDE);
-        } else {
-            (void)tiku_draw_frame_byte(b);
-        }
+    if (link_recv == NULL || len > sizeof link_buf) {
+        return;
     }
-    (void)tiku_draw_frame_byte(0xC0);
+    memcpy(link_buf, msg, len);
+    link_recv(link_ctx, link_buf, len);
 }
 
 /** @brief An EVENT message for window @p id, the desktop's 64-byte record. */
@@ -204,6 +247,7 @@ main(void)
     tiku_form_t parsed;
     int unknown;
 
+    tiku_draw_init();
     printf("the forms road\n");
     tiku_gui_form_init(&form, "demo", "Board one", &owner);
     (void)tiku_gui_text(&form, "note", "Sensors");
@@ -447,16 +491,14 @@ main(void)
                   "and the owner hears the session begin");
         }
         {
-            /* A stray END before a frame, and text around it, do not
-             * unseat the decoder. */
+            /* The channel the library registered at boot: the marker the
+             * desktop's frames carry, stripped before the message is read. */
             posted = 0;
-            check(tiku_draw_frame_byte('l') == 0 && tiku_draw_frame_byte(0xC0) == 1
-                      && tiku_draw_frame_byte('s') == 0,
-                  "text passes, and a lone END followed by text costs only the END");
+            check(link_marker == 0xF1 && link_recv != NULL,
+                  "the session opened its link and listens for messages");
             n = event_msg(msg, win.id, 6, 3, 4);
-            (void)tiku_draw_frame_byte(0xC0);
             feed(msg, n);
-            check(posted == 1, "and a frame after a doubled END still lands");
+            check(posted == 1, "and a message on it reaches the owner");
         }
         printf("the rest of the session\n");
         {

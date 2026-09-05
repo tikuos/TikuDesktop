@@ -186,9 +186,10 @@ int tiku_draw_present(tiku_draw_window_t *win);
 tiku_draw_window_t *tiku_draw_event(tiku_event_t ev, tiku_event_data_t data);
 
 /**
- * @brief The shell's read loop hands every console byte here first.
- * @return 1 when the byte belonged to a frame, 0 when it is the shell's.
+ * @brief Register the session's channel on the console: from here on a
+ *        desktop's frames reach their windows.  Called once at boot, from
+ *        the kernel's one hook for this library, before any process runs.
  */
-int tiku_draw_frame_byte(int ch);
+void tiku_draw_init(void);
 
 #endif /* TIKU_DRAW_H_ */
