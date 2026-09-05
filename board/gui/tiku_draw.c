@@ -564,7 +564,7 @@ push(tiku_draw_window_t *win, const tiku_draw_event_t *e)
  *        the window's owner; a close is noted the same way.
  */
 static void
-take(const unsigned char *msg, size_t len)
+take_message(const unsigned char *msg, size_t len)
 {
     uint32_t type, plen;
     const unsigned char *p = msg + 8;
@@ -650,7 +650,7 @@ tiku_draw_frame_byte(int ch)
     if (in_frame) {
         if (b == FR_END) {
             if (flen > 0u) {
-                take(fbuf, flen);
+                take_message(fbuf, flen);
             }
             in_frame = 0;
             armed = 1;

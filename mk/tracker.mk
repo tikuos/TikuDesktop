@@ -273,6 +273,7 @@ test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := -lX11 -lm -lrt
 test_channel_LDLIBS := -lutil -lpthread
+test_gui_CFLAGS := -I$(T)/tests/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := $(T)/src/core/tiku_trk_deskprefs.c $(T)/src/core/tiku_trk_background.c
 
 # The one link rule.  A test's object, the objects of the sources it
