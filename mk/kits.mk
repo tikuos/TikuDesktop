@@ -50,6 +50,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_syntax.c $(K)/interface/tiku_list.c \
                $(K)/interface/tiku_splash.c \
                $(K)/interface/tiku_layout.c $(K)/interface/tiku_form.c \
+               $(K)/interface/tiku_form_row.c \
                $(K)/interface/tiku_measure_font.c \
                $(K)/interface/tiku_slider_paint.c $(K)/interface/tiku_tabs_paint.c \
                $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
@@ -154,7 +155,8 @@ dl:
 BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
                   $(K)/interface/tiku_textview.c $(K)/interface/tiku_slider.c \
                   $(K)/interface/tiku_tabs.c $(K)/interface/tiku_list.c \
-                  $(K)/interface/tiku_layout.c $(K)/interface/tiku_colors.c
+                  $(K)/interface/tiku_layout.c $(K)/interface/tiku_colors.c \
+                  $(K)/interface/tiku_form_row.c
 check-behaviour:
 	@for f in $(BEHAVIOUR_SRCS); do \
 	    arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra \

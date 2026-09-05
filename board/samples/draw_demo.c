@@ -24,6 +24,7 @@
 #include "tiku_tabs.h"
 #include "tiku_tabs_paint.h"
 #include "tiku_ui.h"
+#include "tiku_layout.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -55,24 +56,49 @@ static const char *const menus_text =
     "item 4 c Copy the name\n";
 
 /**
- * @brief The layout: where each control sits in the window, from its
- *        size, so a resized window lays itself out again.
+ * @brief The layout: a stack of rows down the window, said as weights
+ *        and least heights rather than pixels, so a resize lays it out
+ *        again and the board and the desktop divide it the same way.
  */
 static tiku_rect_t
 place(int which)
 {
-    tiku_rect_t r = { 12, 0, win.w - 24, 24 };
-    int bottom = win.h - 12 - tiku_ui_button_h();
+    tiku_rect_t body = { 0, 0, win.w, win.h };
+    tiku_layout_t stack;
+    tiku_rect_t row, r;
 
-    switch (which) {
-    case 0: r.y = 8;   r.h = 22; break;                 /* the tabs   */
-    case 1: r.y = 38;  r.h = bottom - 38 - 76; break;   /* the list   */
-    case 2: r.y = bottom - 66; r.h = 24; break;         /* the slider */
-    case 3: r.y = bottom - 34; r.h = 24; break;         /* the field  */
-    default: r.y = bottom; r.h = tiku_ui_button_h();
-             r.w = tiku_ui_button_w("Count", 80); break; /* the button */
+    tiku_layout_init(&stack, 0, 8, 12);
+    (void)tiku_layout_add(&stack, 22, 0, 22);           /* the tabs   */
+    (void)tiku_layout_add(&stack, 0, 1, tiku_ui_row_h()); /* the list */
+    (void)tiku_layout_add(&stack, 24, 0, 24);           /* the slider */
+    (void)tiku_layout_add(&stack, 24, 0, 24);           /* the field  */
+    (void)tiku_layout_add(&stack, tiku_ui_button_h(), 0,
+                          tiku_ui_button_h());          /* the button */
+    row = tiku_layout_slot(&stack, body, which);
+    if (which == 4) {
+        /* The button is only as wide as its word; the rest of its row
+         * is the space the count is written in. */
+        r = row;
+        r.w = tiku_ui_button_w("Count", 80);
+        return r;
     }
-    return r;
+    return row;
+}
+
+/** @brief The button's row, for the count written beside it. */
+static tiku_rect_t
+button_row(void)
+{
+    tiku_rect_t body = { 0, 0, win.w, win.h };
+    tiku_layout_t stack;
+
+    tiku_layout_init(&stack, 0, 8, 12);
+    (void)tiku_layout_add(&stack, 22, 0, 22);
+    (void)tiku_layout_add(&stack, 0, 1, tiku_ui_row_h());
+    (void)tiku_layout_add(&stack, 24, 0, 24);
+    (void)tiku_layout_add(&stack, 24, 0, 24);
+    (void)tiku_layout_add(&stack, tiku_ui_button_h(), 0, tiku_ui_button_h());
+    return tiku_layout_slot(&stack, body, 4);
 }
 
 /** @brief A row's name, asked for by the list. */
@@ -100,8 +126,13 @@ paint(void)
     tiku_ui_button(&surface, place(4), "Count", 0u);
     snprintf(line, sizeof line, "Pressed %d time%s, level %d", presses,
              presses == 1 ? "" : "s", level.value);
-    tiku_text(&surface, tiku_font_plain(), place(4).x + place(4).w + 10,
-              place(4).y + 17, line, TIKU_C_TEXT);
+    {
+        tiku_rect_t brow = button_row();
+
+        tiku_text(&surface, tiku_font_plain(),
+                  place(4).x + place(4).w + 10, brow.y + 17, line,
+                  TIKU_C_TEXT);
+    }
     (void)tiku_draw_present(&win);
 }
 

@@ -50,7 +50,7 @@ APP_PREFIXES = ("tiku_trk_desktop", "tiku_trk_app.")
 # in; the paint lives beside them in tiku_<x>_paint.c.
 BEHAVIOUR = ("tiku_field", "tiku_scroll", "tiku_textview", "tiku_slider",
              "tiku_tabs", "tiku_list", "tiku_layout", "tiku_colors",
-             "tiku_measure", "tiku_geom", "tiku_event")
+             "tiku_measure", "tiku_geom", "tiku_event", "tiku_form_row")
 PAINT_HEADERS = ("tiku_gfx.h", "tiku_font.h", "tiku_ui.h", "tiku_dl.h",
                  "tiku_window.h", "tiku_theme.h")
 

@@ -30,6 +30,7 @@ APPL_SRCS   += applications/kits/interface/tiku_slider.c
 APPL_SRCS   += applications/kits/interface/tiku_tabs.c
 APPL_SRCS   += applications/kits/interface/tiku_list.c
 APPL_SRCS   += applications/kits/interface/tiku_layout.c
+APPL_SRCS   += applications/kits/interface/tiku_form_row.c
 APPL_SRCS   += applications/kits/interface/tiku_colors.c
 APPL_SRCS   += applications/kits/interface/tiku_slider_paint.c
 APPL_SRCS   += applications/kits/interface/tiku_tabs_paint.c
