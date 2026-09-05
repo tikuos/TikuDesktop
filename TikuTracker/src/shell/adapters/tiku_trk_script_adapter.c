@@ -76,15 +76,15 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
                 continue;
             }
         }
-        /* Inside its tab: the strip is TAB_H deep from the frame's top
-         * edge, and starts four pixels in.  Thirty across is inside the
-         * narrowest tab the window layer will draw.
+        /* The tab's middle, TAB_H/2 down: clear of the close box on the
+         * left and the zoom box on the right, whatever their width, so a
+         * click meant to raise a window never lands on either.
          *
-         * Where another window stands over that spot, the tab is walked
+         * Where another window stands over the middle, the tab is walked
          * for somewhere this one is really in front: a point under
          * another window is not a point a hand could reach, and an
          * application holding several windows has tabs that overlap. */
-        *x = w->frame.x + 30;
+        *x = w->frame.x + w->frame.w / 2;
         *y = w->frame.y + tiku_window_tab_h() / 2;
         {
             int step;

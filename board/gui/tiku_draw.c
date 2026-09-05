@@ -39,13 +39,13 @@
 #define REMOTE_VERSION 1u
 #define FEAT_COMMAND_STREAM 0x2u
 
-#define FRAME_MAX 256           /* what the desktop sends: an event */
-
 /* The window session rides a console link; its messages arrive as whole
- * frames in this buffer, and go out as one frame each. */
+ * frames in this buffer, the link's header and CRC around each, and go
+ * out as one frame each. */
 static tiku_link_console_t session_link;
 static tiku_link_t *link;
-static unsigned char frame_buf[FRAME_MAX];
+static unsigned char frame_buf[TIKU_LINK_CONSOLE_SESSION_MTU +
+                               TIKU_LINK_CONSOLE_OVERHEAD];
 
 static tiku_draw_window_t *windows[TIKU_DRAW_WINDOWS];
 static uint32_t next_id = 1;

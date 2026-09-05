@@ -12,28 +12,28 @@ note the board's window is on the desktop, beside its form
 expect-windows 3
 note the second tab is pressed and becomes current
 click 558 174
-wait 20
+wait 30
 expect-title Board window
 expect-narrate Switches
 note a list row is chosen
 click 500 248
-wait 20
+wait 30
 expect-narrate Pressure
 note the slider takes the value under the pointer
 click 553 325
-wait 20
+wait 30
 expect-narrate slider at 75
 note the field takes the keyboard once clicked, its text selected as a
 note desktop field opens, so the first letters replace it
 click 500 357
-wait 8
+wait 20
 key h
 key i
-wait 20
+wait 45
 expect-narrate text field "hi", focused
 note and the button counts
 click 421 390
-wait 20
+wait 45
 expect-narrate Pressed 1 time
 shot /tmp/trk_boarddraw.png
 note the window has a menu bar of its own, published as text; with the
@@ -41,17 +41,17 @@ note global bar shown, a pick on it reaches the board's process
 note the window publishes a menu bar of its own, as text; with the
 note global bar shown its File menu offers the board's own items
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
-wait 20
+wait 30
 click-window Board window
-wait 8
+wait 15
 note a pick on that menu rides the wire to the board's process, which
 note asks the desk for a file; the path chosen comes back over the wire
 note into the field -- a menu, a process and a panel over one console
 menu-pick Choose a file
-wait 15
+wait 35
 click 338 200
-wait 4
-click 676 413
 wait 20
+click 676 413
+wait 45
 expect-narrate a.txt
 quit

@@ -96,10 +96,26 @@ the desktop draws with.
 
 Both roads share the console.  The forms road is the shell's own text
 commands.  The drawing road is the desktop's window session, one message
-per frame: `0xC0 0xF1`, the message SLIP-escaped, `0xC0`.  The kernel's
+per frame: `0xC0 0xF1`, the frame SLIP-escaped, `0xC0`.  The kernel's
 console (`kernel/console/`) cuts every frame out of the line before the
 shell's line editor sees a byte and hands it whole to the channel its
 marker names -- this library registers `0xF1` at boot, the IP stack the
 IPv4 nibble -- and the desktop's session does the same on its side, so
 typed commands and frames interleave freely.  The plan and its milestones
 are in `../PLAN-gui.md`; the link under the session in `../PLAN-link.md`.
+
+Inside the frame the link (`kernel/link/tiku_link_console.c` here,
+`kits/device/tiku_link_serial.c` on the desktop) keeps its own four
+bytes around the message: a control byte naming the kind -- DATA, ACK or
+SYN -- with a bit asking for an acknowledgement, a sequence number, the
+message, and a CRC-16 (CCITT-FALSE, high byte first) over all of it.  A
+frame whose CRC disagrees is dropped whole, so a byte the console loses
+while the board paints or writes NVM costs a message, never a corrupt
+one.  The board sends its frames unpaced and never waits; the desktop,
+whose frames are the ones a busy board drops, paces its own through a
+window of two the board acknowledges from inside the console pump,
+writes the window again when an acknowledgement is late, and after four
+tries counts the window lost and greets the board afresh.  A SYN opens
+the desktop's stream: the board restarts its numbering when it takes
+one, so a board that has already talked to another desktop starts again
+from zero.

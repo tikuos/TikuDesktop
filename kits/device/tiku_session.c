@@ -45,6 +45,7 @@ struct tiku_session {
     int                 armed;          /* an END was seen; next byte decides */
     int                 in_frame;
     int                 esc;
+    int                 overflow;       /* the frame outgrew fbuf: dropped */
 };
 
 /** @brief Milliseconds on the monotonic clock. */
@@ -208,13 +209,14 @@ sort_byte(tiku_session_t *s, unsigned char b)
 {
     if (s->in_frame) {
         if (b == FRAME_END) {
-            if (s->frame != NULL && s->flen > 0u) {
+            if (s->frame != NULL && s->flen > 0u && !s->overflow) {
                 s->frame(s->fbuf, s->flen, s->frame_ctx);
             }
             s->in_frame = 0;
             s->armed = 1;
             s->flen = 0;
             s->esc = 0;
+            s->overflow = 0;
             return;
         }
         if (s->esc) {
@@ -228,6 +230,8 @@ sort_byte(tiku_session_t *s, unsigned char b)
         }
         if (s->flen < sizeof s->fbuf) {
             s->fbuf[s->flen++] = b;
+        } else {
+            s->overflow = 1;
         }
         return;
     }

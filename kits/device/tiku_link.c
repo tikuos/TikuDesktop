@@ -19,6 +19,41 @@ tiku_link_send(tiku_link_t *l, const void *msg, size_t len)
     return l->ops->send(l, msg, len);
 }
 
+int
+tiku_link_ready(tiku_link_t *l)
+{
+    if (l == NULL || l->ops == NULL) {
+        return 0;
+    }
+    return (l->ops->ready == NULL) ? 1 : l->ops->ready(l);
+}
+
+void
+tiku_link_pump(tiku_link_t *l)
+{
+    if (l != NULL && l->ops != NULL && l->ops->pump != NULL) {
+        l->ops->pump(l);
+    }
+}
+
+int
+tiku_link_lost(tiku_link_t *l)
+{
+    if (l == NULL || l->ops == NULL || l->ops->lost == NULL) {
+        return 0;
+    }
+    return l->ops->lost(l);
+}
+
+size_t
+tiku_link_mtu(tiku_link_t *l)
+{
+    if (l == NULL || l->ops == NULL || l->ops->mtu == NULL) {
+        return 0u;
+    }
+    return l->ops->mtu(l);
+}
+
 void
 tiku_link_on_message(tiku_link_t *l, tiku_link_msg_fn fn, void *ctx)
 {

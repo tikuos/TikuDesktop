@@ -13,7 +13,9 @@
 
 #include "tiku_link.h"
 
-#define TIKU_LINK_CONSOLE_SESSION 0xF1u
+#define TIKU_LINK_CONSOLE_SESSION     0xF1u
+#define TIKU_LINK_CONSOLE_SESSION_MTU 256u
+#define TIKU_LINK_CONSOLE_OVERHEAD    4u
 
 typedef struct { int used; } tiku_link_console_t;
 

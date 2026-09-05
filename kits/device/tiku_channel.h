@@ -8,9 +8,13 @@
  *
  * The desktop's window session speaks over a file descriptor.  A channel
  * gives it one: a socket pair, one end for the desktop's listener to
- * adopt, the other fed by the frames a session cuts out of the board's
- * console and drained into frames the board reads.  The shell keeps the
- * same cable.
+ * adopt, the other fed by the messages a link carries from the board and
+ * drained into messages the link carries to it, as fast as the link will
+ * take them.  A loss the link reports discards the backlog, stale by
+ * then, and greets the board afresh; a greeting it leaves unanswered for
+ * two seconds is said again, twice, then only every ten seconds, so a
+ * board with a link and no windows costs two spare greetings and a slow
+ * retry that heals one that comes back.  The shell keeps the cable.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,10 +44,17 @@ void tiku_channel_greet(tiku_channel_t *ch);
 /** @brief The descriptor for the desktop's listener to adopt. */
 int tiku_channel_fd(const tiku_channel_t *ch);
 
+/** @brief The link under the channel, for its counters. */
+tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
+
 /**
- * @brief Send what the desktop wrote to its end: one whole message as
- *        one frame per call; pointer moves queued behind a newer message
- *        are dropped.  @return how many frames went out, 0 or 1.
+ * @brief Service the link, then send what the desktop wrote to its end:
+ *        one whole message per call, pulled from the socket only when
+ *        the link would take it now; pointer moves queued behind a newer
+ *        message are dropped, and one the link refuses is dropped too.
+ *        Greets again after a loss the link reports, the backlog
+ *        discarded, and after a greeting the board has not answered.
+ *        @return how many went out, 0 or 1.
  */
 int tiku_channel_pump(tiku_channel_t *ch);
 

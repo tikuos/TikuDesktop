@@ -4,11 +4,11 @@
 UART console today and a Bluetooth radio or an IP connection later, on any
 TikuOS board, without the session or the toolkit knowing which.*
 
-**Milestones 0 and 1 are DONE and hardware-proven on the nRF54LM20A**
-(2026-09-05).  This document records what was built, where it lives, and how
-it is proven, then hands the remaining milestones (2–7) to the next agent.
-The seven-milestone arc and its rationale are in `PLAN-link.md` beside this
-file; read its §0–§8 before starting milestone 2.
+**Milestones 0, 1 and 2 are DONE and hardware-proven on the nRF54LM20A**
+(0–1 on 2026-09-05, 2 on 2026-09-06).  This document records what was built,
+where it lives, and how it is proven, then hands the remaining milestones
+(3–7) to the next agent.  The seven-milestone arc and its rationale are in
+`PLAN-link.md` beside this file; read its §0–§8 before starting milestone 3.
 
 ---
 
@@ -81,13 +81,18 @@ before a cross-MCU or flag-changed rebuild or you ship stale objects.
 - Run one board draw script:
   `TRK_PORT=/dev/ttyACM0 TRK_SHELL_ONLY=boarddraw.script sh \
    TikuTracker/tests/shell/run.sh`
-- **The board window is flaky BACK-TO-BACK** because its `greeted` flag and
-  the desktop's `/tmp/trk_home` persist; the symptom is `windows: 2` (the
-  board window never appears).  This is NOT a transport bug in milestones
-  0–1 — it is the stale-greeting state.  Reflash + `rm -rf /tmp/trk_home`
-  for a clean single run; the suite's contract is one run against a fresh
-  board, which passes 8/8.  (Milestone 2's reliability work is a separate
-  concern: a dropped byte under load corrupting a frame.)
+- **`boarddraw.script` now passes 20 runs of 20 back-to-back** (milestone 2).
+  The old `windows: 2` symptom had two causes, both closed: a dropped console
+  byte corrupting a frame (the transport, fixed by the CRC + ack window), and
+  a test-helper bug where `click-window` landed on the board window's close
+  box and shut it (the board never reboots between runs, so it stayed shut) —
+  `tab_point` in `TikuTracker/src/shell/adapters/tiku_trk_script_adapter.c`
+  now aims at the tab's middle, clear of the close and zoom boxes.  Reflash +
+  `rm -rf /tmp/trk_home` for a clean first run; the loop reboots once and runs
+  the script back to back.  A run script is in the scratchpad but the harness
+  is just: `TRK_PORT=/dev/ttyACM0 TRK_SHELL_ONLY=boarddraw.script sh
+  TikuTracker/tests/shell/run.sh` in a loop, with `pkill -x TikuDesktop`
+  between runs.
 
 ---
 
@@ -266,6 +271,91 @@ remains in `board/gui/`** (`grep -rn tiku_shell_io board/gui/` is empty).
 
 ---
 
+## 4a. Milestone 2 — the console link made reliable  ✅ DONE
+
+**A CRC-16 on every frame, a numbered and acknowledged stream from the
+desktop to the board, a desktop that re-greets on a fault, and a fault
+injector that proves each of them over the port.  The board never waits;
+the desktop paces.**
+
+### The frame inside a link's channel (both ends, and `frames.py`)
+
+```
++0  ctl      bits 0-1 kind: 0 DATA, 1 ACK, 2 SYN;  bit 7 WANT_ACK;  rest 0
++1  seq      DATA/SYN: this frame's number (mod 256); ACK: the last delivered
++2  payload  DATA only
+-2  crc      CRC-16/CCITT-FALSE (0x1021, init 0xFFFF) over ctl..payload, high
+             byte first.  "123456789" -> 0x29B1
+```
+`TIKU_LINK_CONSOLE_OVERHEAD` = 4; a channel buffer holds the message plus
+four.  The window session's channel takes `TIKU_LINK_CONSOLE_SESSION_MTU`
+(256) bytes of message; the desktop refuses (`refused`) anything larger
+before it is sent, so a long clipboard broadcast is dropped, not stalled.
+
+### Receiver rules (identical in `tiku_link_console.c`, `tiku_link_serial.c`,
+`frames.py`)
+1. Shorter than 4 bytes, or a wrong CRC → dropped whole, `bad++`, nothing
+   sent; nothing is ever delivered before the CRC is checked.
+2. ACK → the sender's window bookkeeping; never delivered.
+3. SYN → `paced_expect = seq+1`, the receiver's own outgoing numbering
+   restarts at 0 (so the peer counts the stream from zero), ACK(seq).
+4. DATA without WANT_ACK (the board's own frames) → delivered as it comes; a
+   seq that is not expected counts one `gap` (once per frame).
+5. DATA with WANT_ACK (the desktop's frames) → delivered once, in order, THEN
+   ACK(seq); a seq up to `DUP_SPAN` (8) behind is a repeat whose ACK was lost
+   (ACK again, `dup++`, not delivered); anything else is `reject`ed unanswered.
+
+### Sender rules (the desktop's `tiku_link_serial.c`; the board never paces)
+- WINDOW=2 in flight, PENDING=32 behind; a SYN opens the stream and re-opens
+  it after any loss.  A cumulative ACK pops the window; RETRY_MS=500 without
+  an ACK resends the whole window (go-back-N); RETRIES=4 rounds → a loss:
+  everything in flight and pending is dropped, one fault is reported through
+  `tiku_link_lost()`.  A link never acknowledged goes dead (no link there);
+  one that was re-SYNs on its next send.
+
+### The channel's greet policy (`tiku_channel.c`, link-agnostic)
+A greet is the only WELCOME.  On a fault the socket backlog (stale events) is
+flushed and the board re-greeted; on silence 2 s after a greet with nothing
+received, re-greeted; two re-greets, then a 10 s heartbeat, so a board with a
+link and no windows costs a few bytes a minute.  The socket is read only while
+the link is ready.  The board's listener treats a repeated OPEN with the same
+id as the same window, so a re-greet repaints rather than duplicates.
+
+### Also done, off the seam
+- `tiku_console_frame_begin/put/end` in `kernel/console/` — compose a frame
+  from more parts than `send_frame` takes, no copy; `send_frame` wraps them.
+- `tiku_session.c` on the desktop now drops an oversize frame whole (it used
+  to deliver it truncated).
+- `tab_point` (the script adapter's window-tab locator) aims at the tab's
+  middle, so `click-window` cannot land on the close box (the back-to-back
+  `windows: 2` closer).
+
+### Proof
+- On-target `link` C category (`TikuBench/tests/kernel/link/`): 46/46 (adds
+  integrity and pacing groups to the contract + loopback).  Run: `python3 -m
+  tikubench run kernel --only link --board nrf54lm20a --flash --port
+  /dev/ttyACM0`.  On-target `console`: 27/27 (regression).
+- Host `link-fault.py`: 10/10 — corrupt, truncate (short frame), drop (out of
+  order), dup, recover (a desync healed by a SYN), a 100-message flood through
+  the window, and a paced hold across a 1 s deaf board, each read against the
+  board's own `link:` counters.  Run: `python3 -m tikubench run link-fault
+  --board nrf54lm20a --port /dev/ttyACM0` (after a shell flash).
+- Host `link-console.py`: 7/7; `console.py`: 9/9 (both ported to the link).
+- `boarddraw.script` 20 runs of 20 back-to-back on the LM20: 20/20, the
+  `windows: 2` failure gone.  The board's counters stay clean under load
+  (`bad=0 dup=0 reject=0 gap=0`).
+- Desktop `make test`, `make lint` green; firmware `make lint` clean on the
+  link/console/shell files; overlay byte-identity holds (`nm` shows no
+  `tiku_draw`/`tiku_gui` without the overlay).
+- A native host harness for the kernel link (console + link + the C tests
+  compiled with gcc against small stubs) is in the scratchpad, with mutation
+  checks: breaking the CRC or the dup rule fails exactly the asserts that
+  guard them.
+
+---
+
+---
+
 ## 5. File map (what changed, per repo)
 
 ```
@@ -306,23 +396,37 @@ remains in `board/gui/`** (`grep -rn tiku_shell_io board/gui/` is empty).
 Commits (by capability, one per repo per capability): firmware `Console:` +
 `Link:`; applications `Board:` + `Desktop:`; TikuBench `Console:` + `Link:`.
 
+Milestone 2 touched, per repo (one commit each):
+```
+~/tikuOS  (firmware) — `Link: CRC and an acknowledged stream on the console link`
+  kernel/link/tiku_link_console.{h,c}        CRC, receiver rules, stats
+  kernel/console/tiku_console.{h,c}          frame_begin/put/end (compose a frame)
+  kernel/shell/commands/tiku_shell_cmd_console.{c,h}  the `link:` counters line
+  TikuBench/tests/kernel/link/test_link.{c,h}, tiku_test_config.h,
+    test_runner.c, tikubench/runner.py       integrity + pacing groups
+~/tikuOS/applications — `Desktop:` (link) + `Board:`/adapter
+  kits/device/tiku_link.{h,c}                ready/pump/lost/mtu ops
+  kits/device/tiku_link_serial.{h,c}         paced sender, receiver, stats
+  kits/device/tiku_channel.{c,h}             greet policy, flush, ready gate
+  kits/device/tiku_session.c                 oversize frame dropped whole
+  board/gui/tiku_draw.c, board/README.md     buffer = SESSION_MTU + overhead
+  TikuTracker/src/shell/adapters/tiku_trk_script_adapter.c  tab_point clears close
+  TikuTracker/tests/test_link.c, test_channel.c, boardstub/.../tiku_link_console.h
+  TikuTracker/tests/shell/boarddraw.script   waits sized for the paced round-trip
+~/tikuOS/TikuBench — `Link: A fault injector for the console link`
+  tikubench/core/frames.py                   link_frame/link_parse, class Link
+  tikubench/suites/link_fault.py             NEW  the fault injector
+  tikubench/suites/link_console.py, console.py  ported to the link
+```
+
 ---
 
-## 6. What is LEFT — milestones 2–7
+## 6. What is LEFT — milestones 3–7
 
-The seam is in place; these build on it.  Full detail and the TikuBench proof
-per milestone are in `PLAN-link.md` §7.  The concrete starting points:
+The seam is in place and reliable; these build on it.  Full detail and the
+TikuBench proof per milestone are in `PLAN-link.md` §7.  The concrete
+starting points:
 
-- **M2 — the console link made reliable** (the one that matters: it kills the
-  `windows: 2` drop-a-byte flakiness).  Add to `tiku_link_console.c` /
-  `tiku_link_serial.c`: a CRC-16 per frame (drop-as-a-unit on mismatch, count
-  it), an ack + a small pacing window (the board's RX is the weak direction —
-  it drops while it writes NVM or paints), and a desktop re-greet on a counted
-  loss or a silence past a deadline so the window blinks rather than vanishes.
-  Proof: `link_fault.py` — a host-side fault injector in the serial link that
-  corrupts, truncates and drops frames and proves each is dropped whole,
-  counted and recovered; a flood test proves the ack window holds.  Reuse
-  `tikubench/core/frames.py` for the fault injector.
 - **M3 — the board off the shell's back.**  A small `console` protothread
   calls `tiku_console_pump()` when the shell is not built, so a
   `TIKU_SHELL_ENABLE=0` image still puts a window on the desk.  Proof:
@@ -392,6 +496,12 @@ per milestone are in `PLAN-link.md` §7.  The concrete starting points:
   `test_link` (firmware 13/13, desktop pty 6/6) and `link_console.py` 6/6
   pass; `boarddraw.script` 8/8 on a fresh LM20; `make test`/`make lint`
   green.  ✅
-- **Out of scope here (milestone 2+):** the CRC-16, the ack/pacing window,
-  the desktop re-greet on loss, the shell-less `console` protothread, and the
-  IP/BLE backends.  See `PLAN-link.md` §7.
+- **Milestone 2 done:** a CRC-16 and a numbered, acknowledged, paced stream
+  on the console link; the desktop re-greets on a fault; an oversize frame is
+  dropped whole; `tab_point` clears the close box.  On-target `link` 46/46
+  and `console` 27/27; host `link-fault` 10/10, `link-console` 7/7,
+  `console` 9/9; `boarddraw.script` 20/20 back-to-back on the LM20 with the
+  `windows: 2` failure gone and clean board counters; `make test`/`make
+  lint` green both sides; overlay byte-identity holds.  ✅
+- **Out of scope here (milestone 3+):** the shell-less `console` protothread,
+  and the IP/BLE/capability/discovery backends.  See `PLAN-link.md` §7.
