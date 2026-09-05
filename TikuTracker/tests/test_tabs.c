@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "tiku_tabs.h"
+#include "tiku_tabs_paint.h"
 
 static int fails;
 

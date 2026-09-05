@@ -14,16 +14,19 @@
  */
 #ifndef TIKU_GFX_H_
 #define TIKU_GFX_H_
+#ifdef TIKU_DISPLAYLESS
+/* A build with no pixels -- a board -- answers these names with a
+ * recorder found on the include path instead of the painter below. */
+#include <tiku_gfx.h>
+#else
 
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief Packed 0x00RRGGBB; the alpha byte is unused. */
-typedef uint32_t tiku_rgb_t;
+#include "tiku_geom.h"
 
-#define TIKU_RGB(r, g, b) \
-    (((tiku_rgb_t)(r) << 16) | ((tiku_rgb_t)(g) << 8) | \
-     (tiku_rgb_t)(b))
+/** @brief Packed 0x00RRGGBB; the alpha byte is unused. */
+
 
 /* The R5 palette (R5-SPEC.md).  Every shade of the panel comes from
  * tiku_tint() rather than a second constant. */
@@ -126,10 +129,6 @@ tiku_rgb_t tiku_grey(tiku_rgb_t c);
 #define TIKU_DARKEN_3     1.07f
 #define TIKU_DARKEN_4     1.08f
 #define TIKU_DARKEN_MAX   2.00f
-
-typedef struct {
-    int x, y, w, h;
-} tiku_rect_t;
 
 struct tiku_dl;
 
@@ -350,4 +349,5 @@ tiku_rect_t tiku_inset(tiku_rect_t r, int n);
 /** @brief Write the surface as a PNG; 0 on success. */
 int tiku_surface_png(const tiku_surface_t *s, const char *path);
 
+#endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_GFX_H_ */

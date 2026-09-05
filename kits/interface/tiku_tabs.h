@@ -20,7 +20,7 @@
 #ifndef TIKU_TABS_H_
 #define TIKU_TABS_H_
 
-#include "tiku_gfx.h"
+#include "tiku_geom.h"
 
 #define TIKU_TABS_MAX        8
 #define TIKU_TABS_LABEL_MAX 40
@@ -79,15 +79,5 @@ tiku_rect_t tiku_tabs_rect(const tiku_tabs_t *t, tiku_rect_t strip,
  * @return the tab's index, or -1 for none.
  */
 int tiku_tabs_hit(const tiku_tabs_t *t, tiku_rect_t strip, int x, int y);
-
-/**
- * @brief Draw the strip: the current tab lit and open to the body below,
- *        the rest idle with a seam under them.
- *
- * The strip's own colours come from the theme's tab roles, so it wears
- * the same amber a window's title tab does.
- */
-void tiku_tabs_draw(const tiku_tabs_t *t, tiku_surface_t *s,
-                    tiku_rect_t strip);
 
 #endif /* TIKU_TABS_H_ */

@@ -1,25 +1,39 @@
 # shell: desktop
 # mount: /devices/board1
 # board: only
-# A window of the board's own: its process opens it by title and size
-# and draws it as a list of the desktop's controls, a few hundred bytes
-# over the same console the shell uses.  A press on its button goes back
-# over that line as an event, and the process redraws the count.  This
-# needs a board on the cable, so it runs only with one.
+# A window of the board's own, built from the desktop's kit: the same
+# tabs, list, slider and field a desktop program keeps, their behaviour
+# compiled for the board and their paint recorded as the desktop's own
+# controls, a few hundred bytes over the console.  Each is worked from
+# the desktop and the board's redraw says what changed.  This needs a
+# board on the cable, so it runs only with one.
 wait 30
 note the board's window is on the desktop, beside its form
 expect-windows 3
-click 430 227
+note the second tab is pressed and becomes current
+click 558 174
 wait 20
 expect-title Board window
-expect-narrate Pressed 1 time
-note the window also carries tabs and a scrollbar, said as themselves
-expect-narrate tabs
-expect-narrate scrollbar
-note a second press, past the double-click interval, counts again
-wait 40
-click 445 230
+expect-narrate Switches
+note a list row is chosen
+click 500 248
 wait 20
-expect-narrate Pressed 2 times
+expect-narrate Pressure
+note the slider takes the value under the pointer
+click 553 325
+wait 20
+expect-narrate slider at 75
+note the field takes the keyboard once clicked, its text selected as a
+note desktop field opens, so the first letters replace it
+click 500 357
+wait 8
+key h
+key i
+wait 20
+expect-narrate text field "hi", focused
+note and the button counts
+click 421 390
+wait 20
+expect-narrate Pressed 1 time
 shot /tmp/trk_boarddraw.png
 quit

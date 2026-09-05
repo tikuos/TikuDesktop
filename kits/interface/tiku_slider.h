@@ -20,7 +20,7 @@
 #ifndef TIKU_SLIDER_H_
 #define TIKU_SLIDER_H_
 
-#include "tiku_gfx.h"
+#include "tiku_geom.h"
 
 typedef struct {
     int min, max;
@@ -65,10 +65,6 @@ int tiku_slider_drag(tiku_slider_t *sl, tiku_rect_t r, int x);
 /** @brief Let go. */
 void tiku_slider_release(tiku_slider_t *sl);
 
-/** @brief Draw the track with its knob at the value. */
-void tiku_slider_draw(const tiku_slider_t *sl, tiku_surface_t *s,
-                      tiku_rect_t r);
-
 /*-------------------------------------------------------------------------*
  * The stepper: the same number, shown as digits with two arrows.
  *-------------------------------------------------------------------------*/
@@ -88,9 +84,5 @@ tiku_stepper_hit_t tiku_stepper_hit(tiku_rect_t r, int x, int y);
  * @return nonzero when the value changed.
  */
 int tiku_stepper_press(tiku_slider_t *sl, tiku_rect_t r, int x, int y);
-
-/** @brief Draw @p sl as a field of digits with its two arrows. */
-void tiku_stepper_draw(const tiku_slider_t *sl, tiku_surface_t *s,
-                       tiku_rect_t r);
 
 #endif /* TIKU_SLIDER_H_ */

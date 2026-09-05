@@ -24,7 +24,9 @@
 #include "tiku_ui.h"
 #include "tiku_alert.h"
 #include "tiku_tabs.h"
+#include "tiku_tabs_paint.h"
 #include "tiku_slider.h"
+#include "tiku_slider_paint.h"
 #include "tiku_syntax.h"
 #include "tiku_font.h"
 

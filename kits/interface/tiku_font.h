@@ -13,6 +13,11 @@
  */
 #ifndef TIKU_FONT_H_
 #define TIKU_FONT_H_
+#ifdef TIKU_DISPLAYLESS
+/* A build with no pixels -- a board -- answers these names with a
+ * recorder found on the include path instead of the painter below. */
+#include <tiku_font.h>
+#else
 
 #include "tiku_gfx.h"
 
@@ -172,4 +177,5 @@ int tiku_text_centered(tiku_surface_t *s, const tiku_font_t *f,
                             tiku_rect_t r, const char *text,
                             tiku_rgb_t c);
 
+#endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_FONT_H_ */

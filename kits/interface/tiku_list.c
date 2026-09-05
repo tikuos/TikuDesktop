@@ -11,8 +11,7 @@
 #include <string.h>
 
 #include "tiku_list.h"
-#include "tiku_font.h"
-#include "tiku_ui.h"
+#include "tiku_measure.h"
 
 static int
 clampi(int v, int lo, int hi)
@@ -107,7 +106,7 @@ tiku_list_row_h(const tiku_list_t *l)
     if (l != NULL && l->row_h > 0) {
         return l->row_h;
     }
-    return tiku_ui_row_h();
+    return tiku_measure_row_h();
 }
 
 void
@@ -598,37 +597,3 @@ tiku_list_scroll_to(tiku_list_t *l, int top, tiku_rect_t body)
     return l->top != was;
 }
 
-void
-tiku_list_draw(const tiku_list_t *l, tiku_surface_t *s, tiku_rect_t body,
-               tiku_list_name_fn name, void *ctx)
-{
-    int rows, i;
-
-    if (l == NULL || s == NULL || name == NULL) {
-        return;
-    }
-    rows = tiku_list_visible_rows(l, body);
-    for (i = 0; i < rows; i++) {
-        int row = l->top + i;
-        const char *n;
-
-        if (row >= l->count) {
-            break;
-        }
-        n = name(ctx, row);
-        if (l->head[row]) {
-            /* Words, not a row: the group's NAME, in the face labels
-             * wear, over the paper the rows stand on. */
-            tiku_rect_t r = tiku_list_row_rect(l, body, row);
-            const tiku_font_t *f = tiku_font_bold();
-
-            tiku_fill(s, r, TIKU_C_DOC);
-            tiku_text(s, f, r.x + 4,
-                           r.y + (r.h - f->height) / 2 + f->ascent,
-                           (n != NULL) ? n : "", TIKU_C_TEXT);
-            continue;
-        }
-        tiku_ui_list_row(s, tiku_list_row_rect(l, body, row),
-                         (n != NULL) ? n : "", tiku_list_selected(l, row));
-    }
-}

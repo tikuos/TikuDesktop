@@ -10,6 +10,11 @@
  */
 #ifndef TIKU_EVENT_H_
 #define TIKU_EVENT_H_
+#ifdef TIKU_DISPLAYLESS
+/* A board carries the kernel's own event record; only the names of keys
+ * and modifiers cross, from a generated copy on the include path. */
+#include <tiku_event.h>
+#else
 
 #include <stdint.h>
 
@@ -70,4 +75,5 @@ typedef struct {
     int                    width, height;
 } tiku_event_t;
 
+#endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_EVENT_H_ */

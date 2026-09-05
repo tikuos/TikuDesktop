@@ -13,6 +13,11 @@
  */
 #ifndef TIKU_UI_H_
 #define TIKU_UI_H_
+#ifdef TIKU_DISPLAYLESS
+/* A build with no pixels -- a board -- answers these names with a
+ * recorder found on the include path instead of the painter below. */
+#include <tiku_ui.h>
+#else
 
 #include "tiku_font.h"
 #include "tiku_gfx.h"
@@ -277,4 +282,5 @@ int tiku_ui_text_spans(tiku_surface_t *s, const tiku_font_t *f,
                             int x, int y, const char *text,
                             const tiku_span_t *span, int n);
 
+#endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_UI_H_ */

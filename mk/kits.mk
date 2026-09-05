@@ -50,6 +50,9 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_syntax.c $(K)/interface/tiku_list.c \
                $(K)/interface/tiku_splash.c \
                $(K)/interface/tiku_layout.c $(K)/interface/tiku_form.c \
+               $(K)/interface/tiku_measure_font.c \
+               $(K)/interface/tiku_slider_paint.c $(K)/interface/tiku_tabs_paint.c \
+               $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
                $(K)/interface/tiku_window.c \
                $(K)/interface/tiku_x11.c
 TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
@@ -146,10 +149,23 @@ dl:
 	    > $(K)/interface/tiku_dl_ops.h
 	python3 $(K)/interface/tools/gendl.py board $(K)/interface/dl_ops.txt \
 	    > board/gui/tiku_draw_ops.h
+# The behaviour files must compile for a board that has no display: the
+# firmware's own compiler, the kit's headers only, nothing else.
+BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
+                  $(K)/interface/tiku_textview.c $(K)/interface/tiku_slider.c \
+                  $(K)/interface/tiku_tabs.c $(K)/interface/tiku_list.c \
+                  $(K)/interface/tiku_layout.c $(K)/interface/tiku_colors.c
+check-behaviour:
+	@for f in $(BEHAVIOUR_SRCS); do \
+	    arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra \
+	        -mcpu=cortex-m33 -mthumb -I$(K)/interface $$f || exit 1; \
+	done; echo "check-behaviour: every behaviour file compiles for the board"
 check-dl:
 	@python3 $(K)/interface/tools/gendl.py desktop $(K)/interface/dl_ops.txt \
 	    | diff -q - $(K)/interface/tiku_dl_ops.h > /dev/null \
 	    && python3 $(K)/interface/tools/gendl.py board $(K)/interface/dl_ops.txt \
 	    | diff -q - board/gui/tiku_draw_ops.h > /dev/null \
+	    && python3 $(K)/interface/tools/genevent.py $(K)/interface/tiku_event.h \
+	    | diff -q - board/gui/tiku_event.h > /dev/null \
 	    && echo "check-dl: both ends match dl_ops.txt" \
 	    || { echo "check-dl: a generated op header is stale; run make dl"; exit 1; }

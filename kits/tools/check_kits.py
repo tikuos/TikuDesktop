@@ -44,6 +44,16 @@ INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.MULTILINE)
 # What a kit must never know the name of.
 APP_PREFIXES = ("tiku_trk_desktop", "tiku_trk_app.")
 
+# The interface kit's BEHAVIOUR files: the state a control keeps and the
+# input it takes, and nothing that draws.  These compile on a board with
+# no display, so a paint header in one would drag the whole drawing end
+# in; the paint lives beside them in tiku_<x>_paint.c.
+BEHAVIOUR = ("tiku_field", "tiku_scroll", "tiku_textview", "tiku_slider",
+             "tiku_tabs", "tiku_list", "tiku_layout", "tiku_colors",
+             "tiku_measure", "tiku_geom", "tiku_event")
+PAINT_HEADERS = ("tiku_gfx.h", "tiku_font.h", "tiku_ui.h", "tiku_dl.h",
+                 "tiku_window.h", "tiku_theme.h")
+
 
 def main():
     owner = {}
@@ -78,13 +88,28 @@ def main():
                                   "not one %s may draw on"
                                   % (kit, name, inc, where, kit))
 
+    # A behaviour file that draws is a board program that cannot build.
+    d = os.path.join(KITS_DIR, "interface")
+    for name in sorted(os.listdir(d)):
+        stem = name[:-2] if name.endswith((".c", ".h")) else None
+        if stem not in BEHAVIOUR:
+            continue
+        text = open(os.path.join(d, name), encoding="utf-8",
+                    errors="replace").read()
+        for inc in INCLUDE.findall(text):
+            if inc in PAINT_HEADERS:
+                errors.append("interface/%s: a behaviour file includes %s; "
+                              "the drawing belongs in %s_paint.c"
+                              % (name, inc, stem))
+
     if errors:
         print("kit boundaries broken:")
         for e in errors:
             print("  " + e)
         return 1
 
-    print("the kits hold: %d kits, boundaries as declared" % len(ALLOWS))
+    print("the kits hold: %d kits, boundaries as declared, %d behaviour "
+          "files that do not draw" % (len(ALLOWS), len(BEHAVIOUR)))
     return 0
 
 

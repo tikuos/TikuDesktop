@@ -27,8 +27,10 @@
 #include "tiku_font.h"
 #include "tiku_ui.h"
 #include "tiku_slider.h"
+#include "tiku_slider_paint.h"
 #include "tiku_alert.h"
 #include "tiku_tabs.h"
+#include "tiku_tabs_paint.h"
 
 /* The ops: their numbers, lengths and names come from dl_ops.txt, the
  * one table the board's writers are generated from as well. */

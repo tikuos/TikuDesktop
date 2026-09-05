@@ -14,6 +14,7 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_iconpaint.h"
 #include "tiku_trk_info_window.h"
+#include "tiku_tabs_paint.h"
 
 #include "tiku_attr.h"
 

@@ -16,10 +16,13 @@
 
 #include "tiku_ui.h"
 #include "tiku_tabs.h"
+#include "tiku_tabs_paint.h"
 #include "tiku_slider.h"
+#include "tiku_slider_paint.h"
 #include "tiku_alert.h"
 #include "tiku_syntax.h"
 #include "tiku_list.h"
+#include "tiku_list_paint.h"
 
 #ifndef TIKU_NO_X11
 int tiku_x11_show(const tiku_surface_t *s, const char *title);

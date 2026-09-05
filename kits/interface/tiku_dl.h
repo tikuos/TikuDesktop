@@ -20,6 +20,11 @@
  */
 #ifndef TIKU_DL_H_
 #define TIKU_DL_H_
+#ifdef TIKU_DISPLAYLESS
+/* A build with no pixels -- a board -- answers these names with a
+ * recorder found on the include path instead of the painter below. */
+#include <tiku_dl.h>
+#else
 
 #include <stddef.h>
 #include <stdint.h>
@@ -383,4 +388,5 @@ tiku_dl_t *tiku_dl_unflatten(const void *buf, size_t len, size_t *read);
  */
 int tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s);
 
+#endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_DL_H_ */

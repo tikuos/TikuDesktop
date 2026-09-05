@@ -20,7 +20,7 @@
 #ifndef TIKU_COLORS_H_
 #define TIKU_COLORS_H_
 
-#include "tiku_gfx.h"
+#include "tiku_geom.h"
 
 #define TIKU_COLORS_MAX 64
 
@@ -71,9 +71,5 @@ tiku_rect_t tiku_colors_rect(const tiku_colors_t *c, tiku_rect_t r,
 
 /** @brief Which swatch a point lands on, or -1. */
 int tiku_colors_hit(const tiku_colors_t *c, tiku_rect_t r, int x, int y);
-
-/** @brief Draw the grid, the chosen swatch ringed. */
-void tiku_colors_draw(const tiku_colors_t *c, tiku_surface_t *s,
-                      tiku_rect_t r);
 
 #endif /* TIKU_COLORS_H_ */

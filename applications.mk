@@ -18,7 +18,25 @@ APPL_CFLAGS :=
 ifeq ($(TIKU_APPL_GUI),1)
 APPL_SRCS   += applications/board/gui/tiku_gui.c
 APPL_SRCS   += applications/board/gui/tiku_draw.c
-APPL_CFLAGS += -DTIKU_APPL_GUI=1 -Iapplications/board/gui
+APPL_SRCS   += applications/board/gui/tiku_paint_board.c
+APPL_SRCS   += applications/board/gui/tiku_measure_board.c
+# The desktop kit's behaviour and paint files, compiled here in place:
+# the behaviour has nothing that draws, and the paint draws through the
+# board's recording surface (board/gui/tiku_gfx.h and friends, found
+# first on the include path).
+APPL_SRCS   += applications/kits/interface/tiku_field.c
+APPL_SRCS   += applications/kits/interface/tiku_scroll.c
+APPL_SRCS   += applications/kits/interface/tiku_slider.c
+APPL_SRCS   += applications/kits/interface/tiku_tabs.c
+APPL_SRCS   += applications/kits/interface/tiku_list.c
+APPL_SRCS   += applications/kits/interface/tiku_layout.c
+APPL_SRCS   += applications/kits/interface/tiku_colors.c
+APPL_SRCS   += applications/kits/interface/tiku_slider_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_tabs_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_list_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_colors_paint.c
+APPL_CFLAGS += -DTIKU_APPL_GUI=1 -DTIKU_DISPLAYLESS=1 \
+               -Iapplications/board/gui -Iapplications/kits/interface
 ifeq ($(TIKU_APPL_GUI_DEMO),1)
 APPL_SRCS   += applications/board/samples/panel_demo.c
 APPL_CFLAGS += -DTIKU_APPL_GUI_DEMO=1

@@ -36,6 +36,7 @@
 #include "tiku_font.h"
 #include "tiku_gfx.h"
 #include "tiku_list.h"
+#include "tiku_list_paint.h"
 #include "tiku_iconpaint.h"
 #include "tiku_image.h"
 #include "tiku_logo.h"

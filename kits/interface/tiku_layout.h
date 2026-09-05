@@ -19,7 +19,7 @@
 #ifndef TIKU_LAYOUT_H_
 #define TIKU_LAYOUT_H_
 
-#include "tiku_gfx.h"
+#include "tiku_geom.h"
 
 /**
  * @brief How many parts one description holds.

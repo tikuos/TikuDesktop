@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "tiku_slider.h"
+#include "tiku_slider_paint.h"
 #include "tiku_ui.h"
 
 static int fails;

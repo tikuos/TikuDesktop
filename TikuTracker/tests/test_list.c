@@ -21,6 +21,7 @@
 
 #include "tiku_dl.h"
 #include "tiku_list.h"
+#include "tiku_list_paint.h"
 
 static int fails;
 
