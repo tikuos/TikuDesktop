@@ -56,7 +56,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c $(K)/translation/tiku_fontdir.c
-MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c
+MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c \
+               $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \
@@ -72,6 +73,13 @@ $(GEN_STRINGS): $(T)/strings/en.xml $(K)/support/tools/genstrings.py
 	@mkdir -p $(dir $@)
 	python3 $(K)/support/tools/genstrings.py $< > $@
 $(OBJ)/$(K)/support/tiku_strings.o $(PIC)/$(K)/support/tiku_strings.o: $(GEN_STRINGS)
+
+# The system sounds, baked the same way from assets/sounds/*.score.
+GEN_SCORES := $(BUILD)/gen/tiku_scores_default.h
+$(GEN_SCORES): $(wildcard assets/sounds/*.score) $(K)/media/tools/genscores.py
+	@mkdir -p $(dir $@)
+	python3 $(K)/media/tools/genscores.py assets/sounds > $@
+$(OBJ)/$(K)/media/tiku_sound_scores.o $(PIC)/$(K)/media/tiku_sound_scores.o: $(GEN_SCORES)
 
 LIB_SUPPORT     := $(BUILD)/libtiku_support.a
 LIB_DEVICE      := $(BUILD)/libtiku_device.a

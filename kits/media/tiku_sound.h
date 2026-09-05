@@ -102,6 +102,15 @@ const char *tiku_sound_name(tiku_sound_event_t event);
 void tiku_sound_free(void);
 
 /**
+ * @brief Render every baked score and give each event its clip.
+ * @return how many of the events now have a clip.
+ */
+int tiku_sound_load_scores(void);
+
+/** @brief The score text baked for @p event, or NULL. */
+const char *tiku_sound_score(tiku_sound_event_t event);
+
+/**
  * @brief The host backend: the PulseAudio simple API, opened at run time.
  *
  * Found through dlopen("libpulse-simple.so.0"), which PipeWire serves as

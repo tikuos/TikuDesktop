@@ -24,6 +24,7 @@ LIB_TRANSPORT := $(LIB_STORAGE) $(LIB_DEVICE) $(LIB_SUPPORT)
 
 PROBE     := $(BUILD)/tiku-desk-probe
 GALLERY   := $(BUILD)/tiku-desk-gallery
+SOUNDS    := $(BUILD)/tiku-sound-gallery
 DEMOAPP   := $(BUILD)/tiku-demo-app
 RUNNER    := $(BUILD)/tiku-run
 BASICHOST := $(BUILD)/tiku-basic
@@ -70,13 +71,16 @@ $(info tiku-basic not built: no TikuOS checkout at $(TIKUOS); set TIKUOS= to nam
 endif
 
 .PHONY: apps examples loadable gallery banners probe
-apps: $(PROBE) $(GALLERY) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
+apps: $(PROBE) $(GALLERY) $(SOUNDS) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
       $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP)
 examples: $(EXAMPLES)
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(RUNNER)
 
 $(PROBE): $(OBJ)/$(D)/samples/tiku_probe.o $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(SOUNDS): $(OBJ)/$(D)/samples/tiku_sound_gallery.o $(LIB_MEDIA) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 $(GALLERY): $(OBJ)/$(D)/samples/tiku_gallery.o $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11

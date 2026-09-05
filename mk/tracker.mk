@@ -229,6 +229,7 @@ test_addon_SRCS   := $(T)/src/shell/tiku_trk_addon.c
 test_state_pipeline_SRCS   := $(T)/src/core/tiku_trk_state_pipeline.c
 test_model_SRCS   := $(COMMON)
 test_sound_LDLIBS := -lm
+test_score_LDLIBS := -lm
 test_poseview_SRCS   := $(COMMON) $(POSEVIEW)
 test_fs_SRCS   := $(COMMON)
 test_types_SRCS   := $(COMMON)
