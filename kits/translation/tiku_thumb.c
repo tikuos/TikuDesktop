@@ -22,13 +22,12 @@
 /**
  * @brief Where a thumbnail's PIXELS live.
  *
- * Not on the file.  Tracker stores a WebP-compressed thumbnail as an
- * attribute; this port has no encoder, so the choice is 64 KB of raw pixels
- * per file in an attribute store built for small values, or a cache beside
- * the state store.  The cache wins: the attribute store's 4 KB cap is a
- * design decision about what attributes are FOR, and bulk data is not it.
- * The stamp and the dimensions stay attributes, so freshness is still a
- * property of the file.
+ * Not on the file.  Tracker stores a WebP thumbnail as an attribute;
+ * this port has no encoder, so the choice is 64 KB of raw pixels per
+ * file in an attribute store built for small values, or a cache beside
+ * the state store.  The cache wins, since the store's 4 KB cap is a
+ * decision about what attributes are for.  The stamp and the dimensions
+ * stay attributes, so freshness is still a property of the file.
  */
 static int
 blob_path(const char *path, char *out, size_t max)

@@ -8,14 +8,13 @@
  *
  * One clipboard for every field and every editor page in the process:
  * what was cut from a rename can be pasted into a program, and the
- * other way round.  The SHELL is the process that owns the desk, so
- * this store IS the desk's clipboard; an application hosted out of
- * process reaches the same store through its services, and the shell
- * keeps the two in step over the wire.
+ * other way round.  The shell owns the desk, so this store is the desk's
+ * clipboard; an application hosted out of process reaches the same store
+ * through its services, and the shell keeps the two in step.
  *
  * Text only, by design: the file clipboard (Tracker's) holds names and
- * cuts nothing, and the two must never be one -- a rename's Cut must
- * not cut the selected files.
+ * cuts nothing, and the two must never be one, since a rename's Cut
+ * must not cut the selected files.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

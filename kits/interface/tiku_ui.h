@@ -246,20 +246,14 @@ tiku_rect_t tiku_ui_window(tiku_surface_t *s,
                                      int active);
 
 /**
- * @brief Draw @p text at @p x, @p y (baseline) as runs that MEAN things.
+ * @brief Draw @p text at @p x, @p y (baseline) as runs that mean things.
  *
  * Each run takes its shade from tiku_ink(), so a highlighted line
- * re-themes with everything else and carries no palette of its own.  A
- * run table shorter than the line leaves the tail plain, and a NULL or
- * empty one draws the whole line plain -- so a caller may pass whatever
- * the classifier gave it without checking first.
- *
- * The runs are drawn as separate text calls, which is exactly how they
- * cross the wire: one command per run, each carrying its own colour, the
- * way every other coloured thing on this desktop travels.  A remote
- * window is therefore highlighted without the protocol learning a word
- * about syntax.  The cost is honest and worth naming: a narrated line
- * arrives as several text facts rather than one.
+ * re-themes with everything else.  A run table shorter than the line
+ * leaves the tail plain; a NULL or empty one draws it all plain.  The
+ * runs are separate text calls, one command per run with its own
+ * colour, so a remote window is highlighted without the protocol
+ * knowing syntax, at the cost of a narrated line arriving as several.
  *
  * @return the total advance, so a caller can place what follows.
  */

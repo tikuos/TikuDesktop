@@ -7,35 +7,13 @@
  * tiku_form.h - a panel that was DESCRIBED rather than programmed.
  *
  * A few lines of text say what controls there are, what each is called,
- * and -- the part that matters -- which PLACE in the namespace each one
- * shows or changes:
- *
- *     title   Board one
- *     gauge   Temperature  /devices/board1/sys/temp  0 100
- *     toggle  Lamp         /devices/board1/led
- *     field   Name         /devices/board1/name
- *     button  Reboot       /devices/board1/reboot    1
- *
- * The shell renders that, tracks it, reads the bound places to fill it
- * in, and writes to them when somebody works a control.  So a device
- * with NO interface code of its own has an interface: it publishes what
- * it has, in text, and the desktop is the program that draws it.
- *
- * This is the whole thesis in one file.  The desktop IS the device's
- * interface; the device does not ship a second one, does not link a
- * toolkit, and does not care what the desktop looks like this year.
- * And because the description names PATHS, an interface for a board
- * reached over a serial line is written the same way as one for a
- * folder of files -- the namespace already made those the same kind of
- * thing.
- *
- * WHAT IT DELIBERATELY IS NOT: a layout language.  There are no
- * coordinates, no sizes and no nesting, because a description that
- * carried them would be a description that has to be re-authored for
- * every screen it lands on -- and the reason to describe a panel rather
- * than draw one is that the drawing end knows things the describing end
- * cannot: the face, the theme, how much room there is.  Rows in the
- * order they were written is the whole of the arrangement.
+ * and which place in the namespace each one shows or changes, such as
+ * "gauge Temperature /devices/board1/sys/temp 0 100".  The shell renders
+ * that, tracks it, reads the bound places and writes to them when a
+ * control is worked, so a device with no interface code of its own has
+ * one.  It is not a layout language: no coordinates, sizes or nesting,
+ * only rows in the order written, because the drawing end knows the
+ * face, the theme and the room.  The thesis is in doc/forms.md.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

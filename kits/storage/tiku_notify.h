@@ -6,19 +6,15 @@
  *
  * tiku_notify.h - change notices, and where they come from.
  *
- * Tracker feeds node-monitor, path-monitor and live-query notices through ONE
- * handler, which is why a query window updates by the same code as a folder
- * window.  Everything below depends on that single entry point existing, so
- * it is built first and the source is made to fit it -- not the other way
- * round.
- *
- * The device cannot push these yet.  Its watch primitive is per-node, has
- * eight slots, occupies the shell while it runs, and reports a value with no
- * opcode -- it cannot say "created" or "renamed", and it cannot cover a
- * folder.  So the notices are DERIVED here, by diffing a re-listing against
- * what the view already holds.  The vocabulary is the real one, and when the
- * device grows a channel that can carry it, only the source changes; the
- * handler and every rule it enforces stay as they are.
+ * Tracker feeds node-monitor, path-monitor and live-query notices
+ * through one handler, which is why a query window updates by the same
+ * code as a folder window; that entry point comes first and the source
+ * is made to fit it.  The device cannot push these yet: its watch
+ * primitive is per-node, eight slots, occupies the shell while it runs,
+ * and reports a value with no opcode, so it cannot say created or
+ * renamed and cannot cover a folder.  The notices are derived here by
+ * diffing a re-listing against what the view holds; when the device
+ * grows a channel that can carry them, only the source changes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

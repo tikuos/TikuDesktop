@@ -5,27 +5,14 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_layout.h - a rectangle divided as it was DESCRIBED, rather than
- * as it was worked out twice.
- *
- * A window says what its parts are -- this one is as tall as a button,
- * that one takes what is left, this one is never narrower than its word
- * -- and then asks where part three went.  The draw asks, and the click
- * asks, and they get the same answer because there is only one.
- *
- * That is the whole point.  Every layout bug in this tree has the same
- * shape: a rectangle written down in the drawing and written down again,
- * differently, in the hit test.  A stepper drawn as the string
- * "-  12 px  +" and split by a hard-coded pixel, so which half a press
- * lands in moves with the face and with the NUMBER.  A row of choices
- * whose hit test forgot to bound x, so a click hundreds of pixels from
- * anything drawn still changed the setting.  Neither is a hard bug to
- * write; both are impossible to write when the rectangle is asked for
- * rather than recalled.
- *
- * It solves nothing at draw time that it could have cached, because
- * caching is what goes stale: the description is small, the arithmetic
- * is a handful of adds, and a window whose face just changed size gets
- * the right answer without anybody remembering to invalidate anything.
+ * A window says what its parts are: this one as tall as a button, that
+ * one taking what is left, this one never narrower than its word.  Then
+ * it asks where part three went, and the draw and the click get the
+ * same answer because there is only one.  A rectangle written down in
+ * the drawing and again, differently, in the hit test is the shape of
+ * every layout bug; one asked for rather than recalled cannot have it.
+ * Nothing is cached, since caching goes stale: the arithmetic is a few
+ * adds, and a face that just changed size needs nothing invalidated.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

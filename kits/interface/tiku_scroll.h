@@ -4,19 +4,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_scroll.h - a scrollbar that is a THING, not a drawing.
+ * tiku_scroll.h - a scrollbar that is a thing, not a drawing.
  *
- * The state behind tiku_ui_scrollbar(), which paints one: any
- * application with content longer than its window needs exactly this
- * object, which is why it lives here rather than in the shells.
- *
- * The port's bar was a pure function of the view evaluated per frame: it
- * could be looked at and never touched, and there was nothing to hold a
- * range steady while the user dragged it or while a bulk re-layout moved
- * the content underneath.  This is the object those rows are about -- a
+ * The state behind tiku_ui_scrollbar(): any application with content
+ * longer than its window needs this object, so it lives here rather
+ * than in the shells.  A bar computed per frame from the view can be
+ * looked at and never touched, with nothing to hold a range steady while
+ * the user drags it or a bulk re-layout moves the content.  This holds a
  * range, a thumb, and the two states that make it more than arithmetic:
- * TRACKING (a button is held on it) and DETACHED (the view is being
- * rebuilt).  Both defer the range they are handed rather than dropping it.
+ * tracking, a button held on it, and detached, the view being rebuilt;
+ * both defer the range they are handed rather than dropping it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

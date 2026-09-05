@@ -64,17 +64,12 @@ int tiku_tabs_next(tiku_tabs_t *t, int dir);
 /**
  * @brief Where tab @p index sits in a strip @p strip long.
  *
- * The tabs divide the strip evenly.  The rect is returned even for an
- * index the strip does not have, degenerate (zero width), so a caller
- * looping past the count draws and hits nothing rather than reading off
- * the end.
- *
- * The strip is assumed at least as wide as the tab count -- N tabs need
- * N pixels to each be one a click can land on.  Narrower than that, the
- * even division floors interior tabs to zero width and the last one eats
- * the rest; nothing faults, but the thin tabs stop being hittable.  Both
- * places that use this keep the strip an order of magnitude wider than
- * the count, which is the size a row of named tabs wants anyway.
+ * The tabs divide the strip evenly.  An index the strip does not have
+ * gets a zero-width rect, so a caller looping past the count draws and
+ * hits nothing.  The strip is assumed at least as wide as the count:
+ * narrower, interior tabs floor to zero width and the last eats the
+ * rest, hittable no longer; both callers keep the strip an order of
+ * magnitude wider than the count.
  */
 tiku_rect_t tiku_tabs_rect(const tiku_tabs_t *t, tiku_rect_t strip,
                            int index);

@@ -6,25 +6,15 @@
  *
  * tiku_msg.c - a message that describes itself.
  *
- * The whole of it is three structures deep.  A message is a code and a
- * list of fields; a field is a name, a type and a list of values; a value
- * is a run of bytes and how many.  Everything the interface offers is
- * that, read one way or another.
- *
- * One decision runs through the rest: a value is held in memory in the
- * SAME bytes it goes on the wire in -- little-endian, sizes fixed by type.
- * So flattening is a copy rather than a conversion, and there is exactly
- * one place where a number turns into bytes instead of two that must be
- * kept agreeing.  A number is decoded when somebody asks for it, which
- * costs four shifts and is not where any time goes.
- *
- * The other decision is that a nested message is held FLATTENED, as a run
- * of bytes like any other value.  It is stored as it will be sent, so
- * nesting costs nothing to flatten; and reading one is a call to unflatten
- * on that blob, which stops at that one level.  A message a thousand deep
- * is therefore not a thousand frames of stack -- it is a thousand
- * separate, deliberate asks.  That falls out of the choice rather than
- * being guarded for, which is the better way to not have the problem.
+ * Three structures deep: a message is a code and a list of fields, a
+ * field a name, a type and a list of values, a value a run of bytes and
+ * how many.  A value is held in memory in the same bytes it goes on the
+ * wire in, little-endian with sizes fixed by type, so flattening is a
+ * copy and there is one place where a number turns into bytes; a number
+ * is decoded when asked for.  A nested message is held flattened, as a
+ * run of bytes like any other value: nesting costs nothing to flatten,
+ * and reading one is an unflatten of that blob at that one level, so a
+ * message a thousand deep is a thousand separate asks, not a stack.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

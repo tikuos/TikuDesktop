@@ -5,31 +5,16 @@
  *
  * trk_conduct.c - the scripted driver, as a process of its own.
  *
- * The other driver (src/shell/tiku_trk_script.c) is compiled INTO the
- * shells and reads them from the inside; this one stands outside and
- * speaks the conductor channel, which offers exactly two things: inject an
- * event, and ask about a pixel or a named string.  Every expectation below
- * is composed out of those, here, in a binary that never ships.
- *
- * That boundary is the point.  A driver on the far end of a stream can
- * drive a shell it was not linked against -- including, once the channel
- * rides the device transport, a shell running on real hardware, where no
- * in-process driver could ever have gone.
- *
- * The grammar is a subset of the in-process one, spelled identically, so a
- * script can be read by either:
- *
- *   wait <turns>                 note <text>
- *   click <x> <y>                press/move/release <x> <y>
- *   key <name> [ctrl|shift|alt]
- *   expect-pixel <x> <y> <rrggbb>
- *   expect-title <substring>     expect-no-title <substring>
- *   expect-menu <substring>      expect-status <substring>
- *   expect-narrate <substring>  expect-told <substring>
- *   expect-alert <substring>     expect-mounts <substring>
- *   expect-control <substring>   expect-read <path> <substring>
- *   expect-operation <substring>
- *   expect-count <substring>     quit
+ * The other driver, src/shell/script/, is compiled into the shells and
+ * reads them from the inside; this one stands outside and speaks the
+ * conductor channel, which offers two things: inject an event, and ask
+ * about a pixel or a named string.  Every expectation is composed out of
+ * those, here, in a binary that never ships.  That boundary is the point:
+ * a driver on the far end of a stream can drive a shell it was not
+ * linked against, including one on real hardware once the channel rides
+ * the device transport.  The grammar is the subset of doc/scripting.md
+ * that both drivers speak, spelled identically, so a script reads in
+ * either.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

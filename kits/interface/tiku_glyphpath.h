@@ -6,17 +6,15 @@
  *
  * tiku_glyphpath.h - one outline, however it was described.
  *
- * TrueType describes a glyph in quadratics and CFF describes it in
- * cubics, but a rasteriser wants neither: it wants edges.  Both readers
- * push their curves in here, in DEVICE space -- pixels, y downwards from
- * the baseline -- and this flattens them by how big they actually are on
- * the screen, so a curve is smooth at forty pixels without being ten
- * segments of nothing at ten.
+ * TrueType describes a glyph in quadratics and CFF in cubics, but a
+ * rasteriser wants edges.  Both readers push their curves in here, in
+ * device space (pixels, y downwards from the baseline), and this
+ * flattens them by how big they are on the screen, so a curve is smooth
+ * at forty pixels without being ten segments of nothing at ten.
  *
- * The coverage itself is signed area accumulated per cell and resolved
- * with a prefix sum, which is what the icon renderer resolves its paths
- * with: coverage that is computed rather than sampled has no jaggies to
- * average away, and that matters most at the sizes an interface uses.
+ * Coverage is signed area accumulated per cell and resolved with a
+ * prefix sum, as the icon renderer does it: computed coverage has no
+ * jaggies to average away, which matters most at interface sizes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,15 +26,12 @@ typedef struct tiku_path tiku_path_t;
 /**
  * @brief How font units become device pixels, vertically grid-fitted.
  *
- * X is scaled and left alone, so advances and the spacing between
- * letters stay as smooth as the designer drew them.  Y is scaled and
- * then nudged, so that the lines a reader's eye follows -- the baseline,
- * the top of the lowercase, the top of the capitals -- land ON pixel
- * boundaries instead of straddling two rows at half strength.  That is
- * what "hinted" buys at 10 and 12 px, and almost all of what it buys.
- *
- * With @c zones at 0 this is a plain scale, which is what an unmeasured
- * face gets.
+ * X is scaled and left alone, so advances and letter spacing stay as
+ * smooth as the designer drew them.  Y is scaled and then nudged, so the
+ * lines a reader's eye follows, the baseline and the tops of the
+ * lowercase and the capitals, land on pixel boundaries instead of
+ * straddling two rows at half strength: almost all of what hinting buys
+ * at 10 and 12 px.  With @c zones at 0 this is a plain scale.
  */
 #define TIKU_HINT_ZONES 3
 

@@ -5,17 +5,14 @@
  *
  * test_theme.c - the three tables, and the one thing derived from them.
  *
- * A theme names ROLES and never layout, which is the whole bargain (the
- * Appearance Manager lesson) -- so what is worth testing about one is
- * that its roles stay distinguishable.  A palette whose selection and
- * whose active tab land on the same value has not got two roles, it has
- * one, and every list in the interface stops saying which row is picked.
- *
- * The third table is asked one more thing: that no role in it has any
- * hue, and that the toolkit can TELL, because pictorial art -- icons,
- * thumbnails -- reads that answer and drains itself.  It is derived from
- * the table rather than declared beside it, so this is really a test that
- * the two cannot come apart.
+ * A theme names roles and never layout, which is the whole bargain, so
+ * what is worth testing is that its roles stay distinguishable: a palette
+ * whose selection and active tab land on the same value has one role, not
+ * two, and every list stops saying which row is picked.  The third table
+ * is asked one thing more: that no role in it has any hue, and that the
+ * toolkit can tell, because pictorial art reads that answer and drains
+ * itself.  It is derived from the table rather than declared beside it,
+ * so this is a test that the two cannot come apart.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

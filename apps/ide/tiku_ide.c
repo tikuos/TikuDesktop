@@ -5,22 +5,15 @@
  *
  * tiku_ide.c - TikuBasic and TikuC: a place to work on a PROGRAM.
  *
- * ONE source, two personalities: built plain it is TikuBasic, built
+ * One source, two personalities: built plain it is TikuBasic, built
  * with TIKU_IDE_C it is TikuC.  The difference is what each puts
- * forward -- Run for the interpreter, Build for the compiler -- and
- * nothing else, because two applications that drifted apart would be
- * the second implementation this tree does not keep.
- *
- * The project window lists what the program is made of, grouped the way
- * the project file groups it; opening a row opens an editor window of
- * its own, and the Window menu reaches every one of them.  A file
- * already open is RAISED rather than opened twice, which is the whole
- * difference between windows an application owns and windows it merely
- * makes.
- *
- * The simple editor stays what it is.  This is not a bigger one: it is
- * the same kit machinery -- a text view, the syntax tables, the shell's
- * own file panel -- held in several windows at once.
+ * forward, Run for the interpreter and Build for the compiler, and
+ * nothing else.  The project window lists what the program is made of,
+ * grouped as the project file groups it; opening a row opens an editor
+ * window of its own, the Window menu reaches every one, and a file
+ * already open is raised rather than opened twice.  It is the same kit
+ * machinery as the simple editor, a text view, the syntax tables and
+ * the shell's file panel, held in several windows at once.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -2199,15 +2192,11 @@ messages_open(ide_t *st)
 /**
  * @brief Take one line a run said.
  *
- * The interpreter says where an error was on the line AFTER saying what
- * it was: "? syntax", then "at line 20".  The two are ONE message here,
- * because a person reading a list wants what happened and where in the
- * same row -- and because a row that is only a number is a row nobody
- * can act on.
- *
- * The annotation is folded ONLY onto a row that was an error, which is
- * the one place the interpreter puts it: a program that prints those
- * words itself keeps them.
+ * The interpreter names where an error was on the line after saying
+ * what it was, "? syntax" then "at line 20"; the two become one row,
+ * since a row that is only a number is one nobody can act on.  The
+ * annotation is folded only onto a row that was an error, the one place
+ * the interpreter puts it, so a program printing those words keeps them.
  */
 static void
 message_take(ide_t *st, const char *line)

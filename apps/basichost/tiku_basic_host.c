@@ -5,22 +5,15 @@
  *
  * tiku_basic_host.c - the TikuOS BASIC interpreter, run on the host.
  *
- * The SAME interpreter a board runs -- tiku_basic.c compiled unchanged,
- * every peripheral gated off -- with the kernel it expects provided
- * from libc: the console is stdin/stdout, the clock is the wall clock,
- * and the VFS is a sandbox directory, so a program's VFSWRITE lands in
- * a real file somebody can look at.
- *
- * What this is FOR: the desktop's editor runs a program by running
- * this, which means what the editor shows is what a board would do --
- * not a re-implementation that agrees with the board on the days both
- * are right.
- *
- *   tiku-basic <program.bas> [sandbox-dir]
- *
- * The program is fed to the interpreter's own REPL a line at a time
- * (numbered lines store, exactly as typing them would), then RUN, then
- * the mode is pumped until the program ends.  Output is stdout.
+ * The same interpreter a board runs, tiku_basic.c compiled unchanged
+ * with every peripheral gated off, given the kernel it expects from
+ * libc: the console is stdin/stdout, the clock the wall clock, the VFS
+ * a sandbox directory, so a program's VFSWRITE lands in a real file.
+ * The desktop's editor runs a program by running this, so what the
+ * editor shows is what a board would do.  Usage is
+ * `tiku-basic <program.bas> [sandbox-dir]`: the program is fed to the
+ * interpreter's own REPL a line at a time, then RUN, then the mode is
+ * pumped until the program ends; output is stdout.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

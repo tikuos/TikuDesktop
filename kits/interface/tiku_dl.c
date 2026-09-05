@@ -8,14 +8,13 @@
  *
  * The whole of it is one growing byte buffer.  Recording appends the
  * bytes that go on the wire, so flattening is a copy; playing walks the
- * same bytes and calls the drawing functions the recording mirrors.
- * There is therefore exactly one description of what a command looks
- * like, in the two switch-shaped places below, rather than an encoder
- * and a decoder that must be kept agreeing about a third.
+ * same bytes and calls the drawing functions the recording mirrors, so
+ * there is exactly one description of what a command looks like, in the
+ * two switch-shaped places below, rather than an encoder and a decoder.
  *
- * Coordinates go as i16.  A pixel further than 32767 from the origin is
+ * Coordinates go as i16: a pixel further than 32767 from the origin is
  * not a thing this interface draws, and halving every rectangle is worth
- * more here than the reach: the point of the exercise is the size.
+ * more than the reach when the point of the exercise is the size.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

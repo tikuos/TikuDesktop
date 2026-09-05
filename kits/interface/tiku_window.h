@@ -21,15 +21,11 @@
 /**
  * @brief How tall a window's tab is, for the face in force.
  *
- * It was 21 pixels, written down, which is what a 12-pixel bold face
- * needs and what nothing else does: at 16 the title was drawn into a
- * strip too short for it.  A tab is as tall as its title plus room, so
- * it is asked for rather than assumed -- and at 12 px it still answers
- * 21, which is why nothing that was pinned against it has moved.
- *
- * Every layout that reserves space for the tab must CALL this, including
- * the ones that only add it up to size a frame; a caller that keeps its
- * own copy is the bug this replaces.
+ * A tab is as tall as its title plus room, so it is asked for rather
+ * than written down: a fixed 21 fits a 12-pixel bold face and nothing
+ * else, and at 12 px this still answers 21.  Every layout that reserves
+ * space for the tab must call this, including one that only adds it up
+ * to size a frame; a kept copy is the bug this replaces.
  */
 int tiku_window_tab_h(void);
 
@@ -187,19 +183,15 @@ int tiku_workspace_tracking(const tiku_workspace_t *workspace);
 void tiku_workspace_draw(tiku_workspace_t *workspace);
 
 /**
- * @brief Say what @p window shows, as the plain lines of
- *        tiku_dl_narrate(), into @p out.
+ * @brief Narrate @p window into @p out as the plain lines of
+ *        tiku_dl_narrate().
  *
- * The window's content is drawn once onto a recording surface of the
- * workspace's size -- never the shown one, so answering does not repaint
- * what it observes -- and the recorded list is narrated with no pixel
- * consulted.  A window that strokes marks the wire cannot carry gets a
- * closing line saying so, because a narration that silently omits what
- * was drawn is worse than one that confesses.
- *
- * This is the reader's door: an assistive reader, an agent, or a test on
- * the far end of the conductor channel hears a window it has never seen
- * pixels of.
+ * The content is drawn once onto a recording surface of the workspace's
+ * size, never the shown one, and the list is narrated with no pixel
+ * consulted; a window that strokes marks the wire cannot carry gets a
+ * closing line saying so.  This is the reader's door: an assistive
+ * reader, an agent, or a test on the far end of the conductor channel
+ * hears a window it has never seen pixels of.
  *
  * @return the bytes written, 0 (and an empty @p out) when there is
  *         nothing to narrate -- no window, no draw, no room.

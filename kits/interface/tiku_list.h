@@ -5,40 +5,14 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_list.h - a list of rows, and everything about it that is not
- * pixels.
- *
- * Which rows there are, which are selected, which one the keyboard is
- * on, which is the first one shown, where a row sits and which row a
- * click lands on -- and the rules that turn a gesture into a change of
- * all that.  It owns no names, no art and no columns: what a row LOOKS
- * like is the caller's, because that is the one thing every list wants
- * differently, and the moment this file grew an opinion about it half
- * its callers would have to work around one.  That bargain is the text
- * view's, and it is the reason both are usable at all.
- *
- * The rules are not invented here either.  They are the ones TikuTracker's
- * pose view already keeps -- the ones a person's hands know from every
- * list they have used -- lifted out with the icons, the drag band, the
- * columns and the queries left behind:
- *
- *   - selection is ONE flag per row.  A second list of what is selected
- *     is a second thing that can drift out of step with the first.
- *   - an ANCHOR (the pivot) is what a range extends from, and it is not
- *     moved by extending -- so a second shift-click re-reaches from the
- *     same place rather than growing whatever the last one left.
- *   - the pivot invariant, which is the rule everything else leans on:
- *     an empty selection has no anchors at all, and a selection that is
- *     not empty always has a valid one.  It is re-established at the end
- *     of every gesture rather than trusted to fall out.
- *   - single-selection is enforced HERE, at every path that could extend
- *     a selection, not by each caller remembering -- a rule kept at four
- *     call sites is a rule that will hold at three of them.
- *
- * One index space.  A row's index is its position in the list and also
- * its position on screen; there is no filtered second ordering, and so
- * no bridge between two numbering schemes to get wrong.  A caller that
- * filters filters its own data and hands this a new count -- which is
- * the honest arrangement while nothing here can hide a row.
+ * Which rows there are, which are selected, which the keyboard is on,
+ * which is first shown, where a row sits and which row a click lands on,
+ * and the rules turning a gesture into a change of all that.  It owns no
+ * names, art or columns, since what a row looks like is the one thing
+ * every list wants differently, and one index space: a row's index is
+ * its place in the list and on the screen.  The selection rules are the
+ * pose view's, lifted out with the icons and columns left behind; they
+ * are stated in doc/lists.md.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -128,19 +102,14 @@ tiku_rect_t tiku_list_row_rect(const tiku_list_t *l, tiku_rect_t body,
 int tiku_list_at(const tiku_list_t *l, tiku_rect_t body, int x, int y);
 
 /**
- * @brief Make @p row a HEADING, or an ordinary row again.
+ * @brief Make @p row a heading, or an ordinary row again.
  *
- * A heading names the rows under it -- Sources, Headers, Notes.  It is
- * still a row of the one index space, so nothing here has two numbering
- * schemes to get wrong; what it is not is PICKABLE.  It cannot be
- * selected by any road (a click, a range, select-all, inverting), the
- * cursor steps over it rather than onto it, and spelling a name passes
- * it by -- because a person travelling a list with the arrow keys is
- * looking for something to open, and stopping them on a word they
- * cannot open is the list wasting their time.
- *
- * Set the headings AFTER tiku_list_set_count(): a shrinking list
- * forgets the rows it no longer has, headings among them.
+ * A heading names the rows under it and is still a row of the one index
+ * space, but it is not pickable: no click, range, select-all or
+ * inversion selects it, the cursor steps over it, and spelling a name
+ * passes it by, since a person travelling a list with the arrows is
+ * looking for something to open.  Set headings after
+ * tiku_list_set_count(): a shrinking list forgets the rows it lost.
  */
 void tiku_list_set_heading(tiku_list_t *l, int row, int heading);
 
@@ -187,13 +156,11 @@ void tiku_list_click(tiku_list_t *l, int row, unsigned modifiers);
  * @brief Offer @p key to the list.
  *
  * Up and Down move by one, Page by a bodyful, Home and End to the ends;
- * with TIKU_MOD_SHIFT each of those reaches from the anchor instead of
- * starting over.  Cmd-A selects everything.  The top follows, so a
- * caller that draws from tiku_list_top() never has to scroll by hand.
- *
- * Return is not handled, and that is deliberate: what it means to open
- * a row is the caller's business, and a list that swallowed it would
- * make every caller work around the one key they all want.
+ * with TIKU_MOD_SHIFT each reaches from the anchor instead of starting
+ * over.  Cmd-A selects everything.  The top follows, so a caller that
+ * draws from tiku_list_top() never scrolls by hand.  Return is not
+ * handled, deliberately: what opening a row means is the caller's, and
+ * a list that swallowed it would make every caller work around it.
  *
  * @return nonzero when the list took the key.
  */
@@ -231,16 +198,12 @@ int tiku_list_scroll_to(tiku_list_t *l, int top, tiku_rect_t body);
 /**
  * @brief Draw the rows in @p body as plain named rows.
  *
- * The simple look, for the callers that want it: one line of text a
- * row, selected rows in the selection colours, through the kit's row
- * painter -- so each row crosses the wire as the row it is and a reader
- * is told its name and whether it is picked.  A caller that wants
- * columns, art or a second line ignores this and draws from
- * tiku_list_row_rect(), which is what it is there for.
- *
- * A heading crosses as WORDS rather than as a row, which is what it
- * is: a reader counting the rows of a list should not be told about
- * furniture it cannot pick.
+ * The simple look: one line of text a row, selected rows in the
+ * selection colours, through the kit's row painter, so each row crosses
+ * the wire as the row it is and a reader is told its name and whether
+ * it is picked.  A caller that wants columns, art or a second line draws
+ * from tiku_list_row_rect() instead.  A heading crosses as words rather
+ * than as a row: a reader counting rows is not told about furniture.
  */
 void tiku_list_draw(const tiku_list_t *l, tiku_surface_t *s,
                     tiku_rect_t body, tiku_list_name_fn name, void *ctx);

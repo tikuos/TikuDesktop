@@ -38,15 +38,12 @@ typedef struct tiku_app_services {
     /**
      * @brief The window's next frame as what was DRAWN, when it can be.
      *
-     * Hand over both: the list recorded while painting and the pixels
-     * that painting produced.  Which one goes is not the application's
-     * business -- it depends on the link and on whether the list turned
-     * out to describe the whole window, and the answer can differ from
-     * one frame to the next.
-     *
-     * Appended to this struct rather than replacing frame(), so an
-     * application built against the older header still links and still
-     * works; it simply never gets the cheap path.
+     * Hand over both the list recorded while painting and the pixels it
+     * produced; which one travels depends on the link and on whether the
+     * list described the whole window, and can differ per frame.
+     * Appended rather than replacing frame(), so an application built
+     * against the older header still links and simply never gets the
+     * cheap path.
      *
      * @return 1 when the window was handed over by either road.
      */
@@ -60,13 +57,11 @@ typedef struct tiku_app_services {
      * @brief Ask for a window ROLE, not a position.
      *
      * An application does not know the screen, so it cannot centre
-     * itself; what it knows is what KIND of window it opened, and the
-     * host owns where such a window goes.  ANNOUNCE is the R5 panel
-     * rule: centred, in the upper part of the screen, fixed size.
-     *
-     * Appended, like present(): a host built against the older header
-     * leaves it NULL, and an application must treat NULL as "the host
-     * decides everything" -- which was always true.
+     * itself; it knows what kind of window it opened, and the host owns
+     * where such a window goes.  ANNOUNCE is the R5 panel rule: centred,
+     * in the upper part of the screen, fixed size.  Appended, like
+     * present(): a host built against the older header leaves it NULL,
+     * which an application must read as the host deciding everything.
      */
     int (*place)(void *ctx, uint32_t id, int role);
     /**
@@ -82,79 +77,48 @@ typedef struct tiku_app_services {
     /**
      * @brief Ask the SHELL to let the user pick a file, and answer later.
      *
-     * The application does not draw a file panel and does not learn to
-     * walk a filesystem: it says which kind of question it is asking
-     * (TIKU_APP_PICK_OPEN or _SAVE), where to start, and -- saving -- a
-     * name to offer.  The shell puts up ITS panel, the one the person
-     * already knows, over the namespace the shell already holds.  Which
-     * is why a device's files are pickable by an application that never
-     * heard of devices: the mount table is the shell's, and so is the
-     * panel that walks it.
+     * The application says which question (TIKU_APP_PICK_OPEN or _SAVE),
+     * where to start and, saving, a name to offer; the shell puts up its
+     * own panel over the namespace it holds, so a device's files are
+     * pickable by an application that never heard of devices.  It does
+     * not block: the answer arrives later at picked(), possibly never, a
+     * closed panel owing no answer.  Appended: an older host leaves it NULL.
      *
-     * It does not block, and must not: a shell that stopped to ask a
-     * question would stop for every other window with it, which is the
-     * same reason the kit's alert is drawn by the application over its
-     * own surface rather than asked for through here.  The answer
-     * arrives later at the descriptor's picked() -- possibly many frames
-     * later, and possibly never, because a person who closes the panel
-     * has answered nothing and is owed no answer.
-     *
-     * Appended in the manner of present(): a host that predates it
-     * leaves it NULL, and an application offers what it offers through
-     * this only when it is there.
-     *
-     * @return nonzero when the question was put -- or, out of process,
-     *         when it was CARRIED: a shell already asking one refuses
-     *         it there too, but the refusal cannot ride back through a
-     *         return value that has already returned.  Either way the
-     *         honest reading is the same: an answer may come, and may
-     *         not, and an application that does nothing until picked()
-     *         is called needs no more than that.
+     * @return nonzero when the question was put, or carried out of process.
      */
     int (*pick)(void *ctx, uint32_t id, int mode, const char *start,
                 const char *name);
     /**
      * @brief Bring this window of mine to the front.
      *
-     * What an application knows that the host does not: which of its
-     * own windows the person just asked for.  Picking a file already
-     * open, or a row of a Window menu, means THAT window -- and without
-     * this the application's only way to answer is to open a second
-     * window onto the same thing, which is the bug every multi-window
-     * application has had since the first one.
-     *
-     * It moves a window in front of other windows; it does not steal
-     * anything from an application the person is using, because the
-     * gesture that reaches it was made in this application.
-     *
-     * Appended, like place(): a host that predates it leaves it NULL.
+     * What an application knows that the host does not: which of its own
+     * windows the person just asked for, by picking a file already open
+     * or a row of a Window menu; without this its only answer is a second
+     * window onto the same thing.  It moves a window in front of the
+     * application's others and steals nothing from another application,
+     * the gesture having been made here.  An older host leaves it NULL.
      */
     int (*raise_window)(void *ctx, uint32_t id);
     /**
      * @brief Let the PERSON resize this window of mine.
      *
-     * Windows arrive fixed, because most of an application's windows
-     * are panels whose layout IS their size.  A window that can grow --
-     * an editor's page -- says so, and from then on the runtime owns
-     * the corner and the application hears TIKU_EVENT_RESIZE with the
-     * content's new size, repaints at it, and hands the next frame
-     * over as usual.
-     *
-     * Appended, like the rest: a host that predates it leaves it NULL,
-     * and such a window simply stays the size it opened at.
+     * Windows arrive fixed, because most of an application's windows are
+     * panels whose layout is their size.  A window that can grow, an
+     * editor's page, says so; from then on the runtime owns the corner
+     * and the application hears TIKU_EVENT_RESIZE with the content's new
+     * size, repaints at it and hands the next frame over as usual.  An
+     * older host leaves it NULL, and such a window stays its opening size.
      */
     int (*sizeable)(void *ctx, uint32_t id);
     /**
      * @brief Put @p text on the DESK's clipboard.
      *
      * One clipboard for the desk, not one per application: what is cut
-     * here can be pasted into another application's page, or into the
-     * shell's own rename and Save-panel fields, and the other way
-     * round.  Text only -- the file clipboard is a different thing and
-     * must stay one.
-     *
-     * Appended, like the rest: a host that predates it leaves it NULL,
-     * and an application then keeps its habit of having no clipboard.
+     * here can be pasted into another application's page or the shell's
+     * own rename and Save-panel fields, and the other way round.  Text
+     * only; the file clipboard is a different thing and stays one.  An
+     * older host leaves it NULL, and an application then keeps its habit
+     * of having no clipboard.
      */
     int (*clip_set)(void *ctx, const char *text);
     /**
@@ -200,14 +164,11 @@ typedef struct {
      * @brief The path the person chose, for a pick() this window asked.
      *
      * Called from the shell's own loop rather than from inside pick(),
-     * so an application must be able to hear it at any time and must
-     * not assume it is still in whatever state it was when it asked.  A
-     * cancelled panel never calls this -- the same silence the shell's
-     * own askers get, and a window that changes nothing on cancel needs
-     * nothing else.
-     *
-     * Appended: an application that never asks leaves it NULL, and a
-     * host must check before calling.
+     * so an application must be able to hear it at any time and must not
+     * assume it is still in the state it was in when it asked.  A
+     * cancelled panel never calls this, the same silence the shell's own
+     * askers get.  Appended: an application that never asks leaves it
+     * NULL, and a host must check before calling.
      */
     void (*picked)(void *state, uint32_t window, const char *path);
     /**

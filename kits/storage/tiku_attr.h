@@ -6,17 +6,14 @@
  *
  * tiku_attr.h - attributes, and the text a column shows for one.
  *
- * Tracker decides a column's text by looking first at the attribute's NAME,
- * then at the "display as" hint the type registry gave it, and only then
- * falling back to a generic reader.  A TikuOS namespace node carries that
- * hint itself: the manifest's meta column is a typed descriptor
- * (vtype,unit,freshness,cost[,lo..hi]), so the registry Tracker had to
- * consult is already attached to the node.
- *
- * That descriptor is what lets a reading be shown as "1.2 MiB" or "15h 57m"
- * instead of a bare integer, and what lets a value be REFUSED before it is
- * sent: writing "banana" to a u32, or 5 to a node declared 0..1, is a
- * mistake the descriptor can catch without troubling the device.
+ * Tracker decides a column's text by the attribute's name, then by the
+ * "display as" hint the type registry gave it, then by a generic reader.
+ * A TikuOS node carries that hint itself: the manifest's meta column is
+ * a typed descriptor (vtype,unit,freshness,cost[,lo..hi]), so the
+ * registry is already attached to the node.  The descriptor is what
+ * shows a reading as "1.2 MiB" or "15h 57m" instead of a bare integer,
+ * and what refuses a value before it is sent: "banana" to a u32, or 5
+ * to a node declared 0..1, is caught without troubling the device.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

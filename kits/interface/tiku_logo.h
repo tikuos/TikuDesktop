@@ -6,17 +6,14 @@
  *
  * tiku_logo.h - the TikuOS mark.
  *
- * Two wireframe cubes locked through one another, with the amber on the
- * edges where they meet.  Kept as the DRAWING rather than as a picture:
- * it is a dozen straight lines and one filled face, so it is described
- * here in the same 1024-unit space the artwork was drawn in and painted
- * through the outline rasteriser the faces already use.
- *
- * That is not neatness for its own sake.  A mark stored as pixels has
- * one size and is soft at every other, and this one has to sit in a
- * 16-pixel strip on the Deskbar and fill a panel in the About box; the
- * two are eight times apart.  Drawn, it is sharp at both, and it follows
- * the interface's own size the way everything else now does.
+ * Two wireframe cubes locked through one another, amber on the edges
+ * where they meet.  Kept as the drawing rather than a picture: a dozen
+ * straight lines and one filled face, described in the 1024-unit space
+ * the artwork was drawn in and painted through the outline rasteriser
+ * the faces use.  A mark stored as pixels has one size and is soft at
+ * every other, and this one sits in a 16-pixel Deskbar strip and fills
+ * the About panel; drawn, it is sharp at both and follows the
+ * interface's size.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,22 +35,12 @@
 /**
  * @brief Draw the mark, fitted to the largest square inside @p r.
  *
- * Centred in @p r, and never wider than it is tall: the artwork is
- * square and stretching a logo is worse than leaving room beside it.
- *
- * It is drawn three ways, because one drawing cannot survive the range
- * it is asked to cover -- a Deskbar strip and an About panel are eight
- * times apart:
- *
- *   32 px and up   both cubes, as drawn
- *   22 to 31       the near cube alone: two wireframes through each
- *                  other at that size are a tangle, not a picture
- *   under 22       the near cube FILLED, so it reads as a solid with a
- *                  lit face rather than as five grey lines
- *
- * On a palette without hue the whole thing goes to luminance, like every
- * other picture: a desktop asked for without colour does not get an
- * amber logo in the corner of it.
+ * Centred and never wider than tall, since a stretched logo is worse
+ * than room beside it.  Drawn three ways across the eightfold range it
+ * covers: both cubes at 32 px and up, the near cube alone from 22 to
+ * 31, where two wireframes would tangle, and the near cube filled under
+ * 22, so it reads as a solid with a lit face.  Without hue the whole
+ * goes to luminance, like every other picture.
  */
 void tiku_logo_paint(tiku_surface_t *s, tiku_rect_t r, unsigned flags);
 

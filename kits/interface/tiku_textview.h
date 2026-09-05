@@ -6,17 +6,13 @@
  *
  * tiku_textview.h - many lines of editable text, with a caret in them.
  *
- * tiku_field is one line: a name being typed over.  This is the other
- * kind -- a document, where Return makes a line rather than committing,
- * where the caret is a line and a column instead of an offset, and where
- * what is on screen is a window onto something taller.
- *
- * It owns the text, the caret and the scroll, and nothing else: the
- * pixels are the caller's, because a text view's look is the one thing
- * every application wants differently.  What it will not do is let the
- * caret point outside the text -- every edit below leaves the caret on a
- * real line at a real column, which is the invariant hand-rolled editors
- * get wrong first.
+ * tiku_field is one line, a name being typed over; this is a document,
+ * where Return makes a line rather than committing, the caret is a line
+ * and a column, and the screen is a window onto something taller.  It
+ * owns the text, the caret and the scroll and nothing else: the pixels
+ * are the caller's, since a text view's look is what every application
+ * wants differently.  Every edit leaves the caret on a real line at a
+ * real column, the invariant hand-rolled editors get wrong first.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

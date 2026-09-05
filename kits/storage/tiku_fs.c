@@ -356,17 +356,12 @@ store_of(const tiku_fs_t *fs, const char *path, char *local, size_t max)
 /**
  * @brief Whether a DEVICE answers for @p path, rather than local files.
  *
- * Nearly everything in this file is about a local filesystem -- statvfs,
- * the volumes scan, the Trash resolution, rename(2), opendir -- and a
- * gate that asks the shell's backend, as a whole, whether it is a device
- * asks a question a namespace has no whole answer to.
- *
- * The router carries its ROOT's identity, so with local files at the
- * root every path under /devices/<board> looks local, and the gates open
- * on paths no local filesystem has: rename(2) on a device node, unlink()
- * on a device node, a Trash offered for a store that has none.
- *
- * So it is asked per PATH, of whatever actually serves it.
+ * Nearly everything in this file is about a local filesystem (statvfs,
+ * the volumes scan, the Trash, rename(2), opendir), and a namespace has
+ * no whole answer to whether the shell's backend is a device: the
+ * router carries its root's identity, so with local files at the root
+ * every path under /devices/<board> would look local and the gates
+ * would open on paths no local filesystem has.  So it is asked per path.
  */
 static int
 on_device(const tiku_fs_t *fs, const char *path)
@@ -978,19 +973,12 @@ copy_pose_info(tiku_fs_t *fs, const char *src, const char *dst)
 /**
  * @brief Copy one node from one store to another, through both of them.
  *
- * The only road between two stores is the backend contract, and it is
- * narrow in two ways that decide what this can promise.
- *
- * Its read takes no OFFSET: a node's value comes back whole, into
- * whatever buffer is offered.  So this carries what one buffer holds and
- * REFUSES what it does not, because a copy that silently kept the first
- * sixty-four kilobytes of a file would be worse than one that did not
- * happen.  Lifting that means an offset in the ops table, which is a
- * change to the seam rather than to this.
- *
- * And it has no way to make a directory or take one away -- write is the
- * whole of what it can change -- so a FOLDER crossing between stores is
- * refused rather than half-built.
+ * The only road between two stores is the backend contract, narrow in
+ * two ways.  Its read takes no offset, so this carries what one buffer
+ * holds and refuses what it does not: a copy that silently kept the
+ * first sixty-four kilobytes would be worse than none.  And write is the
+ * whole of what it can change, with no way to make or remove a
+ * directory, so a folder crossing between stores is refused.
  */
 static int
 copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,

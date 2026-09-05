@@ -6,17 +6,15 @@
  *
  * tiku_field.h - the editing state behind a single-line text field.
  *
- * The state behind tiku_ui_textfield(), which paints one.  Grown in
- * Tracker as the rename editor, and moved here because every
+ * The state behind tiku_ui_textfield(), which paints one.  Every
  * application's field wants the same caret, selection, deny-set and
- * clipboard rules -- three programs re-deriving them is how they end
+ * clipboard rules, and three programs re-deriving them is how they end
  * up agreeing on none.
  *
- * Tracker's BTextWidget hands editing to a BTextView placed over the row.
- * The behaviours that matter are not the text view's: the editor opens with
- * everything selected so the first keystroke replaces the old name, Escape
- * abandons and Return commits, and while it is up the view's own keys are
- * off -- an arrow moves the caret, not the selection.
+ * The behaviours that matter are the rename editor's, not a text view's:
+ * it opens with everything selected so the first keystroke replaces the
+ * old name, Escape abandons and Return commits, and while it is up an
+ * arrow moves the caret, not the view's selection.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -138,14 +138,12 @@ type_by_name(const char *name)
 /**
  * @brief Whether @p path is an executable this system BUILT.
  *
- * Every TikuOS application carries a ".tikuos" section, put there by the
- * application kit it links.  Finding it costs the ELF header and the
- * section table -- a few hundred bytes off the front of the file -- and
+ * Every TikuOS application carries a ".tikuos" section, put there by
+ * the application kit it links.  Finding it costs the ELF header and
+ * the section table, a few hundred bytes off the front of the file and
  * never the body, so a listing can ask this of every program it shows.
- *
- * Deliberately not a guess: no reading the name for a prefix, no
- * scanning megabytes for a descriptor id.  A file either carries the
- * stamp or it does not.
+ * Not a guess: no name prefix, no scan for a descriptor id; a file
+ * either carries the stamp or it does not.
  */
 static int
 is_tiku_app(const char *path)

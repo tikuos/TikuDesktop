@@ -4,26 +4,17 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_menu.h - the interactive menu widget: a live tree of items with
- * marks, shortcuts, submenus, layout and tracking, drawn through the
- * control set next door.
+ * tiku_menu.h - the interactive menu widget: items with marks, shortcuts,
+ * submenus, layout and tracking, drawn through the control set.
  *
- * NOT the same thing as the publish protocol in tiku_window.h.  That
- * (tiku_menuset_t) is flat, serialisable DATA an application hands the
- * shell to say what its menus ARE; this is the running object the shell
- * tracks a pointer through and draws.  Grown in Tracker as the whole
- * menu system of a file manager, and moved here because a menu is a
- * control, and a control with tracking and layout belongs beside the
- * others rather than inside one application.
- *
- * The geometry here is not invented: padding, item height, the reserved mark
- * gutter, the stroked check and submenu arrow, the two-line separator and the
- * one-pixel seam between items all come from the menu kit's own layout code,
- * so a menu drawn here has the proportions of the one it is modelled on.
- *
- * A menu is a value the caller BUILDS each time it opens, which is how the
- * original works too: item labels and enabled states are decided at open time
- * from the current selection, never cached across openings.
+ * Not the publish protocol in tiku_window.h: tiku_menuset_t is flat data
+ * an application hands the shell to say what its menus are; this is the
+ * running object the shell tracks a pointer through and draws.  The
+ * geometry is the menu kit's own: padding, item height, the mark gutter,
+ * the stroked check and submenu arrow, the two-line separator and the
+ * one-pixel seam between items.  A menu is a value the caller builds
+ * each time it opens: labels and enabled states are decided at open
+ * time from the current selection, never cached across openings.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

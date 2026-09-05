@@ -208,13 +208,12 @@ tiku_rgb_t tiku_tint(tiku_rgb_t c, float tint);
 /**
  * @brief Disabled ink: @p ink pulled halfway toward the @p ground under it.
  *
- * The one derivation that survives every theme.  tiku_tint() moves a
- * colour toward white or toward black, and either direction INVERTS on
- * one of the tables -- text tinted toward white recedes on a light panel
- * and advances on a dark one, and a darkened panel disappears into the
- * dusk table's own darkness.  The midpoint of ink and ground is half the
- * enabled contrast wherever both came from the same theme, which is what
- * "greyed out" has meant all along.
+ * The one derivation that survives every theme: tiku_tint() moves a
+ * colour toward white or toward black, and either direction inverts on
+ * one of the tables, text tinted toward white receding on a light panel
+ * and advancing on a dark one.  The midpoint of ink and ground is half
+ * the enabled contrast wherever both came from one theme, which is what
+ * "greyed out" has always meant.
  */
 tiku_rgb_t tiku_dim(tiku_rgb_t ink, tiku_rgb_t ground);
 

@@ -6,25 +6,15 @@
  *
  * tiku_query.h - searching the namespace.
  *
- * A query is a predicate plus a scope, exactly as it is in Tracker: terms are
+ * A query is a predicate plus a scope, as in Tracker: terms are
  * (attribute, operator, value), terms join with and/or, and the scope is
- * enforced OUTSIDE the predicate as a path-prefix test on each result -- the
- * same split the original uses, and the reason a folder filter can be added
- * to a running search without rewriting it.
- *
- * The matching rules are ported rather than invented, including the two that
- * look odd until you see the source:
- *
- *   - a name search is a SUBSTRING match, unless the typed text contains a
- *     '*' anywhere, in which case the whole text becomes a pattern and must
- *     match the name outright;
- *   - case-insensitivity is not a comparison flag but a rewrite of the value
- *     into per-character classes, so "txt" is matched as "[tT][xX][tT]" and
- *     one matcher serves every operator.
- *
- * On TikuOS a volume is a namespace subtree and the type registry is the
- * node's own typed descriptor, so a query can ask for "every writable node
- * under /dev whose value is over 1000" without an index existing anywhere.
+ * a path-prefix test on each result outside the predicate, which is why
+ * a folder filter can be added to a running search.  The matching rules
+ * are ported: a name search is a substring match unless the text holds a
+ * '*', when the whole text is a pattern; case-insensitivity rewrites the
+ * value into per-character classes ("txt" as "[tT][xX][tT]") so one
+ * matcher serves every operator.  A volume is a namespace subtree and the
+ * type registry the node's descriptor, so no index needs to exist.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

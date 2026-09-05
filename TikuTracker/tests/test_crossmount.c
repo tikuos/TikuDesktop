@@ -6,16 +6,14 @@
  * test_crossmount.c - copying between two stores in one namespace.
  *
  * The point of a namespace is that a file can be dragged from one device
- * to another, and the road between two stores is the backend contract --
- * which is narrow.  Its read takes no offset, and nothing in it removes
- * or creates anything.  So what this proves is as much about the
- * REFUSALS as about the copy: a limit that announces itself is a limit
- * somebody can work with, and one that truncates a file quietly is not.
- *
- * Two POSIX stores over one namespace rather than a board, because what
- * is under test is the crossing, and two backend objects over the same
- * filesystem cross exactly as two machines would as far as every
- * decision in tiku_fs is concerned.
+ * to another, and the road between two stores is the backend contract,
+ * which is narrow: its read takes no offset, and nothing in it removes or
+ * creates anything.  So this proves the refusals as much as the copy: a
+ * limit that announces itself can be worked with, and one that truncates
+ * a file quietly cannot.  Two POSIX stores over one namespace rather than
+ * a board, because what is under test is the crossing, and two backend
+ * objects over the same filesystem cross exactly as two machines would
+ * as far as every decision in tiku_fs is concerned.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

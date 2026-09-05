@@ -7,18 +7,14 @@
  * tiku_remote.h - the window session: a process boundary that is a
  * deployment property, not an application property.
  *
- * An application built on the toolkit may run LINKED into the desktop (the
- * device deployment: one heap, one loop) or OUT OF PROCESS over this
- * session (the hosted deployment: its faults are its own).  The contracts
- * are the same either way -- a window is a surface plus an event route,
- * menus travel as the plain tiku_menuset_t they already are, and
- * picks come back as commands.  Nothing here is X11 or POSIX-specific
- * beyond a stream socket, which is what will let the same frames ride the
- * device transport one day.
- *
- * The wire is little machine-endian structs on a local stream:
- *   [u32 type][u32 payload length][payload]
- * with both peers on one host; a version in HELLO guards the rest.
+ * An application built on the toolkit may run linked into the desktop
+ * (one heap, one loop) or out of process over this session (its faults
+ * its own); the contracts are the same either way: a window is a
+ * surface plus an event route, menus travel as the tiku_menuset_t they
+ * are, picks come back as commands.  Nothing here is X11 or POSIX
+ * beyond a stream socket.  The wire is little-endian structs,
+ * [u32 type][u32 payload length][payload], both peers on one host, a
+ * version in HELLO guarding the rest.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

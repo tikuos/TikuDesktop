@@ -7,14 +7,13 @@
  * tiku_logo.c - the TikuOS mark.
  *
  * The artwork is strokes and the rasteriser fills, so every line here is
- * turned into the quadrilateral it covers: a segment becomes a rectangle
- * of the stroke's width laid along it, extended half a width past each
- * end so the corners meet.  Where two of those overlap at a joint the
- * accumulator adds them and clamps, which is exactly the union wanted --
- * so the joins cost nothing but the overlap.
+ * turned into the quadrilateral it covers: a rectangle of the stroke's
+ * width laid along the segment, extended half a width past each end so
+ * the corners meet.  Where two overlap at a joint the accumulator adds
+ * them and clamps, which is the union wanted, at the cost of the overlap.
  *
  * Colours are drawn back to front in the order the artwork has them,
- * each as ONE path of many quads: six coverage maps for the whole mark
+ * each as one path of many quads: six coverage maps for the whole mark
  * rather than one per line.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -117,15 +116,12 @@ static const float face[] = {
 /**
  * @brief Where the artwork sits on the surface, and how big.
  *
- * The unit square is not always the whole of it.  When both cubes are
- * drawn the artwork is laid out across the full 1024, but the near cube
- * ALONE lives in x 133..638, y 118..701 -- half the width and three
- * fifths of the height.  Mapping that through the full square would put
- * a two-thirds-size mark in the corner of the room it was given and
- * leave the rest of it empty -- which is not the size the caller asked
- * for.  So the window into unit space is part of the fit: @c ox, @c oy
- * and @c span say which square is being mapped onto @c side, and the
- * near-only rendition names its own.
+ * The unit square is not always the whole of it: with both cubes drawn
+ * the artwork spans the full 1024, but the near cube alone lives in
+ * x 133..638, y 118..701, and mapping that through the full square
+ * would put a two-thirds-size mark in the corner of the room it was
+ * given.  So the window into unit space is part of the fit: @c ox,
+ * @c oy and @c span say which square is mapped onto @c side.
  */
 typedef struct {
     float x, y, side, ox, oy, span;

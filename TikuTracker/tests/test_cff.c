@@ -5,17 +5,15 @@
  *
  * test_cff.c - a PostScript-outline face built byte by byte.
  *
- * The other tests read the fonts on this machine, which is the right way
- * to find out whether real ones draw.  It is the wrong way
- * to prove what happens to a BAD one: a fuzzer found a crash here in a
- * single byte of an 88 KB file -- three bytes in the whole file reach
- * it -- so no amount of bending at random would catch it coming back.
- *
- * So this builds the smallest CFF that gets as far as the bug: a Private
- * DICT whose subroutine index sits two bytes from the end of the table,
- * where its count can be read and its offsets cannot, and a charstring
- * that calls into it.  A reader that lets a half-read index out of the
- * door walks a null pointer here, every time, on every machine.
+ * The other tests read the fonts on this machine, the right way to find
+ * out whether real ones draw and the wrong way to prove what happens to a
+ * bad one: a fuzzer found a crash here in a single byte of an 88 KB file,
+ * three bytes in the whole file reaching it, so no bending at random
+ * would catch it coming back.  This builds the smallest CFF that gets as
+ * far as the bug: a Private DICT whose subroutine index sits two bytes
+ * from the end of the table, where its count can be read and its offsets
+ * cannot, and a charstring that calls into it.  A reader that lets a
+ * half-read index out walks a null pointer here, every time.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -79,16 +77,12 @@ dict_int(long v)
 /**
  * @brief Lay out a CFF table whose Subrs index is cut off by two bytes.
  *
- * Offsets are counted from the table, and every length below is what the
- * structure above it forced, so the numbers are arithmetic rather than
- * magic.  Header 4, an empty Name INDEX 2, a Top DICT INDEX of 5 + 17,
- * two more empty INDEXes 4: the charstrings land at 32 and run 9 bytes,
- * so the Private DICT lands at 41 and the subroutine index it names
- * lands at 49 -- three bytes from the end of a table 52 long.
- *
- * THREE, not two: at two the index cannot even read its offSize, so the
- * offsets it never sets are never walked either, and the bug hides.  It
- * has to get far enough in to believe itself.
+ * Offsets count from the table and every length is what the structure
+ * above it forces: header 4, an empty Name INDEX 2, a Top DICT INDEX of
+ * 5 + 17, two empty INDEXes 4, so the charstrings land at 32 and run 9
+ * bytes, the Private DICT at 41, and the subroutine index it names at
+ * 49, three bytes from the end of a table 52 long.  Three, not two: at
+ * two the index cannot read its offSize and the bug hides.
  */
 static void
 build_cff(void)
@@ -128,14 +122,12 @@ build_cff(void)
 /**
  * @brief A second CFF, where a subroutine ends the glyph.
  *
- * Type 2's endchar finishes the GLYPH.  Meet one inside a subroutine and
- * everything after the call that reached it must not draw -- a reader
- * that treats it as an ordinary return carries on and puts down whatever
- * follows.  So: glyph 1 calls a subroutine that is nothing but endchar,
- * and then tries to draw a triangle.  The triangle must not appear.
- *
- * Header 4, Name 2, Top DICT 5 + 17, two empty INDEXes 4: charstrings at
- * 32 running 19 bytes, Private DICT at 51, its Subrs at 57.
+ * Type 2's endchar finishes the glyph, so met inside a subroutine it
+ * must stop everything after the call; a reader treating it as a return
+ * carries on and draws whatever follows.  Glyph 1 calls a subroutine that
+ * is nothing but endchar, then tries to draw a triangle, which must not
+ * appear.  Header 4, Name 2, Top DICT 5 + 17, two empty INDEXes 4:
+ * charstrings at 32 running 19 bytes, Private DICT at 51, Subrs at 57.
  */
 static void
 build_endchar_cff(void)
@@ -177,14 +169,12 @@ build_endchar_cff(void)
 /**
  * @brief A third CFF, which says its em is a thousandth of a pixel.
  *
- * The FontMatrix states how big a unit is.  Believe one claiming a
- * thousand units to the pixel and every coordinate leaves the range an
- * int can hold, where the conversion has no defined answer -- INT_MIN on
- * one machine, a saturated INT_MAX on another, and an index eight
- * gigabytes below the row either way.
- *
- * Header 4, Name 2, Top DICT 5 + 49, two empty INDEXes 4: charstrings at
- * 64 running 17 bytes, Private DICT at 81, its (empty) Subrs at 87.
+ * The FontMatrix states how big a unit is.  Believed, a thousand units
+ * to the pixel puts every coordinate outside the range an int holds,
+ * where the conversion has no defined answer and the index lands eight
+ * gigabytes below the row.  Header 4, Name 2, Top DICT 5 + 49, two empty
+ * INDEXes 4: charstrings at 64 running 17 bytes, Private DICT at 81, its
+ * empty Subrs at 87.
  */
 static void
 build_hugescale_cff(void)

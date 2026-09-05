@@ -5,19 +5,13 @@
  *
  * fontfuzz.c - bend real fonts and see what the reader does.
  *
- * A DEVELOPMENT tool, not part of the build or the suite.  Fonts arrive
- * by being dropped in a folder, which is to say from anywhere, and a
- * charstring is a program: this takes every face on the machine, cuts it
- * short twelve ways and bends its bytes twelve more, then draws every
- * letter of each.  It found a crash the suite could not have: a single
- * byte of an 88 KB file, three bytes in the whole file reaching it.
- *
- * Build it against the sanitisers, which is what it is for:
+ * A development tool, not part of the build or the suite: it takes every
+ * face on the machine, cuts each short twelve ways and bends its bytes
+ * twelve more, then draws every letter, under the sanitisers:
  *
  *   cc -g -fsanitize=address,undefined -I../../kits/interface \
  *      -o fontfuzz fontfuzz.c ../../kits/interface/tiku_ttf.c \
- *      ../../kits/interface/tiku_cff.c \
- *      ../../kits/interface/tiku_glyphpath.c
+ *      ../../kits/interface/tiku_cff.c ../../kits/interface/tiku_glyphpath.c
  *   ./fontfuzz $(find /usr/share/fonts -name '*.ttf' -o -name '*.otf')
  *
  * The seed is fixed, so a failure is one anybody can have again.

@@ -6,40 +6,15 @@
  *
  * tiku_dl.h - what was drawn, rather than what it came out as.
  *
- * A session hands its window over as PIXELS: a frame copied, or a surface
- * shared when both ends are on one machine.  That is right for a machine
- * talking to itself and wrong for the thing this interface is being built
- * for.  A 372x302 window is 449,376 bytes; down a 115200 line that is
- * thirty-nine seconds, and the shared-surface path cannot help -- sharing
- * a surface means one machine, which a serial line denies.
- *
- * So: a third way to say what a window looks like.  Not the pixels but
- * the CALLS -- twenty-one of them for that same window, around six
- * hundred bytes, which is the difference between a tenth of a second and
- * most of a minute.
- *
- * It is deliberately NOT an app_server.  Nothing here draws a line or a
- * glyph on anybody's behalf: the commands are the ones the interface
- * already has, semantic where the interface is semantic -- "a button,
- * here, disabled, labelled this" -- so the stream is short because the
- * vocabulary is high, not because it was compressed.
- *
- * And measuring stays where it is.  Every window in this interface lays
- * itself out by asking how wide a piece of text is; a stream that had to
- * ask the far end would pay a round trip per label, which is the mistake
- * that made remote interfaces a byword.  The face tables are small and
- * both ends carry them.
- *
- * The recorded form IS the wire form -- appending a command writes the
- * bytes that will be sent -- so flattening is a copy and there is one
- * description of a command rather than two that must be kept agreeing.
- *
- *   per command:  [u16 op][u16 length][payload]
- *
- * The length is what lets a player step over an op it does not know, so
- * a newer end may draw with something an older one has never heard of
- * and the older one draws the rest.  Same bargain as tiku_msg, for the
- * same reason.
+ * A session hands its window over as pixels, which a serial line cannot
+ * afford: a 372x302 window is 449,376 bytes, thirty-nine seconds at
+ * 115200.  This is the third way to say what a window looks like, the
+ * calls rather than the pixels, around six hundred bytes for that same
+ * window.  The commands are the interface's own, semantic where it is
+ * semantic, and measuring stays at the sending end.  The recorded form
+ * is the wire form, [u16 op][u16 length][payload] per command, so
+ * flattening is a copy and a player steps over an op it does not know.
+ * The reasoning is in doc/display-list.md.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -202,21 +177,12 @@ int tiku_dl_list_row(tiku_dl_t *dl, tiku_rect_t r, const char *text,
 /**
  * @brief Record one icon: art defined once, then placed by reference.
  *
- * An icon is the one picture that does NOT have to travel as pixels,
- * because it has a definition -- the HVIF blob -- and both ends carry
- * the rasteriser.  So the art crosses once per list, a few hundred
- * bytes, and every further placement of the same art is sixteen.  The
- * receiver rasterises at its own end, which is what keeps the stream
- * resolution-independent: a doubled screen draws a crisp icon beside
- * its crisp text instead of blowing up the sender's pixels.
- *
- * The art's identity is a hash of the BLOB, not its name: a directory
- * may replace a baked icon per device (tiku_icons_load_dir), and two
- * different pictures under one name must not alias.
- *
- * The wash is the whole of the icon states: plain is no wash, dim is
- * the caller's wash at the caller's strength, and selected is black at
- * 87/255 -- the numbers tiku_iconpaint already draws with.
+ * An icon has a definition, the HVIF blob, and both ends carry the
+ * rasteriser, so the art crosses once per list and each placement is
+ * sixteen bytes, rasterised at the receiver's own resolution.  The art's
+ * identity is a hash of the blob, not its name, since a directory may
+ * replace a baked icon per device.  The wash is the icon state: none,
+ * the caller's, or black at 87/255 for selected, as tiku_iconpaint does.
  *
  * @return 1 recorded whole.  0 means it was NOT recorded and the list
  *         has been marked not-whole -- never neither, because a blit
@@ -379,15 +345,13 @@ size_t tiku_dl_narrate(const void *buf, size_t len, char *out, size_t max);
 size_t tiku_dl_say(const tiku_dl_t *dl, char *out, size_t max);
 
 /**
- * @brief The same list as one machine line per CONTROL: kind, label,
- *        rect and state, tab-separated -- the walkable form of the feed.
+ * @brief The list as one machine line per control: kind, label, rect,
+ *        state, tab-separated; the walkable form of the feed.
  *
- * Narration is for a person; this is for the party that wants to act on
- * what it heard: a driver that clicks the button labelled Cancel needs
- * the rect, not the prose.  Paint is skipped, text is a fact too (its
- * rect is the pen position, width and height 0 -- the wire does not
- * carry its metrics), and the closing confession line matches
- * tiku_dl_say()'s.
+ * Narration is for a person; this is for a driver that acts on what it
+ * heard and needs the rect of the button labelled Cancel, not the prose.
+ * Paint is skipped, text is a fact with its pen position as rect and a
+ * zero size, and the closing confession line matches tiku_dl_say()'s.
  *
  * Line shape: <kind>\t"<label>"\t<x> <y> <w> <h>\t<state>\n
  */

@@ -69,12 +69,11 @@ tiku_layout_least(const tiku_layout_t *l)
  * @brief Work out every part's extent along the laid axis.
  *
  * Fixed parts take their size; what is left is shared by weight, and a
- * part never goes below its least even when that means the whole
- * overruns -- a control squeezed under its own word is unreadable, and
- * a window that overruns is at least visibly wrong.  The LAST weighted
- * part takes the remainder the division could not share out, so the
- * parts together cover the run exactly rather than leaving a sliver at
- * the end that belongs to nobody.
+ * part never goes below its least even when the whole then overruns,
+ * since a control squeezed under its own word is unreadable and an
+ * overrunning window is at least visibly wrong.  The last weighted part
+ * takes the remainder the division could not share, so the parts cover
+ * the run exactly with no sliver left that belongs to nobody.
  */
 static void
 solve(const tiku_layout_t *l, int extent, int *out)

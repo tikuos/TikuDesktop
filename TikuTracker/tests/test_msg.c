@@ -7,16 +7,13 @@
  *
  * Two halves.  First that it keeps what it is given: every type back out
  * as it went in, lists in order, a message inside a message, and the flat
- * bytes exactly as the wire says they are -- because the whole point of
- * this container is that the other end may not be this build, and a wire
- * format nobody has written down the bytes of is one that drifts.
- *
- * Then that it survives what it is not given.  A message arrives from a
- * cable, so every prefix of a good one, and every single-byte change to
- * a good one, must be turned away or read whole, and neither must be a
- * way in.  A field of a type this build has never met must come back out
- * unharmed, since that is the version tolerance the fixed structs cannot
- * offer and the reason any of this exists.
+ * bytes exactly as the wire says, because the other end may not be this
+ * build and a wire format nobody has written the bytes of is one that
+ * drifts.  Then that it survives what it is not given: a message arrives
+ * from a cable, so every prefix of a good one and every single-byte
+ * change to one must be turned away or read whole, and neither may be a
+ * way in.  A field of a type this build has never met comes back out
+ * unharmed, the version tolerance the fixed structs cannot offer.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

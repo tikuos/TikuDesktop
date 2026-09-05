@@ -706,16 +706,12 @@ blend(tiku_surface_t *s, int sc, int x, int y, tiku_rgb_t c,
 /**
  * @brief How a stream names the face @p f, or -1 when it cannot.
  *
- * One byte carries two meanings, and they cannot be confused because the
- * ladder starts at ten: 0 to 3 are the four faces the interface is
- * DRAWN in, whatever size that currently is, and anything larger is a
- * plain face at that many pixels -- which is how a status line set at
- * eleven says so rather than arriving in the body size.
- *
- * -1 for a face this cannot name -- one read from a dropped file, say.
- * The caller marks the list incomplete rather than guessing, because a
- * guess here is a window that arrives in the wrong letters and says
- * nothing about it.
+ * One byte, two meanings that cannot be confused because the ladder
+ * starts at ten: 0 to 3 are the four faces the interface is drawn in at
+ * whatever size that is, and anything larger is a plain face at that
+ * many pixels, which is how a status line set at eleven says so.  -1 is
+ * a face this cannot name, one read from a dropped file; the caller
+ * marks the list incomplete rather than guessing at the letters.
  */
 static int
 face_id(const tiku_font_t *f)

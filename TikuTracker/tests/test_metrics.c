@@ -6,21 +6,14 @@
  * test_metrics.c - how big a control is.
  *
  * A 22-pixel row, a 26-pixel button, a 21-pixel title bar written into
- * every window that draws one is right for a 12-pixel face and for
- * nothing else: with the face a preference, at 16 px the words leave
- * their rows, and one control's halves are split at a pixel the control
- * no longer reaches.
- *
- * Two claims are made here, and the FIRST is the one that makes the
- * metrics safe to rely on at all:
- *
- *   at 12 px each answers exactly the R5 number, so every pinned pixel
- *   in the shell suite goes on meaning what it meant; and
- *
- *   at every other size it moves, in the direction the letters moved.
- *
- * The second without the first would be a rewrite of the whole
- * interface.  The first without the second would be a rename.
+ * every window is right for a 12-pixel face and nothing else: with the
+ * face a preference, at 16 px the words leave their rows and a control's
+ * halves split at a pixel it no longer reaches.  Two claims, of which the
+ * first makes the metrics safe to rely on: at 12 px each answers exactly
+ * the R5 number, so every pinned pixel in the shell suite goes on meaning
+ * what it meant; and at every other size it moves in the direction the
+ * letters moved.  The second without the first would be a rewrite of the
+ * interface; the first without the second would be a rename.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
