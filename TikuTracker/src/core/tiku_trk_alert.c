@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/** @brief Button geometry, shared by the drawing and the hit test. */
 void
 tiku_trk_alert_for_conflict(tiku_alert_t *a, const tiku_progress_t *pr)
 {

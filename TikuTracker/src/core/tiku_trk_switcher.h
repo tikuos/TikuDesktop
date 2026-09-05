@@ -83,6 +83,7 @@ typedef struct {
     int64_t           moved;
 } tiku_trk_switcher_t;
 
+/** @brief No applications, nothing chosen. */
 void tiku_trk_switcher_init(tiku_trk_switcher_t *s);
 
 /** @brief Add or refresh an application.  @return its index. */

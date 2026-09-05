@@ -43,6 +43,7 @@ typedef struct {
     int                   serial;
 } tiku_trk_clip_t;
 
+/** @brief Empty, with nothing on it. */
 void tiku_trk_clip_init(tiku_trk_clip_t *c);
 
 /**
@@ -107,7 +108,9 @@ void tiku_trk_clip_clear(tiku_trk_clip_t *c);
 int tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_model_t *models,
                          int n);
 
+/** @brief How many entries are on it; 0 for NULL. */
 int tiku_trk_clip_count(const tiku_trk_clip_t *c);
+/** @brief Entry @p i, or NULL past the end. */
 const tiku_trk_clip_entry_t *tiku_trk_clip_at(const tiku_trk_clip_t *c,
                                               int i);
 

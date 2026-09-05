@@ -11,7 +11,8 @@
 
 #include "tiku_trk_deskbar_private.h"
 
-/** @brief The last component of @p path, which is what a menu row shows. */
+/** @brief The last component of @p path; the path itself when it ends in
+ *         a slash or has none. */
 const char *
 db_leaf_name(const char *path)
 {
@@ -20,6 +21,7 @@ db_leaf_name(const char *path)
     return (slash != NULL && slash[1] != '\0') ? slash + 1 : path;
 }
 
+/** @brief Days in @p month of @p year, leap years counted. */
 int
 db_calendar_days(int year, int month)
 {
@@ -33,6 +35,7 @@ db_calendar_days(int year, int month)
     return (month >= 1 && month <= 12) ? days[month - 1] : 31;
 }
 
+/** @brief Move the calendar by months and years, the day clamped to fit. */
 void
 db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years)
 {
@@ -50,6 +53,7 @@ db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years)
     }
 }
 
+/** @brief Append a leaf-menu row; a full menu drops it without a word. */
 static void
 add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
          const char *label, const char *path, int which)
@@ -68,6 +72,11 @@ add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
     snprintf(it->path, sizeof it->path, "%s", (path != NULL) ? path : "");
 }
 
+/**
+ * @brief The listing callback that makes a leaf-menu row of an entry: into
+ *        the walk's own table when it has one, else onto the bar's leaf.
+ *        A dot file is not a row.
+ */
 int
 db_menu_entry(const tiku_model_t *m, void *ctx)
 {

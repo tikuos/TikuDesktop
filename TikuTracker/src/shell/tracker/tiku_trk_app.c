@@ -15,7 +15,8 @@
 
 #include "tiku_trk_app_private.h"
 
-/** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
+/** @brief Paint a menu row's icon, dimmed over the panel colour when the
+ *         row is disabled.  @return what the icon painter returns. */
 int
 browser_paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
                 int size, int dimmed)
@@ -30,6 +31,11 @@ browser_paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
 /* the run                                                                   */
 /*---------------------------------------------------------------------------*/
 
+/**
+ * @brief The browser shell, start to finish: the arguments, the boot, the
+ *        loop of turns until the window closes, and the teardown.
+ * @return the exit code.
+ */
 static int
 tracker_run(int argc, char **argv)
 {

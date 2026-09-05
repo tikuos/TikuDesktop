@@ -42,7 +42,9 @@ typedef struct {
 /** @brief The size at rung @p i, or 0 past the end. */
 int tiku_trk_deskprefs_icon_step(int i);
 
+/** @brief What an undressed Desktop is: no picture, scaled, 32 px icons. */
 void tiku_trk_deskprefs_default(tiku_trk_deskprefs_values_t *values);
+/** @brief Start at the defaults, and take those as the opened values. */
 void tiku_trk_deskprefs_init(tiku_trk_deskprefs_t *prefs);
 
 /** @brief Read what @p node says about itself.  @return 1 when it said. */
@@ -54,16 +56,23 @@ int tiku_trk_deskprefs_load(tiku_trk_deskprefs_t *prefs,
 int tiku_trk_deskprefs_save(const tiku_trk_deskprefs_t *prefs,
                             tiku_store_t *store, const char *node);
 
+/** @brief Take the current values as the ones the window opened with. */
 void tiku_trk_deskprefs_mark_opened(tiku_trk_deskprefs_t *prefs);
+/** @brief Whether the values differ from the defaults. */
 int tiku_trk_deskprefs_defaultable(const tiku_trk_deskprefs_t *prefs);
+/** @brief Whether the values differ from what the window opened with. */
 int tiku_trk_deskprefs_revertable(const tiku_trk_deskprefs_t *prefs);
+/** @brief Put the values back to the defaults. */
 void tiku_trk_deskprefs_defaults(tiku_trk_deskprefs_t *prefs);
+/** @brief Put the values back to what the window opened with. */
 void tiku_trk_deskprefs_revert(tiku_trk_deskprefs_t *prefs);
 
 /** @brief Show @p path, keeping whatever mode is already chosen. */
 void tiku_trk_deskprefs_set_picture(tiku_trk_deskprefs_t *prefs,
                                     const char *path);
+/** @brief Show no picture; the mode is kept for the next one. */
 void tiku_trk_deskprefs_clear_picture(tiku_trk_deskprefs_t *prefs);
+/** @brief How the picture is fitted to the Desktop. */
 void tiku_trk_deskprefs_set_mode(tiku_trk_deskprefs_t *prefs,
                                  tiku_trk_bg_mode_t mode);
 

@@ -375,7 +375,12 @@ pv_sorted_slot(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     return lo;
 }
 
-/** @brief Put @p p at its sorted place, shifting the rest down. */
+/**
+ * @brief Insert @p p at its sorted slot, re-sorting first when the array
+ *        has come unsorted, and move every index that pointed past the
+ *        slot down by one.  @return the slot, or -1 when the array is
+ *        full.
+ */
 int
 pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
 {
@@ -719,6 +724,11 @@ tiku_trk_poseview_notify_all(tiku_trk_poseview_t *v,
     return flags;
 }
 
+/**
+ * @brief Take one entry of a re-listing into the diff, holding one the
+ *        backend could not describe the way the first listing does.
+ *        @return 1 to stop the walk when the list is full.
+ */
 static int
 relist_one(const tiku_model_t *m, void *ctx)
 {

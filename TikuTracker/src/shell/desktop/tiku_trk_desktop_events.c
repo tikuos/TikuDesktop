@@ -15,7 +15,10 @@
 
 #include "tiku_trk_desktop_private.h"
 
-/** @brief A button went down: what is under the pointer decides everything that follows. */
+/**
+ * @brief A button went down: what is under the pointer decides everything that
+ * follows.
+ */
 void
 desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
@@ -1277,7 +1280,10 @@ if (hit == TIKU_HIT_CLOSE) {
 app->dirty = 1;
 }
 
-/** @brief The pointer moved: drags, bands, hovers and the tracking a press began. */
+/**
+ * @brief The pointer moved: drags, bands, hovers and the tracking a press
+ * began.
+ */
 void
 desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
@@ -1774,7 +1780,10 @@ if (app->resize_track != NULL) {
 }
 }
 
-/** @brief A key went down: shortcuts, navigation, typing into whatever holds the keyboard. */
+/**
+ * @brief A key went down: shortcuts, navigation, typing into whatever holds the
+ * keyboard.
+ */
 void
 desktop_key_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {

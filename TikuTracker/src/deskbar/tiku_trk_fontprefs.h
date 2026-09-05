@@ -41,7 +41,9 @@ typedef struct {
     tiku_trk_fontprefs_values_t opened;
 } tiku_trk_fontprefs_t;
 
+/** @brief The font values a fresh Deskbar has. */
 void tiku_trk_fontprefs_default(tiku_trk_fontprefs_values_t *values);
+/** @brief Defaults for the value and for what the window opened with. */
 void tiku_trk_fontprefs_init(tiku_trk_fontprefs_t *prefs);
 
 /**
@@ -63,10 +65,15 @@ int tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs,
 int tiku_trk_fontprefs_save(const tiku_trk_fontprefs_t *prefs,
                             tiku_store_t *store);
 
+/** @brief Take the current value as what the window opened with. */
 void tiku_trk_fontprefs_mark_opened(tiku_trk_fontprefs_t *prefs);
+/** @brief Whether the value differs from the defaults. */
 int tiku_trk_fontprefs_defaultable(const tiku_trk_fontprefs_t *prefs);
+/** @brief Whether the value differs from what the window opened with. */
 int tiku_trk_fontprefs_revertable(const tiku_trk_fontprefs_t *prefs);
+/** @brief Set the value back to the defaults. */
 void tiku_trk_fontprefs_defaults(tiku_trk_fontprefs_t *prefs);
+/** @brief Set the value back to what the window opened with. */
 void tiku_trk_fontprefs_revert(tiku_trk_fontprefs_t *prefs);
 
 /** @brief Draw the interface in family @p family.  @return 1 when it moved. */

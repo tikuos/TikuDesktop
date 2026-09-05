@@ -49,7 +49,8 @@ typedef enum {
 
 /** @brief One window under an application. */
 typedef struct {
-    char                   title[TIKU_TRK_DB_LABEL_MAX];  /* app name stripped */
+    /* app name stripped */
+    char                   title[TIKU_TRK_DB_LABEL_MAX];
     tiku_trk_dbwin_state_t state;
     int                    current;      /* the application's front window */
     void                  *tag;          /* the owner's window identity    */
@@ -157,6 +158,10 @@ void tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
 typedef int (*tiku_trk_db_icon_fn)(void *context, tiku_surface_t *s,
                                    const tiku_trk_db_item_t *item,
                                    int x, int y, int size);
+/**
+ * @brief Give the bar the painter that draws a menu row's icon, with the
+ *        context it wants handed back.
+ */
 void tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
                                             tiku_trk_db_icon_fn fn,
                                             void *context);
@@ -180,6 +185,7 @@ void tiku_trk_deskbar_set_recent(tiku_trk_deskbar_t *db,
 
 /** @brief How many rows the leaf menu has, and what row @p i is. */
 int tiku_trk_deskbar_leaf_count(const tiku_trk_deskbar_t *db);
+/** @brief Row @p i of the leaf menu, or NULL when there is no such row. */
 const tiku_trk_db_item_t *tiku_trk_deskbar_leaf_item(
     const tiku_trk_deskbar_t *db, int i);
 
@@ -216,6 +222,7 @@ tiku_trk_db_dock_t tiku_trk_deskbar_dock_at(int x, int y, int sw, int sh,
  * @return the width actually taken.
  */
 int tiku_trk_deskbar_set_width(tiku_trk_deskbar_t *db, int w);
+/** @brief The bar's width, never under TIKU_TRK_DB_MIN_W. */
 int tiku_trk_deskbar_width(const tiku_trk_deskbar_t *db);
 
 /*---------------------------------------------------------------------------*/
@@ -225,7 +232,12 @@ int tiku_trk_deskbar_width(const tiku_trk_deskbar_t *db);
 /** @brief How wide the bar leaves itself when hidden. */
 #define TIKU_TRK_DB_SLIVER 2
 
+/** @brief Whether the bar hides until the pointer reaches its edge. */
 void tiku_trk_deskbar_set_autohide(tiku_trk_deskbar_t *db, int on);
+/**
+ * @brief Whether the bar rises over windows when the pointer reaches it;
+ *        turning it on takes the bar off always-on-top.
+ */
 void tiku_trk_deskbar_set_autoraise(tiku_trk_deskbar_t *db, int on);
 
 /**
@@ -251,7 +263,9 @@ int tiku_trk_deskbar_menu_point(const tiku_trk_deskbar_t *db,
 int tiku_trk_deskbar_menu_labels(const tiku_trk_deskbar_t *db, int sub,
                                  char *out, size_t cap);
 
-/** Whether a pointer location is still within the open menu's tracking margin. */
+/**
+ * Whether a pointer location is still within the open menu's tracking margin.
+ */
 int tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y);
 /** @brief Deskbar's close policy in the single-process port (DB-053). */
 int tiku_trk_deskbar_quit_policy(int prefs_open, int shortcut_quit);
@@ -273,6 +287,7 @@ int tiku_trk_deskbar_scroll(tiku_trk_deskbar_t *db, int step);
 
 /** @brief The first application row shown, and whether any are hidden. */
 int tiku_trk_deskbar_scroll_at(const tiku_trk_deskbar_t *db);
+/** @brief Whether the application list overflows the bar. */
 int tiku_trk_deskbar_scrollable(const tiku_trk_deskbar_t *db);
 
 /** @brief Whether the mini dock's running-apps menu is up (DB-037). */
@@ -334,6 +349,7 @@ typedef struct {
     char                 path[TIKU_PATH_MAX];
 } tiku_trk_db_pick_t;
 
+/** @brief A new bar over @p backend, docked right and expanded, or NULL. */
 tiku_trk_deskbar_t *tiku_trk_deskbar_new(tiku_backend_t *backend);
 
 /**
@@ -386,10 +402,13 @@ int tiku_trk_deskbar_repoint_replicant(tiku_trk_deskbar_t *db,
                                        const char *old_path,
                                        const char *new_path);
 
+/** @brief Free the bar. */
 void tiku_trk_deskbar_free(tiku_trk_deskbar_t *db);
 
+/** @brief Dock the bar at @p dock; a value outside the docks is ignored. */
 void tiku_trk_deskbar_set_dock(tiku_trk_deskbar_t *db,
                                tiku_trk_db_dock_t dock);
+/** @brief Where the bar is docked; right and expanded for no bar. */
 tiku_trk_db_dock_t tiku_trk_deskbar_dock(const tiku_trk_deskbar_t *db);
 
 /** @brief Apply all live preference effects to the bar (DB-061, DB-073). */
@@ -471,11 +490,20 @@ int tiku_trk_deskbar_drop_replicant(tiku_trk_deskbar_t *db, int id);
  * removed.  @return nonzero when anything changed.
  */
 int tiku_trk_deskbar_sync_replicants(tiku_trk_deskbar_t *db);
+/**
+ * @brief Record the height the replicant at @p path asked for, within the
+ *        tray's limit, and save the tray.
+ * @return 1 when the path is in the tray, 0 otherwise or for a height out
+ *         of range.
+ */
 int tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
                                           const char *path, int height);
+/** @brief The height recorded for the replicant at @p path, or 0. */
 int tiku_trk_deskbar_replicant_height(const tiku_trk_deskbar_t *db,
                                       const char *path);
+/** @brief Show or hide the tray's replicants. */
 void tiku_trk_deskbar_set_show_replicants(tiku_trk_deskbar_t *db, int show);
+/** @brief Whether the tray shows its replicants. */
 int tiku_trk_deskbar_show_replicants(const tiku_trk_deskbar_t *db);
 
 /** @brief Re-read the tray's nodes.  @return values that changed. */
@@ -499,8 +527,10 @@ void tiku_trk_deskbar_strip_title(const char *app, const char *title,
 /** @brief The strip the bar occupies; windows keep out of it. */
 tiku_rect_t tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db);
 
+/** @brief Draw the whole bar onto @p s, laying its frame out first. */
 void tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s);
 
+/** @brief Whether the point is inside the bar's frame. */
 int tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y);
 
 /**
@@ -597,10 +627,18 @@ int tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i,
  */
 int tiku_trk_deskbar_launchable(const tiku_model_t *m);
 
+/**
+ * @brief Whether any popup of the bar is open: the leaf menu, the calendar
+ *        or the clock menu.
+ */
 int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
 /** @brief Open the leaf menu, as the Menu key does (DB-011). */
 void tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db);
 
+/**
+ * @brief Close every popup of the bar: the leaf menu, the calendar, the
+ *        clock menu and the window menu.
+ */
 void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
 
 /**
@@ -657,8 +695,11 @@ int tiku_trk_deskbar_calendar_open(const tiku_trk_deskbar_t *db);
 /** @brief Calendar's currently displayed month (1..12) and year/day. */
 void tiku_trk_deskbar_calendar_date(const tiku_trk_deskbar_t *db,
                                     int *year, int *month, int *day);
+/** @brief Whether the clock is shown. */
 int tiku_trk_deskbar_clock_visible(const tiku_trk_deskbar_t *db);
+/** @brief Show or hide the clock; hiding it closes the calendar too. */
 void tiku_trk_deskbar_set_clock_visible(tiku_trk_deskbar_t *db, int visible);
+/** @brief Close the calendar and the clock menu. */
 void tiku_trk_deskbar_close_calendar(tiku_trk_deskbar_t *db);
 
 #endif /* TIKU_TRK_DESKBAR_H_ */

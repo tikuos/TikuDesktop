@@ -32,6 +32,7 @@ static int title_h(void)
     return tiku_font_plain()->height + 7;        /* 22 at 12 px */
 }
 
+/** @brief The window, sized to the slots it shows, centred on the screen. */
 static tiku_rect_t
 frame(tiku_trk_switcher_window_t *controller)
 {
@@ -49,6 +50,7 @@ frame(tiku_trk_switcher_window_t *controller)
     return result;
 }
 
+/** @brief Draw the applications in a row, the chosen one framed and named. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)

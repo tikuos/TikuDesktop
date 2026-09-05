@@ -11,6 +11,10 @@
 
 #include "tiku_trk_deskbar_private.h"
 
+/**
+ * @brief Write the tray's replicants to the session store, one label and
+ *        path per line; a read-only or absent store is left alone.
+ */
 static void
 save_replicants(tiku_trk_deskbar_t *db)
 {

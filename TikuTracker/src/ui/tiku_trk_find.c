@@ -71,6 +71,10 @@ static const char *kOps[] = {
     "op.greater_than", "op.less_than"
 };
 
+/**
+ * @brief The word for @p op on @p field: before and after for a date,
+ *        the operator's own name otherwise.
+ */
 static const char *
 op_label(tiku_qfield_t field, tiku_qop_t op)
 {
@@ -81,6 +85,7 @@ op_label(tiku_qfield_t field, tiku_qop_t op)
     return tiku_str(kOps[op]);
 }
 
+/** @brief The label for field @p f; the name field's when unknown. */
 static const char *
 field_label(tiku_qfield_t f)
 {
@@ -772,6 +777,7 @@ type_command(tiku_trk_find_t *f, const char *type)
     return 100 + i;
 }
 
+/** @brief Whether @p type is among the @p n already listed. */
 static int
 type_is_used(char used[][TIKU_TYPE_MAX], int n, const char *type)
 {
@@ -864,6 +870,7 @@ type_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
     return r;
 }
 
+/** @brief Where the scope field sits, under the last control row. */
 static tiku_rect_t
 scope_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
 {
@@ -887,6 +894,10 @@ trash_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
     return r;
 }
 
+/**
+ * @brief Where button @p which sits on the bottom row; the default
+ *        button is wider, for the ring inside its rectangle.
+ */
 static tiku_rect_t
 button_rect(const tiku_trk_find_t *f, tiku_rect_t fr, int which)
 {
@@ -925,6 +936,7 @@ draw_popup_button(tiku_surface_t *s, tiku_rect_t r,
     tiku_ui_menufield(s, r, label, TIKU_S_NORMAL);
 }
 
+/** @brief A text field, with the caret when it has the focus. */
 static void
 draw_field(tiku_surface_t *s, tiku_rect_t r, const char *text,
            int focused)
@@ -937,6 +949,7 @@ draw_field(tiku_surface_t *s, tiku_rect_t r, const char *text,
                            focused ? TIKU_S_FOCUS : TIKU_S_NORMAL);
 }
 
+/** @brief A button, from the shared control look. */
 static void
 draw_button(tiku_surface_t *s, tiku_rect_t r, const char *label,
             unsigned state)
@@ -944,6 +957,7 @@ draw_button(tiku_surface_t *s, tiku_rect_t r, const char *label,
     tiku_ui_button(s, r, label, state);
 }
 
+/** @brief @p text at @p x, centred on row @p r's height. */
 static void
 label_at(tiku_surface_t *s, int x, tiku_rect_t r, const char *text)
 {
@@ -1094,6 +1108,7 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
 /* hit-testing and clicks                                                    */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Whether the point is inside the rectangle. */
 static int
 in(tiku_rect_t r, int x, int y)
 {

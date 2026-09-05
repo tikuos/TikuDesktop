@@ -62,6 +62,11 @@ tiku_trk_foreign_drop(const tiku_trk_foreign_offer_t *o, int directory,
     return r;
 }
 
+/**
+ * @brief The path a clipping lands at in @p dir: @p name when one was
+ * offered, else an "Untitled" one; a @p serial past the first appends its
+ * number.  @return 0, or -1 when it does not fit in @p max.
+ */
 static int
 join_clip_path(char *out, size_t max, const char *dir, const char *name,
                int serial)

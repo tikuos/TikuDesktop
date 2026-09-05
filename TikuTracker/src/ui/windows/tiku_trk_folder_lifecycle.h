@@ -72,7 +72,12 @@ int tiku_trk_folder_lifecycle_refresh_results(
     tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_window_t *folder);
 
-/** @brief Compose a folder window's title honouring the path preference. */
+/**
+ * @brief The title a folder window shows for @p path (CW-016).
+ *
+ * The whole path when ShowFullPathInTitleBar is on, the folder's own
+ * name otherwise -- root and an empty path stay "/".
+ */
 void tiku_trk_folder_title_for(tiku_trk_prefs_t *prefs,
                                const char *path, char *out, size_t max);
 

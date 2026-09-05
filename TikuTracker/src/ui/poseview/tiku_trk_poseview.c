@@ -19,8 +19,6 @@ int pv_g_layout_clip_valid;
 
 /*---------------------------------------------------------------------------*/
 /* list access -- everything iterates through CurrentPoseList()              */
-/*---------------------------------------------------------------------------*/
-
 int
 tiku_trk_poseview_count(const tiku_trk_poseview_t *v)
 {

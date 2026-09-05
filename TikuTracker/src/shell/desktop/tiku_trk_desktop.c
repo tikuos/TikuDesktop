@@ -15,7 +15,12 @@
 
 #include "tiku_trk_desktop_private.h"
 
-/** @brief Apply folder-list settings to every already-open spatial view. */
+/**
+ * @brief Apply the settings file to the running shell: thumbnails, the
+ *        global menu bar, the theme, and the per-window switches every
+ *        folder view carries.  A change that alters a window's shape or
+ *        palette forgets its pixels and marks the frame dirty.
+ */
 void
 sync_folder_preferences(desktop_t *app)
 {
@@ -202,13 +207,12 @@ sync_folder_preferences(desktop_t *app)
 /**
  * @brief Pixels a window built up frame by frame has wrong (PVL-045).
  *
- * A window that paints what changed can only be held against the picture
- * it is meant to be equal to: keep what is on the screen, throw the
- * windows' kept pixels away so the next draw builds them from nothing, and
- * count where the two disagree.  Nothing is drawn before the copy is
- * taken -- a frame drawn to settle the window would be the very repaint
- * the check exists to do without.  The from-scratch draw stands: it is the
- * picture the shell should be showing anyway.
+ * A window that paints what changed is held against the picture it is
+ * meant to equal: keep what is on the screen, throw the windows' kept
+ * pixels away so the next draw builds from nothing, and count where the
+ * two disagree.  Nothing is drawn before the copy is taken, since a frame
+ * drawn to settle the window would be the very repaint the check exists
+ * to do without; the from-scratch draw stands, being the right picture.
  */
 int
 tracker_run(int argc, char **argv)

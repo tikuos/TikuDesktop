@@ -38,6 +38,7 @@ canonical(int command)
     }
 }
 
+/** @brief Whether Shift is among @p mods. */
 static int
 shifted(unsigned mods)
 {

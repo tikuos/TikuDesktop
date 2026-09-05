@@ -106,6 +106,7 @@ typedef struct {
 #define TIKU_TRK_CMD_EDIT_TEMPLATES 1320
 #define TIKU_TRK_CMD_ADD_TEMPLATE_SUBMENU_BASE 1400
 
+/** @brief Empty menus, with the Templates folder under the home. */
 void tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw);
 
 /** @brief Return the source path for a dynamic template command, if any. */

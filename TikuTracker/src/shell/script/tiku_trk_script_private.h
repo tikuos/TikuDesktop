@@ -43,27 +43,27 @@ typedef enum {
 } sc_op_t;
 
 typedef struct {
-    sc_op_t  op;
-    unsigned key;
-    unsigned modifiers;
+    sc_op_t  op;                        /* the verb                      */
+    unsigned key;                       /* KEY: the keysym               */
+    unsigned modifiers;                 /* TIKU_MOD_* bits with a key    */
     int      button_x, button_y;        /* a resolved tab point          */
     int      x, y;
-    unsigned button;
+    unsigned button;                    /* the mouse button, 1 unless    */
     int      count;                     /* WAIT turns                    */
     char     text[SC_TEXT_MAX];         /* path, substring or note       */
     /* A second string, where one is needed.  Long enough for a PATH: it
      * was a word, and a needle too long to hold was silently truncated to
      * nothing -- which made every check that used it pass. */
     char     text2[512];
-    int      line;
+    int      line;                      /* the script line, for the report */
 } sc_step_t;
 
 struct tiku_trk_script {
-    sc_step_t step[SC_MAX_STEPS];
-    int       count;
-    int       cursor;
+    sc_step_t step[SC_MAX_STEPS];       /* the lines, parsed, in order   */
+    int       count;                    /* how many of step[] are used   */
+    int       cursor;                   /* next step to run, into step[] */
     int       waiting;                  /* turns still owed to a WAIT    */
-    int       pending_release;
+    int       pending_release;          /* a CLICK's release still to go */
     int       dragging_window;          /* a tab drag, mid-play          */
     int       drag_to_x, drag_to_y;          /* a CLICK's second half         */
     char      note[SC_TEXT_MAX];        /* what the next check is for    */

@@ -43,6 +43,7 @@ typedef enum {
     SELECT_HIT_APPLY
 } select_hit_t;
 
+/** @brief Where the expression, the rule, the two boxes and Select go. */
 static void
 layout(tiku_rect_t content, tiku_rect_t *expression,
        tiku_rect_t *rule, tiku_rect_t *ignore,
@@ -65,6 +66,7 @@ layout(tiku_rect_t content, tiku_rect_t *expression,
                                  w, tiku_ui_row_h() };
 }
 
+/** @brief Draw the fields, the boxes and the button; the caret when focused. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -107,6 +109,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                         owns ? TIKU_S_DEFAULT : 0u);
 }
 
+/** @brief Which control a point lands on, or none. */
 static select_hit_t
 hit(tiku_trk_select_window_t *controller, int x, int y)
 {
@@ -128,6 +131,7 @@ hit(tiku_trk_select_window_t *controller, int x, int y)
     return SELECT_HIT_NONE;
 }
 
+/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
 static void
 mark_dirty(tiku_trk_select_window_t *controller)
 {
@@ -136,6 +140,7 @@ mark_dirty(tiku_trk_select_window_t *controller)
     }
 }
 
+/** @brief Hand the expression to the shell to select by, then close. */
 static void
 apply(tiku_trk_select_window_t *controller)
 {
@@ -157,6 +162,7 @@ apply(tiku_trk_select_window_t *controller)
     tiku_workspace_activate(controller->workspace, target);
 }
 
+/** @brief A press focuses a field, toggles a box or applies.  @return 1. */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)

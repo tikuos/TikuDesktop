@@ -26,6 +26,7 @@ tiku_trk_band_controller_init(tiku_trk_band_controller_t *controller,
     };
 }
 
+/** @brief Select what the band covers, in the view's own coordinates. */
 static void
 select_band(tiku_trk_band_controller_t *controller)
 {

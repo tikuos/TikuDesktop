@@ -21,6 +21,7 @@
 #define PREF_FIELDS_V2 17
 #define PREF_FIELDS_V1 16
 
+/** @brief Whether two settings agree in every field the file keeps. */
 static int
 same(const tiku_trk_deskbar_settings_t *a,
      const tiku_trk_deskbar_settings_t *b)
@@ -183,6 +184,7 @@ tiku_trk_deskbar_prefs_auto_raise_enabled(
     return prefs != NULL && !prefs->value.always_on_top;
 }
 
+/** @brief The settings as the stored record, version first. */
 static void
 pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
 {
@@ -208,6 +210,10 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->font_family;
 }
 
+/**
+ * @brief The settings from a stored record, the fields an older version
+ *        lacks filled with their defaults, then normalised.
+ */
 static void
 unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
 {

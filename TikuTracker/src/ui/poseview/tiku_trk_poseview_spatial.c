@@ -29,6 +29,10 @@ pv_state_node(const tiku_trk_poseview_t *v, char *buf, size_t max)
     return v->path;
 }
 
+/**
+ * @brief The attribute the view's state is kept under: the Desktop's, the
+ *        Disks root's, or the ordinary folder one.
+ */
 static const char *
 state_attr(const tiku_trk_poseview_t *v)
 {

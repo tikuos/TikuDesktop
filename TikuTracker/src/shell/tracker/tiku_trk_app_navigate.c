@@ -39,7 +39,14 @@ browser_open_animation(app_t *a, tiku_rect_t from)
     browser_blit(a);
 }
 
-/** @brief Change this browser window to @p path and restore its view state. */
+/**
+ * @brief Show folder @p path in the window: the view's state and columns
+ *        are saved, the directory switched and loaded, the layout and
+ *        writability settled, and the destination recorded in the
+ *        navigator when @p record is set.  @return 1 when the window now
+ *        shows @p path (already, or after the switch), 0 when @p path is
+ *        empty, not a container, or refused by the store.
+ */
 int
 browser_navigate_to(app_t *a, const char *path, int record)
 {

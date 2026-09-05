@@ -86,6 +86,11 @@ tiku_trk_launch_controller_handler(tiku_trk_launch_controller_t *controller,
     return count > 0 ? candidates[0].app : NULL;
 }
 
+/**
+ * @brief The selected non-container poses: their paths, and the distinct
+ *        types among them.  @return 0 when there is no view to read, else
+ *        the number of poses looked at.
+ */
 static int
 collect_selection(tiku_trk_folder_window_t *folder, const char **types,
                   int *type_count, const char **paths, int *path_count)

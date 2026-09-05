@@ -50,6 +50,7 @@ chars_equal(char a, char b, int cs)
     return cs ? (a == b) : (LOWER(a) == LOWER(b));
 }
 
+/** @brief @p c lowered, unless matching is case-sensitive. */
 static char
 cond_lower(char c, int cs)
 {
@@ -117,6 +118,11 @@ bracket_match(const char *string, const char *pattern, int cs)
 
 #define GLOB_LEVELS 100
 
+/**
+ * @brief Whether @p string matches the wildcard @p pattern: '?', '*' and
+ * '[...]', case-sensitive when @p cs.  Each '*' keeps a place to back up
+ * to, GLOB_LEVELS of them at most.
+ */
 static int
 glob_match(const char *string, const char *pattern, int cs)
 {
@@ -264,6 +270,10 @@ typedef struct {
 
 static int rx_parse_alt(rx_t *r, const char **p, int depth);
 
+/**
+ * @brief A fresh node, matching once and linked to nothing.  @return its
+ * index, or -1 with the error set when the table is full.
+ */
 static int
 rx_new_node(rx_t *r)
 {
@@ -280,6 +290,7 @@ rx_new_node(rx_t *r)
     return r->nnode++;
 }
 
+/** @brief Put @p c in a class's bitmap, and its other case unless @p cs. */
 static void
 cls_set(unsigned char *bits, unsigned char c, int cs)
 {
@@ -438,6 +449,11 @@ rx_parse_seq(rx_t *r, const char **p, int depth)
     return head;
 }
 
+/**
+ * @brief Parse an alternation at @p p: branches split on '|', up to ')' or
+ * the end.  @return its index, or -1 with the error set when the table or
+ * the nesting is exhausted.
+ */
 static int
 rx_parse_alt(rx_t *r, const char **p, int depth)
 {
@@ -480,6 +496,10 @@ typedef struct rx_cont {
 static int rx_node_match(rx_t *r, int n, const char *s, const rx_cont_t *k);
 static int rx_repeat(rx_t *r, const rx_cont_t *k, const char *s);
 
+/**
+ * @brief Carry on with continuation @p k at @p s: none left is a match, a
+ * node continues through its own chain, a repeat repeats.
+ */
 static int
 rx_cont_match(rx_t *r, const rx_cont_t *k, const char *s)
 {
@@ -540,6 +560,10 @@ rx_atom(rx_t *r, int n, const char *s, const rx_cont_t *k)
     }
 }
 
+/**
+ * @brief Match node @p n at @p s, then everything after it through @p k;
+ * a node of -1 means only the continuation is left.
+ */
 static int
 rx_node_match(rx_t *r, int n, const char *s, const rx_cont_t *k)
 {
@@ -616,6 +640,10 @@ rx_repeat(rx_t *r, const rx_cont_t *k, const char *s)
     return 0;
 }
 
+/**
+ * @brief Compile @p expr into @p r, case-sensitive when @p cs.
+ * @return 1, or 0 with r->err naming what was wrong.
+ */
 static int
 rx_compile(rx_t *r, const char *expr, int cs)
 {
@@ -639,6 +667,10 @@ rx_compile(rx_t *r, const char *expr, int cs)
     return 1;
 }
 
+/**
+ * @brief Whether the compiled expression matches anywhere in @p text,
+ * tried from each position in turn; an empty branch matches at once.
+ */
 static int
 rx_search(rx_t *r, const char *text)
 {

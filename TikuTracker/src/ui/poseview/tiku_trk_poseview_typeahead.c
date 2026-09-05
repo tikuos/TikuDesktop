@@ -82,6 +82,10 @@ tiku_trk_poseview_filter_pose(tiku_trk_poseview_t *v,
     return 0;
 }
 
+/**
+ * @brief Rebuild the filtered list, unselecting every row the filter
+ *        leaves out.
+ */
 void
 pv_rebuild_filter(tiku_trk_poseview_t *v)
 {

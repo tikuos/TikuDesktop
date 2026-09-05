@@ -221,6 +221,10 @@ tiku_trk_script_adapter_pose_desk_at(void *context, const char *name,
     return 0;
 }
 
+/**
+ * @brief How many rows the Desktop's folder has painted since the last
+ *        reset; with @p reset the count starts again from zero.
+ */
 int
 tiku_trk_script_adapter_rows_drawn(void *context, int reset)
 {
@@ -242,6 +246,13 @@ tiku_trk_script_adapter_rows_drawn(void *context, int reset)
     return n;
 }
 
+/**
+ * @brief A point in the cell of row @p row under the column whose title
+ *        contains @p title, in the focused folder window.
+ *
+ * @return 1 with @p x and @p y set, 0 when the row is off screen or no
+ *         column has that title.
+ */
 int
 tiku_trk_script_adapter_cell_point(void *context, int row, const char *title,
                                    int *x, int *y)
@@ -326,6 +337,7 @@ tiku_trk_script_adapter_pose_screen(void *context, const char *name,
     }
 }
 
+/** @brief Add @p menu's labels, '|'-separated, to the adapter's list. */
 static void
 append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_menu_t *menu)
 {
@@ -343,6 +355,10 @@ append_menu_labels(tiku_trk_script_adapter_t *adapter, tiku_menu_t *menu)
     }
 }
 
+/**
+ * @brief Count @p folder's selected poses into @p state, name the first,
+ *        and note whether every row is of @p find_type.
+ */
 static void
 selected_state(tiku_trk_folder_window_t *folder,
                tiku_trk_script_state_t *state, const char *find_type)
@@ -372,6 +388,7 @@ selected_state(tiku_trk_folder_window_t *folder,
     }
 }
 
+/** @brief Count the Desktop's selected poses into @p state; name the first. */
 static void
 desktop_selection(tiku_trk_script_adapter_t *adapter,
                   tiku_trk_script_state_t *state)
@@ -397,6 +414,7 @@ desktop_selection(tiku_trk_script_adapter_t *adapter,
     }
 }
 
+/** @brief The focused window narrated by its display list, into @p out. */
 static size_t
 adapter_narrate(void *ctx, char *out, size_t max)
 {
@@ -406,6 +424,11 @@ adapter_narrate(void *ctx, char *out, size_t max)
         tiku_workspace_focused(adapter->workspace), out, max);
 }
 
+/**
+ * @brief Everything a script may ask about, read from the shell now:
+ *        the status, title, windows, menus, selection, scroll and rows,
+ *        and the callbacks that answer the rest on demand.
+ */
 static void
 fill_state(tiku_trk_script_adapter_t *adapter,
            tiku_trk_script_state_t *state)
@@ -491,6 +514,12 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->pose_ctx = adapter;
 }
 
+/**
+ * @brief Turn a menu-pick step into the press that chooses @p label: in
+ *        the open popup, the Find window's popup, or the Deskbar's menus.
+ *
+ * @return 1 with @p event filled in, 0 when no row matches.
+ */
 static int
 menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
           tiku_event_t *event)

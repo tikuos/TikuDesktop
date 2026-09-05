@@ -49,26 +49,29 @@ typedef enum {
 #define TIKU_TRK_TT_CURSOR    0x40u   /* the pointer is over a resize edge */
 
 typedef struct tiku_trk_titleview {
-    tiku_trk_poseview_t *view;
+    tiku_trk_poseview_t *view;        /* whose columns these are         */
     int              height;          /* the strip's height              */
-    tiku_trk_track_t track;
+    tiku_trk_track_t track;           /* what the press is doing: none,  */
+                                      /* a resize or a drag              */
     int              field;           /* the column being tracked        */
     int              first_x, first_y;
     int64_t          past_click;      /* the absolute click deadline     */
-    int              has_moved;
+    int              has_moved;       /* the pointer left the press point, */
+                                      /* so a release is not a click     */
     int              grab;            /* resize: right edge minus mouse  */
     int              drag_base;       /* drag: the raw x at press        */
     int              last_x;          /* where the pointer is now        */
     int              line_x;          /* guide line position, or -1      */
     /* A column dragged out of the strip is REMOVED, and what it was is
      * kept here -- it is the only way back if the drag returns. */
-    int              removed;
+    int              removed;         /* a column is out of the strip    */
     int              removed_field, removed_width, removed_align;
     /* The previous divider click, for the double-click auto-fit. */
-    int              prev_field;
-    int64_t          prev_click_at;
+    int              prev_field;      /* the divider it landed on, or -1 */
+    int64_t          prev_click_at;   /* when, in microseconds; 0 never  */
 } tiku_trk_titleview_t;
 
+/** @brief A strip over @p v, @p height tall, tracking nothing yet. */
 void tiku_trk_titleview_init(tiku_trk_titleview_t *t,
                              tiku_trk_poseview_t *v, int height);
 

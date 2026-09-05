@@ -123,6 +123,7 @@ number_w(void)
     return tiku_text_width(tiku_font_plain(), "00 px") + 20;
 }
 
+/** @brief The size stepper's minus, left of the number it changes. */
 static tiku_rect_t
 minus_rect(const tiku_trk_fonts_window_t *controller,
            tiku_rect_t content)
@@ -153,6 +154,7 @@ defaults_rect(const tiku_trk_fonts_window_t *controller,
     return r;
 }
 
+/** @brief The Revert button, beside Defaults, wide enough for its words. */
 static tiku_rect_t
 revert_rect(const tiku_trk_fonts_window_t *controller,
             tiku_rect_t content)
@@ -176,14 +178,11 @@ window_height(const tiku_trk_fonts_window_t *controller)
 /**
  * @brief Grow or shrink the window to what it now needs.
  *
- * The face can change from inside this window and from the Deskbar's own
- * preferences, so the fit is taken every time it is drawn rather than
- * only where a change is noticed -- there is no arrangement of the two
- * windows that leaves this one the wrong size for its contents.
- *
- * The top-left corner does NOT move.  A window that re-centred itself on
- * every press would walk out from under the button being pressed, which
- * is the same bug in a different costume.
+ * The face can change from inside this window and from the Deskbar's
+ * preferences, so the fit is taken every time it is drawn: no
+ * arrangement of the two windows leaves this one the wrong size.  The
+ * top-left corner stays put, since a window that re-centred itself on
+ * every press would walk out from under the button being pressed.
  */
 static void
 refit(tiku_trk_fonts_window_t *controller)
@@ -202,6 +201,7 @@ refit(tiku_trk_fonts_window_t *controller)
     }
 }
 
+/** @brief Whether the point lies within @p r. */
 static int
 inside(tiku_rect_t r, int x, int y)
 {
@@ -236,6 +236,10 @@ apply(tiku_trk_fonts_window_t *controller)
     }
 }
 
+/**
+ * @brief Draw the faces on offer with the chosen one marked, the size
+ *        stepper and the buttons, refitting the window to the face first.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -340,6 +344,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
+/**
+ * @brief A press chooses a face, steps the size, or presses a button,
+ *        and what it chose is applied.  @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)

@@ -30,18 +30,40 @@ typedef struct {
 typedef int (*tiku_trk_addon_invoke_fn)(const tiku_trk_addon_t *addon,
                                         void *context);
 
+/** @brief An empty add-on table. */
 void tiku_trk_addons_init(tiku_trk_addons_t *addons);
+/**
+ * @brief Add an add-on that handles @p type ("*" for any) with shortcut
+ *        @p key.  @return its index, -1 when the table is full.
+ */
 int tiku_trk_addons_register(tiku_trk_addons_t *addons, const char *name,
                              const char *command, const char *type, char key);
+/**
+ * @brief Give add-ons the shortcut keys @p settings names, one
+ *        "name=key" per line.  @return how many were rebound.
+ */
 int tiku_trk_addons_rebind(tiku_trk_addons_t *addons, const char *settings);
+/** @brief Whether @p addon handles any of the @p ntypes @p types. */
 int tiku_trk_addons_accepts(const tiku_trk_addon_t *addon,
                             const char *const *types, int ntypes);
+/**
+ * @brief Fill @p menu with the add-ons: those that accept the selection's
+ *        @p types first, specific before generic, by name; command ids
+ *        count from @p command_base.  @return how many rows.
+ */
 int tiku_trk_addons_build_menu(const tiku_trk_addons_t *addons,
                                const char *const *types, int ntypes,
                                tiku_menu_t *menu, int command_base);
+/**
+ * @brief Run the add-on that @p command names through @p fn.
+ *        @return 1 when it ran, 0 when the command is not an add-on's.
+ */
 int tiku_trk_addons_invoke(const tiku_trk_addons_t *addons, int command,
                            int command_base, tiku_trk_addon_invoke_fn fn,
                            void *context);
+/**
+ * @brief The command id of the add-on bound to @p key with @p mods, or -1.
+ */
 int tiku_trk_addons_shortcut(const tiku_trk_addons_t *addons, char key,
                              unsigned mods, int command_base);
 

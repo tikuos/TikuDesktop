@@ -20,7 +20,12 @@ typedef struct {
     int slide_delta;
 } tiku_trk_repaint_t;
 
+/** @brief Nothing to paint. */
 void tiku_trk_repaint_init(tiku_trk_repaint_t *r);
+/**
+ * @brief Paint @p rect: merged into a recorded rectangle it touches, else
+ * recorded on its own; past the table's end it folds into the first.
+ */
 void tiku_trk_repaint_add(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t rect);
 /**
  * @brief A row appeared at @p row_y, in the view's own coordinates.
@@ -29,10 +34,21 @@ void tiku_trk_repaint_add(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t rect);
  */
 void tiku_trk_repaint_insert(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
                              int row_h, int row_y);
+/**
+ * @brief A row of @p row_h at @p row_y went away.
+ *
+ * Above the view that is a scroll; inside it, the rows below slide up and
+ * the bottom row's worth of pixels is painted.
+ */
 void tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
                              int row_h, int row_y);
+/**
+ * @brief The band grew or shrank from @p old_rect to @p new_rect: only the
+ * strips one has and the other has not are painted, never the whole band.
+ */
 void tiku_trk_repaint_band(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t old_rect,
                            tiku_trk_repaint_rect_t new_rect);
+/** @brief Take up to @p max rectangles out, oldest first.  @return how many. */
 int tiku_trk_repaint_take(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t *out,
                           int max);
 

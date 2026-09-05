@@ -10,7 +10,11 @@
 
 #include "tiku_trk_deskbar_private.h"
 
-/** @brief Rows the application list occupies, windows included. */
+/**
+ * @brief The height in pixels the application list wants: a team row per
+ *        team, plus a window row per window of each expanded team, each
+ *        with its seam.
+ */
 int
 db_list_rows(const tiku_trk_deskbar_t *db)
 {
@@ -27,6 +31,7 @@ db_list_rows(const tiku_trk_deskbar_t *db)
     return h;
 }
 
+/** @brief Where the application list starts: just below the leaf row. */
 int
 db_list_y(const tiku_trk_deskbar_t *db)
 {
@@ -36,6 +41,7 @@ db_list_y(const tiku_trk_deskbar_t *db)
     return db->frame.y + db_leaf_row() + PAD;
 }
 
+/** @brief Where the tray starts: below the list's rows. */
 int
 db_tray_y(const tiku_trk_deskbar_t *db)
 {
@@ -75,15 +81,13 @@ tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
 }
 
 /**
- * The theme switch, drawn like the physical part: a recessed track the
- * knob slides in, lit with the accent colour while the dark side is on --
- * a pilot lamp, not a torch.  The knob is a raised cap with grip lines.
+ * @brief The theme switch, drawn like the physical part.
  *
- * THREE detents, not two: light at the left, dark at the right, and no
- * hue in the middle.  The middle is where it is because the switch is
- * read as a slider and the third mode is not a further step INTO the
- * dark -- it is a different axis, and the centre is the only position
- * that does not claim otherwise.
+ * A recessed track the knob slides in, lit with the accent colour while
+ * the dark side is on, and a raised cap with grip lines.  Three detents:
+ * light at the left, dark at the right, and no hue in the middle, because
+ * the third mode is a different axis rather than a further step into the
+ * dark, and the centre is the one position that does not claim otherwise.
  */
 void
 db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)

@@ -11,6 +11,11 @@
 
 #include "tiku_trk_poseview_private.h"
 
+/**
+ * @brief Take one listed entry as a pose, hiding dotfiles when asked and
+ *        holding an entry the backend could not describe.  @return 1 to
+ *        stop the walk when the view is full.
+ */
 int
 pv_collect(const tiku_model_t *m, void *ctx)
 {
@@ -158,6 +163,10 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
     }
 }
 
+/**
+ * @brief The sort order: containers first when that setting is on, then
+ *        the sort field, then the secondary; reads the view in pv_g_sorting.
+ */
 int
 pv_pose_cmp(const void *pa, const void *pb)
 {
@@ -210,6 +219,7 @@ pv_pose_cmp(const void *pa, const void *pb)
     return pv_g_sorting->sort_reverse ? -r : r;
 }
 
+/** @brief Sort the poses and renumber their indexes. */
 void
 pv_resort(tiku_trk_poseview_t *v)
 {
@@ -261,6 +271,7 @@ already_inserted(const tiku_trk_poseview_t *v, uint64_t id)
     return 0;
 }
 
+/** @brief Remember @p id as inserted this load, once. */
 void
 pv_note_inserted(tiku_trk_poseview_t *v, uint64_t id)
 {
@@ -487,6 +498,11 @@ query_default_columns(tiku_trk_poseview_t *v)
     tiku_trk_poseview_reflow_columns(v);
 }
 
+/**
+ * @brief Replace the poses with @p n models, as a query's results when
+ *        @p as_query says so.  @return -1 for a view or models that are
+ *        missing, else 0.
+ */
 static int
 fill_from(tiku_trk_poseview_t *v, const tiku_model_t *m, int n,
           int as_query)

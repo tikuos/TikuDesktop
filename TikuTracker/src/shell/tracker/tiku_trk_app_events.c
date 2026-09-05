@@ -368,8 +368,10 @@ browser_pointer_down(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 }
 
 /**
- * @brief What a turn does before the events are handled: the script's next
- * step, then every event the host has queued, each dispatched to its case.
+ * @brief The pump: every event the host has queued, or the script's next
+ *        step made into one, each dispatched to its case.  Stops when the
+ *        queue is empty, when a script step ends the turn, or when the
+ *        script is over.
  */
 void
 browser_turn_begin(app_t *app, browser_loop_t *lp)

@@ -63,52 +63,55 @@
 
 
 struct tiku_trk_deskbar {
-    tiku_backend_t  *backend;
-    tiku_store_t     *store;
-    tiku_trk_db_dock_t   dock;
+    tiku_backend_t  *backend;   /* the namespace the leaf menu lists */
+    tiku_store_t     *store;    /* where the tray persists, or NULL  */
+    tiku_trk_db_dock_t   dock;  /* which edge, expanded or mini      */
+    /* The running applications, one row each; order[] holds indices
+     * into teams[] in the order the rows are shown. */
     tiku_trk_team_t      teams[TIKU_TRK_DB_TEAMS_MAX];
-    int                  order[TIKU_TRK_DB_TEAMS_MAX];
-    int                  dragging;
-    int                  drop_team;
-    int                  team_count;
-    tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];
-    int                  tray_count;
+    int                  order[TIKU_TRK_DB_TEAMS_MAX];  /* teams[] indices */
+    int                  dragging;  /* a drag is passing over the bar */
+    int                  drop_team; /* team row under the drag, or -1 */
+    int                  team_count;    /* teams[] in use              */
+    tiku_trk_replicant_t tray[TIKU_TRK_DB_TRAY_MAX];  /* the tray rows */
+    int                  tray_count;    /* tray[] in use               */
     int                  next_replicant;   /* the ids handed out (DB-038) */
     int                  width;     /* the short axis, user-set        */
     /* Which of the three tables is in force: 0 light, 1 dark, 2 no hue.
      * The bar only DRAWS it; the shell owns the setting. */
     int                  theme;
+    /* The applications the leaf menu offers, as installed. */
     struct {
-        char label[TIKU_TRK_DB_LABEL_MAX];
-        char command[TIKU_PATH_MAX];
-        char icon[24];
+        char label[TIKU_TRK_DB_LABEL_MAX];  /* the row's text        */
+        char command[TIKU_PATH_MAX];        /* what launching it runs */
+        char icon[24];          /* the icon set's name for it */
         int  group;             /* which leaf row lists it */
     }                    app[TIKU_TRK_DB_APPS_MAX];
-    int                  app_count;
+    int                  app_count; /* app[] in use                    */
     int                  top_inset; /* the global bar owns this much   */
-    tiku_trk_deskbar_settings_t settings;
-    int                  autohide;
-    int                  autoraise;
-    int                  show_replicants;
+    tiku_trk_deskbar_settings_t settings;   /* the preferences in force */
+    int                  autohide;  /* hidden until the pointer comes  */
+    int                  autoraise; /* raised over windows on hover    */
+    int                  show_replicants;   /* the tray is drawn at all */
     int                  pointer_on;  /* the pointer is over the bar    */
     int                  scroll;      /* first application row shown    */
     int                  overflow;    /* the list ran past the tray     */
-    int                  menu_open;
-    int                  calendar_open;
-    int                  clock_menu_open;
-    int                  calendar_year;
-    int                  calendar_month;
+    int                  menu_open;     /* the leaf menu is showing     */
+    int                  calendar_open; /* the calendar popup is showing */
+    int                  clock_menu_open;   /* the clock's menu is showing */
+    int                  calendar_year;     /* the month the calendar    */
+    int                  calendar_month;    /* shows, 0-based month      */
     time_t               fixed_now;     /* frozen clock for fixtures, or 0 */
     /* The hot row of each little menu, following the pointer; -1 when the
      * pointer is elsewhere.  The draw has always been able to highlight
      * one; this is the hand that moves it. */
-    int                  leaf_hot;
-    int                  sub_hot;
+    int                  leaf_hot;      /* into leaf[]                  */
+    int                  sub_hot;       /* into sub[]                   */
     tiku_trk_db_icon_fn  menu_icon;     /* injected by the shell, or NULL */
-    void                *menu_icon_ctx;
-    int                  win_hot;
-    int                  clock_hot;
-    int                  calendar_day;
+    void                *menu_icon_ctx; /* handed back to menu_icon     */
+    int                  win_hot;       /* the window menu's row        */
+    int                  clock_hot;     /* the clock menu's row         */
+    int                  calendar_day;  /* the day picked, 1-based      */
     int                  win_menu_team;    /* -1 = none showing        */
     /* The expander a press is riding: the arrow turns down at once but
      * the state commits only on RELEASE over the same strip (DB-022). */
@@ -120,42 +123,44 @@ struct tiku_trk_deskbar {
     int                  tip_y;            /* the row's top, or -1     */
     /* The horizontal strip's layout, computed at draw time so the click
      * and the drawing read the same numbers (DB-033). */
-    int                  hbutton_w;
+    int                  hbutton_w;        /* one team button's width  */
     int                  hleft;            /* first button's left edge */
-    int                  hoverflow;
+    int                  hoverflow;        /* the strip ran out of room */
     /* Mini mode's second icon: the running-apps popup (DB-037). */
-    int                  apps_menu_open;
-    int                  apps_hot;
+    int                  apps_menu_open;   /* the popup is showing     */
+    int                  apps_hot;         /* its row under the pointer */
     int                  screen_h;         /* the surface's, at last draw */
     /* The leaf menu, built from the namespace every time it opens rather
      * than compiled in: a file put in the Deskbar folder has to appear
      * without restarting anything (DB-005). */
-    tiku_trk_db_item_t   leaf[TIKU_TRK_DB_LEAF_MAX];
-    int                  leaf_count;
+    tiku_trk_db_item_t   leaf[TIKU_TRK_DB_LEAF_MAX];   /* its rows      */
+    int                  leaf_count;       /* leaf[] in use            */
     int                  sub_of;           /* leaf row whose submenu is
                                             * open, or -1              */
-    tiku_trk_db_item_t   sub[TIKU_TRK_DB_SUB_MAX];
-    int                  sub_count;
-    char                 menu_dir[TIKU_PATH_MAX];
+    tiku_trk_db_item_t   sub[TIKU_TRK_DB_SUB_MAX];     /* that submenu  */
+    int                  sub_count;        /* sub[] in use             */
+    char                 menu_dir[TIKU_PATH_MAX];  /* the folder read  */
+    /* The system's Deskbar folder, read when menu_dir has nothing. */
     char                 menu_dir_fallback[TIKU_PATH_MAX];
+    /* Recent paths per kind, newest first (DB-074). */
     char                 recent[TIKU_TRK_DB_RECENT_KINDS]
                                [TIKU_TRK_DB_RECENT_MAX][TIKU_PATH_MAX];
-    int                  recent_count[TIKU_TRK_DB_RECENT_KINDS];
-    tiku_rect_t     frame;
+    int                  recent_count[TIKU_TRK_DB_RECENT_KINDS]; /* in use */
+    tiku_rect_t     frame;      /* the bar's rectangle on the screen  */
 };
 
 /** @brief Collects one directory entry into the menu being built. */
 struct menu_walk {
-    tiku_trk_deskbar_t *db;
-    int                 n;
-    tiku_trk_db_item_t *into;
-    int                 max;
+    tiku_trk_deskbar_t *db;     /* whose menu is being built          */
+    int                 n;      /* rows written into into[] so far    */
+    tiku_trk_db_item_t *into;   /* the rows, or NULL to only count    */
+    int                 max;    /* into[] capacity                    */
 };
 
 /** @brief Hand one row's item to the shell's painter. */
 struct menu_icon_relay {
-    tiku_trk_deskbar_t       *db;
-    const tiku_trk_db_item_t *items;
+    tiku_trk_deskbar_t       *db;       /* holds the painter and its ctx */
+    const tiku_trk_db_item_t *items;    /* the menu's rows, by index     */
 };
 
 /* Shared across the family: defined in one file, used in another. */

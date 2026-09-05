@@ -169,8 +169,6 @@ tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
 
 /*---------------------------------------------------------------------------*/
 /* The session                                                               */
-/*---------------------------------------------------------------------------*/
-
 int
 tiku_trk_session_save(tiku_store_t *s,
                       const char paths[][TIKU_PATH_MAX], int n)

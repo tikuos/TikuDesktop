@@ -72,6 +72,10 @@ tiku_trk_addons_accepts(const tiku_trk_addon_t *a, const char *const *types,
     return 0;
 }
 
+/**
+ * @brief Whether @p a sorts before @p b for a menu: accepting the types
+ *        first, specific before generic, then by name.
+ */
 static int
 before(const tiku_trk_addon_t *a, const tiku_trk_addon_t *b,
        const char *const *types, int ntypes)

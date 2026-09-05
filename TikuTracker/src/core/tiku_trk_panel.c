@@ -641,6 +641,10 @@ struct complete_ctx {
     int         matches;
 };
 
+/**
+ * @brief Fold one entry into the completion: the first match is the best
+ * so far, and each later one trims it to their common prefix.
+ */
 static int
 complete_one(const tiku_model_t *m, void *ctx)
 {

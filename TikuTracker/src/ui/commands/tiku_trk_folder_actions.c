@@ -11,6 +11,7 @@
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_shortcuts.h"
 
+/** @brief Sort by @p field and lay the icons out again to the width. */
 static void
 sort_and_layout(tiku_trk_folder_window_t *folder, int field)
 {
@@ -19,6 +20,7 @@ sort_and_layout(tiku_trk_folder_window_t *folder, int field)
                               tiku_trk_folder_window_content(folder).w);
 }
 
+/** @brief Icon mode, at @p size. */
 static void
 set_icon_size(tiku_trk_folder_window_t *folder, int size)
 {

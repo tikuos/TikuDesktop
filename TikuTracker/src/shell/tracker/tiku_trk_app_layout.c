@@ -11,6 +11,7 @@
 
 #include "tiku_trk_app_private.h"
 
+/** @brief The host window's title: the path, prefixed by the device's id. */
 void
 browser_retitle(app_t *a)
 {
@@ -116,9 +117,8 @@ browser_sync_navigator_preference(app_t *a, int force)
 }
 
 /**
- * @brief Gather the selection as paths for a file operation.
- *
- * @return Count written.
+ * @brief Copy the selected poses' paths into @p paths, pointing @p out at
+ *        each, at most @p max of them.  @return how many were copied.
  */
 int
 browser_selection_paths(app_t *a, char paths[][TIKU_PATH_MAX],

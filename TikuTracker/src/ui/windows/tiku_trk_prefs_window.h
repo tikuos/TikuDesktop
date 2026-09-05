@@ -27,9 +27,14 @@ typedef struct {
     int                    screen_h;
 } tiku_trk_prefs_window_t;
 
+/**
+ * @brief Bind the controller to its workspace and the settings file, with
+ *        the flags that block a page.  Opens no window.
+ */
 void tiku_trk_prefs_window_init(tiku_trk_prefs_window_t *controller,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     const char *settings_path, int *dirty, const int *blocked);
+/** @brief Close the window if open and free the preferences model. */
 void tiku_trk_prefs_window_destroy(tiku_trk_prefs_window_t *controller);
 
 /** @brief The shared preferences model read by the rest of Tracker. */
@@ -42,6 +47,7 @@ tiku_window_t *tiku_trk_prefs_window_handle(
 
 /** @brief Open the preferences window or activate its existing instance. */
 void tiku_trk_prefs_window_open(tiku_trk_prefs_window_t *controller);
+/** @brief Close the window, if open. */
 void tiku_trk_prefs_window_close(tiku_trk_prefs_window_t *controller);
 
 #endif /* TIKU_TRK_PREFS_WINDOW_H_ */

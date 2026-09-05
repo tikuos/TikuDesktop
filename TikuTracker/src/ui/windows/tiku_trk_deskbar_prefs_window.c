@@ -36,12 +36,14 @@ static const char *const label_keys[ROW_COUNT] = {
     "prefs.deskbar.auto_hide"
 };
 
+/** @brief Whether the point lies within @p r. */
 static int
 inside(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
+/** @brief A push button in the toolkit's look, greyed when not @p enabled. */
 static void
 button(tiku_surface_t *surface, tiku_rect_t rect,
        const char *label, int enabled)
@@ -51,6 +53,7 @@ button(tiku_surface_t *surface, tiku_rect_t rect,
                         enabled ? 0u : TIKU_S_DISABLED);
 }
 
+/** @brief Whether the row's setting applies at this dock and these settings. */
 static int
 row_enabled(const tiku_trk_deskbar_prefs_window_t *controller, int row)
 {
@@ -64,6 +67,7 @@ row_enabled(const tiku_trk_deskbar_prefs_window_t *controller, int row)
     return 1;
 }
 
+/** @brief The on/off setting a row toggles, or NULL for a stepper row. */
 static int *
 row_value(tiku_trk_deskbar_settings_t *s, int row)
 {
@@ -80,6 +84,7 @@ row_value(tiku_trk_deskbar_settings_t *s, int row)
     }
 }
 
+/** @brief Normalise, apply to the bar, save, and ask for a redraw. */
 static void
 apply(tiku_trk_deskbar_prefs_window_t *controller)
 {
@@ -128,6 +133,7 @@ stepper_rect(tiku_rect_t content, int y)
     return r;
 }
 
+/** @brief Draw the rows, the dock monitor, and the three buttons. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -224,6 +230,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
            142, 26 }, tiku_str("prefs.deskbar.edit_in_tracker"), 1);
 }
 
+/**
+ * @brief A press on a row toggles or steps its setting; on the monitor it
+ *        moves the dock; on a button it acts.  @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
@@ -310,6 +320,7 @@ event(tiku_window_t *window, const tiku_event_t *event,
     return 0;
 }
 
+/** @brief The frame the session remembers, or the default placement. */
 static tiku_rect_t
 saved_frame(tiku_trk_deskbar_prefs_window_t *controller)
 {

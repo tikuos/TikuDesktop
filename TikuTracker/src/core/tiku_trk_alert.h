@@ -97,6 +97,7 @@ typedef struct {
     int                     open;
 } tiku_trk_progress_win_t;
 
+/** @brief Clear a progress window's state to nothing in flight. */
 void tiku_trk_progress_reset(tiku_trk_progress_win_t *p);
 
 /**

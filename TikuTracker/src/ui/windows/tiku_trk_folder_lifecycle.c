@@ -16,12 +16,6 @@
 #include "tiku_trk_panel.h"
 #include "tiku_state.h"
 #include "tiku_trk_task.h"
-/**
- * @brief The title a folder window shows for @p path (CW-016).
- *
- * The whole path when ShowFullPathInTitleBar is on, the folder's own
- * name otherwise -- root and an empty path stay "/".
- */
 void
 tiku_trk_folder_title_for(tiku_trk_prefs_t *prefs, const char *path,
                           char *out, size_t max)
@@ -147,6 +141,10 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
     *controller->dirty = 1;
 }
 
+/**
+ * @brief Where a window opening on @p path goes: its saved frame, else
+ *        one inherited from a parent, else the next step of the cascade.
+ */
 static tiku_rect_t
 next_frame(tiku_trk_folder_lifecycle_t *controller, const char *path,
            tiku_trk_folder_window_t *folder)

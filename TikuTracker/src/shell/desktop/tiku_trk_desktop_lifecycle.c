@@ -280,7 +280,10 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
     return -1;
 }
 
-/** @brief The namespace the shell holds and the window it draws in: one backend at the root, the devices beside it, the surface, and the host. */
+/**
+ * @brief The namespace the shell holds and the window it draws in: one backend
+ * at the root, the devices beside it, the surface, and the host.
+ */
 static int
 boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
@@ -376,7 +379,9 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     return -1;
 }
 
-/** @brief The boot screen goes up, and the workspace and the Deskbar are made. */
+/**
+ * @brief The boot screen goes up, and the workspace and the Deskbar are made.
+ */
 static int
 boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
@@ -578,7 +583,10 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     return -1;
 }
 
-/** @brief The views, panels, controllers and adapters, and the art they draw with. */
+/**
+ * @brief The views, panels, controllers and adapters, and the art they draw
+ * with.
+ */
 static int
 boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
@@ -690,7 +698,10 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     return -1;
 }
 
-/** @brief A device mounted beside the files when asked, and the last session's folders back where they were. */
+/**
+ * @brief A device mounted beside the files when asked, and the last session's
+ * folders back where they were.
+ */
 static int
 boot_session(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
@@ -729,7 +740,9 @@ boot_session(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     return -1;
 }
 
-/** @brief The conductor channel and the script, for a shell driven from outside. */
+/**
+ * @brief The conductor channel and the script, for a shell driven from outside.
+ */
 static int
 boot_drivers(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
@@ -815,7 +828,10 @@ boot_drivers(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     return -1;
 }
 
-/** @brief The -shot flags: what a headless run puts on screen before it writes its one frame. */
+/**
+ * @brief The -shot flags: what a headless run puts on screen before it writes
+ * its one frame.
+ */
 static int
 boot_shots(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {

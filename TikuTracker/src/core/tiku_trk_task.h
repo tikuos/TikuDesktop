@@ -57,6 +57,7 @@ typedef void (*tiku_trk_accumulate_fn)(void *pending, void *incoming);
 /** @brief Release a task's context when the task is destroyed. */
 typedef void (*tiku_trk_free_fn)(void *ctx);
 
+/** @brief A loop with no tasks, its last activity now; NULL out of memory. */
 tiku_trk_loop_t *tiku_trk_loop_new(void);
 
 /** @brief Run every task whose time has come.  @return tasks run. */
@@ -72,12 +73,15 @@ int tiku_trk_loop_pulse(tiku_trk_loop_t *loop);
  */
 int64_t tiku_trk_loop_next_due(const tiku_trk_loop_t *loop);
 
+/** @brief How many live tasks the loop holds. */
 int tiku_trk_loop_count(const tiku_trk_loop_t *loop);
 
 /** Request a deterministic worker stop before a loop is destroyed. */
 void tiku_trk_loop_stop(tiku_trk_loop_t *loop);
+/** @brief Whether a stop was requested; a callback checks it to finish. */
 int tiku_trk_loop_stopping(const tiku_trk_loop_t *loop);
 
+/** @brief Stop the loop and free every task, contexts included. */
 void tiku_trk_loop_free(tiku_trk_loop_t *loop);
 
 /** @brief Run @p fn once, @p delay_us from now. */

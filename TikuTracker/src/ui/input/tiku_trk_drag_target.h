@@ -47,15 +47,26 @@ typedef struct {
 void tiku_trk_drag_target_set_script_delay(
     tiku_trk_drag_target_t *controller, int pulses);
 
+/** @brief A target over the shell's windows; everything is borrowed. */
 void tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
     tiku_workspace_t *workspace, tiku_trk_deskbar_t *deskbar,
     tiku_trk_desktop_view_t *desktop_view, tiku_trk_drag_t *drag,
     tiku_trk_folder_window_t *folders, int *folder_count, int row_h,
     int *dirty, tiku_trk_drag_open_fn open, void *open_context);
+/**
+ * @brief The pointer moved with a drag in hand: the folder and row under
+ *        it become the target, and a hold arms the spring.  @return 1 when
+ *        the target changed.
+ */
 int tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
                                 int x, int y, int64_t now);
+/**
+ * @brief A tick during a drag: auto-scroll at an edge, and the spring-open
+ *        of a folder held over.  @return 1 when something changed.
+ */
 int tiku_trk_drag_target_pulse(tiku_trk_drag_target_t *controller,
                                int64_t now);
+/** @brief No target, no spring, no drag on the Deskbar. */
 void tiku_trk_drag_target_reset(tiku_trk_drag_target_t *controller);
 
 #endif /* TIKU_TRK_DRAG_TARGET_H_ */

@@ -117,6 +117,7 @@ tiku_trk_loop_new(void)
     return loop;
 }
 
+/** @brief Free a task, its context released through its free function. */
 static void
 task_free(tiku_trk_task_t *t)
 {
@@ -175,6 +176,11 @@ task_insert(tiku_trk_loop_t *loop, tiku_trk_task_t *t)
     *p = t;
 }
 
+/**
+ * @brief A task of @p kind due @p delay microseconds from now, linked into
+ * the loop in due order.  @return NULL without a loop or a function, or
+ * out of memory.
+ */
 static tiku_trk_task_t *
 task_new(tiku_trk_loop_t *loop, enum task_kind kind, tiku_trk_task_fn fn,
          void *ctx, tiku_trk_free_fn freefn, int64_t delay)

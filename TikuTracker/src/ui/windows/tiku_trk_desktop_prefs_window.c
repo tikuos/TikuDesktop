@@ -73,6 +73,7 @@ mode_row(tiku_rect_t content, int i)
     return r;
 }
 
+/** @brief The icon-size stepper's plus, at the row's right edge. */
 static tiku_rect_t
 plus_rect(tiku_rect_t content)
 {
@@ -85,12 +86,14 @@ plus_rect(tiku_rect_t content)
     return r;
 }
 
+/** @brief Room for the widest size the stepper shows, in the face in force. */
 static int
 number_w(void)
 {
     return tiku_text_width(tiku_font_plain(), "000 px") + 20;
 }
 
+/** @brief The stepper's minus, left of the number it changes. */
 static tiku_rect_t
 minus_rect(tiku_rect_t content)
 {
@@ -100,6 +103,7 @@ minus_rect(tiku_rect_t content)
     return r;
 }
 
+/** @brief The Defaults button, first in the row of buttons. */
 static tiku_rect_t
 defaults_rect(tiku_rect_t content)
 {
@@ -112,6 +116,7 @@ defaults_rect(tiku_rect_t content)
     return r;
 }
 
+/** @brief The Revert button, beside Defaults. */
 static tiku_rect_t
 revert_rect(tiku_rect_t content)
 {
@@ -163,6 +168,7 @@ static const char *const kModeKeys[4] = {
     "prefs.desktop.mode.scaled", "prefs.desktop.mode.tiled"
 };
 
+/** @brief Whether the point lies within @p r. */
 static int
 inside(tiku_rect_t r, int x, int y)
 {
@@ -201,6 +207,10 @@ apply(tiku_trk_desktop_prefs_window_t *controller)
     }
 }
 
+/**
+ * @brief Draw the picture list, the laying modes, the icon-size stepper
+ *        and the buttons, refitting the window to the face first.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -314,6 +324,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                             ? 0u : TIKU_S_DISABLED);
 }
 
+/**
+ * @brief A press picks a picture, a laying mode, a step of the icon size
+ *        or a button, and applies it.  @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)

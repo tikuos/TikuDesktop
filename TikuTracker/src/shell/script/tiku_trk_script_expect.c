@@ -522,7 +522,9 @@ sc_parse_file_state(sc_step_t *st, char **w, int n)
 }
 
 /**
- * @brief the Desktop: a click on it and what it shows
+ * @brief Parse the Desktop verbs: click-desk by icon name (a trailing
+ *        number is the button), and the expectations on what the Desktop
+ *        shows or has selected.  @return 1 for a verb of this group.
  */
 int
 sc_parse_desktop(sc_step_t *st, char **w, int n)

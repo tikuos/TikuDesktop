@@ -63,6 +63,10 @@ typedef struct {
     int screen_h;
 } tiku_trk_drop_controller_t;
 
+/**
+ * @brief Bind the controller to the shell's parts it acts through.  All
+ *        of them are borrowed for the shell's lifetime; nothing is owned.
+ */
 void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_trk_deskbar_t *deskbar, tiku_backend_t *backend,
     tiku_fs_t *fs, tiku_trk_desktop_view_t *desktop_view,
@@ -73,6 +77,11 @@ void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     size_t progress_destination_size, char *status, size_t status_size,
     int *dirty, int screen_w, int screen_h,
     tiku_trk_drop_color_fn set_color, void *color_context);
+/**
+ * @brief Perform the drop at @p x, @p y with the drag in hand: the Deskbar
+ *        first, then a rearrangement within the source view, else a copy,
+ *        move or link into the row or folder under the pointer.
+ */
 void tiku_trk_drop_controller_execute(tiku_trk_drop_controller_t *controller,
                                       int x, int y, unsigned modifiers,
                                       unsigned button);

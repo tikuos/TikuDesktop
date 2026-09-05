@@ -12,6 +12,7 @@
 
 #include "tiku_trk_desktop_private.h"
 
+/** @brief The preferences' backdrop colour, taken as the desktop's. */
 void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
 {
@@ -55,7 +56,11 @@ blit(desktop_t *app)
     (void)tiku_host_present(app->host, app->surf);
 }
 
-/** @brief Adopt a native host frame throughout the desktop controllers. */
+/**
+ * @brief Resize the surface and tell every window controller the new
+ *        screen size.  @return 1 when the size changed, 0 when it did
+ *        not or the request was empty, -1 when the surface refused.
+ */
 int
 resize_desktop(desktop_t *app, int width, int height)
 {
@@ -94,17 +99,12 @@ resize_desktop(desktop_t *app, int width, int height)
 /**
  * @brief Follow the face, whatever changed it.
  *
- * A row has always been as tall as the letters in it -- but it was worked
- * out ONCE, at startup, and handed to everything that draws a list.  The
- * face is a preference now, changeable at any moment from either of two
- * windows, so a row worked out at launch is a row that stops fitting its
- * own words the moment somebody changes it.
- *
- * Taken every frame instead, and pushed to the copies.  Which is cheap:
- * it is one compare until it is not, and when it is, a redraw was owed
- * anyway.  Noticing here rather than at each place that can change the
- * face is deliberate -- there is no third window somebody might add later
- * that this would miss.
+ * The face is a preference, changeable at any moment from either of two
+ * windows, so a row height worked out once at launch stops fitting its
+ * words the moment somebody changes it.  Taken every frame instead and
+ * pushed to the copies: one compare until it differs, and then a redraw
+ * was owed anyway.  Noticed here rather than at each place that can
+ * change the face, so no third window added later can be missed.
  */
 static void
 follow_font(desktop_t *app)
@@ -129,6 +129,10 @@ follow_font(desktop_t *app)
     app->dirty = 1;
 }
 
+/**
+ * @brief One frame of the whole desktop, back to front: the backdrop,
+ *        the windows, the bars, the menus and overlays, the splash.
+ */
 void
 draw_all(desktop_t *app)
 {

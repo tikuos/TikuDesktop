@@ -59,13 +59,17 @@ typedef struct {
     int              nunknown;
 } tiku_trk_prefs_t;
 
+/** @brief The table of settings, each at its default and opened at it. */
 void tiku_trk_prefs_init(tiku_trk_prefs_t *p);
+/** @brief Release the table and the lines kept for other builds. */
 void tiku_trk_prefs_free(tiku_trk_prefs_t *p);
 
 /** @brief A setting by name, or NULL. */
 tiku_trk_pref_t *tiku_trk_prefs_find(tiku_trk_prefs_t *p, const char *name);
 
+/** @brief The value of @p name, or 0 for a setting this build lacks. */
 int32_t tiku_trk_prefs_get(tiku_trk_prefs_t *p, const char *name);
+/** @brief Set @p name, then the interlocks that follow from it. */
 void tiku_trk_prefs_set(tiku_trk_prefs_t *p, const char *name, int32_t v);
 
 /** @brief Whether a control answers clicks, by the interlocks (TS-046). */
@@ -104,10 +108,12 @@ int tiku_trk_prefs_revertable(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 
 /** @brief Whether ANY page is defaultable; what enables the button. */
 int tiku_trk_prefs_any_defaultable(tiku_trk_prefs_t *p);
+/** @brief Whether any page is revertable; what enables the button. */
 int tiku_trk_prefs_any_revertable(tiku_trk_prefs_t *p);
 
 /** @brief Put @p page back to its defaults, or to its opened values. */
 void tiku_trk_prefs_defaults(tiku_trk_prefs_t *p, tiku_trk_page_t page);
+/** @brief Put @p page back to what it was when the window opened. */
 void tiku_trk_prefs_revert(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 
 /** @brief The name a page shows in the list. */

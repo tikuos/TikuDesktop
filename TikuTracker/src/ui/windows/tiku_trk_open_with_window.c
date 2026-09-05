@@ -62,6 +62,7 @@ list_body(tiku_rect_t content)
     return body;
 }
 
+/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
 static void
 mark_dirty(tiku_trk_open_with_window_t *c)
 {
@@ -83,6 +84,7 @@ better(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
     return strcmp(a->app->name, b->app->name) < 0;
 }
 
+/** @brief Where Open and the make-preferred button sit along the bottom. */
 static void
 buttons(tiku_trk_open_with_window_t *c, tiku_rect_t content,
         tiku_rect_t *open_b, tiku_rect_t *prefer_b)
@@ -108,6 +110,7 @@ enables(const tiku_trk_open_with_window_t *c, int *can_open,
                   !c->cand[sel].preferred;
 }
 
+/** @brief Draw the candidates, the chosen one marked, and the two buttons. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -164,6 +167,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                         can_open ? 0u : TIKU_S_DISABLED);
 }
 
+/** @brief Close the window, if open, and ask for a redraw. */
 static void
 close_window(tiku_trk_open_with_window_t *c)
 {
@@ -229,6 +233,7 @@ tiku_trk_open_with_window_confirmed(tiku_trk_open_with_window_t *c)
     close_window(c);
 }
 
+/** @brief A press chooses a row or a button.  @return 1 for any press. */
 static int
 event(tiku_window_t *window, const tiku_event_t *ev,
       void *context)

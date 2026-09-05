@@ -60,34 +60,34 @@
 /* Tracker's own list row: ceilf(plain font size * 1.65) = 20 at 12 px. */
 
 typedef struct {
-    tiku_host_t    *host;
-    tiku_surface_t *surf;
-    tiku_trk_poseview_t *view;
-    tiku_backend_t  *backend;
-    char                 title[160];
-    int                  row_h;
-    int                  running;
-    int                  dirty;
+    tiku_host_t    *host;            /* the window on the display          */
+    tiku_surface_t *surf;            /* the frame, drawn then blitted      */
+    tiku_trk_poseview_t *view;       /* the one list                       */
+    tiku_backend_t  *backend;        /* the namespace the view lists       */
+    char                 title[160]; /* the window's title: the folder     */
+    int                  row_h;      /* a list row in pixels, from the face */
+    int                  running;    /* 0 once quitting was asked for      */
+    int                  dirty;      /* a frame is owed                    */
     /* rubber band and icon drag */
     int                  band_active;
     int                  band_x0, band_y0, band_x1, band_y1;
-    int                  drag_active;
+    int                  drag_active; /* an icon drag is under way         */
     int                  drag_x, drag_y;
     /* file operations */
     tiku_fs_t       *fs;
-    char                 status[220];
+    char                 status[220]; /* the status line's text            */
     /* inline rename: the editor is a mode, as Tracker's TextWidget is */
     int                  editing;
-    tiku_field_t      ed;
-    char                 edit_path[TIKU_PATH_MAX];
-    int                  edit_row;
+    tiku_field_t      ed;            /* the rename editor                  */
+    char                 edit_path[TIKU_PATH_MAX]; /* the entry being renamed */
+    int                  edit_row;   /* its row                            */
     /* The window's own activation state, which decides whether a selection
      * is PAINTED; and where the last press landed, for the long press. */
     int                  active;
-    int64_t              press_at;
+    int64_t              press_at;   /* when the button went down, us      */
     int                  press_x, press_y;
-    int                  press_row;
-    int                  press_down;
+    int                  press_row;  /* the row under that press, or -1    */
+    int                  press_down; /* the button is still held           */
     int                  read_only;  /* the store refuses writes           */
     tiku_trk_titleview_t tv;         /* the column strip's tracking state  */
     int                  cursor_ew;  /* which cursor the window is showing */
@@ -100,36 +100,37 @@ typedef struct {
     tiku_scroll_t    sb;
     tiku_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
     tiku_rect_t     hsb_rect;
-    tiku_rect_t     sb_rect;
+    tiku_rect_t     sb_rect;         /* where the vertical bar is drawn    */
     /* The same container-window menus the desktop shell presents. */
     tiku_trk_cwmenu_t    menus;
-    tiku_menu_t     *popup;
-    tiku_menu_t     *popup_sub;
-    tiku_rect_t     popup_frame;
-    tiku_rect_t     popup_sub_frame;
+    tiku_menu_t     *popup;          /* the open menu, or NULL             */
+    tiku_menu_t     *popup_sub;      /* its open submenu, or NULL          */
+    tiku_rect_t     popup_frame;     /* where the menu is drawn            */
+    tiku_rect_t     popup_sub_frame; /* where the submenu is drawn         */
     tiku_rect_t     viewbtn_rect;  /* the gutter's view popup    */
     int                  theme_mode;    /* -1 until first applied     */
     int                  bar_open;
     /* Browser chrome owns its history and location editor per window. */
     tiku_trk_navigator_t nav;
-    tiku_field_t      nav_edit;
-    int                  nav_editing;
-    int                  show_nav;
+    tiku_field_t      nav_edit;      /* the location field's editor        */
+    int                  nav_editing; /* the location field has the keys   */
+    int                  show_nav;   /* the navigator strip is shown       */
+    /* the settings file watched for changes */
     char                 prefs_path[TIKU_PATH_MAX];
-    int                  prefs_present;
+    int                  prefs_present; /* it existed at the last look     */
     /* TS-052: the preference that swaps type-to-select for type-to-filter,
      * applied live when the settings file changes and re-applied when the
      * view returns to list mode. */
     int                  filter_pref;
-    time_t               prefs_mtime;
-    off_t                prefs_size;
-    int64_t              prefs_checked;
+    time_t               prefs_mtime; /* its mtime then                    */
+    off_t                prefs_size;  /* its size then                     */
+    int64_t              prefs_checked; /* when it was last looked at, us  */
     /* The same command layer the multi-window shell uses.  The folder is a
      * wrapper over this window's own view, so one implementation of what
      * Delete or Paste means serves both shells (FEATURES rule 6). */
     tiku_trk_folder_window_t         folder;
-    tiku_trk_clip_t                  clip;
-    tiku_trk_folder_file_actions_t   file_actions;
+    tiku_trk_clip_t                  clip;         /* the clipboard        */
+    tiku_trk_folder_file_actions_t   file_actions; /* Delete, Paste, kin   */
     /* Deferred and periodic work, pulsed from the loop's own tick: the
      * cooperative protothread the TIKU note asks for (AW-083). */
     tiku_trk_loop_t                 *loop;
@@ -148,10 +149,10 @@ typedef struct {
 
 /* What the command line asked for. */
 typedef struct {
-    const char *port;
+    const char *port;               /* -p: the board's serial port */
     const char *start;              /* the folder to open, else the home */
     int         baud;
-    int         use_device;
+    int         use_device;         /* -d, or -p: that board is the root */
     int64_t     deadline_us;        /* -seconds: stop at this time, 0 never */
     const char *shot;               /* write a frame here, then stop */
     const char *script_path;

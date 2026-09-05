@@ -40,32 +40,45 @@ typedef struct {
     void                  *search_context;
 } tiku_trk_find_window_t;
 
+/**
+ * @brief Bind the controller to its workspace, the shell's dirty flag and
+ *        status line, and the search it runs.  Opens no window.
+ */
 void tiku_trk_find_window_init(tiku_trk_find_window_t *controller,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, char *status, size_t status_size,
     tiku_trk_find_window_search_fn search, void *search_context);
+/** @brief The store saved queries go to, for the form and the window. */
 void tiku_trk_find_window_set_store(tiku_trk_find_window_t *controller,
                                     tiku_store_t *store);
+/** @brief The type registry the form offers its type menu from. */
 void tiku_trk_find_window_set_types(tiku_trk_find_window_t *controller,
                                     const tiku_trk_types_t *types);
 
+/** @brief The form behind the window. */
 tiku_trk_find_t *tiku_trk_find_window_model(
     tiku_trk_find_window_t *controller);
+/** @brief The window while it is open, else NULL. */
 tiku_window_t *tiku_trk_find_window_handle(
     tiku_trk_find_window_t *controller);
 
+/**
+ * @brief Open the window centred on the screen, sized to the form; an open
+ *        window is brought up to date and activated instead.
+ */
 void tiku_trk_find_window_open(tiku_trk_find_window_t *controller);
+/** @brief Close the window, if open, and ask for a redraw. */
 void tiku_trk_find_window_close(tiku_trk_find_window_t *controller);
 
 /** @return Nonzero when the focused Find window consumed the key. */
 int tiku_trk_find_window_key(tiku_trk_find_window_t *controller,
     unsigned key, char character);
 
-/** @return Nonzero while a popup extends outside the Find window. */
 /** @brief Whether (x, y) is on the draggable query icon (Q-034). */
 int tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
                                  int x, int y);
 
+/** @return Nonzero while the open window has a popup up. */
 int tiku_trk_find_window_popup_open(
     const tiku_trk_find_window_t *controller);
 

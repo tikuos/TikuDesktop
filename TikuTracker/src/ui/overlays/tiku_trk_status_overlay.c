@@ -20,6 +20,7 @@
 #define PROGRESS_ROW_H  48
 #define PROGRESS_TOP    22
 
+/** @brief Ask for a redraw, when there is a flag to raise. */
 static void
 mark_dirty(tiku_trk_status_overlay_t *controller)
 {
@@ -28,6 +29,7 @@ mark_dirty(tiku_trk_status_overlay_t *controller)
     }
 }
 
+/** @brief Where the alert sits: centred, a third of the way down. */
 static tiku_rect_t
 alert_frame(const tiku_trk_status_overlay_t *controller)
 {
@@ -40,6 +42,7 @@ alert_frame(const tiku_trk_status_overlay_t *controller)
     };
 }
 
+/** @brief Where the progress panel sits: the bottom right corner. */
 static tiku_rect_t
 progress_frame(const tiku_trk_status_overlay_t *controller)
 {
@@ -52,6 +55,7 @@ progress_frame(const tiku_trk_status_overlay_t *controller)
     };
 }
 
+/** @brief The alert, when one is open. */
 static void
 draw_alert(tiku_trk_status_overlay_t *controller)
 {
@@ -64,6 +68,7 @@ draw_alert(tiku_trk_status_overlay_t *controller)
                     alert_frame(controller));
 }
 
+/** @brief The progress panel and its rows, when it is open. */
 static void
 draw_progress(tiku_trk_status_overlay_t *controller)
 {
@@ -173,6 +178,7 @@ draw_progress(tiku_trk_status_overlay_t *controller)
     }
 }
 
+/** @brief Button @p chosen answers the alert; the caller is told. */
 static void
 answer(tiku_trk_status_overlay_t *controller, int chosen)
 {

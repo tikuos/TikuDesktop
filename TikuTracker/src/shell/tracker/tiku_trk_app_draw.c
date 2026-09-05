@@ -106,6 +106,10 @@ browser_count_label(app_t *a, int width, char *label, size_t max)
     }
 }
 
+/**
+ * @brief The count bar under @p list: the item count, the type filter,
+ *        and the view-mode button in the scroller gutter.
+ */
 static void
 draw_count(app_t *a, tiku_rect_t list)
 {
@@ -372,6 +376,10 @@ draw_navigator(app_t *a)
     }
 }
 
+/**
+ * @brief One frame of the window: the title strip, the rows, the count
+ *        bar, the scrollbar, the resize guide and the rename editor.
+ */
 void
 browser_draw(app_t *a)
 {
@@ -405,6 +413,8 @@ browser_draw(app_t *a)
     browser_paint_editor(a, s, &cols, list, count);
 }
 
+/** @brief Present the surface on the host; a displayless run has no host
+ *         and keeps the surface for -shot. */
 void
 browser_blit(app_t *a)
 {

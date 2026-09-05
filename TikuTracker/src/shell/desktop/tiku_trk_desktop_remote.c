@@ -268,13 +268,11 @@ clip_mirror(desktop_t *app)
 /**
  * @brief Forget an ask whose panel is no longer asking it.
  *
- * The panel tells its caller nothing on cancel -- that is its contract,
- * and the application is owed no answer.  But the SHELL had written the
- * ask down, and a note that outlives the question refuses every later
- * one: after a single cancelled panel, no application could ever ask
- * again.  The panel's target says whose question it is holding; the
- * moment that is not ours -- closed, or re-purposed by one of the
- * shell's own five askers -- the ask is over.
+ * The panel says nothing on cancel and the application is owed no
+ * answer, but a note of the ask that outlives it refuses every later
+ * one.  The panel's target says whose question it holds; the moment
+ * that is not the remote's, closed or taken by one of the shell's own
+ * askers, the ask is over.
  */
 void
 pick_sweep(desktop_t *app)

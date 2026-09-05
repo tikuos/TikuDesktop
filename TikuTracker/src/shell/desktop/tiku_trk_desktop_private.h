@@ -133,89 +133,91 @@
 typedef tiku_trk_folder_window_t folder_t;
 
 typedef struct desktop {
-    tiku_host_t    *host;
-    tiku_surface_t *surf;
-    tiku_trk_splash_t     splash;
-    tiku_workspace_t     *desk;
-    tiku_trk_deskbar_t  *deskbar;
-    tiku_backend_t  *backend;
-    tiku_fs_t       *fs;
-    folder_t             folders[TIKU_WINDOW_MAX];
-    tiku_trk_folder_render_t folder_render;
-    tiku_trk_folder_lifecycle_t folder_lifecycle;
-    int                  folder_count;
-    int                  row_h;
-    int                  team;
-    int                  running;
+    tiku_host_t    *host;           /* the display, or NULL when headless */
+    tiku_surface_t *surf;           /* the frame every window paints into */
+    tiku_trk_splash_t     splash;   /* the boot and closing screens      */
+    tiku_workspace_t     *desk;     /* the windows and their stacking    */
+    tiku_trk_deskbar_t  *deskbar;   /* the bar, drawn last               */
+    tiku_backend_t  *backend;       /* the namespace: local files and mounts */
+    tiku_fs_t       *fs;            /* file operations over it           */
+    folder_t             folders[TIKU_WINDOW_MAX];  /* the open folder   */
+    tiku_trk_folder_render_t folder_render;         /* windows, and what */
+    tiku_trk_folder_lifecycle_t folder_lifecycle;   /* draws/opens them  */
+    int                  folder_count;  /* folders[] in use              */
+    int                  row_h;         /* a list row, in pixels         */
+    int                  team;          /* this shell's own Deskbar team */
+    int                  running;       /* the loop goes on while set    */
     /* Being taken down: the loop runs on so the screen can go under,
      * but nothing a person does reaches anything any more. */
     int                  closing;
-    int                  dirty;
+    int                  dirty;         /* a frame is owed               */
     /* Menus.  One set serves every folder window, rebuilt from whichever is
      * focused each time a menu opens -- the original rebuilds on open too. */
     tiku_trk_cwmenu_t    menus;
-    tiku_trk_launch_controller_t launcher;
-    tiku_trk_drop_controller_t drop_controller;
-    tiku_trk_folder_file_actions_t file_actions;
-    tiku_trk_folder_edit_t folder_edit;
-    tiku_trk_band_controller_t band_controller;
-    tiku_trk_drag_target_t drag_target;
-    tiku_trk_session_controller_t session;
-    tiku_trk_script_adapter_t script_adapter;
-    tiku_trk_folder_menu_t folder_menu;
+    /* The controllers: each owns one gesture or one kind of ask, and the
+     * shell hands them the state they act on. */
+    tiku_trk_launch_controller_t launcher;      /* opening things        */
+    tiku_trk_drop_controller_t drop_controller; /* what a drop does      */
+    tiku_trk_folder_file_actions_t file_actions;    /* delete, duplicate.. */
+    tiku_trk_folder_edit_t folder_edit;         /* the inline rename     */
+    tiku_trk_band_controller_t band_controller; /* the rubber band       */
+    tiku_trk_drag_target_t drag_target;         /* where a drag can land */
+    tiku_trk_session_controller_t session;      /* windows across runs   */
+    tiku_trk_script_adapter_t script_adapter;   /* the -script driver    */
+    tiku_trk_folder_menu_t folder_menu;         /* a folder's menus      */
     tiku_menu_t     *popup;          /* the menu showing, or NULL       */
-    tiku_rect_t     popup_frame;
+    tiku_rect_t     popup_frame;     /* where it is drawn               */
     tiku_menu_t     *popup_sub;      /* its open submenu, or NULL       */
-    tiku_rect_t     popup_sub_frame;
+    tiku_rect_t     popup_sub_frame; /* where that is drawn             */
     folder_t            *bar_fl;         /* window whose bar opened popup   */
     int                  bar_open;       /* title in that window, or -1     */
-    char                 status[200];
-    uint32_t             backdrop_color;
+    char                 status[200];    /* the status line's text          */
+    uint32_t             backdrop_color; /* the desktop's ground, as RGB    */
     /* Find is a MODE, as the shell's own watch is: there is no second window
      * to put a panel in, and a namespace search wants the same one-line
      * entry the rest of the system uses. */
-    int                  finding;
-    char                 find_buf[64];
-    int                  find_len;
-    int                  find_serial;
-    tiku_trk_find_window_t find_window;
-    tiku_remote_listener_t remote;
+    int                  finding;       /* the one-line entry is up       */
+    char                 find_buf[64];  /* what has been typed into it    */
+    int                  find_len;      /* find_buf[] in use              */
+    int                  find_serial;   /* numbers the result windows     */
+    tiku_trk_find_window_t find_window; /* the Find panel                 */
+    tiku_remote_listener_t remote;      /* out-of-process applications    */
     /* The conductor channel: an outside driver's events and questions.
      * Off unless -conduct asked for it.  Injected events queue here and
      * are drained by the same loop that drains the display's, so a
      * driven shell and a used one take exactly the same path. */
-    tiku_conduct_t         conduct;
-    int                         conduct_on;
-    tiku_event_t           cq[64];
+    tiku_conduct_t         conduct;     /* the channel itself             */
+    int                         conduct_on; /* it was asked for and opened */
+    tiku_event_t           cq[64];      /* injected events, a ring        */
     int                         cq_head, cq_tail;
     /* One EMBEDDED descriptor slot: the same application code the client
      * runner takes out of process, hosted here with workspace-backed
      * services -- the both-ways proof. */
     struct desktop_embed {
         struct desktop      *app;       /* the slot's way back      */
-        const tiku_app_descriptor_t *descriptor;
-        tiku_app_services_t services;
-        void                *state;
+        const tiku_app_descriptor_t *descriptor;    /* what is hosted   */
+        tiku_app_services_t services;   /* what it is given to call */
+        void                *state;     /* its own, from its start  */
         /* One of these per window the application holds.  Each is its
          * own workspace TAG, which is what stops a second window from
          * being handed back the first one. */
         struct embed_win {
             struct desktop_embed *slot; /* the window's way back    */
             uint32_t             id;    /* what the application was told */
-            tiku_window_t       *window;
-            uint32_t            *frame;
+            tiku_window_t       *window;    /* on the workspace        */
+            uint32_t            *frame;     /* its pixels, RGB, fw*fh  */
             int                  fw, fh;
         } win[TIKU_TRK_EMBED_WINDOWS];
-        uint32_t             next_id;
-        int                  running;
+        uint32_t             next_id;   /* the next window id to hand out */
+        int                  running;   /* the slot holds an application  */
     } embeds[TIKU_TRK_EMBED_MAX];
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
-    tiku_window_t  *remote_press;
+    tiku_window_t  *remote_press;       /* or NULL                    */
     struct embed_win     *embed_press;  /* the window holding a press */
     /* The window a resize track is reshaping, so the owner can be told
      * the new size when the hand lets go. */
-    tiku_window_t  *resize_track;
+    tiku_window_t  *resize_track;       /* or NULL                    */
     /*
      * The application the file panel is up for, if it is up for one.
      * The panel carries only an opaque (target, command) pair, and the
@@ -235,9 +237,9 @@ typedef struct desktop {
      * reading a path, writing a path, drawing controls.
      */
     struct {
-        tiku_form_t      form;
-        tiku_window_t   *window;
-        char             path[TIKU_PATH_MAX];
+        tiku_form_t      form;      /* the rows, as the device said */
+        tiku_window_t   *window;    /* showing it, or NULL          */
+        char             path[TIKU_PATH_MAX];   /* the node described */
         int              unknown;   /* rows this build did not know */
     } device_panel;
     /* Where the runner is, for starting an installed application in a
@@ -253,43 +255,43 @@ typedef struct desktop {
      * rebuilt per draw from the published data alone -- the strip never
      * reaches into a window's widgets. */
     int                  gbar_on;       /* -1 until the first sync      */
-    tiku_menu_t      sysmenu;
-    tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];
-    tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];
-    tiku_menubar_t   gbar;
+    tiku_menu_t      sysmenu;           /* the system menu at the left  */
+    tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];     /* the published menus */
+    tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];   /* their submenus      */
+    tiku_menubar_t   gbar;              /* the strip they hang from     */
     tiku_window_t  *gbar_from;     /* whose menus the strip shows  */
     /* The focused program's About row, hoisted into the system menu:
      * the published command, and the label it was published under. */
-    int                  about_hoist;
+    int                  about_hoist;   /* the command, 0 = none        */
     char                 about_label[64];
     int                  gbar_open;     /* open strip menu, or -1       */
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
-    int                  qdrag_on;
-    char                 qdrop_dest[TIKU_PATH_MAX];
+    int                  qdrag_on;      /* the drag is under way        */
+    char                 qdrop_dest[TIKU_PATH_MAX];  /* the folder hit  */
     /* The Deskbar's own double-click memory (DB-019). */
-    int64_t              db_click_at;
+    int64_t              db_click_at;   /* the last click, in us        */
     int                  db_click_x, db_click_y;
     /* The zoom: a frame sliding between the menu item and the window it
      * names, alive for a few frames after a Deskbar window action
      * (DB-030). */
-    int64_t              zoom_t0;
+    int64_t              zoom_t0;       /* when it began, in us; 0 = none */
     tiku_rect_t     zoom_from, zoom_to;
     /* A CMD press on the bar, still ambiguous: moved it re-docks, held
      * still it is a chord the rows answer (DB-049 vs DB-021). */
-    int                  dock_armed;
+    int                  dock_armed;    /* such a press is down         */
     int                  dock_x, dock_y;
-    unsigned             dock_mods;
-    unsigned             dock_button;
+    unsigned             dock_mods;     /* the press's modifiers        */
+    unsigned             dock_button;   /* and its button               */
     /* The resize strip along the bar's inner edge (DB-050). */
-    int                  bar_resize;
-    int                  bar_resize_x;
-    int                  bar_resize_w;
+    int                  bar_resize;    /* a resize drag is under way   */
+    int                  bar_resize_x;  /* where it began               */
+    int                  bar_resize_w;  /* the bar's width then         */
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
      * window on the first. */
     int                  cascade_x, cascade_y;
-    struct tiku_store *store;
+    struct tiku_store *store;       /* settings and state, on disk    */
     /* The backdrop pose view owns its union source and watcher. */
     tiku_trk_desktop_view_t desktop_view;
     int                  desk_row;      /* pose under the pointer, or -1 */
@@ -300,7 +302,7 @@ typedef struct desktop {
      * hidden rather than destroyed, so its expression outlives the window
      * it was last used on (CW-063, AW-105). */
     tiku_trk_select_window_t select_window;
-    tiku_trk_open_with_window_t open_with_window;
+    tiku_trk_open_with_window_t open_with_window;   /* likewise one   */
     /* Deferred and periodic work, pulsed from this loop's own tick: the
      * cooperative protothread the TIKU note asks for in place of the
      * source's worker thread (AW-083). */
@@ -308,18 +310,18 @@ typedef struct desktop {
     char                 clock_stamp[64]; /* what the clock last showed  */
     /* Where the last press landed, for the long press and for telling a
      * slow second click from a drag. */
-    int64_t              press_at;
+    int64_t              press_at;      /* in us                        */
     int                  press_x, press_y;
-    int                  press_row;
+    int                  press_row;     /* the pose row hit, or -1      */
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
     unsigned             drag_live_mods; /* modifiers as of the last move  */
     /* The column strip's tracker (TS-063): one gesture at a time, owned
      * by whichever folder window the press landed in. */
     tiku_trk_titleview_t tstrip;
-    folder_t            *tstrip_fl;
+    folder_t            *tstrip_fl;     /* that window, or NULL         */
     folder_t            *sbar_fl;   /* whose bar holds the pointer      */
-    int                  strip_ptr_x;
-    int                  strip_ptr_y;
+    int                  strip_ptr_x;   /* the pointer's last place     */
+    int                  strip_ptr_y;   /* over a title strip           */
     tiku_thumb_q_t   thumbs;    /* image previews, made off-tick  */
     /* ONE node-icon cache for the desktop: the same file shown in two
      * windows is one entry, and an icon edited on disk is dropped once
@@ -329,15 +331,15 @@ typedef struct desktop {
      * the desktop: the Open with menu, a double click and a drop on an
      * application all ask the same question (AW-040). */
     tiku_trk_apps_t      apps;
-    tiku_trk_addons_t    addons;
+    tiku_trk_addons_t    addons;        /* the add-ons and their keys   */
     /* The add-ons directory and the user shortcut file, both watched by
      * modification time so an install or a rebind lands without a restart
      * (AW-022, AW-023). */
-    char                 addons_dir[TIKU_PATH_MAX];
-    char                 addons_keys[TIKU_PATH_MAX];
-    time_t               addons_mtime;
-    time_t               keys_mtime;
-    int64_t              addons_checked;
+    char                 addons_dir[TIKU_PATH_MAX];  /* the directory  */
+    char                 addons_keys[TIKU_PATH_MAX]; /* the shortcut file */
+    time_t               addons_mtime;  /* the directory's, as last seen */
+    time_t               keys_mtime;    /* the file's, as last seen      */
+    int64_t              addons_checked;    /* when last looked, in us   */
     /* What the system knows about a type: its description, its icon, and
      * the columns it is worth showing (AW-013, CW-026). */
     tiku_trk_types_t     types;
@@ -347,38 +349,41 @@ typedef struct desktop {
     /* The folder the running job is writing into, for the progress
      * window's "To:" line (FS-069). */
     char                 prog_dest[TIKU_PATH_MAX];
-    /* The Open/Save panel.  ONE, because it is asking one question at a
-     * time and a second would be a second answer to the same ask. */
     /* What is mounted, and what it was at the last look: the port's
      * only source of mount and unmount notices (PVN-008). */
     tiku_volwatch_t  volwatch;
     /* The record the last search wrote, so Edit query has something to
      * reopen when the window it came from is the one asking. */
     char                 last_query[TIKU_NAME_MAX];
+    /* The Open/Save panel.  ONE, because it is asking one question at a
+     * time and a second would be a second answer to the same ask. */
     tiku_trk_panel_window_t file_panel;
-    tiku_trk_info_windows_t info_windows;
+    tiku_trk_info_windows_t info_windows;   /* every Get Info window    */
     /* The broken link an open offered Get Info for (AW-031). */
     char                 broken_open_path[TIKU_PATH_MAX];
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
-    tiku_trk_status_overlay_t status_overlay;
-    tiku_trk_prefs_window_t prefs_window;
-    tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;
-    tiku_trk_desktop_prefs_window_t desktop_prefs_window;
-    tiku_trk_fonts_window_t         fonts_window;
-    int                  applied_hide_dotfiles;
-    int                  applied_full_path;
-    int                  applied_folders_first;
-    tiku_trk_switcher_window_t switcher_window;
+    /* The one-of-each windows and overlays the shell keeps. */
+    tiku_trk_status_overlay_t status_overlay;   /* alert and progress   */
+    tiku_trk_prefs_window_t prefs_window;       /* Tracker preferences  */
+    tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;   /* Deskbar   */
+    tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
+    tiku_trk_fonts_window_t         fonts_window;           /* the faces */
+    /* The settings as last pushed to the windows, so a change is applied
+     * once rather than on every sync; -1 until the first. */
+    int                  applied_hide_dotfiles;  /* Hide dotfiles        */
+    int                  applied_full_path;      /* full path in titles  */
+    int                  applied_folders_first;  /* folders sort first   */
+    tiku_trk_switcher_window_t switcher_window;  /* the window switcher */
     tiku_trk_nav_t       nav;      /* the open navigation walk   */
-    int                  nav_on;
+    int                  nav_on;        /* it is showing                */
     /* The SPRING navigation: the same walk, anchored to a sprung pose
      * instead of a context-menu row (PVS-051). */
-    int                  spring_nav_on;
-    int                  spring_nav_x;
+    int                  spring_nav_on; /* it is showing                */
+    int                  spring_nav_x;  /* where its root row is drawn  */
     int                  spring_nav_y;
     tiku_window_t      *prog_was_active;  /* focus to give back */
-    int                  press_down;
+    int                  press_down;    /* a primary button is held     */
     int                  ptr_x, ptr_y;  /* where the pointer last was      */
     /* A context menu raised on one named thing -- the info window's icon --
      * rather than on a window's selection (AW-076). */
@@ -391,7 +396,7 @@ typedef struct desktop {
     tiku_window_t  *press_window; /* deferred content raise (PVS-022) */
     tiku_window_t  *press_focus;  /* who was in front when it began   */
     int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
-    folder_t            *press_fl;
+    folder_t            *press_fl;      /* the folder the press is in   */
     int                  press_menu;    /* the long press already fired    */
     int                  deskbar_press; /* primary hold over the clock     */
 } desktop_t;
@@ -402,8 +407,8 @@ static folder_t *desktop_folder(desktop_t *app);
 
 /** @brief One created entry waiting to be selected where it lives. */
 typedef struct {
-    desktop_t *app;
-    char       path[TIKU_PATH_MAX];
+    desktop_t *app;                 /* the shell it was created in */
+    char       path[TIKU_PATH_MAX]; /* the entry, selected once listed */
 } select_created_t;
 
 /* The argv the desktop restarts itself with, kept by the Deskbar. */
@@ -411,10 +416,10 @@ extern char **restart_argv;
 
 /* What the command line asked for. */
 typedef struct {
-    int         want_devices;
-    const char *port;
-    int         baud;
-    int         use_device;
+    int         want_devices;       /* -devices: every board under /devices */
+    const char *port;               /* -p: one board's port, else a scan */
+    int         baud;               /* -b: the port's baud, 115200 unless */
+    int         use_device;         /* -d, or -p alone: the board is root */
     const char *mount_at;           /* -mount: where the -p board goes */
     const char *shot;               /* write a frame here, then stop */
     int         shot_menu, shot_panel, shot_live, shot_shift, shot_zoom;
@@ -424,7 +429,7 @@ typedef struct {
      * row's other clauses -- replicants and add-ons -- have nothing here
      * to suppress (AW-007). */
     int         safe_mode;
-    const char *script_path;
+    const char *script_path;        /* -script: the file driving this run */
     /* The conductor channel is OFF unless asked for by name: a shell
      * that anything reaching its socket could puppet is a shell with a
      * hole in it.  The path is given rather than derived so a harness

@@ -5,27 +5,16 @@
  *
  * tiku_trk_splash.h - what the screen says while the desktop is coming up.
  *
- * A black screen, the mark in the middle of it, and one line under the
- * mark naming the part of the system being started.  The names are the
- * REAL stages -- each is written the moment that piece of the shell has
- * been built, not read off a list somebody wrote down -- because a boot
- * screen that recites a fixed sequence is a progress bar that has been
- * lied to, and it is the same objection the About box answers by reading
- * /proc instead of quoting constants.
- *
- * A stage is held for a moment before the next replaces it, or the whole
- * thing would be a flicker on any machine built this decade: what is
- * being shown is not how long the work took, it is what the work WAS.
- *
- * Then it lets go.  The desktop is drawn underneath and the black is
- * lifted off it over about a second, which is the transition -- the
- * shell is already running by then, so nothing is being waited for.
- *
- * The way out is the same screen run backwards.  The black is laid back
- * over the desktop across that same second, holds for a beat, and then
- * the stages name the pieces being put away in the order they really are
- * put away -- so a shutdown reads as the machine closing rather than as
- * a window that disappeared.
+ * A black screen, the mark in the middle, and one line under it naming
+ * the part of the system being started.  The names are the real stages,
+ * each written the moment that piece of the shell is built, not read
+ * off a list: a boot screen reciting a fixed sequence is a progress bar
+ * that has been lied to.  A stage is held for a moment, or the whole
+ * thing would be a flicker; what is shown is what the work was.  Then
+ * the black lifts off the running desktop over about a second.  The way
+ * out is the same screen backwards: the black laid over the desktop, a
+ * beat, then the stages naming the pieces being put away in the order
+ * they are, so a shutdown reads as the machine closing.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

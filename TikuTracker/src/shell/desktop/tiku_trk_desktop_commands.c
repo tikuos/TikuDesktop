@@ -12,6 +12,7 @@
 
 #include "tiku_trk_desktop_private.h"
 
+/** @brief The directory above @p path into @p out; "/" for the root. */
 void
 parent_path(const char *path, char *out, size_t size)
 {
@@ -697,6 +698,10 @@ do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)
                                      button);
 }
 
+/**
+ * @brief Close the window on @p path and every window on a folder
+ *        inside it; a sibling sharing the prefix is left open.
+ */
 void
 close_windows_under(desktop_t *app, const char *path)
 {
@@ -758,6 +763,11 @@ folder_selection(desktop_t *app, folder_t *fl,
     return tiku_trk_folder_file_actions_selection(fl, paths, out, max);
 }
 
+/**
+ * @brief Run @p addon on the focused folder's selection: an external one
+ *        in a process of its own, a built-in one through its command.
+ *        @return 1 when it ran.
+ */
 static int
 invoke_addon(const tiku_trk_addon_t *addon, void *context)
 {
@@ -1026,7 +1036,11 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     app->dirty = 1;
 }
 
-/** @brief Open (or raise) the window for @p path. */
+/**
+ * @brief Open a window on @p path through the folder lifecycle.  A Trash
+ *        folder becomes a result set over every volume's trash (PVN-027).
+ *        @return the window, or NULL when none could be opened.
+ */
 folder_t *
 open_folder(desktop_t *app, const char *path)
 {

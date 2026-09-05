@@ -133,6 +133,11 @@ void tiku_trk_nav_place(const tiku_trk_nav_t *nav, int level, int px,
  * (PVS-052), combined through tiku_trk_springmenu_item_enabled.
  */
 struct tiku_trk_apps;
+/**
+ * @brief Enable or grey every item of every level for a spring-loaded
+ *        drag: a folder unless its link is broken, a file only when an
+ *        application in @p apps takes one of @p types.
+ */
 void tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
                                 const struct tiku_trk_apps *apps,
                                 const char *const *types, int ntypes);

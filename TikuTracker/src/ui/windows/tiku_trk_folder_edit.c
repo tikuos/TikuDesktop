@@ -184,6 +184,7 @@ tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
     *controller->dirty = 1;
 }
 
+/** @brief The field action a key means; anything else is a character. */
 static tiku_field_key_t
 edit_key(unsigned key)
 {
@@ -200,6 +201,10 @@ edit_key(unsigned key)
     }
 }
 
+/**
+ * @brief The next row after @p row, wrapping, whose name can be edited:
+ *        device nodes and namespace folders are skipped.  -1 for none.
+ */
 static int
 next_rename_row(tiku_trk_folder_window_t *folder, int row, int backwards)
 {

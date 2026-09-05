@@ -55,6 +55,10 @@ tiku_trk_session_restore_deskbar(tiku_trk_session_controller_t *controller)
     }
 }
 
+/**
+ * @brief Reopen the saved session's folders, minimised as they were;
+ *        none in safe mode.  @return how many opened.
+ */
 static int
 restore_saved(tiku_trk_session_controller_t *controller, int safe_mode)
 {

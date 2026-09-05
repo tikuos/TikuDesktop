@@ -44,10 +44,10 @@ typedef enum {
 
 /** @brief One application the registry knows about. */
 typedef struct tiku_trk_app {
-    char name[TIKU_TRK_APP_NAME_MAX];
+    char name[TIKU_TRK_APP_NAME_MAX];    /* as the Open With menu says it */
     char cmd[TIKU_TRK_APP_CMD_MAX];      /* argv[0], run with the paths   */
-    char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX];
-    int  ntype;
+    char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX]; /* the types claimed */
+    int  ntype;                          /* how many of those            */
     int  takes_anything;                 /* a superhandler                */
     /* Where the application itself lives, when it is a file in the
      * namespace.  Its own path is dropped from the documents handed to it,
@@ -64,8 +64,8 @@ typedef struct {
 } tiku_trk_cand_t;
 
 typedef struct tiku_trk_apps {
-    tiku_trk_app_t app[TIKU_TRK_APP_MAX];
-    int            count;
+    tiku_trk_app_t app[TIKU_TRK_APP_MAX];    /* every application registered */
+    int            count;                    /* how many slots are used      */
 } tiku_trk_apps_t;
 
 /** @brief Forget every application. */
@@ -154,17 +154,6 @@ typedef enum {
 } tiku_trk_launch_err_t;
 
 /**
- * @brief Run @p app over @p paths (AW-002, AW-038).
- *
- * The application's own file is dropped from what it is handed, so it never
- * opens itself.  The child starts in the user's home directory, which is
- * what the original gives everything it launches.  The parent does not wait:
- * a launch that blocked the window it was started from would be a launch
- * the user watches.
- *
- * @return TIKU_TRK_LAUNCH_OK, or why not.
- */
-/**
  * @brief Make @p m into the application it already is.
  *
  * A file that can be executed does not need something else to open it --
@@ -177,6 +166,17 @@ typedef enum {
  */
 int tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out);
 
+/**
+ * @brief Run @p app over @p paths (AW-002, AW-038).
+ *
+ * The application's own file is dropped from what it is handed, so it never
+ * opens itself.  The child starts in the user's home directory, which is
+ * what the original gives everything it launches.  The parent does not wait:
+ * a launch that blocked the window it was started from would be a launch
+ * the user watches.
+ *
+ * @return TIKU_TRK_LAUNCH_OK, or why not.
+ */
 tiku_trk_launch_err_t tiku_trk_launch_run(const tiku_trk_app_t *app,
                                           const char *const *paths, int n);
 

@@ -30,6 +30,7 @@ pv_set_selected(tiku_trk_pose_t *p, int on)
     p->selected = on ? 1 : 0;
 }
 
+/** @brief Every pose unselected; the pivots are the caller's to mend. */
 void
 pv_clear_selection(tiku_trk_poseview_t *v)
 {
@@ -106,7 +107,12 @@ tiku_trk_poseview_select_all(tiku_trk_poseview_t *v)
     }
 }
 
-/** @brief Where pose @p pi appears in the list being shown, or -1. */
+/**
+ * @brief The display row of pose index @p pi: the index itself when the
+ *        view is not filtering, else its position in the filtered list.
+ *        @return the row, or -1 when @p pi is out of range or filtered
+ *        out.
+ */
 int
 pv_display_of(const tiku_trk_poseview_t *v, int pi)
 {

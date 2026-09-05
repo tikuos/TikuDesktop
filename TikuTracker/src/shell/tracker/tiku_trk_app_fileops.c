@@ -46,6 +46,11 @@ browser_drain_fs(tiku_fs_t *fs)
     }
 }
 
+/**
+ * @brief After a file operation: reload the view, restore its state,
+ *        select the row that took a deleted one's place when one was
+ *        asked for (FS-050), settle the layout and mark the frame dirty.
+ */
 void
 browser_after_op(app_t *a)
 {

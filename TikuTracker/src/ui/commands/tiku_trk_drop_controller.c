@@ -57,6 +57,7 @@ tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     };
 }
 
+/** @brief The drag's paths into @p paths.  @return how many there are. */
 static int
 drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
 {
@@ -68,6 +69,12 @@ drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
     return controller->drag->count;
 }
 
+/**
+ * @brief A drop that lands on the Deskbar: a menu folder links the items
+ *        into it, the tray subscribes to one node, a team row hands the
+ *        items to that application.  @return 1 when the bar took the
+ *        drop, 0 when it landed elsewhere.
+ */
 static int
 drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
                 unsigned modifiers)
@@ -172,6 +179,11 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
     return 1;
 }
 
+/**
+ * @brief A drop back into the icon view the drag began in: the selected
+ *        icons move by the drag's offset, snapped to the grid with Cmd,
+ *        and the layout is saved.  @return 1 when that is what the drop was.
+ */
 static int
 arrange_in_source(tiku_trk_drop_controller_t *controller, int x, int y,
                   unsigned modifiers)
@@ -212,6 +224,10 @@ arrange_in_source(tiku_trk_drop_controller_t *controller, int x, int y,
     return 1;
 }
 
+/**
+ * @brief Where the drop goes: the row under the pointer, else the folder
+ *        shown.  @return 0 when that row has no pose.
+ */
 static int
 drop_destination(tiku_trk_drop_controller_t *controller, char *destination,
                  size_t destination_size)
@@ -232,6 +248,11 @@ drop_destination(tiku_trk_drop_controller_t *controller, char *destination,
     return 1;
 }
 
+/**
+ * @brief Whether @p destination takes the drag: the foreign offer decides
+ *        for items from outside, the store's own rules for its own; a
+ *        refusal is said in the alert.  @return 1 when the drop may go on.
+ */
 static int
 drop_allowed(tiku_trk_drop_controller_t *controller,
              const char *destination, unsigned drag_modifiers)
@@ -281,6 +302,11 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
     return 1;
 }
 
+/**
+ * @brief In an icon view, give each dropped item the spot it was carried
+ *        to, so it lands where it was let go rather than where the layout
+ *        would put it.
+ */
 static void
 reserve_icon_landings(tiku_trk_drop_controller_t *controller,
                       const char **paths, int count, int x, int y)

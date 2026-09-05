@@ -74,6 +74,7 @@ tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
     }
 }
 
+/** @brief The menu's icon slot, handed to the painter the shell registered. */
 static void
 relay_menu_icon(tiku_surface_t *s, int index, int x, int y, int size,
                 void *context)
@@ -532,6 +533,10 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
     }
 }
 
+/**
+ * @brief The expander arrow beside a team: pointing down when its windows
+ *        are shown, right when they are not.
+ */
 static void
 draw_expander(tiku_surface_t *s, int x, int y, int expanded)
 {

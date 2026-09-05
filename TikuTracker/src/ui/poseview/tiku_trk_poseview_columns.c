@@ -23,6 +23,7 @@ tiku_trk_poseview_set_font_size(tiku_trk_poseview_t *v, int px)
     }
 }
 
+/** @brief @p v with its bytes in the other order. */
 static uint32_t
 swap32u(uint32_t v)
 {
@@ -30,6 +31,7 @@ swap32u(uint32_t v)
            ((v >> 8) & 0xFF00u) | ((v >> 24) & 0xFFu);
 }
 
+/** @brief @p v with its bytes in the other order, signed. */
 static int32_t
 swap32(int32_t v)
 {

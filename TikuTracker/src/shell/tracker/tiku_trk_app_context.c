@@ -81,6 +81,7 @@ browser_first_selected_index(app_t *a)
     return -1;
 }
 
+/** @brief The row of @p wanted in the view, or -1. */
 int
 browser_pose_index(app_t *a, const tiku_trk_pose_t *wanted)
 {
@@ -94,6 +95,11 @@ browser_pose_index(app_t *a, const tiku_trk_pose_t *wanted)
     return -1;
 }
 
+/**
+ * @brief The next row after @p row (before it with @p backwards),
+ *        wrapping, whose entry can be renamed: not a device node or a
+ *        namespace folder.  @return -1 when none can.
+ */
 int
 browser_next_edit_row(app_t *a, int row, int backwards)
 {
@@ -211,6 +217,7 @@ browser_menubar_rect(const app_t *a)
     return r;
 }
 
+/** @brief The current folder's icon at the right end of @p bar. */
 void
 browser_draw_folder_icon(app_t *a, tiku_rect_t bar)
 {
@@ -303,6 +310,7 @@ browser_menu_ctx(app_t *a, unsigned mods)
     return c;
 }
 
+/** @brief How many rows the list has room for at the current face. */
 int
 browser_visible_rows(const app_t *a)
 {
@@ -318,7 +326,8 @@ browser_measure_text(const char *s, void *ctx)
     return tiku_text_width(ctx, s);
 }
 
-/** @brief Where a column's data starts on screen, allowing for the scroll. */
+/** @brief Where column @p c starts on screen: the list's left edge plus
+ *         the column's offset, less the horizontal scroll. */
 int
 browser_col_x(const app_t *a, const tiku_trk_column_t *c)
 {

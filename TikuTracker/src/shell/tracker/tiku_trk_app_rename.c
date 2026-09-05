@@ -10,7 +10,11 @@
 
 #include "tiku_trk_app_private.h"
 
-/** @brief Begin inline rename on the active pose (F2). */
+/**
+ * @brief Open the inline editor on the active pose's name.  A device node
+ *        or namespace folder is refused with a status line instead, since
+ *        it has no name of its own to change.
+ */
 void
 browser_begin_rename(app_t *a)
 {

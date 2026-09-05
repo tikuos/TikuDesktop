@@ -262,8 +262,6 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
 
 /*---------------------------------------------------------------------------*/
 /* The size walk                                                             */
-/*---------------------------------------------------------------------------*/
-
 void
 tiku_trk_info_calc_start(tiku_trk_info_t *in)
 {
@@ -342,8 +340,6 @@ tiku_trk_info_calc_step(tiku_trk_info_t *in, tiku_backend_t *b)
 
 /*---------------------------------------------------------------------------*/
 /* Liveness                                                                  */
-/*---------------------------------------------------------------------------*/
-
 int
 tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_backend_t *b, int64_t now)
 {
@@ -545,6 +541,11 @@ printable(const unsigned char *v, size_t len)
     return 1;
 }
 
+/**
+ * @brief Take one attribute into the record: printable bytes as text, four
+ * or eight bytes as an integer, anything else as a blob named by its size.
+ * @return 1 to stop the walk once the table is full.
+ */
 static int
 attr_row(const char *name, const void *val, size_t len, void *ctx)
 {
@@ -591,8 +592,6 @@ tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_store_t *store)
 
 /*---------------------------------------------------------------------------*/
 /* Where the clickable fields lead                                           */
-/*---------------------------------------------------------------------------*/
-
 int
 tiku_trk_info_location(const tiku_trk_info_t *in, char *dir, size_t dmax,
                        char *select, size_t smax)
@@ -683,6 +682,10 @@ typedef struct {
     int         n;
 } kept_t;
 
+/**
+ * @brief Keep one attribute, bytes and all, for writing back; one that
+ * will not fit is dropped whole rather than truncated.
+ */
 static int
 keep_attr(const char *name, const void *val, size_t len, void *ctx)
 {

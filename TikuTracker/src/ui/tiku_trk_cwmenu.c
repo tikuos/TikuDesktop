@@ -63,6 +63,7 @@ typedef struct {
     int is_dir;
 } template_child_t;
 
+/** @brief Name order, case first ignored then not. */
 static int
 template_child_cmp(const void *a, const void *b)
 {
@@ -73,6 +74,10 @@ template_child_cmp(const void *a, const void *b)
     return c != 0 ? c : strcmp(aa->name, bb->name);
 }
 
+/**
+ * @brief A submenu node for the Templates folder at @p path.
+ *        @return its index, -1 when the table is full.
+ */
 static int
 template_node_new(tiku_trk_cwmenu_t *cw, const char *path)
 {
@@ -89,6 +94,10 @@ template_node_new(tiku_trk_cwmenu_t *cw, const char *path)
     return n;
 }
 
+/**
+ * @brief A command number for the template at @p path, in the add-submenu
+ *        range when @p add_submenu.  @return the command, -1 when full.
+ */
 static int
 template_command(tiku_trk_cwmenu_t *cw, const char *path, int add_submenu)
 {
@@ -107,6 +116,10 @@ template_command(tiku_trk_cwmenu_t *cw, const char *path, int add_submenu)
     return cw->template_entry[n].command;
 }
 
+/**
+ * @brief Fill node @p node's menu from its folder: a row per template,
+ *        a submenu per subfolder, to the depth a menu can nest.
+ */
 static void
 template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
 {
@@ -203,6 +216,7 @@ template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
     }
 }
 
+/** @brief The Templates submenu, rebuilt from the folder if it exists. */
 static void
 build_templates(tiku_trk_cwmenu_t *cw)
 {
@@ -375,6 +389,10 @@ add_picker(tiku_trk_cwmenu_t *cw, tiku_menu_t *m, int k,
     }
 }
 
+/**
+ * @brief The Open With row: a submenu of applications when there are
+ *        any, else a disabled row.
+ */
 static void
 add_open_with(tiku_trk_cwmenu_t *cw, tiku_menu_t *m,
               const tiku_trk_sc_ctx_t *c)
@@ -389,6 +407,7 @@ add_open_with(tiku_trk_cwmenu_t *cw, tiku_menu_t *m,
     }
 }
 
+/** @brief The File menu for context @p c. */
 static void
 build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -470,6 +489,7 @@ build_new(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                             cw->templates_root[0] != '\0');
 }
 
+/** @brief The Window menu for context @p c, the mode in force ticked. */
 static void
 build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -522,6 +542,7 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     m->item[0].marked = (c->view_mode == TIKU_TRK_MODE_ICON);
 }
 
+/** @brief The Attributes menu: a row per column. */
 static void
 build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -583,6 +604,7 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
 }
 
+/** @brief The context menus: on a pose, on the window, on the Desktop. */
 static void
 build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {

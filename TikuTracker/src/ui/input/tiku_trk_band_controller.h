@@ -38,13 +38,24 @@ typedef struct {
 void tiku_trk_band_controller_set_script_delay(
     tiku_trk_band_controller_t *controller, int pulses);
 
+/** @brief A controller with the row height and the dirty flag it raises. */
 void tiku_trk_band_controller_init(tiku_trk_band_controller_t *controller,
                                    int row_h, int *dirty);
+/** @brief A press at @p x, @p y that may become a band in @p folder. */
 void tiku_trk_band_controller_arm(tiku_trk_band_controller_t *controller,
     tiku_trk_folder_window_t *folder, int x, int y, unsigned modifiers);
+/**
+ * @brief The pointer moved: past the slop the press becomes a band, and a
+ *        band selects what it covers.  @return 1 while a band is drawn.
+ */
 int tiku_trk_band_controller_motion(tiku_trk_band_controller_t *controller,
                                     int x, int y, unsigned modifiers);
+/** @brief The band ends.  @return 1 when there was one. */
 int tiku_trk_band_controller_finish(tiku_trk_band_controller_t *controller);
+/**
+ * @brief A tick while the band is held at an edge: the view scrolls and
+ *        the band follows.  @return 1 when something moved.
+ */
 int tiku_trk_band_controller_pulse(tiku_trk_band_controller_t *controller,
                                    int64_t now);
 

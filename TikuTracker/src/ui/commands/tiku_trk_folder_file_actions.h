@@ -90,6 +90,7 @@ typedef enum {
 void tiku_trk_folder_file_actions_answer_empty(
     tiku_trk_folder_file_actions_t *controller);
 
+/** @brief The delete question answered: Trash, outright, or nothing. */
 void tiku_trk_folder_file_actions_answer_delete(
     tiku_trk_folder_file_actions_t *controller,
     tiku_trk_folder_window_t *folder, tiku_trk_delete_answer_t answer);

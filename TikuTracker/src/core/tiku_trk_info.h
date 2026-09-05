@@ -135,7 +135,11 @@ tiku_trk_info_field_t tiku_trk_info_field(const tiku_trk_info_t *in,
 /* The folder-size walk (AW-068)                                             */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Begin (or restart) the walk.  Only containers have one. */
+/*---------------------------------------------------------------------------*/
+/**
+ * @brief Begin the folder-size walk from the node's own path; a node that
+ *        is not a container is left alone.
+ */
 void tiku_trk_info_calc_start(tiku_trk_info_t *in);
 
 /**
@@ -228,10 +232,11 @@ int tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_store_t *store);
 /* Where the clickable fields lead (AW-072, AW-074)                          */
 /*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
 /**
- * @brief The folder to open and the entry to select for Location.
- *
- * @return 1 when there is somewhere to go.
+ * @brief The place to open for a node: its parent in @p dir and its own
+ *        name in @p select, the root standing for itself.
+ * @return 1 when the slot is in use, else 0 with both empty.
  */
 int tiku_trk_info_location(const tiku_trk_info_t *in, char *dir, size_t dmax,
                            char *select, size_t smax);

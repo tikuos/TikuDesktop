@@ -147,6 +147,10 @@ tiku_trk_folder_menu_build_open_with(tiku_trk_folder_menu_t *controller,
     }
 }
 
+/**
+ * @brief The command that shows @p column, with its title.  @return the
+ *        command, or 0 for a column no menu offers.
+ */
 static int
 column_command(int column, const char **title)
 {

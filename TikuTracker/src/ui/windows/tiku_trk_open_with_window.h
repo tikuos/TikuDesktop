@@ -54,6 +54,10 @@ typedef struct {
     tiku_list_t       list;
 } tiku_trk_open_with_window_t;
 
+/**
+ * @brief Bind the controller to its workspace, the launcher it opens
+ *        through, the alert and the store.  Opens no window.
+ */
 void tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *controller,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
@@ -64,6 +68,7 @@ void tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *controller,
     const tiku_trk_apps_t *apps, const char *const *types, int ntypes,
     const char *const *paths, int npaths);
 
+/** @brief The window while it is open, else NULL. */
 tiku_window_t *tiku_trk_open_with_window_handle(
     tiku_trk_open_with_window_t *controller);
 

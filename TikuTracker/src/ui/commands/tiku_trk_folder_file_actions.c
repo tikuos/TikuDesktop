@@ -96,6 +96,7 @@ tiku_trk_folder_file_actions_selection(
     return selected;
 }
 
+/** @brief Close every window under a selected path, through the hook. */
 static void
 close_selected(tiku_trk_folder_file_actions_t *controller,
                const char *const *selection, int count)
@@ -411,6 +412,10 @@ tiku_trk_folder_file_actions_answer_delete(
     }
 }
 
+/**
+ * @brief Delete the selection the way the store's rule for @p command
+ *        says: to the Trash, outright with Shift, or after a question.
+ */
 static void
 delete_selection(tiku_trk_folder_file_actions_t *controller,
                  tiku_trk_folder_window_t *folder, int command)
@@ -459,6 +464,7 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
     }
 }
 
+/** @brief Put the selection back from the Trash, and say what happened. */
 static void
 restore_selection(tiku_trk_folder_file_actions_t *controller,
                   tiku_trk_folder_window_t *folder)
@@ -480,6 +486,10 @@ restore_selection(tiku_trk_folder_file_actions_t *controller,
     }
 }
 
+/**
+ * @brief Put the selection on the clipboard as a cut or a copy, added to
+ *        what is there when @p command says so.
+ */
 static void
 copy_selection(tiku_trk_folder_file_actions_t *controller,
                tiku_trk_folder_window_t *folder, int command)
@@ -506,6 +516,10 @@ copy_selection(tiku_trk_folder_file_actions_t *controller,
              tiku_trk_clip_count(controller->clip) == 1 ? "" : "s");
 }
 
+/**
+ * @brief Finish a drop whose menu was answered: copy, move or link the
+ *        pending items into the chosen destination, then forget them.
+ */
 static void
 finish_drop(tiku_trk_folder_file_actions_t *controller, int command)
 {
@@ -539,6 +553,7 @@ finish_drop(tiku_trk_folder_file_actions_t *controller, int command)
     controller->drop_destination[0] = '\0';
 }
 
+/** @brief Make a new folder here, and say its name or why there is none. */
 static void
 new_folder(tiku_trk_folder_file_actions_t *controller,
            tiku_trk_folder_window_t *folder)
@@ -559,6 +574,10 @@ new_folder(tiku_trk_folder_file_actions_t *controller,
     }
 }
 
+/**
+ * @brief Paste the clipboard into the window's folder: cuts move, copies
+ *        copy, and the links form pastes links instead.
+ */
 static void
 paste(tiku_trk_folder_file_actions_t *controller,
       tiku_trk_folder_window_t *folder, int command)

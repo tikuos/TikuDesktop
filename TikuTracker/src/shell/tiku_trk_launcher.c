@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 
+/** @brief Register the browser application and run it. */
 int
 main(int argc, char **argv)
 {

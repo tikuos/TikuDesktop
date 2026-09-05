@@ -12,6 +12,11 @@ typedef struct {
     int failed;
 } pipeline_t;
 
+/**
+ * @brief Copy one attribute through the pipeline: skipped when the accept
+ * hook refuses it, transformed when there is a transform, then written to
+ * the destination.  @return 1 to stop the walk after a failure.
+ */
 static int
 copy_one(const char *attr, const void *value, size_t len, void *opaque)
 {

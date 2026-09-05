@@ -63,6 +63,7 @@ folder_background(const tiku_trk_poseview_t *v)
                : TIKU_C_DOC;
 }
 
+/** @brief The width of a label in the plain face, for the pose view. */
 static int
 measure_label(const char *text, void *context)
 {
@@ -70,6 +71,7 @@ measure_label(const char *text, void *context)
     return tiku_text_width(tiku_font_plain(), text);
 }
 
+/** @brief Whether the point is on the ink of the icon @p model draws with. */
 static int
 icon_hit(const tiku_model_t *model, int size, int x, int y,
          void *context)
@@ -167,6 +169,10 @@ tiku_trk_folder_window_bar(const tiku_trk_folder_window_t *folder)
     return bar;
 }
 
+/**
+ * @brief A volume's space bar beside its icon: used over free, in the
+ *        colours the settings name, the warning one when space is short.
+ */
 static void
 draw_space_bar(tiku_trk_folder_render_t *render, tiku_surface_t *surface,
                const tiku_model_t *model, int x, int y, int size,
@@ -209,6 +215,7 @@ draw_space_bar(tiku_trk_folder_render_t *render, tiku_surface_t *surface,
     }
 }
 
+/** @brief One pose's icon and label where it sits, counted as a row drawn. */
 static void
 draw_pose_icon(tiku_trk_folder_window_t *folder,
                tiku_surface_t *surface, tiku_trk_pose_t *pose,
@@ -469,6 +476,7 @@ sig_bytes(uint32_t h, const void *p, size_t n)
     return h;
 }
 
+/** @brief Fold a string, terminator included, into a row signature. */
 static uint32_t
 sig_text(uint32_t h, const char *t)
 {
@@ -539,6 +547,10 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     return h;
 }
 
+/**
+ * @brief The rows on screen: all of them, or only the damaged ones, with
+ *        each row's signature written back unless a reader is observing.
+ */
 static void
 draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
           tiku_rect_t list, int rows, int scroll, int total)
@@ -745,6 +757,10 @@ fw_measure_prefix(const char *text, int n, void *ctx)
     return tiku_text_width(tiku_font_plain(), tmp);
 }
 
+/**
+ * @brief The column title strip, in a face three-quarters of the body's,
+ *        with a column being dragged drawn displaced.
+ */
 static void
 draw_title(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
            tiku_rect_t title)
@@ -851,6 +867,7 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
     }
 }
 
+/** @brief The folder's own icon in the bar's corner, from its node's facts. */
 static void
 draw_folder_icon(tiku_trk_folder_window_t *folder,
                  tiku_surface_t *surface)
@@ -917,6 +934,10 @@ tiku_trk_folder_window_forget(tiku_trk_folder_window_t *folder)
     }
 }
 
+/**
+ * @brief What is drawn over the rows and does not stay: the selection
+ *        band and the drop point of a drag in progress.
+ */
 static void
 draw_transients(tiku_trk_folder_window_t *folder,
                 tiku_surface_t *surface, tiku_rect_t list,
@@ -966,6 +987,10 @@ draw_transients(tiku_trk_folder_window_t *folder,
     }
 }
 
+/**
+ * @brief The strip along the bottom: the count and selection, the text
+ *        typed ahead, or the finding note while a search is on.
+ */
 static void
 draw_count(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
            tiku_rect_t content, int total)

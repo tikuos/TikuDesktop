@@ -17,6 +17,7 @@
 
 #define FIND_WIDTH 560
 
+/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
 static void
 mark_dirty(tiku_trk_find_window_t *controller)
 {
@@ -25,6 +26,7 @@ mark_dirty(tiku_trk_find_window_t *controller)
     }
 }
 
+/** @brief Put @p text in the shell's status line, when it lent one. */
 static void
 set_status(tiku_trk_find_window_t *controller, const char *text)
 {
@@ -34,6 +36,7 @@ set_status(tiku_trk_find_window_t *controller, const char *text)
     }
 }
 
+/** @brief Draw the form, then the query icon a drag can pick up. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -69,6 +72,10 @@ tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
            y >= ir.y && y < ir.y + ir.h;
 }
 
+/**
+ * @brief Bring the window up to date with the form: its title, its height,
+ *        and a note the form left for the status line.
+ */
 static void
 sync_window(tiku_trk_find_window_t *controller)
 {
@@ -90,6 +97,10 @@ sync_window(tiku_trk_find_window_t *controller)
     mark_dirty(controller);
 }
 
+/**
+ * @brief Save the query where it belongs, or hand the question of where
+ *        to the save panel; the status line says what happened.
+ */
 static void
 save(tiku_trk_find_window_t *controller)
 {
@@ -124,6 +135,10 @@ save(tiku_trk_find_window_t *controller)
     }
 }
 
+/**
+ * @brief The default action: save the template, or run the search; the
+ *        window closes once it went.
+ */
 static void
 primary(tiku_trk_find_window_t *controller)
 {
@@ -145,6 +160,10 @@ primary(tiku_trk_find_window_t *controller)
     }
 }
 
+/**
+ * @brief A press goes to the form; Search and Save act on it, and a folder
+ *        request is handed to the shell.  @return 1 for any press.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *input,
       void *context)

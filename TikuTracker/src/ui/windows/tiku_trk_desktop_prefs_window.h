@@ -30,16 +30,27 @@ typedef struct {
     char                          pictures_dir[TIKU_PATH_MAX];
 } tiku_trk_desktop_prefs_window_t;
 
+/**
+ * @brief Bind the controller to the Desktop view, store and workspace and
+ *        find the Desktop's own folder.  Opens no window.
+ */
 void tiku_trk_desktop_prefs_window_init(
     tiku_trk_desktop_prefs_window_t *controller,
     tiku_workspace_t *workspace, tiku_trk_desktop_view_t *desktop_view,
     tiku_store_t *store, int screen_w, int screen_h, int *dirty);
+/** @brief Close the window if open; nothing else is held. */
 void tiku_trk_desktop_prefs_window_destroy(
     tiku_trk_desktop_prefs_window_t *controller);
+/**
+ * @brief Open the window centred on the screen, reading the Desktop's
+ *        record and pictures afresh; an open window is activated instead.
+ */
 void tiku_trk_desktop_prefs_window_open(
     tiku_trk_desktop_prefs_window_t *controller);
+/** @brief Close the window and ask for a redraw. */
 void tiku_trk_desktop_prefs_window_close(
     tiku_trk_desktop_prefs_window_t *controller);
+/** @brief The window while it is open, else NULL. */
 tiku_window_t *tiku_trk_desktop_prefs_window_handle(
     tiku_trk_desktop_prefs_window_t *controller);
 

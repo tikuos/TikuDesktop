@@ -214,7 +214,11 @@ icon_size:
     a->dirty = 1;
 }
 
-/** @brief Open a title from the in-window bar when the point names one. */
+/**
+ * @brief A press on the menu bar: the title under (@p x, @p y) opens its
+ *        menu, rebuilt for the current selection and the modifiers held.
+ *        @return 1 when a title was hit, 0 when the press was elsewhere.
+ */
 int
 browser_menubar_press(app_t *a, int x, int y, unsigned state)
 {

@@ -10,7 +10,11 @@
 
 #include "tiku_trk_app_private.h"
 
-/** @brief Whether a point is on the title strip, and where in its own space. */
+/**
+ * @brief Whether (@p px, @p py) lands on the title strip in list mode,
+ *        writing the strip-relative coordinates to @p cx and @p cy when
+ *        given.  Icon mode has no strip and answers 0.
+ */
 int
 browser_title_hit(app_t *a, int px, int py, int *cx, int *cy)
 {
@@ -30,6 +34,11 @@ browser_title_hit(app_t *a, int px, int py, int *cx, int *cy)
     return (py >= top && py <= top + TITLE_H);
 }
 
+/**
+ * @brief A key for the window: an alert, the location field or a rename
+ *        in progress takes it first; then the shortcuts, the navigation
+ *        keys, the command keys, and type-ahead for the rest.
+ */
 void
 browser_handle_key(app_t *a, const tiku_event_t *event)
 {

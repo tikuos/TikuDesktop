@@ -5,21 +5,16 @@
  *
  * tiku_trk_script_stub.c - the shipping build's answer to -script.
  *
- * The scripted driver (tiku_trk_script.c) and its presentation adapter are
- * TEST infrastructure: an interpreter that can be pointed at any file, plus
- * the introspection that lets it read rows, menus and pixels back out of a
- * live shell.  A device image has no business carrying either, so a shipping
- * build links this instead: the same five entry points, none of the engine.
- *
- * The shells need no #ifdef of their own because every scripted path is
- * already reached through a pointer that only a successful open returns.
- * Refusing the open here therefore removes the whole of it -- the driver
- * loop, the fixture clock, the pulse-counted waits -- and a build made with
- * TRK_SCRIPT_ENABLE=1 gets all of it back by linking the real files.
- *
- * The refusal is LOUD, the way the kernel's guard is: a harness that ran the
- * wrong binary must be told, not silently given a shell that ignores its
- * script and passes.
+ * The scripted driver and its presentation adapter are test
+ * infrastructure: an interpreter that can be pointed at any file, and the
+ * introspection that reads rows, menus and pixels back out of a live
+ * shell.  A device image carries neither, so a shipping build links this
+ * instead: the same five entry points, none of the engine.  Every
+ * scripted path is reached through a pointer that only a successful open
+ * returns, so refusing the open here removes all of it, and a build with
+ * TRK_SCRIPT_ENABLE=1 links the real files.  The refusal is loud, as the
+ * kernel's guard is: a harness that ran the wrong binary must be told,
+ * not given a shell that ignores its script and passes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

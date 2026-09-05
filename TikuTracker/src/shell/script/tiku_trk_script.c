@@ -10,7 +10,7 @@
 
 #include "tiku_trk_script_private.h"
 
-/** @brief Whether @p path exists at all. */
+/** @brief Whether @p path names something that stats; NULL and "" do not. */
 int
 sc_there(const char *path)
 {

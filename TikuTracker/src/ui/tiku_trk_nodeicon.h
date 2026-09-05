@@ -74,6 +74,7 @@ typedef struct {
 /** @brief How many types the negative cache remembers. */
 int tiku_trk_nodeicon_misses(const tiku_trk_nodeicon_t *c);
 
+/** @brief An empty cache. */
 void tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c);
 
 /**

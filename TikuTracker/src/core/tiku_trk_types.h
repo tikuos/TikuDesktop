@@ -42,8 +42,8 @@ typedef struct {
 } tiku_trk_typerec_t;
 
 typedef struct tiku_trk_types {
-    tiku_trk_typerec_t rec[TIKU_TRK_TYPES_MAX];
-    int                n;
+    tiku_trk_typerec_t rec[TIKU_TRK_TYPES_MAX]; /* one per type read     */
+    int                n;                        /* how many are filled   */
 } tiku_trk_types_t;
 
 /** @brief Start empty. */

@@ -34,9 +34,21 @@ typedef struct {
     int accepted;
 } tiku_trk_drop_result_t;
 
+/**
+ * @brief Read what a foreign drag offers: the actions it names (copy when it
+ * names none), whether its types carry refs, text or a bitmap, and whether
+ * it is a promise.  @return -1 for no @p offer.
+ */
 int tiku_trk_foreign_offer_parse(tiku_trk_foreign_offer_t *offer,
                                  const char *actions, const char *types,
                                  int promise);
+/**
+ * @brief What a foreign drop does on its target.  A root disk, or anything
+ * that is neither a directory nor the Trash, rejects it; the Trash takes a
+ * trash action; a directory takes @p requested_action where offered, else
+ * copy, else whatever is offered.  A promise, text or a bitmap becomes a
+ * clipping; an offer with nothing to take is rejected.
+ */
 tiku_trk_drop_result_t tiku_trk_foreign_drop(const tiku_trk_foreign_offer_t *o,
                                              int target_directory,
                                              int target_trash, int root_disk,

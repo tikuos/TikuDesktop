@@ -111,6 +111,10 @@ embed_window_count(const struct desktop_embed *slot)
     return n;
 }
 
+/**
+ * @brief Open a window for the embedded application, @p w by @p h,
+ *        titled @p title.  @return its id, 0 when the slot has no room.
+ */
 static uint32_t
 embed_svc_open(void *ctx, const char *title, int w, int h)
 {
@@ -180,6 +184,10 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
     return ew->id;
 }
 
+/**
+ * @brief Take a frame of pixels for window @p id, kept as a copy of the
+ *        application's own.  @return 0, -1 for no such window or no memory.
+ */
 static int
 embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
@@ -202,6 +210,10 @@ embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
     return 0;
 }
 
+/**
+ * @brief A menu row picked in an embedded window, handed to the
+ *        application with the id of the window that published it.
+ */
 static void
 embed_menu_pick(tiku_window_t *window, int command, void *context)
 {
@@ -218,6 +230,7 @@ embed_menu_pick(tiku_window_t *window, int command, void *context)
     }
 }
 
+/** @brief Publish @p set as window @p id's menus; picks come back here. */
 static int
 embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
@@ -390,6 +403,7 @@ embed_svc_clip_set(void *ctx, const char *text)
     return 1;
 }
 
+/** @brief The clipboard's text into @p out.  @return its length. */
 static int
 embed_svc_clip_get(void *ctx, char *out, size_t max)
 {
@@ -416,6 +430,7 @@ embed_svc_raise(void *ctx, uint32_t id)
     return 0;
 }
 
+/** @brief Close window @p id at the application's own request. */
 static void
 embed_svc_close(void *ctx, uint32_t id)
 {
@@ -426,6 +441,10 @@ embed_svc_close(void *ctx, uint32_t id)
     embed_drop_window(embed_win_of_id(slot, id), 0);
 }
 
+/**
+ * @brief Stop the embedded application in @p slot: its stop hook, then
+ *        every window it still holds.  Nothing happens twice.
+ */
 void
 embed_stop(struct desktop_embed *slot)
 {

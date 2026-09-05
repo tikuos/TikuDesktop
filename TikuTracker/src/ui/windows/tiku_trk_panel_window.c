@@ -41,11 +41,13 @@ panel_at_least(int want, int least)
     return (want > least) ? want : least;
 }
 
+/** @brief A button's height in the face in force, with the panel's floor. */
 static int button_h(void)
 {
     return panel_at_least(tiku_ui_row_h(), PANEL_BUTTON_MIN_H);
 }
 
+/** @brief The name field's height in the face in force, with its floor. */
 static int field_h(void)
 {
     return panel_at_least(tiku_ui_row_h(), PANEL_FIELD_MIN_H);
@@ -67,12 +69,14 @@ typedef enum {
 
 #define PANEL_FAV_MIN_H 18
 
+/** @brief A favourites row's height in the face in force, with its floor. */
 static int fav_row_h(void)
 {
     return panel_at_least(tiku_font_plain()->height + 3,
                           PANEL_FAV_MIN_H);
 }
 
+/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
 static void
 mark_dirty(tiku_trk_panel_window_t *controller)
 {
@@ -81,6 +85,10 @@ mark_dirty(tiku_trk_panel_window_t *controller)
     }
 }
 
+/**
+ * @brief Where the list, the name field of a save panel, and the default
+ *        and Cancel buttons go in @p content.
+ */
 static void
 layout(const tiku_trk_panel_window_t *controller, tiku_rect_t content,
        tiku_rect_t *list, tiku_rect_t *name,
@@ -200,6 +208,7 @@ new_folder_button(const tiku_trk_panel_window_t *controller)
     return fav;
 }
 
+/** @brief The favourites popup, above its button, a row per favourite. */
 static tiku_rect_t
 favorites_list_rect(const tiku_trk_panel_window_t *controller)
 {
@@ -242,6 +251,7 @@ favorites_fill(tiku_trk_panel_window_t *controller)
     }
 }
 
+/** @brief The selected poses' models, at most @p max.  @return how many. */
 static int
 selection(const tiku_trk_panel_window_t *controller, tiku_model_t *out,
           int max)
@@ -262,6 +272,7 @@ selection(const tiku_trk_panel_window_t *controller, tiku_model_t *out,
     return selected;
 }
 
+/** @brief Draw the list, the name field, the buttons and the favourites. */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -485,6 +496,7 @@ rebuild_visible(tiku_trk_panel_window_t *controller)
     }
 }
 
+/** @brief List the panel's directory afresh, selecting @p select if given. */
 static void
 reload(tiku_trk_panel_window_t *controller, const char *select)
 {
@@ -525,6 +537,7 @@ reload(tiku_trk_panel_window_t *controller, const char *select)
     mark_dirty(controller);
 }
 
+/** @brief Move the panel to @p directory and list it. */
 static void
 go(tiku_trk_panel_window_t *controller, const char *directory)
 {
@@ -543,6 +556,10 @@ sync_name(tiku_trk_panel_window_t *controller)
     tiku_field_start(&controller->name, controller->model.name);
 }
 
+/**
+ * @brief Answer with the selection, or with the name typed into a save
+ *        panel, through the shell's callback, and close.
+ */
 static void
 commit(tiku_trk_panel_window_t *controller)
 {
@@ -654,6 +671,7 @@ tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
     }
 }
 
+/** @brief The default action: enter a selected folder, else answer. */
 static void
 activate_default(tiku_trk_panel_window_t *controller)
 {
@@ -673,6 +691,7 @@ activate_default(tiku_trk_panel_window_t *controller)
     commit(controller);
 }
 
+/** @brief Which control a point lands on, with the list row in @p row. */
 static panel_hit_t
 hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 {
@@ -749,6 +768,10 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
     return PANEL_HIT_NONE;
 }
 
+/**
+ * @brief A press picks a row, a double click enters or answers, and the
+ *        buttons and the favourites act.  @return 1 for a press.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *input,
       void *context)

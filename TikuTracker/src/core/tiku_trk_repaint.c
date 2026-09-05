@@ -5,6 +5,7 @@
 static int max_i(int a, int b) { return a > b ? a : b; }
 static int min_i(int a, int b) { return a < b ? a : b; }
 
+/** @brief The smallest rectangle holding both. */
 static tiku_trk_repaint_rect_t
 union_rect(tiku_trk_repaint_rect_t a, tiku_trk_repaint_rect_t b)
 {

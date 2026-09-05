@@ -51,7 +51,10 @@ typedef struct {
 /** @brief How many filter terms Shift+Space can accumulate. */
 #define TIKU_TRK_FILTER_TERMS  8
 
-/** @brief Type-ahead lapses after this quiet period (PVK "restarts the timeout"). */
+/**
+ * @brief Type-ahead lapses after this quiet period (PVK "restarts the
+ * timeout").
+ */
 #define TIKU_TRK_TYPEAHEAD_US  1000000
 
 /** @brief A saved position further out than this is nonsense (PVL: 50000). */
@@ -112,6 +115,7 @@ typedef struct tiku_trk_poseview tiku_trk_poseview_t;
 tiku_trk_poseview_t *tiku_trk_poseview_new(tiku_backend_t *backend,
                                            const char *path);
 
+/** @brief Free the view and everything it allocated. */
 void tiku_trk_poseview_free(tiku_trk_poseview_t *v);
 
 /** @brief Re-read the directory into poses (the AddPoses pass). */
@@ -234,6 +238,7 @@ int tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path);
 /** @brief Open the parent directory, if there is one. */
 int tiku_trk_poseview_go_up(tiku_trk_poseview_t *v);
 
+/** @brief The folder the view lists; the empty string for no view. */
 const char *tiku_trk_poseview_path(const tiku_trk_poseview_t *v);
 
 /**
@@ -243,8 +248,13 @@ const char *tiku_trk_poseview_path(const tiku_trk_poseview_t *v);
  * concern rather than a test at each call site.
  */
 int tiku_trk_poseview_count(const tiku_trk_poseview_t *v);
+/**
+ * @brief The pose at row @p i of what is shown, filtered or not.
+ *        @return NULL off the end.
+ */
 tiku_trk_pose_t *tiku_trk_poseview_at(tiku_trk_poseview_t *v, int i);
 
+/** @brief How many poses are selected, filtered out or not. */
 int tiku_trk_poseview_selection_count(const tiku_trk_poseview_t *v);
 
 /** @brief The pose the user acted on last, or NULL. */
@@ -264,6 +274,7 @@ tiku_trk_pose_t *tiku_trk_poseview_active(tiku_trk_poseview_t *v);
  * sites is a rule that will hold at three of them.
  */
 void tiku_trk_poseview_set_multiple(tiku_trk_poseview_t *v, int on);
+/** @brief Whether more than one pose may be selected. */
 int tiku_trk_poseview_multiple(const tiku_trk_poseview_t *v);
 
 /** @brief Apply a click at row @p index (-1 = empty space) with modifiers. */
@@ -294,6 +305,9 @@ int tiku_trk_poseview_select_after_removal(tiku_trk_poseview_t *v, int index);
 /** @brief Clear the selection; the pivot goes with it (PVS-008). */
 void tiku_trk_poseview_select_none(tiku_trk_poseview_t *v);
 
+/**
+ * @brief Select every pose shown; in a single-selection view, the first.
+ */
 void tiku_trk_poseview_select_all(tiku_trk_poseview_t *v);
 
 /**
@@ -379,8 +393,10 @@ void tiku_trk_poseview_damage_row(tiku_trk_poseview_t *v, int index);
  */
 int tiku_trk_poseview_repaint_take_slide(tiku_trk_poseview_t *v, int *y);
 
+/** @brief Take the rectangles due a repaint, up to @p max. */
 int tiku_trk_poseview_repaint_take(tiku_trk_poseview_t *v,
                                    tiku_trk_repaint_rect_t *out, int max);
+/** @brief Whether a band is being drawn. */
 int tiku_trk_poseview_band(const tiku_trk_poseview_t *v);
 
 /*---------------------------------------------------------------------------*/
@@ -425,6 +441,7 @@ void tiku_trk_poseview_type_tick(tiku_trk_poseview_t *v);
 
 /** @brief Filter the listing to type-ahead matches instead of jumping. */
 void tiku_trk_poseview_set_filtering(tiku_trk_poseview_t *v, int on);
+/** @brief Whether a type-ahead filter is in force. */
 int tiku_trk_poseview_is_filtering(const tiku_trk_poseview_t *v);
 
 /**
@@ -475,6 +492,7 @@ int tiku_trk_poseview_filter_pose(tiku_trk_poseview_t *v,
 const char *tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v,
                             const tiku_trk_pose_t *p, int field,
                             char *buf, size_t max);
+/** @brief How often a cell's text was answered from the cache, and not. */
 void tiku_trk_poseview_cell_cache_stats(const tiku_trk_poseview_t *v,
                                         uint64_t *hits, uint64_t *misses);
 
@@ -482,6 +500,7 @@ void tiku_trk_poseview_cell_cache_stats(const tiku_trk_poseview_t *v,
 /* Icon mode, layout and spatial memory (PVL-012..020)                       */
 /*---------------------------------------------------------------------------*/
 
+/** @brief The view's mode; list mode for a NULL view. */
 int tiku_trk_poseview_mode(const tiku_trk_poseview_t *v);
 
 /** @brief Switch mode; icon modes lay out, list mode drops back to rows. */
@@ -503,6 +522,7 @@ void tiku_trk_poseview_set_state_slot(tiku_trk_poseview_t *v,
 /** @brief The Desktop's exemption: it scrolls for no key (PVK-013). */
 void tiku_trk_poseview_set_no_autoscroll(tiku_trk_poseview_t *v, int on);
 
+/** @brief The icon size in pixels; 32 for no view. */
 int tiku_trk_poseview_icon_size(const tiku_trk_poseview_t *v);
 
 /**
@@ -524,6 +544,7 @@ int tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up);
  * whatever that setting says, which is what makes them different modes.
  */
 int tiku_trk_poseview_art_size(const tiku_trk_poseview_t *v);
+/** @brief Icons at @p px, between 16 and 128; anything else is ignored. */
 void tiku_trk_poseview_set_icon_size(tiku_trk_poseview_t *v, int px);
 
 /**
@@ -600,9 +621,13 @@ void tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v);
 void tiku_trk_poseview_hint(const tiku_trk_poseview_t *v, int *x, int *y);
 
 /**
- * @brief Re-place pose @p at if its sort key has moved (MA-055).
+ * @brief Put pose @p at back in sorted order if its key has moved (MA-055).
  *
- * @return Its new row, or -1.
+ * A rename already goes through remove+insert; an edited VALUE did not, so
+ * under a value sort the row kept its old slot until some later insert
+ * happened to notice the array was unsorted.
+ *
+ * @return Where the pose ended up.
  */
 int tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at);
 
@@ -636,6 +661,7 @@ tiku_trk_pose_t *tiku_trk_poseview_pose_at(tiku_trk_poseview_t *v,
  */
 typedef int (*tiku_trk_measure_fn)(const char *text, void *ctx);
 
+/** @brief The text-measuring callback, with its context. */
 void tiku_trk_poseview_set_measure(tiku_trk_poseview_t *v,
                                    tiku_trk_measure_fn fn, void *ctx);
 
@@ -691,6 +717,7 @@ int tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v,
 typedef int (*tiku_trk_hit_fn)(const tiku_model_t *m, int size, int px,
                                int py, void *ctx);
 
+/** @brief The icon hit-test callback, with its context. */
 void tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v,
                                     tiku_trk_hit_fn fn, void *ctx);
 
@@ -707,6 +734,7 @@ void tiku_trk_poseview_set_icon_hit(tiku_trk_poseview_t *v,
  */
 void tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h);
 
+/** @brief The viewport's width and height, as last set. */
 void tiku_trk_poseview_viewport(const tiku_trk_poseview_t *v, int *w,
                                 int *h);
 
@@ -728,6 +756,10 @@ void tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y,
  * what there is to see.
  */
 void tiku_trk_poseview_set_origin(tiku_trk_poseview_t *v, int x, int y);
+/**
+ * @brief Where the view's content starts, in pixels, whatever the mode: a
+ *        list's scroll is answered in the same pixels an icon view's is.
+ */
 void tiku_trk_poseview_origin(const tiku_trk_poseview_t *v, int *x, int *y);
 
 /**
@@ -750,6 +782,7 @@ int tiku_trk_poseview_visible_range(tiku_trk_poseview_t *v, int *first,
  * afterwards.
  */
 void tiku_trk_poseview_set_drop_point(tiku_trk_poseview_t *v, int x, int y);
+/** @brief No drop point is marked any more. */
 void tiku_trk_poseview_clear_drop_point(tiku_trk_poseview_t *v);
 
 /** @brief How many landings a single drop can reserve. */
@@ -777,7 +810,9 @@ int tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0,
 /* Spatial memory -- positions persist on the objects (PVL-021, MA-064)      */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Load saved positions for the current folder.  @return poses placed. */
+/**
+ * @brief Load saved positions for the current folder.  @return poses placed.
+ */
 int tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v);
 
 /** @brief Persist positions and the view state for the current folder. */
@@ -789,7 +824,9 @@ int tiku_trk_poseview_save_state(tiku_trk_poseview_t *v);
 
 /** @brief Sort by @p field; the same field again reverses (TS rows). */
 void tiku_trk_poseview_sort_by(tiku_trk_poseview_t *v, int field);
+/** @brief The column the listing is sorted by. */
 int tiku_trk_poseview_sort_field(const tiku_trk_poseview_t *v);
+/** @brief Whether the sort runs the other way. */
 int tiku_trk_poseview_sort_reverse(const tiku_trk_poseview_t *v);
 
 /**
@@ -805,6 +842,10 @@ void tiku_trk_poseview_sort_click(tiku_trk_poseview_t *v, int field,
 
 /** @brief The tie-break column, or -1 when there is none. */
 int tiku_trk_poseview_sort_secondary(const tiku_trk_poseview_t *v);
+/**
+ * @brief Sort within equal keys by @p field; a field with no column, or
+ *        the primary itself, means no secondary.
+ */
 void tiku_trk_poseview_set_secondary(tiku_trk_poseview_t *v, int field);
 
 /*---------------------------------------------------------------------------*/
@@ -854,6 +895,10 @@ uint64_t tiku_trk_poseview_menu_generation(const tiku_trk_poseview_t *v);
 /** @brief Defer a post-mount broken-link repair by half a second (PVN-042). */
 void tiku_trk_poseview_schedule_broken_repair(tiku_trk_poseview_t *v,
                                               int64_t now);
+/**
+ * @brief Whether the repair of broken rows fell due by @p now; answering
+ *        yes clears it, so it fires once.
+ */
 int tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v,
                                         int64_t now);
 
@@ -1024,6 +1069,10 @@ int tiku_trk_poseview_fit_column(tiku_trk_poseview_t *v, int field);
 
 /** @brief Horizontal scroll, in pixels; titles and rows share it (TS-020). */
 int tiku_trk_poseview_hscroll(const tiku_trk_poseview_t *v);
+/**
+ * @brief Scroll the columns sideways to @p px, clamped so the last column
+ *        ends at the view's edge.
+ */
 void tiku_trk_poseview_set_hscroll(tiku_trk_poseview_t *v, int px);
 
 /** @brief Total width the columns occupy, for the scroll range. */
@@ -1039,6 +1088,12 @@ int tiku_trk_poseview_columns_width(const tiku_trk_poseview_t *v);
  * @return Columns written / restored.
  */
 int tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v);
+/**
+ * @brief The saved column layout for this folder or query, read back from
+ *        its store, byte order and attribute numbering repaired.
+ *        @return how many columns were restored; 0 when nothing usable was
+ *        saved.
+ */
 int tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v);
 
 /**
@@ -1052,8 +1107,16 @@ void tiku_trk_poseview_copy_columns(tiku_trk_poseview_t *v,
 
 /** Copy/paste the complete column and sort layout through the typed channel. */
 int tiku_trk_poseview_copy_layout(const tiku_trk_poseview_t *v);
+/**
+ * @brief Take the copied layout: its columns, widths, sort and order, minus
+ *        any attribute column this view has not registered.
+ *        @return how many columns were taken; 0 when there was no name
+ *        column or nothing copied.
+ */
 int tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v);
+/** @brief Whether a layout has been copied. */
 int tiku_trk_poseview_has_layout_clipboard(void);
+/** @brief The copied layout, or NULL when none has been. */
 const tiku_trk_layout_clip_t *tiku_trk_poseview_layout_clipboard(void);
 
 /**
@@ -1124,6 +1187,7 @@ void tiku_trk_poseview_set_visible_rows(tiku_trk_poseview_t *v, int rows);
 int tiku_trk_poseview_set_invisible(tiku_trk_poseview_t *v, int index,
                                     int hidden);
 
+/** @brief How many rows fit the viewport, as last set. */
 int tiku_trk_poseview_visible_rows(const tiku_trk_poseview_t *v);
 
 /*---------------------------------------------------------------------------*/
@@ -1169,7 +1233,12 @@ void tiku_trk_poseview_allow_editing(tiku_trk_poseview_t *v, int on);
 
 /** @brief Scroll offset in rows, and the row count that fits @p height. */
 int tiku_trk_poseview_scroll(const tiku_trk_poseview_t *v);
+/** @brief Row @p row at the top, clamped to the rows there are. */
 void tiku_trk_poseview_scroll_to(tiku_trk_poseview_t *v, int row);
+/**
+ * @brief Scroll just enough for row @p index to show among @p visible_rows,
+ *        unless auto-scroll is off.
+ */
 void tiku_trk_poseview_scroll_into_view(tiku_trk_poseview_t *v, int index,
                                         int visible_rows);
 

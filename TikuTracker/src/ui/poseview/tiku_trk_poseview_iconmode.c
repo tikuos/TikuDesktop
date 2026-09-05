@@ -87,7 +87,8 @@ tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up)
     return 1;
 }
 
-/** @brief The scale locations are drawn at in @p mode at @p size. */
+/** @brief The factor icon-mode positions are scaled by: the icon size over
+ *         32; every other mode is 1. */
 float
 pv_mode_scale(int mode, int size)
 {

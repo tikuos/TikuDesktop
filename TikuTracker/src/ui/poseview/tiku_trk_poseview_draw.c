@@ -33,15 +33,6 @@ pv_poses_sorted(tiku_trk_poseview_t *v)
     return 1;
 }
 
-/**
- * @brief Put pose @p at back in sorted order if its key has moved (MA-055).
- *
- * A rename already goes through remove+insert; an edited VALUE did not, so
- * under a value sort the row kept its old slot until some later insert
- * happened to notice the array was unsorted.
- *
- * @return Where the pose ended up.
- */
 int
 tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at)
 {
@@ -161,19 +152,12 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
 /**
  * @brief Re-read what is on screen, for as long as @p deadline allows.
  *
- * Forty rows read unconditionally once per tick is forty backend reads,
- * and a store on the far end of a serial line answers in seconds, not
- * microseconds -- a window of forty device rows asks for minutes of work
- * inside a frame that has milliseconds, and the whole desktop waits for
- * it.  A device that has stopped answering altogether costs the full
- * timeout PER ROW.
- *
- * So: a cursor that survives the tick, and a deadline.  Each tick reads
- * what it has time for and leaves the rest for the next one; the cursor
- * ADVANCES BEFORE the read, so a row that overruns is not retried for ever
- * while the rows behind it are never reached.  Nothing waits for the whole
- * screen to be current -- a row that has not been re-read yet goes on
- * showing its last reading, which is what it does between ticks anyway.
+ * A store on the far end of a serial line answers in seconds, so a
+ * cursor survives the tick and a deadline bounds it: each tick reads
+ * what it has time for and leaves the rest for the next.  The cursor
+ * advances before the read, so a row that overruns is not retried for
+ * ever while the rows behind it go unreached; a row not yet re-read
+ * shows its last reading, as it does between ticks anyway.
  */
 static int
 refresh_until(tiku_trk_poseview_t *v, int64_t deadline)

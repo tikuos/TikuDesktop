@@ -29,13 +29,23 @@ typedef struct {
     void                   *apply_context;
 } tiku_trk_select_window_t;
 
+/**
+ * @brief Bind the controller to its workspace and the shell's apply
+ *        callback.  Opens no window.
+ */
 void tiku_trk_select_window_init(tiku_trk_select_window_t *controller,
     tiku_workspace_t *workspace, int screen_w, int screen_h,
     int *dirty, tiku_trk_select_apply_fn apply, void *apply_context);
+/** @brief The form behind the window. */
 tiku_trk_select_t *tiku_trk_select_window_model(
     tiku_trk_select_window_t *controller);
+/** @brief The window while it is open, else NULL. */
 tiku_window_t *tiku_trk_select_window_handle(
     tiku_trk_select_window_t *controller);
+/**
+ * @brief Open the window at @p x, @p y for @p target, the folder the
+ *        selection is made in.
+ */
 void tiku_trk_select_window_open(tiku_trk_select_window_t *controller,
                                  void *target, int x, int y);
 

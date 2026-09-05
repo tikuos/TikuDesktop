@@ -71,12 +71,20 @@ typedef struct {
     char                   fav_label[12][48];
 } tiku_trk_panel_window_t;
 
+/**
+ * @brief Bind the panel to its workspace, backend, store and icons, and to
+ *        the shell's commit callback.  Opens no window.
+ */
 void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
     tiku_workspace_t *workspace, tiku_backend_t *backend,
     tiku_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
     int screen_w, int screen_h, int *dirty,
     tiku_trk_panel_window_commit_fn commit, void *commit_context);
 
+/**
+ * @brief Open the panel for @p target and @p command at its remembered
+ *        frame, listing @p initial_directory.
+ */
 void tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller,
     void *target, int command, const char *initial_directory);
 
@@ -111,11 +119,15 @@ void tiku_trk_panel_window_drop(tiku_trk_panel_window_t *controller,
 /** @brief Give the panel the shell's alert for its save questions. */
 void tiku_trk_panel_window_set_alert(tiku_trk_panel_window_t *controller,
                                      tiku_alert_t *alert);
+/** @brief Close the panel, remembering its frame. */
 void tiku_trk_panel_window_close(tiku_trk_panel_window_t *controller);
+/** @brief Close the panel if open; nothing else is held. */
 void tiku_trk_panel_window_destroy(tiku_trk_panel_window_t *controller);
 
+/** @brief The window while it is open, else NULL. */
 tiku_window_t *tiku_trk_panel_window_handle(
     tiku_trk_panel_window_t *controller);
+/** @brief The panel's model: its mode, directory and question. */
 tiku_trk_panel_t *tiku_trk_panel_window_model(
     tiku_trk_panel_window_t *controller);
 
@@ -131,7 +143,9 @@ int tiku_trk_panel_window_poll(tiku_trk_panel_window_t *controller,
 int tiku_trk_panel_window_device_gone(tiku_trk_panel_window_t *controller,
                                       const char *mount);
 
+/** @brief The list's scroll position, 0 with no list. */
 int tiku_trk_panel_window_scroll(const tiku_trk_panel_window_t *controller);
+/** @brief How many rows the list holds, 0 with no list. */
 int tiku_trk_panel_window_rows(const tiku_trk_panel_window_t *controller);
 
 #endif /* TIKU_TRK_PANEL_WINDOW_H_ */

@@ -219,6 +219,11 @@ conduct_text(void *context, const char *name, char *out, size_t max)
     return 0;                   /* a name this build cannot say */
 }
 
+/**
+ * @brief Redraw the desktop from nothing and count the pixels that came
+ *        out different from the frame on screen.  @return that count,
+ *        -1 with no surface or no memory for the copy.
+ */
 long
 script_redraw_diff(void *ctx)
 {

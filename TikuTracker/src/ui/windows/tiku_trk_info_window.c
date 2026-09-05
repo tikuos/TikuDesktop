@@ -60,6 +60,7 @@ static int info_height(void)
                + (tiku_window_tab_h() - 21);
 }
 
+/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
 static void
 mark_dirty(tiku_trk_info_windows_t *controller)
 {
@@ -68,6 +69,7 @@ mark_dirty(tiku_trk_info_windows_t *controller)
     }
 }
 
+/** @brief Where the icon, the name, the tabs and the body go in @p content. */
 static void
 layout(tiku_rect_t content, tiku_rect_t *icon,
        tiku_rect_t *name, tiku_rect_t *tabs,
@@ -92,12 +94,14 @@ layout(tiku_rect_t content, tiku_rect_t *icon,
     }
 }
 
+/** @brief The width of @p text in the face @p ctx names. */
 static int
 measure_info_text(const char *text, void *ctx)
 {
     return tiku_text_width((const tiku_font_t *)ctx, text);
 }
 
+/** @brief The @p index-th permission button, down the body's left side. */
 static tiku_rect_t
 permission_rect(tiku_rect_t body, int index)
 {
@@ -110,16 +114,11 @@ permission_rect(tiku_rect_t body, int index)
 /**
  * @brief Where the values start: past the widest label there is.
  *
- * It was 96 pixels, which held the English labels at a 12 px face and
- * nothing else.  At 16 "Opens with" ran straight into its own value --
- * and worse, the room left for the value was measured from that same 96,
- * so a date was truncated to make space that was already there.  Two
- * faults from one written-down number, which is what written-down
- * numbers do.
- *
- * Measured now, over the labels the catalogue actually returns, so a
- * translation gets the column it needs as well.  Floored at 96, so the
- * default face still draws the column it always drew.
+ * Measured over the labels the catalogue returns, so a larger face and
+ * a translation each get the column they need; a written-down 96 held
+ * the English labels at 12 px and nothing else, and the value's room
+ * was measured from the same number.  Floored at 96, so the default
+ * face draws the column it always drew.
  */
 static int
 value_column(tiku_trk_info_t *info, tiku_store_t *store)
@@ -196,6 +195,10 @@ refit(tiku_window_t *window, int *dirty)
     }
 }
 
+/**
+ * @brief Draw one Get Info window: icon, name or its editor, the tabs and
+ *        the current tab's body, refitting the window to the face first.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -312,6 +315,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
+/** @brief The slot already showing @p path, or -1. */
 static int
 slot_for_path(const tiku_trk_info_windows_t *controller, const char *path)
 {
@@ -326,6 +330,10 @@ slot_for_path(const tiku_trk_info_windows_t *controller, const char *path)
     return -1;
 }
 
+/**
+ * @brief End the name edit, renaming the node when @p apply and the name
+ *        changed; a rename the filesystem refuses is reported in an alert.
+ */
 static void
 finish_rename(tiku_trk_info_windows_t *controller, int apply)
 {

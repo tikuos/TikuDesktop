@@ -14,6 +14,10 @@
 /** @brief Collect a directory's entries into @p out.  @return how many. */
 struct collect_ctx { tiku_model_t *out; int n, max; };
 
+/**
+ * @brief Rebuild the Open With rows, the pickers and the add-ons menu
+ *        for @p fl's selection (for none when @p fl is NULL).
+ */
 void
 build_open_with(desktop_t *app, folder_t *fl)
 {
@@ -87,6 +91,10 @@ panel_refresh(desktop_t *app)
     }
 }
 
+/**
+ * @brief Paint the device panel: its form, and a note when the device
+ *        sent rows this build cannot draw.
+ */
 static void
 panel_draw(tiku_window_t *window, tiku_surface_t *surface,
            tiku_rect_t content, void *context)
@@ -111,6 +119,10 @@ panel_draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
+/**
+ * @brief A press on the device panel: the row under it is pressed and
+ *        what it writes goes to the device.  @return 1 when a row took it.
+ */
 static int
 panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
 {
@@ -197,6 +209,10 @@ open_described_panel(desktop_t *app, const tiku_model_t *model)
     return 1;
 }
 
+/**
+ * @brief Open @p model: a .panel file as a described panel, anything
+ *        else through the launcher.  @return 1 when something opened.
+ */
 int
 open_one(desktop_t *app, const tiku_model_t *model)
 {
@@ -312,6 +328,7 @@ open_with_pick(desktop_t *app, folder_t *fl, int at)
     tiku_trk_launch_controller_pick(&app->launcher, fl, at);
 }
 
+/** @brief One listed entry copied into the collector; full stops the list. */
 static int
 collect_one(const tiku_model_t *m, void *ctx)
 {
@@ -324,6 +341,10 @@ collect_one(const tiku_model_t *m, void *ctx)
     return 0;
 }
 
+/**
+ * @brief The entries of @p path from backend @p b, at most @p max, into
+ *        @p out.  @return how many.
+ */
 int
 list_children(tiku_backend_t *b, const char *path, tiku_model_t *out,
               int max)
@@ -586,6 +607,11 @@ deliver_pick(desktop_t *app, const char *path)
     }
 }
 
+/**
+ * @brief The file panel's answer: an application's pick delivered, a
+ *        scope added to the search, or the selection moved or copied to
+ *        @p destination on behalf of @p target's folder.
+ */
 void
 fpanel_commit(void *context, void *target, int command,
               const char *destination)

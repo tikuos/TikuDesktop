@@ -131,6 +131,11 @@ visible(const tiku_trk_nav_t *nav, const tiku_model_t *m)
     return 1;
 }
 
+/**
+ * @brief Take one listed entry into the level being filled, skipping what
+ *        an earlier chunk took; a file is listed but not choosable.
+ *        @return 1 when this chunk is full.
+ */
 static int
 fill_one(const tiku_model_t *m, void *ctx)
 {

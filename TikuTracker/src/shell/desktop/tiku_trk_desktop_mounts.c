@@ -76,15 +76,11 @@ save_before_unmount(dev_t dev, void *context)
 /**
  * @brief What to call a board where the namespace can see it.
  *
- * Its own name where it has one, because that is what somebody set and
- * what they will look for.  Sanitised first: this becomes a PATH
- * COMPONENT, and a board answering to "my/board" would otherwise mount
- * somewhere nobody asked for.
- *
- * The name is user-settable and therefore weak -- two boards may answer
- * to the same one -- so a clash takes a number.  What durable state keys
- * on stays the devid, not this: renaming a board must not lose the
- * arrangement of its windows.
+ * Its own name where it has one, sanitised into a path component so a
+ * board answering to "my/board" cannot mount somewhere nobody asked for.
+ * The name is user-settable and so weak: a clash takes a number, and
+ * durable state keys on the devid, not on this, so renaming a board
+ * keeps the arrangement of its windows.
  */
 static void
 device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,

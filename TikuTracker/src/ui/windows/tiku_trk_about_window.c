@@ -6,21 +6,15 @@
  * tiku_trk_about_window.c - the About box, in the R5 manner.
  *
  * The original About BeOS put the identity on the left and the facts
- * beside it.  This one keeps that shape and keeps the facts SHORT: the
- * release it is, and then only what the machine can answer for itself --
- * how many processors there are and how much memory is free.
- *
- * What is not here was taken out on purpose.  A build date, a kernel
- * string, a processor model and the name of the computer tell a person
- * nothing they can act on, and every one of them says more about the
- * host than about the system that is being asked to describe itself.
- *
- * Written as a DESCRIPTOR against the services contract, the same one a
- * third-party application gets: it paints its own surface and hands
- * frames over, asks for the ANNOUNCE role instead of a position, and
- * owns its colour cycle from its tick.  The shell only hosts it and
- * never draws it -- which is the boundary this whole panel exists to
- * demonstrate, on the one window every user will open.
+ * beside it.  This one keeps that shape and keeps the facts short: the
+ * release, then only what the machine can answer for itself, how many
+ * processors and how much memory is free.  A build date, a kernel
+ * string, a processor model and the computer's name say more about the
+ * host than about the system asked to describe itself, so they are out.
+ * Written as a descriptor against the services contract, as a
+ * third-party application is: it paints its own surface, asks for the
+ * ANNOUNCE role rather than a position, and owns its colour cycle.  The
+ * shell only hosts it, which is the boundary this panel demonstrates.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -139,6 +133,10 @@ static int about_body_w(void)
     return (need > ABOUT_W) ? need : ABOUT_W;
 }
 
+/**
+ * @brief The body's height: the taller of the two columns, plus the
+ *        two-line footer.
+ */
 static int about_body_h(void)
 {
     int facts = 171 + 3 * (tiku_font_plain()->height - 15);
@@ -215,6 +213,10 @@ read_memory(long *total_kb, long *avail_kb)
     }
 }
 
+/**
+ * @brief Paint the box: the mark and wordmark, the facts beside them, and
+ *        the footer with the licence and the build.
+ */
 static void
 paint(about_state_t *st)
 {
@@ -322,6 +324,12 @@ show(about_state_t *st)
                               st->surface->h);
 }
 
+/**
+ * @brief Open the box through the services and paint its first frame.
+ *
+ * @return 0 with @p state set, -1 when the services lack open or frame or
+ *         the window could not be made.
+ */
 static int
 about_start(void **state, const tiku_app_services_t *services)
 {
@@ -364,6 +372,7 @@ about_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
+/** @brief Close the window and free what the box held. */
 static void
 about_stop(void *state)
 {
@@ -379,6 +388,7 @@ about_stop(void *state)
     free(st);
 }
 
+/** @brief Escape asks to close; every other event is watched and ignored. */
 static int
 about_event(void *state, const tiku_event_t *event)
 {
@@ -392,6 +402,10 @@ about_event(void *state, const tiku_event_t *event)
     return 0;
 }
 
+/**
+ * @brief Refit the surface when the face changed, and advance the colour
+ *        cycle, repainting when either moved.
+ */
 static void
 about_tick(void *state, int64_t now_us)
 {

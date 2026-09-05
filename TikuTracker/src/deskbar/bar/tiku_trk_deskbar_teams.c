@@ -10,6 +10,10 @@
 
 #include "tiku_trk_deskbar_private.h"
 
+/**
+ * @brief Whether team @p a sorts before @p b: Tracker first when asked,
+ *        then by name when asked, else in arrival order.
+ */
 static int
 team_before(const tiku_trk_deskbar_t *db, int a, int b)
 {
@@ -25,6 +29,7 @@ team_before(const tiku_trk_deskbar_t *db, int a, int b)
     return a < b;
 }
 
+/** @brief Put the team order under team_before(), by insertion sort. */
 static void
 sort_teams(tiku_trk_deskbar_t *db)
 {

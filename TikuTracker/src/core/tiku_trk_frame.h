@@ -94,6 +94,7 @@ int tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
 
 /** @brief Read and write the fallback every unvisited folder starts from. */
 int tiku_trk_frame_default(tiku_store_t *s, tiku_trk_frame_t *out);
+/** @brief Write the frame every unvisited folder will start from. */
 void tiku_trk_frame_set_default(tiku_store_t *s,
                                 const tiku_trk_frame_t *f);
 
@@ -126,6 +127,10 @@ int tiku_trk_session_load(tiku_store_t *s,
 int tiku_trk_session_save_entries(tiku_store_t *s,
                                   const tiku_trk_session_entry_t *entries,
                                   int n);
+/**
+ * @brief Read the session into @p out, up to @p max entries: each a path
+ * and whether its window was minimised.  @return how many were read.
+ */
 int tiku_trk_session_load_entries(tiku_store_t *s,
                                   tiku_trk_session_entry_t *out, int max);
 

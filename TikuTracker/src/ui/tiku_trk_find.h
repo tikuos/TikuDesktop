@@ -260,13 +260,11 @@ void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q);
 /**
  * @brief Fill the panel FROM a query, for Edit query (Q-026).
  *
- * The inverse of _build, and the reason a saved query is a thing you can
- * open rather than only a thing you can run: the mode comes back, the rows
- * come back with their joins, the name text comes back out of the single
- * term a by-name query is, and a scope that names a place the panel offers
- * ticks that place.  A scope naming somewhere the panel does not offer
- * leaves it on "everywhere" rather than silently narrowing the search to
- * nothing.
+ * The inverse of _build, which is what lets a saved query be opened and
+ * not only run: the mode, the rows with their joins, and the name text
+ * of a by-name query come back.  A scope naming a place the panel
+ * offers ticks it; one naming a place it does not stays on
+ * "everywhere" rather than narrowing the search to nothing.
  *
  * @return 1 when every scope in the query was recognised.
  */
@@ -288,6 +286,7 @@ int tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out,
 /** @brief Natural height for @p width. */
 int tiku_trk_find_height(const tiku_trk_find_t *f);
 
+/** @brief The whole panel into @p frame: mode, rows, scope, buttons. */
 void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
                         tiku_rect_t frame);
 
@@ -321,6 +320,7 @@ tiku_trk_find_hit_t tiku_trk_find_click(tiku_trk_find_t *f,
 /** @brief Feed a character to whichever field has the caret. */
 void tiku_trk_find_key(tiku_trk_find_t *f, char ch);
 
+/** @brief One character off the end of the focused field. */
 void tiku_trk_find_backspace(tiku_trk_find_t *f);
 
 #endif /* TIKU_TRK_FIND_H_ */

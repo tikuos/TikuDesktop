@@ -39,6 +39,7 @@ tiku_trk_drag_target_init(tiku_trk_drag_target_t *controller,
     tiku_trk_springmenu_reset(&controller->spring);
 }
 
+/** @brief The folder window shown in @p window, or NULL. */
 static tiku_trk_folder_window_t *
 folder_for_window(tiku_trk_drag_target_t *controller,
                   tiku_window_t *window)
@@ -127,6 +128,10 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
     return changed;
 }
 
+/**
+ * @brief Scroll the target view while the drag sits at its edge.
+ *        @return 1 when it scrolled.
+ */
 static int
 auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
 {

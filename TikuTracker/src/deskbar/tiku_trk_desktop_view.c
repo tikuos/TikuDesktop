@@ -20,6 +20,7 @@
 #include "tiku_trk_deskicons.h"
 #include "tiku_volume.h"
 
+/** @brief The workspace backdrop: the Desktop folder's ground and its icons. */
 static void
 draw(tiku_surface_t *surface, void *context)
 {
@@ -123,6 +124,10 @@ tiku_trk_desktop_view_area(const tiku_trk_desktop_view_t *controller)
                            controller->screen_h);
 }
 
+/**
+ * @brief Adopt @p path as a pose on the Desktop, at the slot a watched
+ *        entry would take; a path the backend cannot stat is skipped.
+ */
 static void
 add_pose(tiku_trk_desktop_view_t *controller, const char *path)
 {
@@ -407,18 +412,6 @@ dv_dir_has_entries(const char *path)
     return any;
 }
 
-/**
- * @brief Re-ask whether the Trash is full, across every volume (AW-029).
- *
- * The listing diff only re-stats an entry whose own directory changed, and
- * a file trashed on ANOTHER volume changes nothing under the Desktop.  So
- * on the owner's slow beat the desk Trash pose is asked again -- and the
- * answer is the union over the same trash directories the union window
- * lists (PVN-027): a file trashed on a memory stick fills the desk icon
- * even while the home trash is empty.
- *
- * @return nonzero when the icon flipped and a repaint is owed.
- */
 void
 tiku_trk_desktop_view_set_top_inset(tiku_trk_desktop_view_t *controller,
                                     int inset)

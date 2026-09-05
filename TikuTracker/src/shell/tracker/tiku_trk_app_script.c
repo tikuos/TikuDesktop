@@ -150,6 +150,7 @@ script_recite(void *ctx, char *out, size_t max, int as_facts)
     return used;
 }
 
+/** @brief The window as prose, for a script's narration checks. */
 size_t
 browser_script_narrate(void *ctx, char *out, size_t max)
 {
