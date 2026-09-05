@@ -92,6 +92,12 @@ void tiku_sound_pump(void);
 /** @brief Whether a clip is still being handed out. */
 int tiku_sound_playing(void);
 
+/** @brief Whether @p event is enabled. */
+int tiku_sound_enabled(tiku_sound_event_t event);
+
+/** @brief The volume in force, 0 to 100. */
+int tiku_sound_volume(void);
+
 /** @brief How many times @p event has been raised since init. */
 unsigned tiku_sound_count(tiku_sound_event_t event);
 

@@ -49,6 +49,7 @@
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
+#include "tiku_trk_sounds_window.h"
 #include "tiku_strings.h"
 #include "tiku_volume.h"
 #include "tiku_trk_switcher.h"
@@ -370,6 +371,7 @@ typedef struct desktop {
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;   /* Deskbar   */
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
+    tiku_trk_sounds_window_t        sounds_window;          /* the moments */
     /* The settings as last pushed to the windows, so a change is applied
      * once rather than on every sync; -1 until the first. */
     int                  applied_hide_dotfiles;  /* Hide dotfiles        */

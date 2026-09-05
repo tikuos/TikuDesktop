@@ -167,11 +167,20 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         int i;
 
         out[0] = '\0';
+        /* name:count:on|off for every moment, then the volume: the
+         * count is the proof a moment happened, the flag the proof of
+         * a preference, and neither depends on a card. */
         for (i = 0; i < TIKU_SOUND_EVENTS && used < max; i++) {
-            used += (size_t)snprintf(out + used, max - used, "%s%s:%u",
+            used += (size_t)snprintf(out + used, max - used, "%s%s:%u:%s",
                                      i ? " " : "",
                                      tiku_sound_name((tiku_sound_event_t)i),
-                                     tiku_sound_count((tiku_sound_event_t)i));
+                                     tiku_sound_count((tiku_sound_event_t)i),
+                                     tiku_sound_enabled((tiku_sound_event_t)i)
+                                         ? "on" : "off");
+        }
+        if (used < max) {
+            snprintf(out + used, max - used, " volume:%d",
+                     tiku_sound_volume());
         }
         return 1;
     }

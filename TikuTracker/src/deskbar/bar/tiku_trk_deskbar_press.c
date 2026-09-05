@@ -343,6 +343,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                            TIKU_TRK_DB_ITEM_FONT_PREFS) {
                     pick->what = TIKU_TRK_DB_FONT_PREFERENCES;
                 } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_SOUND_PREFS) {
+                    pick->what = TIKU_TRK_DB_SOUND_PREFERENCES;
+                } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
                     /* A toggle is not a departure: the menu stays up
                      * with the row saying the other thing now. */

@@ -160,6 +160,19 @@ tiku_sound_pump(void)
 }
 
 int
+tiku_sound_enabled(tiku_sound_event_t event)
+{
+    return (event >= 0 && event < TIKU_SOUND_EVENTS) ? sound.enabled[event]
+                                                     : 0;
+}
+
+int
+tiku_sound_volume(void)
+{
+    return sound.volume;
+}
+
+int
 tiku_sound_playing(void)
 {
     return sound.playing != NULL;

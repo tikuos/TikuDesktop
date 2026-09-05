@@ -56,6 +56,7 @@ DESKTOP_CONTROLLERS := $(T)/src/deskbar/tiku_trk_deskbar_roster.c \
                        $(T)/src/ui/windows/tiku_trk_deskbar_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_desktop_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_fonts_window.c \
+                       $(T)/src/ui/windows/tiku_trk_sounds_window.c \
                        $(T)/src/ui/windows/tiku_trk_select_window.c \
                        $(T)/src/ui/windows/tiku_trk_switcher_window.c \
                        $(T)/src/ui/input/tiku_trk_band_controller.c \
@@ -69,6 +70,7 @@ CORE := $(T)/src/core/tiku_trk_task.c $(T)/src/core/tiku_trk_match.c \
         $(T)/src/core/tiku_trk_clip.c $(T)/src/core/tiku_trk_drag.c \
         $(T)/src/core/tiku_trk_alert.c $(T)/src/core/tiku_trk_launch.c \
         $(T)/src/core/tiku_trk_types.c $(T)/src/core/tiku_trk_prefs.c \
+        $(T)/src/core/tiku_trk_soundprefs.c \
         $(T)/src/core/tiku_trk_switcher.c $(T)/src/core/tiku_trk_frame.c \
         $(T)/src/core/tiku_trk_panel.c $(T)/src/core/tiku_trk_deskprefs.c \
         $(T)/src/core/tiku_trk_info.c $(T)/src/core/tiku_trk_repaint.c \
@@ -245,6 +247,7 @@ test_text_LDLIBS := -lm
 test_ttf_LDLIBS := -lm
 test_cff_LDLIBS := -lm
 test_fontprefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/deskbar/tiku_trk_fontprefs.c
+test_soundprefs_SRCS  := $(T)/src/core/tiku_trk_prefs.c $(T)/src/core/tiku_trk_soundprefs.c
 test_deskbar_prefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_frame_SRCS   := $(COMMON)
 test_copybits_SRCS   := $(COMMON)

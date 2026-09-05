@@ -576,6 +576,10 @@ close_window(desktop_t *app, tiku_window_t *w)
         tiku_trk_fonts_window_close(&app->fonts_window);
         return;
     }
+    if (w == tiku_trk_sounds_window_handle(&app->sounds_window)) {
+        tiku_trk_sounds_window_close(&app->sounds_window);
+        return;
+    }
     info_slot = tiku_trk_info_windows_slot(&app->info_windows, w);
     if (info_slot >= 0) {
         tiku_trk_info_windows_close(&app->info_windows, info_slot);

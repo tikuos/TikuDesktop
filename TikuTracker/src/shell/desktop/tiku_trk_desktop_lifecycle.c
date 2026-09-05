@@ -623,6 +623,11 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         tiku_trk_prefs_window_init(&app->prefs_window, app->desk,
             DESK_W, DESK_H, path, &app->dirty,
             &alert_model(app)->open);
+        tiku_trk_sounds_window_init(&app->sounds_window, app->desk,
+            prefs_model(app), path, DESK_W, DESK_H, &app->dirty);
+        /* The chime has played by now on the kit's own defaults; from
+         * here the settings file says which moments sound. */
+        tiku_trk_soundprefs_apply(prefs_model(app));
     }
     tiku_trk_folder_file_actions_init(&app->file_actions, app->fs,
         app->backend, &app->clip,
@@ -1138,6 +1143,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_deskbar_prefs_window_destroy(&app->deskbar_prefs_window);
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
+    tiku_trk_sounds_window_destroy(&app->sounds_window);
     tiku_trk_prefs_window_destroy(&app->prefs_window);
     splash_stage(app, "the Deskbar");
     tiku_trk_deskbar_free(app->deskbar);

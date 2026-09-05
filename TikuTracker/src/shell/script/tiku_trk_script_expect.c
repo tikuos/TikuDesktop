@@ -148,12 +148,16 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                 "menu:", "nothing");
         return 1;
     case OP_EXPECT_SOUND:
-    case OP_EXPECT_NO_SOUND: {
-        /* The shell's count of the moment, through the "sounds" noun: a
-         * scripted run is mute, so the count is the whole proof. */
+    case OP_EXPECT_NO_SOUND:
+    case OP_EXPECT_SOUND_ON:
+    case OP_EXPECT_SOUND_OFF: {
+        /* The shell's word on the moment, through the "sounds" noun as
+         * name:count:on|off: a scripted run is mute, so the count is the
+         * whole proof of a moment and the flag of a preference. */
         char text[2048], key[80];
-        const char *hit;
+        const char *hit, *tail = "";
         unsigned count = 0;
+        int ok;
 
         text[0] = '\0';
         if (st != NULL && st->say != NULL) {
@@ -162,11 +166,37 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         snprintf(key, sizeof key, "%s:", cur->text);
         hit = strstr(text, key);
         if (hit != NULL) {
-            count = (unsigned)strtoul(hit + strlen(key), NULL, 10);
+            char *end;
+
+            count = (unsigned)strtoul(hit + strlen(key), &end, 10);
+            tail = (*end == ':') ? end + 1 : "";
         }
-        sc_verdict(s, (cur->op == OP_EXPECT_SOUND) ? count > 0 : count == 0,
-                   (cur->op == OP_EXPECT_SOUND) ? "sounded:" : "silent:",
+        ok = (cur->op == OP_EXPECT_SOUND)     ? count > 0
+           : (cur->op == OP_EXPECT_NO_SOUND)  ? count == 0
+           : (cur->op == OP_EXPECT_SOUND_ON)  ? strncmp(tail, "on", 2) == 0
+                                              : strncmp(tail, "off", 3) == 0;
+        sc_verdict(s, ok,
+                   (cur->op == OP_EXPECT_SOUND)    ? "sounded:"
+                   : (cur->op == OP_EXPECT_NO_SOUND) ? "silent:"
+                   : (cur->op == OP_EXPECT_SOUND_ON) ? "on:" : "off:",
                    cur->text);
+        return 1;
+    }
+    case OP_EXPECT_VOLUME: {
+        char text[2048], want[32];
+        const char *hit;
+        int got = -1;
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, "sounds", text, sizeof text);
+        }
+        hit = strstr(text, "volume:");
+        if (hit != NULL) {
+            got = atoi(hit + strlen("volume:"));
+        }
+        snprintf(want, sizeof want, "%d, got %d", cur->count, got);
+        sc_verdict(s, got == cur->count, "volume:", want);
         return 1;
     }
     case OP_EXPECT_MOUNTS:
@@ -604,6 +634,15 @@ sc_parse_said(sc_step_t *st, char **w, int n)
     } else if (strcmp(w[0], "expect-no-sound") == 0 && n >= 2) {
         st->op = OP_EXPECT_NO_SOUND;
         snprintf(st->text, sizeof st->text, "%s", w[1]);
+    } else if (strcmp(w[0], "expect-sound-on") == 0 && n >= 2) {
+        st->op = OP_EXPECT_SOUND_ON;
+        snprintf(st->text, sizeof st->text, "%s", w[1]);
+    } else if (strcmp(w[0], "expect-sound-off") == 0 && n >= 2) {
+        st->op = OP_EXPECT_SOUND_OFF;
+        snprintf(st->text, sizeof st->text, "%s", w[1]);
+    } else if (strcmp(w[0], "expect-volume") == 0 && n >= 2) {
+        st->op = OP_EXPECT_VOLUME;
+        st->count = atoi(w[1]);
     } else if (strcmp(w[0], "expect-mounts") == 0 && n >= 2) {
         st->op = OP_EXPECT_MOUNTS;
         sc_rest(w, n, 1, st->text, sizeof st->text);

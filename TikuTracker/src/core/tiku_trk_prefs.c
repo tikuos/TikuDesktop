@@ -69,7 +69,18 @@ static const tiku_trk_pref_t table[] = {
     { "RecentFolders",           I, TIKU_TRK_PAGE_NONE,   10, 0, 0 },
     /* No control of their own, and still read and written so an older
      * file round-trips rather than losing them (TS-062). */
-    { "DesktopFilePanelRoot",    B, TIKU_TRK_PAGE_NONE,    1, 0, 0 }
+    { "DesktopFilePanelRoot",    B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
+    /* The moments that sound (tiku_trk_soundprefs.h): the chime, the
+     * beep and the closing sound on; the window ticks off, being many. */
+    { "sound.startup",           B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
+    { "sound.beep",              B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
+    { "sound.window-open",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
+    { "sound.window-close",      B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
+    { "sound.window-minimize",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
+    { "sound.window-zoom",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
+    { "sound.window-activate",   B, TIKU_TRK_PAGE_NONE,    0, 0, 0 },
+    { "sound.shutdown",          B, TIKU_TRK_PAGE_NONE,    1, 0, 0 },
+    { "sound.volume",            I, TIKU_TRK_PAGE_NONE,   80, 0, 0 }
 };
 
 #define NPREF ((int)(sizeof table / sizeof table[0]))

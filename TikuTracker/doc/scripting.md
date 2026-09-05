@@ -53,6 +53,10 @@ drives a shipping shell from outside.  The harness that runs them is
     expect-sound <event>                -- the moment sounded (counted; a
                                            scripted run is mute)
     expect-no-sound <event>
+    expect-sound-on <event>             -- the moment is enabled in the
+                                           Sounds preferences
+    expect-sound-off <event>
+    expect-volume <n>                   -- the volume in force, 0..100
     expect-no-menu
     note <text>                         -- what the next check is for
     quit

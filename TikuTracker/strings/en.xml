@@ -27,6 +27,7 @@
   <string name="title.deskbar_prefs">Deskbar preferences</string>
   <string name="title.desktop_prefs">TikuDesktop preferences</string>
   <string name="title.fonts">Fonts</string>
+  <string name="title.sounds">Sounds</string>
 
   <!-- The Deskbar's menu. -->
   <string name="menu.about">About this system</string>
@@ -38,6 +39,7 @@
   <string name="menu.tracker_prefs">TikuTracker preferences…</string>
   <string name="menu.desktop_prefs">TikuDesktop preferences…</string>
   <string name="menu.fonts">Fonts…</string>
+  <string name="menu.sounds">Sounds…</string>
   <string name="menu.show_replicants">Show replicants</string>
   <string name="menu.hide_replicants">Hide replicants</string>
   <string name="menu.restart">Restart system</string>
@@ -84,6 +86,19 @@
   <string name="prefs.fonts.size">Size</string>
   <string name="prefs.fonts.sample_title">TikuTracker</string>
   <string name="prefs.fonts.sample_body">Handgloves 0123456789</string>
+
+  <!-- Sounds window: the moments, in the kit's order. -->
+  <string name="prefs.sounds.event">Sound</string>
+  <string name="prefs.sounds.volume">Volume</string>
+  <string name="button.test">Test</string>
+  <string name="sound.startup">Startup chime</string>
+  <string name="sound.beep">Beep</string>
+  <string name="sound.window-open">Window opened</string>
+  <string name="sound.window-close">Window closed</string>
+  <string name="sound.window-minimize">Window minimized</string>
+  <string name="sound.window-zoom">Window zoomed</string>
+  <string name="sound.window-activate">Window activated</string>
+  <string name="sound.shutdown">Shutdown</string>
 
   <!-- File and view commands (from tiku_trk_sc_label). -->
   <string name="button.cancel">Cancel</string>

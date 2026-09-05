@@ -1,0 +1,49 @@
+# shell: desktop
+# The moments that sound are preferences: a row per moment with its
+# on/off and a Test button, and one volume under them.  A press applies
+# at once and is written to the settings file as a sound.<event> line;
+# Test sounds a moment whether or not its row is on; Revert puts back
+# what the window opened on.  A scripted run is mute, so the shell's own
+# word on each moment is the proof.
+wait 15
+key w ctrl
+wait 5
+click 980 20
+wait 4
+menu-pick Settings
+wait 4
+menu-pick Sounds
+wait 12
+expect-title Sounds
+expect-sound-on beep
+expect-sound-off window-zoom
+expect-volume 80
+note a checkbox applies at once and is saved -- there is no OK button
+click 341 205
+wait 5
+expect-sound-off beep
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.beep off
+click 341 305
+wait 5
+expect-sound-on window-zoom
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.window-zoom on
+note Test sounds a moment that is off, without turning it on
+click 632 330
+wait 5
+expect-sound window-activate
+expect-sound-off window-activate
+note the volume moves a step at a time
+click 408 391
+wait 5
+expect-volume 70
+expect-file-has /tmp/trk_home/.config/TrackerSettings sound.volume 70
+shot /tmp/trk_soundprefs.png
+note Revert puts back what the window opened on; a default is not
+note written down, so the file stops saying off rather than saying on
+click 508 431
+wait 5
+expect-sound-on beep
+expect-sound-off window-zoom
+expect-volume 80
+expect-file-lacks /tmp/trk_home/.config/TrackerSettings sound.beep off
+quit

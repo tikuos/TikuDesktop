@@ -409,22 +409,49 @@ main(int argc, char **argv)
                 verdict(strstr(text, arg) != NULL, what, text);
             }
         } else if ((strcmp(w[0], "expect-sound") == 0 ||
-                    strcmp(w[0], "expect-no-sound") == 0) && n >= 2) {
-            /* The count of a moment, from the "sounds" noun: a driven shell
-             * is mute, so the count is the whole proof. */
+                    strcmp(w[0], "expect-no-sound") == 0 ||
+                    strcmp(w[0], "expect-sound-on") == 0 ||
+                    strcmp(w[0], "expect-sound-off") == 0) && n >= 2) {
+            /* The "sounds" noun says name:count:on|off per moment: a
+             * driven shell is mute, so the count is the whole proof of
+             * a moment and the flag of a preference. */
             char key[80], what[LINE_MAX_CHARS];
-            const char *hit;
+            const char *hit, *tail = "";
             unsigned count = 0;
+            int ok;
 
             (void)ask_text(&client, "sounds", text, sizeof text);
             snprintf(key, sizeof key, "%s:", w[1]);
             hit = strstr(text, key);
             if (hit != NULL) {
-                count = (unsigned)strtoul(hit + strlen(key), NULL, 10);
+                char *end;
+
+                count = (unsigned)strtoul(hit + strlen(key), &end, 10);
+                tail = (*end == ':') ? end + 1 : "";
+            }
+            if (strcmp(w[0], "expect-sound") == 0) {
+                ok = count > 0;
+            } else if (strcmp(w[0], "expect-no-sound") == 0) {
+                ok = count == 0;
+            } else if (strcmp(w[0], "expect-sound-on") == 0) {
+                ok = strncmp(tail, "on", 2) == 0;
+            } else {
+                ok = strncmp(tail, "off", 3) == 0;
             }
             snprintf(what, sizeof what, "%s %s", w[0] + strlen("expect-"), w[1]);
-            verdict(strcmp(w[0], "expect-sound") == 0 ? count > 0 : count == 0,
-                    what, text);
+            verdict(ok, what, text);
+        } else if (strcmp(w[0], "expect-volume") == 0 && n >= 2) {
+            char what[LINE_MAX_CHARS];
+            const char *hit;
+            int got = -1;
+
+            (void)ask_text(&client, "sounds", text, sizeof text);
+            hit = strstr(text, "volume:");
+            if (hit != NULL) {
+                got = atoi(hit + strlen("volume:"));
+            }
+            snprintf(what, sizeof what, "volume %s", w[1]);
+            verdict(got == atoi(w[1]), what, text);
         } else if ((strcmp(w[0], "expect-alert") == 0 ||
                     strcmp(w[0], "expect-mounts") == 0 ||
                     strcmp(w[0], "expect-control") == 0) && n >= 2) {

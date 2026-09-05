@@ -327,6 +327,24 @@ if (ev->button == 1u &&
             return;
         }
     }
+    {
+        tiku_window_t *sounds =
+            tiku_trk_sounds_window_handle(&app->sounds_window);
+
+        if (sounds != NULL && sounds->open &&
+            !alert_model(app)->open) {
+            tiku_event_t window_event = { 0 };
+
+            window_event.type = TIKU_EVENT_POINTER_DOWN;
+            window_event.time_us = tiku_trk_now();
+            window_event.x = ev->x;
+            window_event.y = ev->y;
+            window_event.button = ev->button;
+            if (tiku_window_send(sounds, &window_event)) {
+                return;
+            }
+        }
+    }
 }
 {
     tiku_window_t *prefs_window =
@@ -2471,6 +2489,7 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
             settings_size = sst.st_size;
             (void)tiku_trk_prefs_load(prefs_model(app),
                                       app->prefs_window.path);
+            tiku_trk_soundprefs_apply(prefs_model(app));
             app->dirty = 1;
         }
     }
