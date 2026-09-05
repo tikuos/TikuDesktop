@@ -35,8 +35,13 @@
 #define REGREETS          2
 #define HEARTBEAT_MS      10000L
 
+/* A port of the channel's own that broke is opened again this often. */
+#define REOPEN_MS         1000L
+
 struct tiku_channel {
     tiku_link_t    *link;           /* the board, over its medium */
+    tiku_session_t *sess;           /* a port of its own, or NULL */
+    long            reopen_at;      /* ms, the next try after a break */
     int             desk_fd;        /* the listener's end */
     int             mine_fd;        /* fed by messages, drained to messages */
     unsigned char   out[OUT_MAX];   /* a message being gathered */
@@ -105,6 +110,71 @@ tiku_channel_open(tiku_session_t *s)
     (void)fcntl(ch->mine_fd, F_SETFL, O_NONBLOCK);
     tiku_link_on_message(link, on_message, ch);
     return ch;
+}
+
+tiku_channel_t *
+tiku_channel_open_port(const char *port, int baud)
+{
+    tiku_tx_t *tx = tiku_tx_open_serial(port, baud);
+    tiku_session_t *s;
+    tiku_channel_t *ch;
+
+    if (tx == NULL) {
+        return NULL;
+    }
+    s = tiku_session_new(tx);
+    if (s == NULL) {
+        tiku_tx_close(tx);
+        return NULL;
+    }
+    ch = tiku_channel_open(s);
+    if (ch == NULL) {
+        tiku_session_free(s);
+        return NULL;
+    }
+    ch->sess = s;
+    return ch;
+}
+
+/** @brief Read the port the channel owns; a line that broke is opened
+ *         again, once a second, until it is back. */
+static void
+poll_own(tiku_channel_t *ch)
+{
+    if (ch->sess == NULL || tiku_session_poll(ch->sess, 0) >= 0) {
+        return;
+    }
+    if (now_ms() >= ch->reopen_at) {
+        ch->reopen_at = now_ms() + REOPEN_MS;
+        (void)tiku_session_reopen(ch->sess);
+    }
+}
+
+int
+tiku_channel_probe(tiku_channel_t *ch, int timeout_ms)
+{
+    const tiku_link_serial_stats_t *st;
+    long deadline;
+
+    if (ch == NULL) {
+        return 0;
+    }
+    st = tiku_link_serial_stats(ch->link);
+    if (ch->sess == NULL || st == NULL) {
+        return 1;
+    }
+    deadline = now_ms() + timeout_ms;
+    while (now_ms() < deadline) {
+        (void)tiku_session_poll(ch->sess, 20);
+        tiku_link_pump(ch->link);
+        if (st->acked > 0) {
+            return 1;
+        }
+        if (st->faults > 0) {
+            return 0;
+        }
+    }
+    return 0;
 }
 
 void
@@ -193,6 +263,7 @@ flush(tiku_channel_t *ch)
 static void
 tend(tiku_channel_t *ch)
 {
+    poll_own(ch);
     tiku_link_pump(ch->link);
     if (tiku_link_lost(ch->link) > 0) {
         flush(ch);
@@ -296,6 +367,7 @@ tiku_channel_close(tiku_channel_t *ch)
         return;
     }
     tiku_link_close(ch->link);
+    tiku_session_free(ch->sess);
     close(ch->desk_fd);
     close(ch->mine_fd);
     free(ch);

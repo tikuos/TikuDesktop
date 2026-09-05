@@ -13,7 +13,8 @@
  * dropped, a message behind a full window waits in the socket.  The
  * board end then answers or withholds acknowledgements to prove the
  * greeting is said again, twice, while it stays silent, and afresh with
- * the backlog discarded when a window is lost.
+ * the backlog discarded when a window is lost.  Last, a channel on a port
+ * of its own finds a board that answers and lets a silent one go.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -552,8 +553,66 @@ the_loss(tiku_channel_t *ch, tiku_session_t *s, int master)
           "discarded: nothing else goes out");
 }
 
+/** @brief A channel opened on a port alone: it opens with a SYN, a board
+ *         that acknowledges it is found, its messages come through the
+ *         channel's own polling, and a port nobody answers is let go. */
+static void
+the_port(void)
+{
+    int master, slave, quiet, quiet_slave;
+    char path[64], quiet_path[64];
+    tiku_channel_t *ch;
+    unsigned char plain[64], wire[128], got[16];
+    struct parsed p;
+    size_t n, wn;
+    long t0;
+
+    printf("a port of its own\n");
+    if (openpty(&master, &slave, path, NULL, NULL) != 0 ||
+        openpty(&quiet, &quiet_slave, quiet_path, NULL, NULL) != 0) {
+        printf("  [FAIL] no pty\n");
+        fails++;
+        return;
+    }
+    close(slave);
+    close(quiet_slave);
+    rx_len = 0;
+    check(tiku_channel_open_port("/nonexistent/port", 115200) == NULL,
+          "no channel on a port that will not open");
+    ch = tiku_channel_open_port(path, 115200);
+    check(ch != NULL && tiku_channel_link(ch) != NULL,
+          "a channel opens on the port alone, a session of its own inside");
+    n = take_frame(master, 1000, plain, wire, &wn);
+    check(link_parse(plain, n, &p) == 0 && p.kind == SYN,
+          "its link opens with a SYN");
+    board_ack(master, p.seq);
+    check(tiku_channel_probe(ch, 3000) == 1,
+          "a board that acknowledges it is found");
+    board_send(master, DATA, 0, hello, sizeof hello);
+    t0 = now_ms();
+    n = 0;
+    while (n == 0 && now_ms() - t0 < 1000) {
+        (void)tiku_channel_pump(ch);
+        n = read_desk(ch, got, sizeof got, 20);
+    }
+    check(n == sizeof hello && memcmp(got, hello, sizeof hello) == 0,
+          "the pump polls the port itself: a message comes out whole");
+    tiku_channel_close(ch);
+    close(master);
+
+    ch = tiku_channel_open_port(quiet_path, 115200);
+    t0 = now_ms();
+    check(ch != NULL && tiku_channel_probe(ch, 5000) == 0 &&
+              now_ms() - t0 >= 2000 && now_ms() - t0 < 4000,
+          "a port nobody answers is given up on once the link's retries "
+          "are spent");
+    tiku_channel_close(ch);
+    close(quiet);
+}
+
 /** @brief The line, then the channel on it: text and frames apart, then
- *         the window, the greeting and the loss in turn. */
+ *         the window, the greeting and the loss in turn; then a channel
+ *         on a port of its own. */
 int
 main(void)
 {
@@ -605,6 +664,7 @@ main(void)
     tiku_channel_close(ch);
     tiku_session_free(s);
     close(master);
+    the_port();
     printf("%s\n", fails ? "FAILURES" : "one line carries both");
     return fails ? 1 : 0;
 }

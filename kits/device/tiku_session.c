@@ -487,12 +487,26 @@ tiku_session_poll(tiku_session_t *s, int timeout_ms)
 }
 
 int
-tiku_session_reconnect(tiku_session_t *s)
+tiku_session_reopen(tiku_session_t *s)
 {
     if (s == NULL || tiku_tx_reopen(s->tx) != 0) {
         return -1;
     }
     s->len = 0;
+    s->flen = 0;
+    s->armed = 0;
+    s->in_frame = 0;
+    s->esc = 0;
+    s->overflow = 0;
+    return 0;
+}
+
+int
+tiku_session_reconnect(tiku_session_t *s)
+{
+    if (tiku_session_reopen(s) != 0) {
+        return -1;
+    }
     return tiku_session_sync(s, 4000);
 }
 

@@ -155,6 +155,43 @@ channels_attach(desktop_t *app)
     }
 }
 
+/* How long a port with no prompt is given to acknowledge a link: the
+ * link's own retries take two and a half seconds to give up. */
+#define PROBE_MS 3000
+
+/** @brief Keep @p ch in a free slot, or close it when there is none. */
+static void
+channel_keep(desktop_t *app, tiku_channel_t *ch)
+{
+    int k;
+
+    for (k = 0; ch != NULL && k < TIKU_MOUNT_MAX; k++) {
+        if (app->channels[k] == NULL) {
+            app->channels[k] = ch;
+            ch = NULL;
+        }
+    }
+    tiku_channel_close(ch);     /* no slot: NULL is a no-op */
+}
+
+/**
+ * @brief A port that answers no prompt.  A board built without its shell
+ *        has no namespace to mount but still carries its window session,
+ *        so a channel is opened on the port alone and kept when a board
+ *        acknowledges its link; a port nothing answers is let go.
+ */
+static void
+windows_only(desktop_t *app, const char *port, int baud)
+{
+    tiku_channel_t *ch = tiku_channel_open_port(port, baud);
+
+    if (ch != NULL && !tiku_channel_probe(ch, PROBE_MS)) {
+        tiku_channel_close(ch);
+        return;
+    }
+    channel_keep(app, ch);
+}
+
 /**
  * @brief Put every board that answers into the namespace under /devices.
  *
@@ -163,7 +200,8 @@ channels_attach(desktop_t *app)
  * will not open is skipped rather than fatal: the others are still
  * worth showing, and the shell is not a device tool.  A board named by
  * @p port goes at @p at when that is given, so a namespace a script
- * was written against can be laid over a real board.
+ * was written against can be laid over a real board.  A port with no
+ * prompt on it may still be a board with windows: see windows_only.
  *
  * @return how many were mounted.
  */
@@ -184,6 +222,7 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         char name[64], prefix[TIKU_PATH_MAX];
 
         if (dev == NULL) {
+            windows_only(app, scan[i], baud);
             continue;
         }
         if (at != NULL && at[0] == '/' && port != NULL && port[0] != '\0') {
@@ -202,19 +241,7 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         /* The same cable carries the board's windows: a channel on the
          * console's session, adopted by the desktop's listener once that
          * exists (channels_attach). */
-        {
-            tiku_channel_t *ch =
-                tiku_channel_open(tiku_backend_tiku_session(dev));
-            int k;
-
-            for (k = 0; ch != NULL && k < TIKU_MOUNT_MAX; k++) {
-                if (app->channels[k] == NULL) {
-                    app->channels[k] = ch;
-                    ch = NULL;
-                }
-            }
-            tiku_channel_close(ch);     /* no slot: NULL is a no-op */
-        }
+        channel_keep(app, tiku_channel_open(tiku_backend_tiku_session(dev)));
         mounted++;
     }
     return mounted;

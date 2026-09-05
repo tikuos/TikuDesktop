@@ -66,6 +66,10 @@ int tiku_session_poll(tiku_session_t *s, int timeout_ms);
 /** @brief Reopen the transport and resynchronise.  0 on success. */
 int tiku_session_reconnect(tiku_session_t *s);
 
+/** @brief Reopen the transport alone, for a board with no prompt to
+ *         resynchronise on; what was half read is dropped.  0 on success. */
+int tiku_session_reopen(tiku_session_t *s);
+
 /*
  * Frames on the same line.  A board's console carries typed text and,
  * between 0xC0 delimiters after a 0xF1 marker, binary frames escaped the

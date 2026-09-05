@@ -4,11 +4,12 @@
 UART console today and a Bluetooth radio or an IP connection later, on any
 TikuOS board, without the session or the toolkit knowing which.*
 
-**Milestones 0, 1 and 2 are DONE and hardware-proven on the nRF54LM20A**
-(0–1 on 2026-09-05, 2 on 2026-09-06).  This document records what was built,
-where it lives, and how it is proven, then hands the remaining milestones
-(3–7) to the next agent.  The seven-milestone arc and its rationale are in
-`PLAN-link.md` beside this file; read its §0–§8 before starting milestone 3.
+**Milestones 0, 1, 2 and 3 are DONE and hardware-proven on the nRF54LM20A**
+(0–1 on 2026-09-05, 2–3 on 2026-09-06).  This document records what was
+built, where it lives, and how it is proven, then hands the remaining
+milestones (4–7) to the next agent.  The seven-milestone arc and its
+rationale are in `PLAN-link.md` beside this file; read its §0–§8 before
+starting milestone 4.
 
 ---
 
@@ -354,6 +355,104 @@ id as the same window, so a re-greet repaints rather than duplicates.
 
 ---
 
+## 4b. Milestone 3 — the board off the shell's back  ✅ DONE
+
+**A `TIKU_SHELL_ENABLE=0` image puts the board's window on the desk.  The
+kernel's console runs a process of its own that drains the wire while a
+channel is registered; the desktop finds a board that answers no prompt on
+its port alone and greets it.**
+
+### As built — kernel (`kernel/console/tiku_console.{h,c}`)
+- `TIKU_PROCESS(tiku_console_process, "Console")`, compiled only when
+  `!TIKU_SHELL_ENABLE` (with a shell, the shell's loop reads the wire and
+  the hooks below are no-ops).  It arms a one-shot timer of
+  `TIKU_CONSOLE_POLL_TICKS` (`TIKU_CLOCK_SECOND / 20`, the shell's own
+  cadence), and on each TIMER event re-arms it FROM NOW
+  (`tiku_timer_restart`) and calls `tiku_console_pump()`, which on an
+  RP2350 USB console is preceded by `tiku_usb_cdc_poll()` as in the shell.
+  A POLL event drains at once (the hook for an RX-interrupt wake later).
+- **Lazy start, self-ending.**  `tiku_console_add_channel()` and a non-NULL
+  `tiku_console_set_text_sink()` start the process if it is not running;
+  `remove_channel`, a NULL sink and `tiku_console_reset()` poll it, and its
+  loop ends (timer stopped, `PT_END`) once nothing listens.  So an image
+  that registers nothing — every kernel test category, the power images —
+  runs no process and arms no timer, which keeps their idle measurements
+  honest; `--gc-sections` drops the process from a build with no channel
+  registrant at all (verified: the bare LM20 kernel has no
+  `tiku_console_process`/`pump_timer` symbol).
+- `tiku_console_pumping()` reports the process's state (always 0 with a
+  shell); `tiku_console_process` is exported so a test can post to it.
+- **Why restart, not reset.**  The first cut re-armed with the drift-free
+  `tiku_timer_reset`, and the on-target test — which posts the TIMER by
+  hand because the tests run with the tick stopped — wedged the board: a
+  start advanced past a stalled clock reads as due at once under the
+  wraparound test, so the timer process re-fires it, the pump re-arms it,
+  for ever.  A pump wants drain-to-drain spacing anyway; `restart` is
+  immune.  The shell keeps `reset` (its cadence also paces jobs and rules).
+
+### As built — the desktop (`kits/device/`, `TikuTracker/src/shell/desktop/`)
+- `tiku_channel_open_port(port, baud)`: a channel that owns its transport
+  and session (`tiku_session_new` over `tiku_tx_open_serial`), for a board
+  with windows and no shell.  `tiku_channel_pump()` polls that session
+  itself (timeout 0) before tending the link, and reopens it once a second
+  after a break (`tiku_session_reopen`, new: a transport reopen with no
+  prompt sync, which `tiku_session_reconnect` now builds on).
+  `tiku_channel_close()` frees the owned session.
+- `tiku_channel_probe(ch, ms)`: pumps until the link's opening SYN is
+  acknowledged (a board is there) or the link gives its window up (nothing
+  there); a channel on a caller-owned session counts as answered.
+- `mount_devices()` in `tiku_trk_desktop_mounts.c`: a port whose
+  `tiku_backend_tiku_open()` fails (no prompt within 4 s) goes through
+  `windows_only()`: open the channel on the port alone, probe it for up to
+  3 s, keep it in a channel slot or close it.  `channels_attach()` then
+  greets it like any other.  Nothing is mounted for such a board: the forms
+  road is the shell's text and has no counterpart; the window comes up.
+  The ~6 s a shell-less board costs at boot (the prompt wait, then the
+  probe) is the price of not guessing.
+
+### Proof
+- On-target `console` C category: **37/37** (27 as before + the new
+  `Console Pump` group, `TEST_CONSOLE_PUMP`: no pump while nothing is
+  registered; the first channel starts it; its first turn arms the timer;
+  a frame waits for the tick; a hand-posted TIMER drains it and re-arms; a
+  POLL drains at once; one channel of two gone keeps it; the last gone ends
+  it with the timer off; a text sink alone keeps it; its removal ends it).
+  Run: `python3 -m tikubench run kernel --only console --board nrf54lm20a
+  --flash --port /dev/ttyACM0`.
+- Host `console-noshell` (`TikuBench/tikubench/suites/console_noshell.py`,
+  firmware mode `noshell` = `TIKU_SHELL_ENABLE=0 HAS_TESTS=0 HAS_EXAMPLES=0`
+  plus `TIKU_APPL_GUI=1 TIKU_APPL_DRAW_DEMO=1`): **7/7** — a newline draws
+  no prompt and nothing arrives unasked; a SYN on `0xF1` is acknowledged; a
+  WELCOME brings OPEN/DRAW/MENUS/SIZEABLE/DRAW back whole (host bad 0, gap
+  0); the open names `Board window`; a press redraws `Pressed 1 time`; ten
+  paced presses land (`Pressed 11 times`, 0 retransmits, 0 lost); typed
+  lines between frames draw no answer and cost no frame.  Run: `python3 -m
+  tikubench run console-noshell --board nrf54lm20a --flash --port
+  /dev/ttyACM0`.  There is no `console` command on this image, so the host
+  link's counters are the witness.
+- Desktop unit `test_channel`: the new `a port of its own` scenario (6
+  checks: a port that will not open; a channel with a session of its own;
+  its SYN; a board that acknowledges is found; the pump polls the port
+  itself and a message comes out whole; a silent port is given up on once
+  the retries are spent, 2–4 s).  `make test`, `make lint` green.
+- The desk: `TikuTracker/tests/shell/boardnoshell.script` (`# board: only`,
+  needs the shell-less image on the cable): **3/3** — two windows, the
+  board's beside the fixture's folder with nothing mounted; its title;
+  a press on the demo's button (the same `click 421 390` as
+  `boarddraw.script`, the window lands in the same place) narrates
+  `Pressed 1 time`; screenshot at `/tmp/trk_boardnoshell.png`.  Run:
+  `TRK_PORT=/dev/ttyACM0 TRK_SHELL_ONLY=boardnoshell.script sh
+  TikuTracker/tests/shell/run.sh`.
+  NOTE: the board lane of `run.sh` runs every `# board:` script against
+  whatever image is flashed, so with the shell-less image on, the shell
+  scripts (`board.script`, `boarddraw.script`) fail their mount, and with
+  the shell image on, this one finds a mount and two extra windows.  Flash
+  per script; the images are named in each script's header.
+- Cross-target: the bare LM20 kernel (no overlay) links without the pump;
+  the LM20 shell+GUI image builds with the hooks compiled to no-ops and no
+  `tiku_console_process`; MSP430 FR5994 (large model) and RP2350 with the
+  USB console (`tiku_usb_cdc_poll` path) compile.
+
 ---
 
 ## 5. File map (what changed, per repo)
@@ -419,18 +518,36 @@ Milestone 2 touched, per repo (one commit each):
   tikubench/suites/link_console.py, console.py  ported to the link
 ```
 
+Milestone 3 touched, per repo (one commit each):
+```
+~/tikuOS  (firmware) — `Console:` the pump without a shell
+  kernel/console/tiku_console.{h,c}          the Console process, POLL_TICKS,
+                                             pumping(), lazy start/self-end
+  (CLAUDE.md "Console" section, gitignored here)
+~/tikuOS/applications — `Desktop:` a board with windows and no shell
+  kits/device/tiku_channel.{h,c}             open_port, probe, owned session
+  kits/device/tiku_session.{h,c}             tiku_session_reopen
+  TikuTracker/src/shell/desktop/tiku_trk_desktop_mounts.c  windows_only
+  TikuTracker/tests/test_channel.c           the port scenario
+  TikuTracker/tests/shell/boardnoshell.script  NEW  the desk proof
+  board/README.md                            "The wire": the shell-less build
+  tikudesktopchange.md                       this section
+~/tikuOS/TikuBench — `Console:` the shell-less suite and the pump tests
+  tests/kernel/console/test_console.{c,h}    Console Pump group
+  tests/tiku_test_config.h, tests/test_runner.c  TEST_CONSOLE_PUMP
+  tikubench/runner.py                        the flag in the console category
+  tikubench/core/board.py                    firmware mode "noshell"
+  tikubench/suites/console_noshell.py        NEW  the host suite
+```
+
 ---
 
-## 6. What is LEFT — milestones 3–7
+## 6. What is LEFT — milestones 4–7
 
-The seam is in place and reliable; these build on it.  Full detail and the
-TikuBench proof per milestone are in `PLAN-link.md` §7.  The concrete
-starting points:
+The seam is in place, reliable, and stands without the shell; these build
+on it.  Full detail and the TikuBench proof per milestone are in
+`PLAN-link.md` §7.  The concrete starting points:
 
-- **M3 — the board off the shell's back.**  A small `console` protothread
-  calls `tiku_console_pump()` when the shell is not built, so a
-  `TIKU_SHELL_ENABLE=0` image still puts a window on the desk.  Proof:
-  `console_noshell.py`.
 - **M4 — the IP link.**  `tikukits/net/link/tiku_link_ip.c` over the TCP
   stack (a u32 length prefix per message; dial-out from the board first);
   desktop `tiku_link_tcp.c`.  A kit, not the kernel.  Proof: `link_ip.py`,
@@ -503,5 +620,13 @@ starting points:
   `console` 9/9; `boarddraw.script` 20/20 back-to-back on the LM20 with the
   `windows: 2` failure gone and clean board counters; `make test`/`make
   lint` green both sides; overlay byte-identity holds.  ✅
-- **Out of scope here (milestone 3+):** the shell-less `console` protothread,
-  and the IP/BLE/capability/discovery backends.  See `PLAN-link.md` §7.
+- **Milestone 3 done:** the console's own pump process in a shell-less
+  build, started by the first channel and ended by the last; the desktop
+  finds a board with no prompt on its port alone and greets it.  On-target
+  `console` 37/37; host `console-noshell` 7/7; desktop `test_channel` with
+  the port scenario, `make test`/`make lint` green; `boardnoshell.script`
+  3/3 puts the shell-less board's window on the desk and presses its
+  button from there; the bare kernel links
+  without the pump and the shell image without the process.  ✅
+- **Out of scope here (milestone 4+):** the IP/BLE/capability/discovery
+  backends.  See `PLAN-link.md` §7.

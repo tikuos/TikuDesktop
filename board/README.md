@@ -119,3 +119,13 @@ tries counts the window lost and greets the board afresh.  A SYN opens
 the desktop's stream: the board restarts its numbering when it takes
 one, so a board that has already talked to another desktop starts again
 from zero.
+
+The shell is not needed for any of this.  With `TIKU_SHELL_ENABLE=0` the
+kernel's console runs a process of its own that drains the wire while a
+channel is registered (`tiku_console_pumping()` says whether it is), and
+this library's channel is registered at boot, so the drawing road works on
+an image with no line editor.  The forms road does not: it is the shell's
+text commands.  The desktop finds such a board on its port alone, since no
+prompt answers, and keeps the channel when the link's opening SYN is
+acknowledged (`tiku_channel_open_port` and `tiku_channel_probe` in
+`kits/device/`); the window comes up, the namespace does not.

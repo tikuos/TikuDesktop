@@ -12,9 +12,9 @@
  * drained into messages the link carries to it, as fast as the link will
  * take them.  A loss the link reports discards the backlog, stale by
  * then, and greets the board afresh; a greeting it leaves unanswered for
- * two seconds is said again, twice, then only every ten seconds, so a
- * board with a link and no windows costs two spare greetings and a slow
- * retry that heals one that comes back.  The shell keeps the cable.
+ * two seconds is said again, twice, then only every ten seconds.  The
+ * shell keeps the cable, or the channel keeps a port of its own for a
+ * board built without one.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,6 +32,23 @@ typedef struct tiku_channel tiku_channel_t;
 /** @brief Open a channel on @p s: a serial link is opened over the session
  *         and its messages flow to the channel.  NULL when out of sockets. */
 tiku_channel_t *tiku_channel_open(tiku_session_t *s);
+
+/**
+ * @brief Open a channel on a port of its own, for a board with windows
+ *        and no shell: the transport and the session are the channel's,
+ *        polled from its pump, reopened after a replug, closed with it.
+ *        NULL when the port will not open.
+ */
+tiku_channel_t *tiku_channel_open_port(const char *port, int baud);
+
+/**
+ * @brief Whether a board is behind a channel opened on a port of its own:
+ *        pumps until the link's opening SYN is acknowledged, or given up
+ *        on after its retries.  @return 1 for a board that answered, 0 for
+ *        a port with nothing there; a channel on a session the caller
+ *        owns is taken as answered, since its prompt was met.
+ */
+int tiku_channel_probe(tiku_channel_t *ch, int timeout_ms);
 
 /**
  * @brief Tell the board a desktop is listening: a WELCOME carrying the
@@ -58,7 +75,8 @@ tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
  */
 int tiku_channel_pump(tiku_channel_t *ch);
 
-/** @brief Close both ends; the session stops routing frames. */
+/** @brief Close both ends; the session stops routing frames, and one the
+ *         channel owns is closed with it. */
 void tiku_channel_close(tiku_channel_t *ch);
 
 #endif /* TIKU_CHANNEL_H_ */
