@@ -104,6 +104,7 @@ if (ev->button == 1u &&
             if (tiku_trk_info_perm_toggle(info,
                     app->backend, which, perr,
                     sizeof perr) != 0) {
+                tiku_sound_play(TIKU_SOUND_BEEP);
                 tiku_alert_open(alert_model(app),
                     TIKU_ALERT_WARN,
                     TIKU_TRK_ALERT_TAG_ERROR, perr,
@@ -883,6 +884,7 @@ if (hit == TIKU_HIT_ZOOM) {
     folder_t *fl = folder_of(app, w);
 
     if (fl != NULL) {
+        tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
         (void)tiku_workspace_zoom(app->desk, w,
                                  tiku_trk_folder_window_fit_width(fl),
                                  tiku_trk_folder_window_fit_height(fl));

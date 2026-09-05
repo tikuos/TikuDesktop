@@ -20,6 +20,7 @@ browser_teardown(app_t *app, browser_loop_t *lp)
 {
     int rc = 0;
 
+    tiku_sound_free();
     tiku_host_close(app->host);
     tiku_surface_free(app->surf);
     /* Quitting waits for work already under way, up to five seconds
@@ -44,6 +45,9 @@ browser_teardown(app_t *app, browser_loop_t *lp)
 int
 browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
 {
+    tiku_sound_init((o->script_path != NULL || o->mute)
+                        ? NULL : tiku_sound_pulse_backend());
+    (void)tiku_sound_load_scores();
     if (o->use_device) {
         app->backend = tiku_backend_tiku_open(o->port, o->baud);
         if (app->backend == NULL) {
@@ -230,6 +234,7 @@ browser_parse_args(int argc, char **argv, browser_options_t *o)
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) { o->baud = atoi(argv[++i]); }
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { o->shot = argv[++i]; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { o->script_path = argv[++i]; }
+        else if (strcmp(argv[i], "-mute") == 0) { o->mute = 1; }
         else if (strcmp(argv[i], "-seconds") == 0 && i + 1 < argc) { o->deadline_us = tiku_trk_now() + (int64_t)atoi(argv[++i]) * 1000000; }
         else                                                 { o->start = argv[i]; }
     }

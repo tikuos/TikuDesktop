@@ -12,6 +12,23 @@
 
 #include "tiku_trk_desktop_private.h"
 
+/* Used before they are defined. */
+int desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command,
+                           int seeded, int seed_x, int seed_y);
+int desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_mount(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_layout(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
+                         const char *template_path,
+                         const char **template_parent, int *seeded, int *seed_x,
+                         int *seed_y);
+int desktop_cmd_destination(desktop_t *app, folder_t *fl, int command,
+                            const char **template_path);
+int desktop_cmd_query(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_system(desktop_t *app, folder_t *fl, int command);
+/* End of the forward declarations. */
+
 /** @brief The directory above @p path into @p out; "/" for the root. */
 void
 parent_path(const char *path, char *out, size_t size)
@@ -92,6 +109,7 @@ offer_broken_link(desktop_t *app, const char *path)
 {
     snprintf(app->broken_open_path, sizeof app->broken_open_path, "%s",
              path);
+    tiku_sound_play(TIKU_SOUND_BEEP);
     tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                         TIKU_TRK_ALERT_TAG_BROKEN_OPEN,
                         tiku_str("alert.msg.broken_open"),
@@ -1367,6 +1385,7 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
                          "unmounted \"%.60s\"",
                          (uvol != NULL) ? uvol->name : upath);
             } else if (uwhy[0] != '\0') {
+                tiku_sound_play(TIKU_SOUND_BEEP);
                 tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                                     TIKU_TRK_ALERT_TAG_REFUSAL, uwhy,
                                     "Cancel");
@@ -1476,6 +1495,7 @@ desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
             }
         }
         if (failed && why[0] != '\0') {
+            tiku_sound_play(TIKU_SOUND_BEEP);
             tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                                 TIKU_TRK_ALERT_TAG_REFUSAL, why, "Cancel");
         } else if (tried == 0) {
@@ -1687,6 +1707,7 @@ desktop_cmd_system(desktop_t *app, folder_t *fl, int command)
     if (command == TIKU_TRK_CMD_SHUTDOWN) {
         /* The system menu's corner ritual, by the same question the
          * Deskbar asks (DB-006). */
+        tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
                             tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));

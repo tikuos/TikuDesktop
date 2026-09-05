@@ -284,6 +284,7 @@ system_invoke(desktop_t *app, int command)
     case TIKU_TRK_CMD_SHUTDOWN:
         /* The ellipsis is a promise: Shut down… asks before anything is
          * taken down (DB-006), the same question the leaf asks. */
+        tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
                             tiku_str("alert.msg.shut_down"), tiku_str("alert.btn.shut_down"));

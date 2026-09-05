@@ -11,6 +11,12 @@
 
 #include "tiku_trk_desktop_private.h"
 
+/* Used before they are defined. */
+int deskbar_pick_clock(desktop_t *app, tiku_trk_db_pick_t *pick);
+int deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y);
+int deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick);
+/* End of the forward declarations. */
+
 /* The argv the desktop was started with, for Restart system (DB-006). */
 char **restart_argv;
 
@@ -213,6 +219,7 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
                     x - 8, y - 8, 16, 16 };
             }
             t->minimized = 1;
+            tiku_sound_play(TIKU_SOUND_WINDOW_MINIMIZE);
         }
         break;
     case TIKU_TRK_DB_CLOSE_WINDOW:
@@ -405,6 +412,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_QUIT:
         /* The ellipsis is a promise: Shut down… asks
          * before anything is taken down (DB-006). */
+        tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app),
             TIKU_ALERT_WARN,
             TIKU_TRK_ALERT_TAG_SHUTDOWN,

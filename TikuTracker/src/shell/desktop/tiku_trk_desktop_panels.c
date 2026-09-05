@@ -400,6 +400,7 @@ apply_select_model(void *context, void *target,
     if (count < 0) {
         /* A bad expression is a stop alert, closeable with Escape, and it
          * selects nothing (PVK-047). */
+        tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
                             TIKU_TRK_ALERT_TAG_REFUSAL, error, "Cancel");
         return NULL;

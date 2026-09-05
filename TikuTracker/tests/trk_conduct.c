@@ -408,6 +408,23 @@ main(int argc, char **argv)
                 snprintf(what, sizeof what, "menu offers %s", arg);
                 verdict(strstr(text, arg) != NULL, what, text);
             }
+        } else if ((strcmp(w[0], "expect-sound") == 0 ||
+                    strcmp(w[0], "expect-no-sound") == 0) && n >= 2) {
+            /* The count of a moment, from the "sounds" noun: a driven shell
+             * is mute, so the count is the whole proof. */
+            char key[80], what[LINE_MAX_CHARS];
+            const char *hit;
+            unsigned count = 0;
+
+            (void)ask_text(&client, "sounds", text, sizeof text);
+            snprintf(key, sizeof key, "%s:", w[1]);
+            hit = strstr(text, key);
+            if (hit != NULL) {
+                count = (unsigned)strtoul(hit + strlen(key), NULL, 10);
+            }
+            snprintf(what, sizeof what, "%s %s", w[0] + strlen("expect-"), w[1]);
+            verdict(strcmp(w[0], "expect-sound") == 0 ? count > 0 : count == 0,
+                    what, text);
         } else if ((strcmp(w[0], "expect-alert") == 0 ||
                     strcmp(w[0], "expect-mounts") == 0 ||
                     strcmp(w[0], "expect-control") == 0) && n >= 2) {

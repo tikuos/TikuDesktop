@@ -50,6 +50,9 @@ drives a shipping shell from outside.  The harness that runs them is
     expect-deskbar-at <x> <y>
     expect-title <substring>
     expect-menu <substring>
+    expect-sound <event>                -- the moment sounded (counted; a
+                                           scripted run is mute)
+    expect-no-sound <event>
     expect-no-menu
     note <text>                         -- what the next check is for
     quit

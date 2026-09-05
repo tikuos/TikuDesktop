@@ -400,11 +400,13 @@ def sync(fam, verbose=True):
         fwd = []
         for fn in idx2:
             tline = fn['sig'] if fn.get('oneline') else fn['sig'] - 1
-            if not lines[tline].startswith('static '):
+            static_here = lines[tline].startswith('static ')
+            # one the header already declares needs nothing here
+            if not static_here and (refs_outside(f, fn['name'], files) or fn['name'] in public):
                 continue
             before = '\n'.join(lines[:fn['start']])
             if word_in(fn['name'], before):
-                fwd.append(prototype(lines, fn, 'static '))
+                fwd.append(prototype(lines, fn, 'static ' if static_here else ''))
         inc = '#include "%s"' % fam.hdr
         if fwd:
             block = FWD_A + '\n' + '\n'.join(fwd) + '\n' + FWD_B
@@ -466,11 +468,10 @@ def forward_decls(p):
     fwd = []
     for fn in idx:
         tline = fn['sig'] if fn.get('oneline') else fn['sig'] - 1
-        if not lines[tline].startswith('static '):
-            continue
+        static_here = lines[tline].startswith('static ')
         before = '\n'.join(lines[:fn['start']])
         if word_in(fn['name'], before):
-            fwd.append(prototype(lines, fn, 'static '))
+            fwd.append(prototype(lines, fn, 'static ' if static_here else ''))
     if fwd:
         last = max(k for k, l in enumerate(lines) if l.startswith('#include'))
         lines[last + 1:last + 1] = ['', FWD_A] + fwd + [FWD_B]

@@ -162,6 +162,19 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         snprintf(out, max, "%s", alert->open ? alert->text : "");
         return 1;
     }
+    if (strcmp(name, "sounds") == 0) {
+        size_t used = 0;
+        int i;
+
+        out[0] = '\0';
+        for (i = 0; i < TIKU_SOUND_EVENTS && used < max; i++) {
+            used += (size_t)snprintf(out + used, max - used, "%s%s:%u",
+                                     i ? " " : "",
+                                     tiku_sound_name((tiku_sound_event_t)i),
+                                     tiku_sound_count((tiku_sound_event_t)i));
+        }
+        return 1;
+    }
     if (strcmp(name, "mounts") == 0) {
         /* Every mounted volume by name: as ~mounts, "a mount arrived"
          * is a push rather than a poll. */

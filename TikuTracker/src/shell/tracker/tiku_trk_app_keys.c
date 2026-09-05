@@ -10,6 +10,23 @@
 
 #include "tiku_trk_app_private.h"
 
+/* Used before they are defined. */
+int browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
+                     unsigned modifiers, unsigned mods);
+int browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
+                     unsigned modifiers, unsigned mods);
+int browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
+                     unsigned modifiers, unsigned mods);
+int browser_key_nav(app_t *a, const tiku_event_t *event, unsigned key,
+                    unsigned modifiers, unsigned mods);
+int browser_key_cmd(app_t *a, const tiku_event_t *event, unsigned key,
+                    unsigned modifiers, unsigned mods);
+int browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
+                       unsigned modifiers, unsigned mods);
+int browser_key_location(app_t *a, const tiku_event_t *event, unsigned key,
+                         unsigned modifiers, unsigned mods);
+/* End of the forward declarations. */
+
 /**
  * @brief Whether (@p px, @p py) lands on the title strip in list mode,
  *        writing the strip-relative coordinates to @p cx and @p cy when

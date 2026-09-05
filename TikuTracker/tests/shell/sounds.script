@@ -1,0 +1,19 @@
+# shell: desktop
+# open: /dev/shm
+# The moments that sound, heard through their count rather than a card:
+# the chime as the boot screen came up, a window opening, the beep of an
+# alert once one opens, and nothing for a moment that did not happen.  A
+# scripted run is mute, so this proves the moments, not the speaker.
+wait 20
+expect-sound startup
+expect-sound window-open
+expect-no-sound beep
+expect-no-sound shutdown
+note the volume shown cannot be unmounted, and the refusal is an alert
+key u ctrl
+wait 15
+expect-alert could not be unmounted
+expect-sound beep
+key Escape
+wait 3
+quit

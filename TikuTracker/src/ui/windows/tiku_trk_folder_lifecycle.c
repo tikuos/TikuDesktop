@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tiku_sound.h"
 #include "tiku_trk_folder_lifecycle.h"
 #include "tiku_trk_panel.h"
 #include "tiku_state.h"
@@ -128,6 +129,7 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
     (void)tiku_trk_poseview_save_state(folder->view);
     (void)tiku_trk_poseview_save_columns(folder->view);
     tiku_trk_folder_lifecycle_save_frame(controller, folder);
+    tiku_sound_play(TIKU_SOUND_WINDOW_CLOSE);
     tiku_workspace_close(controller->workspace, folder->win);
     /* The pixels belonged to the window that was showing.  A slot reused
      * for another folder starts from a blank frame, not from what the last
@@ -292,6 +294,7 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     }
     (*controller->count)++;
     *controller->dirty = 1;
+    tiku_sound_play(TIKU_SOUND_WINDOW_OPEN);
     return folder;
 }
 

@@ -10,6 +10,24 @@
 
 #include "tiku_trk_deskbar_private.h"
 
+/* Used before they are defined. */
+int db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                  int button, int clicks, tiku_trk_db_pick_t *pick,
+                  int secondary, int *ry);
+int db_click_apps_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                       int button, int clicks, tiku_trk_db_pick_t *pick);
+int db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                       int button, int clicks, tiku_trk_db_pick_t *pick,
+                       const tiku_font_t *f);
+int db_click_win_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                      int button, int clicks, tiku_trk_db_pick_t *pick,
+                      const tiku_font_t *f);
+int db_click_clock_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                        int button, int clicks, tiku_trk_db_pick_t *pick);
+int db_click_calendar(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
+                      int button, int clicks, tiku_trk_db_pick_t *pick);
+/* End of the forward declarations. */
+
 int
 tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                        int button, int clicks, tiku_trk_db_pick_t *pick)

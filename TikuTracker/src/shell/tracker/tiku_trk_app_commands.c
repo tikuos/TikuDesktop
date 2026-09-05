@@ -11,6 +11,14 @@
 
 #include "tiku_trk_app_private.h"
 
+/* Used before they are defined. */
+int browser_cmd_template(app_t *a, int command, const char *template_path,
+                         const char **template_parent);
+int browser_cmd_new_folder(app_t *a, int command);
+int browser_cmd_unmount(app_t *a, int command);
+int browser_cmd_mount(app_t *a, int command);
+/* End of the forward declarations. */
+
 /** @brief Save what is open on the leaving volume while it is still there
  *         to save to (AW-096). */
 static void
@@ -481,6 +489,7 @@ browser_cmd_unmount(app_t *a, int command)
                 snprintf(a->status, sizeof a->status, "unmounted \"%.60s\"",
                          (vol != NULL) ? vol->name : path);
             } else if (why[0] != '\0') {
+                tiku_sound_play(TIKU_SOUND_BEEP);
                 tiku_alert_open(
                     tiku_trk_status_overlay_alert(&a->status_overlay),
                     TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,
@@ -549,6 +558,7 @@ browser_cmd_mount(app_t *a, int command)
             }
         }
         if (failed && why[0] != '\0') {
+            tiku_sound_play(TIKU_SOUND_BEEP);
             tiku_alert_open(
                 tiku_trk_status_overlay_alert(&a->status_overlay),
                 TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_REFUSAL, why,

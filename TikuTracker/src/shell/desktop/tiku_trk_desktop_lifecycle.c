@@ -68,6 +68,7 @@ splash_stage(desktop_t *app, const char *what)
 void
 begin_shutdown(desktop_t *app)
 {
+    tiku_sound_play(TIKU_SOUND_SHUTDOWN);
     tiku_trk_splash_closing(&app->splash, tiku_trk_now());
     if (tiku_trk_splash_closed(&app->splash, tiku_trk_now())) {
         app->running = 0;
@@ -242,6 +243,7 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { o->shot = argv[++i]; }
         else if (strcmp(argv[i], "-shotmenu") == 0) { o->shot_menu = 1; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { o->script_path = argv[++i]; }
+        else if (strcmp(argv[i], "-mute") == 0) { o->mute = 1; }
         else if (strcmp(argv[i], "-conduct") == 0 && i + 1 < argc) { o->conduct_path = argv[++i]; }
         else if (strcmp(argv[i], "-conduct-tty") == 0 && i + 1 < argc) { o->conduct_tty = argv[++i]; }
         else if (strcmp(argv[i], "-conduct-token") == 0 && i + 1 < argc) { o->conduct_token = argv[++i]; }
@@ -386,8 +388,15 @@ static int
 boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
     (void)lp;
+    /* The moments sound only for a person: a scripted or conducted run
+     * counts them and keeps quiet. */
+    tiku_sound_init((o->script_path != NULL || o->conduct_path != NULL ||
+                     o->conduct_tty != NULL || o->mute)
+                        ? NULL : tiku_sound_pulse_backend());
+    (void)tiku_sound_load_scores();
     tiku_trk_splash_begin(&app->splash,
         app->host != NULL || getenv("TIKU_SPLASH") != NULL, tiku_trk_now());
+    tiku_sound_play(TIKU_SOUND_STARTUP);
     splash_stage(app, "storage");
     app->row_h = tiku_font_plain()->height + 5;
     app->desk = tiku_workspace_new(app->surf);
@@ -1107,6 +1116,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     int rc = 0;
     int i;
 
+    tiku_sound_free();
     /*
      * The way out, named as it happens.  Each line goes up before the
      * work it names, the way the boot's do, so the dwell a stage is held

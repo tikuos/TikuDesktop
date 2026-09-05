@@ -1127,6 +1127,7 @@ const tiku_trk_layout_clip_t *tiku_trk_poseview_layout_clipboard(void);
  * another rather than clipping or leaving a gap.
  */
 #define TIKU_TRK_FONT_REF 12
+/** @brief The face size in pixels the layout is scaled for; 0 is ignored. */
 void tiku_trk_poseview_set_font_size(tiku_trk_poseview_t *v, int px);
 
 /**

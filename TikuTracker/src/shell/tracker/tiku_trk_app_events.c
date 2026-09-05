@@ -11,6 +11,16 @@
 
 #include "tiku_trk_app_private.h"
 
+/* Used before they are defined. */
+int browser_press_list(app_t *app, const tiku_event_t *ev, browser_loop_t *lp);
+int browser_press_icons(app_t *app, const tiku_event_t *ev, browser_loop_t *lp);
+int browser_press_title(app_t *app, const tiku_event_t *ev, browser_loop_t *lp);
+int browser_press_scroll(app_t *app, const tiku_event_t *ev,
+                         browser_loop_t *lp);
+int browser_script_step(app_t *app, browser_loop_t *lp, tiku_event_t *ev,
+                        int *have);
+/* End of the forward declarations. */
+
 /**
  * @brief What a turn does after the events: progress, loading, the pump, the
  * shot, the frame, the deadline, and the nap.
@@ -18,6 +28,7 @@
 void
 browser_turn_end(app_t *app, const browser_options_t *o, browser_loop_t *lp)
 {
+    tiku_sound_pump();
     if (app->fs != NULL && tiku_fs_busy(app->fs)) {
         const tiku_progress_t *pr;
 

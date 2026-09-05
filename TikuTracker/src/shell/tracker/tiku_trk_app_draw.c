@@ -11,6 +11,22 @@
 
 #include "tiku_trk_app_private.h"
 
+/* Used before they are defined. */
+void browser_paint_editor(app_t *a, tiku_surface_t *s,
+                          const tiku_trk_column_t **cols, tiku_rect_t list,
+                          tiku_rect_t count);
+void browser_paint_guide(app_t *a, tiku_surface_t *s, tiku_rect_t list);
+void browser_paint_scrollbar(app_t *a, tiku_surface_t *s, tiku_rect_t list,
+                             int rows, int scroll, int total);
+void browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
+                        const tiku_trk_column_t **cols, tiku_rect_t list,
+                        int ncol, int rows, int scroll, int total);
+int browser_paint_title(app_t *a, tiku_surface_t *s,
+                        const tiku_trk_column_t **cols, tiku_rect_t list,
+                        tiku_rect_t *title, tiku_rect_t bar, int ncol,
+                        int rows);
+/* End of the forward declarations. */
+
 /**
  * @brief The barber pole: a bevelled well with a moving stripe (TS-038).
  *

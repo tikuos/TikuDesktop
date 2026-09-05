@@ -11,6 +11,20 @@
 
 #include "tiku_trk_poseview_private.h"
 
+/* Used before they are defined. */
+int pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
+                      unsigned *flags, int *at, unsigned *out);
+int pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
+                    unsigned *flags, int *at, unsigned *out);
+int pv_notify_removed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
+                      unsigned *flags, int *at, unsigned *out);
+int pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
+                      unsigned *flags, int *at, unsigned *out);
+int pv_poll_ring(tiku_trk_poseview_t *v, int64_t now,
+                 const tiku_model_change_t *ch, int nch, int complete,
+                 unsigned *flags, unsigned *out);
+/* End of the forward declarations. */
+
 /** @brief Take one pose's rectangle into the running bounding box. */
 void
 pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)

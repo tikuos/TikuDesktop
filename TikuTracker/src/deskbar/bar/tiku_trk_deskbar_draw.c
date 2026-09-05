@@ -13,6 +13,27 @@
 /* Used before they are defined. */
 static void fit_label(const tiku_font_t *f, const char *src, int budget,
                       char *out, size_t max);
+void db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                      const tiku_font_t *f, const tiku_font_t *fb,
+                      tiku_rgb_t dark);
+void db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s);
+void db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s);
+void db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s);
+void db_draw_win_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                      const tiku_font_t *f);
+void db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                       const tiku_font_t *f);
+void db_draw_clock(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                   const tiku_font_t *f, int *y);
+void db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                  const tiku_font_t *f, int *y);
+void db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                   const tiku_font_t *f, int team_h, int *y);
+void db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                  const tiku_font_t *f);
+void db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                  const tiku_font_t *fb, tiku_rgb_t dark, tiku_rect_t *leaf);
+void db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows);
 /* End of the forward declarations. */
 
 /** @brief A window's state icon: filled when shown, hollow when minimised. */

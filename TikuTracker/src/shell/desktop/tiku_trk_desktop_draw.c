@@ -12,6 +12,17 @@
 
 #include "tiku_trk_desktop_private.h"
 
+/* Used before they are defined. */
+void desktop_draw_splash(desktop_t *app);
+void desktop_draw_overlays(desktop_t *app);
+void desktop_draw_popup(desktop_t *app);
+void desktop_draw_bars(desktop_t *app);
+void desktop_draw_drag(desktop_t *app);
+void desktop_draw_strip_drag(desktop_t *app);
+void desktop_draw_info_hover(desktop_t *app);
+void desktop_draw_zoom(desktop_t *app);
+/* End of the forward declarations. */
+
 /** @brief The preferences' backdrop colour, taken as the desktop's. */
 void
 set_backdrop_color(void *context, const tiku_trk_color_t *color)
@@ -261,6 +272,7 @@ desktop_focus_paint(desktop_t *app)
 void
 desktop_idle_work(desktop_t *app)
 {
+    tiku_sound_pump();
     /* One directory of one folder-size walk per turn, so a Get Info
      * window on a deep tree fills in while the desktop keeps answering. */
     (void)tiku_trk_info_windows_calc_step(&app->info_windows);

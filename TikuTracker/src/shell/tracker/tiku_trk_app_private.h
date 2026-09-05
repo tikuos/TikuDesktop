@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "tiku_sound.h"
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_strings.h"
 #include "tiku_host.h"
@@ -156,6 +157,7 @@ typedef struct {
     int64_t     deadline_us;        /* -seconds: stop at this time, 0 never */
     const char *shot;               /* write a frame here, then stop */
     const char *script_path;
+    int         mute;               /* -mute: every moment silent */
 } browser_options_t;
 
 /* What the shell's loop keeps between one event and the next. */

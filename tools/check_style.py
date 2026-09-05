@@ -83,6 +83,9 @@ def is_doc_end(line):
     """Whether a line closes a comment that documents what follows, as
     against a banner or its label."""
     t = line.rstrip()
+    # the split tool's markers around generated declarations document nothing
+    if 'forward declarations' in t or 'Used before they are defined' in t:
+        return False
     return t.endswith('*/') and not BANNER.match(t) and not LABEL.match(t)
 DECL = re.compile(r'^    ((?:const\s+)?(?:unsigned\s+|struct\s+)?[A-Za-z_]\w*(?:\s+\*+|\s+|\s*\*+\s*))(.*);\s*$')
 

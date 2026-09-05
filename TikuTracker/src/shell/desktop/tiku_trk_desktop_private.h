@@ -28,6 +28,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "tiku_sound.h"
 #include "tiku_attr.h"
 #include "tiku_logo.h"
 #include "tiku_host.h"
@@ -430,6 +431,7 @@ typedef struct {
      * to suppress (AW-007). */
     int         safe_mode;
     const char *script_path;        /* -script: the file driving this run */
+    int         mute;               /* -mute: every moment silent */
     /* The conductor channel is OFF unless asked for by name: a shell
      * that anything reaching its socket could puppet is a shell with a
      * hole in it.  The path is given rather than derived so a harness

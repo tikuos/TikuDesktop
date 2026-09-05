@@ -167,6 +167,19 @@ browser_script_say(void *ctx, const char *noun, char *out, size_t max)
     if (noun == NULL || out == NULL) {
         return 0;
     }
+    if (strcmp(noun, "sounds") == 0) {
+        size_t used = 0;
+        int i;
+
+        out[0] = '\0';
+        for (i = 0; i < TIKU_SOUND_EVENTS && used < max; i++) {
+            used += (size_t)snprintf(out + used, max - used, "%s%s:%u",
+                                     i ? " " : "",
+                                     tiku_sound_name((tiku_sound_event_t)i),
+                                     tiku_sound_count((tiku_sound_event_t)i));
+        }
+        return 1;
+    }
     if (strcmp(noun, "mounts") == 0) {
         tiku_volumes_t vs;
         size_t used = 0u;
