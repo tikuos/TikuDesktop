@@ -25,6 +25,7 @@ LIB_TRANSPORT := $(LIB_STORAGE) $(LIB_DEVICE) $(LIB_SUPPORT)
 PROBE     := $(BUILD)/tiku-desk-probe
 GALLERY   := $(BUILD)/tiku-desk-gallery
 SOUNDS    := $(BUILD)/tiku-sound-gallery
+METRICS   := $(BUILD)/tiku-metrics-gen
 DEMOAPP   := $(BUILD)/tiku-demo-app
 RUNNER    := $(BUILD)/tiku-run
 BASICHOST := $(BUILD)/tiku-basic
@@ -71,7 +72,7 @@ $(info tiku-basic not built: no TikuOS checkout at $(TIKUOS); set TIKUOS= to nam
 endif
 
 .PHONY: apps examples loadable gallery banners probe
-apps: $(PROBE) $(GALLERY) $(SOUNDS) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
+apps: $(PROBE) $(GALLERY) $(SOUNDS) $(METRICS) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
       $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP)
 examples: $(EXAMPLES)
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(RUNNER)
@@ -81,6 +82,18 @@ $(PROBE): $(OBJ)/$(D)/samples/tiku_probe.o $(LIB_TRANSPORT) | $(BUILD)
 
 $(SOUNDS): $(OBJ)/$(D)/samples/tiku_sound_gallery.o $(LIB_MEDIA) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+$(METRICS): $(OBJ)/$(D)/samples/tiku_metrics_gen.o $(LIB_INTERFACE) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+# The board's copy of the desktop's text metrics, checked against the
+# fonts the desktop draws with.
+metrics: $(METRICS)
+	$(METRICS) > board/gui/tiku_metrics.h
+check-metrics: $(METRICS)
+	@$(METRICS) | diff -q - board/gui/tiku_metrics.h > /dev/null \
+	    && echo "check-metrics: the board's metrics match the desktop's" \
+	    || { echo "check-metrics: board/gui/tiku_metrics.h is stale; run make metrics"; exit 1; }
 
 $(GALLERY): $(OBJ)/$(D)/samples/tiku_gallery.o $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11

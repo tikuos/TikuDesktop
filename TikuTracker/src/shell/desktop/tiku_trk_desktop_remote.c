@@ -21,6 +21,18 @@ remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
     int y, w, h;
 
     (void)window;
+    if (rw != NULL && rw->list_fresh && rw->list != NULL &&
+        surface->record != NULL) {
+        /* A reader, not a screen: the window is what its list says, so
+         * the list is what is recorded, words and controls intact. */
+        int rec = tiku_gfx_rec_enter(surface);
+
+        if (rec) {
+            (void)tiku_dl_append(surface->record, rw->list);
+        }
+        tiku_gfx_rec_leave(surface, rec);
+        return;
+    }
     tiku_fill(surface, content, TIKU_C_PANEL);
     if (rw == NULL) {
         return;

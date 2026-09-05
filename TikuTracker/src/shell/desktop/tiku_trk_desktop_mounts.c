@@ -133,6 +133,28 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
     }
 }
 
+void
+channels_attach(desktop_t *app)
+{
+    int k;
+
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        tiku_channel_t *ch = app->channels[k];
+
+        if (ch == NULL) {
+            continue;
+        }
+        if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) == 0) {
+            /* A greeting, so a board that drew before anyone was
+             * listening says it all again. */
+            tiku_channel_greet(ch);
+        } else {
+            tiku_channel_close(ch);
+            app->channels[k] = NULL;
+        }
+    }
+}
+
 /**
  * @brief Put every board that answers into the namespace under /devices.
  *
@@ -176,6 +198,22 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
             tiku_backend_close(dev);
             continue;
+        }
+        /* The same cable carries the board's windows: a channel on the
+         * console's session, adopted by the desktop's listener once that
+         * exists (channels_attach). */
+        {
+            tiku_channel_t *ch =
+                tiku_channel_open(tiku_backend_tiku_session(dev));
+            int k;
+
+            for (k = 0; ch != NULL && k < TIKU_MOUNT_MAX; k++) {
+                if (app->channels[k] == NULL) {
+                    app->channels[k] = ch;
+                    ch = NULL;
+                }
+            }
+            tiku_channel_close(ch);     /* no slot: NULL is a no-op */
         }
         mounted++;
     }

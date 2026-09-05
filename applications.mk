@@ -17,10 +17,18 @@ APPL_CFLAGS :=
 # --- gui (a form the desktop draws; PLAN-gui.md) ---------------------------
 ifeq ($(TIKU_APPL_GUI),1)
 APPL_SRCS   += applications/board/gui/tiku_gui.c
+APPL_SRCS   += applications/board/gui/tiku_draw.c
 APPL_CFLAGS += -DTIKU_APPL_GUI=1 -Iapplications/board/gui
 ifeq ($(TIKU_APPL_GUI_DEMO),1)
 APPL_SRCS   += applications/board/samples/panel_demo.c
 APPL_CFLAGS += -DTIKU_APPL_GUI_DEMO=1
+endif
+ifeq ($(TIKU_APPL_DRAW_DEMO),1)
+APPL_SRCS   += applications/board/samples/draw_demo.c
+APPL_CFLAGS += -DTIKU_APPL_DRAW_DEMO=1
+endif
+ifneq ($(filter 1,$(TIKU_APPL_GUI_DEMO) $(TIKU_APPL_DRAW_DEMO)),)
+APPL_SRCS   += applications/board/samples/tiku_appl_autostart.c
 endif
 endif
 

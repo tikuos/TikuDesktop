@@ -478,6 +478,9 @@ session_message(tiku_remote_session_t *s)
                         win->fh = h;
                         win->list_fresh = 1;
                         changed = 1;
+                        tiku_dl_free(win->list);
+                        win->list = dl;
+                        dl = NULL;
                     }
                     tiku_dl_free(dl);
                 }
@@ -552,6 +555,8 @@ session_message(tiku_remote_session_t *s)
                 window_unmap(win);
                 free(win->frame);
                 win->frame = NULL;
+                tiku_dl_free(win->list);
+                win->list = NULL;
                 win->opened = 0;
                 win->has_menus = 0;
                 win->menus_fresh = 0;
@@ -848,6 +853,8 @@ tiku_remote_window_closed(tiku_remote_listener_t *listener,
     window_unmap(win);
     free(win->frame);
     win->frame = NULL;
+    tiku_dl_free(win->list);
+    win->list = NULL;
     win->window = NULL;
     win->opened = 0;
     win->has_menus = 0;

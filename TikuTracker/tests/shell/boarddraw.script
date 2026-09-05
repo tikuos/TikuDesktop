@@ -1,0 +1,22 @@
+# shell: desktop
+# mount: /devices/board1
+# board: only
+# A window of the board's own: its process opens it by title and size
+# and draws it as a list of the desktop's controls, a few hundred bytes
+# over the same console the shell uses.  A press on its button goes back
+# over that line as an event, and the process redraws the count.  This
+# needs a board on the cable, so it runs only with one.
+wait 30
+note the board's window is on the desktop, beside its form
+expect-windows 3
+click 449 256
+wait 20
+expect-title Board window
+expect-narrate Pressed 1 time
+note a second press, past the double-click interval, counts again
+wait 40
+click 430 262
+wait 20
+expect-narrate Pressed 2 times
+shot /tmp/trk_boarddraw.png
+quit

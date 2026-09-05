@@ -87,4 +87,3 @@ TIKU_PROCESS_THREAD(gui_demo_process, ev, data)
     TIKU_PROCESS_END();
 }
 
-TIKU_AUTOSTART_PROCESSES(&gui_demo_process);

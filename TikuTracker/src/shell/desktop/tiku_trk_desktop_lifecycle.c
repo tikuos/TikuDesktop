@@ -423,6 +423,7 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         /* No socket, no sessions: the desktop still stands alone. */
         app->remote.fd = -1;
     }
+    channels_attach(app);
     if (getenv("TIKU_EMBED_DEMO") != NULL) {
         /* The both-ways proof: the SAME descriptor the client runner
          * takes out of process, hosted here linked-in. */
@@ -1149,6 +1150,14 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     splash_stage(app, "the Deskbar");
     tiku_trk_deskbar_free(app->deskbar);
     splash_stage(app, "applications");
+    {
+        int k;
+
+        for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+            tiku_channel_close(app->channels[k]);
+            app->channels[k] = NULL;
+        }
+    }
     tiku_remote_shutdown(&app->remote);
     tiku_workspace_free(app->desk);
     splash_stage(app, "storage");

@@ -245,6 +245,37 @@ tiku_dl_clear(tiku_dl_t *dl)
 }
 
 int
+tiku_dl_append(tiku_dl_t *dst, const tiku_dl_t *src)
+{
+    unsigned char *p;
+
+    if (dst == NULL || src == NULL) {
+        return 0;
+    }
+    if (src->n == 0u) {
+        return 1;
+    }
+    if (dst->n + src->n > dst->cap) {
+        size_t cap = dst->cap ? dst->cap : 256u;
+
+        while (cap < dst->n + src->n) {
+            cap *= 2u;
+        }
+        p = realloc(dst->b, cap);
+        if (p == NULL) {
+            return 0;
+        }
+        dst->b = p;
+        dst->cap = cap;
+    }
+    memcpy(dst->b + dst->n, src->b, src->n);
+    dst->n += src->n;
+    dst->count += src->count;
+    dst->missed += src->missed;
+    return 1;
+}
+
+int
 tiku_dl_count(const tiku_dl_t *dl)
 {
     return (dl != NULL) ? dl->count : 0;

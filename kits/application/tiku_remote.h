@@ -172,6 +172,9 @@ typedef struct tiku_remote_window {
      * stand at whatever it drew first.
      */
     int                  list_fresh;
+    /* The list itself, kept from the last DRAW: what the window is made
+     * of, for a reader that wants words rather than pixels. */
+    struct tiku_dl      *list;
     /*
      * The geometry the shared mapping was made at.  fw/fh follow
      * whichever arrival is newest, and a list's are its own -- so the

@@ -54,6 +54,13 @@ void tiku_dl_clear(tiku_dl_t *dl);
 int tiku_dl_count(const tiku_dl_t *dl);
 
 /**
+ * @brief Add every command of @p src to the end of @p dst, misses too:
+ *        a window drawn from a list is recorded by replaying the list.
+ * @return 1 when it fit.
+ */
+int tiku_dl_append(tiku_dl_t *dst, const tiku_dl_t *src);
+
+/**
  * @brief Note that something was drawn which this cannot carry.
  *
  * A recording surface calls it for a control with no command of its own.

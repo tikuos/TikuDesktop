@@ -24,6 +24,13 @@
 #define SESSION_BUF_INIT  (16u * 1024u)
 #define SESSION_BUF_MAX   (512u * 1024u)
 
+#define FRAME_END    0xC0u
+#define FRAME_ESC    0xDBu
+#define FRAME_ESC_END 0xDCu
+#define FRAME_ESC_ESC 0xDDu
+#define FRAME_ESC_NUL 0xDEu
+#define FRAME_MARK   0xF1u
+
 struct tiku_session {
     tiku_tx_t     *tx;
     unsigned char      *buf;
@@ -31,6 +38,13 @@ struct tiku_session {
     size_t              cap;
     tiku_notify_fn notify;
     void               *notify_ctx;
+    tiku_frame_fn       frame;          /* where whole frames go, or NULL */
+    void               *frame_ctx;
+    unsigned char       fbuf[TIKU_SESSION_FRAME_MAX];
+    size_t              flen;
+    int                 armed;          /* an END was seen; next byte decides */
+    int                 in_frame;
+    int                 esc;
 };
 
 /** @brief Milliseconds on the monotonic clock. */
@@ -182,13 +196,64 @@ drain_notifies(tiku_session_t *s)
     return fired;
 }
 
-/** @brief One transport read appended to the buffer, then normalised. */
+/**
+ * @brief Sort one received byte: into a frame, or into the text.
+ *
+ * An END arms the decision and the byte after it makes it: the marker
+ * opens a frame, anything else was a stray END and the byte is text.
+ * A frame that outgrows the buffer is dropped whole.
+ */
+static void
+sort_byte(tiku_session_t *s, unsigned char b)
+{
+    if (s->in_frame) {
+        if (b == FRAME_END) {
+            if (s->frame != NULL && s->flen > 0u) {
+                s->frame(s->fbuf, s->flen, s->frame_ctx);
+            }
+            s->in_frame = 0;
+            s->armed = 1;
+            s->flen = 0;
+            s->esc = 0;
+            return;
+        }
+        if (s->esc) {
+            s->esc = 0;
+            b = (b == FRAME_ESC_END) ? FRAME_END
+              : (b == FRAME_ESC_ESC) ? FRAME_ESC
+              : (b == FRAME_ESC_NUL) ? 0u : b;
+        } else if (b == FRAME_ESC) {
+            s->esc = 1;
+            return;
+        }
+        if (s->flen < sizeof s->fbuf) {
+            s->fbuf[s->flen++] = b;
+        }
+        return;
+    }
+    if (s->armed) {
+        s->armed = 0;
+        if (b == FRAME_MARK) {
+            s->in_frame = 1;
+            s->flen = 0;
+            s->esc = 0;
+            return;
+        }
+    }
+    if (b == FRAME_END) {
+        s->armed = 1;
+        return;
+    }
+    s->buf[s->len++] = b;
+}
+
+/** @brief One transport read sorted into frames and text, then normalised. */
 static int
 pump(tiku_session_t *s, int timeout_ms, int *notified)
 {
     unsigned char chunk[4096];
     int n = tiku_tx_read(s->tx, chunk, sizeof chunk, timeout_ms);
-    int f;
+    int f, i;
 
     if (n < 0) {
         return -1;
@@ -197,8 +262,9 @@ pump(tiku_session_t *s, int timeout_ms, int *notified)
         if (buf_reserve(s, (size_t)n) != 0) {
             return -1;
         }
-        memcpy(s->buf + s->len, chunk, (size_t)n);
-        s->len += (size_t)n;
+        for (i = 0; i < n; i++) {
+            sort_byte(s, chunk[i]);
+        }
         strip_ansi(s->buf, &s->len);
     }
     f = drain_notifies(s);
@@ -239,6 +305,52 @@ tiku_session_free(tiku_session_t *s)
     tiku_tx_close(s->tx);
     free(s->buf);
     free(s);
+}
+
+void
+tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
+{
+    if (s != NULL) {
+        s->frame = fn;
+        s->frame_ctx = ctx;
+    }
+}
+
+int
+tiku_session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
+{
+    const unsigned char *p = bytes;
+    unsigned char *out;
+    size_t i, n = 0;
+    int rc;
+
+    if (s == NULL || bytes == NULL || len > TIKU_SESSION_FRAME_MAX) {
+        return -1;
+    }
+    out = malloc(2u * len + 3u);
+    if (out == NULL) {
+        return -1;
+    }
+    out[n++] = FRAME_END;
+    out[n++] = FRAME_MARK;
+    for (i = 0; i < len; i++) {
+        if (p[i] == FRAME_END) {
+            out[n++] = FRAME_ESC;
+            out[n++] = FRAME_ESC_END;
+        } else if (p[i] == FRAME_ESC) {
+            out[n++] = FRAME_ESC;
+            out[n++] = FRAME_ESC_ESC;
+        } else if (p[i] == 0u) {
+            out[n++] = FRAME_ESC;
+            out[n++] = FRAME_ESC_NUL;
+        } else {
+            out[n++] = p[i];
+        }
+    }
+    out[n++] = FRAME_END;
+    rc = tiku_tx_write(s->tx, out, n);
+    free(out);
+    return rc < 0 ? -1 : 0;
 }
 
 void

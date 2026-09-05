@@ -477,6 +477,14 @@ tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms)
     }
 }
 
+struct tiku_session *
+tiku_backend_tiku_session(tiku_backend_t *b)
+{
+    tiku_impl_t *impl = (b != NULL) ? b->impl : NULL;
+
+    return (impl != NULL) ? impl->sess : NULL;
+}
+
 int
 tiku_backend_tiku_down(const tiku_backend_t *b)
 {

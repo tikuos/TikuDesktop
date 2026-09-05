@@ -59,6 +59,7 @@
 #include "tiku_conduct.h"
 #include "tiku_trk_script.h"
 #include "tiku_mount.h"
+#include "tiku_channel.h"
 #include "tiku_tx.h"
 #include "tiku_trk_splash.h"
 #include "tiku_trk_script_api.h"
@@ -265,6 +266,8 @@ typedef struct desktop {
     /* One per mount: its gui/ node's identity, so a change record can
      * be told to be the board's, and whether its forms were opened
      * unasked once -- a panel a person closed is not put back. */
+    /* A window session per board, riding its console beside the shell. */
+    tiku_channel_t      *channels[TIKU_MOUNT_MAX];
     struct {
         char     root[TIKU_PATH_MAX];   /* the mount's prefix */
         uint64_t gui_id;                /* 0 unknown, ~0 none */
@@ -512,6 +515,11 @@ tiku_trk_described_t *panel_tracking(desktop_t *app);
  *        forms opened.  @return how many panels changed.
  */
 int panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch);
+/**
+ * @brief Adopt every board's channel into the remote listener and greet
+ *        it; called once the listener exists, after the mounts.
+ */
+void channels_attach(desktop_t *app);
 
 /** @brief Preferences remain shared data; their window owns the lifetime. */
 static inline tiku_trk_prefs_t *

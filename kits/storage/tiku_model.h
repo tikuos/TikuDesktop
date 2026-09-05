@@ -305,6 +305,8 @@ tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
 void tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms);
 /** @brief Whether a device backend's link is down, awaiting a replug. */
 int tiku_backend_tiku_down(const tiku_backend_t *b);
+/** @brief The console session under a device backend, for a channel. */
+struct tiku_session *tiku_backend_tiku_session(tiku_backend_t *b);
 
 /**
  * @brief The identity that backend bound to, or NULL if it is not one.

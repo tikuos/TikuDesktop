@@ -66,6 +66,25 @@ int tiku_session_poll(tiku_session_t *s, int timeout_ms);
 /** @brief Reopen the transport and resynchronise.  0 on success. */
 int tiku_session_reconnect(tiku_session_t *s);
 
+/*
+ * Frames on the same line.  A board's console carries typed text and,
+ * between 0xC0 delimiters after a 0xF1 marker, binary frames escaped the
+ * SLIP way; the frames are cut out of the stream before any text is
+ * looked at, so a shell and a window session share one cable.
+ */
+#define TIKU_SESSION_FRAME_MAX 4096
+
+/** @brief Called with each whole frame's unescaped bytes. */
+typedef void (*tiku_frame_fn)(const unsigned char *bytes, size_t len,
+                              void *ctx);
+
+/** @brief Route frames to @p fn; NULL drops them. */
+void tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx);
+
+/** @brief Send @p len bytes as one frame.  0 on success. */
+int tiku_session_send_frame(tiku_session_t *s, const void *bytes,
+                            size_t len);
+
 /** @brief Endpoint name, for titles and logs. */
 const char *tiku_session_name(const tiku_session_t *s);
 
