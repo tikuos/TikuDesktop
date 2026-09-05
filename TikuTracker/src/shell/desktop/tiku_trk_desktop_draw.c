@@ -272,6 +272,17 @@ desktop_focus_paint(desktop_t *app)
 void
 desktop_idle_work(desktop_t *app)
 {
+    tiku_window_t *front = tiku_workspace_focused(app->desk);
+    int windows = tiku_workspace_count(app->desk);
+
+    /* A window coming to the front is a moment, unless it came there by
+     * opening, which has already sounded. */
+    if (front != NULL && front != app->sound_focused &&
+        windows <= app->sound_windows) {
+        tiku_sound_play(TIKU_SOUND_WINDOW_ACTIVATE);
+    }
+    app->sound_focused = front;
+    app->sound_windows = windows;
     tiku_sound_pump();
     /* One directory of one folder-size walk per turn, so a Get Info
      * window on a deep tree fills in while the desktop keeps answering. */

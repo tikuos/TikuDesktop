@@ -372,6 +372,8 @@ typedef struct desktop {
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
     tiku_trk_sounds_window_t        sounds_window;          /* the moments */
+    tiku_window_t *sound_focused;   /* the front window last turn */
+    int            sound_windows;   /* how many were open last turn */
     /* The settings as last pushed to the windows, so a change is applied
      * once rather than on every sync; -1 until the first. */
     int                  applied_hide_dotfiles;  /* Hide dotfiles        */
