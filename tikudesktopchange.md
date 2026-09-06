@@ -625,6 +625,39 @@ milestone 4's listener.  There is one plan; it lives there.
 
 ---
 
+## 4e. Milestone 6 — a link's capability, enforced
+
+**The half of milestone 6 that needs no radio: what a link confers is now
+applied to what a session does over it.**  Discovery (a desktop finding
+serial, BLE and IP boards) is the other half and waits on the BLE link.
+
+The namespace already guarded nodes (`req_cap` per node,
+`tiku_vfs_caller_cap_set/get`, granted iff `(req_cap & ~caller) == 0`), and
+each link already declared what it confers (`tiku_link_cap`: the console
+`CAP_ALL`, the IP link nothing).  Nothing joined the two: a desktop across
+a network had exactly the authority of one on the cable.
+
+- `tiku_draw_set_link` records `tiku_link_cap(link)`, and `tiku_draw_cap()`
+  publishes it.  A process acting on what its window was told brackets its
+  writes with it -- the save/restore the VFS API was built for.
+- The drawing demo's Board menu lights `/dev/led0` (guarded behind
+  `CAP_HW`) that way, and says in the window which happened.
+
+Proof, the same pick over two media: **`console` 10/10** -- the cable's
+authority lets it land ("LED lit"); **`link-ip` 9/9** -- over an address
+the board refuses its own write ("LED refused").  A mutation that keeps
+full authority whatever the link carries fails exactly the check that
+guards it, with the diagnostic naming the fault.
+
+What this does NOT yet cover, and should be said plainly: no app but the
+demo writes the namespace on a session's behalf, and a remote desktop
+cannot reach a board's namespace at all yet (the forms road is the shell's
+text, which only the cable carries).  The seam is in place ahead of the
+traffic it will gate, and the bracket is the app's to apply -- a process
+that forgets it writes with whatever authority it already had.
+
+---
+
 ## 5. File map (what changed, per repo)
 
 ```
