@@ -263,15 +263,25 @@ and four tests that only ever saw a parked board now pass (the observer
 hears advertisers, the hardware window, the extended events, the LL
 groundwork).  `link-ip` still 8/8.
 
-STILL OPEN, and no longer parking anything: three failures that are their
-own bugs -- `ble-adv-basic` (a BASIC BLE word errors), and
-`ble-adv-observe` / `ble-adv-combined`, both of which read `devices=0`
-live mid-observe although the observer demonstrably hears (12 advertisers
-in `ble-adv-scan-rx`).  The live-summary path is the thread to pull:
-`observe_update_summary` reports `bg_ctx.count`, so a count stuck at zero
-while packets are delivered means the drain is not filling `bg_ctx`.
-Worth closing before Phase 1 leans on the observer, but it no longer
-blocks: a negative BLE result is now honest rather than a parked board.
+Then the rest of it, and the null store's own cause, in `Timers: The
+clock's width no longer depends on include order`.  `tiku_clock.h` fell
+back to a 16-bit time when a translation unit reached it before `tiku.h`
+(an include guard locks the first typedef in), so `struct tiku_timer` was
+**24 bytes in `tiku_ble_adv.c` and 28 in the timer subsystem**: every timer
+that file declared was four bytes short, and the timer's own stores landed
+past the end of it.  On this board those four bytes fell on the object
+following `observe_timer` in .bss -- the observer's report table -- so it
+went NULL and the drain faulted through it.  Adding any .bss to that file
+moved the damage elsewhere, which is why it read as a Heisenbug.  The
+header decides the width itself now, by the same platform test, so the
+type is identical whatever the include order; 44 files include it.
+
+`ble-adv` on the LM20 is **13/13 with no faults**, from 5/13 with 24 fault
+lines.  Regressions after the header change: `link-ip` 9/9, `console`
+10/10, `console-noshell` 7/7, on-target `console` 37/37, and MSP430 (the
+16-bit platform), Apollo4L and RP2350 all build.
+
+The bench is trustworthy: a negative BLE result is now an honest one.
 
 ### Phase 1 -- the radio interop, which is the milestone (one day)
 

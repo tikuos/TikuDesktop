@@ -606,8 +606,12 @@ fired for this device.
   against a second Nordic DK's first-window timing (`ble_serial.py`), not a
   BlueZ central's.  `PLAN-link.md` §9 has the full trace and the fix path.
 - **`ble-adv` used to leave the board hard-faulted** -- fixed 2026-09-06,
-  see `PLAN-link.md` §9 Phase 0; it is now 10/13 with no fault, and a
-  negative BLE result is honest rather than a parked board.  As it stood:
+  see `PLAN-link.md` §9 Phase 0; it is now **13/13** with no fault, and a
+  negative BLE result is honest rather than a parked board.  The cause was
+  not in the radio at all: `tiku_clock.h` gave a 16-bit time to any file
+  that reached it before `tiku.h`, so `struct tiku_timer` was four bytes
+  short there and the timer subsystem wrote past every timer that file
+  declared.  As it stood:
   `ble-adv-ll` (csa1, ackfsm) ends in `!! FAULT exc=00000003 CFSR=00008200`
   and everything after it fails against a parked board.  This predates the
   link work (nothing here touches `arch/nordic/` or
