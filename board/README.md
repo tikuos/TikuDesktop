@@ -133,6 +133,20 @@ stands and what has crossed it.  On the desk a TikuDesktop started with
 `-listen` takes in boards that dial it, greets each and shows its windows;
 `TikuTracker/tests/shell/boardnet.script` is that proven end to end.
 
+A board with a radio need not be on a network either.  With the kernel's
+BLE link built (`TIKU_LINK_BLE_ENABLE=1`, over the coprocessor radio,
+`TIKU_FLPR_ENABLE=1`) and this library's `ble` road (`TIKU_APPL_GUI_BLE=1`),
+`write /gui/desk ble` advertises as `TIKU-DESK`; a central that connects and
+subscribes to the UART Service takes the session, each message behind its
+32-bit length exactly as on a connection, and `write /gui/desk off` brings
+it back to the console.  The pipe delivers bytes whole and in order, so the
+link keeps no CRC or numbering of its own; what the pipe will not take now
+waits in the link's outbox, and a process of the link's own services the
+pipe while a link is open.  On the desk, `ble_peer` in TikuBench connects
+from the host's adapter and carries the link to a TikuDesktop started with
+`-listen`, as `tcp_peer` carries a dialled connection;
+`TikuTracker/tests/shell/boardble.script` is that end to end.
+
 The shell is not needed for any of this.  With `TIKU_SHELL_ENABLE=0` the
 kernel's console runs a process of its own that drains the wire while a
 channel is registered (`tiku_console_pumping()` says whether it is), and

@@ -130,6 +130,18 @@ for s in "$here"/*.script; do
                 continue
             fi
         fi
+        # "# board: ble" is the same shape over the air: the board is told
+        # to advertise over its console, this host's adapter is the
+        # central, and the relay carries the link to the listening desktop.
+        boardble=""
+        if grep -q '^# board: ble' "$s"; then
+            boardble=yes
+            boardonly=yes
+            if [ -z "${TRK_PORT:-}" ] ||
+               [ ! -f "$top/../TikuBench/tikubench/core/ble_peer.py" ]; then
+                continue
+            fi
+        fi
         if grep -q '^# board: only' "$s"; then
             boardonly=yes
             if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
@@ -387,6 +399,29 @@ for s in "$here"/*.script; do
                 -script "$s" || fails=$((fails+1))
             kill $relay 2>/dev/null
             wait $relay 2>/dev/null
+        fi
+        # The ble lane: the board is told to advertise, the relay connects
+        # to it from this host's adapter and carries the link to the
+        # desktop listening on TCP.  Discovery can take a while on a busy
+        # host, so the script waits before it looks.
+        if [ -n "$boardble" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, board over the air)\n' "$(basename "$s")" "$bin"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            printf 'write /gui/desk off\r\nwrite /gui/desk ble\r\n' > "$TRK_PORT"
+            PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.ble_peer \
+                --name TIKU-DESK --to 127.0.0.1:7749 --discover-wait 120 \
+                --verbose > /tmp/trk_boardble_relay.log 2>&1 &
+            relay=$!
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -listen \
+                -script "$s" || fails=$((fails+1))
+            kill $relay 2>/dev/null
+            wait $relay 2>/dev/null
+            printf 'write /gui/desk off\r\n' > "$TRK_PORT"
         fi
     done
 done

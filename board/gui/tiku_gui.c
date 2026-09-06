@@ -9,8 +9,8 @@
  */
 #include "tiku_gui.h"
 
-#if TIKU_APPL_GUI_IP
-#include "tiku_draw_ip.h"           /* the desk this board may dial */
+#if TIKU_APPL_GUI_DESK
+#include "tiku_draw_desk.h"         /* where the session may go */
 #endif
 
 #include <stdio.h>
@@ -193,8 +193,8 @@ gui_list_dir(const char *prefix, tiku_vfs_dyn_list_cb cb, void *ctx)
                 cb(entry, ctx);
             }
         }
-#if TIKU_APPL_GUI_IP
-        cb(TIKU_DRAW_IP_NODE, ctx);
+#if TIKU_APPL_GUI_DESK
+        cb(TIKU_DRAW_DESK_NODE, ctx);
 #endif
     } else {
         const char *rest;
@@ -225,9 +225,9 @@ gui_read(const char *name, char *buf, size_t max)
     tiku_gui_form_t *form;
     tiku_gui_row_t *r;
 
-#if TIKU_APPL_GUI_IP
-    if (strcmp(name, TIKU_DRAW_IP_NODE) == 0) {
-        return tiku_draw_ip_read(buf, max);
+#if TIKU_APPL_GUI_DESK
+    if (strcmp(name, TIKU_DRAW_DESK_NODE) == 0) {
+        return tiku_draw_desk_read(buf, max);
     }
 #endif
     form = locate(name, &rest);
@@ -244,7 +244,7 @@ gui_read(const char *name, char *buf, size_t max)
 /**
  * @brief Write a row: store the value here, in the shell's context, and
  *        post the row to its process, whose thread does the rest.  The
- *        desk, when this build has one, takes an address instead.
+ *        desk, when this build has one, takes a destination instead.
  */
 static int
 gui_write(const char *name, const char *buf, size_t len)
@@ -253,9 +253,9 @@ gui_write(const char *name, const char *buf, size_t len)
     tiku_gui_form_t *form;
     tiku_gui_row_t *r;
 
-#if TIKU_APPL_GUI_IP
-    if (strcmp(name, TIKU_DRAW_IP_NODE) == 0) {
-        return tiku_draw_ip_write(buf, len);
+#if TIKU_APPL_GUI_DESK
+    if (strcmp(name, TIKU_DRAW_DESK_NODE) == 0) {
+        return tiku_draw_desk_write(buf, len);
     }
 #endif
     form = locate(name, &rest);

@@ -1,0 +1,20 @@
+# shell: desktop
+# board: ble
+# The board's window over the air.  The board advertises, this host is the
+# central, and the relay carries the connection to this desktop, which is
+# listening as it does for a board that dials over IP: the drawing road
+# rides the BLE link and the forms road, which is the shell's text, does
+# not come with it.  This needs the board on the cable flashed with
+# TIKU_FLPR_ENABLE=1 TIKU_LINK_BLE_ENABLE=1 TIKU_APPL_GUI=1
+# TIKU_APPL_GUI_BLE=1 TIKU_APPL_DRAW_DEMO=1, and the harness tells it to
+# advertise and carries its link here (see run.sh's ble lane).
+wait 900
+note the board's window is on the desktop, beside the fixture's folder
+expect-windows 2
+expect-title Board window
+note the button counts: a press crosses the air and its redraw comes back
+click 421 390
+wait 60
+expect-narrate Pressed 1 time
+shot /tmp/trk_boardble.png
+quit

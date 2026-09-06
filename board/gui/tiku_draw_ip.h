@@ -16,8 +16,6 @@
 
 #include <stddef.h>
 
-/** @brief The name the desk answers to under /gui. */
-#define TIKU_DRAW_IP_NODE "desk"
 
 /**
  * @brief Dial the desktop @p value names, "a.b.c.d" or "a.b.c.d:port",

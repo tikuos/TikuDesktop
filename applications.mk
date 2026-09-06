@@ -54,6 +54,18 @@ ifeq ($(TIKU_APPL_GUI_IP),1)
 APPL_SRCS   += applications/board/gui/tiku_draw_ip.c
 APPL_CFLAGS += -DTIKU_APPL_GUI_IP=1
 endif
+# The BLE road: `write /gui/desk ble` advertises and the session rides the
+# kernel's BLE link (TIKU_LINK_BLE_ENABLE=1, which the firmware Makefile
+# compiles over the BLE serial facade); this only registers against it.
+ifeq ($(TIKU_APPL_GUI_BLE),1)
+APPL_SRCS   += applications/board/gui/tiku_draw_ble.c
+APPL_CFLAGS += -DTIKU_APPL_GUI_BLE=1
+endif
+# The desk node itself, whichever roads are built.
+ifneq ($(filter 1,$(TIKU_APPL_GUI_IP) $(TIKU_APPL_GUI_BLE)),)
+APPL_SRCS   += applications/board/gui/tiku_draw_desk.c
+APPL_CFLAGS += -DTIKU_APPL_GUI_DESK=1
+endif
 ifneq ($(filter 1,$(TIKU_APPL_GUI_DEMO) $(TIKU_APPL_DRAW_DEMO)),)
 APPL_SRCS   += applications/board/samples/tiku_appl_autostart.c
 endif
