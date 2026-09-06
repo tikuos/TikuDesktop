@@ -203,4 +203,21 @@ void tiku_draw_init(void);
  */
 void tiku_draw_set_link(struct tiku_link *link);
 
+/**
+ * @brief What the link carrying the session confers: a TIKU_VFS_CAP_*
+ *        mask, as the medium's backend declares it.
+ *
+ * The cable confers everything; an address confers nothing until the
+ * desk at the other end is weighed.  A process acting on what a window
+ * was told holds its writes to this, so a window shown over the air
+ * cannot do what one on the cable can:
+ *
+ * @code
+ * uint8_t prev = tiku_vfs_caller_cap_set(tiku_draw_cap());
+ * rc = tiku_vfs_write("/dev/led0", "1", 1u);
+ * (void)tiku_vfs_caller_cap_set(prev);
+ * @endcode
+ */
+uint8_t tiku_draw_cap(void);
+
 #endif /* TIKU_DRAW_H_ */

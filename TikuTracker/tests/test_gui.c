@@ -192,6 +192,14 @@ tiku_link_on_recv(tiku_link_t *l, tiku_link_recv_fn fn, void *ctx)
     link_ctx = ctx;
 }
 
+/* The stub stands in for the console's link, which confers everything. */
+uint8_t
+tiku_link_cap(const tiku_link_t *l)
+{
+    (void)l;
+    return 0xFFu;
+}
+
 int
 tiku_link_send2(tiku_link_t *l, const void *head, size_t hlen,
                 const void *body, size_t blen)

@@ -26,6 +26,8 @@
 #include "tiku_ui.h"
 #include "tiku_layout.h"
 
+#include <kernel/vfs/tiku_vfs.h>    /* the guarded write a menu pick makes */
+
 #include <stdio.h>
 #include <string.h>
 
@@ -39,6 +41,10 @@ static tiku_list_t rows;
 static tiku_slider_t level;
 static tiku_field_t name;
 static int presses, editing;
+/* What the last "Light the LED" pick did: the window says so, since the
+ * point of it is that the same pick is refused over a link that confers
+ * less than the cable does. */
+static const char *lamp = "";
 
 static const char *const row_names[] = {
     "Temperature", "Humidity", "Pressure", "Light", "Sound"
@@ -53,7 +59,28 @@ static const char *const menus_text =
     "item 2 - Up\n"
     "item 3 - Down\n"
     "menu Edit\n"
-    "item 4 c Copy the name\n";
+    "item 4 c Copy the name\n"
+    "menu Board\n"
+    "item 5 - Light the LED\n";
+
+/**
+ * @brief Actuate a board LED on behalf of the desk that asked.
+ *
+ * The write is held to what the session's link confers, so the same pick
+ * that lights the lamp over the cable is refused over a link that carries
+ * no authority.  The window says which happened.
+ */
+static void
+light_the_led(void)
+{
+    uint8_t prev = tiku_vfs_caller_cap_set(tiku_draw_cap());
+    int rc = tiku_vfs_write("/dev/led0", "1", 1u);
+
+    (void)tiku_vfs_caller_cap_set(prev);
+    lamp = (rc == TIKU_VFS_EPERM) ? ", LED refused"
+         : (rc < 0)               ? ", LED failed"
+                                  : ", LED lit";
+}
 
 /**
  * @brief The layout: a stack of rows down the window, said as weights
@@ -124,8 +151,8 @@ paint(void)
     tiku_ui_textfield(&surface, place(3), name.text, editing ? name.caret : -1,
                       editing ? TIKU_S_FOCUS : 0u);
     tiku_ui_button(&surface, place(4), "Count", 0u);
-    snprintf(line, sizeof line, "Pressed %d time%s, level %d", presses,
-             presses == 1 ? "" : "s", level.value);
+    snprintf(line, sizeof line, "Pressed %d time%s, level %d%s", presses,
+             presses == 1 ? "" : "s", level.value, lamp);
     {
         tiku_rect_t brow = button_row();
 
@@ -255,6 +282,7 @@ TIKU_PROCESS_THREAD(draw_demo_process, ev, data)
                 case 2: (void)tiku_slider_step(&level, 1); break;
                 case 3: (void)tiku_slider_step(&level, -1); break;
                 case 4: tiku_draw_clipboard(name.text); break;
+                case 5: light_the_led(); break;
                 case 9: presses = 0; break;
                 default: break;
                 }

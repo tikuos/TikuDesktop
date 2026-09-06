@@ -45,6 +45,7 @@
 static tiku_link_console_t session_link;
 static tiku_link_t *link;           /* the one the session rides now */
 static tiku_link_t *console_link;   /* the cable, always open under it */
+static uint8_t      session_cap;    /* what that link confers */
 static unsigned char frame_buf[TIKU_LINK_CONSOLE_SESSION_MTU +
                                TIKU_LINK_CONSOLE_OVERHEAD];
 
@@ -698,7 +699,14 @@ tiku_draw_init(void)
                                           TIKU_LINK_CONSOLE_SESSION,
                                           frame_buf, sizeof frame_buf);
     link = console_link;
+    session_cap = tiku_link_cap(link);
     tiku_link_on_recv(link, on_frame, NULL);
+}
+
+uint8_t
+tiku_draw_cap(void)
+{
+    return session_cap;
 }
 
 void
@@ -712,6 +720,7 @@ tiku_draw_set_link(struct tiku_link *l)
     }
     tiku_link_on_recv(link, NULL, NULL);
     link = l;
+    session_cap = tiku_link_cap(link);
     tiku_link_on_recv(link, on_frame, NULL);
     /* The new desktop has heard nothing: the hello and the windows wait
      * for its greeting, as they do at boot. */
