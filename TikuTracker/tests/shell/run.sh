@@ -133,6 +133,18 @@ for s in "$here"/*.script; do
         # "# board: ble" is the same shape over the air: the board is told
         # to advertise over its console, this host's adapter is the
         # central, and the relay carries the link to the listening desktop.
+        # "# board: both" is two boards over two media at once: the one on
+        # TRK_PORT is mounted from its cable, the one on TRK_PORT2 dials in
+        # over IP through the relay, and the desktop holds both.
+        boardboth=""
+        if grep -q '^# board: both' "$s"; then
+            boardboth=yes
+            boardonly=yes
+            if [ -z "${TRK_PORT:-}" ] || [ -z "${TRK_PORT2:-}" ] ||
+               [ ! -f "$top/../TikuBench/tikubench/core/tcp_peer.py" ]; then
+                continue
+            fi
+        fi
         boardble=""
         if grep -q '^# board: ble' "$s"; then
             boardble=yes
@@ -395,6 +407,27 @@ for s in "$here"/*.script; do
                 TIKU_APPS="$appsdir" \
                 TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
+                -listen \
+                -script "$s" || fails=$((fails+1))
+            kill $relay 2>/dev/null
+            wait $relay 2>/dev/null
+        fi
+        # The both lane: the cable board mounted and listened to on its
+        # port, the second board dialling in through the relay from its own.
+        if [ -n "$boardboth" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, board on %s + board dialling from %s)\n' \
+                "$(basename "$s")" "$bin" "$TRK_PORT" "$TRK_PORT2"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.tcp_peer \
+                --port "$TRK_PORT2" --to 127.0.0.1:7749 --arm --dial-wait 30 \
+                > /tmp/trk_boardboth_relay.log 2>&1 &
+            relay=$!
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -devices -p "$TRK_PORT" ${mountat:+-mount "$mountat"} \
                 -listen \
                 -script "$s" || fails=$((fails+1))
             kill $relay 2>/dev/null

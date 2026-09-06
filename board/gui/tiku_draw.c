@@ -706,6 +706,9 @@ tiku_draw_init(void)
 uint8_t
 tiku_draw_cap(void)
 {
+    /* Read live: a link over the air confers more once its central has
+     * paired, which happens after the link was set. */
+    session_cap = tiku_link_cap(link);
     return session_cap;
 }
 

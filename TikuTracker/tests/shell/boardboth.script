@@ -1,0 +1,18 @@
+# shell: desktop
+# board: both
+# Two boards on one desk over two media at once: the board on the cable is
+# mounted and its window rides the console link, and a second board dials
+# this desktop over IP, its connection carried here by the relay from its
+# own port.  The desktop listens for the second while it holds the first;
+# each window comes up on the desk beside the fixture's folder, and the
+# forms road (the shell's text) comes with the cable board only.  This
+# needs the cable board flashed with TIKU_APPL_GUI=1 TIKU_APPL_DRAW_DEMO=1
+# and the dialling board with TIKU_KIT_NET_ENABLE=1
+# TIKU_KITS_NET_LINK_IP_ENABLE=1 TIKU_APPL_GUI=1 TIKU_APPL_GUI_IP=1
+# TIKU_APPL_DRAW_DEMO=1 (see run.sh's both lane).
+wait 400
+note two boards' windows are on the desktop, beside the fixture's folder
+expect-windows 3
+expect-title Board window
+shot /tmp/trk_boardboth.png
+quit

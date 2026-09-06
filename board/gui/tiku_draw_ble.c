@@ -16,6 +16,8 @@
 
 #include <kernel/link/tiku_link_ble.h>
 #include <kernel/link/tiku_link_console.h>
+#include <kernel/vfs/tiku_vfs.h>
+#include <interfaces/bluetooth/tiku_ble_serial.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -66,18 +68,26 @@ int
 tiku_draw_ble_read(char *buf, size_t max)
 {
     static const char *const where[] = { "advertising", "up" };
+    static const char *const trust[] = { "none", "pairing", "paired",
+                                         "secured" };
     const tiku_link_ble_stats_t *st;
     uint8_t state;
+    int sec;
 
     if (desk_link == NULL) {
         return snprintf(buf, max, "off\n");
     }
     state = tiku_link_ble_state(&desk);
     st = tiku_link_ble_stats(&desk);
+    sec = tiku_ble_serial_secure_state();
     return snprintf(buf, max,
-                    "ble %s %s rx %lu tx %lu drops %lu oversize %lu "
-                    "refused %lu stalled %lu\n",
+                    "ble %s %s %s cap %s %s rx %lu tx %lu drops %lu "
+                    "oversize %lu refused %lu stalled %lu\n",
                     TIKU_DRAW_BLE_NAME, where[(state <= 1u) ? state : 0u],
+                    tiku_ble_serial_connected() ? "held" : "free",
+                    (tiku_link_cap(desk_link) & TIKU_VFS_CAP_HW) ? "hw"
+                                                                 : "none",
+                    trust[(sec >= 0 && sec <= 3) ? sec : 0],
                     (unsigned long)st->rx, (unsigned long)st->tx,
                     (unsigned long)st->drops, (unsigned long)st->oversize,
                     (unsigned long)st->refused, (unsigned long)st->stalled);
