@@ -171,7 +171,7 @@ suites.
 | **4** | The IP link | `tikukits/net/link/tiku_link_ip.c`; desktop `tiku_link_tcp.c` | the Pico W shows its window over WiFi, no cable; `boardnet.script` | `link_ip.py`: the host listens, the board dials, messages cross whole; reuses the net suite's WiFi bring-up |
 | **5** | The BLE link (plan in §9) | `kernel/link/tiku_link_ble.c` over `tiku_ble_serial`, with fragmentation; a BLE relay on the desk, as IP's | the LM20 shows its window over BLE, no cable; `boardble.script` | `link_ble.py` on the D-Bus helpers of `ble_adv.py`: the board advertises, a central subscribes, a message larger than one notification reassembles at the negotiated MTU; a two-board variant as `ble_serial.py` does for boards without a host radio |
 | **6** | Discovery and capability (capability DONE) | the mount path finds serial, BLE and IP boards; each link's capability enforced on VFS writes and SAY/TELL | one desktop shows three boards over three media at once; an unpaired BLE link's write to `/gui` is refused | `link_cap.py`: a write over an unpaired link refused, the same write after pairing accepted |
-| **7** | Portability proof | every board builds its backends behind its capability macros; the matrix documented | forms and drawing demos build for MSP430 (console), LM20 (console + BLE), Pico W (console + IP) and each reaches the desk over its best link | the three images built in CI; the board lanes above run per board |
+| **7** | Portability proof (builds DONE) | every board builds its backends behind its capability macros; the matrix documented | forms and drawing demos build for MSP430 (console), LM20 (console + BLE), Pico W (console + IP) and each reaches the desk over its best link | the three images built in CI; the board lanes above run per board |
 
 Costs: 0 and 1 a day each; 2 two days (the acks and the fault injector
 are the work); 3 half a day; 4 two days; 5 three days; 6 and 7 a day
@@ -357,3 +357,35 @@ central becomes an optional follow-up rather than a prerequisite.
 
 Three to four days, of which Phase 1 carries all the risk.  The first act
 of the next session is the `btmon` trace.
+
+## 10. Milestone 7, the build half
+
+Every supported board builds the window session behind its capability
+macros (2026-09-06).  What is left of milestone 7 is the hardware half:
+each board reaching a desk over its best link, which needs the boards.
+
+| board | link | session symbols | IP link |
+|---|---|---|---|
+| msp430fr5994 (large model) | console | 29 | -- |
+| nrf54lm20a | console | 29 | -- |
+| nrf54lm20a | console + IP | 32 | 3 |
+| nrf54lm20a, no overlay | -- | **0** | 0 |
+| rp2350 | console + IP | 32 | 3 |
+| apollo4l | console + IP | 32 | 3 |
+| apollo510 | console + IP | 32 | 3 |
+| ra8p1 | console + IP | 32 | 3 |
+
+The no-overlay row is the overlay contract: a build without
+`applications/` carries none of the session's symbols.
+
+The RA8P1 needed `Net: Support for the RA8P1 in the stack's arch branches`
+in `tikukits`: the slip, ipv4, dns and http files each pick an arch header
+per platform and had no RA8P1 arm, so asking for the net stack there did
+not compile.  That is a net-kit gap the IP link surfaced, not a link one;
+the console road built there already.  The other four platforms build the
+net stack as before.
+
+Proven on hardware so far, all on the nRF54LM20A: the console link
+(milestones 0-3), the IP link (milestone 4), and a link's capability
+(milestone 6's half).  A second board of each kind is what the rest of
+this milestone needs.
