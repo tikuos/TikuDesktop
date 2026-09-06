@@ -558,6 +558,71 @@ nothing else, since TCP delivers whole and in order.**
 
 ---
 
+## 4d. Milestone 5 — the BLE link: what the ground looks like
+
+Not started as code.  A session of survey and bring-up on the bench
+established where it stands, so the next one does not repeat it.
+
+### The seam is already there, and it is not the one the plan named
+`PLAN-link.md` §4 says to add a GATT service API to
+`tikukits/net/bluetooth/tiku_bt.c`.  On the LM20 that is the wrong stack:
+`tiku_bt.c` is the EM9305 host (Apollo510 Blue).  The Nordic radio's own
+facade is **`interfaces/bluetooth/tiku_ble_serial.h`** -- a byte pipe over
+the Nordic UART Service layout, with exactly what a link backend needs:
+`_start(name)`, `_ready()` (connected AND subscribed), `_service()` (pump),
+`_send()` (flow-controlled), `_rx_ready()`/`_recv()`.  A BLE link should sit
+on THAT, not on a second GATT service invented beside it.  It is a kernel
+interface, not a kit, so a backend over it breaks no rule about the kernel
+reaching into `tikukits/`.
+
+On Nordic the facade needs `TIKU_FLPR_ENABLE=1`: the FLPR (the VPR RISC-V
+coprocessor) is the BLE controller, and the M33 talks to it over the
+mailbox.  The RISC-V toolchain is present
+(`temp/toolchains/xpack-riscv-none-elf-gcc-15.2.0-1`), and
+`make MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_FLPR_ENABLE=1` builds.
+
+### The host end
+This machine has an adapter (`hci0`, BlueZ, service active) and
+`python3-dbus`.  TikuBench already drives BlueZ over D-Bus --
+`tikubench/suites/ble_adv.py:_discover()` polls `GetManagedObjects`, and its
+`_reset_host_adapter()` documents two measured false negatives (a stale
+cached name, and a scan path that degrades until the adapter is power
+cycled).  Reuse those; the same file's note says bleak's callbacks never
+fired for this device.
+
+### What is proven, and what blocks
+- The radio works and this host hears it: `ble-adv` decodes the board's
+  beacons over the air (`host decoded 'TIKU-18FA' ...`).
+- `bleadv serial <secs>` runs a NUS echo through the facade, named
+  `TIKU-CONN`, and a **freshly flashed** board IS seen by BlueZ
+  (`found TIKU-CONN at /org/bluez/hci0/dev_F9_38_16_D8_16_0D`).
+- **Connecting establishes but does not hold** (Phase 1 diagnostic,
+  2026-09-06).  When BlueZ connects, the FLPR captures the CONNECT_IND --
+  `conn_state` reaches 1 -- so it is not a discovery problem.  Within
+  ~300 ms `Connect()` returns `le-connection-abort-by-local` and the board
+  falls back to advertising: the link is captured at the link layer but
+  the peripheral does not answer the central's first data-channel events,
+  so the host tears it down before ATT.  The FLPR hold loop was tuned
+  against a second Nordic DK's first-window timing (`ble_serial.py`), not a
+  BlueZ central's.  `PLAN-link.md` §9 has the full trace and the fix path.
+- **`ble-adv` leaves the board hard-faulted.**  On the LM20 it is 5/11:
+  `ble-adv-ll` (csa1, ackfsm) ends in `!! FAULT exc=00000003 CFSR=00008200`
+  and everything after it fails against a parked board.  This predates the
+  link work (nothing here touches `arch/nordic/` or
+  `interfaces/bluetooth/`), but it POISONS any BLE session that follows:
+  reflash before believing a negative discovery result.
+- A second Nordic DK, which the plan's two-board variant wants, was not on
+  the bench.
+
+### The plan
+`PLAN-link.md` §9 is the milestone's plan, written from this survey: the
+bench made trustworthy first, the radio interop answered with a `btmon`
+trace before any link code, then the link on the IP link's contract, the
+suite on the D-Bus helpers, and the desk leg through a relay into
+milestone 4's listener.  There is one plan; it lives there.
+
+---
+
 ## 5. File map (what changed, per repo)
 
 ```
@@ -691,11 +756,8 @@ concrete starting points:
   a radio instead of SLIP, is the demo the plan asks for; it needs the
   board on the bench and the CYW43 firmware blobs, which are licence-gated
   and not in the tree.
-- **M5 — the BLE link.**  A GATT "TikuLink" service in
-  `tikukits/net/bluetooth/tiku_bt.c` (add `tiku_bt_gatt_add_service` /
-  `_notify`); `tiku_link_ble.c` fragments a message across notifies to the
-  ATT MTU; desktop BLE central via BlueZ.  Proof: `link_ble.py` extending
-  `ble_gatt.py`.
+- **M5 — the BLE link.**  Planned in `PLAN-link.md` §9 from the survey
+  in §4d above; start with the `btmon` trace.
 - **M6 — discovery and capability.**  The mount path finds serial, BLE and
   IP boards; each link's `cap` is enforced on VFS writes and SAY/TELL (an
   unpaired BLE link's write to `/gui` is refused).  The console link is

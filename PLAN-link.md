@@ -114,15 +114,19 @@ console's faults are answered, invisibly above:
   already offers `connect`/`listen` with `recv_cb`/`event_cb`; a u32
   length prefix per message; gated on `TIKU_KITS_NET_ENABLE`.  Dial-out
   from the board to a known desktop address first; mDNS if wanted later.
-- `tiku_link_ble.c` -- over a GATT service (below); fragments a message
-  across writes/notifies to the ATT MTU and reassembles; gated on the
-  BLE driver macro.
+- `tiku_link_ble.c` -- over the byte pipe the radio already exposes
+  (below); fragments a message to the pipe's maximum and reassembles.
 
-**EXTEND `tikukits/net/bluetooth/tiku_bt.c`** with a service API it
-lacks: `tiku_bt_gatt_add_service(service_uuid, write_uuid, notify_uuid,
-on_write_cb)`, `tiku_bt_gatt_notify(conn, char, data, len)`, and the
-service UUID in the advertisement.  A "TikuLink" service: one write
-characteristic host-to-board, one notify characteristic board-to-host.
+**RIDE `interfaces/bluetooth/tiku_ble_serial.h`**, not a new GATT service.
+The first draft of this section had the BLE backend add a "TikuLink"
+service to `tikukits/net/bluetooth/tiku_bt.c`; that is the EM9305 host
+stack (Apollo510 Blue), and on the Nordic parts the radio's own facade is
+already a flow-controlled byte pipe over the Nordic UART Service layout --
+start, ready (connected and subscribed), service, send, recv.  A link
+backend over it is the same shape as the IP link's, and the facade is a
+kernel interface, so the backend may live in `kernel/link/` beside the
+console's without the kernel reaching into a kit.  Section 9 has the
+milestone's plan as surveyed on the bench.
 
 ## 5. What a link may do
 
@@ -138,9 +142,11 @@ window shown over the air cannot do more than its link is allowed to.
 
 - NEW `kits/device/tiku_link.h` -- the desktop's mirror of the contract.
 - NEW `tiku_link_serial.c` (the console channelization over `tiku_tx`,
-  with the CRC, the acks, the pacing and the re-greet), `tiku_link_tcp.c`
-  (a socket), `tiku_link_ble.c` (a BLE central via BlueZ, scanning the
-  TikuLink service UUID).
+  with the CRC, the acks, the pacing and the re-greet) and
+  `tiku_link_tcp.c` (a socket a board dialled, behind `-listen`).  BLE
+  reaches the desktop through that same listener by way of a relay on the
+  host (section 9), so no `tiku_link_ble.c` is needed here; a native
+  BlueZ central is an optional follow-up.
 - `tiku_channel.c` adopts a `tiku_link_t` rather than pairing a serial
   session with a socketpair; serial becomes one link of three.
 - `tiku_session.c` loses its copy of the frame codec: framing is the
@@ -163,7 +169,7 @@ suites.
 | **2** | The console link made reliable | CRC-16, drop-as-a-unit, ack + pacing window, desktop re-greet on loss | `boarddraw.script` passes 20 runs of 20 back-to-back; the "windows: 2" failure is gone | `link_fault.py`: the suite corrupts, truncates and drops frames on purpose (a host-side fault injector in the serial link) and proves each is dropped whole, counted, and recovered by a re-greet; flood test proves the ack window holds |
 | **3** | The board off the shell's back | the `console` protothread pumps when the shell is not built | a `TIKU_SHELL_ENABLE=0` build puts the board's window on the desk | `console_noshell.py`: the shell-less image answers a greeting with its window |
 | **4** | The IP link | `tikukits/net/link/tiku_link_ip.c`; desktop `tiku_link_tcp.c` | the Pico W shows its window over WiFi, no cable; `boardnet.script` | `link_ip.py`: the host listens, the board dials, messages cross whole; reuses the net suite's WiFi bring-up |
-| **5** | The BLE link | the GATT service API in `tiku_bt.c`; `tiku_link_ble.c` with MTU fragmentation; desktop BLE central | the LM20 shows its window over BLE, no cable; `boardble.script` | `link_ble.py`: extends `ble_gatt.py` -- the service advertises, a central subscribes, a 265-byte message crosses in three notifications and reassembles; a two-board variant as `ble_serial.py` does for boards without a host radio |
+| **5** | The BLE link (plan in §9) | `kernel/link/tiku_link_ble.c` over `tiku_ble_serial`, with fragmentation; a BLE relay on the desk, as IP's | the LM20 shows its window over BLE, no cable; `boardble.script` | `link_ble.py` on the D-Bus helpers of `ble_adv.py`: the board advertises, a central subscribes, a message larger than one notification reassembles at the negotiated MTU; a two-board variant as `ble_serial.py` does for boards without a host radio |
 | **6** | Discovery and capability | the mount path finds serial, BLE and IP boards; each link's capability enforced on VFS writes and SAY/TELL | one desktop shows three boards over three media at once; an unpaired BLE link's write to `/gui` is refused | `link_cap.py`: a write over an unpaired link refused, the same write after pairing accepted |
 | **7** | Portability proof | every board builds its backends behind its capability macros; the matrix documented | forms and drawing demos build for MSP430 (console), LM20 (console + BLE), Pico W (console + IP) and each reaches the desk over its best link | the three images built in CI; the board lanes above run per board |
 
@@ -183,3 +189,142 @@ each.  Ten to eleven days.
   first draft); CRC-16 and a small ack window on the console rather than
   a heavier reliable-stream protocol; dial-out first for IP; GATT before
   L2CAP for BLE.
+
+## 9. Milestone 5, planned from the ground
+
+Milestones 0 to 4 are built and proven (their record is in
+`tikudesktopchange.md`).  A session of survey and bring-up on the bench
+found where milestone 5 stands, and this is the plan that follows from it.
+Everything above the link -- `tiku_draw_set_link`, the channel, the greet
+policy, the desktop's listener -- is medium-agnostic already and needs
+nothing; what the milestone has to earn is the radio.
+
+### What the survey established
+
+- The seam exists: `interfaces/bluetooth/tiku_ble_serial.h` (section 4).
+  On Nordic it needs `TIKU_FLPR_ENABLE=1`, since the FLPR RISC-V
+  coprocessor is the BLE controller; the toolchain is present and the
+  build works.
+- The host end exists: `hci0`, BlueZ, `python3-dbus`, and TikuBench already
+  drives BlueZ over D-Bus (`suites/ble_adv.py`: `_discover`,
+  `_reset_host_adapter`).  bleak's callbacks never fire for this device;
+  use the D-Bus helpers.
+- The radio works and this host hears it: `ble-adv` decodes the board's
+  beacons over the air, and a freshly flashed board running `bleadv serial`
+  is discovered by BlueZ as `TIKU-CONN`.
+- The unknown, now traced (Phase 1 done, 2026-09-06): `btmon` needs root
+  here, so the board's own `conn_state` is the trace.  When BlueZ connects
+  to `bleadv serial`, the FLPR DOES capture the CONNECT_IND -- `conn_state`
+  reaches 1 (connected), so it is not an advertising or discovery problem.
+  Within ~300 ms `Device1.Connect()` returns
+  `org.bluez.Error.Failed: le-connection-abort-by-local` and the board
+  returns to `conn_state` 0 (the facade's auto-reconnect).  The link is
+  ESTABLISHED at the link-layer capture but not HELD: the peripheral is not
+  answering the central's first data-channel events in time, so the host
+  adapter tears the connection down before ATT.  The facade has only ever
+  been proven against a second Nordic DK as the central (`ble_serial.py`),
+  whose first-window timing the FLPR was tuned against; a BlueZ central
+  uses its own interval and WinOffset (the reference central is 30 ms /
+  12.5 ms window, `CEN_INTERVAL`/`CEN_WINSIZE` in `tiku_radio_arch.c`).
+  The first suspect is the FLPR's first-event anchor + re-acquire window
+  (`flpr_conn_hold` in `arch/nordic/flpr/tiku_flpr_main.c`, `ARX_WIN_*`):
+  if it misses the central's first packets it burns ~30 events and the
+  central's supervision expires.
+- The trap, now diagnosed: `ble-adv` is 5/11 on the LM20 and the later
+  tests report a hard fault -- but `addr2line` on the suite's own image
+  puts the faulting PC in `scan_cb` / `tiku_radio_arch_scan_service`
+  (`interfaces/bluetooth/tiku_ble_adv.c`, `arch/nordic/tiku_radio_arch.c`),
+  NOT in `csa1`/`ackfsm`.  Those two are pure array logic; they only PRINT
+  the already-parked banner.  The lead: `scan_cb` trusts the on-air LENGTH
+  byte (`p->buf[1]`, up to 255) and parses the name at `buf[9]` for
+  `len - 6` bytes out of a 48-byte ring packet (`radio_scan_pkt.buf[48]`),
+  and the ISR `memcpy(..., 3u + n)` into that same 48-byte buffer can
+  overrun when a DLE / combined session raises MAXLEN.  A bounds clamp
+  there is Phase 0's likely fix.  Until it is fixed, reflash before
+  believing any negative BLE result.
+
+### Phase 0 -- make the bench trustworthy (half a day)
+
+The fault is in the scan path, not `csa1`/`ackfsm` (see the trap above).
+Clamp `scan_cb`'s trust in the on-air LENGTH to what the ring packet
+actually holds, and clamp the ISR's `3u + n` copy to `sizeof buf`; then
+re-run `ble-adv` and confirm it no longer parks.  Have the runner treat a
+`!! FAULT` line as "reflash before the next category" rather than running
+later tests against a parked board.  Nothing in this milestone can be
+believed before this is closed -- a parked board reads as "device not
+found" and sends Phase 1 chasing a ghost.
+
+### Phase 1 -- the radio interop, which is the milestone (one day)
+
+This is where the risk is; no link code is written before it is answered.
+The diagnostic ran (2026-09-06): the FLPR captures the CONNECT_IND but the
+link is torn down before ATT (see "the unknown" above).  What remains is
+the fix, and it needs one of two things this bench lacked:
+
+- `btmon` with root beside a connect attempt, to read the host adapter's
+  own reason code (failed-to-establish vs supervision-timeout point at
+  different fixes) -- this run had no root, so only the board's
+  `conn_state` was visible.
+- The nRF54L15-DK from the lab on the bench, running `ble_serial.py`: the
+  proven central.  If the peripheral holds a link to it but not to BlueZ,
+  the gap is first-window / connection-parameter tuning; if it holds
+  neither, the FLPR hold loop itself regressed.
+- Fix what the reason shows.  Most likely, per the trace: the FLPR's
+  first-event anchor missing a BlueZ central's WinOffset, so the tuning in
+  `flpr_conn_hold` widens its first re-acquire to cover a foreign
+  central's window.  Then an LL feature / version exchange BlueZ sends
+  that the controller must answer; then connection parameters it proposes.
+- Exit: a host probe passes end to end -- BlueZ connects, services
+  resolve, both UART Service characteristics are found, a subscribe and a
+  write produce an echoed notification.  DECISION POINT: if the L15 shows
+  the FLPR link layer itself cannot hold a foreign central, ride the
+  two-board variant (a second DK as the central, as `ble_serial.py`) and
+  the host-radio path becomes a later follow-up.
+
+### Phase 2 -- the link (one day)
+
+`kernel/link/tiku_link_ble.c` over the facade, the IP link's contract
+again: a 32-bit length in front, a message queued whole or refused whole,
+an outbox that waits for the pipe rather than tearing the stream, and the
+size a board sends kept apart from the size it takes.  One thing is new:
+the pipe must be serviced and no process on the board does that today, so
+the link gets a timer process on the console pump's pattern -- started by
+the first open, ended by the last close, so an image with no BLE link arms
+no timer.  Prove the framing on a host harness against a stubbed facade,
+with mutation checks, before it meets the radio.
+
+`/gui/desk` gains one word: `write /gui/desk ble` starts advertising and
+moves the session, `off` returns it to the console.
+
+### Phase 3 -- the suite (half a day)
+
+`link_ble.py`, on the D-Bus helpers `ble_adv.py` already has: the board
+writes `ble` to its desk; the host discovers, connects, subscribes, and
+speaks the session as length-framed bytes over UART Service writes; the
+greeting brings the window back whole; a message larger than one
+notification reassembles -- read the negotiated ATT MTU rather than assume
+how many fragments that takes; presses redraw; `off` hangs up.  No root:
+BlueZ's connect, subscribe and write are unprivileged.
+
+### Phase 4 -- the desk (one day)
+
+Not a BLE central inside TikuDesktop.  Milestone 4's listener already takes
+any connection; a relay on the host, `ble_peer --to 127.0.0.1:7749`,
+carries the BLE connection to it exactly as `tcp_peer` carries the IP one.
+The desktop then shows a board's window over BLE with no new code,
+`boardble.script` is `boardnet.script` with the other relay, and a native
+central becomes an optional follow-up rather than a prerequisite.
+
+### Done when
+
+- `link_ble.py` green on the LM20 with BlueZ as the central, as a normal
+  user.
+- `boardble.script` puts the board's window on the desk over BLE and a
+  press crosses.
+- The framing harness passes and its mutations fail.
+- `ble-adv` no longer parks the board.
+- `tikudesktopchange.md` §4d records it done; the board README's wire
+  section gains the BLE paragraph.
+
+Three to four days, of which Phase 1 carries all the risk.  The first act
+of the next session is the `btmon` trace.
