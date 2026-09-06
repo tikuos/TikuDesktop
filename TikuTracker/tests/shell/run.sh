@@ -117,6 +117,19 @@ for s in "$here"/*.script; do
         # not at all when no board is on the cable.
         board=""
         boardonly=""
+        boardnet=""
+        # "# board: net" is for a board that DIALS this desktop instead of
+        # being found on a port: the desktop listens, and the relay carries
+        # the board's connection here from the cable.  It needs TikuBench
+        # beside this repo for the relay, and is skipped without it.
+        if grep -q '^# board: net' "$s"; then
+            boardnet=yes
+            boardonly=yes          # the net lane is its only lane
+            if [ -z "${TRK_PORT:-}" ] ||
+               [ ! -f "$top/../TikuBench/tikubench/core/tcp_peer.py" ]; then
+                continue
+            fi
+        fi
         if grep -q '^# board: only' "$s"; then
             boardonly=yes
             if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
@@ -354,6 +367,26 @@ for s in "$here"/*.script; do
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" -mount "$mountat" \
                 -script "$s" || fails=$((fails+1))
+        fi
+        # The net lane: the desktop LISTENS, the board dials, and the
+        # relay joins the two.  The board is told to dial once the
+        # desktop is up, so the connection it makes finds a listener.
+        if [ -n "$boardnet" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, board dialling in)\n' "$(basename "$s")" "$bin"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.tcp_peer \
+                --port "$TRK_PORT" --to 127.0.0.1:7749 --arm --dial-wait 30 \
+                > /tmp/trk_boardnet_relay.log 2>&1 &
+            relay=$!
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -listen \
+                -script "$s" || fails=$((fails+1))
+            kill $relay 2>/dev/null
+            wait $relay 2>/dev/null
         fi
     done
 done

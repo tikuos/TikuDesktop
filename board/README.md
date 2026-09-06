@@ -129,7 +129,9 @@ at boot, and `write /gui/desk off` brings the session back to the console.
 Inside the connection a message is its 32-bit length and its bytes: TCP
 delivers them whole and in order, so nothing of the console link's CRC,
 numbering or pacing is needed.  Reading `/gui/desk` says where the link
-stands and what has crossed it.
+stands and what has crossed it.  On the desk a TikuDesktop started with
+`-listen` takes in boards that dial it, greets each and shows its windows;
+`TikuTracker/tests/shell/boardnet.script` is that proven end to end.
 
 The shell is not needed for any of this.  With `TIKU_SHELL_ENABLE=0` the
 kernel's console runs a process of its own that drains the wire while a

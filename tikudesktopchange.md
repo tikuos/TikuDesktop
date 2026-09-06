@@ -4,11 +4,11 @@
 UART console today and a Bluetooth radio or an IP connection later, on any
 TikuOS board, without the session or the toolkit knowing which.*
 
-**Milestones 0 to 3 are DONE and hardware-proven on the nRF54LM20A**
-(0–1 on 2026-09-05, 2–3 on 2026-09-06), and **milestone 4's link is built
-and proven** on the same board, with its desk leg and its radio leg still
-open (§4c).  This document records what was built, where it lives, and how
-it is proven, then hands the rest to the next agent.  The seven-milestone
+**Milestones 0 to 4 are DONE and hardware-proven on the nRF54LM20A**
+(0–1 on 2026-09-05, 2–4 on 2026-09-06), but for milestone 4's radio leg:
+the Pico W over WiFi, which needs a board this bench did not have (§4c).
+This document records what was built, where it lives, and how it is
+proven, then hands the rest to the next agent.  The seven-milestone
 arc and its rationale are in `PLAN-link.md` beside this file; read its
 §0–§8 before carrying on.
 
@@ -456,7 +456,7 @@ its port alone and greets it.**
 
 ---
 
-## 4c. Milestone 4 — the IP link  ✅ the link, ⏳ the desk and the radio
+## 4c. Milestone 4 — the IP link  ✅ the link and the desk, ⏳ the radio
 
 **A board with an address dials a desktop and the window session rides the
 connection.  A kit, not the kernel; a length in front of each message and
@@ -536,12 +536,25 @@ nothing else, since TCP delivers whole and in order.**
   stubbed transport, 17/17, with mutation checks — delivering before a
   message is whole, dropping the oversize skip, or letting a stalled chunk
   through each fails exactly the asserts that guard them.
-- **Not yet done: the desk leg.**  A real TikuDesktop showing a board's
-  window over IP needs the board's packets routed to the host, which is
-  the TUN gateway and therefore root: `sudo python3 -m tikubench ...` or a
-  `boardnet.script` run under a gateway.  Everything under it is proven;
-  what is unproven is `-listen` against a live board rather than a
-  loopback socket.
+- The desk: `TikuTracker/tests/shell/boardnet.script` (`# board: net`):
+  **3/3**, three runs back to back — the board's window is on the desk
+  beside the fixture's folder, its title is right, and a press crosses the
+  connection and redraws (`Pressed 1 time`); screenshot at
+  `/tmp/trk_boardnet.png`.  Run: `TRK_PORT=/dev/ttyACM0
+  TRK_SHELL_ONLY=boardnet.script sh TikuTracker/tests/shell/run.sh`.
+  **No root here either.**  The desktop LISTENS (`-listen`) and the board
+  dials; between them run.sh's net lane starts the relay
+  (`python3 -m tikubench.core.tcp_peer --arm`), which ends the board's TCP
+  in userspace and passes what it carries, byte for byte, to a real
+  connection to the desktop.  Neither end knows: the desktop accepts a
+  socket, the board talks to an address.  The relay arms the board (its
+  net stack up, the address written to its desk) and stops it at the end,
+  so the board is left on the console it started on.
+- **Not yet done: the radio leg.**  The Pico W showing its window over
+  WiFi with no cable is the same kit dialling over a radio instead of
+  SLIP.  The RP2350 image builds with the link (and the WiFi build needs
+  the CYW43 firmware blobs, which are licence-gated and absent here), but
+  no Pico W was on the bench to run it.
 
 ---
 
@@ -654,6 +667,17 @@ Milestone 4 touched, per repo (one commit each):
   tikubench/suites/link_ip.py                NEW  the suite
 ```
 
+The desk leg, after it (one commit per repo):
+```
+~/tikuOS/TikuBench — `Link:` the relay
+  tikubench/core/tcp_peer.py                 the board's MSS, raw mode,
+                                             the relay and its arming
+~/tikuOS/applications — `Desktop:` the desk over an address
+  TikuTracker/tests/shell/boardnet.script    NEW  the desk proof
+  TikuTracker/tests/shell/run.sh             the net lane
+  tikudesktopchange.md                       this section
+```
+
 ---
 
 ## 6. What is LEFT — milestones 5–7
@@ -663,10 +687,10 @@ session over an address as well as a cable; these build on it.  Full detail
 and the TikuBench proof per milestone are in `PLAN-link.md` §7.  The
 concrete starting points:
 
-- **M4's remainder.**  A live desktop over IP (the `-listen` leg against a
-  real board) needs the TUN gateway and root; and the Pico W over WiFi,
-  where the same kit dials over a radio instead of SLIP, is the demo the
-  plan asks for.
+- **M4's remainder.**  The Pico W over WiFi, where the same kit dials over
+  a radio instead of SLIP, is the demo the plan asks for; it needs the
+  board on the bench and the CYW43 firmware blobs, which are licence-gated
+  and not in the tree.
 - **M5 — the BLE link.**  A GATT "TikuLink" service in
   `tikukits/net/bluetooth/tiku_bt.c` (add `tiku_bt_gatt_add_service` /
   `_notify`); `tiku_link_ble.c` fragments a message across notifies to the
@@ -749,9 +773,12 @@ concrete starting points:
   desktop can listen for boards that dial in.  Host `link-ip` 8/8 (no
   root), desktop `test_link_tcp` 18/18, the kit's framing 17/17 on a host
   harness with mutation checks; `make test`/`make lint` green.  ✅
-- **Milestone 4, what the plan still asks for:** a live TikuDesktop showing
-  a board's window over IP (the `-listen` leg, which needs the TUN gateway
-  and root) and the Pico W over WiFi with no cable, which is the same kit
-  dialling over a radio.  ⏳
+- **Milestone 4, the desk:** a live TikuDesktop listening, a board
+  dialling into it, and its window on the desk with a press crossing and
+  redrawing -- `boardnet.script` 3/3, three runs back to back, with the
+  relay joining the two and no root anywhere.  ✅
+- **Milestone 4, what the plan still asks for:** the Pico W over WiFi with
+  no cable, which is the same kit dialling over a radio.  The RP2350 image
+  builds with the link; no Pico W was on the bench.  ⏳
 - **Out of scope here (milestone 5+):** the BLE/capability/discovery
   backends.  See `PLAN-link.md` §7.
