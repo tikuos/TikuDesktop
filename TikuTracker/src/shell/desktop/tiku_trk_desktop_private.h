@@ -268,6 +268,7 @@ typedef struct desktop {
      * unasked once -- a panel a person closed is not put back. */
     /* A window session per board, riding its console beside the shell. */
     tiku_channel_t      *channels[TIKU_MOUNT_MAX];
+    int                  board_listen;  /* -listen's socket, or -1/0 for none */
     struct {
         char     root[TIKU_PATH_MAX];   /* the mount's prefix */
         uint64_t gui_id;                /* 0 unknown, ~0 none */
@@ -452,6 +453,7 @@ extern char **restart_argv;
 /* What the command line asked for. */
 typedef struct {
     int         want_devices;       /* -devices: every board under /devices */
+    int         listen_port;        /* -listen: boards that dial in, or 0 */
     const char *port;               /* -p: one board's port, else a scan */
     int         baud;               /* -b: the port's baud, 115200 unless */
     int         use_device;         /* -d, or -p alone: the board is root */
@@ -694,6 +696,15 @@ void begin_shutdown(desktop_t *app);
 
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
+/**
+ * @brief Listen on @p port for boards that dial in rather than being found
+ *        on a cable.  @return 1 when the socket is up.
+ */
+int boards_listen(desktop_t *app, int port);
+/** @brief Take in every board that dialled since the last turn. */
+void boards_accept(desktop_t *app);
+/** @brief Stop listening; the channels taken in are not touched. */
+void boards_unlisten(desktop_t *app);
 void desktop_device_pump(desktop_t *app);
 void desktop_notice_pump(desktop_t *app, desktop_loop_t *lp);
 void desktop_sweep(desktop_t *app, desktop_loop_t *lp);

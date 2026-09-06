@@ -4,12 +4,13 @@
 UART console today and a Bluetooth radio or an IP connection later, on any
 TikuOS board, without the session or the toolkit knowing which.*
 
-**Milestones 0, 1, 2 and 3 are DONE and hardware-proven on the nRF54LM20A**
-(0–1 on 2026-09-05, 2–3 on 2026-09-06).  This document records what was
-built, where it lives, and how it is proven, then hands the remaining
-milestones (4–7) to the next agent.  The seven-milestone arc and its
-rationale are in `PLAN-link.md` beside this file; read its §0–§8 before
-starting milestone 4.
+**Milestones 0 to 3 are DONE and hardware-proven on the nRF54LM20A**
+(0–1 on 2026-09-05, 2–3 on 2026-09-06), and **milestone 4's link is built
+and proven** on the same board, with its desk leg and its radio leg still
+open (§4c).  This document records what was built, where it lives, and how
+it is proven, then hands the rest to the next agent.  The seven-milestone
+arc and its rationale are in `PLAN-link.md` beside this file; read its
+§0–§8 before carrying on.
 
 ---
 
@@ -455,6 +456,95 @@ its port alone and greets it.**
 
 ---
 
+## 4c. Milestone 4 — the IP link  ✅ the link, ⏳ the desk and the radio
+
+**A board with an address dials a desktop and the window session rides the
+connection.  A kit, not the kernel; a length in front of each message and
+nothing else, since TCP delivers whole and in order.**
+
+### As built — the kit (`tikukits/net/link/tiku_kits_net_link_ip.{h,c}`)
+- `tiku_kits_net_link_ip_open(l, addr, port, buf, cap)` dials and returns a
+  `tiku_link_t`.  `TIKU_KITS_NET_LINK_IP_PORT` is 7749.  Compiled by the
+  firmware Makefile under `TIKU_KITS_NET_LINK_IP_ENABLE=1`, which errors
+  without `TIKU_KIT_NET_ENABLE=1` under it.
+- **The frame is a 32-bit little-endian length and the message.**  No CRC,
+  no numbering, no acknowledgement: the console link earns those because
+  its medium loses bytes, and TCP does not.
+- **The outbox is the send contract.**  `ip_send` puts the WHOLE message
+  (length, head, body) into `out[TIKU_KITS_NET_LINK_IP_OUTBOX]` (2 KB) or
+  refuses it whole and counts `refused`; then offers the outbox to the
+  transport in `snd_mss` chunks.  What the transport will not take waits
+  for a flush timer (`stalled` counts that), because the first cut ABORTED
+  the connection on a short write and the board RST every greeting: the
+  TX pool holds a segment until it is acknowledged, so a burst of five
+  announce messages meets a full pool routinely.  A length-framed reader
+  cannot recover from half a message, and TCP keeps order, so waiting is
+  the only correct answer.
+- **What it sends and what it takes are different sizes.**  `cap` is the
+  receive buffer (256, what a desk sends); the outbox bounds what the
+  board sends (a window's display list, up to 1536).  The first cut used
+  `cap` for both and refused every DRAW.
+- Redials on its own five seconds after a connection ends, and steps its
+  source port per dial, as MQTT does, so a board that resets does not reuse
+  a port the peer still holds.
+- **`tiku_kits_net_tcp_init()` is now idempotent** and the link calls it:
+  its ONE caller was `tiku_shell_init` under `TIKU_SHELL_NET_TEST`, so in
+  any other profile the segment pool was never created and every send was
+  refused.  Same class as the MQTT-on-lean trap; the tier API's
+  `init`-is-idempotent precedent is what this follows.
+
+### As built — the board overlay (`applications/board/gui/`)
+- `tiku_draw_set_link(link)`: the session moves to another link, holding
+  its windows until that desktop greets (`said_hello`/`greeted` reset), as
+  at boot.  `tiku_draw_init()` keeps the console link open underneath, so
+  NULL returns the session to the cable.
+- `tiku_draw_ip.{h,c}` + a reserved `desk` name in `/gui`'s dynops, both
+  behind `TIKU_APPL_GUI_IP` (applications.mk): `write /gui/desk
+  172.16.7.1:7749` dials, `write /gui/desk off` hangs up, and reading it
+  gives the address, the state and the counters.  No new mainline hook --
+  the namespace is the interface.
+
+### As built — the desktop (`applications/kits/device/`, TikuTracker)
+- `tiku_link_tcp.{h,c}`: a link over a socket a board dialled, with an out
+  buffer for what the socket will not take now.  `TIKU_LINK_TCP_MTU` (256)
+  bounds what it SENDS; `TIKU_LINK_TCP_RECV_MAX` (the session's 4096)
+  what it takes.  `tiku_link_tcp_listen(port)` opens the listener.
+- `tiku_channel_adopt(link)`: a channel on any link at all;
+  `tiku_channel_open(session)` is now that over a serial link.
+- `-listen [port]` on TikuDesktop (default 7749), OFF by default because a
+  listening port is the desktop's own posture, not a session's assumption.
+  `boards_accept()` takes in each dialled board, adopts it into the remote
+  listener and greets it; `boards_unlisten()` at shutdown.
+
+### Proof
+- Host `link-ip` (`TikuBench/tikubench/suites/link_ip.py`): **8/8** on the
+  LM20 — /gui/desk off; the board dials and the handshake finishes; the
+  greeting brings OPEN/DRAW/MENUS/SIZEABLE/DRAW back whole; a press
+  redraws; ten more land (`Pressed 11 times`); the board's own line reads
+  `up dials 1 rx 12 tx 8 drops 0 refused 0 stalled 0`; `off` returns the
+  session to the cable and closes the connection.  Run: `python3 -m
+  tikubench run link-ip --board nrf54lm20a --flash --port /dev/ttyACM0`.
+  **No root and no gateway**: `TikuBench/tikubench/core/tcp_peer.py` is the
+  host's own end of the connection (SLIP wire + a one-connection TCP
+  fixture), so the suite runs anywhere the board does.
+- Desktop unit `test_link_tcp.c`: **18/18** over a loopback socket — whole,
+  split and joined streams, one the size of the peer's buffer, one larger
+  than any board sends passed over, the length-framed send, a refusal
+  larger than the peer takes, the hang-up as a fault, and a channel
+  adopting the link.  `make test`, `make lint` green.
+- The kit's framing on the host: a harness in the scratchpad against a
+  stubbed transport, 17/17, with mutation checks — delivering before a
+  message is whole, dropping the oversize skip, or letting a stalled chunk
+  through each fails exactly the asserts that guard them.
+- **Not yet done: the desk leg.**  A real TikuDesktop showing a board's
+  window over IP needs the board's packets routed to the host, which is
+  the TUN gateway and therefore root: `sudo python3 -m tikubench ...` or a
+  `boardnet.script` run under a gateway.  Everything under it is proven;
+  what is unproven is `-listen` against a live board rather than a
+  loopback socket.
+
+---
+
 ## 5. File map (what changed, per repo)
 
 ```
@@ -540,18 +630,43 @@ Milestone 3 touched, per repo (one commit each):
   tikubench/suites/console_noshell.py        NEW  the host suite
 ```
 
+Milestone 4 touched, per repo (one commit each):
+```
+~/tikuOS  (firmware) — `Makefile:` the IP link kit's block
+  Makefile                                   TIKU_KITS_NET_LINK_IP_ENABLE
+  (CLAUDE.md's Link section, gitignored here)
+~/tikuOS/tikukits — `Net:` the IP link
+  net/link/tiku_kits_net_link_ip.{h,c}       NEW  the link over TCP
+  net/ipv4/tiku_kits_net_tcp.{h,c}           init is idempotent
+~/tikuOS/applications — `Board:` the desk + `Desktop:` the socket
+  board/gui/tiku_draw.{h,c}                  tiku_draw_set_link
+  board/gui/tiku_draw_ip.{h,c}               NEW  /gui/desk
+  board/gui/tiku_gui.c                       the reserved desk name
+  applications.mk                            TIKU_APPL_GUI_IP
+  kits/device/tiku_link_tcp.{h,c}            NEW  the desktop's socket link
+  kits/device/tiku_channel.{h,c}             tiku_channel_adopt
+  TikuTracker/src/shell/desktop/*            -listen, boards_accept
+  TikuTracker/tests/test_link_tcp.c          NEW  the loopback test
+  mk/kits.mk, board/README.md, tikudesktopchange.md
+~/tikuOS/TikuBench — `Link:` the IP suite
+  tikubench/core/tcp_peer.py                 NEW  the host's end, no root
+  tikubench/core/frames.py                   class Stream
+  tikubench/suites/link_ip.py                NEW  the suite
+```
+
 ---
 
-## 6. What is LEFT — milestones 4–7
+## 6. What is LEFT — milestones 5–7
 
-The seam is in place, reliable, and stands without the shell; these build
-on it.  Full detail and the TikuBench proof per milestone are in
-`PLAN-link.md` §7.  The concrete starting points:
+The seam is in place, reliable, stands without the shell, and carries a
+session over an address as well as a cable; these build on it.  Full detail
+and the TikuBench proof per milestone are in `PLAN-link.md` §7.  The
+concrete starting points:
 
-- **M4 — the IP link.**  `tikukits/net/link/tiku_link_ip.c` over the TCP
-  stack (a u32 length prefix per message; dial-out from the board first);
-  desktop `tiku_link_tcp.c`.  A kit, not the kernel.  Proof: `link_ip.py`,
-  Pico W shows its window over WiFi.
+- **M4's remainder.**  A live desktop over IP (the `-listen` leg against a
+  real board) needs the TUN gateway and root; and the Pico W over WiFi,
+  where the same kit dials over a radio instead of SLIP, is the demo the
+  plan asks for.
 - **M5 — the BLE link.**  A GATT "TikuLink" service in
   `tikukits/net/bluetooth/tiku_bt.c` (add `tiku_bt_gatt_add_service` /
   `_notify`); `tiku_link_ble.c` fragments a message across notifies to the
@@ -628,5 +743,15 @@ on it.  Full detail and the TikuBench proof per milestone are in
   3/3 puts the shell-less board's window on the desk and presses its
   button from there; the bare kernel links
   without the pump and the shell image without the process.  ✅
-- **Out of scope here (milestone 4+):** the IP/BLE/capability/discovery
+- **Milestone 4, the link:** a board dials a desktop and the window
+  session rides the connection, each message behind its length; the outbox
+  holds what the transport will not take rather than tearing the stream; a
+  desktop can listen for boards that dial in.  Host `link-ip` 8/8 (no
+  root), desktop `test_link_tcp` 18/18, the kit's framing 17/17 on a host
+  harness with mutation checks; `make test`/`make lint` green.  ✅
+- **Milestone 4, what the plan still asks for:** a live TikuDesktop showing
+  a board's window over IP (the `-listen` leg, which needs the TUN gateway
+  and root) and the Pico W over WiFi with no cable, which is the same kit
+  dialling over a radio.  ⏳
+- **Out of scope here (milestone 5+):** the BLE/capability/discovery
   backends.  See `PLAN-link.md` §7.

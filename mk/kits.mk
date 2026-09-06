@@ -30,6 +30,7 @@ K := kits
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c
 DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku_channel.c \
                $(K)/device/tiku_link.c $(K)/device/tiku_link_serial.c \
+               $(K)/device/tiku_link_tcp.c \
                $(K)/device/tiku_ns.c
 STORAGE     := $(K)/storage/tiku_model.c $(K)/storage/tiku_state.c \
                $(K)/storage/tiku_ident.c $(K)/storage/tiku_attr.c \

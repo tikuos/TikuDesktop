@@ -86,13 +86,11 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
 }
 
 tiku_channel_t *
-tiku_channel_open(tiku_session_t *s)
+tiku_channel_adopt(tiku_link_t *link)
 {
     tiku_channel_t *ch;
-    tiku_link_t *link;
     int sv[2];
 
-    link = tiku_link_serial_open(s);
     if (link == NULL || socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
         tiku_link_close(link);
         return NULL;
@@ -110,6 +108,12 @@ tiku_channel_open(tiku_session_t *s)
     (void)fcntl(ch->mine_fd, F_SETFL, O_NONBLOCK);
     tiku_link_on_message(link, on_message, ch);
     return ch;
+}
+
+tiku_channel_t *
+tiku_channel_open(tiku_session_t *s)
+{
+    return tiku_channel_adopt(tiku_link_serial_open(s));
 }
 
 tiku_channel_t *

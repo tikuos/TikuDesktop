@@ -12,6 +12,11 @@
 
 #include "tiku_trk_desktop_private.h"
 
+#include "tiku_link_tcp.h"
+
+#include <sys/socket.h>
+#include <unistd.h>
+
 /**
  * @brief Re-resolve what a mount may have fixed, half a second on (PVN-042).
  *
@@ -160,6 +165,9 @@ channels_attach(desktop_t *app)
 #define PROBE_MS 3000
 
 /** @brief Keep @p ch in a free slot, or close it when there is none. */
+static void channel_keep(desktop_t *app, tiku_channel_t *ch);
+
+/** @brief Keep @p ch in a free slot, or close it when there is none. */
 static void
 channel_keep(desktop_t *app, tiku_channel_t *ch)
 {
@@ -190,6 +198,64 @@ windows_only(desktop_t *app, const char *port, int baud)
         return;
     }
     channel_keep(app, ch);
+}
+
+/*---------------------------------------------------------------------------*/
+/* BOARDS THAT DIAL IN                                                       */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Listen on @p port for boards that dial in rather than being
+ *         found on a cable.  @return 1 when the socket is up. */
+int
+boards_listen(desktop_t *app, int port)
+{
+    /* Zero is "no listener" here, as it is in a desktop that never asked
+     * for one: the shell's own descriptors are open, so the socket is
+     * never 0 in practice. */
+    app->board_listen = tiku_link_tcp_listen(port);
+    return app->board_listen > 0;
+}
+
+/**
+ * @brief Take in every board that dialled since the last turn: a channel
+ *        on its connection, adopted by the desktop's listener and greeted
+ *        where it stands, since it arrived after the boot-time sweep.
+ */
+void
+boards_accept(desktop_t *app)
+{
+    for (;;) {
+        tiku_channel_t *ch;
+        int fd;
+
+        if (app->board_listen <= 0) {
+            return;
+        }
+        fd = accept(app->board_listen, NULL, NULL);
+        if (fd < 0) {
+            return;
+        }
+        ch = tiku_channel_adopt(tiku_link_tcp_open(fd));
+        if (ch == NULL) {
+            continue;
+        }
+        if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) != 0) {
+            tiku_channel_close(ch);
+            continue;
+        }
+        channel_keep(app, ch);
+        tiku_channel_greet(ch);
+    }
+}
+
+/** @brief Stop listening; the channels already taken in are untouched. */
+void
+boards_unlisten(desktop_t *app)
+{
+    if (app->board_listen > 0) {
+        close(app->board_listen);
+    }
+    app->board_listen = -1;
 }
 
 /**

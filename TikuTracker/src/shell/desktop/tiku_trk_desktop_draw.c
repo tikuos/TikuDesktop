@@ -288,6 +288,7 @@ desktop_idle_work(desktop_t *app)
     {
         int k;
 
+        boards_accept(app);
         for (k = 0; k < TIKU_MOUNT_MAX; k++) {
             (void)tiku_channel_pump(app->channels[k]);
         }

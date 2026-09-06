@@ -12,6 +12,8 @@
 
 #include "tiku_trk_desktop_private.h"
 
+#include "tiku_link_tcp.h"          /* the port a board dials, for -listen */
+
 /**
  * @brief Hold the line now up for whatever is still owed it.
  *
@@ -232,6 +234,18 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
          * desktops.  Both are kept: -d is what a device tool wants.
          */
         else if (strcmp(argv[i], "-devices") == 0) { o->want_devices = 1; }
+        /*
+         * Boards that dial in rather than being found on a cable.  Opt-in
+         * and never a default: a listening port is the desktop's own
+         * posture, not something a window session should assume.
+         */
+        else if (strcmp(argv[i], "-listen") == 0) {
+            o->listen_port = TIKU_LINK_TCP_PORT;
+            if (i + 1 < argc && argv[i + 1][0] >= '0' &&
+                argv[i + 1][0] <= '9') {
+                o->listen_port = atoi(argv[++i]);
+            }
+        }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) { o->port = argv[++i]; }
         /*
          * Where the one board -p names goes in the namespace, instead of
@@ -317,6 +331,9 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     }
     if (o->want_devices) {
         (void)mount_devices(app, o->port, o->baud, o->mount_at);
+    }
+    if (o->listen_port > 0 && !boards_listen(app, o->listen_port)) {
+        fprintf(stderr, "tracker: nothing listening on %d\n", o->listen_port);
     }
     {
         /*
@@ -1153,6 +1170,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     {
         int k;
 
+        boards_unlisten(app);
         for (k = 0; k < TIKU_MOUNT_MAX; k++) {
             tiku_channel_close(app->channels[k]);
             app->channels[k] = NULL;

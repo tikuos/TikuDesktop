@@ -34,6 +34,13 @@ typedef struct tiku_channel tiku_channel_t;
 tiku_channel_t *tiku_channel_open(tiku_session_t *s);
 
 /**
+ * @brief Open a channel on @p link, whatever medium it is: the channel
+ *        owns it from here and closes it with itself.  NULL when out of
+ *        sockets, and @p link is closed in that case.
+ */
+tiku_channel_t *tiku_channel_adopt(tiku_link_t *link);
+
+/**
  * @brief Open a channel on a port of its own, for a board with windows
  *        and no shell: the transport and the session are the channel's,
  *        polled from its pump, reopened after a replug, closed with it.
