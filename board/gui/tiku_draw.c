@@ -43,7 +43,8 @@
  * frames in this buffer, the link's header and CRC around each, and go
  * out as one frame each. */
 static tiku_link_console_t session_link;
-static tiku_link_t *link;
+static tiku_link_t *link;           /* the one the session rides now */
+static tiku_link_t *console_link;   /* the cable, always open under it */
 static unsigned char frame_buf[TIKU_LINK_CONSOLE_SESSION_MTU +
                                TIKU_LINK_CONSOLE_OVERHEAD];
 
@@ -693,9 +694,29 @@ on_frame(void *ctx, uint8_t *buf, size_t len)
 void
 tiku_draw_init(void)
 {
-    link = tiku_link_console_open(&session_link, TIKU_LINK_CONSOLE_SESSION,
-                                  frame_buf, sizeof frame_buf);
+    console_link = tiku_link_console_open(&session_link,
+                                          TIKU_LINK_CONSOLE_SESSION,
+                                          frame_buf, sizeof frame_buf);
+    link = console_link;
     tiku_link_on_recv(link, on_frame, NULL);
+}
+
+void
+tiku_draw_set_link(struct tiku_link *l)
+{
+    if (l == NULL) {
+        l = console_link;
+    }
+    if (l == link || l == NULL) {
+        return;
+    }
+    tiku_link_on_recv(link, NULL, NULL);
+    link = l;
+    tiku_link_on_recv(link, on_frame, NULL);
+    /* The new desktop has heard nothing: the hello and the windows wait
+     * for its greeting, as they do at boot. */
+    said_hello = 0;
+    greeted = 0;
 }
 
 tiku_draw_window_t *

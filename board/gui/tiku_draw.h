@@ -20,6 +20,8 @@
 #include "tiku.h"
 #include <kernel/process/tiku_process.h>
 
+struct tiku_link;
+
 #define TIKU_DRAW_LIST_MAX 1536     /**< a fair list buffer, in bytes */
 #define TIKU_DRAW_WINDOWS  8
 #define TIKU_DRAW_QUEUE    8        /**< events waiting for the owner */
@@ -191,5 +193,14 @@ tiku_draw_window_t *tiku_draw_event(tiku_event_t ev, tiku_event_data_t data);
  *        the kernel's one hook for this library, before any process runs.
  */
 void tiku_draw_init(void);
+
+/**
+ * @brief Carry the session on @p link from here on, or on the console
+ *        again for NULL.
+ *
+ * The windows are held until the desktop on the new link greets, exactly
+ * as at boot, so it sees them opened rather than half-drawn.
+ */
+void tiku_draw_set_link(struct tiku_link *link);
 
 #endif /* TIKU_DRAW_H_ */

@@ -46,6 +46,14 @@ ifeq ($(TIKU_APPL_DRAW_DEMO),1)
 APPL_SRCS   += applications/board/samples/draw_demo.c
 APPL_CFLAGS += -DTIKU_APPL_DRAW_DEMO=1
 endif
+# The desk over an address: /gui/desk dials a desktop and the session
+# rides the kit's IP link instead of the cable.  Needs the kit under it
+# (TIKU_KITS_NET_LINK_IP_ENABLE=1 TIKU_KIT_NET_ENABLE=1), which the
+# firmware Makefile compiles; this only registers against it.
+ifeq ($(TIKU_APPL_GUI_IP),1)
+APPL_SRCS   += applications/board/gui/tiku_draw_ip.c
+APPL_CFLAGS += -DTIKU_APPL_GUI_IP=1
+endif
 ifneq ($(filter 1,$(TIKU_APPL_GUI_DEMO) $(TIKU_APPL_DRAW_DEMO)),)
 APPL_SRCS   += applications/board/samples/tiku_appl_autostart.c
 endif

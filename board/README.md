@@ -120,6 +120,17 @@ the desktop's stream: the board restarts its numbering when it takes
 one, so a board that has already talked to another desktop starts again
 from zero.
 
+A board with an address need not be on the cable at all.  With the IP link
+kit built (`TIKU_KITS_NET_LINK_IP_ENABLE=1`) and this library's desk node
+(`TIKU_APPL_GUI_IP=1`), writing an address to `/gui/desk` -- `write
+/gui/desk 172.16.7.1:7749` -- dials a desktop over TCP and moves the
+session there; the windows are held until that desktop greets, as they are
+at boot, and `write /gui/desk off` brings the session back to the console.
+Inside the connection a message is its 32-bit length and its bytes: TCP
+delivers them whole and in order, so nothing of the console link's CRC,
+numbering or pacing is needed.  Reading `/gui/desk` says where the link
+stands and what has crossed it.
+
 The shell is not needed for any of this.  With `TIKU_SHELL_ENABLE=0` the
 kernel's console runs a process of its own that drains the wire while a
 channel is registered (`tiku_console_pumping()` says whether it is), and
