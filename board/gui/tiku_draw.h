@@ -203,6 +203,13 @@ void tiku_draw_init(void);
  */
 void tiku_draw_set_link(struct tiku_link *link);
 
+/** @brief Send one session message of @p type with @p payload.
+ *  @return 0, or -1 when the link refused it (no room now, or down). */
+int tiku_draw_send_msg(uint32_t type, const void *payload, uint32_t len);
+
+/** @brief Whether the session is on the console link right now. */
+uint8_t tiku_draw_link_is_console(void);
+
 /**
  * @brief What the link carrying the session confers: a TIKU_VFS_CAP_*
  *        mask, as the medium's backend declares it.

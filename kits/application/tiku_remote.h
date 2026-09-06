@@ -122,6 +122,11 @@
  * is the safe answer rather than the optimistic one.
  */
 #define TIKU_RMSG_WELCOME 20u  /* u32 version, u32 features         */
+/* The forms road over a link: shell text each way.  A board's shell answers
+ * whoever spoke last, so a desk on a link and a person on the cable each
+ * see their own commands and replies. */
+#define TIKU_RMSG_SHELL_IN  21u  /* text for the board's shell            */
+#define TIKU_RMSG_SHELL_OUT 22u  /* what its shell wrote back             */
 #define TIKU_RMSG_CLOSED  18u  /* u32 id: the user closed it        */
 
 /** @brief Where the desktop listens, under this user's HOME. */

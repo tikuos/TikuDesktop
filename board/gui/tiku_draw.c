@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_draw.h"
+#include "tiku_draw_shell.h"
 
 #include "tiku_metrics.h"
 
@@ -36,6 +37,8 @@
 #define WHAT_CLIP    0x636c6970u    /* 'clip' */
 #define RMSG_CLOSED  18u
 #define RMSG_WELCOME 20u
+#define RMSG_SHELL_IN  21u
+#define RMSG_SHELL_OUT 22u
 #define REMOTE_VERSION 1u
 #define FEAT_COMMAND_STREAM 0x2u
 
@@ -617,6 +620,8 @@ take_message(const unsigned char *msg, size_t len)
         e.kind = TIKU_DRAW_PICK;
         e.command = (int)(int32_t)get32(p + 4);
         push(win, &e);
+    } else if (type == RMSG_SHELL_IN) {
+        tiku_draw_shell_take(p, plen);
     } else if (type == RMSG_TELL && plen >= 12u) {
         /* The desk answering: a picked path for the window that asked,
          * or the clipboard's new text, told to every window. */
@@ -703,6 +708,21 @@ tiku_draw_init(void)
     tiku_link_on_recv(link, on_frame, NULL);
 }
 
+int
+tiku_draw_send_msg(uint32_t type, const void *payload, uint32_t len)
+{
+    unsigned char head[8];
+
+    wire_head(head, type, len);
+    return tiku_link_send2(link, head, sizeof head, payload, len);
+}
+
+uint8_t
+tiku_draw_link_is_console(void)
+{
+    return (link == console_link) ? 1u : 0u;
+}
+
 uint8_t
 tiku_draw_cap(void)
 {
@@ -721,6 +741,7 @@ tiku_draw_set_link(struct tiku_link *l)
     if (l == link || l == NULL) {
         return;
     }
+    tiku_draw_shell_detach();           /* the forms road went with the link */
     tiku_link_on_recv(link, NULL, NULL);
     link = l;
     session_cap = tiku_link_cap(link);

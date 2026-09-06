@@ -18,6 +18,7 @@ APPL_CFLAGS :=
 ifeq ($(TIKU_APPL_GUI),1)
 APPL_SRCS   += applications/board/gui/tiku_gui.c
 APPL_SRCS   += applications/board/gui/tiku_draw.c
+APPL_SRCS   += applications/board/gui/tiku_draw_shell.c
 APPL_SRCS   += applications/board/gui/tiku_paint_board.c
 APPL_SRCS   += applications/board/gui/tiku_measure_board.c
 # The desktop kit's behaviour and paint files, compiled here in place:
