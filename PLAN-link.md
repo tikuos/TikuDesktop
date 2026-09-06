@@ -209,27 +209,44 @@ nothing; what the milestone has to earn is the radio.
   drives BlueZ over D-Bus (`suites/ble_adv.py`: `_discover`,
   `_reset_host_adapter`).  bleak's callbacks never fire for this device;
   use the D-Bus helpers.
-- The radio works and this host hears it: `ble-adv` decodes the board's
-  beacons over the air, and a freshly flashed board running `bleadv serial`
-  is discovered by BlueZ as `TIKU-CONN`.
-- The unknown, now traced (Phase 1 done, 2026-09-06): `btmon` needs root
-  here, so the board's own `conn_state` is the trace.  When BlueZ connects
-  to `bleadv serial`, the FLPR DOES capture the CONNECT_IND -- `conn_state`
-  reaches 1 (connected), so it is not an advertising or discovery problem.
-  Within ~300 ms `Device1.Connect()` returns
-  `org.bluez.Error.Failed: le-connection-abort-by-local` and the board
-  returns to `conn_state` 0 (the facade's auto-reconnect).  The link is
-  ESTABLISHED at the link-layer capture but not HELD: the peripheral is not
-  answering the central's first data-channel events in time, so the host
-  adapter tears the connection down before ATT.  The facade has only ever
-  been proven against a second Nordic DK as the central (`ble_serial.py`),
-  whose first-window timing the FLPR was tuned against; a BlueZ central
-  uses its own interval and WinOffset (the reference central is 30 ms /
-  12.5 ms window, `CEN_INTERVAL`/`CEN_WINSIZE` in `tiku_radio_arch.c`).
-  The first suspect is the FLPR's first-event anchor + re-acquire window
-  (`flpr_conn_hold` in `arch/nordic/flpr/tiku_flpr_main.c`, `ARX_WIN_*`):
-  if it misses the central's first packets it burns ~30 events and the
-  central's supervision expires.
+- The radio works and this host hears its BEACONS: `ble-adv` decodes them
+  over the air and BlueZ reports them within seconds.  A connectable
+  advertiser is a different matter -- see below.
+- The unknown, now traced to the end (2026-09-06).  `btmon` needs root
+  here, so the board measured itself, and a SECOND radio measured the
+  board: `bleadv scanreq` on the nRF54L15-DK is an active scanner that
+  captures when a scan response arrives on a clock the advertiser has no
+  hand in.  What it found, in order:
+  - the coprocessor advertiser answered no SCAN_REQ at all; it now answers
+    every one (316 of 316 in a run), with the service UUID rather than a
+    copy of the advert;
+  - the RADIO's `TIFS` does not govern the PHYEND_DISABLE + DISABLED_TXEN
+    chain on this part: the reply left ~58 us after the request.  It is
+    now fired by TIMER10 over DPPI (the compare on a channel opened only
+    for a request that deserves an answer), and lands where the peer reads
+    the spec's 150 us -- 200 ticks at 2 MHz, a figure the advertiser's own
+    capture reads 40 ticks higher because its receive and transmit events
+    fire at different points in a packet;
+  - the DPPI channels carry their own SPU security attribute, so a
+    non-secure radio and timer met on nothing until the channels were
+    granted with the peripherals;
+  - a received packet's buffer is ordinary memory the DMA writes behind the
+    compiler's back: a header loaded for one packet was reused for the
+    next.  Every parse now sits behind a barrier -- the coprocessor's
+    "DMA settle" spin was this bug wearing a different name;
+  - advertising events ran 8 ms apart, under the spec's 20 ms floor and
+    with under a millisecond of jitter; they now run ~50 ms apart with the
+    spec's 0..10 ms delay.
+- What the host does with it: this MacBook's Broadcom BCM4364 on the T2
+  UART runs without its firmware patch (`brcm/BCM.hcd` not found, per the
+  kernel log) and its kernel logs advertising reports it drops, legacy
+  ADV_IND types among them, at a steady rate with the board silent.  It
+  reports the board's advert in about one scan session of three, the
+  board's non-connectable beacon in about the same, and a 150 s search with
+  the adapter reset between sessions found nothing in two of three runs.
+  A Nordic central connects in under two seconds every time.  The board is
+  right; this host's radio is the lottery, and no unprivileged user can
+  change that.
 - The trap, now diagnosed: `ble-adv` is 5/11 on the LM20 and the later
   tests report a hard fault -- but `addr2line` on the suite's own image
   puts the faulting PC in `scan_cb` / `tiku_radio_arch_scan_service`
@@ -283,32 +300,19 @@ lines.  Regressions after the header change: `link-ip` 9/9, `console`
 
 The bench is trustworthy: a negative BLE result is now an honest one.
 
-### Phase 1 -- the radio interop, which is the milestone (one day)
+### Phase 1 -- the radio interop  ✅ on the board, ⏳ on this host
 
-This is where the risk is; no link code is written before it is answered.
-The diagnostic ran (2026-09-06): the FLPR captures the CONNECT_IND but the
-link is torn down before ATT (see "the unknown" above).  What remains is
-the fix, and it needs one of two things this bench lacked:
+Answered (see "the unknown" above): the board advertises, answers scan
+requests at the spec's mark and holds a link, as a second radio proves
+end to end.  The instruments stay in the tree: `bleadv connprobe <s>
+[tifs] [txen] [nonconn|scan]` on the advertiser, `bleadv scanreq <name>
+[s] [txen]` on a peer, `bleadv flprnus [txen]` for the coprocessor.
 
-- `btmon` with root beside a connect attempt, to read the host adapter's
-  own reason code (failed-to-establish vs supervision-timeout point at
-  different fixes) -- this run had no root, so only the board's
-  `conn_state` was visible.
-- The nRF54L15-DK from the lab on the bench, running `ble_serial.py`: the
-  proven central.  If the peripheral holds a link to it but not to BlueZ,
-  the gap is first-window / connection-parameter tuning; if it holds
-  neither, the FLPR hold loop itself regressed.
-- Fix what the reason shows.  Most likely, per the trace: the FLPR's
-  first-event anchor missing a BlueZ central's WinOffset, so the tuning in
-  `flpr_conn_hold` widens its first re-acquire to cover a foreign
-  central's window.  Then an LL feature / version exchange BlueZ sends
-  that the controller must answer; then connection parameters it proposes.
-- Exit: a host probe passes end to end -- BlueZ connects, services
-  resolve, both UART Service characteristics are found, a subscribe and a
-  write produce an echoed notification.  DECISION POINT: if the L15 shows
-  the FLPR link layer itself cannot hold a foreign central, ride the
-  two-board variant (a second DK as the central, as `ble_serial.py`) and
-  the host-radio path becomes a later follow-up.
+- Exit as written: a host probe passes end to end.  DECISION taken: this
+  host's radio does not qualify as the probe, so the two-board route is
+  the milestone's, and `link_ble.py` stands ready for a host whose adapter
+  reports what it hears.  It searches in fresh scan sessions with the
+  adapter reset between them, for 150 s, before it gives up.
 
 ### Phase 2 -- the link (one day)
 

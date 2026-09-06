@@ -558,74 +558,56 @@ nothing else, since TCP delivers whole and in order.**
 
 ---
 
-## 4d. Milestone 5 — the BLE link: what the ground looks like
+## 4d. Milestone 5 — the BLE link  ✅ the board, the link, the suite; ⏳ a host that hears
 
-Not started as code.  A session of survey and bring-up on the bench
-established where it stands, so the next one does not repeat it.
+The session rides the air the way it rides an address.  `write /gui/desk
+ble` advertises as `TIKU-DESK`; a central that connects and subscribes to
+the UART Service takes the session, each message behind a 32-bit length as
+on the IP link; `off` returns it to the console.
 
-### The seam is already there, and it is not the one the plan named
-`PLAN-link.md` §4 says to add a GATT service API to
-`tikukits/net/bluetooth/tiku_bt.c`.  On the LM20 that is the wrong stack:
-`tiku_bt.c` is the EM9305 host (Apollo510 Blue).  The Nordic radio's own
-facade is **`interfaces/bluetooth/tiku_ble_serial.h`** -- a byte pipe over
-the Nordic UART Service layout, with exactly what a link backend needs:
-`_start(name)`, `_ready()` (connected AND subscribed), `_service()` (pump),
-`_send()` (flow-controlled), `_rx_ready()`/`_recv()`.  A BLE link should sit
-on THAT, not on a second GATT service invented beside it.  It is a kernel
-interface, not a kit, so a backend over it breaks no rule about the kernel
-reaching into `tikukits/`.
+### What was built
+- `kernel/link/tiku_link_ble.c` (`TIKU_LINK_BLE_ENABLE=1`): the link over
+  `interfaces/bluetooth/tiku_ble_serial.h`, the Nordic UART Service byte
+  pipe -- an outbox for what the pipe will not take now, a stream rewound
+  when a central leaves, and a process of its own that services the pipe
+  while a link is open, started by the first open and ended by the last
+  close.  `TikuBench/tests/host/kernel/test_link_ble.c` runs it over a
+  stubbed pipe: 23 checks, and three corrupted streams that the harness
+  must notice (`make -C TikuBench/tests/host/kernel run`).
+- `/gui/desk` is one node with every road off the cable
+  (`board/gui/tiku_draw_desk.c`): an address dials over IP, `ble`
+  advertises (`board/gui/tiku_draw_ble.c`, `TIKU_APPL_GUI_BLE=1`), `off`
+  hangs up whichever is up.  Reading it gives the active link's line.
+- `tikubench/core/ble_host.py`: the host as a central over BlueZ's D-Bus,
+  as a normal user, single-threaded on purpose.  `suites/link_ble.py`
+  speaks the session over it.  `tikubench/core/ble_peer.py` carries the
+  link to a desktop listening on TCP, as `tcp_peer` carries the IP one, and
+  `TikuTracker/tests/shell/boardble.script` with run.sh's `ble` lane puts
+  the window on the desk that way.
 
-On Nordic the facade needs `TIKU_FLPR_ENABLE=1`: the FLPR (the VPR RISC-V
-coprocessor) is the BLE controller, and the M33 talks to it over the
-mailbox.  The RISC-V toolchain is present
-(`temp/toolchains/xpack-riscv-none-elf-gcc-15.2.0-1`), and
-`make MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_FLPR_ENABLE=1` builds.
+### What the radio needed, found with a second radio
+`PLAN-link.md` §9 has the trace.  The coprocessor advertiser answered no
+scan request; its reply, once it had one, left ~58 us after the request
+because the RADIO's `TIFS` does not govern that shortcut chain on this
+part, and is now fired by TIMER10 over DPPI at the spec's 150 us -- as
+measured by `bleadv scanreq` on the nRF54L15-DK, an active scanner that
+captures the reply on its own clock; the advertiser's own capture reads
+20 us more.  The DPPI channels needed their own security grants, every
+parse of a received packet needed a barrier against the compiler reusing
+the previous packet's bytes, and the events needed the spec's spacing and
+random delay.  The peer receives every reply; `ble-serial` is 3/3 and
+`ble-adv` 13/13.
 
-### The host end
-This machine has an adapter (`hci0`, BlueZ, service active) and
-`python3-dbus`.  TikuBench already drives BlueZ over D-Bus --
-`tikubench/suites/ble_adv.py:_discover()` polls `GetManagedObjects`, and its
-`_reset_host_adapter()` documents two measured false negatives (a stale
-cached name, and a scan path that degrades until the adapter is power
-cycled).  Reuse those; the same file's note says bleak's callbacks never
-fired for this device.
-
-### What is proven, and what blocks
-- The radio works and this host hears it: `ble-adv` decodes the board's
-  beacons over the air (`host decoded 'TIKU-18FA' ...`).
-- `bleadv serial <secs>` runs a NUS echo through the facade, named
-  `TIKU-CONN`, and a **freshly flashed** board IS seen by BlueZ
-  (`found TIKU-CONN at /org/bluez/hci0/dev_F9_38_16_D8_16_0D`).
-- **Connecting establishes but does not hold** (Phase 1 diagnostic,
-  2026-09-06).  When BlueZ connects, the FLPR captures the CONNECT_IND --
-  `conn_state` reaches 1 -- so it is not a discovery problem.  Within
-  ~300 ms `Connect()` returns `le-connection-abort-by-local` and the board
-  falls back to advertising: the link is captured at the link layer but
-  the peripheral does not answer the central's first data-channel events,
-  so the host tears it down before ATT.  The FLPR hold loop was tuned
-  against a second Nordic DK's first-window timing (`ble_serial.py`), not a
-  BlueZ central's.  `PLAN-link.md` §9 has the full trace and the fix path.
-- **`ble-adv` used to leave the board hard-faulted** -- fixed 2026-09-06,
-  see `PLAN-link.md` §9 Phase 0; it is now **13/13** with no fault, and a
-  negative BLE result is honest rather than a parked board.  The cause was
-  not in the radio at all: `tiku_clock.h` gave a 16-bit time to any file
-  that reached it before `tiku.h`, so `struct tiku_timer` was four bytes
-  short there and the timer subsystem wrote past every timer that file
-  declared.  As it stood:
-  `ble-adv-ll` (csa1, ackfsm) ends in `!! FAULT exc=00000003 CFSR=00008200`
-  and everything after it fails against a parked board.  This predates the
-  link work (nothing here touches `arch/nordic/` or
-  `interfaces/bluetooth/`), but it POISONS any BLE session that follows:
-  reflash before believing a negative discovery result.
-- A second Nordic DK, which the plan's two-board variant wants, was not on
-  the bench.
-
-### The plan
-`PLAN-link.md` §9 is the milestone's plan, written from this survey: the
-bench made trustworthy first, the radio interop answered with a `btmon`
-trace before any link code, then the link on the IP link's contract, the
-suite on the D-Bus helpers, and the desk leg through a relay into
-milestone 4's listener.  There is one plan; it lives there.
+### What blocks, and it is not the board
+This MacBook's Broadcom BCM4364 (T2 UART, no firmware patch found) reports
+the board's advert -- or its beacon -- in about one scan session of three,
+and a 150 s search with the adapter reset between sessions found nothing in
+two runs of three, while a Nordic central connects in under two seconds
+every time.  The kernel logs the reports it drops with the board silent.
+So the exit as written -- BlueZ connects, resolves, subscribes, echoes --
+waits for a host whose adapter reports what it hears; `link_ble.py`
+searches for 150 s and is ready for it.  The two-board route is the
+milestone's proven one.
 
 ---
 
