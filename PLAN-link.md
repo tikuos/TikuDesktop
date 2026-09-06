@@ -243,16 +243,35 @@ nothing; what the milestone has to earn is the radio.
   there is Phase 0's likely fix.  Until it is fixed, reflash before
   believing any negative BLE result.
 
-### Phase 0 -- make the bench trustworthy (half a day)
+### Phase 0 -- make the bench trustworthy  DONE 2026-09-06
 
-The fault is in the scan path, not `csa1`/`ackfsm` (see the trap above).
-Clamp `scan_cb`'s trust in the on-air LENGTH to what the ring packet
-actually holds, and clamp the ISR's `3u + n` copy to `sizeof buf`; then
-re-run `ble-adv` and confirm it no longer parks.  Have the runner treat a
-`!! FAULT` line as "reflash before the next category" rather than running
-later tests against a parked board.  Nothing in this milestone can be
-believed before this is closed -- a parked board reads as "device not
-found" and sends Phase 1 chasing a ghost.
+The fault was in the scan drain, not `csa1`/`ackfsm` (those are pure array
+logic and only printed the already-parked banner).  Disassembling the
+faulting PC put it on the slot store `ctx->out[count]` with a null base --
+a precise bus fault at address 0, escalated to a hard fault that parked the
+board.  Fixed in `BLE: Fixes for the scan drain parking the board`:
+
+- `scan_cb` drops a report whose table is absent instead of storing
+  through a null base.
+- A ring entry's stored LENGTH is now what the entry HOLDS: the ISR
+  clamped its copy to 44 bytes but kept the on-air byte, which can claim
+  255, and the AD walk at `buf[9]` ran to LENGTH-6, past the 48-byte entry.
+- The name walk is bounded by the largest legacy advertising payload.
+
+`ble-adv` on the LM20 goes **5/13 with 24 fault lines to 10/13 with none**,
+and four tests that only ever saw a parked board now pass (the observer
+hears advertisers, the hardware window, the extended events, the LL
+groundwork).  `link-ip` still 8/8.
+
+STILL OPEN, and no longer parking anything: three failures that are their
+own bugs -- `ble-adv-basic` (a BASIC BLE word errors), and
+`ble-adv-observe` / `ble-adv-combined`, both of which read `devices=0`
+live mid-observe although the observer demonstrably hears (12 advertisers
+in `ble-adv-scan-rx`).  The live-summary path is the thread to pull:
+`observe_update_summary` reports `bg_ctx.count`, so a count stuck at zero
+while packets are delivered means the drain is not filling `bg_ctx`.
+Worth closing before Phase 1 leans on the observer, but it no longer
+blocks: a negative BLE result is now honest rather than a parked board.
 
 ### Phase 1 -- the radio interop, which is the milestone (one day)
 

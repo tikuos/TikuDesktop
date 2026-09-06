@@ -605,7 +605,9 @@ fired for this device.
   so the host tears it down before ATT.  The FLPR hold loop was tuned
   against a second Nordic DK's first-window timing (`ble_serial.py`), not a
   BlueZ central's.  `PLAN-link.md` §9 has the full trace and the fix path.
-- **`ble-adv` leaves the board hard-faulted.**  On the LM20 it is 5/11:
+- **`ble-adv` used to leave the board hard-faulted** -- fixed 2026-09-06,
+  see `PLAN-link.md` §9 Phase 0; it is now 10/13 with no fault, and a
+  negative BLE result is honest rather than a parked board.  As it stood:
   `ble-adv-ll` (csa1, ackfsm) ends in `!! FAULT exc=00000003 CFSR=00008200`
   and everything after it fails against a parked board.  This predates the
   link work (nothing here touches `arch/nordic/` or
