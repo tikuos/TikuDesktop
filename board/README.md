@@ -142,7 +142,11 @@ subscribes to the UART Service takes the session, each message behind its
 it back to the console.  The pipe delivers bytes whole and in order, so the
 link keeps no CRC or numbering of its own; what the pipe will not take now
 waits in the link's outbox, and a process of the link's own services the
-pipe while a link is open.  On the desk, `ble_peer` in TikuBench connects
+pipe while a link is open.  What the air confers follows the central's
+standing: a stranger that connects gets no authority over the namespace, a
+central that pairs and runs the link encrypted may actuate hardware, and the
+grant goes with the link; reading `/gui/desk` says where that stands.  On
+the desk, `ble_peer` in TikuBench connects
 from the host's adapter and carries the link to a TikuDesktop started with
 `-listen`, as `tcp_peer` carries a dialled connection;
 `TikuTracker/tests/shell/boardble.script` is that end to end.

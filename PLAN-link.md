@@ -170,7 +170,7 @@ suites.
 | **3** | The board off the shell's back | the `console` protothread pumps when the shell is not built | a `TIKU_SHELL_ENABLE=0` build puts the board's window on the desk | `console_noshell.py`: the shell-less image answers a greeting with its window |
 | **4** | The IP link | `tikukits/net/link/tiku_link_ip.c`; desktop `tiku_link_tcp.c` | the Pico W shows its window over WiFi, no cable; `boardnet.script` | `link_ip.py`: the host listens, the board dials, messages cross whole; reuses the net suite's WiFi bring-up |
 | **5** | The BLE link (plan in §9) | `kernel/link/tiku_link_ble.c` over `tiku_ble_serial`, with fragmentation; a BLE relay on the desk, as IP's | the LM20 shows its window over BLE, no cable; `boardble.script` | `link_ble.py` on the D-Bus helpers of `ble_adv.py`: the board advertises, a central subscribes, a message larger than one notification reassembles at the negotiated MTU; a two-board variant as `ble_serial.py` does for boards without a host radio |
-| **6** | Discovery and capability (capability DONE) | the mount path finds serial, BLE and IP boards; each link's capability enforced on VFS writes and SAY/TELL | one desktop shows three boards over three media at once; an unpaired BLE link's write to `/gui` is refused | `link_cap.py`: a write over an unpaired link refused, the same write after pairing accepted |
+| **6** | Discovery and capability (DONE: `boardboth.script`, `link-cap` 6/6) | the mount path finds serial, BLE and IP boards; each link's capability enforced on VFS writes and SAY/TELL | one desktop shows three boards over three media at once; an unpaired BLE link's write to `/gui` is refused | `link_cap.py`: a write over an unpaired link refused, the same write after pairing accepted |
 | **7** | Portability proof (builds DONE) | every board builds its backends behind its capability macros; the matrix documented | forms and drawing demos build for MSP430 (console), LM20 (console + BLE), Pico W (console + IP) and each reaches the desk over its best link | the three images built in CI; the board lanes above run per board |
 
 Costs: 0 and 1 a day each; 2 two days (the acks and the fault injector
@@ -362,7 +362,21 @@ central becomes an optional follow-up rather than a prerequisite.
 Three to four days, of which Phase 1 carries all the risk.  The first act
 of the next session is the `btmon` trace.
 
-## 10. Milestone 7, the build half
+## 10. Milestone 6, done
+
+Discovery was mostly there: a serial scan when no port is named, a listener
+for boards that dial, the BLE relay into that listener.  What was missing
+was the two together on one desk, which run.sh's `both` lane runs and
+`boardboth.script` proves with the two DKs on the bench (windows 3).
+
+Capability over the air follows the central's standing.  The BLE serial
+facade now answers a central's pairing, stores the key, and services the
+encryption that follows; the BLE link confers `CAP_HW` while the link runs
+encrypted under an agreed or recalled key and nothing otherwise; the
+session reads its link's capability live.  `link-cap` 6/6, two-board.  The
+desk line names the standing, so a failure names its step.
+
+## 11. Milestone 7, the build half
 
 Every supported board builds the window session behind its capability
 macros (2026-09-06).  What is left of milestone 7 is the hardware half:

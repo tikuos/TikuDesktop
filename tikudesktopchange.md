@@ -611,12 +611,54 @@ milestone's proven one.
 
 ---
 
-## 4e. Milestone 6 — a link's capability, enforced
+## 4e. Milestone 6 — discovery and capability  ✅ DONE
 
-**The half of milestone 6 that needs no radio: what a link confers is now
-applied to what a session does over it.**  Discovery (a desktop finding
-serial, BLE and IP boards) is the other half and waits on the BLE link.
+**A desk finds boards on three media, and what a link confers follows the
+central's standing, not its address.**
 
+### Discovery
+The mount path already found boards two ways -- a serial scan when no port
+is named, and `-listen` for boards that dial -- and the BLE relay feeds
+that listener.  What was missing was the two together: run.sh's `both`
+lane starts the desktop with a cable board mounted (`-devices -p`) AND
+listening, and carries a second board's dialled connection in through the
+relay from its own port.  `boardboth.script` is that proven: the LM20 on
+the cable and the nRF54L15 dialling over IP, three windows on the desk
+beside the fixture's folder.  The third medium is the same listener taking
+`ble_peer`'s relay (`boardble.script`), which waits on a host adapter that
+reports what it hears (§4d).
+
+### Capability
+The first pass (below) applied a link's capability to what a session does
+over it; the BLE link conferred nothing, always.  Now:
+- the BLE serial facade answers a central's pairing itself (the same LE-SC
+  responder `bleadv flprbond` ran by hand), stores the key so a central
+  seen before skips pairing, and services the encryption the central then
+  asks for -- `tiku_ble_serial_secured()` says when the link runs encrypted
+  under a key it agreed or recalled;
+- the BLE link confers `CAP_HW` exactly then, and nothing otherwise --
+  a stranger that connects and subscribes gets nothing, whatever address
+  it shows; the session reads its link's capability live rather than at
+  the moment the link was set;
+- `/gui/desk` names it: `held`/`free`, `cap hw|none`, and where the
+  pairing stands (`none`, `pairing`, `paired`, `secured`);
+- the link services the pipe every tick while a central holds it (a
+  pairing exchange and the pipe's one-fragment mailbox both want an answer
+  within a connection interval), every 50 ms while it only advertises.
+
+Proof, two-board: **`link-cap` 6/6** -- advertising confers nothing; a
+stranger holds the link with nothing; a central that pairs is granted
+hardware within two seconds of connecting and the central stores the key;
+the grant goes with the link; the same central bonded is granted again
+without pairing; a stranger after the bond still gets nothing.  The desk
+line is the oracle.  With it: `ble-serial` 3/3, `ble-bond` 3/3, `ble-adv`
+13/13.
+
+Found on the way: `bleadv dbg` read the RADIO's registers through the
+secure alias whatever owned the radio, a bus fault whenever the
+coprocessor did; it now says who holds it instead.
+
+### The first pass -- a link's capability applied (2026-09-06)
 The namespace already guarded nodes (`req_cap` per node,
 `tiku_vfs_caller_cap_set/get`, granted iff `(req_cap & ~caller) == 0`), and
 each link already declared what it confers (`tiku_link_cap`: the console
@@ -635,12 +677,11 @@ the board refuses its own write ("LED refused").  A mutation that keeps
 full authority whatever the link carries fails exactly the check that
 guards it, with the diagnostic naming the fault.
 
-What this does NOT yet cover, and should be said plainly: no app but the
-demo writes the namespace on a session's behalf, and a remote desktop
-cannot reach a board's namespace at all yet (the forms road is the shell's
-text, which only the cable carries).  The seam is in place ahead of the
-traffic it will gate, and the bracket is the app's to apply -- a process
-that forgets it writes with whatever authority it already had.
+Still true, and said plainly: no app but the demo writes the namespace on
+a session's behalf, and a remote desktop cannot reach a board's namespace
+(the forms road is the shell's text, which only the cable carries).  The
+seam is in place ahead of the traffic it will gate, and the bracket is the
+app's to apply.
 
 ---
 
@@ -779,11 +820,9 @@ concrete starting points:
   and not in the tree.
 - **M5 — the BLE link.**  Planned in `PLAN-link.md` §9 from the survey
   in §4d above; start with the `btmon` trace.
-- **M6 — discovery and capability.**  The mount path finds serial, BLE and
-  IP boards; each link's `cap` is enforced on VFS writes and SAY/TELL (an
-  unpaired BLE link's write to `/gui` is refused).  The console link is
-  already `CAP_ALL`; the seam for this is `tiku_link_cap()` +
-  `tiku_vfs_caller_cap_set()`.  Proof: `link_cap.py`.
+- **M6 — discovery and capability.**  DONE (§4e): two boards over two
+  media on one desk, the third medium through the relay; the BLE link's
+  capability follows pairing, `link-cap` 6/6.
 - **M7 — portability proof.**  Every board builds its backends behind its
   capability macros; forms + drawing demos reach the desk over each board's
   best link (MSP430 console, LM20 console+BLE, Pico W console+IP).
@@ -863,5 +902,10 @@ concrete starting points:
 - **Milestone 4, what the plan still asks for:** the Pico W over WiFi with
   no cable, which is the same kit dialling over a radio.  The RP2350 image
   builds with the link; no Pico W was on the bench.  ⏳
-- **Out of scope here (milestone 5+):** the BLE/capability/discovery
-  backends.  See `PLAN-link.md` §7.
+- **Milestone 5:** the board, the link, the suite, the relay and the lane
+  (§4d); the host leg waits on a host adapter that reports what it hears.
+  ✅ / ⏳
+- **Milestone 6 done:** two boards over two media on one desk
+  (`boardboth.script`, windows 3); the BLE link's capability follows the
+  central's pairing and is gone with the link (`link-cap` 6/6);
+  `ble-serial` 3/3, `ble-bond` 3/3, `ble-adv` 13/13 with it.  ✅
