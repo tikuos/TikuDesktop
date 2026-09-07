@@ -8,7 +8,8 @@
  *
  * Manifest lines are "path\tkind\tperm\tmeta\tcap"; everything the UI needs to
  * decide what a node IS comes from that one read, so windows never guess a
- * node's type or writability.
+ * node's type or writability.  The read is paged: a page of whole lines
+ * at a time, each bounded to what a link carries in one reply.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,6 +22,12 @@
 
 #define NS_MANIFEST_PATH  "/sys/vfs/manifest"
 #define NS_READ_BUF       (64u * 1024u)
+/* A page's byte budget: under a link's outbox with the line's own
+ * overhead, and a few round trips for a tree of a hundred nodes. */
+#define NS_PAGE_BYTES     1024
+/* A reply wider than this to a page request is the whole node from a
+ * board older than paging, which ignores the extra words. */
+#define NS_PAGE_WHOLE     (3 * NS_PAGE_BYTES)
 #define NS_PENDING_MAX    64
 
 struct tiku_ns {
@@ -161,6 +168,59 @@ set_name(tiku_node_t *n)
     n->name[len] = '\0';
 }
 
+/**
+ * @brief Read the manifest into @p buf, a page of whole lines at a time.
+ *
+ * The session trims a reply's line end, so pages are counted in lines,
+ * not bytes: the next page starts at the line after the last one seen.
+ * An empty page is the end; a page far wider than asked is the whole
+ * node from a board without paging, and is the end too.
+ *
+ * @return The bytes gathered, or -1 when the board would not answer.
+ */
+static int
+ns_read_manifest(tiku_ns_t *ns, char *buf, size_t max)
+{
+    char cmd[64];
+    size_t got = 0;
+    long line = 0;
+
+    for (;;) {
+        char *page = buf + got;
+        size_t room = max - got;
+        int rc, i, lines = 0;
+
+        if (room < 2u) {
+            break;
+        }
+        snprintf(cmd, sizeof cmd, "read " NS_MANIFEST_PATH " %ld %d", line,
+                 NS_PAGE_BYTES);
+        rc = tiku_session_cmd(ns->s, cmd, page, room - 1u, 15000);
+        if (rc < 0 || (line == 0 && strstr(page, "cannot read") != NULL)) {
+            return -1;
+        }
+        if (rc == 0) {
+            break;
+        }
+        for (i = 0; i < rc; i++) {
+            if (page[i] == '\n') {
+                lines++;
+            }
+        }
+        if (page[rc - 1] != '\n') {
+            lines++;                    /* the trimmed last line */
+            page[rc++] = '\n';
+        }
+        got += (size_t)rc;
+        line += lines;
+        if (rc > NS_PAGE_WHOLE) {
+            break;
+        }
+    }
+    buf[got] = '\0';
+    return (int)got;
+}
+
 int
 tiku_ns_load(tiku_ns_t *ns)
 {
@@ -175,17 +235,13 @@ tiku_ns_load(tiku_ns_t *ns)
     if (buf == NULL) {
         return -1;
     }
-    rc = tiku_session_cmd(ns->s, "cat " NS_MANIFEST_PATH, buf,
-                               NS_READ_BUF, 15000);
-    if (rc < 0 || strstr(buf, "cannot read") != NULL) {
+    rc = ns_read_manifest(ns, buf, NS_READ_BUF);
+    if (rc < 0) {
         free(buf);
         return -1;
     }
     ns->count = 0;
-    /* The device renders the manifest into the shell's read buffer, so a
-     * large tree arrives cut mid-line.  Note it: the tail is completed by
-     * ls-walking rather than silently missing. */
-    ns->truncated = (rc > 0 && buf[rc - 1] != '\n');
+    ns->truncated = 0;
     for (p = buf; *p != '\0'; ) {
         tiku_node_t *n;
         char kind[8], perm[8];
@@ -225,6 +281,11 @@ tiku_ns_load(tiku_ns_t *ns)
         }
         while (*p != '\0' && *p != '\n') { p++; }
 
+        /* The device renders the manifest into its shell's read buffer,
+         * so a tree wider than that arrives cut mid-line: the last line
+         * then has no capability column.  Note it: the tail is completed
+         * by ls-walking rather than silently missing. */
+        ns->truncated = (n->cap[0] == '\0');
         n->is_dir = (kind[0] == 'd');
         n->perm = 0u;
         if (perm[0] == 'r') { n->perm |= TIKU_NS_P_READ; }
@@ -692,6 +753,45 @@ tiku_ns_complete(tiku_ns_t *ns, int max_depth)
         return -1;
     }
     return ns_walk(ns, "/", 0, (max_depth > 0) ? max_depth : 4);
+}
+
+/** @brief Whether the mirror holds anything under directory @p dir. */
+static int
+ns_has_child(const tiku_ns_t *ns, const char *dir)
+{
+    size_t len = strlen(dir);
+    int i;
+
+    for (i = 0; i < ns->count; i++) {
+        const char *p = ns->nodes[i].path;
+
+        if (strncmp(p, dir, len) == 0 && p[len] == '/' && p[len + 1] != '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+tiku_ns_complete_dynamic(tiku_ns_t *ns, int max_depth)
+{
+    int i, count, added = 0;
+
+    if (ns == NULL) {
+        return -1;
+    }
+    count = ns->count;
+    for (i = 0; i < count; i++) {
+        char dir[TIKU_NS_PATH_MAX];
+
+        if (!ns->nodes[i].is_dir || ns_has_child(ns, ns->nodes[i].path)) {
+            continue;
+        }
+        /* The walk may move the node table; the path is copied first. */
+        snprintf(dir, sizeof dir, "%s", ns->nodes[i].path);
+        added += ns_walk(ns, dir, 0, (max_depth > 0) ? max_depth : 2);
+    }
+    return added;
 }
 
 int

@@ -13,6 +13,7 @@
 #include "tiku_trk_desktop_private.h"
 
 #include "tiku_link_tcp.h"
+#include "tiku_mount.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -164,11 +165,9 @@ channels_attach(desktop_t *app)
  * link's own retries take two and a half seconds to give up. */
 #define PROBE_MS 3000
 
-/** @brief Keep @p ch in a free slot, or close it when there is none. */
-static void channel_keep(desktop_t *app, tiku_channel_t *ch);
-
-/** @brief Keep @p ch in a free slot, or close it when there is none. */
-static void
+/** @brief Keep @p ch in a free slot, or close it when there is none.
+ *         @return the slot, or -1. */
+static int
 channel_keep(desktop_t *app, tiku_channel_t *ch)
 {
     int k;
@@ -176,10 +175,69 @@ channel_keep(desktop_t *app, tiku_channel_t *ch)
     for (k = 0; ch != NULL && k < TIKU_MOUNT_MAX; k++) {
         if (app->channels[k] == NULL) {
             app->channels[k] = ch;
-            ch = NULL;
+            app->channel_mount[k][0] = '\0';
+            return k;
         }
     }
     tiku_channel_close(ch);     /* no slot: NULL is a no-op */
+    return -1;
+}
+
+/**
+ * @brief Mount the shell of a board that reached the desk over a link:
+ *        the same session and namespace a cable gives, over the shell
+ *        road the channel carries beside the windows.  A board built
+ *        without a shell answers no prompt and keeps its windows only.
+ */
+static void
+mount_over(desktop_t *app, int slot)
+{
+    tiku_channel_t *ch = app->channels[slot];
+    tiku_tx_t *tx = tiku_channel_shell_tx(ch);
+    tiku_backend_t *dev;
+    char name[64], prefix[TIKU_PATH_MAX];
+
+    if (tx == NULL) {
+        return;
+    }
+    dev = tiku_backend_tiku_open_tx(tx);
+    if (dev == NULL) {
+        return;
+    }
+    device_mount_name(dev, app->backend, name, sizeof name);
+    snprintf(prefix, sizeof prefix, "/devices/%s", name);
+    tiku_backend_tiku_set_write_timeout(dev, 4000);
+    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+        tiku_backend_close(dev);
+        return;
+    }
+    snprintf(app->channel_mount[slot], TIKU_PATH_MAX, "%s", prefix);
+}
+
+/** @brief Each turn: pump every channel, and let go of a dialled board
+ *         whose link is lost, its mount with it. */
+void
+channels_tend(desktop_t *app)
+{
+    int k;
+
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        tiku_channel_t *ch = app->channels[k];
+
+        if (ch == NULL) {
+            continue;
+        }
+        (void)tiku_channel_pump(ch);
+        /* A link a board dialled does not come back: the board dials
+         * again and is taken in afresh.  Its mount goes with it, so a
+         * board that rebooted is one place under /devices, not two. */
+        if (app->channel_mount[k][0] != '\0' && tiku_channel_losses(ch) > 0) {
+            (void)tiku_mount_remove(app->backend, app->channel_mount[k]);
+            app->channel_mount[k][0] = '\0';
+            tiku_channel_close(ch);
+            app->channels[k] = NULL;
+        }
+    }
 }
 
 /**
@@ -197,7 +255,7 @@ windows_only(desktop_t *app, const char *port, int baud)
         tiku_channel_close(ch);
         return;
     }
-    channel_keep(app, ch);
+    (void)channel_keep(app, ch);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -235,6 +293,8 @@ boards_accept(desktop_t *app)
         if (fd < 0) {
             return;
         }
+        int slot;
+
         ch = tiku_channel_adopt(tiku_link_tcp_open(fd));
         if (ch == NULL) {
             continue;
@@ -243,8 +303,12 @@ boards_accept(desktop_t *app)
             tiku_channel_close(ch);
             continue;
         }
-        channel_keep(app, ch);
+        slot = channel_keep(app, ch);
+        if (slot < 0) {
+            continue;
+        }
         tiku_channel_greet(ch);
+        mount_over(app, slot);
     }
 }
 
@@ -307,7 +371,8 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         /* The same cable carries the board's windows: a channel on the
          * console's session, adopted by the desktop's listener once that
          * exists (channels_attach). */
-        channel_keep(app, tiku_channel_open(tiku_backend_tiku_session(dev)));
+        (void)channel_keep(app,
+                           tiku_channel_open(tiku_backend_tiku_session(dev)));
         mounted++;
     }
     return mounted;

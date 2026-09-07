@@ -266,8 +266,12 @@ typedef struct desktop {
     /* One per mount: its gui/ node's identity, so a change record can
      * be told to be the board's, and whether its forms were opened
      * unasked once -- a panel a person closed is not put back. */
-    /* A window session per board, riding its console beside the shell. */
+    /* A window session per board, riding its console beside the shell,
+     * or the link it dialled in on; for the latter, the mount its shell
+     * stands at over that link, dropped with the link. */
     tiku_channel_t      *channels[TIKU_MOUNT_MAX];
+    /* The mount over each channel's link, or "" for none. */
+    char                 channel_mount[TIKU_MOUNT_MAX][TIKU_PATH_MAX];
     int                  board_listen;  /* -listen's socket, or -1/0 for none */
     struct {
         char     root[TIKU_PATH_MAX];   /* the mount's prefix */
@@ -703,6 +707,7 @@ int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
 int boards_listen(desktop_t *app, int port);
 /** @brief Take in every board that dialled since the last turn. */
 void boards_accept(desktop_t *app);
+void channels_tend(desktop_t *app);
 /** @brief Stop listening; the channels taken in are not touched. */
 void boards_unlisten(desktop_t *app);
 void desktop_device_pump(desktop_t *app);

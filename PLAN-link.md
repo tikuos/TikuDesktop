@@ -407,3 +407,9 @@ Proven on hardware so far, all on the nRF54LM20A: the console link
 (milestones 0-3), the IP link (milestone 4), and a link's capability
 (milestone 6's half).  A second board of each kind is what the rest of
 this milestone needs.
+
+Since then (2026-09-07): `ladder.sh` walks both DKs to a desk over the
+console, over IP and both at once; a dialled board is mounted by name over
+its connection, its manifest read in pages (`tikudesktopchange.md` §4f);
+`link-soak` brings the session up and down twenty times over each wired
+medium.  The BLE rung is written and waits on a host adapter that hears.

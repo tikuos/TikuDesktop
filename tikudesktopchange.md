@@ -683,6 +683,74 @@ a session's behalf, and a remote desktop cannot reach a board's namespace
 seam is in place ahead of the traffic it will gate, and the bracket is the
 app's to apply.
 
+### The shell over a link -- a dialled board mounted (2026-09-07)
+The forms road is the shell's text, and a link now carries it beside the
+windows: `SHELL_IN` (21) brings a line to the board, `SHELL_OUT` (22)
+takes the reply back.  On the board `tiku_draw_shell.c` injects the text
+into the console ahead of the wire (`tiku_console_inject`), and a RAM
+`tiku_shell_io_t` in front of the cable's steers each command's output to
+whoever spoke last, re-syncing the caller's capability, so a guarded
+write typed over an address is refused as the pick was.  Nothing pumps
+the medium from `putc`: the IP stack is on that call chain, and pumping
+it there was the fault that ended the first attempt.
+
+A reply is bounded by the link's outbox, and a manifest is not.  So the
+shell's `read` takes a page -- `read <path> <line> [bytes]`, whole lines
+from the given line within the byte budget, a wider line printed whole --
+and the desk's `tiku_ns_load` walks `/sys/vfs/manifest` page by page,
+counting lines because the session trims a reply's line ends, stopping at
+an empty page; a board older than paging answers the whole node to the
+first request and is taken as such.  The manifest never lists what a
+dynamic directory holds (gui/, proc/, data/), so after it the desk walks
+each directory the manifest left empty (`tiku_ns_complete_dynamic`);
+until now that walk ran by accident, because the session's trimming made
+every manifest read as cut and the whole-tree completion covered it.  On
+the desk the channel keeps a
+second socket pair for the shell (`tiku_channel_shell_tx`),
+`tiku_tx_open_custom` makes a transport of a descriptor and two hooks,
+`tiku_backend_tiku_open_tx` opens the same backend over it, and
+`boards_accept` mounts the board that dialled under `/devices/<name>`;
+`channels_tend` drops the mount and the channel when the link reports a
+loss, so a board that reboots comes back as one place, not two.
+
+Found on the way, in the net kit: the TCP TX pool's array was sized from a
+10-byte segment header and an unrounded block, while the descriptor is 12
+bytes with a 4-byte pointer and `tiku_pool_create` strides at the rounded
+size; a full pool -- a 1 KB page over the lean 88-byte MSS -- wrote its
+last segments over the UDP bind table and the link table, and `link_of`
+faulted on payload bytes.  Every earlier session was too small to fill
+the pool.  The block is now the real header rounded up, with a
+`_Static_assert` on the descriptor.
+
+Proof: **`link-ip` 12/12** with `namespace-paged` (the manifest over the
+link, 7 pages, equal line for line to the cable's, a press after it still
+redrawing); `boardnet.script` and `boardboth.script` read
+`/devices/tiku` -- the dialled L15 mounted by its own name beside its
+window; desktop `make test` green.
+
+### Soak and hygiene (2026-09-07)
+- **`link-soak`**: twenty greetings over the console link, twenty dials
+  over IP (a connection each), and with `TIKUBENCH_AIR=1` five sessions
+  over the air; after each leg the board's counters show nothing refused,
+  bad or gapped, and `ps` and `/sys/timer/count` are what they were.
+- **`bleadv dbg`** asks the SPU whether the RADIO is secure rather than
+  the facade's owner: any path that lends the radio to the coprocessor
+  flips that bit, and a read through the secure alias while it is clear
+  is a bus fault.
+- **`link-cap`'s `beacon-after`**: once the sessions the BLE link held
+  are over, the DUT beacons a nonce name and the peer's own scan must
+  hear it, with a second radio as the oracle.  It passes -- and, said
+  plainly, it did not fail with the shortcut reset of §4e undone, nor did
+  a check after `bleadv flprnus`, so that reset is not shown to be
+  load-bearing.  What the probing found instead is OPEN: after
+  `write /gui/desk ble` with a peer scanning nearby and then `off`, a
+  beacon says it is running and nothing reaches the air, and it stays
+  silent until the board reboots; `bleadv dbg` then reads TXPOWER 0x3f
+  and a DATAWHITE the link set, so the lead is shared RADIO configuration
+  not restored when the radio comes back from the coprocessor
+  (`beacon_after_probe.py` beside the lane scripts reproduces it on the
+  two DKs, peer console on ttyACM2).
+
 ---
 
 ## 5. File map (what changed, per repo)
@@ -824,8 +892,10 @@ concrete starting points:
   media on one desk, the third medium through the relay; the BLE link's
   capability follows pairing, `link-cap` 6/6.
 - **M7 — portability proof.**  Every board builds its backends behind its
-  capability macros; forms + drawing demos reach the desk over each board's
-  best link (MSP430 console, LM20 console+BLE, Pico W console+IP).
+  capability macros (§4e's table); `ladder.sh` walks the two DKs to a desk
+  over console, IP and both at once, and a dialled board is mounted by
+  name (§4f).  Left: the BLE rung on a host adapter that hears, and the
+  MSP430 and Pico W rows on the bench.
 
 ### Design decisions already made (keep them)
 - Message link over byte link; the kernel owns the console + the contract,
@@ -909,3 +979,7 @@ concrete starting points:
   (`boardboth.script`, windows 3); the BLE link's capability follows the
   central's pairing and is gone with the link (`link-cap` 6/6);
   `ble-serial` 3/3, `ble-bond` 3/3, `ble-adv` 13/13 with it.  ✅
+- **The shell over a link:** a dialled board's namespace is mounted on
+  the desk over its connection, the manifest paged; `link-ip` 12/12,
+  `boardnet.script` and `boardboth.script` read `/devices/tiku`;
+  `link-soak` holds over the console link and IP.  ✅

@@ -6,8 +6,9 @@
  *
  * tiku_tx.h - transport seam: bytes to and from one device.
  *
- * Serial and TCP today; the WebSocket/wasm build implements the same three
- * calls.  Nothing above this header knows which one it is talking to.
+ * Serial, TCP and a custom one over a caller's own descriptor and hooks;
+ * the WebSocket/wasm build implements the same three calls.  Nothing above
+ * this header knows which one it is talking to.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,6 +38,27 @@ tiku_tx_t *tiku_tx_open_serial(const char *path, int baud);
  */
 tiku_tx_t *tiku_tx_open_tcp(const char *host, int port);
 
+/** @brief A custom transport's write: @p len bytes to the device;
+ *         @return len, or -1 when the way is gone. */
+typedef int (*tiku_tx_write_fn)(const void *buf, size_t len, void *ctx);
+
+/** @brief A custom transport's pump: whatever moves bytes onto @p fd. */
+typedef void (*tiku_tx_pump_fn)(void *ctx);
+
+/**
+ * @brief A transport over what a caller already carries: bytes back
+ *        arrive on @p fd, which stays the caller's and is not closed with
+ *        the transport; bytes out go through @p write; @p pump runs
+ *        while a read waits, so the medium is serviced by whoever is
+ *        blocked on it.  The shell of a board over a link is one.
+ *
+ * @param name  What to call it, for window titles and logs.
+ * @return Handle, or NULL (errno set).
+ */
+tiku_tx_t *tiku_tx_open_custom(int fd, tiku_tx_write_fn write,
+                               tiku_tx_pump_fn pump, void *ctx,
+                               const char *name);
+
 /**
  * @brief Read whatever has arrived, waiting at most @p timeout_ms.
  *
@@ -48,7 +70,8 @@ int tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max,
 /** @brief Write @p len bytes; -1 on a broken link. */
 int tiku_tx_write(tiku_tx_t *tx, const void *buf, size_t len);
 
-/** @brief Reopen the same endpoint after a replug.  0 on success. */
+/** @brief Reopen the same endpoint after a replug.  0 on success; a
+ *         custom transport has no endpoint of its own and stays down. */
 int tiku_tx_reopen(tiku_tx_t *tx);
 
 /** @brief Human-readable endpoint name, for window titles and logs. */

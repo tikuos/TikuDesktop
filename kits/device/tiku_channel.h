@@ -23,6 +23,7 @@
 
 #include "tiku_link.h"
 #include "tiku_session.h"
+#include "tiku_tx.h"
 
 typedef struct tiku_channel tiku_channel_t;
 
@@ -70,6 +71,20 @@ int tiku_channel_fd(const tiku_channel_t *ch);
 
 /** @brief The link under the channel, for its counters. */
 tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
+
+/**
+ * @brief The board's shell over the same link: a transport whose bytes
+ *        out go as SHELL_IN messages and whose bytes back are what the
+ *        board's shell wrote, so a session and a namespace stand on a
+ *        board that has no cable here.  One per channel; the transport
+ *        is the caller's to close, and reads nothing once the channel is
+ *        closed.  NULL when out of sockets.
+ */
+tiku_tx_t *tiku_channel_shell_tx(tiku_channel_t *ch);
+
+/** @brief Losses the link has reported in all, for a caller to decide
+ *         when a board that dialled in is gone for good. */
+int tiku_channel_losses(const tiku_channel_t *ch);
 
 /**
  * @brief Service the link, then send what the desktop wrote to its end:

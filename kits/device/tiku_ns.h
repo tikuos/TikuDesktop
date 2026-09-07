@@ -175,6 +175,18 @@ int tiku_ns_unsubscribe(tiku_ns_t *ns, const char *path);
 int tiku_ns_truncated(const tiku_ns_t *ns);
 
 /**
+ * @brief Fill in the directories the manifest lists empty by walking
+ *        them with `ls`: a dynamic directory (gui/, proc/, data/) has no
+ *        static children to render, and what it holds is only found by
+ *        asking.  Nodes found this way carry no metadata, as with
+ *        tiku_ns_complete().
+ *
+ * @param max_depth  How far below each such directory to walk; 2 if 0.
+ * @return Nodes added, or -1.
+ */
+int tiku_ns_complete_dynamic(tiku_ns_t *ns, int max_depth);
+
+/**
  * @brief Complete a truncated mirror by walking the tree with `ls`.
  *
  * Nodes discovered this way carry no descriptor or capability metadata; their

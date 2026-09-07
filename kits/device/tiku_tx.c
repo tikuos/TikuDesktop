@@ -7,7 +7,8 @@
  * tiku_tx.c - serial and TCP transports.
  *
  * Serial is raw 8N1 with no flow control and DTR left asserted; TCP is a plain
- * stream to the telnet-shell port.  Both poll with a deadline so the UI thread
+ * stream to the telnet-shell port; a custom one reads a descriptor the caller
+ * feeds and writes through a hook.  All poll with a deadline so the UI thread
  * never blocks on a silent device.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -31,6 +32,10 @@
 
 #define TX_SERIAL 0
 #define TX_TCP    1
+#define TX_CUSTOM 2
+
+/* A custom read polls in slices this long, pumping its medium between. */
+#define TX_SLICE_MS 20
 
 struct tiku_tx {
     int  kind;
@@ -39,6 +44,9 @@ struct tiku_tx {
     int  port;                 /* tcp only    */
     char endpoint[256];        /* device path or host */
     char name[288];
+    tiku_tx_write_fn cwrite;   /* custom only */
+    tiku_tx_pump_fn  cpump;
+    void            *cctx;
 };
 
 /** @brief Map an integer rate onto its termios constant; B0 if unsupported. */
@@ -172,6 +180,29 @@ tiku_tx_open_tcp(const char *host, int port)
     return tx;
 }
 
+tiku_tx_t *
+tiku_tx_open_custom(int fd, tiku_tx_write_fn write, tiku_tx_pump_fn pump,
+                    void *ctx, const char *name)
+{
+    tiku_tx_t *tx;
+
+    if (fd < 0 || write == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    tx = calloc(1, sizeof *tx);
+    if (tx == NULL) {
+        return NULL;
+    }
+    tx->kind   = TX_CUSTOM;
+    tx->fd     = fd;
+    tx->cwrite = write;
+    tx->cpump  = pump;
+    tx->cctx   = ctx;
+    snprintf(tx->name, sizeof tx->name, "%s", (name != NULL) ? name : "link");
+    return tx;
+}
+
 int
 tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
 {
@@ -184,7 +215,26 @@ tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
     p.fd = tx->fd;
     p.events = POLLIN;
     p.revents = 0;
-    if (poll(&p, 1, timeout_ms) <= 0) {
+    if (tx->kind == TX_CUSTOM) {
+        /* The medium is serviced from here: whoever waits on the shell
+         * is the only one running while it waits. */
+        int left = timeout_ms;
+
+        for (;;) {
+            int slice = (left < TX_SLICE_MS) ? left : TX_SLICE_MS;
+
+            if (tx->cpump != NULL) {
+                tx->cpump(tx->cctx);
+            }
+            if (poll(&p, 1, (slice < 0) ? 0 : slice) > 0) {
+                break;
+            }
+            left -= slice;
+            if (left <= 0) {
+                return 0;
+            }
+        }
+    } else if (poll(&p, 1, timeout_ms) <= 0) {
         return 0;                      /* timeout, or a signal: no data yet */
     }
     n = read(tx->fd, buf, max);
@@ -193,7 +243,7 @@ tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
     }
     /* 0 from a socket is a closed peer; on a serial fd it is just quiet. */
     if (n == 0) {
-        return (tx->kind == TX_TCP) ? -1 : 0;
+        return (tx->kind == TX_SERIAL) ? 0 : -1;
     }
     return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
 }
@@ -206,6 +256,9 @@ tiku_tx_write(tiku_tx_t *tx, const void *buf, size_t len)
 
     if (tx == NULL || tx->fd < 0) {
         return -1;
+    }
+    if (tx->kind == TX_CUSTOM) {
+        return tx->cwrite(buf, len, tx->cctx);
     }
     while (off < len) {
         ssize_t n = write(tx->fd, p + off, len - off);
@@ -230,6 +283,9 @@ tiku_tx_reopen(tiku_tx_t *tx)
 {
     if (tx == NULL) {
         return -1;
+    }
+    if (tx->kind == TX_CUSTOM) {
+        return -1;                 /* the descriptor is the caller's */
     }
     if (tx->fd >= 0) {
         (void)close(tx->fd);
@@ -263,7 +319,7 @@ tiku_tx_close(tiku_tx_t *tx)
     if (tx == NULL) {
         return;
     }
-    if (tx->fd >= 0) {
+    if (tx->fd >= 0 && tx->kind != TX_CUSTOM) {
         (void)close(tx->fd);
     }
     free(tx);

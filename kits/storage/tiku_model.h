@@ -301,6 +301,13 @@ tiku_backend_t *tiku_backend_posix_open(void);
  * @param baud  Line rate.
  */
 tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
+/**
+ * @brief The same device over a transport already open -- the shell of a
+ *        board that reached the desk over a link rather than a cable.
+ *        Takes @p tx: it is closed with the backend, or on failure.
+ */
+struct tiku_tx;
+tiku_backend_t *tiku_backend_tiku_open_tx(struct tiku_tx *tx);
 /** @brief A device backend's patience for one write, in ms. */
 void tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms);
 /** @brief Whether a device backend's link is down, awaiting a replug. */

@@ -543,8 +543,6 @@ static const tiku_backend_ops_t TIKU_OPS = {
 tiku_backend_t *
 tiku_backend_tiku_open(const char *port, int baud)
 {
-    tiku_backend_t *b;
-    tiku_impl_t *impl;
     tiku_tx_t *tx;
     char scan[8][256];
 
@@ -555,6 +553,18 @@ tiku_backend_tiku_open(const char *port, int baud)
         port = scan[0];
     }
     tx = tiku_tx_open_serial(port, baud);
+    if (tx == NULL) {
+        return NULL;
+    }
+    return tiku_backend_tiku_open_tx(tx);
+}
+
+tiku_backend_t *
+tiku_backend_tiku_open_tx(tiku_tx_t *tx)
+{
+    tiku_backend_t *b;
+    tiku_impl_t *impl;
+
     if (tx == NULL) {
         return NULL;
     }
@@ -581,8 +591,13 @@ tiku_backend_tiku_open(const char *port, int baud)
         free(b);
         return NULL;
     }
+    /* The manifest never lists what a dynamic directory holds -- the
+     * forms under gui/ above all -- so those are asked for; a manifest
+     * cut by the device's buffer is completed whole instead. */
     if (tiku_ns_truncated(impl->ns)) {
         (void)tiku_ns_complete(impl->ns, 4);
+    } else {
+        (void)tiku_ns_complete_dynamic(impl->ns, 2);
     }
     read_ident_field(impl->ns, "/sys/device/uid",  impl->ident.uid,
                      sizeof impl->ident.uid);

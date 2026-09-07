@@ -22,9 +22,17 @@
 #define MSG_HEAD 8u
 #define OUT_MAX  (MSG_HEAD + TIKU_SESSION_FRAME_MAX)
 
-/* The session's own vocabulary, only as far as coalescing needs it. */
+/* The session's own vocabulary, only as far as coalescing and the shell
+ * road need it. */
 #define RMSG_EVENT        16u
 #define EVENT_POINTER_MOVE 8u
+#define RMSG_SHELL_IN     21u
+#define RMSG_SHELL_OUT    22u
+
+/* The most shell text one message carries; a board's inject ring is 256. */
+#define SHELL_CHUNK       128u
+/* How long a shell write waits for the link to take a message. */
+#define SHELL_WAIT_MS     2000L
 
 /* A greeting the board has not answered is said again after SILENCE_MS,
  * and after a loss; REGREETS of those go out at once since the board
@@ -51,6 +59,9 @@ struct tiku_channel {
     long            greeted_at;     /* ms, the last one */
     long            last_rx;        /* ms, the board's last message */
     int             regreets;       /* greetings said again since last_rx */
+    int             losses;         /* the link's, in all */
+    int             shell_desk_fd;  /* the shell road's ends, or -1 */
+    int             shell_mine_fd;
 };
 
 /** @brief Milliseconds on the monotonic clock. */
@@ -63,17 +74,14 @@ now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-/** @brief A message from the board: handed to the desktop as a stream. */
+/** @brief Write all of @p bytes to @p fd, waiting out a full socket. */
 static void
-on_message(const unsigned char *bytes, size_t len, void *ctx)
+write_all(int fd, const unsigned char *bytes, size_t len)
 {
-    tiku_channel_t *ch = ctx;
     size_t off = 0;
 
-    ch->last_rx = now_ms();
-    ch->regreets = 0;
     while (off < len) {
-        ssize_t n = write(ch->mine_fd, bytes + off, len - off);
+        ssize_t n = write(fd, bytes + off, len - off);
 
         if (n <= 0) {
             if (n < 0 && (errno == EAGAIN || errno == EINTR)) {
@@ -83,6 +91,38 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
         }
         off += (size_t)n;
     }
+}
+
+/** @brief The little-endian length at @p b + 4. */
+static size_t
+len_at(const unsigned char *b)
+{
+    return (size_t)b[4] | ((size_t)b[5] << 8) | ((size_t)b[6] << 16) |
+           ((size_t)b[7] << 24);
+}
+
+/**
+ * @brief A message from the board: handed to the desktop as a stream,
+ *        except what its shell wrote, which goes to the shell road when
+ *        one is open.  The two never mix: the desktop's listener does
+ *        not know the shell's messages, and the shell's session does not
+ *        know windows.
+ */
+static void
+on_message(const unsigned char *bytes, size_t len, void *ctx)
+{
+    tiku_channel_t *ch = ctx;
+
+    ch->last_rx = now_ms();
+    ch->regreets = 0;
+    if (len >= MSG_HEAD && bytes[0] == RMSG_SHELL_OUT && bytes[1] == 0u &&
+        bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
+        if (ch->shell_mine_fd >= 0) {
+            write_all(ch->shell_mine_fd, bytes + MSG_HEAD, len_at(bytes));
+        }
+        return;
+    }
+    write_all(ch->mine_fd, bytes, len);
 }
 
 tiku_channel_t *
@@ -105,9 +145,80 @@ tiku_channel_adopt(tiku_link_t *link)
     ch->link = link;
     ch->desk_fd = sv[0];
     ch->mine_fd = sv[1];
+    ch->shell_desk_fd = -1;
+    ch->shell_mine_fd = -1;
     (void)fcntl(ch->mine_fd, F_SETFL, O_NONBLOCK);
     tiku_link_on_message(link, on_message, ch);
     return ch;
+}
+
+/** @brief Bytes for the board's shell, as SHELL_IN messages the link
+ *         takes one at a time; the link is serviced while it will not. */
+static int
+shell_write(const void *buf, size_t len, void *ctx)
+{
+    tiku_channel_t *ch = ctx;
+    const unsigned char *p = buf;
+    size_t off = 0;
+
+    while (off < len) {
+        unsigned char msg[MSG_HEAD + SHELL_CHUNK];
+        size_t n = len - off;
+        long deadline = now_ms() + SHELL_WAIT_MS;
+
+        if (n > SHELL_CHUNK) {
+            n = SHELL_CHUNK;
+        }
+        while (!tiku_link_ready(ch->link)) {
+            if (now_ms() >= deadline) {
+                return -1;
+            }
+            tiku_link_pump(ch->link);
+        }
+        memset(msg, 0, MSG_HEAD);
+        msg[0] = RMSG_SHELL_IN;
+        msg[4] = (unsigned char)n;
+        memcpy(msg + MSG_HEAD, p + off, n);
+        if (tiku_link_send(ch->link, msg, MSG_HEAD + n) != 0) {
+            return -1;
+        }
+        off += n;
+    }
+    return (int)len;
+}
+
+/** @brief While a shell read waits, the link is serviced from here. */
+static void
+shell_pump(void *ctx)
+{
+    tiku_channel_t *ch = ctx;
+
+    tiku_link_pump(ch->link);
+}
+
+tiku_tx_t *
+tiku_channel_shell_tx(tiku_channel_t *ch)
+{
+    int sv[2];
+
+    if (ch == NULL || ch->shell_desk_fd >= 0) {
+        return NULL;
+    }
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return NULL;
+    }
+    ch->shell_desk_fd = sv[0];
+    ch->shell_mine_fd = sv[1];
+    (void)fcntl(ch->shell_desk_fd, F_SETFL, O_NONBLOCK);
+    (void)fcntl(ch->shell_mine_fd, F_SETFL, O_NONBLOCK);
+    return tiku_tx_open_custom(ch->shell_desk_fd, shell_write, shell_pump,
+                               ch, "shell over a link");
+}
+
+int
+tiku_channel_losses(const tiku_channel_t *ch)
+{
+    return (ch != NULL) ? ch->losses : 0;
 }
 
 tiku_channel_t *
@@ -270,6 +381,7 @@ tend(tiku_channel_t *ch)
     poll_own(ch);
     tiku_link_pump(ch->link);
     if (tiku_link_lost(ch->link) > 0) {
+        ch->losses++;
         flush(ch);
         regreet(ch);
     } else if (ch->greeted && ch->last_rx < ch->greeted_at &&
@@ -374,5 +486,9 @@ tiku_channel_close(tiku_channel_t *ch)
     tiku_session_free(ch->sess);
     close(ch->desk_fd);
     close(ch->mine_fd);
+    if (ch->shell_desk_fd >= 0) {
+        close(ch->shell_desk_fd);
+        close(ch->shell_mine_fd);
+    }
     free(ch);
 }
