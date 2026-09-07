@@ -341,10 +341,13 @@ tiku_tx_scan_serial(char out[][256], int max)
             continue;
         }
         /* by-id names carry the probe: J-Link (Nordic/Ambiq/Renesas kits),
-         * CDC (Pico), FTDI (the FR5994 rig). */
+         * CDC (Pico), FTDI (the FR5994 rig), TikuOS (a board whose console
+         * is its OWN USB port, the LM20 native-USB build -- the probe is off
+         * the console path there, so the port carries the device's name). */
         if (strstr(e->d_name, "J-Link") == NULL &&
             strstr(e->d_name, "CDC")    == NULL &&
             strstr(e->d_name, "FT232")  == NULL &&
+            strstr(e->d_name, "TikuOS") == NULL &&
             strstr(e->d_name, "Pico")   == NULL) {
             continue;
         }
