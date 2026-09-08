@@ -98,7 +98,7 @@ cost the shell already has on the cable today.
   runner: lease, send `cat /sys/uptime`, the answer arrives on the
   callback, a namespace read meanwhile is refused and SAYS so, unlease,
   the same read succeeds.  Half a day.
-- **P2 — IN PROGRESS.**  The runner is done and proven (applications
+- **P2 — DONE 2026-09-08** (applications `d8ddc71` + `d85a550`).  The runner is done and proven (applications
   `d8ddc71`): `kits/storage/tiku_board_basic.{h,c}` turns P0's cues into
   code on P1's lease -- hand it a program, pump it, take the output as
   lines, stop it, and the board is back at its shell afterwards.
@@ -202,4 +202,51 @@ board (125), because a native-USB console disappears and comes back as a
 new device while a J-Link VCOM does not -- 185/203 on the LM20 against
 290/292 on the L15.  A reboot-aware reconnect in the bench session would
 close the whole class; until then, drive board-reboot suites over a VCOM.
+
+## 7. What P2 settled, and the four things it cost (2026-09-08)
+
+TikuBasic offers **Run on <board>** beside Run, runs the program there,
+and what the board prints lands in the same message window a run on this
+machine fills.  `iderunboard.script` proves it on a board found by
+scanning with no port named: the board is offered BY NAME (which takes
+the whole chain -- mount, shell service, wire, client cache, menu), and
+running it opens the message window, which the editor only makes when
+there is something to put in it.
+
+The seam: the shell owns the mounts and the lease, so the SHELL runs the
+program; an application asks by name and is TOLD the output, exactly as
+the clipboard is told, because an ABI service that returns data must
+never wait on the wire.  Four services, `board_said()` on the descriptor,
+ABI 2, carried in process and over the wire both.
+
+Four things the building cost, each now in the code:
+
+1. **An application cannot reach a board at all.**  It gets files only
+   through host libc on paths the shell's panel hands it, and a board is
+   in the SHELL's namespace.  The seam is not an optimisation; without it
+   there is no road.
+2. **Names told once are told to nobody.**  The boards were named when
+   they changed -- at startup, before any application had connected.  A
+   session arriving later never heard them.  Told when the ROOM changes
+   too.
+3. **A run with no child must not be read as one.**  The editor's tick
+   read the run's pipe; for a board run that descriptor is closed, the
+   read returns EBADF, and the loop takes it for "a broken pipe is a
+   finished run" -- the run ended before it had said anything.  Stopping
+   one likewise asks the shell rather than killing a child that a board
+   run has not got (with no child, the kill would signal this process's
+   own group).
+4. **A shared line must be resynchronised, and never waited on for ever.**
+   The desk's own namespace reply was still in flight when the run took
+   the line, so "basic" arrived appended to it and the board never
+   reached the interpreter's prompt -- the run sat in SENDING and the
+   shell sat with it.  A newline first, a bounded drain, and a bound on
+   reaching the prompt at all: a run that cannot start FAILS rather than
+   hanging the shell.
+
+Not asserted in the script, and held elsewhere on purpose: what a message
+row SAYS.  A remote window's drawing cannot be narrated over the wire and
+the row menu offers a place rather than the words, so the two lines an
+error is printed in -- and the fold that makes them one row with a line
+-- are checked by `test_boardbasic` against a board instead.
 
