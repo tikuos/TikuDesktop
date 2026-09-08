@@ -245,7 +245,27 @@ remote_hear(desktop_t *app)
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
                 }
             }
-                        if (tiku_msg_what(m) == TIKU_MSG_BOARDSAVE) {
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDFREE) {
+                const char *board = tiku_msg_find_string(m, "board", 0);
+                int ok = desktop_board_release(app, board);
+
+                desktop_board_tell(app, i,
+                                   ok ? TIKU_APP_BOARD_RELEASED
+                                      : TIKU_APP_BOARD_FAILED,
+                                   (board != NULL) ? board : "");
+                desktop_board_names_tell(app);
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDBACK) {
+                const char *board = tiku_msg_find_string(m, "board", 0);
+                int ok = desktop_board_reclaim(app, board);
+
+                desktop_board_tell(app, i,
+                                   ok ? TIKU_APP_BOARD_RECLAIMED
+                                      : TIKU_APP_BOARD_FAILED,
+                                   (board != NULL) ? board : "");
+                desktop_board_names_tell(app);
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDSAVE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);
                 const char *name = tiku_msg_find_string(m, "name", 0);
                 const char *prog = tiku_msg_find_string(m, "program", 0);
@@ -316,7 +336,7 @@ desktop_board_names_tell(desktop_t *app)
             sessions++;
         }
     }
-    (void)desktop_board_names(app, names, sizeof names);
+        (void)desktop_board_list(app, names, sizeof names);
     /* Told when the names change -- AND when the room does.  The boards
      * were named once at startup, before any application had connected,
      * and a session arriving after that would never have heard them. */

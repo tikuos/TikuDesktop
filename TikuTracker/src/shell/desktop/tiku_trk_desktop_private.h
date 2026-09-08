@@ -247,7 +247,16 @@ typedef struct desktop {
     int                      board_run_saving;    /* a save, not a run */
     int                      board_run_asked;     /* the INPUT was told */
     char                     board_names_told[512];
-    int                      board_names_sessions;  /* how many heard it */
+        int                      board_names_sessions;  /* how many heard it */
+    int                      board_baud;   /* what the mounts were opened at */
+    /* Boards let go so something else could have their ports.  What is
+     * kept is what the board IS, not where it was: a reflashed board
+     * comes back on whatever node the host gives it next. */
+    struct {
+        char name[64];              /* the mount it had, and will have */
+        char uid[40];               /* its die, which does not move    */
+        int  used;
+    }                        released[TIKU_MOUNT_MAX];
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_window_t  *remote_press;       /* or NULL                    */
@@ -687,6 +696,13 @@ int  desktop_board_save(desktop_t *app, struct desktop_embed *slot,
                         const char *program);
 int  desktop_board_input(desktop_t *app, const char *text);
 int  desktop_board_stop(desktop_t *app);
+int  desktop_board_list(desktop_t *app, char *out, size_t max);
+int  desktop_board_release(desktop_t *app, const char *name);
+int  desktop_board_reclaim(desktop_t *app, const char *name);
+int  desktop_board_port(desktop_t *app, const char *name, char *out,
+                        size_t max);
+int  desktop_board_mcu(desktop_t *app, const char *name, char *out,
+                       size_t max);
 void desktop_board_pump(desktop_t *app);
 void desktop_board_tell(desktop_t *app, int session, int what,
                         const char *text);
@@ -730,6 +746,7 @@ void begin_shutdown(desktop_t *app);
 
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
+int channel_keep(desktop_t *app, struct tiku_channel *ch);
 /**
  * @brief Listen on @p port for boards that dial in rather than being found
  *        on a cable.  @return 1 when the socket is up.

@@ -328,6 +328,22 @@ struct tiku_session *tiku_backend_tiku_session(tiku_backend_t *b);
 const tiku_identity_t *tiku_backend_tiku_identity(const tiku_backend_t *b);
 
 /**
+ * @brief The port a board is on, into @p out ("/dev/ttyACM0").
+ * @return the bytes written, or 0 when it is not on a port at all.
+ */
+int tiku_backend_tiku_port(const tiku_backend_t *b, char *out, size_t max);
+
+/**
+ * @brief Open the board whose die says @p uid, whatever port it is on.
+ *
+ * A board that has just been reflashed comes back on whichever node the
+ * host gives it next, so the way back to it is what it IS, not where it
+ * was.  Every port is asked in turn and the rest let go.
+ * @return the board, or NULL when none of them is that one.
+ */
+tiku_backend_t *tiku_backend_tiku_open_uid(const char *uid, int baud);
+
+/**
  * @brief Take the board's shell for one client: its text comes to
  *        @p on_text as it arrives, and the namespace is closed until it
  *        is given back.

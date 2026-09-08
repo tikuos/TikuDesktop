@@ -156,6 +156,217 @@ run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
 }
 
 /**
+  * @brief The boards, one a line, each "name<TAB>port<TAB>part".
+ *
+ * Told rather than asked for: an application drawing a menu needs both,
+ * and neither may cost it a wait on the wire.
+ */
+int
+desktop_board_list(desktop_t *app, char *out, size_t max)
+{
+    size_t n = 0u;
+    int i, slots;
+
+    if (app == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    slots = tiku_mount_slots(app->backend);
+    for (i = 0; i < slots; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+        tiku_backend_t *b = tiku_mount_at(app->backend, i);
+                char port[128];
+        char row[320];
+        const tiku_identity_t *id;
+        size_t need;
+
+        if (prefix == NULL || b == NULL ||
+            strncmp(prefix, "/devices/", 9) != 0) {
+            continue;
+        }
+                port[0] = '\0';
+        (void)tiku_backend_tiku_port(b, port, sizeof port);
+        id = tiku_backend_tiku_identity(b);
+        (void)snprintf(row, sizeof row, "%s\t%s\t%s\n", leaf_of(prefix),
+                       port, (id != NULL) ? id->mcu : "");
+        need = strlen(row);
+        if (n + need >= max) {
+            break;
+        }
+        memcpy(out + n, row, need);
+        n += need;
+        out[n] = '\0';
+    }
+    return (int)n;
+}
+
+/** @brief The channel slot of the board mounted at @p prefix, or -1. */
+static int
+channel_slot_of(desktop_t *app, const char *prefix)
+{
+    int k;
+
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        if (app->channels[k] != NULL &&
+            strcmp(app->channel_board[k], prefix) == 0) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+/** @brief The port @p name is on ("/dev/ttyACM0"), into @p out. */
+int
+desktop_board_port(desktop_t *app, const char *name, char *out, size_t max)
+{
+    tiku_backend_t *b;
+
+    if (app == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    b = board_named(app, name);
+    if (b == NULL) {
+        return 0;
+    }
+    return tiku_backend_tiku_port(b, out, max);
+}
+
+/** @brief What @p name IS, as its die says ("nRF54LM20B"), into @p out. */
+int
+desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
+{
+    tiku_backend_t *b;
+    const tiku_identity_t *id;
+
+    if (app == NULL || out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    b = board_named(app, name);
+    if (b == NULL) {
+        return 0;
+    }
+    id = tiku_backend_tiku_identity(b);
+    if (id == NULL) {
+        return 0;
+    }
+    return (int)strlen(strncpy(out, id->mcu, max - 1u));
+}
+
+/**
+ * @brief Let the board called @p name go, port and all.
+ *
+ * Something else on this machine needs it -- a bench run that reflashes
+ * it, above all -- and two owners on one port corrupt each other.  What
+ * is remembered is the board's DIE, because the thing coming back may
+ * be on a different node than the thing that went.
+ */
+int
+desktop_board_release(desktop_t *app, const char *name)
+{
+    char prefix[TIKU_PATH_MAX];
+    tiku_backend_t *b;
+    const tiku_identity_t *id;
+    int slot, i;
+
+    if (app == NULL || name == NULL || name[0] == '\0') {
+        return 0;
+    }
+    if (app->board_run != NULL) {
+        return 0;               /* a program is on it: not while it runs */
+    }
+    b = board_named(app, name);
+    if (b == NULL) {
+        return 0;
+    }
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (!app->released[i].used) {
+            break;
+        }
+    }
+    if (i == TIKU_MOUNT_MAX) {
+        return 0;
+    }
+    id = tiku_backend_tiku_identity(b);
+    if (id == NULL || id->uid[0] == '\0') {
+        return 0;               /* nothing to find it by: keep it mounted */
+    }
+    (void)snprintf(app->released[i].name, sizeof app->released[i].name,
+                   "%s", name);
+    (void)snprintf(app->released[i].uid, sizeof app->released[i].uid,
+                   "%s", id->uid);
+    app->released[i].used = 1;
+    (void)snprintf(prefix, sizeof prefix, "/devices/%s", name);
+    /* The windows go with the port: a channel on a cable nobody holds
+     * is a channel talking to a board that may be being reflashed. */
+    slot = channel_slot_of(app, prefix);
+    if (slot >= 0) {
+        tiku_channel_close(app->channels[slot]);
+        app->channels[slot] = NULL;
+        app->channel_board[slot][0] = '\0';
+        app->channel_mount[slot][0] = '\0';
+    }
+    /* The router took the obligation when it was mounted, so removing
+     * it closes it: closing again here would be closing it twice. */
+    (void)tiku_mount_remove(app->backend, prefix);
+    app->dirty = 1;
+    return 1;
+}
+
+/**
+ * @brief Take the board called @p name back, wherever it is now.
+ *
+ * @return nonzero when it answered again and is mounted where it was.
+ */
+int
+desktop_board_reclaim(desktop_t *app, const char *name)
+{
+    char prefix[TIKU_PATH_MAX];
+    tiku_backend_t *dev;
+    tiku_model_t gui;
+    int i, baud;
+
+    if (app == NULL || name == NULL) {
+        return 0;
+    }
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (app->released[i].used &&
+            strcmp(app->released[i].name, name) == 0) {
+            break;
+        }
+    }
+    if (i == TIKU_MOUNT_MAX) {
+        return 0;               /* not one this shell let go */
+    }
+    baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    dev = tiku_backend_tiku_open_uid(app->released[i].uid, baud);
+    if (dev == NULL) {
+        return 0;               /* not back yet: asking again is free */
+    }
+    (void)snprintf(prefix, sizeof prefix, "/devices/%s",
+                   app->released[i].name);
+    tiku_backend_tiku_set_write_timeout(dev, 4000);
+    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+        tiku_backend_close(dev);
+        return 0;
+    }
+    if (dev->ops->stat(dev, "/gui", &gui) == 0) {
+        int slot = channel_keep(app,
+                                tiku_channel_open(
+                                    tiku_backend_tiku_session(dev)));
+
+        if (slot >= 0) {
+            (void)snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
+                           prefix);
+        }
+    }
+    app->released[i].used = 0;
+    app->dirty = 1;
+    return 1;
+}
+
+/**
  * @brief Start @p program on the board called @p board.
  *
  * @param slot the embedded application to tell, or NULL for a session.

@@ -167,7 +167,7 @@ channels_attach(desktop_t *app)
 
 /** @brief Keep @p ch in a free slot, or close it when there is none.
  *         @return the slot, or -1. */
-static int
+int
 channel_keep(desktop_t *app, tiku_channel_t *ch)
 {
     int k;
@@ -339,8 +339,10 @@ boards_unlisten(desktop_t *app)
 int
 mount_devices(desktop_t *app, const char *port, int baud, const char *at)
 {
-    char scan[TIKU_MOUNT_MAX][256];
+        char scan[TIKU_MOUNT_MAX][256];
     int found, i, mounted = 0;
+
+    app->board_baud = baud;     /* what a board let go is found again at */
 
     if (port != NULL && port[0] != '\0') {
         snprintf(scan[0], sizeof scan[0], "%s", port);

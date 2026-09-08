@@ -318,7 +318,9 @@ const uint32_t *tiku_remote_pixels(
  * ASK   TIKU_MSG_BOARDRUN  string "board", string "program"
  * ASK   TIKU_MSG_BOARDIN   string "text"
  * ASK   TIKU_MSG_BOARDSTOP
- * ASK   TIKU_MSG_BOARDSAVE string "board", string "name", string "program"
+  * ASK   TIKU_MSG_BOARDSAVE string "board", string "name", string "program"
+ * ASK   TIKU_MSG_BOARDFREE string "board"  -- let go, port and all
+ * ASK   TIKU_MSG_BOARDBACK string "board"   -- and take it back
  * TELL  TIKU_MSG_BOARDOUT  int32 "what" (TIKU_APP_BOARD_*), string "text"
  */
 #define TIKU_MSG_BOARDS    0x62726473u   /* 'brds' */
@@ -327,6 +329,8 @@ const uint32_t *tiku_remote_pixels(
 #define TIKU_MSG_BOARDSTOP 0x62737470u   /* 'bstp' */
 #define TIKU_MSG_BOARDOUT  0x626f7574u   /* 'bout' */
 #define TIKU_MSG_BOARDSAVE 0x62736176u   /* 'bsav' */
+#define TIKU_MSG_BOARDFREE 0x62667265u   /* 'bfre' */
+#define TIKU_MSG_BOARDBACK 0x6262616bu   /* 'bbak' */
 
 /**
  * @brief Take the next message a session sent, or NULL.

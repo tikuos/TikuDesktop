@@ -165,8 +165,45 @@ typedef struct tiku_app_services {
      * board_said(TIKU_APP_BOARD_SAVED, name), or FAILED.
      * @return nonzero when the saving was started.
      */
-    int (*board_save)(void *ctx, const char *board, const char *name,
+        int (*board_save)(void *ctx, const char *board, const char *name,
                       const char *program);
+
+    /**
+     * @brief The port @p board is on, into @p out ("/dev/ttyACM0").
+     *
+     * Warm, like the names: an application asks while drawing, and a
+     * service that returns data must never wait on the wire.
+     * @return the bytes written.
+     */
+        int (*board_port)(void *ctx, const char *board, char *out, size_t max);
+
+    /**
+     * @brief What @p board IS, as its die says ("nRF54LM20B"), into
+     *        @p out.  Warm, like the port.
+     * @return the bytes written.
+     */
+    int (*board_mcu)(void *ctx, const char *board, char *out, size_t max);
+
+    /**
+     * @brief Ask the shell to let @p board go, port and all.
+     *
+     * For a tool that must have the port to itself -- one that reflashes
+     * the board, above all -- since two owners on one port corrupt each
+     * other.  Told as board_said(TIKU_APP_BOARD_RELEASED); ask for the
+     * port BEFORE releasing, because a board let go has none.
+     * @return nonzero when the asking was taken.
+     */
+    int (*board_release)(void *ctx, const char *board);
+
+    /**
+     * @brief Ask for it back, wherever it is now.
+     *
+     * A reflashed board returns on whatever node the host gives it next,
+     * so this is by name and the shell finds the rest.  Told as
+     * board_said(TIKU_APP_BOARD_RECLAIMED), or FAILED when it has not
+     * come back yet -- asking again costs nothing.
+     */
+    int (*board_reclaim)(void *ctx, const char *board);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
@@ -251,10 +288,12 @@ typedef struct {
  * future export is refused by absence rather than by misreading; the
  * numbers inside catch a file built against a different toolkit.
  */
-/* 2: the board services and board_said().  An application built for 1
+/* 3: board_port(), board_release() and board_reclaim(), for a tool that
+ * must have a board's port to itself.
+ * 2: the board services and board_said().  An application built for 1
  * has no field to put them in, so the loader refuses it rather than
  * reading past the end of a descriptor that is a field short. */
-#define TIKU_APP_ABI    2u
+#define TIKU_APP_ABI    3u
 
 /** @brief What board_said() is carrying. */
 #define TIKU_APP_BOARD_LINE     0   /**< one line the program printed   */
@@ -263,6 +302,8 @@ typedef struct {
 #define TIKU_APP_BOARD_FAILED   3   /**< the board would not take it    */
 #define TIKU_APP_BOARD_ASKS     4   /**< at an INPUT; text is its prompt */
 #define TIKU_APP_BOARD_SAVED    5   /**< kept on the board; text = name */
+#define TIKU_APP_BOARD_RELEASED 6   /**< let go; text = the board       */
+#define TIKU_APP_BOARD_RECLAIMED 7  /**< taken back; text = the board   */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {

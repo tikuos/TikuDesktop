@@ -672,6 +672,61 @@ tiku_backend_tiku_open(const char *port, int baud)
     return tiku_backend_tiku_open_tx(tx);
 }
 
+int
+tiku_backend_tiku_port(const tiku_backend_t *b, char *out, size_t max)
+{
+    const tiku_impl_t *impl;
+    const char *name;
+    const char *at;
+    size_t n;
+
+    if (b == NULL || out == NULL || max == 0u || b->ops != &TIKU_OPS) {
+        return 0;
+    }
+    out[0] = '\0';
+    impl = b->impl;
+    name = tiku_session_name(impl->sess);
+    /* A serial transport names itself "<path> @<baud>"; anything else is
+     * not a port and has no path to give. */
+    at = strstr(name, " @");
+    if (name[0] != '/' || at == NULL) {
+        return 0;
+    }
+    n = (size_t)(at - name);
+    if (n >= max) {
+        n = max - 1u;
+    }
+    memcpy(out, name, n);
+    out[n] = '\0';
+    return (int)n;
+}
+
+tiku_backend_t *
+tiku_backend_tiku_open_uid(const char *uid, int baud)
+{
+    char scan[16][256];
+    int found, i;
+
+    if (uid == NULL || uid[0] == '\0') {
+        return NULL;
+    }
+    found = tiku_tx_scan_serial(scan, 16);
+    for (i = 0; i < found; i++) {
+        tiku_backend_t *dev = tiku_backend_tiku_open(scan[i], baud);
+        const tiku_identity_t *id;
+
+        if (dev == NULL) {
+            continue;
+        }
+        id = tiku_backend_tiku_identity(dev);
+        if (id != NULL && strcmp(id->uid, uid) == 0) {
+            return dev;
+        }
+        tiku_backend_close(dev);
+    }
+    return NULL;
+}
+
 tiku_backend_t *
 tiku_backend_tiku_open_tx(tiku_tx_t *tx)
 {

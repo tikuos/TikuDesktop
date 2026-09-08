@@ -541,6 +541,42 @@ embed_svc_board_save(void *ctx, const char *board, const char *name,
     return desktop_board_save(slot->app, slot, board, name, program);
 }
 
+/** @brief The port a board is on. */
+static int
+embed_svc_board_port(void *ctx, const char *board, char *out, size_t max)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_port(slot->app, board, out, max);
+}
+
+/** @brief What a board is, as its die says. */
+static int
+embed_svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_mcu(slot->app, board, out, max);
+}
+
+/** @brief Let a board go, port and all. */
+static int
+embed_svc_board_release(void *ctx, const char *board)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_release(slot->app, board);
+}
+
+/** @brief And take it back. */
+static int
+embed_svc_board_reclaim(void *ctx, const char *board)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_reclaim(slot->app, board);
+}
+
 /** @brief Break the running program. */
 static int
 embed_svc_board_stop(void *ctx)
@@ -593,7 +629,11 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.board_run = embed_svc_board_run;
     slot->services.board_input = embed_svc_board_input;
         slot->services.board_stop = embed_svc_board_stop;
-    slot->services.board_save = embed_svc_board_save;
+        slot->services.board_save = embed_svc_board_save;
+        slot->services.board_port = embed_svc_board_port;
+    slot->services.board_mcu = embed_svc_board_mcu;
+    slot->services.board_release = embed_svc_board_release;
+    slot->services.board_reclaim = embed_svc_board_reclaim;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }

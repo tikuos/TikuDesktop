@@ -239,6 +239,114 @@ svc_clip_get(void *ctx, char *out, size_t max)
     return (int)strlen(out);
 }
 
+/** @brief The @p which'th field of @p row, up to a tab or its end. */
+static size_t
+field_of(const char *row, int which, char *out, size_t max)
+{
+    const char *p = row;
+    int i;
+
+    out[0] = '\0';
+    for (i = 0; i < which; i++) {
+        const char *tab = strchr(p, '\t');
+
+        if (tab == NULL || *p == '\n') {
+            return 0u;
+        }
+        p = tab + 1;
+    }
+    {
+        size_t n = strcspn(p, "\t\n");
+
+        if (n >= max) {
+            n = max - 1u;
+        }
+        memcpy(out, p, n);
+        out[n] = '\0';
+        return n;
+    }
+}
+
+static int
+svc_board_port(void *ctx, const char *board, char *out, size_t max)
+{
+    client_ctx_t *c = ctx;
+    const char *row = c->boards;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    while (*row != '\0') {
+        char name[64];
+
+        (void)field_of(row, 0, name, sizeof name);
+        if (board != NULL && strcmp(name, board) == 0) {
+            return (int)field_of(row, 1, out, max);
+        }
+        row = strchr(row, '\n');
+        if (row == NULL) {
+            break;
+        }
+        row++;
+    }
+    return 0;
+}
+
+static int
+svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
+{
+    client_ctx_t *c = ctx;
+    const char *row = c->boards;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    while (*row != '\0') {
+        char name[64];
+
+        (void)field_of(row, 0, name, sizeof name);
+        if (board != NULL && strcmp(name, board) == 0) {
+            return (int)field_of(row, 2, out, max);
+        }
+        row = strchr(row, '\n');
+        if (row == NULL) {
+            break;
+        }
+        row++;
+    }
+    return 0;
+}
+
+/** @brief Ask the shell for something about one board, by name. */
+static int
+say_board(client_ctx_t *c, uint32_t what, const char *board)
+{
+    tiku_msg_t *m = tiku_msg_new(what);
+    int sent;
+
+    if (m == NULL) {
+        return 0;
+    }
+    (void)tiku_msg_add_string(m, "board", (board != NULL) ? board : "");
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
+svc_board_release(void *ctx, const char *board)
+{
+    return say_board(ctx, TIKU_MSG_BOARDFREE, board);
+}
+
+static int
+svc_board_reclaim(void *ctx, const char *board)
+{
+    return say_board(ctx, TIKU_MSG_BOARDBACK, board);
+}
+
 static int
 svc_board_names(void *ctx, char *out, size_t max)
 {
@@ -247,7 +355,31 @@ svc_board_names(void *ctx, char *out, size_t max)
     if (out == NULL || max == 0u) {
         return 0;
     }
-    snprintf(out, max, "%s", c->boards);
+        {
+        /* The shell tells name AND port; a caller asking for names is
+         * asking for names. */
+        const char *row = c->boards;
+        size_t n = 0u;
+
+        out[0] = '\0';
+        while (*row != '\0' && n + 1u < max) {
+            char name[64];
+            size_t k = field_of(row, 0, name, sizeof name);
+
+            if (k > 0u && n + k + 1u < max) {
+                memcpy(out + n, name, k);
+                n += k;
+                out[n++] = '\n';
+                out[n] = '\0';
+            }
+            row = strchr(row, '\n');
+            if (row == NULL) {
+                break;
+            }
+            row++;
+        }
+        return (int)n;
+    }
     return (int)strlen(out);
 }
 
@@ -343,7 +475,11 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.board_run = svc_board_run;
     services.board_input = svc_board_input;
     services.board_stop = svc_board_stop;
-    services.board_save = svc_board_save;
+        services.board_save = svc_board_save;
+        services.board_port = svc_board_port;
+    services.board_mcu = svc_board_mcu;
+    services.board_release = svc_board_release;
+    services.board_reclaim = svc_board_reclaim;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;
