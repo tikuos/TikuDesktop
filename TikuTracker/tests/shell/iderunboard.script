@@ -1,0 +1,59 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboard
+# board: discover
+# A program runs ON THE BOARD and is watched here.
+#
+# The editor offers the board the shell has mounted, hands the program
+# to its interpreter, and what the board prints arrives in the SAME
+# message window a run on this machine fills -- because it is the same
+# interpreter, and the rows, the folded error and the caret are the
+# same road.  A board's program is far slower than the host's, so the
+# waits here are long on purpose.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+note the board the shell mounted is offered by name, beside Run
+click-window Project
+wait 8
+note the row the list stands on is the program with a mistake on a
+note KNOWN line: what comes back has to name that line, which is the
+note whole of what a message is for
+key Down
+wait 8
+click 71 8
+wait 8
+expect-menu Run on tiku
+menu-pick Run on tiku
+note a board is slower than this machine by a long way
+wait 600
+note the window is made only when there is something to put in it, so
+note its being here at all is the board's output having arrived
+expect-title Messages
+note and the row IS what the board printed: a remote window's drawing
+note cannot be narrated over the wire, so the row is read where a person
+note would reach it, in the menu that offers to follow it
+click-window Messages
+wait 8
+note the rows themselves are not read here: a remote window's drawing
+note cannot be narrated over the wire, and the row menu offers a place
+note to go rather than the words.  What the row SAYS is held instead by
+note test_boardbasic, against a board, where the two lines an error is
+note printed in are checked as the editor folds them.
+quit

@@ -130,6 +130,7 @@ enum {
 #define CMD_REDO     18
 #define CMD_RENUM    19
 #define CMD_STOP     20
+#define CMD_RUNBOARD 21
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
@@ -266,6 +267,10 @@ typedef struct {
      * tick, which is called wherever this application is hosted. */
     int                             running;
     int                             child_fd;
+    /* The board a run was sent to, empty when it ran here.  A run on a
+     * board has no child and no pipe: the shell owns it and says what it
+     * printed. */
+    char                            board[64];
     pid_t                           child;
     char                            child_file[512];
     char                            partial[160];
@@ -1779,6 +1784,33 @@ project_publish(ide_t *st)
                                               : "");
         menus.menu[0].item[mrow].command = CMD_RUN;
         menus.menu[0].item[mrow].enabled = (unsigned char)can;
+        {
+            /* Offered only when the shell has a board mounted: a row
+             * naming a road that is not there is furniture. */
+            char boards[256];
+            int have = (st->services->board_names != NULL)
+                     ? st->services->board_names(st->services->ctx, boards,
+                                                 sizeof boards)
+                     : 0;
+
+            if (have > 0) {
+                char first[64];
+                char *nl;
+
+                snprintf(first, sizeof first, "%s", boards);
+                nl = strchr(first, '\n');
+                if (nl != NULL) {
+                    *nl = '\0';
+                }
+                mrow++;
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label,
+                         "Run on %s", first);
+                menus.menu[0].item[mrow].command = CMD_RUNBOARD;
+                menus.menu[0].item[mrow].enabled =
+                    (unsigned char)(st->proj.nrow > 0 && !st->running);
+            }
+        }
         mrow++;
     }
 #endif
@@ -2309,6 +2341,15 @@ run_stop(ide_t *st, const char *why)
     if (!st->running) {
         return;
     }
+    if (st->board[0] != '\0') {
+        /* Somebody else's program: asked to stop, not killed.  A kill
+         * here would signal this process's own group -- there is no
+         * child, so st->child is nobody. */
+        if (st->services->board_stop != NULL) {
+            (void)st->services->board_stop(st->services->ctx);
+        }
+        return;                 /* the shell says when it has stopped */
+    }
     (void)kill(st->child, SIGTERM);
     (void)waitpid(st->child, NULL, 0);
     st->running = 0;
@@ -2380,6 +2421,94 @@ run_file(ide_t *st, const char *path)
      * a message window standing empty is furniture. */
     (void)tiku_list_set_count(&st->msg_list, 0);
     messages_paint(st);
+}
+
+/**
+ * @brief Run the file at @p path on a board the shell has mounted.
+ *
+ * No child and no pipe: the shell owns the board and the run, and what
+ * the program prints arrives as board_said().  Everything downstream --
+ * the message rows, the folded error, the caret -- is the same road a
+ * run on this machine takes, because a board's interpreter IS this one.
+ */
+static void
+run_file_on_board(ide_t *st, const char *path)
+{
+    char program[8192];
+    char boards[256];
+    char *nl;
+    FILE *f;
+    size_t n;
+
+    if (st->running) {
+        snprintf(st->note, sizeof st->note, "already running");
+        project_paint(st);
+        return;
+    }
+    if (st->services->board_run == NULL ||
+        st->services->board_names == NULL ||
+        st->services->board_names(st->services->ctx, boards,
+                                  sizeof boards) <= 0) {
+        snprintf(st->note, sizeof st->note, "no board is mounted");
+        project_paint(st);
+        return;
+    }
+    nl = strchr(boards, '\n');
+    if (nl != NULL) {
+        *nl = '\0';
+    }
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        snprintf(st->note, sizeof st->note, "cannot read the file");
+        project_paint(st);
+        return;
+    }
+    n = fread(program, 1u, sizeof program - 1u, f);
+    (void)fclose(f);
+    program[n] = '\0';
+
+    snprintf(st->child_file, sizeof st->child_file, "%s", path);
+    snprintf(st->board, sizeof st->board, "%s", boards);
+    st->child_numbered = 1;          /* BASIC names its own lines */
+    st->child_fd = -1;               /* nothing of ours to read   */
+    st->nmsg = 0;
+    st->partial[0] = '\0';
+    (void)tiku_list_set_count(&st->msg_list, 0);
+    if (!st->services->board_run(st->services->ctx, st->board, program)) {
+        st->board[0] = '\0';
+        snprintf(st->note, sizeof st->note, "the board would not take it");
+        project_paint(st);
+        return;
+    }
+    st->running = 1;
+    st->run_from = 0;
+    messages_paint(st);
+}
+
+/**
+ * @brief What the program running on a board printed, and how it ended.
+ */
+static void
+ide_board_said(void *state, int what, const char *text)
+{
+    ide_t *st = state;
+
+    if (st == NULL || !st->running || st->board[0] == '\0') {
+        return;
+    }
+    if (what == TIKU_APP_BOARD_LINE) {
+        if (text != NULL && text[0] != '\0') {
+            message_take(st, text);
+        }
+        return;
+    }
+    st->running = 0;
+    st->board[0] = '\0';
+    if (what == TIKU_APP_BOARD_FAILED) {
+        message_take(st, "? the board would not run it");
+    }
+    messages_show(st);
+    project_publish(st);
 }
 
 /**
@@ -2606,6 +2735,13 @@ ide_tick(void *state, int64_t now_us)
     }
     if (st->run_from == 0) {
         st->run_from = now_us;
+    }
+    /* A run on a board has no child and no pipe: the shell owns it and
+     * tells us, so there is nothing to read here.  Reading anyway gets
+     * EBADF from the closed descriptor, which the loop below reads as a
+     * finished run -- the run ended before it had said anything. */
+    if (st->board[0] != '\0') {
+        return;
     }
     /*
      * BOUNDED, because a program is something somebody may have written
@@ -3565,6 +3701,24 @@ ide_pick(void *state, uint32_t window, int command)
         }
         break;
     }
+    case CMD_RUNBOARD: {
+        int row = tiku_list_chosen(&st->tv_list);
+
+        if (row >= 0 && row < st->proj.nrow &&
+            !st->proj.row[row].heading) {
+            edit_t *open_now = edit_of_path(st, st->proj.row[row].path);
+
+            if (open_now != NULL &&
+                tiku_textview_modified(&open_now->tv)) {
+                (void)edit_save(open_now);
+                edit_paint(st, open_now);
+                edit_publish(st, open_now);
+            }
+            run_file_on_board(st, st->proj.row[row].path);
+            project_publish(st);
+        }
+        break;
+    }
     case CMD_BUILD:
         build_project(st);
         project_publish(st);
@@ -3676,7 +3830,8 @@ const tiku_app_descriptor_t tiku_ide_app = {
     .picked = ide_picked,
     .tick = ide_tick,
     .event_in = ide_event,
-    .closed = ide_closed
+    .closed = ide_closed,
+    .board_said = ide_board_said
 };
 
 #ifdef TIKU_APP_SO

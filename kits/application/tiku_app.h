@@ -130,6 +130,32 @@ typedef struct tiku_app_services {
      * when the clipboard is empty (or the service is absent).
      */
     int (*clip_get)(void *ctx, char *out, size_t max);
+
+    /**
+     * @brief The boards the shell has mounted, one name a line.
+     *
+     * A local copy the shell keeps warm, like the clipboard: an
+     * application asks it while drawing a menu, and a service that
+     * returns data must never wait on the wire.
+     * @return the bytes written.
+     */
+    int (*board_names)(void *ctx, char *out, size_t max);
+
+    /**
+     * @brief Run @p program on the board called @p board.
+     *
+     * The shell hands it to that board's interpreter and TELLS the
+     * application what it prints, as board_said(); nothing is returned
+     * here but whether the asking was taken.
+     * @return nonzero when the run was started.
+     */
+    int (*board_run)(void *ctx, const char *board, const char *program);
+
+    /** @brief Answer the running program's INPUT with @p text. */
+    int (*board_input)(void *ctx, const char *text);
+
+    /** @brief Break the running program, as Ctrl-C at its console does. */
+    int (*board_stop)(void *ctx);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
@@ -197,6 +223,15 @@ typedef struct {
      * host must check before calling.
      */
     void (*closed)(void *state, uint32_t window);
+
+    /**
+     * @brief What the program running on a board printed, a line at a
+     *        time, and then how it ended.
+     *
+     * @param what TIKU_APP_BOARD_*; @p text is the line for LINE, and
+     *             the reason (or empty) for the others.
+     */
+    void (*board_said)(void *state, int what, const char *text);
 } tiku_app_descriptor_t;
 
 /*
@@ -205,7 +240,16 @@ typedef struct {
  * future export is refused by absence rather than by misreading; the
  * numbers inside catch a file built against a different toolkit.
  */
-#define TIKU_APP_ABI    1u
+/* 2: the board services and board_said().  An application built for 1
+ * has no field to put them in, so the loader refuses it rather than
+ * reading past the end of a descriptor that is a field short. */
+#define TIKU_APP_ABI    2u
+
+/** @brief What board_said() is carrying. */
+#define TIKU_APP_BOARD_LINE     0   /**< one line the program printed   */
+#define TIKU_APP_BOARD_ENDED    1   /**< it finished by itself          */
+#define TIKU_APP_BOARD_STOPPED  2   /**< a person stopped it            */
+#define TIKU_APP_BOARD_FAILED   3   /**< the board would not take it    */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {

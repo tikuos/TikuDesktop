@@ -307,6 +307,23 @@ const uint32_t *tiku_remote_pixels(
  * clip_get() never waits on the wire. */
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 
+/* A program on a board the shell has mounted.  The shell owns the board
+ * and the run, so an application ASKs for one and is TOLD what it
+ * prints -- the names it may choose from are TOLD too, warm before a
+ * menu asks, because a service that returns data must never wait.
+ *
+ * TELL  TIKU_MSG_BOARDS    string "names"  (one a line)
+ * ASK   TIKU_MSG_BOARDRUN  string "board", string "program"
+ * ASK   TIKU_MSG_BOARDIN   string "text"
+ * ASK   TIKU_MSG_BOARDSTOP
+ * TELL  TIKU_MSG_BOARDOUT  int32 "what" (TIKU_APP_BOARD_*), string "text"
+ */
+#define TIKU_MSG_BOARDS    0x62726473u   /* 'brds' */
+#define TIKU_MSG_BOARDRUN  0x6272756eu   /* 'brun' */
+#define TIKU_MSG_BOARDIN   0x6269696eu   /* 'biin' */
+#define TIKU_MSG_BOARDSTOP 0x62737470u   /* 'bstp' */
+#define TIKU_MSG_BOARDOUT  0x626f7574u   /* 'bout' */
+
 /**
  * @brief Take the next message a session sent, or NULL.
  *

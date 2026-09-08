@@ -237,6 +237,15 @@ typedef struct desktop {
         uint32_t             next_id;   /* the next window id to hand out */
         int                  running;   /* the slot holds an application  */
     } embeds[TIKU_TRK_EMBED_MAX];
+    /* The one program running on a board, and who asked for it: the
+     * board's shell is held while it runs, so a second run would be a
+     * second holder and there is only one line. */
+    struct tiku_board_basic *board_run;
+    struct desktop_embed    *board_run_slot;   /* who hears it, or NULL */
+    char                     board_run_name[64];
+    int                      board_run_session;   /* who asked, or -1  */
+    char                     board_names_told[512];
+    int                      board_names_sessions;  /* how many heard it */
     /* The remote window owning the current press, so MOVE and RELEASE
      * follow the DOWN to the same session -- a drag is one conversation. */
     tiku_window_t  *remote_press;       /* or NULL                    */
@@ -661,6 +670,17 @@ int tick_embeds(void *ctx);
 struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);
 void embed_stop(struct desktop_embed *slot);
+
+/* tiku_trk_desktop_boardrun.c -- a program on a mounted board */
+int  desktop_board_names(desktop_t *app, char *out, size_t max);
+int  desktop_board_run(desktop_t *app, struct desktop_embed *slot,
+                       const char *board, const char *program);
+int  desktop_board_input(desktop_t *app, const char *text);
+int  desktop_board_stop(desktop_t *app);
+void desktop_board_pump(desktop_t *app);
+void desktop_board_tell(desktop_t *app, int session, int what,
+                        const char *text);
+void desktop_board_names_tell(desktop_t *app);
 
 /* tiku_trk_desktop_events.c */
 extern folder_t *fl;

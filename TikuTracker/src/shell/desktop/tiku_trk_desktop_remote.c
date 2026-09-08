@@ -232,6 +232,27 @@ remote_hear(desktop_t *app)
                 }
                 app->dirty = 1;
             }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDRUN) {
+                const char *board = tiku_msg_find_string(m, "board", 0);
+                const char *prog = tiku_msg_find_string(m, "program", 0);
+
+                /* Which session asked is remembered, so what the program
+                 * prints goes back to it and not to every session. */
+                app->board_run_session = i;
+                if (!desktop_board_run(app, NULL, board,
+                                       (prog != NULL) ? prog : "")) {
+                    app->board_run_session = -1;
+                    desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
+                }
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDIN) {
+                const char *text = tiku_msg_find_string(m, "text", 0);
+
+                (void)desktop_board_input(app, (text != NULL) ? text : "");
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDSTOP) {
+                (void)desktop_board_stop(app);
+            }
             if (tiku_msg_what(m) == TIKU_MSG_CLIP) {
                 /* A session put text on the desk's clipboard.  Taken
                  * into the one store; the stamp watch below mirrors it
@@ -243,6 +264,66 @@ remote_hear(desktop_t *app)
             tiku_msg_free(m);
         }
     }
+}
+
+/**
+ * @brief Tell one session something its board program said.
+ */
+void
+desktop_board_tell(desktop_t *app, int session, int what, const char *text)
+{
+    tiku_msg_t *m;
+
+    if (session < 0 || session >= TIKU_REMOTE_SESSIONS) {
+        return;
+    }
+    m = tiku_msg_new(TIKU_MSG_BOARDOUT);
+    if (m == NULL) {
+        return;
+    }
+    (void)tiku_msg_add_int32(m, "what", (int32_t)what);
+    (void)tiku_msg_add_string(m, "text", (text != NULL) ? text : "");
+    (void)tiku_remote_tell(&app->remote, session, m);
+    tiku_msg_free(m);
+}
+
+/**
+ * @brief Tell every session which boards are mounted, when that changes.
+ *
+ * Warm before a menu asks, for the same reason the clipboard is.
+ */
+void
+desktop_board_names_tell(desktop_t *app)
+{
+    char names[512];
+    tiku_msg_t *m;
+    int i, sessions = 0;
+
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        if (app->remote.session[i].used) {
+            sessions++;
+        }
+    }
+    (void)desktop_board_names(app, names, sizeof names);
+    /* Told when the names change -- AND when the room does.  The boards
+     * were named once at startup, before any application had connected,
+     * and a session arriving after that would never have heard them. */
+    if (sessions == app->board_names_sessions &&
+        strcmp(names, app->board_names_told) == 0) {
+        return;
+    }
+    app->board_names_sessions = sessions;
+    (void)snprintf(app->board_names_told, sizeof app->board_names_told,
+                   "%s", names);
+    m = tiku_msg_new(TIKU_MSG_BOARDS);
+    if (m == NULL) {
+        return;
+    }
+    (void)tiku_msg_add_string(m, "names", names);
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        (void)tiku_remote_tell(&app->remote, i, m);
+    }
+    tiku_msg_free(m);
 }
 
 /**

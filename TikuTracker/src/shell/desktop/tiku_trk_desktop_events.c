@@ -2553,6 +2553,9 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
     remote_reconcile(app);
     remote_hear(app);
     clip_mirror(app);
+    /* The boards a session may choose from, on the same beat and for the
+     * same reason: warm before a menu asks for them. */
+    desktop_board_names_tell(app);
     pick_sweep(app);
     remote_sweep(app);
     sync_folder_preferences(app);

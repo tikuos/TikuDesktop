@@ -626,7 +626,10 @@ tiku_backend_tiku_unlease(tiku_backend_t *b)
      * take that tail's own prompt for its answer and leave every command
      * after it one prompt out of step. */
     tiku_session_drain(impl->sess, 150);
-    (void)tiku_session_sync(impl->sess, 4000);
+    /* Short on purpose: the drain has already left the line quiet, and
+     * this can be called from a loop that draws -- four seconds of it
+     * is a frozen shell, not a careful one. */
+    (void)tiku_session_sync(impl->sess, 500);
 }
 
 int

@@ -44,6 +44,9 @@ typedef struct {
     /* The desk's clipboard, mirrored: the shell TELLs every change, so
      * a paste reads from here and never waits on the wire. */
     char                      clip[4096];
+    /* The boards the shell has mounted, kept warm the way the clipboard
+     * is: a menu asks while it is being drawn. */
+    char                      boards[512];
 } client_ctx_t;
 
 static uint32_t
@@ -237,6 +240,67 @@ svc_clip_get(void *ctx, char *out, size_t max)
 }
 
 static int
+svc_board_names(void *ctx, char *out, size_t max)
+{
+    client_ctx_t *c = ctx;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    snprintf(out, max, "%s", c->boards);
+    return (int)strlen(out);
+}
+
+static int
+svc_board_run(void *ctx, const char *board, const char *program)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_BOARDRUN);
+    int sent;
+
+    if (m == NULL) {
+        return 0;
+    }
+    (void)tiku_msg_add_string(m, "board", (board != NULL) ? board : "");
+    (void)tiku_msg_add_string(m, "program",
+                              (program != NULL) ? program : "");
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
+svc_board_input(void *ctx, const char *text)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_BOARDIN);
+    int sent;
+
+    if (m == NULL) {
+        return 0;
+    }
+    (void)tiku_msg_add_string(m, "text", (text != NULL) ? text : "");
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
+svc_board_stop(void *ctx)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_BOARDSTOP);
+    int sent;
+
+    if (m == NULL) {
+        return 0;
+    }
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
 pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
 {
     tiku_app_services_t services;
@@ -255,6 +319,10 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.sizeable = svc_sizeable;
     services.clip_set = svc_clip_set;
     services.clip_get = svc_clip_get;
+    services.board_names = svc_board_names;
+    services.board_run = svc_board_run;
+    services.board_input = svc_board_input;
+    services.board_stop = svc_board_stop;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;
@@ -308,6 +376,23 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
                 tiku_msg_t *heard = tiku_remote_heard(&ctx->remote);
 
                 if (heard != NULL) {
+                    if (tiku_msg_what(heard) == TIKU_MSG_BOARDS) {
+                        const char *n = tiku_msg_find_string(heard,
+                                                             "names", 0);
+
+                        snprintf(ctx->boards, sizeof ctx->boards, "%s",
+                                 (n != NULL) ? n : "");
+                    }
+                    if (tiku_msg_what(heard) == TIKU_MSG_BOARDOUT &&
+                        app->board_said != NULL) {
+                        int32_t what = 0;
+                        const char *text = tiku_msg_find_string(heard,
+                                                                "text", 0);
+
+                        (void)tiku_msg_find_int32(heard, "what", 0, &what);
+                        app->board_said(state, (int)what,
+                                        (text != NULL) ? text : "");
+                    }
                     if (tiku_msg_what(heard) == TIKU_MSG_CLIP) {
                         const char *text =
                             tiku_msg_find_string(heard, "text", 0);

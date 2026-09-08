@@ -28,6 +28,10 @@ tick_embeds(void *ctx)
     desktop_t *app = ctx;
     int e;
 
+    /* The board's program moves on this beat too: the shell owns the
+     * run, and an application only hears about it. */
+    desktop_board_pump(app);
+
     for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
         if (app->embeds[e].running &&
             app->embeds[e].descriptor->tick != NULL) {
@@ -496,6 +500,46 @@ embed_deliver(struct embed_win *ew, const tiku_event_t *ev)
                                        ew->id, ev);
 }
 
+/*---------------------------------------------------------------------------*/
+/* A PROGRAM ON A BOARD                                                      */
+/*---------------------------------------------------------------------------*/
+
+/** @brief The boards the shell has mounted, for an embedded app. */
+static int
+embed_svc_board_names(void *ctx, char *out, size_t max)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_names(slot->app, out, max);
+}
+
+/** @brief Run a program on a board, telling this slot what it prints. */
+static int
+embed_svc_board_run(void *ctx, const char *board, const char *program)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_run(slot->app, slot, board, program);
+}
+
+/** @brief Answer the running program's INPUT. */
+static int
+embed_svc_board_input(void *ctx, const char *text)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_input(slot->app, text);
+}
+
+/** @brief Break the running program. */
+static int
+embed_svc_board_stop(void *ctx)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_stop(slot->app);
+}
+
 /**
  * @brief Host @p descriptor in this process, over workspace services.
  *
@@ -535,6 +579,10 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.sizeable = embed_svc_sizeable;
     slot->services.clip_set = embed_svc_clip_set;
     slot->services.clip_get = embed_svc_clip_get;
+    slot->services.board_names = embed_svc_board_names;
+    slot->services.board_run = embed_svc_board_run;
+    slot->services.board_input = embed_svc_board_input;
+    slot->services.board_stop = embed_svc_board_stop;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }

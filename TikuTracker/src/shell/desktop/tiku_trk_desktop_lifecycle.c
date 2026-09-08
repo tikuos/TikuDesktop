@@ -711,6 +711,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         sizeof app->status, &app->dirty, DESK_W, DESK_H);
 
     app->desk_row = -1;
+    /* Zero is a real session; -1 is nobody. */
+    app->board_run_session = -1;
     (void)tiku_trk_desktop_view_init(&app->desktop_view, app->backend, app->fs,
         prefs_model(app), app->deskbar, &app->folder_render, DESK_W, DESK_H);
     tiku_trk_drag_target_init(&app->drag_target, app->desk, app->deskbar,

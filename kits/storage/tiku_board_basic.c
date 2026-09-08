@@ -16,6 +16,7 @@
 #include "tiku_board_basic.h"
 
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,6 +25,19 @@
 #define PROMPT      "ok>"
 #define OUT_MAX     4096u
 #define LINE_MAX    512u
+/* A board that has not reached the interpreter's prompt by now is not
+ * going to: something else was mid-sentence on the line, and a run that
+ * waits for it waits for ever. */
+#define START_MS    12000L
+
+static long
+now_ms(void)
+{
+    struct timespec ts;
+
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+}
 
 struct tiku_board_basic {
     struct tiku_backend      *b;
@@ -34,7 +48,9 @@ struct tiku_board_basic {
     char                      line[LINE_MAX];
     size_t                    line_len;
     tiku_board_basic_state_t  state;
+    long                      began_ms;  /* when the handover started  */
     int                       started;   /* RUN has gone out           */
+    int                       drop_echo; /* the board's echo of RUN     */
     int                       held;      /* the shell is ours          */
 };
 
@@ -97,6 +113,15 @@ say_lines(tiku_board_basic_t *r, const char *text, size_t n,
         }
         if (c == '\n') {
             r->line[r->line_len] = '\0';
+            /* The board echoes what it was told; the echo of RUN is not
+             * something the program printed. */
+            if (r->drop_echo) {
+                r->drop_echo = 0;
+                if (strcmp(r->line, "RUN") == 0) {
+                    r->line_len = 0u;
+                    continue;
+                }
+            }
             if (fn != NULL) {
                 fn(r->line, ctx);
             }
@@ -145,18 +170,28 @@ tiku_board_basic_start(struct tiku_backend *b, const char *program)
      * prompt would be taken for this one's, ending the run before it has
      * begun.  Let it land, then drop it. */
     {
-        int quiet = 0;
+        int quiet = 0, rounds = 0;
 
-        while (quiet < 3) {
+        /* Bounded as well as quiet: this runs inside the shell's own
+         * loop, and a board that never stops talking would otherwise
+         * stop the shell rather than the drain. */
+        while (quiet < 3 && rounds < 20) {
             size_t before = r->len;
 
-            (void)b->ops->pump(b, 60);
+            (void)b->ops->pump(b, 30);
             quiet = (r->len == before) ? quiet + 1 : 0;
+            rounds++;
         }
     }
     r->len = 0u;
     r->buf[0] = '\0';
     r->state = TIKU_BOARD_BASIC_SENDING;
+    r->began_ms = now_ms();
+    /* A newline first: whoever had the line may have left a half-typed
+     * command on it, and "basic" appended to that is a word the shell
+     * does not know.  The board answers a bare newline with a prompt,
+     * and the drain above has already taken what came before. */
+    (void)send_text(r, "\n");
     /* Entering answers with the banner and the prompt; the pump waits for
      * that prompt before it hands the first line over. */
     if (send_text(r, "basic\n") != 0) {
@@ -195,6 +230,7 @@ send_next(tiku_board_basic_t *r)
     }
     (void)send_text(r, "RUN\n");
     r->started = 1;
+    r->drop_echo = 1;
     r->state = TIKU_BOARD_BASIC_RUNNING;
 }
 
@@ -221,6 +257,10 @@ tiku_board_basic_pump(tiku_board_basic_t *r, int timeout_ms,
         while (r->state == TIKU_BOARD_BASIC_SENDING && prompt_at(r, &end)) {
             consume(r, end);
             send_next(r);
+        }
+        if (r->state == TIKU_BOARD_BASIC_SENDING &&
+            now_ms() - r->began_ms > START_MS) {
+            r->state = TIKU_BOARD_BASIC_FAILED;
         }
         return r->state;
     }
