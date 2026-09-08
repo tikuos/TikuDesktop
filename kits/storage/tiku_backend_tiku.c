@@ -378,14 +378,33 @@ tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
                     (void)snprintf(m.facts.meta, sizeof m.facts.meta, "-");
                     (void)snprintf(m.facts.req_cap, sizeof m.facts.req_cap,
                                    "?");
-                    m.kind = kinds[i] ? TIKU_KIND_VIRTUAL_DIR
-                                      : TIKU_KIND_DEVICE_NODE;
+                    /* WHERE it is decides what it is, exactly as it does
+                     * for a name the manifest knows: the manifest is read
+                     * once at connect, so a program saved after that -- or
+                     * every name on an image whose manifest is empty --
+                     * would otherwise be served as a live value node, and
+                     * a saved BASIC program would read as a sensor. */
+                    if (in_store(full)) {
+                        m.kind = kinds[i] ? TIKU_KIND_DIRECTORY
+                                          : TIKU_KIND_FILE;
+                    } else {
+                        m.kind = kinds[i] ? TIKU_KIND_VIRTUAL_DIR
+                                          : TIKU_KIND_DEVICE_NODE;
+                    }
+                    /* Writability is the manifest's to state and this name
+                     * is not in it; a store file the person may not edit is
+                     * wrong in one direction, inventing a permission the
+                     * device never granted is wrong in the other. */
                     m.facts.perm = TIKU_P_READ;
                     m.facts.cap_known = 0;
                     m.backend = b;
                     (void)snprintf(m.type, sizeof m.type, "%s",
-                                   kinds[i] ? "tiku-dir/namespace"
-                                            : "tiku-node/value");
+                                   (m.kind == TIKU_KIND_FILE)
+                                       ? "tiku-file/data"
+                                   : (m.kind == TIKU_KIND_DIRECTORY)
+                                       ? "tiku-dir/store"
+                                   : kinds[i] ? "tiku-dir/namespace"
+                                              : "tiku-node/value");
                 }
                 count++;
                 if (fn != NULL && fn(&m, ctx) != 0) {
