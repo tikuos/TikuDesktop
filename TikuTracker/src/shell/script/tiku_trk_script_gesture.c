@@ -167,6 +167,13 @@ sc_pump_gesture(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->what = TIKU_TRK_SC_SHOT;
         out->path = cur->text;
         return 1;
+    case OP_RESIZE:
+        if (st == NULL || st->resize == NULL) {
+            sc_verdict(s, 0, "resize:", "this shell cannot");
+        } else if (!st->resize(st->resize_ctx, cur->x, cur->y)) {
+            sc_verdict(s, 0, "resize:", "refused");
+        }
+        return 1;
     case OP_NOTE:
         snprintf(s->note, sizeof s->note, "%s", cur->text);
         return 1;
@@ -254,6 +261,10 @@ sc_parse_gesture(sc_step_t *st, char **w, int n, int lineno)
     } else if (strcmp(w[0], "shot") == 0 && n >= 2) {
         st->op = OP_SHOT;
         snprintf(st->text, sizeof st->text, "%s", w[1]);
+    } else if (strcmp(w[0], "resize") == 0 && n >= 3) {
+        st->op = OP_RESIZE;
+        st->x = atoi(w[1]);
+        st->y = atoi(w[2]);
     } else {
         return 0;
     }

@@ -118,6 +118,11 @@ typedef struct {
      * draws that picture and counts the difference. */
     long      (*redraw_diff)(void *ctx);
     void       *redraw_ctx;
+    /* Resize the shell's screen, as a window manager would: the one way a
+     * script can ask for a picture larger than the window the shell began
+     * in.  0 when the shell cannot. */
+    int       (*resize)(void *ctx, int width, int height);
+    void       *resize_ctx;
     void       *pose_ctx;
 } tiku_trk_script_state_t;
 

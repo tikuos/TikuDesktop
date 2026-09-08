@@ -14,6 +14,13 @@
 
 #include "tiku_link_tcp.h"          /* the port a board dials, for -listen */
 
+/** @brief A script's resize: the same path a window manager's takes. */
+static int
+script_resize(void *ctx, int width, int height)
+{
+    return resize_desktop((desktop_t *)ctx, width, height) >= 0;
+}
+
 /**
  * @brief Hold the line now up for whatever is still owed it.
  *
@@ -717,6 +724,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     /* After the init, which writes the whole adapter. */
     app->script_adapter.redraw_diff = script_redraw_diff;
     app->script_adapter.redraw_ctx = app;
+    app->script_adapter.resize = script_resize;
+    app->script_adapter.resize_ctx = app;
     app->script_adapter.say = conduct_text;
     app->script_adapter.say_ctx = app;
     tiku_trk_drop_controller_init(&app->drop_controller, app->deskbar,

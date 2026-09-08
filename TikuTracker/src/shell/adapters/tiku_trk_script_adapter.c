@@ -509,6 +509,8 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     state->pixel_at = tiku_trk_script_adapter_pixel_at;
     state->redraw_diff = adapter->redraw_diff;
     state->redraw_ctx = adapter->redraw_ctx;
+    state->resize = adapter->resize;
+    state->resize_ctx = adapter->resize_ctx;
     state->say = adapter->say;
     state->say_ctx = adapter->say_ctx;
     state->pose_ctx = adapter;

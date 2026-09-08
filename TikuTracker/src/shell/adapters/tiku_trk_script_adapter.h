@@ -44,6 +44,10 @@ typedef struct {
      * painted is what a full redraw would have drawn. */
     long               (*redraw_diff)(void *ctx);
     void                *redraw_ctx;
+    /* The shell's screen resize, for a script that wants a picture larger
+     * than the window it began in. */
+    int                (*resize)(void *ctx, int width, int height);
+    void                *resize_ctx;
     /* The shell's named-fact answerer -- the SAME function its conductor
      * channel answers QUERY with, so both surfaces stay one surface. */
     int                (*say)(void *ctx, const char *noun, char *out,

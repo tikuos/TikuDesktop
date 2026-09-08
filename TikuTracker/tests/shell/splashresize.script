@@ -1,0 +1,26 @@
+# shell: desktop
+# home: fixture
+# splash: on
+# The splash covers the desktop at its CURRENT size, not the size the
+# window began at.  The desktop is widened while the boot screen is
+# still up, and a corner beyond the first window's edge is asked for the
+# black -- and, once the veil lifts, for the backdrop, which a pixel off
+# the surface can never show, so the corner is proven to exist as well as
+# to be covered.  Before the fix that corner showed the backdrop under
+# the veil: it was painted over the 1000 by 680 the window started in,
+# and a maximized desktop closed under a splash the size of its first
+# window.
+resize 1400 900
+wait 1
+expect-pixel 5 5 000000
+expect-pixel 1390 890 000000
+expect-pixel 1005 685 000000
+note the far corner and the first pixel past the old edge are both
+note under the veil, so the screen is covered rather than its first size
+wait 150
+expect-pixel 5 5 336698
+expect-pixel 1390 890 336698
+expect-pixel 1005 685 336698
+note and the black is lifted off the whole of it: the backdrop is there
+note at the corner that was under the veil, so the corner is real
+quit
