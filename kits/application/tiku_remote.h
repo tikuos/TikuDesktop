@@ -127,6 +127,8 @@
  * see their own commands and replies. */
 #define TIKU_RMSG_SHELL_IN  21u  /* text for the board's shell            */
 #define TIKU_RMSG_SHELL_OUT 22u  /* what its shell wrote back             */
+#define TIKU_RMSG_BASIC_IN  23u  /* text for the board's interpreter      */
+#define TIKU_RMSG_BASIC_OUT 24u  /* what a program on it printed          */
 #define TIKU_RMSG_CLOSED  18u  /* u32 id: the user closed it        */
 
 /** @brief Where the desktop listens, under this user's HOME. */

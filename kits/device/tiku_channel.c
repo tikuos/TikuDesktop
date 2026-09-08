@@ -28,6 +28,12 @@
 #define EVENT_POINTER_MOVE 8u
 #define RMSG_SHELL_IN     21u
 #define RMSG_SHELL_OUT    22u
+#define RMSG_BASIC_IN     23u
+#define RMSG_BASIC_OUT    24u
+/* What a program has printed and nobody has read yet.  A run says more
+ * than a command does, and the reader is a shell drawing between
+ * pumps. */
+#define BASIC_CAP         4096u
 
 /* The most shell text one message carries; a board's inject ring is 256. */
 #define SHELL_CHUNK       128u
@@ -55,6 +61,8 @@ struct tiku_channel {
     unsigned char   out[OUT_MAX];   /* a message being gathered */
     size_t          got;
     size_t          skip;           /* bytes of one too big still to pass */
+        unsigned char   basic[BASIC_CAP]; /* what a program printed, unread */
+    size_t          basic_len;
     int             greeted;        /* a greeting has gone out */
     long            greeted_at;     /* ms, the last one */
     long            last_rx;        /* ms, the board's last message */
@@ -115,11 +123,24 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
 
     ch->last_rx = now_ms();
     ch->regreets = 0;
-    if (len >= MSG_HEAD && bytes[0] == RMSG_SHELL_OUT && bytes[1] == 0u &&
+        if (len >= MSG_HEAD && bytes[0] == RMSG_SHELL_OUT && bytes[1] == 0u &&
         bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
         if (ch->shell_mine_fd >= 0) {
             write_all(ch->shell_mine_fd, bytes + MSG_HEAD, len_at(bytes));
         }
+        return;
+    }
+    if (len >= MSG_HEAD && bytes[0] == RMSG_BASIC_OUT && bytes[1] == 0u &&
+        bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
+        /* What a program printed: kept for whoever is running it, and
+         * never given to the listener, which does not know it. */
+        size_t n = len_at(bytes);
+
+        if (ch->basic_len + n > BASIC_CAP) {
+            n = BASIC_CAP - ch->basic_len;   /* the oldest keeps its place */
+        }
+        memcpy(ch->basic + ch->basic_len, bytes + MSG_HEAD, n);
+        ch->basic_len += n;
         return;
     }
     write_all(ch->mine_fd, bytes, len);
@@ -194,6 +215,59 @@ shell_pump(void *ctx)
     tiku_channel_t *ch = ctx;
 
     tiku_link_pump(ch->link);
+}
+
+int
+tiku_channel_basic_send(tiku_channel_t *ch, const void *bytes, size_t len)
+{
+    const unsigned char *p = bytes;
+    size_t off = 0;
+
+    if (ch == NULL || bytes == NULL) {
+        return -1;
+    }
+    while (off < len) {
+        unsigned char msg[MSG_HEAD + SHELL_CHUNK];
+        size_t n = len - off;
+        long deadline = now_ms() + SHELL_WAIT_MS;
+
+        if (n > SHELL_CHUNK) {
+            n = SHELL_CHUNK;
+        }
+        while (!tiku_link_ready(ch->link)) {
+            if (now_ms() >= deadline) {
+                return -1;
+            }
+            tiku_link_pump(ch->link);
+        }
+        memset(msg, 0, MSG_HEAD);
+        msg[0] = RMSG_BASIC_IN;
+        msg[4] = (unsigned char)n;
+        memcpy(msg + MSG_HEAD, p + off, n);
+        if (tiku_link_send(ch->link, msg, MSG_HEAD + n) != 0) {
+            return -1;
+        }
+        off += n;
+    }
+    return (int)len;
+}
+
+int
+tiku_channel_basic_recv(tiku_channel_t *ch, void *buf, size_t max)
+{
+    size_t n;
+
+    if (ch == NULL || buf == NULL || max == 0u) {
+        return 0;
+    }
+    n = (ch->basic_len < max) ? ch->basic_len : max;
+    if (n == 0u) {
+        return 0;
+    }
+    memcpy(buf, ch->basic, n);
+    ch->basic_len -= n;
+    memmove(ch->basic, ch->basic + n, ch->basic_len);
+    return (int)n;
 }
 
 tiku_tx_t *

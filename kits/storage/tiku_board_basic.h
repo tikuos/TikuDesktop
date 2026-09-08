@@ -32,6 +32,28 @@ typedef enum {
     TIKU_BOARD_BASIC_FAILED       /**< the board would not take it       */
 } tiku_board_basic_state_t;
 
+/**
+ * @brief A board's own way to its interpreter, apart from its shell.
+ *
+ * A board that has one is not held while a program runs: its console
+ * stays the shell's, so the namespace answers throughout.
+ */
+typedef struct {
+    int  (*send)(void *ctx, const void *bytes, size_t len);
+    int  (*recv)(void *ctx, void *buf, size_t max);
+    void (*pump)(void *ctx);
+    void  *ctx;
+} tiku_board_basic_stream_t;
+
+/**
+ * @brief Start @p program over a board's own interpreter stream.
+ *
+ * Nothing is held: the board's shell is untouched, and the run is
+ * driven and heard on @p stream alone.
+ */
+tiku_board_basic_t *tiku_board_basic_start_stream(
+        const tiku_board_basic_stream_t *stream, const char *program);
+
 /** @brief One line the program printed.  No newline on it. */
 typedef void (*tiku_board_basic_line_fn)(const char *line, void *ctx);
 

@@ -282,7 +282,12 @@ typedef struct desktop {
      * stands at over that link, dropped with the link. */
     tiku_channel_t      *channels[TIKU_MOUNT_MAX];
     /* The mount over each channel's link, or "" for none. */
-    char                 channel_mount[TIKU_MOUNT_MAX][TIKU_PATH_MAX];
+        char                 channel_mount[TIKU_MOUNT_MAX][TIKU_PATH_MAX];
+    /* Which mounted board each channel belongs to.  Apart from
+     * channel_mount, which is only for a board the CHANNEL mounted: a
+     * board on a cable is mounted by its own session and its channel is
+     * beside that, not under it. */
+    char                 channel_board[TIKU_MOUNT_MAX][TIKU_PATH_MAX];
     int                  board_listen;  /* -listen's socket, or -1/0 for none */
     struct {
         char     root[TIKU_PATH_MAX];   /* the mount's prefix */

@@ -59,7 +59,11 @@ struct tiku_board_basic {
     char                      echo[LINE_MAX];
     int                       echo_pending;
     char                      prompt[LINE_MAX];  /* what INPUT asked  */
-    int                       held;      /* the shell is ours          */
+        int                       held;      /* the shell is ours          */
+    /* A board with a stream of its own: nothing is held, and the bytes
+     * go and come on it rather than through the shell's line. */
+    tiku_board_basic_stream_t stream;
+    int                       streamed;
 };
 
 #define MODE_RUN    0
@@ -92,6 +96,37 @@ prompt_at(const tiku_board_basic_t *r, size_t *end)
         return 0;
     }
     *end = (size_t)(p - r->buf) + strlen(PROMPT);
+    return 1;
+}
+
+/**
+ * @brief The LAST prompt in what has arrived, and where it ends.
+ *
+ * Entering the interpreter answers with a prompt of its own, so more
+ * prompts can be waiting than lines were sent; taking the last of them
+ * and sending one line keeps the handover in step however many arrive
+ * at once.  Taking them one at a time instead sends a line per prompt,
+ * which runs the program before the whole of it has gone over.
+ */
+static int
+last_prompt_at(const tiku_board_basic_t *r, size_t *end)
+{
+    const char *p = r->buf;
+    const char *found = NULL;
+
+    for (;;) {
+        const char *at = strstr(p, PROMPT);
+
+        if (at == NULL) {
+            break;
+        }
+        found = at;
+        p = at + strlen(PROMPT);
+    }
+    if (found == NULL) {
+        return 0;
+    }
+    *end = (size_t)(found - r->buf) + strlen(PROMPT);
     return 1;
 }
 
@@ -153,7 +188,32 @@ say_lines(tiku_board_basic_t *r, const char *text, size_t n,
 static int
 send_text(tiku_board_basic_t *r, const char *s)
 {
+    if (r->streamed) {
+        return (r->stream.send(r->stream.ctx, s, strlen(s)) >= 0) ? 0 : -1;
+    }
     return tiku_backend_tiku_lease_send(r->b, s, strlen(s));
+}
+
+/** @brief Move the medium and take whatever the board has said. */
+static void
+draw_in(tiku_board_basic_t *r, int timeout_ms)
+{
+    if (!r->streamed) {
+        (void)r->b->ops->pump(r->b, timeout_ms);
+        return;
+    }
+    if (r->stream.pump != NULL) {
+        r->stream.pump(r->stream.ctx);
+    }
+    for (;;) {
+        unsigned char got[256];
+        int n = r->stream.recv(r->stream.ctx, got, sizeof got);
+
+        if (n <= 0) {
+            break;
+        }
+        took_text(got, (size_t)n, r);
+    }
 }
 
 static tiku_board_basic_t *
@@ -198,7 +258,7 @@ start(struct tiku_backend *b, const char *program, int mode,
         while (quiet < 3 && rounds < 20) {
             size_t before = r->len;
 
-            (void)b->ops->pump(b, 30);
+            draw_in(r, 30);
             quiet = (r->len == before) ? quiet + 1 : 0;
             rounds++;
         }
@@ -224,6 +284,40 @@ tiku_board_basic_t *
 tiku_board_basic_start(struct tiku_backend *b, const char *program)
 {
     return start(b, program, MODE_RUN, NULL);
+}
+
+tiku_board_basic_t *
+tiku_board_basic_start_stream(const tiku_board_basic_stream_t *stream,
+                              const char *program)
+{
+    tiku_board_basic_t *r;
+
+    if (stream == NULL || stream->send == NULL || stream->recv == NULL ||
+        program == NULL) {
+        return NULL;
+    }
+    r = calloc(1, sizeof *r);
+    if (r == NULL) {
+        return NULL;
+    }
+    r->program = strdup(program);
+    if (r->program == NULL) {
+        free(r);
+        return NULL;
+    }
+    r->at = r->program;
+    r->stream = *stream;
+    r->streamed = 1;
+    r->mode = MODE_RUN;
+    r->state = TIKU_BOARD_BASIC_SENDING;
+    r->began_ms = now_ms();
+    /* A newline is all it takes: the board enters its interpreter on the
+     * first byte of this stream and answers with the prompt the handover
+     * waits for.  No `basic` command: the shell is not spoken to here. */
+    if (send_text(r, "\n") != 0) {
+        r->state = TIKU_BOARD_BASIC_FAILED;
+    }
+    return r;
 }
 
 tiku_board_basic_t *
@@ -320,15 +414,23 @@ tiku_board_basic_pump(tiku_board_basic_t *r, int timeout_ms,
         r->state != TIKU_BOARD_BASIC_ASKING) {
         return r->state;
     }
-    /* Pumping the backend is what moves the board's bytes to took_text. */
-    (void)r->b->ops->pump(r->b, timeout_ms);
+        /* Drawing the medium is what moves the board's bytes to took_text. */
+    draw_in(r, timeout_ms);
 
-    if (r->state == TIKU_BOARD_BASIC_SENDING) {
+        if (r->state == TIKU_BOARD_BASIC_SENDING) {
         /* One prompt, one line: anything the board says while taking the
          * program is its own echo and not the program's output. */
-        while (r->state == TIKU_BOARD_BASIC_SENDING && prompt_at(r, &end)) {
-            consume(r, end);
-            send_next(r);
+        if (r->streamed) {
+            if (last_prompt_at(r, &end)) {
+                consume(r, end);
+                send_next(r);
+            }
+        } else {
+            while (r->state == TIKU_BOARD_BASIC_SENDING &&
+                   prompt_at(r, &end)) {
+                consume(r, end);
+                send_next(r);
+            }
         }
         if (r->state == TIKU_BOARD_BASIC_SENDING &&
             now_ms() - r->began_ms > START_MS) {
@@ -408,12 +510,12 @@ tiku_board_basic_input(tiku_board_basic_t *r, const char *text)
 void
 tiku_board_basic_stop(tiku_board_basic_t *r)
 {
-    if (r == NULL || !r->held) {
+    if (r == NULL || (!r->held && !r->streamed)) {
         return;
     }
-    if (r->started && (r->state == TIKU_BOARD_BASIC_RUNNING ||
+        if (r->started && (r->state == TIKU_BOARD_BASIC_RUNNING ||
                        r->state == TIKU_BOARD_BASIC_ASKING)) {
-        (void)tiku_backend_tiku_lease_send(r->b, "\x03", 1u);
+        (void)send_text(r, "\x03");
         r->state = TIKU_BOARD_BASIC_STOPPED;
     }
 }
@@ -424,7 +526,14 @@ tiku_board_basic_free(tiku_board_basic_t *r)
     if (r == NULL) {
         return;
     }
-    if (r->held) {
+        if (r->streamed) {
+        /* Out of the interpreter, so the next run enters it afresh; the
+         * shell was never held, so there is nothing to give back. */
+        (void)send_text(r, "\x03");
+        draw_in(r, 200);
+        (void)send_text(r, "BYE\n");
+        draw_in(r, 200);
+    } else if (r->held) {
         /* Out of the interpreter before the shell is anybody else's: a
          * board left in BASIC answers no command the namespace asks. */
         (void)tiku_backend_tiku_lease_send(r->b, "\x03", 1u);

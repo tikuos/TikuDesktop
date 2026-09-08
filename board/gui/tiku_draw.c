@@ -9,6 +9,7 @@
  */
 #include "tiku_draw.h"
 #include "tiku_draw_shell.h"
+#include "tiku_draw_basic.h"
 
 #include "tiku_metrics.h"
 
@@ -38,6 +39,7 @@
 #define RMSG_CLOSED  18u
 #define RMSG_WELCOME 20u
 #define RMSG_SHELL_IN  21u
+#define RMSG_BASIC_IN  23u
 #define RMSG_SHELL_OUT 22u
 #define REMOTE_VERSION 1u
 #define FEAT_COMMAND_STREAM 0x2u
@@ -622,6 +624,8 @@ take_message(const unsigned char *msg, size_t len)
         push(win, &e);
     } else if (type == RMSG_SHELL_IN) {
         tiku_draw_shell_take(p, plen);
+    } else if (type == RMSG_BASIC_IN) {
+        tiku_draw_basic_take(p, plen);
     } else if (type == RMSG_TELL && plen >= 12u) {
         /* The desk answering: a picked path for the window that asked,
          * or the clipboard's new text, told to every window. */

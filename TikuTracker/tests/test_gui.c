@@ -102,6 +102,7 @@ stub_escape(unsigned char b)
 #include "tiku_gui.c"
 #include "tiku_draw.c"
 #include "tiku_draw_shell.c"
+#include "tiku_draw_basic.c"
 
 /*---------------------------------------------------------------------------*/
 /* The test                                                                  */

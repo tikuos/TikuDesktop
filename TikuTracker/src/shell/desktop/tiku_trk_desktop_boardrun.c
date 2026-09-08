@@ -15,10 +15,12 @@
 
 #include "tiku_trk_desktop_private.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "tiku_board_basic.h"
 #include "tiku_mount.h"
+#include "tiku_channel.h"
 
 /** @brief The name a board is mounted under, without the /devices/. */
 static const char *
@@ -86,6 +88,73 @@ board_named(desktop_t *app, const char *name)
     return NULL;
 }
 
+/** @brief The channel of the board mounted at @p prefix, or NULL. */
+static tiku_channel_t *
+channel_of_board(desktop_t *app, const char *prefix)
+{
+    int k;
+
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        if (app->channels[k] != NULL &&
+            strcmp(app->channel_board[k], prefix) == 0) {
+            return app->channels[k];
+        }
+    }
+    return NULL;
+}
+
+/** @brief To the board's interpreter, on its own stream. */
+static int
+stream_send(void *ctx, const void *bytes, size_t len)
+{
+    return tiku_channel_basic_send(ctx, bytes, len);
+}
+
+/** @brief What a program on it has printed. */
+static int
+stream_recv(void *ctx, void *buf, size_t max)
+{
+    return tiku_channel_basic_recv(ctx, buf, max);
+}
+
+/** @brief Move the channel the stream rides on. */
+static void
+stream_pump(void *ctx)
+{
+    (void)tiku_channel_pump(ctx);
+}
+
+/**
+ * @brief The run, over the board's own interpreter stream when it has
+ *        one and through its shell when it has not.
+ *
+ * A board carrying the overlay answers on a stream beside its console,
+ * so its namespace stays live while the program runs; one without is
+ * held as before, which is the only way to reach an interpreter that
+ * has no other door.
+ */
+static tiku_board_basic_t *
+run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
+          const char *program)
+{
+    char prefix[TIKU_PATH_MAX];
+    tiku_channel_t *ch;
+
+    (void)snprintf(prefix, sizeof prefix, "/devices/%s",
+                   (board != NULL && board[0] != '\0') ? board : "");
+    ch = channel_of_board(app, prefix);
+    if (ch != NULL) {
+        tiku_board_basic_stream_t stream;
+
+        stream.send = stream_send;
+        stream.recv = stream_recv;
+        stream.pump = stream_pump;
+        stream.ctx = ch;
+        return tiku_board_basic_start_stream(&stream, program);
+    }
+    return tiku_board_basic_start(b, program);
+}
+
 /**
  * @brief Start @p program on the board called @p board.
  *
@@ -106,7 +175,7 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
     if (b == NULL) {
         return 0;
     }
-        app->board_run = tiku_board_basic_start(b, program);
+            app->board_run = run_begin(app, board, b, program);
     if (app->board_run == NULL) {
         return 0;
     }

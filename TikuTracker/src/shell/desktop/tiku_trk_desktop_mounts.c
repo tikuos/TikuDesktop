@@ -173,9 +173,10 @@ channel_keep(desktop_t *app, tiku_channel_t *ch)
     int k;
 
     for (k = 0; ch != NULL && k < TIKU_MOUNT_MAX; k++) {
-        if (app->channels[k] == NULL) {
+                if (app->channels[k] == NULL) {
             app->channels[k] = ch;
             app->channel_mount[k][0] = '\0';
+            app->channel_board[k][0] = '\0';
             return k;
         }
     }
@@ -375,13 +376,20 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
          * takes a frame for an unregistered channel as text -- every
          * greeting would land on its shell's line as junk, in the middle
          * of whatever else was being typed there. */
-        {
+                {
             tiku_model_t gui;
 
             if (dev->ops->stat(dev, "/gui", &gui) == 0) {
-                (void)channel_keep(app,
-                                   tiku_channel_open(
-                                       tiku_backend_tiku_session(dev)));
+                int slot = channel_keep(app,
+                                        tiku_channel_open(
+                                            tiku_backend_tiku_session(dev)));
+
+                if (slot >= 0) {
+                    /* Remembered against the board it belongs to: a run
+                     * asks for it by the name the board is mounted at. */
+                    snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
+                             prefix);
+                }
             }
         }
         mounted++;

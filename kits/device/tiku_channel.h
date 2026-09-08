@@ -82,6 +82,21 @@ tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
  */
 tiku_tx_t *tiku_channel_shell_tx(tiku_channel_t *ch);
 
+/**
+ * @brief Send text to the board's INTERPRETER, on a stream of its own.
+ *
+ * Not the shell's: a board driven here keeps its console, so its
+ * namespace still answers while a program runs.
+ * @return the bytes taken, or -1.
+ */
+int tiku_channel_basic_send(tiku_channel_t *ch, const void *bytes, size_t len);
+
+/**
+ * @brief Take what a program on the board has printed, up to @p max.
+ * @return the bytes written into @p buf; 0 when it has said nothing.
+ */
+int tiku_channel_basic_recv(tiku_channel_t *ch, void *buf, size_t max);
+
 /** @brief Losses the link has reported in all, for a caller to decide
  *         when a board that dialled in is gone for good. */
 int tiku_channel_losses(const tiku_channel_t *ch);

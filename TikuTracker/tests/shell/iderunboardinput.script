@@ -52,6 +52,14 @@ note answered with the one word line 20 trips on: its error is the first
 note row, and the row knows the line
 click-window Messages
 wait 8
+note down to the LAST row, which is where an error that ended a run is,
+note however many rows its output made before it
+key Down
+wait 6
+key Down
+wait 6
+key Down
+wait 6
 key Down
 wait 10
 click 71 8

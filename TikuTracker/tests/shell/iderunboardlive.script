@@ -1,0 +1,70 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboardlive
+# board: only
+# A program runs on the board while the board still answers.
+#
+# A board carrying the overlay has a stream for its interpreter beside
+# its console, so a run does not take its shell: the namespace is read
+# HERE, in the middle of a program, which a run that held the shell
+# could not allow.  The lamp is what makes the reading mean something --
+# the program lights it on its first line and puts it out on its last,
+# so a lit lamp read from the namespace is a program still going.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+note quiet.bas first, to put the lamp out whatever an earlier run left
+key Down
+wait 6
+key Down
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku
+wait 200
+expect-read /devices/tiku/dev/led0 0
+note now the long one, which lights the lamp and then runs on
+click-window Project
+wait 8
+key Up
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku
+wait 120
+note THE reading this script exists for: the board answers its namespace
+note while a program of its own is running.  A run that held the board's
+note shell -- which is how a board without this stream is reached -- could
+note not answer at all, and that is the whole difference.
+expect-read /devices/tiku/sys/device/name tiku
+note and it IS a program still running that was read past, which is why
+note there is a Stop to be offered
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Stop
+menu-pick Stop
+wait 150
+note and stopping it is still a stop: the board is its own again, its
+note shell answering as it did before any of this
+expect-read /devices/tiku/sys/device/name tiku
+quit
