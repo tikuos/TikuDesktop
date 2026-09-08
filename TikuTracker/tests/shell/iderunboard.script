@@ -37,10 +37,15 @@ note KNOWN line: what comes back has to name that line, which is the
 note whole of what a message is for
 key Down
 wait 8
+note where runs go is chosen once, in Connect; the project remembers it
+click 175 8
+wait 8
+menu-pick tiku
+wait 10
 click 71 8
 wait 8
-expect-menu Run on tiku
-menu-pick Run on tiku
+expect-menu Run blink.bas on tiku
+menu-pick Run blink.bas on tiku
 note a board is slower than this machine by a long way
 wait 600
 note the window is made only when there is something to put in it, so

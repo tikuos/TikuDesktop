@@ -38,21 +38,27 @@ key Down
 wait 6
 key Down
 wait 8
+note the project remembers a board that is not on this desk: it is SAID
+note in Connect, beside both boards that ARE here, offered by name
+click 175 8
+wait 8
+expect-menu This machine|tiku|tiku-2|elsewhere is not here|
+menu-pick tiku
+wait 10
 click 71 8
 wait 8
-note the project remembers a board that is not on this desk: it is SAID,
-note and both boards that ARE here are offered by name beside it
-expect-menu elsewhere is not here
-expect-menu Run on tiku
-expect-menu Run on tiku-2
-menu-pick Run on tiku
+menu-pick Run quiet.bas on tiku
 wait 250
 note and now the same program to the OTHER board
 click-window Project
 wait 8
+click 175 8
+wait 8
+menu-pick tiku-2
+wait 10
 click 71 8
 wait 8
-menu-pick Run on tiku-2
+menu-pick Run quiet.bas on tiku-2
 wait 250
 note both lamps are out, and each was put out by a run sent to it
 expect-read /devices/tiku/dev/led0 0
@@ -64,17 +70,22 @@ key Up
 wait 8
 click 71 8
 wait 8
-menu-pick Run on tiku-2
+menu-pick Run blink.bas on tiku-2
 wait 250
 note lit on the board that was chosen
 expect-read /devices/tiku-2/dev/led0 1
 note and dark on the one that was not: a program went to ONE board
 expect-read /devices/tiku/dev/led0 0
-note and the project remembers the board it was run on: Save follows it,
-note and the row about a board that is not here has nothing left to say
+note and the project remembers the board chosen: Run and Save both read
+note as going there, and the board that is not here is no longer named
 click-window Project
 wait 8
 click 71 8
 wait 8
-expect-menu Run blink.bas|Run on tiku|Run on tiku-2|Look for boards again|Save on tiku-2|
+expect-menu Run blink.bas on tiku-2|Save on tiku-2|
+click-window Project
+wait 10
+click 175 8
+wait 8
+expect-menu This machine|tiku|tiku-2||Look again|
 quit

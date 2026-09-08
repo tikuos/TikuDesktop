@@ -34,6 +34,11 @@ key Down
 wait 6
 key Down
 wait 8
+note where runs go is chosen once, in Connect; the project remembers it
+click 175 8
+wait 8
+menu-pick tiku
+wait 10
 click 71 8
 wait 8
 expect-menu Save on tiku

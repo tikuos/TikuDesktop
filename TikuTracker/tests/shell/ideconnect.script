@@ -1,0 +1,60 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: ideconnect
+# board: discover
+# Where a program goes is chosen in Connect, and the project remembers.
+#
+# Opening a project is when the shell looks for boards -- a deliberate
+# act, and opening the machine's ports is worth it for a Connect menu
+# that already lists what is here.  This desktop was never told to look.
+# Picking a board there makes it the destination: Run reads as going
+# there, and asking the shell to look again mounts nothing twice.
+wait 60
+click 980 30
+wait 10
+menu-pick Programming
+wait 10
+menu-pick TikuBasic
+wait 250
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 200
+note runs go to this machine until a board is chosen
+click 71 8
+wait 8
+expect-menu New Project…|Open Project…||Run||Close Project|
+click-window Project
+wait 10
+note the boards the shell found when the project opened, and the one
+note place a program can always go
+click 175 8
+wait 8
+expect-menu This machine|tiku|tiku-2||Look again|
+menu-pick tiku
+wait 10
+note and now Run says where it will go
+click 71 8
+wait 8
+expect-menu Run on tiku|Save on tiku|
+click-window Project
+wait 10
+note looking again finds the same boards, not the same boards twice
+click 175 8
+wait 8
+menu-pick Look again
+wait 400
+click 175 8
+wait 8
+expect-menu This machine|tiku|tiku-2||Look again|
+quit

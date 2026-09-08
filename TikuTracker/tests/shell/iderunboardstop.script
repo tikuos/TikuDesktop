@@ -32,9 +32,14 @@ wait 8
 note the row the list stands on is the long one
 key Down
 wait 8
+note where runs go is chosen once, in Connect; the project remembers it
+click 175 8
+wait 8
+menu-pick tiku
+wait 10
 click 71 8
 wait 8
-menu-pick Run on tiku
+menu-pick Run blink.bas on tiku
 note it is still going: Stop is offered only while a run is, and the
 note loop is a minute of the board's time
 wait 200

@@ -140,10 +140,15 @@ enum {
 #define IDE_BOARDS   8
 #define CMD_BOARDGONE 25        /* the row that only says; never picked */
 #define CMD_FINDBOARDS 26
-#define CMD_RUNBOARD 32
+#define CMD_CONNECT_HOST 27     /* run here: no board is the destination */
+/*
+ * One command per mounted board in the Connect menu, a range kept below
+ * CMD_WINDOW for the same reason the Run range is.
+ */
+#define CMD_CONNECT  40
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
-_Static_assert(CMD_RUNBOARD + IDE_BOARDS <= 64,
+_Static_assert(CMD_CONNECT + IDE_BOARDS <= 64,
                "the board commands must stay below CMD_WINDOW");
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
@@ -306,6 +311,12 @@ static void messages_show(ide_t *st);
 static int  board_at(ide_t *st, int which, char *out, size_t max);
 static int  board_of_project(ide_t *st);
 static void project_set_board(ide_t *st, const char *name);
+static int  dest_board(ide_t *st, char *out, size_t max);
+static void connect_menu(ide_t *st, tiku_menu_list_t *m);
+static void run_file_where(ide_t *st, const char *path);
+static void run_file(ide_t *st, const char *path);
+static void run_file_on_board(ide_t *st, const char *path,
+                              const char *board);
 static void splash_drop(ide_t *st);
 static void announce_paint_art(tiku_surface_t *sf, const char *status,
                                const tiku_surface_t *art);
@@ -1456,7 +1467,7 @@ edit_publish(ide_t *st, edit_t *e)
     char row[64];
 
     memset(&menus, 0, sizeof menus);
-    menus.nmenu = 3;
+    menus.nmenu = 4;
     /* File: the page's own file, its run, and its leaving -- each row
      * saying the key that is the same gesture. */
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
@@ -1491,7 +1502,8 @@ edit_publish(ide_t *st, edit_t *e)
          * lines wear their numbers. */
         mrow(&menus.menu[1], "Renumber", CMD_RENUM, 0, 0u, 1);
     }
-    window_menu(st, &menus.menu[2]);
+    connect_menu(st, &menus.menu[2]);
+    window_menu(st, &menus.menu[3]);
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
@@ -1773,7 +1785,7 @@ project_publish(ide_t *st)
     tiku_menuset_t menus;
 
     memset(&menus, 0, sizeof menus);
-    menus.nmenu = 3;
+        menus.nmenu = 4;
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "Project");
     snprintf(menus.menu[0].item[0].label,
              sizeof menus.menu[0].item[0].label, APP_ABOUT);
@@ -1817,69 +1829,26 @@ project_publish(ide_t *st)
         menus.menu[0].item[mrow].command = CMD_RUN;
         menus.menu[0].item[mrow].enabled = (unsigned char)can;
         {
-            /* Offered only when the shell has a board mounted: a row
-             * naming a road that is not there is furniture. */
-            char boards[256];
-            int have = (st->services->board_names != NULL)
-                     ? st->services->board_names(st->services->ctx, boards,
-                                                 sizeof boards)
-                     : 0;
+            /* Where the run goes is chosen in Connect; here it is only
+             * said, so Run reads as what it will do. */
+            char dest[64];
 
-                        int mine = board_of_project(st);
-            int can_board =
-                (int)(st->proj.nrow > 0 && !st->running);
-            char name[64];
-            int i;
-
-            (void)boards;
-            if (have > 0 && st->proj.board[0] != '\0' && mine < 0) {
-                /* The project names a board that is not here.  SAID,
-                 * rather than quietly run somewhere else: which board a
-                 * program went to is not a detail. */
+            if (dest_board(st, dest, sizeof dest)) {
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label, "Run%s%s on %s",
+                         (row >= 0 && row < st->proj.nrow &&
+                          !st->proj.row[row].heading) ? " " : "",
+                         (row >= 0 && row < st->proj.nrow &&
+                          !st->proj.row[row].heading) ? st->proj.row[row].name
+                                                      : "",
+                         dest);
                 mrow++;
                 snprintf(menus.menu[0].item[mrow].label,
                          sizeof menus.menu[0].item[mrow].label,
-                         "%s is not here", st->proj.board);
-                menus.menu[0].item[mrow].command = CMD_BOARDGONE;
-                menus.menu[0].item[mrow].enabled = 0;
-            }
-            /* Every board, by name.  Two boards on one desk are two
-             * places a program can go, and the menu is where that
-             * choice is made. */
-            for (i = 0; i < IDE_BOARDS && have > 0; i++) {
-                if (!board_at(st, i, name, sizeof name)) {
-                    break;
-                }
-                mrow++;
-                snprintf(menus.menu[0].item[mrow].label,
-                         sizeof menus.menu[0].item[mrow].label,
-                         "Run on %s", name);
-                menus.menu[0].item[mrow].command = CMD_RUNBOARD + i;
-                menus.menu[0].item[mrow].enabled = (unsigned char)can_board;
-            }
-                        if (st->services->board_find != NULL) {
-                /* Boards are looked for when somebody ASKS: opening the
-                 * machine's ports writes to whatever is on them, so it
-                 * is offered here rather than done at startup. */
-                mrow++;
-                snprintf(menus.menu[0].item[mrow].label,
-                         sizeof menus.menu[0].item[mrow].label,
-                         "%s", (have > 0) ? "Look for boards again"
-                                          : "Look for boards");
-                menus.menu[0].item[mrow].command = CMD_FINDBOARDS;
-                menus.menu[0].item[mrow].enabled =
-                    (unsigned char)!st->running;
-            }
-            if (have > 0 && board_at(st, (mine >= 0) ? mine : 0, name,
-                                     sizeof name)) {
-                /* Saving follows the project's own board: the one it
-                 * remembers, or the only one there is. */
-                mrow++;
-                snprintf(menus.menu[0].item[mrow].label,
-                         sizeof menus.menu[0].item[mrow].label,
-                         "Save on %s", name);
+                         "Save on %s", dest);
                 menus.menu[0].item[mrow].command = CMD_SAVEBOARD;
-                menus.menu[0].item[mrow].enabled = (unsigned char)can_board;
+                menus.menu[0].item[mrow].enabled =
+                    (unsigned char)(st->proj.nrow > 0 && !st->running);
             }
             if (st->running) {
                 /* A run started from here has to be stoppable from here:
@@ -1966,7 +1935,8 @@ project_publish(ide_t *st)
     }
     menus.menu[1].nitem = 5;
 
-    window_menu(st, &menus.menu[2]);
+    connect_menu(st, &menus.menu[2]);
+    window_menu(st, &menus.menu[3]);
     (void)st->services->menus(st->services->ctx, st->proj_id, &menus);
 }
 
@@ -2019,10 +1989,16 @@ project_take(ide_t *st, const char *path)
     (void)project_parse(&st->proj, whole, dir);
     /* Copied ASIDE first: a caller may hand this the very buffer it is
      * about to be written into, and printf over itself is nothing. */
-    if (path != st->proj_file) {
+        if (path != st->proj_file) {
         snprintf(st->proj_file, sizeof st->proj_file, "%s", path);
     }
     project_show(st);
+    /* Opening a project is the moment to look for boards: it is a
+     * deliberate act, and a Connect menu that already lists what is here
+     * is worth the ports being opened for it. */
+    if (st->services->board_find != NULL) {
+        (void)st->services->board_find(st->services->ctx);
+    }
 }
 
 /**
@@ -2209,6 +2185,79 @@ board_of_project(ide_t *st)
 }
 
 /**
+ * @brief Where a run goes: the board the project names, when that board
+ *        is here.  Into @p out.
+ * @return nonzero for a board; zero means this machine.
+ */
+static int
+dest_board(ide_t *st, char *out, size_t max)
+{
+    int mine = board_of_project(st);
+
+    out[0] = '\0';
+    if (mine < 0) {
+        return 0;
+    }
+    return board_at(st, mine, out, max);
+}
+
+/**
+ * @brief The Connect menu: every place a program can be sent, the one it
+ *        goes to marked.
+ *
+ * Picking a board makes it the destination and the project remembers
+ * it; this machine is a destination like any other, so Run always has
+ * exactly one.  A board the project names that is not here is said, in
+ * a row that cannot be picked, rather than quietly replaced.
+ */
+static void
+connect_menu(ide_t *st, tiku_menu_list_t *m)
+{
+    char name[64], dest[64];
+    int have_dest = dest_board(st, dest, sizeof dest);
+    int i, n = 0;
+
+    memset(m, 0, sizeof *m);
+    snprintf(m->title, sizeof m->title, "Connect");
+    mrow(m, "This machine", CMD_CONNECT_HOST, 0, 0u, !st->running);
+    m->item[m->nitem - 1].marked = !have_dest;
+    for (i = 0; i < IDE_BOARDS && board_at(st, i, name, sizeof name); i++) {
+        mrow(m, name, CMD_CONNECT + i, 0, 0u, !st->running);
+        m->item[m->nitem - 1].marked =
+            (have_dest && strcmp(name, dest) == 0);
+        n++;
+    }
+    if (st->proj.board[0] != '\0' && !have_dest) {
+        snprintf(name, sizeof name, "%s is not here", st->proj.board);
+        mrow(m, name, CMD_BOARDGONE, 0, 0u, 0);
+    }
+    if (n == 0) {
+        mrow(m, "no board found", CMD_BOARDGONE, 0, 0u, 0);
+    }
+    if (st->services->board_find != NULL) {
+        msep(m);
+        /* Looked for when a project opens; looked for again from here,
+         * for the board plugged in since. */
+        mrow(m, "Look again", CMD_FINDBOARDS, 0, 0u, !st->running);
+    }
+}
+
+/**
+ * @brief Run @p path where the project says: on its board, or here.
+ */
+static void
+run_file_where(ide_t *st, const char *path)
+{
+    char dest[64];
+
+    if (dest_board(st, dest, sizeof dest)) {
+        run_file_on_board(st, path, dest);
+    } else {
+        run_file(st, path);
+    }
+}
+
+/**
  * @brief Remember @p name as this project's board, in its description.
  *
  * Every other line rides through as it stands, exactly as removing a
@@ -2248,10 +2297,15 @@ project_set_board(ide_t *st, const char *name)
         }
         line += n;
     }
-    if (w > 0u && kept[w - 1u] != '\n' && w + 1u < sizeof kept) {
+        if (w > 0u && kept[w - 1u] != '\n' && w + 1u < sizeof kept) {
         kept[w++] = '\n';
     }
-    w += (size_t)snprintf(kept + w, sizeof kept - w, "board %s\n", name);
+    if (name[0] != '\0') {
+        /* An empty name is "this machine": the line is left out rather
+         * than written empty, so an older reader is not puzzled by it. */
+        w += (size_t)snprintf(kept + w, sizeof kept - w, "board %s\n",
+                              name);
+    }
     f = fopen(st->proj_file, "w");
     if (f == NULL) {
         snprintf(st->note, sizeof st->note, "cannot write the project");
@@ -2638,10 +2692,9 @@ run_file(ide_t *st, const char *path)
  * run on this machine takes, because a board's interpreter IS this one.
  */
 static void
-run_file_on_board(ide_t *st, const char *path, int which)
+run_file_on_board(ide_t *st, const char *path, const char *board)
 {
     char program[8192];
-    char board[64];
     FILE *f;
     size_t n;
 
@@ -2650,9 +2703,9 @@ run_file_on_board(ide_t *st, const char *path, int which)
         project_paint(st);
         return;
     }
-        if (st->services->board_run == NULL ||
-        !board_at(st, which, board, sizeof board)) {
-        snprintf(st->note, sizeof st->note, "no board is mounted");
+    if (st->services->board_run == NULL || board == NULL ||
+        board[0] == '\0') {
+        snprintf(st->note, sizeof st->note, "no board is connected");
         project_paint(st);
         return;
     }
@@ -2666,11 +2719,8 @@ run_file_on_board(ide_t *st, const char *path, int which)
     (void)fclose(f);
     program[n] = '\0';
 
-        snprintf(st->child_file, sizeof st->child_file, "%s", path);
+            snprintf(st->child_file, sizeof st->child_file, "%s", path);
     snprintf(st->board, sizeof st->board, "%s", board);
-    /* Chosen is remembered: a project that has been run on a board goes
-     * back to the same one, and says so before it is asked again. */
-    project_set_board(st, board);
     st->child_numbered = 1;          /* BASIC names its own lines */
     st->child_fd = -1;               /* nothing of ours to read   */
     st->nmsg = 0;
@@ -2709,15 +2759,11 @@ save_file_on_board(ide_t *st, const char *path)
         project_paint(st);
         return;
     }
-        {
-        int mine = board_of_project(st);
-
-        if (st->services->board_save == NULL ||
-            !board_at(st, (mine >= 0) ? mine : 0, boards, sizeof boards)) {
-            snprintf(st->note, sizeof st->note, "no board is mounted");
-            project_paint(st);
-            return;
-        }
+            if (st->services->board_save == NULL ||
+        !dest_board(st, boards, sizeof boards)) {
+        snprintf(st->note, sizeof st->note, "no board is connected");
+        project_paint(st);
+        return;
     }
     base = strrchr(path, '/');
     base = (base != NULL) ? base + 1 : path;
@@ -2761,7 +2807,16 @@ static void
 ide_board_said(void *state, int what, const char *text)
 {
     ide_t *st = state;
-    if (st == NULL || !st->running || st->board[0] == '\0') {
+    if (st == NULL) {
+        return;
+    }
+    if (what == TIKU_APP_BOARD_LOOKED) {
+        /* The shell has looked; what it found reaches the menus on the
+         * next tick.  Said here only so it is never taken, below, for
+         * the end of a run that happened to be going. */
+        return;
+    }
+    if (!st->running || st->board[0] == '\0') {
         return;
     }
     if (what == TIKU_APP_BOARD_LINE) {
@@ -3495,7 +3550,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                  * AFTER the run starts, so the stop square is already
                  * red when the eye comes looking for it. */
                 (void)edit_save(e);
-                run_file(st, e->path);
+                run_file_where(st, e->path);
                 edit_paint(st, e);
                 edit_publish(st, e);
                 project_publish(st);
@@ -3684,7 +3739,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'r' &&
                 e->lang == TIKU_SYNTAX_BASIC) {
                 (void)edit_save(e);
-                run_file(st, e->path);
+                run_file_where(st, e->path);
                 edit_paint(st, e);
                 edit_publish(st, e);
                 project_publish(st);
@@ -3930,21 +3985,21 @@ ide_pick(void *state, uint32_t window, int command)
         project_paint(st);
         return 0;
     }
-    if (command >= CMD_RUNBOARD && command < CMD_RUNBOARD + IDE_BOARDS) {
-        int row = tiku_list_chosen(&st->tv_list);
+    if (command == CMD_CONNECT_HOST ||
+        (command >= CMD_CONNECT && command < CMD_CONNECT + IDE_BOARDS)) {
+        /* Choosing where runs go.  The project remembers it, so the
+         * choice is made once and Run reads as what it will do. */
+        char name[64];
 
-        if (row >= 0 && row < st->proj.nrow && !st->proj.row[row].heading) {
-            edit_t *open_now = edit_of_path(st, st->proj.row[row].path);
-
-            if (open_now != NULL &&
-                tiku_textview_modified(&open_now->tv)) {
-                (void)edit_save(open_now);
-                edit_paint(st, open_now);
-                edit_publish(st, open_now);
-            }
-            run_file_on_board(st, st->proj.row[row].path,
-                              command - CMD_RUNBOARD);
-            project_publish(st);
+        name[0] = '\0';
+        if (command != CMD_CONNECT_HOST &&
+            !board_at(st, command - CMD_CONNECT, name, sizeof name)) {
+            return 0;
+        }
+        project_set_board(st, name);
+        project_publish(st);
+        if (e != NULL) {
+            edit_publish(st, e);
         }
         return 0;
     }
@@ -3952,8 +4007,8 @@ ide_pick(void *state, uint32_t window, int command)
         e->lang == TIKU_SYNTAX_BASIC) {
         /* Run, asked ON a page: THIS file, not whichever row the
          * project window happens to hold selected. */
-        (void)edit_save(e);
-        run_file(st, e->path);
+                (void)edit_save(e);
+        run_file_where(st, e->path);
         edit_paint(st, e);
         edit_publish(st, e);
         project_publish(st);
@@ -4073,7 +4128,7 @@ ide_pick(void *state, uint32_t window, int command)
                 edit_paint(st, open_now);
                 edit_publish(st, open_now);
             }
-            run_file(st, st->proj.row[row].path);
+                        run_file_where(st, st->proj.row[row].path);
             project_publish(st);
         }
         break;
