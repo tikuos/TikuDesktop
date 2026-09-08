@@ -76,5 +76,5 @@ click-window Project
 wait 8
 click 71 8
 wait 8
-expect-menu Run blink.bas|Run on tiku|Run on tiku-2|Save on tiku-2|
+expect-menu Run blink.bas|Run on tiku|Run on tiku-2|Look for boards again|Save on tiku-2|
 quit

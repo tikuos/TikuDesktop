@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdio.h>
 #include "tiku_trk_desktop_private.h"
 
 /** @brief A remote window's pixels are whatever its session last sent. */
@@ -244,6 +245,14 @@ remote_hear(desktop_t *app)
                     app->board_run_session = -1;
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
                 }
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
+                char how[32];
+                int n = desktop_board_look(app);
+
+                (void)snprintf(how, sizeof how, "%d", n);
+                desktop_board_tell(app, i, TIKU_APP_BOARD_LOOKED, how);
+                desktop_board_names_tell(app);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDFREE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);

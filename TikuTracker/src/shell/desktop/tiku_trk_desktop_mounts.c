@@ -324,6 +324,33 @@ boards_unlisten(desktop_t *app)
 }
 
 /**
+ * @brief Whether a board is already mounted from @p port.
+ *
+ * Looking again must not open what this shell already has open: two
+ * owners on one cable corrupt each other, and the second one would be
+ * mounted beside the first as though it were another board.
+ */
+static int
+port_is_mounted(desktop_t *app, const char *port)
+{
+    int i, slots = tiku_mount_slots(app->backend);
+
+    for (i = 0; i < slots; i++) {
+        tiku_backend_t *b = tiku_mount_at(app->backend, i);
+        char have[256];
+
+        if (b == NULL) {
+            continue;
+        }
+        if (tiku_backend_tiku_port(b, have, sizeof have) > 0 &&
+            strcmp(have, port) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * @brief Put every board that answers into the namespace under /devices.
  *
  * One backend per board, each at a name of its own, so two of them are
@@ -350,9 +377,14 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
     } else {
         found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
     }
-    for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
-        tiku_backend_t *dev = tiku_backend_tiku_open(scan[i], baud);
+        for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
+        tiku_backend_t *dev;
         char name[64], prefix[TIKU_PATH_MAX];
+
+        if (port_is_mounted(app, scan[i])) {
+            continue;           /* already this shell's; leave it alone */
+        }
+        dev = tiku_backend_tiku_open(scan[i], baud);
 
         if (dev == NULL) {
             windows_only(app, scan[i], baud);

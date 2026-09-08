@@ -559,6 +559,15 @@ embed_svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
     return desktop_board_mcu(slot->app, board, out, max);
 }
 
+/** @brief Look for boards on this machine's ports. */
+static int
+embed_svc_board_find(void *ctx)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_look(slot->app);
+}
+
 /** @brief Let a board go, port and all. */
 static int
 embed_svc_board_release(void *ctx, const char *board)
@@ -633,7 +642,8 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
         slot->services.board_port = embed_svc_board_port;
     slot->services.board_mcu = embed_svc_board_mcu;
     slot->services.board_release = embed_svc_board_release;
-    slot->services.board_reclaim = embed_svc_board_reclaim;
+        slot->services.board_reclaim = embed_svc_board_reclaim;
+    slot->services.board_find = embed_svc_board_find;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }

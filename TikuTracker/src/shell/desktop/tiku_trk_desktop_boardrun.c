@@ -16,6 +16,7 @@
 #include "tiku_trk_desktop_private.h"
 
 #include <stdio.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "tiku_board_basic.h"
@@ -64,6 +65,23 @@ desktop_board_names(desktop_t *app, char *out, size_t max)
         out[n] = '\0';
     }
     return (int)n;
+}
+
+/** @brief How many boards are mounted. */
+static int
+board_count(desktop_t *app)
+{
+    int i, slots = tiku_mount_slots(app->backend), n = 0;
+
+    for (i = 0; i < slots; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+
+        if (prefix != NULL && tiku_mount_at(app->backend, i) != NULL &&
+            strncmp(prefix, "/devices/", 9) == 0) {
+            n++;
+        }
+    }
+    return n;
 }
 
 /** @brief The backend mounted as @p name, or NULL. */
@@ -252,6 +270,27 @@ desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
         return 0;
     }
     return (int)strlen(strncpy(out, id->mcu, max - 1u));
+}
+
+/**
+ * @brief Look for boards on this machine's ports, and mount what answers.
+ *
+ * A port this shell already holds is left alone: opening it again would
+ * put two owners on one cable and mount the same board beside itself.
+ * @return how many boards are mounted afterwards.
+ */
+int
+desktop_board_look(desktop_t *app)
+{
+    int baud;
+
+    if (app == NULL) {
+        return 0;
+    }
+    baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    (void)mount_devices(app, NULL, baud, NULL);
+    app->dirty = 1;
+    return board_count(app);
 }
 
 /**

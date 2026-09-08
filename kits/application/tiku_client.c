@@ -348,6 +348,12 @@ svc_board_reclaim(void *ctx, const char *board)
 }
 
 static int
+svc_board_find(void *ctx)
+{
+    return say_board(ctx, TIKU_MSG_BOARDLOOK, "");
+}
+
+static int
 svc_board_names(void *ctx, char *out, size_t max)
 {
     client_ctx_t *c = ctx;
@@ -479,7 +485,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
         services.board_port = svc_board_port;
     services.board_mcu = svc_board_mcu;
     services.board_release = svc_board_release;
-    services.board_reclaim = svc_board_reclaim;
+        services.board_reclaim = svc_board_reclaim;
+    services.board_find = svc_board_find;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;

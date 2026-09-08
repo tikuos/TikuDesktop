@@ -139,6 +139,7 @@ enum {
  */
 #define IDE_BOARDS   8
 #define CMD_BOARDGONE 25        /* the row that only says; never picked */
+#define CMD_FINDBOARDS 26
 #define CMD_RUNBOARD 32
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
@@ -156,7 +157,7 @@ typedef struct {
 typedef struct {
     char  title[64];
     char  dir[512];             /* what the file's own paths are from */
-        char  target[32];           /* what the program is being built FOR */
+    char  target[32];           /* what the program is being built FOR */
     char  board[64];            /* which board its programs go to */
     int   nrow;
     int   unknown;              /* lines this build did not know */
@@ -282,7 +283,10 @@ typedef struct {
     /* The board a run was sent to, empty when it ran here.  A run on a
      * board has no child and no pipe: the shell owns it and says what it
      * printed. */
-        char                            board[64];
+    char                            board[64];
+    /* The shell's board list as last seen, so a board mounted after
+     * this window was made still reaches the menu. */
+    char                            boards_seen[512];
     /* A program on the board at an INPUT: what it asked, and the line
      * being typed for it, in the message window's strip. */
     int                             asking;
@@ -1853,6 +1857,19 @@ project_publish(ide_t *st)
                 menus.menu[0].item[mrow].command = CMD_RUNBOARD + i;
                 menus.menu[0].item[mrow].enabled = (unsigned char)can_board;
             }
+                        if (st->services->board_find != NULL) {
+                /* Boards are looked for when somebody ASKS: opening the
+                 * machine's ports writes to whatever is on them, so it
+                 * is offered here rather than done at startup. */
+                mrow++;
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label,
+                         "%s", (have > 0) ? "Look for boards again"
+                                          : "Look for boards");
+                menus.menu[0].item[mrow].command = CMD_FINDBOARDS;
+                menus.menu[0].item[mrow].enabled =
+                    (unsigned char)!st->running;
+            }
             if (have > 0 && board_at(st, (mine >= 0) ? mine : 0, name,
                                      sizeof name)) {
                 /* Saving follows the project's own board: the one it
@@ -2978,6 +2995,22 @@ ide_tick(void *state, int64_t now_us)
     if (st == NULL) {
         return;
     }
+        {
+        /* Boards are mounted when somebody looks, which may be long
+         * after this window was made: what it offers follows the
+         * shell's list rather than whatever was there at startup. */
+        char boards[512];
+
+        boards[0] = '\0';
+        if (st->services->board_names != NULL) {
+            (void)st->services->board_names(st->services->ctx, boards,
+                                            sizeof boards);
+        }
+        if (strcmp(boards, st->boards_seen) != 0) {
+            snprintf(st->boards_seen, sizeof st->boards_seen, "%s", boards);
+            project_publish(st);
+        }
+    }
     if (st->splash_surface != NULL) {
         /* The splash leaves on its own: an announcement is not a door
          * somebody should have to close.  While it stands, the status
@@ -3887,7 +3920,17 @@ ide_pick(void *state, uint32_t window, int command)
         }
         return 0;
     }
-        if (command >= CMD_RUNBOARD && command < CMD_RUNBOARD + IDE_BOARDS) {
+    if (command == CMD_FINDBOARDS) {
+        if (st->services->board_find != NULL &&
+            st->services->board_find(st->services->ctx)) {
+            snprintf(st->note, sizeof st->note, "looking for boards…");
+        } else {
+            snprintf(st->note, sizeof st->note, "cannot ask for boards");
+        }
+        project_paint(st);
+        return 0;
+    }
+    if (command >= CMD_RUNBOARD && command < CMD_RUNBOARD + IDE_BOARDS) {
         int row = tiku_list_chosen(&st->tv_list);
 
         if (row >= 0 && row < st->proj.nrow && !st->proj.row[row].heading) {

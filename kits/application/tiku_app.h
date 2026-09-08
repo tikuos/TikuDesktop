@@ -203,7 +203,19 @@ typedef struct tiku_app_services {
      * board_said(TIKU_APP_BOARD_RECLAIMED), or FAILED when it has not
      * come back yet -- asking again costs nothing.
      */
-    int (*board_reclaim)(void *ctx, const char *board);
+        int (*board_reclaim)(void *ctx, const char *board);
+
+    /**
+     * @brief Ask the shell to look for boards on this machine's ports.
+     *
+     * Not done unasked: opening every serial port writes to whatever is
+     * on it, and those ports belong to other things until somebody says
+     * otherwise.  So an application that offers boards offers this too.
+     * What is found joins board_names(); told as
+     * board_said(TIKU_APP_BOARD_LOOKED) with how many are mounted now.
+     * @return nonzero when the asking was taken.
+     */
+    int (*board_find)(void *ctx);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
@@ -304,6 +316,7 @@ typedef struct {
 #define TIKU_APP_BOARD_SAVED    5   /**< kept on the board; text = name */
 #define TIKU_APP_BOARD_RELEASED 6   /**< let go; text = the board       */
 #define TIKU_APP_BOARD_RECLAIMED 7  /**< taken back; text = the board   */
+#define TIKU_APP_BOARD_LOOKED   8   /**< looked; text = how many there are */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {

@@ -697,6 +697,7 @@ int  desktop_board_save(desktop_t *app, struct desktop_embed *slot,
 int  desktop_board_input(desktop_t *app, const char *text);
 int  desktop_board_stop(desktop_t *app);
 int  desktop_board_list(desktop_t *app, char *out, size_t max);
+int  desktop_board_look(desktop_t *app);
 int  desktop_board_release(desktop_t *app, const char *name);
 int  desktop_board_reclaim(desktop_t *app, const char *name);
 int  desktop_board_port(desktop_t *app, const char *name, char *out,
