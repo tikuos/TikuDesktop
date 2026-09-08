@@ -344,6 +344,27 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
 {
     switch (pick->what) {
 
+        case TIKU_TRK_DB_FIND_BOARDS: {
+        /* Whatever answers is mounted under /devices and named; every
+         * application that offers boards follows that list, so they
+         * appear where they are useful without being told. */
+        /* At whatever the shell was told, or the rate a board's console
+         * runs at unless somebody said otherwise. */
+        int baud = (app->board_baud > 0) ? app->board_baud : 115200;
+        int found = mount_devices(app, NULL, baud, NULL);
+
+        desktop_board_names_tell(app);
+        app->dirty = 1;
+        if (found <= 0) {
+            /* Looking and finding nothing is an answer: a board that is
+             * plugged in but silent is a different thing from a menu
+             * row that did nothing. */
+            tiku_alert_open(alert_model(app), TIKU_ALERT_INFO, 0,
+                                tiku_str("alert.msg.no_boards"),
+                                tiku_str("alert.btn.ok"));
+        }
+        break;
+    }
     case TIKU_TRK_DB_FIND:
         /* The leaf's Find item is the panel: the same
          * entry point as Ctrl+F, reachable by mouse. */

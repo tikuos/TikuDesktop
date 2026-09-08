@@ -33,6 +33,7 @@
   <string name="menu.about">About this system</string>
   <string name="menu.find">Find…</string>
   <string name="menu.settings">Settings</string>
+  <string name="menu.find_boards">Find boards</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programming</string>
   <string name="menu.deskbar_prefs">Deskbar preferences…</string>
@@ -164,6 +165,7 @@
   <string name="cmd.paste">Paste</string>
   <string name="cmd.paste_layout">Paste layout</string>
   <string name="cmd.paste_shift">Paste links</string>
+  <string name="cmd.findboards">Find boards</string>
   <string name="cmd.preferences">Preferences…</string>
   <string name="cmd.resize_to_fit">Resize to fit</string>
   <string name="cmd.restore">Restore</string>
@@ -196,6 +198,7 @@
   <string name="alert.btn.empty_trash">Cancel|Empty Trash</string>
   <string name="alert.btn.get_info">Cancel|Get info</string>
   <string name="alert.btn.trash_delete">Cancel|Move to Trash|Delete</string>
+  <string name="alert.msg.no_boards">No board answered on any port.</string>
   <string name="alert.btn.ok">Cancel|OK</string>
   <string name="alert.btn.open">Cancel|Open</string>
   <string name="alert.btn.replace">Cancel|Replace</string>
