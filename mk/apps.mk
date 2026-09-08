@@ -43,6 +43,7 @@ APPS      := $(patsubst %,$(BUILD)/tiku-%,$(APP_NAMES))
 APPS_D      := $(BUILD)/apps
 PROG_D      := $(APPS_D)/programming
 SO_APPS     := $(APPS_D)/terminal.so $(APPS_D)/editor.so \
+               $(APPS_D)/Bench.so \
                $(PROG_D)/TikuBasic.so $(PROG_D)/TikuC.so
 SO_EXAMPLES := $(patsubst %,$(APPS_D)/%.so,hello clock counter sketch twowin)
 
@@ -128,6 +129,9 @@ $(APPS_D)/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(PROG_D)/TikuBasic.so: $(D)/ide/tiku_ide.c $(PIC_LIBS) | $(PROG_D)

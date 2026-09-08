@@ -1,0 +1,61 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: benchrun
+# board: only
+# The bench, run against a mounted board from the shell.
+#
+# TikuBench builds, flashes and talks to boards; none of that is done
+# again here.  What the shell adds is the board -- already mounted and
+# named -- and the hand-over of its port, since a run that reflashes a
+# board cannot share it with the shell that has it open.  So the whole
+# question this asks is: does the shell let go, does the run reach the
+# board, and does the shell get its board back?
+wait 60
+click 980 30
+wait 10
+menu-pick Applications
+wait 10
+menu-pick Bench
+wait 250
+expect-title Bench
+note the suites are the bench's own list, not a copy of it kept here;
+note down to link-console, which a board answers on its own
+click-window Bench
+wait 8
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+wait 8
+click 71 8
+wait 8
+note the board is offered BY NAME, which is what the shell knows and
+note the bench would otherwise have to be told
+expect-menu Run on tiku
+menu-pick Run on tiku
+note the results window is made only when the bench has said something,
+note so its being here at all is the run's own report arriving
+wait 700
+expect-title Results
+note and the board is the shell's again: let go for the run, taken back
+note after it, and answering as it did before any of this
+wait 500
+expect-read /devices/tiku/sys/device/name tiku
+quit
