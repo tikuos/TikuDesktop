@@ -98,7 +98,27 @@ cost the shell already has on the cable today.
   runner: lease, send `cat /sys/uptime`, the answer arrives on the
   callback, a namespace read meanwhile is refused and SAYS so, unlease,
   the same read succeeds.  Half a day.
-- **P2 — Run on a board.**  The IDE: `board` line read and written,
+- **P2 — IN PROGRESS.**  The runner is done and proven (applications
+  `d8ddc71`): `kits/storage/tiku_board_basic.{h,c}` turns P0's cues into
+  code on P1's lease -- hand it a program, pump it, take the output as
+  lines, stop it, and the board is back at its shell afterwards.
+  `test_boardbasic` proves it on a board (output, the two-line error the
+  editor already folds, a stop, the namespace usable after); 8 runs clean.
+  Two things it cost: the runner lives in the STORAGE kit, because it
+  stands on the board BACKEND and the device kit may not draw on storage
+  (the repo's own boundary check caught it); and a run must DRAIN what the
+  last one left in flight, or that run's trailing prompt is taken for this
+  one's and ends it before it starts.
+  What is left of P2, and why it is the harder half: the editor is an
+  APPLICATION, and the application ABI has no file or board service -- it
+  reaches files only through host libc on paths the desktop's panel hands
+  it, and a board lives in the desktop's namespace, not the filesystem.
+  So "Run on..." needs a service seam: the desktop, which owns the mount
+  and the lease, drives the runner and TELLS the session its output, the
+  way the clipboard is told and `pick` is answered, because a service that
+  returns data must never wait on the wire.  Then the message window
+  consumes those lines exactly as it consumes the child pipe's today.
+  ~~Run on a board.~~  The IDE: `board` line read and written,
   "Run on…" in the Run menu, upload through the REPL, streaming into the
   message window with the existing fold and caret, the end detected by
   the prompt, the child-pipe road untouched for this machine.
