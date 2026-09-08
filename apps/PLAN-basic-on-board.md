@@ -133,14 +133,8 @@ cost the shell already has on the cable today.
   console reading the file back.  Half a day.
 - **P4 — DONE 2026-09-08** (applications `45ee9bb`).
 
-- **P5 — decided for later, not now: BASIC's own stream.**  Session
-  kinds `BASIC_IN` 23 / `BASIC_OUT` 24, a board bridge beside
-  `tiku_draw_shell.c` that feeds `tiku_basic_mode_feed_char()` directly
-  and steers the interpreter's output to `BASIC_OUT` while a run is on.
-  Then the namespace stays live during a run — the message window can
-  show a `/data` file as the program writes it — and the lease shrinks
-  to the upload.  Worth doing once P2–P4 have shown what a running
-  program wants to see; not worth doing before.
+- **P5 — DONE 2026-09-08** (tikuOS `e5d2408`, applications `fb261e2`).
+
 
 ## 4. What is deliberately NOT in this plan
 
@@ -323,4 +317,47 @@ Two things worth keeping:
    home folder, so renaming a fixture's programs moves the row the other
    scripts click by coordinate.  Two programs, the same two names every
    other editor fixture uses.
+
+## 10. What P5 settled (2026-09-08)
+
+The interpreter has a stream of its own on the link -- `BASIC_IN` 23 and
+`BASIC_OUT` 24 -- so a run no longer takes the board's shell.  The
+program, the RUN and the answers to INPUT arrive as messages; what the
+program prints goes back the same way; and the console stays the
+shell's throughout.  `iderunboardlive.script` reads
+`/devices/tiku/sys/device/name` WHILE a program is running, with Stop
+offered beside it to show the run really is in progress -- a reading no
+board held by a lease could answer.  The lease did not shrink to the
+upload: it is gone entirely for a board that offers a stream, and kept
+whole for one that does not.
+
+The kernel's part is small and off by default: a stream set on the mode
+carries what the interpreter reads and writes, swapped in around the
+mode's own hooks so a command's output and a program's never mix, and
+while it is set the shell keeps its console line.  With no stream set
+nothing changes, and with the overlay absent the image has none of it
+(checked by symbols, not by size).
+
+Four things the building cost, each a rule the code now keeps:
+
+1. **A question must leave before its answer can arrive.**  INPUT prints
+   its prompt with no line end and then waits in a loop of its own;
+   nothing else was sending, so the desk waited for a question that had
+   not gone out and the board for its answer.  The wait now flushes
+   first and SERVES the port, rather than merely reading it.
+2. **A standing prompt needs a beat of its own.**  The interpreter ends
+   a program by printing `ok> ` -- again with no line end -- so a run
+   that ended in an error was one the desk waited on for ever.  The
+   bridge flushes on the shell's pump, exactly as the shell's own
+   bridge does.
+3. **Do not feed the interpreter from inside itself.**  The answer
+   arrives while the board is already inside INPUT's read; fed there it
+   would be read twice.  It is buffered, and the wait takes it.
+4. **The mode's own state decides, not a flag beside it.**  A program
+   that ended with BYE left the interpreter, and a second run fed to a
+   mode that had exited went nowhere.
+
+Not attempted here: the message window showing a `/data` file as a
+program writes it.  The road to it is open now -- the namespace answers
+mid-run -- but nothing yet asks.
 
