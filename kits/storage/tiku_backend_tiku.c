@@ -474,6 +474,21 @@ tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
     const tiku_node_t *n;
     size_t len;
 
+    if (tiku_ns_find(impl->ns, path) == NULL) {
+        /* A node the manifest never listed -- a file the board made after
+         * it was mounted -- is asked about, not refused: its directory is
+         * asked what it holds now, the same way the forms under gui/ are
+         * asked for at connect. */
+        char dir[TIKU_PATH_MAX];
+        char *slash;
+
+        (void)snprintf(dir, sizeof dir, "%s", path);
+        slash = strrchr(dir, '/');
+        if (slash != NULL && slash != dir) {
+            *slash = '\0';
+            (void)tiku_ns_complete_dir(impl->ns, dir, 1);
+        }
+    }
     if (tiku_ns_read(impl->ns, path) != 0) {
         return -1;
     }
@@ -675,8 +690,21 @@ tiku_backend_tiku_open_tx(tiku_tx_t *tx)
         return NULL;
     }
     impl->sess = tiku_session_new(tx);
-    if (impl->sess == NULL || tiku_session_sync(impl->sess, 4000) != 0) {
-        tiku_session_free(impl->sess);
+    if (impl->sess != NULL && tiku_session_sync(impl->sess, 4000) != 0) {
+        /* No shell prompt.  A board whose last client died mid-program is
+         * still inside its interpreter, answering ok> to everything and
+         * the shell's prompt to nothing; break and BYE put it back, and
+         * cost a board that was never there nothing but a moment. */
+        (void)tiku_session_send_raw(impl->sess, "\x03", 1u);
+        tiku_session_drain(impl->sess, 150);
+        (void)tiku_session_send_raw(impl->sess, "BYE\n", 4u);
+        tiku_session_drain(impl->sess, 300);
+        if (tiku_session_sync(impl->sess, 2000) != 0) {
+            tiku_session_free(impl->sess);
+            impl->sess = NULL;
+        }
+    }
+    if (impl->sess == NULL) {
         free(impl);
         free(b);
         return NULL;

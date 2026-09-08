@@ -773,6 +773,15 @@ ns_has_child(const tiku_ns_t *ns, const char *dir)
 }
 
 int
+tiku_ns_complete_dir(tiku_ns_t *ns, const char *path, int max_depth)
+{
+    if (ns == NULL || path == NULL || path[0] != '/') {
+        return -1;
+    }
+    return ns_walk(ns, path, 0, (max_depth > 0) ? max_depth : 1);
+}
+
+int
 tiku_ns_complete_dynamic(tiku_ns_t *ns, int max_depth)
 {
     int i, count, added = 0;

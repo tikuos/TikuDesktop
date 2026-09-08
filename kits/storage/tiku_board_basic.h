@@ -26,6 +26,7 @@ typedef struct tiku_board_basic tiku_board_basic_t;
 typedef enum {
     TIKU_BOARD_BASIC_SENDING = 0, /**< still handing the program over    */
     TIKU_BOARD_BASIC_RUNNING,     /**< started; its output is coming     */
+    TIKU_BOARD_BASIC_ASKING,      /**< at an INPUT, waiting for a line   */
     TIKU_BOARD_BASIC_ENDED,       /**< the program finished by itself    */
     TIKU_BOARD_BASIC_STOPPED,     /**< a person stopped it               */
     TIKU_BOARD_BASIC_FAILED       /**< the board would not take it       */
@@ -56,6 +57,31 @@ tiku_board_basic_state_t tiku_board_basic_pump(tiku_board_basic_t *r,
                                                int timeout_ms,
                                                tiku_board_basic_line_fn fn,
                                                void *ctx);
+
+/**
+ * @brief Keep @p program on the board under @p name instead of running it.
+ *
+ * The interpreter's own SAVE: the board keeps it in a named slot and
+ * shows it in its namespace as /data/<name>.bas.  A name is at most seven
+ * characters, which is the board's limit and not this kit's.  Pumped and
+ * freed like a run; ENDED means saved.
+ */
+tiku_board_basic_t *tiku_board_basic_save(struct tiku_backend *b,
+                                          const char *name,
+                                          const char *program);
+
+/**
+ * @brief Read back what the board keeps under @p name: LOAD then LIST,
+ *        the listing coming out as lines.  Pumped and freed like a run.
+ */
+tiku_board_basic_t *tiku_board_basic_list(struct tiku_backend *b,
+                                          const char *name);
+
+/**
+ * @brief What the program is asking, while the run is ASKING: the text
+ *        its INPUT printed, "NAME? " for INPUT "NAME"; A$.
+ */
+const char *tiku_board_basic_prompt(const tiku_board_basic_t *r);
 
 /** @brief Answer the program's INPUT with @p text. */
 int tiku_board_basic_input(tiku_board_basic_t *r, const char *text);

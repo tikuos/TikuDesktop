@@ -13,6 +13,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define _GNU_SOURCE
 #include "tiku_board_basic.h"
 
 #include <stdio.h>
@@ -49,10 +50,21 @@ struct tiku_board_basic {
     size_t                    line_len;
     tiku_board_basic_state_t  state;
     long                      began_ms;  /* when the handover started  */
-    int                       started;   /* RUN has gone out           */
-    int                       drop_echo; /* the board's echo of RUN     */
+    int                       mode;      /* MODE_RUN / SAVE / LIST     */
+    char                      name[16];  /* the slot, for SAVE / LIST  */
+    int                       newed;     /* NEW has gone out           */
+    int                       started;   /* the last command went out  */
+    /* The board echoes what it is told, and an echo is not output: the
+     * next whole line is dropped when it is this. */
+    char                      echo[LINE_MAX];
+    int                       echo_pending;
+    char                      prompt[LINE_MAX];  /* what INPUT asked  */
     int                       held;      /* the shell is ours          */
 };
+
+#define MODE_RUN    0
+#define MODE_SAVE   1
+#define MODE_LIST   2
 
 /** @brief The board's text, as the lease hands it over. */
 static void
@@ -113,11 +125,15 @@ say_lines(tiku_board_basic_t *r, const char *text, size_t n,
         }
         if (c == '\n') {
             r->line[r->line_len] = '\0';
-            /* The board echoes what it was told; the echo of RUN is not
-             * something the program printed. */
-            if (r->drop_echo) {
-                r->drop_echo = 0;
-                if (strcmp(r->line, "RUN") == 0) {
+            if (r->echo_pending) {
+                const char *l = r->line;
+
+                /* The echo follows the prompt's own trailing space. */
+                while (*l == ' ') {
+                    l++;
+                }
+                r->echo_pending = 0;
+                if (strcmp(l, r->echo) == 0) {
                     r->line_len = 0u;
                     continue;
                 }
@@ -140,8 +156,9 @@ send_text(tiku_board_basic_t *r, const char *s)
     return tiku_backend_tiku_lease_send(r->b, s, strlen(s));
 }
 
-tiku_board_basic_t *
-tiku_board_basic_start(struct tiku_backend *b, const char *program)
+static tiku_board_basic_t *
+start(struct tiku_backend *b, const char *program, int mode,
+      const char *name)
 {
     tiku_board_basic_t *r;
 
@@ -153,6 +170,9 @@ tiku_board_basic_start(struct tiku_backend *b, const char *program)
         return NULL;
     }
     r->b = b;
+    r->mode = mode;
+    (void)snprintf(r->name, sizeof r->name, "%s",
+                   (name != NULL) ? name : "");
     r->program = strdup(program);
     if (r->program == NULL) {
         free(r);
@@ -200,6 +220,43 @@ tiku_board_basic_start(struct tiku_backend *b, const char *program)
     return r;
 }
 
+tiku_board_basic_t *
+tiku_board_basic_start(struct tiku_backend *b, const char *program)
+{
+    return start(b, program, MODE_RUN, NULL);
+}
+
+tiku_board_basic_t *
+tiku_board_basic_save(struct tiku_backend *b, const char *name,
+                      const char *program)
+{
+    if (name == NULL || name[0] == '\0' || strlen(name) > 7u ||
+        strchr(name, '"') != NULL) {
+        return NULL;            /* the board's own limit on a slot name */
+    }
+    return start(b, program, MODE_SAVE, name);
+}
+
+tiku_board_basic_t *
+tiku_board_basic_list(struct tiku_backend *b, const char *name)
+{
+    char load[32];
+
+    if (name == NULL || name[0] == '\0' || strlen(name) > 7u ||
+        strchr(name, '"') != NULL) {
+        return NULL;
+    }
+    (void)snprintf(load, sizeof load, "LOAD \"%s\"\n", name);
+    return start(b, load, MODE_LIST, name);
+}
+
+const char *
+tiku_board_basic_prompt(const tiku_board_basic_t *r)
+{
+    return (r != NULL && r->state == TIKU_BOARD_BASIC_ASKING) ? r->prompt
+                                                              : "";
+}
+
 /** @brief Hand over the next line of the program, or start it. */
 static void
 send_next(tiku_board_basic_t *r)
@@ -208,6 +265,14 @@ send_next(tiku_board_basic_t *r)
     const char *nl;
     size_t n;
 
+    if (!r->newed) {
+        /* The interpreter keeps the last program's lines by number, and
+         * a line of the old one the new one does not overwrite would run
+         * with it.  NEW before anything. */
+        r->newed = 1;
+        (void)send_text(r, "NEW\n");
+        return;
+    }
     while (r->at != NULL && *r->at != '\0') {
         nl = strchr(r->at, '\n');
         n = (nl != NULL) ? (size_t)(nl - r->at) : strlen(r->at);
@@ -228,9 +293,16 @@ send_next(tiku_board_basic_t *r)
             return;
         }
     }
-    (void)send_text(r, "RUN\n");
+    if (r->mode == MODE_SAVE) {
+        (void)snprintf(r->echo, sizeof r->echo, "SAVE \"%s\"", r->name);
+    } else {
+        (void)snprintf(r->echo, sizeof r->echo, "%s",
+                       (r->mode == MODE_LIST) ? "LIST" : "RUN");
+    }
+    (void)snprintf(line, sizeof line, "%s\n", r->echo);
+    (void)send_text(r, line);
     r->started = 1;
-    r->drop_echo = 1;
+    r->echo_pending = 1;
     r->state = TIKU_BOARD_BASIC_RUNNING;
 }
 
@@ -243,9 +315,9 @@ tiku_board_basic_pump(tiku_board_basic_t *r, int timeout_ms,
     if (r == NULL) {
         return TIKU_BOARD_BASIC_FAILED;
     }
-    if (r->state == TIKU_BOARD_BASIC_ENDED ||
-        r->state == TIKU_BOARD_BASIC_STOPPED ||
-        r->state == TIKU_BOARD_BASIC_FAILED) {
+    if (r->state != TIKU_BOARD_BASIC_SENDING &&
+        r->state != TIKU_BOARD_BASIC_RUNNING &&
+        r->state != TIKU_BOARD_BASIC_ASKING) {
         return r->state;
     }
     /* Pumping the backend is what moves the board's bytes to took_text. */
@@ -278,13 +350,35 @@ tiku_board_basic_pump(tiku_board_basic_t *r, int timeout_ms,
             r->line_len = 0u;
         }
         consume(r, end);
-        if (r->state == TIKU_BOARD_BASIC_RUNNING) {
+        if (r->state == TIKU_BOARD_BASIC_RUNNING ||
+            r->state == TIKU_BOARD_BASIC_ASKING) {
             r->state = TIKU_BOARD_BASIC_ENDED;
         }
         return r->state;
     }
-    say_lines(r, r->buf, r->len, fn, ctx);
-    consume(r, r->len);
+    /* Whole lines go out; what follows the last newline stays, because
+     * it may be the front half of a prompt whose back half is in the
+     * next read -- taken as a line, the prompt would never be seen and
+     * the run would never end. */
+    {
+        const char *last = memrchr(r->buf, '\n', r->len);
+
+        if (last != NULL) {
+            size_t upto = (size_t)(last - r->buf) + 1u;
+
+            say_lines(r, r->buf, upto, fn, ctx);
+            consume(r, upto);
+        }
+    }
+    if (r->state == TIKU_BOARD_BASIC_RUNNING && r->len >= 2u &&
+        r->buf[r->len - 2u] == '?' && r->buf[r->len - 1u] == ' ') {
+        /* The line stopped at "? ": the program is waiting for a person.
+         * The prompt is kept for whoever answers and taken off the line,
+         * so what the program prints next starts a row of its own. */
+        (void)snprintf(r->prompt, sizeof r->prompt, "%s", r->buf);
+        consume(r, r->len);
+        r->state = TIKU_BOARD_BASIC_ASKING;
+    }
     return r->state;
 }
 
@@ -293,11 +387,22 @@ tiku_board_basic_input(tiku_board_basic_t *r, const char *text)
 {
     char line[LINE_MAX];
 
-    if (r == NULL || text == NULL || r->state != TIKU_BOARD_BASIC_RUNNING) {
+    if (r == NULL || text == NULL ||
+        (r->state != TIKU_BOARD_BASIC_RUNNING &&
+         r->state != TIKU_BOARD_BASIC_ASKING)) {
         return -1;
     }
     (void)snprintf(line, sizeof line, "%s\n", text);
-    return send_text(r, line);
+    if (send_text(r, line) != 0) {
+        return -1;
+    }
+    /* The board echoes the answer on the prompt's line; neither is what
+     * the program printed. */
+    (void)snprintf(r->echo, sizeof r->echo, "%s", text);
+    r->echo_pending = 1;
+    r->line_len = 0u;
+    r->state = TIKU_BOARD_BASIC_RUNNING;
+    return 0;
 }
 
 void
@@ -306,7 +411,8 @@ tiku_board_basic_stop(tiku_board_basic_t *r)
     if (r == NULL || !r->held) {
         return;
     }
-    if (r->started && r->state == TIKU_BOARD_BASIC_RUNNING) {
+    if (r->started && (r->state == TIKU_BOARD_BASIC_RUNNING ||
+                       r->state == TIKU_BOARD_BASIC_ASKING)) {
         (void)tiku_backend_tiku_lease_send(r->b, "\x03", 1u);
         r->state = TIKU_BOARD_BASIC_STOPPED;
     }

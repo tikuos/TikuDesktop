@@ -187,6 +187,17 @@ int tiku_ns_truncated(const tiku_ns_t *ns);
 int tiku_ns_complete_dynamic(tiku_ns_t *ns, int max_depth);
 
 /**
+ * @brief Ask the device what @p path holds NOW, adding what is new.
+ *
+ * For a directory whose contents change after connect -- a program
+ * saved into /data -- which tiku_ns_complete_dynamic() passes over once
+ * the directory has any child at all.
+ *
+ * @return Nodes added, or -1.
+ */
+int tiku_ns_complete_dir(tiku_ns_t *ns, const char *path, int max_depth);
+
+/**
  * @brief Complete a truncated mirror by walking the tree with `ls`.
  *
  * Nodes discovered this way carry no descriptor or capability metadata; their

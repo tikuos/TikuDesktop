@@ -60,16 +60,22 @@ took_line(const char *line, void *ctx)
     }
 }
 
-/** @brief Run @p program to its end (or @p ms), collecting its output. */
+/**
+ * @brief Pump @p r to its end (or @p ms), collecting its output; a
+ *        program that asks is answered @p answer, and @p prompt keeps
+ *        what it asked.
+ */
 static tiku_board_basic_state_t
-run_it(tiku_backend_t *b, const char *program, int ms, int stop_after_ms)
+pump_it(tiku_board_basic_t *r, int ms, int stop_after_ms,
+        const char *answer, char *prompt, size_t prompt_max)
 {
-    tiku_board_basic_t *r = tiku_board_basic_start(b, program);
     tiku_board_basic_state_t st = TIKU_BOARD_BASIC_FAILED;
     long deadline = now_ms() + ms;
     long stop_at = (stop_after_ms > 0) ? now_ms() + stop_after_ms : 0;
-
     said[0] = '\0';
+    if (prompt != NULL) {
+        prompt[0] = '\0';
+    }
     if (r == NULL) {
         return TIKU_BOARD_BASIC_FAILED;
     }
@@ -77,6 +83,17 @@ run_it(tiku_backend_t *b, const char *program, int ms, int stop_after_ms)
         st = tiku_board_basic_pump(r, 50, took_line, NULL);
         if (st == TIKU_BOARD_BASIC_ENDED || st == TIKU_BOARD_BASIC_FAILED) {
             break;
+        }
+        if (st == TIKU_BOARD_BASIC_ASKING) {
+            if (prompt != NULL) {
+                snprintf(prompt, prompt_max, "%s",
+                         tiku_board_basic_prompt(r));
+            }
+            if (answer == NULL) {
+                break;                  /* asked, and nobody to answer */
+            }
+            (void)tiku_board_basic_input(r, answer);
+            answer = NULL;              /* once */
         }
         if (stop_at != 0 && now_ms() >= stop_at) {
             tiku_board_basic_stop(r);
@@ -86,6 +103,14 @@ run_it(tiku_backend_t *b, const char *program, int ms, int stop_after_ms)
     }
     tiku_board_basic_free(r);
     return st;
+}
+
+/** @brief Run @p program to its end (or @p ms), collecting its output. */
+static tiku_board_basic_state_t
+run_it(tiku_backend_t *b, const char *program, int ms, int stop_after_ms)
+{
+    return pump_it(tiku_board_basic_start(b, program), ms, stop_after_ms,
+                   NULL, NULL, 0u);
 }
 
 int
@@ -137,9 +162,46 @@ main(int argc, char **argv)
           && strstr(said, "NOTREACHED") == NULL,
           "a running program is stopped, and the rest of it never runs");
 
-    /* The one a leaked lease fails: the namespace has to work again. */
+        /* The one a leaked lease fails: the namespace has to work again. */
     check(b->ops->read(b, "/sys/uptime", buf, sizeof buf) > 0,
           "and the board answers its namespace again afterwards");
+    /* The interpreter keeps the last program's lines by number.  Without
+     * NEW, the stopped program's lines 20-40 are still there under this
+     * one's line 10, and its NOTREACHED would be printed by a program
+     * that never mentioned it. */
+    st = run_it(b, "10 PRINT \"ONLY\"\n", 30000, 0);
+    check(st == TIKU_BOARD_BASIC_ENDED && strstr(said, "ONLY") != NULL
+          && strstr(said, "NOTREACHED") == NULL,
+          "a program runs alone: the last one's lines are not still there");
+    {
+        char prompt[64];
+
+        st = pump_it(tiku_board_basic_start(b,
+                         "10 INPUT \"NAME\"; A$\n20 PRINT \"HI \"; A$\n"),
+                     30000, 0, "TIKU", prompt, sizeof prompt);
+        if (strcmp(prompt, "NAME? ") != 0) {
+            printf("         it asked: '%s' (state %d)\n", prompt, (int)st);
+        }
+        check(st == TIKU_BOARD_BASIC_ENDED && strcmp(prompt, "NAME? ") == 0
+              && strstr(said, "HI TIKU") != NULL,
+              "INPUT is noticed with what it asked, an answer from here "
+              "reaches it, and the program carries on with it");
+        /* The prompt and the answer's echo are the wire's, not the
+         * program's: neither is a line it printed. */
+        check(strstr(said, "NAME?") == NULL && strncmp(said, "TIKU\n", 5)
+              != 0, "and neither the prompt nor the answer's echo is output");
+    }
+    st = pump_it(tiku_board_basic_save(b, "T2", "10 PRINT \"KEPT\"\n"),
+                 30000, 0, NULL, NULL, 0u);
+    check(st == TIKU_BOARD_BASIC_ENDED && strstr(said, "saved") != NULL,
+          "a program is kept on the board under a name");
+    st = pump_it(tiku_board_basic_list(b, "T2"), 30000, 0, NULL, NULL, 0u);
+    check(st == TIKU_BOARD_BASIC_ENDED && strstr(said, "KEPT") != NULL,
+          "and read back from the board by that name");
+    /* Where a person, or the shell, finds it: the board's namespace. */
+    check(b->ops->read(b, "/data/T2.bas", buf, sizeof buf) > 0 &&
+          strstr(buf, "KEPT") != NULL,
+          "and it is a file in the board's namespace, /data/T2.bas");
 
     tiku_backend_close(b);
     printf("%d passed, %d failed\n", passes, fails);
