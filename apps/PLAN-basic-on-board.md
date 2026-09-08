@@ -125,23 +125,7 @@ cost the shell already has on the cable today.
   `iderunboard.script` (`# board: only`): a hello program on the LM20
   over its USB port says its line; a program with a bad line puts the
   caret on it; Run while running says "already running".  One day.
-- **P3 — STARTED, not landed.**  The stop MECHANISM is proven at the kit
-  (`test_boardbasic`: a running program is stopped, the rest never runs,
-  and the board answers its namespace afterwards).  What is not landed is
-  the editor's end: a run started from the project window cannot be
-  stopped from there, because the editor offers Stop only on an EDITOR
-  window, which such a run never opened.  Adding the row is a few lines
-  and was written, but its script did not pass and was not shipped: the
-  run had already finished, or failed to start, by the time the script
-  opened the menu, so no Stop was offered.  Two things to chase first,
-  both seen while trying: stray "Unknown command" text on the board
-  during a run (the desk's own namespace polling and the run share the
-  line, and the run's resync only covers the moment it starts), and a
-  desktop killed mid-run leaves the board inside the interpreter with
-  nothing to put it back.  The second is why several attempts measured a
-  board that was not in the state the test assumed -- a run must be
-  re-measured from a known board state, as the USB work already learned.
-  ~~interactive.~~  The input line and Stop.  `iderunboardinput.
+- **P3 — DONE 2026-09-08** (applications `b210547` + `fc2b143`).
   script`: a program that `INPUT`s a name and prints it back, answered
   from the window; a program that loops forever, stopped, and the board's
   prompt back afterwards (the mount usable again — the proof that a
@@ -265,4 +249,50 @@ row SAYS.  A remote window's drawing cannot be narrated over the wire and
 the row menu offers a place rather than the words, so the two lines an
 error is printed in -- and the fold that makes them one row with a line
 -- are checked by `test_boardbasic` against a board instead.
+
+## 8. What P3 settled (2026-09-08)
+
+The editor now drives a program on a board the way it drives one here.
+
+- **Stop** is offered on the project window the run was started from --
+  not only on an editor page, which a run started from the project never
+  opened.  It asks the shell to break the program rather than killing a
+  child a board run has not got.
+- **INPUT** is answered from the message window.  When the board's
+  interpreter stops at "? ", the run notices, keeps the prompt, and the
+  message window's bottom strip becomes a field with that prompt beside
+  it; the line typed there goes to the program and it carries on.  A new
+  ABI kind (ASKS) and a board_save service carry this in process and over
+  the wire both.
+- **Save on <board>** keeps the file in the interpreter's own named slot;
+  the board shows it in its namespace as /data/<name>.bas, which is where
+  the script reads it back through the shell's mount.
+
+Four things the building cost, each fixed in the code:
+
+1. **A command number collided with a base.**  The editor treats any
+   command at or above CMD_WINDOW as "raise window N"; the new Run/Save
+   numbers, assigned as max+1, landed there and returned before the
+   switch, so the run never started and left NO trace on the wire.  The
+   lesson that cost the most: the desktop's own log showed only the
+   file-picker ask from Open Project, and the run produced nothing --
+   the IDE runs remote, its stderr had to be proven captured before its
+   own prints could be trusted.
+2. **The last run's lines were still there.**  The interpreter keeps a
+   program by line number; without NEW, the previous program's lines ran
+   under the new one's.  NEW before the first line.
+3. **A file made after mounting could not be read.**  The manifest is
+   read once at connect and never lists a slot saved later; a read of an
+   unlisted name now asks its directory first, the same shape the forms
+   under gui/ are completed with.
+4. **A shell-only board was fed frames as text.**  The desk greeted a
+   window channel on every board; one without the overlay takes a frame
+   for an unregistered channel as text, so every greeting landed on its
+   shell line as junk.  The channel is opened only on a board that has
+   a /gui.
+
+Held at the kit, not the script: what a message row SAYS.  A remote
+window cannot be narrated over the wire, so test_boardbasic checks the
+INPUT prompt, the saved file's contents in the board's namespace, and
+that a stopped program's rest never runs -- ten legs against a board.
 
