@@ -23,7 +23,6 @@
   <string name="menu.about">À propos de ce système</string>
   <string name="menu.find">Rechercher…</string>
   <string name="menu.settings">Réglages</string>
-  <string name="menu.find_boards">Chercher des cartes</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programmation</string>
   <string name="menu.deskbar_prefs">Préférences du Deskbar…</string>
@@ -106,8 +105,6 @@
   <string name="cmd.edit_templates">Modifier les modèles…</string>
   <string name="cmd.empty_trash">Vider la corbeille</string>
   <string name="cmd.find">Rechercher…</string>
-  <string name="cmd.findboards">Chercher des cartes</string>
-  <string name="alert.msg.no_boards">Aucune carte n'a répondu.</string>
   <string name="cmd.get_info">Informations</string>
   <string name="cmd.icon_view">Vue en icônes</string>
   <string name="cmd.identify">Identifier</string>

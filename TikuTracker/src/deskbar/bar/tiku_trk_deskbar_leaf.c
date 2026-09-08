@@ -177,14 +177,8 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     /* One row for everything that configures the desktop, the way the
      * programs have one: the leaf says what a person can do here, and
      * the lists live inside it. */
-        add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_str("menu.settings"),
+    add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_str("menu.settings"),
              NULL, 0);
-    /* Boards are looked for when somebody ASKS: opening every serial
-     * port on a machine is not a thing to do uninvited, since the ports
-     * belong to whatever else is on them.  What is found is mounted and
-     * offered wherever boards are useful. */
-    add_item(db, TIKU_TRK_DB_ITEM_FIND_BOARDS,
-             tiku_str("menu.find_boards"), NULL, 0);
     {
         int napps = 0, nprog = 0;
 
