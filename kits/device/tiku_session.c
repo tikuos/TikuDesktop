@@ -40,6 +40,8 @@ struct tiku_session {
     void               *notify_ctx;
     tiku_frame_fn       frame;          /* where whole frames go, or NULL */
     void               *frame_ctx;
+    tiku_text_fn        text;           /* who owns the text, or NULL     */
+    void               *text_ctx;
     unsigned char       fbuf[TIKU_SESSION_FRAME_MAX];
     size_t              flen;
     int                 armed;          /* an END was seen; next byte decides */
@@ -275,6 +277,12 @@ pump(tiku_session_t *s, int timeout_ms, int *notified)
     if (notified != NULL) {
         *notified += f;
     }
+    /* A client holding the line takes the text as it comes.  After the
+     * notices, so a board that still pushes one is still heard. */
+    if (s->text != NULL && s->len > 0u) {
+        s->text(s->buf, s->len, s->text_ctx);
+        s->len = 0;
+    }
     return n;
 }
 
@@ -318,6 +326,49 @@ tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
         s->frame = fn;
         s->frame_ctx = ctx;
     }
+}
+
+void
+tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
+{
+    if (s == NULL) {
+        return;
+    }
+    /* What arrived before the handover belonged to whoever asked for it;
+     * it is not this client's to be given. */
+    s->len = 0;
+    s->text = fn;
+    s->text_ctx = ctx;
+}
+
+int
+tiku_session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
+{
+    if (s == NULL || bytes == NULL || n == 0u) {
+        return -1;
+    }
+    return (tiku_tx_write(s->tx, bytes, n) < 0) ? -1 : 0;
+}
+
+void
+tiku_session_drain(tiku_session_t *s, int quiet_ms)
+{
+    long quiet_until;
+
+    if (s == NULL) {
+        return;
+    }
+    quiet_until = now_ms() + quiet_ms;
+    while (now_ms() < quiet_until) {
+        int n = pump(s, 10, NULL);
+
+        if (n > 0) {
+            quiet_until = now_ms() + quiet_ms;   /* still talking */
+        } else if (n < 0) {
+            break;
+        }
+    }
+    s->len = 0;
 }
 
 int

@@ -28,6 +28,17 @@ typedef struct tiku_session tiku_session_t;
  */
 typedef void (*tiku_notify_fn)(const char *path, void *ctx);
 
+/**
+ * @brief The board's text, handed over as it arrives.
+ *
+ * What a client that OWNS the line reads: bytes as the board wrote them,
+ * with the escape sequences already taken out, and no prompt framing --
+ * a running program's output is not a command's reply and has no prompt
+ * to end it until it ends.
+ */
+typedef void (*tiku_text_fn)(const unsigned char *bytes, size_t n,
+                             void *ctx);
+
 /** @brief Wrap an open transport.  Takes ownership of @p tx. */
 tiku_session_t *tiku_session_new(tiku_tx_t *tx);
 
@@ -86,6 +97,35 @@ typedef void (*tiku_frame_fn)(const unsigned char *bytes, size_t len,
 void tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx);
 
 /** @brief Send @p len bytes as one frame.  0 on success. */
+/**
+ * @brief Hand the board's text to @p fn as it arrives, instead of keeping
+ *        it for the next command's reply.  NULL gives it back.
+ *
+ * Frames are untouched: a board whose windows share the line goes on
+ * drawing while a program prints.  A command cannot be framed while this
+ * is set -- its reply would go to @p fn -- so a caller takes the line,
+ * uses it, and gives it back.
+ */
+void tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx);
+
+/**
+ * @brief Write bytes exactly as given: no newline added, no prompt waited
+ *        for, no timeout.  For the client that owns the line.
+ * @return 0, or -1 when the transport refused them.
+ */
+int tiku_session_send_raw(tiku_session_t *s, const void *bytes, size_t n);
+
+/**
+ * @brief Read and discard until the board has been quiet for @p quiet_ms.
+ *
+ * What a caller handing the line back owes the next one.  A sync alone
+ * cannot do it: it clears what it holds and then takes the next prompt it
+ * sees, so a prompt already on its way from the last client's traffic
+ * satisfies it while the answer to its OWN newline is still to come, and
+ * the command after that reads one prompt out of step.
+ */
+void tiku_session_drain(tiku_session_t *s, int quiet_ms);
+
 int tiku_session_send_frame(tiku_session_t *s, const void *bytes,
                             size_t len);
 

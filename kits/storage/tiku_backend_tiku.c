@@ -32,8 +32,18 @@ typedef struct {
     tiku_ns_t      *ns;
     tiku_store_t    *store;
     tiku_identity_t  ident;
+    int                  leased;        /* a client holds the shell       */
     char                 devid[TIKU_DEVID_MAX];
 } tiku_impl_t;
+
+/** @brief Whether the shell is somebody's, so the namespace is closed. */
+static int
+shell_is_leased(const tiku_backend_t *b)
+{
+    const tiku_impl_t *impl = (b != NULL) ? b->impl : NULL;
+
+    return impl != NULL && impl->leased;
+}
 
 /** @brief Read one identity node, empty string when absent. */
 static void
@@ -237,6 +247,9 @@ tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 static int
 tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
+    if (shell_is_leased(b)) {
+        return -1;
+    }
     tiku_impl_t *impl = b->impl;
     const tiku_node_t *n = tiku_ns_find(impl->ns, path);
 
@@ -319,6 +332,9 @@ static int
 tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
         void *ctx)
 {
+    if (shell_is_leased(b)) {
+        return -1;
+    }
     tiku_impl_t *impl = b->impl;
     const tiku_node_t *kids[256];
     int n, i, count;
@@ -432,6 +448,9 @@ tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
 static int
 tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 {
+    if (shell_is_leased(b)) {
+        return -1;
+    }
     tiku_impl_t *impl = b->impl;
     const tiku_node_t *n;
     size_t len;
@@ -455,6 +474,12 @@ static int
 tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
          char *err, size_t errmax)
 {
+    if (shell_is_leased(b)) {
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "a program is running on the board");
+        }
+        return -1;
+    }
     tiku_impl_t *impl = b->impl;
     char val[512];
     size_t n = (len < sizeof val - 1u) ? len : sizeof val - 1u;
@@ -539,6 +564,57 @@ static const tiku_backend_ops_t TIKU_OPS = {
     "tiku", tk_stat, tk_list, tk_read, tk_write, tk_pump, tk_changes,
     tk_path_of_id, NULL, tk_store, tk_close
 };
+
+int
+tiku_backend_tiku_lease(tiku_backend_t *b,
+                        void (*on_text)(const unsigned char *bytes,
+                                        size_t n, void *ctx),
+                        void *ctx)
+{
+    tiku_impl_t *impl = (b != NULL && b->ops == &TIKU_OPS) ? b->impl : NULL;
+
+    if (impl == NULL || impl->sess == NULL || impl->leased || on_text == NULL) {
+        return -1;
+    }
+    impl->leased = 1;
+    tiku_session_on_text(impl->sess, on_text, ctx);
+    return 0;
+}
+
+int
+tiku_backend_tiku_lease_send(tiku_backend_t *b, const void *bytes, size_t n)
+{
+    tiku_impl_t *impl = (b != NULL && b->ops == &TIKU_OPS) ? b->impl : NULL;
+
+    if (impl == NULL || !impl->leased) {
+        return -1;
+    }
+    return tiku_session_send_raw(impl->sess, bytes, n);
+}
+
+void
+tiku_backend_tiku_unlease(tiku_backend_t *b)
+{
+    tiku_impl_t *impl = (b != NULL && b->ops == &TIKU_OPS) ? b->impl : NULL;
+
+    if (impl == NULL || !impl->leased) {
+        return;
+    }
+    tiku_session_on_text(impl->sess, NULL, NULL);
+    impl->leased = 0;
+    /* Whatever the client left on the line is not the namespace's: let the
+     * tail land and drop it, THEN find the prompt.  Syncing first would
+     * take that tail's own prompt for its answer and leave every command
+     * after it one prompt out of step. */
+    tiku_session_drain(impl->sess, 150);
+    (void)tiku_session_sync(impl->sess, 4000);
+}
+
+int
+tiku_backend_tiku_leased(const tiku_backend_t *b)
+{
+    return shell_is_leased(b);
+}
 
 tiku_backend_t *
 tiku_backend_tiku_open(const char *port, int baud)

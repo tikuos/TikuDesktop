@@ -327,6 +327,35 @@ struct tiku_session *tiku_backend_tiku_session(tiku_backend_t *b);
  */
 const tiku_identity_t *tiku_backend_tiku_identity(const tiku_backend_t *b);
 
+/**
+ * @brief Take the board's shell for one client: its text comes to
+ *        @p on_text as it arrives, and the namespace is closed until it
+ *        is given back.
+ *
+ * A program running on the board owns the line -- every byte sent to it
+ * is the program's input, and its output has no prompt to end it until
+ * it ends.  So a caller that runs one takes the shell, and while it
+ * holds it a stat, a list, a read or a write is refused rather than
+ * quietly becoming the program's input.  Pumping still works: it is what
+ * moves the text.
+ *
+ * @return 0, -1 if this is not a board backend or somebody already holds it.
+ */
+int tiku_backend_tiku_lease(tiku_backend_t *b,
+                            void (*on_text)(const unsigned char *bytes,
+                                            size_t n, void *ctx),
+                            void *ctx);
+
+/** @brief Write bytes to the leased shell as they are: no newline, no wait. */
+int tiku_backend_tiku_lease_send(tiku_backend_t *b, const void *bytes,
+                                 size_t n);
+
+/** @brief Give the shell back and find its prompt again. */
+void tiku_backend_tiku_unlease(tiku_backend_t *b);
+
+/** @brief Whether somebody is holding the shell. */
+int tiku_backend_tiku_leased(const tiku_backend_t *b);
+
 void tiku_backend_close(tiku_backend_t *b);
 
 #endif /* TIKU_MODEL_H_ */
