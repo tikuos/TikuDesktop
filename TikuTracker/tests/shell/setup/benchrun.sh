@@ -5,3 +5,9 @@
 # the shell looks for applications, beside the ones the other scripts use.
 mkdir -p "$appsdir"
 cp -f "$top/build/apps/Bench.so" "$appsdir/"
+
+# The run's log goes where a person keeps theirs -- under the home --
+# and this fixture's home is made fresh for every run, so a name a
+# script can write down is pointed at it.
+rm -f /tmp/trk_bench_logs
+ln -s "$deskhome/bench" /tmp/trk_bench_logs

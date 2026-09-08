@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -133,7 +134,9 @@ typedef struct {
     char            board[64];  /* whose port it is using */
         char            suite_key[48];
     char            only[64];   /* one sub-test, or empty for all of it */
-    int             released;   /* the shell let the board go for us */
+        int             released;   /* the shell let the board go for us */
+    FILE           *log;        /* everything the run said, kept        */
+    char            log_path[512];
     int             waiting;    /* released, and the run not started yet */
         char            note[160];
     char            boards_seen[512];   /* to notice one arriving */
@@ -729,6 +732,27 @@ bench_publish(bench_t *st)
 /*---------------------------------------------------------------------------*/
 
 /**
+ * @brief Open the file this run's words are kept in.
+ *
+ * Rows are what a run MEANT; this is what it said.  A run that fails
+ * before it means anything -- a build that would not build, a board
+ * that would not answer -- says it here, and a window that could only
+ * show rows would have nothing to show at all.
+ */
+static void
+log_open(bench_t *st)
+{
+    const char *home = getenv("HOME");
+    char dir[400];
+
+    snprintf(dir, sizeof dir, "%s/bench", (home != NULL) ? home : ".");
+    (void)mkdir(dir, 0755);
+    snprintf(st->log_path, sizeof st->log_path, "%s/%s-%s.log", dir,
+             st->suite_key, st->board);
+    st->log = fopen(st->log_path, "w");
+}
+
+/**
  * @brief Spawn the bench's own command for the chosen suite and board.
  *
  * The port is passed because the shell has just let go of it; the part
@@ -806,7 +830,8 @@ run_spawn(bench_t *st)
         (void)execvp("python3", argv);
         _exit(127);
     }
-    (void)close(fd[1]);
+        (void)close(fd[1]);
+    log_open(st);
     st->child_fd = fd[0];
     (void)fcntl(st->child_fd, F_SETFL, O_NONBLOCK);
     st->partial[0] = '\0';
@@ -829,9 +854,13 @@ run_spawn(bench_t *st)
 static void
 run_finish(bench_t *st, const char *why)
 {
-    if (st->child_fd >= 0) {
+        if (st->child_fd >= 0) {
         (void)close(st->child_fd);
         st->child_fd = -1;
+    }
+    if (st->log != NULL) {
+        (void)fclose(st->log);
+        st->log = NULL;
     }
     if (st->child > 0) {
         (void)waitpid(st->child, NULL, WNOHANG);
@@ -846,8 +875,13 @@ run_finish(bench_t *st, const char *why)
     }
         /* The ledger has just been added to, so what the window says about
      * this suite is read again rather than left as it was. */
-    past_load(st);
-    snprintf(st->note, sizeof st->note, "%s", why);
+        past_load(st);
+    if (st->log_path[0] != '\0') {
+        snprintf(st->note, sizeof st->note, "%s -- what it said is in %s",
+                 why, st->log_path);
+    } else {
+        snprintf(st->note, sizeof st->note, "%s", why);
+    }
     bench_paint(st);
     bench_publish(st);
 }
@@ -857,6 +891,11 @@ static void
 run_line(bench_t *st, const char *line)
 {
     char text[160];
+
+    if (st->log != NULL) {
+        (void)fprintf(st->log, "%s\n", line);
+        (void)fflush(st->log);      /* readable while it is still going */
+    }
     unsigned pass = 0u, fail = 0u;
     char id[96];
 

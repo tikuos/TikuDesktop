@@ -52,6 +52,9 @@ note the results window is made only when the bench has said something,
 note so its being here at all is the run's own report arriving
 wait 900
 expect-title Results
+note and everything the run SAID is kept, not only what it meant: a run
+note that fails before it means anything is not a dead end
+expect-file-has /tmp/trk_bench_logs/link-console-tiku.log [PASS] armed
 note and the board is the shell's again: let go for the run, taken back
 note after it, and answering as it did before any of this
 wait 500
