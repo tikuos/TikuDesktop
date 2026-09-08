@@ -1,0 +1,62 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: benchpart
+# board: only
+# One PART of a suite, run on its own.
+#
+# A suite is a set of checks and sometimes only one of them is the
+# question being asked.  The bench can already run one alone; what this
+# adds is somewhere to see them and pick, so the list opens to show a
+# suite's own parts and running takes whichever row was chosen.
+wait 60
+click 980 30
+wait 10
+menu-pick Applications
+wait 10
+menu-pick Bench
+wait 250
+expect-title Bench
+note the list holds only what a board on THIS desk can answer, so the
+note row counted to here is the same row every time -- the first Down
+note takes the top row, so one more than its number gets there
+click-window Bench
+wait 8
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+wait 8
+note opening a suite shows its own parts, each one runnable alone
+click 71 8
+wait 8
+expect-menu Show the parts of link-console
+menu-pick Show the parts of link-console
+wait 12
+click-window Bench
+wait 8
+key Down
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku
+note the results window is made only when the bench has said something,
+note and a part that did not exist would make the bench say nothing at all
+wait 900
+expect-title Results
+note and the board is the shell's again afterwards
+wait 400
+expect-read /devices/tiku/sys/device/name tiku
+quit

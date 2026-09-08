@@ -20,13 +20,10 @@ menu-pick Bench
 wait 250
 expect-title Bench
 note the suites are the bench's own list, not a copy of it kept here;
-note down to link-console, which a board answers on its own
+note down to link-console, which a board answers on its own; the list
+note holds only what a board HERE can answer, so the count is stable
 click-window Bench
 wait 8
-key Down
-wait 3
-key Down
-wait 3
 key Down
 wait 3
 key Down
@@ -48,11 +45,12 @@ click 71 8
 wait 8
 note the board is offered BY NAME, which is what the shell knows and
 note the bench would otherwise have to be told
+expect-menu Show the parts of link-console
 expect-menu Run on tiku
 menu-pick Run on tiku
 note the results window is made only when the bench has said something,
 note so its being here at all is the run's own report arriving
-wait 700
+wait 900
 expect-title Results
 note and the board is the shell's again: let go for the run, taken back
 note after it, and answering as it did before any of this

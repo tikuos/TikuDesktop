@@ -43,18 +43,41 @@
 #define STRIP_H     22
 
 #define SUITES_MAX  160
+#define LEAVES_MAX  600
+#define ENTRY_MAX   (SUITES_MAX + 64)
 #define ROWS_MAX    200
 #define BOARDS_MAX  8
 
 #define CMD_RUN      1          /* + i: on the i'th mounted board */
 #define CMD_STOP     32
 #define CMD_REFRESH  33
+#define CMD_OPEN     34
 
 typedef struct {
     char key[48];
     char group[32];
     char name[96];
+    char boards[320];           /* the parts it can answer on, or "*" */
+    int  first_leaf;            /* into leaf[], -1 when it has none   */
+    int  nleaf;
 } suite_t;
+
+/** @brief One of a suite's own sub-tests, which can be run alone. */
+typedef struct {
+    char id[64];
+    char label[120];
+} leaf_t;
+
+/**
+ * @brief A row of the list: a suite, or one leaf of the open suite.
+ *
+ * Flat, because a list IS flat: what a row means is carried here rather
+ * than worked out again from where it happens to be.
+ */
+typedef struct {
+    int  suite;                 /* into suite[] */
+    int  leaf;                  /* into leaf[], -1 for the suite itself */
+} entry_t;
 
 typedef struct {
     char text[160];
@@ -68,9 +91,15 @@ typedef struct {
 
     uint32_t        win_id;
     tiku_surface_t *win;
-    tiku_list_t     suites_list;
+        tiku_list_t     suites_list;
     suite_t         suite[SUITES_MAX];
     int             nsuite;
+    leaf_t          leaf[LEAVES_MAX];
+    int             nleaf;
+    entry_t         entry[ENTRY_MAX];
+    int             nentry;
+    int             open_suite;     /* whose leaves are shown, or -1 */
+    int             hidden;         /* suites no mounted board answers */
 
     uint32_t        res_id;
     tiku_surface_t *res;
@@ -84,7 +113,8 @@ typedef struct {
     char            partial[512];
     int             running;
     char            board[64];  /* whose port it is using */
-    char            suite_key[48];
+        char            suite_key[48];
+    char            only[64];   /* one sub-test, or empty for all of it */
     int             released;   /* the shell let the board go for us */
     int             waiting;    /* released, and the run not started yet */
         char            note[160];
@@ -135,11 +165,14 @@ bench_dir(void)
 static void
 suites_load(bench_t *st)
 {
-    char cmd[768];
-    char line[512];
+        char cmd[768];
+    char line[1024];
     FILE *f;
+    int i;
 
     st->nsuite = 0;
+    st->nleaf = 0;
+    st->open_suite = -1;
     snprintf(cmd, sizeof cmd, "cd '%s' && python3 gui/tb_meta.py 2>/dev/null",
              bench_dir());
     f = popen(cmd, "r");
@@ -147,15 +180,15 @@ suites_load(bench_t *st)
         snprintf(st->note, sizeof st->note, "cannot ask the bench");
         return;
     }
-    while (fgets(line, sizeof line, f) != NULL && st->nsuite < SUITES_MAX) {
-        char *field[6];
+        while (fgets(line, sizeof line, f) != NULL) {
+        char *field[9];
         char *p = line;
         int n = 0;
 
-        if (line[0] != 'S' || line[1] != '\t') {
+        if ((line[0] != 'S' && line[0] != 'C') || line[1] != '\t') {
             continue;
         }
-        while (n < 6) {
+        while (n < 9) {
             char *tab = strchr(p, '\t');
 
             field[n++] = p;
@@ -165,20 +198,41 @@ suites_load(bench_t *st)
             *tab = '\0';
             p = tab + 1;
         }
-        if (n < 4) {
-            continue;
-        }
-        {
-            suite_t *s = &st->suite[st->nsuite++];
-            char *nl;
+        for (i = 0; i < n; i++) {
+            char *nl = strchr(field[i], '\n');
 
-            snprintf(s->key, sizeof s->key, "%s", field[1]);
-            snprintf(s->group, sizeof s->group, "%s", field[2]);
-            snprintf(s->name, sizeof s->name, "%s", field[3]);
-            nl = strchr(s->name, '\n');
             if (nl != NULL) {
                 *nl = '\0';
             }
+        }
+        if (line[0] == 'S' && n >= 5 && st->nsuite < SUITES_MAX) {
+            suite_t *su = &st->suite[st->nsuite++];
+
+            snprintf(su->key, sizeof su->key, "%s", field[1]);
+            snprintf(su->group, sizeof su->group, "%s", field[2]);
+            snprintf(su->name, sizeof su->name, "%s", field[3]);
+            snprintf(su->boards, sizeof su->boards, "%s", field[4]);
+            su->first_leaf = -1;
+            su->nleaf = 0;
+            continue;
+        }
+        /* A suite's sub-tests follow it, so they belong to the last one
+         * read -- which is the order the bench emits them in. */
+        if (line[0] == 'C' && n >= 4 && st->nsuite > 0 &&
+            st->nleaf < LEAVES_MAX) {
+            suite_t *su = &st->suite[st->nsuite - 1];
+            leaf_t *lf = &st->leaf[st->nleaf];
+
+            if (strcmp(su->key, field[1]) != 0) {
+                continue;
+            }
+            snprintf(lf->id, sizeof lf->id, "%s", field[2]);
+            snprintf(lf->label, sizeof lf->label, "%s", field[3]);
+            if (su->first_leaf < 0) {
+                su->first_leaf = st->nleaf;
+            }
+            su->nleaf++;
+            st->nleaf++;
         }
     }
     (void)pclose(f);
@@ -191,17 +245,115 @@ suites_load(bench_t *st)
 /* DRAWING                                                                   */
 /*---------------------------------------------------------------------------*/
 
+static int board_at(bench_t *st, int which, char *out, size_t max);
+
+/** @brief Whether @p csv, a bench board list, names @p part. */
+static int
+board_listed(const char *csv, const char *part)
+{
+    const char *at;
+    size_t n;
+
+    if (csv[0] == '*' || part[0] == '\0') {
+        return 1;               /* every board, or nothing to go on */
+    }
+    n = strlen(part);
+    for (at = csv; (at = strstr(at, part)) != NULL; at += n) {
+        char before = (at == csv) ? ',' : at[-1];
+        char after = at[n];
+
+        if ((before == ',' || before == '\0') &&
+            (after == ',' || after == '\0')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Whether any board this shell has mounted can answer @p su.
+ *
+ * A bench with ninety suites and one board on the desk is a list of
+ * things that cannot be done; what is left out is counted and said,
+ * rather than quietly dropped.
+ */
+static int
+any_board_answers(bench_t *st, const suite_t *su)
+{
+    char name[64];
+    int i;
+
+    for (i = 0; i < BOARDS_MAX && board_at(st, i, name, sizeof name); i++) {
+        char part[64];
+        char *p;
+
+        part[0] = '\0';
+        if (st->services->board_mcu != NULL) {
+            (void)st->services->board_mcu(st->services->ctx, name, part,
+                                          sizeof part);
+        }
+        for (p = part; *p != '\0'; p++) {
+            if (*p >= 'A' && *p <= 'Z') {
+                *p = (char)(*p - 'A' + 'a');
+            }
+        }
+        if (board_listed(su->boards, part)) {
+            return 1;
+        }
+    }
+    return (i == 0);            /* no board yet: nothing to rule out */
+}
+
+/** @brief Build the rows: the suites on offer, and the open one's parts. */
+static void
+entries_build(bench_t *st)
+{
+    int i, j;
+
+    st->nentry = 0;
+    st->hidden = 0;
+    for (i = 0; i < st->nsuite && st->nentry < ENTRY_MAX; i++) {
+        if (!any_board_answers(st, &st->suite[i])) {
+            st->hidden++;
+            continue;
+        }
+        st->entry[st->nentry].suite = i;
+        st->entry[st->nentry].leaf = -1;
+        st->nentry++;
+        if (i != st->open_suite) {
+            continue;
+        }
+        for (j = 0; j < st->suite[i].nleaf && st->nentry < ENTRY_MAX; j++) {
+            st->entry[st->nentry].suite = i;
+            st->entry[st->nentry].leaf = st->suite[i].first_leaf + j;
+            st->nentry++;
+        }
+    }
+    (void)tiku_list_set_count(&st->suites_list, st->nentry);
+}
+
 static const char *
 suite_name(void *ctx, int row)
 {
     bench_t *st = ctx;
-    static char text[160];
+    static char text[200];
+    const entry_t *e;
 
-    if (row < 0 || row >= st->nsuite) {
+    if (row < 0 || row >= st->nentry) {
         return NULL;
     }
-    snprintf(text, sizeof text, "%s  %s", st->suite[row].group,
-             st->suite[row].name);
+    e = &st->entry[row];
+    if (e->leaf >= 0) {
+        snprintf(text, sizeof text, "      %s  %s", st->leaf[e->leaf].id,
+                 st->leaf[e->leaf].label);
+        return text;
+    }
+    snprintf(text, sizeof text, "%s %s  %s",
+             (st->suite[e->suite].nleaf > 0)
+                 ? ((e->suite == st->open_suite) ? "\xe2\x96\xbe"
+                                                 : "\xe2\x96\xb8")
+                 : " ",
+             st->suite[e->suite].group, st->suite[e->suite].name);
     return text;
 }
 
@@ -367,6 +519,20 @@ bench_publish(bench_t *st)
         menus.menu[0].item[at].enabled = 0;
         at++;
     }
+        if (chosen >= 0 && chosen < st->nentry &&
+        st->entry[chosen].leaf < 0 &&
+        st->suite[st->entry[chosen].suite].nleaf > 0) {
+        /* A suite is a set of checks, and sometimes one of them is the
+         * question: opening it offers them one at a time. */
+        snprintf(menus.menu[0].item[at].label,
+                 sizeof menus.menu[0].item[at].label, "%s the parts of %s",
+                 (st->entry[chosen].suite == st->open_suite) ? "Close"
+                                                             : "Show",
+                 st->suite[st->entry[chosen].suite].key);
+        menus.menu[0].item[at].command = CMD_OPEN;
+        menus.menu[0].item[at].enabled = 1;
+        at++;
+    }
     snprintf(menus.menu[0].item[at].label,
              sizeof menus.menu[0].item[at].label, "Stop");
     menus.menu[0].item[at].command = CMD_STOP;
@@ -395,7 +561,7 @@ bench_publish(bench_t *st)
 static void
 run_spawn(bench_t *st)
 {
-    char port[160], mcu[64], key[48];
+        char port[160], mcu[64], key[48], only[64];
     char *lower;
     int fd[2];
     int i;
@@ -417,7 +583,8 @@ run_spawn(bench_t *st)
             *lower = (char)(*lower - 'A' + 'a');
         }
     }
-    snprintf(key, sizeof key, "%s", st->suite_key);
+        snprintf(key, sizeof key, "%s", st->suite_key);
+    snprintf(only, sizeof only, "%s", st->only);
     if (pipe(fd) != 0) {
         snprintf(st->note, sizeof st->note, "no pipe for the run");
         bench_paint(st);
@@ -432,7 +599,7 @@ run_spawn(bench_t *st)
         return;
     }
     if (st->child == 0) {
-        char *argv[12];
+        char *argv[16];   /* every word below, and the NUL end */
         int n = 0;
 
         (void)dup2(fd[1], 1);
@@ -448,11 +615,15 @@ run_spawn(bench_t *st)
         argv[n++] = (char *)"tikubench";
         argv[n++] = (char *)"run";
         argv[n++] = key;
-        argv[n++] = (char *)"--board";
+                argv[n++] = (char *)"--board";
         argv[n++] = mcu;
         if (port[0] != '\0') {
             argv[n++] = (char *)"--port";
             argv[n++] = port;
+        }
+        if (only[0] != '\0') {
+            argv[n++] = (char *)"--only";
+            argv[n++] = only;
         }
         argv[n] = NULL;
         (void)execvp("python3", argv);
@@ -467,7 +638,12 @@ run_spawn(bench_t *st)
     for (i = 0; i < 1; i++) {
         (void)i;
     }
-    snprintf(st->note, sizeof st->note, "%s on %s…", key, st->board);
+        if (only[0] != '\0') {
+        snprintf(st->note, sizeof st->note, "%s %s on %s…", key, only,
+                 st->board);
+    } else {
+        snprintf(st->note, sizeof st->note, "%s on %s…", key, st->board);
+    }
     bench_paint(st);
     bench_publish(st);
 }
@@ -625,10 +801,12 @@ bench_start(void **state, const tiku_app_services_t *services)
     tiku_list_init(&st->suites_list, 1);
     snprintf(st->note, sizeof st->note, "reading the bench's suites…");
     suites_load(st);
+        entries_build(st);
     if (st->nsuite > 0) {
-        snprintf(st->note, sizeof st->note, "%d suites", st->nsuite);
+        snprintf(st->note, sizeof st->note,
+                 "%d suites; %d this desk's boards cannot answer",
+                 st->nentry, st->hidden);
     }
-    (void)tiku_list_set_count(&st->suites_list, st->nsuite);
     bench_paint(st);
     bench_publish(st);
     return 0;
@@ -673,8 +851,12 @@ bench_tick(void *state, int64_t now_us)
         (void)st->services->board_names(st->services->ctx, boards,
                                         sizeof boards);
     }
-    if (strcmp(boards, st->boards_seen) != 0) {
+        if (strcmp(boards, st->boards_seen) != 0) {
         snprintf(st->boards_seen, sizeof st->boards_seen, "%s", boards);
+        /* What is worth offering changes with the boards: a suite no
+         * board here can answer is not on the list. */
+        entries_build(st);
+        bench_paint(st);
         bench_publish(st);
     }
     if (st->running) {
@@ -722,9 +904,23 @@ bench_pick(void *state, uint32_t window, int command)
     if (st == NULL) {
         return 0;
     }
+            if (command == CMD_OPEN) {
+        int row = tiku_list_chosen(&st->suites_list);
+
+        if (row >= 0 && row < st->nentry && st->entry[row].leaf < 0) {
+            int which = st->entry[row].suite;
+
+            st->open_suite = (st->open_suite == which) ? -1 : which;
+            entries_build(st);
+            tiku_list_click(&st->suites_list, row, 0u);
+            bench_paint(st);
+            bench_publish(st);
+        }
+        return 0;
+    }
     if (command == CMD_REFRESH) {
         suites_load(st);
-        (void)tiku_list_set_count(&st->suites_list, st->nsuite);
+        entries_build(st);
         bench_paint(st);
         return 0;
     }
@@ -734,17 +930,23 @@ bench_pick(void *state, uint32_t window, int command)
         }
         return 0;
     }
-    if (command >= CMD_RUN && command < CMD_RUN + BOARDS_MAX) {
+        if (command >= CMD_RUN && command < CMD_RUN + BOARDS_MAX) {
         int chosen = tiku_list_chosen(&st->suites_list);
+        const entry_t *e;
 
-        if (st->running || chosen < 0 || chosen >= st->nsuite) {
+        if (st->running || chosen < 0 || chosen >= st->nentry) {
             return 0;
         }
         if (!board_at(st, command - CMD_RUN, st->board, sizeof st->board)) {
             return 0;
         }
+        e = &st->entry[chosen];
         snprintf(st->suite_key, sizeof st->suite_key, "%s",
-                 st->suite[chosen].key);
+                 st->suite[e->suite].key);
+        /* A part of a suite is run alone when a part is what was
+         * chosen; the whole of it when the suite's own row was. */
+        snprintf(st->only, sizeof st->only, "%s",
+                 (e->leaf >= 0) ? st->leaf[e->leaf].id : "");
         st->nrow = 0;
         (void)tiku_list_set_count(&st->res_list, 0);
         /* The shell has the board open; a run that reflashes it needs
@@ -786,12 +988,39 @@ bench_event(void *state, uint32_t window, const tiku_event_t *event)
     if (window != st->win_id) {
         return 0;
     }
-    if (event->type == TIKU_EVENT_POINTER_DOWN) {
-        tiku_list_click(&st->suites_list,
-                        tiku_list_at(&st->suites_list, suites_body(),
-                                     event->x, event->y), event->modifiers);
+        if (event->type == TIKU_EVENT_POINTER_DOWN) {
+        int was = tiku_list_chosen(&st->suites_list);
+        int row = tiku_list_at(&st->suites_list, suites_body(), event->x,
+                               event->y);
+
+        tiku_list_click(&st->suites_list, row, event->modifiers);
+        /* The second click on a suite opens it, exactly as it opens a
+         * row anywhere else on this desk. */
+        if (row >= 0 && row == was && row < st->nentry &&
+            st->entry[row].leaf < 0 && st->suite[st->entry[row].suite].nleaf
+            > 0) {
+            int which = st->entry[row].suite;
+
+            st->open_suite = (st->open_suite == which) ? -1 : which;
+            entries_build(st);
+            tiku_list_click(&st->suites_list, row, 0u);
+        }
         bench_paint(st);
         bench_publish(st);
+        return 0;
+    }
+    if (event->key == TIKU_KEY_RETURN) {
+        int row = tiku_list_chosen(&st->suites_list);
+
+        if (row >= 0 && row < st->nentry && st->entry[row].leaf < 0) {
+            int which = st->entry[row].suite;
+
+            st->open_suite = (st->open_suite == which) ? -1 : which;
+            entries_build(st);
+            tiku_list_click(&st->suites_list, row, 0u);
+            bench_paint(st);
+            bench_publish(st);
+        }
         return 0;
     }
     if (tiku_list_key(&st->suites_list, event->key, event->modifiers,
