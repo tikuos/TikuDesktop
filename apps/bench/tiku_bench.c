@@ -44,6 +44,7 @@
 
 #define SUITES_MAX  160
 #define LEAVES_MAX  600
+#define HIST_MAX    200
 #define ENTRY_MAX   (SUITES_MAX + 64)
 #define ROWS_MAX    200
 #define BOARDS_MAX  8
@@ -61,6 +62,21 @@ typedef struct {
     int  first_leaf;            /* into leaf[], -1 when it has none   */
     int  nleaf;
 } suite_t;
+
+/**
+ * @brief What a suite last did on a board, as the bench's own ledger
+ *        remembers it.
+ *
+ * Only the FULL runs: a part of a suite passing says nothing about the
+ * suite, and a result that says less than it seems to is worse than no
+ * result at all.
+ */
+typedef struct {
+    char board[40];
+    char suite[48];
+    char verdict[12];
+    long age;                   /* seconds since it was recorded */
+} past_t;
 
 /** @brief One of a suite's own sub-tests, which can be run alone. */
 typedef struct {
@@ -96,6 +112,8 @@ typedef struct {
     int             nsuite;
     leaf_t          leaf[LEAVES_MAX];
     int             nleaf;
+        past_t          past[HIST_MAX];
+    int             npast;
     entry_t         entry[ENTRY_MAX];
     int             nentry;
     int             open_suite;     /* whose leaves are shown, or -1 */
@@ -156,6 +174,64 @@ bench_dir(void)
 /*---------------------------------------------------------------------------*/
 
 /**
+ * @brief Read the bench's ledger again, and nothing else.
+ *
+ * After a run, because the run has just added to it: a window that
+ * still says a suite has never run here, moments after running it, is
+ * telling somebody something that was true and is not.
+ */
+static void
+past_load(bench_t *st)
+{
+    char cmd[768];
+    char line[1024];
+    FILE *f;
+
+    snprintf(cmd, sizeof cmd, "cd '%s' && python3 gui/tb_meta.py 2>/dev/null",
+             bench_dir());
+    f = popen(cmd, "r");
+    if (f == NULL) {
+        return;
+    }
+    st->npast = 0;
+    while (fgets(line, sizeof line, f) != NULL && st->npast < HIST_MAX) {
+        char *field[7];
+        char *p = line;
+        int n = 0, i;
+
+        if (line[0] != 'H' || line[1] != '\t') {
+            continue;
+        }
+        while (n < 7) {
+            char *tab = strchr(p, '\t');
+
+            field[n++] = p;
+            if (tab == NULL) {
+                break;
+            }
+            *tab = '\0';
+            p = tab + 1;
+        }
+        for (i = 0; i < n; i++) {
+            char *nl = strchr(field[i], '\n');
+
+            if (nl != NULL) {
+                *nl = '\0';
+            }
+        }
+        if (n >= 6 && strcmp(field[3], "full") == 0) {
+            past_t *h = &st->past[st->npast++];
+
+            snprintf(h->board, sizeof h->board, "%s", field[1]);
+            snprintf(h->suite, sizeof h->suite, "%s", field[2]);
+            snprintf(h->verdict, sizeof h->verdict, "%s", field[4]);
+            h->age = atol(field[5]);
+        }
+    }
+    (void)pclose(f);
+}
+
+/**
  * @brief Read the suite list the bench emits for its own front ends.
  *
  * One record a line, tab separated; the S records are the suites.  The
@@ -170,8 +246,9 @@ suites_load(bench_t *st)
     FILE *f;
     int i;
 
-    st->nsuite = 0;
+        st->nsuite = 0;
     st->nleaf = 0;
+    st->npast = 0;
     st->open_suite = -1;
     snprintf(cmd, sizeof cmd, "cd '%s' && python3 gui/tb_meta.py 2>/dev/null",
              bench_dir());
@@ -185,7 +262,8 @@ suites_load(bench_t *st)
         char *p = line;
         int n = 0;
 
-        if ((line[0] != 'S' && line[0] != 'C') || line[1] != '\t') {
+                if ((line[0] != 'S' && line[0] != 'C' && line[0] != 'H') ||
+            line[1] != '\t') {
             continue;
         }
         while (n < 9) {
@@ -204,6 +282,19 @@ suites_load(bench_t *st)
             if (nl != NULL) {
                 *nl = '\0';
             }
+        }
+                if (line[0] == 'H' && n >= 6 && st->npast < HIST_MAX) {
+            /* Only the authoritative kind is kept; the rest would make
+             * a partial run look like the suite's verdict. */
+            if (strcmp(field[3], "full") == 0) {
+                past_t *h = &st->past[st->npast++];
+
+                snprintf(h->board, sizeof h->board, "%s", field[1]);
+                snprintf(h->suite, sizeof h->suite, "%s", field[2]);
+                snprintf(h->verdict, sizeof h->verdict, "%s", field[4]);
+                h->age = atol(field[5]);
+            }
+            continue;
         }
         if (line[0] == 'S' && n >= 5 && st->nsuite < SUITES_MAX) {
             suite_t *su = &st->suite[st->nsuite++];
@@ -491,6 +582,78 @@ board_at(bench_t *st, int which, char *out, size_t max)
     return 0;
 }
 
+/** @brief The part a board is, in the bench's spelling, into @p out. */
+static void
+board_part(bench_t *st, const char *name, char *out, size_t max)
+{
+    char *p;
+
+    out[0] = '\0';
+    if (st->services->board_mcu != NULL) {
+        (void)st->services->board_mcu(st->services->ctx, name, out, max);
+    }
+    for (p = out; *p != '\0'; p++) {
+        if (*p >= 'A' && *p <= 'Z') {
+            *p = (char)(*p - 'A' + 'a');
+        }
+    }
+}
+
+/** @brief How long ago @p secs was, in the largest unit that fits. */
+static void
+how_long(long secs, char *out, size_t max)
+{
+    if (secs < 90L) {
+        snprintf(out, max, "just now");
+    } else if (secs < 5400L) {
+        snprintf(out, max, "%ld minutes ago", secs / 60L);
+    } else if (secs < 172800L) {
+        snprintf(out, max, "%ld hours ago", secs / 3600L);
+    } else {
+        snprintf(out, max, "%ld days ago", secs / 86400L);
+    }
+}
+
+/**
+ * @brief What the chosen suite last did on a board that is here.
+ *
+ * The bench keeps this; the shell only says it, at the moment somebody
+ * is deciding whether to run the thing again.  A suite that has never
+ * run here says so, which is a different answer from a pass.
+ */
+static void
+past_line(bench_t *st, int chosen, char *out, size_t max)
+{
+    char name[64], part[64], ago[40];
+    int i, j;
+
+    out[0] = '\0';
+    if (chosen < 0 || chosen >= st->nentry || st->entry[chosen].leaf >= 0) {
+        return;
+    }
+    for (i = 0; i < BOARDS_MAX && board_at(st, i, name, sizeof name); i++) {
+        board_part(st, name, part, sizeof part);
+        for (j = 0; j < st->npast; j++) {
+            if (strcmp(st->past[j].board, part) != 0 ||
+                strcmp(st->past[j].suite,
+                       st->suite[st->entry[chosen].suite].key) != 0) {
+                continue;
+            }
+            how_long(st->past[j].age, ago, sizeof ago);
+            snprintf(out, max, "%s on %s: %s, %s",
+                     st->suite[st->entry[chosen].suite].key, name,
+                     (strcmp(st->past[j].verdict, "pass") == 0) ? "passed"
+                                                                : "FAILED",
+                     ago);
+            return;
+        }
+    }
+    if (i > 0) {
+        snprintf(out, max, "%s has not run here",
+                 st->suite[st->entry[chosen].suite].key);
+    }
+}
+
 static void
 bench_publish(bench_t *st)
 {
@@ -519,7 +682,21 @@ bench_publish(bench_t *st)
         menus.menu[0].item[at].enabled = 0;
         at++;
     }
-        if (chosen >= 0 && chosen < st->nentry &&
+            {
+        /* What it did last time, where somebody is deciding whether to
+         * do it again.  Said, not acted on: it is the bench's record. */
+        char was[160];
+
+        past_line(st, chosen, was, sizeof was);
+        if (was[0] != '\0') {
+            snprintf(menus.menu[0].item[at].label,
+                     sizeof menus.menu[0].item[at].label, "%s", was);
+            menus.menu[0].item[at].command = CMD_REFRESH;
+            menus.menu[0].item[at].enabled = 0;
+            at++;
+        }
+    }
+    if (chosen >= 0 && chosen < st->nentry &&
         st->entry[chosen].leaf < 0 &&
         st->suite[st->entry[chosen].suite].nleaf > 0) {
         /* A suite is a set of checks, and sometimes one of them is the
@@ -667,6 +844,9 @@ run_finish(bench_t *st, const char *why)
          * run that ends badly must not cost the desk its board. */
         (void)st->services->board_reclaim(st->services->ctx, st->board);
     }
+        /* The ledger has just been added to, so what the window says about
+     * this suite is read again rather than left as it was. */
+    past_load(st);
     snprintf(st->note, sizeof st->note, "%s", why);
     bench_paint(st);
     bench_publish(st);
