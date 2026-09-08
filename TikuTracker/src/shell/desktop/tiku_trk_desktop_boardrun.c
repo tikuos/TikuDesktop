@@ -106,14 +106,62 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
     if (b == NULL) {
         return 0;
     }
-    app->board_run = tiku_board_basic_start(b, program);
+        app->board_run = tiku_board_basic_start(b, program);
     if (app->board_run == NULL) {
         return 0;
     }
     app->board_run_slot = slot;
+    app->board_run_saving = 0;
+    app->board_run_asked = 0;
     (void)snprintf(app->board_run_name, sizeof app->board_run_name, "%s",
                    (board != NULL) ? board : "");
     return 1;
+}
+
+/**
+ * @brief Keep @p program on the board called @p board under @p name.
+ *
+ * The same one-at-a-time line a run takes; told as SAVED or FAILED.
+ */
+int
+desktop_board_save(desktop_t *app, struct desktop_embed *slot,
+                   const char *board, const char *name, const char *program)
+{
+    tiku_backend_t *b;
+
+    if (app == NULL || program == NULL || app->board_run != NULL) {
+        return 0;
+    }
+    b = board_named(app, board);
+    if (b == NULL) {
+        return 0;
+    }
+    app->board_run = tiku_board_basic_save(b, name, program);
+    if (app->board_run == NULL) {
+        return 0;
+    }
+    app->board_run_slot = slot;
+    app->board_run_saving = 1;
+    app->board_run_asked = 0;
+    (void)snprintf(app->board_run_name, sizeof app->board_run_name, "%s",
+                   (name != NULL) ? name : "");
+    return 1;
+}
+
+/** @brief Tell whoever asked for the run one thing about it. */
+static void
+tell_asker(desktop_t *app, int what, const char *text)
+{
+    struct desktop_embed *slot = app->board_run_slot;
+
+    if (slot != NULL && slot->running && slot->descriptor != NULL &&
+        slot->descriptor->board_said != NULL) {
+        slot->descriptor->board_said(slot->state, what, text);
+        return;
+    }
+    if (app->board_run_session >= 0) {
+        desktop_board_tell(app, app->board_run_session, what, text);
+    }
 }
 
 /** @brief Answer the running program's INPUT with @p text. */
@@ -141,18 +189,7 @@ desktop_board_stop(desktop_t *app)
 static void
 say_line(const char *line, void *ctx)
 {
-    desktop_t *app = ctx;
-    struct desktop_embed *slot = app->board_run_slot;
-
-    if (slot != NULL && slot->running && slot->descriptor != NULL &&
-        slot->descriptor->board_said != NULL) {
-        slot->descriptor->board_said(slot->state, TIKU_APP_BOARD_LINE, line);
-        return;
-    }
-    if (app->board_run_session >= 0) {
-        desktop_board_tell(app, app->board_run_session,
-                           TIKU_APP_BOARD_LINE, line);
-    }
+    tell_asker(ctx, TIKU_APP_BOARD_LINE, line);
 }
 
 /** @brief Move the run along and pass on what it printed; called on the
@@ -169,11 +206,24 @@ desktop_board_pump(desktop_t *app)
     }
     /* Short: this rides the shell's own beat, and a board's program is
      * far slower than the beat is. */
-    st = tiku_board_basic_pump(app->board_run, 5, say_line, app);
-    if (st == TIKU_BOARD_BASIC_SENDING || st == TIKU_BOARD_BASIC_RUNNING) {
+        st = tiku_board_basic_pump(app->board_run, 5, say_line, app);
+    if (st == TIKU_BOARD_BASIC_ASKING) {
+        /* Told once per question: the prompt the program printed, so
+         * whoever answers sees what they are answering. */
+        if (!app->board_run_asked) {
+            app->board_run_asked = 1;
+            tell_asker(app, TIKU_APP_BOARD_ASKS,
+                       tiku_board_basic_prompt(app->board_run));
+        }
         return;
     }
-    what = (st == TIKU_BOARD_BASIC_ENDED)   ? TIKU_APP_BOARD_ENDED
+    if (st == TIKU_BOARD_BASIC_SENDING || st == TIKU_BOARD_BASIC_RUNNING) {
+        app->board_run_asked = 0;
+        return;
+    }
+    what = (st == TIKU_BOARD_BASIC_ENDED)   ? (app->board_run_saving
+                                                ? TIKU_APP_BOARD_SAVED
+                                                : TIKU_APP_BOARD_ENDED)
          : (st == TIKU_BOARD_BASIC_STOPPED) ? TIKU_APP_BOARD_STOPPED
                                             : TIKU_APP_BOARD_FAILED;
     slot = app->board_run_slot;
@@ -183,13 +233,17 @@ desktop_board_pump(desktop_t *app)
     tiku_board_basic_free(app->board_run);
     app->board_run = NULL;
     app->board_run_slot = NULL;
-    if (slot != NULL && slot->running && slot->descriptor != NULL &&
+        if (slot != NULL && slot->running && slot->descriptor != NULL &&
         slot->descriptor->board_said != NULL) {
-        slot->descriptor->board_said(slot->state, what, "");
+        slot->descriptor->board_said(slot->state, what,
+                                     app->board_run_saving
+                                         ? app->board_run_name : "");
     } else if (app->board_run_session >= 0) {
         int session = app->board_run_session;
 
         app->board_run_session = -1;
-        desktop_board_tell(app, session, what, "");
+        desktop_board_tell(app, session, what,
+                           app->board_run_saving ? app->board_run_name : "");
     }
+    app->board_run_saving = 0;
 }

@@ -286,6 +286,26 @@ svc_board_input(void *ctx, const char *text)
 }
 
 static int
+svc_board_save(void *ctx, const char *board, const char *name,
+               const char *program)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_BOARDSAVE);
+    int sent;
+
+    if (m == NULL) {
+        return 0;
+    }
+    (void)tiku_msg_add_string(m, "board", (board != NULL) ? board : "");
+    (void)tiku_msg_add_string(m, "name", (name != NULL) ? name : "");
+    (void)tiku_msg_add_string(m, "program",
+                              (program != NULL) ? program : "");
+    sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m);
+    return sent;
+}
+
+static int
 svc_board_stop(void *ctx)
 {
     client_ctx_t *c = ctx;
@@ -323,6 +343,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.board_run = svc_board_run;
     services.board_input = svc_board_input;
     services.board_stop = svc_board_stop;
+    services.board_save = svc_board_save;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;

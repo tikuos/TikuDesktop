@@ -531,6 +531,16 @@ embed_svc_board_input(void *ctx, const char *text)
     return desktop_board_input(slot->app, text);
 }
 
+/** @brief Keep a program on a board, telling this slot when it is. */
+static int
+embed_svc_board_save(void *ctx, const char *board, const char *name,
+                     const char *program)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_board_save(slot->app, slot, board, name, program);
+}
+
 /** @brief Break the running program. */
 static int
 embed_svc_board_stop(void *ctx)
@@ -582,7 +592,8 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.board_names = embed_svc_board_names;
     slot->services.board_run = embed_svc_board_run;
     slot->services.board_input = embed_svc_board_input;
-    slot->services.board_stop = embed_svc_board_stop;
+        slot->services.board_stop = embed_svc_board_stop;
+    slot->services.board_save = embed_svc_board_save;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }

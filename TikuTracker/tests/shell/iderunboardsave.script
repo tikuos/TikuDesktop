@@ -1,0 +1,44 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboardsave
+# board: discover
+# A program is kept on a board from the editor, and is there afterwards.
+#
+# Save on <board> puts the file in the interpreter's own named slot, and
+# the board shows that slot in its namespace as /data/<name>.bas -- which
+# is where this reads it back, through the shell's own mount, so the
+# proof is the same road a person would take to find it.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+note the row the list stands on is quiet.bas, the one to keep
+key Down
+wait 6
+key Down
+wait 8
+click 71 8
+wait 8
+expect-menu Save on tiku
+menu-pick Save on tiku
+wait 250
+note kept under the file's own name, and readable where the board put it
+expect-read /devices/tiku/data/quiet.bas KEPT
+quit

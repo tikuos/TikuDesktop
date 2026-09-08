@@ -245,6 +245,18 @@ remote_hear(desktop_t *app)
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
                 }
             }
+                        if (tiku_msg_what(m) == TIKU_MSG_BOARDSAVE) {
+                const char *board = tiku_msg_find_string(m, "board", 0);
+                const char *name = tiku_msg_find_string(m, "name", 0);
+                const char *prog = tiku_msg_find_string(m, "program", 0);
+
+                app->board_run_session = i;
+                if (!desktop_board_save(app, NULL, board, name,
+                                        (prog != NULL) ? prog : "")) {
+                    app->board_run_session = -1;
+                    desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
+                }
+            }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDIN) {
                 const char *text = tiku_msg_find_string(m, "text", 0);
 

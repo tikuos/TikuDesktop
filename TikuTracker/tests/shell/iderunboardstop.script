@@ -1,0 +1,51 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboardstop
+# board: discover
+# Stopping a program running on a board, and the board afterwards.
+#
+# A stop has to be a stop: the program ends, and the board is its own
+# again -- its shell answering the namespace, not still inside the
+# interpreter with a run nobody is watching.  That last part is what a
+# leaked hold would fail, and it is the reason this script exists.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+note the row the list stands on is the long one
+key Down
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku
+note it is still going: Stop is offered only while a run is, and the
+note loop is a minute of the board's time
+wait 200
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Stop
+menu-pick Stop
+wait 120
+note and the board is its own again: its namespace answers, which it
+note could not do from inside the interpreter or under a hold nobody let go
+expect-read /devices/tiku/sys/device/name tiku
+quit

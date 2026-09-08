@@ -244,6 +244,8 @@ typedef struct desktop {
     struct desktop_embed    *board_run_slot;   /* who hears it, or NULL */
     char                     board_run_name[64];
     int                      board_run_session;   /* who asked, or -1  */
+    int                      board_run_saving;    /* a save, not a run */
+    int                      board_run_asked;     /* the INPUT was told */
     char                     board_names_told[512];
     int                      board_names_sessions;  /* how many heard it */
     /* The remote window owning the current press, so MOVE and RELEASE
@@ -675,6 +677,9 @@ void embed_stop(struct desktop_embed *slot);
 int  desktop_board_names(desktop_t *app, char *out, size_t max);
 int  desktop_board_run(desktop_t *app, struct desktop_embed *slot,
                        const char *board, const char *program);
+int  desktop_board_save(desktop_t *app, struct desktop_embed *slot,
+                        const char *board, const char *name,
+                        const char *program);
 int  desktop_board_input(desktop_t *app, const char *text);
 int  desktop_board_stop(desktop_t *app);
 void desktop_board_pump(desktop_t *app);

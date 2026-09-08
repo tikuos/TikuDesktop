@@ -370,9 +370,20 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         }
         /* The same cable carries the board's windows: a channel on the
          * console's session, adopted by the desktop's listener once that
-         * exists (channels_attach). */
-        (void)channel_keep(app,
-                           tiku_channel_open(tiku_backend_tiku_session(dev)));
+         * exists (channels_attach).  Only on a board that HAS windows: a
+         * board without the overlay registers no channel, and its console
+         * takes a frame for an unregistered channel as text -- every
+         * greeting would land on its shell's line as junk, in the middle
+         * of whatever else was being typed there. */
+        {
+            tiku_model_t gui;
+
+            if (dev->ops->stat(dev, "/gui", &gui) == 0) {
+                (void)channel_keep(app,
+                                   tiku_channel_open(
+                                       tiku_backend_tiku_session(dev)));
+            }
+        }
         mounted++;
     }
     return mounted;

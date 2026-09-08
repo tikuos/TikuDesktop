@@ -156,6 +156,17 @@ typedef struct tiku_app_services {
 
     /** @brief Break the running program, as Ctrl-C at its console does. */
     int (*board_stop)(void *ctx);
+
+    /**
+     * @brief Keep @p program on the board called @p board, under @p name.
+     *
+     * The board's interpreter saves it in a slot of that name (at most
+     * seven characters) and shows it as /data/<name>.bas.  Told as
+     * board_said(TIKU_APP_BOARD_SAVED, name), or FAILED.
+     * @return nonzero when the saving was started.
+     */
+    int (*board_save)(void *ctx, const char *board, const char *name,
+                      const char *program);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
@@ -250,6 +261,8 @@ typedef struct {
 #define TIKU_APP_BOARD_ENDED    1   /**< it finished by itself          */
 #define TIKU_APP_BOARD_STOPPED  2   /**< a person stopped it            */
 #define TIKU_APP_BOARD_FAILED   3   /**< the board would not take it    */
+#define TIKU_APP_BOARD_ASKS     4   /**< at an INPUT; text is its prompt */
+#define TIKU_APP_BOARD_SAVED    5   /**< kept on the board; text = name */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {

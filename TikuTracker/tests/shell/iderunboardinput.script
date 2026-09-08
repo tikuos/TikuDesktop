@@ -1,0 +1,60 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboardinput
+# board: discover
+# A program on a board asks, and is answered from the message window.
+#
+# INPUT on a board waits for a person who is at this machine.  The
+# window that shows what the program prints is where it asks, and the
+# answer typed there reaches the program: proven by a line that goes
+# wrong only for that answer, whose error the row then offers to visit.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+note the row the list stands on is the asking one
+key Down
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku
+note the program asks before it prints anything: the window is made for
+note the question, and the question is what the strip shows
+wait 200
+expect-title Messages
+click-window Messages
+wait 8
+key t
+key i
+key k
+key u
+wait 4
+key Return
+wait 200
+note answered with the one word line 20 trips on: its error is the first
+note row, and the row knows the line
+click-window Messages
+wait 8
+key Down
+wait 10
+click 71 8
+wait 8
+expect-menu Go to line 20
+quit

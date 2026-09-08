@@ -130,7 +130,8 @@ enum {
 #define CMD_REDO     18
 #define CMD_RENUM    19
 #define CMD_STOP     20
-#define CMD_RUNBOARD 21
+#define CMD_RUNBOARD 23
+#define CMD_SAVEBOARD 24
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
@@ -270,7 +271,13 @@ typedef struct {
     /* The board a run was sent to, empty when it ran here.  A run on a
      * board has no child and no pipe: the shell owns it and says what it
      * printed. */
-    char                            board[64];
+        char                            board[64];
+    /* A program on the board at an INPUT: what it asked, and the line
+     * being typed for it, in the message window's strip. */
+    int                             asking;
+    char                            ask_prompt[160];
+    tiku_field_t                    answer;
+    int                             saving;     /* a save, not a run  */
     pid_t                           child;
     char                            child_file[512];
     char                            partial[160];
@@ -1806,9 +1813,25 @@ project_publish(ide_t *st)
                 snprintf(menus.menu[0].item[mrow].label,
                          sizeof menus.menu[0].item[mrow].label,
                          "Run on %s", first);
-                menus.menu[0].item[mrow].command = CMD_RUNBOARD;
+                                menus.menu[0].item[mrow].command = CMD_RUNBOARD;
                 menus.menu[0].item[mrow].enabled =
                     (unsigned char)(st->proj.nrow > 0 && !st->running);
+                mrow++;
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label,
+                         "Save on %s", first);
+                menus.menu[0].item[mrow].command = CMD_SAVEBOARD;
+                menus.menu[0].item[mrow].enabled =
+                    (unsigned char)(st->proj.nrow > 0 && !st->running);
+            }
+            if (st->running) {
+                /* A run started from here has to be stoppable from here:
+                 * the editor's Stop is on a window this run never opened. */
+                mrow++;
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label, "Stop");
+                menus.menu[0].item[mrow].command = CMD_STOP;
+                menus.menu[0].item[mrow].enabled = 1;
             }
         }
         mrow++;
@@ -2158,12 +2181,26 @@ messages_paint(ide_t *st)
     tiku_fill(st->msg_surface, all, TIKU_C_PANEL);
     tiku_ui_sunken(st->msg_surface, body, TIKU_C_DOC);
     tiku_list_draw(&st->msg_list, st->msg_surface, body, msg_name, st);
-    tiku_fill(st->msg_surface, strip, TIKU_C_PANEL);
-    snprintf(says, sizeof says, "%s",
-             st->running ? "running…" : "the run has finished");
-    tiku_text(st->msg_surface, f, MARGIN,
-                   strip.y + (STRIP_H - f->height) / 2 + f->ascent,
-                   says, TIKU_C_TEXT);
+        tiku_fill(st->msg_surface, strip, TIKU_C_PANEL);
+    if (st->asking) {
+        /* The program is waiting for a person: its own prompt as the
+         * label, the answer typed beside it, Return to send it. */
+        int lw = tiku_text_width(f, st->ask_prompt);
+        tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
+                            MSG_W - (MARGIN + lw + 6) - MARGIN, STRIP_H - 6 };
+
+        tiku_text(st->msg_surface, f, MARGIN,
+                       strip.y + (STRIP_H - f->height) / 2 + f->ascent,
+                       st->ask_prompt, TIKU_C_TEXT);
+        tiku_ui_textfield(st->msg_surface, fld, st->answer.text,
+                          st->answer.caret, 0u);
+    } else {
+        snprintf(says, sizeof says, "%s",
+                 st->running ? "running…" : "the run has finished");
+        tiku_text(st->msg_surface, f, MARGIN,
+                       strip.y + (STRIP_H - f->height) / 2 + f->ascent,
+                       says, TIKU_C_TEXT);
+    }
     (void)st->services->frame(st->services->ctx, st->msg_id,
                               st->msg_surface->px, MSG_W, MSG_H);
 }
@@ -2486,13 +2523,82 @@ run_file_on_board(ide_t *st, const char *path)
 }
 
 /**
+ * @brief Keep the file at @p path on the first board, under its own name.
+ *
+ * The slot is the file's name without its extension, cut to the seven
+ * characters the board allows; the board shows it as /data/<name>.bas.
+ * The line is held while it goes, exactly as for a run, so Run and Save
+ * are offered again only when the shell says it is done.
+ */
+static void
+save_file_on_board(ide_t *st, const char *path)
+{
+    char program[8192];
+    char boards[256];
+    char name[8];
+    const char *base, *dot;
+    char *nl;
+    FILE *f;
+    size_t n, k;
+    if (st->running) {
+        snprintf(st->note, sizeof st->note, "already running");
+        project_paint(st);
+        return;
+    }
+    if (st->services->board_save == NULL ||
+        st->services->board_names == NULL ||
+        st->services->board_names(st->services->ctx, boards,
+                                  sizeof boards) <= 0) {
+        snprintf(st->note, sizeof st->note, "no board is mounted");
+        project_paint(st);
+        return;
+    }
+    nl = strchr(boards, '\n');
+    if (nl != NULL) {
+        *nl = '\0';
+    }
+    base = strrchr(path, '/');
+    base = (base != NULL) ? base + 1 : path;
+    dot = strrchr(base, '.');
+    k = (dot != NULL) ? (size_t)(dot - base) : strlen(base);
+    if (k > 7u) {
+        k = 7u;
+    }
+    memcpy(name, base, k);
+    name[k] = '\0';
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        snprintf(st->note, sizeof st->note, "cannot read the file");
+        project_paint(st);
+        return;
+    }
+    n = fread(program, 1u, sizeof program - 1u, f);
+    (void)fclose(f);
+    program[n] = '\0';
+    snprintf(st->board, sizeof st->board, "%s", boards);
+    st->child_fd = -1;
+    if (!st->services->board_save(st->services->ctx, st->board, name,
+                                  program)) {
+        st->board[0] = '\0';
+        snprintf(st->note, sizeof st->note, "the board would not take it");
+        project_paint(st);
+        return;
+    }
+    st->running = 1;
+    st->saving = 1;
+    st->run_from = 0;
+    snprintf(st->note, sizeof st->note, "keeping %s on %s…", name,
+             st->board);
+    project_paint(st);
+}
+
+/**
  * @brief What the program running on a board printed, and how it ended.
  */
 static void
 ide_board_said(void *state, int what, const char *text)
 {
     ide_t *st = state;
-
     if (st == NULL || !st->running || st->board[0] == '\0') {
         return;
     }
@@ -2502,10 +2608,45 @@ ide_board_said(void *state, int what, const char *text)
         }
         return;
     }
+    if (what == TIKU_APP_BOARD_ASKS) {
+        /* The program wants a line.  The window it asks in is the one
+         * its output goes to, made now if nothing has been printed yet. */
+        st->asking = 1;
+        snprintf(st->ask_prompt, sizeof st->ask_prompt, "%s",
+                 (text != NULL) ? text : "? ");
+        tiku_field_start(&st->answer, "");
+        messages_open(st);
+        (void)tiku_list_set_count(&st->msg_list, st->nmsg);
+        messages_paint(st);
+        messages_publish(st);
+        if (st->services->raise_window != NULL) {
+            (void)st->services->raise_window(st->services->ctx, st->msg_id);
+        }
+        return;
+    }
     st->running = 0;
+    st->asking = 0;
+    if (what == TIKU_APP_BOARD_SAVED || st->saving) {
+        /* A save says where it went, not in a message window: nothing
+         * was printed, and a window for nothing is furniture. */
+        if (what == TIKU_APP_BOARD_SAVED) {
+            snprintf(st->note, sizeof st->note, "kept on %s as %s",
+                     st->board, (text != NULL) ? text : "");
+        } else {
+            snprintf(st->note, sizeof st->note, "%s would not keep it",
+                     st->board);
+        }
+        st->saving = 0;
+        st->board[0] = '\0';
+        project_paint(st);
+        project_publish(st);
+        return;
+    }
     st->board[0] = '\0';
     if (what == TIKU_APP_BOARD_FAILED) {
         message_take(st, "? the board would not run it");
+    } else if (what == TIKU_APP_BOARD_STOPPED) {
+        message_take(st, "? the run was stopped by hand");
     }
     messages_show(st);
     project_publish(st);
@@ -3506,6 +3647,36 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             messages_show(st);
             return 0;
         }
+                if (st->asking) {
+            /* The strip has the keys while the program waits: Return
+             * sends the line, the rest edit it. */
+            unsigned ch = (unsigned char)event->text[0];
+
+            if (ch == 0u) {
+                ch = event->key;
+            }
+            if (event->key == TIKU_KEY_RETURN) {
+                if (st->services->board_input != NULL) {
+                    (void)st->services->board_input(st->services->ctx,
+                                                    st->answer.text);
+                }
+                st->asking = 0;
+                tiku_field_stop(&st->answer);
+            } else if (event->key == TIKU_KEY_BACKSPACE) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
+                                     '\0');
+            } else if (event->key == TIKU_KEY_LEFT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
+            } else if (event->key == TIKU_KEY_RIGHT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
+            } else if (ch >= 32u && ch < 127u &&
+                       !(event->modifiers & TIKU_MOD_CMD)) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
+                                     (char)ch);
+            }
+            messages_paint(st);
+            return 0;
+        }
         if (event->key == TIKU_KEY_RETURN) {
             /* What FOLLOWING a message means is the application's, the
              * same way opening a row is. */
@@ -3719,6 +3890,28 @@ ide_pick(void *state, uint32_t window, int command)
         }
         break;
     }
+    case CMD_SAVEBOARD: {
+        int row = tiku_list_chosen(&st->tv_list);
+
+        if (row >= 0 && row < st->proj.nrow &&
+            !st->proj.row[row].heading) {
+            edit_t *open_now = edit_of_path(st, st->proj.row[row].path);
+
+            if (open_now != NULL &&
+                tiku_textview_modified(&open_now->tv)) {
+                (void)edit_save(open_now);
+                edit_paint(st, open_now);
+                edit_publish(st, open_now);
+            }
+            save_file_on_board(st, st->proj.row[row].path);
+            project_publish(st);
+        }
+        break;
+    }
+    case CMD_STOP:
+        run_stop(st, "? the run was stopped by hand");
+        project_publish(st);
+        break;
     case CMD_BUILD:
         build_project(st);
         project_publish(st);
