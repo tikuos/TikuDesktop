@@ -125,7 +125,23 @@ cost the shell already has on the cable today.
   `iderunboard.script` (`# board: only`): a hello program on the LM20
   over its USB port says its line; a program with a bad line puts the
   caret on it; Run while running says "already running".  One day.
-- **P3 — interactive.**  The input line and Stop.  `iderunboardinput.
+- **P3 — STARTED, not landed.**  The stop MECHANISM is proven at the kit
+  (`test_boardbasic`: a running program is stopped, the rest never runs,
+  and the board answers its namespace afterwards).  What is not landed is
+  the editor's end: a run started from the project window cannot be
+  stopped from there, because the editor offers Stop only on an EDITOR
+  window, which such a run never opened.  Adding the row is a few lines
+  and was written, but its script did not pass and was not shipped: the
+  run had already finished, or failed to start, by the time the script
+  opened the menu, so no Stop was offered.  Two things to chase first,
+  both seen while trying: stray "Unknown command" text on the board
+  during a run (the desk's own namespace polling and the run share the
+  line, and the run's resync only covers the moment it starts), and a
+  desktop killed mid-run leaves the board inside the interpreter with
+  nothing to put it back.  The second is why several attempts measured a
+  board that was not in the state the test assumed -- a run must be
+  re-measured from a known board state, as the USB work already learned.
+  ~~interactive.~~  The input line and Stop.  `iderunboardinput.
   script`: a program that `INPUT`s a name and prints it back, answered
   from the window; a program that loops forever, stopped, and the board's
   prompt back afterwards (the mount usable again — the proof that a
