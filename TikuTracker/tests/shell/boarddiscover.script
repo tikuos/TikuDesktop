@@ -1,0 +1,12 @@
+# shell: desktop
+# board: discover
+# The board is found by its name on the bus, not by a port the harness
+# hands over: the desktop scans, mounts what it finds, and the board's
+# window comes up.  A native-USB console enumerates under its own name,
+# which is what the scan matches.  The click brings that window to the
+# front of the fixture's, as boarddraw does, before its title is asked.
+wait 80
+note the board found by scanning has its window on the desktop
+click 558 174
+wait 20
+expect-title Board window

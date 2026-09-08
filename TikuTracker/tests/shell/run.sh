@@ -154,6 +154,17 @@ for s in "$here"/*.script; do
                 continue
             fi
         fi
+        # "# board: discover" hands the desktop NO port: it scans the bus
+        # and mounts the board it finds by name.  TRK_PORT is only the sign
+        # that a board is on the cable at all.
+        boarddiscover=""
+        if grep -q '^# board: discover' "$s"; then
+            boarddiscover=yes
+            boardonly=yes
+            if [ -z "${TRK_PORT:-}" ]; then
+                continue
+            fi
+        fi
         if grep -q '^# board: only' "$s"; then
             boardonly=yes
             if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
@@ -390,6 +401,17 @@ for s in "$here"/*.script; do
                 TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" -mount "$mountat" \
+                -script "$s" || fails=$((fails+1))
+        fi
+        if [ -n "$boarddiscover" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, board found by scanning, no port given)\n' "$(basename "$s")" "$bin"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -devices \
                 -script "$s" || fails=$((fails+1))
         fi
         # The net lane: the desktop LISTENS, the board dials, and the
