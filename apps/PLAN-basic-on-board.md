@@ -131,11 +131,8 @@ cost the shell already has on the cable today.
   prompt back afterwards (the mount usable again — the proof that a
   stop is a stop).  "Save on board", proven by `basic load` on the
   console reading the file back.  Half a day.
-- **P4 — two boards.**  "Run on…" lists both mounts; a project remembers
-  its board; a board named but not mounted is SAID, with the list
-  offered.  `iderunboards.script` under the discover lane, which finds
-  both DKs with no port named: the same program run on each, each
-  window saying its own board's `/sys/device/name`.  Half a day.
+- **P4 — DONE 2026-09-08** (applications `45ee9bb`).
+
 - **P5 — decided for later, not now: BASIC's own stream.**  Session
   kinds `BASIC_IN` 23 / `BASIC_OUT` 24, a board bridge beside
   `tiku_draw_shell.c` that feeds `tiku_basic_mode_feed_char()` directly
@@ -295,4 +292,35 @@ Held at the kit, not the script: what a message row SAYS.  A remote
 window cannot be narrated over the wire, so test_boardbasic checks the
 INPUT prompt, the saved file's contents in the board's namespace, and
 that a stopped program's rest never runs -- ten legs against a board.
+
+## 9. What P4 settled (2026-09-08)
+
+Two DKs on one desk -- an nRF54LM20B on its own USB console and an
+nRF54L15 on a J-Link port -- both calling themselves `tiku`, so the
+shell names the second `tiku-2`.  That pair of names is what the editor
+offers: one **Run on <name>** row per mounted board, so which board a
+program goes to is a choice rather than whichever answered first.  The
+project REMEMBERS the board it was run on, in a `board` line of its own
+description, and Save follows it.  A project naming a board that is not
+on this desk says so, in a row of its own beside the boards that are --
+because which board a program went to is not a detail to guess at.
+
+`iderunboards.script`, 11 checks on the two real DKs: the same program
+sent to each board in turn puts both lamps out, then one program sent to
+one board lights that board's lamp and leaves the other dark.  The lamp
+is the evidence, read back through each board's own namespace, and the
+dark state it starts from is MADE by the feature rather than assumed.
+
+Two things worth keeping:
+
+1. **A command number is not a free integer.**  The editor reads any
+   command at or above `CMD_WINDOW` as "raise window N" and returns
+   before the switch; board commands assigned as max+1 landed there and
+   the menu row did nothing AT ALL -- no run, and nothing on the wire to
+   show for it.  They are now a declared range below that base, with a
+   `_Static_assert` holding it, because the failure is silent.
+2. **A fixture's file names are geometry.**  The Open panel lists the
+   home folder, so renaming a fixture's programs moves the row the other
+   scripts click by coordinate.  Two programs, the same two names every
+   other editor fixture uses.
 
