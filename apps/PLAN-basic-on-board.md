@@ -86,7 +86,7 @@ cost the shell already has on the cable today.
 
 ## 3. Phases, in order, each ending green and committed
 
-- **P0 — pin the wire contract.**  Firmware + bench, no desk.  The LM20
+- **P0 — DONE 2026-09-08** (TikuBench `1500015`).  ~~pin the wire contract.~~  Firmware + bench, no desk.  The LM20
   USB-console image with `TIKU_SHELL_BASIC_ENABLE=1`, and a bench test
   (`basic-wire`, in the `basic` suite's home) that drives the mode over
   the console exactly as the desk will: enter, `NEW`, lines, `RUN`,
@@ -94,7 +94,7 @@ cost the shell already has on the cable today.
   `INPUT` fed and answered, `EXIT`.  Its PASS text names the prompt and
   the cues, so the IDE depends on facts a suite holds, not on a reading
   of the source.  Both DKs.  Half a day.
-- **P1 — the lease.**  Kit only, with `leaseboard.script` through the
+- **P1 — DONE 2026-09-08** (applications `c1095b4`).  ~~the lease.~~  Kit only, with `leaseboard.script` through the
   runner: lease, send `cat /sys/uptime`, the answer arrives on the
   callback, a namespace read meanwhile is refused and SAYS so, unlease,
   the same read succeeds.  Half a day.
@@ -144,3 +144,42 @@ no program editor on the board's window.  Each is a later argument.
   scan matches the LM20 by the "TikuOS" in its by-id name.
 - An abused board's control endpoint goes flaky; `nrfutil device
   recover` and a fresh flash is the baseline before blaming code.
+
+## 6. What P0 and P1 settled (2026-09-08)
+
+**P0 (TikuBench test 143, `basic-wire`).**  9/9 on an nRF54LM20B over its
+own USB port and on an nRF54L15.  The cues P2 may now depend on: entering
+says `Tiku BASIC ready` and prompts `ok> `; a program is entered a line at
+a time; **the first `ok> ` after RUN arrives only once the program has
+ended** -- that is the end cue, and it is withheld meanwhile; Ctrl-C on a
+running program gives `^C break at line N` and leaves the REPL answering;
+INPUT takes a line sent from off the board; BYE returns the shell.
+Load-bearing: with the interpreter changed to prompt as soon as RUN starts,
+the two prompt legs fail.  Measured while pinning it: the interpreter runs
+about a thousand loop steps a second in the yielding mode, so a board
+program is far slower than the same program on the host -- P2's message
+window should not treat a quiet second as a finished run.
+
+**P1 (kits `c1095b4`).**  `tiku_session_on_text` / `_send_raw` / `_drain`
+and `tiku_backend_tiku_lease` / `_lease_send` / `_unlease` / `_leased`.
+Proven on a pty and on a board, 15/15, five runs clean.  Two things the
+building taught, both now in the code:
+
+- **A refusal has to be immediate.**  Without the guard a leased backend's
+  read still fails -- the holder's callback is taking the text, so the
+  command never finds its prompt -- but only after its whole timeout.  The
+  first version of the test passed on that accident; it now requires the
+  refusal inside 250 ms, and the write to NAME the running program.
+- **Handing the line back means draining it first.**  `tiku_session_sync`
+  clears what it holds and takes the NEXT prompt it sees, so a prompt
+  already on its way from the last client satisfied it while its own
+  newline's answer was still coming, leaving the command after that one
+  prompt out of step.  One run in four failed until unlease drained.
+
+Also learned, and it shapes how P2 is tested rather than built: the
+`basic` suite over `--console usb` dies at the first test that reboots the
+board (125), because a native-USB console disappears and comes back as a
+new device while a J-Link VCOM does not -- 185/203 on the LM20 against
+290/292 on the L15.  A reboot-aware reconnect in the bench session would
+close the whole class; until then, drive board-reboot suites over a VCOM.
+
