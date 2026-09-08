@@ -1,0 +1,59 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: benchstop
+# board: only
+# Stopping a bench run, and the board afterwards.
+#
+# A run holds the board's port for as long as it lasts, so stopping one
+# has to give the board back -- otherwise a run somebody changed their
+# mind about costs the shell its board until the run would have ended
+# anyway.  That is what is checked here: stopped EARLY, and the board is
+# the shell's again well before the run could have finished.
+wait 60
+click 980 30
+wait 10
+menu-pick Applications
+wait 10
+menu-pick Bench
+wait 250
+expect-title Bench
+click-window Bench
+wait 8
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+key Down
+wait 3
+wait 8
+click 71 8
+wait 8
+expect-menu Show the parts of link-console
+menu-pick Run on tiku
+note far enough in to be a run, nowhere near far enough to be over
+wait 150
+click-window Bench
+wait 8
+click 71 8
+wait 8
+note the board is away because THIS application asked for it, so the
+note list does not reshuffle under the row somebody chose
+expect-menu Show the parts of link-console
+expect-menu Stop
+menu-pick Stop
+note and the board is back at once -- the whole of this run would still
+note have been going
+wait 250
+expect-read /devices/tiku/sys/device/name tiku
+quit

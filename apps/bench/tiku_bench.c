@@ -851,11 +851,16 @@ bench_tick(void *state, int64_t now_us)
         (void)st->services->board_names(st->services->ctx, boards,
                                         sizeof boards);
     }
-        if (strcmp(boards, st->boards_seen) != 0) {
+            if (strcmp(boards, st->boards_seen) != 0) {
         snprintf(st->boards_seen, sizeof st->boards_seen, "%s", boards);
         /* What is worth offering changes with the boards: a suite no
-         * board here can answer is not on the list. */
-        entries_build(st);
+         * board here can answer is not on the list.  Not DURING a run,
+         * though: the board is away because this application asked for
+         * it, and a list that reshuffles under the row somebody chose
+         * is the one thing worse than a stale one. */
+        if (!st->running) {
+            entries_build(st);
+        }
         bench_paint(st);
         bench_publish(st);
     }
