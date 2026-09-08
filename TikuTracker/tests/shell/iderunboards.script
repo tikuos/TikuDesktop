@@ -1,0 +1,80 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: iderunboards
+# board: discover
+# Two boards on one desk, and choosing between them.
+#
+# Both are the same make and both call themselves tiku, so the shell
+# names the second one apart; that pair of names is what the editor
+# offers.  A program lights the lamp of whatever board runs it, so each
+# board's own /dev/led0 afterwards says whether it was the one -- which
+# is the whole question two boards raise.  The dark state both start
+# from is MADE here, by running the program that puts the lamp out on
+# each board in turn: the same program, sent to two places.
+wait 60
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+note quiet.bas puts the lamp out; chosen before the menu opens, so the
+note offers and the choosing are one visit
+key Down
+wait 6
+key Down
+wait 8
+click 71 8
+wait 8
+note the project remembers a board that is not on this desk: it is SAID,
+note and both boards that ARE here are offered by name beside it
+expect-menu elsewhere is not here
+expect-menu Run on tiku
+expect-menu Run on tiku-2
+menu-pick Run on tiku
+wait 250
+note and now the same program to the OTHER board
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku-2
+wait 250
+note both lamps are out, and each was put out by a run sent to it
+expect-read /devices/tiku/dev/led0 0
+expect-read /devices/tiku-2/dev/led0 0
+note now blink.bas, the one that lights a lamp, to one board only
+click-window Project
+wait 8
+key Up
+wait 8
+click 71 8
+wait 8
+menu-pick Run on tiku-2
+wait 250
+note lit on the board that was chosen
+expect-read /devices/tiku-2/dev/led0 1
+note and dark on the one that was not: a program went to ONE board
+expect-read /devices/tiku/dev/led0 0
+note and the project remembers the board it was run on: Save follows it,
+note and the row about a board that is not here has nothing left to say
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Run blink.bas|Run on tiku|Run on tiku-2|Save on tiku-2|
+quit

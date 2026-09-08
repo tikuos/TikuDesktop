@@ -130,10 +130,20 @@ enum {
 #define CMD_REDO     18
 #define CMD_RENUM    19
 #define CMD_STOP     20
-#define CMD_RUNBOARD 23
-#define CMD_SAVEBOARD 24
+#define CMD_SAVEBOARD 23
+/*
+ * One command per mounted board, so the menu can offer them all.  The
+ * ceiling is not decoration: any command at or above CMD_WINDOW is read
+ * as "raise window N" and returns before the switch below ever sees it,
+ * which costs a menu row that silently does nothing.
+ */
+#define IDE_BOARDS   8
+#define CMD_BOARDGONE 25        /* the row that only says; never picked */
+#define CMD_RUNBOARD 32
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
+_Static_assert(CMD_RUNBOARD + IDE_BOARDS <= 64,
+               "the board commands must stay below CMD_WINDOW");
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -146,7 +156,8 @@ typedef struct {
 typedef struct {
     char  title[64];
     char  dir[512];             /* what the file's own paths are from */
-    char  target[32];           /* what the program is being built FOR */
+        char  target[32];           /* what the program is being built FOR */
+    char  board[64];            /* which board its programs go to */
     int   nrow;
     int   unknown;              /* lines this build did not know */
     prow_t row[IDE_ROWS];
@@ -288,6 +299,9 @@ typedef struct {
 static void project_paint(ide_t *st);
 static void project_publish(ide_t *st);
 static void messages_show(ide_t *st);
+static int  board_at(ide_t *st, int which, char *out, size_t max);
+static int  board_of_project(ide_t *st);
+static void project_set_board(ide_t *st, const char *name);
 static void splash_drop(ide_t *st);
 static void announce_paint_art(tiku_surface_t *sf, const char *status,
                                const tiku_surface_t *art);
@@ -378,6 +392,13 @@ project_parse(project_t *pj, const char *text, const char *dir)
         }
         if (strcmp(kind, "title") == 0) {
             (void)tail(rest, pj->title, sizeof pj->title);
+            p = line_end(p);
+            continue;
+        }
+                if (strcmp(kind, "board") == 0) {
+            /* WHICH board this project's programs go to, remembered
+             * across openings the way the target is. */
+            (void)word(rest, pj->board, sizeof pj->board);
             p = line_end(p);
             continue;
         }
@@ -1800,29 +1821,48 @@ project_publish(ide_t *st)
                                                  sizeof boards)
                      : 0;
 
-            if (have > 0) {
-                char first[64];
-                char *nl;
+                        int mine = board_of_project(st);
+            int can_board =
+                (int)(st->proj.nrow > 0 && !st->running);
+            char name[64];
+            int i;
 
-                snprintf(first, sizeof first, "%s", boards);
-                nl = strchr(first, '\n');
-                if (nl != NULL) {
-                    *nl = '\0';
+            (void)boards;
+            if (have > 0 && st->proj.board[0] != '\0' && mine < 0) {
+                /* The project names a board that is not here.  SAID,
+                 * rather than quietly run somewhere else: which board a
+                 * program went to is not a detail. */
+                mrow++;
+                snprintf(menus.menu[0].item[mrow].label,
+                         sizeof menus.menu[0].item[mrow].label,
+                         "%s is not here", st->proj.board);
+                menus.menu[0].item[mrow].command = CMD_BOARDGONE;
+                menus.menu[0].item[mrow].enabled = 0;
+            }
+            /* Every board, by name.  Two boards on one desk are two
+             * places a program can go, and the menu is where that
+             * choice is made. */
+            for (i = 0; i < IDE_BOARDS && have > 0; i++) {
+                if (!board_at(st, i, name, sizeof name)) {
+                    break;
                 }
                 mrow++;
                 snprintf(menus.menu[0].item[mrow].label,
                          sizeof menus.menu[0].item[mrow].label,
-                         "Run on %s", first);
-                                menus.menu[0].item[mrow].command = CMD_RUNBOARD;
-                menus.menu[0].item[mrow].enabled =
-                    (unsigned char)(st->proj.nrow > 0 && !st->running);
+                         "Run on %s", name);
+                menus.menu[0].item[mrow].command = CMD_RUNBOARD + i;
+                menus.menu[0].item[mrow].enabled = (unsigned char)can_board;
+            }
+            if (have > 0 && board_at(st, (mine >= 0) ? mine : 0, name,
+                                     sizeof name)) {
+                /* Saving follows the project's own board: the one it
+                 * remembers, or the only one there is. */
                 mrow++;
                 snprintf(menus.menu[0].item[mrow].label,
                          sizeof menus.menu[0].item[mrow].label,
-                         "Save on %s", first);
+                         "Save on %s", name);
                 menus.menu[0].item[mrow].command = CMD_SAVEBOARD;
-                menus.menu[0].item[mrow].enabled =
-                    (unsigned char)(st->proj.nrow > 0 && !st->running);
+                menus.menu[0].item[mrow].enabled = (unsigned char)can_board;
             }
             if (st->running) {
                 /* A run started from here has to be stoppable from here:
@@ -2091,6 +2131,118 @@ project_remove_file(ide_t *st)
     (void)fwrite(kept, 1u, w, f);
     (void)fclose(f);
     project_take(st, st->proj_file);
+}
+
+/**
+ * @brief The @p which'th board the shell has mounted, into @p out.
+ * @return nonzero when there is one.
+ */
+static int
+board_at(ide_t *st, int which, char *out, size_t max)
+{
+    char boards[512];
+    const char *p;
+    int i = 0;
+
+    out[0] = '\0';
+    if (st->services->board_names == NULL ||
+        st->services->board_names(st->services->ctx, boards,
+                                  sizeof boards) <= 0) {
+        return 0;
+    }
+    for (p = boards; *p != '\0'; ) {
+        const char *nl = strchr(p, '\n');
+        size_t n = (nl != NULL) ? (size_t)(nl - p) : strlen(p);
+
+        if (n > 0u) {
+            if (i == which) {
+                if (n >= max) {
+                    n = max - 1u;
+                }
+                memcpy(out, p, n);
+                out[n] = '\0';
+                return 1;
+            }
+            i++;
+        }
+        p = (nl != NULL) ? nl + 1 : p + strlen(p);
+    }
+    return 0;
+}
+
+/** @brief Which mounted board the project names, or -1 when none of them. */
+static int
+board_of_project(ide_t *st)
+{
+    char name[64];
+    int i;
+
+    if (st->proj.board[0] == '\0') {
+        return -1;
+    }
+    for (i = 0; i < IDE_BOARDS; i++) {
+        if (!board_at(st, i, name, sizeof name)) {
+            break;
+        }
+        if (strcmp(name, st->proj.board) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief Remember @p name as this project's board, in its description.
+ *
+ * Every other line rides through as it stands, exactly as removing a
+ * file keeps them: a board line replaces the one that was there, or is
+ * appended when there was none.
+ */
+static void
+project_set_board(ide_t *st, const char *name)
+{
+    char whole[8192];
+    char kept[8192];
+    size_t used = 0, w = 0;
+    FILE *f;
+    char *line;
+
+    snprintf(st->proj.board, sizeof st->proj.board, "%s", name);
+    if (st->proj_file[0] == '\0') {
+        return;                 /* nothing opened: the choice is this run's */
+    }
+    f = fopen(st->proj_file, "r");
+    if (f == NULL) {
+        return;
+    }
+    used = fread(whole, 1u, sizeof whole - 1u, f);
+    (void)fclose(f);
+    whole[used] = '\0';
+    line = whole;
+    while (*line != '\0') {
+        char *nl = strchr(line, '\n');
+        size_t n = (nl != NULL) ? (size_t)(nl - line) + 1u : strlen(line);
+
+        if (strncmp(line, "board ", 6u) == 0) {
+            ;                   /* the one line being replaced */
+        } else if (w + n < sizeof kept) {
+            memcpy(kept + w, line, n);
+            w += n;
+        }
+        line += n;
+    }
+    if (w > 0u && kept[w - 1u] != '\n' && w + 1u < sizeof kept) {
+        kept[w++] = '\n';
+    }
+    w += (size_t)snprintf(kept + w, sizeof kept - w, "board %s\n", name);
+    f = fopen(st->proj_file, "w");
+    if (f == NULL) {
+        snprintf(st->note, sizeof st->note, "cannot write the project");
+        project_paint(st);
+        return;
+    }
+    (void)fwrite(kept, 1u, w, f);
+    (void)fclose(f);
 }
 
 /**
@@ -2469,11 +2621,10 @@ run_file(ide_t *st, const char *path)
  * run on this machine takes, because a board's interpreter IS this one.
  */
 static void
-run_file_on_board(ide_t *st, const char *path)
+run_file_on_board(ide_t *st, const char *path, int which)
 {
     char program[8192];
-    char boards[256];
-    char *nl;
+    char board[64];
     FILE *f;
     size_t n;
 
@@ -2482,17 +2633,11 @@ run_file_on_board(ide_t *st, const char *path)
         project_paint(st);
         return;
     }
-    if (st->services->board_run == NULL ||
-        st->services->board_names == NULL ||
-        st->services->board_names(st->services->ctx, boards,
-                                  sizeof boards) <= 0) {
+        if (st->services->board_run == NULL ||
+        !board_at(st, which, board, sizeof board)) {
         snprintf(st->note, sizeof st->note, "no board is mounted");
         project_paint(st);
         return;
-    }
-    nl = strchr(boards, '\n');
-    if (nl != NULL) {
-        *nl = '\0';
     }
     f = fopen(path, "rb");
     if (f == NULL) {
@@ -2504,8 +2649,11 @@ run_file_on_board(ide_t *st, const char *path)
     (void)fclose(f);
     program[n] = '\0';
 
-    snprintf(st->child_file, sizeof st->child_file, "%s", path);
-    snprintf(st->board, sizeof st->board, "%s", boards);
+        snprintf(st->child_file, sizeof st->child_file, "%s", path);
+    snprintf(st->board, sizeof st->board, "%s", board);
+    /* Chosen is remembered: a project that has been run on a board goes
+     * back to the same one, and says so before it is asked again. */
+    project_set_board(st, board);
     st->child_numbered = 1;          /* BASIC names its own lines */
     st->child_fd = -1;               /* nothing of ours to read   */
     st->nmsg = 0;
@@ -2537,7 +2685,6 @@ save_file_on_board(ide_t *st, const char *path)
     char boards[256];
     char name[8];
     const char *base, *dot;
-    char *nl;
     FILE *f;
     size_t n, k;
     if (st->running) {
@@ -2545,17 +2692,15 @@ save_file_on_board(ide_t *st, const char *path)
         project_paint(st);
         return;
     }
-    if (st->services->board_save == NULL ||
-        st->services->board_names == NULL ||
-        st->services->board_names(st->services->ctx, boards,
-                                  sizeof boards) <= 0) {
-        snprintf(st->note, sizeof st->note, "no board is mounted");
-        project_paint(st);
-        return;
-    }
-    nl = strchr(boards, '\n');
-    if (nl != NULL) {
-        *nl = '\0';
+        {
+        int mine = board_of_project(st);
+
+        if (st->services->board_save == NULL ||
+            !board_at(st, (mine >= 0) ? mine : 0, boards, sizeof boards)) {
+            snprintf(st->note, sizeof st->note, "no board is mounted");
+            project_paint(st);
+            return;
+        }
     }
     base = strrchr(path, '/');
     base = (base != NULL) ? base + 1 : path;
@@ -3742,6 +3887,24 @@ ide_pick(void *state, uint32_t window, int command)
         }
         return 0;
     }
+        if (command >= CMD_RUNBOARD && command < CMD_RUNBOARD + IDE_BOARDS) {
+        int row = tiku_list_chosen(&st->tv_list);
+
+        if (row >= 0 && row < st->proj.nrow && !st->proj.row[row].heading) {
+            edit_t *open_now = edit_of_path(st, st->proj.row[row].path);
+
+            if (open_now != NULL &&
+                tiku_textview_modified(&open_now->tv)) {
+                (void)edit_save(open_now);
+                edit_paint(st, open_now);
+                edit_publish(st, open_now);
+            }
+            run_file_on_board(st, st->proj.row[row].path,
+                              command - CMD_RUNBOARD);
+            project_publish(st);
+        }
+        return 0;
+    }
     if (e != NULL && command == CMD_RUN &&
         e->lang == TIKU_SYNTAX_BASIC) {
         /* Run, asked ON a page: THIS file, not whichever row the
@@ -3868,24 +4031,6 @@ ide_pick(void *state, uint32_t window, int command)
                 edit_publish(st, open_now);
             }
             run_file(st, st->proj.row[row].path);
-            project_publish(st);
-        }
-        break;
-    }
-    case CMD_RUNBOARD: {
-        int row = tiku_list_chosen(&st->tv_list);
-
-        if (row >= 0 && row < st->proj.nrow &&
-            !st->proj.row[row].heading) {
-            edit_t *open_now = edit_of_path(st, st->proj.row[row].path);
-
-            if (open_now != NULL &&
-                tiku_textview_modified(&open_now->tv)) {
-                (void)edit_save(open_now);
-                edit_paint(st, open_now);
-                edit_publish(st, open_now);
-            }
-            run_file_on_board(st, st->proj.row[row].path);
             project_publish(st);
         }
         break;
