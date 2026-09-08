@@ -64,7 +64,15 @@ BASIC_GATES := -DTIKU_BASIC_GPIO_ENABLE=0 -DTIKU_BASIC_ADC_ENABLE=0 \
                -DTIKU_BASIC_MODULE_ENABLE=0 -DTIKU_BASIC_FILE_ENABLE=0
 ifneq ($(wildcard $(BASIC_SRC)),)
 BASIC_TARGETS := $(BASICHOST)
-$(BASICHOST): $(D)/basichost/tiku_basic_host.c $(BASIC_SRC) | $(BUILD)
+# The interpreter's headers and its .inl parts too: this is one
+# translation unit built from a tree that is edited elsewhere, and with
+# only the .c files named here an edit to any of them rebuilds nothing.
+BASIC_DEPS := $(wildcard $(TIKUOS)/kernel/shell/basic/*.h) \
+              $(wildcard $(TIKUOS)/kernel/shell/basic/*.inl) \
+              $(wildcard $(D)/basichost/kernel/shell/*.h)
+
+$(BASICHOST): $(D)/basichost/tiku_basic_host.c $(BASIC_SRC) $(BASIC_DEPS) \
+              | $(BUILD)
 	$(CC) -O2 -std=gnu11 -o $@ $(D)/basichost/tiku_basic_host.c $(BASIC_SRC) \
 	    -I$(D)/basichost -I$(TIKUOS) -I$(TIKUOS)/kernel/shell/basic $(BASIC_GATES)
 else
