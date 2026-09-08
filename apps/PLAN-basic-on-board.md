@@ -361,3 +361,42 @@ Not attempted here: the message window showing a `/data` file as a
 program writes it.  The road to it is open now -- the namespace answers
 mid-run -- but nothing yet asks.
 
+## 11. Connect: where a program goes is chosen once (2026-09-09)
+
+The Run-on-<board> rows were the wrong shape, and it was the user who
+said so: one row per board per action sprawls, and a separate "look for
+boards" verb is a chore nobody asked for.  What replaced it is the shape
+every IDE with targets has.
+
+**Connect** is a menu of its own on both the project window and the
+editor page: **This machine**, then every board the shell has mounted,
+the destination marked.  Picking one makes it the destination and the
+project remembers it (its `board` line); picking This machine forgets.
+**Run** is a single row that says where it will go -- "Run blink.bas on
+tiku" -- and Save on <board> appears only when a board is the
+destination.  A board the project names that is not here is said in
+Connect, in a row that cannot be picked.
+
+The shell looks for boards **when a project opens**: a deliberate act,
+and a Connect menu that already lists what is here is worth the ports
+being opened for it.  "Look again" sits at the bottom of Connect for a
+board plugged in since; it is not a separate verb.  A port the shell
+already holds is left alone, so looking twice mounts nothing twice --
+which is the bug that hung the desktop when looking was a deskbar row.
+
+Not in the shell at large.  A desktop-wide "Find boards" was built and
+reverted: it opened every serial port on the machine uninvited, and it
+belongs beside the thing that uses boards.
+
+Proof: `ideconnect.script` (a desktop never told to look: Connect lists
+both DKs after the project opens, Run reads as going to the chosen one,
+looking again duplicates nothing) and every earlier board script
+rewritten to the Connect flow -- iderunboard, stop, input, save, the
+two-board script, and the live-namespace one -- all green.
+
+Three script facts that cost a round each: Escape does not close a menu
+here, a click on the window body does; clicking another title while a
+menu is open switches to it; and `menu-pick` searches only the OPEN
+menu, exact label first, then substring -- so "Save on tiku" and "Run
+blink.bas on tiku" must be named whole.
+
