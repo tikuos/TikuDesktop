@@ -52,7 +52,7 @@ splash_stage(desktop_t *app, const char *what)
     splash_settle(app);
     tiku_trk_splash_say(&app->splash, what, tiku_trk_now());
     tiku_trk_splash_draw(&app->splash, app->surf,
-                         (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
+                         (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                          tiku_trk_now());
     if (app->host != NULL) {
         (void)tiku_host_present(app->host, app->surf);

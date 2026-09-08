@@ -316,7 +316,7 @@ desktop_draw_splash(desktop_t *app)
      */
     if (tiku_trk_splash_visible(&app->splash, tiku_trk_now())) {
         tiku_trk_splash_draw(&app->splash, app->surf,
-                             (tiku_rect_t){ 0, 0, DESK_W, DESK_H },
+                             (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                              tiku_trk_now());
         app->dirty = 1;         /* not finished going: come back */
     }
