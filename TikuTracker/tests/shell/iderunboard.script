@@ -50,11 +50,11 @@ note a board is slower than this machine by a long way
 wait 600
 note the window is made only when there is something to put in it, so
 note its being here at all is the board's output having arrived
-expect-title Messages
+expect-title blink.bas on nrf54lm20b
 note and the row IS what the board printed: a remote window's drawing
 note cannot be narrated over the wire, so the row is read where a person
 note would reach it, in the menu that offers to follow it
-click-window Messages
+click-window blink.bas on nrf54lm20b
 wait 8
 note the rows themselves are not read here: a remote window's drawing
 note cannot be narrated over the wire, and the row menu offers a place

@@ -40,11 +40,11 @@ wait 10
 click 71 8
 wait 8
 menu-pick Run blink.bas on nrf54lm20b
-note the program asks before it prints anything: the window is made for
-note the question, and the question is what the strip shows
+note the program asks before it prints anything: the console the run
+note opened in shows the question on its input line
 wait 200
-expect-title Messages
-click-window Messages
+expect-title blink.bas on nrf54lm20b
+click-window blink.bas on nrf54lm20b
 wait 8
 key t
 key i

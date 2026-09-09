@@ -291,6 +291,19 @@ main(void)
           strcmp(tiku_textview_line(&tv, 2), "Z") == 0,
           "and one redo put the whole batch back");
 
+    /* A selection endpoint left past its line after the buffer shrank
+     * under it: backspace once fed `len - cx` as a huge size_t and ran
+     * a memcpy off a 1024-byte buffer (SIGABRT under FORTIFY).  The
+     * caret is clamped now, so the edit is safe. */
+    tiku_textview_set(&tv, "0123456789ABCDEF\nshort");
+    tv.selecting = 1;
+    tv.ay = 0; tv.ax = 16;      /* an anchor at the long line's end */
+    tv.cy = 0; tv.cx = 16;
+    tv.line[0].len = 3;         /* the line is shortened under the anchor */
+    tiku_textview_backspace(&tv);
+    check(tv.cx <= tiku_textview_line_len(&tv, tv.cy),
+          "a stale selection past a shortened line does not run off it");
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }

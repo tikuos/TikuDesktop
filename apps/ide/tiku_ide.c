@@ -86,6 +86,13 @@
 
 #define MSG_W      420
 #define MSG_H      220
+#define CON_W      560          /* the console: a program's own screen */
+#define CON_H      340
+#define CON_LINES  400
+#define CON_COLS   120
+#define CON_INK    0xd8d8d8u    /* what the program printed */
+#define CON_DIM    0x8a8a8au    /* the console's own remarks */
+#define CON_BACK   0x000000u
 /* Wide, the way the banners those splash screens wore are wide: the
  * band takes a picture cut close to three-to-one edge to edge. */
 #define SPLASH_W   560
@@ -277,7 +284,17 @@ typedef struct {
      * window arrives when there is something to put in it: a message
      * window standing empty is furniture. */
     uint32_t                        msg_id;
-    tiku_surface_t            *msg_surface;
+        tiku_surface_t            *msg_surface;
+    /* The console: opened for a board run, black, the mono face; every
+     * line the program printed in order, the run's states as the
+     * console's own dim remarks, and the INPUT line at the bottom. */
+    uint32_t                        con_id;
+    tiku_surface_t            *con_surface;
+    char                            con[CON_LINES][CON_COLS];
+    unsigned char                   con_dim[CON_LINES];
+    int                             ncon;
+    int                             con_top;    /* first line shown, or -1 for the tail */
+    char                            con_title[96];
     tiku_list_t                msg_list;
     msg_t                           msg[IDE_MSGS];
     int                             nmsg;
@@ -309,6 +326,7 @@ typedef struct {
 
 static void project_paint(ide_t *st);
 static void project_publish(ide_t *st);
+static void console_open(ide_t *st, const char *file, const char *board);
 static void messages_show(ide_t *st);
 static int  board_at(ide_t *st, int which, char *out, size_t max);
 static int  board_of_project(ide_t *st);
@@ -2737,9 +2755,10 @@ run_file_on_board(ide_t *st, const char *path, const char *board)
         project_paint(st);
         return;
     }
-    st->running = 1;
+        st->running = 1;
     st->run_from = 0;
     messages_paint(st);
+    console_open(st, path, st->board);
 }
 
 /**
@@ -2805,6 +2824,117 @@ save_file_on_board(ide_t *st, const char *path)
     project_paint(st);
 }
 
+/** @brief One line onto the console, the oldest dropped when full. */
+static void
+console_take(ide_t *st, const char *line, int dim)
+{
+    if (st->ncon >= CON_LINES) {
+        memmove(st->con[0], st->con[1], (size_t)(CON_LINES - 1) * CON_COLS);
+        memmove(st->con_dim, st->con_dim + 1, (size_t)(CON_LINES - 1));
+        st->ncon = CON_LINES - 1;
+    }
+    snprintf(st->con[st->ncon], CON_COLS, "%s", line);
+    st->con_dim[st->ncon] = (unsigned char)dim;
+    st->ncon++;
+    st->con_top = -1;               /* new output shows the tail */
+}
+
+/** @brief Paint the console and hand the frame over. */
+static void
+console_paint(ide_t *st)
+{
+    const tiku_font_t *f = tiku_font_mono(0);
+    tiku_rect_t all = { 0, 0, CON_W, CON_H };
+    tiku_rect_t strip = { 0, CON_H - STRIP_H, CON_W, STRIP_H };
+    int lh = f->height + 2;
+    int rows = (CON_H - STRIP_H - 2 * MARGIN) / lh;
+    int first, i, y;
+
+    if (st->con_surface == NULL) {
+        return;
+    }
+    tiku_fill(st->con_surface, all, CON_BACK);
+    first = (st->con_top >= 0) ? st->con_top : st->ncon - rows;
+    if (first < 0) {
+        first = 0;
+    }
+    y = MARGIN;
+    for (i = first; i < st->ncon && i < first + rows; i++) {
+        tiku_text(st->con_surface, f, MARGIN, y + f->ascent, st->con[i],
+                  st->con_dim[i] ? CON_DIM : CON_INK);
+        y += lh;
+    }
+    tiku_fill(st->con_surface, strip, 0x202020u);
+    if (st->asking) {
+        /* The program wants a line: its prompt, and the answer typed
+         * after it, Return to send. */
+        int lw = tiku_text_width(f, st->ask_prompt);
+        tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
+                            CON_W - (MARGIN + lw + 6) - MARGIN, STRIP_H - 6 };
+
+        tiku_text(st->con_surface, f, MARGIN,
+                  strip.y + (STRIP_H - f->height) / 2 + f->ascent,
+                  st->ask_prompt, CON_INK);
+        tiku_ui_textfield(st->con_surface, fld, st->answer.text,
+                          st->answer.caret, 0u);
+    } else {
+        tiku_text(st->con_surface, f, MARGIN,
+                  strip.y + (STRIP_H - f->height) / 2 + f->ascent,
+                  st->running ? "running   (Cmd+C stops it)"
+                              : "the run has finished", CON_DIM);
+    }
+    (void)st->services->frame(st->services->ctx, st->con_id,
+                              st->con_surface->px, CON_W, CON_H);
+}
+
+/** @brief The console's one menu: stop the run. */
+static void
+console_publish(ide_t *st)
+{
+    tiku_menuset_t menus;
+
+    memset(&menus, 0, sizeof menus);
+    menus.nmenu = 1;
+    snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "Console");
+    mrow(&menus.menu[0], "Stop", CMD_STOP, 'c', TIKU_MOD_CMD, st->running);
+    (void)st->services->menus(st->services->ctx, st->con_id, &menus);
+}
+
+/**
+ * @brief Open the console for a run of @p file on @p board, or bring it
+ *        to the front cleared, and say what is being sent where.
+ */
+static void
+console_open(ide_t *st, const char *file, const char *board)
+{
+    const char *leaf = strrchr(file, '/');
+    char line[160];
+
+    leaf = (leaf != NULL) ? leaf + 1 : file;
+    snprintf(st->con_title, sizeof st->con_title, "%s on %s", leaf, board);
+    st->ncon = 0;
+    st->con_top = -1;
+    if (st->con_surface == NULL) {
+        st->con_surface = tiku_surface_new(CON_W, CON_H, CON_BACK);
+        if (st->con_surface == NULL) {
+            return;
+        }
+        st->con_id = st->services->open(st->services->ctx, st->con_title,
+                                        CON_W, CON_H);
+        if (st->con_id == 0u) {
+            tiku_surface_free(st->con_surface);
+            st->con_surface = NULL;
+            return;
+        }
+    } else if (st->services->raise_window != NULL) {
+        (void)st->services->raise_window(st->services->ctx, st->con_id);
+    }
+    snprintf(line, sizeof line, "sending %s to %s...", leaf, board);
+    console_take(st, line, 1);
+    console_paint(st);
+    console_publish(st);
+}
+
 /**
  * @brief What the program running on a board printed, and how it ended.
  */
@@ -2828,9 +2958,16 @@ ide_board_said(void *state, int what, const char *text)
     if (!st->running || st->board[0] == '\0') {
         return;
     }
+        if (what == TIKU_APP_BOARD_RUNNING) {
+        console_take(st, "running", 1);
+        console_paint(st);
+        return;
+    }
     if (what == TIKU_APP_BOARD_LINE) {
         if (text != NULL && text[0] != '\0') {
             message_take(st, text);
+            console_take(st, text, 0);
+            console_paint(st);
         }
         return;
     }
@@ -2840,7 +2977,16 @@ ide_board_said(void *state, int what, const char *text)
         st->asking = 1;
         snprintf(st->ask_prompt, sizeof st->ask_prompt, "%s",
                  (text != NULL) ? text : "? ");
-        tiku_field_start(&st->answer, "");
+                tiku_field_start(&st->answer, "");
+        if (st->con_surface != NULL) {
+            /* The console is where the program is: it asks there. */
+            console_paint(st);
+            if (st->services->raise_window != NULL) {
+                (void)st->services->raise_window(st->services->ctx,
+                                                 st->con_id);
+            }
+            return;
+        }
         messages_open(st);
         (void)tiku_list_set_count(&st->msg_list, st->nmsg);
         messages_paint(st);
@@ -2868,13 +3014,32 @@ ide_board_said(void *state, int what, const char *text)
         project_publish(st);
         return;
     }
-    st->board[0] = '\0';
+        st->board[0] = '\0';
     if (what == TIKU_APP_BOARD_FAILED) {
         message_take(st, "? the board would not run it");
     } else if (what == TIKU_APP_BOARD_STOPPED) {
         message_take(st, "? the run was stopped by hand");
     }
-    messages_show(st);
+    if (st->con_surface != NULL) {
+        int i, errors = 0;
+
+        console_take(st, "", 1);
+        console_take(st, (what == TIKU_APP_BOARD_FAILED)  ? "failed"
+                       : (what == TIKU_APP_BOARD_STOPPED) ? "stopped"
+                                                          : "ended", 1);
+        console_paint(st);
+        console_publish(st);
+        /* Messages is for what went wrong: with a console showing what
+         * the program said, it opens only when a row is an error. */
+        for (i = 0; i < st->nmsg; i++) {
+            errors += (strstr(st->msg[i].text, "? ") != NULL);
+        }
+        if (errors > 0) {
+            messages_show(st);
+        }
+    } else {
+        messages_show(st);
+    }
     project_publish(st);
 }
 
@@ -3877,10 +4042,69 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             return 0;
         }
     }
+        if (window == st->con_id && st->con_surface != NULL) {
+        if (event->type == TIKU_EVENT_WHEEL) {
+            int rows = (CON_H - STRIP_H - 2 * MARGIN) /
+                       (tiku_font_mono(0)->height + 2);
+            int top = (st->con_top >= 0) ? st->con_top : st->ncon - rows;
+
+            top += (event->dy > 0) ? 3 : -3;
+            if (top >= st->ncon - rows) {
+                st->con_top = -1;   /* back at the tail: it follows */
+            } else {
+                st->con_top = (top < 0) ? 0 : top;
+            }
+            console_paint(st);
+            return 0;
+        }
+        if (event->type != TIKU_EVENT_KEY_DOWN) {
+            return 0;
+        }
+        if ((event->modifiers & TIKU_MOD_CMD) &&
+            (event->key == 'c' || event->text[0] == 'c') && st->running) {
+            if (st->services->board_stop != NULL) {
+                (void)st->services->board_stop(st->services->ctx);
+            }
+            return 0;
+        }
+        if (st->asking) {
+            unsigned ch = (unsigned char)event->text[0];
+
+            if (ch == 0u) {
+                ch = event->key;
+            }
+            if (event->key == TIKU_KEY_RETURN) {
+                /* The answer is echoed, as a terminal would. */
+                char echo[200];
+
+                snprintf(echo, sizeof echo, "%s%s", st->ask_prompt,
+                         st->answer.text);
+                console_take(st, echo, 0);
+                if (st->services->board_input != NULL) {
+                    (void)st->services->board_input(st->services->ctx,
+                                                    st->answer.text);
+                }
+                st->asking = 0;
+                tiku_field_stop(&st->answer);
+            } else if (event->key == TIKU_KEY_BACKSPACE) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
+                                     '\0');
+            } else if (event->key == TIKU_KEY_LEFT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
+            } else if (event->key == TIKU_KEY_RIGHT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
+            } else if (ch >= 32u && ch < 127u &&
+                       !(event->modifiers & TIKU_MOD_CMD)) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
+                                     (char)ch);
+            }
+            console_paint(st);
+        }
+        return 0;
+    }
     if (window == st->msg_id && st->msg_surface != NULL) {
         tiku_rect_t body = { MARGIN, MARGIN, MSG_W - 2 * MARGIN,
                                   MSG_H - STRIP_H - 2 * MARGIN };
-
         if (event->type == TIKU_EVENT_POINTER_DOWN) {
             tiku_list_click(&st->msg_list,
                             tiku_list_at(&st->msg_list, body, event->x,
@@ -4250,10 +4474,16 @@ ide_closed(void *state, uint32_t window)
         project_publish(st);
         return;
     }
-    if (window == st->msg_id && st->msg_surface != NULL) {
+        if (window == st->msg_id && st->msg_surface != NULL) {
         tiku_surface_free(st->msg_surface);
         st->msg_surface = NULL;
         st->msg_id = 0u;
+        return;
+    }
+    if (window == st->con_id && st->con_surface != NULL) {
+        tiku_surface_free(st->con_surface);
+        st->con_surface = NULL;
+        st->con_id = 0u;
         return;
     }
     if (window == st->splash_id && st->splash_surface != NULL) {

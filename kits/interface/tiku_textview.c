@@ -556,6 +556,32 @@ tiku_textview_can_redo(const tiku_textview_t *tv)
 }
 
 /**
+ * @brief Bring the caret back inside the buffer.
+ *
+ * A caret column can be left past its line's end -- a selection anchor
+ * outlives the edit that shortened the line under it.  An edit that then
+ * reads `len - cx` gets a negative count that becomes a huge size_t and
+ * runs a memcpy off the end (SIGABRT under FORTIFY).  Every edit clamps
+ * first so that cannot happen.
+ */
+static void
+caret_clamp(tiku_textview_t *tv)
+{
+    if (tv->cy < 0) {
+        tv->cy = 0;
+    }
+    if (tv->cy >= tv->nline) {
+        tv->cy = tv->nline - 1;
+    }
+    if (tv->cx < 0) {
+        tv->cx = 0;
+    }
+    if (tv->cy >= 0 && tv->cx > tv->line[tv->cy].len) {
+        tv->cx = tv->line[tv->cy].len;
+    }
+}
+
+/**
  * @brief Remove the selected span, caret left where it began.
  *
  * Counted as characters and the newlines between the lines, then taken
@@ -574,6 +600,18 @@ sel_delete(tiku_textview_t *tv)
 
     if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
         return 0;
+    }
+    /* A selection endpoint can point past its line after the buffer
+     * shrank under it; bring both ends back inside first. */
+    if (y1 >= tv->nline) {
+        y1 = tv->nline - 1;
+        x1 = tv->line[y1].len;
+    }
+    if (x0 > tv->line[y0].len) {
+        x0 = tv->line[y0].len;
+    }
+    if (x1 > tv->line[y1].len) {
+        x1 = tv->line[y1].len;
     }
     if (y0 == y1) {
         count = x1 - x0;
@@ -701,6 +739,7 @@ tiku_textview_backspace(tiku_textview_t *tv)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    caret_clamp(tv);
     if (sel_delete(tv)) {
         return;                 /* the selection was the thing to remove */
     }
@@ -732,6 +771,7 @@ tiku_textview_delete(tiku_textview_t *tv)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    caret_clamp(tv);
     if (sel_delete(tv)) {
         return;
     }

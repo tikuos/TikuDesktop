@@ -517,6 +517,11 @@ desktop_board_pump(desktop_t *app)
         app->board_run_state = (int)st;
         tiku_trail("run: %s", ((int)st >= 0 && (int)st < 6)
                                   ? NAMED[(int)st] : "?");
+        if (st == TIKU_BOARD_BASIC_RUNNING) {
+            /* The upload took its seconds; the asker is told the program
+             * is running now, so a console can say so. */
+            tell_asker(app, TIKU_APP_BOARD_RUNNING, "");
+        }
     }
     if (st == TIKU_BOARD_BASIC_ASKING) {
         /* Told once per question: the prompt the program printed, so

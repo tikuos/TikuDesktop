@@ -327,6 +327,7 @@ typedef struct {
 #define TIKU_APP_BOARD_RELEASED 6   /**< let go; text = the board       */
 #define TIKU_APP_BOARD_RECLAIMED 7  /**< taken back; text = the board   */
 #define TIKU_APP_BOARD_LOOKED   8   /**< looked; text = how many there are */
+#define TIKU_APP_BOARD_RUNNING  9   /**< sent, and now running          */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {

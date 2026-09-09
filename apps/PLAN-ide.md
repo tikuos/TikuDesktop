@@ -254,3 +254,20 @@ LINES OF THE FILE, while a BASIC program's lines wear their own numbers
 and are not in file order.  A message says which kind it carries;
 getting that wrong lands the caret somewhere plausible and wrong, which
 is worse than not moving at all.
+
+## Console window (added 2026-09-09)
+
+A board run opens a Console window titled "<file> on <board>": black
+background, mono face.  It shows "sending <file> to <board>..." and
+"running" as dim remarks (the desk now tells the app
+TIKU_APP_BOARD_RUNNING when the upload is done), then every line the
+program prints, then "ended", "stopped" or "failed".  An INPUT prompt
+appears on the strip at the bottom with a text field; Return sends the
+answer and echoes it.  Cmd+C (or the Console menu's Stop) stops the
+run.  The wheel scrolls; new output snaps back to the tail.
+
+Messages still collects the same lines with error folding and
+click-to-line, but for a board run it opens only when a row is an
+error.  Host runs are unchanged.  Not done: an immediate-mode line to
+the board's BASIC when no program is running.
+
