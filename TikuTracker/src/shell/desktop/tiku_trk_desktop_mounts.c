@@ -11,6 +11,8 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include <sys/wait.h>
+#include "tiku_trail.h"
 
 #include "tiku_link_tcp.h"
 #include "tiku_mount.h"
@@ -232,7 +234,10 @@ channels_tend(desktop_t *app)
         /* A link a board dialled does not come back: the board dials
          * again and is taken in afresh.  Its mount goes with it, so a
          * board that rebooted is one place under /devices, not two. */
-        if (app->channel_mount[k][0] != '\0' && tiku_channel_losses(ch) > 0) {
+        if (app->channel_mount[k][0] != '\0' &&
+            tiku_channel_losses(ch) > 0) {
+            tiku_trail("unmount %s: the link was lost",
+                       app->channel_mount[k]);
             (void)tiku_mount_remove(app->backend, app->channel_mount[k]);
             app->channel_mount[k][0] = '\0';
             tiku_channel_close(ch);
@@ -374,9 +379,11 @@ mount_one(desktop_t *app, const char *port, int baud, const char *at,
     if (port_is_mounted(app, port)) {
         return 0;               /* already this shell's; leave it alone */
     }
+        tiku_trail("%s %s", probe ? "probe" : "open", port);
     dev = probe ? tiku_backend_tiku_open_within(port, baud, 800, 0)
                 : tiku_backend_tiku_open(port, baud);
     if (dev == NULL) {
+        tiku_trail("  %s: nothing answered", port);
         if (!probe) {
             windows_only(app, port, baud);
         }
@@ -390,11 +397,13 @@ mount_one(desktop_t *app, const char *port, int baud, const char *at,
     }
     /* Four seconds: a control's write is a few bytes, and a board
      * that takes longer is one to say something about, not wait on. */
-    tiku_backend_tiku_set_write_timeout(dev, 4000);
+        tiku_backend_tiku_set_write_timeout(dev, 4000);
     if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+        tiku_trail("mount %s refused", prefix);
         tiku_backend_close(dev);
         return 0;
     }
+    tiku_trail("mount %s on %s", prefix, port);
     /* The same cable carries the board's windows: a channel on the
      * console's session, adopted by the desktop's listener once that
      * exists (channels_attach).  Only on a board that HAS windows: a
@@ -462,8 +471,27 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
 {
     int i;
 
-    if (tiku_trk_now() - lp->last_pump > 400000) {
+        if (tiku_trk_now() - lp->last_pump > 400000) {
         int changed = 0;
+
+        /* What became of a program this shell started.  Nobody collected
+         * it before, so an application that died left no word at all --
+         * and its zombie stayed in the table. */
+        for (;;) {
+            int status = 0;
+            pid_t gone = waitpid(-1, &status, WNOHANG);
+
+            if (gone <= 0) {
+                break;
+            }
+            if (WIFSIGNALED(status)) {
+                tiku_trail("program pid %d died: signal %d", (int)gone,
+                           WTERMSIG(status));
+            } else {
+                tiku_trail("program pid %d ended: %d", (int)gone,
+                           WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+            }
+        }
         {
             /* What the leaf menu offers above the Deskbar folder.
              * Refreshed on the tick rather than read by the bar: they
