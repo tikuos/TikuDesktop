@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_trail.h"
 
 #include <stdio.h>
 #include <stdio.h>
@@ -293,8 +294,9 @@ desktop_board_look_begin(desktop_t *app, int session)
     app->look.count = tiku_tx_scan_serial(app->look.port, TIKU_MOUNT_MAX);
     app->look.at = 0;
     app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
-    app->look.session = session;
+        app->look.session = session;
     app->look.going = 1;
+    tiku_trail("look: %d ports to ask", app->look.count);
 }
 
 /** @brief One port of a look in progress; the last one says so. */
@@ -312,7 +314,8 @@ desktop_board_look_step(desktop_t *app)
             return;
         }
     }
-    app->look.going = 0;
+        app->look.going = 0;
+    tiku_trail("look: done, %d boards", board_count(app));
     desktop_board_names_tell(app);
     if (app->look.session >= 0) {
         char how[32];
@@ -391,6 +394,7 @@ desktop_board_release(desktop_t *app, const char *name)
         app->channel_board[slot][0] = '\0';
         app->channel_mount[slot][0] = '\0';
     }
+        tiku_trail("release %s", name);
     /* The router took the obligation when it was mounted, so removing
      * it closes it: closing again here would be closing it twice. */
     (void)tiku_mount_remove(app->backend, prefix);
@@ -445,8 +449,9 @@ desktop_board_reclaim(desktop_t *app, const char *name)
                            prefix);
         }
     }
-    app->released[i].used = 0;
+        app->released[i].used = 0;
     app->dirty = 1;
+    tiku_trail("reclaim %s", name);
     return 1;
 }
 
@@ -470,10 +475,13 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
     if (b == NULL) {
         return 0;
     }
-            app->board_run = run_begin(app, board, b, program);
+                tiku_trail("run: start on %s", (board != NULL) ? board : "?");
+    app->board_run = run_begin(app, board, b, program);
     if (app->board_run == NULL) {
+        tiku_trail("run: would not start");
         return 0;
     }
+    app->board_run_state = -1;
     app->board_run_slot = slot;
     app->board_run_saving = 0;
     app->board_run_asked = 0;
@@ -573,7 +581,15 @@ desktop_board_pump(desktop_t *app)
     }
     /* Short: this rides the shell's own beat, and a board's program is
      * far slower than the beat is. */
-        st = tiku_board_basic_pump(app->board_run, 5, say_line, app);
+            st = tiku_board_basic_pump(app->board_run, 5, say_line, app);
+    if ((int)st != app->board_run_state) {
+        static const char *const NAMED[] = { "sending", "running", "asking",
+                                             "ended", "stopped", "failed" };
+
+        app->board_run_state = (int)st;
+        tiku_trail("run: %s", ((int)st >= 0 && (int)st < 6)
+                                  ? NAMED[(int)st] : "?");
+    }
     if (st == TIKU_BOARD_BASIC_ASKING) {
         /* Told once per question: the prompt the program printed, so
          * whoever answers sees what they are answering. */

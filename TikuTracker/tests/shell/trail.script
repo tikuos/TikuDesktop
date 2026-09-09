@@ -1,0 +1,54 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: trail
+# board: only
+# What the shell was doing, kept so that it can be asked afterwards.
+#
+# Every failure this shell has had was diagnosed by adding a print and
+# running it again, which is not a thing a person using it can do.  So
+# the shell keeps a ring of what it did -- always on, never written down
+# until something goes wrong -- and here it is simply asked for.  What
+# is asserted is a SEQUENCE: the ask arriving, the run beginning, and
+# the states it went through, in the order they happened.
+wait 60
+note the ports the shell asked at startup, and what answered
+expect-read trail:mount /devices/tiku
+click 980 30
+wait 10
+menu-pick Programming
+wait 10
+menu-pick TikuBasic
+wait 250
+expect-title Project
+note starting an application is one of the things it keeps
+expect-read trail:launch tiku-run
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+click 400 220
+wait 6
+click 675 413
+wait 60
+click-window Project
+wait 200
+note opening a project looks for boards, and the look is a line a port
+expect-read trail:look done
+click 175 8
+wait 8
+menu-pick tiku
+wait 10
+key Down
+wait 8
+click 71 8
+wait 8
+menu-pick Run blink.bas on tiku
+note the ask reaching the shell over the wire, named by what it was
+wait 60
+expect-read trail:wire brun
+note and the run itself, from where it began to where it ended
+expect-read trail:run start on tiku
+wait 500
+expect-read trail:run ended
+quit

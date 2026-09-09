@@ -10,6 +10,7 @@
  */
 
 #include <stdio.h>
+#include "tiku_trail.h"
 #include "tiku_trk_desktop_private.h"
 
 /** @brief A remote window's pixels are whatever its session last sent. */
@@ -246,7 +247,14 @@ remote_hear(desktop_t *app)
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
                 }
             }
-                        if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
+                                    {
+                uint32_t w = tiku_msg_what(m);
+
+                tiku_trail("wire %c%c%c%c from session %d",
+                           (char)(w >> 24), (char)(w >> 16),
+                           (char)(w >> 8), (char)w, i);
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
                 /* Begun here, finished over the beats: the asker is told
                  * when the last port has been asked. */
                 desktop_board_look_begin(app, i);

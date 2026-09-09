@@ -10,6 +10,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_trail.h"
 
 /** @brief Append one menu's rows to @p out, the way a driver reads them. */
 static void
@@ -111,6 +112,16 @@ conduct_text(void *context, const char *name, char *out, size_t max)
 
     if (name == NULL || out == NULL) {
         return 0;
+    }
+            if (strncmp(name, "trail", 5) == 0 &&
+        (name[5] == '\0' || name[5] == ':')) {
+        /* What this shell has been doing, newest lines last.  A noun
+         * rather than a verb of its own: it is one more thing the shell
+         * already knows, and a driver reads it as it reads a title.
+         * "trail:<word>" is the part of it about that word, because the
+         * ring is longer than any one reader's room. */
+        (void)tiku_trail_find((name[5] == ':') ? name + 6 : NULL, out, max);
+        return 1;
     }
     if (strcmp(name, "title") == 0) {
         tiku_window_t *w = tiku_workspace_focused(app->desk);

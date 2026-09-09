@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_launch.h"
+#include "tiku_trail.h"
 #include "tiku_state.h"
 
 #include <stdio.h>
@@ -387,6 +388,7 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
         execvp(argv[0], (char *const *)(void *)argv);
         _exit(127);
     }
+        tiku_trail("launch %s pid %d", argv[0], (int)pid);
     /* Reaped without waiting: a launch that blocked the window it was
      * started from would be a launch the user watches (AW-036). */
     (void)waitpid(pid, NULL, WNOHANG);

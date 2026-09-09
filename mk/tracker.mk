@@ -274,6 +274,7 @@ test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := -lX11 -lm -lrt
 test_channel_LDLIBS := -lutil -lpthread
+test_trail_CFLAGS := -I$(K)/support
 test_lease_LDLIBS := -lutil -lpthread
 test_reclaim_LDLIBS := -lutil -lpthread
 test_link_LDLIBS := -lutil
