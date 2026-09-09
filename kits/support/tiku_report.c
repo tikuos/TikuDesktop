@@ -40,6 +40,10 @@ static char  latest_path[PATH_ROOM];
 static char  header[512];           /* program, pid, when it started */
 static int   armed;
 static void *frames[FRAMES];        /* filled in the handler; never freed */
+/* The handler runs HERE, not on the stack that faulted: a crash that IS
+ * the stack running out would otherwise fault the handler too, and
+ * leave no report -- which is the most a report is for. */
+static char  alt_stack[64 * 1024];
 
 /** @brief The signals worth a report: the ones nothing recovers from. */
 static const int FATAL[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
@@ -208,16 +212,27 @@ tiku_report_install(const char *program, const char *dir)
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec, (long)getpid());
 
-    /* The unwinder loads what it needs on its first use; asked once
+        /* The unwinder loads what it needs on its first use; asked once
      * here, so the fault's own backtrace allocates nothing. */
     (void)backtrace(frames, FRAMES);
 
+    {
+        stack_t ss;
+
+        ss.ss_sp = alt_stack;
+        ss.ss_size = sizeof alt_stack;
+        ss.ss_flags = 0;
+        (void)sigaltstack(&ss, NULL);
+    }
     for (i = 0u; i < sizeof FATAL / sizeof FATAL[0]; i++) {
         struct sigaction sa;
 
         memset(&sa, 0, sizeof sa);
         sa.sa_handler = took_signal;
-        sa.sa_flags = SA_RESETHAND | SA_NODEFER;
+        /* ONSTACK so a stack-overflow crash is caught; RESETHAND so a
+         * fault INSIDE the handler dies rather than looping; NODEFER so
+         * the re-raise below reaches the default action at once. */
+        sa.sa_flags = SA_RESETHAND | SA_NODEFER | SA_ONSTACK;
         (void)sigemptyset(&sa.sa_mask);
         (void)sigaction(FATAL[i], &sa, NULL);
     }

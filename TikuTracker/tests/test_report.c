@@ -63,6 +63,17 @@ slurp(const char *path)
  */
 static volatile intptr_t nowhere;
 
+/** @brief Recurse until the stack is gone; -O0 so it is not turned into
+ *         a loop that never overflows. */
+static int __attribute__((noinline, optimize("O0")))
+eat_the_stack(volatile int x)
+{
+    volatile char pad[4096];
+
+    pad[0] = (char)x;
+    return eat_the_stack(x + 1) + pad[0];
+}
+
 /*
  * Not static, so that -rdynamic puts the name where a backtrace can
  * find it.  A static one shows as the module and an offset, which is
@@ -83,6 +94,13 @@ main(int argc, char **argv)
     pid_t child;
     int status = 0;
 
+        if (argc > 1 && strcmp(argv[1], "--overflow") == 0) {
+        /* The crash a handler is most likely to be unable to catch: the
+         * stack running out.  It must run on a stack of its own. */
+        tiku_report_install("OverflowProgram", argv[2]);
+        tiku_trail("about to run out of stack");
+        return eat_the_stack(0);
+    }
     if (argc > 1 && strcmp(argv[1], "--crash") == 0) {
         /* The child: arm, leave a trail, and fault. */
         tiku_report_install("TestProgram", argv[2]);
@@ -134,6 +152,25 @@ main(int argc, char **argv)
               strstr(all, "the step it was on"),
               "oldest first, so the last line is the last thing that "
               "happened");
+    }
+
+        {
+        /* The audit's finding: a stack-overflow crash still leaves a
+         * report, because the handler runs on a stack of its own. */
+        pid_t so = fork();
+        int st2 = 0;
+
+        if (so == 0) {
+            (void)execl(argv[0], argv[0], "--overflow", dir, (char *)NULL);
+            _exit(127);
+        }
+        (void)waitpid(so, &st2, 0);
+        said = slurp(latest);
+        check(WIFSIGNALED(st2) && WTERMSIG(st2) == SIGSEGV,
+              "a stack-overflow crash still dies of its signal");
+        check(strstr(said, "OverflowProgram") != NULL &&
+              strstr(said, "about to run out of stack") != NULL,
+              "and still leaves a report, though the stack was gone");
     }
 
     printf("%d passed, %d failed\n", passes, fails);
