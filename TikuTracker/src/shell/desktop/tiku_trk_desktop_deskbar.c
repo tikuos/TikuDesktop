@@ -375,8 +375,14 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         size_t n = strlen(pick->path);
         int nargs = 0;
 
+        const char *leaf = strrchr(pick->path, '/');
+
         memset(&program, 0, sizeof program);
-        snprintf(program.name, sizeof program.name, "%s", pick->path);
+        /* Its NAME is its leaf: the field is short, and a path long
+         * enough leaves a fragment of some directory where the name
+         * should be -- in every message that says which program. */
+        snprintf(program.name, sizeof program.name, "%s",
+                 (leaf != NULL) ? leaf + 1 : pick->path);
         if (n > 3u && strcmp(pick->path + n - 3, ".so") == 0) {
             /* A loadable application: the runner gives it the process
              * this desktop is not giving it. */

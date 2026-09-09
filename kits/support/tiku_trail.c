@@ -93,7 +93,8 @@ tiku_trail_find(const char *needle, char *out, size_t max)
         if (!wanted(line, needle)) {
             continue;
         }
-        if (used + strlen(line) + 1u >= max) {
+                /* The newline, and room for the NUL that ends the whole. */
+        if (used + strlen(line) + 2u > max) {
             first = i;
             break;
         }

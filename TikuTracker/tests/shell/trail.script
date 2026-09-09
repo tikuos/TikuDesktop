@@ -21,8 +21,8 @@ wait 10
 menu-pick TikuBasic
 wait 250
 expect-title Project
-note starting an application is one of the things it keeps
-expect-read trail:launch tiku-run
+note starting an application is one of the things it keeps, by name
+expect-read trail:launch TikuBasic
 click 71 8
 wait 8
 menu-pick Open Project…

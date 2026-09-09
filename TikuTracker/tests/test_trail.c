@@ -48,8 +48,17 @@ main(void)
           strstr(big, "second 2") != NULL &&
           strstr(big, "first") < strstr(big, "second"),
           "lines come back in the order they were written");
-    check(strstr(big, "     ") != NULL || big[0] == ' ' || big[0] >= '0',
-          "and each says how long into the program it was written");
+        {
+        /* A line is "<ms> text": the number parses, and a later line's
+         * is no earlier than the one before it. */
+        long a = -1, b = -1;
+        char *second = strstr(big, "\n");
+
+        check(sscanf(big, "%ld", &a) == 1 && a >= 0 &&
+              second != NULL && sscanf(second + 1, "%ld", &b) == 1 &&
+              b >= a,
+              "and each says how long into the program it was written");
+    }
 
     /* Past the end of the ring: the oldest go, the newest stay. */
     for (i = 0; i < TIKU_TRAIL_LINES + 100; i++) {

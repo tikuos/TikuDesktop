@@ -474,24 +474,10 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
         if (tiku_trk_now() - lp->last_pump > 400000) {
         int changed = 0;
 
-        /* What became of a program this shell started.  Nobody collected
-         * it before, so an application that died left no word at all --
-         * and its zombie stayed in the table. */
-        for (;;) {
-            int status = 0;
-            pid_t gone = waitpid(-1, &status, WNOHANG);
-
-            if (gone <= 0) {
-                break;
-            }
-            if (WIFSIGNALED(status)) {
-                tiku_trail("program pid %d died: signal %d", (int)gone,
-                           WTERMSIG(status));
-            } else {
-                tiku_trail("program pid %d ended: %d", (int)gone,
-                           WIFEXITED(status) ? WEXITSTATUS(status) : -1);
-            }
-        }
+                /* What became of the programs this shell started.  Nobody
+         * collected it before, so an application that died left no word
+         * at all -- and its zombie stayed in the table. */
+        (void)tiku_trk_launch_reap();
         {
             /* What the leaf menu offers above the Deskbar folder.
              * Refreshed on the tick rather than read by the bar: they

@@ -245,7 +245,7 @@ typedef struct desktop {
     char                     board_run_name[64];
     int                      board_run_session;   /* who asked, or -1  */
         int                      board_run_saving;    /* a save, not a run */
-    int                      board_run_state;     /* as last trailed */
+        int                      board_run_state;     /* as last trailed */
     int                      board_run_asked;     /* the INPUT was told */
     char                     board_names_told[512];
         int                      board_names_sessions;  /* how many heard it */

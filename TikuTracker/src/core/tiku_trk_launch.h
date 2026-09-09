@@ -17,6 +17,7 @@
 #ifndef TIKU_TRK_LAUNCH_H_
 #define TIKU_TRK_LAUNCH_H_
 
+#include <sys/types.h>
 #include "tiku_model.h"
 
 struct tiku_store;
@@ -182,5 +183,20 @@ tiku_trk_launch_err_t tiku_trk_launch_run(const tiku_trk_app_t *app,
 
 /** @brief The sentence a failed launch should say (AW-039). */
 const char *tiku_trk_launch_reason(tiku_trk_launch_err_t err);
+
+/**
+ * @brief Remember that @p pid is @p name, until it is collected.
+ *
+ * A program that ends is reaped by pid, so nothing else's child is
+ * taken, and named when it goes -- a bare pid says nothing to the
+ * person reading what happened.
+ */
+void tiku_trk_launch_note(pid_t pid, const char *name);
+
+/**
+ * @brief Collect any launched program that has ended.
+ * @return how many, each written into the trail with how it went.
+ */
+int tiku_trk_launch_reap(void);
 
 #endif /* TIKU_TRK_LAUNCH_H_ */

@@ -388,9 +388,80 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
         execvp(argv[0], (char *const *)(void *)argv);
         _exit(127);
     }
-        tiku_trail("launch %s pid %d", argv[0], (int)pid);
+            {
+        /* By its leaf: a program is known by its name, and a path long
+         * enough would push the name off the end of the line. */
+        const char *leaf = strrchr(app->name, '/');
+
+        leaf = (leaf != NULL) ? leaf + 1 : app->name;
+        tiku_trail("launch %s pid %d", leaf, (int)pid);
+        tiku_trk_launch_note(pid, leaf);
+    }
     /* Reaped without waiting: a launch that blocked the window it was
      * started from would be a launch the user watches (AW-036). */
     (void)waitpid(pid, NULL, WNOHANG);
     return TIKU_TRK_LAUNCH_OK;
 }
+
+/*---------------------------------------------------------------------------*/
+/* WHAT WAS LAUNCHED, UNTIL IT ENDS                                          */
+/*---------------------------------------------------------------------------*/
+
+#define LAUNCHED_MAX 16
+
+static struct {
+    pid_t pid;
+    char  name[64];
+} launched[LAUNCHED_MAX];
+
+void
+tiku_trk_launch_note(pid_t pid, const char *name)
+{
+    int i;
+
+    for (i = 0; i < LAUNCHED_MAX; i++) {
+        if (launched[i].pid == 0) {
+            launched[i].pid = pid;
+            snprintf(launched[i].name, sizeof launched[i].name, "%s",
+                     (name != NULL) ? name : "?");
+            return;
+        }
+    }
+    /* Full: the oldest gives way.  Its exit will still be collected by
+     * the system, only not named here. */
+    memmove(&launched[0], &launched[1], sizeof launched - sizeof launched[0]);
+    launched[LAUNCHED_MAX - 1].pid = pid;
+    snprintf(launched[LAUNCHED_MAX - 1].name,
+             sizeof launched[LAUNCHED_MAX - 1].name, "%s",
+             (name != NULL) ? name : "?");
+}
+
+int
+tiku_trk_launch_reap(void)
+{
+    int i, n = 0;
+
+    for (i = 0; i < LAUNCHED_MAX; i++) {
+        int status = 0;
+        pid_t gone;
+
+        if (launched[i].pid == 0) {
+            continue;
+        }
+        gone = waitpid(launched[i].pid, &status, WNOHANG);
+        if (gone <= 0) {
+            continue;
+        }
+        if (WIFSIGNALED(status)) {
+            tiku_trail("%s (pid %d) died: signal %d", launched[i].name,
+                       (int)gone, WTERMSIG(status));
+        } else {
+            tiku_trail("%s (pid %d) ended: %d", launched[i].name, (int)gone,
+                       WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        }
+        launched[i].pid = 0;
+        n++;
+    }
+    return n;
+}
+
