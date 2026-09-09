@@ -50,6 +50,14 @@ int tiku_trail_find(const char *needle, char *out, size_t max);
  */
 void tiku_trail_write(int fd);
 
+/**
+ * @brief The newest line alone, to @p fd.
+ *
+ * What a program was doing at the end is the first thing a reader
+ * wants, so it goes where it is seen first.  Async-signal-safe.
+ */
+void tiku_trail_write_last(int fd);
+
 /** @brief How many lines have been written since the program began. */
 unsigned long tiku_trail_written(void);
 

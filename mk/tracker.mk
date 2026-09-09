@@ -275,6 +275,8 @@ test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := -lX11 -lm -lrt
 test_channel_LDLIBS := -lutil -lpthread
 test_trail_CFLAGS := -I$(K)/support
+test_report_CFLAGS := -I$(K)/support
+test_report_LDLIBS := -rdynamic
 test_reap_CFLAGS := -I$(K)/support -I$(T)/src/core
 test_reap_SRCS := $(T)/src/core/tiku_trk_launch.c
 test_lease_LDLIBS := -lutil -lpthread

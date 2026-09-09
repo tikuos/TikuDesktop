@@ -193,10 +193,20 @@ const char *tiku_trk_launch_reason(tiku_trk_launch_err_t err);
  */
 void tiku_trk_launch_note(pid_t pid, const char *name);
 
+/** @brief How a launched program ended. */
+typedef struct {
+    char name[64];
+    int  signal;                /* what killed it, or 0 */
+    int  status;                /* what it exited with, when it exited */
+} tiku_trk_death_t;
+
 /**
  * @brief Collect any launched program that has ended.
+ *
+ * @param out up to @p max of them, or NULL when only the trail is
+ *            wanted.
  * @return how many, each written into the trail with how it went.
  */
-int tiku_trk_launch_reap(void);
+int tiku_trk_launch_reap(tiku_trk_death_t *out, int max);
 
 #endif /* TIKU_TRK_LAUNCH_H_ */

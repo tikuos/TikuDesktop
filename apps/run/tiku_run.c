@@ -13,7 +13,10 @@
 
 #include <stdio.h>
 
+#include <string.h>
+
 #include "tiku_app.h"
+#include "tiku_report.h"
 #include "tiku_client.h"
 
 int
@@ -25,6 +28,13 @@ main(int argc, char **argv)
     if (argc < 2) {
         fprintf(stderr, "usage: tiku-run <application.so>\n");
         return 2;
+    }
+        {
+        /* Named for the application, not for the runner: a report is
+         * looked at by somebody asking which program died. */
+        const char *leaf = strrchr(argv[1], '/');
+
+        tiku_report_install((leaf != NULL) ? leaf + 1 : argv[1], NULL);
     }
     app = tiku_app_load(argv[1], why, sizeof why);
     if (app == NULL) {

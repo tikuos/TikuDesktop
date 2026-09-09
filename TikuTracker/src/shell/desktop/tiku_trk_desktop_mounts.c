@@ -11,6 +11,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_report.h"
 #include <sys/wait.h>
 #include "tiku_trail.h"
 
@@ -474,10 +475,27 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
         if (tiku_trk_now() - lp->last_pump > 400000) {
         int changed = 0;
 
-                /* What became of the programs this shell started.  Nobody
-         * collected it before, so an application that died left no word
-         * at all -- and its zombie stayed in the table. */
-        (void)tiku_trk_launch_reap();
+                        {
+            /* What became of the programs this shell started.  A death
+             * is SAID: an application whose window simply vanished is
+             * the thing nobody could explain. */
+            tiku_trk_death_t gone[4];
+            int n = tiku_trk_launch_reap(gone, 4), g;
+
+            for (g = 0; g < n && g < 4; g++) {
+                char says[256];
+
+                if (gone[g].signal == 0) {
+                    continue;   /* it ended; only a death is news */
+                }
+                snprintf(says, sizeof says,
+                         "%s stopped: signal %d.  What it was doing is in %s",
+                         gone[g].name, gone[g].signal, tiku_report_latest());
+                tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
+                                tiku_str("alert.btn.ok"));
+                app->dirty = 1;
+            }
+        }
         {
             /* What the leaf menu offers above the Deskbar folder.
              * Refreshed on the tick rather than read by the bar: they

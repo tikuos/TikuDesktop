@@ -138,6 +138,19 @@ tiku_trail_write(int fd)
     }
 }
 
+void
+tiku_trail_write_last(int fd)
+{
+    const char *line;
+
+    if (written == 0uL) {
+        return;
+    }
+    line = ring[(written - 1uL) % TIKU_TRAIL_LINES];
+    (void)!write(fd, line, strlen(line));
+    (void)!write(fd, "\n", 1u);
+}
+
 unsigned long
 tiku_trail_written(void)
 {

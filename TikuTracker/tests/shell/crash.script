@@ -1,0 +1,26 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: crash
+# An application that dies says so, and leaves what it was doing behind.
+#
+# An application runs in a process of its own, so when one fails there
+# is nothing on screen to look at -- the window it never opened.  What
+# is asked here is that the shell notices, names the program and the
+# signal, and that the program itself left a file saying where it was.
+wait 40
+click 980 30
+wait 10
+menu-pick Applications
+wait 10
+note it fails inside start(), before it has a window at all
+menu-pick Fault
+wait 200
+note the shell noticed, and says WHICH program and WHAT killed it
+expect-alert Fault.so stopped: signal 11
+note and the program left its own account: the signal, and the place
+expect-file-has /tmp/trk_reports/latest-crash.txt SIGSEGV
+expect-file-has /tmp/trk_reports/latest-crash.txt fault_where_it_starts
+note and the last thing it did, near the top where it is read first
+expect-file-has /tmp/trk_reports/latest-crash.txt the last thing it did
+quit

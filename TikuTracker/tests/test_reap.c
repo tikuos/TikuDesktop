@@ -68,7 +68,7 @@ main(void)
     /* They have to have ended before they can be collected. */
     for (i = 0; i < 50 && n < 2; i++) {
         usleep(20000);
-        n += tiku_trk_launch_reap();
+        n += tiku_trk_launch_reap(NULL, 0);
     }
     (void)tiku_trail_find(NULL, said, sizeof said);
     check(n == 2, "both programs this shell launched are collected");
@@ -91,8 +91,23 @@ main(void)
         check(got == stranger,
               "a child nobody noted is left for whoever forked it");
     }
-    check(tiku_trk_launch_reap() == 0,
+        check(tiku_trk_launch_reap(NULL, 0) == 0,
           "and asking again, with nothing ended, collects nothing");
+    {
+        /* Who died and how, for the shell that has to say so. */
+        tiku_trk_death_t gone[2];
+        pid_t late = child_that(SIGABRT, 0);
+        int got = 0, k;
+
+        tiku_trk_launch_note(late, "Late.so");
+        for (k = 0; k < 50 && got == 0; k++) {
+            usleep(20000);
+            got = tiku_trk_launch_reap(gone, 2);
+        }
+        check(got == 1 && strcmp(gone[0].name, "Late.so") == 0 &&
+              gone[0].signal == SIGABRT,
+              "and it hands back who died and what killed them");
+    }
 
     printf("%d passed, %d failed\n", passes, fails);
     return fails ? 1 : 0;

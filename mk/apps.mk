@@ -30,6 +30,7 @@ DEMOAPP   := $(BUILD)/tiku-demo-app
 RUNNER    := $(BUILD)/tiku-run
 BASICHOST := $(BUILD)/tiku-basic
 TEST_APP  := $(BUILD)/tests/test_app
+FAULT_APP := $(BUILD)/tests/Fault.so
 
 # Applications, as opposed to examples: these are meant to be used.
 APP_NAMES := edit term
@@ -82,7 +83,7 @@ endif
 
 .PHONY: apps examples loadable gallery banners probe
 apps: $(PROBE) $(GALLERY) $(SOUNDS) $(METRICS) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
-      $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP)
+      $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP) $(FAULT_APP)
 examples: $(EXAMPLES)
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(RUNNER)
 
@@ -138,6 +139,9 @@ $(APPS_D)/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 
 $(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(BUILD)/tests/Fault.so: $(D)/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
+	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm

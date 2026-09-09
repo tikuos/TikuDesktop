@@ -437,7 +437,7 @@ tiku_trk_launch_note(pid_t pid, const char *name)
 }
 
 int
-tiku_trk_launch_reap(void)
+tiku_trk_launch_reap(tiku_trk_death_t *out, int max)
 {
     int i, n = 0;
 
@@ -452,12 +452,18 @@ tiku_trk_launch_reap(void)
         if (gone <= 0) {
             continue;
         }
-        if (WIFSIGNALED(status)) {
+                if (WIFSIGNALED(status)) {
             tiku_trail("%s (pid %d) died: signal %d", launched[i].name,
                        (int)gone, WTERMSIG(status));
         } else {
             tiku_trail("%s (pid %d) ended: %d", launched[i].name, (int)gone,
                        WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        }
+        if (out != NULL && n < max) {
+            snprintf(out[n].name, sizeof out[n].name, "%s",
+                     launched[i].name);
+            out[n].signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
+            out[n].status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
         }
         launched[i].pid = 0;
         n++;

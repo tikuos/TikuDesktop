@@ -16,6 +16,7 @@
  */
 
 #include "tiku_trk_application.h"
+#include "tiku_report.h"
 
 #include <stdio.h>
 
@@ -23,6 +24,9 @@
 int
 main(int argc, char **argv)
 {
+    /* Before anything else can go wrong: from here a fault leaves a
+     * file saying what this was doing, rather than nothing at all. */
+    tiku_report_install("TikuDesktop", NULL);
     tiku_app_registry_t registry;
     const tiku_app_descriptor_t *application;
 
