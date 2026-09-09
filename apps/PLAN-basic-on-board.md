@@ -400,3 +400,16 @@ menu is open switches to it; and `menu-pick` searches only the OPEN
 menu, exact label first, then substring -- so "Save on tiku" and "Run
 blink.bas on tiku" must be named whole.
 
+### 11.1 The freeze, and the rule it left (2026-09-09)
+
+The look on project open ran inside the desk's own loop, and a scan
+waited the full four seconds on every port -- then wrote a break and a
+BYE to each, to put back a board that was never there.  Five ports:
+twenty-one seconds in which the desk answered nothing.  Now a scan only
+PROBES -- a short wait, and nothing written to a port not known to be a
+board -- and asks one port per beat, so the desk stays a desk and the
+boards appear as they are found: 4 seconds in all, 0.8 per silent port.
+`ideconnect.script` opens the Project menu a second after opening the
+project, while the look is still going.  The rule: nothing that opens a
+serial port runs in the desk's loop for longer than a beat.
+
