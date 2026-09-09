@@ -1,0 +1,53 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: report
+# board: only
+# A report on demand: what the shell holds, asked for by a signal.
+#
+# Nothing has gone wrong here.  A person who wants to know what the
+# desk thinks it has -- which boards, which programs, a run under way
+# -- sends SIGUSR2 from a terminal and reads a file.  The signal only
+# asks; the loop writes, on its next turn, so the snapshot is read by
+# the one thread that may read it.
+wait 60
+note first, About this system: one row for all of this, the newest
+note report, which a click opens -- in whatever opens text here, or
+note failing that the folder it is in, since a fresh machine registers
+note nothing.  A report is asked for so that there is one to name.
+report
+wait 30
+click 20 8
+wait 4
+menu-pick About this system
+wait 10
+expect-title About this system
+click 470 287
+wait 40
+expect-title reports
+key w cmd
+wait 10
+click-window About this system
+wait 4
+key Escape
+wait 10
+click 980 30
+wait 10
+menu-pick Programming
+wait 10
+menu-pick TikuBasic
+wait 250
+expect-title Project
+report
+wait 60
+note the file names the mounted board, with its port
+expect-file-has /tmp/trk_reports/latest-report.txt /devices/tiku
+note and the program that is talking to the desk
+expect-file-has /tmp/trk_reports/latest-report.txt TikuBasic
+note and what asked for it
+expect-file-has /tmp/trk_reports/latest-report.txt asked for: SIGUSR2
+note the trail is in it too, with the launch that just happened
+expect-file-has /tmp/trk_reports/latest-report.txt launch TikuBasic
+note and the desk knows it wrote one
+expect-read trail:report report written
+quit

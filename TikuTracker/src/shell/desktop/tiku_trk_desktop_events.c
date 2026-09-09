@@ -2502,6 +2502,7 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
 {
     (void)lp;
     (void)o;
+    desktop_report_poll(app);
     {   /* The settings FILE is a doorway too: a change written by
          * anything -- another shell, a script, an editor -- lands in
          * the live model, the reload the browser shell already does

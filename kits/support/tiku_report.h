@@ -16,6 +16,7 @@
 #define TIKU_REPORT_H_
 
 #include <stddef.h>
+#include <stdio.h>
 
 /**
  * @brief Take the fatal signals, and say where reports go.
@@ -55,6 +56,34 @@ void tiku_report_folder(const char *dir, char *out, size_t max);
 
 /** @brief Where a report of a stall would be written. */
 const char *tiku_report_stall_path(void);
+
+/*
+ * A report on demand.  SIGUSR2 only ASKS: a handler cannot format a
+ * snapshot of anything, so the asking is a flag and the writing is the
+ * loop's, where everything may be read and printed.
+ */
+
+/** @brief Arm SIGUSR2 to ask for a report. */
+void tiku_report_ask_install(void);
+
+/** @brief Whether a report was asked for since last asked; clears it. */
+int tiku_report_asked(void);
+
+/**
+ * @brief Write report-<time>.txt: the header, @p why, what @p snapshot
+ *        prints, the trail.  Loop context: formatting is allowed here.
+ *
+ * @param out where it was written, or "" when it could not be.
+ * @return 0 when written.
+ */
+int tiku_report_write(const char *why, void (*snapshot)(FILE *, void *),
+                      void *ctx, char *out, size_t max);
+
+/**
+ * @brief The newest report of any kind in the folder, or "" for none.
+ *        The row in About this system that opens it asks this.
+ */
+int tiku_report_newest(char *out, size_t max);
 
 /**
  * @brief Write a report now, as a fault would, and carry on.

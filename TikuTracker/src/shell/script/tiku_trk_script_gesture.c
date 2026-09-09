@@ -11,6 +11,8 @@
 
 #include "tiku_trk_script_private.h"
 
+#include <signal.h>
+
 /**
  * @brief the gestures a script makes: keys, presses, clicks, drags, and the
  * housekeeping between them
@@ -156,8 +158,14 @@ sc_pump_gesture(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         out->button = cur->button;
         out->modifiers = cur->modifiers;
         return 1;
-    case OP_WAIT:
+        case OP_WAIT:
         s->waiting = (cur->count > 0) ? cur->count : 1;
+        return 1;
+    case OP_REPORT:
+        /* The signal itself, not a call: what a person would send from
+         * a terminal is what is being proven. */
+        (void)raise(SIGUSR2);
+        s->waiting = 1;
         return 1;
     case OP_MENU_PICK:
         out->what = TIKU_TRK_SC_MENU_PICK;
@@ -252,9 +260,11 @@ sc_parse_gesture(sc_step_t *st, char **w, int n, int lineno)
             st->button = (unsigned)atoi(w[2]);
         }
         st->modifiers = sc_mods_of(w, n, 3);
-    } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
+        } else if (strcmp(w[0], "wait") == 0 && n >= 2) {
         st->op = OP_WAIT;
         st->count = atoi(w[1]);
+    } else if (strcmp(w[0], "report") == 0) {
+        st->op = OP_REPORT;
     } else if (strcmp(w[0], "menu-pick") == 0 && n >= 2) {
         st->op = OP_MENU_PICK;
         sc_rest(w, n, 1, st->text, sizeof st->text);

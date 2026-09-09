@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_report.h"
 #include "tiku_watch.h"
 
 /**
@@ -267,7 +268,8 @@ tracker_run(int argc, char **argv)
 
         /* Watched from here: a turn that does not end is the shape a shell
      * with one thread fails in, and nothing inside it can notice. */
-    tiku_watch_install(0);
+        tiku_watch_install(0);
+    tiku_report_ask_install();
     while (app.running) {
         tiku_watch_beat();
         desktop_turn_begin(&app, &opt, &lp);

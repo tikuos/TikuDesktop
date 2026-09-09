@@ -762,6 +762,11 @@ int desktop_parse_args(int argc, char **argv, desktop_options_t *o);
 int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
 
+/* tiku_trk_desktop_report.c */
+int  desktop_report_write(desktop_t *app, const char *why, char *out,
+                          size_t max);
+void desktop_report_poll(desktop_t *app);
+
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
 int channel_keep(desktop_t *app, struct tiku_channel *ch);

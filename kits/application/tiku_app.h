@@ -193,6 +193,16 @@ typedef struct tiku_app_services {
      * port BEFORE releasing, because a board let go has none.
      * @return nonzero when the asking was taken.
      */
+    /**
+     * @brief Open @p path as a double click on it would: a folder as a
+     *        window, a document in its program.
+     *
+     * Absent (NULL) for an application out of process, whose shell is
+     * not on this machine's paths.
+     * @return nonzero when something opened.
+     */
+    int (*open_path)(void *ctx, const char *path);
+
     int (*board_release)(void *ctx, const char *board);
 
     /**

@@ -17,6 +17,7 @@
 
 #include <execinfo.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +41,10 @@ static char  latest_path[PATH_ROOM];
 static char  stall_path[PATH_ROOM];
 static char  latest_stall[PATH_ROOM];
 static char  header[512];           /* program, pid, when it started */
+static char  folder_path[PATH_ROOM / 2];
+static char  program_name[64];
 static int   armed;
+static volatile sig_atomic_t asked;
 static void *frames[FRAMES];        /* filled in the handler; never freed */
 /* The handler runs HERE, not on the stack that faulted: a crash that IS
  * the stack running out would otherwise fault the handler too, and
@@ -210,8 +214,11 @@ tiku_report_install(const char *program, const char *dir)
     if (armed) {
         return;
     }
-    tiku_report_folder(dir, folder, sizeof folder);
+        tiku_report_folder(dir, folder, sizeof folder);
     make_path(folder);
+    snprintf(folder_path, sizeof folder_path, "%s", folder);
+    snprintf(program_name, sizeof program_name, "%s",
+             (program != NULL) ? program : "program");
 
     /* The name is settled now, while formatting is still allowed. */
     (void)localtime_r(&now, &when);
@@ -312,3 +319,108 @@ tiku_report_now(const char *why)
     write_report(latest_path, (why != NULL) ? why : "asked for", 0L, NULL,
                  depth);
 }
+
+/*---------------------------------------------------------------------------*/
+/* ON DEMAND                                                                 */
+/*---------------------------------------------------------------------------*/
+
+static void
+was_asked(int sig)
+{
+    (void)sig;
+    asked = 1;
+}
+
+void
+tiku_report_ask_install(void)
+{
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = was_asked;
+    sa.sa_flags = SA_RESTART;
+    (void)sigemptyset(&sa.sa_mask);
+    (void)sigaction(SIGUSR2, &sa, NULL);
+}
+
+int
+tiku_report_asked(void)
+{
+    int was = asked;
+
+    asked = 0;
+    return was;
+}
+
+int
+tiku_report_write(const char *why, void (*snapshot)(FILE *, void *),
+                  void *ctx, char *out, size_t max)
+{
+    char latest[PATH_ROOM];
+    struct tm when;
+    time_t now = time(NULL);
+    FILE *f;
+
+    out[0] = '\0';
+    if (!armed) {
+        return -1;
+    }
+    (void)localtime_r(&now, &when);
+    snprintf(out, max, "%s/report-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt",
+             folder_path, when.tm_year + 1900, when.tm_mon + 1,
+             when.tm_mday, when.tm_hour, when.tm_min, when.tm_sec,
+             program_name, (long)getpid());
+    f = fopen(out, "w");
+    if (f == NULL) {
+        out[0] = '\0';
+        return -1;
+    }
+    fputs(header, f);
+    fprintf(f, "asked for: %s\n", (why != NULL) ? why : "a report");
+    fprintf(f, "lines it had written: %lu\n\n", tiku_trail_written());
+    if (snapshot != NULL) {
+        snapshot(f, ctx);
+    }
+    fprintf(f, "\nwhat it was doing:\n");
+    (void)fflush(f);
+    tiku_trail_write(fileno(f));
+    (void)fclose(f);
+    snprintf(latest, sizeof latest, "%s/latest-report.txt", folder_path);
+    (void)unlink(latest);
+    (void)symlink(out, latest);
+    return 0;
+}
+
+int
+tiku_report_newest(char *out, size_t max)
+{
+    char folder[PATH_ROOM / 2];
+    DIR *d;
+    struct dirent *e;
+    time_t best = 0;
+
+    out[0] = '\0';
+    tiku_report_folder(NULL, folder, sizeof folder);
+    d = opendir(folder);
+    if (d == NULL) {
+        return -1;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char path[PATH_ROOM];
+        struct stat st;
+
+        /* The pointers to the latest of each kind are not reports. */
+        if (strncmp(e->d_name, "latest-", 7) == 0 ||
+            strstr(e->d_name, ".txt") == NULL) {
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s", folder, e->d_name);
+        if (stat(path, &st) == 0 && st.st_mtime >= best) {
+            best = st.st_mtime;
+            snprintf(out, max, "%s", path);
+        }
+    }
+    (void)closedir(d);
+    return (out[0] != '\0') ? 0 : -1;
+}
+

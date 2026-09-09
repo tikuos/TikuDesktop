@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "tiku_logo.h"
+#include "tiku_report.h"
 #include "tiku_trk_task.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
@@ -81,7 +82,11 @@ typedef struct {
      * -- a window standing open must not cost a frame per tick.
      */
     int                        step;
-    int64_t                    gauge_s;
+        int64_t                    gauge_s;
+    /* The one row that does something: the newest report, and where
+     * on the box it was painted, so a click can be matched to it. */
+    char                       report[512];
+    tiku_rect_t                report_row;
 } about_state_t;
 
 /** @brief Which set, and how far into the fade, at @p now. */
@@ -283,8 +288,38 @@ paint(about_state_t *st)
                  avail / 1024, total / 1024);
         tiku_text(surface, plain, facts_x, y + plain->ascent, line,
                        TIKU_C_TEXT);
-        tiku_ui_gauge(surface, gauge,
+                tiku_ui_gauge(surface, gauge,
                       (total > 0) ? (float)used / (float)total : 0.0f);
+    }
+    y += plain->height + 10 + 10;
+    {   /* The newest account of something going wrong, by name, and a
+         * click on it opens the file: the whole of what this desk shows
+         * for its reports is a folder of plain text and this one row. */
+                const char *leaf;
+        char kind[16] = "", stamp[16] = "";
+
+        (void)tiku_report_newest(st->report, sizeof st->report);
+        leaf = strrchr(st->report, '/');
+        leaf = (leaf != NULL) ? leaf + 1 : st->report;
+        /* A report is named <kind>-<yyyymmdd>-<hhmmss>-...: the kind
+         * and the moment are what a person is choosing between, and
+         * the rest of the name would run off the box. */
+        if (sscanf(leaf, "%15[a-z]-%15[0-9-]", kind, stamp) == 2 &&
+            strlen(stamp) >= 15u) {
+            snprintf(line, sizeof line,
+                     "Last report: %s, %.4s-%.2s-%.2s %.2s:%.2s",
+                     kind, stamp, stamp + 4, stamp + 6, stamp + 9,
+                     stamp + 11);
+        } else {
+            snprintf(line, sizeof line, "Last report: %.60s",
+                     (st->report[0] != '\0') ? leaf : "none");
+        }
+        tiku_text(surface, plain, facts_x, y + plain->ascent, line,
+                       (st->report[0] != '\0') ? TIKU_C_SELECT : TIKU_C_TEXT);
+        st->report_row.x = facts_x;
+        st->report_row.y = y;
+        st->report_row.w = tiku_text_width(plain, line);
+        st->report_row.h = plain->height;
     }
     {   /* Whose it is, where it lives, and on what terms.  Two lines
          * rather than one because the three together are 405 pixels at
@@ -392,12 +427,23 @@ about_stop(void *state)
 static int
 about_event(void *state, const tiku_event_t *event)
 {
-    (void)state;
+    about_state_t *st = state;
+
     /* Escape closes it, as a panel that announces should.  Everything
-     * else -- there are no controls -- is watched and ignored. */
+     * else -- there is one control, the report row -- is watched and
+     * ignored. */
     if (event != NULL && event->type == TIKU_EVENT_KEY_DOWN &&
         event->key == TIKU_KEY_ESCAPE) {
         return 1;
+    }
+    if (event != NULL && event->type == TIKU_EVENT_POINTER_DOWN &&
+        st != NULL && st->report[0] != '\0' &&
+        st->services->open_path != NULL &&
+        event->x >= st->report_row.x &&
+        event->x < st->report_row.x + st->report_row.w &&
+        event->y >= st->report_row.y &&
+        event->y < st->report_row.y + st->report_row.h) {
+        (void)st->services->open_path(st->services->ctx, st->report);
     }
     return 0;
 }

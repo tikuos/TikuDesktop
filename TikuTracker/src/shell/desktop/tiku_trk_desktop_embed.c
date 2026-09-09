@@ -11,6 +11,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_trail.h"
 
 /**
  * @brief The About box's colour cycle, which only sometimes has news.
@@ -569,6 +570,40 @@ embed_svc_board_find(void *ctx)
     return 1;
 }
 
+/** @brief A path, opened as a double click on it would open it. */
+static int
+embed_svc_open_path(void *ctx, const char *path)
+{
+    struct desktop_embed *slot = ctx;
+    tiku_model_t model;
+
+    if (slot == NULL || slot->app == NULL || path == NULL ||
+        slot->app->backend == NULL ||
+        slot->app->backend->ops->stat(slot->app->backend, path,
+                                      &model) != 0) {
+        return 0;
+    }
+    tiku_trail("open %s for %s", path, slot->descriptor->name);
+    if (open_one(slot->app, &model)) {
+        return 1;
+    }
+    /* Nothing registered to open it -- a fresh machine has no
+     * application registry -- so its folder is shown instead, with the
+     * name on the row to find it by: the person still gets there. */
+    {
+        char folder[TIKU_PATH_MAX];
+        char *slash;
+
+        snprintf(folder, sizeof folder, "%s", path);
+        slash = strrchr(folder, '/');
+        if (slash == NULL || slash == folder) {
+            return 0;
+        }
+        *slash = '\0';
+        return open_folder(slot->app, folder) != NULL;
+    }
+}
+
 /** @brief Let a board go, port and all. */
 static int
 embed_svc_board_release(void *ctx, const char *board)
@@ -642,7 +677,8 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
         slot->services.board_save = embed_svc_board_save;
         slot->services.board_port = embed_svc_board_port;
     slot->services.board_mcu = embed_svc_board_mcu;
-    slot->services.board_release = embed_svc_board_release;
+        slot->services.board_release = embed_svc_board_release;
+    slot->services.open_path = embed_svc_open_path;
         slot->services.board_reclaim = embed_svc_board_reclaim;
     slot->services.board_find = embed_svc_board_find;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
