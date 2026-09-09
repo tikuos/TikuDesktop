@@ -25,7 +25,7 @@ expect-title About this system
 click 470 287
 wait 40
 expect-title reports
-key w cmd
+key w ctrl
 wait 10
 click-window About this system
 wait 4
