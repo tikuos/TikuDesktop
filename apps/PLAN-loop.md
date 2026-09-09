@@ -121,7 +121,7 @@ Three facts that make it cheap here:
 
 ## 4. The pieces, in the order they pay back
 
-### W0 -- the worker kit  (one day)
+### W0 -- the worker kit  (DONE 2026-09-09)
 
 `kits/support/tiku_work.{h,c}`.  A pool of four threads and two queues:
 requests in, results out.  `tiku_work_post(&job)` from the loop; a job
@@ -269,3 +269,32 @@ is the complaint.
    `nanosleep` (learned in P2): a job that "waits" by sleeping and
    returns early on SIGUSR1 has proven nothing.  Waits in tests are on
    a clock, not a sleep.
+
+## 7. What W0 settled
+
+`kits/support/tiku_work.{h,c}`: a fixed table of 64 slots under one
+lock, four workers started on the first post.  A worker takes the
+oldest QUEUED slot whose key has nothing RUNNING; the loop takes the
+FINISHED slots at collect -- those finished at ENTRY, so a job posted
+from a done lands next turn rather than looping -- and runs done, then
+free, on the loop.  Cancel marks; a marked job not yet started is
+finished without running, a running one sees `tiku_work_cancelled()`
+and may stop; neither has its done called, both are freed.  Nothing
+in the kit allocates.  The desk collects at the top of every turn,
+before events.  Every post, done and drop is a trail line with how
+long the job ran and how long it waited.
+
+The watchdog gained what the proofs read: `tiku_watch_longest_ms()`,
+the longest gap between beats, answered by the desk as the `turns`
+noun (and reset by the reading, so a script measures the stretch it
+arranged); and a beat from any thread but the watched one is refused
+and counted, so a job cannot hide a stall.
+
+**Proof:** `test_work`, 29 legs, each guard shown to FAIL without it:
+without key serialisation two jobs under one key ran at once; with a
+collect that kept draining, the job posted from a done was collected in
+the same turn; with beats accepted from any thread, the worker's beat
+counted.  (A first mutation of the collect rescanned BEFORE running
+done and proved nothing -- the mutation, not the test, was wrong; the
+one that rescans after is the one that fails.)
+
