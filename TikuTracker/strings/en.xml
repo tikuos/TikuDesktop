@@ -170,6 +170,7 @@
   <string name="cmd.reverse_order">Reverse order</string>
   <string name="cmd.select_all">Select all</string>
   <string name="cmd.select_matching">Select…</string>
+  <string name="cmd.screenshot">Take Screenshot</string>
   <string name="cmd.shutdown">Shut down…</string>
   <string name="cmd.unmount">Unmount</string>
   <string name="label.capability">Capability</string>

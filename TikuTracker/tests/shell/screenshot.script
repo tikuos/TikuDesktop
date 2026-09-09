@@ -1,0 +1,17 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A screenshot from the Tiku menu, saved to ~/Pictures.
+#
+# The desk can already draw itself to a PNG for the test harness; this
+# is that, offered to a person: a menu item that saves the screen, taken
+# a frame later so the menu it was picked from is not in the shot.
+wait 40
+click 20 8
+wait 4
+expect-menu About this system…||Find…|Preferences…||Take Screenshot||Shut down…
+menu-pick Take Screenshot
+wait 40
+note the status line names the file it saved
+expect-read status screenshot saved
+quit

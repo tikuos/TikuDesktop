@@ -165,9 +165,15 @@ rebuild_global_bar(desktop_t *app)
             (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.find"),
                                     TIKU_TRK_CMD_FIND,
                                     'f', TIKU_TRK_MOD_CMD, 1);
-            (void)tiku_menu_add(&app->sysmenu,
+                        (void)tiku_menu_add(&app->sysmenu,
                                     tiku_str("cmd.preferences"),
                                     TIKU_TRK_CMD_PREFERENCES, 0, 0u, 1);
+            (void)tiku_menu_add_separator(&app->sysmenu);
+            (void)tiku_menu_add(&app->sysmenu,
+                                    tiku_str("cmd.screenshot"),
+                                    TIKU_TRK_CMD_SCREENSHOT, '3',
+                                    TIKU_TRK_MOD_CMD | TIKU_TRK_MOD_SHIFT,
+                                    1);
             (void)tiku_menu_add_separator(&app->sysmenu);
             (void)tiku_menu_add(&app->sysmenu, tiku_str("cmd.shutdown"),
                                     TIKU_TRK_CMD_SHUTDOWN, 0, 0u, 1);
@@ -269,8 +275,13 @@ system_invoke(desktop_t *app, int command)
     case TIKU_TRK_CMD_FIND:
         open_panel(app);
         return 1;
-    case TIKU_TRK_CMD_PREFERENCES:
+        case TIKU_TRK_CMD_PREFERENCES:
         tiku_trk_prefs_window_open(&app->prefs_window);
+        return 1;
+    case TIKU_TRK_CMD_SCREENSHOT:
+        /* Taken next turn, once the menu is gone, so the shot is of the
+         * desktop and not of the menu that asked for it. */
+        app->shot_pending = 1;
         return 1;
     case TIKU_TRK_CMD_APP_ABOUT:
         /* The hoisted row: it looks like the system's but it belongs to

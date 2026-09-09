@@ -135,6 +135,7 @@
   <string name="cmd.reverse_order">Ordre inverse</string>
   <string name="cmd.select_all">Tout sélectionner</string>
   <string name="cmd.select_matching">Sélectionner…</string>
+  <string name="cmd.screenshot">Capture d'écran</string>
   <string name="cmd.shutdown">Arrêter…</string>
   <string name="cmd.unmount">Démonter</string>
   <string name="label.capability">Capacité</string>

@@ -460,7 +460,10 @@ typedef struct desktop {
     /* Which broken link a picker was opened to re-point, or -1. */
     int                  info_relink;
     /* The one-of-each windows and overlays the shell keeps. */
-    tiku_trk_status_overlay_t status_overlay;   /* alert and progress   */
+        tiku_trk_status_overlay_t status_overlay;   /* alert and progress   */
+    int                      shot_pending;      /* a screenshot is owed,
+                                                 * taken once the menu is
+                                                 * gone next turn */
     tiku_trk_prefs_window_t prefs_window;       /* Tracker preferences  */
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;   /* Deskbar   */
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
@@ -706,6 +709,7 @@ void blit(desktop_t *app);
 void desktop_focus_paint(desktop_t *app);
 void desktop_idle_work(desktop_t *app);
 void draw_all(desktop_t *app);
+void desktop_screenshot_tick(desktop_t *app);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */

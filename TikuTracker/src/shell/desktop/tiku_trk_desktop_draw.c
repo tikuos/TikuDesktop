@@ -10,6 +10,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <sys/stat.h>
+#include <time.h>
+#include "tiku_trail.h"
 #include "tiku_trk_desktop_private.h"
 
 /* Used before they are defined. */
@@ -176,6 +179,43 @@ draw_all(desktop_t *app)
     desktop_draw_popup(app);
     desktop_draw_overlays(app);
     desktop_draw_splash(app);
+}
+
+/**
+ * @brief Take the owed screenshot: the current frame to a PNG under
+ *        ~/Pictures, named by the time, and say where it went.
+ */
+void
+desktop_screenshot_tick(desktop_t *app)
+{
+    char dir[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
+    const char *home = getenv("HOME");
+    struct tm when;
+    time_t now = time(NULL);
+
+    if (!app->shot_pending) {
+        return;
+    }
+    app->shot_pending = 0;
+    snprintf(dir, sizeof dir, "%s/Pictures",
+             (home != NULL && home[0] != '\0') ? home : ".");
+    (void)mkdir(dir, 0755);
+    (void)localtime_r(&now, &when);
+    snprintf(path, sizeof path,
+             "%s/tiku-screenshot-%04d%02d%02d-%02d%02d%02d.png", dir,
+             when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
+             when.tm_hour, when.tm_min, when.tm_sec);
+    if (tiku_surface_png(app->surf, path) == 0) {
+        const char *leaf = strrchr(path, '/');
+
+        snprintf(app->status, sizeof app->status, "screenshot saved to %s",
+                 (leaf != NULL) ? leaf + 1 : path);
+        tiku_trail("screenshot %s", path);
+    } else {
+        snprintf(app->status, sizeof app->status,
+                 "could not save the screenshot");
+    }
+    app->dirty = 1;
 }
 
 /**

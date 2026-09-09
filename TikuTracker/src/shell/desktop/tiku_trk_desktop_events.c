@@ -2587,6 +2587,9 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     if (o->shot != NULL && lp->shot_at > 0 && tiku_trk_now() >= lp->shot_at) {
         app->dirty = 1;
     }
+        if (app->shot_pending) {
+        app->dirty = 1;         /* redraw without the menu, then capture */
+    }
     if (app->dirty) {
         draw_all(app);
         blit(app);
@@ -2596,6 +2599,7 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
             fflush(stdout);
             lp->shot_at = 0;
         }
+        desktop_screenshot_tick(app);
     }
     desktop_progress_tick(app);
     if (o->deadline > 0 && tiku_trk_now() > o->deadline) {

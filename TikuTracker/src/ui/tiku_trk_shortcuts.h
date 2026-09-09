@@ -104,8 +104,9 @@ enum {
     TIKU_TRK_CMD_LINK_HERE,
     TIKU_TRK_CMD_REL_LINK_HERE,      /* Shift                               */
     /* The global bar's system menu */
-    TIKU_TRK_CMD_ABOUT,
+        TIKU_TRK_CMD_ABOUT,
     TIKU_TRK_CMD_APP_ABOUT,          /* the focused program's, hoisted */
+    TIKU_TRK_CMD_SCREENSHOT,         /* save the screen to a PNG */
     TIKU_TRK_CMD_SHUTDOWN,
     /* Query-icon drop menu (Q-034) */
     TIKU_TRK_CMD_CREATE_QUERY,
