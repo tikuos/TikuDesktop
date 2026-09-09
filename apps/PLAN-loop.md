@@ -197,7 +197,7 @@ setup; open it; `expect-read turns` under 100 ms while it fills;
 `expect-title` shows the count arriving.  And the device folder in
 `ideconnect` opens without a stall.
 
-### W3 -- the file engine on a worker  (one day)
+### W3 -- the file engine on a worker  (DONE 2026-09-09)
 
 The whole of a `tiku_fs` operation runs on one worker; the loop sees
 progress results (bytes, items, the current name) and the cancel flag
@@ -397,4 +397,47 @@ what the window shows is done at landing.
 
 **Measured:** `deadfolder.script` -- a window open on the board's root,
 then the board goes quiet.  Longest turn 9663 ms before, 28 ms after.
+
+## 10. What W3 settled
+
+**A hand with owner tracking, put down around the bytes.**  Every way
+into `tiku_fs` takes the engine's hand (36 wrappers, generated from the
+header's prototypes); a hold this thread already has is deepened, not
+retaken.  The byte loop puts the hand down entirely around each read
+and each write, and `copy_across` around the board's read and write,
+so the loop waits for one chunk at most -- and `tiku_fs_progress()`
+hands the loop a COPY taken under the hand, which its callers read at
+leisure while the worker goes on changing the original; no caller
+changed.
+
+**The moved hook is told later.**  A step that moves a file called the
+hook that follows the clipboard, which opens windows -- and a step now
+runs on a worker.  The step notes the move; `tiku_fs_moved_pump()` tells
+the hook from the loop, in the desk's tick and in the Tracker shell's
+own drain loop.
+
+**One job for the whole operation.**  The desk posts a job that steps
+until the engine is done or asks a question; the tick reads progress,
+raises the alert the question needs, and posts the next job once it is
+answered.  Completion is a transition the tick notices (busy last time,
+not now, no job out), where before it was a fact the same step
+delivered.  The quit waits for the job before draining.
+
+**Measured:** `bigcopy.script`, a sparse file of a gigabyte and a half
+copied into its own folder, the loop asked while the copy runs.
+Longest turn 654 ms before, 28 ms after.
+
+**Two things the Tracker shell taught.**  The full sweep failed both
+clip-follow scripts in the Tracker lane and no other: the deferred hook
+was pumped before each step and never after the last, and the shell's
+event tick stepped the engine in a second place with no pump at all.
+Then a rename -- no operation, no step, a synchronous call that tells
+the hook at once -- was never told, because the pump sat inside "while
+the engine is busy".  It is pumped every turn now, in both shells.
+
+**One expectation withdrawn.**  `ops.script` claimed the in-flight state
+of a copy of three small files, "safe because the in-process driver is
+turn-locked".  The engine steps on a worker now and the three files are
+copied between two turns; the script asserts the copies instead, and
+the in-flight claim lives where a file is large enough to carry it.
 
