@@ -327,7 +327,9 @@ sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         char path[sizeof cur->text + sizeof cur->text2];
         char needle[sizeof cur->text2];
         FILE *f;
-        char got[512] = "";
+        /* Enough for a report: a backtrace pushes what a driver is
+         * asking about well past the first few hundred bytes. */
+        char got[8192] = "";
         int ok = 0;
 
         /* A path with spaces in it cannot be one word.  The path is the

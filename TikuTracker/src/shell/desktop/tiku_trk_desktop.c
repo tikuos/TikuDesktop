@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_watch.h"
 
 /**
  * @brief Apply the settings file to the running shell: thumbnails, the
@@ -248,7 +249,11 @@ tracker_run(int argc, char **argv)
         return code;
     }
 
+        /* Watched from here: a turn that does not end is the shape a shell
+     * with one thread fails in, and nothing inside it can notice. */
+    tiku_watch_install(0);
     while (app.running) {
+        tiku_watch_beat();
         desktop_turn_begin(&app, &opt, &lp);
         for (;;) {
             tiku_event_t ev;

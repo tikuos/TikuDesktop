@@ -36,6 +36,18 @@ const char *tiku_report_path(void);
 const char *tiku_report_latest(void);
 
 /**
+ * @brief Write a report of a turn that has not ended, and carry on.
+ *
+ * @param ms         how long it has been quiet.
+ * @param with_stack nonzero when the caller is the thread that is
+ *                   stuck, so a backtrace of it means something.
+ */
+void tiku_report_stall(long ms, int with_stack);
+
+/** @brief Where a report of a stall would be written. */
+const char *tiku_report_stall_path(void);
+
+/**
  * @brief Write a report now, as a fault would, and carry on.
  *
  * For a program that has decided something is wrong before anything has

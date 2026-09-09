@@ -37,6 +37,8 @@
 
 static char  report_path[PATH_ROOM];
 static char  latest_path[PATH_ROOM];
+static char  stall_path[PATH_ROOM];
+static char  latest_stall[PATH_ROOM];
 static char  header[512];           /* program, pid, when it started */
 static int   armed;
 static void *frames[FRAMES];        /* filled in the handler; never freed */
@@ -104,7 +106,8 @@ named(int sig)
  * that takes a lock.  @p why is a phrase the caller already has.
  */
 static void
-write_report(const char *path, const char *why, int depth)
+write_report(const char *path, const char *why, long num, const char *unit,
+             int depth)
 {
     char line[256];
     size_t at;
@@ -114,8 +117,14 @@ write_report(const char *path, const char *why, int depth)
         return;
     }
     (void)!write(fd, header, strlen(header));
-        at = put_str(line, 0u, "stopped by: ");
+    at = put_str(line, 0u, "stopped by: ");
     at = put_str(line, at, why);
+    if (unit != NULL) {
+        at = put_str(line, at, " (");
+        at = put_num(line, at, num);
+        at = put_str(line, at, unit);
+        line[at++] = ')';
+    }
     at = put_str(line, at, "\nlines it had written: ");
     at = put_num(line, at, (long)tiku_trail_written());
     line[at++] = '\n';
@@ -144,8 +153,8 @@ took_signal(int sig)
 {
     int depth = backtrace(frames, FRAMES);
 
-    write_report(report_path, named(sig), depth);
-    write_report(latest_path, named(sig), depth);
+    write_report(report_path, named(sig), 0L, NULL, depth);
+    write_report(latest_path, named(sig), 0L, NULL, depth);
     /* And on, as though nothing had caught it: a core for whoever wants
      * one, and a parent that is told what killed this. */
     (void)signal(sig, SIG_DFL);
@@ -205,7 +214,14 @@ tiku_report_install(const char *program, const char *dir)
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec,
              (program != NULL) ? program : "program", (long)getpid());
-    snprintf(latest_path, sizeof latest_path, "%s/latest-crash.txt", folder);
+        snprintf(latest_path, sizeof latest_path, "%s/latest-crash.txt", folder);
+    snprintf(stall_path, sizeof stall_path,
+             "%s/stall-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt", folder,
+             when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
+             when.tm_hour, when.tm_min, when.tm_sec,
+             (program != NULL) ? program : "program", (long)getpid());
+    snprintf(latest_stall, sizeof latest_stall, "%s/latest-stall.txt",
+             folder);
     snprintf(header, sizeof header,
              "%s\nstarted: %04d-%02d-%02d %02d:%02d:%02d\npid: %ld\n",
              (program != NULL) ? program : "program",
@@ -252,6 +268,30 @@ tiku_report_latest(void)
     return latest_path;
 }
 
+const char *
+tiku_report_stall_path(void)
+{
+    return stall_path;
+}
+
+void
+tiku_report_stall(long ms, int with_stack)
+{
+    int depth = 0;
+
+    if (!armed) {
+        return;
+    }
+    /* Only the stuck thread's own stack says anything: a watchdog's
+     * would be a picture of the watchdog waiting. */
+    if (with_stack) {
+        depth = backtrace(frames, FRAMES);
+    }
+    write_report(stall_path, "a turn that has not ended", ms, " ms", depth);
+    write_report(latest_stall, "a turn that has not ended", ms, " ms",
+                 depth);
+}
+
 void
 tiku_report_now(const char *why)
 {
@@ -261,6 +301,8 @@ tiku_report_now(const char *why)
         return;
     }
     depth = backtrace(frames, FRAMES);
-    write_report(report_path, (why != NULL) ? why : "asked for", depth);
-    write_report(latest_path, (why != NULL) ? why : "asked for", depth);
+    write_report(report_path, (why != NULL) ? why : "asked for", 0L, NULL,
+                 depth);
+    write_report(latest_path, (why != NULL) ? why : "asked for", 0L, NULL,
+                 depth);
 }

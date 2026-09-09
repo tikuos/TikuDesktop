@@ -1,0 +1,24 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: stall
+# A turn that does not end is written down, by something outside it.
+#
+# A freeze leaves no signal and no exit: nothing a crash handler does
+# would catch one, and the shell cannot notice about itself that it has
+# stopped noticing.  So something else counts its turns, and when the
+# count stops it asks the stuck thread -- by a signal -- to say where it
+# is.  An application loaded into this process holds a turn for eight
+# seconds, which is the freeze, done on purpose.
+wait 40
+note the turn is being held now; the watch says so after five seconds
+wait 500
+note what was written names the trouble, and how long it had lasted
+expect-file-has /tmp/trk_reports/latest-stall.txt a turn that has not ended
+note and WHERE the stuck turn was, which is the whole of what a freeze
+note otherwise refuses to say
+expect-file-has /tmp/trk_reports/latest-stall.txt the_turn_that_will_not_end
+note the shell is still here afterwards, and answering: a watch that
+note killed it would lose the very thing somebody wanted to read
+expect-read trail:quiet a turn quiet for 5000 ms
+quit
