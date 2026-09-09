@@ -145,7 +145,7 @@ counter that would race proves it did not); a cancelled job's `done`
 never runs; a job posted from `done` is legal; `busy` is right.  And
 the hazard leg: a job that beats the watchdog is refused (rule 7).
 
-### W1 -- the board wire off the loop  (two days)
+### W1 -- the board wire off the loop  (PART DONE 2026-09-09)
 
 The biggest payback and the deepest change.  Every place the desk
 waits on a board becomes a job with the board's key:
@@ -297,4 +297,62 @@ the same turn; with beats accepted from any thread, the worker's beat
 counted.  (A first mutation of the collect rescanned BEFORE running
 done and proved nothing -- the mutation, not the test, was wrong; the
 one that rescans after is the one that fails.)
+
+## 8. What W1 settled so far
+
+**The hand is mechanical, not a discipline.**  The map of the loop's
+calls into a board backend ran to dozens -- a pointer-down, every
+repaint of a folder icon, every Deskbar replicant -- so "only jobs
+touch the wire" could not be kept by care.  Two locks keep it instead:
+one in the session (`tiku_session.c`), where a poll that finds the hand
+taken answers "nothing now" rather than waiting, and a PEN for writing
+only, so a link frame sent while a worker holds the hand goes between
+the command's bytes (the board's decoder takes it whole) and never
+waits; and one in the board backend (`tiku_backend_tiku.c`) around
+every op, because the namespace in memory is rebuilt by a worker's
+reload while the loop reads it for a stat.  The mount table gained a
+per-slot generation and a detach that hands the backend back unclosed.
+
+**Moved to workers:** the notice pump's `changes` (one job per board,
+keyed by the board, one in flight; the pump reads the last answer and
+posts the next after every reader has had this one; the panels' second
+drain reads the same answer); the look (every port probed at once, the
+mount applied on the loop as each lands, the asker told when the last
+has); the boot sweep (the same, waited for, since the loop is not yet
+turning); the reclaim (every port at once, the one with the uid mounted,
+RECLAIMED or FAILED told when the ports have spoken -- so the wire
+message and the hosted application are answered later, as the look
+already was).  A mount that goes is detached at once and closed by a
+job queued behind whatever is still asking it.
+
+**Left on the loop, on purpose:** a board that dials in is opened over
+the channel it came on, whose shell transport is fed by pumping that
+channel -- a worker opening it would be a second hand on one link.
+
+**Still to move (W1b):** a panel control's write (a 12 s ceiling), the
+run-end unlease (a drain and a sync, ~650 ms, plus two 200 ms pumps),
+`tiku_ns_pump`'s re-read of every subscribed node, the Deskbar
+replicant's read.  All hold the backend hand on the loop and each is a
+freeze on its own day.
+
+**Three things the building taught:**
+
+1. **The first proof failed at 3951 ms, and the watchdog said why.**
+   SIGUSR1 to the desk mid-freeze gave the loop's own backtrace:
+   `channels_tend` sending a link frame through `tiku_session_send_frame`,
+   which took the full hand behind the worker's four-second command.  A
+   send is a write; hence the pen.
+2. **A pseudo-terminal in front of the real board is the dead board.**
+   `tests/tools/deadport.py` forwards both ways until a timer, then
+   swallows what comes back: unplugged-but-mounted, from the desk's side.
+   The harness lane `# board: dead` starts it.
+3. **`pkill -f <name>` kills the shell that typed it**, whose command
+   line carries the name.  Twice.
+
+**Proof:** `deadboard.script` -- turns 4039 ms on the old build, 27 ms
+now, and 4041 ms again with the asking put back on the loop; every board
+suite green on hardware (`ideconnect`, `trail`, `iderunboard`,
+`iderunboards`, `benchrun`); the session tests under both hands.  The
+`boardnet` lane fails on the previous commit too (an empty relay log)
+and is not this change's.
 
