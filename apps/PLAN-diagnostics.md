@@ -43,7 +43,7 @@ something has gone wrong, or is asked for.**  A diagnostic that costs
 the hot path anything will be turned off, and one that is off is not
 there when it is needed.
 
-### P0 -- the trail  (half a day)
+### P0 -- the trail  (DONE 2026-09-09)
 
 A fixed ring in the desk's memory -- 512 entries of one short line
 each, no allocation, no I/O -- appended at the moments that turn out to
@@ -156,3 +156,46 @@ P1, because a crash with no report is the worst of the four.  P2 next,
 since freezes were the most frequent shape here.  P3 and P4 after, in
 either order.  Three and a half days in all, each stage landing with
 its proof.
+
+## 6. What P0 settled, and where it differs from the plan above
+
+The ring is `kits/support/tiku_trail.{h,c}`: 512 lines of 112 bytes,
+formatted when written so that reading needs nothing but `write()`.
+`tiku_trail("look: probe %s", port)` is the whole API.  It is read as a
+noun the shell already answers -- `expect-read trail:<word> <needle>` --
+so no new script verb was needed.
+
+Three deviations, each for a reason:
+
+1. **No `app` argument.**  The plan wrote `trail(app, ...)`.  The ring is
+   one per process and the crash handler will have no pointer to
+   anything, so it is a global in the support kit -- which also lets
+   `tiku-run` use the same file when P1 lands.
+2. **Not every turn.**  "A turn beginning and the event kind it took"
+   would have let a few seconds of mouse movement flush the ring and
+   take the history with it.  What is recorded instead is what CHANGES
+   something: launches and exits, menu picks, wire messages, mounts and
+   unmounts, every port a look probes, every state a run passes through,
+   releases and reclaims.  The "what is the current turn doing" line
+   belongs with P2's watchdog, which is what wants it.
+3. **A filtered read.**  A reader's buffer is 2 KB and the ring is 55 KB,
+   so `trail:<word>` answers with the part of the trail about that word.
+   Without it an assertion about a launch could not survive the run that
+   came after it.
+
+**And one thing found by writing it:** nothing collected a launched
+program's exit status -- `tiku_trk_launch_run` reaps with WNOHANG the
+instant after forking, which almost always returns 0.  So an application
+that died left no word AND its zombie stayed in the table.  The notice
+pump now reaps whatever has exited and writes down how it went, which is
+half of what P1 promised, arriving early.
+
+**Proof:** `test_trail` (10 legs: order, what a full ring drops and
+keeps, a small reader gets the newest, a filtered reader gets only its
+own, and the signal-handler road gives the same lines) and
+`trail.script`, which drives a real run on a board and reads the
+sequence back -- the mount, the launch, the look, the ask arriving over
+the wire named `brun`, and the run from `start on tiku` to `ended`.  The
+three run assertions were confirmed to FAIL on a session where nothing
+is run, so they are not vacuous.
+
