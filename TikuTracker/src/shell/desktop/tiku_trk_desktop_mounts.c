@@ -333,21 +333,89 @@ boards_unlisten(desktop_t *app)
 static int
 port_is_mounted(desktop_t *app, const char *port)
 {
+    char want[PATH_MAX], real[PATH_MAX];
     int i, slots = tiku_mount_slots(app->backend);
 
+    /* By what they resolve to: a scan names a port by its stable id,
+     * -p by its node, and they are the same cable. */
+    if (realpath(port, want) == NULL) {
+        snprintf(want, sizeof want, "%s", port);
+    }
     for (i = 0; i < slots; i++) {
         tiku_backend_t *b = tiku_mount_at(app->backend, i);
         char have[256];
 
-        if (b == NULL) {
+        if (b == NULL || tiku_backend_tiku_port(b, have, sizeof have) <= 0) {
             continue;
         }
-        if (tiku_backend_tiku_port(b, have, sizeof have) > 0 &&
-            strcmp(have, port) == 0) {
+        if (realpath(have, real) == NULL) {
+            snprintf(real, sizeof real, "%s", have);
+        }
+        if (strcmp(real, want) == 0) {
             return 1;
         }
     }
     return 0;
+}
+
+/**
+ * @brief Mount the board on @p port, if one answers.  A @p probe asks
+ *        briefly and writes nothing; the other way waits and puts a
+ *        board found inside its interpreter back.
+ * @return 1 when a board was mounted.
+ */
+int
+mount_one(desktop_t *app, const char *port, int baud, const char *at,
+          int probe)
+{
+    tiku_backend_t *dev;
+    char name[64], prefix[TIKU_PATH_MAX];
+
+    if (port_is_mounted(app, port)) {
+        return 0;               /* already this shell's; leave it alone */
+    }
+    dev = probe ? tiku_backend_tiku_open_within(port, baud, 800, 0)
+                : tiku_backend_tiku_open(port, baud);
+    if (dev == NULL) {
+        if (!probe) {
+            windows_only(app, port, baud);
+        }
+        return 0;
+    }
+    if (at != NULL && at[0] == '/') {
+        snprintf(prefix, sizeof prefix, "%s", at);
+    } else {
+        device_mount_name(dev, app->backend, name, sizeof name);
+        snprintf(prefix, sizeof prefix, "/devices/%s", name);
+    }
+    /* Four seconds: a control's write is a few bytes, and a board
+     * that takes longer is one to say something about, not wait on. */
+    tiku_backend_tiku_set_write_timeout(dev, 4000);
+    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+        tiku_backend_close(dev);
+        return 0;
+    }
+    /* The same cable carries the board's windows: a channel on the
+     * console's session, adopted by the desktop's listener once that
+     * exists (channels_attach).  Only on a board that HAS windows: a
+     * board without the overlay registers no channel, and its console
+     * takes a frame for an unregistered channel as text. */
+    {
+        tiku_model_t gui;
+
+        if (dev->ops->stat(dev, "/gui", &gui) == 0) {
+            int slot = channel_keep(app,
+                                    tiku_channel_open(
+                                        tiku_backend_tiku_session(dev)));
+
+            if (slot >= 0) {
+                snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
+                         prefix);
+            }
+        }
+    }
+    app->dirty = 1;
+    return 1;
 }
 
 /**
@@ -366,67 +434,21 @@ port_is_mounted(desktop_t *app, const char *port)
 int
 mount_devices(desktop_t *app, const char *port, int baud, const char *at)
 {
-        char scan[TIKU_MOUNT_MAX][256];
+    char scan[TIKU_MOUNT_MAX][256];
     int found, i, mounted = 0;
 
     app->board_baud = baud;     /* what a board let go is found again at */
-
     if (port != NULL && port[0] != '\0') {
         snprintf(scan[0], sizeof scan[0], "%s", port);
         found = 1;
     } else {
         found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
     }
-        for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
-        tiku_backend_t *dev;
-        char name[64], prefix[TIKU_PATH_MAX];
-
-        if (port_is_mounted(app, scan[i])) {
-            continue;           /* already this shell's; leave it alone */
-        }
-        dev = tiku_backend_tiku_open(scan[i], baud);
-
-        if (dev == NULL) {
-            windows_only(app, scan[i], baud);
-            continue;
-        }
-        if (at != NULL && at[0] == '/' && port != NULL && port[0] != '\0') {
-            snprintf(prefix, sizeof prefix, "%s", at);
-        } else {
-            device_mount_name(dev, app->backend, name, sizeof name);
-            snprintf(prefix, sizeof prefix, "/devices/%s", name);
-        }
-        /* Four seconds: a control's write is a few bytes, and a board
-         * that takes longer is one to say something about, not wait on. */
-        tiku_backend_tiku_set_write_timeout(dev, 4000);
-        if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
-            tiku_backend_close(dev);
-            continue;
-        }
-        /* The same cable carries the board's windows: a channel on the
-         * console's session, adopted by the desktop's listener once that
-         * exists (channels_attach).  Only on a board that HAS windows: a
-         * board without the overlay registers no channel, and its console
-         * takes a frame for an unregistered channel as text -- every
-         * greeting would land on its shell's line as junk, in the middle
-         * of whatever else was being typed there. */
-                {
-            tiku_model_t gui;
-
-            if (dev->ops->stat(dev, "/gui", &gui) == 0) {
-                int slot = channel_keep(app,
-                                        tiku_channel_open(
-                                            tiku_backend_tiku_session(dev)));
-
-                if (slot >= 0) {
-                    /* Remembered against the board it belongs to: a run
-                     * asks for it by the name the board is mounted at. */
-                    snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
-                             prefix);
-                }
-            }
-        }
-        mounted++;
+    for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
+        /* A port named on the command line is known to be a board and
+         * is waited for; one merely found is only asked. */
+        mounted += mount_one(app, scan[i], baud, at,
+                             !(port != NULL && port[0] != '\0'));
     }
     return mounted;
 }

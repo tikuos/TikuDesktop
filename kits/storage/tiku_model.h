@@ -301,6 +301,19 @@ tiku_backend_t *tiku_backend_posix_open(void);
  * @param baud  Line rate.
  */
 tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
+
+/**
+ * @brief The same, with the wait and the recovery chosen.
+ *
+ * A board at its shell answers a newline in well under a second; the
+ * long wait and the break-and-BYE that put a board back inside its
+ * interpreter are for a port KNOWN to carry one.  Looking across every
+ * port on a machine is a different act: @p sync_ms short and
+ * @p recover zero, so a port that is not a board costs a moment and is
+ * not written to.
+ */
+tiku_backend_t *tiku_backend_tiku_open_within(const char *port, int baud,
+                                              int sync_ms, int recover);
 /**
  * @brief The same device over a transport already open -- the shell of a
  *        board that reached the desk over a link rather than a cable.

@@ -246,13 +246,10 @@ remote_hear(desktop_t *app)
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED, "");
                 }
             }
-            if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
-                char how[32];
-                int n = desktop_board_look(app);
-
-                (void)snprintf(how, sizeof how, "%d", n);
-                desktop_board_tell(app, i, TIKU_APP_BOARD_LOOKED, how);
-                desktop_board_names_tell(app);
+                        if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
+                /* Begun here, finished over the beats: the asker is told
+                 * when the last port has been asked. */
+                desktop_board_look_begin(app, i);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDFREE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);

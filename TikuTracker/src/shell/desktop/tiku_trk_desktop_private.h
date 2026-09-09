@@ -248,7 +248,17 @@ typedef struct desktop {
     int                      board_run_asked;     /* the INPUT was told */
     char                     board_names_told[512];
         int                      board_names_sessions;  /* how many heard it */
-    int                      board_baud;   /* what the mounts were opened at */
+    int                      board_baud;   /* the mounts were opened at */
+    /* A look in progress: the ports still to try, one per beat, so the
+     * desk keeps its turns while every port on the machine is asked. */
+    struct {
+        char port[TIKU_MOUNT_MAX][256]; /* every port the machine has */
+        int  count;                 /* ports listed */
+        int  at;                    /* the next to ask */
+        int  baud;                  /* asked at */
+        int  session;               /* who asked, or -1 */
+        int  going;                 /* a look is in progress */
+    }                        look;
     /* Boards let go so something else could have their ports.  What is
      * kept is what the board IS, not where it was: a reflashed board
      * comes back on whatever node the host gives it next. */
@@ -698,6 +708,10 @@ int  desktop_board_input(desktop_t *app, const char *text);
 int  desktop_board_stop(desktop_t *app);
 int  desktop_board_list(desktop_t *app, char *out, size_t max);
 int  desktop_board_look(desktop_t *app);
+void desktop_board_look_begin(desktop_t *app, int session);
+void desktop_board_look_step(desktop_t *app);
+int  mount_one(desktop_t *app, const char *port, int baud, const char *at,
+               int probe);
 int  desktop_board_release(desktop_t *app, const char *name);
 int  desktop_board_reclaim(desktop_t *app, const char *name);
 int  desktop_board_port(desktop_t *app, const char *name, char *out,

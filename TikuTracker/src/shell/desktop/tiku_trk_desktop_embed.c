@@ -565,7 +565,8 @@ embed_svc_board_find(void *ctx)
 {
     struct desktop_embed *slot = ctx;
 
-    return desktop_board_look(slot->app);
+    desktop_board_look_begin(slot->app, -1);
+    return 1;
 }
 
 /** @brief Let a board go, port and all. */

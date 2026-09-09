@@ -22,6 +22,7 @@
 #include "tiku_board_basic.h"
 #include "tiku_mount.h"
 #include "tiku_channel.h"
+#include "tiku_tx.h"
 
 /** @brief The name a board is mounted under, without the /devices/. */
 static const char *
@@ -273,24 +274,68 @@ desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
 }
 
 /**
- * @brief Look for boards on this machine's ports, and mount what answers.
+ * @brief Start looking for boards: the ports to ask, asked one per beat.
  *
- * A port this shell already holds is left alone: opening it again would
- * put two owners on one cable and mount the same board beside itself.
+ * Every port on a machine, each waited on in turn, is twenty seconds
+ * the desk would not answer for; asked one at a time between beats it
+ * stays a desk, and the boards appear as they are found.  A port this
+ * shell already holds is left alone.
+ *
+ * @param session who asked over the wire, or -1 for an application in
+ *                this process; told LOOKED when the last port has been.
+ */
+void
+desktop_board_look_begin(desktop_t *app, int session)
+{
+    if (app == NULL || app->look.going) {
+        return;                 /* one look at a time; the asker hears */
+    }
+    app->look.count = tiku_tx_scan_serial(app->look.port, TIKU_MOUNT_MAX);
+    app->look.at = 0;
+    app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    app->look.session = session;
+    app->look.going = 1;
+}
+
+/** @brief One port of a look in progress; the last one says so. */
+void
+desktop_board_look_step(desktop_t *app)
+{
+    if (app == NULL || !app->look.going) {
+        return;
+    }
+    if (app->look.at < app->look.count) {
+        (void)mount_one(app, app->look.port[app->look.at], app->look.baud,
+                        NULL, 1);
+        app->look.at++;
+        if (app->look.at < app->look.count) {
+            return;
+        }
+    }
+    app->look.going = 0;
+    desktop_board_names_tell(app);
+    if (app->look.session >= 0) {
+        char how[32];
+
+        (void)snprintf(how, sizeof how, "%d", board_count(app));
+        desktop_board_tell(app, app->look.session, TIKU_APP_BOARD_LOOKED,
+                           how);
+    }
+    app->dirty = 1;
+}
+
+/**
+ * @brief Look for boards, waiting: every port, here and now.
  * @return how many boards are mounted afterwards.
  */
 int
 desktop_board_look(desktop_t *app)
 {
-    int baud;
-
-    if (app == NULL) {
-        return 0;
+    desktop_board_look_begin(app, -1);
+    while (app != NULL && app->look.going) {
+        desktop_board_look_step(app);
     }
-    baud = (app->board_baud > 0) ? app->board_baud : 115200;
-    (void)mount_devices(app, NULL, baud, NULL);
-    app->dirty = 1;
-    return board_count(app);
+    return (app != NULL) ? board_count(app) : 0;
 }
 
 /**
@@ -519,8 +564,11 @@ desktop_board_pump(desktop_t *app)
     tiku_board_basic_state_t st;
     struct desktop_embed *slot;
     int what;
-
-    if (app == NULL || app->board_run == NULL) {
+    if (app == NULL) {
+        return;
+    }
+    desktop_board_look_step(app);   /* a look in progress, a port a beat */
+    if (app->board_run == NULL) {
         return;
     }
     /* Short: this rides the shell's own beat, and a board's program is

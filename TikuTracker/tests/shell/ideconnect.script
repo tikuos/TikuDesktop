@@ -29,6 +29,13 @@ click 675 413
 wait 60
 expect-no-title Open
 click-window Project
+note the shell is looking for boards now, one port a beat -- and the
+note desk is still a desk while it does: its menu opens at once
+wait 10
+click 71 8
+wait 8
+expect-menu New Project…|Open Project…||Run||Close Project|
+click-window Project
 wait 200
 note runs go to this machine until a board is chosen
 click 71 8

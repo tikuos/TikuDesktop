@@ -656,6 +656,16 @@ tiku_backend_tiku_leased(const tiku_backend_t *b)
 tiku_backend_t *
 tiku_backend_tiku_open(const char *port, int baud)
 {
+    return tiku_backend_tiku_open_within(port, baud, 4000, 1);
+}
+
+static tiku_backend_t *open_tx_within(tiku_tx_t *tx, int sync_ms,
+                                      int recover);
+
+tiku_backend_t *
+tiku_backend_tiku_open_within(const char *port, int baud, int sync_ms,
+                              int recover)
+{
     tiku_tx_t *tx;
     char scan[8][256];
 
@@ -669,7 +679,7 @@ tiku_backend_tiku_open(const char *port, int baud)
     if (tx == NULL) {
         return NULL;
     }
-    return tiku_backend_tiku_open_tx(tx);
+    return open_tx_within(tx, sync_ms, recover);
 }
 
 int
@@ -712,7 +722,8 @@ tiku_backend_tiku_open_uid(const char *uid, int baud)
     }
     found = tiku_tx_scan_serial(scan, 16);
     for (i = 0; i < found; i++) {
-        tiku_backend_t *dev = tiku_backend_tiku_open(scan[i], baud);
+        tiku_backend_t *dev =
+            tiku_backend_tiku_open_within(scan[i], baud, 800, 0);
         const tiku_identity_t *id;
 
         if (dev == NULL) {
@@ -730,6 +741,12 @@ tiku_backend_tiku_open_uid(const char *uid, int baud)
 tiku_backend_t *
 tiku_backend_tiku_open_tx(tiku_tx_t *tx)
 {
+    return open_tx_within(tx, 4000, 1);
+}
+
+static tiku_backend_t *
+open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
+{
     tiku_backend_t *b;
     tiku_impl_t *impl;
 
@@ -744,8 +761,17 @@ tiku_backend_tiku_open_tx(tiku_tx_t *tx)
         free(impl);
         return NULL;
     }
-    impl->sess = tiku_session_new(tx);
-    if (impl->sess != NULL && tiku_session_sync(impl->sess, 4000) != 0) {
+            impl->sess = tiku_session_new(tx);
+    {
+        int answered = (impl->sess != NULL &&
+                        tiku_session_sync(impl->sess, sync_ms) == 0);
+
+        if (impl->sess != NULL && !answered && !recover) {
+            /* A probe: nothing answered, and nothing is written to a
+             * port that may belong to something else. */
+            tiku_session_free(impl->sess);
+            impl->sess = NULL;
+        } else if (impl->sess != NULL && !answered) {
         /* No shell prompt.  A board whose last client died mid-program is
          * still inside its interpreter, answering ok> to everything and
          * the shell's prompt to nothing; break and BYE put it back, and
@@ -754,9 +780,10 @@ tiku_backend_tiku_open_tx(tiku_tx_t *tx)
         tiku_session_drain(impl->sess, 150);
         (void)tiku_session_send_raw(impl->sess, "BYE\n", 4u);
         tiku_session_drain(impl->sess, 300);
-        if (tiku_session_sync(impl->sess, 2000) != 0) {
+                if (tiku_session_sync(impl->sess, 2000) != 0) {
             tiku_session_free(impl->sess);
             impl->sess = NULL;
+        }
         }
     }
     if (impl->sess == NULL) {
