@@ -145,7 +145,7 @@ counter that would race proves it did not); a cancelled job's `done`
 never runs; a job posted from `done` is legal; `busy` is right.  And
 the hazard leg: a job that beats the watchdog is refused (rule 7).
 
-### W1 -- the board wire off the loop  (PART DONE 2026-09-09)
+### W1 -- the board wire off the loop  (DONE 2026-09-09)
 
 The biggest payback and the deepest change.  Every place the desk
 waits on a board becomes a job with the board's key:
@@ -329,11 +329,20 @@ job queued behind whatever is still asking it.
 the channel it came on, whose shell transport is fed by pumping that
 channel -- a worker opening it would be a second hand on one link.
 
-**Still to move (W1b):** a panel control's write (a 12 s ceiling), the
-run-end unlease (a drain and a sync, ~650 ms, plus two 200 ms pumps),
-`tiku_ns_pump`'s re-read of every subscribed node, the Deskbar
-replicant's read.  All hold the backend hand on the loop and each is a
-freeze on its own day.
+**Moved in the second part (W1b):** a panel control's write and the
+read-back of its rows (one job, keyed by the board, applied only if the
+panel is still the window that asked); a held run's end (the drain and
+sync that give the shell back, on a worker, and the asker told ENDED
+only when it is back -- because an application told a run has ended
+may ask for the next in that very call); the Deskbar replicants that
+show a board's node (read by jobs, the local ones still by the Deskbar).
+A streamed run's end stays on the loop: its stream is the channel's,
+which the loop pumps.  Left for W2: `tiku_ns_pump`'s re-read of every
+subscribed node, which is a folder window's business.
+
+**Measured:** `iderunboards.script` with `expect-under turns 300` before
+its quit -- two runs on two boards, one held, one streamed.  Longest
+turn 4081 ms with the first part only; 152 ms with the second.
 
 **Three things the building taught:**
 
