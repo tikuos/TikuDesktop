@@ -1217,6 +1217,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
      * nothing to say so.  A stage that waits on a real copy is the one
      * place here where the line is reporting the wait rather than
      * covering it, which is what it is for. */
+    desktop_wire_wait(app, &app->fs_job, 5000L);
     tiku_trk_session_drain_filesystem(app->fs);
     if (lp->sc != NULL) {
         rc = tiku_trk_script_report(lp->sc, "desktop");

@@ -1099,16 +1099,27 @@ open_folder(desktop_t *app, const char *path)
 void
 desktop_progress_tick(desktop_t *app)
 {
-    if (app->fs != NULL && tiku_fs_busy(app->fs) &&
-        !progress_model(app)->row[0].paused) {
+    int busy = (app->fs != NULL) && tiku_fs_busy(app->fs);
+    int over = app->fs_was_busy && !busy && !app->fs_job;
+
+    app->fs_was_busy = busy;
+    if (app->fs != NULL) {
+        tiku_fs_moved_pump(app->fs);
+    }
+    if (busy && !progress_model(app)->row[0].paused) {
+        const tiku_progress_t *pr = tiku_fs_progress(app->fs);
+
+        /* The stepping is a worker's, one job for the whole operation;
+         * it stops when the engine asks, and is posted again once the
+         * question is answered. */
+        if (!app->fs_job && !pr->conflict && !pr->error_ask) {
+            desktop_wire_fs_run(app);
+        }
+    }
+    if (over || (busy && !progress_model(app)->row[0].paused)) {
         const tiku_progress_t *pr;
 
-        /* Stepped here, not inside the command: start() only builds the
-         * queue, so a shell that never steps reports work it has not
-         * done.  Membership changes reach the windows through the
-         * notice poll above, which is why nothing is reloaded here. */
-        (void)tiku_fs_step(app->fs, 4);
-        if (!tiku_fs_busy(app->fs)) {
+        if (over) {
             /* The operation just finished: what it MADE gets selected
              * where it lives, once it shows up (AW-033). */
             char made[8][TIKU_PATH_MAX];

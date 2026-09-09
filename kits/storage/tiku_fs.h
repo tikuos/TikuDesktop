@@ -102,8 +102,14 @@ typedef void (*tiku_fs_moved_fn)(void *ctx, const char *from,
                                      const char *to);
 
 /** @brief Listen for items landing somewhere else.  One listener. */
-void tiku_fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn,
-                           void *ctx);
+void tiku_fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn, void *ctx);
+
+/**
+ * @brief Tell the moved hook what moved since last asked.  A step may
+ *        run on a worker, and the hook touches windows: so a move is
+ *        noted by the step and told here, by whoever runs the loop.
+ */
+void tiku_fs_moved_pump(tiku_fs_t *fs);
 
 /** @brief Create the operation engine for one backend. */
 tiku_fs_t *tiku_fs_new(tiku_backend_t *backend);

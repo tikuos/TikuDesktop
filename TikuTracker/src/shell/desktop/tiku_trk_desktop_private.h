@@ -260,6 +260,9 @@ typedef struct desktop {
         int                 in_flight;
         }                        wire[TIKU_MOUNT_MAX];
     int                      replicant_reads;   /* Deskbar reads out */
+    int                      fs_job;            /* the engine is stepping
+                                                 * on a worker */
+    int                      fs_was_busy;       /* last tick's answer */
     /* A look in progress: every port asked at once, by workers; what
      * lands is mounted on the loop, and the asker hears when the last
      * has landed.  The same accounting serves the boot sweep. */
@@ -797,6 +800,7 @@ int  desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p,
                               int row);
 void desktop_wire_replicants(desktop_t *app);
 void desktop_wire_install(desktop_t *app);
+void desktop_wire_fs_run(desktop_t *app);
 void panel_refreshed(tiku_trk_described_t *p, int asked, int answered);
 const char *bind_path(const tiku_trk_described_t *p,
                       const tiku_form_row_t *row, char *buf, size_t max);

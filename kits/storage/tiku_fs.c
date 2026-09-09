@@ -18,6 +18,7 @@
 #include "tiku_state.h"
 #include "tiku_volume.h"
 
+#include <pthread.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -85,22 +86,113 @@ struct tiku_fs {
     void               *cancel_ctx;
     tiku_fs_moved_fn moved_fn;
     void               *moved_ctx;
-    int                 cancelling;   /* the flag cancel() itself sets  */
+        int                 cancelling;   /* the flag cancel() itself sets  */
     int                 link_relative;
+    /* One hand on the engine: a worker steps it while the loop reads
+     * its progress, answers its questions and cancels it.  The hand is
+     * put down around each read and write of bytes, so the loop waits
+     * for a chunk at most. */
+    pthread_mutex_t     hand;
+    pthread_t           owner;
+    int                 depth;
+    tiku_progress_t     prog_seen;    /* the loop's copy of prog        */
+    /* What moved, told later on the loop: the hook that follows a move
+     * touches windows, and a step may run on a worker. */
+    struct { char from[TIKU_PATH_MAX]; char to[TIKU_PATH_MAX]; } moved[16];
+    int                 moved_n;
 };
+
+/*---------------------------------------------------------------------------*/
+/* THE HAND                                                                  */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Take the hand, or deepen a hold this thread already has. */
+static void
+fs_take(tiku_fs_t *fs)
+{
+    if (fs->depth > 0 && pthread_equal(fs->owner, pthread_self())) {
+        fs->depth++;
+        return;
+    }
+    pthread_mutex_lock(&fs->hand);
+    fs->owner = pthread_self();
+    fs->depth = 1;
+}
+
+/** @brief Give the hand back, or shallow the hold. */
+static void
+fs_give(tiku_fs_t *fs)
+{
+    if (--fs->depth == 0) {
+        pthread_mutex_unlock(&fs->hand);
+    }
+}
+
+/** @brief Put the hand down entirely, for a wait; @return the hold to restore. */
+static int
+fs_rest(tiku_fs_t *fs)
+{
+    int held = fs->depth;
+
+    fs->depth = 0;
+    pthread_mutex_unlock(&fs->hand);
+    return held;
+}
+
+/** @brief Pick the hand back up after fs_rest(). */
+static void
+fs_back(tiku_fs_t *fs, int held)
+{
+    pthread_mutex_lock(&fs->hand);
+    fs->owner = pthread_self();
+    fs->depth = held;
+}
 
 /** @brief An item is no longer at @p from; it is at @p to. */
 static void
 landed(tiku_fs_t *fs, const char *from, const char *to)
 {
     if (fs != NULL && fs->moved_fn != NULL && from != NULL && to != NULL &&
-        from[0] != '\0' && to[0] != '\0') {
-        fs->moved_fn(fs->moved_ctx, from, to);
+        from[0] != '\0' && to[0] != '\0' &&
+        fs->moved_n < (int)(sizeof fs->moved / sizeof fs->moved[0])) {
+        snprintf(fs->moved[fs->moved_n].from, TIKU_PATH_MAX, "%s", from);
+        snprintf(fs->moved[fs->moved_n].to, TIKU_PATH_MAX, "%s", to);
+        fs->moved_n++;
     }
 }
 
 void
-tiku_fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn, void *ctx)
+tiku_fs_moved_pump(tiku_fs_t *fs)
+{
+    if (fs == NULL) {
+        return;
+    }
+    for (;;) {
+        char from[TIKU_PATH_MAX], to[TIKU_PATH_MAX];
+        tiku_fs_moved_fn fn;
+        void *ctx;
+
+        fs_take(fs);
+        if (fs->moved_n == 0) {
+            fs_give(fs);
+            return;
+        }
+        snprintf(from, sizeof from, "%s", fs->moved[0].from);
+        snprintf(to, sizeof to, "%s", fs->moved[0].to);
+        fs->moved_n--;
+        memmove(&fs->moved[0], &fs->moved[1],
+                (size_t)fs->moved_n * sizeof fs->moved[0]);
+        fn = fs->moved_fn;
+        ctx = fs->moved_ctx;
+        fs_give(fs);
+        /* Outside the hand: the hook opens windows. */
+        if (fn != NULL) {
+            fn(ctx, from, to);
+        }
+    }
+}
+static void
+fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn, void *ctx)
 {
     if (fs != NULL) {
         fs->moved_fn = fn;
@@ -120,9 +212,8 @@ cancelled(tiku_fs_t *fs)
     }
     return fs->cancelling;
 }
-
-tiku_fs_t *
-tiku_fs_new(tiku_backend_t *backend)
+static tiku_fs_t *
+fs_new(tiku_backend_t *backend)
 {
     tiku_fs_t *fs = calloc(1, sizeof *fs);
 
@@ -131,9 +222,8 @@ tiku_fs_new(tiku_backend_t *backend)
     }
     return fs;
 }
-
-void
-tiku_fs_free(tiku_fs_t *fs)
+static void
+fs_free(tiku_fs_t *fs)
 {
     if (fs != NULL) {
         undo_stack_clear(fs->ustack, &fs->ucount);
@@ -143,18 +233,11 @@ tiku_fs_free(tiku_fs_t *fs)
         free(fs);
     }
 }
-
-int
-tiku_fs_busy(const tiku_fs_t *fs)
+static int
+fs_busy(const tiku_fs_t *fs)
 {
     return (fs != NULL && fs->prog.op != TIKU_OP_IDLE &&
             fs->qcursor < fs->qcount);
-}
-
-const tiku_progress_t *
-tiku_fs_progress(const tiku_fs_t *fs)
-{
-    return (fs != NULL) ? &fs->prog : NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -317,17 +400,15 @@ free_suffixed_name(tiku_fs_t *fs, const char *dir, const char *name,
     }
     return -1;
 }
-
-int
-tiku_fs_duplicate_name(tiku_fs_t *fs, const char *dir,
+static int
+fs_duplicate_name(tiku_fs_t *fs, const char *dir,
                            const char *name, char *out, size_t max)
 {
     /* Duplicate never reuses the plain name: a duplicate is always "copy". */
     return free_suffixed_name(fs, dir, name, "copy", 0, out, max);
 }
-
-int
-tiku_fs_link_name(tiku_fs_t *fs, const char *dir, const char *name,
+static int
+fs_link_name(tiku_fs_t *fs, const char *dir, const char *name,
                       char *out, size_t max)
 {
     /* A link keeps the original name when the destination allows it. */
@@ -391,9 +472,8 @@ volume_of(tiku_fs_t *fs, const char *path)
     }
     return (unsigned long)st.st_dev;
 }
-
-tiku_op_t
-tiku_fs_drop_action(tiku_fs_t *fs, const char *src,
+static tiku_op_t
+fs_drop_action(tiku_fs_t *fs, const char *src,
                         const char *dst_dir, int force_copy)
 {
     unsigned long a, b;
@@ -698,30 +778,26 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     undo_reset(fs, op);
     return 0;
 }
-
-int
-tiku_fs_copy(tiku_fs_t *fs, const char *const *paths, int n,
+static int
+fs_copy(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst_dir, tiku_conflict_t policy)
 {
     return start(fs, TIKU_OP_COPY, paths, n, dst_dir, policy);
 }
-
-int
-tiku_fs_move(tiku_fs_t *fs, const char *const *paths, int n,
+static int
+fs_move(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst_dir, tiku_conflict_t policy)
 {
     return start(fs, TIKU_OP_MOVE, paths, n, dst_dir, policy);
 }
-
-int
-tiku_fs_duplicate(tiku_fs_t *fs, const char *const *paths, int n)
+static int
+fs_duplicate(tiku_fs_t *fs, const char *const *paths, int n)
 {
     return start(fs, TIKU_OP_DUPLICATE, paths, n, NULL,
                  TIKU_CONFLICT_RENAME);
 }
-
-int
-tiku_fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
+static int
+fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
 {
     return start(fs, TIKU_OP_TRASH, paths, n, NULL,
                  TIKU_CONFLICT_SKIP);
@@ -864,9 +940,8 @@ tiku_fs_confirm_move(const char *path)
     }
     return TIKU_CONFIRM_NONE;
 }
-
-int
-tiku_fs_in_trash(tiku_fs_t *fs, const char *path)
+static int
+fs_in_trash(tiku_fs_t *fs, const char *path)
 {
     char trash[TIKU_PATH_MAX];
     size_t n;
@@ -881,9 +956,8 @@ tiku_fs_in_trash(tiku_fs_t *fs, const char *path)
     return (strncmp(path, trash, n) == 0 &&
             (path[n] == '\0' || path[n] == '/'));
 }
-
-int
-tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n,
+static int
+fs_link(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst, int relative)
 {
     if (fs == NULL) {
@@ -893,9 +967,8 @@ tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n,
     return start(fs, TIKU_OP_LINK, paths, n, dst,
                  TIKU_CONFLICT_ASK);
 }
-
-int
-tiku_fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
+static int
+fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
 {
     return start(fs, TIKU_OP_DELETE, paths, n, NULL,
                  TIKU_CONFLICT_ASK);
@@ -1012,7 +1085,12 @@ copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
                  leaf_of(src), (long long)m.facts.size);
         return -1;
     }
-    len = sb->ops->read(sb, slocal, across, sizeof across);
+        {
+        int held = fs_rest(fs);
+
+        len = sb->ops->read(sb, slocal, across, sizeof across);
+        fs_back(fs, held);
+    }
     if (len < 0) {
         snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
         return -1;
@@ -1032,7 +1110,14 @@ copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
         snprintf(err, errmax, "that store does not take writes");
         return -1;
     }
-    return db->ops->write(db, dlocal, across, (size_t)len, err, errmax);
+        {
+        int held = fs_rest(fs);
+        int rc = db->ops->write(db, dlocal, across, (size_t)len, err,
+                                errmax);
+
+        fs_back(fs, held);
+        return rc;
+    }
 }
 
 static int
@@ -1101,12 +1186,26 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
             snprintf(err, errmax, "cancelled");
             return -2;
         }
-        n = fread(buf, 1, sizeof buf, in);
+                {
+            int held = fs_rest(fs);
+
+            n = fread(buf, 1, sizeof buf, in);
+            fs_back(fs, held);
+        }
         if (n == 0) {
             break;
         }
         fs->prog.bytes += (int64_t)n;
-        if (fwrite(buf, 1, n, out) != n) {
+        {
+            int held = fs_rest(fs);
+            size_t put = fwrite(buf, 1, n, out);
+
+            fs_back(fs, held);
+            if (put == n) {
+                continue;
+            }
+        }
+        {
             (void)fclose(in);
             (void)fclose(out);
             snprintf(err, errmax, "write failed on '%s'", dst);
@@ -1454,9 +1553,8 @@ is_dir(const char *path)
 
     return (stat(path, &st) == 0) && S_ISDIR(st.st_mode);
 }
-
-tiku_refusal_t
-tiku_fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
+static tiku_refusal_t
+fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
                        char *msg, size_t max)
 {
     char dstpath[TIKU_PATH_MAX];
@@ -1567,9 +1665,8 @@ make_path(const char *path)
     }
     return mkdir(buf, 0755);
 }
-
-int
-tiku_fs_has_trash(const tiku_fs_t *fs)
+static int
+fs_has_trash(const tiku_fs_t *fs)
 {
     /*
      * A device store has nowhere to put anything: its nodes are not
@@ -1659,9 +1756,8 @@ trash_under(const char *dir, char *out, size_t max)
     }
     return (mkdir(out, 0755) == 0) ? 0 : -1;
 }
-
-int
-tiku_fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
+static int
+fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
                        int max)
 {
     tiku_volumes_t vs;
@@ -1682,9 +1778,8 @@ tiku_fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
     return tiku_fs_trash_dirs_of(fs,
                (const struct tiku_volumes *)&vs, out, max);
 }
-
-int
-tiku_fs_prepare_trash(tiku_fs_t *fs)
+static int
+fs_prepare_trash(tiku_fs_t *fs)
 {
     char dirs[TIKU_VOLUME_MAX][TIKU_PATH_MAX];
 
@@ -1696,9 +1791,8 @@ tiku_fs_prepare_trash(tiku_fs_t *fs)
      * callers such as tests and file panels. */
     return tiku_fs_trash_dirs(fs, dirs, TIKU_VOLUME_MAX);
 }
-
-int
-tiku_fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
+static int
+fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
                           char out[][TIKU_PATH_MAX], int max)
 {
     const tiku_volumes_t *vsp = (const tiku_volumes_t *)v;
@@ -1732,9 +1826,8 @@ tiku_fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
     }
     return n;
 }
-
-int
-tiku_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
+static int
+fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
                       size_t max)
 {
     char root[TIKU_PATH_MAX];
@@ -1767,9 +1860,8 @@ tiku_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
     /* A volume the home does not live on keeps its Trash at its root. */
     return (trash_under(root, out, max) == 0) ? 0 : -1;
 }
-
-int
-tiku_fs_original_path(tiku_fs_t *fs, const char *path, char *out,
+static int
+fs_original_path(tiku_fs_t *fs, const char *path, char *out,
                           size_t max)
 {
     tiku_store_t *store;
@@ -1814,9 +1906,8 @@ record_origin(tiku_fs_t *fs, const char *trashed, const char *origin)
                                origin, strlen(origin));
     (void)tiku_store_flush(store);
 }
-
-tiku_delete_q_t
-tiku_fs_delete_question(const tiku_fs_t *fs, const char *path,
+static tiku_delete_q_t
+fs_delete_question(const tiku_fs_t *fs, const char *path,
                             int shift_held)
 {
     if (fs == NULL) {
@@ -1844,9 +1935,8 @@ tiku_fs_delete_question(const tiku_fs_t *fs, const char *path,
     }
     return TIKU_DELETE_ASK;
 }
-
-int
-tiku_fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
+static int
+fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
                     char *err, size_t errmax)
 {
     int i, done = 0;
@@ -1904,9 +1994,8 @@ tiku_fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
     }
     return done;
 }
-
-int
-tiku_fs_empty_trash(tiku_fs_t *fs)
+static int
+fs_empty_trash(tiku_fs_t *fs)
 {
     char dirs[TIKU_VOLUME_MAX][TIKU_PATH_MAX];
     char paths[FS_QUEUE_MAX][TIKU_PATH_MAX];
@@ -2382,9 +2471,8 @@ delete_attempt:
     fs->qcursor++;
     return 1;
 }
-
-int
-tiku_fs_step(tiku_fs_t *fs, int budget)
+static int
+fs_step(tiku_fs_t *fs, int budget)
 {
     int n = 0;
 
@@ -2402,9 +2490,8 @@ tiku_fs_step(tiku_fs_t *fs, int budget)
     }
     return n;
 }
-
-void
-tiku_fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
+static void
+fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
 {
     if (fs == NULL || !fs->prog.conflict) {
         return;
@@ -2436,9 +2523,8 @@ tiku_fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
         break;
     }
 }
-
-void
-tiku_fs_cancel(tiku_fs_t *fs)
+static void
+fs_cancel(tiku_fs_t *fs)
 {
     if (fs != NULL) {
         /* What is already done stays done: a half-finished copy is real.
@@ -2451,9 +2537,8 @@ tiku_fs_cancel(tiku_fs_t *fs)
         fs->prog.cancelled = 1;
     }
 }
-
-void
-tiku_fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn,
+static void
+fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn,
                              void *ctx)
 {
     if (fs != NULL) {
@@ -2461,9 +2546,8 @@ tiku_fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn,
         fs->cancel_ctx = ctx;
     }
 }
-
-void
-tiku_fs_resolve_error(tiku_fs_t *fs, int keep_going)
+static void
+fs_resolve_error(tiku_fs_t *fs, int keep_going)
 {
     if (fs == NULL || !fs->prog.error_ask) {
         return;
@@ -2481,9 +2565,8 @@ tiku_fs_resolve_error(tiku_fs_t *fs, int keep_going)
         (void)give_up(fs);
     }
 }
-
-int
-tiku_fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
+static int
+fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
                    char *err, size_t errmax)
 {
     char dir[TIKU_PATH_MAX], dst[TIKU_PATH_MAX];
@@ -2578,9 +2661,8 @@ tiku_fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
 /*---------------------------------------------------------------------------*/
 /* New folder (FS-079)                                                       */
 /*---------------------------------------------------------------------------*/
-
-void
-tiku_fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
+static void
+fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
                             size_t max)
 {
     long n;
@@ -2608,9 +2690,8 @@ tiku_fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
         }
     }
 }
-
-int
-tiku_fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
+static int
+fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
                        size_t max, char *err, size_t errmax)
 {
     char name[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
@@ -2632,9 +2713,8 @@ tiku_fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
     }
     return 0;
 }
-
-int
-tiku_fs_new_from_template(tiku_fs_t *fs, const char *template_path,
+static int
+fs_new_from_template(tiku_fs_t *fs, const char *template_path,
                               const char *dst_dir, char *out, size_t max,
                               char *err, size_t errmax)
 {
@@ -2704,9 +2784,8 @@ tiku_fs_new_from_template(tiku_fs_t *fs, const char *template_path,
     snprintf(out, max, "%s", dst);
     return 0;
 }
-
-int
-tiku_fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
+static int
+fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
 {
     const undo_op_t *o;
 
@@ -2727,9 +2806,8 @@ tiku_fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
     }
     return 1;
 }
-
-int
-tiku_fs_last_created(const tiku_fs_t *fs,
+static int
+fs_last_created(const tiku_fs_t *fs,
                          char out[][TIKU_PATH_MAX], int max)
 {
     const undo_op_t *o;
@@ -2749,9 +2827,8 @@ tiku_fs_last_created(const tiku_fs_t *fs,
     }
     return n;
 }
-
-int
-tiku_fs_can_redo(const tiku_fs_t *fs, char *what, size_t max)
+static int
+fs_can_redo(const tiku_fs_t *fs, char *what, size_t max)
 {
     const undo_op_t *o;
 
@@ -2837,9 +2914,8 @@ redo_one(tiku_fs_t *fs, tiku_op_t op, const undo_rec_t *r, char *err,
     }
     return 0;
 }
-
-int
-tiku_fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
+static int
+fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
 {
     undo_op_t *o;
     int i, n = 0;
@@ -2861,9 +2937,8 @@ tiku_fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
     fs->ucount--;
     return n;
 }
-
-int
-tiku_fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
+static int
+fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
 {
     undo_op_t *o;
     int i, n = 0;
@@ -2933,3 +3008,530 @@ tiku_backend_text(tiku_backend_t *b, const char *path,
     }
     return 1;
 }
+
+/*---------------------------------------------------------------------------*/
+/* EVERY WAY IN TAKES THE HAND                                               */
+/*---------------------------------------------------------------------------*/
+
+tiku_fs_t *
+tiku_fs_new(tiku_backend_t *backend)
+{
+    tiku_fs_t *fs = fs_new(backend);
+
+    if (fs != NULL) {
+        (void)pthread_mutex_init(&fs->hand, NULL);
+    }
+    return fs;
+}
+
+void
+tiku_fs_free(tiku_fs_t *fs)
+{
+    if (fs != NULL) {
+        (void)pthread_mutex_destroy(&fs->hand);
+        fs_free(fs);
+    }
+}
+
+const tiku_progress_t *
+tiku_fs_progress(const tiku_fs_t *fs)
+{
+    tiku_fs_t *w = (tiku_fs_t *)fs;
+
+    if (w == NULL) {
+        return NULL;
+    }
+    /* A copy, taken under the hand: the caller reads it at leisure
+     * while a worker goes on changing the original. */
+    fs_take(w);
+    w->prog_seen = w->prog;
+    fs_give(w);
+    return &w->prog_seen;
+}
+
+void
+tiku_fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn, void *ctx)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_set_moved(fs, fn, ctx);
+    fs_give((tiku_fs_t *)fs);
+}
+
+tiku_op_t
+tiku_fs_drop_action(tiku_fs_t *fs, const char *src, const char *dst_dir, int force_copy)
+{
+    tiku_op_t r;
+
+    if (fs == NULL) {
+        return (tiku_op_t)0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_drop_action(fs, src, dst_dir, force_copy);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_duplicate_name(tiku_fs_t *fs, const char *dir, const char *name, char *out, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_duplicate_name(fs, dir, name, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_link_name(tiku_fs_t *fs, const char *dir, const char *name, char *out, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_link_name(fs, dir, name, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_copy(tiku_fs_t *fs, const char *const *paths, int n, const char *dst_dir, tiku_conflict_t policy)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_copy(fs, paths, n, dst_dir, policy);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_move(tiku_fs_t *fs, const char *const *paths, int n, const char *dst_dir, tiku_conflict_t policy)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_move(fs, paths, n, dst_dir, policy);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_duplicate(tiku_fs_t *fs, const char *const *paths, int n)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_duplicate(fs, paths, n);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_trash(fs, paths, n);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+tiku_refusal_t
+tiku_fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir, char *msg, size_t max)
+{
+    tiku_refusal_t r;
+
+    if (fs == NULL) {
+        return (tiku_refusal_t)0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_check_move(fs, src, dst_dir, msg, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_delete(fs, paths, n);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX], int max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_trash_dirs(fs, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_prepare_trash(tiku_fs_t *fs)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_prepare_trash(fs);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *vs, char out[][TIKU_PATH_MAX], int max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_trash_dirs_of(fs, vs, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_trash_dir(fs, path, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_has_trash(const tiku_fs_t *fs)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_has_trash(fs);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_restore(tiku_fs_t *fs, const char *const *paths, int n, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_restore(fs, paths, n, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_original_path(tiku_fs_t *fs, const char *path, char *out, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_original_path(fs, path, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_empty_trash(tiku_fs_t *fs)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_empty_trash(fs);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+tiku_delete_q_t
+tiku_fs_delete_question(const tiku_fs_t *fs, const char *path, int shift_held)
+{
+    tiku_delete_q_t r;
+
+    if (fs == NULL) {
+        return (tiku_delete_q_t)0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_delete_question(fs, path, shift_held);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_rename(tiku_fs_t *fs, const char *path, const char *new_name, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_rename(fs, path, new_name, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_step(tiku_fs_t *fs, int budget)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_step(fs, budget);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+void
+tiku_fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_resolve(fs, how);
+    fs_give((tiku_fs_t *)fs);
+}
+
+void
+tiku_fs_cancel(tiku_fs_t *fs)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_cancel(fs);
+    fs_give((tiku_fs_t *)fs);
+}
+
+void
+tiku_fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn, void *ctx)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_set_cancel_check(fs, fn, ctx);
+    fs_give((tiku_fs_t *)fs);
+}
+
+void
+tiku_fs_resolve_error(tiku_fs_t *fs, int keep_going)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_resolve_error(fs, keep_going);
+    fs_give((tiku_fs_t *)fs);
+}
+
+int
+tiku_fs_busy(const tiku_fs_t *fs)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_busy(fs);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_in_trash(tiku_fs_t *fs, const char *path)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_in_trash(fs, path);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n, const char *dst, int relative)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_link(fs, paths, n, dst, relative);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+void
+tiku_fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out, size_t max)
+{
+    if (fs == NULL) {
+        return;
+    }
+    fs_take((tiku_fs_t *)fs);
+    fs_new_folder_name(fs, dir, out, max);
+    fs_give((tiku_fs_t *)fs);
+}
+
+int
+tiku_fs_new_folder(tiku_fs_t *fs, const char *dir, char *out, size_t max, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_new_folder(fs, dir, out, max, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_new_from_template(tiku_fs_t *fs, const char *template_path, const char *dst_dir, char *out, size_t max, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_new_from_template(fs, template_path, dst_dir, out, max, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_can_undo(fs, what, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_undo(fs, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_can_redo(const tiku_fs_t *fs, char *what, size_t max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_can_redo(fs, what, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_last_created(const tiku_fs_t *fs, char out[][TIKU_PATH_MAX], int max)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_last_created(fs, out, max);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
+{
+    int r;
+
+    if (fs == NULL) {
+        return 0;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_redo(fs, err, errmax);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+

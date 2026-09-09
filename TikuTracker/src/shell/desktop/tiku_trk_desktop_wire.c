@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "tiku_board_basic.h"
+#include "tiku_fs.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_channel.h"
 #include "tiku_sound.h"
@@ -837,5 +838,65 @@ void
 desktop_wire_install(desktop_t *app)
 {
     tiku_trk_poseview_set_lister(desktop_lister, app);
+}
+
+/** @brief On a worker: step the engine until it is done, or asks. */
+static void
+fs_run(void *ctx)
+{
+    tiku_fs_t *fs = ((tiku_fs_t **)ctx)[0];
+
+    while (tiku_fs_busy(fs) && tiku_fs_step(fs, 1) > 0) {
+    }
+}
+
+/** @brief On the loop: the engine has stopped, done or asking. */
+static void
+fs_done(void *ctx)
+{
+    desktop_t *app = ((void **)ctx)[1];
+
+    app->fs_job = 0;
+    app->dirty = 1;
+}
+
+/** @brief The asking is over. */
+static void
+fs_free_ctx(void *ctx)
+{
+    free(ctx);
+}
+
+/**
+ * @brief Run the file engine's queued operation on a worker, one job
+ *        for the whole of it; the loop reads progress, answers a
+ *        question when the job stops on one, and posts the next.
+ */
+void
+desktop_wire_fs_run(desktop_t *app)
+{
+    tiku_work_job_t job;
+    void **ctx;
+
+    if (app->fs == NULL || app->fs_job) {
+        return;
+    }
+    ctx = calloc(2, sizeof *ctx);
+    if (ctx == NULL) {
+        return;
+    }
+    ctx[0] = app->fs;
+    ctx[1] = app;
+    memset(&job, 0, sizeof job);
+    job.run = fs_run;
+    job.done = fs_done;
+    job.free = fs_free_ctx;
+    job.ctx = ctx;
+    snprintf(job.key, sizeof job.key, "fs");
+    if (tiku_work_post(&job) == 0) {
+        app->fs_job = 1;
+    } else {
+        free(ctx);
+    }
 }
 

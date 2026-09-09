@@ -1,9 +1,9 @@
 # shell: both
-# The operation's own lifecycle is a fact: idle, then the job by
-# caption, current leaf and count, then idle again.  The mid-flight
-# claim is safe HERE because the in-process driver is turn-locked --
-# the conducted lane, which races a real clock, claims only the
-# endpoints (told.script).
+# The operation's own lifecycle is a fact: idle, then idle again with
+# the copies there.  The mid-flight claim is not made even here: the
+# engine steps on a worker now, and three small files are copied
+# between two turns -- bigcopy.script, with a file large enough to be
+# caught in flight, makes that claim.
 wait 12
 expect-operation idle
 key a ctrl
@@ -13,6 +13,6 @@ wait 3
 key v ctrl
 note mid-flight the job speaks its count -- the one phrase every
 note caption shares and idle never says
-expect-operation of
 expect-operation idle
+expect-read /tmp/trk_script a.txt copy
 quit

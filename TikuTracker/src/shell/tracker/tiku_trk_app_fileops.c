@@ -28,6 +28,7 @@ browser_drain_fs(tiku_fs_t *fs)
     }
     /* 50 turns of 100 ms, the original's own budget. */
     while (tiku_fs_busy(fs) && guard++ < 50) {
+        tiku_fs_moved_pump(fs);
         if (tiku_fs_step(fs, 16) == 0) {
             const tiku_progress_t *pr = tiku_fs_progress(fs);
 
@@ -44,6 +45,7 @@ browser_drain_fs(tiku_fs_t *fs)
         }
         usleep(100000);
     }
+    tiku_fs_moved_pump(fs);         /* what the last step moved */
 }
 
 /**

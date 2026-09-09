@@ -1,0 +1,25 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: bigcopy
+# Copying a large file costs the loop nothing.
+#
+# The file engine copies a whole file inside one step, and a step ran on
+# the loop: a copy of anything large was the desk gone for the copy.
+# Here a file of a gigabyte and a half is copied into its own folder
+# and, while the copy runs, the loop is asked how long its turns got.
+wait 12
+expect-operation idle
+key a ctrl
+wait 3
+key c ctrl
+wait 3
+key v ctrl
+wait 3
+expect-operation of
+expect-under turns 100
+note and the copy still finishes, and the copy is there
+wait 600
+expect-operation idle
+expect-read /tmp/trk_script big.bin copy
+quit

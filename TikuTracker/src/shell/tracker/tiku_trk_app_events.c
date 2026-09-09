@@ -29,6 +29,12 @@ void
 browser_turn_end(app_t *app, const browser_options_t *o, browser_loop_t *lp)
 {
     tiku_sound_pump();
+    if (app->fs != NULL) {
+        /* What moved since last turn -- a step's doing, or a rename's,
+         * which is no operation at all -- told to the hook that follows
+         * it, here on the loop. */
+        tiku_fs_moved_pump(app->fs);
+    }
     if (app->fs != NULL && tiku_fs_busy(app->fs)) {
         const tiku_progress_t *pr;
 

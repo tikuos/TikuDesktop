@@ -176,4 +176,5 @@ tiku_trk_session_drain_filesystem(tiku_fs_t *filesystem)
         }
         usleep(100000);
     }
+    tiku_fs_moved_pump(filesystem);         /* what the last step moved */
 }
