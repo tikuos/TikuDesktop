@@ -184,7 +184,7 @@ mounted.  With W1 reverted the noun reads 800 and more, and the script
 fails: that is the break-it leg.  `ideconnect`, `iderunboard(s)`,
 `benchrun`, `boardnet` unchanged and green on hardware.
 
-### W2 -- a folder lists on a worker  (one day)
+### W2 -- a folder lists on a worker  (DONE 2026-09-09)
 
 `load_begin` posts the `ops->list` as a job keyed by the window; the
 staged listing is the result; `load_step` publishes it as it does
@@ -364,4 +364,37 @@ suite green on hardware (`ideconnect`, `trail`, `iderunboard`,
 `iderunboards`, `benchrun`); the session tests under both hands.  The
 `boardnet` lane fails on the previous commit too (an empty relay log)
 and is not this change's.
+
+## 9. What W2 settled
+
+**A lister the views ask.**  `tiku_trk_poseview_set_lister()` installs
+one hook for every view; asked for a listing -- a load, or a poll's
+re-list -- it may take the fetch off the loop and hand the entries back
+through `tiku_trk_poseview_load_landed()` / `relist_landed()`, or
+decline, and the view lists synchronously as it always did.  A view
+whose listing is out is `awaiting`: its load step publishes nothing and
+says "still loading", its reload returns at once, its poll posts no
+second re-list while one is out.  Every view that exists is in a
+registry, so a listing that lands after its window closed is dropped
+by `tiku_trk_poseview_alive()`; a listing's generation and the mount's
+generation are checked besides.  The Tracker shell and the tests, which
+install no lister, are unchanged.
+
+**The desk's lister takes only a board's folders.**  A local folder
+lists as before -- `readdir` is fast, and the local backend's thread
+safety was not the question being asked.  The `/devices` folder itself
+is the router's, listed on the loop.  A board's folder is a job keyed
+by the board (so the close job waits behind it), the entries adopted
+on the worker by a pure function of the prefix and slot
+(`tiku_mount_adopt_entry`) rather than by walking the table.
+
+**Two re-lists, not one.**  The map named `load_begin`; the building
+found the other: when a board cannot say what changed, every open
+folder RE-LISTS to find out, and a folder on that board asked its
+listing on the loop with a six-second ceiling, every notice pump.  The
+poll's re-list is the second thing the lister takes; the diff against
+what the window shows is done at landing.
+
+**Measured:** `deadfolder.script` -- a window open on the board's root,
+then the board goes quiet.  Longest turn 9663 ms before, 28 ms after.
 
