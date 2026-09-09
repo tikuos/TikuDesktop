@@ -24,6 +24,7 @@
 
 #include "tiku_logo.h"
 #include "tiku_report.h"
+#include "tiku_list.h"
 #include "tiku_trk_task.h"
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
@@ -85,9 +86,27 @@ typedef struct {
         int64_t                    gauge_s;
     /* The one row that does something: the newest report, and where
      * on the box it was painted, so a click can be matched to it. */
-    char                       report[512];
-    tiku_rect_t                report_row;
+            char                       report[512];
+    tiku_rect_t                reports_btn;    /* the door to the section */
+    /* The reports section, under the facts when opened from the row:
+     * every report newest first, and the chosen one's account. */
+    int                        reports_open;
+    char                       paths[64][512];
+    int                        nreports;
+    tiku_list_t                list;
+    int                        chosen;         /* which path, or -1 */
+    struct {
+        char stopped[120];
+        char last[120];
+        char frames[4][120];
+        int  nframes;
+    }                          detail;
+        tiku_rect_t                list_box;
+    tiku_rect_t                open_btn;       /* "Open the file" */
 } about_state_t;
+
+#define REPORT_ROWS    5
+#define ACCOUNT_LINES  7
 
 /** @brief Which set, and how far into the fade, at @p now. */
 static void
@@ -138,6 +157,17 @@ static int about_body_w(void)
     return (need > ABOUT_W) ? need : ABOUT_W;
 }
 
+/** @brief What the reports section adds under the facts when open. */
+static int reports_h(void)
+{
+    int h = tiku_font_plain()->height;
+
+    /* A heading, the list, the account, a button row, and the margins
+     * between: every pixel of it drawn, none reserved. */
+    return 8 + h + 5 + REPORT_ROWS * (h + 3) + 8 +
+           ACCOUNT_LINES * (h + 2) + 8 + 6 + tiku_ui_button_h() + 12;
+}
+
 /**
  * @brief The body's height: the taller of the two columns, plus the
  *        two-line footer.
@@ -154,8 +184,15 @@ static int about_body_h(void)
     /* The footer is two lines now, not one -- the copyright with the
      * project page, then the licence -- and it runs under BOTH columns,
      * so whichever of them is the taller has to find the extra line. */
-    return ((identity > facts) ? identity : facts)
+        return ((identity > facts) ? identity : facts)
            + tiku_font_plain()->height + 4;
+}
+
+/** @brief The whole box: the facts, and the reports when they are open. */
+static int
+about_h(const about_state_t *st)
+{
+    return about_body_h() + (st->reports_open ? reports_h() : 0);
 }
 
 /*
@@ -216,6 +253,267 @@ read_memory(long *total_kb, long *avail_kb)
     if (f != NULL) {
         (void)fclose(f);
     }
+}
+
+/** @brief Kind and moment from a report's name, for its row. */
+static void
+report_label(const char *path, char *out, size_t max)
+{
+    const char *leaf = strrchr(path, '/');
+    char kind[16] = "", stamp[16] = "";
+
+    leaf = (leaf != NULL) ? leaf + 1 : path;
+    if (sscanf(leaf, "%15[a-z]-%15[0-9-]", kind, stamp) == 2 &&
+        strlen(stamp) >= 15u) {
+        snprintf(out, max, "%-7s %.4s-%.2s-%.2s %.2s:%.2s:%.2s", kind,
+                 stamp, stamp + 4, stamp + 6, stamp + 9, stamp + 11,
+                 stamp + 13);
+    } else {
+        snprintf(out, max, "%.60s", leaf);
+    }
+}
+
+/**
+ * @brief A frame as the report wrote it, made readable: the desk's own
+ *        offsets through addr2line on this build, a library's symbol
+ *        as it stands.
+ */
+static void
+frame_name(const char *raw, char *out, size_t max)
+{
+    const char *paren = strchr(raw, '(');
+    const char *self = strrchr(raw, '/');
+    char leaf[64] = "";
+
+    self = (self != NULL) ? self + 1 : raw;
+    (void)sscanf(self, "%63[^(]", leaf);
+    if (paren != NULL && paren[1] == '+' &&
+        strcmp(leaf, "TikuDesktop") == 0) {
+        char cmd[256], line[160];
+        FILE *p;
+
+        snprintf(cmd, sizeof cmd,
+                 "addr2line -e /proc/self/exe -f -C -p %.*s 2>/dev/null",
+                 (int)strcspn(paren + 1, ")"), paren + 1);
+        p = popen(cmd, "r");
+        if (p != NULL && fgets(line, sizeof line, p) != NULL) {
+            char *at = strstr(line, " at ");
+
+            if (at != NULL) {
+                *at = '\0';
+            }
+                        line[strcspn(line, "\n")] = '\0';
+            if (strncmp(line, "??", 2) == 0) {
+                /* An offset this build does not have: the report is an
+                 * earlier build's, and only its own binary could say. */
+                snprintf(out, max, "an earlier build's %.*s",
+                         (int)strcspn(paren + 1, ")"), paren + 1);
+            } else {
+                snprintf(out, max, "%.119s", line);
+            }
+            (void)pclose(p);
+            return;
+        }
+        if (p != NULL) {
+            (void)pclose(p);
+        }
+    }
+        if (paren != NULL && paren[1] != '+' && paren[1] != ')') {
+        snprintf(out, max, "%s: %.*s", leaf, (int)strcspn(paren + 1, "+)"),
+                 paren + 1);
+    } else if (paren != NULL) {
+        snprintf(out, max, "%s %.*s", leaf, (int)strcspn(paren + 1, ")"),
+                 paren + 1);
+    } else {
+        snprintf(out, max, "%.100s", raw);
+    }
+}
+
+/** @brief Read the chosen report's account into the detail. */
+static void
+load_detail(about_state_t *st)
+{
+    FILE *f;
+    char line[256];
+    int in_frames = 0, want_last = 0;
+
+    memset(&st->detail, 0, sizeof st->detail);
+    if (st->chosen < 0 || st->chosen >= st->nreports) {
+        return;
+    }
+    f = fopen(st->paths[st->chosen], "r");
+    if (f == NULL) {
+        snprintf(st->detail.stopped, sizeof st->detail.stopped,
+                 "the file could not be read");
+        return;
+    }
+    while (fgets(line, sizeof line, f) != NULL) {
+        line[strcspn(line, "\n")] = '\0';
+        if (want_last) {
+            const char *text = line;
+
+            while (*text == ' ' || (*text >= '0' && *text <= '9')) {
+                text++;         /* past the trail's own time stamp */
+            }
+            snprintf(st->detail.last, sizeof st->detail.last, "%.119s",
+                     text);
+            want_last = 0;
+            continue;
+        }
+        if (strncmp(line, "stopped by: ", 12) == 0 ||
+            strncmp(line, "asked for: ", 11) == 0) {
+            snprintf(st->detail.stopped, sizeof st->detail.stopped,
+                     "%.119s", line);
+        } else if (strcmp(line, "the last thing it did:") == 0) {
+            want_last = 1;
+        } else if (strcmp(line, "where it was:") == 0) {
+            in_frames = 1;
+        } else if (in_frames) {
+            if (line[0] == '\0') {
+                in_frames = 0;
+            } else if (st->detail.nframes < 4 &&
+                       strstr(line, "tiku_report") == NULL &&
+                       strstr(line, "asked_to_say") == NULL &&
+                       strstr(line, "took_signal") == NULL) {
+                frame_name(line, st->detail.frames[st->detail.nframes],
+                           sizeof st->detail.frames[0]);
+                st->detail.nframes++;
+            }
+        }
+    }
+    (void)fclose(f);
+}
+
+/** @brief Open the section, or refresh it: the list and the newest. */
+static void
+reports_open(about_state_t *st)
+{
+    st->nreports = tiku_report_list(st->paths, 64);
+    tiku_list_init(&st->list, 1);
+    (void)tiku_list_set_count(&st->list, st->nreports);
+    st->chosen = (st->nreports > 0) ? 0 : -1;
+    if (st->chosen >= 0) {
+        tiku_list_select_only(&st->list, 0);
+    }
+    load_detail(st);
+    st->reports_open = 1;
+}
+
+/** @brief @p text, cut to @p width pixels of @p font with an ellipsis. */
+static void
+elide(const tiku_font_t *font, const char *text, int width, char *out,
+      size_t max)
+{
+    size_t n = strlen(text);
+
+    snprintf(out, max, "%s", text);
+    while (n > 3u && tiku_text_width(font, out) > width) {
+        n--;
+        snprintf(out, max, "%.*s...", (int)n, text);
+    }
+}
+
+/** @brief One line of the account, kept inside its box. */
+static void
+account_line(tiku_surface_t *surface, const tiku_font_t *font,
+             tiku_rect_t box, int y, const char *text)
+{
+    char fit[160];
+
+    elide(font, text, box.w - 16, fit, sizeof fit);
+    tiku_text(surface, font, box.x + 8, y + font->ascent, fit, TIKU_C_TEXT);
+}
+
+/** @brief Paint the reports section from @p y down. */
+static void
+paint_reports(about_state_t *st, int y)
+{
+    tiku_surface_t *surface = st->surface;
+    const tiku_font_t *plain = tiku_font_plain();
+    int left = 18, i;
+    int h = plain->height;
+    tiku_rect_t body, account, btn;
+
+    y += 8;
+    tiku_text(surface, tiku_font_bold(), left, y + plain->ascent, "Reports",
+              TIKU_C_TEXT);
+    y += h + 5;
+
+    /* The list: newest first, one row each by kind and moment. */
+    body.x = left;
+    body.y = y;
+    body.w = surface->w - 2 * left;
+    body.h = REPORT_ROWS * (h + 3);
+    st->list_box = body;
+    tiku_ui_sunken(surface, body, TIKU_C_DOC);
+    tiku_list_set_row_h(&st->list, h + 3);
+    if (st->nreports == 0) {
+        tiku_text(surface, plain, body.x + 8, body.y + 4 + plain->ascent,
+                  "none", TIKU_C_NOTE);
+    }
+    for (i = st->list.top; i < st->nreports; i++) {
+        tiku_rect_t r = tiku_list_row_rect(&st->list, body, i);
+        char label[96];
+
+        if (r.y + r.h > body.y + body.h) {
+            break;
+        }
+        r.x += 2;
+        r.w -= 4;
+        report_label(st->paths[i], label, sizeof label);
+        if (tiku_list_selected(&st->list, i)) {
+            tiku_fill(surface, r, TIKU_C_SELECT);
+        }
+        tiku_text(surface, plain, r.x + 6, r.y + plain->ascent + 1, label,
+                  tiku_list_selected(&st->list, i) ? TIKU_C_SELTEXT
+                                                   : TIKU_C_TEXT);
+    }
+    y += body.h + 8;
+
+    /* The account of the chosen one, in a box of its own. */
+    account.x = left;
+    account.y = y;
+    account.w = surface->w - 2 * left;
+    account.h = ACCOUNT_LINES * (h + 2) + 8;
+    tiku_ui_sunken(surface, account, TIKU_C_DOC);
+    if (st->chosen >= 0) {
+        int ty = account.y + 4;
+        char text[160];
+        account_line(surface, plain, account, ty, st->detail.stopped);
+        ty += h + 2;
+        if (st->detail.last[0] != '\0') {
+            snprintf(text, sizeof text, "the last thing it did: %.100s",
+                     st->detail.last);
+            account_line(surface, plain, account, ty, text);
+        }
+        ty += h + 2;
+        if (st->detail.nframes > 0) {
+            account_line(surface, plain, account, ty,
+                         "where it was, as this build reads it:");
+            ty += h + 2;
+            for (i = 0; i < st->detail.nframes && i < ACCOUNT_LINES - 3;
+                 i++) {
+                snprintf(text, sizeof text, "    %.90s",
+                         st->detail.frames[i]);
+                account_line(surface, plain, account, ty, text);
+                ty += h + 2;
+            }
+        }
+    } else {
+        tiku_text(surface, plain, account.x + 8,
+                  account.y + 4 + plain->ascent,
+                  "nothing to show", TIKU_C_NOTE);
+    }
+    y += account.h + 8;
+
+    /* The button row: the file itself, for the whole of it. */
+    btn.w = tiku_ui_button_w("Open the file", 0);
+    btn.h = tiku_ui_button_h();
+    btn.x = surface->w - left - btn.w;
+    btn.y = y + 6;
+    tiku_ui_button(surface, btn, "Open the file",
+                   (st->chosen >= 0) ? 0u : TIKU_S_DISABLED);
+    st->open_btn = btn;
 }
 
 /**
@@ -291,42 +589,46 @@ paint(about_state_t *st)
                 tiku_ui_gauge(surface, gauge,
                       (total > 0) ? (float)used / (float)total : 0.0f);
     }
-    y += plain->height + 10 + 10;
-    {   /* The newest account of something going wrong, by name, and a
-         * click on it opens the file: the whole of what this desk shows
-         * for its reports is a folder of plain text and this one row. */
-                const char *leaf;
+    y += plain->height + 10 + 8;
+    {   /* The newest account of something going wrong, on a button that
+         * opens every one of them under the facts: the whole of what
+         * this box shows for its reports until the button is pressed. */
+        const char *leaf;
         char kind[16] = "", stamp[16] = "";
+        tiku_rect_t btn;
 
         (void)tiku_report_newest(st->report, sizeof st->report);
         leaf = strrchr(st->report, '/');
         leaf = (leaf != NULL) ? leaf + 1 : st->report;
-        /* A report is named <kind>-<yyyymmdd>-<hhmmss>-...: the kind
-         * and the moment are what a person is choosing between, and
-         * the rest of the name would run off the box. */
-        if (sscanf(leaf, "%15[a-z]-%15[0-9-]", kind, stamp) == 2 &&
-            strlen(stamp) >= 15u) {
+        if (st->reports_open) {
+            snprintf(line, sizeof line, "Hide reports");
+        } else if (st->report[0] == '\0') {
+            snprintf(line, sizeof line, "Reports: none");
+        } else if (sscanf(leaf, "%15[a-z]-%15[0-9-]", kind, stamp) == 2 &&
+                   strlen(stamp) >= 15u) {
+            /* A report is named <kind>-<yyyymmdd>-<hhmmss>-...: the kind
+             * and the moment are what a person is choosing between. */
             snprintf(line, sizeof line,
-                     "Last report: %s, %.4s-%.2s-%.2s %.2s:%.2s",
+                     "Last report: %s, %.4s-%.2s-%.2s %.2s:%.2s...",
                      kind, stamp, stamp + 4, stamp + 6, stamp + 9,
                      stamp + 11);
         } else {
-            snprintf(line, sizeof line, "Last report: %.60s",
-                     (st->report[0] != '\0') ? leaf : "none");
+            snprintf(line, sizeof line, "Last report: %.40s...", leaf);
         }
-        tiku_text(surface, plain, facts_x, y + plain->ascent, line,
-                       (st->report[0] != '\0') ? TIKU_C_SELECT : TIKU_C_TEXT);
-        st->report_row.x = facts_x;
-        st->report_row.y = y;
-        st->report_row.w = tiku_text_width(plain, line);
-        st->report_row.h = plain->height;
+        btn.x = facts_x;
+        btn.y = y;
+        btn.w = surface->w - 14 - facts_x;
+        btn.h = tiku_ui_button_h();
+        tiku_ui_button(surface, btn, line,
+                       (st->report[0] == '\0') ? TIKU_S_DISABLED : 0u);
+        st->reports_btn = btn;
     }
     {   /* Whose it is, where it lives, and on what terms.  Two lines
          * rather than one because the three together are 405 pixels at
          * the 12 px face and 526 at 16, against the 394 the window has
          * between its margins -- so the licence goes under the rest
          * instead of running off the side of the box that states it. */
-        int foot = surface->h - 14;
+        int foot = about_body_h() - 14;
 
         tiku_text(surface, plain, left, foot - plain->height - 4,
                        "(c) 2026 the TikuOS project   http://tiku-os.org",
@@ -342,10 +644,13 @@ paint(about_state_t *st)
 
             snprintf(built, sizeof built, "built %s %s", __DATE__,
                      __TIME__);
-            w = tiku_text_width(plain, built);
+                        w = tiku_text_width(plain, built);
             tiku_text(surface, plain, surface->w - 14 - w, foot,
                            built, TIKU_C_TEXT);
         }
+    }
+    if (st->reports_open) {
+        paint_reports(st, about_body_h());
     }
 }
 
@@ -380,6 +685,7 @@ about_start(void **state, const tiku_app_services_t *services)
     st->ncpu = count_cpus();
     st->opened_us = tiku_trk_now();
     st->step = -1;
+    st->chosen = -1;
     w = about_content_w();
     h = about_body_h();
     st->surface = tiku_surface_new(w, h, TIKU_C_PANEL);
@@ -436,14 +742,57 @@ about_event(void *state, const tiku_event_t *event)
         event->key == TIKU_KEY_ESCAPE) {
         return 1;
     }
-    if (event != NULL && event->type == TIKU_EVENT_POINTER_DOWN &&
-        st != NULL && st->report[0] != '\0' &&
-        st->services->open_path != NULL &&
-        event->x >= st->report_row.x &&
-        event->x < st->report_row.x + st->report_row.w &&
-        event->y >= st->report_row.y &&
-        event->y < st->report_row.y + st->report_row.h) {
-        (void)st->services->open_path(st->services->ctx, st->report);
+        if (event == NULL || st == NULL) {
+        return 0;
+    }
+        if (event->type == TIKU_EVENT_POINTER_DOWN &&
+        st->report[0] != '\0' &&
+        event->x >= st->reports_btn.x &&
+        event->x < st->reports_btn.x + st->reports_btn.w &&
+        event->y >= st->reports_btn.y &&
+        event->y < st->reports_btn.y + st->reports_btn.h) {
+        /* The row is the door: the reports open under the facts, or
+         * close again. */
+        if (st->reports_open) {
+            st->reports_open = 0;
+        } else {
+            reports_open(st);
+        }
+        st->step = -1;          /* the tick repaints and resizes */
+        return 0;
+    }
+    if (st->reports_open && event->type == TIKU_EVENT_POINTER_DOWN) {
+        int row = tiku_list_at(&st->list, st->list_box, event->x, event->y);
+
+        if (row >= 0 && row < st->nreports) {
+            tiku_list_select_only(&st->list, row);
+            st->chosen = row;
+            load_detail(st);
+            st->step = -1;
+            return 0;
+        }
+                if (st->chosen >= 0 && st->services->open_path != NULL &&
+            event->x >= st->open_btn.x &&
+            event->x < st->open_btn.x + st->open_btn.w &&
+            event->y >= st->open_btn.y &&
+            event->y < st->open_btn.y + st->open_btn.h) {
+            (void)st->services->open_path(st->services->ctx,
+                                          st->paths[st->chosen]);
+            return 0;
+        }
+    }
+    if (st->reports_open && event->type == TIKU_EVENT_WHEEL &&
+        st->nreports > REPORT_ROWS) {
+        int top = st->list.top + ((event->dy > 0) ? 1 : -1);
+
+        if (top < 0) {
+            top = 0;
+        }
+        if (top > st->nreports - REPORT_ROWS) {
+            top = st->nreports - REPORT_ROWS;
+        }
+        st->list.top = top;
+        st->step = -1;
     }
     return 0;
 }
@@ -468,7 +817,7 @@ about_tick(void *state, int64_t now_us)
      * the corner where it is, so a refit does not jump under the
      * pointer. */
     want_w = about_content_w();
-    want_h = about_body_h();
+    want_h = about_h(st);
     if (want_w != st->surface->w || want_h != st->surface->h) {
         tiku_surface_t *grown = tiku_surface_new(want_w, want_h,
                                                  TIKU_C_PANEL);

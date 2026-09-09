@@ -387,40 +387,77 @@ tiku_report_write(const char *why, void (*snapshot)(FILE *, void *),
     (void)fclose(f);
     snprintf(latest, sizeof latest, "%s/latest-report.txt", folder_path);
     (void)unlink(latest);
-    (void)symlink(out, latest);
+    if (symlink(out, latest) != 0) {
+        latest[0] = '\0';           /* the file stands on its own */
+    }
     return 0;
+}
+
+
+/** @brief The moment in a report's name, as a string that sorts. */
+static void
+report_stamp(const char *leaf, char *out, size_t max)
+{
+    const char *dash = strchr(leaf, '-');
+
+    snprintf(out, max, "%.15s", (dash != NULL) ? dash + 1 : leaf);
+}
+
+int
+tiku_report_list(char out[][512], int max)
+{
+    char folder[PATH_ROOM / 2];
+    DIR *d;
+    struct dirent *e;
+    char when[64][16];
+    int n = 0, i, j;
+
+    if (max > 64) {
+        max = 64;
+    }
+    tiku_report_folder(NULL, folder, sizeof folder);
+    d = opendir(folder);
+    if (d == NULL) {
+        return 0;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char stamp[16];
+
+        if (strncmp(e->d_name, "latest-", 7) == 0 ||
+            strstr(e->d_name, ".txt") == NULL) {
+            continue;
+        }
+        /* By the moment in the name, newest first: a copied file keeps
+         * its account but not its time. */
+        report_stamp(e->d_name, stamp, sizeof stamp);
+        for (i = 0; i < n && strcmp(when[i], stamp) >= 0; i++) {
+        }
+        if (i >= max) {
+            continue;
+        }
+        if (n < max) {
+            n++;
+        }
+        for (j = n - 1; j > i; j--) {
+            memcpy(when[j], when[j - 1], sizeof when[0]);
+            snprintf(out[j], 512, "%s", out[j - 1]);
+        }
+        memcpy(when[i], stamp, sizeof when[0]);
+        snprintf(out[i], 512, "%s/%s", folder, e->d_name);
+    }
+    (void)closedir(d);
+    return n;
 }
 
 int
 tiku_report_newest(char *out, size_t max)
 {
-    char folder[PATH_ROOM / 2];
-    DIR *d;
-    struct dirent *e;
-    time_t best = 0;
+    char one[1][512];
 
     out[0] = '\0';
-    tiku_report_folder(NULL, folder, sizeof folder);
-    d = opendir(folder);
-    if (d == NULL) {
+    if (tiku_report_list(one, 1) < 1) {
         return -1;
     }
-    while ((e = readdir(d)) != NULL) {
-        char path[PATH_ROOM];
-        struct stat st;
-
-        /* The pointers to the latest of each kind are not reports. */
-        if (strncmp(e->d_name, "latest-", 7) == 0 ||
-            strstr(e->d_name, ".txt") == NULL) {
-            continue;
-        }
-        snprintf(path, sizeof path, "%s/%s", folder, e->d_name);
-        if (stat(path, &st) == 0 && st.st_mtime >= best) {
-            best = st.st_mtime;
-            snprintf(out, max, "%s", path);
-        }
-    }
-    (void)closedir(d);
-    return (out[0] != '\0') ? 0 : -1;
+    snprintf(out, max, "%s", one[0]);
+    return 0;
 }
-

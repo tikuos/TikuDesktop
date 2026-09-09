@@ -86,6 +86,12 @@ int tiku_report_write(const char *why, void (*snapshot)(FILE *, void *),
 int tiku_report_newest(char *out, size_t max);
 
 /**
+ * @brief Every report in the folder, newest first, as full paths.
+ * @return how many were written to @p out.
+ */
+int tiku_report_list(char out[][512], int max);
+
+/**
  * @brief Write a report now, as a fault would, and carry on.
  *
  * For a program that has decided something is wrong before anything has
