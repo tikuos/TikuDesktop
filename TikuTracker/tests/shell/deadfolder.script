@@ -1,0 +1,25 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: report
+# board: dead
+# dead-after: 8
+# open: /devices/tiku
+# A folder open on a board that stops answering costs the loop nothing.
+#
+# The other half of a quiet board: a window showing one of its folders.
+# When the board cannot say what changed, every open folder re-lists
+# to find out, and a folder on the board asked its listing on the loop
+# with a six-second ceiling, every notice pump.  Here the window is
+# opened on the board's root before it goes quiet; afterwards the loop
+# is asked how long its turns got.
+wait 60
+expect-read trail:mount /devices/tiku
+expect-title tiku
+expect-under turns 100
+note the board goes quiet now; the folder is still open on it
+wait 1400
+expect-under turns 100
+note and the desk is still answering, the window still there
+expect-title tiku
+quit
