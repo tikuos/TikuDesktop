@@ -11,6 +11,7 @@
 
 #include "tiku_trk_desktop_private.h"
 #include "tiku_trail.h"
+#include "tiku_watch.h"
 
 /** @brief Append one menu's rows to @p out, the way a driver reads them. */
 static void
@@ -121,6 +122,14 @@ conduct_text(void *context, const char *name, char *out, size_t max)
          * "trail:<word>" is the part of it about that word, because the
          * ring is longer than any one reader's room. */
         (void)tiku_trail_find((name[5] == ':') ? name + 6 : NULL, out, max);
+        return 1;
+    }
+        if (strcmp(name, "turns") == 0) {
+        /* The longest turn since last asked, in ms: the number every
+         * "the loop never waits" proof reads, and reset by the reading
+         * so a script measures the stretch it arranged. */
+        snprintf(out, max, "%ld", tiku_watch_longest_ms());
+        tiku_watch_longest_reset();
         return 1;
     }
     if (strcmp(name, "title") == 0) {

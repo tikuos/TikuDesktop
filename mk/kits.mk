@@ -29,7 +29,8 @@ K := kits
 
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_trail.c $(K)/support/tiku_report.c \
-               $(K)/support/tiku_watch.c
+               $(K)/support/tiku_watch.c \
+               $(K)/support/tiku_work.c
 DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku_channel.c \
                $(K)/device/tiku_link.c $(K)/device/tiku_link_serial.c \
                $(K)/device/tiku_link_tcp.c \

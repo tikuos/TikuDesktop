@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_work.h"
 
 /**
  * @brief A button went down: what is under the pointer decides everything that
@@ -2500,9 +2501,12 @@ return;
 void
 desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
-    (void)lp;
+        (void)lp;
     (void)o;
     desktop_report_poll(app);
+    /* What the workers finished lands before events are taken, so the
+     * screen a click meets already shows what arrived. */
+    (void)tiku_work_collect();
     {   /* The settings FILE is a doorway too: a change written by
          * anything -- another shell, a script, an editor -- lands in
          * the live model, the reload the browser shell already does

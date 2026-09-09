@@ -41,6 +41,9 @@ static volatile int           stalls;
 static pthread_t turning;           /* the thread that runs the loop */
 static int       after_ms = 5000;
 static int       watching_on;
+static int       refused;
+static long      last_beat_ms;      /* loop thread only */
+static volatile long longest_ms;
 
 /** @brief On the stuck thread: write what it is in the middle of. */
 static void
@@ -148,10 +151,50 @@ tiku_watch_install(int ms)
     tiku_trail("a turn quiet for %d ms is written down", after_ms);
 }
 
+/** @brief Milliseconds on a clock that does not step. */
+static long
+now_ms(void)
+{
+    struct timespec t;
+
+    (void)clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000L + t.tv_nsec / 1000000L;
+}
+
 void
 tiku_watch_beat(void)
 {
+    long now;
+
+    if (watching_on && !pthread_equal(pthread_self(), turning)) {
+        refused++;
+        return;
+    }
+    now = now_ms();
+    if (last_beat_ms != 0L && now - last_beat_ms > longest_ms) {
+        longest_ms = now - last_beat_ms;
+    }
+    last_beat_ms = now;
     beats++;
+}
+
+int
+tiku_watch_refused(void)
+{
+    return refused;
+}
+
+long
+tiku_watch_longest_ms(void)
+{
+    return longest_ms;
+}
+
+void
+tiku_watch_longest_reset(void)
+{
+    longest_ms = 0L;
+    last_beat_ms = 0L;
 }
 
 int

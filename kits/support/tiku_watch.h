@@ -23,8 +23,25 @@
  */
 void tiku_watch_install(int after_ms);
 
-/** @brief The loop turned.  Cheap enough for every turn, and meant for it. */
+/**
+ * @brief The loop turned.  Cheap enough for every turn, and meant for it.
+ *
+ * Only the watched thread's beats count: a worker that beat would hide
+ * the very stall this exists to find.  Others are refused and counted.
+ */
 void tiku_watch_beat(void);
+
+/** @brief Beats refused because they came from another thread. */
+int tiku_watch_refused(void);
+
+/**
+ * @brief The longest gap between beats since the last reset, in ms --
+ *        the instrument every "the loop never waits" proof reads.
+ */
+long tiku_watch_longest_ms(void);
+
+/** @brief Start measuring the longest gap afresh. */
+void tiku_watch_longest_reset(void);
 
 /** @brief How many stalls have been written down. */
 int tiku_watch_stalls(void);
