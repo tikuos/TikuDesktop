@@ -106,7 +106,7 @@ scan that takes six seconds is a stall to record, not a process to end.
 sleeps eight seconds); asserts the stall report exists, names the
 seconds, and its backtrace contains the sleeping function's name.
 
-### P3 -- a supervisor  (half a day)
+### P3 -- a supervisor  (DONE 2026-09-09)
 
 `tiku-desk`: a small launcher that runs TikuDesktop with stderr
 captured to `reports/desk.log` (rotated at 1 MB), waits for it, and on
@@ -288,4 +288,37 @@ carries the STUCK thread's backtrace and the trail; and a loop that
 turns again goes quiet) and `stall.script`, where an application holds
 the shell's own turn for eight seconds and the shell is still answering
 afterwards.
+
+## 9. What P3 settled
+
+`apps/desk/tiku_desk.c` -> `build/tiku-desk`: starts the desk beside it
+(or `$TIKU_DESK`) with stderr kept in `reports/desk.log` (rolled at
+1 MB), waits, and on a bad end writes `exit-<time>.txt` -- the signal
+or status, the desk's own crash or stall account if it managed one,
+the last 200 lines it printed -- and points `latest-exit.txt` at it.
+Then it starts the desk ONCE more with `-after <that file>`, and the
+desk's first act is to say so on its screen, with the path.  A desk
+that ends badly again is left down, with the reason on the
+supervisor's stderr.  SIGTERM/SIGINT/SIGHUP to the supervisor go to the
+desk and that end is not mistaken for a mishap.
+
+**Two things the building taught:**
+
+1. **The supervisor found the wrong desk and was right about it.**  The
+   shipping desk beside `build/tiku-desk` has no script engine; it
+   refused the test's script with exit 2, and the supervisor wrote
+   that down, restarted once, and stopped -- the whole mechanism
+   working, on the wrong program.  The harness names the development
+   desk with `TIKU_DESK`, as it names applications with `TIKU_APPS`.
+2. **A Restart must forget `-after`.**  The Deskbar's Restart re-execs
+   the same argv; carried through, the word "stopped and was started
+   again" would greet a restart nobody crashed from.  `restart_argv`
+   is now the argv less that pair.
+
+**Proof:** `TikuTracker/tests/supervisor.sh` (18 legs, host-side, run
+by `make test`): killed from outside with SIGKILL, which no handler
+inside the desk can record, the exit report names signal 9; the desk
+is started again and told where the account is; the restarted desk
+SAID so; killed twice it is left down with two reports and no desk
+behind; ending the supervisor ends the desk and writes nothing.
 
