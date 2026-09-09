@@ -119,7 +119,7 @@ from.  It is the only new process.
 **Proof:** `supervisor.sh` (a host-side test): kills the desk with
 SIGKILL and asserts `exit-*.txt` names it.
 
-### P4 -- a report on demand  (half a day)
+### P4 -- a report on demand  (DONE 2026-09-09)
 
 SIGUSR2 to the desk writes `report-<time>.txt`: the trail, and a
 snapshot of what is safe to read -- the mounts and their ports, the
@@ -321,4 +321,40 @@ inside the desk can record, the exit report names signal 9; the desk
 is started again and told where the account is; the restarted desk
 SAID so; killed twice it is left down with two reports and no desk
 behind; ending the supervisor ends the desk and writes nothing.
+
+## 10. What P4 settled
+
+SIGUSR2 only ASKS: a handler can format nothing, so it sets a flag and
+the loop writes `report-<time>.txt` on its next turn, where everything
+may be read -- the mounts with their ports, the channels, the sessions
+by name with their windows, the applications hosted in this process, a
+run in progress and its state, a look in progress and where it is, and
+the trail.  `latest-report.txt` points at the newest.  The script verb
+`report` raises the real signal.
+
+**About this system** gained its one row: *Last report: <kind>,
+<moment>*, in the link colour, from the newest file in the folder.  A
+click opens it as a double click would -- and when nothing on the
+machine claims text files (a fresh home has no application registry,
+and the built-in "Open with Editor" add-on only sets a status line), it
+opens the reports folder instead, with the name on the row to find it
+by.  That needed one service, `open_path`, at the end of the services
+table; the runner leaves it NULL, since an application out of process
+is not on this machine's paths.
+
+**Three things the building taught:**
+
+1. **Channels do not share the mounts' slots.**  The first snapshot
+   said "/, a channel" -- indexing `channels[]` by mount slot.  They
+   are listed apart now, by descriptor and losses.
+2. **A report cannot contain the line that says it was written.**  The
+   trail goes into the file before the "report written" line is
+   trailed; the script asserts the launch before it instead.
+3. **A file name runs off the box.**  The row says the kind and the
+   moment parsed from the name, not the name.
+
+**Proof:** `report.script` on hardware -- a mounted board and a running
+TikuBasic; the file names `/devices/tiku` with its port, the session,
+`asked for: SIGUSR2`, the launch in the trail; the trail noun knows;
+About opens, its row is clicked, the reports folder opens.
 
