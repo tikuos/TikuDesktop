@@ -15,6 +15,8 @@
 
 #include "tiku_session.h"
 
+#include <pthread.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -48,7 +50,28 @@ struct tiku_session {
     int                 in_frame;
     int                 esc;
     int                 overflow;       /* the frame outgrew fbuf: dropped */
+    /* One hand on the wire at a time: a worker in the middle of a
+     * command and the loop polling for frames share this line, and the
+     * prompt discipline cannot survive two readers. */
+    pthread_mutex_t     hand;
+    /* The pen is for writing only.  A frame sent while a worker holds
+     * the hand goes between the command's bytes, which the board's
+     * decoder takes whole; what must not happen is two writers
+     * interleaving. */
+    pthread_mutex_t     pen;
 };
+
+/** @brief Every byte out goes through here, one writer at a time. */
+static int
+put(tiku_session_t *s, const void *bytes, size_t n)
+{
+    int rc;
+
+    pthread_mutex_lock(&s->pen);
+    rc = tiku_tx_write(s->tx, bytes, n);
+    pthread_mutex_unlock(&s->pen);
+    return rc;
+}
 
 /** @brief Milliseconds on the monotonic clock. */
 static long
@@ -286,8 +309,8 @@ pump(tiku_session_t *s, int timeout_ms, int *notified)
     return n;
 }
 
-tiku_session_t *
-tiku_session_new(tiku_tx_t *tx)
+static tiku_session_t *
+session_new(tiku_tx_t *tx)
 {
     tiku_session_t *s;
 
@@ -308,8 +331,8 @@ tiku_session_new(tiku_tx_t *tx)
     return s;
 }
 
-void
-tiku_session_free(tiku_session_t *s)
+static void
+session_free(tiku_session_t *s)
 {
     if (s == NULL) {
         return;
@@ -319,8 +342,8 @@ tiku_session_free(tiku_session_t *s)
     free(s);
 }
 
-void
-tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
+static void
+session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
 {
     if (s != NULL) {
         s->frame = fn;
@@ -328,8 +351,8 @@ tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
     }
 }
 
-void
-tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
+static void
+session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
 {
     if (s == NULL) {
         return;
@@ -341,17 +364,17 @@ tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
     s->text_ctx = ctx;
 }
 
-int
-tiku_session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
+static int
+session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
 {
     if (s == NULL || bytes == NULL || n == 0u) {
         return -1;
     }
-    return (tiku_tx_write(s->tx, bytes, n) < 0) ? -1 : 0;
+    return (put(s, bytes, n) < 0) ? -1 : 0;
 }
 
-void
-tiku_session_drain(tiku_session_t *s, int quiet_ms)
+static void
+session_drain(tiku_session_t *s, int quiet_ms)
 {
     long quiet_until;
 
@@ -371,8 +394,8 @@ tiku_session_drain(tiku_session_t *s, int quiet_ms)
     s->len = 0;
 }
 
-int
-tiku_session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
+static int
+session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
 {
     const unsigned char *p = bytes;
     unsigned char *out;
@@ -403,13 +426,13 @@ tiku_session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
         }
     }
     out[n++] = FRAME_END;
-    rc = tiku_tx_write(s->tx, out, n);
+    rc = put(s, out, n);
     free(out);
     return rc < 0 ? -1 : 0;
 }
 
-void
-tiku_session_on_notify(tiku_session_t *s, tiku_notify_fn fn,
+static void
+session_on_notify(tiku_session_t *s, tiku_notify_fn fn,
                             void *ctx)
 {
     if (s != NULL) {
@@ -418,8 +441,8 @@ tiku_session_on_notify(tiku_session_t *s, tiku_notify_fn fn,
     }
 }
 
-int
-tiku_session_sync(tiku_session_t *s, int timeout_ms)
+static int
+session_sync(tiku_session_t *s, int timeout_ms)
 {
     long deadline;
 
@@ -427,7 +450,7 @@ tiku_session_sync(tiku_session_t *s, int timeout_ms)
         return -1;
     }
     s->len = 0;
-    if (tiku_tx_write(s->tx, "\r\n", 2u) < 0) {
+    if (put(s, "\r\n", 2u) < 0) {
         return -1;
     }
     deadline = now_ms() + timeout_ms;
@@ -446,8 +469,8 @@ tiku_session_sync(tiku_session_t *s, int timeout_ms)
     }
 }
 
-int
-tiku_session_cmd(tiku_session_t *s, const char *line, char *out,
+static int
+session_cmd(tiku_session_t *s, const char *line, char *out,
                       size_t max, int timeout_ms)
 {
     long deadline;
@@ -462,8 +485,8 @@ tiku_session_cmd(tiku_session_t *s, const char *line, char *out,
     while (pump(s, 5, NULL) > 0) {
         s->len = 0;
     }
-    if (tiku_tx_write(s->tx, line, strlen(line)) < 0 ||
-        tiku_tx_write(s->tx, "\n", 1u) < 0) {
+    if (put(s, line, strlen(line)) < 0 ||
+        put(s, "\n", 1u) < 0) {
         return -1;
     }
     echo = strlen(line);
@@ -523,8 +546,8 @@ tiku_session_cmd(tiku_session_t *s, const char *line, char *out,
     }
 }
 
-int
-tiku_session_poll(tiku_session_t *s, int timeout_ms)
+static int
+session_poll(tiku_session_t *s, int timeout_ms)
 {
     int fired = 0;
 
@@ -537,8 +560,8 @@ tiku_session_poll(tiku_session_t *s, int timeout_ms)
     return fired;
 }
 
-int
-tiku_session_reopen(tiku_session_t *s)
+static int
+session_reopen(tiku_session_t *s)
 {
     if (s == NULL || tiku_tx_reopen(s->tx) != 0) {
         return -1;
@@ -552,8 +575,8 @@ tiku_session_reopen(tiku_session_t *s)
     return 0;
 }
 
-int
-tiku_session_reconnect(tiku_session_t *s)
+static int
+session_reconnect(tiku_session_t *s)
 {
     if (tiku_session_reopen(s) != 0) {
         return -1;
@@ -566,3 +589,161 @@ tiku_session_name(const tiku_session_t *s)
 {
     return (s != NULL) ? tiku_tx_name(s->tx) : "(none)";
 }
+
+/*---------------------------------------------------------------------------*/
+/* THE HAND                                                                  */
+/*---------------------------------------------------------------------------*/
+
+/*
+ * Every way in takes the hand; a poll that finds it taken says "nothing
+ * now" rather than waiting, because a poll is a look and the loop that
+ * looks must not stand behind a worker's four-second command.
+ */
+
+tiku_session_t *
+tiku_session_new(tiku_tx_t *tx)
+{
+    tiku_session_t *s = session_new(tx);
+    pthread_mutexattr_t attr;
+
+    if (s == NULL) {
+        return NULL;
+    }
+    (void)pthread_mutexattr_init(&attr);
+    (void)pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    (void)pthread_mutex_init(&s->hand, &attr);
+    (void)pthread_mutex_init(&s->pen, &attr);
+    (void)pthread_mutexattr_destroy(&attr);
+    return s;
+}
+
+void
+tiku_session_free(tiku_session_t *s)
+{
+    if (s == NULL) {
+        return;
+    }
+    (void)pthread_mutex_destroy(&s->hand);
+    (void)pthread_mutex_destroy(&s->pen);
+    session_free(s);
+}
+
+#define WITH_HAND(s, call) do { \
+        pthread_mutex_lock(&(s)->hand); call; \
+        pthread_mutex_unlock(&(s)->hand); } while (0)
+
+void
+tiku_session_on_notify(tiku_session_t *s, tiku_notify_fn fn, void *ctx)
+{
+    if (s != NULL) {
+        WITH_HAND(s, session_on_notify(s, fn, ctx));
+    }
+}
+
+int
+tiku_session_sync(tiku_session_t *s, int timeout_ms)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        WITH_HAND(s, rc = session_sync(s, timeout_ms));
+    }
+    return rc;
+}
+
+int
+tiku_session_cmd(tiku_session_t *s, const char *line, char *out, size_t max,
+                 int timeout_ms)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        WITH_HAND(s, rc = session_cmd(s, line, out, max, timeout_ms));
+    }
+    return rc;
+}
+
+int
+tiku_session_poll(tiku_session_t *s, int timeout_ms)
+{
+    int rc;
+
+    if (s == NULL) {
+        return 0;
+    }
+    if (pthread_mutex_trylock(&s->hand) != 0) {
+        return 0;               /* a worker has the wire: nothing now */
+    }
+    rc = session_poll(s, timeout_ms);
+    pthread_mutex_unlock(&s->hand);
+    return rc;
+}
+
+int
+tiku_session_reconnect(tiku_session_t *s)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        WITH_HAND(s, rc = session_reconnect(s));
+    }
+    return rc;
+}
+
+int
+tiku_session_reopen(tiku_session_t *s)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        WITH_HAND(s, rc = session_reopen(s));
+    }
+    return rc;
+}
+
+void
+tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
+{
+    if (s != NULL) {
+        WITH_HAND(s, session_on_frame(s, fn, ctx));
+    }
+}
+
+void
+tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
+{
+    if (s != NULL) {
+        WITH_HAND(s, session_on_text(s, fn, ctx));
+    }
+}
+
+int
+tiku_session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        rc = session_send_raw(s, bytes, n);     /* put() holds the pen */
+    }
+    return rc;
+}
+
+void
+tiku_session_drain(tiku_session_t *s, int quiet_ms)
+{
+    if (s != NULL) {
+        WITH_HAND(s, session_drain(s, quiet_ms));
+    }
+}
+
+int
+tiku_session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
+{
+    int rc = -1;
+
+    if (s != NULL) {
+        rc = session_send_frame(s, bytes, len); /* put() holds the pen */
+    }
+    return rc;
+}
+

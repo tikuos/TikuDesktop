@@ -250,16 +250,30 @@ typedef struct desktop {
     char                     board_names_told[512];
         int                      board_names_sessions;  /* how many heard it */
     int                      board_baud;   /* the mounts were opened at */
-    /* A look in progress: the ports still to try, one per beat, so the
-     * desk keeps its turns while every port on the machine is asked. */
-    struct {
-        char port[TIKU_MOUNT_MAX][256]; /* every port the machine has */
-        int  count;                 /* ports listed */
-        int  at;                    /* the next to ask */
-        int  baud;                  /* asked at */
-        int  session;               /* who asked, or -1 */
-        int  going;                 /* a look is in progress */
-    }                        look;
+    /* A board's last answer to "what changed", fetched by a worker;
+     * one asking in flight per mount slot. */
+    struct desktop_wire {
+        tiku_model_change_t ch[32];     /* the records it brought */
+        int                 n;          /* records, or -1: cannot tell */
+        int                 complete;
+        int                 answered;   /* an answer landed this pump */
+        int                 in_flight;
+    }                        wire[TIKU_MOUNT_MAX];
+    /* A look in progress: every port asked at once, by workers; what
+     * lands is mounted on the loop, and the asker hears when the last
+     * has landed.  The same accounting serves the boot sweep. */
+    struct desktop_ask {
+        int   going;            /* an asking is under way */
+        int   pending;          /* ports still to answer */
+        int   count;            /* ports asked */
+        int   landed;           /* answered so far */
+        int   baud;
+        int   session;          /* who asked, or -1 */
+        struct desktop_embed *slot; /* or the application hosted here */
+        int   found;            /* a reclaim: the board came back */
+        char  name[64];         /* a reclaim: which board */
+        char  uid[64];
+    }                        look, reclaim;
     /* Boards let go so something else could have their ports.  What is
      * kept is what the board IS, not where it was: a reflashed board
      * comes back on whatever node the host gives it next. */
@@ -710,13 +724,19 @@ int  desktop_board_save(desktop_t *app, struct desktop_embed *slot,
 int  desktop_board_input(desktop_t *app, const char *text);
 int  desktop_board_stop(desktop_t *app);
 int  desktop_board_list(desktop_t *app, char *out, size_t max);
-int  desktop_board_look(desktop_t *app);
-void desktop_board_look_begin(desktop_t *app, int session);
-void desktop_board_look_step(desktop_t *app);
+void desktop_board_look_begin(desktop_t *app, int session,
+                              struct desktop_embed *slot);
+void desktop_board_look_done(desktop_t *app);
+void desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev);
+void desktop_board_reclaim_done(desktop_t *app);
+void desktop_board_say(desktop_t *app, int session,
+                       struct desktop_embed *slot, int what,
+                       const char *text);
 int  mount_one(desktop_t *app, const char *port, int baud, const char *at,
                int probe);
 int  desktop_board_release(desktop_t *app, const char *name);
-int  desktop_board_reclaim(desktop_t *app, const char *name);
+int  desktop_board_reclaim(desktop_t *app, const char *name, int session,
+                           struct desktop_embed *slot);
 int  desktop_board_port(desktop_t *app, const char *name, char *out,
                         size_t max);
 int  desktop_board_mcu(desktop_t *app, const char *name, char *out,
@@ -762,6 +782,20 @@ int desktop_parse_args(int argc, char **argv, desktop_options_t *o);
 int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
 
+/* tiku_trk_desktop_wire.c */
+typedef struct desktop_wire desktop_wire_t;
+enum { DESKTOP_ASK_LOOK, DESKTOP_ASK_BOOT, DESKTOP_ASK_RECLAIM };
+int  desktop_wire_probe(desktop_t *app, int kind, const char *port,
+                        int baud, int probe, const char *at);
+void desktop_wire_wait(desktop_t *app, int *pending, long ms);
+int  mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
+                  const char *at);
+void desktop_wire_ask(desktop_t *app);
+int  desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
+                          int *complete);
+int  desktop_wire_changed(desktop_t *app, int slot);
+int  desktop_board_unmount(desktop_t *app, const char *prefix);
+
 /* tiku_trk_desktop_report.c */
 int  desktop_report_write(desktop_t *app, const char *why, char *out,
                           size_t max);
@@ -770,6 +804,9 @@ void desktop_report_poll(desktop_t *app);
 /* tiku_trk_desktop_mounts.c */
 int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
 int channel_keep(desktop_t *app, struct tiku_channel *ch);
+int port_is_mounted(desktop_t *app, const char *port);
+void device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
+                       char *out, size_t max);
 /**
  * @brief Listen on @p port for boards that dial in rather than being found
  *        on a cable.  @return 1 when the socket is up.

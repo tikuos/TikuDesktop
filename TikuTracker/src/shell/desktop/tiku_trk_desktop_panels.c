@@ -548,20 +548,13 @@ panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch)
      * panels' alone since every view is polling.
      */
     for (b = 0; b < TIKU_MOUNT_MAX; b++) {
-        tiku_backend_t *dev = tiku_mount_at(app->backend, b);
-        tiku_model_change_t mine[32];
-        int n, complete = 1;
-
+        /* The router could not tell: each board's own answer, as the
+         * worker last brought it, says whether its panels moved. */
         if (app->boards[b].root[0] == '\0' ||
-            app->boards[b].gui_id == ~(uint64_t)0 || dev == NULL ||
-            dev->ops->changes == NULL) {
+            app->boards[b].gui_id == ~(uint64_t)0) {
             continue;
         }
-        n = dev->ops->changes(dev, mine, 32, &complete);
-        if (n > 0) {
-            /* The records came off THIS board's ring, so they are its
-             * own -- the id need not be matched, and the board's dynamic
-             * gui/ hashes to no stable id to match against anyway. */
+        if (desktop_wire_changed(app, b)) {
             changed += panels_apply_board(app, b);
         }
     }

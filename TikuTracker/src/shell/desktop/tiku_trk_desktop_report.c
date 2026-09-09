@@ -111,13 +111,15 @@ snapshot(FILE *f, void *ctx)
     } else {
         fprintf(f, "no run in progress\n");
     }
-    if (app->look.going) {
-        fprintf(f, "a look in progress: port %d of %d, at %s\n",
-                app->look.at + 1, app->look.count,
-                (app->look.at < app->look.count)
-                    ? app->look.port[app->look.at] : "the end");
+        if (app->look.going) {
+        fprintf(f, "a look in progress: %d of %d ports answered\n",
+                app->look.landed, app->look.count);
     } else {
         fprintf(f, "no look in progress\n");
+    }
+    if (app->reclaim.going) {
+        fprintf(f, "a reclaim in progress: %s, %d ports to answer\n",
+                app->reclaim.name, app->reclaim.pending);
     }
 }
 

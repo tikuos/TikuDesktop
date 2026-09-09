@@ -257,7 +257,7 @@ remote_hear(desktop_t *app)
             if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
                 /* Begun here, finished over the beats: the asker is told
                  * when the last port has been asked. */
-                desktop_board_look_begin(app, i);
+                desktop_board_look_begin(app, i, NULL);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDFREE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);
@@ -270,14 +270,15 @@ remote_hear(desktop_t *app)
                 desktop_board_names_tell(app);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDBACK) {
-                const char *board = tiku_msg_find_string(m, "board", 0);
-                int ok = desktop_board_reclaim(app, board);
+                const char *board =
+                    tiku_msg_find_string(m, "board", 0);
 
-                desktop_board_tell(app, i,
-                                   ok ? TIKU_APP_BOARD_RECLAIMED
-                                      : TIKU_APP_BOARD_FAILED,
-                                   (board != NULL) ? board : "");
-                desktop_board_names_tell(app);
+                /* Taken: the answer comes when the ports have spoken.
+                 * Not taken: there is nothing to wait for. */
+                if (!desktop_board_reclaim(app, board, i, NULL)) {
+                    desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED,
+                                       (board != NULL) ? board : "");
+                }
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDSAVE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);

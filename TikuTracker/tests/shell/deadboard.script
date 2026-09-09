@@ -1,0 +1,26 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: report
+# board: dead
+# dead-after: 8
+# A mounted board that stops answering costs the loop nothing.
+#
+# The worst freeze in the tree: every 400 ms the desk asks each mounted
+# board what changed, with a four-second ceiling -- and a board that has
+# gone quiet costs the whole four, every 400 ms, on the one thread that
+# draws and takes clicks.  Here the board is real and answers until the
+# eighth second; from then on nothing comes back.  What is asserted is
+# the longest turn the loop took, read from the watchdog: a number that
+# was four thousand before the wire left the loop.
+wait 60
+expect-read trail:mount /devices/tiku
+expect-under turns 100
+note the board goes quiet now; ten notice pumps later, the loop is asked
+wait 1400
+expect-under turns 100
+note and the desk is still here, answering, its mount still standing
+report
+wait 60
+expect-file-has /tmp/trk_reports/latest-report.txt /devices/tiku
+quit

@@ -237,6 +237,20 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         }
         return 1;
     }
+        case OP_EXPECT_UNDER: {
+        char text[64], said[96];
+        long got;
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, cur->text2, text, sizeof text);
+        }
+        got = atol(text);
+        snprintf(said, sizeof said, "%s is %ld, under %d", cur->text2, got,
+                 cur->count);
+        sc_verdict(s, text[0] != '\0' && got < cur->count, said, "");
+        return 1;
+    }
     case OP_EXPECT_OPERATION: {
         /* Eventually, bounded: a job's lifecycle takes turns to reach
          * any given state, and a driver that must catch it mid-flight
@@ -661,6 +675,12 @@ sc_parse_said(sc_step_t *st, char **w, int n)
         st->op = OP_EXPECT_READ;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         sc_rest(w, n, 2, st->text, sizeof st->text);
+        } else if (strcmp(w[0], "expect-under") == 0 && n >= 3) {
+        /* A noun that answers a number, and the number it must stay
+         * under: how "the loop never waits" is asserted. */
+        st->op = OP_EXPECT_UNDER;
+        snprintf(st->text2, sizeof st->text2, "%s", w[1]);
+        st->count = atoi(w[2]);
     } else if (strcmp(w[0], "expect-operation") == 0 && n >= 2) {
         st->op = OP_EXPECT_OPERATION;
         sc_rest(w, n, 1, st->text, sizeof st->text);

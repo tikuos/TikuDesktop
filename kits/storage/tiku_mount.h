@@ -58,6 +58,29 @@ int tiku_mount_add(tiku_backend_t *router, const char *prefix,
  */
 int tiku_mount_remove(tiku_backend_t *router, const char *prefix);
 
+/**
+ * @brief Take the mount at @p prefix out of the table WITHOUT closing
+ *        it, and hand its backend back -- for a caller who must close it
+ *        later, once nothing else has a hand on it.
+ * @return the backend, or NULL for no such mount.
+ */
+tiku_backend_t *tiku_mount_detach(tiku_backend_t *router,
+                                  const char *prefix);
+
+/**
+ * @brief Which mounting of slot @p i this is: a number that changes when
+ *        the slot is filled again, so a result made for one board is not
+ *        applied to the next in its place.  0 for an empty slot.
+ */
+unsigned tiku_mount_gen_at(const tiku_backend_t *router, int i);
+
+/**
+ * @brief Mark @p raw, an id a slot's own backend minted, as the router
+ *        marks every id that leaves it -- for a change record fetched
+ *        from that backend directly rather than through the router.
+ */
+uint64_t tiku_mount_tag_id(int slot, uint64_t raw);
+
 /** @brief How many mounts there are, ignoring the gaps left by removal. */
 int tiku_mount_count(const tiku_backend_t *router);
 

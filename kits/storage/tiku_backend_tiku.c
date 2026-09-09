@@ -22,6 +22,7 @@
 #include "tiku_session.h"
 #include "tiku_tx.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +35,11 @@ typedef struct {
     tiku_identity_t  ident;
     int                  leased;        /* a client holds the shell       */
     char                 devid[TIKU_DEVID_MAX];
+    /* One hand on this board at a time: the namespace in memory is
+     * rebuilt by a worker's reload while the loop reads it for a stat,
+     * so every way in takes this, not only the ones that reach the
+     * wire. */
+    pthread_mutex_t      hand;
 } tiku_impl_t;
 
 /** @brief Whether the shell is somebody's, so the namespace is closed. */
@@ -171,7 +177,7 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
  * re-listing every open directory is not.
  */
 static int
-tk_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
+do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
            int *complete)
 {
     tiku_impl_t *impl = b->impl;
@@ -231,7 +237,7 @@ tk_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
 }
 
 static int
-tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
+do_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 {
     tiku_impl_t *impl = b->impl;
     const tiku_node_t *n = tiku_ns_find_id(impl->ns,
@@ -245,7 +251,7 @@ tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 }
 
 static int
-tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
+do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
     if (shell_is_leased(b)) {
         return -1;
@@ -329,7 +335,7 @@ tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 }
 
 static int
-tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
+do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
         void *ctx)
 {
     if (shell_is_leased(b)) {
@@ -465,7 +471,7 @@ tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
 }
 
 static int
-tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
+do_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 {
     if (shell_is_leased(b)) {
         return -1;
@@ -505,7 +511,7 @@ tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 }
 
 static int
-tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
+do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
          char *err, size_t errmax)
 {
     if (shell_is_leased(b)) {
@@ -553,7 +559,7 @@ tiku_backend_tiku_down(const tiku_backend_t *b)
 }
 
 static int
-tk_pump(tiku_backend_t *b, int timeout_ms)
+do_pump(tiku_backend_t *b, int timeout_ms)
 {
     tiku_impl_t *impl = b->impl;
 
@@ -572,7 +578,7 @@ tk_store(tiku_backend_t *b)
 }
 
 static void
-tk_close(tiku_backend_t *b)
+do_close(tiku_backend_t *b)
 {
     tiku_impl_t *impl = b->impl;
 
@@ -588,6 +594,105 @@ tk_close(tiku_backend_t *b)
         free(impl);
     }
     free(b);
+}
+
+/*---------------------------------------------------------------------------*/
+/* THE HAND                                                                  */
+/*---------------------------------------------------------------------------*/
+
+#define HAND(b) (&((tiku_impl_t *)(b)->impl)->hand)
+
+static int
+tk_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
+           int *complete)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_changes(b, out, max, complete);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_path_of_id(b, id, out, max);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_stat(b, path, out);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_list(b, path, fn, ctx);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_read(b, path, buf, max);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
+         char *err, size_t errmax)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_write(b, path, buf, len, err, errmax);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static int
+tk_pump(tiku_backend_t *b, int timeout_ms)
+{
+    int rc;
+
+    /* A pump is a look: behind a worker's command it says nothing now. */
+    if (pthread_mutex_trylock(HAND(b)) != 0) {
+        return 0;
+    }
+    rc = do_pump(b, timeout_ms);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
+static void
+tk_close(tiku_backend_t *b)
+{
+    pthread_mutex_t *hand = HAND(b);
+
+    pthread_mutex_lock(hand);
+    pthread_mutex_unlock(hand);
+    (void)pthread_mutex_destroy(hand);
+    do_close(b);
 }
 
 static const tiku_backend_ops_t TIKU_OPS = {
@@ -760,6 +865,14 @@ open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
         free(b);
         free(impl);
         return NULL;
+    }
+    {
+        pthread_mutexattr_t attr;
+
+        (void)pthread_mutexattr_init(&attr);
+        (void)pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+        (void)pthread_mutex_init(&impl->hand, &attr);
+        (void)pthread_mutexattr_destroy(&attr);
     }
             impl->sess = tiku_session_new(tx);
     {

@@ -566,7 +566,7 @@ embed_svc_board_find(void *ctx)
 {
     struct desktop_embed *slot = ctx;
 
-    desktop_board_look_begin(slot->app, -1);
+    desktop_board_look_begin(slot->app, -1, slot);
     return 1;
 }
 
@@ -619,7 +619,9 @@ embed_svc_board_reclaim(void *ctx, const char *board)
 {
     struct desktop_embed *slot = ctx;
 
-    return desktop_board_reclaim(slot->app, board);
+        /* Told as board_said(RECLAIMED / FAILED) once the ports have
+     * spoken; here only whether the asking was taken. */
+    return desktop_board_reclaim(slot->app, board, -1, slot);
 }
 
 /** @brief Break the running program. */

@@ -20,10 +20,13 @@ typedef struct {
     tiku_backend_t  *backend;
     int              owned;
     int              live;
+    unsigned         gen;       /* which mounting of this slot this is */
 } mount_slot_t;
 
 typedef struct {
     mount_slot_t slot[TIKU_MOUNT_MAX];
+    unsigned     next_gen;      /* never reused, so a slot's old life and
+                                 * its new one never share a number */
 } mount_impl_t;
 
 /*
@@ -40,6 +43,12 @@ static uint64_t
 tag_id(int slot, uint64_t raw)
 {
     return ((uint64_t)(slot + 1) << ID_SHIFT) | (raw & ID_MASK);
+}
+
+uint64_t
+tiku_mount_tag_id(int slot, uint64_t raw)
+{
+    return tag_id(slot, raw);
 }
 
 static int
@@ -701,7 +710,41 @@ tiku_mount_add(tiku_backend_t *router, const char *prefix,
     m->slot[spare].backend = b;
     m->slot[spare].owned = owned ? 1 : 0;
     m->slot[spare].live = 1;
+    m->slot[spare].gen = ++m->next_gen;
     return 0;
+}
+
+unsigned
+tiku_mount_gen_at(const tiku_backend_t *router, int i)
+{
+    mount_impl_t *m = table_of(router);
+
+    if (m == NULL || i < 0 || i >= TIKU_MOUNT_MAX || !m->slot[i].live) {
+        return 0u;
+    }
+    return m->slot[i].gen;
+}
+
+tiku_backend_t *
+tiku_mount_detach(tiku_backend_t *router, const char *prefix)
+{
+    mount_impl_t *m = table_of(router);
+    int i;
+
+    if (m == NULL || prefix == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (m->slot[i].live && strcmp(m->slot[i].prefix, prefix) == 0) {
+            tiku_backend_t *b = m->slot[i].backend;
+
+            m->slot[i].live = 0;
+            m->slot[i].backend = NULL;
+            m->slot[i].prefix[0] = '\0';
+            return b;
+        }
+    }
+    return NULL;
 }
 
 int

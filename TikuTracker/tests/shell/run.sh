@@ -165,6 +165,19 @@ for s in "$here"/*.script; do
                 continue
             fi
         fi
+        boarddead=""
+        if grep -q '^# board: dead' "$s"; then
+            # The board goes quiet mid-script: a pseudo-terminal in front
+            # of the real port stops answering after "# dead-after: N"
+            # seconds (8 when unsaid).  What is being tested is the desk,
+            # not the board -- that a mount which stops answering costs
+            # the loop nothing.
+            boarddead=yes
+            boardonly=yes
+            if [ -z "${TRK_PORT:-}" ]; then
+                continue
+            fi
+        fi
         if grep -q '^# board: only' "$s"; then
             boardonly=yes
             if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
@@ -402,6 +415,31 @@ for s in "$here"/*.script; do
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" -mount "$mountat" \
                 -script "$s" || fails=$((fails+1))
+        fi
+        if [ -n "$boarddead" ] && [ "$bin" = desktop ]; then
+            deadafter=$(sed -n 's/^# dead-after: //p' "$s" | head -1)
+            printf '\n== %s (%s, board on %s, quiet after %ss)\n' \
+                "$(basename "$s")" "$bin" "$TRK_PORT" "${deadafter:-8}"
+            rm -rf "$deskhome"/.local/share/tracker/devices/*.state
+            rm -f /tmp/trk_deadport
+            python3 "$top/TikuTracker/tests/tools/deadport.py" \
+                --port "$TRK_PORT" --dead-after "${deadafter:-8}" \
+                --dead-for 600 --say /tmp/trk_deadport \
+                < /dev/null > /tmp/trk_deadport.log 2>&1 &
+            relay=$!
+            i=0
+            while [ ! -s /tmp/trk_deadport ] && [ $i -lt 50 ]; do
+                sleep 0.1; i=$((i + 1))
+            done
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                "$devbin/$exe" ${openat:-$work} \
+                -devices -p "$(cat /tmp/trk_deadport)" \
+                -script "$s" || fails=$((fails+1))
+            kill $relay 2>/dev/null
+            wait $relay 2>/dev/null
         fi
         if [ -n "$boarddiscover" ] && [ "$bin" = desktop ]; then
             printf '\n== %s (%s, board found by scanning, no port given)\n' "$(basename "$s")" "$bin"

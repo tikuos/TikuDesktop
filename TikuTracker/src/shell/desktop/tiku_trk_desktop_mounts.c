@@ -91,7 +91,7 @@ save_before_unmount(dev_t dev, void *context)
  * durable state keys on the devid, not on this, so renaming a board
  * keeps the arrangement of its windows.
  */
-static void
+void
 device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
                   char *out, size_t max)
 {
@@ -187,11 +187,60 @@ channel_keep(desktop_t *app, tiku_channel_t *ch)
     return -1;
 }
 
+
+/** @brief Each turn: pump every channel, and let go of a dialled board
+ *         whose link is lost, its mount with it. */
+void
+channels_tend(desktop_t *app)
+{
+    int k;
+
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        tiku_channel_t *ch = app->channels[k];
+
+        if (ch == NULL) {
+            continue;
+        }
+        (void)tiku_channel_pump(ch);
+        /* A link a board dialled does not come back: the board dials
+         * again and is taken in afresh.  Its mount goes with it, so a
+         * board that rebooted is one place under /devices, not two. */
+        if (app->channel_mount[k][0] != '\0' &&
+            tiku_channel_losses(ch) > 0) {
+            tiku_trail("unmount %s: the link was lost",
+                       app->channel_mount[k]);
+            (void)desktop_board_unmount(app, app->channel_mount[k]);
+            app->channel_mount[k][0] = '\0';
+            tiku_channel_close(ch);
+            app->channels[k] = NULL;
+        }
+    }
+}
+
+
+/*---------------------------------------------------------------------------*/
+/* BOARDS THAT DIAL IN                                                       */
+/*---------------------------------------------------------------------------*/
+
+/** @brief Listen on @p port for boards that dial in rather than being
+ *         found on a cable.  @return 1 when the socket is up. */
+int
+boards_listen(desktop_t *app, int port)
+{
+    /* Zero is "no listener" here, as it is in a desktop that never asked
+     * for one: the shell's own descriptors are open, so the socket is
+     * never 0 in practice. */
+    app->board_listen = tiku_link_tcp_listen(port);
+    return app->board_listen > 0;
+}
+
 /**
- * @brief Mount the shell of a board that reached the desk over a link:
- *        the same session and namespace a cable gives, over the shell
- *        road the channel carries beside the windows.  A board built
- *        without a shell answers no prompt and keeps its windows only.
+ * @brief Mount the shell of a board that dialled in, over the channel it
+ *        came on.
+ *
+ * On the loop, unlike a cable's open: the shell's transport is fed by
+ * pumping this channel, and the loop pumps it too, so a worker opening
+ * it would be a second hand on one link.
  */
 static void
 mount_over(desktop_t *app, int slot)
@@ -216,69 +265,7 @@ mount_over(desktop_t *app, int slot)
         return;
     }
     snprintf(app->channel_mount[slot], TIKU_PATH_MAX, "%s", prefix);
-}
-
-/** @brief Each turn: pump every channel, and let go of a dialled board
- *         whose link is lost, its mount with it. */
-void
-channels_tend(desktop_t *app)
-{
-    int k;
-
-    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
-        tiku_channel_t *ch = app->channels[k];
-
-        if (ch == NULL) {
-            continue;
-        }
-        (void)tiku_channel_pump(ch);
-        /* A link a board dialled does not come back: the board dials
-         * again and is taken in afresh.  Its mount goes with it, so a
-         * board that rebooted is one place under /devices, not two. */
-        if (app->channel_mount[k][0] != '\0' &&
-            tiku_channel_losses(ch) > 0) {
-            tiku_trail("unmount %s: the link was lost",
-                       app->channel_mount[k]);
-            (void)tiku_mount_remove(app->backend, app->channel_mount[k]);
-            app->channel_mount[k][0] = '\0';
-            tiku_channel_close(ch);
-            app->channels[k] = NULL;
-        }
-    }
-}
-
-/**
- * @brief A port that answers no prompt.  A board built without its shell
- *        has no namespace to mount but still carries its window session,
- *        so a channel is opened on the port alone and kept when a board
- *        acknowledges its link; a port nothing answers is let go.
- */
-static void
-windows_only(desktop_t *app, const char *port, int baud)
-{
-    tiku_channel_t *ch = tiku_channel_open_port(port, baud);
-
-    if (ch != NULL && !tiku_channel_probe(ch, PROBE_MS)) {
-        tiku_channel_close(ch);
-        return;
-    }
-    (void)channel_keep(app, ch);
-}
-
-/*---------------------------------------------------------------------------*/
-/* BOARDS THAT DIAL IN                                                       */
-/*---------------------------------------------------------------------------*/
-
-/** @brief Listen on @p port for boards that dial in rather than being
- *         found on a cable.  @return 1 when the socket is up. */
-int
-boards_listen(desktop_t *app, int port)
-{
-    /* Zero is "no listener" here, as it is in a desktop that never asked
-     * for one: the shell's own descriptors are open, so the socket is
-     * never 0 in practice. */
-    app->board_listen = tiku_link_tcp_listen(port);
-    return app->board_listen > 0;
+    tiku_trail("mount %s over a dial-in", prefix);
 }
 
 /**
@@ -314,7 +301,7 @@ boards_accept(desktop_t *app)
         if (slot < 0) {
             continue;
         }
-        tiku_channel_greet(ch);
+                        tiku_channel_greet(ch);
         mount_over(app, slot);
     }
 }
@@ -336,7 +323,7 @@ boards_unlisten(desktop_t *app)
  * owners on one cable corrupt each other, and the second one would be
  * mounted beside the first as though it were another board.
  */
-static int
+int
 port_is_mounted(desktop_t *app, const char *port)
 {
     char want[PATH_MAX], real[PATH_MAX];
@@ -364,69 +351,6 @@ port_is_mounted(desktop_t *app, const char *port)
     return 0;
 }
 
-/**
- * @brief Mount the board on @p port, if one answers.  A @p probe asks
- *        briefly and writes nothing; the other way waits and puts a
- *        board found inside its interpreter back.
- * @return 1 when a board was mounted.
- */
-int
-mount_one(desktop_t *app, const char *port, int baud, const char *at,
-          int probe)
-{
-    tiku_backend_t *dev;
-    char name[64], prefix[TIKU_PATH_MAX];
-
-    if (port_is_mounted(app, port)) {
-        return 0;               /* already this shell's; leave it alone */
-    }
-        tiku_trail("%s %s", probe ? "probe" : "open", port);
-    dev = probe ? tiku_backend_tiku_open_within(port, baud, 800, 0)
-                : tiku_backend_tiku_open(port, baud);
-    if (dev == NULL) {
-        tiku_trail("  %s: nothing answered", port);
-        if (!probe) {
-            windows_only(app, port, baud);
-        }
-        return 0;
-    }
-    if (at != NULL && at[0] == '/') {
-        snprintf(prefix, sizeof prefix, "%s", at);
-    } else {
-        device_mount_name(dev, app->backend, name, sizeof name);
-        snprintf(prefix, sizeof prefix, "/devices/%s", name);
-    }
-    /* Four seconds: a control's write is a few bytes, and a board
-     * that takes longer is one to say something about, not wait on. */
-        tiku_backend_tiku_set_write_timeout(dev, 4000);
-    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
-        tiku_trail("mount %s refused", prefix);
-        tiku_backend_close(dev);
-        return 0;
-    }
-    tiku_trail("mount %s on %s", prefix, port);
-    /* The same cable carries the board's windows: a channel on the
-     * console's session, adopted by the desktop's listener once that
-     * exists (channels_attach).  Only on a board that HAS windows: a
-     * board without the overlay registers no channel, and its console
-     * takes a frame for an unregistered channel as text. */
-    {
-        tiku_model_t gui;
-
-        if (dev->ops->stat(dev, "/gui", &gui) == 0) {
-            int slot = channel_keep(app,
-                                    tiku_channel_open(
-                                        tiku_backend_tiku_session(dev)));
-
-            if (slot >= 0) {
-                snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
-                         prefix);
-            }
-        }
-    }
-    app->dirty = 1;
-    return 1;
-}
 
 /**
  * @brief Put every board that answers into the namespace under /devices.
@@ -454,13 +378,83 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
     } else {
         found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
     }
+    /* Every port asked at once; the boot waits for the answers, since
+     * the loop is not turning yet and the splash is honest about it.  A
+     * port named on the command line is known to be a board and is
+     * waited for; one merely found is only asked. */
+    app->look.going = 1;
+    app->look.session = -1;
+    app->look.slot = NULL;
+    app->look.pending = 0;
+    app->look.count = 0;
+    app->look.landed = 0;
     for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
-        /* A port named on the command line is known to be a board and
-         * is waited for; one merely found is only asked. */
-        mounted += mount_one(app, scan[i], baud, at,
-                             !(port != NULL && port[0] != '\0'));
+        if (desktop_wire_probe(app, DESKTOP_ASK_BOOT, scan[i], baud,
+                               !(port != NULL && port[0] != '\0'), at) == 0) {
+            app->look.pending++;
+            app->look.count++;
+        }
+    }
+    desktop_wire_wait(app, &app->look.pending, 60000L);
+    app->look.going = 0;
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+
+        mounted += (prefix != NULL && strncmp(prefix, "/devices/", 9) == 0);
     }
     return mounted;
+}
+
+/**
+ * @brief A board answered on @p port: mount it.  The loop's side of a
+ *        probe; the open itself was a worker's.
+ * @return 1 when mounted.
+ */
+int
+mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
+             const char *at)
+{
+    char name[64], prefix[TIKU_PATH_MAX];
+
+    if (port_is_mounted(app, port)) {
+        /* Two askings of one cable, and the other landed first. */
+        tiku_backend_close(dev);
+        return 0;
+    }
+    if (at != NULL && at[0] == '/') {
+        snprintf(prefix, sizeof prefix, "%s", at);
+    } else {
+        device_mount_name(dev, app->backend, name, sizeof name);
+        snprintf(prefix, sizeof prefix, "/devices/%s", name);
+    }
+    /* Four seconds: a control's write is a few bytes, and a board
+     * that takes longer is one to say something about, not wait on. */
+    tiku_backend_tiku_set_write_timeout(dev, 4000);
+    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+        tiku_trail("mount %s refused", prefix);
+        tiku_backend_close(dev);
+        return 0;
+    }
+    tiku_trail("mount %s on %s", prefix, port);
+    /* A board with a /gui has windows to show: a channel beside the
+     * shell carries them.  The stat is answered from the manifest just
+     * loaded, so it costs no wire. */
+    {
+        tiku_model_t gui;
+
+        if (dev->ops->stat(dev, "/gui", &gui) == 0) {
+            int slot = channel_keep(app,
+                                    tiku_channel_open(
+                                        tiku_backend_tiku_session(dev)));
+
+            if (slot >= 0) {
+                snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
+                         prefix);
+            }
+        }
+    }
+    app->dirty = 1;
+    return 1;
 }
 
 /**
@@ -522,13 +516,13 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
          * the first window consume everyone else's and leave them told
          * that nothing happened.
          */
-        tiku_model_change_t ch[32];
+                tiku_model_change_t ch[32];
         int nch = -1, complete = 1;
 
-        if (app->backend->ops->changes != NULL) {
-            nch = app->backend->ops->changes(app->backend, ch, 32,
-                                            &complete);
-        }
+        /* The boards' answers are the workers' last; the local stores
+         * answer at once.  Then the next asking is posted, after every
+         * reader below has had this one. */
+        nch = desktop_wire_changes(app, ch, 32, &complete);
         for (i = 0; i < app->folder_count; i++) {
             folder_t *fl = &app->folders[i];
             unsigned nf;
@@ -566,7 +560,8 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
             tiku_trk_now(), ch, nch, complete);
         changed += tiku_trk_panel_window_poll(&app->file_panel,
             tiku_trk_now(), ch, nch, complete);
-        changed += panels_poll(app, ch, nch);
+                changed += panels_poll(app, ch, nch);
+        desktop_wire_ask(app);
         {   /* What has been mounted or unmounted since the last look.
              * Polled with everything else rather than on a timer of its
              * own: a volume arriving is a change like any other. */

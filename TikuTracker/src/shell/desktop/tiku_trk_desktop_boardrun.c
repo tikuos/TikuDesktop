@@ -274,72 +274,8 @@ desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
     return (int)strlen(strncpy(out, id->mcu, max - 1u));
 }
 
-/**
- * @brief Start looking for boards: the ports to ask, asked one per beat.
- *
- * Every port on a machine, each waited on in turn, is twenty seconds
- * the desk would not answer for; asked one at a time between beats it
- * stays a desk, and the boards appear as they are found.  A port this
- * shell already holds is left alone.
- *
- * @param session who asked over the wire, or -1 for an application in
- *                this process; told LOOKED when the last port has been.
- */
-void
-desktop_board_look_begin(desktop_t *app, int session)
-{
-    if (app == NULL || app->look.going) {
-        return;                 /* one look at a time; the asker hears */
-    }
-    app->look.count = tiku_tx_scan_serial(app->look.port, TIKU_MOUNT_MAX);
-    app->look.at = 0;
-    app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
-        app->look.session = session;
-    app->look.going = 1;
-    tiku_trail("look: %d ports to ask", app->look.count);
-}
 
-/** @brief One port of a look in progress; the last one says so. */
-void
-desktop_board_look_step(desktop_t *app)
-{
-    if (app == NULL || !app->look.going) {
-        return;
-    }
-    if (app->look.at < app->look.count) {
-        (void)mount_one(app, app->look.port[app->look.at], app->look.baud,
-                        NULL, 1);
-        app->look.at++;
-        if (app->look.at < app->look.count) {
-            return;
-        }
-    }
-        app->look.going = 0;
-    tiku_trail("look: done, %d boards", board_count(app));
-    desktop_board_names_tell(app);
-    if (app->look.session >= 0) {
-        char how[32];
 
-        (void)snprintf(how, sizeof how, "%d", board_count(app));
-        desktop_board_tell(app, app->look.session, TIKU_APP_BOARD_LOOKED,
-                           how);
-    }
-    app->dirty = 1;
-}
-
-/**
- * @brief Look for boards, waiting: every port, here and now.
- * @return how many boards are mounted afterwards.
- */
-int
-desktop_board_look(desktop_t *app)
-{
-    desktop_board_look_begin(app, -1);
-    while (app != NULL && app->look.going) {
-        desktop_board_look_step(app);
-    }
-    return (app != NULL) ? board_count(app) : 0;
-}
 
 /**
  * @brief Let the board called @p name go, port and all.
@@ -397,63 +333,11 @@ desktop_board_release(desktop_t *app, const char *name)
         tiku_trail("release %s", name);
     /* The router took the obligation when it was mounted, so removing
      * it closes it: closing again here would be closing it twice. */
-    (void)tiku_mount_remove(app->backend, prefix);
+    (void)desktop_board_unmount(app, prefix);
     app->dirty = 1;
     return 1;
 }
 
-/**
- * @brief Take the board called @p name back, wherever it is now.
- *
- * @return nonzero when it answered again and is mounted where it was.
- */
-int
-desktop_board_reclaim(desktop_t *app, const char *name)
-{
-    char prefix[TIKU_PATH_MAX];
-    tiku_backend_t *dev;
-    tiku_model_t gui;
-    int i, baud;
-
-    if (app == NULL || name == NULL) {
-        return 0;
-    }
-    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
-        if (app->released[i].used &&
-            strcmp(app->released[i].name, name) == 0) {
-            break;
-        }
-    }
-    if (i == TIKU_MOUNT_MAX) {
-        return 0;               /* not one this shell let go */
-    }
-    baud = (app->board_baud > 0) ? app->board_baud : 115200;
-    dev = tiku_backend_tiku_open_uid(app->released[i].uid, baud);
-    if (dev == NULL) {
-        return 0;               /* not back yet: asking again is free */
-    }
-    (void)snprintf(prefix, sizeof prefix, "/devices/%s",
-                   app->released[i].name);
-    tiku_backend_tiku_set_write_timeout(dev, 4000);
-    if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
-        tiku_backend_close(dev);
-        return 0;
-    }
-    if (dev->ops->stat(dev, "/gui", &gui) == 0) {
-        int slot = channel_keep(app,
-                                tiku_channel_open(
-                                    tiku_backend_tiku_session(dev)));
-
-        if (slot >= 0) {
-            (void)snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
-                           prefix);
-        }
-    }
-        app->released[i].used = 0;
-    app->dirty = 1;
-    tiku_trail("reclaim %s", name);
-    return 1;
-}
 
 /**
  * @brief Start @p program on the board called @p board.
@@ -575,7 +459,7 @@ desktop_board_pump(desktop_t *app)
     if (app == NULL) {
         return;
     }
-    desktop_board_look_step(app);   /* a look in progress, a port a beat */
+    
     if (app->board_run == NULL) {
         return;
     }
@@ -629,4 +513,189 @@ desktop_board_pump(desktop_t *app)
                            app->board_run_saving ? app->board_run_name : "");
     }
     app->board_run_saving = 0;
+}
+
+/*---------------------------------------------------------------------------*/
+/* LOOKING, AND ASKING BACK                                                  */
+/*---------------------------------------------------------------------------*/
+
+/**
+ * @brief Look for boards on every port at once.  What answers is mounted
+ *        as it lands; the asker -- a session, or an application hosted
+ *        here -- hears when the last port has answered.
+ */
+void
+desktop_board_look_begin(desktop_t *app, int session,
+                         struct desktop_embed *slot)
+{
+    char scan[TIKU_MOUNT_MAX][256];
+    int found, i;
+
+    if (app == NULL || app->look.going) {
+        return;                 /* one look at a time; the asker hears */
+    }
+    found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
+    app->look.going = 1;
+    app->look.session = session;
+    app->look.slot = slot;
+    app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    app->look.pending = 0;
+    app->look.count = 0;
+    app->look.landed = 0;
+    tiku_trail("look: %d ports to ask", found);
+    for (i = 0; i < found; i++) {
+        if (desktop_wire_probe(app, DESKTOP_ASK_LOOK, scan[i],
+                               app->look.baud, 1, NULL) == 0) {
+            app->look.pending++;
+            app->look.count++;
+        }
+    }
+    if (app->look.pending == 0) {
+        desktop_board_look_done(app);
+    }
+}
+
+/** @brief The last port answered: say so to whoever asked. */
+void
+desktop_board_look_done(desktop_t *app)
+{
+    char how[32];
+
+    app->look.going = 0;
+    tiku_trail("look: done, %d boards", board_count(app));
+    desktop_board_names_tell(app);
+    (void)snprintf(how, sizeof how, "%d", board_count(app));
+    desktop_board_say(app, app->look.session, app->look.slot,
+                      TIKU_APP_BOARD_LOOKED, how);
+    app->dirty = 1;
+}
+
+/**
+ * @brief Ask for a released board back, wherever it is now: every port
+ *        is probed at once and the one with its uid is mounted.  The
+ *        asker hears RECLAIMED when it lands, or FAILED when the last
+ *        port has answered without it.
+ * @return 1 when the asking was taken; 0 for a board this shell never
+ *         let go, or a reclaim already under way.
+ */
+int
+desktop_board_reclaim(desktop_t *app, const char *name, int session,
+                      struct desktop_embed *slot)
+{
+    char scan[16][256];
+    int i, found;
+
+    if (app == NULL || name == NULL || app->reclaim.going) {
+        return 0;
+    }
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (app->released[i].used &&
+            strcmp(app->released[i].name, name) == 0) {
+            break;
+        }
+    }
+    if (i == TIKU_MOUNT_MAX) {
+        return 0;               /* not one this shell let go */
+    }
+    app->reclaim.going = 1;
+    app->reclaim.session = session;
+    app->reclaim.slot = slot;
+    app->reclaim.found = 0;
+    app->reclaim.pending = 0;
+    app->reclaim.baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    snprintf(app->reclaim.name, sizeof app->reclaim.name, "%s", name);
+    snprintf(app->reclaim.uid, sizeof app->reclaim.uid, "%s",
+             app->released[i].uid);
+    found = tiku_tx_scan_serial(scan, 16);
+    for (i = 0; i < found; i++) {
+        if (desktop_wire_probe(app, DESKTOP_ASK_RECLAIM, scan[i],
+                               app->reclaim.baud, 1, NULL) == 0) {
+            app->reclaim.pending++;
+        }
+    }
+    tiku_trail("reclaim %s: %d ports to ask", name, app->reclaim.pending);
+    if (app->reclaim.pending == 0) {
+        desktop_board_reclaim_done(app);
+    }
+    return 1;
+}
+
+/**
+ * @brief A probe for a reclaim answered with @p dev, or NULL.  The one
+ *        with the uid is mounted where the board was; the rest are
+ *        closed.  Called on the loop.
+ */
+void
+desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
+{
+    const tiku_identity_t *id = (dev != NULL)
+                                ? tiku_backend_tiku_identity(dev) : NULL;
+
+    app->reclaim.pending--;
+    if (dev != NULL && !app->reclaim.found && id != NULL &&
+        strcmp(id->uid, app->reclaim.uid) == 0) {
+        char prefix[TIKU_PATH_MAX];
+        tiku_model_t gui;
+        int i;
+
+        (void)snprintf(prefix, sizeof prefix, "/devices/%s",
+                       app->reclaim.name);
+        tiku_backend_tiku_set_write_timeout(dev, 4000);
+        if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
+            tiku_backend_close(dev);
+        } else {
+            if (dev->ops->stat(dev, "/gui", &gui) == 0) {
+                int slot = channel_keep(app,
+                                        tiku_channel_open(
+                                            tiku_backend_tiku_session(dev)));
+
+                if (slot >= 0) {
+                    (void)snprintf(app->channel_board[slot], TIKU_PATH_MAX,
+                                   "%s", prefix);
+                }
+            }
+            for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+                if (app->released[i].used &&
+                    strcmp(app->released[i].name, app->reclaim.name) == 0) {
+                    app->released[i].used = 0;
+                }
+            }
+            app->reclaim.found = 1;
+            app->dirty = 1;
+            tiku_trail("reclaim %s", app->reclaim.name);
+        }
+    } else if (dev != NULL) {
+        tiku_backend_close(dev);
+    }
+    if (app->reclaim.pending <= 0) {
+        desktop_board_reclaim_done(app);
+    }
+}
+
+/** @brief Every port has answered the reclaim: say how it went. */
+void
+desktop_board_reclaim_done(desktop_t *app)
+{
+    app->reclaim.going = 0;
+    desktop_board_say(app, app->reclaim.session, app->reclaim.slot,
+                      app->reclaim.found ? TIKU_APP_BOARD_RECLAIMED
+                                         : TIKU_APP_BOARD_FAILED,
+                      app->reclaim.name);
+    desktop_board_names_tell(app);
+}
+
+/**
+ * @brief Tell whoever asked: a session over the wire, or an application
+ *        hosted in this process, or nobody.
+ */
+void
+desktop_board_say(desktop_t *app, int session, struct desktop_embed *slot,
+                  int what, const char *text)
+{
+    if (session >= 0) {
+        desktop_board_tell(app, session, what, text);
+    } else if (slot != NULL && slot->running && slot->descriptor != NULL &&
+               slot->descriptor->board_said != NULL) {
+        slot->descriptor->board_said(slot->state, what, text);
+    }
 }
