@@ -284,6 +284,8 @@ typedef struct {
     /* The run itself: a child on the far end of a pipe, pumped from
      * tick, which is called wherever this application is hosted. */
     int                             running;
+    int              looking;   /* a look for boards is out; its answer
+                                 * rebuilds the Connect menu */
     int                             child_fd;
     /* The board a run was sent to, empty when it ran here.  A run on a
      * board has no child and no pipe: the shell owns it and says what it
@@ -1996,8 +1998,10 @@ project_take(ide_t *st, const char *path)
     /* Opening a project is the moment to look for boards: it is a
      * deliberate act, and a Connect menu that already lists what is here
      * is worth the ports being opened for it. */
-    if (st->services->board_find != NULL) {
-        (void)st->services->board_find(st->services->ctx);
+        if (st->services->board_find != NULL &&
+        st->services->board_find(st->services->ctx)) {
+        st->looking = 1;
+        project_publish(st);
     }
 }
 
@@ -2238,7 +2242,8 @@ connect_menu(ide_t *st, tiku_menu_list_t *m)
         msep(m);
         /* Looked for when a project opens; looked for again from here,
          * for the board plugged in since. */
-        mrow(m, "Look again", CMD_FINDBOARDS, 0, 0u, !st->running);
+        mrow(m, st->looking ? "Looking..." : "Look again", CMD_FINDBOARDS,
+             0, 0u, !st->running && !st->looking);
     }
 }
 
@@ -2811,9 +2816,13 @@ ide_board_said(void *state, int what, const char *text)
         return;
     }
     if (what == TIKU_APP_BOARD_LOOKED) {
-        /* The shell has looked; what it found reaches the menus on the
-         * next tick.  Said here only so it is never taken, below, for
-         * the end of a run that happened to be going. */
+        /* The look landed: the Connect menu is rebuilt with what it
+         * found, so the next opening shows the boards without a second
+         * asking. */
+        st->looking = 0;
+        if (st->proj_id != 0u) {
+            project_publish(st);
+        }
         return;
     }
     if (!st->running || st->board[0] == '\0') {
@@ -3977,7 +3986,8 @@ ide_pick(void *state, uint32_t window, int command)
     }
     if (command == CMD_FINDBOARDS) {
         if (st->services->board_find != NULL &&
-            st->services->board_find(st->services->ctx)) {
+                        st->services->board_find(st->services->ctx)) {
+            st->looking = 1;
             snprintf(st->note, sizeof st->note, "looking for boards…");
         } else {
             snprintf(st->note, sizeof st->note, "cannot ask for boards");

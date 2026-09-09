@@ -95,17 +95,25 @@ void
 device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
                   char *out, size_t max)
 {
-    const tiku_identity_t *id = tiku_backend_tiku_identity(dev);
+        const tiku_identity_t *id = tiku_backend_tiku_identity(dev);
     char base[64];
     size_t i, n = 0;
     const char *from;
     int tries;
 
-    from = (id != NULL && id->name[0] != '\0') ? id->name : dev->devid;
+    /* The processor names the board -- nrf54l15, nrf54lm20b -- since
+     * that is what a person choosing between two is choosing by; the
+     * board's own name is what every board ships calling itself. */
+    from = (id != NULL && id->mcu[0] != '\0')  ? id->mcu
+         : (id != NULL && id->name[0] != '\0') ? id->name
+                                                : dev->devid;
     for (i = 0; from[i] != '\0' && n + 1u < sizeof base; i++) {
         unsigned char c = (unsigned char)from[i];
 
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        if (c >= 'A' && c <= 'Z') {
+            c = (unsigned char)(c - 'A' + 'a');
+        }
+        if ((c >= 'a' && c <= 'z') ||
             (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
             base[n++] = (char)c;
         } else if (n > 0u && base[n - 1u] != '-') {
@@ -119,12 +127,27 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
     if (base[0] == '\0') {
         snprintf(base, sizeof base, "%s", "device");
     }
-    for (tries = 1; tries < 100; tries++) {
+        for (tries = 1; tries < 100; tries++) {
         char prefix[TIKU_PATH_MAX];
         int slot, taken = 0;
 
         if (tries == 1) {
             snprintf(out, max, "%s", base);
+        } else if (tries == 2) {
+            /* Two of one processor: the port tells them apart, as it
+             * does on the bench -- nrf54l15-ttyACM3. */
+            char port[256], real[PATH_MAX];
+            const char *leaf = NULL;
+
+            if (tiku_backend_tiku_port(dev, port, sizeof port) == 0 &&
+                realpath(port, real) != NULL) {
+                leaf = strrchr(real, '/');
+            }
+            if (leaf != NULL && leaf[1] != '\0') {
+                snprintf(out, max, "%s-%s", base, leaf + 1);
+            } else {
+                snprintf(out, max, "%s-%d", base, tries);
+            }
         } else {
             snprintf(out, max, "%s-%d", base, tries);
         }

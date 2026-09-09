@@ -35,11 +35,11 @@ wait 8
 note where runs go is chosen once, in Connect; the project remembers it
 click 175 8
 wait 8
-menu-pick tiku
+menu-pick nrf54lm20b
 wait 10
 click 71 8
 wait 8
-menu-pick Run blink.bas on tiku
+menu-pick Run blink.bas on nrf54lm20b
 note it is still going: Stop is offered only while a run is, and the
 note loop is a minute of the board's time
 wait 200
@@ -52,5 +52,5 @@ menu-pick Stop
 wait 120
 note and the board is its own again: its namespace answers, which it
 note could not do from inside the interpreter or under a hold nobody let go
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit

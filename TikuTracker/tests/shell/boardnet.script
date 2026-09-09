@@ -15,7 +15,7 @@ expect-windows 2
 expect-title Board window
 note the board's shell came over the connection: it is mounted by name
 expect-read /devices tiku
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 note the button counts: a press crosses the connection and its redraw
 note comes back the same way
 click 421 390

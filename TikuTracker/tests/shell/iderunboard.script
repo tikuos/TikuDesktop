@@ -40,12 +40,12 @@ wait 8
 note where runs go is chosen once, in Connect; the project remembers it
 click 175 8
 wait 8
-menu-pick tiku
+menu-pick nrf54lm20b
 wait 10
 click 71 8
 wait 8
-expect-menu Run blink.bas on tiku
-menu-pick Run blink.bas on tiku
+expect-menu Run blink.bas on nrf54lm20b
+menu-pick Run blink.bas on nrf54lm20b
 note a board is slower than this machine by a long way
 wait 600
 note the window is made only when there is something to put in it, so

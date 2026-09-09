@@ -37,13 +37,13 @@ wait 8
 note where runs go is chosen once, in Connect; the project remembers it
 click 175 8
 wait 8
-menu-pick tiku
+menu-pick nrf54lm20b
 wait 10
 click 71 8
 wait 8
-expect-menu Save on tiku
-menu-pick Save on tiku
+expect-menu Save on nrf54lm20b
+menu-pick Save on nrf54lm20b
 wait 250
 note kept under the file's own name, and readable where the board put it
-expect-read /devices/tiku/data/quiet.bas KEPT
+expect-read /devices/nrf54lm20b/data/quiet.bas KEPT
 quit

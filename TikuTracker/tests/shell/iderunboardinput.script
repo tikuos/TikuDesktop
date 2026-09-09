@@ -35,11 +35,11 @@ wait 8
 note where runs go is chosen once, in Connect; the project remembers it
 click 175 8
 wait 8
-menu-pick tiku
+menu-pick nrf54lm20b
 wait 10
 click 71 8
 wait 8
-menu-pick Run blink.bas on tiku
+menu-pick Run blink.bas on nrf54lm20b
 note the program asks before it prints anything: the window is made for
 note the question, and the question is what the strip shows
 wait 200

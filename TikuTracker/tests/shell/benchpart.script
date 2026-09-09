@@ -51,12 +51,12 @@ key Down
 wait 8
 click 71 8
 wait 8
-menu-pick Run on tiku
+menu-pick Run on nrf54lm20b
 note the results window is made only when the bench has said something,
 note and a part that did not exist would make the bench say nothing at all
 wait 900
 expect-title Results
 note and the board is the shell's again afterwards
 wait 400
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit

@@ -47,13 +47,13 @@ note the boards the shell found when the project opened, and the one
 note place a program can always go
 click 175 8
 wait 8
-expect-menu This machine|tiku|tiku-2||Look again|
-menu-pick tiku
+expect-menu This machine|nrf54l15|nrf54lm20b||Look again|
+menu-pick nrf54lm20b
 wait 10
 note and now Run says where it will go
 click 71 8
 wait 8
-expect-menu Run on tiku|Save on tiku|
+expect-menu Run on nrf54lm20b|Save on nrf54lm20b|
 click-window Project
 wait 10
 note looking again finds the same boards, not the same boards twice
@@ -63,5 +63,5 @@ menu-pick Look again
 wait 400
 click 175 8
 wait 8
-expect-menu This machine|tiku|tiku-2||Look again|
+expect-menu This machine|nrf54l15|nrf54lm20b||Look again|
 quit

@@ -40,7 +40,7 @@ wait 8
 click 71 8
 wait 8
 expect-menu Show the parts of link-console
-menu-pick Run on tiku
+menu-pick Run on nrf54lm20b
 note far enough in to be a run, nowhere near far enough to be over
 wait 150
 click-window Bench
@@ -55,5 +55,5 @@ menu-pick Stop
 note and the board is back at once -- the whole of this run would still
 note have been going
 wait 250
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit

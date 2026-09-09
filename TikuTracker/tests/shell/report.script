@@ -11,8 +11,9 @@
 # asks; the loop writes, on its next turn, so the snapshot is read by
 # the one thread that may read it.
 wait 60
-note first, About this system: one row for all of this, the newest
-note report, which a click opens -- in whatever opens text here, or
+note first, About this system: its Last report button opens a section
+note under the facts, every report newest first with the chosen one's
+note account, and "Open the file" opens it -- in whatever opens text here, or
 note failing that the folder it is in, since a fresh machine registers
 note nothing.  A report is asked for so that there is one to name.
 report
@@ -22,7 +23,11 @@ wait 4
 menu-pick About this system
 wait 10
 expect-title About this system
-click 470 287
+click 560 287
+wait 20
+note the box grew a reports section, newest first, with the chosen one's
+note account; the "Open the file" button opens it
+click 638 659
 wait 40
 expect-title reports
 key w ctrl
@@ -41,7 +46,7 @@ expect-title Project
 report
 wait 60
 note the file names the mounted board, with its port
-expect-file-has /tmp/trk_reports/latest-report.txt /devices/tiku
+expect-file-has /tmp/trk_reports/latest-report.txt /devices/nrf54lm20b
 note and the program that is talking to the desk
 expect-file-has /tmp/trk_reports/latest-report.txt TikuBasic
 note and what asked for it

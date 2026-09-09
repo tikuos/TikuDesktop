@@ -277,7 +277,10 @@ typedef struct desktop {
         int   baud;
         int   session;          /* who asked, or -1 */
         struct desktop_embed *slot; /* or the application hosted here */
-        int   found;            /* a reclaim: the board came back */
+                int   found;            /* a reclaim: the board came back */
+        int   again;            /* a look asked during this one */
+        int   again_session;    /* who asked it, over the wire */
+        struct desktop_embed *again_slot;   /* or hosted here */
         char  name[64];         /* a reclaim: which board */
         char  uid[64];
     }                        look, reclaim;

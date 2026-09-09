@@ -4,7 +4,7 @@
 # setup: report
 # board: dead
 # dead-after: 8
-# open: /devices/tiku
+# open: /devices/nrf54lm20b
 # A folder open on a board that stops answering costs the loop nothing.
 #
 # The other half of a quiet board: a window showing one of its folders.
@@ -14,12 +14,12 @@
 # opened on the board's root before it goes quiet; afterwards the loop
 # is asked how long its turns got.
 wait 60
-expect-read trail:mount /devices/tiku
-expect-title tiku
+expect-read trail:mount /devices/nrf54lm20b
+expect-title nrf54lm20b
 expect-under turns 100
 note the board goes quiet now; the folder is still open on it
 wait 1400
 expect-under turns 100
 note and the desk is still answering, the window still there
-expect-title tiku
+expect-title nrf54lm20b
 quit

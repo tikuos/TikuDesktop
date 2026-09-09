@@ -44,20 +44,31 @@ desktop_board_names(desktop_t *app, char *out, size_t max)
     if (app == NULL || out == NULL || max == 0u) {
         return 0;
     }
+        const char *leaves[TIKU_MOUNT_MAX];
+    int nleaves = 0, j;
+
     out[0] = '\0';
     slots = tiku_mount_slots(app->backend);
     for (i = 0; i < slots; i++) {
         const char *prefix = tiku_mount_prefix_at(app->backend, i);
         tiku_backend_t *b = tiku_mount_at(app->backend, i);
-        const char *leaf;
-        size_t need;
 
         if (prefix == NULL || b == NULL ||
             strncmp(prefix, "/devices/", 9) != 0) {
             continue;           /* the local files are not a board */
         }
-        leaf = leaf_of(prefix);
-        need = strlen(leaf) + 1u;
+        /* In name order: the ports are asked at once now, and which
+         * answered first is not an order a menu should show. */
+        for (j = nleaves; j > 0 &&
+             strcmp(leaves[j - 1], leaf_of(prefix)) > 0; j--) {
+            leaves[j] = leaves[j - 1];
+        }
+        leaves[j] = leaf_of(prefix);
+        nleaves++;
+    }
+    for (i = 0; i < nleaves; i++) {
+        const char *leaf = leaves[i];
+        size_t need = strlen(leaf) + 1u;
         if (n + need >= max) {
             break;
         }
@@ -176,6 +187,35 @@ run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
 }
 
 /**
+ * @brief The board mounts' slots in name order: the ports are asked at
+ *        once now, and which answered first is not an order to show.
+ * @return how many.
+ */
+static int
+board_slots_sorted(desktop_t *app, int *order)
+{
+    int i, j, n = 0, slots = tiku_mount_slots(app->backend);
+
+    for (i = 0; i < slots; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+
+        if (prefix == NULL || tiku_mount_at(app->backend, i) == NULL ||
+            strncmp(prefix, "/devices/", 9) != 0) {
+            continue;
+        }
+        for (j = n; j > 0 &&
+             strcmp(leaf_of(tiku_mount_prefix_at(app->backend,
+                                                 order[j - 1])),
+                    leaf_of(prefix)) > 0; j--) {
+            order[j] = order[j - 1];
+        }
+        order[j] = i;
+        n++;
+    }
+    return n;
+}
+
+/**
   * @brief The boards, one a line, each "name<TAB>port<TAB>part".
  *
  * Told rather than asked for: an application drawing a menu needs both,
@@ -184,16 +224,20 @@ run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
 int
 desktop_board_list(desktop_t *app, char *out, size_t max)
 {
-    size_t n = 0u;
-    int i, slots;
+        size_t n = 0u;
+    int order[TIKU_MOUNT_MAX];
+    int i, k, nsorted;
 
     if (app == NULL || out == NULL || max == 0u) {
         return 0;
     }
     out[0] = '\0';
-    slots = tiku_mount_slots(app->backend);
-    for (i = 0; i < slots; i++) {
-        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+        nsorted = board_slots_sorted(app, order);
+    for (k = 0; k < nsorted; k++) {
+        const char *prefix;
+
+        i = order[k];
+        prefix = tiku_mount_prefix_at(app->backend, i);
         tiku_backend_t *b = tiku_mount_at(app->backend, i);
                 char port[128];
         char row[320];
@@ -537,8 +581,18 @@ desktop_board_look_begin(desktop_t *app, int session,
     char scan[TIKU_MOUNT_MAX][256];
     int found, i;
 
-    if (app == NULL || app->look.going) {
-        return;                 /* one look at a time; the asker hears */
+        if (app == NULL) {
+        return;
+    }
+    if (app->look.going) {
+        /* One look at a time -- but a look asked during a look is a
+         * look owed, not a look refused: it begins when this one ends,
+         * and its asker hears then.  Pressed twice, the answer came
+         * once and late; now it comes to both. */
+        app->look.again = 1;
+        app->look.again_session = session;
+        app->look.again_slot = slot;
+        return;
     }
     found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
     app->look.going = 1;
@@ -571,9 +625,16 @@ desktop_board_look_done(desktop_t *app)
     tiku_trail("look: done, %d boards", board_count(app));
     desktop_board_names_tell(app);
     (void)snprintf(how, sizeof how, "%d", board_count(app));
-    desktop_board_say(app, app->look.session, app->look.slot,
+        desktop_board_say(app, app->look.session, app->look.slot,
                       TIKU_APP_BOARD_LOOKED, how);
     app->dirty = 1;
+    if (app->look.again) {
+        int session = app->look.again_session;
+        struct desktop_embed *slot = app->look.again_slot;
+
+        app->look.again = 0;
+        desktop_board_look_begin(app, session, slot);
+    }
 }
 
 /**

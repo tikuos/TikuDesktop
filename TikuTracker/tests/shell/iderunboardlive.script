@@ -39,13 +39,13 @@ wait 8
 note where runs go is chosen once, in Connect; the project remembers it
 click 175 8
 wait 8
-menu-pick tiku
+menu-pick nrf54lm20b
 wait 10
 click 71 8
 wait 8
-menu-pick Run quiet.bas on tiku
+menu-pick Run quiet.bas on nrf54lm20b
 wait 200
-expect-read /devices/tiku/dev/led0 0
+expect-read /devices/nrf54lm20b/dev/led0 0
 note now the long one, which lights the lamp and then runs on
 click-window Project
 wait 8
@@ -53,13 +53,13 @@ key Up
 wait 8
 click 71 8
 wait 8
-menu-pick Run blink.bas on tiku
+menu-pick Run blink.bas on nrf54lm20b
 wait 120
 note THE reading this script exists for: the board answers its namespace
 note while a program of its own is running.  A run that held the board's
 note shell -- which is how a board without this stream is reached -- could
 note not answer at all, and that is the whole difference.
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 note and it IS a program still running that was read past, which is why
 note there is a Stop to be offered
 click-window Project
@@ -71,5 +71,5 @@ menu-pick Stop
 wait 150
 note and stopping it is still a stop: the board is its own again, its
 note shell answering as it did before any of this
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit

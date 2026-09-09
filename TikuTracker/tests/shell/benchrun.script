@@ -46,17 +46,17 @@ wait 8
 note the board is offered BY NAME, which is what the shell knows and
 note the bench would otherwise have to be told
 expect-menu Show the parts of link-console
-expect-menu Run on tiku
-menu-pick Run on tiku
+expect-menu Run on nrf54lm20b
+menu-pick Run on nrf54lm20b
 note the results window is made only when the bench has said something,
 note so its being here at all is the run's own report arriving
 wait 900
 expect-title Results
 note and everything the run SAID is kept, not only what it meant: a run
 note that fails before it means anything is not a dead end
-expect-file-has /tmp/trk_bench_logs/link-console-tiku.log [PASS] armed
+expect-file-has /tmp/trk_bench_logs/link-console-nrf54lm20b.log [PASS] armed
 note and the board is the shell's again: let go for the run, taken back
 note after it, and answering as it did before any of this
 wait 500
-expect-read /devices/tiku/sys/device/name tiku
+expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit
