@@ -474,3 +474,21 @@ may take seconds, never on a thread that draws.
 28 mounts on this machine.  Longest turn 19442 ms on the previous
 build, 27 ms now.
 
+## 12. Afterwards: two things the Connect menu showed
+
+**A look asked during a look was refused, and nobody heard.**  With
+the ports asked at once a look lands in a second or two, and the
+Connect menu opened before it did showed the boards of the last one;
+*Look again* pressed meanwhile was dropped by "one look at a time".
+Now a look asked during a look is a look owed -- it begins when this
+one ends and its asker hears -- and the IDE shows *Looking...*
+(disabled) until the answer lands, then rebuilds the menu with it, so
+one press is one answer.
+
+**A board is named by its processor.**  Every board ships calling
+itself `tiku`, so two of them were `tiku` and `tiku-2`, which says
+nothing.  The mount is named by `/sys/device/mcu` now -- `nrf54l15`,
+`nrf54lm20b` -- and two of one processor by the port that tells them
+apart, `nrf54l15-ttyACM3`.  The names come in name order, since which
+port answered first is no order for a menu.  Fifteen scripts renamed.
+

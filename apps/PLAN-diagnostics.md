@@ -358,3 +358,30 @@ TikuBasic; the file names `/devices/tiku` with its port, the session,
 `asked for: SIGUSR2`, the launch in the trail; the trail noun knows;
 About opens, its row is clicked, the reports folder opens.
 
+## 11. P5 -- the reports, in About this system  (DONE 2026-09-09)
+
+Asked for after the plan was done: somewhere graphical to see the last
+report and the ones before it.  Not a new window: a BUTTON in **About
+this system**, wide as its facts column, reads *Last report: stall,
+2026-09-09 10:10...* (or *Reports: none*, disabled), and pressing it
+grows the box under its facts into a reports section: a heading, a
+box with every report newest first by kind and moment, a box with the
+chosen one's account -- what stopped it, the last thing it did, where
+it was with the desk's own frames resolved through `addr2line` on this
+build (an earlier build's offsets say so rather than pretend), a
+library's by its symbol -- and an *Open the file* button, which opens
+the file as a double click would, or the folder when nothing on the
+machine opens text.  The button reads *Hide reports* while it is open.
+Every pixel of the section is drawn, none reserved; a line longer than
+its box is elided.  The wheel scrolls the list.  The report kit sorts by
+the moment in a report's name rather than the file's time, so a copied
+report keeps its place.
+
+The first cut was plain text that opened on a click, "none yet", and a
+box taller than what it held: a mechanism, not a control.  The second
+is what a person can see is pressable.
+
+**Proof:** `report.script`'s About legs -- the row opens the section,
+*Open the file* opens the folder; `about.script` unchanged, since the
+box collapsed is the box it was.
+
