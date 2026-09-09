@@ -3558,8 +3558,16 @@ ide_stop(void *state)
     if (st == NULL) {
         return;
     }
-    if (st->running) {
-        /* A run outliving the application it was started from is a
+    if (st->running && st->board[0] != '\0') {
+        /* A board program left running goes to the interpreter's INPUT
+         * with nobody to answer, and the board's console then goes
+         * silent until it is power-cycled.  Stop it before the app closes. */
+        if (st->services->board_stop != NULL) {
+            (void)st->services->board_stop(st->services->ctx);
+        }
+        st->running = 0;
+    } else if (st->running) {
+        /* A host run outliving the application it was started from is a
          * program nobody is listening to. */
         (void)kill(st->child, SIGTERM);
         (void)waitpid(st->child, NULL, 0);
