@@ -65,7 +65,7 @@ new `expect-trail <substring>` verb (the script engine already asks the
 desk questions through `say()`); asserts the run's states appear in
 order.
 
-### P1 -- the crash report  (one day)
+### P1 -- the crash report  (DONE 2026-09-09)
 
 `sigaction` for SIGSEGV, SIGBUS, SIGFPE, SIGILL and SIGABRT, installed
 by the desk AND by `tiku-run` (they share the kits, so it is one file:
@@ -198,4 +198,47 @@ sequence back -- the mount, the launch, the look, the ask arriving over
 the wire named `brun`, and the run from `start on tiku` to `ended`.  The
 three run assertions were confirmed to FAIL on a session where nothing
 is run, so they are not vacuous.
+
+## 7. What P1 settled
+
+`kits/support/tiku_report.{h,c}`, armed by the desk in its `main` and by
+`tiku-run` before it loads anything, named for the APPLICATION rather
+than the runner.  A fault writes `crash-<when>-<program>-<pid>.txt` and
+the same bytes to `latest-crash.txt`, then restores the default action
+and re-raises -- so the program still dies of what killed it and a core
+still drops.
+
+Everything a handler cannot safely do is done at arming time: the path,
+the header, the program's name, and one throwaway `backtrace()` so the
+unwinder has already loaded what it needs.  What the handler itself does
+is open, write and close.
+
+The report reads, in this order: the program, when it started, the
+signal, **the last thing it did**, where it was, and then the whole
+trail.  The last line is quoted at the top because that is what a reader
+wants before forty frames of backtrace -- and because a reader with a
+512-byte window (the harness has one) would otherwise never reach it.
+
+And a dead application is no longer silent: the desk collects its exit,
+writes it down by name, and SAYS it -- "Fault.so stopped: signal 11.
+What it was doing is in .../latest-crash.txt".
+
+**Deviations:** the plan's `TIKU_TRK_FAULT=segv|abort` knob was not
+built.  A fault knob inside the shipping program is a thing that can
+fire by accident; an application that faults on purpose
+(`build/tests/Fault.so`, built with the tests and never installed beside
+the real ones) tests the same path from outside, which is where the
+fault it is imitating comes from.  `TIKU_TRK_REPORTS` does exist, so a
+test can say where reports go.
+
+**Proof:** `test_report` (9 legs: the report exists, names the signal
+and the program, the backtrace reaches the faulting function, the trail
+is there oldest-first, the summary precedes the detail, and the program
+still dies of the signal), `test_reap` (7), and `crash.script` -- an
+application that faults inside `start()`, before it has a window, where
+the only word of it is what the shell says.
+
+**A limit, stated:** static functions appear as module and offset, not
+by name.  `addr2line -e <module> <offset>` resolves them; that is the
+person's to run, as this plan said it would be.
 
