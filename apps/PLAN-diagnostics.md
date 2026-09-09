@@ -90,7 +90,7 @@ segfaults in `start()` when asked.  `crash.script` launches the fault
 app and asserts with `expect-file-has` that a report exists naming
 SIGSEGV and containing `start`; `expect-alert` that the desk said so.
 
-### P2 -- the stall watchdog  (one day)
+### P2 -- the stall watchdog  (DONE 2026-09-09)
 
 The desk is one thread and a freeze is a turn that does not end.  A
 watchdog thread -- the one place a second thread is right, because it
@@ -241,4 +241,51 @@ the only word of it is what the shell says.
 **A limit, stated:** static functions appear as module and offset, not
 by name.  `addr2line -e <module> <offset>` resolves them; that is the
 person's to run, as this plan said it would be.
+
+## 8. What P2 settled
+
+`kits/support/tiku_watch.{h,c}`: the desk bumps a counter each turn, and
+a thread that touches nothing else watches the count.  Quiet for five
+seconds and it ASKS the stuck thread, by SIGUSR1, to write the report --
+so the backtrace is the stuck thread's own, and the trail is read by the
+thread that writes it, which is what makes the ring safe to read at all.
+If the stuck thread cannot answer within a second (a syscall the kernel
+will not interrupt), the watcher writes what it has: the trail, without
+a stack.  Then again at 30 s and 120 s, so a long stall leaves a record
+of being long.
+
+It never ends anything.  A scan that takes six seconds is a stall to
+write down, not a program to kill -- and a shell killed by its own
+watchdog would lose the very thing somebody wanted to read.
+
+**No fault knob, again.**  An application loaded INTO the shell's
+process holds one tick for eight seconds (`build/tests/Stall.so`, built
+with the tests).  That is a real freeze of the real loop, arranged from
+outside, rather than a switch inside the shipping program.
+
+**Three things the building taught:**
+
+1. **A signal cuts short a sleep.**  `nanosleep` is never resumed after
+   a handler, whatever `SA_RESTART` says.  Asking a stuck thread to
+   speak will therefore shorten a sleep it was in -- which a waiting
+   loop must expect, and which made the first test's "stuck" turn end
+   early and race its own assertion.
+2. **A static function has no name in a backtrace.**  The same lesson as
+   P1: the thing a report is asked about must have external linkage, or
+   it is an offset for `addr2line`.
+3. **The harness read 512 bytes of a file.**  That is where the useful
+   part of a report begins, not ends; it now reads 8 KB, which is what
+   let the stall test assert the stuck function by name rather than
+   asserting that something went wrong in general.
+
+**Safe beside fork():** the watcher never allocates, and the child
+between `fork` and `exec` only calls `getenv`, `chdir` and `execvp` --
+so the classic hazard of forking a threaded program is not reached.
+
+**Proof:** `test_watchdog` (10 legs: a turning loop is left alone and
+nothing is written about it; a stopped one is noticed, named, timed,
+carries the STUCK thread's backtrace and the trail; and a loop that
+turns again goes quiet) and `stall.script`, where an application holds
+the shell's own turn for eight seconds and the shell is still answering
+afterwards.
 
