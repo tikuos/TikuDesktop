@@ -458,6 +458,34 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
 }
 
 /**
+ * @brief The programs launched from here that have died since last
+ *        asked: said, with the signal and where the account of it is.
+ */
+static void
+reap_deaths(desktop_t *app)
+{
+    /* What became of the programs this shell started.  A death
+     * is SAID: an application whose window simply vanished is
+     * the thing nobody could explain. */
+    tiku_trk_death_t gone[4];
+    int n = tiku_trk_launch_reap(gone, 4), g;
+
+    for (g = 0; g < n && g < 4; g++) {
+        char says[256];
+
+        if (gone[g].signal == 0) {
+            continue;   /* it ended; only a death is news */
+        }
+        snprintf(says, sizeof says,
+                 "%s stopped: signal %d.  What it was doing is in %s",
+                 gone[g].name, gone[g].signal, tiku_report_latest());
+        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
+                        tiku_str("alert.btn.ok"));
+        app->dirty = 1;
+    }
+}
+
+/**
  * @brief The notice pump, every 400 ms: what the stores report changed, and
  * which windows that reaches.
  */
@@ -469,27 +497,7 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
         if (tiku_trk_now() - lp->last_pump > 400000) {
         int changed = 0;
 
-                        {
-            /* What became of the programs this shell started.  A death
-             * is SAID: an application whose window simply vanished is
-             * the thing nobody could explain. */
-            tiku_trk_death_t gone[4];
-            int n = tiku_trk_launch_reap(gone, 4), g;
-
-            for (g = 0; g < n && g < 4; g++) {
-                char says[256];
-
-                if (gone[g].signal == 0) {
-                    continue;   /* it ended; only a death is news */
-                }
-                snprintf(says, sizeof says,
-                         "%s stopped: signal %d.  What it was doing is in %s",
-                         gone[g].name, gone[g].signal, tiku_report_latest());
-                tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
-                                tiku_str("alert.btn.ok"));
-                app->dirty = 1;
-            }
-        }
+                        reap_deaths(app);
         {
             /* What the leaf menu offers above the Deskbar folder.
              * Refreshed on the tick rather than read by the bar: they
@@ -519,9 +527,9 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
                 tiku_model_change_t ch[32];
         int nch = -1, complete = 1;
 
-        /* The boards' answers are the workers' last; the local stores
-         * answer at once.  Then the next asking is posted, after every
-         * reader below has had this one. */
+        /* The boards' answers are the workers' last, the local stores'
+         * at once; the next asking is posted once every reader has had
+         * this one. */
         nch = desktop_wire_changes(app, ch, 32, &complete);
         for (i = 0; i < app->folder_count; i++) {
             folder_t *fl = &app->folders[i];
@@ -566,8 +574,10 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
              * Polled with everything else rather than on a timer of its
              * own: a volume arriving is a change like any other. */
             tiku_volchange_t vc[TIKU_VOLWATCH_MAX];
-            int nv = tiku_volwatch_poll(&app->volwatch, vc,
-                                            TIKU_VOLWATCH_MAX);
+                        int nv;
+
+            desktop_wire_volumes(app);  /* the watch reads a worker's scan */
+            nv = tiku_volwatch_poll(&app->volwatch, vc, TIKU_VOLWATCH_MAX);
             int k;
 
             for (k = 0; k < nv; k++) {

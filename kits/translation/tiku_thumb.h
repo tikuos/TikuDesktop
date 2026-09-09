@@ -104,6 +104,17 @@ int tiku_thumb_queue(tiku_thumb_q_t *q, const char *path,
  */
 int tiku_thumb_step(tiku_thumb_q_t *q, tiku_store_t *store);
 
+/*
+ * The step in three, for a shell that decodes elsewhere: take the next
+ * path (it becomes the active one), make its thumbnail on any thread,
+ * and land it -- the writes, the count, the active one cleared -- on
+ * the loop.  tiku_thumb_step() is the three in a row.
+ */
+int  tiku_thumb_take(tiku_thumb_q_t *q, char *path, size_t max);
+int  tiku_thumb_make(const char *path, int *w, int *h, tiku_image_t *thumb);
+void tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store,
+                       const char *path, int w, int h, tiku_image_t *thumb);
+
 /**
  * @brief Read a stored thumbnail back into @p out.
  *

@@ -290,11 +290,9 @@ desktop_idle_work(desktop_t *app)
     /* One directory of one folder-size walk per turn, so a Get Info
      * window on a deep tree fills in while the desktop keeps answering. */
     (void)tiku_trk_info_windows_calc_step(&app->info_windows);
-    if (tiku_thumb_step(&app->thumbs, app->store)) {
-        /* One picture per turn, on the idle tick: the window keeps
-         * answering while a folder of images fills in (IV-031). */
-        app->dirty = 1;
-    }
+        /* One picture at a time, decoded on a worker: the window keeps
+     * answering while a folder of images fills in (IV-031). */
+    (void)desktop_wire_thumb(app);
     (void)tiku_trk_band_controller_pulse(&app->band_controller,
                                          tiku_trk_now());
     (void)tiku_trk_drag_target_pulse(&app->drag_target,

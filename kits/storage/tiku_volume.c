@@ -11,6 +11,7 @@
 
 #include "tiku_volume.h"
 
+#include <pthread.h>
 #include <errno.h>
 #include <sys/mount.h>
 
@@ -34,7 +35,7 @@ name_of(const char *mount, char *out, size_t max)
 }
 
 int
-tiku_volumes_scan(tiku_volumes_t *vs)
+tiku_volumes_scan_now(tiku_volumes_t *vs)
 {
     FILE *f;
     char line[1024];
@@ -534,3 +535,92 @@ tiku_volume_unmount(const tiku_volumes_t *vs, const char *path,
     }
     return TIKU_UNMOUNT_OK;
 }
+
+/*
+ * The cache.  A scan asks statvfs of every mount, and a mount that has
+ * gone away on the network answers never; so a shell with workers has
+ * one scan on a worker at a time and installs what it found here, and
+ * every caller of tiku_volumes_scan() reads that.  With no cache ever
+ * installed, a scan is a scan, as it always was.
+ */
+static pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
+static tiku_volumes_t  cache;
+static int             cache_count = -1;    /* -1: never installed */
+
+void
+tiku_volumes_cache_set(const tiku_volumes_t *vs, int count)
+{
+    pthread_mutex_lock(&cache_lock);
+    if (vs != NULL) {
+        cache = *vs;
+    }
+    cache_count = count;
+    pthread_mutex_unlock(&cache_lock);
+}
+
+int
+tiku_volumes_scan(tiku_volumes_t *vs)
+{
+    int count;
+
+    if (vs == NULL) {
+        return -1;
+    }
+    pthread_mutex_lock(&cache_lock);
+    count = cache_count;
+    if (count >= 0) {
+        *vs = cache;
+    }
+    pthread_mutex_unlock(&cache_lock);
+    if (count >= 0) {
+        return count;
+    }
+    return tiku_volumes_scan_now(vs);
+}
+
+/*
+ * An unmount in two halves, for a shell that will not wait on umount(2):
+ * the asking and the saving on the loop, the call itself elsewhere.
+ */
+int
+tiku_volume_unmount_prepare(const tiku_volumes_t *vs, const char *path,
+                            tiku_before_unmount_fn before, void *ctx,
+                            char *mount, size_t mmax, char *name,
+                            size_t nmax, char *why, size_t max)
+{
+    const tiku_volume_t *v;
+
+    if (why != NULL && max > 0u) {
+        why[0] = '\0';
+    }
+    if (!tiku_volume_may_unmount(vs, path, why, max)) {
+        return -1;
+    }
+    v = tiku_volume_of(vs, path);
+    if (v == NULL) {
+        return -1;
+    }
+    if (before != NULL) {
+        before(v->dev, ctx);
+    }
+    snprintf(mount, mmax, "%s", v->mount);
+    snprintf(name, nmax, "%s", v->name);
+    return 0;
+}
+
+tiku_unmount_t
+tiku_volume_umount_now(const char *mount, const char *name, char *why,
+                       size_t max)
+{
+    if (umount(mount) != 0) {
+        if (why != NULL) {
+            snprintf(why, max, (errno == EBUSY)
+                         ? "Something is still using \"%.40s\"."
+                         : "\"%.40s\" could not be unmounted.", name);
+        }
+        return (errno == EBUSY) ? TIKU_UNMOUNT_BUSY
+                                : TIKU_UNMOUNT_FAILED;
+    }
+    return TIKU_UNMOUNT_OK;
+}
+

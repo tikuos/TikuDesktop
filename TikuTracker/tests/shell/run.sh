@@ -178,6 +178,9 @@ for s in "$here"/*.script; do
                 continue
             fi
         fi
+        # "# statvfs: slow N" preloads a statvfs that sleeps N ms, so a
+        # mount that answers slowly is arranged without one.
+        slowfs=$(sed -n 's/^# statvfs: slow //p' "$s" | head -1)
         if grep -q '^# board: only' "$s"; then
             boardonly=yes
             if [ -z "${TRK_PORT:-}" ] || [ -z "$mountat" ]; then
@@ -414,6 +417,16 @@ for s in "$here"/*.script; do
                 TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" -mount "$mountat" \
+                -script "$s" || fails=$((fails+1))
+        fi
+        if [ -n "$slowfs" ] && [ "$bin" = desktop ]; then
+            printf '\n== %s (%s, statvfs %s ms)\n' "$(basename "$s")" "$bin" "$slowfs"
+            DISPLAY= HOME="$deskhome" \
+                env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
+                TIKU_APPS="$appsdir" \
+                LD_PRELOAD="$top/build/tests/slowstatvfs.so" \
+                TRK_SLOW_STATVFS_MS="$slowfs" \
+                "$devbin/$exe" ${openat:-$work} \
                 -script "$s" || fails=$((fails+1))
         fi
         if [ -n "$boarddead" ] && [ "$bin" = desktop ]; then

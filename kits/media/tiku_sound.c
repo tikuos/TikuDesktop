@@ -34,6 +34,37 @@ static struct {
     int16_t  chunk[CHUNK_FRAMES];
 } sound;
 
+static int (*opener)(void *ctx);
+static void *opener_ctx;
+static int opening;
+
+void
+tiku_sound_set_opener(int (*fn)(void *ctx), void *ctx)
+{
+    opener = fn;
+    opener_ctx = ctx;
+}
+
+int
+tiku_sound_open_now(void)
+{
+    if (sound.backend == NULL || sound.backend->open == NULL) {
+        return -1;
+    }
+    return sound.backend->open(sound.backend->ctx, TIKU_SOUND_RATE);
+}
+
+void
+tiku_sound_opened(int ok)
+{
+    opening = 0;
+    if (ok) {
+        sound.opened = 1;
+    } else {
+        sound.playing = NULL;
+    }
+}
+
 static const char *const NAMES[TIKU_SOUND_EVENTS] = {
     "startup", "beep", "window-open", "window-close", "window-minimize",
     "window-zoom", "window-activate", "shutdown",
@@ -98,6 +129,15 @@ ensure_open(void)
 {
     if (sound.opened) {
         return 1;
+    }
+    if (opener != NULL) {
+        /* Opening the device connects to a sound server, which can take
+         * seconds: asked of the opener, who does it elsewhere and says
+         * so; until then nothing is written and the clip waits. */
+        if (!opening && opener(opener_ctx)) {
+            opening = 1;
+        }
+        return 0;
     }
     if (sound.backend->open != NULL &&
         sound.backend->open(sound.backend->ctx, TIKU_SOUND_RATE) != 0) {

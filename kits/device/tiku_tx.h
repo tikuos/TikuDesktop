@@ -29,6 +29,8 @@ typedef struct tiku_tx tiku_tx_t;
  */
 tiku_tx_t *tiku_tx_open_serial(const char *path, int baud);
 
+/* Resolves a name and connects, each of which may take seconds: never
+ * on a thread that draws. */
 /**
  * @brief Open a TCP connection (the telnet-shell channel).
  *

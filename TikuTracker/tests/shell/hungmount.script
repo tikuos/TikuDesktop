@@ -1,0 +1,15 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# statvfs: slow 150
+# A mount that answers slowly costs the loop nothing.
+#
+# Every few hundred milliseconds the desk asks each mount how much room
+# it has, and a mount gone away on the network answers never.  Here every
+# statvfs takes a hundred and fifty milliseconds -- with thirty mounts,
+# seconds per scan -- and the loop is asked how long its turns got.
+wait 200
+expect-under turns 100
+note and the mounts are still known
+expect-read mounts Boot
+quit

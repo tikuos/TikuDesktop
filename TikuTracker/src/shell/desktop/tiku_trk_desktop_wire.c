@@ -21,6 +21,9 @@
 
 #include "tiku_board_basic.h"
 #include "tiku_fs.h"
+#include "tiku_sound.h"
+#include "tiku_thumb.h"
+#include "tiku_volume.h"
 #include "tiku_trk_poseview.h"
 #include "tiku_channel.h"
 #include "tiku_sound.h"
@@ -833,11 +836,21 @@ desktop_lister(void *ctx, tiku_trk_poseview_t *v, int gen, int kind)
     return 1;
 }
 
+static int sound_opener(void *ctx);
+
 /** @brief From here, every folder on a board is listed by a worker. */
 void
 desktop_wire_install(desktop_t *app)
 {
+    tiku_volumes_t vs;
+    int n;
+
     tiku_trk_poseview_set_lister(desktop_lister, app);
+    tiku_sound_set_opener(sound_opener, app);
+    /* The first scan is the boot's, on the loop, so the cache is never
+     * empty; every later one is a worker's. */
+    n = tiku_volumes_scan_now(&vs);
+    tiku_volumes_cache_set(&vs, n);
 }
 
 /** @brief On a worker: step the engine until it is done, or asks. */
@@ -900,3 +913,242 @@ desktop_wire_fs_run(desktop_t *app)
     }
 }
 
+typedef struct {
+    desktop_t    *app;
+    char          path[TIKU_PATH_MAX];
+    int           w, h;
+    tiku_image_t  thumb;
+    int           rc;
+} thumb_t;
+
+/** @brief On a worker: decode the picture and shrink it. */
+static void
+thumb_run(void *ctx)
+{
+    thumb_t *t = ctx;
+
+    t->rc = tiku_thumb_make(t->path, &t->w, &t->h, &t->thumb);
+}
+
+/** @brief On the loop: the writes, the count, the next one free to go. */
+static void
+thumb_done(void *ctx)
+{
+    thumb_t *t = ctx;
+
+    if (t->rc != 0) {
+        memset(&t->thumb, 0, sizeof t->thumb);
+    }
+    tiku_thumb_landed(&t->app->thumbs, t->app->store, t->path, t->w, t->h,
+                      &t->thumb);
+    t->app->thumb_job = 0;
+    t->app->dirty = 1;
+}
+
+/**
+ * @brief Decode the next queued picture on a worker, one at a time.
+ * @return 1 when one was sent.
+ */
+int
+desktop_wire_thumb(desktop_t *app)
+{
+    tiku_work_job_t job;
+    thumb_t *t;
+
+    if (app->thumb_job) {
+        return 0;
+    }
+    t = calloc(1, sizeof *t);
+    if (t == NULL) {
+        return 0;
+    }
+    if (!tiku_thumb_take(&app->thumbs, t->path, sizeof t->path)) {
+        free(t);
+        return 0;
+    }
+    t->app = app;
+    memset(&job, 0, sizeof job);
+    job.run = thumb_run;
+    job.done = thumb_done;
+    job.free = free;
+    job.ctx = t;
+    snprintf(job.key, sizeof job.key, "thumb");
+    if (tiku_work_post(&job) != 0) {
+        tiku_thumb_landed(&app->thumbs, app->store, t->path, 0, 0, NULL);
+        free(t);
+        return 0;
+    }
+    app->thumb_job = 1;
+    return 1;
+}
+
+typedef struct {
+    desktop_t      *app;
+    tiku_volumes_t  vs;
+    int             count;
+} volscan_t;
+
+/** @brief On a worker: every mount asked how much room it has. */
+static void
+volscan_run(void *ctx)
+{
+    volscan_t *v = ctx;
+
+    v->count = tiku_volumes_scan_now(&v->vs);
+}
+
+/** @brief On the loop: what was found is what every scan answers now. */
+static void
+volscan_done(void *ctx)
+{
+    volscan_t *v = ctx;
+
+    if (v->count >= 0) {
+        tiku_volumes_cache_set(&v->vs, v->count);
+    }
+    v->app->volumes_job = 0;
+}
+
+/**
+ * @brief Scan the volumes on a worker, one scan out at a time; a mount
+ *        that never answers hangs the worker, and the loop reads the
+ *        last scan.
+ */
+void
+desktop_wire_volumes(desktop_t *app)
+{
+    tiku_work_job_t job;
+    volscan_t *v;
+
+    if (app->volumes_job) {
+        return;
+    }
+    v = calloc(1, sizeof *v);
+    if (v == NULL) {
+        return;
+    }
+    v->app = app;
+    memset(&job, 0, sizeof job);
+    job.run = volscan_run;
+    job.done = volscan_done;
+    job.free = free;
+    job.ctx = v;
+    snprintf(job.key, sizeof job.key, "volumes");
+    if (tiku_work_post(&job) == 0) {
+        app->volumes_job = 1;
+    } else {
+        free(v);
+    }
+}
+
+typedef struct {
+    desktop_t      *app;
+    char            mount[TIKU_PATH_MAX];
+    char            name[128];
+    char            why[200];
+    tiku_unmount_t  rc;
+} unmount_t;
+
+/** @brief On a worker: umount(2), which flushes what is dirty. */
+static void
+unmount_run(void *ctx)
+{
+    unmount_t *u = ctx;
+
+    u->rc = tiku_volume_umount_now(u->mount, u->name, u->why, sizeof u->why);
+}
+
+/** @brief On the loop: say how it went. */
+static void
+unmount_done(void *ctx)
+{
+    unmount_t *u = ctx;
+    desktop_t *app = u->app;
+
+    app->unmount_job = 0;
+    if (u->rc == TIKU_UNMOUNT_OK) {
+        snprintf(app->status, sizeof app->status, "unmounted \"%.60s\"",
+                 u->name);
+        tiku_trail("unmounted %s", u->mount);
+    } else {
+        tiku_sound_play(TIKU_SOUND_BEEP);
+        tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
+                        TIKU_TRK_ALERT_TAG_REFUSAL, u->why, "Cancel");
+    }
+    desktop_wire_volumes(app);
+    app->dirty = 1;
+}
+
+/**
+ * @brief Unmount @p mount on a worker; the status line and the alert
+ *        come when it has.  @return 1 when asked.
+ */
+int
+desktop_wire_unmount(desktop_t *app, const char *mount, const char *name)
+{
+    tiku_work_job_t job;
+    unmount_t *u;
+
+    if (app->unmount_job) {
+        return 0;
+    }
+    u = calloc(1, sizeof *u);
+    if (u == NULL) {
+        return 0;
+    }
+    u->app = app;
+    snprintf(u->mount, sizeof u->mount, "%s", mount);
+    snprintf(u->name, sizeof u->name, "%s", name);
+    memset(&job, 0, sizeof job);
+    job.run = unmount_run;
+    job.done = unmount_done;
+    job.free = free;
+    job.ctx = u;
+    snprintf(job.key, sizeof job.key, "volumes");
+    if (tiku_work_post(&job) != 0) {
+        free(u);
+        return 0;
+    }
+    app->unmount_job = 1;
+    snprintf(app->status, sizeof app->status, "unmounting \"%.60s\"...",
+             name);
+    return 1;
+}
+
+/** @brief On a worker: connect to the sound server. */
+static void
+sound_open_run(void *ctx)
+{
+    *(int *)ctx = tiku_sound_open_now();
+}
+
+/** @brief On the loop: the device is open, or is not. */
+static void
+sound_open_done(void *ctx)
+{
+    tiku_sound_opened(*(int *)ctx == 0);
+}
+
+/** @brief The sound kit's opener: the connect goes to a worker. */
+static int
+sound_opener(void *ctx)
+{
+    tiku_work_job_t job;
+    int *rc = calloc(1, sizeof *rc);
+
+    (void)ctx;
+    if (rc == NULL) {
+        return 0;
+    }
+    memset(&job, 0, sizeof job);
+    job.run = sound_open_run;
+    job.done = sound_open_done;
+    job.free = free;
+    job.ctx = rc;
+    snprintf(job.key, sizeof job.key, "sound");
+    if (tiku_work_post(&job) != 0) {
+        free(rc);
+        return 0;
+    }
+    return 1;
+}

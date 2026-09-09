@@ -58,6 +58,8 @@ typedef struct tiku_volumes {
  */
 int tiku_volumes_scan(tiku_volumes_t *vs);
 
+
+
 /** @brief The volume @p path is on, or NULL. */
 const tiku_volume_t *tiku_volume_of(const tiku_volumes_t *vs,
                                             const char *path);
@@ -255,5 +257,32 @@ int tiku_volwatch_poll(tiku_volwatch_t *w,
 int tiku_volwatch_diff(const tiku_volumes_t *was,
                            const tiku_volumes_t *now,
                            tiku_volchange_t *out, int max);
+
+/**
+ * @brief The scan itself: /proc/self/mounts and a statvfs of each --
+ *        which a mount gone away on the network never answers.  For a
+ *        worker; the loop reads tiku_volumes_scan().
+ */
+int tiku_volumes_scan_now(tiku_volumes_t *vs);
+
+/**
+ * @brief Install what a scan found as what tiku_volumes_scan() answers
+ *        from now on.  Never called: a scan is a scan.
+ */
+void tiku_volumes_cache_set(const tiku_volumes_t *vs, int count);
+
+/**
+ * @brief The half of an unmount that belongs on the loop: the refusal,
+ *        the saving, and the names.  @return 0 to go on, with @p mount
+ *        and @p name filled for tiku_volume_umount_now().
+ */
+int tiku_volume_unmount_prepare(const tiku_volumes_t *vs, const char *path,
+                                tiku_before_unmount_fn before, void *ctx,
+                                char *mount, size_t mmax, char *name,
+                                size_t nmax, char *why, size_t max);
+
+/** @brief umount(2) itself, which flushes what is dirty: for a worker. */
+tiku_unmount_t tiku_volume_umount_now(const char *mount, const char *name,
+                                      char *why, size_t max);
 
 #endif /* TIKU_VOLUME_H_ */

@@ -170,73 +170,102 @@ pop(tiku_thumb_job_t *list, int *n, tiku_thumb_job_t *out)
 }
 
 int
-tiku_thumb_step(tiku_thumb_q_t *q, tiku_store_t *store)
+tiku_thumb_take(tiku_thumb_q_t *q, char *path, size_t max)
 {
     tiku_thumb_job_t job;
-    tiku_image_t src, thumb;
-    struct stat st;
-    int64_t now_mtime = 0;
 
-    if (q == NULL) {
+    if (q == NULL || q->active[0] != '\0') {
         return 0;
     }
-    /* Small files first: the whole reason for two queues is that a big one
-     * must not stall them (IV-032). */
     if (!pop(q->small, &q->nsmall, &job) &&
         !pop(q->big, &q->nbig, &job)) {
         return 0;
     }
     snprintf(q->active, sizeof q->active, "%s", job.path);
+    snprintf(path, max, "%s", job.path);
+    return 1;
+}
+
+int
+tiku_thumb_make(const char *path, int *w, int *h, tiku_image_t *thumb)
+{
+    tiku_image_t src;
 
     memset(&src, 0, sizeof src);
-    memset(&thumb, 0, sizeof thumb);
-    if (tiku_image_load(job.path, &src) != TIKU_IMG_OK) {
-        q->active[0] = '\0';
-        return 1;                   /* the job ran; it just found nothing */
+    memset(thumb, 0, sizeof *thumb);
+    if (tiku_image_load(path, &src) != TIKU_IMG_OK) {
+        return -1;
     }
-    if (tiku_image_thumb(&src, TIKU_THUMB_SIZE, &thumb) == 0) {
-        if (store != NULL) {
-            uint32_t dim[2];
-
-            /* The picture first, then its stamp: a stamp written before the
-             * data would make a half-written thumbnail look fresh. */
-            char blob[TIKU_PATH_MAX];
-
-            if (blob_path(job.path, blob, sizeof blob) == 0) {
-                {   /* The write conjures the cache directory; nothing
-                     * else does (TS-053). */
-                    char dir[TIKU_PATH_MAX];
-                    const char *home = getenv("HOME");
-
-                    if (home != NULL &&
-                        snprintf(dir, sizeof dir, "%s/.cache/tiku-tracker",
-                                 home) > 0) {
-                        (void)tiku_state_mkparents(dir);
-                        (void)mkdir(dir, 0755);
-                    }
-                }
-                (void)blob_write(blob, thumb.px,
-                                 (size_t)thumb.w * (size_t)thumb.h *
-                                     sizeof *thumb.px);
-            }
-            dim[0] = (uint32_t)src.w;
-            dim[1] = (uint32_t)src.h;
-            (void)tiku_state_write(store, job.path,
-                                       TIKU_ATTR_THUMB_DIM, dim,
-                                       sizeof dim);
-            if (stat(job.path, &st) == 0) {
-                now_mtime = (int64_t)st.st_mtime + 1;
-            }
-            (void)tiku_state_write(store, job.path,
-                                       TIKU_ATTR_THUMB_TIME, &now_mtime,
-                                       sizeof now_mtime);
-        }
-        q->made++;
-        tiku_image_free(&thumb);
+    *w = src.w;
+    *h = src.h;
+    if (tiku_image_thumb(&src, TIKU_THUMB_SIZE, thumb) != 0) {
+        tiku_image_free(&src);
+        return -1;
     }
     tiku_image_free(&src);
+    return 0;
+}
+
+void
+tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store, const char *path,
+                  int w, int h, tiku_image_t *thumb)
+{
+    struct stat st;
+    int64_t now_mtime = 0;
+
+    if (thumb != NULL && thumb->px != NULL && store != NULL) {
+        uint32_t dim[2];
+        char blob[TIKU_PATH_MAX];
+
+        if (blob_path(path, blob, sizeof blob) == 0) {
+            {   /* The write conjures the cache directory; nothing else
+                 * makes it. */
+                char dir[TIKU_PATH_MAX];
+                const char *home = getenv("HOME");
+
+                if (home != NULL &&
+                    snprintf(dir, sizeof dir, "%s/.cache/tiku-tracker",
+                             home) > 0) {
+                    (void)tiku_state_mkparents(dir);
+                    (void)mkdir(dir, 0755);
+                }
+            }
+            (void)blob_write(blob, thumb->px,
+                             (size_t)thumb->w * (size_t)thumb->h *
+                                 sizeof *thumb->px);
+        }
+        dim[0] = (uint32_t)w;
+        dim[1] = (uint32_t)h;
+        (void)tiku_state_write(store, path, TIKU_ATTR_THUMB_DIM, dim,
+                               sizeof dim);
+        if (stat(path, &st) == 0) {
+            now_mtime = (int64_t)st.st_mtime + 1;
+        }
+        (void)tiku_state_write(store, path, TIKU_ATTR_THUMB_TIME,
+                               &now_mtime, sizeof now_mtime);
+    }
+    if (thumb != NULL && thumb->px != NULL) {
+        q->made++;
+        tiku_image_free(thumb);
+    }
     q->active[0] = '\0';
-    return 1;
+}
+
+int
+tiku_thumb_step(tiku_thumb_q_t *q, tiku_store_t *store)
+{
+    char path[TIKU_PATH_MAX];
+    tiku_image_t thumb;
+    int w = 0, h = 0;
+
+    if (!tiku_thumb_take(q, path, sizeof path)) {
+        return 0;
+    }
+    if (tiku_thumb_make(path, &w, &h, &thumb) != 0) {
+        memset(&thumb, 0, sizeof thumb);
+    }
+    tiku_thumb_landed(q, store, path, w, h, &thumb);
+    return 1;                       /* the job ran, found something or not */
 }
 
 int

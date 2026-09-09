@@ -89,6 +89,17 @@ void tiku_sound_play(tiku_sound_event_t event);
  */
 void tiku_sound_pump(void);
 
+/*
+ * Opening the device elsewhere.  Connecting to the sound server can take
+ * seconds; a shell with workers installs an opener that is asked when the
+ * device is closed and a clip wants out.  The opener returns nonzero
+ * when it took the opening; it then calls tiku_sound_open_now() where it
+ * likes and tiku_sound_opened() on the loop.
+ */
+void tiku_sound_set_opener(int (*fn)(void *ctx), void *ctx);
+int  tiku_sound_open_now(void);
+void tiku_sound_opened(int ok);
+
 /** @brief Whether a clip is still being handed out. */
 int tiku_sound_playing(void);
 

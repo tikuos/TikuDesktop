@@ -31,7 +31,7 @@ RUNNER    := $(BUILD)/tiku-run
 DESK_SUP  := $(BUILD)/tiku-desk
 BASICHOST := $(BUILD)/tiku-basic
 TEST_APP  := $(BUILD)/tests/test_app
-FAULT_APP := $(BUILD)/tests/Fault.so $(BUILD)/tests/Stall.so
+FAULT_APP := $(BUILD)/tests/Fault.so $(BUILD)/tests/Stall.so $(BUILD)/tests/slowstatvfs.so
 
 # Applications, as opposed to examples: these are meant to be used.
 APP_NAMES := edit term
@@ -143,6 +143,9 @@ $(APPS_D)/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 
 $(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(BUILD)/tests/slowstatvfs.so: $(T)/tests/tools/slowstatvfs.c | $(BUILD)/tests
+	$(CC) -shared -fPIC -O2 -o $@ $< -ldl
 
 $(BUILD)/tests/Stall.so: $(D)/stall/tiku_stall.c $(PIC_LIBS) | $(BUILD)/tests
 	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm

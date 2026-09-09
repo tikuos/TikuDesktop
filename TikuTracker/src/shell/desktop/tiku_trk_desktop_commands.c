@@ -1390,15 +1390,16 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
         uwhy[0] = '\0';
         if (tiku_volumes_scan(&uvols) > 0 &&
             tiku_volume_is_root(&uvols, upath)) {
-            const tiku_volume_t *uvol =
-                tiku_volume_of(&uvols, upath);
+                        char umount_at[TIKU_PATH_MAX], uname[128];
 
-            if (tiku_volume_unmount(&uvols, upath, save_before_unmount,
-                                        app, uwhy, sizeof uwhy) ==
-                    TIKU_UNMOUNT_OK) {
-                snprintf(app->status, sizeof app->status,
-                         "unmounted \"%.60s\"",
-                         (uvol != NULL) ? uvol->name : upath);
+            /* Asked and saved here; the umount itself, which flushes
+             * what is dirty, goes to a worker and reports back. */
+            if (tiku_volume_unmount_prepare(&uvols, upath,
+                                            save_before_unmount, app,
+                                            umount_at, sizeof umount_at,
+                                            uname, sizeof uname,
+                                            uwhy, sizeof uwhy) == 0) {
+                (void)desktop_wire_unmount(app, umount_at, uname);
             } else if (uwhy[0] != '\0') {
                 tiku_sound_play(TIKU_SOUND_BEEP);
                 tiku_alert_open(alert_model(app), TIKU_ALERT_STOP,
