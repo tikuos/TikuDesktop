@@ -208,7 +208,7 @@ the last result.
 **Proof:** `bigcopy.script` -- copy a 2 GB sparse file; `expect-read
 turns` under 100 ms; cancel it halfway and assert the target is gone.
 
-### W4 -- the small ones  (one day, all together)
+### W4 -- the small ones  (DONE 2026-09-09)
 
 A thumbnail is a job per image (the decode; the write stays on the
 loop).  The sound device opens on a worker; a sound asked for before it
@@ -440,4 +440,37 @@ of a copy of three small files, "safe because the in-process driver is
 turn-locked".  The engine steps on a worker now and the three files are
 copied between two turns; the script asserts the copies instead, and
 the in-flight claim lives where a file is large enough to carry it.
+
+## 11. What W4 settled
+
+**The volumes are a cache.**  `tiku_volumes_scan()` -- eight callers in
+the UI, and the watch every notice pump -- answers from a cache once
+one is installed, and the desk installs the boot's own scan then posts
+a worker's scan each pump, one out at a time.  A mount that never
+answers hangs a worker and the cache goes stale, which is the whole of
+the cost.  With no cache installed (the Tracker shell, the tests) a
+scan is a scan.
+
+**An unmount in two halves.**  The refusal, the saving and the names on
+the loop (`tiku_volume_unmount_prepare`); `umount(2)`, which flushes
+what is dirty, on a worker (`tiku_volume_umount_now`); the status line
+and the alert when it has.
+
+**A thumbnail in three.**  Take the next path (it becomes the active
+one), make it on any thread, land it -- the writes and the count -- on
+the loop; `tiku_thumb_step()` is the three in a row, for the shell that
+has no workers.  The desk decodes one at a time.
+
+**The sound device opens elsewhere.**  Connecting to the sound server
+can take seconds and was done on the draw path, on the first sound
+after five seconds' quiet.  The kit asks an opener; the desk's posts a
+job; the clip waits and plays when the device is open.
+
+**The dial is marked**: resolving a name and connecting, each of which
+may take seconds, never on a thread that draws.
+
+**Measured:** `hungmount.script` -- a preloaded `statvfs` that dawdles
+150 ms (`tests/tools/slowstatvfs.c`, the `# statvfs: slow` lane), with
+28 mounts on this machine.  Longest turn 19442 ms on the previous
+build, 27 ms now.
 
