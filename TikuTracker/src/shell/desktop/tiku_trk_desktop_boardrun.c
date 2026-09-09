@@ -494,25 +494,31 @@ desktop_board_pump(desktop_t *app)
          : (st == TIKU_BOARD_BASIC_STOPPED) ? TIKU_APP_BOARD_STOPPED
                                             : TIKU_APP_BOARD_FAILED;
     slot = app->board_run_slot;
-    /* Freed BEFORE the telling: an application told a run has ended may
-     * ask for the next one in that very call, and the board's shell has
-     * to be its own again by then. */
-    tiku_board_basic_free(app->board_run);
-    app->board_run = NULL;
-    app->board_run_slot = NULL;
-        if (slot != NULL && slot->running && slot->descriptor != NULL &&
-        slot->descriptor->board_said != NULL) {
-        slot->descriptor->board_said(slot->state, what,
-                                     app->board_run_saving
-                                         ? app->board_run_name : "");
-    } else if (app->board_run_session >= 0) {
+    {
+        tiku_board_basic_t *run = app->board_run;
         int session = app->board_run_session;
+        int saving = app->board_run_saving;
 
+        app->board_run = NULL;
+        app->board_run_slot = NULL;
         app->board_run_session = -1;
-        desktop_board_tell(app, session, what,
-                           app->board_run_saving ? app->board_run_name : "");
+        app->board_run_saving = 0;
+        if (tiku_board_basic_streamed(run)) {
+            /* The stream is the channel's, and the loop pumps that: left
+             * here.  Freed BEFORE the telling: an application told a run
+             * has ended may ask for the next one in that very call, and
+             * the board's shell has to be its own again by then. */
+            tiku_board_basic_free(run);
+            desktop_board_say(app, session, slot, what,
+                              saving ? app->board_run_name : "");
+        } else {
+            /* A held shell is given back by a worker -- a drain and a
+             * sync the loop must not stand for -- and the asker hears
+             * once it is back, for the same reason. */
+            desktop_wire_run_over(app, run, what, session, slot, saving,
+                                  app->board_run_name);
+        }
     }
-    app->board_run_saving = 0;
 }
 
 /*---------------------------------------------------------------------------*/

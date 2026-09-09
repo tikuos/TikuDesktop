@@ -19,7 +19,9 @@
 
 #include <unistd.h>
 
+#include "tiku_board_basic.h"
 #include "tiku_channel.h"
+#include "tiku_sound.h"
 #include "tiku_trail.h"
 #include "tiku_work.h"
 
@@ -358,3 +360,334 @@ desktop_wire_wait(desktop_t *app, int *pending, long ms)
         waited += 10L;
     }
 }
+
+typedef struct {
+    desktop_t             *app;
+    tiku_board_basic_t    *run;
+    int                    what;
+    int                    session;
+    struct desktop_embed  *slot;
+    int                    saving;
+    char                   name[64];
+} over_t;
+
+/** @brief On a worker: leave the interpreter and give the shell back. */
+static void
+over_run(void *ctx)
+{
+    over_t *o = ctx;
+
+    tiku_board_basic_free(o->run);
+}
+
+/** @brief On the loop: the shell is back; the asker hears how it ended. */
+static void
+over_done(void *ctx)
+{
+    over_t *o = ctx;
+
+    tiku_trail("run: shell given back on %s", o->name);
+    desktop_board_say(o->app, o->session, o->slot, o->what,
+                      o->saving ? o->name : "");
+}
+
+/**
+ * @brief A held run has ended: give the shell back on a worker, and tell
+ *        the asker once it is, so the next run finds the shell free.
+ */
+void
+desktop_wire_run_over(desktop_t *app, tiku_board_basic_t *run, int what,
+                      int session, struct desktop_embed *slot, int saving,
+                      const char *name)
+{
+    tiku_work_job_t job;
+    over_t *o = calloc(1, sizeof *o);
+
+    if (o == NULL) {
+        tiku_board_basic_free(run);
+        desktop_board_say(app, session, slot, what, saving ? name : "");
+        return;
+    }
+    o->app = app;
+    o->run = run;
+    o->what = what;
+    o->session = session;
+    o->slot = slot;
+    o->saving = saving;
+    snprintf(o->name, sizeof o->name, "%s", name);
+    memset(&job, 0, sizeof job);
+    job.run = over_run;
+    job.done = over_done;
+    job.free = free;
+    job.ctx = o;
+    snprintf(job.key, sizeof job.key, "board:/devices/%.30s", name);
+    if (tiku_work_post(&job) != 0) {
+        free(o);
+        tiku_board_basic_free(run);
+        desktop_board_say(app, session, slot, what, saving ? name : "");
+    }
+}
+
+/** @brief The key of the board a path under /devices/ belongs to. */
+static void
+key_of_path(char *out, size_t max, const char *path)
+{
+    const char *third = NULL;
+
+    if (strncmp(path, "/devices/", 9) == 0) {
+        third = strchr(path + 9, '/');
+    }
+    if (third != NULL) {
+        snprintf(out, max, "board:%.*s", (int)(third - path), path);
+    } else {
+        snprintf(out, max, "board:%.40s", path);
+    }
+}
+
+typedef struct {
+    desktop_t             *app;
+    tiku_trk_described_t  *p;
+    tiku_window_t         *window;  /* the panel's identity when asked */
+    int                    row;
+    tiku_backend_t        *dev;
+    char                   local[TIKU_PATH_MAX];
+    char                   value[256];
+    char                   err[160];
+    int                    rc;
+    /* The read-back: each bound row's place and what it said. */
+    int                    nrow;
+    char                   place[TIKU_FORM_ROWS][TIKU_PATH_MAX];
+    char                   said[TIKU_FORM_ROWS][64];
+    int                    known[TIKU_FORM_ROWS];
+} pwrite_t;
+
+/** @brief On a worker: the write, then every bound place read back. */
+static void
+pwrite_run(void *ctx)
+{
+    pwrite_t *w = ctx;
+    int i;
+
+    w->rc = w->dev->ops->write(w->dev, w->local, w->value,
+                               strlen(w->value), w->err, sizeof w->err);
+    for (i = 0; i < w->nrow; i++) {
+        if (w->place[i][0] == '\0') {
+            continue;
+        }
+        w->known[i] = tiku_backend_text(w->dev, w->place[i], w->said[i],
+                                        sizeof w->said[i]);
+    }
+}
+
+/**
+ * @brief On the loop: the status line and the rows, if the panel is
+ *        still the one that asked.
+ */
+static void
+pwrite_done(void *ctx)
+{
+    pwrite_t *w = ctx;
+    tiku_trk_described_t *p = w->p;
+    int i, asked = 0, answered = 0;
+
+    if (p->window != w->window || p->window == NULL || !p->window->open) {
+        return;                 /* closed, or another panel in its place */
+    }
+    if (w->rc != 0) {
+        snprintf(p->status, sizeof p->status, "%s: %s",
+                 p->form.row[w->row].label,
+                 w->err[0] != '\0' ? w->err : "refused");
+        tiku_sound_play(TIKU_SOUND_BEEP);
+    } else {
+        p->status[0] = '\0';
+    }
+    for (i = 0; i < w->nrow && i < p->form.nrow; i++) {
+        tiku_form_row_t *row = &p->form.row[i];
+
+        if (w->place[i][0] == '\0') {
+            continue;
+        }
+        asked++;
+        if (w->known[i]) {
+            size_t n;
+
+            answered++;
+            snprintf(row->value, sizeof row->value, "%s", w->said[i]);
+            n = strlen(row->value);
+            while (n > 0u && (row->value[n - 1u] == '\n' ||
+                              row->value[n - 1u] == '\r' ||
+                              row->value[n - 1u] == ' ')) {
+                row->value[--n] = '\0';
+            }
+            row->known = 1;
+        } else {
+            row->known = 0;
+        }
+    }
+    panel_refreshed(p, asked, answered);
+    w->app->dirty = 1;
+}
+
+/**
+ * @brief Write row @p row of panel @p p on a worker and read the panel
+ *        back.  @return 1 when asked; 0 when nothing serves the place.
+ */
+int
+desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p, int row)
+{
+    tiku_work_job_t job;
+    pwrite_t *w;
+    char path[TIKU_PATH_MAX], local[TIKU_PATH_MAX];
+    const char *bind = bind_path(p, &p->form.row[row], path, sizeof path);
+    tiku_backend_t *dev = tiku_backend_serving(app->backend, bind, local,
+                                               sizeof local);
+    int i;
+
+    if (dev == NULL) {
+        return 0;
+    }
+    w = calloc(1, sizeof *w);
+    if (w == NULL) {
+        return 0;
+    }
+    w->app = app;
+    w->p = p;
+    w->window = p->window;
+    w->row = row;
+    w->dev = dev;
+    snprintf(w->local, sizeof w->local, "%s", local);
+    snprintf(w->value, sizeof w->value, "%s", p->form.row[row].value);
+    w->nrow = (p->form.nrow < TIKU_FORM_ROWS) ? p->form.nrow
+                                              : TIKU_FORM_ROWS;
+    for (i = 0; i < w->nrow; i++) {
+        const tiku_form_row_t *r = &p->form.row[i];
+        char rp[TIKU_PATH_MAX], rl[TIKU_PATH_MAX];
+
+        w->place[i][0] = '\0';
+        if (r->bind[0] == '\0' || r->kind == TIKU_FORM_BUTTON) {
+            continue;
+        }
+        /* Read back through the same backend, by its own path, so the
+         * worker never walks the mount table. */
+        if (tiku_backend_serving(app->backend,
+                                 bind_path(p, r, rp, sizeof rp),
+                                 rl, sizeof rl) == dev) {
+            snprintf(w->place[i], sizeof w->place[i], "%s", rl);
+        }
+    }
+    memset(&job, 0, sizeof job);
+    job.run = pwrite_run;
+    job.done = pwrite_done;
+    job.free = free;
+    job.ctx = w;
+    key_of_path(job.key, sizeof job.key, bind);
+    if (tiku_work_post(&job) != 0) {
+        free(w);
+        return 0;
+    }
+    tiku_trail("panel: write %s", bind);
+    return 1;
+}
+
+typedef struct {
+    desktop_t      *app;
+    char            path[TIKU_PATH_MAX];
+    char            local[TIKU_PATH_MAX];
+    tiku_backend_t *dev;
+    char            value[64];
+    int             n;
+} rread_t;
+
+/** @brief On a worker: read the node a replicant shows. */
+static void
+rread_run(void *ctx)
+{
+    rread_t *r = ctx;
+
+    r->n = r->dev->ops->read(r->dev, r->local, r->value,
+                             sizeof r->value - 1u);
+    if (r->n >= 0) {
+        char *nl;
+
+        r->value[r->n] = '\0';
+        nl = strchr(r->value, '\n');
+        if (nl != NULL) {
+            *nl = '\0';
+        }
+    }
+}
+
+/** @brief On the loop: the value shown, or the replicant gone. */
+static void
+rread_done(void *ctx)
+{
+    rread_t *r = ctx;
+
+    if (tiku_trk_deskbar_replicant_set(r->app->deskbar, r->path,
+                                       (r->n >= 0) ? r->value : NULL)) {
+        r->app->dirty = 1;
+    }
+}
+
+/** @brief The asking is over, answered or dropped. */
+static void
+rread_free(void *ctx)
+{
+    rread_t *r = ctx;
+
+    r->app->replicant_reads--;
+    free(r);
+}
+
+/**
+ * @brief Read every Deskbar replicant that shows a board's node, on a
+ *        worker; the local ones the Deskbar reads itself, cheaply.
+ */
+void
+desktop_wire_replicants(desktop_t *app)
+{
+    char paths[16][TIKU_PATH_MAX];
+    int n, i;
+
+    if (app->deskbar == NULL || app->replicant_reads > 0) {
+        return;                 /* last pump's reads are still out */
+    }
+    n = tiku_trk_deskbar_replicant_paths(app->deskbar, paths, 16);
+    for (i = 0; i < n; i++) {
+        tiku_work_job_t job;
+        rread_t *r;
+        char local[TIKU_PATH_MAX];
+        tiku_backend_t *dev;
+
+        if (strncmp(paths[i], "/devices/", 9) != 0) {
+            continue;
+        }
+        dev = tiku_backend_serving(app->backend, paths[i], local,
+                                   sizeof local);
+        if (dev == NULL) {
+            (void)tiku_trk_deskbar_replicant_set(app->deskbar, paths[i],
+                                                 NULL);
+            continue;
+        }
+        r = calloc(1, sizeof *r);
+        if (r == NULL) {
+            continue;
+        }
+        r->app = app;
+        snprintf(r->path, sizeof r->path, "%s", paths[i]);
+        snprintf(r->local, sizeof r->local, "%s", local);
+        r->dev = dev;
+        memset(&job, 0, sizeof job);
+        job.run = rread_run;
+        job.done = rread_done;
+        job.free = rread_free;
+        job.ctx = r;
+        key_of_path(job.key, sizeof job.key, paths[i]);
+        if (tiku_work_post(&job) == 0) {
+            app->replicant_reads++;
+        } else {
+            free(r);
+        }
+    }
+}
+

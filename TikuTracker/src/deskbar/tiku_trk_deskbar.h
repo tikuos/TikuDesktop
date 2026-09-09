@@ -513,6 +513,27 @@ int tiku_trk_deskbar_show_replicants(const tiku_trk_deskbar_t *db);
 /** @brief Re-read the tray's nodes.  @return values that changed. */
 int tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db);
 
+/**
+ * @brief As tiku_trk_deskbar_refresh, but leaving every replicant whose
+ *        path begins with @p except to the caller, who reads those its
+ *        own way (off the loop, for a board's) and hands the value back
+ *        through tiku_trk_deskbar_replicant_set().
+ */
+int tiku_trk_deskbar_refresh_except(tiku_trk_deskbar_t *db,
+                                    const char *except);
+
+/** @brief The paths of the replicants, for a caller reading them itself. */
+int tiku_trk_deskbar_replicant_paths(const tiku_trk_deskbar_t *db,
+                                     char out[][TIKU_PATH_MAX], int max);
+
+/**
+ * @brief A value read elsewhere for the replicant at @p path; NULL for a
+ *        read that failed, which removes it as a failed read here would.
+ * @return nonzero when something shown changed.
+ */
+int tiku_trk_deskbar_replicant_set(tiku_trk_deskbar_t *db, const char *path,
+                                   const char *value);
+
 /** @brief How many applications the bar is tracking. */
 int tiku_trk_deskbar_team_count(const tiku_trk_deskbar_t *db);
 

@@ -61,7 +61,7 @@ handler_for(desktop_t *app, const tiku_model_t *model)
 }
 
 /** @brief The bind of @p row as a path of this namespace. */
-static const char *
+const char *
 bind_path(const tiku_trk_described_t *p, const tiku_form_row_t *row,
           char *buf, size_t max)
 {
@@ -108,6 +108,17 @@ panel_refresh(tiku_trk_described_t *p)
     }
     /* Every place quiet at once is the board, not a row: said in the
      * status line, and the rows are drawn empty rather than stale. */
+        panel_refreshed(p, asked, answered);
+}
+
+/**
+ * @brief The end of a refresh, however the values came: every place
+ *        quiet at once is the board, not a row -- said in the status
+ *        line, and the rows are drawn empty rather than stale.
+ */
+void
+panel_refreshed(tiku_trk_described_t *p, int asked, int answered)
+{
     p->quiet = (asked > 0 && answered == 0);
     if (p->quiet) {
         snprintf(p->status, sizeof p->status, "%s", "not answering");
@@ -229,31 +240,20 @@ panel_track(tiku_trk_described_t *p, tiku_window_t *window,
     return 1;
 }
 
-/** @brief Write row @p row's value to its place, saying so on refusal. */
+/**
+ * @brief Write a row's value to the place it is bound to, and read the
+ *        panel back -- on a worker, since a board's write has a ceiling
+ *        of seconds and the loop must not stand for it.
+ */
 static void
 panel_write(tiku_trk_described_t *p, int row)
 {
-    desktop_t *app = p->app;
-    char err[160], path[TIKU_PATH_MAX];
-    const char *bind = bind_path(p, &p->form.row[row], path, sizeof path);
-    const char *value = p->form.row[row].value;
-    int rc = -1;
-
-    err[0] = '\0';
-    if (app->backend != NULL && app->backend->ops != NULL &&
-        app->backend->ops->write != NULL) {
-        rc = app->backend->ops->write(app->backend, bind, value,
-                                      strlen(value), err, sizeof err);
-    }
-    if (rc != 0) {
+    if (!desktop_wire_panel_write(p->app, p, row)) {
         snprintf(p->status, sizeof p->status, "%s: %s",
-                 p->form.row[row].label, err[0] != '\0' ? err : "refused");
+                 p->form.row[row].label, "nothing serves it");
         tiku_sound_play(TIKU_SOUND_BEEP);
-    } else {
-        p->status[0] = '\0';
+        p->app->dirty = 1;
     }
-    panel_refresh(p);
-    app->dirty = 1;
 }
 
 int

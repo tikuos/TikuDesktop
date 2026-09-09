@@ -258,7 +258,8 @@ typedef struct desktop {
         int                 complete;
         int                 answered;   /* an answer landed this pump */
         int                 in_flight;
-    }                        wire[TIKU_MOUNT_MAX];
+        }                        wire[TIKU_MOUNT_MAX];
+    int                      replicant_reads;   /* Deskbar reads out */
     /* A look in progress: every port asked at once, by workers; what
      * lands is mounted on the loop, and the asker hears when the last
      * has landed.  The same accounting serves the boot sweep. */
@@ -788,6 +789,16 @@ enum { DESKTOP_ASK_LOOK, DESKTOP_ASK_BOOT, DESKTOP_ASK_RECLAIM };
 int  desktop_wire_probe(desktop_t *app, int kind, const char *port,
                         int baud, int probe, const char *at);
 void desktop_wire_wait(desktop_t *app, int *pending, long ms);
+void desktop_wire_run_over(desktop_t *app, struct tiku_board_basic *run,
+                           int what, int session,
+                           struct desktop_embed *slot, int saving,
+                           const char *name);
+int  desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p,
+                              int row);
+void desktop_wire_replicants(desktop_t *app);
+void panel_refreshed(tiku_trk_described_t *p, int asked, int answered);
+const char *bind_path(const tiku_trk_described_t *p,
+                      const tiku_form_row_t *row, char *buf, size_t max);
 int  mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
                   const char *at);
 void desktop_wire_ask(desktop_t *app);

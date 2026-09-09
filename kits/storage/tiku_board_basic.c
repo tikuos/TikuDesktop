@@ -545,3 +545,10 @@ tiku_board_basic_free(tiku_board_basic_t *r)
     free(r->program);
     free(r);
 }
+
+int
+tiku_board_basic_streamed(const tiku_board_basic_t *r)
+{
+    return r != NULL && r->streamed;
+}
+

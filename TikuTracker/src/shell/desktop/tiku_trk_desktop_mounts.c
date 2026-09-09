@@ -636,7 +636,9 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
         }
         changed += tiku_trk_info_windows_refresh(&app->info_windows,
                                                   tiku_trk_now());
-        changed += tiku_trk_deskbar_refresh(app->deskbar);
+                changed += tiku_trk_deskbar_refresh_except(app->deskbar,
+                                                   "/devices/");
+        desktop_wire_replicants(app);
         /* Live queries re-evaluate on a slower beat than values are
          * read: a re-walk costs a directory listing per subtree, and a
          * result set that moves every 400 ms is unreadable anyway. */

@@ -302,6 +302,12 @@ tiku_trk_deskbar_repoint_replicant(tiku_trk_deskbar_t *db,
 int
 tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db)
 {
+    return tiku_trk_deskbar_refresh_except(db, NULL);
+}
+
+int
+tiku_trk_deskbar_refresh_except(tiku_trk_deskbar_t *db, const char *except)
+{
     int i, changed = 0;
 
     if (db == NULL || db->backend == NULL) {
@@ -310,10 +316,15 @@ tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db)
     for (i = 0; i < db->tray_count; i++) {
         tiku_trk_replicant_t *r = &db->tray[i];
         char buf[64];
-        int n = db->backend->ops->read(db->backend, r->path, buf,
-                                       sizeof buf - 1);
+        int n;
         char *nl;
 
+        if (except != NULL && except[0] != '\0' &&
+            strncmp(r->path, except, strlen(except)) == 0) {
+            continue;           /* the caller's to read */
+        }
+        n = db->backend->ops->read(db->backend, r->path, buf,
+                                   sizeof buf - 1);
         if (n < 0) {
             changed += tiku_trk_deskbar_remove_replicant(db, r->path);
             i--;
@@ -331,3 +342,45 @@ tiku_trk_deskbar_refresh(tiku_trk_deskbar_t *db)
     }
     return changed;
 }
+
+int
+tiku_trk_deskbar_replicant_paths(const tiku_trk_deskbar_t *db,
+                                 char out[][TIKU_PATH_MAX], int max)
+{
+    int i, n = 0;
+
+    if (db == NULL) {
+        return 0;
+    }
+    for (i = 0; i < db->tray_count && n < max; i++) {
+        snprintf(out[n++], TIKU_PATH_MAX, "%s", db->tray[i].path);
+    }
+    return n;
+}
+
+int
+tiku_trk_deskbar_replicant_set(tiku_trk_deskbar_t *db, const char *path,
+                               const char *value)
+{
+    int i;
+
+    if (db == NULL || path == NULL) {
+        return 0;
+    }
+    if (value == NULL) {
+        return tiku_trk_deskbar_remove_replicant(db, path);
+    }
+    for (i = 0; i < db->tray_count; i++) {
+        tiku_trk_replicant_t *r = &db->tray[i];
+
+        if (strcmp(r->path, path) == 0) {
+            int changed = strcmp(r->value, value) != 0;
+
+            snprintf(r->value, sizeof r->value, "%s", value);
+            r->valid = 1;
+            return changed;
+        }
+    }
+    return 0;
+}
+

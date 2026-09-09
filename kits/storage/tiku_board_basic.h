@@ -114,4 +114,11 @@ void tiku_board_basic_stop(tiku_board_basic_t *r);
 /** @brief Leave the interpreter, give the shell back, and free the run. */
 void tiku_board_basic_free(tiku_board_basic_t *r);
 
+/**
+ * @brief Whether the run rides the board's own stream rather than a held
+ *        shell.  A streamed run's leaving pumps the channel, which the
+ *        loop pumps too, so only a held run's leaving may go to a worker.
+ */
+int tiku_board_basic_streamed(const tiku_board_basic_t *r);
+
 #endif /* TIKU_BOARD_BASIC_H_ */
