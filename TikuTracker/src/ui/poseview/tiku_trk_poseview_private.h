@@ -176,6 +176,9 @@ struct tiku_trk_poseview {
     int                 stage_count;    /* stage[] in use                   */
     int                 stage_at;       /* next stage[] entry to publish    */
     int                 loading;        /* a load is under way              */
+    int                 awaiting;       /* the listing is being fetched     */
+                                        /* elsewhere; nothing to publish    */
+    int                 relisting;      /* a poll's re-list is out          */
     int64_t             next_chunk;     /* when the next batch is due, in   */
                                         /* us; 0 = now                      */
     int64_t             pole_at;        /* when the pole becomes visible   */
@@ -307,5 +310,8 @@ void pv_filter_changed(tiku_trk_poseview_t *v, int grew);
 void pv_rebuild_filter(tiku_trk_poseview_t *v);
 
 /* End of the shared declarations. */
+
+/** @brief Whether the installed lister takes this view's listing. */
+int tiku_trk_poseview_lister_takes(tiku_trk_poseview_t *v, int kind);
 
 #endif /* TIKU_TRK_POSEVIEW_PRIVATE_H_ */

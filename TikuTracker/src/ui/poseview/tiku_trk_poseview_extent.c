@@ -805,11 +805,9 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
                        const tiku_model_change_t *ch, int nch, int complete)
 {
     unsigned out;
-    tiku_model_t *was, *is;
+    tiku_model_t *is;
     struct relist r;
-    tiku_evlist_t evs;
     unsigned flags = TIKU_TRK_NOTIFY_NOTHING;
-    int i, nwas;
 
     if (v == NULL || v->backend == NULL) {
         return flags;
@@ -839,56 +837,26 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
         return out;
     }
 
-    was = calloc(POSES_MAX, sizeof *was);
-    is = calloc(POSES_MAX, sizeof *is);
-    if (was == NULL || is == NULL) {
-        free(was);
-        free(is);
-        return flags;
+    if (v->relisting) {
+        return flags;           /* the last re-list is still out */
     }
-    nwas = 0;
-    for (i = 0; i < v->count; i++) {
-        /* An adopted pose is left out of the comparison entirely: it does
-         * not live in this directory, so a re-listing that cannot find it
-         * is not evidence that it has gone. */
-        if (!v->poses[i].adopted) {
-            was[nwas++] = v->poses[i].model;
-        }
+    if (tiku_trk_poseview_lister_takes(v, TIKU_TRK_LIST_RELIST)) {
+        v->relisting = 1;
+        return flags;           /* diffed when the entries land */
+    }
+    is = calloc(POSES_MAX, sizeof *is);
+    if (is == NULL) {
+        return flags;
     }
     r.set = is;
     r.n = 0;
     r.max = POSES_MAX;
     r.view = v;
     if (v->backend->ops->list(v->backend, v->path, relist_one, &r) < 0) {
-        /* The listing failed: the folder may be gone.  Ask about the folder
-         * rather than concluding it from a failed read. */
-        tiku_model_t self;
-
-        if (v->backend->ops->stat != NULL &&
-            v->backend->ops->stat(v->backend, v->path, &self) != 0 &&
-            strcmp(v->path, "/") != 0) {
-            flags |= TIKU_TRK_NOTIFY_GONE;
-        }
-        free(was);
-        free(is);
-        return flags;
+        r.n = -1;
     }
-    tiku_evlist_clear(&evs);
-    (void)tiku_notify_diff(was, nwas, is, r.n, now, &evs);
-    flags |= tiku_trk_poseview_notify_all(v, &evs);
-    if (evs.overflowed) {
-        /* More happened than the batch could carry.  Re-reading wholesale is
-         * the honest response; pretending the batch was complete would leave
-         * rows that no longer exist. */
-        (void)tiku_trk_poseview_reload(v);
-        flags |= TIKU_TRK_NOTIFY_REDRAW;
-    }
-    free(was);
+    flags |= tiku_trk_poseview_relist_landed(v, v->load_gen, is, r.n, now);
     free(is);
-    /* Rows that arrived ABOVE the viewport move the listing under the
-     * reader.  The batch's worth of them is applied once here, so a folder
-     * that gains ten files while someone reads the middle of it does not
-     * walk down the screen ten times (PVL-046). */
     if (v->repaint.scroll_delta != 0 && v->mode == TIKU_TRK_MODE_LIST) {
         int rh = (v->row_h > 0) ? v->row_h : 1;
         int rows = v->repaint.scroll_delta / rh;
@@ -1360,3 +1328,69 @@ pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
     }
     return 0;
 }
+
+unsigned
+tiku_trk_poseview_relist_landed(tiku_trk_poseview_t *v, int gen,
+                                tiku_model_t *entries, int n, int64_t now)
+{
+    unsigned flags = TIKU_TRK_NOTIFY_NOTHING;
+    tiku_model_t *was, *is;
+    struct relist r;
+    tiku_evlist_t evs;
+    int i, nwas;
+
+    if (v == NULL) {
+        return flags;
+    }
+    v->relisting = 0;
+    if (v->backend == NULL || gen != v->load_gen) {
+        return flags;           /* for a listing the window has left */
+    }
+    if (n < 0) {
+        /* The listing failed: the folder may be gone.  Ask about the
+         * folder rather than concluding it from a failed read. */
+        tiku_model_t self;
+
+        if (v->backend->ops->stat != NULL &&
+            v->backend->ops->stat(v->backend, v->path, &self) != 0 &&
+            strcmp(v->path, "/") != 0) {
+            flags |= TIKU_TRK_NOTIFY_GONE;
+        }
+        return flags;
+    }
+    was = calloc(POSES_MAX, sizeof *was);
+    is = calloc(POSES_MAX, sizeof *is);
+    if (was == NULL || is == NULL) {
+        free(was);
+        free(is);
+        return flags;
+    }
+    nwas = 0;
+    for (i = 0; i < v->count; i++) {
+        if (!v->poses[i].adopted) {
+            was[nwas++] = v->poses[i].model;
+        }
+    }
+    /* Through relist_one, whichever thread fetched them: it is what
+     * keeps an entry of unknown kind as a zombie rather than a row. */
+    r.set = is;
+    r.n = 0;
+    r.max = POSES_MAX;
+    r.view = v;
+    for (i = 0; i < n; i++) {
+        if (relist_one(&entries[i], &r)) {
+            break;
+        }
+    }
+    tiku_evlist_clear(&evs);
+    (void)tiku_notify_diff(was, nwas, is, r.n, now, &evs);
+    flags |= tiku_trk_poseview_notify_all(v, &evs);
+    if (evs.overflowed) {
+        (void)tiku_trk_poseview_reload(v);
+        flags |= TIKU_TRK_NOTIFY_REDRAW;
+    }
+    free(was);
+    free(is);
+    return flags;
+}
+

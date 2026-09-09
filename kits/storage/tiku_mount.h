@@ -81,6 +81,14 @@ unsigned tiku_mount_gen_at(const tiku_backend_t *router, int i);
  */
 uint64_t tiku_mount_tag_id(int slot, uint64_t raw);
 
+/**
+ * @brief Make an entry a slot's backend listed look as the router would
+ *        have shown it: its path under @p prefix, its id marked with
+ *        @p slot.  Pure -- for an entry fetched off the loop, where the
+ *        table must not be walked.
+ */
+void tiku_mount_adopt_entry(const char *prefix, int slot, tiku_model_t *m);
+
 /** @brief How many mounts there are, ignoring the gaps left by removal. */
 int tiku_mount_count(const tiku_backend_t *router);
 

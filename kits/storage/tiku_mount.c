@@ -135,6 +135,23 @@ graft(const char *prefix, const char *local, char *out, size_t max)
 }
 
 /** @brief The slot serving @p path: the longest prefix that claims it. */
+void
+tiku_mount_adopt_entry(const char *prefix, int slot, tiku_model_t *m)
+{
+    char mounted[TIKU_PATH_MAX];
+
+    graft(prefix, m->path, mounted, sizeof mounted);
+    snprintf(m->path, sizeof m->path, "%s", mounted);
+    if (strcmp(mounted, prefix) == 0) {
+        const char *leaf = strrchr(prefix, '/');
+
+        if (leaf != NULL && leaf[1] != '\0') {
+            snprintf(m->name, sizeof m->name, "%s", leaf + 1);
+        }
+    }
+    m->node_id = tag_id(slot, m->node_id);
+}
+
 static int
 route_slot(const mount_impl_t *m, const char *path)
 {

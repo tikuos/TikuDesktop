@@ -796,6 +796,7 @@ void desktop_wire_run_over(desktop_t *app, struct tiku_board_basic *run,
 int  desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p,
                               int row);
 void desktop_wire_replicants(desktop_t *app);
+void desktop_wire_install(desktop_t *app);
 void panel_refreshed(tiku_trk_described_t *p, int asked, int answered);
 const char *bind_path(const tiku_trk_described_t *p,
                       const tiku_form_row_t *row, char *buf, size_t max);

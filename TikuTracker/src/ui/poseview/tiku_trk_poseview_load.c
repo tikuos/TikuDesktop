@@ -11,6 +11,66 @@
 
 #include "tiku_trk_poseview_private.h"
 
+/* Every view that exists, so a listing fetched elsewhere can be told
+ * whether the view it was for is still there to take it. */
+#define VIEWS_MAX 256
+static tiku_trk_poseview_t *views[VIEWS_MAX];
+static tiku_trk_poseview_lister_fn lister;
+static void *lister_ctx;
+
+/** @brief Note a view that now exists. */
+static void
+views_add(tiku_trk_poseview_t *v)
+{
+    int i;
+
+    for (i = 0; i < VIEWS_MAX; i++) {
+        if (views[i] == NULL) {
+            views[i] = v;
+            return;
+        }
+    }
+}
+
+/** @brief Forget a view that is going. */
+static void
+views_drop(const tiku_trk_poseview_t *v)
+{
+    int i;
+
+    for (i = 0; i < VIEWS_MAX; i++) {
+        if (views[i] == v) {
+            views[i] = NULL;
+        }
+    }
+}
+
+int
+tiku_trk_poseview_alive(const tiku_trk_poseview_t *v)
+{
+    int i;
+
+    for (i = 0; v != NULL && i < VIEWS_MAX; i++) {
+        if (views[i] == v) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void
+tiku_trk_poseview_set_lister(tiku_trk_poseview_lister_fn fn, void *ctx)
+{
+    lister = fn;
+    lister_ctx = ctx;
+}
+
+int
+tiku_trk_poseview_lister_takes(tiku_trk_poseview_t *v, int kind)
+{
+    return lister != NULL && lister(lister_ctx, v, v->load_gen, kind);
+}
+
 /**
  * @brief Take one listed entry as a pose, hiding dotfiles when asked and
  *        holding an entry the backend could not describe.  @return 1 to
@@ -324,6 +384,16 @@ tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
         v->loading = 0;
         return v->count;
     }
+    v->awaiting = 0;
+    if (tiku_trk_poseview_lister_takes(v, TIKU_TRK_LIST_LOAD)) {
+        /* Fetched elsewhere: the window shows its pole and publishes
+         * when the entries land. */
+        v->awaiting = 1;
+        v->loading = 1;
+        v->pole_at = now + TIKU_TRK_POLE_AFTER_US;
+        v->next_chunk = 0;
+        return 0;
+    }
     if (v->backend->ops->list(v->backend, v->path, stage_one, v) < 0) {
         v->loading = 0;
         return -1;
@@ -343,6 +413,9 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
 
     if (v == NULL || !v->loading) {
         return 0;
+    }
+    if (v->awaiting) {
+        return 1;                       /* still loading; nothing to publish */
     }
     while (v->stage_at < v->stage_count) {
         tiku_model_t *m = &v->stage[v->stage_at];
@@ -412,6 +485,9 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
      * of building a listing is two places for it to differ. */
     if (tiku_trk_poseview_load_begin(v, 0) < 0) {
         return -1;
+    }
+    if (v->awaiting) {
+        return v->count;        /* the rest lands, and is stepped, later */
     }
     while (tiku_trk_poseview_load_step(v, TIKU_TRK_LOAD_CHUNK_US * 2)) {
     }
@@ -651,7 +727,8 @@ tiku_trk_poseview_new(tiku_backend_t *backend, const char *path)
         free(v);
         return NULL;
     }
-    v->backend = backend;
+        v->backend = backend;
+    views_add(v);
     snprintf(v->path, sizeof v->path, "%s", path ? path : "/");
     v->last_icon = TIKU_TRK_MODE_ICON;
     v->pivot = -1;
@@ -688,6 +765,7 @@ void
 tiku_trk_poseview_free(tiku_trk_poseview_t *v)
 {
     if (v != NULL) {
+        views_drop(v);
         free(v->poses);
         free(v->filtered);
         free(v->band_was);
@@ -737,3 +815,31 @@ tiku_trk_poseview_go_up(tiku_trk_poseview_t *v)
     }
     return tiku_trk_poseview_switch_dir(v, parent);
 }
+
+int
+tiku_trk_poseview_load_landed(tiku_trk_poseview_t *v, int gen,
+                              const tiku_model_t *entries, int n)
+{
+    int i;
+
+    if (v == NULL || !v->awaiting || gen != v->load_gen) {
+        return -1;              /* a listing the window has left */
+    }
+    v->awaiting = 0;
+    if (n < 0) {
+        v->loading = 0;
+        v->stage_count = 0;
+        v->stage_at = 0;
+        return -1;
+    }
+    v->stage_count = 0;
+    v->stage_at = 0;
+    for (i = 0; i < n; i++) {
+        if (stage_one(&entries[i], v)) {
+            break;
+        }
+    }
+    v->next_chunk = 0;
+    return 0;
+}
+

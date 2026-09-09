@@ -714,9 +714,23 @@ desktop_device_pump(desktop_t *app)
          * the desktop drawing rather than holding the loop. */
         if (app->folders[i].win != NULL && app->folders[i].win->open &&
             tiku_trk_poseview_loading(app->folders[i].view)) {
-            (void)tiku_trk_poseview_load_step(app->folders[i].view,
+                        (void)tiku_trk_poseview_load_step(app->folders[i].view,
                                               tiku_trk_now());
             app->dirty = 1;
         }
+    }
+    /* The file panel and the Desktop hold views too, and a listing that
+     * lands for either is published the same way. */
+    if (app->file_panel.view != NULL &&
+        tiku_trk_poseview_loading(app->file_panel.view)) {
+        (void)tiku_trk_poseview_load_step(app->file_panel.view,
+                                          tiku_trk_now());
+        app->dirty = 1;
+    }
+    if (app->desktop_view.folder.view != NULL &&
+        tiku_trk_poseview_loading(app->desktop_view.folder.view)) {
+        (void)tiku_trk_poseview_load_step(app->desktop_view.folder.view,
+                                          tiku_trk_now());
+        app->dirty = 1;
     }
 }

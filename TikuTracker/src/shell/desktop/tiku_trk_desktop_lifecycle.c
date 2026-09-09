@@ -341,6 +341,8 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
             return 1;
         }
     }
+        /* From here every folder on a board is listed by a worker. */
+    desktop_wire_install(app);
     if (o->want_devices) {
         (void)mount_devices(app, o->port, o->baud, o->mount_at);
     }

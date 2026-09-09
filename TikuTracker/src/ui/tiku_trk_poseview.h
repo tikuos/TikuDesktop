@@ -160,6 +160,43 @@ int tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now);
 /** @brief Whether a load is in flight. */
 int tiku_trk_poseview_loading(const tiku_trk_poseview_t *v);
 
+/*
+ * Listing elsewhere.  A shell with workers installs a lister: asked for
+ * a listing (a load, or a poll's re-list), it may take the fetch off the
+ * loop and hand the entries back through the landed calls, or decline
+ * and let the view list synchronously as it always did.
+ */
+#define TIKU_TRK_LIST_LOAD   0          /* a whole listing to publish   */
+#define TIKU_TRK_LIST_RELIST 1          /* a poll's re-list, to diff    */
+
+/** @return nonzero when the lister took the fetch. */
+typedef int (*tiku_trk_poseview_lister_fn)(void *ctx, tiku_trk_poseview_t *v,
+                                           int gen, int kind);
+
+/** @brief Install the lister for every view, or NULL for none. */
+void tiku_trk_poseview_set_lister(tiku_trk_poseview_lister_fn fn, void *ctx);
+
+/**
+ * @brief The entries a lister fetched for a load; @p n < 0 for a fetch
+ *        that failed.  Ignored when @p gen is not the view's current
+ *        listing.  @return 0 when taken.
+ */
+int tiku_trk_poseview_load_landed(tiku_trk_poseview_t *v, int gen,
+                                  const tiku_model_t *entries, int n);
+
+/**
+ * @brief The entries a lister fetched for a poll's re-list, diffed
+ *        against what the view shows; @p n < 0 for a fetch that failed.
+ * @return the notify flags the poll would have returned.
+ */
+unsigned tiku_trk_poseview_relist_landed(tiku_trk_poseview_t *v, int gen,
+                                         tiku_model_t *entries, int n,
+                                         int64_t now);
+
+/** @brief Whether @p v is a view that exists: a lister's result may
+ *         land after the window it was for has closed. */
+int tiku_trk_poseview_alive(const tiku_trk_poseview_t *v);
+
 /**
  * @brief Whether the barber pole should be drawn (TS-038).
  *

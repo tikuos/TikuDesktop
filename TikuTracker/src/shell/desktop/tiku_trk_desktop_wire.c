@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "tiku_board_basic.h"
+#include "tiku_trk_poseview.h"
 #include "tiku_channel.h"
 #include "tiku_sound.h"
 #include "tiku_trail.h"
@@ -689,5 +690,152 @@ desktop_wire_replicants(desktop_t *app)
             free(r);
         }
     }
+}
+
+typedef struct {
+    desktop_t             *app;
+    tiku_trk_poseview_t   *view;
+    int                    gen;
+    int                    kind;
+    tiku_backend_t        *dev;
+    int                    slot;
+    unsigned               mount_gen;
+    char                   prefix[TIKU_PATH_MAX];
+    char                   local[TIKU_PATH_MAX];
+    tiku_model_t          *entries;
+    int                    n;
+} listing_t;
+
+/** @brief The walk's callback, on a worker: keep the entry, adopted. */
+static int
+listing_one(const tiku_model_t *m, void *ctx)
+{
+    listing_t *l = ctx;
+
+    if (l->n >= 4096) {
+        return 1;
+    }
+    l->entries[l->n] = *m;
+    tiku_mount_adopt_entry(l->prefix, l->slot, &l->entries[l->n]);
+    l->n++;
+    return 0;
+}
+
+/** @brief On a worker: list the folder on the board. */
+static void
+listing_run(void *ctx)
+{
+    listing_t *l = ctx;
+
+    l->n = 0;
+    if (l->dev->ops->list(l->dev, l->local, listing_one, l) < 0) {
+        l->n = -1;
+    }
+}
+
+/** @brief On the loop: the entries to the view, if it is still there. */
+static void
+listing_done(void *ctx)
+{
+    listing_t *l = ctx;
+
+    if (!tiku_trk_poseview_alive(l->view) ||
+        tiku_mount_gen_at(l->app->backend, l->slot) != l->mount_gen) {
+        return;
+    }
+    if (l->kind == TIKU_TRK_LIST_RELIST) {
+        unsigned nf = tiku_trk_poseview_relist_landed(l->view, l->gen,
+                                                      l->entries, l->n,
+                                                      tiku_trk_now());
+
+        if (nf != TIKU_TRK_NOTIFY_NOTHING) {
+            l->app->dirty = 1;
+        }
+    } else {
+        (void)tiku_trk_poseview_load_landed(l->view, l->gen, l->entries,
+                                            l->n);
+        l->app->dirty = 1;
+    }
+    tiku_trail("list: %s landed, %d entries", l->local, l->n);
+}
+
+/** @brief The listing is over. */
+static void
+listing_free(void *ctx)
+{
+    listing_t *l = ctx;
+
+    free(l->entries);
+    free(l);
+}
+
+/**
+ * @brief The lister every view asks: a folder on a board is listed by a
+ *        worker; anything else lists as it always did.
+ */
+static int
+desktop_lister(void *ctx, tiku_trk_poseview_t *v, int gen, int kind)
+{
+    desktop_t *app = ctx;
+    const char *path = tiku_trk_poseview_path(v);
+    tiku_backend_t *dev;
+    tiku_work_job_t job;
+    listing_t *l;
+    char local[TIKU_PATH_MAX];
+    int i;
+
+    if (path == NULL || strncmp(path, "/devices/", 9) != 0) {
+        return 0;
+    }
+    dev = tiku_backend_serving(app->backend, path, local, sizeof local);
+    if (!is_board(dev)) {
+        return 0;               /* the /devices folder itself, or local */
+    }
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (tiku_mount_at(app->backend, i) == dev) {
+            break;
+        }
+    }
+    if (i == TIKU_MOUNT_MAX) {
+        return 0;
+    }
+    l = calloc(1, sizeof *l);
+    if (l == NULL) {
+        return 0;
+    }
+    l->entries = calloc(4096, sizeof *l->entries);
+    if (l->entries == NULL) {
+        free(l);
+        return 0;
+    }
+    l->app = app;
+    l->view = v;
+    l->gen = gen;
+    l->kind = kind;
+    l->dev = dev;
+    l->slot = i;
+    l->mount_gen = tiku_mount_gen_at(app->backend, i);
+    snprintf(l->prefix, sizeof l->prefix, "%s",
+             tiku_mount_prefix_at(app->backend, i));
+    snprintf(l->local, sizeof l->local, "%s", local);
+    memset(&job, 0, sizeof job);
+    job.run = listing_run;
+    job.done = listing_done;
+    job.free = listing_free;
+    job.ctx = l;
+    key_of_path(job.key, sizeof job.key, path);
+    if (tiku_work_post(&job) != 0) {
+        listing_free(l);
+        return 0;
+    }
+    tiku_trail("list: %s asked", path);
+    return 1;
+}
+
+/** @brief From here, every folder on a board is listed by a worker. */
+void
+desktop_wire_install(desktop_t *app)
+{
+    tiku_trk_poseview_set_lister(desktop_lister, app);
 }
 
