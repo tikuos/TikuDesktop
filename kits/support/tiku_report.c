@@ -184,11 +184,25 @@ make_path(const char *dir)
 }
 
 void
+tiku_report_folder(const char *dir, char *out, size_t max)
+{
+    const char *home = getenv("HOME");
+
+    if (dir == NULL) {
+        dir = getenv("TIKU_TRK_REPORTS");
+    }
+    if (dir != NULL && dir[0] != '\0') {
+        snprintf(out, max, "%s", dir);
+    } else {
+        snprintf(out, max, "%s/.config/tracker/reports",
+                 (home != NULL) ? home : "/tmp");
+    }
+}
+
+void
 tiku_report_install(const char *program, const char *dir)
 {
-        char folder[PATH_ROOM / 2];
-    const char *home = getenv("HOME");
-    const char *env = getenv("TIKU_TRK_REPORTS");
+    char folder[PATH_ROOM / 2];
     struct tm when;
     time_t now = time(NULL);
     size_t i;
@@ -196,15 +210,7 @@ tiku_report_install(const char *program, const char *dir)
     if (armed) {
         return;
     }
-    if (dir == NULL) {
-        dir = env;
-    }
-    if (dir != NULL && dir[0] != '\0') {
-        snprintf(folder, sizeof folder, "%s", dir);
-    } else {
-        snprintf(folder, sizeof folder, "%s/.config/tracker/reports",
-                 (home != NULL) ? home : "/tmp");
-    }
+    tiku_report_folder(dir, folder, sizeof folder);
     make_path(folder);
 
     /* The name is settled now, while formatting is still allowed. */
@@ -214,7 +220,7 @@ tiku_report_install(const char *program, const char *dir)
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec,
              (program != NULL) ? program : "program", (long)getpid());
-        snprintf(latest_path, sizeof latest_path, "%s/latest-crash.txt", folder);
+    snprintf(latest_path, sizeof latest_path, "%s/latest-crash.txt", folder);
     snprintf(stall_path, sizeof stall_path,
              "%s/stall-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt", folder,
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,

@@ -28,6 +28,7 @@ SOUNDS    := $(BUILD)/tiku-sound-gallery
 METRICS   := $(BUILD)/tiku-metrics-gen
 DEMOAPP   := $(BUILD)/tiku-demo-app
 RUNNER    := $(BUILD)/tiku-run
+DESK_SUP  := $(BUILD)/tiku-desk
 BASICHOST := $(BUILD)/tiku-basic
 TEST_APP  := $(BUILD)/tests/test_app
 FAULT_APP := $(BUILD)/tests/Fault.so $(BUILD)/tests/Stall.so
@@ -83,7 +84,7 @@ endif
 
 .PHONY: apps examples loadable gallery banners probe
 apps: $(PROBE) $(GALLERY) $(SOUNDS) $(METRICS) $(DEMOAPP) $(APPS) $(EXAMPLES) $(BASIC_TARGETS) \
-      $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(TEST_APP) $(FAULT_APP)
+      $(SO_APPS) $(SO_EXAMPLES) $(RUNNER) $(DESK_SUP) $(TEST_APP) $(FAULT_APP)
 examples: $(EXAMPLES)
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(RUNNER)
 
@@ -127,6 +128,9 @@ $(EXAMPLES): $(BUILD)/tiku-example-%: $(OBJ)/$(D)/examples/%.o $(LIB_RUNTIME) \
 
 # Gives a loaded application a process of its own: the same file the
 # desktop can open in-process, started beside it instead.
+$(DESK_SUP): $(OBJ)/$(D)/desk/tiku_desk.o $(LIB_SUPPORT) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 $(RUNNER): $(OBJ)/$(D)/run/tiku_run.o $(LIB_RUNTIME) $(LIB_UI) \
            $(LIB_TRANSPORT) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm -ldl

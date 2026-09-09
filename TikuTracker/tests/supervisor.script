@@ -1,0 +1,7 @@
+# shell: desktop
+# The desk under the supervisor.  The first run of this is killed from
+# outside before the wait ends; the second run, started again and told
+# why, finds the word on its screen.
+wait 4000
+expect-alert started again
+quit

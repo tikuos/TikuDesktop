@@ -15,6 +15,8 @@
 #ifndef TIKU_REPORT_H_
 #define TIKU_REPORT_H_
 
+#include <stddef.h>
+
 /**
  * @brief Take the fatal signals, and say where reports go.
  *
@@ -43,6 +45,13 @@ const char *tiku_report_latest(void);
  *                   stuck, so a backtrace of it means something.
  */
 void tiku_report_stall(long ms, int with_stack);
+
+/**
+ * @brief Where reports go: @p dir, else $TIKU_TRK_REPORTS, else
+ *        $HOME/.config/tracker/reports.  The one answer every program
+ *        that writes or reads a report agrees on.
+ */
+void tiku_report_folder(const char *dir, char *out, size_t max);
 
 /** @brief Where a report of a stall would be written. */
 const char *tiku_report_stall_path(void);

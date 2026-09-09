@@ -12,6 +12,8 @@
 
 #include "tiku_trk_desktop_private.h"
 
+#include "tiku_trail.h"
+
 #include "tiku_link_tcp.h"          /* the port a board dials, for -listen */
 
 /** @brief A script's resize: the same path a window manager's takes. */
@@ -264,7 +266,10 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
         else if (strcmp(argv[i], "-shot") == 0 && i + 1 < argc) { o->shot = argv[++i]; }
         else if (strcmp(argv[i], "-shotmenu") == 0) { o->shot_menu = 1; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { o->script_path = argv[++i]; }
-        else if (strcmp(argv[i], "-mute") == 0) { o->mute = 1; }
+                else if (strcmp(argv[i], "-mute") == 0) { o->mute = 1; }
+        else if (strcmp(argv[i], "-after") == 0 && i + 1 < argc) {
+            o->after = argv[++i];
+        }
         else if (strcmp(argv[i], "-conduct") == 0 && i + 1 < argc) { o->conduct_path = argv[++i]; }
         else if (strcmp(argv[i], "-conduct-tty") == 0 && i + 1 < argc) { o->conduct_tty = argv[++i]; }
         else if (strcmp(argv[i], "-conduct-token") == 0 && i + 1 < argc) { o->conduct_token = argv[++i]; }
@@ -1135,6 +1140,21 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
      */
     splash_stage(app, "the desktop");
     tiku_trk_splash_done(&app->splash, tiku_trk_now());
+    if (o->after != NULL) {
+        /* Started again by the supervisor after the last one ended
+         * badly: the first thing on the screen says so, and where the
+         * account of it is, because a desk that just reappears has
+         * told nobody anything. */
+        char says[256];
+
+        snprintf(says, sizeof says,
+                 "TikuDesktop stopped and was started again.  "
+                 "What happened is in %s", o->after);
+        tiku_trail("started after %s", o->after);
+        tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
+                        tiku_str("alert.btn.ok"));
+        app->dirty = 1;
+    }
     return -1;
 }
 

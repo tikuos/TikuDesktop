@@ -75,6 +75,7 @@ test: all
 	@python3 $(T)/tools/check_shipping.py
 	@$(if $(BASIC_TARGETS),$(D)/basichost/check_basic_host.sh $(BASICHOST),true)
 	@sh $(T)/tests/shell/run.sh
+	@sh $(T)/tests/supervisor.sh
 
 check-architecture:
 	@python3 $(T)/tools/check_architecture.py

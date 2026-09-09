@@ -223,7 +223,23 @@ tracker_run(int argc, char **argv)
     desktop_loop_t lp;
     int code;
 
-    restart_argv = argv;
+        {
+        /* What a Restart starts over with: the same words, less the
+         * -after that told THIS desk why it was started, because a
+         * restart nobody crashed from has nothing to explain. */
+        static char *again[64];
+        int i, n = 0;
+
+        for (i = 0; i < argc && n < 63; i++) {
+            if (strcmp(argv[i], "-after") == 0 && i + 1 < argc) {
+                i++;
+                continue;
+            }
+            again[n++] = argv[i];
+        }
+        again[n] = NULL;
+        restart_argv = again;
+    }
     /* The words the interface is made of, before anything is drawn with
      * them: the language comes from the environment, the English is baked
      * in as the floor. */

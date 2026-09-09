@@ -516,7 +516,9 @@ typedef struct {
      * whatever is on the other end of its console cable.  The tokens
      * are names on the channel; requiring one turns every unnamed peer
      * away at HELLO. */
-    const char *conduct_path, *conduct_tty;
+        const char *conduct_path, *conduct_tty;
+    const char *after;              /* -after: the exit report of the
+                                     * desk this one was started after */
     const char *conduct_token, *conduct_query_token;
     const char *openme[TIKU_WINDOW_MAX];   /* paths to open at start */
     const char *argv0;              /* how this shell was started */
