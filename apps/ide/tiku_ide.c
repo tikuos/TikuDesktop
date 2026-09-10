@@ -1764,13 +1764,14 @@ project_paint(ide_t *st)
         for (i = 0; i < st->proj.nrow; i++) {
             files += !st->proj.row[i].heading;
         }
+                const char *name = (st->proj.title[0] != '\0') ? st->proj.title
+                                                        : "a project";
+
         if (files == 0) {
-            snprintf(says, sizeof says,
-                     "%s: empty -- New File… adds one",
-                     (st->proj.title[0] != '\0') ? st->proj.title
-                                                 : "a project");
+            snprintf(says, sizeof says, "%s: empty -- New File… adds one",
+                     name);
         } else {
-            snprintf(says, sizeof says, "%d file%s", files,
+            snprintf(says, sizeof says, "%s: %d file%s", name, files,
                      files == 1 ? "" : "s");
         }
     }
