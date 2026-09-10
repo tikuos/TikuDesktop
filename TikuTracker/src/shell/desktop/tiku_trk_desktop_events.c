@@ -544,6 +544,17 @@ if (app->popup != NULL) {
 }
 
 if (app->gbar_on == 1 && app->popup == NULL &&
+    ev->y < app->menus.bar.height && ev->button == 1u &&
+    ev->x >= app->shot_btn.x &&
+    ev->x < app->shot_btn.x + app->shot_btn.w) {
+    /* The camera on the bar's right: a screenshot, taken next turn so
+     * the pointer's press is not frozen into it. */
+    app->shot_pending = 1;
+    app->shot_pressed = 1;
+    app->dirty = 1;
+    return;
+}
+if (app->gbar_on == 1 && app->popup == NULL &&
     ev->y < app->menus.bar.height && ev->button == 1u) {
     /* The strip: a press on a title opens its menu, from
      * the published description alone. */

@@ -23,7 +23,51 @@ global_bar_rect(desktop_t *app)
                                app->menus.bar.height };
 }
 
-/** @brief A published pick lands back in the shell's one command path. */
+/**
+ * @brief The status area on the bar's right: a camera that saves a
+ *        screenshot.  Its rectangle is kept so a click can find it.
+ */
+void
+global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
+{
+    int bw = 18, bh = 13;               /* the camera body */
+    int cell = bw + 16;
+    int x0 = strip.x + strip.w - cell;  /* the carved cell's left edge */
+    int bx = x0 + (cell - bw) / 2;
+    int by = strip.y + (strip.h - bh) / 2 + 1;
+    int cx = bx + bw / 2, cy = by + bh / 2 + 1, r = 4, i;
+
+    app->shot_btn = (tiku_rect_t){ x0, strip.y, cell, strip.h };
+    /* Carve the cell: a little darker than the bar, held darker still,
+     * with an engraved separator down its left -- a groove then a
+     * highlight, the way a sunken edge reads. */
+    tiku_fill(app->surf, app->shot_btn,
+              tiku_tint(TIKU_C_PANEL, app->shot_pressed ? 0.82f : 0.95f));
+    tiku_vline(app->surf, x0, strip.y, strip.h - 1,
+               tiku_tint(TIKU_C_PANEL, 0.72f));
+    tiku_vline(app->surf, x0 + 1, strip.y, strip.h - 1,
+               tiku_tint(TIKU_C_PANEL, 1.18f));
+    /* The camera, in line art so it reads at this size: a body outline,
+     * a viewfinder bump, a lens ring, and a flash dot. */
+    tiku_hline(app->surf, bx, by, bw, TIKU_C_TEXT);
+    tiku_hline(app->surf, bx, by + bh - 1, bw, TIKU_C_TEXT);
+    tiku_vline(app->surf, bx, by, bh, TIKU_C_TEXT);
+    tiku_vline(app->surf, bx + bw - 1, by, bh, TIKU_C_TEXT);
+    tiku_hline(app->surf, bx + 3, by - 2, 5, TIKU_C_TEXT);   /* viewfinder */
+    tiku_vline(app->surf, bx + 3, by - 2, 2, TIKU_C_TEXT);
+    tiku_vline(app->surf, bx + 7, by - 2, 2, TIKU_C_TEXT);
+    tiku_fill(app->surf, (tiku_rect_t){ bx + bw - 4, by + 2, 2, 2 },
+              TIKU_C_TEXT);                                  /* flash */
+    for (i = -r; i <= r; i++) {                              /* lens ring */
+        int half = (int)(0.5 + __builtin_sqrt((double)(r * r - i * i)));
+
+        tiku_fill(app->surf, (tiku_rect_t){ cx - half, cy + i, 1, 1 },
+                  TIKU_C_TEXT);
+        tiku_fill(app->surf, (tiku_rect_t){ cx + half, cy + i, 1, 1 },
+                  TIKU_C_TEXT);
+    }
+    tiku_fill(app->surf, (tiku_rect_t){ cx - 1, cy - 1, 2, 2 }, TIKU_C_TEXT);
+}/** @brief A published pick lands back in the shell's one command path. */
 static void
 folder_menu_pick(tiku_window_t *window, int command, void *context)
 {

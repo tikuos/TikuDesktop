@@ -1,0 +1,13 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# A camera on the menu bar's right takes a screenshot.
+#
+# The Tiku menu already had a Take Screenshot item; this is the same
+# thing as a button a person can see and reach: a small camera at the
+# far right of the bar, saving to ~/Pictures.  The shot is taken next
+# turn so the pointer's press is not frozen into it.
+wait 40
+click 979 8
+wait 40
+expect-read status screenshot saved

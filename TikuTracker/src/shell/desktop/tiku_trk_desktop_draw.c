@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include "tiku_trail.h"
+#include "tiku_state.h"
 #include "tiku_trk_desktop_private.h"
 
 /* Used before they are defined. */
@@ -188,8 +189,7 @@ draw_all(desktop_t *app)
 void
 desktop_screenshot_tick(desktop_t *app)
 {
-    char dir[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
-    const char *home = getenv("HOME");
+    char desk[TIKU_PATH_MAX], dir[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
     struct tm when;
     time_t now = time(NULL);
 
@@ -197,18 +197,24 @@ desktop_screenshot_tick(desktop_t *app)
         return;
     }
     app->shot_pending = 0;
-    snprintf(dir, sizeof dir, "%s/Pictures",
-             (home != NULL && home[0] != '\0') ? home : ".");
+    app->shot_pressed = 0;
+    /* A Screenshots folder on the desktop itself, so a shot is where a
+     * person looks for it. */
+    (void)tiku_desktop_dir(desk, sizeof desk);
+    (void)tiku_state_mkparents(desk);
+    (void)mkdir(desk, 0755);
+    snprintf(dir, sizeof dir, "%s/Screenshots", desk);
     (void)mkdir(dir, 0755);
     (void)localtime_r(&now, &when);
     snprintf(path, sizeof path,
              "%s/tiku-screenshot-%04d%02d%02d-%02d%02d%02d.png", dir,
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec);
-    if (tiku_surface_png(app->surf, path) == 0) {
+        if (tiku_surface_png(app->surf, path) == 0) {
         const char *leaf = strrchr(path, '/');
 
-        snprintf(app->status, sizeof app->status, "screenshot saved to %s",
+        snprintf(app->status, sizeof app->status,
+                 "screenshot saved to Screenshots/%s",
                  (leaf != NULL) ? leaf + 1 : path);
         tiku_trail("screenshot %s", path);
     } else {
@@ -458,7 +464,8 @@ desktop_draw_bars(desktop_t *app)
         tiku_fill(app->surf, strip, TIKU_C_PANEL);
         tiku_hline(app->surf, strip.x, strip.y + strip.h - 1,
                         strip.w, tiku_tint(TIKU_C_PANEL, 1.40f));
-        tiku_menubar_draw(&app->gbar, app->surf, strip);
+                tiku_menubar_draw(&app->gbar, app->surf, strip);
+        global_bar_status_draw(app, strip);
         if (app->gbar_open >= 0 && app->gbar_open < app->gbar.count) {
             app->popup = app->gbar.menu[app->gbar_open];
             app->popup_frame = tiku_menubar_panel(&app->gbar, strip,
