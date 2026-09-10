@@ -3682,8 +3682,9 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (e != NULL && event->type == TIKU_EVENT_RESIZE) {
-        /* The person let go of the corner: repaint at the size the
-         * window now is, and the next frame hands it over. */
+        /* The corner moved: repaint at the size the window now is, and
+         * the next frame hands it over.  This arrives on every step of
+         * the drag, so the page tracks the frame. */
         int w = (event->width > 160) ? event->width : 160;
         int h = (event->height > 100) ? event->height : 100;
         tiku_surface_t *grown = tiku_surface_new(w, h,

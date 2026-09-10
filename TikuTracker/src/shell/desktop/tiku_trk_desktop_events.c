@@ -1318,6 +1318,31 @@ app->dirty = 1;
 }
 
 /**
+ * @brief Tell a window its content size, so it repaints its page to fit.
+ *
+ * The same message on every corner move and on release, so an
+ * application's page tracks the frame as it is dragged rather than
+ * catching up when the hand lets go.
+ */
+static void
+resize_deliver(desktop_t *app, tiku_window_t *w)
+{
+    tiku_rect_t rc = tiku_window_content(w);
+    struct embed_win *ew = embed_win_of_window(app, w);
+    tiku_event_t rev;
+
+    memset(&rev, 0, sizeof rev);
+    rev.type = TIKU_EVENT_RESIZE;
+    rev.width = rc.w;
+    rev.height = rc.h;
+    if (ew != NULL) {
+        (void)embed_deliver(ew, &rev);
+    } else if (tiku_remote_owner(&app->remote, w) != NULL) {
+        tiku_remote_event(&app->remote, w, &rev);
+    }
+}
+
+/**
  * @brief The pointer moved: drags, bands, hovers and the tracking a press
  * began.
  */
@@ -1580,6 +1605,12 @@ if (tiku_trk_deskbar_pointer(app->deskbar, ev->x,
 if (tiku_workspace_tracking(app->desk)) {
     if (tiku_workspace_track(app->desk, ev->x,
                             ev->y)) {
+        if (app->resize_track != NULL) {
+            /* The frame just changed size under the hand: the
+             * window hears it now, so its page grows with the
+             * corner rather than snapping when the hand lets go. */
+            resize_deliver(app, app->resize_track);
+        }
         app->dirty = 1;
     }
 }
@@ -1814,25 +1845,9 @@ app->press_window = NULL;
 app->press_focus = NULL;
 tiku_workspace_end_track(app->desk);
 if (app->resize_track != NULL) {
-    /* The hand let go: whoever owns the window is told
-     * the content's new size, and answers with a frame
-     * painted at it. */
-    tiku_window_t *rw2 = app->resize_track;
-    tiku_rect_t rc = tiku_window_content(rw2);
-    tiku_event_t rev;
-    struct embed_win *ew =
-        embed_win_of_window(app, rw2);
-
-    memset(&rev, 0, sizeof rev);
-    rev.type = TIKU_EVENT_RESIZE;
-    rev.width = rc.w;
-    rev.height = rc.h;
-    if (ew != NULL) {
-        (void)embed_deliver(ew, &rev);
-    } else if (tiku_remote_owner(&app->remote,
-                                      rw2) != NULL) {
-        tiku_remote_event(&app->remote, rw2, &rev);
-    }
+    /* The hand let go: one last size at the final corner,
+     * and the window answers with a frame painted at it. */
+    resize_deliver(app, app->resize_track);
     app->resize_track = NULL;
     app->dirty = 1;
 }
