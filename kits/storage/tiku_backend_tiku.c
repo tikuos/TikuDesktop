@@ -185,6 +185,13 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     unsigned dropped = 0u;
     int n, i, w = 0;
 
+    if (shell_is_leased(b)) {
+        /* A program has the shell: asking the namespace what changed
+         * would read the program output off the wire and throw
+         * it away.  Report nothing changed while the run holds it. */
+        return 0;
+    }
+
     if (complete != NULL) {
         *complete = 1;
     }
