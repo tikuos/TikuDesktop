@@ -141,7 +141,8 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_embed.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_boardrun.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_report.c \
-                 $(T)/src/shell/desktop/tiku_trk_desktop_wire.c
+                 $(T)/src/shell/desktop/tiku_trk_desktop_wire.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_deviceprefs.c
 
 # tiku_trk_deskbar, one composition over the files of one directory.
 DESKBAR := $(T)/src/deskbar/bar/tiku_trk_deskbar.c \
@@ -289,6 +290,8 @@ test_lease_LDLIBS := -lutil -lpthread
 test_reclaim_LDLIBS := -lutil -lpthread
 test_link_LDLIBS := -lutil
 test_menutext_LDLIBS := -lX11 -lm
+test_ide_default_LDLIBS := -lX11 -lm
+test_deviceprefs_LDLIBS := -lX11 -lm
 test_formrow_LDLIBS := -lX11 -lm
 test_gui_CFLAGS := -I$(T)/tests/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := $(T)/src/core/tiku_trk_deskprefs.c $(T)/src/core/tiku_trk_background.c

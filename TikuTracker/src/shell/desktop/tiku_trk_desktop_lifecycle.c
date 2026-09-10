@@ -1229,6 +1229,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_deskbar_prefs_window_destroy(&app->deskbar_prefs_window);
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
+    desktop_deviceprefs_destroy(app);
     tiku_trk_sounds_window_destroy(&app->sounds_window);
     tiku_trk_prefs_window_destroy(&app->prefs_window);
     splash_stage(app, "the Deskbar");

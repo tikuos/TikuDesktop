@@ -71,6 +71,9 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
     case TIKU_TRK_DB_ITEM_FONT_PREFS:
         art = "folder_fonts";
         break;
+    case TIKU_TRK_DB_ITEM_DEVICE_PREFS:
+        art = "microcontroller";
+        break;
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";
         break;
@@ -361,6 +364,9 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         break;
     case TIKU_TRK_DB_SOUND_PREFERENCES:
         tiku_trk_sounds_window_open(&app->sounds_window);
+        break;
+    case TIKU_TRK_DB_DEVICE_PREFERENCES:
+        desktop_deviceprefs_open(app);
         break;
     case TIKU_TRK_DB_DESKTOP_PREFERENCES:
         tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);

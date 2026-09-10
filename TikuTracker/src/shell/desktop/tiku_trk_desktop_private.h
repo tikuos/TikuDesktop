@@ -378,6 +378,7 @@ typedef struct desktop {
     tiku_menu_t      sysmenu;           /* the system menu at the left  */
     tiku_menu_t      devmenu;           /* the Devices menu beside it   */
     tiku_menu_t      devsub;            /* its default-device submenu   */
+    struct desktop_deviceprefs *deviceprefs; /* connected-device settings */
     tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];     /* the published menus */
     tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];   /* their submenus      */
     tiku_menubar_t   gbar;              /* the strip they hang from     */
@@ -786,6 +787,10 @@ int  device_scan(desktop_t *app);
 int  device_connect(desktop_t *app, const char *port);
 int  device_disconnect(desktop_t *app, const char *name);
 void device_set_current(desktop_t *app, const char *name);
+void desktop_deviceprefs_open(desktop_t *app);
+tiku_window_t *desktop_deviceprefs_handle(desktop_t *app);
+void desktop_deviceprefs_close(desktop_t *app);
+void desktop_deviceprefs_destroy(desktop_t *app);
 void device_candidate_record(desktop_t *app, const char *port,
                              const char *label);
 void device_port_where(const char *port, char *out, size_t max);

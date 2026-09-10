@@ -489,6 +489,10 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
                  tiku_str("menu.sounds"));
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_DEVICE_PREFS;
+        snprintf(si->label, sizeof si->label, "Devices Preferences…");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
         /* Says what choosing it DOES, which is the other state: a row
          * labelled with the state it is in reads as a heading. */

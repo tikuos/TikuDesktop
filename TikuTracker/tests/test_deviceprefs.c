@@ -1,0 +1,262 @@
+/* Device preferences: capabilities, explicit writes and confirmed readback. */
+#include <assert.h>
+#include "../src/shell/desktop/tiku_trk_desktop_deviceprefs.c"
+
+static char vals[DP_COUNT][96] = {"Desk sensor", "128000000",
+                                  "1789041600", "auto", "0", "WFI"};
+static int writes, readonly, missing, reject, mismatch;
+static int clock_supported;
+static char clock_target[96] = "128000000";
+static char clock_mode[16] = "reboot";
+static const char *clock_rates = "64000000 128000000";
+
+int desktop_board_names(desktop_t *app, char *out, size_t max)
+{
+    (void)app;
+    return snprintf(out, max, "nrf54l15\nnrf54lm20b\n");
+}
+
+static int which(const char *path)
+{
+    if (clock_supported && !strcmp(path, "/sys/cpu/freq_target"))
+        return DP_COUNT;
+    for (int i = 0; i < DP_COUNT; i++)
+        if (!strcmp(path, settings[i].path)) return i;
+    return -1;
+}
+
+static int mock_stat(tiku_backend_t *b, const char *path, tiku_model_t *m)
+{
+    int i = which(path);
+    (void)b;
+    if (i < 0 || (missing && i == DP_RADIO)) return -1;
+    memset(m, 0, sizeof *m);
+    m->facts.perm = TIKU_P_READ | (readonly ? 0 : TIKU_P_WRITE);
+    return 0;
+}
+
+static int mock_read(tiku_backend_t *b, const char *path, void *out, size_t max)
+{
+    int i = which(path);
+    (void)b;
+    if (clock_supported) {
+        if (!strcmp(path, "/sys/cpu/freq_available"))
+            return snprintf(out, max, "%s\n", clock_rates);
+        if (!strcmp(path, "/sys/cpu/freq_change_mode"))
+            return snprintf(out, max, "%s\n", clock_mode);
+        if (i == DP_COUNT) return snprintf(out, max, "%s\n", clock_target);
+    }
+    if (i < 0) return -1;
+    return snprintf(out, max, "%s\n", vals[i]);
+}
+
+static int mock_write(tiku_backend_t *b, const char *path, const void *in,
+                      size_t n, char *err, size_t max)
+{
+    (void)b;
+    writes++;
+    if (reject) {
+        snprintf(err, max, "unsupported value");
+        return -1;
+    }
+    if (!mismatch) snprintf(which(path) == DP_COUNT ? clock_target :
+        vals[which(path)], sizeof vals[0], "%.*s", (int)n, (const char *)in);
+    return 0;
+}
+
+int main(void)
+{
+    const tiku_backend_ops_t ops = {.stat=mock_stat, .read=mock_read,
+                                   .write=mock_write};
+    tiku_backend_t backend = {.ops=&ops};
+    dp_job_t j = {.backend=&backend, .write_at=-1};
+    dp_run(&j);
+    assert(writes == 0 && j.values[DP_NAME].writable);
+    assert(!j.values[DP_CPU].writable && !j.values[DP_SLEEP].writable);
+    j.write_at = DP_NAME;
+    snprintf(j.input, sizeof j.input, "Lab sensor");
+    dp_run(&j);
+    assert(writes == 1 && !strcmp(j.values[DP_NAME].value, "Lab sensor"));
+    assert(!strcmp(j.status, "Applied and confirmed by device."));
+    readonly = 1;
+    dp_run(&j);
+    assert(writes == 1 && strstr(j.status, "no longer writable"));
+    readonly = 0;
+    reject = 1;
+    dp_run(&j);
+    assert(writes == 2 && strstr(j.status, "unsupported value"));
+    reject = 0;
+    mismatch = 1;
+    snprintf(j.input, sizeof j.input, "Other sensor");
+    dp_run(&j);
+    assert(strstr(j.status, "different value"));
+    memset(j.values, 0, sizeof j.values);
+    missing = 1;
+    j.write_at = -1;
+    dp_run(&j);
+    assert(!j.values[DP_RADIO].present);
+    clock_supported = 1;
+    mismatch = 0;
+    j.write_at = DP_CPU;
+    snprintf(j.input, sizeof j.input, "64000000");
+    dp_run(&j);
+    assert(j.values[DP_CPU].writable && j.clock.count == 2);
+    assert(!strcmp(j.clock.target, "64000000"));
+    assert(!strcmp(j.values[DP_CPU].value, "128000000"));
+    assert(strstr(j.status, "Saved for next restart"));
+    readonly = 1;
+    int before = writes;
+    dp_run(&j);
+    assert(writes == before && !j.values[DP_CPU].writable);
+    readonly = 0;
+    snprintf(clock_mode, sizeof clock_mode, "fixed");
+    before = writes;
+    dp_run(&j);
+    assert(writes == before && !j.values[DP_CPU].writable);
+    j.write_at = -1;
+    dp_run(&j);
+    assert(!j.values[DP_CPU].writable);
+    snprintf(clock_mode, sizeof clock_mode, "reboot");
+    dp_run(&j);
+    const char *platform_rates[] = {
+        "1000000 2000000 4000000 8000000",
+        "12000000 48000000 100000000 125000000 133000000 150000000",
+        "96000000 192000000", "96000000 250000000",
+        "240000000 480000000 1000000000",
+        "100000000 150000000 200000000 300000000 400000000 600000000"
+    };
+    for (int i = 0; i < 6; i++) {
+        clock_rates = platform_rates[i];
+        dp_run(&j);
+        assert(j.clock.writable && j.clock.count >= 2);
+        snprintf(j.input, sizeof j.input, "%lu",
+                 j.clock.rates[j.clock.count - 1]);
+        j.write_at = DP_CPU;
+        dp_run(&j);
+        assert(!strcmp(j.clock.target, j.input));
+        assert(strstr(j.status, "Saved for next restart"));
+        assert(!strcmp(j.values[DP_CPU].value, "128000000"));
+        j.write_at = -1;
+    }
+    clock_rates = "64000000 128000000";
+    snprintf(clock_target, sizeof clock_target, "64000000");
+    dp_run(&j);
+    desktop_t *app = calloc(1, sizeof *app);
+    struct desktop_deviceprefs *pending = calloc(1, sizeof *pending);
+    dp_job_t *cancelled = calloc(1, sizeof *cancelled);
+    assert(app && pending && cancelled);
+    pending->app = app;
+    pending->refs = 2;
+    pending->busy = 1;
+    app->deviceprefs = pending;
+    cancelled->owner = pending;
+    dp_free(cancelled);
+    assert(!pending->busy && pending->refs == 1);
+    assert(strstr(pending->status, "disconnected"));
+    dp_job_t *late = calloc(1, sizeof *late);
+    assert(late);
+    late->owner = pending;
+    pending->refs++;
+    desktop_deviceprefs_destroy(app);
+    assert(pending->refs == 1 && pending->app == NULL);
+    dp_done(late);
+    dp_free(late);
+    free(app);
+    struct desktop_deviceprefs p = {.count=2, .selected=0, .setting=DP_NAME};
+    memcpy(p.values, j.values, sizeof p.values);
+    p.clock = j.clock;
+    snprintf(p.names[0], sizeof p.names[0], "nrf54l15");
+    snprintf(p.names[1], sizeof p.names[1], "nrf54lm20b");
+    snprintf(p.status, sizeof p.status,
+             "Select a setting to view or change it.");
+    p.setting = DP_CPU;
+    dp_edit(&p);
+    assert(dp_clock_pending(&p) && !dp_clock_dirty(&p));
+    assert(strstr(dp_clock_help(&p), "Restart the device"));
+    snprintf(p.values[DP_CPU].value, sizeof p.values[DP_CPU].value,
+             "63999000");
+    /* measurement noise is not a pending change */
+    assert(!dp_clock_pending(&p));
+    snprintf(p.values[DP_CPU].value, sizeof p.values[DP_CPU].value,
+             "128000000");
+    dp_clock_t supported_clock = p.clock;
+    memset(&p.clock, 0, sizeof p.clock);
+    assert(strstr(dp_clock_help(&p), "newer device firmware"));
+    snprintf(p.clock.mode, sizeof p.clock.mode, "fixed");
+    assert(strstr(dp_clock_help(&p), "fixed clock"));
+    p.clock = supported_clock;
+    p.clock.writable = 0;
+    assert(strstr(dp_clock_help(&p), "read-only"));
+    p.clock = supported_clock;
+    for (int dark = 0; dark < 2; dark++) {
+        char path[80];
+        tiku_theme_set(dark ? tiku_theme_dark() : NULL);
+        tiku_surface_t *s = tiku_surface_new(820, 500, TIKU_C_PANEL);
+        p.clock_menu = dark;
+        dp_draw(NULL, s, (tiku_rect_t){0,0,820,500}, &p);
+        snprintf(path, sizeof path, "/tmp/tiku-deviceprefs-%d.png", dark);
+        assert(tiku_surface_png(s, path) == 0);
+        tiku_surface_free(s);
+    }
+    p.clock_menu = 0;
+    app = calloc(1, sizeof *app);
+    app->surf = tiku_surface_new(1100, 800, TIKU_C_PANEL);
+    app->desk = tiku_workspace_new(app->surf);
+    p.app = app;
+    app->deviceprefs = &p;
+    p.window = tiku_workspace_open(app->desk, "Devices Preferences",
+        (tiku_rect_t){30, 60, 820, 500}, dp_draw, &p, NULL);
+    tiku_window_set_handlers(p.window, dp_event, NULL, NULL);
+    assert(desktop_deviceprefs_handle(app) == p.window);
+    tiku_rect_t c = tiku_window_content(p.window);
+    tiku_event_t ev = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+        .x=c.x+220, .y=c.y+18+(DP_CRYPTO+1)*dp_row()+4};
+    assert(tiku_window_send(p.window, &ev));
+    assert(p.setting == DP_CRYPTO);
+    ev.y = c.y+18+(DP_COUNT+4)*dp_row()+4;
+    assert(tiku_window_send(p.window, &ev));
+    assert(!strcmp(p.field.text, "sw"));
+    ev.y = c.y+18+dp_row()+4;
+    assert(tiku_window_send(p.window, &ev));
+    assert(p.setting == DP_NAME);
+    ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN,
+        .key='a', .modifiers=TIKU_MOD_CMD};
+    assert(tiku_window_send(p.window, &ev));
+    ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN,
+        .key='X', .text="X"};
+    assert(tiku_window_send(p.window, &ev));
+    assert(!strcmp(p.field.text, "X"));
+    ev.key = TIKU_KEY_TAB;
+    assert(tiku_window_send(p.window, &ev));
+    assert(p.setting == DP_CPU);
+    ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+        .x=c.x+220, .y=c.y+18+(DP_COUNT+4)*dp_row()+4};
+    assert(tiku_window_send(p.window, &ev));
+    assert(p.clock_menu);
+    ev.y -= dp_row();
+    assert(tiku_window_send(p.window, &ev));
+    assert(!p.clock_menu && !strcmp(p.field.text, "128000000"));
+    assert(!strcmp(clock_target, "64000000")); /* selection is not a write */
+    assert(dp_clock_dirty(&p));
+    before = writes;
+    ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN, .key=' '};
+    assert(tiku_window_send(p.window, &ev));
+    assert(p.clock_menu);
+    ev.key = TIKU_KEY_RETURN;
+    assert(tiku_window_send(p.window, &ev));
+    assert(!p.clock_menu && writes == before && !p.busy);
+    tiku_field_start(&p.field, p.clock.target);
+    assert(!dp_clock_dirty(&p));
+    dp_apply(&p); /* unchanged Save must not queue a write */
+    assert(writes == before && !p.busy);
+    p.busy = 1;
+    ev.type = TIKU_EVENT_KEY_DOWN;
+    ev.key = TIKU_KEY_ESCAPE;
+    assert(tiku_window_send(p.window, &ev));
+    assert(desktop_deviceprefs_handle(app) == NULL);
+    tiku_workspace_free(app->desk);
+    tiku_surface_free(app->surf);
+    free(app);
+    puts("PASS: capabilities, writes, readback, input and teardown");
+    return 0;
+}

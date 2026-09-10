@@ -972,6 +972,10 @@ if (hit == TIKU_HIT_CLOSE) {
     tiku_workspace_begin_track(app->desk, w, hit, ev->x,
                               ev->y);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
+           w == desktop_deviceprefs_handle(app)) {
+    tiku_workspace_activate(app->desk, w);
+    (void)tiku_window_send(w, ev);
+} else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            w == tiku_trk_select_window_handle(
                     &app->select_window)) {
     (void)tiku_window_send(w, ev);
@@ -2361,6 +2365,13 @@ if (key == TIKU_KEY_TAB && (ev->modifiers & TIKU_MOD_CMD)) {
     tiku_trk_switcher_window_open(&app->switcher_window,
         (ev->modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
     app->dirty = 1;
+    return;
+}
+if (w != NULL && w == desktop_deviceprefs_handle(app) &&
+    !alert_model(app)->open) {
+    /* Under the desk's own shortcuts: the panel takes every key it is
+     * focused for, but Cmd-Tab above still reaches the switcher. */
+    (void)tiku_window_send(w, ev);
     return;
 }
 if (key == ',' && (ev->modifiers & TIKU_MOD_CMD)) {
