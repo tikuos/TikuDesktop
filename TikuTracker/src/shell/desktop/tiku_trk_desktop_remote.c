@@ -356,17 +356,24 @@ desktop_board_names_tell(desktop_t *app)
      * were named once at startup, before any application had connected,
      * and a session arriving after that would never have heard them. */
     if (sessions == app->board_names_sessions &&
-        strcmp(names, app->board_names_told) == 0) {
+        strcmp(names, app->board_names_told) == 0 &&
+        strcmp(app->current_device, app->board_current_told) == 0) {
         return;
     }
     app->board_names_sessions = sessions;
     (void)snprintf(app->board_names_told, sizeof app->board_names_told,
                    "%s", names);
+    (void)snprintf(app->board_current_told,
+                   sizeof app->board_current_told, "%s",
+                   app->current_device);
     m = tiku_msg_new(TIKU_MSG_BOARDS);
     if (m == NULL) {
         return;
     }
     (void)tiku_msg_add_string(m, "names", names);
+    /* The current device rides with them: a session out of process has
+     * no other way to know what its work defaults to. */
+    (void)tiku_msg_add_string(m, "current", app->current_device);
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         (void)tiku_remote_tell(&app->remote, i, m);
     }

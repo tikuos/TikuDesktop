@@ -47,6 +47,9 @@ typedef struct {
     /* The boards the shell has mounted, kept warm the way the clipboard
      * is: a menu asks while it is being drawn. */
     char                      boards[512];
+    /* The desktop's current device, mirrored the same way: an app that
+     * defaults its work to it asks while a menu is being built. */
+    char                      current[64];
 } client_ctx_t;
 
 static uint32_t
@@ -354,6 +357,18 @@ svc_board_find(void *ctx)
 }
 
 static int
+svc_current_device(void *ctx, char *out, size_t max)
+{
+    client_ctx_t *c = ctx;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    snprintf(out, max, "%s", c->current);
+    return (int)strlen(out);
+}
+
+static int
 svc_board_names(void *ctx, char *out, size_t max)
 {
     client_ctx_t *c = ctx;
@@ -487,6 +502,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.board_release = svc_board_release;
         services.board_reclaim = svc_board_reclaim;
     services.board_find = svc_board_find;
+    services.current_device = svc_current_device;
     if (app->start != NULL && app->start(&state, &services) != 0) {
         tiku_remote_disconnect(&ctx->remote);
         return 1;
@@ -543,9 +559,23 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
                     if (tiku_msg_what(heard) == TIKU_MSG_BOARDS) {
                         const char *n = tiku_msg_find_string(heard,
                                                              "names", 0);
+                        const char *cur = tiku_msg_find_string(heard,
+                                                               "current", 0);
+                        char was[64];
 
                         snprintf(ctx->boards, sizeof ctx->boards, "%s",
                                  (n != NULL) ? n : "");
+                        snprintf(was, sizeof was, "%s", ctx->current);
+                        snprintf(ctx->current, sizeof ctx->current, "%s",
+                                 (cur != NULL) ? cur : "");
+                        /* An application out here defaults its work to the
+                         * current device as one embedded in the shell does,
+                         * so the change has to reach it the same way. */
+                        if (strcmp(was, ctx->current) != 0 &&
+                            app->board_said != NULL) {
+                            app->board_said(state, TIKU_APP_BOARD_CURRENT,
+                                            ctx->current);
+                        }
                     }
                     if (tiku_msg_what(heard) == TIKU_MSG_BOARDOUT &&
                         app->board_said != NULL) {

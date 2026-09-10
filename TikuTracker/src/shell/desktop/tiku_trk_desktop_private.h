@@ -272,6 +272,7 @@ typedef struct desktop {
         int                      board_run_state;     /* as last trailed */
     int                      board_run_asked;     /* the INPUT was told */
     char                     board_names_told[512];
+    char                     board_current_told[64]; /* told with them  */
         int                      board_names_sessions;  /* how many heard it */
     int                      board_baud;   /* the mounts were opened at */
     /* A board's last answer to "what changed", fetched by a worker;

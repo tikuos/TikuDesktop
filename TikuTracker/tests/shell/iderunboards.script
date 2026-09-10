@@ -12,7 +12,16 @@
 # is the whole question two boards raise.  The dark state both start
 # from is MADE here, by running the program that puts the lamp out on
 # each board in turn: the same program, sent to two places.
-wait 60
+wait 200
+note connect devices through TikuDesktop before opening TikuBasic
+click 264 8
+wait 10
+menu-pick Connect to nRF54L15
+wait 300
+click 264 8
+wait 10
+menu-pick Connect to nRF54LM20B
+wait 300
 click 980 30
 wait 4
 menu-pick Programming
@@ -38,11 +47,13 @@ key Down
 wait 6
 key Down
 wait 8
-note the project remembers a board that is not on this desk: it is SAID
-note in Connect, beside both boards that ARE here, offered by name
-click 175 8
+note a legacy project board entry cannot override the desktop default
+click 264 8
 wait 8
-expect-menu This machine|nrf54l15|nrf54lm20b|elsewhere is not here|
+menu-pick Default device:
+wait 8
+expect-menu nrf54l15
+expect-menu nrf54lm20b
 menu-pick nrf54lm20b
 wait 10
 click 71 8
@@ -52,7 +63,9 @@ wait 250
 note and now the same program to the OTHER board
 click-window Project
 wait 8
-click 175 8
+click 264 8
+wait 8
+menu-pick Default device:
 wait 8
 menu-pick nrf54l15
 wait 10
@@ -76,8 +89,7 @@ note lit on the board that was chosen
 expect-read /devices/nrf54l15/dev/led0 1
 note and dark on the one that was not: a program went to ONE board
 expect-read /devices/nrf54lm20b/dev/led0 0
-note and the project remembers the board chosen: Run and Save both read
-note as going there, and the board that is not here is no longer named
+note Run and Save both follow the desktop default
 click-window Project
 wait 8
 click 71 8
@@ -85,7 +97,10 @@ wait 8
 expect-menu Run blink.bas on nrf54l15|Save on nrf54l15|
 click-window Project
 wait 10
-click 175 8
+click 264 8
 wait 8
-expect-menu This machine|nrf54l15|nrf54lm20b||Look again|
+menu-pick Default device:
+wait 8
+expect-menu nrf54l15
+expect-menu nrf54lm20b
 quit

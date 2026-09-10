@@ -9,7 +9,12 @@
 # again -- its shell answering the namespace, not still inside the
 # interpreter with a run nobody is watching.  That last part is what a
 # leaked hold would fail, and it is the reason this script exists.
-wait 60
+wait 200
+note connect devices through TikuDesktop before opening TikuBasic
+click 264 8
+wait 10
+menu-pick Connect to nRF54LM20B
+wait 300
 click 980 30
 wait 4
 menu-pick Programming
@@ -32,8 +37,10 @@ wait 8
 note the row the list stands on is the long one
 key Down
 wait 8
-note where runs go is chosen once, in Connect; the project remembers it
-click 175 8
+note choose the desktop default for subsequent runs and saves
+click 264 8
+wait 8
+menu-pick Default device:
 wait 8
 menu-pick nrf54lm20b
 wait 10

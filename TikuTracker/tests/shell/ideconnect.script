@@ -3,13 +3,11 @@
 # prefs: factory
 # setup: ideconnect
 # board: discover
-# Where a program goes is chosen in Connect, and the project remembers.
+# Run and Save follow the desktop default, including changes while open.
 #
 # A board is CONNECTED from the desktop's Devices menu before any of
 # this: finding one on the bus no longer mounts it, choosing it does.
-# Picking a board in Connect makes it that project's destination: Run
-# reads as going there, and asking the shell to look again mounts
-# nothing twice.
+# TikuBasic owns no connection menu or per-project destination.
 wait 200
 note the two boards on the bench, taken in from the Devices menu
 click 264 8
@@ -46,8 +44,7 @@ click 675 413
 wait 60
 expect-no-title Open
 click-window Project
-note the shell is looking for boards now, one port a beat -- and the
-note desk is still a desk while it does: its menu opens at once
+note opening a project does not start another device scan
 wait 10
 click 71 8
 wait 8
@@ -60,11 +57,13 @@ wait 8
 expect-menu New Project…|Open Project…||Run||Close Project|
 click-window Project
 wait 10
-note the boards the shell found when the project opened, and the one
-note place a program can always go
-click 175 8
+note change the desktop default while the project is open
+click 264 8
 wait 8
-expect-menu This machine|nrf54l15|nrf54lm20b||Look again|
+menu-pick Default device:
+wait 8
+expect-menu nrf54l15
+expect-menu nrf54lm20b
 menu-pick nrf54lm20b
 wait 10
 note and now Run says where it will go
@@ -73,12 +72,14 @@ wait 8
 expect-menu Run on nrf54lm20b|Save on nrf54lm20b|
 click-window Project
 wait 10
-note looking again finds the same boards, not the same boards twice
-click 175 8
+note choosing this machine updates the open project's Run menu
+click 264 8
 wait 8
-menu-pick Look again
-wait 400
-click 175 8
+menu-pick Default device:
 wait 8
-expect-menu This machine|nrf54l15|nrf54lm20b||Look again|
+menu-pick This machine
+wait 10
+click 71 8
+wait 8
+expect-menu New Project…|Open Project…||Run||Close Project|
 quit
