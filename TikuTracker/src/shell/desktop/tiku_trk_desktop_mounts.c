@@ -165,25 +165,30 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
     }
 }
 
+int
+channel_attach(desktop_t *app, int k)
+{
+    tiku_channel_t *ch = (k >= 0) ? app->channels[k] : NULL;
+
+    if (ch == NULL) {
+        return 0;
+    }
+    if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) != 0) {
+        tiku_channel_close(ch);
+        app->channels[k] = NULL;
+        return 0;
+    }
+    tiku_channel_greet(ch);
+    return 1;
+}
+
 void
 channels_attach(desktop_t *app)
 {
     int k;
 
     for (k = 0; k < TIKU_MOUNT_MAX; k++) {
-        tiku_channel_t *ch = app->channels[k];
-
-        if (ch == NULL) {
-            continue;
-        }
-        if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) == 0) {
-            /* A greeting, so a board that drew before anyone was
-             * listening says it all again. */
-            tiku_channel_greet(ch);
-        } else {
-            tiku_channel_close(ch);
-            app->channels[k] = NULL;
-        }
+        (void)channel_attach(app, k);
     }
 }
 
@@ -566,6 +571,10 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
             if (slot >= 0) {
                 snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
                          prefix);
+                /* A board taken in after the desktop was up: its
+                 * channel is adopted here, because the one sweep at
+                 * startup is long past and nothing else would. */
+                (void)channel_attach(app, slot);
             }
         }
     }

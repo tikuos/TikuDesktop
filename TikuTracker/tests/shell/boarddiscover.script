@@ -1,4 +1,5 @@
 # shell: desktop
+# prefs: factory
 # board: discover
 # The board is found by its name on the bus, not by a port the harness
 # hands over -- and finding it is not taking it in.  The desktop scans,
@@ -12,7 +13,7 @@ note nothing is mounted by merely being found: the first board on offer
 note is taken in from the Devices menu, at the end of the bar
 click 264 8
 wait 10
-click 300 60
+menu-pick Connect to
 wait 300
 note and the board taken in has its window on the desktop
 click 558 174

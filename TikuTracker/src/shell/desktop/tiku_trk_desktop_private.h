@@ -620,6 +620,13 @@ int panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch);
  */
 void channels_attach(desktop_t *app);
 
+/**
+ * @brief Adopt one board's channel into the listener and greet it, for a
+ *        board taken in after the startup sweep is long past.
+ * @return nonzero when the channel is now listened to.
+ */
+int  channel_attach(desktop_t *app, int slot);
+
 /** @brief Preferences remain shared data; their window owns the lifetime. */
 static inline tiku_trk_prefs_t *
 prefs_model(desktop_t *app)
