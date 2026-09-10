@@ -274,7 +274,8 @@ the board's BASIC when no program is running.
 ## Screenshot (added 2026-09-09)
 
 The Tiku menu has a "Take Screenshot" item (Cmd+Shift+3).  It saves the
-current frame as ~/Pictures/tiku-screenshot-<time>.png and names the
+current frame to a Screenshots folder on the desktop
+(<desktop>/Screenshots/tiku-screenshot-<time>.png) and names the
 file in the status line.  The shot is taken one frame after the menu is
 picked, so the menu is not in it.  The desk already rendered itself to a
 PNG for the -shot test harness; this offers the same to a person.
