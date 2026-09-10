@@ -656,6 +656,34 @@ desktop_board_look_done(desktop_t *app)
 }
 
 /**
+ * @brief The first board mounted, in the order the menus list them.
+ * @return nonzero when there is one, with its leaf in @p out.
+ */
+static int
+board_first(desktop_t *app, char *out, size_t max)
+{
+    char names[512];
+    const char *nl;
+    size_t len;
+
+    out[0] = '\0';
+    if (desktop_board_names(app, names, sizeof names) <= 0) {
+        return 0;
+    }
+    nl = strchr(names, '\n');
+    len = (nl != NULL) ? (size_t)(nl - names) : strlen(names);
+    if (len == 0u) {
+        return 0;
+    }
+    if (len >= max) {
+        len = max - 1u;
+    }
+    memcpy(out, names, len);
+    out[len] = '\0';
+    return 1;
+}
+
+/**
  * @brief Tell every open application, and every remote session, that the
  *        current device changed, so a window defaulting to it re-reads.
  */
@@ -725,17 +753,35 @@ device_connect(desktop_t *app, const char *port)
 int
 device_disconnect(desktop_t *app, const char *name)
 {
-    char prefix[TIKU_PATH_MAX];
+    char prefix[TIKU_PATH_MAX], port[256];
+    int was_current, gone;
 
     if (app == NULL || name == NULL || name[0] == '\0') {
         return -1;
     }
-    if (app->current_device[0] != '\0' &&
-        strcmp(app->current_device, name) == 0) {
-        device_set_current(app, "");
-    }
+    was_current = (app->current_device[0] != '\0' &&
+                   strcmp(app->current_device, name) == 0);
+    /* Where it is, asked while it is still here: a board let go goes
+     * back on the list of what can be connected, under the name it
+     * already answered to, without a second scan to find it again. */
+    port[0] = '\0';
+    (void)desktop_board_port(app, name, port, sizeof port);
     snprintf(prefix, sizeof prefix, "/devices/%s", name);
-    return desktop_board_unmount(app, prefix);
+    gone = desktop_board_unmount(app, prefix);
+    if (gone && port[0] != '\0') {
+        device_candidate_record(app, port, name);
+    }
+    if (was_current) {
+        /* The current board has gone: the work steps to another board
+         * that is still here, and only falls back to this machine when
+         * none is.  Asked AFTER the unmount, so the board leaving is
+         * not the one it steps to. */
+        char next[64];
+
+        device_set_current(app, board_first(app, next, sizeof next)
+                                    ? next : "");
+    }
+    return gone;
 }
 
 /**

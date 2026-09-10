@@ -227,9 +227,12 @@ build_devices_menu(desktop_t *app)
                            "microcontroller");
     }
     /* Disconnect opens ONTO the boards, so any of them can be let go --
-     * not only whichever happens to be current. */
-    (void)tiku_menu_add_submenu(&app->devmenu, "Disconnect", &app->devsub,
-                                any);
+     * not only whichever happens to be current.  With none connected
+     * there is nothing to let go, and the row is not there to read. */
+    if (any) {
+        (void)tiku_menu_add_submenu(&app->devmenu, "Disconnect",
+                                    &app->devsub, 1);
+    }
     any = 0;
     for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
         char row[128];
