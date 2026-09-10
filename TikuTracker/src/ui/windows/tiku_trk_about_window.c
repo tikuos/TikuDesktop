@@ -142,6 +142,10 @@ typedef struct {
         int           known;        /* an answer has landed for it */
     }                          dev[6];
     int                        ndev;
+    /* One board at a time, so the box never outgrows the screen: which
+     * one, and where its stepper was painted so a click can find it. */
+    int                        page;
+    tiku_rect_t                prev_btn, next_btn;
 } about_state_t;
 
 #define ABOUT_DEVS  6
@@ -380,7 +384,8 @@ about_dev_estate(about_state_t *st, int at, const char *mem, char *rest)
          * other; the legend says both. */
         st->dev[at].lay[which].est[k].used = v[1];
         st->dev[at].lay[which].est[k].live = 0;
-    } else if (strcmp(f[0], "tier") == 0 || strcmp(f[0], "code") == 0) {
+    } else if (strcmp(f[0], "tier") == 0 || strcmp(f[0], "code") == 0 ||
+               (strcmp(f[0], "store") == 0 && nf >= 3)) {
         st->dev[at].lay[which].est[k].used = v[1];
         st->dev[at].lay[which].est[k].live = 1;
         /* A tier in a bank of its own is not part of this bar. */
@@ -489,60 +494,40 @@ dev_rows(const about_state_t *st, int i)
     return rows;
 }
 
-/* The estates' colours, in the order a legend reads them. */
-static const struct { const char *key; const char *say; float tint; }
+/* A hue per estate; small keys match the bar while the labels retain
+ * the theme's text contrast. */
+static const struct { const char *key; const char *say; tiku_rgb_t hue; }
 about_estates[] = {
-    { "code",    "code",    0.55f },
-    { "module",  "module",  0.70f },
-    { "static",  "static",  0.55f },
-    { "stack",   "stack",   0.70f },
-    { "tier",    "tier",    0.85f },
-    { "tier2",   "tier",    0.85f },
-    { "store",   "store",   1.00f },
-    { "persist", "persist", 0.40f },
+    { "code",    "Code",    0x3B6EA5u },   /* the desktop's blue     */
+    { "module",  "Modules", 0x6A4C93u },   /* violet                 */
+    { "static",  "Static",  0x3B6EA5u },
+    { "stack",   "Stack",   0xC0703Cu },   /* amber                  */
+    { "tier",    "Tier",    0x2E8B57u },   /* green                  */
+    { "tier2",   "Tier",    0x2E8B57u },
+    { "store",   "Store",   0x8A8A2Eu },   /* olive                  */
+    { "persist", "Persist", 0xB03A48u },   /* carmine                */
 };
 
-/** @brief How @p key is named and shaded, or a plain default. */
+/** @brief How @p key is named and coloured, or a plain grey default. */
 static const char *
-estate_look(const char *key, float *tint)
+estate_look(const char *key, tiku_rgb_t *hue)
 {
     size_t i;
 
     for (i = 0; i < sizeof about_estates / sizeof about_estates[0]; i++) {
         if (strcmp(about_estates[i].key, key) == 0) {
-            *tint = about_estates[i].tint;
+            *hue = about_estates[i].hue;
             return about_estates[i].say;
         }
     }
-    *tint = 0.9f;
+    *hue = 0x7A7A7Au;
     return key;
 }
 
-/** @brief One estate's words for the legend, into @p out. */
-static void
-legend_piece(const about_state_t *st, int i, int m, int k, char *out,
-             size_t max)
-{
-    float tint;
-    const char *name = estate_look(st->dev[i].lay[m].est[k].label, &tint);
-    char b[24], u[24];
-
-    fmt_bytes(st->dev[i].lay[m].est[k].size, b, sizeof b);
-    if (strcmp(st->dev[i].lay[m].est[k].label, "stack") == 0) {
-        fmt_bytes(st->dev[i].lay[m].est[k].used, u, sizeof u);
-        snprintf(out, max, "%s %s, %s headroom", name, b, u);
-    } else if (st->dev[i].lay[m].est[k].live) {
-        fmt_bytes(st->dev[i].lay[m].est[k].used, u, sizeof u);
-        snprintf(out, max, "%s %s of %s", name, u, b);
-    } else {
-        snprintf(out, max, "%s %s", name, b);
-    }
-}
-
 /**
- * @brief Lay the legend out in lines no wider than the box, painting
- *        them when @p s is given and only counting them when it is not,
- *        so the height and the drawing can never disagree.
+ * @brief Aligned memory details: region, reserved size and live usage.
+ *        Count the same rows when measuring, including the header and
+ *        trailing space that separates one memory from the next.
  * @return how many lines it took.
  */
 static int
@@ -550,42 +535,80 @@ legend_lines(about_state_t *st, tiku_surface_t *s, int x, int y, int i,
              int m)
 {
     const tiku_font_t *plain = tiku_font_plain();
-    int room = st->surface->w - x - 14, k, lines = 0;
-    char line[160] = "";
+    int room = st->surface->w - x - 14, k, lines = 1;
+    int step = plain->height + 2;
+    int size_right = x + room * 48 / 100;
+    int usage_right = x + room - 6;
+    tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT,
+                                tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
+
+    if (s != NULL) {
+        tiku_fill(s, (tiku_rect_t){ x, y, room, step },
+                  tiku_tint(TIKU_C_PANEL, 0.95f));
+        tiku_text(s, plain, x + 16, y + plain->ascent, "Region", quiet);
+        tiku_text(s, plain, size_right - tiku_text_width(plain, "Size"),
+                  y + plain->ascent, "Size", quiet);
+        tiku_text(s, plain, usage_right - tiku_text_width(plain, "Usage"),
+                  y + plain->ascent, "Usage", quiet);
+    }
 
     for (k = 0; k < st->dev[i].lay[m].nest; k++) {
-        char piece[64], trial[224];
+        char size[24], used[24], usage[48];
+        tiku_rgb_t hue;
+        const char *name;
 
         if (strcmp(st->dev[i].lay[m].est[k].label, "tier2") == 0) {
             continue;           /* lives in the second bank, said after */
         }
-        legend_piece(st, i, m, k, piece, sizeof piece);
-        snprintf(trial, sizeof trial, "%s%s%s", line,
-                 line[0] ? " \xC2\xB7 " : "", piece);
-        if (line[0] != '\0' && tiku_text_width(plain, trial) > room) {
-            if (s != NULL) {
-                tiku_text(s, plain, x, y + plain->ascent, line,
-                          tiku_tint(TIKU_C_TEXT, 1.6f));
-            }
-            y += plain->height + 2;
-            lines++;
-            snprintf(line, sizeof line, "%s", piece);
+        name = estate_look(st->dev[i].lay[m].est[k].label, &hue);
+        fmt_bytes(st->dev[i].lay[m].est[k].size, size, sizeof size);
+        fmt_bytes(st->dev[i].lay[m].est[k].used, used, sizeof used);
+        if (strcmp(st->dev[i].lay[m].est[k].label, "stack") == 0) {
+            snprintf(usage, sizeof usage, "%s headroom", used);
+        } else if (st->dev[i].lay[m].est[k].live) {
+            snprintf(usage, sizeof usage, "%s used", used);
+        } else if (strcmp(st->dev[i].lay[m].est[k].label, "store") == 0) {
+            /* The map reports this region's capacity, not file usage. */
+            snprintf(usage, sizeof usage, "Files & user data");
         } else {
-            snprintf(line, sizeof line, "%s", trial);
+            snprintf(usage, sizeof usage, "Reserved");
         }
-    }
-    if (line[0] != '\0') {
+        y += step;
         if (s != NULL) {
-            tiku_text(s, plain, x, y + plain->ascent, line,
-                      tiku_tint(TIKU_C_TEXT, 1.6f));
+            tiku_fill(s, (tiku_rect_t){ x, y, room, step },
+                      tiku_tint(TIKU_C_PANEL, (lines % 2) ? 1.04f : 1.0f));
+            tiku_fill(s, (tiku_rect_t){ x + 4, y + (plain->height - 6) / 2,
+                                       6, 6 }, hue);
+            tiku_text(s, plain, x + 16, y + plain->ascent, name, TIKU_C_TEXT);
+            tiku_text(s, plain, size_right - tiku_text_width(plain, size),
+                      y + plain->ascent, size, TIKU_C_TEXT);
+            tiku_text(s, plain, usage_right - tiku_text_width(plain, usage),
+                      y + plain->ascent, usage, TIKU_C_TEXT);
         }
         lines++;
+        if (strcmp(st->dev[i].lay[m].est[k].label, "store") == 0 &&
+            st->dev[i].lay[m].est[k].live) {
+            unsigned long total = st->dev[i].lay[m].est[k].size;
+            unsigned long taken = st->dev[i].lay[m].est[k].used;
+
+            fmt_bytes(total > taken ? total - taken : 0UL, used, sizeof used);
+            snprintf(usage, sizeof usage, "%s free", used);
+            y += step;
+            if (s != NULL) {
+                tiku_text(s, plain, x + 16, y + plain->ascent,
+                          "Files & data", quiet);
+                tiku_text(s, plain,
+                          usage_right - tiku_text_width(plain, usage),
+                          y + plain->ascent, usage, TIKU_C_TEXT);
+            }
+            lines++;
+        }
     }
-    return lines;
+    return lines + 1;
 }
 
 /**
- * @brief The legend under a memory's bar, wrapped to the box; then a
+ * @brief The table under a memory's bar; then a
  *        second bank, when there is one.
  * @return how many lines it took.
  */
@@ -617,7 +640,7 @@ paint_legend(about_state_t *st, int x, int y, int i, int m)
         }
         tiku_text(st->surface, plain, x + 62,
                   y + lines * (plain->height + 2) + plain->ascent, said,
-                  tiku_tint(TIKU_C_TEXT, 1.6f));
+                  TIKU_C_TEXT);
         lines++;
     }
     return lines;
@@ -650,10 +673,10 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
     px = bar.x;
     for (k = 0; k < st->dev[i].lay[m].nest; k++) {
         unsigned long sz = st->dev[i].lay[m].est[k].size;
-        float tint;
+        tiku_rgb_t hue;
         int w;
 
-        (void)estate_look(st->dev[i].lay[m].est[k].label, &tint);
+        (void)estate_look(st->dev[i].lay[m].est[k].label, &hue);
         if (strcmp(st->dev[i].lay[m].est[k].label, "tier2") == 0) {
             continue;           /* lives in the second bank, drawn below */
         }
@@ -664,16 +687,22 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
         if (w < 1 && sz > 0UL) {
             w = 1;
         }
+        /* The whole estate in its hue, lightened; what is used of it
+         * in the hue itself, so a slice reads as "this much of this". */
         tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, w, bar.h },
-                  tiku_tint(TIKU_C_SELECT, tint));
+                  tiku_tint(hue, 1.55f));
+        if (!st->dev[i].lay[m].est[k].live && sz > 0UL) {
+            tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, w, bar.h },
+                      hue);         /* region size; occupancy not reported */
+        }
         if (st->dev[i].lay[m].est[k].live && sz > 0UL) {
-            /* The used part, darker, from the estate's left edge. */
+            /* The used part, in the hue itself, from the left edge. */
             unsigned long u = st->dev[i].lay[m].est[k].used;
             int uw = (int)((unsigned long long)((u > sz) ? sz : u) *
                            (unsigned long long)w / sz);
 
             tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, uw, bar.h },
-                      tiku_tint(TIKU_C_SELECT, tint * 0.6f));
+                      hue);
         }
         tiku_vline(st->surface, px + w, bar.y, bar.h,
                    tiku_tint(TIKU_C_PANEL, 0.7f));
@@ -699,10 +728,13 @@ devices_h(const about_state_t *st)
     if (st->ndev <= 0) {
         return 0;
     }
-    for (i = 0; i < st->ndev; i++) {
-        rows += dev_rows(st, i);
-    }
-    return 10 + h + 8 + rows * (h + 2) + st->ndev * 10 + 6;
+    /* Only the board on show, plus the stepper's row when there is
+     * more than one: the box stays the size of one board however many
+     * are plugged in. */
+    i = (st->page >= 0 && st->page < st->ndev) ? st->page : 0;
+    rows = dev_rows(st, i);
+    return 10 + h + 8 + rows * (h + 2) + 10 + 6 +
+           ((st->ndev > 1) ? tiku_ui_button_h() + 8 : 0);
 }
 
 /**
@@ -740,6 +772,91 @@ paint_room(about_state_t *st, int x, int y, const char *label,
 }
 
 /**
+ * @brief One board, from its mark down to its uptime line, at @p y.
+ * @return the y below it.
+ */
+static int
+paint_device(about_state_t *st, int i, int y)
+{
+    const tiku_font_t *plain = tiku_font_plain();
+    const tiku_font_t *bold = tiku_font_bold();
+    tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT,
+                                tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
+    int h = plain->height, k;
+    char said[128];
+    int x = 58;
+
+    /* Its own mark, the size the Deskbar draws a team at. */
+    (void)tiku_icon_paint(st->surface, "microcontroller", 18, y + 2,
+                          32);
+    tiku_text(st->surface, bold, x, y + bold->ascent,
+              st->dev[i].name, TIKU_C_TEXT);
+    y += h + 2;
+    if (!st->dev[i].known) {
+        /* Nothing kept yet: the shell is asking, and the box says
+         * so rather than showing a board with no facts at all. */
+        tiku_text(st->surface, plain, x, y + plain->ascent,
+                  "asking...", quiet);
+        return y + h + 2 + 10;
+    }
+    {
+        char speed[24];
+
+        fmt_hz(st->dev[i].freq, speed, sizeof speed);
+        snprintf(said, sizeof said, "%s at %s",
+                 st->dev[i].mcu[0] ? st->dev[i].mcu : "?", speed);
+    }
+    tiku_text(st->surface, plain, x, y + plain->ascent, said, quiet);
+    y += h + 2;
+    /* What the part is FITTED with, said once: the gauges below are
+     * what is free to allocate, which is a smaller thing. */
+    if (st->dev[i].nlay == 0 &&
+        (st->dev[i].part_sram > 0UL || st->dev[i].part_nvm > 0UL)) {
+        char a[24], b[24];
+
+        fmt_bytes(st->dev[i].part_sram, a, sizeof a);
+        fmt_bytes(st->dev[i].part_nvm, b, sizeof b);
+        snprintf(said, sizeof said, "Fitted with %s SRAM and %s %s",
+                 a, b, st->dev[i].kind[0] ? st->dev[i].kind : "NVM");
+        tiku_text(st->surface, plain, x, y + plain->ascent, said,
+                  quiet);
+        y += h + 2;
+    }
+    if (st->dev[i].nlay > 0) {
+        int m;
+
+        for (m = 0; m < st->dev[i].nlay; m++) {
+            y += paint_layout(st, x, y, i, m) * (h + 2);
+        }
+    } else {
+        for (k = 0; k < st->dev[i].nmem; k++) {
+            paint_room(st, x, y, st->dev[i].mem[k].label,
+                       st->dev[i].mem[k].freeb,
+                       st->dev[i].mem[k].total);
+            y += h + 2;
+        }
+    }
+    if (st->dev[i].has[0] != '\0' || st->dev[i].up[0] != '\0' ||
+        st->dev[i].boots[0] != '\0') {
+        char up[48] = "";
+
+        if (st->dev[i].up[0] != '\0' || st->dev[i].boots[0] != '\0') {
+            snprintf(up, sizeof up, "up %s s, %s boots",
+                     st->dev[i].up[0] ? st->dev[i].up : "?",
+                     st->dev[i].boots[0] ? st->dev[i].boots : "?");
+        }
+        snprintf(said, sizeof said, "%s%s%s%s",
+                 st->dev[i].has[0] ? "also " : "", st->dev[i].has,
+                 (st->dev[i].has[0] && up[0]) ? " \xC2\xB7 " : "", up);
+        tiku_text(st->surface, plain, x, y + plain->ascent, said,
+                  quiet);
+        y += h + 2;
+    }
+    y += 10;
+    return y;
+}
+
+/**
  * @brief The devices section: a board its own mark, its name, what it
  *        is, what memory of each KIND it has left, and what else is on
  *        it.
@@ -754,92 +871,43 @@ paint_devices(about_state_t *st, int top)
 {
     const tiku_font_t *plain = tiku_font_plain();
     const tiku_font_t *bold = tiku_font_bold();
-    tiku_rgb_t quiet = tiku_tint(TIKU_C_TEXT, 1.6f);
     int h = plain->height;
     int y = top + 10;
-    int i, k;
 
     tiku_hline(st->surface, 14, y, st->surface->w - 28,
                tiku_tint(TIKU_C_PANEL, 0.80f));
     y += 8;
     tiku_text(st->surface, bold, 14, y + bold->ascent,
               "Connected devices", TIKU_C_TEXT);
-    y += h + 8;
-    for (i = 0; i < st->ndev; i++) {
-        char said[128];
-        int x = 58;
+    if (st->ndev > 1) {
+        /* Which of them, and the way to the others: a stepper at the
+         * heading's right, the count between its arrows. */
+        char count[24];
+        int bh = tiku_ui_button_h(), cw, bx = st->surface->w - 14;
 
-        /* Its own mark, the size the Deskbar draws a team at. */
-        (void)tiku_icon_paint(st->surface, "microcontroller", 18, y + 2,
-                              32);
-        tiku_text(st->surface, bold, x, y + bold->ascent,
-                  st->dev[i].name, TIKU_C_TEXT);
-        y += h + 2;
-        if (!st->dev[i].known) {
-            /* Nothing kept yet: the shell is asking, and the box says
-             * so rather than showing a board with no facts at all. */
-            tiku_text(st->surface, plain, x, y + plain->ascent,
-                      "asking...", quiet);
-            y += h + 2 + 10;
-            continue;
-        }
-        {
-            char speed[24];
-
-            fmt_hz(st->dev[i].freq, speed, sizeof speed);
-            snprintf(said, sizeof said, "%s at %s",
-                     st->dev[i].mcu[0] ? st->dev[i].mcu : "?", speed);
-        }
-        tiku_text(st->surface, plain, x, y + plain->ascent, said, quiet);
-        y += h + 2;
-        /* What the part is FITTED with, said once: the gauges below are
-         * what is free to allocate, which is a smaller thing. */
-        if (st->dev[i].nlay == 0 &&
-            (st->dev[i].part_sram > 0UL || st->dev[i].part_nvm > 0UL)) {
-            char a[24], b[24];
-
-            fmt_bytes(st->dev[i].part_sram, a, sizeof a);
-            fmt_bytes(st->dev[i].part_nvm, b, sizeof b);
-            snprintf(said, sizeof said, "Fitted with %s SRAM and %s %s",
-                     a, b, st->dev[i].kind[0] ? st->dev[i].kind : "NVM");
-            tiku_text(st->surface, plain, x, y + plain->ascent, said,
-                      quiet);
-            y += h + 2;
-        }
-        if (st->dev[i].nlay > 0) {
-            int m;
-
-            for (m = 0; m < st->dev[i].nlay; m++) {
-                y += paint_layout(st, x, y, i, m) * (h + 2);
-            }
-        } else {
-            for (k = 0; k < st->dev[i].nmem; k++) {
-                paint_room(st, x, y, st->dev[i].mem[k].label,
-                           st->dev[i].mem[k].freeb,
-                           st->dev[i].mem[k].total);
-                y += h + 2;
-            }
-        }
-        if (st->dev[i].has[0] != '\0' || st->dev[i].up[0] != '\0' ||
-            st->dev[i].boots[0] != '\0') {
-            char up[48] = "";
-
-            if (st->dev[i].up[0] != '\0' || st->dev[i].boots[0] != '\0') {
-                snprintf(up, sizeof up, "up %s s, %s boots",
-                         st->dev[i].up[0] ? st->dev[i].up : "?",
-                         st->dev[i].boots[0] ? st->dev[i].boots : "?");
-            }
-            snprintf(said, sizeof said, "%s%s%s%s",
-                     st->dev[i].has[0] ? "also " : "", st->dev[i].has,
-                     (st->dev[i].has[0] && up[0]) ? " \xC2\xB7 " : "", up);
-            tiku_text(st->surface, plain, x, y + plain->ascent, said,
-                      quiet);
-            y += h + 2;
-        }
-        y += 10;
+        snprintf(count, sizeof count, "%d of %d", st->page + 1, st->ndev);
+        cw = tiku_text_width(plain, count);
+        st->next_btn = (tiku_rect_t){ bx - bh, y - 2, bh, bh };
+        st->prev_btn = (tiku_rect_t){ bx - bh - 8 - cw - 8 - bh, y - 2,
+                                       bh, bh };
+        tiku_ui_button(st->surface, st->prev_btn, "",
+                       (st->page > 0) ? 0u : TIKU_S_DISABLED);
+        tiku_ui_arrow(st->surface, st->prev_btn, 2, st->page > 0);
+        tiku_text(st->surface, plain, st->prev_btn.x + bh + 8,
+                  y - 2 + (bh - h) / 2 + plain->ascent, count, TIKU_C_TEXT);
+        tiku_ui_button(st->surface, st->next_btn, "",
+                       (st->page + 1 < st->ndev) ? 0u : TIKU_S_DISABLED);
+        tiku_ui_arrow(st->surface, st->next_btn, 3,
+                      st->page + 1 < st->ndev);
+    } else {
+        st->prev_btn = st->next_btn = (tiku_rect_t){ 0, 0, 0, 0 };
     }
+    y += h + 8;
+    if (st->page < 0 || st->page >= st->ndev) {
+        st->page = 0;
+    }
+    (void)paint_device(st, st->page, y);
 }
-
 /**
  * @brief The body's height: the taller of the two columns, plus the
  *        two-line footer.
@@ -1436,6 +1504,23 @@ about_event(void *state, const tiku_event_t *event)
         }
         st->step = -1;          /* the tick repaints and resizes */
         return 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_DOWN && st->ndev > 1) {
+        int hit_prev = event->x >= st->prev_btn.x &&
+                       event->x < st->prev_btn.x + st->prev_btn.w &&
+                       event->y >= st->prev_btn.y &&
+                       event->y < st->prev_btn.y + st->prev_btn.h;
+        int hit_next = event->x >= st->next_btn.x &&
+                       event->x < st->next_btn.x + st->next_btn.w &&
+                       event->y >= st->next_btn.y &&
+                       event->y < st->next_btn.y + st->next_btn.h;
+
+        if ((hit_prev && st->page > 0) ||
+            (hit_next && st->page + 1 < st->ndev)) {
+            st->page += hit_next ? 1 : -1;
+            st->step = -1;      /* the tick repaints and resizes */
+            return 0;
+        }
     }
     if (st->reports_open && event->type == TIKU_EVENT_POINTER_DOWN) {
         int row = tiku_list_at(&st->list, st->list_box, event->x, event->y);
