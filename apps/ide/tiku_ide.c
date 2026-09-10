@@ -148,6 +148,10 @@ enum {
 #define CMD_BOARDGONE 25        /* the row that only says; never picked */
 #define CMD_FINDBOARDS 26
 #define CMD_CONNECT_HOST 27     /* run here: no board is the destination */
+/* A project with no board of its own follows the desktop's current
+ * device; this sentinel is how it says "this machine" ON PURPOSE, so
+ * the choice sticks instead of falling back to the current device. */
+#define IDE_HOST_PICK "(this machine)"
 /*
  * One command per mounted board in the Connect menu, a range kept below
  * CMD_WINDOW for the same reason the Run range is.
@@ -2225,13 +2229,34 @@ board_of_project(ide_t *st)
 static int
 dest_board(ide_t *st, char *out, size_t max)
 {
-    int mine = board_of_project(st);
+    int mine;
 
     out[0] = '\0';
-    if (mine < 0) {
-        return 0;
+    if (strcmp(st->proj.board, IDE_HOST_PICK) == 0) {
+        return 0;               /* the project pins this machine */
     }
-    return board_at(st, mine, out, max);
+    mine = board_of_project(st);
+    if (mine >= 0) {
+        return board_at(st, mine, out, max);    /* the board it names */
+    }
+    /* No board of its own: default to the desktop's current device,
+     * when that device is one that is mounted here. */
+    if (st->proj.board[0] == '\0' && st->services->current_device != NULL) {
+        char cur[64];
+        int i;
+
+        if (st->services->current_device(st->services->ctx, cur,
+                                          sizeof cur) > 0 &&
+            cur[0] != '\0') {
+            for (i = 0; i < IDE_BOARDS && board_at(st, i, out, max); i++) {
+                if (strcmp(out, cur) == 0) {
+                    return 1;
+                }
+            }
+            out[0] = '\0';
+        }
+    }
+    return 0;
 }
 
 /**
@@ -2260,7 +2285,8 @@ connect_menu(ide_t *st, tiku_menu_list_t *m)
             (have_dest && strcmp(name, dest) == 0);
         n++;
     }
-    if (st->proj.board[0] != '\0' && !have_dest) {
+    if (st->proj.board[0] != '\0' &&
+        strcmp(st->proj.board, IDE_HOST_PICK) != 0 && !have_dest) {
         snprintf(name, sizeof name, "%s is not here", st->proj.board);
         mrow(m, name, CMD_BOARDGONE, 0, 0u, 0);
     }
@@ -2962,6 +2988,14 @@ ide_board_said(void *state, int what, const char *text)
          * found, so the next opening shows the boards without a second
          * asking. */
         st->looking = 0;
+        if (st->proj_id != 0u) {
+            project_publish(st);
+        }
+        return;
+    }
+    if (what == TIKU_APP_BOARD_CURRENT) {
+        /* The desktop's current device changed: a project defaulting to
+         * it now runs somewhere else, so the Connect menu re-marks. */
         if (st->proj_id != 0u) {
             project_publish(st);
         }
@@ -4246,9 +4280,12 @@ ide_pick(void *state, uint32_t window, int command)
          * choice is made once and Run reads as what it will do. */
         char name[64];
 
-        name[0] = '\0';
-        if (command != CMD_CONNECT_HOST &&
-            !board_at(st, command - CMD_CONNECT, name, sizeof name)) {
+        if (command == CMD_CONNECT_HOST) {
+            /* This machine ON PURPOSE: pin it, so the run stays here
+             * even when a current device is set. */
+            snprintf(name, sizeof name, "%s", IDE_HOST_PICK);
+        } else if (!board_at(st, command - CMD_CONNECT, name,
+                             sizeof name)) {
             return 0;
         }
         project_set_board(st, name);

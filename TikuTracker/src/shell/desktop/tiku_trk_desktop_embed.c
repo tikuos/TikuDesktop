@@ -514,6 +514,20 @@ embed_svc_board_names(void *ctx, char *out, size_t max)
     return desktop_board_names(slot->app, out, max);
 }
 
+/** @brief The current device (empty for this machine), for an app that
+ *         defaults its work to it. */
+static int
+embed_svc_current_device(void *ctx, char *out, size_t max)
+{
+    struct desktop_embed *slot = ctx;
+
+    if (out == NULL || max == 0u) {
+        return 0;
+    }
+    snprintf(out, max, "%s", slot->app->current_device);
+    return (int)strlen(out);
+}
+
 /** @brief Run a program on a board, telling this slot what it prints. */
 static int
 embed_svc_board_run(void *ctx, const char *board, const char *program)
@@ -673,6 +687,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.clip_set = embed_svc_clip_set;
     slot->services.clip_get = embed_svc_clip_get;
     slot->services.board_names = embed_svc_board_names;
+    slot->services.current_device = embed_svc_current_device;
     slot->services.board_run = embed_svc_board_run;
     slot->services.board_input = embed_svc_board_input;
         slot->services.board_stop = embed_svc_board_stop;
